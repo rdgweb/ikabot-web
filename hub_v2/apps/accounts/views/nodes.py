@@ -176,6 +176,6 @@ class NodeDeployView(LoginRequiredMixin, DetailView):
             f"  -e HUB_URL={hub_url} \\\n"
             f"  -e AGENT_TOKEN={self.object.deploy_token} \\\n"
             f"  -e AGENT_NODE_ID={self.object.pk} \\\n"
-            f"  ghcr.io/user/ikabot-agent:latest"
+            f"  blackoneal/ikabot-web-agent:latest"
         )
         return ctx

@@ -1,25 +1,30 @@
 # =============================================================================
-# ikabot-web  —  Docker Compose (dev / production)
+# ikabot-web - Docker Compose
 # =============================================================================
-# Usage:
-#   cp .env.example .env   # edit values
+# Installation from source:
+#   cp .env.example .env
 #   docker compose up -d --build
+#
+# Installation using prebuilt images:
+#   cp .env.example .env
+#   docker compose pull
+#   docker compose up -d
+#
+# Notes:
+# - hub_v2 and agent_v2 can be built locally or pulled from Docker Hub.
+# - IkabotAPI is an external dependency and is not bundled in this repository.
 # =============================================================================
 
 services:
-
-  # ---------------------------------------------------------------------------
-  # MariaDB 11  —  primary database for hub_v2 (Django)
-  # ---------------------------------------------------------------------------
   mariadb:
     image: mariadb:11
     restart: unless-stopped
     environment:
-      MARIADB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me-root}
-      MARIADB_DATABASE:      ${DB_NAME:-ikabot_hub}
-      MARIADB_USER:          ${DB_USER:-ikabot}
-      MARIADB_PASSWORD:      ${DB_PASSWORD:-change-me}
-      TZ:                    America/Cuiaba
+      MARIADB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me-root-password}
+      MARIADB_DATABASE: ${DB_NAME:-ikabot_hub}
+      MARIADB_USER: ${DB_USER:-ikabot}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-change-me-db-password}
+      TZ: America/Cuiaba
     ports:
       - "${DB_PORT:-3306}:3306"
     volumes:
@@ -30,9 +35,6 @@ services:
       timeout: 5s
       retries: 10
 
-  # ---------------------------------------------------------------------------
-  # Redis 7  —  cache / Celery broker / channel layer
-  # ---------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -46,10 +48,8 @@ services:
       timeout: 5s
       retries: 5
 
-  # ---------------------------------------------------------------------------
-  # hub  —  Django web application (hub_v2)
-  # ---------------------------------------------------------------------------
   hub:
+    image: ${HUB_IMAGE:-blackoneal/ikabot-web-hub:latest}
     build:
       context: ./hub_v2
     restart: unless-stopped
@@ -60,30 +60,26 @@ services:
         condition: service_healthy
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.base
-      DJANGO_SECRET_KEY:   ${DJANGO_SECRET_KEY:-change-me-to-random-string}
-      DJANGO_DEBUG:        ${DJANGO_DEBUG:-true}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-to-a-long-random-string}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-false}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,hub}
-      DB_NAME:             ${DB_NAME:-ikabot_hub}
-      DB_USER:             ${DB_USER:-ikabot}
-      DB_PASSWORD:         ${DB_PASSWORD:-change-me}
-      DB_HOST:             mariadb
-      DB_PORT:             "3306"
-      REDIS_URL:           ${REDIS_URL:-redis://redis:6379/0}
-      APP_SECRET:          ${APP_SECRET:-change-me-32-char-fernet-key}
-      AGENT_TOKEN:         ${AGENT_TOKEN:-change-me-agent-token}
-      WEBSHARE_API_KEY:    ${WEBSHARE_API_KEY:-}
-      IKABOTAPI_URL:       ${IKABOTAPI_URL:-http://ikabotapi:5005}
-      TZ:                  America/Cuiaba
+      ADMIN_CREATE: ${ADMIN_CREATE:-true}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@ikabot.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      DB_NAME: ${DB_NAME:-ikabot_hub}
+      DB_USER: ${DB_USER:-ikabot}
+      DB_PASSWORD: ${DB_PASSWORD:-change-me-db-password}
+      DB_HOST: mariadb
+      DB_PORT: "3306"
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      APP_SECRET: ${APP_SECRET:-change-me-app-secret}
+      AGENT_TOKEN: ${AGENT_TOKEN:-change-me-agent-token}
+      WEBSHARE_API_KEY: ${WEBSHARE_API_KEY:-}
+      IKABOTAPI_URL: ${IKABOTAPI_URL:-}
+      TZ: America/Cuiaba
     ports:
       - "${HUB_PORT:-8000}:8000"
-    volumes:
-      - ./hub_v2:/app
-    # NOTE: --reload removed — on Windows/Docker volume mounts it causes
-    # heavy filesystem polling that degrades performance significantly.
-    # For dev hot-reload, restart the container: docker compose restart hub
-    # Workers: need enough for agent long-poll connections + browser requests.
-    # Each agent holds 1 worker during long-poll (~5s). With 2 agents, 4 workers
-    # ensures browser requests always find a free worker.
     command: ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "4", "--access-logfile", "-", "--timeout", "120"]
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/agent/heartbeat/ || curl -fsS http://127.0.0.1:8000/ || exit 1"]
@@ -91,38 +87,27 @@ services:
       timeout: 6s
       retries: 10
 
-  # ---------------------------------------------------------------------------
-  # telegram-worker  —  Telegram polling service (receives bot messages)
-  # ---------------------------------------------------------------------------
-  # Runs alongside the hub. Polls Telegram's getUpdates API to process
-  # /start commands for account linking. Automatically waits for the bot
-  # to be configured before polling. No webhook or public URL needed.
   telegram-worker:
-    build:
-      context: ./hub_v2
+    image: ${HUB_IMAGE:-blackoneal/ikabot-web-hub:latest}
     restart: unless-stopped
     depends_on:
       hub:
         condition: service_healthy
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.base
-      DJANGO_SECRET_KEY:   ${DJANGO_SECRET_KEY:-change-me-to-random-string}
-      DB_NAME:             ${DB_NAME:-ikabot_hub}
-      DB_USER:             ${DB_USER:-ikabot}
-      DB_PASSWORD:         ${DB_PASSWORD:-change-me}
-      DB_HOST:             mariadb
-      DB_PORT:             "3306"
-      REDIS_URL:           ${REDIS_URL:-redis://redis:6379/0}
-      TZ:                  America/Cuiaba
-    volumes:
-      - ./hub_v2:/app
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-to-a-long-random-string}
+      DB_NAME: ${DB_NAME:-ikabot_hub}
+      DB_USER: ${DB_USER:-ikabot}
+      DB_PASSWORD: ${DB_PASSWORD:-change-me-db-password}
+      DB_HOST: mariadb
+      DB_PORT: "3306"
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      TZ: America/Cuiaba
     entrypoint: ["python", "manage.py"]
     command: ["telegram_poll"]
 
-  # ---------------------------------------------------------------------------
-  # agent  —  Python worker (agent_v2)
-  # ---------------------------------------------------------------------------
   agent:
+    image: ${AGENT_IMAGE:-blackoneal/ikabot-web-agent:latest}
     build:
       context: ./agent_v2
     restart: unless-stopped
@@ -132,23 +117,15 @@ services:
       redis:
         condition: service_healthy
     environment:
-      HUB_URL:       ${HUB_URL:-http://hub:8000}
-      REDIS_URL:     ${REDIS_URL:-redis://redis:6379/0}
-      AGENT_TOKEN:   ${AGENT_TOKEN:-change-me-agent-token}
+      HUB_URL: ${HUB_URL:-http://hub:8000}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      AGENT_TOKEN: ${AGENT_TOKEN:-change-me-agent-token}
       AGENT_NODE_ID: ${AGENT_NODE_ID:-}
-      AGENT_NAME:    ${AGENT_NAME:-ikabot-agent-01}
-      TZ:            America/Cuiaba
-    volumes:
-      - ./agent_v2:/app
-    profiles:
-      - agent  # Only starts with: docker compose --profile agent up
+      AGENT_NAME: ${AGENT_NAME:-ikabot-agent-01}
+      TZ: America/Cuiaba
 
-  # ---------------------------------------------------------------------------
-  # agent-vps-teste  —  second agent for vps-teste node (local)
-  # ---------------------------------------------------------------------------
   agent-vps-teste:
-    build:
-      context: ./agent_v2
+    image: ${AGENT_IMAGE:-blackoneal/ikabot-web-agent:latest}
     restart: unless-stopped
     depends_on:
       hub:
@@ -156,20 +133,15 @@ services:
       redis:
         condition: service_healthy
     environment:
-      HUB_URL:       ${HUB_URL:-http://hub:8000}
-      REDIS_URL:     ${REDIS_URL:-redis://redis:6379/0}
-      AGENT_TOKEN:   ${AGENT_TOKEN:-change-me-agent-token}
+      HUB_URL: ${HUB_URL:-http://hub:8000}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      AGENT_TOKEN: ${AGENT_TOKEN:-change-me-agent-token}
       AGENT_NODE_ID: "37062b20-eb8e-4b8d-ada6-b8f6b77379c3"
-      AGENT_NAME:    agent-vps-teste
-      TZ:            America/Cuiaba
-    volumes:
-      - ./agent_v2:/app
+      AGENT_NAME: agent-vps-teste
+      TZ: America/Cuiaba
     profiles:
-      - agent  # Only starts with: docker compose --profile agent up
+      - extra-agent
 
-  # ---------------------------------------------------------------------------
-  # phpMyAdmin  —  database admin UI
-  # ---------------------------------------------------------------------------
   phpmyadmin:
     image: phpmyadmin:latest
     restart: unless-stopped
@@ -177,29 +149,14 @@ services:
       mariadb:
         condition: service_healthy
     environment:
-      PMA_HOST:     mariadb
-      PMA_PORT:     "3306"
+      PMA_HOST: mariadb
+      PMA_PORT: "3306"
       UPLOAD_LIMIT: 64M
     ports:
       - "${PMA_PORT:-8080}:80"
-
-  # ---------------------------------------------------------------------------
-  # ikabotapi  —  blackbox + captcha solver (local image)
-  # ---------------------------------------------------------------------------
-  ikabotapi:
-    build:
-      context: ./ikabotapi
-    restart: unless-stopped
-    environment:
-      TZ: America/Cuiaba
-    ports:
-      - "${IKABOTAPI_PORT:-8888}:5005"
     profiles:
-      - full  # Only starts with: docker compose --profile full up
+      - tools
 
-# =============================================================================
-# Named volumes
-# =============================================================================
 volumes:
   mariadb_data:
   redis_data:
