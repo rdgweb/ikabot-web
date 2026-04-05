@@ -1,0 +1,56 @@
+from .constants import CAT_MONITORING, FIELD_BOOL, FIELD_CHOICE, FIELD_INT, TRANSPORT_LOAD_CHOICES
+
+
+ACTIONS = {
+    701: {
+        "name": "Alerta de Ataques",
+        "name_en": "Attack alerts",
+        "category": CAT_MONITORING,
+        "icon": "bi-exclamation-triangle",
+        "runner": "alert_attacks",
+        "requires_game_session": True,
+        "recurring": True,
+        "long_running": True,
+        "ready": True,
+        "description": "Monitora ataques e envia alertas.",
+        "inputs": [
+            {"key": "interval_minutes", "type": FIELD_INT, "label": "Intervalo de checagem (min)", "required": True, "min": 3, "default": 20, "help": "Frequencia com que o advisor militar e relido."},
+            {"key": "min_troops", "type": FIELD_INT, "label": "Ignorar abaixo de tropas", "required": True, "min": 0, "default": 0, "help": "Ataques com menos tropas do que isso nao geram alerta novo."},
+            {"key": "min_fleet", "type": FIELD_INT, "label": "Ignorar abaixo de frotas", "required": True, "min": 0, "default": 0, "help": "Ataques com menos navios do que isso nao geram alerta novo."},
+            {"key": "notify_telegram", "type": FIELD_BOOL, "label": "Notificar no Telegram", "required": False, "default": True, "help": "Envia notificacao para ataques novos detectados."},
+        ],
+    },
+    702: {
+        "name": "Alerta de Vinho",
+        "name_en": "Low wine alerts",
+        "category": CAT_MONITORING,
+        "icon": "bi-cup-fill",
+        "runner": "alert_wine",
+        "requires_game_session": True,
+        "recurring": True,
+        "long_running": True,
+        "ready": True,
+        "description": "Faz gestao completa de vinho: felicidade total, taverna e envios logísticos sem microajustes.",
+        "inputs": [
+            {"key": "protect_hours", "type": FIELD_INT, "label": "Nunca deixar abaixo de (h)", "required": True, "min": 1, "default": 24, "help": "Quando uma cidade cair abaixo disso, o sistema age."},
+            {"key": "cover_hours", "type": FIELD_INT, "label": "Cobrir ate (h)", "required": True, "min": 1, "default": 168, "help": "Cada envio tenta cobrir esta janela de vinho."},
+            {"key": "donor_reserve_hours", "type": FIELD_INT, "label": "Reserva do doador (h)", "required": True, "min": 1, "default": 168, "help": "O doador precisa manter esta folga minima para si."},
+            {"key": "useful_transfer_min", "type": FIELD_INT, "label": "Envio minimo util", "required": True, "min": 1, "default": 5000, "help": "Evita transportes pequenos demais, exceto em risco extremo."},
+            {"key": "shipment_cap", "type": FIELD_INT, "label": "Envio maximo por remessa", "required": True, "min": 1, "default": 25000, "help": "Limita o tamanho de cada envio criado pelo monitor."},
+            {"key": "growth_happiness_floor", "type": FIELD_INT, "label": "Felicidade minima em cidade crescendo", "required": True, "min": 0, "default": 96, "help": "Quando a cidade ainda nao esta cheia, a taverna tenta preservar pelo menos esta satisfacao total."},
+            {"key": "transport_load_percent", "type": FIELD_CHOICE, "label": "Carga por barco", "required": True, "choices": TRANSPORT_LOAD_CHOICES, "default": "100", "help": "Usa a mesma estrategia do envio de recursos."},
+        ],
+    },
+    13: {
+        "name": "Movimentos de Navios",
+        "name_en": "Ship movements",
+        "category": CAT_MONITORING,
+        "icon": "bi-water",
+        "runner": "ship_movements",
+        "requires_game_session": True,
+        "recurring": False,
+        "long_running": False,
+        "description": "Monitora movimentos de navios.",
+        "inputs": [],
+    },
+}

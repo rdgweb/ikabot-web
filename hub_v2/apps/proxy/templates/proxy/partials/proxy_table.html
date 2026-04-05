@@ -1,0 +1,112 @@
+{% load hub_tags %}
+
+{% if object_list %}
+<div class="card overflow-hidden p-0">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Endereço</th>
+        <th>Porta</th>
+        <th>País</th>
+        <th>Nó Atribuído</th>
+        <th>Último Teste</th>
+        <th>IP Testado</th>
+        <th>Latência</th>
+        <th>Status</th>
+        <th class="text-right">Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for proxy in object_list %}
+      <tr>
+        <td class="font-mono text-sm">{{ proxy.address }}</td>
+        <td class="text-muted">{{ proxy.port }}</td>
+        <td>
+          {% if proxy.country_code %}
+            <span class="badge badge-secondary">{{ proxy.country_code }}</span>
+          {% else %}
+            <span class="text-muted">-</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if proxy.assigned_node %}
+            <a href="{% url 'accounts:node-detail' proxy.assigned_node.pk %}" class="text-sm link-sea">
+              {{ proxy.assigned_node.name }}
+            </a>
+          {% else %}
+            <span class="text-muted">Livre</span>
+          {% endif %}
+        </td>
+        <td class="text-xs text-muted">
+          {% if proxy.last_test_at %}
+            {{ proxy.last_test_at|date:"d/m H:i" }}
+            {% if proxy.last_test_status %}
+              <span class="badge badge-success ml-1">OK</span>
+            {% elif proxy.last_test_status is not None %}
+              <span class="badge badge-danger ml-1">Falha</span>
+            {% endif %}
+          {% else %}
+            <span class="badge badge-secondary">Nunca testado</span>
+          {% endif %}
+        </td>
+        <td class="font-mono text-xs">{{ proxy.last_test_ip|default:"—" }}</td>
+        <td class="text-xs text-muted">
+          {% if proxy.last_test_latency_ms is not None %}
+            {{ proxy.last_test_latency_ms }}ms
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td>
+          {% if proxy.active %}
+            <span class="badge badge-success">Ativo</span>
+          {% else %}
+            <span class="badge badge-secondary">Inativo</span>
+          {% endif %}
+        </td>
+        <td class="text-right">
+          <div class="flex items-center justify-end gap-1">
+            <form method="post" action="{% url 'proxy:test' proxy.pk %}" class="inline">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-secondary btn-sm" title="Testar conexão">
+                <i class="bi bi-lightning"></i>
+              </button>
+            </form>
+            <a href="{% url 'proxy:edit' proxy.pk %}" class="btn btn-secondary btn-sm" title="Editar">
+              <i class="bi bi-pencil"></i>
+            </a>
+            <button type="button"
+                    onclick="return openConfirm({
+                      title: '{% if proxy.active %}Desativar{% else %}Ativar{% endif %} proxy',
+                      message: '{% if proxy.active %}Desativar{% else %}Ativar{% endif %} o proxy {{ proxy.address }}:{{ proxy.port }}?',
+                      style: '{% if proxy.active %}danger{% else %}primary{% endif %}',
+                      confirmLabel: '{% if proxy.active %}Desativar{% else %}Ativar{% endif %}',
+                      onConfirm: () => htmx.ajax('POST', '{% url 'proxy:toggle' proxy.pk %}', {swap: 'none'})
+                    })"
+                    class="btn btn-secondary btn-sm" title="{% if proxy.active %}Desativar{% else %}Ativar{% endif %}">
+              <i class="bi {% if proxy.active %}bi-pause-circle{% else %}bi-play-circle{% endif %}"></i>
+            </button>
+            <button type="button"
+                    onclick="return openConfirm({
+                      title: 'Excluir proxy',
+                      message: 'Excluir o proxy {{ proxy.address }}:{{ proxy.port }}?{% if proxy.assigned_node %} O nó {{ proxy.assigned_node.name }} ficará sem proxy.{% endif %}',
+                      style: 'danger',
+                      confirmLabel: 'Excluir',
+                      onConfirm: () => htmx.ajax('POST', '{% url 'proxy:delete' proxy.pk %}', {swap: 'none'})
+                    })"
+                    class="btn btn-danger btn-sm" title="Excluir">
+              <i class="bi bi-trash"></i>
+            </button>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% include "components/table/pagination.html" %}
+
+{% else %}
+{% include "components/table/empty.html" with icon="bi-globe" message="Nenhum proxy cadastrado." action_url="/proxy/create/" action_label="Novo Proxy" %}
+{% endif %}

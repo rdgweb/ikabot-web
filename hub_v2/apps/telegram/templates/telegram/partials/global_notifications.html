@@ -1,0 +1,53 @@
+{# ── Card de toggles globais de notificacao (auto-save) ── #}
+
+<div class="card" id="global-notifications-card">
+  <h2 class="text-lg font-semibold text-ink mb-2">
+    <i class="bi bi-bell"></i> Notificacoes Globais
+  </h2>
+  <p class="text-xs text-muted mb-4">
+    Padrao para todas as subcontas. Cada subconta pode ter overrides individuais.
+  </p>
+
+  <form hx-post="{% url 'telegram:save-notifications' %}"
+        hx-target="#global-notifications-area"
+        hx-swap="innerHTML"
+        hx-trigger="change from:input[type='checkbox']"
+        hx-push-url="false"
+        hx-indicator="#toggle-indicator">
+    {% csrf_token %}
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1">
+      {% for item in enriched_fields %}
+      <div class="flex items-center justify-between py-2">
+        <div class="flex items-center gap-2">
+          {% if item.icon %}
+            <i class="bi {{ item.icon }} text-muted text-xs"></i>
+          {% endif %}
+          <label for="{{ item.field.id_for_label }}" class="text-sm text-ink cursor-pointer"
+                 title="{{ item.description }}">
+            {{ item.field.label }}
+          </label>
+        </div>
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="hidden" name="{{ item.field.html_name }}" value="">
+          <input type="checkbox" name="{{ item.field.html_name }}"
+                 id="{{ item.field.id_for_label }}"
+                 {% if item.field.value %}checked{% endif %}
+                 class="sr-only peer">
+          <div class="w-9 h-5 bg-gray-300 peer-focus:outline-none rounded-full peer
+                      peer-checked:after:translate-x-full peer-checked:after:border-white
+                      after:content-[''] after:absolute after:top-[2px] after:start-[2px]
+                      after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all
+                      peer-checked:bg-[var(--ik-sea)]"></div>
+        </label>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="flex items-center justify-end mt-3 pt-2 border-t border-line">
+      <span id="toggle-indicator" class="htmx-indicator text-xs text-muted">
+        <i class="bi bi-arrow-repeat animate-spin"></i> Salvando...
+      </span>
+    </div>
+  </form>
+</div>

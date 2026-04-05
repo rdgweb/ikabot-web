@@ -1,0 +1,50 @@
+{# ── Vinculacao global pendente — exibe codigo + polling ── #}
+{# Usado tanto no POST inicial quanto no polling enquanto pendente #}
+
+<div class="py-2">
+  <div class="flex items-start gap-4">
+    {# Lado esquerdo: codigo #}
+    <div class="flex-1">
+      <p class="text-xs text-muted mb-2">
+        Envie o comando abaixo para o bot no Telegram:
+      </p>
+      <div class="p-3 bg-white border border-line rounded-lg text-center">
+        <p class="text-[10px] text-muted uppercase tracking-wide mb-1">Seu codigo</p>
+        <p class="font-mono text-2xl font-bold text-ink tracking-widest select-all">
+          {{ bot_config.link_code }}
+        </p>
+        <p class="mt-2 text-xs text-muted">
+          <code class="bg-gray-100 px-1.5 py-0.5 rounded text-ink font-mono text-[11px]">/start {{ bot_config.link_code }}</code>
+        </p>
+      </div>
+    </div>
+
+    {# Lado direito: instrucoes #}
+    <div class="flex-1 text-xs text-muted space-y-2 pt-6">
+      <p><span class="font-semibold text-ink">1.</span> Abra o Telegram e busque o bot</p>
+      <p><span class="font-semibold text-ink">2.</span> Envie o comando <code class="text-ink">/start</code> com o codigo</p>
+      <p><span class="font-semibold text-ink">3.</span> Aguarde a confirmacao aparecer aqui</p>
+    </div>
+  </div>
+
+  {# Polling + status #}
+  <div class="flex items-center justify-between mt-4 pt-3 border-t border-line">
+    <div hx-get="{% url 'telegram:global-link-status' %}"
+         hx-trigger="every 3s"
+         hx-target="#global-link-area"
+         hx-swap="innerHTML"
+         hx-push-url="false"
+         class="flex items-center gap-2 text-xs text-amber-600">
+      <span class="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+      Aguardando vinculacao...
+    </div>
+
+    <button hx-get="{% url 'telegram:global-link-status' %}"
+            hx-target="#global-link-area"
+            hx-swap="innerHTML"
+            hx-push-url="false"
+            class="text-xs text-muted hover:text-red-600 transition-colors">
+      <i class="bi bi-x-lg"></i> Cancelar
+    </button>
+  </div>
+</div>

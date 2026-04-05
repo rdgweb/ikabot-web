@@ -1,0 +1,55 @@
+{% if object_list or request.GET %}
+<div class="card overflow-hidden p-0">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Email</th>
+        <th>Grupo</th>
+        <th>Status</th>
+        <th class="text-right">Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for user in object_list %}
+      <tr>
+        <td class="font-medium text-ink">{{ user.username }}</td>
+        <td class="text-muted text-sm">{{ user.email|default:"-" }}</td>
+        <td class="text-sm text-muted">
+          {% with group=user.groups.first %}
+            {{ group.name|default:"-" }}
+          {% endwith %}
+        </td>
+        <td>
+          {% if user.is_active %}
+            <span class="badge badge-success">Ativo</span>
+          {% else %}
+            <span class="badge badge-secondary">Inativo</span>
+          {% endif %}
+        </td>
+        <td class="text-right">
+          <a href="{% url 'users:edit' user.pk %}" class="btn btn-secondary btn-sm" title="Editar">
+            <i class="bi bi-pencil"></i>
+          </a>
+          <a href="{% url 'users:delete' user.pk %}" class="btn btn-secondary btn-sm" title="Excluir">
+            <i class="bi bi-trash"></i>
+          </a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="5" class="text-center py-8 text-muted">
+          <i class="bi bi-people text-2xl block mb-2"></i>
+          Nenhum usuário encontrado.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% include "components/table/pagination.html" %}
+
+{% else %}
+{% include "components/table/empty.html" with icon="bi-people" message="Nenhum usuário cadastrado." action_url="/users/create/" action_label="Criar Usuário" %}
+{% endif %}

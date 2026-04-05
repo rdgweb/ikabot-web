@@ -1,0 +1,73 @@
+{% load static hub_tags %}
+
+{% if object_list or request.GET %}
+<div class="card overflow-hidden p-0">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Recurso</th>
+        <th>Quantidade</th>
+        <th>Preço</th>
+        <th>Comprador</th>
+        <th>Vendedor</th>
+        <th>Status</th>
+        <th>Criado em</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for order in object_list %}
+      <tr>
+        <td>
+          <a href="{% url 'market:order-detail' order.pk %}" class="flex items-center gap-2 link-sea">
+            <img src="{% static order.resource_idx|resource_icon %}" alt="" class="w-5 h-5" onerror="this.style.display='none'">
+            <span class="font-medium">{{ order.get_resource_idx_display }}</span>
+          </a>
+        </td>
+        <td class="text-sm">{{ order.amount|default:"0" }}</td>
+        <td class="text-sm">{{ order.unit_price }}</td>
+        <td>
+          <a href="{% url 'accounts:account-detail' order.buyer_account.pk %}" class="text-sm text-muted hover:text-sea">
+            {{ order.buyer_account.label }}
+          </a>
+        </td>
+        <td>
+          {% if order.seller_account %}
+          <a href="{% url 'accounts:account-detail' order.seller_account.pk %}" class="text-sm text-muted hover:text-sea">
+            {{ order.seller_account.label }}
+          </a>
+          {% else %}
+          <span class="text-muted">&mdash;</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if order.status == "completed" %}
+            <span class="badge badge-success">{{ order.get_status_display }}</span>
+          {% elif order.status == "failed" %}
+            <span class="badge badge-danger">{{ order.get_status_display }}</span>
+          {% elif order.status == "canceled" %}
+            <span class="badge badge-secondary">{{ order.get_status_display }}</span>
+          {% elif order.status == "jobs_running" %}
+            <span class="badge badge-warning">{{ order.get_status_display }}</span>
+          {% else %}
+            <span class="badge badge-info">{{ order.get_status_display }}</span>
+          {% endif %}
+        </td>
+        <td class="text-sm text-muted">{{ order.created_at|localtime_format }}</td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="7" class="text-center py-8 text-muted">
+          <i class="bi bi-shop text-2xl block mb-2"></i>
+          Nenhuma ordem encontrada.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% include "components/table/pagination.html" %}
+
+{% else %}
+{% include "components/table/empty.html" with icon="bi-shop" message="Nenhuma ordem encontrada." %}
+{% endif %}

@@ -1,0 +1,56 @@
+# Secrets / local env
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# Temporary / local tooling
+tmp/
+.codex_tmp/
+.claude/
+
+# Publish only hub_v2 and agent_v2 for now
+/agent/
+/docs/
+/hub/
+/ikabotapi/
+/shared/
+/tests/
+/tools/
+
+# hub_v2 local/runtime artifacts
+/hub_v2/staticfiles/
+/hub_v2/db.sqlite3
+/hub_v2/.tmp_*.py
+/hub_v2/token_compare_trace.log
+/hub_v2/nul
+
+# agent_v2 local/runtime artifacts
+/agent_v2/tmp/
+/agent_v2/tmp_*.html
+
+# Local test artifacts
+tmp_modal_scroll_test.png

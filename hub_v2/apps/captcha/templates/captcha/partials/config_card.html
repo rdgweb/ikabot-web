@@ -1,0 +1,65 @@
+{# ── Card de configuracao de captcha ── #}
+
+<div class="card">
+  <h2 class="text-lg font-semibold text-ink mb-4">
+    <i class="bi bi-gear"></i> Configuracao
+  </h2>
+
+  <form hx-post="{% url 'captcha:save-config' %}"
+        hx-target="#captcha-config-area"
+        hx-swap="innerHTML">
+    {% csrf_token %}
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {# Habilitado #}
+      <div class="sm:col-span-2">
+        <label class="relative inline-flex items-center cursor-pointer gap-3">
+          <input type="hidden" name="enabled" value="">
+          <input type="checkbox" name="enabled"
+                 {% if config.enabled %}checked{% endif %}
+                 class="sr-only peer">
+          <div class="w-9 h-5 bg-gray-300 peer-focus:outline-none rounded-full peer
+                      peer-checked:after:translate-x-full peer-checked:after:border-white
+                      after:content-[''] after:absolute after:top-[2px] after:start-[2px]
+                      after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all
+                      peer-checked:bg-[var(--ik-sea)]"></div>
+          <span class="text-sm font-medium text-ink">Captcha ativo</span>
+        </label>
+      </div>
+
+      {# Metodo principal #}
+      <div>
+        <label class="form-label">{{ config_form.solve_method.label }}</label>
+        {{ config_form.solve_method }}
+      </div>
+
+      {# Fallback #}
+      <div>
+        <label class="form-label">{{ config_form.fallback_method.label }}</label>
+        {{ config_form.fallback_method }}
+      </div>
+
+      {# ikabotapi URL #}
+      <div>
+        <label class="form-label">{{ config_form.ikabotapi_url.label }}</label>
+        {{ config_form.ikabotapi_url }}
+        <p class="text-[10px] text-muted mt-0.5">Apenas para metodo automatico.</p>
+      </div>
+
+      {# Timeout #}
+      <div>
+        <label class="form-label">{{ config_form.timeout_sec.label }}</label>
+        <div class="flex items-center gap-2">
+          {{ config_form.timeout_sec }}
+          <span class="text-xs text-muted">segundos</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex justify-end mt-4 pt-3 border-t border-[var(--ik-line)]">
+      <button type="submit" class="btn btn-primary btn-sm">
+        <i class="bi bi-check-lg"></i> Salvar
+      </button>
+    </div>
+  </form>
+</div>

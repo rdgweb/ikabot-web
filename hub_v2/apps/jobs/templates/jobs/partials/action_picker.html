@@ -1,0 +1,70 @@
+{# ══ Step 2: Choose action ══ #}
+{# Replaces #job-modal-body content entirely #}
+{# Receives: action_groups, game_account #}
+
+<div class="p-5">
+  {# Step indicator #}
+  <div class="flex items-center gap-2 mb-4">
+    <span class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold"
+          style="background: var(--ik-good); color: #fff;">
+      <i class="bi bi-check text-xs"></i>
+    </span>
+    <span class="flex-1 h-px" style="background: var(--ik-good);"></span>
+    <span class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
+          style="background: var(--ik-sea);">2</span>
+    <span class="text-xs font-semibold text-ink">Escolher acao</span>
+    <span class="flex-1 h-px" style="background: var(--ik-line);"></span>
+    <span class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold"
+          style="background: var(--ik-sand); color: var(--ik-muted);">3</span>
+  </div>
+
+  {# Selected GA + back button #}
+  <div class="flex items-center gap-2 mb-4 p-2 rounded-lg" style="background: var(--ik-sand-light);">
+    <button class="text-muted hover:text-ink transition-colors shrink-0"
+            hx-get="{% url 'jobs:job-create' %}"
+            hx-target="#job-modal-body"
+            hx-swap="innerHTML"
+            hx-push-url="false">
+      <i class="bi bi-arrow-left text-sm"></i>
+    </button>
+    <i class="bi bi-controller text-xs" style="color: var(--ik-gold);"></i>
+    <span class="text-xs font-medium text-ink truncate">{{ game_account.name|default:game_account.server_id }}</span>
+    <span class="text-[10px] text-muted">{{ game_account.server_id }}</span>
+  </div>
+
+  {# Action categories #}
+  <div class="space-y-4">
+    {% for group in action_groups %}
+    <div>
+      {# Category label #}
+      <div class="flex items-center gap-1.5 mb-1.5 px-0.5">
+        <i class="bi {{ group.icon }} text-[10px]" style="color: {{ group.color }};"></i>
+        <span class="text-[10px] font-bold uppercase tracking-wider text-muted">{{ group.label }}</span>
+      </div>
+
+      {# Action buttons #}
+      <div class="grid grid-cols-2 gap-1.5">
+        {% for action in group.actions %}
+        <button type="button"
+                class="flex items-center gap-2 p-2.5 rounded-lg border text-left transition-all hover:border-[var(--ik-sea)]/50 hover:shadow-sm"
+                style="border-color: var(--ik-line); background: var(--ik-paper);"
+                hx-get="{% url 'jobs:job-form' %}?ga={{ game_account.pk }}&action={{ action.code }}"
+                hx-target="#job-modal-body"
+                hx-swap="innerHTML"
+                hx-push-url="false">
+          <i class="bi {{ action.icon }} text-sm shrink-0" style="color: {{ group.color }};"></i>
+          <div class="min-w-0">
+            <span class="text-xs font-semibold text-ink block truncate">{{ action.name }}</span>
+            {% if action.recurring %}
+            <span class="text-[8px] font-medium" style="color: var(--ik-good);">
+              <i class="bi bi-arrow-repeat"></i> Loop
+            </span>
+            {% endif %}
+          </div>
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>

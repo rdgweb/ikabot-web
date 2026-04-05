@@ -1,0 +1,68 @@
+{# ── Modal de resolucao de captcha (usado por GET /captcha/<pk>/solve/) ── #}
+
+<div class="max-w-md mx-auto">
+  {# Imagem #}
+  <div class="bg-[#1e2c3a] flex items-center justify-center p-6 rounded-t-lg min-h-[180px]">
+    {% if challenge.image_data %}
+      {% if challenge.image_data|slice:":4" == "http" %}
+        <img src="{{ challenge.image_data }}" alt="Captcha" class="max-w-full max-h-[160px] rounded">
+      {% else %}
+        <img src="data:image/png;base64,{{ challenge.image_data }}" alt="Captcha" class="max-w-full max-h-[160px] rounded">
+      {% endif %}
+    {% else %}
+      <div class="text-center text-white/50">
+        <i class="bi bi-image text-4xl"></i>
+        <p class="text-sm mt-2">Sem imagem disponivel</p>
+      </div>
+    {% endif %}
+  </div>
+
+  {# Info + Form #}
+  <div class="bg-[var(--ik-paper)] p-4 rounded-b-lg border border-t-0 border-[var(--ik-line)]">
+    <div class="flex items-center justify-between mb-3">
+      <span class="text-xs font-mono bg-[var(--ik-sand)] px-2 py-1 rounded">
+        {{ challenge.get_captcha_type_display }}
+      </span>
+      {% if challenge.game_account %}
+      <span class="text-xs text-muted">
+        {{ challenge.game_account.name|default:challenge.game_account.server_id }}
+      </span>
+      {% endif %}
+    </div>
+
+    {% if challenge.is_pending %}
+    <form hx-post="{% url 'captcha:solve' challenge.pk %}"
+          hx-target="closest div"
+          hx-swap="outerHTML">
+      {% csrf_token %}
+      {{ form.solution }}
+      {% for error in form.solution.errors %}
+        <p class="text-xs text-[var(--ik-bad)] mt-1">{{ error }}</p>
+      {% endfor %}
+
+      <div class="flex gap-2 mt-3">
+        <button type="submit" class="btn btn-primary flex-1">
+          <i class="bi bi-check-lg"></i> Enviar
+        </button>
+        <button type="button"
+                hx-post="{% url 'captcha:skip' challenge.pk %}"
+                hx-target="closest div"
+                hx-swap="outerHTML"
+                class="btn btn-secondary">
+          Pular
+        </button>
+      </div>
+    </form>
+    {% elif challenge.status == "expired" %}
+    <div class="text-center py-4 text-[var(--ik-warn)]">
+      <i class="bi bi-clock-history text-2xl"></i>
+      <p class="text-sm font-semibold mt-1">Captcha expirado</p>
+    </div>
+    {% elif challenge.status == "solved" %}
+    <div class="text-center py-4 text-[var(--ik-good)]">
+      <i class="bi bi-check-circle text-2xl"></i>
+      <p class="text-sm font-semibold mt-1">Ja resolvido</p>
+    </div>
+    {% endif %}
+  </div>
+</div>

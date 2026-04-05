@@ -1,0 +1,15 @@
+{# Empty state for lists and sections #}
+{# Usage: {% include "components/empty_state.html" with icon="bi-inbox" message="Nenhum item encontrado" %} #}
+{# Optional: action_url, action_label for a CTA button #}
+<div class="text-center py-16">
+  <i class="bi {{ icon|default:'bi-inbox' }} text-5xl" style="color: #b5ad9a;"></i>
+  <p class="mt-4 text-sm text-muted">{{ message|default:"Nenhum item encontrado." }}</p>
+  {% if description %}
+  <p class="mt-1 text-xs" style="color: #b5ad9a;">{{ description }}</p>
+  {% endif %}
+  {% if action_url %}
+  <a href="{{ action_url }}" class="btn btn-primary btn-sm mt-6 inline-flex items-center gap-1">
+    <i class="bi bi-plus-lg"></i> {{ action_label|default:"Criar novo" }}
+  </a>
+  {% endif %}
+</div>

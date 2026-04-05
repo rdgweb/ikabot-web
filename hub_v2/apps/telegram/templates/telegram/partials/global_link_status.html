@@ -1,0 +1,56 @@
+{# ── Status da vinculacao global ── #}
+{# Mostra chat vinculado ou botao para vincular #}
+
+{% if bot_config.link_status == "linked" and bot_config.chat_id %}
+  {# ── Vinculado ── #}
+  <div class="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
+    <div class="flex items-center gap-3">
+      <span class="inline-block w-3 h-3 rounded-full bg-green-500"></span>
+      <div>
+        <p class="text-sm font-medium text-green-800">Vinculado</p>
+        <div class="flex gap-3 text-xs text-green-700 mt-0.5">
+          <span><i class="bi bi-chat-fill"></i> Chat ID: <span class="font-mono">{{ bot_config.chat_id }}</span></span>
+          {% if bot_config.telegram_username %}
+          <span><i class="bi bi-person"></i> @{{ bot_config.telegram_username }}</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <button hx-post="{% url 'telegram:global-unlink' %}"
+            hx-target="#global-link-area"
+            hx-swap="innerHTML"
+            hx-push-url="false"
+            hx-confirm="Desvincular o chat global? Subcontas sem chat proprio deixarao de receber notificacoes."
+            class="text-xs text-red-500 hover:text-red-700 transition-colors">
+      <i class="bi bi-unlink"></i> Desvincular
+    </button>
+  </div>
+
+{% elif bot_config.link_status == "pending" %}
+  {# ── Pending — show code + polling #}
+  {% include "telegram/partials/global_link_pending.html" %}
+
+{% else %}
+  {# ── Nao vinculado ── #}
+  <div class="text-center py-4">
+    <p class="text-sm text-muted mb-3">Nenhum chat vinculado.</p>
+    {% if bot_config.is_active %}
+      <button hx-post="{% url 'telegram:global-start-link' %}"
+              hx-target="#global-link-area"
+              hx-swap="innerHTML"
+              hx-push-url="false"
+              class="btn btn-primary btn-sm">
+        <i class="bi bi-link-45deg"></i> Vincular Chat
+      </button>
+    {% else %}
+      <button disabled
+              class="btn btn-primary btn-sm opacity-50 cursor-not-allowed"
+              title="Salve o token e habilite o bot primeiro">
+        <i class="bi bi-link-45deg"></i> Vincular Chat
+      </button>
+      <p class="text-[10px] text-amber-600 mt-2">
+        Salve o token e habilite o bot primeiro.
+      </p>
+    {% endif %}
+  </div>
+{% endif %}

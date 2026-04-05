@@ -1,0 +1,14 @@
+{% extends "base_form.html" %}
+
+{% block title %}Novo Nó{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'accounts:node-list' %}" class="hover:text-ink">Nós</a>
+  <span class="mx-1">/</span> <span class="text-ink">Novo</span>
+{% endblock %}
+
+{% block form_title %}Criar Novo Nó{% endblock %}
+{% block form_subtitle %}Step 1 — Defina identidade e rede do nó. Após criação, você receberá o comando de deploy.{% endblock %}
+
+{% block cancel_url %}{% url 'accounts:node-list' %}{% endblock %}
+{% block submit_label %}Criar & Gerar Token{% endblock %}

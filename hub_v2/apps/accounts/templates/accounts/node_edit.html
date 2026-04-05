@@ -1,0 +1,14 @@
+{% extends "base_form.html" %}
+
+{% block title %}Editar {{ object.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'accounts:node-list' %}" class="hover:text-ink">Nós</a>
+  <span class="mx-1">/</span> <a href="{% url 'accounts:node-detail' object.pk %}" class="hover:text-ink">{{ object.name }}</a>
+  <span class="mx-1">/</span> <span class="text-ink">Editar</span>
+{% endblock %}
+
+{% block form_title %}Editar Nó{% endblock %}
+{% block form_subtitle %}{{ object.name }}{% endblock %}
+
+{% block cancel_url %}{% url 'accounts:node-detail' object.pk %}{% endblock %}

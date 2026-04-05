@@ -1,0 +1,196 @@
+{% extends "base_detail.html" %}
+{% load hub_tags %}
+
+{% block title %}Ordem {{ order.pk|truncatechars:8 }}{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'market:order-list' %}" class="hover:text-ink">Mercado</a>
+  <span class="mx-1">/</span> <span class="text-ink">Ordem {{ order.pk|truncatechars:8 }}</span>
+{% endblock %}
+
+{% block detail_title %}Ordem de Mercado{% endblock %}
+{% block detail_subtitle %}{{ order.get_resource_idx_display }} &mdash; {{ order.amount }} unidades{% endblock %}
+
+{% block detail_main %}
+<!-- Order Info -->
+<div class="card">
+  <h3 class="text-sm font-semibold text-ink mb-3">Informações da Ordem</h3>
+  <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+    <div>
+      <dt class="text-muted">Recurso</dt>
+      <dd class="mt-0.5 font-medium">{{ order.get_resource_idx_display }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Quantidade</dt>
+      <dd class="mt-0.5">{{ order.amount }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Preço Unitário</dt>
+      <dd class="mt-0.5">{{ order.unit_price }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Status</dt>
+      <dd class="mt-0.5">
+        {% if order.status == "completed" %}
+          <span class="badge badge-success">{{ order.get_status_display }}</span>
+        {% elif order.status == "failed" %}
+          <span class="badge badge-danger">{{ order.get_status_display }}</span>
+        {% elif order.status == "canceled" %}
+          <span class="badge badge-secondary">{{ order.get_status_display }}</span>
+        {% elif order.status == "jobs_running" %}
+          <span class="badge badge-warning">{{ order.get_status_display }}</span>
+        {% else %}
+          <span class="badge badge-info">{{ order.get_status_display }}</span>
+        {% endif %}
+      </dd>
+    </div>
+  </dl>
+</div>
+
+<!-- Buyer Info -->
+<div class="card">
+  <h3 class="text-sm font-semibold text-ink mb-3">Comprador</h3>
+  <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+    <div>
+      <dt class="text-muted">Conta</dt>
+      <dd class="mt-0.5">
+        <a href="{% url 'accounts:account-detail' order.buyer_account.pk %}" class="link-sea">
+          {{ order.buyer_account.label }}
+        </a>
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted">Nó</dt>
+      <dd class="mt-0.5">
+        <a href="{% url 'accounts:node-detail' order.buyer_node.pk %}" class="link-sea">
+          {{ order.buyer_node.name }}
+        </a>
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted">Cidade (índice)</dt>
+      <dd class="mt-0.5">{{ order.buyer_city_index }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Cidade Mercado (índice)</dt>
+      <dd class="mt-0.5">{{ order.buyer_market_city_index|default:"—" }}</dd>
+    </div>
+  </dl>
+</div>
+
+<!-- Seller Info -->
+<div class="card">
+  <h3 class="text-sm font-semibold text-ink mb-3">Vendedor</h3>
+  {% if order.seller_account %}
+  <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+    <div>
+      <dt class="text-muted">Conta</dt>
+      <dd class="mt-0.5">
+        <a href="{% url 'accounts:account-detail' order.seller_account.pk %}" class="link-sea">
+          {{ order.seller_account.label }}
+        </a>
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted">Nó</dt>
+      <dd class="mt-0.5">
+        {% if order.seller_node %}
+        <a href="{% url 'accounts:node-detail' order.seller_node.pk %}" class="link-sea">
+          {{ order.seller_node.name }}
+        </a>
+        {% else %}
+        <span class="text-muted">&mdash;</span>
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted">Cidade (índice)</dt>
+      <dd class="mt-0.5">{{ order.seller_city_index|default:"—" }}</dd>
+    </div>
+  </dl>
+  {% else %}
+  <p class="text-sm text-muted">Vendedor ainda não pareado.</p>
+  {% endif %}
+</div>
+
+<!-- Related Jobs -->
+<div class="card">
+  <h3 class="text-sm font-semibold text-ink mb-3">Jobs Relacionados</h3>
+  <dl class="space-y-3 text-sm">
+    <div>
+      <dt class="text-muted">Job de Compra</dt>
+      <dd class="mt-0.5">
+        {% if order.buy_job %}
+        <a href="{% url 'jobs:job-detail' order.buy_job.pk %}" class="link-sea font-mono text-xs">
+          {{ order.buy_job.pk|truncatechars:8 }}
+        </a>
+        {% else %}
+        <span class="text-muted">&mdash;</span>
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted">Job de Venda</dt>
+      <dd class="mt-0.5">
+        {% if order.sell_job %}
+        <a href="{% url 'jobs:job-detail' order.sell_job.pk %}" class="link-sea font-mono text-xs">
+          {{ order.sell_job.pk|truncatechars:8 }}
+        </a>
+        {% else %}
+        <span class="text-muted">&mdash;</span>
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted">Job de Redistribuição</dt>
+      <dd class="mt-0.5">
+        {% if order.redistribution_job %}
+        <a href="{% url 'jobs:job-detail' order.redistribution_job.pk %}" class="link-sea font-mono text-xs">
+          {{ order.redistribution_job.pk|truncatechars:8 }}
+        </a>
+        {% else %}
+        <span class="text-muted">&mdash;</span>
+        {% endif %}
+      </dd>
+    </div>
+  </dl>
+</div>
+{% endblock %}
+
+{% block detail_sidebar %}
+<div class="card">
+  <h3 class="text-sm font-semibold text-ink mb-3">Detalhes</h3>
+  <dl class="space-y-2 text-sm">
+    <div>
+      <dt class="text-muted">ID</dt>
+      <dd class="font-mono text-xs mt-0.5">{{ order.pk }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Criado em</dt>
+      <dd class="mt-0.5">{{ order.created_at|localtime_format }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Atualizado em</dt>
+      <dd class="mt-0.5">{{ order.updated_at|localtime_format }}</dd>
+    </div>
+    {% if order.source_action_code %}
+    <div>
+      <dt class="text-muted">Ação de Origem</dt>
+      <dd class="mt-0.5 font-mono text-xs">{{ order.source_action_code }}</dd>
+    </div>
+    {% endif %}
+    {% if order.source_reason %}
+    <div>
+      <dt class="text-muted">Motivo</dt>
+      <dd class="mt-0.5 text-ink">{{ order.source_reason }}</dd>
+    </div>
+    {% endif %}
+    {% if order.result_note %}
+    <div>
+      <dt class="text-muted">Resultado</dt>
+      <dd class="mt-0.5 text-ink">{{ order.result_note }}</dd>
+    </div>
+    {% endif %}
+  </dl>
+</div>
+{% endblock %}

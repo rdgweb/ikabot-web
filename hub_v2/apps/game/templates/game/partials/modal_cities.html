@@ -1,0 +1,114 @@
+{% load static %}
+<div class="grid min-h-0 h-full" style="grid-template-rows:auto minmax(0,1fr);">
+  <div class="gm-header flex items-center justify-between px-4 py-3 shrink-0">
+    <div class="flex items-center gap-2">
+      <i class="bi bi-geo-alt-fill gm-text-sea"></i>
+      <div>
+        <span class="gm-title gm-text-title font-bold text-sm tracking-wide block">CIDADES</span>
+        <span class="gm-subtitle gm-text-label text-[11px]">Distribuicao, servidores, transportes e autonomia de vinho</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-4">
+      <span class="gm-header-value gm-text-title" x-text="kpi.cities+' cidade'+(kpi.cities!==1?'s':'')"></span>
+      <button @click="kpiModal=null"><i class="bi bi-x-lg gm-close"></i></button>
+    </div>
+  </div>
+  <div class="gm-body flex-1 min-h-0 p-4 space-y-4">
+    {# ── 4 KPI cards ── #}
+    <div class="grid grid-cols-2 xl:grid-cols-4 gap-2">
+      <div class="gm-card rounded-lg p-3">
+        <div class="gm-card-label">Cidades filtradas</div>
+        <div class="gm-card-value gm-text-title mt-1" x-text="citySummary().totalCities"></div>
+      </div>
+      <div class="gm-card rounded-lg p-3">
+        <div class="gm-card-label">Contas visiveis</div>
+        <div class="gm-card-value gm-text-sea mt-1" x-text="citySummary().accounts"></div>
+      </div>
+      <div class="gm-card rounded-lg p-3">
+        <div class="gm-card-label">Media por conta</div>
+        <div class="gm-card-value gm-text-title mt-1" x-text="citySummary().avgCities"></div>
+      </div>
+      <div class="gm-card rounded-lg p-3">
+        <div class="gm-card-label">Alertas de vinho</div>
+        <div class="gm-card-value mt-1" :class="citySummary().wineRisk ? 'gm-text-negative' : 'gm-text-positive'" x-text="citySummary().wineRisk"></div>
+      </div>
+    </div>
+
+    {# ── History chart ── #}
+    <div class="gm-section rounded-lg p-3">
+      <div class="flex items-center justify-between mb-2">
+        <h4 class="gm-section-title">Historico de cidades</h4>
+        <span class="gm-section-hint" x-text="historyState('cities').scopeLabel"></span>
+      </div>
+      <template x-if="historyState('cities').available">
+        <div>
+          <div class="gm-chart-box-blue h-36 rounded-lg p-2">
+            <canvas id="cities-history-chart"></canvas>
+          </div>
+          <div class="gm-chart-footer mt-2 flex items-center justify-between text-[11px]">
+            <span class="gm-text-label" x-text="'Inicio: ' + fmt(historyState('cities').first)"></span>
+            <span :class="historyState('cities').delta>=0?'gm-text-positive':'gm-text-negative'" x-text="'Delta: ' + signedFmt(historyState('cities').delta)"></span>
+            <span class="gm-text-label" x-text="'Atual: ' + fmt(historyState('cities').last)"></span>
+          </div>
+        </div>
+      </template>
+      <template x-if="!historyState('cities').available">
+        <div class="gm-empty" x-text="historyState('cities').reason"></div>
+      </template>
+    </div>
+
+    {# ── Por conta + Cidades em foco grid ── #}
+    <div class="grid grid-cols-1 xl:grid-cols-[0.95fr_1.05fr] gap-4">
+      <div class="gm-section rounded-lg p-3">
+        <div class="flex items-center justify-between mb-3">
+          <h4 class="gm-section-title">Por conta</h4>
+          <span class="gm-section-hint">distribuicao de cidades</span>
+        </div>
+        <div class="space-y-2">
+          <template x-for="account in cityAccountRanking()" :key="'city-account-'+account.game_account_id">
+            <div class="gm-item rounded-lg p-2.5">
+              <div class="flex items-center justify-between gap-3 text-[11px]">
+                <div class="min-w-0">
+                  <div class="font-semibold truncate gm-text-player" x-text="account.player"></div>
+                  <div class="text-[10px] gm-text-label" x-text="account.server_label"></div>
+                </div>
+                <span class="font-mono font-bold gm-text-title" x-text="account.cityCountResolved"></span>
+              </div>
+              <div class="gm-bar-track mt-2 rounded-full overflow-hidden">
+                <div class="h-full rounded-full" style="background:linear-gradient(90deg,#4f86b9,#7aa3c4);" :style="'width:' + Math.max(account.cityWidth, 2) + '%'"></div>
+              </div>
+              <div class="mt-2 grid grid-cols-2 gap-2 text-[10px]">
+                <span :class="Number(account.free_transporters || 0) > 0 ? 'gm-text-positive' : 'gm-text-negative'" x-text="'Transportes ' + account.free_transporters + '/' + account.max_transporters"></span>
+                <span :class="account.total_wine_hours ? 'gm-text-warning' : 'gm-text-positive'" x-text="'Vinho ' + (account.total_wine_hours ? fmtHours(account.total_wine_hours) : 'Estavel')"></span>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <div class="gm-section rounded-lg p-3">
+        <div class="flex items-center justify-between mb-3">
+          <h4 class="gm-section-title">Cidades em foco</h4>
+          <span class="gm-section-hint">vinho, pressao e peso da cidade</span>
+        </div>
+        <div class="space-y-2">
+          <template x-for="city in cityFocusList()" :key="'city-focus-'+city.player+'-'+city.name">
+            <div class="gm-item rounded-lg p-2.5">
+              <div class="flex items-center justify-between gap-3 text-[11px]">
+                <div class="min-w-0">
+                  <div class="font-semibold truncate gm-text-player" x-text="city.name"></div>
+                  <div class="text-[10px] gm-text-label" x-text="city.player + ' [' + city.x + ':' + city.y + ']'"></div>
+                </div>
+                <span class="font-mono font-bold gm-text-title" x-text="fmt(city.resource_total)"></span>
+              </div>
+              <div class="mt-2 flex items-center justify-between text-[10px]">
+                <span :class="Number(city.cap_pct || 0) >= 95 ? 'gm-text-negative' : Number(city.cap_pct || 0) >= 85 ? 'gm-text-warning' : 'gm-text-positive'" x-text="'Armazem ' + city.cap_pct + '%'"></span>
+                <span :class="city.wine_hours !== null && city.wine_hours !== undefined && Number(city.wine_hours) < 24 ? 'gm-text-negative' : 'gm-text-label'" x-text="city.wine_hours !== null && city.wine_hours !== undefined ? 'Vinho ' + fmtHours(city.wine_hours) : 'Sem risco de vinho'"></span>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

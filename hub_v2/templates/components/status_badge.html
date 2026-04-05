@@ -1,0 +1,15 @@
+<!-- Status badge component -->
+{# Usage: include "components/status_badge.html" with status="running" #}
+{% load hub_tags %}
+<span class="badge {{ status|status_badge_class }}">
+  {% if status == "queued" %}<i class="bi bi-clock"></i>
+  {% elif status == "running" %}<i class="bi bi-play-circle"></i>
+  {% elif status == "done" %}<i class="bi bi-check-circle"></i>
+  {% elif status == "error" %}<i class="bi bi-x-circle"></i>
+  {% elif status == "cancelled" %}<i class="bi bi-slash-circle"></i>
+  {% elif status == "scheduled" %}<i class="bi bi-calendar-event"></i>
+  {% elif status == "online" %}<i class="bi bi-circle-fill text-xs"></i>
+  {% elif status == "offline" %}<i class="bi bi-circle text-xs"></i>
+  {% endif %}
+  {{ status|title }}
+</span>

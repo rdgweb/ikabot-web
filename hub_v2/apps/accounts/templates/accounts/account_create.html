@@ -1,0 +1,14 @@
+{% extends "base_form.html" %}
+
+{% block title %}Nova Conta{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'accounts:account-list' %}" class="hover:text-ink">Contas</a>
+  <span class="mx-1">/</span> <span class="text-ink">Nova</span>
+{% endblock %}
+
+{% block form_title %}Criar Conta do Jogo{% endblock %}
+{% block form_subtitle %}Vincule uma conta Ikariam a um nó para execução de jobs.{% endblock %}
+
+{% block cancel_url %}{% url 'accounts:account-list' %}{% endblock %}
+{% block submit_label %}Criar Conta{% endblock %}

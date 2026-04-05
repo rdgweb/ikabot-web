@@ -1,0 +1,36 @@
+{# ── Polling fragment para subconta — mantem codigo visivel ── #}
+
+<div class="px-3 py-3 border-t border-line bg-[var(--ik-sand-light)]"
+     id="tg-ga-inner-{{ ga.pk }}">
+  <div class="text-center py-2">
+    {% if tg_config.link_code %}
+    <div class="my-2 p-3 bg-white border border-line rounded-lg inline-block">
+      <p class="text-[10px] text-muted uppercase tracking-wide mb-1">Seu codigo</p>
+      <p class="font-mono text-2xl font-bold text-ink tracking-widest select-all">
+        {{ tg_config.link_code }}
+      </p>
+    </div>
+    <p class="text-xs text-muted mb-3">
+      Envie: <code class="bg-gray-100 px-1.5 py-0.5 rounded text-ink font-mono text-[11px]">/start {{ tg_config.link_code }}</code>
+    </p>
+    {% endif %}
+
+    <div hx-get="{% url 'telegram:ga-link-status' ga.pk %}"
+         hx-trigger="every 3s"
+         hx-target="#tg-ga-inner-{{ ga.pk }}"
+         hx-swap="outerHTML"
+         hx-push-url="false"
+         class="flex items-center justify-center gap-2 text-xs text-amber-600 mb-3">
+      <span class="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+      Aguardando vinculacao...
+    </div>
+
+    <button hx-get="{% url 'telegram:ga-settings' ga.pk %}"
+            hx-target="#tg-ga-inner-{{ ga.pk }}"
+            hx-swap="outerHTML"
+            hx-push-url="false"
+            class="text-xs text-muted hover:text-red-600 transition-colors">
+      <i class="bi bi-x-lg"></i> Cancelar
+    </button>
+  </div>
+</div>

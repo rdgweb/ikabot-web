@@ -1,0 +1,55 @@
+{% if object_list or request.GET %}
+<div class="card overflow-hidden p-0">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Nome</th>
+        <th>Ação</th>
+        <th>Timeout</th>
+        <th>Status</th>
+        <th class="text-right">Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for profile in object_list %}
+      <tr>
+        <td>
+          <a href="{% url 'profiles:profile-detail' profile.pk %}" class="font-medium link-sea">
+            {{ profile.name }}
+          </a>
+        </td>
+        <td class="text-muted text-sm font-mono">{{ profile.action_code }}</td>
+        <td class="text-muted text-sm">{{ profile.timeout_sec }}s</td>
+        <td>
+          {% if profile.enabled %}
+            <span class="badge badge-success">Ativo</span>
+          {% else %}
+            <span class="badge badge-secondary">Inativo</span>
+          {% endif %}
+        </td>
+        <td class="text-right">
+          <a href="{% url 'profiles:profile-detail' profile.pk %}" class="btn btn-secondary btn-sm" title="Ver">
+            <i class="bi bi-eye"></i>
+          </a>
+          <a href="{% url 'profiles:profile-edit' profile.pk %}" class="btn btn-secondary btn-sm" title="Editar">
+            <i class="bi bi-pencil"></i>
+          </a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="5" class="text-center py-8 text-muted">
+          <i class="bi bi-collection text-2xl block mb-2"></i>
+          Nenhum perfil encontrado.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% include "components/table/pagination.html" %}
+
+{% else %}
+{% include "components/table/empty.html" with icon="bi-collection" message="Nenhum perfil cadastrado." action_url="/profiles/create/" action_label="Criar Perfil" %}
+{% endif %}

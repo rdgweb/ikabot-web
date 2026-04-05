@@ -1,0 +1,36 @@
+"""
+Compatibility facade for action contracts and catalogs.
+"""
+
+from .actions import (
+    ACTIONS_BY_CATEGORY,
+    ACTION_CATALOG,
+    CATEGORY_META,
+    CAT_ADMIN,
+    CAT_AUTOMATION,
+    CAT_CONSTRUCTION,
+    CAT_ECONOMY,
+    CAT_MARKET,
+    CAT_MILITARY,
+    CAT_MONITORING,
+    CONSTRUCTION_TIME_CHOICES,
+    DONATION_CHOICES,
+    DONATION_METHOD_CHOICES,
+    FIELD_BOOL,
+    FIELD_BUILDING_SELECT,
+    FIELD_CHOICE,
+    FIELD_CITY_SELECT,
+    FIELD_DONATION_TYPE,
+    FIELD_INT,
+    FIELD_JSON_ARRAY,
+    FIELD_RESOURCE_TYPE,
+    FIELD_STR,
+    FIELD_UNIT_SELECT,
+    RESEARCH_REDUCTION_CHOICES,
+    RESOURCE_CHOICES,
+    TRANSPORT_LOAD_CHOICES,
+    get_action_contract,
+    get_action_info,
+    get_actions_for_ui,
+)
+from .catalogs import BUILDING_CATALOG, UNIT_CATALOG, get_building_info, get_unit_info

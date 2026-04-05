@@ -1,0 +1,62 @@
+{# ── Global Job Creation Modal (Wizard) ── #}
+{# Opens via: $dispatch('open-modal-jobcreate') #}
+{# Content loaded via HTMX into #job-modal-body #}
+
+<div x-data="{ open: false }"
+     x-show="open"
+     @open-modal-jobcreate.window="open = true"
+     @close-modal.window="open = false"
+     @keydown.escape.window="if (open) open = false"
+     @closeModal.window="open = false"
+     x-cloak
+     class="fixed inset-0 z-50 flex items-start justify-center pt-[5vh] sm:pt-[8vh]"
+     style="pointer-events: none;">
+
+  {# Backdrop #}
+  <div x-show="open"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="fixed inset-0 bg-black/50"
+       style="pointer-events: auto;"
+       @click="open = false"></div>
+
+  {# Panel #}
+  <div x-show="open"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0 scale-95 translate-y-4"
+       x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="opacity-100 scale-100"
+       x-transition:leave-end="opacity-0 scale-95"
+       class="relative z-10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 flex flex-col"
+       style="background: var(--ik-paper); border: 1px solid var(--ik-line); max-height: 85vh; pointer-events: auto;">
+
+    {# Header #}
+    <div class="flex items-center justify-between px-5 py-3 shrink-0"
+         style="border-bottom: 1px solid var(--ik-line); background: linear-gradient(180deg, var(--ik-sand-light), var(--ik-paper));">
+      <div class="flex items-center gap-2.5">
+        <div class="w-7 h-7 rounded-lg flex items-center justify-center"
+             style="background: var(--ik-sea); color: #fff;">
+          <i class="bi bi-plus-lg text-sm"></i>
+        </div>
+        <h3 class="text-sm font-bold text-ink">Novo Job</h3>
+      </div>
+      <button @click="open = false" class="text-muted hover:text-ink transition-colors p-1 -mr-1">
+        <i class="bi bi-x-lg text-base"></i>
+      </button>
+    </div>
+
+    {# Scrollable body — wizard steps replace content here #}
+    <div id="job-modal-body" class="flex-1 min-h-0 overflow-y-auto"
+         style="overscroll-behavior: contain;">
+      <div class="text-center py-16 text-muted">
+        <i class="bi bi-arrow-repeat animate-spin text-2xl"></i>
+        <p class="text-sm mt-2">Carregando...</p>
+      </div>
+    </div>
+  </div>
+</div>

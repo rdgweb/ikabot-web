@@ -1,0 +1,23 @@
+<!-- Sortable table header -->
+{# Usage: include "components/table/header.html" with label="Nome" field="name" #}
+{% with current_sort=request.GET.sort current_dir=request.GET.dir %}
+<th class="data-table th">
+  <a href="?sort={{ field }}&dir={% if current_sort == field and current_dir != '-' %}-{% endif %}{{ request.GET.urlencode }}"
+     hx-get="{{ request.path }}?sort={{ field }}&dir={% if current_sort == field and current_dir != '-' %}-{% endif %}"
+     hx-target="#table-content"
+     hx-swap="innerHTML"
+     hx-push-url="true"
+     class="flex items-center gap-1 hover:text-ink whitespace-nowrap">
+    {{ label }}
+    {% if current_sort == field %}
+      {% if current_dir == "-" %}
+        <i class="bi bi-sort-down text-sea"></i>
+      {% else %}
+        <i class="bi bi-sort-up text-sea"></i>
+      {% endif %}
+    {% else %}
+      <i class="bi bi-chevron-expand" style="color: #b5ad9a;"></i>
+    {% endif %}
+  </a>
+</th>
+{% endwith %}

@@ -1,0 +1,7 @@
+<!-- Filter bar for list pages (used inside base_list.html filter_bar block) -->
+<!-- Individual filter field component -->
+{# Usage: include "components/table/filter_bar.html" with field=filter_form.status #}
+<div class="flex flex-col gap-1">
+  <label for="{{ field.id_for_label }}" class="text-xs font-medium text-muted">{{ field.label }}</label>
+  {{ field }}
+</div>

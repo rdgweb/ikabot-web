@@ -1,0 +1,755 @@
+{% extends "base.html" %}
+{% load humanize static hub_tags l10n %}
+
+{% block title %}Painel do Jogo{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <span class="text-ink">Painel do Jogo</span>
+{% endblock %}
+
+{% block content %}
+<div x-data="gameDashboard()" x-init="init()">
+
+{% include "game/partials/dashboard_header.html" %}
+{% include "game/partials/dashboard_kpi_cards.html" %}
+{% comment %}
+
+<div class="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+  <div>
+    <h1 class="text-2xl font-bold text-ink">Painel do Jogo</h1>
+    <p class="text-sm text-muted mt-1">Visao geral de todas as contas com dados em tempo real</p>
+  </div>
+
+  {# ── Filter bar ── #}
+  <div class="flex flex-wrap gap-2 items-center">
+    {% if nodes.count > 1 %}
+    <select x-model="filterNode" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto">
+      <option value="">Todos os nos</option>
+      {% for node in nodes %}
+      <option value="{{ node.pk }}">{{ node.name }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+
+    {% if accounts.count > 1 %}
+    <select x-model="filterAccount" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto">
+      <option value="">Todas as contas</option>
+      {% for acct in accounts %}
+      <option value="{{ acct.pk }}">{{ acct.label }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+
+    <select x-model="filterServer" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto">
+      <option value="">Todos os servidores</option>
+      {% for card in account_cards %}
+      <option value="{{ card.server_id }}">{{ card.player_name }} ({{ card.server_id }})</option>
+      {% endfor %}
+    </select>
+
+    {% if city_options %}
+    <select x-model="filterCity" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto">
+      <option value="">Todas as cidades</option>
+      {% for city_name in city_options %}
+      <option value="{{ city_name }}">{{ city_name }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+
+    <button x-show="filterNode || filterAccount || filterServer || filterCity" x-cloak
+            @click="filterNode=''; filterAccount=''; filterServer=''; filterCity=''; applyFilter()"
+            class="btn btn-secondary btn-sm !py-1 !px-2 text-xs">
+      <i class="bi bi-x"></i> Limpar
+    </button>
+  </div>
+</div>
+
+{# ── KPI Cards (clickable → modal) ── #}
+<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+  <div class="card !p-3 flex items-center gap-2 cursor-pointer hover:ring-2 hover:ring-[var(--ik-sea)]/30 transition-all" @click="kpiModal='gold'">
+    <img src="{% static 'game/resources/icon_actionpoints.png' %}" class="w-6 h-6" alt="Ouro">
+    <div>
+      <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Ouro</p>
+      <p class="text-base font-bold text-ink" x-text="fmt(kpi.gold)">{{ kpi.gold|intcomma }}</p>
+    </div>
+  </div>
+  <div class="card !p-3 flex items-center gap-2 cursor-pointer hover:ring-2 hover:ring-[var(--ik-sea)]/30 transition-all" @click="kpiModal='income'">
+    <i class="bi text-lg" :class="kpi.income >= 0 ? 'bi-graph-up-arrow' : 'bi-graph-down-arrow'"
+       :style="kpi.income >= 0 ? 'color:#4fb44e' : 'color:#bb5143'"></i>
+    <div>
+      <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Renda/h</p>
+      <p class="text-base font-bold" :class="kpi.income >= 0 ? 'text-green-600' : 'text-red-500'"
+         x-text="(kpi.income > 0 ? '+' : '') + fmt(kpi.income)">{{ kpi.income|intcomma }}</p>
+    </div>
+  </div>
+  <div class="card !p-3 flex items-center gap-2 cursor-pointer hover:ring-2 hover:ring-[var(--ik-sea)]/30 transition-all" @click="kpiModal='cities'">
+    <i class="bi bi-geo-alt-fill text-lg" style="color: var(--ik-sea);"></i>
+    <div>
+      <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Cidades</p>
+      <p class="text-base font-bold text-ink" x-text="kpi.cities">{{ kpi.cities }}</p>
+    </div>
+  </div>
+  <div class="card !p-3 flex items-center gap-2 cursor-pointer hover:ring-2 hover:ring-[var(--ik-sea)]/30 transition-all" @click="kpiModal='resources'">
+    <img src="{% static 'game/resources/icon_wood.png' %}" class="w-6 h-6" alt="Recursos">
+    <div>
+      <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Recursos</p>
+      <div class="flex items-center gap-1.5 text-[11px] font-bold text-ink">
+        <span class="flex items-center gap-0.5"><img src="{% static 'game/resources/icon_wood.png' %}" class="w-3 h-3"><span x-text="fmt(kpi.wood)"></span></span>
+        <span class="flex items-center gap-0.5"><img src="{% static 'game/resources/icon_wine.png' %}" class="w-3 h-3"><span x-text="fmt(kpi.wine)"></span></span>
+        <span class="flex items-center gap-0.5"><img src="{% static 'game/resources/icon_marble.png' %}" class="w-3 h-3"><span x-text="fmt(kpi.marble)"></span></span>
+        <span class="flex items-center gap-0.5"><img src="{% static 'game/resources/icon_glass.png' %}" class="w-3 h-3"><span x-text="fmt(kpi.crystal)"></span></span>
+        <span class="flex items-center gap-0.5"><img src="{% static 'game/resources/icon_sulfur.png' %}" class="w-3 h-3"><span x-text="fmt(kpi.sulfur)"></span></span>
+      </div>
+    </div>
+  </div>
+  <div class="card !p-3 flex items-center gap-2 cursor-pointer hover:ring-2 hover:ring-[var(--ik-sea)]/30 transition-all" @click="kpiModal='troops'">
+    <i class="bi bi-shield-shaded text-lg" style="color: #c9553e;"></i>
+    <div>
+      <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Tropas</p>
+      <p class="text-base font-bold text-ink" x-text="fmt(kpi.troops)">{{ kpi.troops|intcomma }}</p>
+    </div>
+  </div>
+  <div class="card !p-3 flex items-center gap-2 cursor-pointer hover:ring-2 hover:ring-[var(--ik-sea)]/30 transition-all" @click="kpiModal='ships'">
+    <i class="bi bi-water text-lg" style="color: var(--ik-sea);"></i>
+    <div>
+      <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Navios</p>
+      <p class="text-base font-bold text-ink" x-text="fmt(kpi.ships)">{{ kpi.ships|intcomma }}</p>
+    </div>
+  </div>
+</div>
+
+{% endcomment %}
+{# ── KPI Modals ── #}
+<template x-if="kpiModal">
+  <div class="gm-overlay" @keydown.escape.window="kpiModal=null">
+    <div class="fixed inset-0 bg-black/50" @click="kpiModal=null"></div>
+    <div class="gm-container">
+      <div class="gm-panel">
+
+      <template x-if="kpiModal==='gold'">{% include "game/partials/modal_gold.html" %}</template>
+      <template x-if="kpiModal==='income'">{% include "game/partials/modal_income.html" %}</template>
+      <template x-if="kpiModal==='cities'">{% include "game/partials/modal_cities.html" %}</template>
+      <template x-if="kpiModal==='resources'">{% include "game/partials/modal_resources.html" %}</template>
+      <template x-if="kpiModal==='troops'">{% include "game/partials/modal_troops.html" %}</template>
+      <template x-if="kpiModal==='ships'">{% include "game/partials/modal_ships.html" %}</template>
+      </div>
+    </div>
+  </div>
+</template>
+
+{# ── Per Game Account Cards ── #}
+{% if account_cards %}
+<div class="space-y-6">
+  {% for card in account_cards %}
+  <div class="card game-card" x-data="{ tab: 'cities', open: true }"
+       data-node="{{ card.account.node_id }}"
+       data-account="{{ card.account.pk }}"
+       data-game-account="{{ card.game_account_id }}"
+       data-server="{{ card.server_id }}"
+       data-city-names="{{ card.city_names|join:'|' }}"
+       data-filter-visible="1"
+       data-gold="{{ card.gold }}"
+       data-income="{{ card.income }}"
+       data-cities="{{ card.city_count }}"
+       data-resources="{{ card.resources }}"
+       data-wood="{{ card.totals.wood }}"
+       data-wine="{{ card.totals.wine }}"
+       data-marble="{{ card.totals.marble }}"
+       data-crystal="{{ card.totals.crystal }}"
+       data-sulfur="{{ card.totals.sulfur }}"
+       data-troops="{{ card.troop_total }}"
+       data-ships="{{ card.ship_total }}"
+       data-gross-income="{{ card.gross_income }}"
+       data-upkeep="{{ card.upkeep }}"
+       data-scientists="{{ card.scientists_upkeep }}"
+       data-wine-spendings="{{ card.wine_spendings }}"
+       data-net-wine-rate="{{ card.net_wine_rate }}"
+       data-res-production="{{ card.resource_production }}"
+       data-tg-production="{{ card.tradegood_production }}"
+       data-free-transporters="{{ card.free_transporters }}"
+       data-max-transporters="{{ card.max_transporters }}"
+       data-player="{{ card.player_name }}"
+       data-server-label="{{ card.server_id }}"
+       data-total-wine-hours="{{ card.total_wine_hours|default:'' }}">
+
+    {# ── Header (clickable to collapse) ── #}
+    <div class="flex items-center justify-between cursor-pointer select-none"
+         :class="open ? 'mb-4 pb-3' : ''"
+         :style="open ? 'border-bottom: 2px solid var(--ik-line)' : ''"
+         @click="open = !open">
+      <div class="flex items-center gap-3">
+        <div class="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold"
+             style="background: linear-gradient(135deg, var(--ik-sea), var(--ik-sea-dark)); color: #fff;">
+          {{ card.player_name|truncatechars:2|upper }}
+        </div>
+        <div>
+          <h3 class="text-sm font-semibold text-ink">{{ card.player_name|default:card.account.label }}</h3>
+          <p class="text-xs text-muted">{{ card.server_id }} &middot; {{ card.city_count }} cidades</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-4">
+        {# Quick stats with Ikariam icons #}
+        <div class="hidden md:flex items-center gap-3 text-xs">
+          <span class="flex items-center gap-1" title="Ouro">
+            <img src="{% static 'game/resources/icon_actionpoints.png' %}" class="w-4 h-4"> {{ card.gold|intcomma }}
+          </span>
+          <span class="relative group flex items-center gap-1 {% if card.income > 0 %}text-green-600{% elif card.income < 0 %}text-red-500{% endif %} cursor-help">
+            <i class="bi bi-graph-up-arrow"></i> {{ card.income|intcomma }}/h
+            {# Financial breakdown tooltip #}
+            <div class="pointer-events-none absolute right-0 top-full z-20 mt-1 hidden w-48 rounded-lg border border-[var(--ik-line)] bg-paper p-2.5 text-left shadow-xl group-hover:block">
+              <div class="text-[10px] font-bold text-ink mb-1.5">Detalhamento Financeiro</div>
+              <div class="space-y-1">
+                <div class="flex justify-between text-[10px]">
+                  <span class="text-muted">Rendimento</span>
+                  <span class="font-mono text-green-600">+{{ card.gross_income|intcomma }}/h</span>
+                </div>
+                {% if card.upkeep %}
+                <div class="flex justify-between text-[10px]">
+                  <span class="text-muted">Manutencao</span>
+                  <span class="font-mono text-red-500">{{ card.upkeep|intcomma }}/h</span>
+                </div>
+                {% endif %}
+                {% if card.scientists_upkeep %}
+                <div class="flex justify-between text-[10px]">
+                  <span class="text-muted">Cientistas</span>
+                  <span class="font-mono text-red-500">{{ card.scientists_upkeep|intcomma }}/h</span>
+                </div>
+                {% endif %}
+                <div class="flex justify-between text-[10px] pt-1" style="border-top: 1px solid var(--ik-line);">
+                  <span class="font-semibold text-ink">Total</span>
+                  <span class="font-mono font-bold {% if card.income >= 0 %}text-green-600{% else %}text-red-500{% endif %}">
+                    {% if card.income > 0 %}+{% endif %}{{ card.income|intcomma }}/h
+                  </span>
+                </div>
+              </div>
+            </div>
+          </span>
+          <span class="flex items-center gap-1" title="Transportes">
+            <i class="bi bi-truck"></i> {{ card.free_transporters }}/{{ card.max_transporters }}
+          </span>
+          {% if card.wine_spendings %}
+          <span class="relative group flex items-center gap-1 {% if card.net_wine_rate < 0 %}text-red-500{% else %}text-green-600{% endif %} cursor-help">
+            <img src="{% static 'game/resources/icon_wine.png' %}" class="w-4 h-4">
+            {% if card.net_wine_rate > 0 %}+{% endif %}{{ card.net_wine_rate|floatformat:0 }}/h
+            {# Wine balance tooltip #}
+            <div class="pointer-events-none absolute right-0 top-full z-20 mt-1 hidden w-48 rounded-lg border border-[var(--ik-line)] bg-paper p-2.5 text-left shadow-xl group-hover:block">
+              <div class="text-[10px] font-bold text-ink mb-1.5">Balanco de Vinho</div>
+              <div class="space-y-1">
+                <div class="flex justify-between text-[10px]">
+                  <span class="text-muted">Estoque</span>
+                  <span class="font-mono text-ink">{{ card.totals.wine|intcomma }}</span>
+                </div>
+                <div class="flex justify-between text-[10px]">
+                  <span class="text-muted">Consumo</span>
+                  <span class="font-mono text-red-500">-{{ card.wine_spendings|intcomma }}/h</span>
+                </div>
+                <div class="flex justify-between text-[10px]">
+                  <span class="text-muted">Saldo</span>
+                  <span class="font-mono font-bold {% if card.net_wine_rate >= 0 %}text-green-600{% else %}text-red-500{% endif %}">
+                    {% if card.net_wine_rate > 0 %}+{% endif %}{{ card.net_wine_rate|floatformat:0 }}/h
+                  </span>
+                </div>
+                <div class="flex justify-between text-[10px] pt-1" style="border-top: 1px solid var(--ik-line);">
+                  <span class="font-semibold text-ink">Duracao</span>
+                  {% if card.total_wine_hours is not None %}
+                  <span class="font-mono font-bold {% if card.total_wine_hours < 24 %}text-red-500{% elif card.total_wine_hours < 72 %}text-amber-500{% else %}text-green-600{% endif %}">
+                    {{ card.total_wine_hours|hours_display }}
+                  </span>
+                  {% elif card.net_wine_rate >= 0 %}
+                  <span class="font-bold text-green-600">Superavit</span>
+                  {% else %}
+                  <span class="text-muted">-</span>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          </span>
+          {% endif %}
+        </div>
+
+        {% if card.snapshot %}
+        <span class="text-[10px] text-muted" title="Ultima atualizacao">
+          <i class="bi bi-clock"></i> {{ card.snapshot.updated_at|timesince }}
+        </span>
+        {% endif %}
+
+        {# Action buttons (stop propagation to prevent collapse) #}
+        <div class="flex items-center gap-1" @click.stop>
+          <button hx-post="{% url 'game:run-action' %}"
+                  hx-vals='{"game_account_id": "{{ card.game_account.pk }}", "action_code": "100"}'
+                  hx-swap="none"
+                  class="btn btn-secondary btn-sm !px-2 !py-1" title="Atualizar Status">
+            <i class="bi bi-arrow-clockwise text-xs"></i>
+          </button>
+        </div>
+
+        {# Collapse indicator #}
+        <i class="bi text-muted transition-transform" :class="open ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+      </div>
+    </div>
+
+    {# ── Collapsible body ── #}
+    <div x-show="open" x-transition>
+
+    {# ── Tabs ── #}
+    <div class="flex gap-1 mb-4">
+      <button @click="tab='cities'" :class="tab==='cities' ? 'bg-[var(--ik-sea)] text-white' : 'text-muted hover:text-ink'"
+              class="px-3 py-1 rounded text-xs font-semibold transition-colors">
+        <i class="bi bi-geo-alt-fill"></i> Cidades
+      </button>
+      <button @click="tab='military'" :class="tab==='military' ? 'bg-[var(--ik-sea)] text-white' : 'text-muted hover:text-ink'"
+              class="px-3 py-1 rounded text-xs font-semibold transition-colors">
+        <i class="bi bi-shield-shaded"></i> Militar
+      </button>
+      <button @click="tab='buildings'" :class="tab==='buildings' ? 'bg-[var(--ik-sea)] text-white' : 'text-muted hover:text-ink'"
+              class="px-3 py-1 rounded text-xs font-semibold transition-colors">
+        <i class="bi bi-building"></i> Construcoes
+      </button>
+    </div>
+
+    {# ══ TAB: Cities (resources table — Ikariam style with hover tooltips) ══ #}
+    <div x-show="tab==='cities'" x-transition
+         x-data="{ tt: null, ttX: 0, ttY: 0,
+           showTT(ev, d) {
+             this.tt = d;
+             const r = ev.target.closest('td').getBoundingClientRect();
+             this.ttX = Math.min(r.left, window.innerWidth - 260);
+             this.ttY = r.bottom + 4;
+           },
+           hideTT() { this.tt = null; }
+         }">
+      {% if card.cities %}
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--ik-line);">
+              <th class="text-left py-2 px-2 text-muted font-semibold">Cidade</th>
+              <th class="text-right py-2 px-1 text-muted font-semibold">
+                <img src="{% static 'game/resources/icon_wood.png' %}" class="w-4 h-4 inline" title="Madeira">
+              </th>
+              <th class="text-right py-2 px-1 text-muted font-semibold">
+                <img src="{% static 'game/resources/icon_wine.png' %}" class="w-4 h-4 inline" title="Vinho">
+              </th>
+              <th class="text-right py-2 px-1 text-muted font-semibold">
+                <img src="{% static 'game/resources/icon_marble.png' %}" class="w-4 h-4 inline" title="Marmore">
+              </th>
+              <th class="text-right py-2 px-1 text-muted font-semibold">
+                <img src="{% static 'game/resources/icon_glass.png' %}" class="w-4 h-4 inline" title="Cristal">
+              </th>
+              <th class="text-right py-2 px-1 text-muted font-semibold">
+                <img src="{% static 'game/resources/icon_sulfur.png' %}" class="w-4 h-4 inline" title="Enxofre">
+              </th>
+              <th class="text-right py-2 px-1 text-muted font-semibold">Total</th>
+              <th class="text-center py-2 px-1 text-muted font-semibold" title="Populacao">
+                <i class="bi bi-people-fill"></i>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for city in card.cities %}
+            <tr class="hover:bg-[var(--ik-sand-light)] transition-colors"
+                style="border-bottom: 1px solid var(--ik-line);">
+              <td class="py-2 px-2">
+                <div class="flex items-center gap-1">
+                  {% with city.produced_tradegood|default:city.tradegood|tradegood_icon as tg_icon %}
+                  {% if tg_icon %}
+                  <img src="{% static tg_icon %}" class="w-4 h-4" title="{{ city.produced_tradegood|default:city.tradegood|resource_name }}">
+                  {% else %}
+                  <i class="bi bi-geo-alt-fill text-sea text-[10px]"></i>
+                  {% endif %}
+                  {% endwith %}
+                  <span class="font-medium text-ink">{{ city.name|default:"Cidade" }}</span>
+                  {% if city.x and city.y %}
+                  <span class="text-muted text-[10px]">[{{ city.x }}:{{ city.y }}]</span>
+                  {% endif %}
+                  {% if city.upgrading_count %}
+                  <i class="bi bi-arrow-up-circle-fill text-amber-500 text-[10px]" title="{{ city.upgrading_count }} construcao em andamento"></i>
+                  {% endif %}
+                  {% if city.wine_hours is not None and city.wine_hours < 24 %}
+                  <i class="bi bi-exclamation-triangle-fill text-red-500 text-[10px]" title="Vinho: {{ city.wine_hours|hours_display }}"></i>
+                  {% endif %}
+                </div>
+              </td>
+              {# ── Resource cells — hover triggers Alpine tooltip ── #}
+              {% for resource in city.resource_projections %}
+              {% localize off %}
+              <td class="py-1 px-1 text-right font-mono {{ resource.pct|fill_color }} cursor-pointer"
+                  @mouseenter="showTT($event, {
+                    label: '{{ resource.label }}',
+                    icon: '{% static resource.icon %}',
+                    current: {{ resource.current }},
+                    capacity: {{ resource.capacity }},
+                    market: {{ resource.market }},
+                    production_hour: {{ resource.production_hour }},
+                    consumption_hour: {{ resource.consumption_hour }},
+                    net_hour: {{ resource.net_hour }},
+                    pct: {{ resource.pct }},
+                    fill_hours: {% if resource.fill_hours is not None %}{{ resource.fill_hours }}{% else %}null{% endif %},
+                    is_wine: {% if resource.key == 'wine' %}true{% else %}false{% endif %}
+                  })"
+                  @mouseleave="hideTT()">
+                  <span class="js-projected-resource"
+                        data-base="{{ resource.base_current }}"
+                        data-rate="{{ resource.net_hour }}"
+                        data-capacity="{{ resource.capacity }}"
+                        data-snapshot-epoch="{{ resource.snapshot_epoch|default:card.snapshot_epoch|default:'' }}">{{ resource.current|intcomma }}</span>
+              </td>
+              {% endlocalize %}
+              {% endfor %}
+              <td class="py-1 px-1 text-right font-mono font-semibold text-ink">
+                <span class="js-projected-total">{{ city.resource_total|intcomma }}</span>
+              </td>
+              <td class="py-1 px-1 text-center text-[10px] text-muted font-mono" title="Pop {{ city.population|intcomma }} · {{ city.free_citizens|default:0 }} livres">
+                {{ city.population|intcomma }}
+              </td>
+            </tr>
+            {% endfor %}
+            {# Totals #}
+            <tr style="border-top: 2px solid var(--ik-line); background: var(--ik-sand-light);">
+              <td class="py-2 px-2 font-semibold text-ink text-[11px]">
+                Total ({{ card.cities|length }})
+              </td>
+              <td class="py-2 px-1 text-right font-mono font-bold text-ink"><span class="js-projected-col-total" data-col="0">{{ card.totals.wood|intcomma }}</span></td>
+              <td class="py-2 px-1 text-right font-mono font-bold text-ink"><span class="js-projected-col-total" data-col="1">{{ card.totals.wine|intcomma }}</span></td>
+              <td class="py-2 px-1 text-right font-mono font-bold text-ink"><span class="js-projected-col-total" data-col="2">{{ card.totals.marble|intcomma }}</span></td>
+              <td class="py-2 px-1 text-right font-mono font-bold text-ink"><span class="js-projected-col-total" data-col="3">{{ card.totals.crystal|intcomma }}</span></td>
+              <td class="py-2 px-1 text-right font-mono font-bold text-ink"><span class="js-projected-col-total" data-col="4">{{ card.totals.sulfur|intcomma }}</span></td>
+              <td class="py-2 px-1 text-right font-mono font-bold text-ink"><span class="js-projected-grand-total">{{ card.resources|intcomma }}</span></td>
+              <td class="py-2 px-1"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {# ── Ikariam-style tooltip (fixed position, outside overflow) ── #}
+      <template x-if="tt">
+        <div class="fixed z-50 w-60 rounded border-2 p-2.5 text-xs shadow-lg overflow-hidden"
+             :style="`left:${ttX}px;top:${ttY}px;background:#f5e6c8;border-color:#b8976a;`"
+             style="font-family: Arial, sans-serif;">
+          <table class="w-full" style="border-collapse: collapse;">
+            <tr>
+              <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">No armazem:</td>
+              <td class="py-0.5 text-right font-mono font-bold" style="color:#3a2a0a;" x-text="new Intl.NumberFormat('pt-BR').format(tt.current)"></td>
+            </tr>
+            <template x-if="!tt.is_wine && tt.production_hour > 0">
+              <tr>
+                <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">
+                  <span x-text="'Producao por hora ' + tt.label + ':'"></span>
+                </td>
+                <td class="py-0.5 text-right font-mono font-bold" style="color:#2d6e2d;" x-text="new Intl.NumberFormat('pt-BR').format(Math.round(tt.production_hour))"></td>
+              </tr>
+            </template>
+            <template x-if="tt.is_wine && tt.production_hour > 0">
+              <tr>
+                <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">Producao por hora:</td>
+                <td class="py-0.5 text-right font-mono font-bold" style="color:#2d6e2d;" x-text="new Intl.NumberFormat('pt-BR').format(Math.round(tt.production_hour))"></td>
+              </tr>
+            </template>
+            <template x-if="tt.is_wine && tt.production_hour > 0 && tt.consumption_hour > 0">
+              <tr>
+                <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">Gastos por hora:</td>
+                <td class="py-0.5 text-right font-mono font-bold" style="color:#a33;" x-text="new Intl.NumberFormat('pt-BR').format(Math.round(tt.consumption_hour))"></td>
+              </tr>
+            </template>
+            <template x-if="tt.is_wine && tt.production_hour <= 0 && tt.consumption_hour > 0">
+              <tr>
+                <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">Gasto por hora:</td>
+                <td class="py-0.5 text-right font-mono font-bold" style="color:#a33;" x-text="new Intl.NumberFormat('pt-BR').format(Math.round(tt.consumption_hour))"></td>
+              </tr>
+            </template>
+            <template x-if="tt.is_wine && tt.production_hour > 0">
+              <tr>
+                <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">Saldo por hora:</td>
+                <td class="py-0.5 text-right font-mono font-bold" :style="tt.net_hour >= 0 ? 'color:#2d6e2d;' : 'color:#a33;'" x-text="new Intl.NumberFormat('pt-BR').format(Math.round(tt.net_hour))"></td>
+              </tr>
+            </template>
+            <template x-if="!tt.is_wine && tt.net_hour < 0">
+              <tr>
+                <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">Consumo por hora:</td>
+                <td class="py-0.5 text-right font-mono font-bold" style="color:#a33;" x-text="new Intl.NumberFormat('pt-BR').format(Math.abs(Math.round(tt.net_hour)))"></td>
+              </tr>
+            </template>
+            <tr>
+              <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">Capacidade do Armazem:</td>
+              <td class="py-0.5 text-right font-mono font-bold" style="color:#3a2a0a;" x-text="new Intl.NumberFormat('pt-BR').format(tt.capacity)"></td>
+            </tr>
+            <template x-if="tt.market > 0">
+              <tr>
+                <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">Mercado:</td>
+                <td class="py-0.5 text-right font-mono font-bold" style="color:#3a2a0a;" x-text="new Intl.NumberFormat('pt-BR').format(tt.market)"></td>
+              </tr>
+            </template>
+          </table>
+          {# Fill bar #}
+          <div style="margin-top:6px;height:8px;width:100%;border-radius:9999px;background:#d4c4a0;overflow:hidden;">
+            <div :style="{
+              height: '100%',
+              borderRadius: '9999px',
+              width: Math.max(tt.pct, 1) + '%',
+              backgroundColor: tt.pct >= 95 ? '#dc2626' : tt.pct >= 80 ? '#f97316' : tt.pct >= 60 ? '#d97706' : '#16a34a'
+            }"></div>
+          </div>
+          <div class="mt-0.5 text-[10px] text-right font-mono font-bold" style="color:#5a4a2a;" x-text="tt.pct + '%'"></div>
+          <template x-if="tt.fill_hours !== null && tt.fill_hours > 0 && tt.net_hour > 0">
+            <div class="text-[10px] text-right font-mono" style="color:#5a4a2a;">
+              <span>Enche em: </span>
+              <span class="font-bold" :class="tt.fill_hours < 24 ? 'text-red-600' : tt.fill_hours < 72 ? 'text-amber-600' : ''" x-text="fmtHours(tt.fill_hours)"></span>
+            </div>
+          </template>
+          <template x-if="tt.fill_hours !== null && tt.net_hour < 0">
+            <div class="text-[10px] text-right font-mono" style="color:#5a4a2a;">
+              <span>Esvazia em: </span>
+              <span class="font-bold text-red-600" x-text="fmtHours(Math.abs(tt.current / tt.net_hour))"></span>
+            </div>
+          </template>
+          <template x-if="tt.fill_hours === 0">
+            <div class="text-[10px] text-right font-bold text-red-600">Cheio!</div>
+          </template>
+        </div>
+      </template>
+      {# Production info is shown in resource hover tooltips #}
+      {% else %}
+      <div class="text-center py-6 text-sm text-muted">
+        <i class="bi bi-info-circle text-lg block mb-2"></i>
+        Nenhum dado de cidade disponivel.
+        <button hx-post="{% url 'game:run-action' %}"
+                hx-vals='{"game_account_id": "{{ card.game_account.pk }}", "action_code": "100"}'
+                hx-swap="none"
+                class="btn btn-primary btn-sm mt-3">
+          <i class="bi bi-arrow-clockwise"></i> Executar Check Status
+        </button>
+      </div>
+      {% endif %}
+    </div>
+
+    {# Production tab removed — finance/production info is in header tooltips and city tooltips #}
+
+    {# ══ TAB: Military ══ #}
+    <div x-show="tab==='military'" x-transition>
+      {% if card.troops or card.ships or card.cities %}
+      <div class="space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="p-3 rounded" style="background: var(--ik-sand-light);">
+            <h4 class="text-xs font-semibold text-muted mb-2">
+              <i class="bi bi-shield-shaded"></i> Tropas totais
+            </h4>
+            <p class="text-lg font-bold text-ink">{{ card.troop_total|intcomma }}</p>
+          </div>
+          <div class="p-3 rounded" style="background: var(--ik-sand-light);">
+            <h4 class="text-xs font-semibold text-muted mb-2">
+              <i class="bi bi-water"></i> Frotas totais
+            </h4>
+            <p class="text-lg font-bold text-ink">{{ card.ship_total|intcomma }}</p>
+          </div>
+        </div>
+
+        <div class="space-y-4">
+          <div>
+            <h5 class="text-[11px] font-semibold text-muted uppercase tracking-wider mb-2">
+              <i class="bi bi-shield-shaded"></i> Tropas por cidade
+            </h5>
+            {% if card.troop_columns %}
+            <div class="overflow-x-auto">
+              <table class="w-full text-xs">
+                <thead>
+                  <tr style="border-bottom: 2px solid var(--ik-line);">
+                    <th class="text-left py-2 px-2 text-muted font-semibold min-w-[180px]">Cidade</th>
+                    {% for unit in card.troop_columns %}
+                    <th class="text-center py-2 px-1 text-muted font-semibold min-w-[82px]">
+                      <div class="flex flex-col items-center gap-1">
+                        {% with icon=unit.name|unit_icon %}
+                        <img src="{% static icon %}"
+                             alt="{{ unit.name|unit_name }}"
+                             class="h-6 w-6 object-contain"
+                             loading="lazy">
+                        {% endwith %}
+                        <span class="leading-tight text-[10px]">{{ unit.name|unit_name }}</span>
+                      </div>
+                    </th>
+                    {% endfor %}
+                    <th class="text-right py-2 px-2 text-muted font-semibold">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for city in card.cities %}
+                  <tr class="hover:bg-[var(--ik-sand-light)] transition-colors"
+                      style="border-bottom: 1px solid var(--ik-line);">
+                    <td class="py-2 px-2">
+                      <div class="flex items-center gap-1">
+                        <i class="bi bi-geo-alt-fill text-sea text-[10px]"></i>
+                        <span class="font-medium text-ink">{{ city.name|default:"Cidade" }}</span>
+                        {% if city.x and city.y %}
+                        <span class="text-muted text-[10px]">[{{ city.x }}:{{ city.y }}]</span>
+                        {% endif %}
+                      </div>
+                    </td>
+                    {% for count in city.troop_counts %}
+                    <td class="py-1 px-1 text-center font-mono text-ink">{{ count|intcomma }}</td>
+                    {% endfor %}
+                    <td class="py-1 px-2 text-right font-mono font-semibold text-ink">{{ city.troop_total|intcomma }}</td>
+                  </tr>
+                  {% endfor %}
+                  <tr style="border-top: 2px solid var(--ik-line); background: var(--ik-sand-light);">
+                    <td class="py-2 px-2 font-semibold text-ink text-[11px]">Total ({{ card.cities|length }})</td>
+                    {% for unit in card.troop_columns %}
+                    <td class="py-2 px-1 text-center font-mono font-bold text-ink">{{ unit.total|intcomma }}</td>
+                    {% endfor %}
+                    <td class="py-2 px-2 text-right font-mono font-bold text-ink">{{ card.troop_total|intcomma }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            {% else %}
+            <div class="text-sm text-muted py-3">Nenhuma tropa encontrada neste snapshot.</div>
+            {% endif %}
+          </div>
+
+          <div>
+            <h5 class="text-[11px] font-semibold text-muted uppercase tracking-wider mb-2">
+              <i class="bi bi-water"></i> Frotas por cidade
+            </h5>
+            {% if card.fleet_columns %}
+            <div class="overflow-x-auto">
+              <table class="w-full text-xs">
+                <thead>
+                  <tr style="border-bottom: 2px solid var(--ik-line);">
+                    <th class="text-left py-2 px-2 text-muted font-semibold min-w-[180px]">Cidade</th>
+                    {% for unit in card.fleet_columns %}
+                    <th class="text-center py-2 px-1 text-muted font-semibold min-w-[82px]">
+                      <div class="flex flex-col items-center gap-1">
+                        {% with icon=unit.name|unit_icon %}
+                        <img src="{% static icon %}"
+                             alt="{{ unit.name|unit_name }}"
+                             class="h-6 w-6 object-contain"
+                             loading="lazy">
+                        {% endwith %}
+                        <span class="leading-tight text-[10px]">{{ unit.name|unit_name }}</span>
+                      </div>
+                    </th>
+                    {% endfor %}
+                    <th class="text-right py-2 px-2 text-muted font-semibold">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for city in card.cities %}
+                  <tr class="hover:bg-[var(--ik-sand-light)] transition-colors"
+                      style="border-bottom: 1px solid var(--ik-line);">
+                    <td class="py-2 px-2">
+                      <div class="flex items-center gap-1">
+                        <i class="bi bi-geo-alt-fill text-sea text-[10px]"></i>
+                        <span class="font-medium text-ink">{{ city.name|default:"Cidade" }}</span>
+                        {% if city.x and city.y %}
+                        <span class="text-muted text-[10px]">[{{ city.x }}:{{ city.y }}]</span>
+                        {% endif %}
+                      </div>
+                    </td>
+                    {% for count in city.fleet_counts %}
+                    <td class="py-1 px-1 text-center font-mono text-ink">{{ count|intcomma }}</td>
+                    {% endfor %}
+                    <td class="py-1 px-2 text-right font-mono font-semibold text-ink">{{ city.fleet_total|intcomma }}</td>
+                  </tr>
+                  {% endfor %}
+                  <tr style="border-top: 2px solid var(--ik-line); background: var(--ik-sand-light);">
+                    <td class="py-2 px-2 font-semibold text-ink text-[11px]">Total ({{ card.cities|length }})</td>
+                    {% for unit in card.fleet_columns %}
+                    <td class="py-2 px-1 text-center font-mono font-bold text-ink">{{ unit.total|intcomma }}</td>
+                    {% endfor %}
+                    <td class="py-2 px-2 text-right font-mono font-bold text-ink">{{ card.ship_total|intcomma }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            {% else %}
+            <div class="text-sm text-muted py-3">Nenhuma frota encontrada neste snapshot.</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <div class="text-center py-6 text-sm text-muted">
+        <i class="bi bi-shield text-lg block mb-2"></i>
+        Nenhum dado militar disponivel.
+        <p class="text-xs mt-1">Os dados militares serao coletados junto com o Check Status.</p>
+      </div>
+      {% endif %}
+    </div>
+
+    {# ══ TAB: Buildings ══ #}
+    <div x-show="tab==='buildings'" x-transition>
+      {% if card.cities %}
+      <div class="space-y-3">
+        {% for city in card.cities %}
+        {% if city.buildings %}
+        <div>
+          <div class="flex items-center gap-1.5 mb-1.5">
+            {% with city.produced_tradegood|default:city.tradegood|tradegood_icon as tg_icon %}
+            {% if tg_icon %}
+            <img src="{% static tg_icon %}" class="w-4 h-4">
+            {% else %}
+            <i class="bi bi-geo-alt-fill text-sea text-xs"></i>
+            {% endif %}
+            {% endwith %}
+            <span class="font-semibold text-ink text-xs">{{ city.name|default:"Cidade" }}</span>
+          </div>
+          <div class="flex flex-wrap gap-1">
+            {% for bld in city.buildings %}
+            {% if bld.building and bld.building != "empty" %}
+            <div class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded
+                         {% if bld.is_upgrading %}bg-amber-50 text-amber-700 ring-1 ring-amber-200{% else %}bg-gray-50 text-gray-500{% endif %}"
+                 title="{{ bld.building|building_name }} Lv.{{ bld.level }}{% if bld.is_upgrading %} (em construcao){% endif %}">
+              {% with bld.building|building_icon as icon_path %}
+              {% if icon_path %}
+              <img src="{% static icon_path %}" class="w-3.5 h-3.5">
+              {% else %}
+              <i class="bi {{ bld.building|building_bi_icon }} text-[11px]"></i>
+              {% endif %}
+              {% endwith %}
+              <span class="text-[9px] font-bold leading-none">{{ bld.level }}</span>
+              {% if bld.is_upgrading %}
+              <i class="bi bi-arrow-up-circle-fill text-amber-500 text-[9px]"></i>
+              {% endif %}
+            </div>
+            {% endif %}
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="text-center py-6 text-sm text-muted">
+        Nenhum dado de construcao disponivel.
+      </div>
+      {% endif %}
+    </div>
+
+    </div>{# end collapsible body #}
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="card text-center py-12">
+  <i class="bi bi-controller text-4xl text-muted block mb-3"></i>
+  <p class="text-sm text-muted">Nenhuma conta de jogo encontrada.</p>
+  <a href="{% url 'accounts:account-list' %}" class="btn btn-primary btn-sm mt-4">
+    <i class="bi bi-plus-circle"></i> Gerenciar Contas
+  </a>
+</div>
+{% endif %}
+
+</div>{# end x-data gameDashboard #}
+
+{{ kpi_history|json_script:"game-dashboard-history" }}
+{{ resource_modal_data|json_script:"game-dashboard-resource-data" }}
+{{ account_detail_data|json_script:"game-dashboard-account-detail-data" }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/game-dashboard-modals.js' %}"></script>
+<script src="{% static 'js/game-dashboard-charts.js' %}"></script>
+<script src="{% static 'js/game-dashboard-core.js' %}"></script>
+{% endblock %}
+
+{% block extra_js %}
+  {{ block.super }}
+{% endblock %}

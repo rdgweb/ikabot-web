@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}Captcha{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <span class="text-ink">Captcha</span>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  {# ── Header ── #}
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-ink">Resolucao de Captcha</h1>
+      <p class="text-sm text-muted mt-1">Estrategia, resolucao manual e historico</p>
+    </div>
+    <div class="flex items-center gap-3">
+      {% if config.is_active %}
+        <span class="badge badge-success">Ativo</span>
+      {% else %}
+        <span class="badge badge-secondary">Inativo</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════════════════════ #}
+  {# Row 1: Configuracao + Stats                                      #}
+  {# ══════════════════════════════════════════════════════════════════ #}
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    {# ── Config Card (2 cols) ── #}
+    <div class="lg:col-span-2" id="captcha-config-area">
+      {% include "captcha/partials/config_card.html" %}
+    </div>
+
+    {# ── Stats Card ── #}
+    <div class="card">
+      <h2 class="text-lg font-semibold text-ink mb-4">
+        <i class="bi bi-bar-chart"></i> Ultimas 24h
+      </h2>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="text-center p-3 bg-[var(--ik-sand-light)] rounded-lg">
+          <p class="text-2xl font-bold text-ink">{{ stats.total_24h }}</p>
+          <p class="text-[10px] text-muted uppercase tracking-wide">Total</p>
+        </div>
+        <div class="text-center p-3 bg-[var(--ik-sand-light)] rounded-lg">
+          <p class="text-2xl font-bold text-[var(--ik-good)]">{{ stats.solved_24h }}</p>
+          <p class="text-[10px] text-muted uppercase tracking-wide">Resolvidos</p>
+        </div>
+        <div class="text-center p-3 bg-[var(--ik-sand-light)] rounded-lg">
+          <p class="text-2xl font-bold text-[var(--ik-bad)]">{{ stats.failed_24h }}</p>
+          <p class="text-[10px] text-muted uppercase tracking-wide">Falharam</p>
+        </div>
+        <div class="text-center p-3 bg-[var(--ik-sand-light)] rounded-lg">
+          <p class="text-2xl font-bold text-[var(--ik-warn)]">{{ stats.expired_24h }}</p>
+          <p class="text-[10px] text-muted uppercase tracking-wide">Expirados</p>
+        </div>
+      </div>
+
+      {% if stats.pending_now > 0 %}
+      <div class="mt-4 p-3 border border-[var(--ik-warn)] bg-[var(--ik-warn)]/10 rounded-lg text-center">
+        <p class="text-lg font-bold text-[var(--ik-warn)]">{{ stats.pending_now }}</p>
+        <p class="text-xs text-[var(--ik-warn)]">aguardando resolucao</p>
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+
+  {# ══════════════════════════════════════════════════════════════════ #}
+  {# Row 2: Resolucao manual (pendentes)                              #}
+  {# ══════════════════════════════════════════════════════════════════ #}
+  <div class="card">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-lg font-semibold text-ink">
+        <i class="bi bi-shield-exclamation"></i> Captchas Pendentes
+      </h2>
+      <span class="text-xs text-muted">Atualiza automaticamente</span>
+    </div>
+
+    <div id="captcha-pending-area"
+         hx-get="{% url 'captcha:pending' %}"
+         hx-trigger="every 5s, captchaSolved from:body"
+         hx-target="this"
+         hx-swap="innerHTML"
+         hx-push-url="false">
+      {% include "captcha/partials/pending_list.html" %}
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════════════════════ #}
+  {# Row 3: Estrategia — documentacao inline                          #}
+  {# ══════════════════════════════════════════════════════════════════ #}
+  <div class="card">
+    <h2 class="text-lg font-semibold text-ink mb-4">
+      <i class="bi bi-diagram-3"></i> Estrategias de Resolucao
+    </h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {% for key, info in method_info.items %}
+      <div class="p-4 rounded-lg border border-[var(--ik-line)] {% if config.solve_method == key %}ring-2 ring-[{{ info.color }}]/40 bg-[var(--ik-sand-light)]{% endif %}">
+        <div class="flex items-center gap-2 mb-2">
+          <i class="bi {{ info.icon }} text-lg" style="color: {{ info.color }};"></i>
+          <h3 class="text-sm font-semibold text-ink">{{ info.title }}</h3>
+          {% if config.solve_method == key %}
+            <span class="ml-auto text-[10px] font-bold uppercase px-1.5 py-0.5 rounded" style="background: {{ info.color }}; color: #fff;">Ativo</span>
+          {% endif %}
+        </div>
+        <p class="text-xs text-muted leading-relaxed">{{ info.desc }}</p>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="mt-4 p-3 bg-[var(--ik-sand-light)] rounded-lg border border-[var(--ik-line)]">
+      <p class="text-xs text-muted">
+        <i class="bi bi-info-circle"></i>
+        <strong>Fluxo:</strong> Agent detecta captcha no jogo → envia ao hub → hub tenta o metodo principal →
+        se falhar, tenta o fallback → agent recebe a solucao e submete ao jogo.
+        {% if config.solve_method == "manual" or config.fallback_method == "manual" %}
+        <br><strong>Modo manual:</strong> Captchas pendentes aparecem acima. Voce tem <strong>{{ config.timeout_sec }}s</strong> para resolver antes de expirar.
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════════════════════ #}
+  {# Row 4: Historico recente                                          #}
+  {# ══════════════════════════════════════════════════════════════════ #}
+  {% if history %}
+  <div class="card">
+    <h2 class="text-lg font-semibold text-ink mb-4">
+      <i class="bi bi-clock-history"></i> Historico Recente
+    </h2>
+    <div class="overflow-x-auto">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Tipo</th>
+            <th>Conta</th>
+            <th>Metodo</th>
+            <th>Status</th>
+            <th>Tempo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in history %}
+          <tr>
+            <td class="text-xs text-muted">{{ c.created_at|date:"d/m H:i" }}</td>
+            <td>
+              <span class="text-xs font-mono bg-[var(--ik-sand)] px-1.5 py-0.5 rounded">{{ c.get_captcha_type_display }}</span>
+            </td>
+            <td class="text-xs">
+              {% if c.game_account %}{{ c.game_account.name|default:c.game_account.server_id }}{% else %}—{% endif %}
+            </td>
+            <td class="text-xs text-muted">{{ c.solve_method|default:"—" }}</td>
+            <td>
+              {% if c.status == "solved" %}
+                <span class="badge badge-success">Resolvido</span>
+              {% elif c.status == "failed" %}
+                <span class="badge badge-danger">Falhou</span>
+              {% elif c.status == "expired" %}
+                <span class="badge badge-warning">Expirado</span>
+              {% else %}
+                <span class="badge badge-secondary">{{ c.get_status_display }}</span>
+              {% endif %}
+            </td>
+            <td class="text-xs text-muted">
+              {% if c.solved_at %}
+                {{ c.created_at|timesince:c.solved_at }}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

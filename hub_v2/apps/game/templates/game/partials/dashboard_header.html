@@ -1,0 +1,48 @@
+<div class="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+  <div>
+    <h1 class="text-2xl font-bold text-ink">Painel do Jogo</h1>
+    <p class="text-sm text-muted mt-1">Visao geral de todas as contas com dados em tempo real</p>
+  </div>
+
+  <div class="flex flex-wrap gap-2 items-center">
+    {% if nodes.count > 1 %}
+    <select x-model="filterNode" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto">
+      <option value="">Todos os nos</option>
+      {% for node in nodes %}
+      <option value="{{ node.pk }}">{{ node.name }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+
+    {% if accounts.count > 1 %}
+    <select x-model="filterAccount" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto">
+      <option value="">Todas as contas</option>
+      {% for acct in accounts %}
+      <option value="{{ acct.pk }}">{{ acct.label }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+
+    <select x-model="filterServer" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto">
+      <option value="">Todos os servidores</option>
+      {% for card in account_cards %}
+      <option value="{{ card.server_id }}">{{ card.player_name }} ({{ card.server_id }})</option>
+      {% endfor %}
+    </select>
+
+    {% if city_options %}
+    <select x-model="filterCity" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto">
+      <option value="">Todas as cidades</option>
+      {% for city_name in city_options %}
+      <option value="{{ city_name }}">{{ city_name }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+
+    <button x-show="filterNode || filterAccount || filterServer || filterCity" x-cloak
+            @click="filterNode=''; filterAccount=''; filterServer=''; filterCity=''; applyFilter()"
+            class="btn btn-secondary btn-sm !py-1 !px-2 text-xs">
+      <i class="bi bi-x"></i> Limpar
+    </button>
+  </div>
+</div>

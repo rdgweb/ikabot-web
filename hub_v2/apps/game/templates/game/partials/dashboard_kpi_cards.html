@@ -1,0 +1,47 @@
+{% load static humanize %}
+<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+  <div class="card !p-3 flex items-center gap-2 cursor-pointer hover:ring-2 hover:ring-[var(--ik-sea)]/30 transition-all" @click="kpiModal='gold'">
+    <img src="{% static 'game/resources/icon_actionpoints.png' %}" class="w-6 h-6" alt="Ouro">
+    <div>
+      <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Ouro</p>
+      <p class="text-base font-bold text-ink" x-text="fmt(kpi.gold)">{{ kpi.gold|intcomma }}</p>
+    </div>
+  </div>
+  <div class="card !p-3 flex items-center gap-2 cursor-pointer hover:ring-2 hover:ring-[var(--ik-sea)]/30 transition-all" @click="kpiModal='income'">
+    <i class="bi text-lg" :class="kpi.income >= 0 ? 'bi-graph-up-arrow' : 'bi-graph-down-arrow'"
+       :style="kpi.income >= 0 ? 'color:#4fb44e' : 'color:#bb5143'"></i>
+    <div>
+      <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Renda/h</p>
+      <p class="text-base font-bold" :class="kpi.income >= 0 ? 'text-green-600' : 'text-red-500'"
+         x-text="(kpi.income > 0 ? '+' : '') + fmt(kpi.income)">{{ kpi.income|intcomma }}</p>
+    </div>
+  </div>
+  <div class="card !p-3 flex items-center gap-2 cursor-pointer hover:ring-2 hover:ring-[var(--ik-sea)]/30 transition-all" @click="kpiModal='cities'">
+    <i class="bi bi-geo-alt-fill text-lg" style="color: var(--ik-sea);"></i>
+    <div>
+      <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Cidades</p>
+      <p class="text-base font-bold text-ink" x-text="kpi.cities">{{ kpi.cities }}</p>
+    </div>
+  </div>
+  <div class="card !p-3 flex items-center gap-2 cursor-pointer hover:ring-2 hover:ring-[var(--ik-sea)]/30 transition-all" @click="kpiModal='resources'">
+    <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABkAAAAUCAMAAABPqWaPAAAC31BMVEX////468ogAEeCsPHe6//x69EgAFUtAGJbBqNiE6qJTgaqfCDXsDrXsEHx3rD469EaAEEnEy00AG86AHUgLQ1BBoJVAJxoBrdvOgB1ILcnb+ScYhNVj+SWvfHx68QTADQnAE4nAFstBk4tBmI6Bm80DWI0E1VBBnxOBpZVDY9HIFVOGoJHNEdiIJxvE700VS1BVRN8RwZ8J8QGYt6CTgZ8QYJvTmiCNMQgaNdVfImjbyCjdSCjfBq3giBbj+R1nNeJnLfElkGPtzTKo1XRt1WPvfGjveucxPHkvVv/5GLX6//k8f8TGhMTICAtDVtiAKo6LTQAOpZHIGIaOmhiDZxOJ1tbIIlbGqpoE7c0ThMAR9diIKo6R1VoILBbNHVHTidVQU5OTicTTsQNTt5iNIlVR2JoOnUTW7dVVTR1OoJbVUdiTlstVcoaW95bVVuCLcp8Or0gaN4taN6CR7dVb2KPYhOWYg2JaBOPaBOJYkdHaNd1gi1vgkE6fOtHfNFBgsRHfN5viTR8gkdHgt5VfOROguROguuwfBOPjzR8nC2qiSBoj8Rviddij969iSC3iTS9iSdOnPGCqiewnC2clolvnOTEli23j3WjlonEnCeWsDq9nEG3oy2wj7DEnDqcsEG9ozqCo+Sjty2WvTTEnGiwo4+CqvGWqr18sOTXqjSjxEG3t2i3sI+qyjSWsPHXsEeJt/GqykGqt7DXt0eq0TrKqrDetzqw0TrXt2Kwt8q3vZycvfG9vZyw10GqvdfkvUHkvU7E0UHKvaOwxPGwyt63ytHKyqPxylXRyrDkyom30d690dew0f/x0VW30fHx0WK90fHX0bC90fje0aP4107411Xr0Zb411v412LR18rx13zR19HR19fX197/3lX43m/E3vje3r3R5PH/61vR5PjX5PHr5L3k5NHX5Pj/62/x5L3r5NHx5MT/63z465z/65b/65zx69f48df/+Lf//6Ooous2AAAAAXRSTlMAQObYZgAAAaxJREFUaN5jYEACjEdrz5xqZmXAAIy3ky+wMMt8xJTgL+z1ZmGeepcRXYb/TiuL1wvmhh4M4xhPtx329mJ2223PiqqL//mR3KqWS8ueyhqv2MkPV84oJydnn7RONkpK5pG7lN0+RrjExfiaXfVFLLLGE3PcmC1cn9xkhUpMETGI1Ld0YAEqX7jp5A5nhw3nwFLP1swQMchILNGP6bZwfcjHZ2vVv/w1yDzGYz55qXrmxVoivsHpD/Z8+uIhzWXLB5Y5kZaZIubPGZ3VGChz+d3nl2/7JLjW8wEllppJ6jIJqysyJey1rLv1/uz1/Su5JXg9gDLZYUaSigIK6pxxG51WT59w4Hw7L4+hDS8D41ZTNQ0xNnltIz2OpsVb5lTO5zXhucotzc3AaMrJKcrExK4pzhGu1um0avvBmVzTPHm45jEwaoqbFyiz+bELC7EzBU2qnrV2sonNcc8KawYzUQ4xIYHYfA55VRVdFZ2OBV3ShuXbHm+WYNDREmZjUhaP0GDTlgxRWLKIh7vMerbLvSulDIcCBEMFBUWF2AWUVJXm3ndxtHK+9urNhxuOAJk6glB3deULAAAAAElFTkSuQmCC" class="w-6 h-6" alt="Recursos">
+    <div>
+      <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Recursos</p>
+      <p class="text-base font-bold text-ink" x-text="fmt(kpi.resources)">{{ kpi.resources|intcomma }}</p>
+    </div>
+  </div>
+  <div class="card !p-3 flex items-center gap-2 cursor-pointer hover:ring-2 hover:ring-[var(--ik-sea)]/30 transition-all" @click="kpiModal='troops'">
+    <i class="bi bi-shield-shaded text-lg" style="color: #c9553e;"></i>
+    <div>
+      <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Tropas</p>
+      <p class="text-base font-bold text-ink" x-text="fmt(kpi.troops)">{{ kpi.troops|intcomma }}</p>
+    </div>
+  </div>
+  <div class="card !p-3 flex items-center gap-2 cursor-pointer hover:ring-2 hover:ring-[var(--ik-sea)]/30 transition-all" @click="kpiModal='ships'">
+    <i class="bi bi-water text-lg" style="color: var(--ik-sea);"></i>
+    <div>
+      <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Navios</p>
+      <p class="text-base font-bold text-ink" x-text="fmt(kpi.ships)">{{ kpi.ships|intcomma }}</p>
+    </div>
+  </div>
+</div>

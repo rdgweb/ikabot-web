@@ -1,0 +1,261 @@
+{% extends "base_detail.html" %}
+{% load hub_tags %}
+
+{% block title %}{{ node.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'accounts:node-list' %}" class="hover:text-ink">Nós</a>
+  <span class="mx-1">/</span> <span class="text-ink">{{ node.name }}</span>
+{% endblock %}
+
+{% block detail_title %}{{ node.name }}{% endblock %}
+{% block detail_subtitle %}{{ node.location|default:"Sem localização definida" }}{% endblock %}
+
+{% block detail_actions %}
+<a href="{% url 'accounts:node-deploy' node.pk %}" class="btn btn-secondary btn-sm">
+  <i class="bi bi-terminal"></i> Deploy
+</a>
+<a href="{% url 'accounts:node-edit' node.pk %}" class="btn btn-secondary btn-sm">
+  <i class="bi bi-pencil"></i> Editar
+</a>
+<button type="button"
+        onclick="return openConfirm({
+          title: '{% if node.active %}Desativar{% else %}Ativar{% endif %} agent',
+          message: '{% if node.active %}Desativar{% else %}Ativar{% endif %} o agent {{ node.name|escapejs }}?',
+          style: '{% if node.active %}danger{% else %}primary{% endif %}',
+          confirmLabel: '{% if node.active %}Desativar{% else %}Ativar{% endif %}',
+          onConfirm: () => htmx.ajax('POST', '{% url 'accounts:node-toggle' node.pk %}', {swap: 'none'})
+        })"
+        class="btn {% if node.active %}btn-secondary{% else %}btn-primary{% endif %} btn-sm">
+  <i class="bi {% if node.active %}bi-pause-circle{% else %}bi-play-circle{% endif %}"></i>
+  {% if node.active %}Desativar{% else %}Ativar{% endif %}
+</button>
+<button type="button"
+        onclick="return openConfirm({
+          title: 'Excluir no',
+          message: 'Excluir o no {{ node.name|escapejs }}? As contas vinculadas e jobs associados tambem serao removidos.',
+          action: '{% url 'accounts:node-delete' node.pk %}',
+          method: 'post',
+          style: 'danger',
+          confirmLabel: 'Excluir'
+        })"
+        class="btn btn-danger btn-sm">
+  <i class="bi bi-trash"></i> Excluir
+</button>
+{% endblock %}
+
+{% block detail_main %}
+{% if ip_conflict_nodes %}
+<div class="card !bg-red-50 !border-red-200" style="border: 1px solid;">
+  <div class="flex items-center gap-2 text-red-700">
+    <i class="bi bi-exclamation-triangle-fill text-lg"></i>
+    <div>
+      <p class="text-sm font-semibold">Conflito de IP detectado</p>
+      <p class="text-xs mt-0.5">
+        O IP <span class="font-mono font-bold">{{ node.external_ip }}</span> é compartilhado com:
+        {% for cn in ip_conflict_nodes %}
+          <a href="{% url 'accounts:node-detail' cn.pk %}" class="font-semibold underline">{{ cn.name }}</a>{% if not forloop.last %},{% endif %}
+        {% endfor %}
+        — risco de banimento por multiconta.
+      </p>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Agent info -->
+<div class="card">
+  <h3 class="text-sm font-semibold text-ink mb-3">Informações do Agent</h3>
+  <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+    <div>
+      <dt class="text-muted">Status</dt>
+      <dd class="mt-0.5">
+        {% if node.is_online %}
+          <span class="badge badge-success"><i class="bi bi-circle-fill text-xs"></i> Online</span>
+        {% else %}
+          <span class="badge badge-warning"><i class="bi bi-circle text-xs"></i> Offline</span>
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted">Versão</dt>
+      <dd class="mt-0.5 font-mono">{{ node.agent_version|default:"—" }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Host</dt>
+      <dd class="mt-0.5 font-mono">{{ node.agent_host|default:"—" }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">IP Externo</dt>
+      <dd class="mt-0.5 font-mono">
+        {{ node.external_ip|default:"—" }}
+        {% if node.ip_source %}
+          <span class="text-muted text-xs ml-1">({{ node.ip_source }})</span>
+        {% endif %}
+        {% if node.ip_checked_at %}
+          <span class="text-muted text-xs ml-1">{{ node.ip_checked_at|date:"d/m H:i" }}</span>
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted">Última atividade</dt>
+      <dd class="mt-0.5">{{ node.agent_last_seen_at|default:"Nunca" }}</dd>
+    </div>
+  </dl>
+</div>
+
+{# ── Proxy card ── #}
+<div class="card">
+  <div class="flex items-center justify-between mb-3">
+    <h3 class="text-sm font-semibold text-ink"><i class="bi bi-shield-check"></i> Proxy</h3>
+    {% if proxy_profile %}
+      {% if proxy_profile.last_test_status is True %}
+        <span class="badge badge-success">Verificado</span>
+      {% elif proxy_profile.last_test_status is False %}
+        <span class="badge badge-danger">Falhou</span>
+      {% else %}
+        <span class="badge badge-warning">Não testado</span>
+      {% endif %}
+    {% else %}
+      <span class="badge badge-secondary">Sem proxy</span>
+    {% endif %}
+  </div>
+
+  {% if proxy_profile %}
+  <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+    <div>
+      <dt class="text-muted">Endereço</dt>
+      <dd class="mt-0.5 font-mono">{{ proxy_profile.address }}:{{ proxy_profile.port }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">País</dt>
+      <dd class="mt-0.5">
+        {% if proxy_profile.country_code %}
+          <span class="badge badge-info">{{ proxy_profile.country_code }}</span>
+        {% else %}
+          —
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted">IP testado</dt>
+      <dd class="mt-0.5 font-mono">{{ proxy_profile.last_test_ip|default:"—" }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Latência</dt>
+      <dd class="mt-0.5">
+        {% if proxy_profile.last_test_latency_ms %}
+          {{ proxy_profile.last_test_latency_ms }}ms
+        {% else %}
+          —
+        {% endif %}
+      </dd>
+    </div>
+    {% if proxy_profile.last_test_at %}
+    <div class="col-span-2">
+      <dt class="text-muted">Último teste</dt>
+      <dd class="mt-0.5 text-xs text-muted">{{ proxy_profile.last_test_at|date:"d/m/Y H:i:s" }}</dd>
+    </div>
+    {% endif %}
+  </dl>
+
+  <div class="mt-4 pt-3" style="border-top: 1px solid var(--ik-line);">
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-secondary btn-sm"
+              hx-post="{% url 'accounts:node-proxy-test' node.pk %}"
+              hx-target="#proxy-test-result"
+              hx-swap="innerHTML">
+        <i class="bi bi-lightning"></i> Testar Proxy
+      </button>
+      <a href="{% url 'proxy:edit' proxy_profile.pk %}" class="btn btn-secondary btn-sm">
+        <i class="bi bi-pencil"></i> Editar Proxy
+      </a>
+    </div>
+    <div id="proxy-test-result"></div>
+  </div>
+  {% else %}
+  <p class="text-sm text-muted mb-3">Nenhum proxy atribuído. Sem proxy, o agent usará o IP direto do servidor — risco de banimento.</p>
+  <a href="{% url 'accounts:node-edit' node.pk %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg"></i> Atribuir Proxy
+  </a>
+  {% endif %}
+</div>
+
+<!-- Accounts linked to this node -->
+<div class="card">
+  <div class="flex items-center justify-between mb-3">
+    <h3 class="text-sm font-semibold text-ink">Contas vinculadas ({{ accounts|length }})</h3>
+    <a href="{% url 'accounts:account-create' %}?node={{ node.pk }}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-lg"></i> Vincular
+    </a>
+  </div>
+  {% if accounts %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Label</th>
+        <th>Servidor</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for acc in accounts %}
+      <tr>
+        <td>
+          <a href="{% url 'accounts:account-detail' acc.pk %}" class="link-sea">
+            {{ acc.label }}
+          </a>
+        </td>
+        <td class="text-muted text-xs font-mono">{{ acc.server }}</td>
+        <td>
+          {% if acc.active %}
+            <span class="badge badge-success">Ativo</span>
+          {% else %}
+            <span class="badge badge-secondary">Inativo</span>
+          {% endif %}
+        </td>
+        <td class="text-right">
+          <a href="{% url 'accounts:account-edit' acc.pk %}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-pencil"></i>
+          </a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-sm text-muted text-center py-4">Nenhuma conta vinculada.</p>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block detail_sidebar %}
+<div class="card">
+  <h3 class="text-sm font-semibold text-ink mb-3">Detalhes</h3>
+  <dl class="space-y-2 text-sm">
+    <div>
+      <dt class="text-muted">ID</dt>
+      <dd class="font-mono text-xs mt-0.5">{{ node.pk }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Criado em</dt>
+      <dd class="mt-0.5">{{ node.created_at }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Atualizado em</dt>
+      <dd class="mt-0.5">{{ node.updated_at }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Ativo</dt>
+      <dd class="mt-0.5">
+        {% if node.active %}
+          <span class="text-green-600">Sim</span>
+        {% else %}
+          <span class="text-red-600">Não</span>
+        {% endif %}
+      </dd>
+    </div>
+  </dl>
+</div>
+{% endblock %}

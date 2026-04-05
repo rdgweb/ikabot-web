@@ -1,0 +1,157 @@
+{% load static %}
+<div class="grid min-h-0 h-full" style="grid-template-rows:auto minmax(0,1fr);">
+  <div class="gm-header flex items-center justify-between px-4 py-3 shrink-0">
+    <div class="flex items-center gap-2">
+      <i class="bi bi-graph-up-arrow" :class="kpi.income>=0?'gm-text-positive':'gm-text-negative'"></i>
+      <div>
+        <span class="gm-title gm-text-title font-bold text-sm tracking-wide block">RENDA / HORA</span>
+        <span class="gm-subtitle gm-text-label text-[11px]">Quem sustenta, quem drena e qual o impacto nas proximas 24h</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-4">
+      <span class="gm-header-value"
+            :class="kpi.income>=0?'gm-text-positive':'gm-text-negative'"
+            x-text="(kpi.income>0?'+':'')+fmt(kpi.income)+'/h'"></span>
+      <button @click="kpiModal=null"><i class="bi bi-x-lg gm-close"></i></button>
+    </div>
+  </div>
+  <div class="gm-body flex-1 min-h-0 p-3 space-y-3">
+    {# ── 4 KPI cards ── #}
+    <div class="grid grid-cols-2 xl:grid-cols-4 gap-2">
+      <div class="gm-card rounded-lg p-2.5">
+        <div class="gm-card-label">Liquido global</div>
+        <div class="text-lg font-bold font-mono mt-1" :class="kpi.income>=0?'gm-text-positive':'gm-text-negative'" x-text="signedFmt(kpi.income)"></div>
+      </div>
+      <div class="gm-card rounded-lg p-2.5">
+        <div class="gm-card-label">Projecao 24h</div>
+        <div class="text-lg font-bold font-mono mt-1" :class="incomeInsights().delta24>=0?'gm-text-positive':'gm-text-negative'" x-text="signedFmt(incomeInsights().delta24)"></div>
+      </div>
+      <div class="gm-card rounded-lg p-2.5">
+        <div class="gm-card-label">Contas positivas</div>
+        <div class="text-lg font-bold font-mono mt-1 gm-text-positive" x-text="incomeInsights().positiveCount"></div>
+      </div>
+      <div class="gm-card rounded-lg p-2.5">
+        <div class="gm-card-label">Contas negativas</div>
+        <div class="text-lg font-bold font-mono mt-1" :class="incomeInsights().negativeCount?'gm-text-negative':'gm-text-positive'" x-text="incomeInsights().negativeCount"></div>
+      </div>
+    </div>
+
+    {# ── History chart ── #}
+    <div class="gm-section rounded-lg p-3">
+      <div class="flex items-center justify-between mb-2">
+        <h4 class="gm-section-title">Historico de renda</h4>
+        <span class="gm-section-hint" x-text="historyState('income').scopeLabel"></span>
+      </div>
+      <template x-if="historyState('income').available">
+        <div>
+          <div class="gm-chart-box-green h-36 rounded-lg p-2">
+            <canvas id="income-history-chart"></canvas>
+          </div>
+          <div class="gm-chart-footer mt-2 flex items-center justify-between text-[11px]">
+            <span class="gm-text-label" x-text="'Inicio: ' + signedFmt(historyState('income').first)"></span>
+            <span :class="historyState('income').delta>=0?'gm-text-positive':'gm-text-negative'" x-text="'Delta: ' + signedFmt(historyState('income').delta)"></span>
+            <span class="gm-text-label" x-text="'Atual: ' + signedFmt(historyState('income').last)"></span>
+          </div>
+        </div>
+      </template>
+      <template x-if="!historyState('income').available">
+        <div class="gm-empty" x-text="historyState('income').reason"></div>
+      </template>
+    </div>
+
+    {# ── Ranking + Alert grid ── #}
+    <div class="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-3 items-start">
+      <div class="gm-section rounded-lg p-3">
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="gm-section-title">Melhor resultado</h4>
+          <span class="gm-section-hint">ranking por liquido/h</span>
+        </div>
+        <div class="space-y-2">
+          <template x-for="c in topIncomeAccounts()" :key="'income-top-'+c.uid">
+            <div class="gm-item rounded-lg p-2.5">
+              <div class="flex items-center justify-between gap-2 text-[11px]">
+                <span class="font-semibold truncate gm-text-player" x-text="c.player"></span>
+                <span class="font-mono font-bold" :class="c.income>=0?'gm-text-positive':'gm-text-negative'" x-text="signedFmt(c.income)"></span>
+              </div>
+              <div class="gm-bar-track-sm mt-1 rounded-full overflow-hidden" style="background:#d6e5d0;">
+                <div class="h-full rounded-full" style="background:linear-gradient(90deg,#77b35d,#2d7a2d);" :style="'width:'+Math.max(c.incomeWidth,2)+'%'"></div>
+              </div>
+              <div class="mt-1 flex items-center justify-between text-[10px] gm-text-label">
+                <span x-text="'Bruta ' + signedFmt(c.grossIncome)"></span>
+                <span x-text="'24h ' + signedFmt(c.delta24)"></span>
+              </div>
+            </div>
+          </template>
+          <div x-show="!topIncomeAccounts().length" class="gm-empty">
+            Nenhum dado disponivel para o ranking atual.
+          </div>
+        </div>
+      </div>
+
+      <div class="gm-section rounded-lg p-3">
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="gm-section-title">Contas em alerta</h4>
+          <span class="gm-section-hint">quem puxa o KPI para baixo</span>
+        </div>
+        <div class="space-y-2" x-show="negativeIncomeAccounts().length">
+          <template x-for="c in negativeIncomeAccounts()" :key="'income-risk-'+c.uid">
+            <div class="gm-item rounded-lg p-2.5">
+              <div class="flex items-center justify-between gap-2 text-[11px]">
+                <span class="font-semibold truncate gm-text-player" x-text="c.player"></span>
+                <span class="font-mono font-bold text-red-600" x-text="signedFmt(c.income)"></span>
+              </div>
+              <div class="mt-1 grid grid-cols-3 gap-1 text-[10px]">
+                <span class="gm-text-positive" x-text="'Bruta ' + signedFmt(c.grossIncome)"></span>
+                <span class="gm-text-negative" x-text="'Militar ' + fmt(Math.abs(c.upkeep || 0))"></span>
+                <span class="gm-text-negative" x-text="'Cient. ' + fmt(Math.abs(c.scientists || 0))"></span>
+              </div>
+            </div>
+          </template>
+        </div>
+        <div x-show="!negativeIncomeAccounts().length" class="gm-empty-ok">
+          Todas as contas filtradas estao com liquido positivo.
+        </div>
+      </div>
+    </div>
+
+    {# ── Composicao financeira table ── #}
+    <div class="gm-section rounded-lg p-3">
+      <div class="flex items-center justify-between mb-3">
+        <h4 class="gm-section-title">Composicao financeira</h4>
+        <span class="gm-section-hint">visao compacta por conta</span>
+      </div>
+      <div class="overflow-x-auto gm-item rounded-lg">
+        <table class="gm-table">
+          <thead>
+            <tr>
+              <th class="text-left py-2 px-3">Conta</th>
+              <th class="text-right py-2 px-2" style="color:#5f8b52;">Bruta</th>
+              <th class="text-right py-2 px-2" style="color:#b36a2c;">Militar</th>
+              <th class="text-right py-2 px-2" style="color:#a44738;">Cientistas</th>
+              <th class="text-right py-2 px-3">Liquido/h</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="c in incomeRanking('asc')" :key="'income-composition-'+c.uid">
+              <tr>
+                <td class="py-2.5 px-3">
+                  <div class="font-semibold truncate gm-text-player" x-text="c.player"></div>
+                  <div class="text-[10px] gm-text-label" x-text="c.serverLabel || 'Conta filtrada'"></div>
+                </td>
+                <td class="py-2.5 px-2 text-right font-mono font-semibold gm-text-positive" x-text="signedFmt(c.grossIncome)"></td>
+                <td class="py-2.5 px-2 text-right font-mono gm-text-warning" x-text="'-' + fmt(Math.abs(c.upkeep || 0))"></td>
+                <td class="py-2.5 px-2 text-right font-mono gm-text-negative" x-text="'-' + fmt(Math.abs(c.scientists || 0))"></td>
+                <td class="py-2.5 px-3 text-right">
+                  <span class="gm-pill" :class="c.income>=0?'gm-pill-positive':'gm-pill-negative'" x-text="signedFmt(c.income)"></span>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <div x-show="!incomeRanking('asc').length" class="p-3 text-sm text-center gm-text-label">
+          Nenhum dado disponivel para a composicao atual.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

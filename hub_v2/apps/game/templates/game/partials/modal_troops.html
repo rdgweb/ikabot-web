@@ -1,0 +1,147 @@
+{% load static %}
+<div class="grid min-h-0 h-full" style="grid-template-rows:auto minmax(0,1fr);">
+  <div class="gm-header flex items-center justify-between px-4 py-3 shrink-0">
+    <div class="flex items-center gap-2">
+      <i class="bi bi-shield-shaded" style="color:#c9553e;"></i>
+      <div>
+        <span class="gm-title gm-text-title font-bold text-sm tracking-wide block">TROPAS</span>
+        <span class="gm-subtitle gm-text-label text-[11px]">Distribuicao total por conta e servidor</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-4">
+      <span class="gm-header-value gm-text-title" x-text="fmt(kpi.troops)"></span>
+      <button @click="kpiModal=null"><i class="bi bi-x-lg gm-close"></i></button>
+    </div>
+  </div>
+  <div class="gm-body flex-1 min-h-0 p-4 space-y-4">
+    {# -- 4 KPI cards -- #}
+    <div class="grid grid-cols-1 sm:grid-cols-4 gap-2 mb-4">
+      <div class="gm-card rounded-lg p-3">
+        <div class="gm-card-label">Tropas totais</div>
+        <div class="gm-card-value mt-1" style="color:#c9553e;" x-text="fmt(kpi.troops)"></div>
+      </div>
+      <div class="gm-card rounded-lg p-3">
+        <div class="gm-card-label">Media por conta</div>
+        <div class="gm-card-value gm-text-title mt-1" x-text="fmt(troopInsights().avg)"></div>
+      </div>
+      <div class="gm-card rounded-lg p-3">
+        <div class="gm-card-label">Maior exercito</div>
+        <div class="text-sm font-bold mt-1 truncate gm-text-title" x-text="troopInsights().topName"></div>
+        <div class="text-[11px] font-mono mt-1" style="color:#c9553e;" x-text="fmt(troopInsights().topCount)"></div>
+      </div>
+      <div class="gm-card rounded-lg p-3">
+        <div class="gm-card-label">Contas visiveis</div>
+        <div class="gm-card-value gm-text-title mt-1" x-text="troopInsights().visibleCount"></div>
+      </div>
+    </div>
+
+    {# -- History chart -- #}
+    <div class="gm-section rounded-lg p-3">
+      <div class="flex items-center justify-between mb-2">
+        <h4 class="gm-section-title">Historico de tropas</h4>
+        <span class="gm-section-hint" x-text="historyState('troops').scopeLabel"></span>
+      </div>
+      <template x-if="historyState('troops').available">
+        <div>
+          <div class="h-48 rounded-lg p-2" style="background:#fff5f3;border:1px solid #eed5d0;">
+            <canvas id="troops-history-chart"></canvas>
+          </div>
+          <div class="gm-chart-footer mt-2 flex items-center justify-between text-[11px]">
+            <span class="gm-text-label" x-text="'Inicio: ' + fmt(historyState('troops').first)"></span>
+            <span :class="historyState('troops').delta>=0?'gm-text-positive':'gm-text-negative'" x-text="'Delta: ' + signedFmt(historyState('troops').delta)"></span>
+            <span class="gm-text-label" x-text="'Atual: ' + fmt(historyState('troops').last)"></span>
+          </div>
+        </div>
+      </template>
+      <template x-if="!historyState('troops').available">
+        <div class="gm-empty" x-text="historyState('troops').reason"></div>
+      </template>
+    </div>
+
+    {# -- Ranking + Composition grid -- #}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="gm-section rounded-lg p-3">
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="gm-section-title">Ranking por conta</h4>
+          <span class="gm-section-hint">participacao nas tropas totais</span>
+        </div>
+        <div class="space-y-2">
+          <template x-for="account in troopAccountRanking().slice(0, 5)" :key="'troop-rank-'+account.uid">
+            <div class="gm-item rounded-lg p-2.5">
+              <div class="flex items-center justify-between gap-2 text-[11px]">
+                <span class="font-semibold truncate gm-text-player" x-text="account.player"></span>
+                <span class="font-mono font-bold" style="color:#c9553e;" x-text="fmt(account.troops)"></span>
+              </div>
+              <div class="gm-bar-track mt-1 rounded-full overflow-hidden">
+                <div class="h-full rounded-full" style="background:linear-gradient(90deg,#c9553e,#e58e67);" :style="'width:'+Math.max(account.share,2)+'%'"></div>
+              </div>
+              <div class="mt-1 flex items-center justify-between text-[10px] gm-text-label">
+                <span x-text="account.share + '%'"></span>
+              </div>
+            </div>
+          </template>
+          <div x-show="!troopAccountRanking().length" class="gm-empty">
+            Nenhum dado disponivel para o ranking atual.
+          </div>
+        </div>
+      </div>
+
+      <div class="gm-section rounded-lg p-3">
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="gm-section-title">Composicao</h4>
+          <span class="gm-section-hint">tipos de unidade</span>
+        </div>
+        <div class="space-y-2">
+          <template x-for="unit in troopComposition()" :key="'troop-comp-'+unit.name">
+            <div class="gm-item rounded-lg p-2.5">
+              <div class="flex items-center justify-between gap-2 text-[11px]">
+                <span class="font-semibold truncate gm-text-player" x-text="unit.name"></span>
+                <span class="font-mono font-bold" style="color:#c9553e;" x-text="fmt(unit.count)"></span>
+              </div>
+              <div class="gm-bar-track-sm mt-1 rounded-full overflow-hidden">
+                <div class="h-full rounded-full" style="background:#c9553e;" :style="'width:'+Math.max(unit.share,2)+'%'"></div>
+              </div>
+              <div class="mt-1 text-[10px] gm-text-label" x-text="unit.share + '%'"></div>
+            </div>
+          </template>
+          <div x-show="!troopComposition().length" class="gm-empty">
+            Nenhum dado de composicao disponivel.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# -- Strongest cities table -- #}
+    <div class="gm-section rounded-lg p-3">
+      <div class="flex items-center justify-between mb-2">
+        <h4 class="gm-section-title">Cidades mais fortes</h4>
+        <span class="gm-section-hint">por total de tropas</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="gm-table w-full text-[11px]">
+          <thead>
+            <tr>
+              <th class="text-left">Cidade</th>
+              <th class="text-right">Tropas</th>
+              <th class="text-right">Recursos</th>
+              <th class="text-right">Vinho</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="city in strongestTroopCities()" :key="'troop-city-'+city.id">
+              <tr>
+                <td class="truncate max-w-[140px]" x-text="city.name"></td>
+                <td class="text-right font-mono font-bold" style="color:#c9553e;" x-text="fmt(city.troops)"></td>
+                <td class="text-right font-mono" x-text="fmt(city.resources)"></td>
+                <td class="text-right font-mono" x-text="fmt(city.wine)"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <div x-show="!strongestTroopCities().length" class="gm-empty mt-2">
+          Nenhuma cidade com tropas encontrada.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

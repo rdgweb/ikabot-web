@@ -1,0 +1,99 @@
+{% extends "base_detail.html" %}
+
+{% block title %}{{ profile.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'profiles:profile-list' %}" class="hover:text-ink">Perfis</a>
+  <span class="mx-1">/</span> <span class="text-ink">{{ profile.name }}</span>
+{% endblock %}
+
+{% block detail_title %}{{ profile.name }}{% endblock %}
+{% block detail_subtitle %}Código da ação: {{ profile.action_code }}{% endblock %}
+
+{% block detail_actions %}
+<a href="{% url 'profiles:profile-edit' profile.pk %}" class="btn btn-secondary btn-sm">
+  <i class="bi bi-pencil"></i> Editar
+</a>
+<button type="button"
+        onclick="return openConfirm({
+          title: 'Excluir perfil',
+          message: 'Excluir o perfil {{ profile.name|escapejs }}? Esta acao nao pode ser desfeita.',
+          action: '{% url 'profiles:profile-delete' profile.pk %}',
+          method: 'post',
+          style: 'danger',
+          confirmLabel: 'Excluir'
+        })"
+        class="btn btn-danger btn-sm">
+  <i class="bi bi-trash"></i> Excluir
+</button>
+{% endblock %}
+
+{% block detail_main %}
+<div class="card">
+  <h3 class="text-sm font-semibold text-ink mb-3">Informações do Perfil</h3>
+  <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+    <div>
+      <dt class="text-muted">Nome</dt>
+      <dd class="mt-0.5">{{ profile.name }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Código da Ação</dt>
+      <dd class="mt-0.5 font-mono">{{ profile.action_code }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Timeout</dt>
+      <dd class="mt-0.5">{{ profile.timeout_sec }}s</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Status</dt>
+      <dd class="mt-0.5">
+        {% if profile.enabled %}
+          <span class="badge badge-success">Ativo</span>
+        {% else %}
+          <span class="badge badge-secondary">Inativo</span>
+        {% endif %}
+      </dd>
+    </div>
+  </dl>
+  {% if profile.description %}
+  <div class="mt-4 pt-3 border-t border-line">
+    <dt class="text-muted text-sm">Descrição</dt>
+    <dd class="mt-1 text-sm text-ink">{{ profile.description }}</dd>
+  </div>
+  {% endif %}
+  <div class="mt-4 pt-3 border-t border-line">
+    <dt class="text-muted text-sm">Inputs (JSON)</dt>
+    <dd class="mt-1 text-sm text-ink font-mono bg-sand rounded p-2 whitespace-pre-wrap">{{ profile.inputs_json }}</dd>
+  </div>
+</div>
+{% endblock %}
+
+{% block detail_sidebar %}
+<div class="card">
+  <h3 class="text-sm font-semibold text-ink mb-3">Detalhes</h3>
+  <dl class="space-y-2 text-sm">
+    <div>
+      <dt class="text-muted">ID</dt>
+      <dd class="font-mono text-xs mt-0.5">{{ profile.pk }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Status</dt>
+      <dd class="mt-0.5">
+        {% if profile.enabled %}
+          <span class="badge badge-success">Ativo</span>
+        {% else %}
+          <span class="badge badge-secondary">Inativo</span>
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted">Criado em</dt>
+      <dd class="mt-0.5">{{ profile.created_at }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Atualizado em</dt>
+      <dd class="mt-0.5">{{ profile.updated_at }}</dd>
+    </div>
+  </dl>
+</div>
+{% endblock %}

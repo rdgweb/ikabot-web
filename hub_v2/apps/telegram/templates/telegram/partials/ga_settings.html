@@ -1,0 +1,162 @@
+{# ── Configuracao Telegram de uma subconta (GameAccount) ── #}
+
+<div class="px-3 py-3 border-t border-line bg-[var(--ik-sand-light)]"
+     id="tg-ga-inner-{{ ga.pk }}">
+
+  {% if is_linked %}
+    {# ── Chat proprio vinculado ── #}
+    <div class="mb-3">
+      <div class="px-2 py-1.5 bg-green-50 border border-green-200 rounded text-xs text-green-700 mb-2">
+        <i class="bi bi-check-circle mr-1"></i>
+        Chat proprio vinculado
+      </div>
+      <dl class="flex gap-4 text-xs">
+        <div>
+          <dt class="text-muted">Chat ID</dt>
+          <dd class="font-mono mt-0.5">{{ tg_config.chat_id }}</dd>
+        </div>
+        {% if tg_config.telegram_username %}
+        <div>
+          <dt class="text-muted">Username</dt>
+          <dd class="mt-0.5">@{{ tg_config.telegram_username }}</dd>
+        </div>
+        {% endif %}
+      </dl>
+    </div>
+
+  {% elif uses_global %}
+    {# ── Usando chat global ── #}
+    <div class="mb-3">
+      <div class="px-2 py-1.5 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
+        <i class="bi bi-globe mr-1"></i>
+        Usando chat global
+        {% if bot_config.telegram_username %}
+          — @{{ bot_config.telegram_username }}
+        {% endif %}
+      </div>
+    </div>
+
+  {% else %}
+    {# ── Nao vinculado e sem global ── #}
+    <div class="text-center py-2 mb-3">
+      <p class="text-xs text-muted mb-2">
+        {% if global_linked %}
+          Usando chat global. Vincule um chat proprio para override.
+        {% else %}
+          Nenhum chat vinculado (nem global, nem individual).
+        {% endif %}
+      </p>
+      {% if bot_active %}
+        <button hx-post="{% url 'telegram:ga-start-link' ga.pk %}"
+                hx-target="#tg-ga-inner-{{ ga.pk }}"
+                hx-swap="outerHTML"
+                hx-push-url="false"
+                class="btn btn-primary btn-sm text-xs">
+          <i class="bi bi-link-45deg"></i> Vincular Chat Proprio
+        </button>
+      {% else %}
+        <button disabled
+                class="btn btn-primary btn-sm text-xs opacity-50 cursor-not-allowed"
+                title="Configure o bot primeiro">
+          <i class="bi bi-link-45deg"></i> Vincular
+        </button>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {# ── Form de toggles (sempre visivel se tem chat global ou proprio) ── #}
+  {% if is_linked or uses_global %}
+    <form hx-post="{% url 'telegram:ga-settings' ga.pk %}"
+          hx-target="#tg-ga-inner-{{ ga.pk }}"
+          hx-swap="outerHTML"
+          hx-push-url="false">
+      {% csrf_token %}
+
+      {# Toggle principal: enabled #}
+      {% for item in enriched_fields %}
+        {% if not item.is_toggle %}
+          <div class="flex items-center justify-between py-1.5">
+            <label for="{{ item.field.id_for_label }}" class="text-xs font-medium text-ink cursor-pointer">
+              {{ item.field.label }}
+            </label>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="hidden" name="{{ item.field.html_name }}" value="">
+              <input type="checkbox" name="{{ item.field.html_name }}"
+                     id="{{ item.field.id_for_label }}"
+                     {% if item.field.value %}checked{% endif %}
+                     class="sr-only peer">
+              <div class="w-8 h-4 bg-gray-300 peer-focus:outline-none rounded-full peer
+                          peer-checked:after:translate-x-full peer-checked:after:border-white
+                          after:content-[''] after:absolute after:top-[1px] after:start-[2px]
+                          after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all
+                          peer-checked:bg-[var(--ik-sea)]"></div>
+            </label>
+          </div>
+        {% endif %}
+      {% endfor %}
+
+      {# Toggles de evento #}
+      <div class="mt-2 pt-2 border-t border-line">
+        <p class="text-[10px] font-semibold text-muted uppercase tracking-wide mb-1.5">
+          Notificacoes
+        </p>
+      </div>
+
+      {% for item in enriched_fields %}
+        {% if item.is_toggle %}
+          <div class="flex items-center justify-between py-1">
+            <div class="flex items-center gap-1.5">
+              {% if item.icon %}
+                <i class="bi {{ item.icon }} text-muted" style="font-size: 10px;"></i>
+              {% endif %}
+              <label for="{{ item.field.id_for_label }}" class="text-xs text-ink cursor-pointer"
+                     title="{{ item.description }}">
+                {{ item.field.label }}
+              </label>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="hidden" name="{{ item.field.html_name }}" value="">
+              <input type="checkbox" name="{{ item.field.html_name }}"
+                     id="{{ item.field.id_for_label }}"
+                     {% if item.field.value %}checked{% endif %}
+                     class="sr-only peer">
+              <div class="w-8 h-4 bg-gray-300 peer-focus:outline-none rounded-full peer
+                          peer-checked:after:translate-x-full peer-checked:after:border-white
+                          after:content-[''] after:absolute after:top-[1px] after:start-[2px]
+                          after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all
+                          peer-checked:bg-[var(--ik-sea)]"></div>
+            </label>
+          </div>
+        {% endif %}
+      {% endfor %}
+
+      <div class="flex justify-between items-center mt-3 pt-2 border-t border-line">
+        <div class="flex gap-2">
+          {% if is_linked %}
+            <button hx-post="{% url 'telegram:ga-unlink' ga.pk %}"
+                    hx-target="#tg-ga-inner-{{ ga.pk }}"
+                    hx-swap="outerHTML"
+                    hx-push-url="false"
+                    hx-confirm="Remover chat proprio? A subconta voltara a usar o chat global."
+                    class="text-[10px] text-red-500 hover:text-red-700 transition-colors"
+                    type="button">
+              <i class="bi bi-unlink"></i> Remover chat proprio
+            </button>
+          {% elif uses_global and bot_active %}
+            <button hx-post="{% url 'telegram:ga-start-link' ga.pk %}"
+                    hx-target="#tg-ga-inner-{{ ga.pk }}"
+                    hx-swap="outerHTML"
+                    hx-push-url="false"
+                    class="text-[10px] text-sea hover:text-ink transition-colors"
+                    type="button">
+              <i class="bi bi-link-45deg"></i> Vincular chat proprio
+            </button>
+          {% endif %}
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm text-xs !px-2 !py-1">
+          <i class="bi bi-check-lg"></i> Salvar
+        </button>
+      </div>
+    </form>
+  {% endif %}
+</div>

@@ -1,0 +1,195 @@
+{% extends "base_detail.html" %}
+
+{% block title %}{{ account.label }}{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'accounts:account-list' %}" class="hover:text-ink">Contas</a>
+  <span class="mx-1">/</span> <span class="text-ink">{{ account.label }}</span>
+{% endblock %}
+
+{% block detail_title %}{{ account.label }}{% endblock %}
+{% block detail_subtitle %}{{ account.email }}{% endblock %}
+
+{% block detail_actions %}
+<button hx-post="{% url 'game:run-action' %}"
+        hx-vals='{"account_id": "{{ account.pk }}", "action_code": "101"}'
+        hx-swap="none"
+        class="btn btn-primary btn-sm" title="Descobrir personagens no lobby Gameforge">
+  <i class="bi bi-search"></i> Discover Characters
+</button>
+<a href="{% url 'accounts:account-edit' account.pk %}" class="btn btn-secondary btn-sm">
+  <i class="bi bi-pencil"></i> Editar
+</a>
+<button type="button"
+        onclick="return openConfirm({
+          title: '{% if account.active %}Desativar{% else %}Ativar{% endif %} conta',
+          message: '{% if account.active %}Desativar{% else %}Ativar{% endif %} a conta {{ account.label|escapejs }}?',
+          style: '{% if account.active %}danger{% else %}primary{% endif %}',
+          confirmLabel: '{% if account.active %}Desativar{% else %}Ativar{% endif %}',
+          onConfirm: () => htmx.ajax('POST', '{% url 'accounts:account-toggle' account.pk %}', {swap: 'none'})
+        })"
+        class="btn {% if account.active %}btn-secondary{% else %}btn-primary{% endif %} btn-sm">
+  <i class="bi {% if account.active %}bi-pause-circle{% else %}bi-play-circle{% endif %}"></i>
+  {% if account.active %}Desativar{% else %}Ativar{% endif %}
+</button>
+<button type="button"
+        onclick="return openConfirm({
+          title: 'Excluir conta',
+          message: 'Excluir a conta {{ account.label|escapejs }}? Todos os jobs e dados associados serao removidos.',
+          action: '{% url 'accounts:account-delete' account.pk %}',
+          method: 'post',
+          style: 'danger',
+          confirmLabel: 'Excluir'
+        })"
+        class="btn btn-danger btn-sm">
+  <i class="bi bi-trash"></i> Excluir
+</button>
+{% endblock %}
+
+{% block detail_main %}
+<div class="card mb-4">
+  <h3 class="text-sm font-semibold text-ink mb-3">Informacoes do Lobby</h3>
+  <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+    <div>
+      <dt class="text-muted">Email</dt>
+      <dd class="mt-0.5">{{ account.email }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">No</dt>
+      <dd class="mt-0.5">
+        <a href="{% url 'accounts:node-detail' account.node.pk %}" class="link-sea">
+          {{ account.node.name }}
+        </a>
+        {% if account.node.is_online %}
+          <span class="badge badge-success ml-1">Online</span>
+        {% else %}
+          <span class="badge badge-secondary ml-1">Offline</span>
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted">GF Token</dt>
+      <dd class="mt-0.5 font-mono text-xs">
+        {% if account.gf_token_enc %}
+          <span class="text-green-600">Configurado</span>
+        {% else %}
+          <span class="text-amber-500">Nao configurado</span>
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted">Status</dt>
+      <dd class="mt-0.5">
+        {% if account.active %}
+          <span class="badge badge-success">Ativo</span>
+        {% else %}
+          <span class="badge badge-secondary">Inativo</span>
+        {% endif %}
+      </dd>
+    </div>
+  </dl>
+  {% if account.notes %}
+  <div class="mt-4 pt-3 border-t border-line">
+    <dt class="text-muted text-sm">Notas</dt>
+    <dd class="mt-1 text-sm text-ink">{{ account.notes }}</dd>
+  </div>
+  {% endif %}
+</div>
+
+{# ── Game Accounts (Sub-accounts) ── #}
+<div id="game-accounts-section" class="card">
+  <div class="flex items-center justify-between mb-3">
+    <h3 class="text-sm font-semibold text-ink">
+      <i class="bi bi-people"></i> Contas de Jogo ({{ account.game_accounts.count }})
+    </h3>
+  </div>
+
+  {% if account.game_accounts.all %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead>
+        <tr style="border-bottom: 2px solid var(--ik-line);">
+          <th class="text-left py-2 px-2 text-muted font-semibold">Servidor</th>
+          <th class="text-left py-2 px-2 text-muted font-semibold">Nome</th>
+          <th class="text-left py-2 px-2 text-muted font-semibold">Lobby ID</th>
+          <th class="text-left py-2 px-2 text-muted font-semibold">Grupo</th>
+          <th class="text-center py-2 px-2 text-muted font-semibold">Status</th>
+          <th class="text-center py-2 px-2 text-muted font-semibold">Acoes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ga in account.game_accounts.all %}
+        <tr class="hover:bg-[var(--ik-sand-light)] transition-colors"
+            style="border-bottom: 1px solid var(--ik-line);">
+          <td class="py-2 px-2 font-mono font-medium text-ink">{{ ga.server_id }}</td>
+          <td class="py-2 px-2 text-ink">{{ ga.name|default:"-" }}</td>
+          <td class="py-2 px-2 font-mono text-muted">{{ ga.lobby_account_id }}</td>
+          <td class="py-2 px-2 text-muted">{{ ga.account_group|default:"-" }}</td>
+          <td class="py-2 px-2 text-center">
+            {% if ga.blocked %}
+              <span class="badge badge-danger">Bloqueado</span>
+            {% elif ga.active %}
+              <span class="badge badge-success">Ativo</span>
+            {% else %}
+              <span class="badge badge-secondary">Inativo</span>
+            {% endif %}
+          </td>
+          <td class="py-2 px-2 text-center">
+            <div class="flex items-center justify-center gap-1">
+              <button hx-post="{% url 'game:run-action' %}"
+                      hx-vals='{"game_account_id": "{{ ga.pk }}", "action_code": "100"}'
+                      hx-swap="none"
+                      class="btn btn-secondary btn-sm !px-2 !py-0.5" title="Check Status">
+                <i class="bi bi-arrow-clockwise text-[10px]"></i>
+              </button>
+              <button type="button"
+                      onclick="return openConfirm({
+                        title: '{% if ga.active %}Desativar{% else %}Ativar{% endif %} subconta',
+                        message: '{% if ga.active %}Desativar{% else %}Ativar{% endif %} subconta {{ ga.name|default:ga.server_id }} ({{ ga.server_id }})?',
+                        style: '{% if ga.active %}danger{% else %}primary{% endif %}',
+                        confirmLabel: '{% if ga.active %}Desativar{% else %}Ativar{% endif %}',
+                        onConfirm: () => htmx.ajax('POST', '{% url 'accounts:game-account-toggle' ga.pk %}', {swap: 'none'})
+                      })"
+                      class="btn {% if ga.active %}btn-secondary{% else %}btn-primary{% endif %} btn-sm !px-2 !py-0.5"
+                      title="{% if ga.active %}Desativar{% else %}Ativar{% endif %}">
+                <i class="bi {% if ga.active %}bi-pause-circle{% else %}bi-play-circle{% endif %} text-[10px]"></i>
+              </button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center py-6 text-sm text-muted">
+    <i class="bi bi-info-circle text-lg block mb-2"></i>
+    Nenhuma conta de jogo encontrada.
+    <p class="text-xs mt-1">Clique em "Discover Characters" para buscar os personagens no lobby.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block detail_sidebar %}
+<div class="card">
+  <h3 class="text-sm font-semibold text-ink mb-3">Detalhes</h3>
+  <dl class="space-y-2 text-sm">
+    <div>
+      <dt class="text-muted">ID</dt>
+      <dd class="font-mono text-xs mt-0.5">{{ account.pk }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Criado em</dt>
+      <dd class="mt-0.5">{{ account.created_at }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Atualizado em</dt>
+      <dd class="mt-0.5">{{ account.updated_at }}</dd>
+    </div>
+  </dl>
+</div>
+
+{# ── Telegram (renderizado server-side) ── #}
+{% include "telegram/partials/account_overview.html" %}
+{% endblock %}

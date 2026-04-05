@@ -1,0 +1,77 @@
+{# ── Lista de captchas pendentes ── #}
+
+{% if pending %}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+  {% for challenge in pending %}
+  <div class="border border-[var(--ik-line)] rounded-lg overflow-hidden hover:border-[var(--ik-sea)]/50 transition-colors"
+       id="captcha-card-{{ challenge.pk }}">
+
+    {# Imagem do captcha #}
+    <div class="bg-[#1e2c3a] flex items-center justify-center p-4 min-h-[140px]">
+      {% if challenge.image_data %}
+        {% if challenge.image_data|slice:":4" == "http" %}
+          <img src="{{ challenge.image_data }}" alt="Captcha" class="max-w-full max-h-[120px] rounded">
+        {% else %}
+          <img src="data:image/png;base64,{{ challenge.image_data }}" alt="Captcha" class="max-w-full max-h-[120px] rounded">
+        {% endif %}
+      {% else %}
+        <div class="text-center text-white/50">
+          <i class="bi bi-image text-3xl"></i>
+          <p class="text-xs mt-1">Sem imagem</p>
+        </div>
+      {% endif %}
+    </div>
+
+    {# Info #}
+    <div class="p-3">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-[10px] font-mono bg-[var(--ik-sand)] px-1.5 py-0.5 rounded">
+          {{ challenge.get_captcha_type_display }}
+        </span>
+        <span class="text-[10px] text-muted">
+          {{ challenge.created_at|timesince }} atras
+        </span>
+      </div>
+
+      {% if challenge.game_account %}
+      <p class="text-xs text-muted mb-2">
+        <i class="bi bi-person text-[10px]"></i>
+        {{ challenge.game_account.name|default:challenge.game_account.server_id }}
+      </p>
+      {% endif %}
+
+      {# Solve form inline #}
+      <div id="captcha-solve-{{ challenge.pk }}">
+        <form hx-post="{% url 'captcha:solve' challenge.pk %}"
+              hx-target="#captcha-card-{{ challenge.pk }}"
+              hx-swap="outerHTML"
+              class="flex gap-1.5">
+          {% csrf_token %}
+          <input type="text" name="solution"
+                 class="form-input text-sm font-mono flex-1 py-1 px-2"
+                 placeholder="Resposta..."
+                 autofocus required>
+          <button type="submit" class="btn btn-primary btn-sm py-1 px-2">
+            <i class="bi bi-check-lg"></i>
+          </button>
+          <button type="button"
+                  hx-post="{% url 'captcha:skip' challenge.pk %}"
+                  hx-target="#captcha-card-{{ challenge.pk }}"
+                  hx-swap="outerHTML"
+                  class="btn btn-ghost btn-sm py-1 px-2 text-[var(--ik-bad)]"
+                  title="Pular">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-12 text-muted">
+  <i class="bi bi-shield-check text-4xl opacity-50"></i>
+  <p class="mt-2 text-sm">Nenhum captcha pendente</p>
+  <p class="text-xs mt-1">Captchas aparecem aqui quando o agent encontra um no jogo.</p>
+</div>
+{% endif %}

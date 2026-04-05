@@ -1,0 +1,26 @@
+{% extends "base_list.html" %}
+
+{% block title %}Proxies{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <span class="text-ink">Proxies</span>
+{% endblock %}
+
+{% block page_title %}Proxies{% endblock %}
+{% block page_subtitle %}Gerenciar proxies manuais e sincronizados com Webshare.io{% endblock %}
+
+{% block page_actions %}
+<a href="{% url 'proxy:create' %}" class="btn btn-primary btn-sm">
+  <i class="bi bi-plus-lg"></i> Novo Proxy
+</a>
+<form method="post" action="{% url 'proxy:sync' %}" class="inline">
+  {% csrf_token %}
+  <button type="submit" class="btn btn-secondary btn-sm">
+    <i class="bi bi-arrow-repeat"></i> Sincronizar Webshare
+  </button>
+</form>
+{% endblock %}
+
+{% block table_content %}
+{% include "proxy/partials/proxy_table.html" %}
+{% endblock %}

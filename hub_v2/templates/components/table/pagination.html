@@ -1,0 +1,43 @@
+<!-- HTMX-powered pagination -->
+{# Usage: include "components/table/pagination.html" with page_obj=page_obj #}
+{% if page_obj.has_other_pages %}
+<nav class="flex items-center justify-between px-4 py-3" style="border-top: 1px solid var(--ik-line);">
+  <div class="text-sm text-muted">
+    Mostrando <span class="font-medium">{{ page_obj.start_index }}</span>
+    a <span class="font-medium">{{ page_obj.end_index }}</span>
+    de <span class="font-medium">{{ page_obj.paginator.count }}</span> resultados
+  </div>
+  <div class="flex gap-1">
+    {% if page_obj.has_previous %}
+    <a href="?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}page={{ page_obj.previous_page_number }}"
+       hx-get="{{ request.path }}?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}page={{ page_obj.previous_page_number }}"
+       hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+       class="px-3 py-1 text-sm rounded border-line" style="border: 1px solid var(--ik-line); background: var(--ik-paper);">
+      <i class="bi bi-chevron-left"></i>
+    </a>
+    {% endif %}
+
+    {% for num in page_obj.paginator.page_range %}
+      {% if page_obj.number == num %}
+        <span class="pagination-active px-3 py-1 text-sm rounded" style="border: 1px solid var(--ik-sea);">{{ num }}</span>
+      {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+        <a href="?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}page={{ num }}"
+           hx-get="{{ request.path }}?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}page={{ num }}"
+           hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+           class="px-3 py-1 text-sm rounded" style="border: 1px solid var(--ik-line); background: var(--ik-paper);">{{ num }}</a>
+      {% elif num == page_obj.number|add:"-3" or num == page_obj.number|add:"3" %}
+        <span class="px-3 py-1 text-sm text-muted">...</span>
+      {% endif %}
+    {% endfor %}
+
+    {% if page_obj.has_next %}
+    <a href="?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}page={{ page_obj.next_page_number }}"
+       hx-get="{{ request.path }}?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}page={{ page_obj.next_page_number }}"
+       hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+       class="px-3 py-1 text-sm rounded" style="border: 1px solid var(--ik-line); background: var(--ik-paper);">
+      <i class="bi bi-chevron-right"></i>
+    </a>
+    {% endif %}
+  </div>
+</nav>
+{% endif %}

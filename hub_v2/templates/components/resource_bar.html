@@ -1,0 +1,11 @@
+<!-- Resource bar for Ikariam resources -->
+{# Usage: include "components/resource_bar.html" with resources=snapshot.resources #}
+{% load hub_tags %}
+<div class="flex flex-wrap gap-4 text-sm">
+  {% for code, amount in resources.items %}
+  <div class="flex items-center gap-1.5" title="{{ code|resource_name }}">
+    <i class="bi {{ code|resource_icon }} text-base"></i>
+    <span class="font-medium tabular-nums">{{ amount|floatformat:0 }}</span>
+  </div>
+  {% endfor %}
+</div>

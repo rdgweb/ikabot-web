@@ -1,0 +1,111 @@
+{% extends "base_detail.html" %}
+
+{% block title %}Deploy — {{ node.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'accounts:node-list' %}" class="hover:text-ink">Nós</a>
+  <span class="mx-1">/</span> <a href="{% url 'accounts:node-detail' node.pk %}" class="hover:text-ink">{{ node.name }}</a>
+  <span class="mx-1">/</span> <span class="text-ink">Deploy</span>
+{% endblock %}
+
+{% block detail_title %}Deploy do Agent{% endblock %}
+{% block detail_subtitle %}{{ node.name }} — copie o comando abaixo para iniciar o agent{% endblock %}
+
+{% block detail_actions %}
+<a href="{% url 'accounts:node-detail' node.pk %}" class="btn btn-secondary btn-sm">
+  <i class="bi bi-arrow-left"></i> Voltar
+</a>
+{% endblock %}
+
+{% block detail_main %}
+<!-- Deploy command -->
+<div class="card" x-data="{ copied: false }">
+  <h3 class="text-sm font-semibold text-ink mb-3">
+    <i class="bi bi-terminal"></i> Comando de Deploy
+  </h3>
+  <div class="relative">
+    <pre class="bg-gray-900 text-green-400 rounded-lg p-4 text-sm font-mono overflow-x-auto"><code>{{ deploy_command }}</code></pre>
+    <button
+      @click="navigator.clipboard.writeText($refs.cmd.textContent); copied = true; setTimeout(() => copied = false, 2000)"
+      class="absolute top-2 right-2 px-2 py-1 bg-gray-700 hover:bg-gray-600 text-muted rounded text-xs">
+      <span x-show="!copied"><i class="bi bi-clipboard"></i> Copiar</span>
+      <span x-show="copied" x-cloak><i class="bi bi-check"></i> Copiado!</span>
+    </button>
+    <span x-ref="cmd" class="hidden">{{ deploy_command }}</span>
+  </div>
+</div>
+
+<!-- Token info -->
+<div class="card">
+  <h3 class="text-sm font-semibold text-ink mb-3">
+    <i class="bi bi-key"></i> Token do Agent
+  </h3>
+  <p class="text-sm text-muted mb-2">Este token é usado pelo agent para se registrar no hub. Mantenha-o seguro.</p>
+  <code class="block bg-sand rounded px-3 py-2 text-sm font-mono text-ink break-all">
+    {{ node.deploy_token }}
+  </code>
+</div>
+
+<!-- Status check -->
+<div class="card" hx-get="{% url 'accounts:node-detail' node.pk %}" hx-trigger="every 10s" hx-select="#agent-status" hx-target="#agent-status" hx-swap="outerHTML">
+  <h3 class="text-sm font-semibold text-ink mb-3">
+    <i class="bi bi-broadcast"></i> Status da Conexão
+  </h3>
+  <div id="agent-status">
+    {% if node.is_online %}
+      <div class="flex items-center gap-2 text-green-600">
+        <i class="bi bi-check-circle-fill"></i>
+        <span class="text-sm font-medium">Agent conectado!</span>
+      </div>
+    {% else %}
+      <div class="flex items-center gap-2 text-yellow-600">
+        <i class="bi bi-hourglass-split"></i>
+        <span class="text-sm">Aguardando conexão do agent...</span>
+        <span class="animate-pulse text-xs text-muted">(verificando a cada 10s)</span>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block detail_sidebar %}
+<div class="card">
+  <h3 class="text-sm font-semibold text-ink mb-3">Checklist</h3>
+  <ul class="space-y-2 text-sm">
+    <li class="flex items-center gap-2">
+      <i class="bi bi-check-circle-fill text-green-500"></i>
+      <span>Nó criado</span>
+    </li>
+    <li class="flex items-center gap-2">
+      <i class="bi bi-check-circle-fill text-green-500"></i>
+      <span>Token gerado</span>
+    </li>
+    <li class="flex items-center gap-2">
+      {% if node.is_online %}
+        <i class="bi bi-check-circle-fill text-green-500"></i>
+      {% else %}
+        <i class="bi bi-circle text-muted"></i>
+      {% endif %}
+      <span>Agent conectado</span>
+    </li>
+    <li class="flex items-center gap-2">
+      {% if node.accounts.count > 0 %}
+        <i class="bi bi-check-circle-fill text-green-500"></i>
+      {% else %}
+        <i class="bi bi-circle text-muted"></i>
+      {% endif %}
+      <span>Conta vinculada</span>
+    </li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3 class="text-sm font-semibold text-ink mb-3">Próximos passos</h3>
+  <ol class="space-y-2 text-sm text-muted list-decimal list-inside">
+    <li>Execute o comando de deploy no servidor</li>
+    <li>Aguarde o agent se conectar</li>
+    <li><a href="{% url 'accounts:account-create' %}?node={{ node.pk }}" class="link-sea">Vincule uma conta</a></li>
+    <li>Crie um job para testar</li>
+  </ol>
+</div>
+{% endblock %}

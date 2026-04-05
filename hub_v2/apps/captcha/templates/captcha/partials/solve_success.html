@@ -1,0 +1,9 @@
+{# ── Feedback apos resolver captcha ── #}
+
+<div class="border border-[var(--ik-good)]/30 rounded-lg overflow-hidden bg-[var(--ik-good)]/5 p-6 text-center animate-fade-in">
+  <i class="bi bi-check-circle-fill text-3xl text-[var(--ik-good)]"></i>
+  <p class="text-sm font-semibold text-[var(--ik-good)] mt-2">Resolvido!</p>
+  <p class="text-xs text-muted mt-1">
+    {{ challenge.get_captcha_type_display }} — {{ challenge.solved_at|timesince }} atras
+  </p>
+</div>

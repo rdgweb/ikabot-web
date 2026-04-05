@@ -1,0 +1,26 @@
+[
+  {
+    "code": 100,
+    "name": "Verificar Status da Conta",
+    "name_en": "Check account status",
+    "category": "admin",
+    "description": "Efetua login no Ikariam e coleta o status completo da conta: cidades, recursos, ouro, militar.",
+    "description_en": "Logs into Ikariam and collects full account status: cities, resources, gold, military.",
+    "runner_engine": "check_status",
+    "input_schema": [],
+    "long_running": false,
+    "recurring": false
+  },
+  {
+    "code": 101,
+    "name": "Descobrir Personagens",
+    "name_en": "Discover characters",
+    "category": "admin",
+    "description": "Autentica no lobby Gameforge e lista todos os personagens/contas disponíveis com seus lobby_account_index.",
+    "description_en": "Authenticates with Gameforge lobby and lists all available characters/accounts with their lobby_account_index values.",
+    "runner_engine": "discover_characters",
+    "input_schema": [],
+    "long_running": false,
+    "recurring": false
+  }
+]

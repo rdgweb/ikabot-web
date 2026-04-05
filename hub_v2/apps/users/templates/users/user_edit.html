@@ -1,0 +1,13 @@
+{% extends "base_form.html" %}
+
+{% block title %}Editar {{ object.username }}{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'users:list' %}" class="hover:text-ink">Usuários</a>
+  <span class="mx-1">/</span> <span class="text-ink">Editar {{ object.username }}</span>
+{% endblock %}
+
+{% block form_title %}Editar Usuário{% endblock %}
+{% block form_subtitle %}{{ object.username }}{% endblock %}
+
+{% block cancel_url %}{% url 'users:list' %}{% endblock %}

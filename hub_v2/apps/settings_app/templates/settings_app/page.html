@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+
+{% block title %}Configurações{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <span class="text-ink">Configurações</span>
+{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-ink">Configurações</h1>
+  <p class="text-sm text-muted mt-1">Integrações externas e segurança do sistema</p>
+</div>
+
+{# ── Integrations grid ── #}
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+
+  {# ── Webshare API ── #}
+  <div class="card flex flex-col">
+    <div class="card-header !px-5 !py-3">
+      <div class="flex items-center gap-2">
+        <i class="bi bi-globe text-sea"></i>
+        <h3 class="text-sm font-semibold text-ink">Webshare.io</h3>
+      </div>
+      {% if webshare_configured %}
+        <span class="badge badge-success">Ativo</span>
+      {% else %}
+        <span class="badge badge-warning">Sem chave</span>
+      {% endif %}
+    </div>
+
+    <div class="p-5 flex-1 flex flex-col">
+      <p class="text-xs text-muted mb-4">API de proxies rotativos — sincroniza automaticamente com a lista de proxies da conta Webshare.</p>
+
+      {% if webshare_configured %}
+      <div class="flex items-center gap-2 mb-4 px-3 py-2 rounded text-xs" style="background: var(--ik-sand-light);">
+        <i class="bi bi-key text-muted"></i>
+        <span class="text-muted">Chave:</span>
+        <span class="font-mono">{{ webshare_masked }}</span>
+      </div>
+      {% endif %}
+
+      <form method="post" action="{% url 'settings_app:webshare-save' %}" class="mt-auto">
+        {% csrf_token %}
+        <div class="mb-3">
+          <label class="form-label text-xs">{{ webshare_form.api_key.label }}</label>
+          {{ webshare_form.api_key }}
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="submit" class="btn btn-primary btn-sm">
+            <i class="bi bi-check-lg"></i> Salvar
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm"
+                  hx-post="{% url 'settings_app:webshare-test' %}"
+                  hx-target="#ws-test-result"
+                  hx-swap="innerHTML"
+                  hx-indicator="#ws-spinner">
+            <i class="bi bi-lightning"></i> Testar
+            <span id="ws-spinner" class="htmx-indicator"><i class="bi bi-arrow-repeat animate-spin"></i></span>
+          </button>
+        </div>
+      </form>
+
+      <div id="ws-test-result" class="mt-3"></div>
+    </div>
+  </div>
+
+  {# ── ikabotapi (Captcha Solver) ── #}
+  <div class="card flex flex-col">
+    <div class="card-header !px-5 !py-3">
+      <div class="flex items-center gap-2">
+        <i class="bi bi-puzzle text-sea"></i>
+        <h3 class="text-sm font-semibold text-ink">ikabotapi</h3>
+      </div>
+      {% if ikabotapi_url %}
+        <span class="badge badge-success">Configurado</span>
+      {% else %}
+        <span class="badge badge-secondary">Padrão</span>
+      {% endif %}
+    </div>
+
+    <div class="p-5 flex-1 flex flex-col">
+      <p class="text-xs text-muted mb-4">Serviço de resolução de captcha e geração de blackbox tokens para autenticação no jogo.</p>
+
+      {% if ikabotapi_url %}
+      <div class="flex items-center gap-2 mb-4 px-3 py-2 rounded text-xs" style="background: var(--ik-sand-light);">
+        <i class="bi bi-link-45deg text-muted"></i>
+        <span class="text-muted">URL:</span>
+        <span class="font-mono truncate">{{ ikabotapi_url }}</span>
+      </div>
+      {% endif %}
+
+      <form method="post" action="{% url 'settings_app:ikabotapi-save' %}" class="mt-auto">
+        {% csrf_token %}
+        <div class="mb-3">
+          <label class="form-label text-xs">{{ ikabotapi_form.url.label }}</label>
+          {{ ikabotapi_form.url }}
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="submit" class="btn btn-primary btn-sm">
+            <i class="bi bi-check-lg"></i> Salvar
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm"
+                  hx-post="{% url 'settings_app:ikabotapi-test' %}"
+                  hx-target="#ika-test-result"
+                  hx-swap="innerHTML"
+                  hx-indicator="#ika-spinner">
+            <i class="bi bi-lightning"></i> Testar
+            <span id="ika-spinner" class="htmx-indicator"><i class="bi bi-arrow-repeat animate-spin"></i></span>
+          </button>
+        </div>
+      </form>
+
+      <div id="ika-test-result" class="mt-3"></div>
+    </div>
+  </div>
+
+</div>
+
+{# ── Agent Security — full width ── #}
+<div class="card mb-6">
+  <div class="card-header !px-5 !py-3">
+    <div class="flex items-center gap-2">
+      <i class="bi bi-shield-lock text-sea"></i>
+      <h3 class="text-sm font-semibold text-ink">Segurança do Agent</h3>
+    </div>
+  </div>
+
+  <div class="p-5">
+    <p class="text-xs text-muted mb-4">Token de autenticação (definido via variável de ambiente) e controle de acesso por IP para comunicação hub ↔ agent.</p>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+      {# Token (read-only) #}
+      <div>
+        <label class="form-label text-xs">Agent Token <span class="text-muted font-normal">(somente leitura)</span></label>
+        <div class="flex items-center gap-2">
+          <div x-data="{ show: false }" class="flex-1 relative">
+            <input type="text" class="form-input font-mono text-xs pr-10"
+                   :value="show ? '{{ agent_token }}' : '{{ agent_token_masked }}'" readonly>
+            <button type="button" class="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
+                    @click="show = !show" :title="show ? 'Ocultar' : 'Mostrar'">
+              <i class="bi" :class="show ? 'bi-eye-slash' : 'bi-eye'"></i>
+            </button>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm"
+                  @click="navigator.clipboard.writeText('{{ agent_token }}'); $dispatch('toast', {type: 'success', message: 'Token copiado!'})"
+                  title="Copiar token">
+            <i class="bi bi-clipboard"></i>
+          </button>
+        </div>
+        <p class="form-help">Definido na env var <code class="text-xs">AGENT_TOKEN</code>. Para alterar, modifique o .env e reinicie.</p>
+      </div>
+
+      {# Allowed IPs #}
+      <div>
+        <form method="post" action="{% url 'settings_app:agent-save' %}">
+          {% csrf_token %}
+          <label class="form-label text-xs">{{ agent_form.allowed_ips.label }}</label>
+          <div class="flex items-center gap-2">
+            {{ agent_form.allowed_ips }}
+            <button type="submit" class="btn btn-primary btn-sm">
+              <i class="bi bi-check-lg"></i> Salvar
+            </button>
+          </div>
+          {% if agent_form.allowed_ips.help_text %}
+          <p class="form-help">{{ agent_form.allowed_ips.help_text }}</p>
+          {% endif %}
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-6">
+  <div class="card-header !px-5 !py-3">
+    <div class="flex items-center gap-2">
+      <i class="bi bi-hourglass-split text-sea"></i>
+      <h3 class="text-sm font-semibold text-ink">Política de Snapshot</h3>
+    </div>
+  </div>
+
+  <div class="p-5">
+    <p class="text-xs text-muted mb-4">Define quando o agent considera o snapshot vencido e quando o sync <code class="text-xs">1001</code> precisa atualizar as opções reais de construção.</p>
+
+    <form method="post" action="{% url 'settings_app:snapshot-policy-save' %}">
+      {% csrf_token %}
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
+        <div>
+          <label class="form-label text-xs">{{ snapshot_policy_form.snapshot_stale_seconds.label }}</label>
+          {{ snapshot_policy_form.snapshot_stale_seconds }}
+          {% if snapshot_policy_form.snapshot_stale_seconds.help_text %}
+          <p class="form-help">{{ snapshot_policy_form.snapshot_stale_seconds.help_text }}</p>
+          {% endif %}
+        </div>
+        <div>
+          <label class="form-label text-xs">{{ snapshot_policy_form.building_options_stale_seconds.label }}</label>
+          {{ snapshot_policy_form.building_options_stale_seconds }}
+          {% if snapshot_policy_form.building_options_stale_seconds.help_text %}
+          <p class="form-help">{{ snapshot_policy_form.building_options_stale_seconds.help_text }}</p>
+          {% endif %}
+        </div>
+        <div>
+          <label class="form-label text-xs">{{ snapshot_policy_form.running_job_recovery_grace_seconds.label }}</label>
+          {{ snapshot_policy_form.running_job_recovery_grace_seconds }}
+          {% if snapshot_policy_form.running_job_recovery_grace_seconds.help_text %}
+          <p class="form-help">{{ snapshot_policy_form.running_job_recovery_grace_seconds.help_text }}</p>
+          {% endif %}
+        </div>
+        <div>
+          <label class="form-label text-xs">{{ snapshot_policy_form.running_job_lease_seconds.label }}</label>
+          {{ snapshot_policy_form.running_job_lease_seconds }}
+          {% if snapshot_policy_form.running_job_lease_seconds.help_text %}
+          <p class="form-help">{{ snapshot_policy_form.running_job_lease_seconds.help_text }}</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="mt-4">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-check-lg"></i> Salvar
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Generic Settings (advanced) ── #}
+{% if generic_settings %}
+<div class="card">
+  <div class="card-header !px-5 !py-3">
+    <div class="flex items-center gap-2">
+      <i class="bi bi-gear text-muted"></i>
+      <h3 class="text-sm font-semibold text-ink">Outras Configurações</h3>
+    </div>
+    <span class="text-xs text-muted">{{ generic_settings|length }} entr{{ generic_settings|length|pluralize:"ada,adas" }}</span>
+  </div>
+
+  <div class="overflow-hidden">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Chave</th>
+          <th>Valor</th>
+          <th>Atualizado</th>
+          <th class="text-right">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for setting in generic_settings %}
+        <tr>
+          <td class="font-mono text-xs font-medium">{{ setting.key }}</td>
+          <td class="text-xs text-muted">{{ setting.value|truncatechars:60 }}</td>
+          <td class="text-xs text-muted">{{ setting.updated_at|date:"d/m/Y H:i" }}</td>
+          <td class="text-right">
+            <a href="{% url 'settings_app:edit' setting.key %}" class="btn btn-secondary btn-sm" title="Editar">
+              <i class="bi bi-pencil"></i>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "base_list.html" %}
+
+{% block title %}Usuários & Permissões{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <span class="text-ink">Usuários & Permissões</span>
+{% endblock %}
+
+{% block page_title %}Usuários & Permissões{% endblock %}
+{% block page_subtitle %}Gerenciar usuários do sistema e seus grupos{% endblock %}
+
+{% block filter_dropdown %}
+<div x-data="{ filterOpen: false }" class="relative">
+  <button @click="filterOpen = !filterOpen" class="btn btn-secondary btn-sm relative" type="button">
+    <i class="bi bi-funnel"></i> Filtros
+    {% if request.GET.username %}
+    <span class="filter-badge"></span>
+    {% endif %}
+  </button>
+  <div x-show="filterOpen" x-cloak
+       x-transition:enter="transition ease-out duration-150"
+       x-transition:enter-start="opacity-0 scale-95"
+       x-transition:enter-end="opacity-100 scale-100"
+       x-transition:leave="transition ease-in duration-100"
+       x-transition:leave-start="opacity-100 scale-100"
+       x-transition:leave-end="opacity-0 scale-95"
+       @click.away="filterOpen = false"
+       class="filter-panel right-0">
+    <h3 class="text-sm font-semibold text-ink mb-3">Filtros</h3>
+    <div class="grid grid-cols-1 gap-3">
+      <div>
+        <label class="filter-panel-label">Username</label>
+        <input type="text" name="username"
+               value="{{ request.GET.username|default:'' }}"
+               class="filter-input" placeholder="Buscar..."
+               hx-get="{{ request.path }}" hx-target="#table-content"
+               hx-swap="innerHTML" hx-trigger="keyup changed delay:300ms"
+               hx-include=".filter-panel [name]" hx-push-url="true">
+      </div>
+    </div>
+    <div class="flex justify-between items-center mt-4 pt-3" style="border-top: 1px solid var(--ik-line);">
+      <a href="{{ request.path }}" class="text-sm text-muted hover:text-ink">Limpar filtros</a>
+      <button type="button" @click="filterOpen = false" class="btn btn-primary btn-sm">Fechar</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_actions %}
+<a href="{% url 'users:create' %}" class="btn btn-primary btn-sm">
+  <i class="bi bi-plus-lg"></i> Novo Usuário
+</a>
+{% endblock %}
+
+{% block table_content %}
+{% include "users/partials/user_table.html" %}
+{% endblock %}

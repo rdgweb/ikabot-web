@@ -1,0 +1,53 @@
+<!-- Activity feed — recent jobs table partial for HTMX refresh -->
+{% load hub_tags %}
+
+<div class="bg-paper rounded-lg shadow-sm" id="activity-feed">
+  <div class="px-4 py-3 border-b border-line">
+    <h2 class="text-base font-semibold text-ink">
+      <i class="bi bi-activity text-sea"></i> Atividade Recente
+    </h2>
+  </div>
+
+  {% if recent_jobs %}
+  <div class="overflow-x-auto">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Conta</th>
+          <th>A&ccedil;&atilde;o</th>
+          <th>N&oacute;</th>
+          <th>Criado em</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in recent_jobs %}
+        <tr class="hover:bg-sand cursor-pointer"
+            onclick="window.location='{% url 'jobs:job-detail' job.pk %}'">
+          <td>
+            <span class="badge {{ job.status|status_badge_class }}">
+              {{ job.get_status_display }}
+            </span>
+          </td>
+          <td class="text-sm text-ink">
+            {% if job.game_account %}
+              {{ job.game_account.name|default:job.game_account.server_id }}
+            {% else %}
+              {{ job.account.label }}
+            {% endif %}
+          </td>
+          <td class="text-sm text-muted">{{ job.action_code|action_name }}</td>
+          <td class="text-sm text-muted">{{ job.node.name }}</td>
+          <td class="text-sm text-muted">{{ job.created_at|localtime_format }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center py-10">
+    <i class="bi bi-inbox text-3xl text-muted"></i>
+    <p class="mt-2 text-sm text-muted">Nenhum job registrado.</p>
+  </div>
+  {% endif %}
+</div>

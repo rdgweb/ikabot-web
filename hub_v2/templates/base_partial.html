@@ -1,0 +1,6 @@
+{% load static hub_tags %}
+{# This template is used for HTMX boosted requests — renders only the #page-content innards #}
+{% include "components/topbar.html" %}
+<main id="main-area" class="p-6">
+  {% block content %}{% endblock %}
+</main>

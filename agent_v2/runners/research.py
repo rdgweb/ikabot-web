@@ -1,0 +1,301 @@
+"""Research runner - global research queue ordered by the lowest ETA."""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timezone
+from typing import Any
+
+from core.runner_registry import register_runner
+from runners.base import BaseRunner, RunnerResult
+
+logger = logging.getLogger(__name__)
+
+RESEARCH_BRANCH_META = {
+    "seafaring": {"label": "Navegacao Maritima", "fallback_name": "Futuro da Navegacao"},
+    "economy": {"label": "Economia", "fallback_name": "Futuro Economico"},
+    "knowledge": {"label": "Ciencia", "fallback_name": "Futuro Cientifico"},
+    "military": {"label": "Militar", "fallback_name": "Futuro Belico"},
+    "mythology": {"label": "Mitologia", "fallback_name": "Maximo atingido"},
+}
+
+
+def _to_int(raw: Any, default: int = 0) -> int:
+    try:
+        return int(str(raw).strip())
+    except Exception:
+        return default
+
+
+def _snapshot_time(raw: Any) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+@register_runner(18)
+class ResearchRunner(BaseRunner):
+    """Monitor selected branches globally until they reach maximum."""
+
+    def execute(self, job: dict[str, Any]) -> RunnerResult:
+        jid = job["job_id"]
+        aid = job["account_id"]
+        ga_id = job.get("game_account_id")
+        inputs = dict(job.get("inputs") or {})
+
+        if not ga_id:
+            self.log(jid, "error", "game_account_id ausente para pesquisa")
+            return RunnerResult(success=False, data={"error": "missing_game_account"})
+
+        selected_types = self._selected_branches(inputs)
+        if not selected_types:
+            self.log(jid, "error", "Nenhum ramo selecionado para pesquisa")
+            return RunnerResult(success=False, data={"error": "missing_branches"})
+
+        fallback_minutes = max(5, _to_int(inputs.get("fallback_interval_minutes"), 60))
+        ready_margin_minutes = max(0, _to_int(inputs.get("ready_margin_minutes"), 10))
+        fallback_seconds = fallback_minutes * 60
+        ready_margin_seconds = ready_margin_minutes * 60
+
+        snapshot = self._get_snapshot(jid, ga_id)
+        city_snapshot = self._pick_research_city(snapshot)
+        if not city_snapshot:
+            self.log(jid, "error", "Nenhuma cidade com academia encontrada no snapshot")
+            return RunnerResult(success=False, data={"error": "academy_not_found"})
+        city_id = str(city_snapshot.get("id") or "").strip()
+
+        try:
+            creds = self.resolve_credentials(aid, {}, game_account_id=ga_id)
+            if not creds:
+                self.log(jid, "error", "Credenciais nao encontradas para pesquisa")
+                return RunnerResult(success=False, data={"error": "missing_credentials"})
+
+            client = self.get_or_login_game_client(jid, aid, ga_id, creds)
+            state = client.get_research_state(int(city_id))
+            self._persist_research_state(
+                job_id=jid,
+                account_id=aid,
+                game_account_id=ga_id,
+                snapshot=snapshot,
+                city_snapshot=city_snapshot,
+                state=state,
+            )
+
+            city_name = str(state.get("city_name") or (city_snapshot or {}).get("name") or city_id).strip()
+            available = [
+                item for item in (state.get("branches") or [])
+                if str(item.get("research_type") or "").strip().lower() in selected_types
+            ]
+            if not available:
+                self.log(jid, "error", "Nenhum dos ramos selecionados apareceu no advisor")
+                return RunnerResult(success=False, data={"error": "research_branch_not_found"})
+
+            pending = [item for item in available if not item.get("max_reached")]
+            summary_parts = []
+            for branch in available:
+                branch_type = str(branch.get("research_type") or "").strip().lower()
+                branch_label = str(branch.get("branch_name") or RESEARCH_BRANCH_META.get(branch_type, {}).get("label") or branch_type)
+                next_name = str(branch.get("next_name") or RESEARCH_BRANCH_META.get(branch_type, {}).get("fallback_name") or "-")
+                eta_human = self._duration_human(_to_int(branch.get("eta_seconds"), 0))
+                summary_parts.append(f"{branch_label}: {next_name or '-'} ({eta_human or '0s'})")
+            self.log(jid, "info", f"Pesquisa global: cidade={city_name} | ramos={'; '.join(summary_parts)}")
+
+            if not pending:
+                self.save_game_client(ga_id, client)
+                self.log(jid, "info", "Pesquisa encerrada: todos os ramos selecionados chegaram ao maximo")
+                return RunnerResult(
+                    success=True,
+                    data={
+                        "status": "max_reached",
+                        "city_id": int(city_id),
+                        "city_name": city_name,
+                        "selected_branches": selected_types,
+                    },
+                )
+
+            pending.sort(key=lambda item: (_to_int(item.get("eta_seconds"), 0), str(item.get("branch_name") or "")))
+            branch = pending[0]
+            research_type = str(branch.get("research_type") or "").strip().lower()
+            branch_label = str(branch.get("branch_name") or RESEARCH_BRANCH_META[research_type]["label"]).strip()
+            next_name = str(branch.get("next_name") or RESEARCH_BRANCH_META[research_type]["fallback_name"]).strip()
+            cost_text = str(branch.get("cost_text") or branch.get("cost") or "-").strip()
+            eta_seconds = _to_int(branch.get("eta_seconds"), 0)
+            eta_human = self._duration_human(eta_seconds)
+
+            if not branch.get("ready"):
+                delay = max(fallback_seconds, eta_seconds + ready_margin_seconds if eta_seconds > 0 else fallback_seconds)
+                self.save_game_client(ga_id, client)
+                self.log(
+                    jid,
+                    "info",
+                    f"Pesquisa aguardando pontos: ramo={branch_label} | pesquisa={next_name or '-'} | custo={cost_text} | eta={eta_human or '0s'} | proximo_em={delay}s",
+                )
+                return RunnerResult(
+                    success=True,
+                    reschedule_seconds=delay,
+                    reschedule_inputs=inputs,
+                    data={
+                        "status": "waiting_points",
+                        "city_id": int(city_id),
+                        "city_name": city_name,
+                        "branch_name": branch_label,
+                        "next_name": next_name,
+                        "eta_seconds": eta_seconds,
+                        "selected_branches": selected_types,
+                    },
+                )
+
+            client.discover_research(int(city_id), research_type)
+            after_state = client.get_research_state(int(city_id))
+            self.save_game_client(ga_id, client)
+            self._persist_research_state(
+                job_id=jid,
+                account_id=aid,
+                game_account_id=ga_id,
+                snapshot=snapshot,
+                city_snapshot=city_snapshot,
+                state=after_state,
+            )
+            after_branch = next((item for item in after_state.get("branches") or [] if item.get("research_type") == research_type), None) or {}
+            self.log(
+                jid,
+                "info",
+                (
+                    f"Pesquisa concluida: ramo={branch_label} | descoberta={next_name or '-'} | "
+                    f"proxima={(after_branch.get('next_name') or 'maximo atingido')}"
+                ),
+            )
+            return RunnerResult(
+                success=True,
+                reschedule_seconds=max(60, ready_margin_seconds or 60),
+                reschedule_inputs=inputs,
+                data={
+                    "status": "discovered",
+                    "city_id": int(city_id),
+                    "city_name": city_name,
+                    "branch_name": branch_label,
+                    "discovered_name": next_name,
+                    "next_name": str(after_branch.get("next_name") or ""),
+                    "selected_branches": selected_types,
+                },
+            )
+        except Exception as exc:
+            logger.exception("ResearchRunner failed for job %s", jid)
+            retry_seconds = fallback_seconds
+            self.log(jid, "error", f"Falha ao pesquisar: {exc} | retry_em={retry_seconds}s")
+            return RunnerResult(
+                success=True,
+                reschedule_seconds=retry_seconds,
+                reschedule_inputs=inputs,
+                data={"status": "retry", "error": str(exc), "retry_seconds": retry_seconds},
+            )
+
+    def _get_snapshot(self, job_id: str, game_account_id: str) -> dict[str, Any] | None:
+        try:
+            return self.hub.get_snapshot(game_account_id=game_account_id)
+        except Exception as exc:
+            self.log(job_id, "warn", f"Nao foi possivel obter snapshot para pesquisa: {exc}")
+            return None
+
+    @staticmethod
+    def _selected_branches(inputs: dict[str, Any]) -> list[str]:
+        selected = []
+        for branch_type in RESEARCH_BRANCH_META:
+            if bool(inputs.get(f"branch_{branch_type}")):
+                selected.append(branch_type)
+        return selected
+
+    def _pick_research_city(self, snapshot: dict[str, Any] | None) -> dict[str, Any] | None:
+        cities = list((snapshot or {}).get("cities") or [])
+        last_city_id = str(((snapshot or {}).get("base_snapshot") or {}).get("research_city_id") or "").strip()
+        candidates = []
+        for city in cities:
+            academy_level = 0
+            has_academy = False
+            for building in city.get("buildings") or []:
+                if str(building.get("building") or "") == "academy":
+                    has_academy = True
+                    academy_level = _to_int(building.get("level"), 0)
+                    break
+            if not has_academy:
+                continue
+            candidates.append((city, academy_level))
+        if not candidates:
+            return None
+        candidates.sort(
+            key=lambda item: (
+                0 if str(item[0].get("id") or "") == last_city_id else 1,
+                -item[1],
+                str(item[0].get("name") or "").lower(),
+            ),
+        )
+        return candidates[0][0]
+
+    def _persist_research_state(
+        self,
+        *,
+        job_id: str,
+        account_id: str,
+        game_account_id: str,
+        snapshot: dict[str, Any] | None,
+        city_snapshot: dict[str, Any] | None,
+        state: dict[str, Any],
+    ) -> None:
+        try:
+            base_snapshot = dict((snapshot or {}).get("base_snapshot") or {})
+            cities = [dict(city) for city in ((snapshot or {}).get("cities") or [])]
+            military = (snapshot or {}).get("military") or {}
+            now_iso = datetime.now(timezone.utc).isoformat()
+            city_id = int(state.get("city_id") or (city_snapshot or {}).get("id") or 0)
+            city_name = str(state.get("city_name") or (city_snapshot or {}).get("name") or city_id)
+
+            payload = {
+                "city_id": city_id,
+                "city_name": city_name,
+                "island_name": str(state.get("island_name") or ""),
+                "current_research_type": str(state.get("current_research_type") or ""),
+                "current_research_label": str(state.get("current_research_label") or ""),
+                "branches": list(state.get("branches") or []),
+                "updated_at": str(state.get("updated_at") or now_iso),
+            }
+
+            base_snapshot["research_state"] = payload
+            base_snapshot["research_city_id"] = city_id
+            base_snapshot["research_city_name"] = city_name
+            base_snapshot["research_current_type"] = payload["current_research_type"]
+            base_snapshot["research_updated_at"] = payload["updated_at"]
+
+            self.hub.update_snapshot(
+                account_id,
+                {
+                    "base_snapshot": base_snapshot,
+                    "cities": cities,
+                    "military": military,
+                    "source_job_id": job_id,
+                },
+                game_account_id=game_account_id,
+            )
+        except Exception as exc:
+            self.log(job_id, "warn", f"Nao foi possivel persistir estado da pesquisa no snapshot: {exc}")
+
+    @staticmethod
+    def _duration_human(seconds: int) -> str:
+        seconds = max(0, int(seconds or 0))
+        if seconds < 60:
+            return f"{seconds}s"
+        if seconds < 3600:
+            minutes, rem = divmod(seconds, 60)
+            return f"{minutes}min" if rem == 0 else f"{minutes}min {rem}s"
+        if seconds < 86400:
+            hours, rem = divmod(seconds, 3600)
+            minutes = rem // 60
+            return f"{hours}h" if minutes == 0 else f"{hours}h {minutes}min"
+        days, rem = divmod(seconds, 86400)
+        hours = rem // 3600
+        return f"{days}d" if hours == 0 else f"{days}d {hours}h"

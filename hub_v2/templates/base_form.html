@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+  <div class="card">
+    <div class="mb-6">
+      <h1 class="text-2xl font-bold text-ink">{% block form_title %}Formulário{% endblock %}</h1>
+      <p class="text-sm text-muted mt-1">{% block form_subtitle %}{% endblock %}</p>
+    </div>
+
+    <form method="post" {% block form_attrs %}{% endblock %}>
+      {% csrf_token %}
+
+      {% if form.non_field_errors %}
+      <div class="mb-5 p-3 rounded-lg" style="background: #fde8e5; border: 1px solid #e8b4af;">
+        {% for error in form.non_field_errors %}
+        <p class="text-sm flex items-center gap-2" style="color: #8c3028;">
+          <i class="bi bi-exclamation-triangle-fill"></i> {{ error }}
+        </p>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% block form_fields %}
+      <div class="space-y-5">
+        {% for field in form %}
+        <div class="form-group mb-0">
+          {% if field.field.widget.input_type == "checkbox" %}
+          <div class="flex items-center gap-3">
+            {{ field }}
+            <label for="{{ field.id_for_label }}" class="text-sm font-semibold" style="color: #4a4639;">
+              {{ field.label }}
+              {% if field.field.required %}<span style="color: var(--ik-bad);">*</span>{% endif %}
+            </label>
+          </div>
+          {% else %}
+          <label for="{{ field.id_for_label }}" class="form-label">
+            {{ field.label }}
+            {% if field.field.required %}<span style="color: var(--ik-bad);">*</span>{% endif %}
+          </label>
+          {{ field }}
+          {% endif %}
+          {% if field.help_text %}
+          <p class="form-help">{{ field.help_text }}</p>
+          {% endif %}
+          {% for error in field.errors %}
+          <p class="form-error"><i class="bi bi-exclamation-circle"></i> {{ error }}</p>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endblock %}
+
+      <div class="flex justify-end gap-3 mt-6 pt-5" style="border-top: 1px solid var(--ik-line);">
+        {% block form_actions %}
+        <a href="{% block cancel_url %}javascript:history.back(){% endblock %}" class="btn btn-secondary">
+          <i class="bi bi-x-lg"></i> Cancelar
+        </a>
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check-lg"></i> {% block submit_label %}Salvar{% endblock %}
+        </button>
+        {% endblock %}
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

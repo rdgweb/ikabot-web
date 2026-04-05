@@ -1,0 +1,90 @@
+{# ── Card Telegram — sidebar do detalhe da Account ── #}
+
+<div class="card" id="telegram-card" hx-push-url="false" hx-boost="false">
+  {# ── Header ── #}
+  <div class="flex items-center justify-between mb-3">
+    <h3 class="text-sm font-semibold text-ink">
+      <i class="bi bi-telegram"></i> Telegram
+    </h3>
+    {% if has_any_linked %}
+      <span class="badge badge-success">Ativo</span>
+    {% elif global_linked %}
+      <span class="badge badge-success">Global</span>
+    {% else %}
+      <span class="badge badge-secondary">Nao configurado</span>
+    {% endif %}
+  </div>
+
+  {# ── Info global ── #}
+  {% if bot_active %}
+    {% if global_linked %}
+      <div class="px-3 py-2 rounded text-xs mb-4 bg-green-50 text-green-700 border border-green-200">
+        <i class="bi bi-check-circle mr-1"></i>
+        Chat global: <strong>@{{ bot_config.telegram_username|default:bot_config.chat_id }}</strong>
+      </div>
+    {% else %}
+      <div class="px-3 py-2 rounded text-xs mb-4 bg-amber-50 text-amber-700 border border-amber-200">
+        <i class="bi bi-exclamation-triangle mr-1"></i>
+        Chat global nao vinculado —
+        <a href="{% url 'telegram:config' %}" class="underline font-medium">Configurar</a>
+      </div>
+    {% endif %}
+  {% else %}
+    <div class="px-3 py-2 rounded text-xs mb-4 bg-amber-50 text-amber-700 border border-amber-200">
+      <i class="bi bi-exclamation-triangle mr-1"></i>
+      Bot <strong>Inativo</strong> —
+      <a href="{% url 'telegram:config' %}" class="underline font-medium">Config Telegram</a>
+    </div>
+  {% endif %}
+
+  {# ── Lista de subcontas ── #}
+  {% if ga_configs %}
+    <div class="space-y-2">
+      {% for item in ga_configs %}
+        <div class="border border-line rounded">
+          <button class="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-[var(--ik-sand-light)] transition-colors"
+                  hx-get="{% url 'telegram:ga-settings' item.ga.pk %}"
+                  hx-target="#tg-ga-{{ item.ga.pk }}"
+                  hx-swap="innerHTML"
+                  hx-push-url="false"
+                  hx-trigger="click once">
+            <div class="flex items-center gap-2">
+              <span class="font-medium text-ink">{{ item.ga.name|default:item.ga.server_id }}</span>
+              <span class="text-xs text-muted font-mono">{{ item.ga.server_id }}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              {% if item.is_linked %}
+                <span class="inline-block w-2 h-2 rounded-full bg-green-500" title="Chat proprio vinculado"></span>
+              {% elif item.uses_global %}
+                <span class="inline-block w-2 h-2 rounded-full bg-blue-400" title="Usando chat global"></span>
+              {% elif item.tg.link_status == "pending" %}
+                <span class="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="Aguardando confirmacao"></span>
+              {% else %}
+                <span class="inline-block w-2 h-2 rounded-full bg-gray-300" title="Nao vinculado"></span>
+              {% endif %}
+              <i class="bi bi-chevron-down text-muted text-xs"></i>
+            </div>
+          </button>
+
+          <div id="tg-ga-{{ item.ga.pk }}"></div>
+        </div>
+      {% endfor %}
+    </div>
+
+    {# ── Legenda ── #}
+    <div class="flex gap-4 mt-3 text-[10px] text-muted">
+      <span><span class="inline-block w-2 h-2 rounded-full bg-green-500"></span> Chat proprio</span>
+      <span><span class="inline-block w-2 h-2 rounded-full bg-blue-400"></span> Chat global</span>
+      <span><span class="inline-block w-2 h-2 rounded-full bg-gray-300"></span> Sem chat</span>
+    </div>
+  {% else %}
+    <div class="text-center py-4">
+      <i class="bi bi-info-circle text-lg text-muted block mb-2"></i>
+      <p class="text-sm text-muted">
+        Nenhuma subconta encontrada.
+        <br>
+        <span class="text-xs">Execute "Discover Characters" primeiro.</span>
+      </p>
+    </div>
+  {% endif %}
+</div>

@@ -1,0 +1,297 @@
+{% load static humanize hub_tags %}
+
+{% if object_list or request.GET %}
+<div x-data="jobBulk({ filteredCount: {{ page_obj.paginator.count|default:0 }}, pageCount: {{ object_list|length|default:0 }} })" class="space-y-3">
+
+  <div class="card overflow-hidden p-0">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th class="w-8 text-center"></th>
+          <th>Status</th>
+          <th>Conta</th>
+          <th>Subconta</th>
+          <th>Acao</th>
+          <th>Cidade</th>
+          <th>Itens</th>
+          <th>No</th>
+          <th>Criado em</th>
+          <th>Iniciado em</th>
+        </tr>
+      </thead>
+      {% for row in grouped_rows %}
+      <tbody {% if row.is_group %}x-data="{ open: false }"{% endif %}>
+        <tr>
+          <td class="text-center align-top">
+            {% if row.is_group %}
+            <button type="button"
+                    @click="open = !open"
+                    class="mt-1 text-muted hover:text-ink"
+                    title="Expandir grupo">
+              <i class="bi" :class="open ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+            </button>
+            {% else %}
+            <input type="checkbox"
+                   value="{{ row.jobs.0.object.pk }}"
+                   x-model="selected"
+                   class="job-checkbox mt-1 rounded border-gray-300">
+            {% endif %}
+          </td>
+          <td class="align-top">
+            {% if row.is_group %}
+            <div class="flex flex-wrap gap-1">
+              {% for status, amount in row.status_badges %}
+              <span class="badge {{ status|status_badge_class }}">{{ amount }} {{ status }}</span>
+              {% endfor %}
+            </div>
+            {% else %}
+            {% with job=row.jobs.0.object %}
+            <a href="{% url 'jobs:job-detail' job.pk %}" class="inline-block">
+              <span class="badge {{ job.status|status_badge_class }}">{{ job.get_status_display }}</span>
+            </a>
+            {% endwith %}
+            {% endif %}
+          </td>
+          <td class="align-top">
+            {% with account=row.jobs.0.object.account %}
+            <a href="{% url 'accounts:account-detail' account.pk %}" class="text-sm font-medium link-sea">
+              {{ row.account_label }}
+            </a>
+            {% endwith %}
+          </td>
+          <td class="align-top">
+            <div class="text-sm text-ink">{{ row.subaccount_label }}</div>
+            {% if row.is_group %}
+            <div class="text-[11px] text-muted">{{ row.jobs|length }} jobs • {{ row.status_summary }}</div>
+            {% endif %}
+          </td>
+          <td class="align-top text-sm text-ink">{{ row.action_name }}</td>
+          <td class="align-top">
+            <div class="text-sm text-ink">{{ row.city_summary }}</div>
+            {% if row.group_type == "transport" and row.transport_display %}
+            <div class="mt-1 flex flex-wrap gap-1">
+              {% if row.transport_display.mode_label %}
+              <span class="badge badge-info">{{ row.transport_display.mode_label }}</span>
+              {% endif %}
+              {% if row.transport_display.load_label %}
+              <span class="badge badge-secondary">Carga {{ row.transport_display.load_label }}</span>
+              {% endif %}
+              {% if row.transport_display.next_check_human %}
+              <span class="badge badge-warning">Check em {{ row.transport_display.next_check_human }}</span>
+              {% endif %}
+            </div>
+            {% endif %}
+            {% if row.summary_lines %}
+            <div class="mt-1 space-y-0.5">
+              {% for line in row.summary_lines %}
+              <div class="text-[11px] text-muted">{{ line }}</div>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </td>
+          <td class="align-top">
+            {% if row.resource_items %}
+            <div class="flex flex-wrap gap-1.5">
+              {% for resource in row.resource_items %}
+              <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] text-ink"
+                    style="border-color: var(--ik-line); background: var(--ik-sand-light);"
+                    title="{{ resource.label }}">
+                <img src="{% static resource.icon %}" alt="{{ resource.label }}" class="h-3.5 w-3.5">
+                <span>{{ resource.amount|intcomma }}</span>
+              </span>
+              {% endfor %}
+            </div>
+            {% else %}
+            <span class="text-sm text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="align-top">
+            {% with node=row.jobs.0.object.node %}
+            <a href="{% url 'accounts:node-detail' node.pk %}" class="text-sm text-muted hover:text-sea">
+              {{ row.node_name }}
+            </a>
+            {% endwith %}
+          </td>
+          <td class="align-top text-sm text-muted">{{ row.created_at|localtime_format }}</td>
+          <td class="align-top text-sm text-muted">{{ row.started_at|localtime_format|default:"—" }}</td>
+        </tr>
+
+        {% if row.is_group %}
+        {% for item in row.jobs %}
+        <tr x-show="open" x-cloak class="bg-white/70">
+          <td class="text-center">
+            <input type="checkbox"
+                   value="{{ item.object.pk }}"
+                   x-model="selected"
+                   class="job-checkbox rounded border-gray-300">
+          </td>
+          <td>
+            <a href="{% url 'jobs:job-detail' item.object.pk %}" class="inline-block">
+              <span class="badge {{ item.object.status|status_badge_class }}">{{ item.object.get_status_display }}</span>
+            </a>
+          </td>
+          <td>
+            <a href="{% url 'accounts:account-detail' item.object.account.pk %}" class="text-sm link-sea">
+              {{ item.object.account.label }}
+            </a>
+          </td>
+          <td class="text-sm text-ink">
+            {% if item.object.game_account %}
+            {{ item.object.game_account.name|default:item.object.game_account.server_id }}
+            <div class="text-[10px] text-muted">{{ item.object.game_account.server_id }}</div>
+            {% else %}
+            —
+            {% endif %}
+          </td>
+          <td class="text-sm text-ink">{{ item.object.action_code|action_name }}</td>
+          <td class="text-sm text-ink">{{ item.city_label|default:"—" }}</td>
+          <td>
+            {% if item.resource_items %}
+            <div class="flex flex-wrap gap-1.5">
+              {% for resource in item.resource_items %}
+              <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] text-ink"
+                    style="border-color: var(--ik-line); background: var(--ik-sand-light);"
+                    title="{{ resource.label }}">
+                <img src="{% static resource.icon %}" alt="{{ resource.label }}" class="h-3.5 w-3.5">
+                <span>{{ resource.amount|intcomma }}</span>
+              </span>
+              {% endfor %}
+            </div>
+            {% else %}
+            <span class="text-sm text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{% url 'accounts:node-detail' item.object.node.pk %}" class="text-sm text-muted hover:text-sea">
+              {{ item.object.node.name }}
+            </a>
+          </td>
+          <td class="text-sm text-muted">{{ item.object.created_at|localtime_format }}</td>
+          <td class="text-sm text-muted">{{ item.object.started_at|localtime_format|default:"—" }}</td>
+        </tr>
+        {% endfor %}
+        {% endif %}
+      </tbody>
+      {% empty %}
+      <tbody>
+        <tr>
+          <td colspan="10" class="py-8 text-center text-muted">
+            <i class="bi bi-list-task mb-2 block text-2xl"></i>
+            Nenhum job encontrado.
+          </td>
+        </tr>
+      </tbody>
+      {% endfor %}
+    </table>
+  </div>
+
+  <div x-show="selected.length > 0 || selectAllFiltered" x-cloak x-transition
+       class="card !py-2 !px-4 flex items-center justify-between"
+       style="background: var(--ik-sand-light); border: 1px solid var(--ik-line);">
+    <span class="text-sm font-medium text-ink">
+      <i class="bi bi-check2-square text-sea"></i>
+      <span x-text="selectAllFiltered ? filteredCount : selected.length"></span> selecionado(s)
+    </span>
+    <div class="flex gap-2">
+      <button x-show="!selectAllFiltered"
+              @click="selectFiltered()"
+              class="btn btn-secondary btn-sm"
+              type="button">
+        <i class="bi bi-funnel-fill"></i> Selecionar filtrados
+      </button>
+      <button x-show="!selectAllFiltered"
+              @click="selectCurrentPage()"
+              class="btn btn-secondary btn-sm"
+              type="button">
+        <i class="bi bi-check2"></i> Selecionar página
+      </button>
+      <button @click="bulkDelete()" class="btn btn-danger btn-sm" type="button">
+        <i class="bi bi-trash"></i> Excluir selecionados
+      </button>
+      <button @click="clearSelection()" class="btn btn-secondary btn-sm" type="button">
+        Cancelar
+      </button>
+    </div>
+  </div>
+
+  {% include "components/table/pagination.html" %}
+</div>
+
+<script>
+function jobBulk(config) {
+  return {
+    filteredCount: Number(config?.filteredCount || 0),
+    pageCount: Number(config?.pageCount || 0),
+    selected: [],
+    selectAllFiltered: false,
+    clearSelection() {
+      this.selected = [];
+      this.selectAllFiltered = false;
+    },
+    selectCurrentPage() {
+      this.selectAllFiltered = false;
+      this.selected = Array.from(document.querySelectorAll('.job-checkbox')).map(el => el.value);
+    },
+    selectFiltered() {
+      this.selected = [];
+      this.selectAllFiltered = true;
+    },
+    _appendCurrentFilters(form) {
+      const params = new URLSearchParams(window.location.search);
+      params.forEach((value, key) => {
+        if (key !== 'page') {
+          form.append(key, value);
+        }
+      });
+    },
+    _doDelete() {
+      const form = new FormData();
+      if (this.selectAllFiltered) {
+        form.append('delete_filtered', 'true');
+        this._appendCurrentFilters(form);
+      } else {
+        this.selected.forEach(id => form.append('job_ids', id));
+      }
+
+      const csrfToken = JSON.parse(document.body.getAttribute('hx-headers') || '{}')['X-CSRFToken'] || '';
+      form.append('csrfmiddlewaretoken', csrfToken);
+
+      fetch('{% url "jobs:job-bulk-delete" %}', {
+        method: 'POST',
+        body: form,
+        headers: { 'X-CSRFToken': csrfToken },
+      }).then(resp => {
+        const trigger = resp.headers.get('HX-Trigger');
+        if (trigger) {
+          try {
+            const data = JSON.parse(trigger);
+            if (data.toast) {
+              window.dispatchEvent(new CustomEvent('toast', { detail: data.toast }));
+            }
+          } catch {}
+        }
+        htmx.ajax('GET', window.location.href, { target: '#table-content', swap: 'innerHTML' });
+        this.clearSelection();
+      });
+    },
+    bulkDelete() {
+      const self = this;
+      const count = this.selectAllFiltered ? this.filteredCount : this.selected.length;
+      const msg = `Excluir ${count} job(s) selecionado(s)? Esta acao nao pode ser desfeita.`;
+      window.dispatchEvent(new CustomEvent('confirm', {
+        detail: {
+          title: 'Excluir jobs',
+          message: msg,
+          style: 'danger',
+          confirmLabel: 'Excluir',
+          onConfirm: () => self._doDelete(),
+        }
+      }));
+    }
+  }
+}
+</script>
+
+{% else %}
+{% include "components/table/empty.html" with icon="bi-list-task" message="Nenhum job encontrado." %}
+{% endif %}

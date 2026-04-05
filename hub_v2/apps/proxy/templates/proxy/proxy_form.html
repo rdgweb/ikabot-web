@@ -1,0 +1,14 @@
+{% extends "base_form.html" %}
+
+{% block title %}{{ form_title }}{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'proxy:list' %}" class="hover:text-ink">Proxies</a>
+  <span class="mx-1">/</span> <span class="text-ink">{{ form_title }}</span>
+{% endblock %}
+
+{% block form_title %}{{ form_title }}{% endblock %}
+{% block form_subtitle %}{{ form_subtitle }}{% endblock %}
+
+{% block cancel_url %}{% url 'proxy:list' %}{% endblock %}
+{% block submit_label %}Salvar{% endblock %}

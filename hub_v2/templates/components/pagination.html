@@ -1,0 +1,44 @@
+{# Pagination component (HTMX-powered) #}
+{# Usage: include "components/pagination.html" with page_obj=page_obj %} #}
+{# Wraps the table pagination for use outside of table contexts #}
+{% if page_obj.has_other_pages %}
+<nav class="flex items-center justify-between px-4 py-3 rounded-b-lg" style="border-top: 1px solid var(--ik-line); background: var(--ik-paper);">
+  <div class="text-sm text-muted">
+    Mostrando <span class="font-medium">{{ page_obj.start_index }}</span>
+    a <span class="font-medium">{{ page_obj.end_index }}</span>
+    de <span class="font-medium">{{ page_obj.paginator.count }}</span> resultados
+  </div>
+  <div class="flex gap-1">
+    {% if page_obj.has_previous %}
+    <a href="?page={{ page_obj.previous_page_number }}"
+       hx-get="{{ request.path }}?page={{ page_obj.previous_page_number }}"
+       hx-target="#table-container" hx-swap="innerHTML" hx-push-url="true"
+       class="px-3 py-1 text-sm rounded transition-colors" style="border: 1px solid var(--ik-line); background: var(--ik-paper);">
+      <i class="bi bi-chevron-left"></i>
+    </a>
+    {% endif %}
+
+    {% for num in page_obj.paginator.page_range %}
+      {% if page_obj.number == num %}
+        <span class="pagination-active px-3 py-1 text-sm rounded" style="border: 1px solid var(--ik-sea);">{{ num }}</span>
+      {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+        <a href="?page={{ num }}"
+           hx-get="{{ request.path }}?page={{ num }}"
+           hx-target="#table-container" hx-swap="innerHTML" hx-push-url="true"
+           class="px-3 py-1 text-sm rounded transition-colors" style="border: 1px solid var(--ik-line); background: var(--ik-paper);">{{ num }}</a>
+      {% elif num == page_obj.number|add:"-3" or num == page_obj.number|add:"3" %}
+        <span class="px-3 py-1 text-sm text-muted">...</span>
+      {% endif %}
+    {% endfor %}
+
+    {% if page_obj.has_next %}
+    <a href="?page={{ page_obj.next_page_number }}"
+       hx-get="{{ request.path }}?page={{ page_obj.next_page_number }}"
+       hx-target="#table-container" hx-swap="innerHTML" hx-push-url="true"
+       class="px-3 py-1 text-sm rounded transition-colors" style="border: 1px solid var(--ik-line); background: var(--ik-paper);">
+      <i class="bi bi-chevron-right"></i>
+    </a>
+    {% endif %}
+  </div>
+</nav>
+{% endif %}

@@ -1,0 +1,430 @@
+{% load static %}
+{{ cities|json_script:"construction-cities-data" }}
+{{ construction_buildings|json_script:"construction-buildings-data" }}
+<div class="mb-4 overflow-hidden rounded-[22px] border shadow-[0_10px_30px_rgba(87,66,24,0.08)]"
+     style="border-color: var(--ik-line); background:
+       radial-gradient(760px 220px at 0% 0%, rgba(79,134,185,0.10), transparent 60%),
+       radial-gradient(680px 220px at 100% 100%, rgba(201,156,78,0.12), transparent 60%),
+       linear-gradient(180deg, rgba(255,252,245,0.96), rgba(247,241,229,0.92));"
+     x-data="{
+       cities: [],
+       buildings: {},
+       selectedCityIds: [],
+       selectedCardKeys: [],
+       mode: 'upgrade',
+       targetLevel: '',
+       buildingQuery: '',
+       planJson: '[]',
+       init() {
+         this.cities = JSON.parse(document.getElementById('construction-cities-data')?.textContent || '[]');
+         this.buildings = JSON.parse(document.getElementById('construction-buildings-data')?.textContent || '{}');
+         this.syncPlan();
+       },
+       cityById(cityId) {
+         return this.cities.find(city => String(city.id) === String(cityId));
+       },
+       selectedCities() {
+         return this.selectedCityIds.map(id => this.cityById(id)).filter(Boolean);
+       },
+       toggleCity(cityId) {
+         cityId = String(cityId);
+         if (this.selectedCityIds.includes(cityId)) {
+           this.selectedCityIds = this.selectedCityIds.filter(id => id !== cityId);
+         } else {
+           this.selectedCityIds = [...this.selectedCityIds, cityId];
+         }
+         this.selectedCardKeys = this.selectedCardKeys.filter(key => this.buildingCards().some(card => String(card.card_key) === String(key)));
+         this.syncPlan();
+       },
+       selectAllCities() {
+         this.selectedCityIds = this.cities.map(city => String(city.id));
+         this.selectedCardKeys = this.selectedCardKeys.filter(key => this.buildingCards().some(card => String(card.card_key) === String(key)));
+         this.syncPlan();
+       },
+       clearCities() {
+         this.selectedCityIds = [];
+         this.selectedCardKeys = [];
+         this.syncPlan();
+       },
+       setMode(nextMode) {
+         this.mode = nextMode;
+         this.selectedCardKeys = [];
+         this.syncPlan();
+       },
+       buildingCards() {
+         const cities = this.selectedCities();
+         if (!cities.length) return [];
+         const cards = [];
+         for (const city of cities) {
+           const source = this.mode === 'upgrade' ? (city.buildings || []) : (city.available_new_buildings || []);
+           for (const item of source) {
+             const buildingId = String(item.building || '');
+             if (!buildingId) continue;
+             const meta = this.buildings[buildingId] || {};
+             if (this.mode === 'upgrade') {
+               const level = Number(item.level || 0);
+               const position = Number(item.position || 0);
+               cards.push({
+                 card_key: `${city.id}::${buildingId}::${position}::upgrade`,
+                 city_id: String(city.id),
+                 city_name: city.name,
+                 building_id: buildingId,
+                 name: meta.name || item.name || buildingId,
+                 icon: meta.icon || '',
+                 bi: meta.bi || 'bi-building',
+                 current_level: level,
+                 position,
+                 slot_types: [],
+                 meta: `Nível atual ${level} · pos ${position}`,
+               });
+             } else {
+               const slotTypes = item.slot_types || [];
+               const position = Number(item.preferred_position || 0);
+               cards.push({
+                 card_key: `${city.id}::${buildingId}::${position || 'new'}::new`,
+                 city_id: String(city.id),
+                 city_name: city.name,
+                 building_id: buildingId,
+                 name: meta.name || item.name || buildingId,
+                 icon: meta.icon || '',
+                 bi: meta.bi || 'bi-building',
+                 current_level: 0,
+                 position,
+                 slot_types: slotTypes,
+                 meta: `Novo · slot ${position || '-'} · ${slotTypes.join('/') || 'land'}`,
+               });
+             }
+           }
+         }
+         return cards.sort((a, b) => {
+           const cityCmp = String(a.city_name).localeCompare(String(b.city_name), 'pt-BR');
+           if (cityCmp !== 0) return cityCmp;
+           const buildingCmp = String(a.name).localeCompare(String(b.name), 'pt-BR');
+           if (buildingCmp !== 0) return buildingCmp;
+           return Number(a.position || 0) - Number(b.position || 0);
+         });
+       },
+       filteredBuildingCards() {
+         const query = String(this.buildingQuery || '').trim().toLowerCase();
+         const cards = this.buildingCards();
+         if (!query) return cards;
+         return cards.filter(card => {
+           const hay = [
+             card.name || '',
+             card.meta || '',
+             card.city_name || '',
+           ].join(' ').toLowerCase();
+           return hay.includes(query);
+         });
+       },
+       toggleCard(cardKey) {
+         cardKey = String(cardKey);
+         if (this.selectedCardKeys.includes(cardKey)) {
+           this.selectedCardKeys = this.selectedCardKeys.filter(id => id !== cardKey);
+         } else {
+           this.selectedCardKeys = [...this.selectedCardKeys, cardKey];
+         }
+         this.syncPlan();
+       },
+       selectAllBuildings() {
+         this.selectedCardKeys = this.filteredBuildingCards().map(card => String(card.card_key));
+         this.syncPlan();
+       },
+       clearBuildings() {
+         this.selectedCardKeys = [];
+         this.syncPlan();
+       },
+       cardPayload(card) {
+         if (!card) return null;
+         return {
+           city_id: String(card.city_id),
+           city_name: card.city_name,
+           building_id: String(card.building_id),
+           building_name: card.name,
+           building_position: this.mode === 'upgrade' ? String(card.position || '') : '',
+           mode: this.mode,
+           target_level: Number(this.targetLevel || 0),
+           slot_types: this.mode === 'new' ? (card.slot_types || []) : [],
+           preferred_position: this.mode === 'new' ? String(card.position || '') : '',
+         };
+       },
+       planSteps() {
+         const level = Number(this.targetLevel || 0);
+         if (!level || level < 1) return [];
+         return this.buildingCards()
+           .filter(card => this.selectedCardKeys.includes(String(card.card_key)))
+           .map(card => this.cardPayload(card))
+           .filter(Boolean);
+       },
+       previewRows() {
+         const grouped = {};
+         for (const step of this.planSteps()) {
+           const key = String(step.city_id);
+           if (!grouped[key]) {
+             grouped[key] = { city_id: key, city_name: step.city_name, names: [] };
+           }
+           grouped[key].names.push(step.building_name);
+         }
+         return Object.values(grouped).map(row => ({
+           city_id: row.city_id,
+           city_name: row.city_name,
+           buildings_label: row.names.join(', '),
+         }));
+       },
+       summaryText() {
+         const steps = this.planSteps();
+         if (!steps.length) return 'Selecione cidades, prédios e o nível alvo.';
+         return `${this.selectedCityIds.length} cidade(s) · ${this.selectedCardKeys.length} seleção(ões) · ${steps.length} etapa(s)`;
+       },
+       syncPlan() {
+         this.planJson = JSON.stringify(this.planSteps());
+         this.$nextTick(() => {
+           if (this.$refs.planInput) {
+             this.$refs.planInput.dispatchEvent(new Event('change', { bubbles: true }));
+           }
+         });
+       },
+     }"
+     x-init="init()">
+  <input type="hidden" name="construction_plan_json" x-model="planJson" x-ref="planInput">
+
+  <div class="border-b px-4 py-4"
+       style="border-color: rgba(219,201,167,0.82); background: linear-gradient(180deg, rgba(255,255,255,0.52), rgba(255,255,255,0));">
+    <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      <div class="max-w-2xl">
+        <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Plano em lote</div>
+        <div class="mt-1 text-sm font-semibold text-ink">Selecione várias cidades, vários prédios e um nível alvo único</div>
+        <p class="mt-1 text-xs leading-relaxed text-muted">
+          O plano gera uma etapa para cada combinação válida entre cidades e prédios selecionados.
+        </p>
+      </div>
+      <div class="rounded-full border px-3 py-1.5 text-[11px] font-medium"
+           style="border-color: rgba(79,134,185,0.20); color: var(--ik-sea); background: rgba(79,134,185,0.08);"
+           x-text="summaryText()"></div>
+    </div>
+  </div>
+
+  <div class="px-4 py-4">
+    <div class="grid grid-cols-1 gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+      <section class="rounded-[18px] border p-3"
+               style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+        <div class="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Cidades</div>
+            <div class="mt-1 text-sm font-semibold text-ink">Escolha onde o plano vai rodar</div>
+          </div>
+          <div class="flex items-center gap-3">
+            <button type="button" class="rounded-full border px-3 py-1.5 text-[11px] font-medium"
+                    style="border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.08);"
+                    @click="selectAllCities()">Selecionar todas</button>
+            <button type="button" class="rounded-full border px-3 py-1.5 text-[11px] font-medium"
+                    style="border-color: rgba(219,201,167,0.88); color: #7a6a52; background: rgba(255,255,255,0.66);"
+                    @click="clearCities()">Limpar</button>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 xl:grid-cols-4">
+          <template x-for="city in cities" :key="`construction-city-${city.id}`">
+            <button type="button"
+                    class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150 hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]"
+                    :class="selectedCityIds.includes(String(city.id)) ? 'translate-y-[-1px] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : ''"
+                    :style="selectedCityIds.includes(String(city.id))
+                      ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.88));'
+                      : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'"
+                    @click="toggleCity(city.id)">
+              <div class="absolute inset-x-0 top-0 h-14"
+                   style="background: linear-gradient(135deg, rgba(79,134,185,0.16), rgba(79,134,185,0.02));"></div>
+              <div class="relative p-3">
+                <div class="flex items-start gap-3">
+                  <div class="relative shrink-0">
+                    <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                         style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                      <img :src="city.city_art" alt="" class="h-8 w-8 object-contain">
+                    </div>
+                    <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                      <img :src="city.tradegood_icon" :alt="city.tradegood_name" class="h-4 w-4 object-contain">
+                    </div>
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-start justify-between gap-2">
+                      <div class="min-w-0">
+                        <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
+                        <div class="mt-1 text-[11px] text-muted">
+                          <span x-text="city.tradegood_name"></span>
+                          <span x-show="city.x && city.y" x-text="` • [${city.x}:${city.y}]`"></span>
+                        </div>
+                      </div>
+                      <span class="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full border transition-colors"
+                            :style="selectedCityIds.includes(String(city.id))
+                              ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
+                              : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
+                        <i class="bi" :class="selectedCityIds.includes(String(city.id)) ? 'bi-check-lg' : 'bi-buildings'"></i>
+                      </span>
+                    </div>
+                    <div class="mt-2 flex flex-wrap gap-1.5">
+                      <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]"
+                            style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">
+                        <i class="bi bi-grid-3x3-gap text-[10px]"></i>
+                        <span x-text="`${(city.buildings || []).length} edif.`"></span>
+                      </span>
+                      <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]"
+                            style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">
+                        <i class="bi bi-plus-square text-[10px]"></i>
+                        <span x-text="`${(city.available_new_buildings || []).length} novos`"></span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </button>
+          </template>
+        </div>
+      </section>
+
+      <section class="rounded-[18px] border p-3"
+               style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+        <div class="mb-2 flex items-center gap-2">
+          <span class="inline-flex h-8 w-8 items-center justify-center rounded-2xl"
+                style="background: rgba(79,134,185,0.12); color: var(--ik-sea);">
+            <i class="bi bi-sliders text-sm"></i>
+          </span>
+          <div>
+            <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Aplicação</div>
+            <div class="text-xs text-muted">Um alvo único para tudo</div>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <button type="button"
+                  class="rounded-[16px] border px-3 py-2 text-left transition-all"
+                  :class="mode === 'upgrade' ? 'ring-1 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.08)]' : 'hover:border-[var(--ik-sea)]/50'"
+                  style="border-color: var(--ik-line);"
+                  @click="setMode('upgrade')">
+            <div class="text-xs font-semibold text-ink">Evoluir existentes</div>
+            <div class="mt-1 text-[11px] text-muted">Só os que existem em todas as cidades.</div>
+          </button>
+          <button type="button"
+                  class="rounded-[16px] border px-3 py-2 text-left transition-all"
+                  :class="mode === 'new' ? 'ring-1 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.08)]' : 'hover:border-[var(--ik-sea)]/50'"
+                  style="border-color: var(--ik-line);"
+                  @click="setMode('new')">
+            <div class="text-xs font-semibold text-ink">Construir novos</div>
+            <div class="mt-1 text-[11px] text-muted">Só os disponíveis em todas as cidades.</div>
+          </button>
+        </div>
+        <div class="mt-3">
+          <label class="form-label text-xs mb-1 block">Nível alvo</label>
+          <input type="number" min="1" max="86" class="form-input" x-model="targetLevel" @input="syncPlan()">
+          <p class="mt-1 text-[11px] text-muted">Todos os prédios selecionados irão para esse nível.</p>
+        </div>
+      </section>
+    </div>
+
+    <section class="mt-3 rounded-[18px] border p-3"
+             style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+        <div class="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">Prédios</div>
+            <div class="mt-1 text-sm font-semibold text-ink">Selecione cada prédio individualmente</div>
+            <div class="mt-1 text-[11px] text-muted">Cada card representa um prédio em uma cidade. Você escolhe exatamente quais entram no lote.</div>
+          </div>
+        <div class="flex items-center gap-3">
+          <button type="button" class="rounded-full border px-3 py-1.5 text-[11px] font-medium"
+                  style="border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.08);"
+                  @click="selectAllBuildings()">Selecionar todos</button>
+          <button type="button" class="rounded-full border px-3 py-1.5 text-[11px] font-medium"
+                  style="border-color: rgba(219,201,167,0.88); color: #7a6a52; background: rgba(255,255,255,0.66);"
+                  @click="clearBuildings()">Limpar</button>
+          </div>
+        </div>
+      <label class="mb-3 block" x-show="buildingCards().length">
+        <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Filtrar prédios</span>
+        <input type="text" x-model="buildingQuery" class="form-input" placeholder="Buscar por nome ou cidade vinculada">
+      </label>
+      <div class="grid grid-cols-2 gap-2 xl:grid-cols-4" x-show="filteredBuildingCards().length">
+        <template x-for="card in filteredBuildingCards()" :key="`construction-building-${card.card_key}`">
+          <button type="button"
+                  class="text-left rounded-[16px] border px-3 py-3 transition-all hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]"
+                  :class="selectedCardKeys.includes(String(card.card_key)) ? 'translate-y-[-1px] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : ''"
+                  :style="selectedCardKeys.includes(String(card.card_key))
+                    ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.88));'
+                    : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'"
+                  @click="toggleCard(card.card_key)">
+            <div class="flex items-start gap-3">
+              <template x-if="card.icon">
+                <img :src="card.icon" :alt="card.name" class="h-10 w-10 object-contain shrink-0">
+              </template>
+              <template x-if="!card.icon">
+                <span class="inline-flex h-10 w-10 items-center justify-center rounded-xl shrink-0 text-[11px] font-bold uppercase"
+                      style="background: rgba(79,134,185,0.10); color: var(--ik-sea);">
+                  <span x-text="(card.name || '?').slice(0, 2)"></span>
+                </span>
+              </template>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <div class="truncate text-sm font-semibold text-ink" x-text="card.name"></div>
+                      <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px]"
+                            style="border-color: rgba(79,134,185,0.18); background: rgba(79,134,185,0.06); color: var(--ik-sea);"
+                            x-text="card.city_name"></span>
+                      <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] text-muted"
+                            style="border-color: rgba(219,201,167,0.72); background: rgba(255,255,255,0.72);"
+                            x-text="mode === 'upgrade' ? `lvl ${card.current_level}` : 'novo'"></span>
+                    </div>
+                    <div class="mt-1 text-[11px] text-muted"
+                         x-text="mode === 'upgrade' ? `Posição ${card.position}` : `Slot ${card.position || '-'} · ${(card.slot_types || []).join('/') || 'land'}`"></div>
+                  </div>
+                  <span class="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full border transition-colors"
+                        :style="selectedCardKeys.includes(String(card.card_key))
+                          ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
+                          : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
+                    <i class="bi" :class="selectedCardKeys.includes(String(card.card_key)) ? 'bi-check-lg' : 'bi-hammer'"></i>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </button>
+        </template>
+      </div>
+      <div class="rounded-[16px] border px-3 py-4 text-sm text-muted"
+           style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.66);"
+           x-show="!buildingCards().length">
+        Selecione cidades para ver os prédios disponíveis nelas.
+      </div>
+      <div class="rounded-[16px] border px-3 py-4 text-sm text-muted"
+           style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.66);"
+           x-show="buildingCards().length && !filteredBuildingCards().length">
+        Nenhum prédio encontrado com esse filtro.
+      </div>
+    </section>
+
+    <section class="mt-3 rounded-[18px] border p-3"
+             style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, rgba(79,134,185,0.07), rgba(255,255,255,0.76));">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Como vai ficar</div>
+          <div class="mt-1 text-sm font-semibold text-ink">Resumo do lote gerado</div>
+          <div class="mt-1 text-[11px] text-muted">Cada cidade selecionada recebe todos os prédios marcados no mesmo nível alvo.</div>
+        </div>
+        <div class="rounded-full border px-3 py-1.5 text-[11px] font-medium"
+             style="border-color: rgba(79,134,185,0.20); color: var(--ik-sea); background: rgba(79,134,185,0.08);"
+             x-text="targetLevel ? `Nível alvo ${targetLevel}` : 'Defina o nível alvo'"></div>
+      </div>
+
+      <div class="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-2" x-show="previewRows().length">
+        <template x-for="row in previewRows()" :key="`construction-preview-${row.city_id}`">
+          <div class="rounded-[16px] border px-3 py-3"
+               style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+            <div class="text-sm font-semibold text-ink" x-text="row.city_name"></div>
+            <div class="mt-1 text-[11px] leading-relaxed text-muted" x-text="row.buildings_label"></div>
+          </div>
+        </template>
+      </div>
+
+      <div class="mt-3 rounded-[16px] border px-3 py-4 text-sm text-muted"
+           style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.66);"
+           x-show="!previewRows().length">
+        Quando você escolher cidades, prédios e um nível alvo, o plano mostra aqui exatamente quais combinações serão geradas.
+      </div>
+    </section>
+  </div>
+</div>

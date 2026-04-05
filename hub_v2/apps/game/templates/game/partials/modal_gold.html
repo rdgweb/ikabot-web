@@ -1,0 +1,115 @@
+{% load static %}
+<div class="grid min-h-0 h-full" style="grid-template-rows:auto minmax(0,1fr);">
+  <div class="gm-header flex items-center justify-between px-4 py-3 shrink-0">
+    <div class="flex items-center gap-2">
+      <img src="{% static 'game/resources/icon_actionpoints.png' %}" class="w-5 h-5">
+      <div>
+        <span class="gm-title gm-text-title font-bold text-sm tracking-wide block">OURO</span>
+        <span class="gm-subtitle gm-text-label text-[11px]">Caixa atual, projecao e risco por conta</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-4">
+      <span class="gm-header-value gm-text-gold" x-text="fmt(kpi.gold)"></span>
+      <button @click="kpiModal=null"><i class="bi bi-x-lg gm-close"></i></button>
+    </div>
+  </div>
+  <div class="gm-body flex-1 min-h-0 p-4 space-y-4">
+    {# ── 4 KPI cards ── #}
+    <div class="grid grid-cols-1 sm:grid-cols-4 gap-2 mb-4">
+      <div class="gm-card-alt rounded-lg p-3">
+        <div class="gm-card-label">Caixa total</div>
+        <div class="gm-card-value gm-text-gold mt-1" x-text="fmt(kpi.gold)"></div>
+      </div>
+      <div class="gm-card rounded-lg p-3">
+        <div class="gm-card-label">Saldo em 24h</div>
+        <div class="gm-card-value mt-1" :class="goldInsights().delta24>=0?'gm-text-positive':'gm-text-negative'" x-text="signedFmt(goldInsights().delta24)"></div>
+      </div>
+      <div class="gm-card rounded-lg p-3">
+        <div class="gm-card-label">Contas em risco</div>
+        <div class="gm-card-value mt-1" :class="goldInsights().negativeCount?'gm-text-negative':'gm-text-positive'" x-text="goldInsights().negativeCount"></div>
+      </div>
+      <div class="gm-card rounded-lg p-3">
+        <div class="gm-card-label">Mais critica</div>
+        <div class="text-sm font-bold mt-1 truncate gm-text-title" x-text="goldInsights().criticalName"></div>
+        <div class="text-[11px] font-mono mt-1" :class="goldInsights().criticalHours===null?'gm-text-positive':'gm-text-negative'" x-text="goldInsights().criticalLabel"></div>
+      </div>
+    </div>
+
+    {# ── History chart ── #}
+    <div class="gm-section rounded-lg p-3">
+      <div class="flex items-center justify-between mb-2">
+        <h4 class="gm-section-title">Historico de ouro</h4>
+        <span class="gm-section-hint" x-text="historyState('gold').scopeLabel"></span>
+      </div>
+      <template x-if="historyState('gold').available">
+        <div>
+          <div class="gm-chart-box h-48 rounded-lg p-2">
+            <canvas id="gold-history-chart"></canvas>
+          </div>
+          <div class="gm-chart-footer mt-2 flex items-center justify-between text-[11px]">
+            <span class="gm-text-label" x-text="'Inicio: ' + fmt(historyState('gold').first)"></span>
+            <span :class="historyState('gold').delta>=0?'gm-text-positive':'gm-text-negative'" x-text="'Delta: ' + signedFmt(historyState('gold').delta)"></span>
+            <span class="gm-text-label" x-text="'Atual: ' + fmt(historyState('gold').last)"></span>
+          </div>
+        </div>
+      </template>
+      <template x-if="!historyState('gold').available">
+        <div class="gm-empty" x-text="historyState('gold').reason"></div>
+      </template>
+    </div>
+
+    {# ── Ranking + Risk grid ── #}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="gm-section rounded-lg p-3">
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="gm-section-title">Ranking de caixa</h4>
+          <span class="gm-section-hint">participacao no ouro total</span>
+        </div>
+        <div class="space-y-2">
+          <template x-for="c in topGoldAccounts().slice(0, 5)" :key="'gold-rank-'+c.uid">
+            <div>
+              <div class="flex items-center justify-between gap-2 text-[11px]">
+                <span class="font-semibold truncate gm-text-player" x-text="c.player"></span>
+                <span class="font-mono font-bold gm-text-gold" x-text="fmt(c.gold)"></span>
+              </div>
+              <div class="gm-bar-track mt-1 rounded-full overflow-hidden">
+                <div class="h-full rounded-full" style="background:linear-gradient(90deg,#d8b158,#a67c00);" :style="'width:'+Math.max(c.goldShare,2)+'%'"></div>
+              </div>
+              <div class="mt-1 flex items-center justify-between text-[10px] gm-text-label">
+                <span x-text="c.goldShare + '%'"></span>
+                <span :class="c.income>=0?'gm-text-positive':'gm-text-negative'" x-text="signedFmt(c.income) + '/h'"></span>
+              </div>
+            </div>
+          </template>
+          <div x-show="!topGoldAccounts().length" class="gm-empty">
+            Nenhum dado disponivel para o ranking atual.
+          </div>
+        </div>
+      </div>
+
+      <div class="gm-section rounded-lg p-3">
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="gm-section-title">Drenos de ouro</h4>
+          <span class="gm-section-hint">quem pode esgotar caixa primeiro</span>
+        </div>
+        <div class="space-y-2" x-show="goldRiskAccounts().length">
+          <template x-for="c in goldRiskAccounts()" :key="'gold-risk-'+c.uid">
+            <div class="gm-item rounded-lg p-2.5">
+              <div class="flex items-center justify-between gap-2 text-[11px]">
+                <span class="font-semibold truncate gm-text-player" x-text="c.player"></span>
+                <span class="font-mono font-bold text-red-600" x-text="signedFmt(c.income) + '/h'"></span>
+              </div>
+              <div class="mt-1 flex items-center justify-between text-[10px] gm-text-label">
+                <span x-text="'Caixa: ' + fmt(c.gold)"></span>
+                <span :class="c.hoursToZero===null?'gm-text-positive':'gm-text-negative'" x-text="c.hoursToZero===null?'Sem risco imediato':('Zera em ' + fmtHours(c.hoursToZero))"></span>
+              </div>
+            </div>
+          </template>
+        </div>
+        <div x-show="!goldRiskAccounts().length" class="gm-empty-ok">
+          Nenhuma conta com liquido negativo no filtro atual.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

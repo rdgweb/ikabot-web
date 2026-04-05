@@ -1,0 +1,48 @@
+<!-- Stats cards — includable partial for HTMX refresh -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="stats-cards">
+
+  <!-- Nos Online -->
+  <div class="bg-paper rounded-lg shadow-sm border-l-4 border-line p-4 flex items-center gap-4">
+    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-sand flex items-center justify-center">
+      <i class="bi bi-hdd-network text-sea text-lg"></i>
+    </div>
+    <div>
+      <p class="text-sm text-muted">N&oacute;s Online</p>
+      <p class="text-2xl font-bold text-ink">{{ online_nodes }}<span class="text-sm font-normal text-muted">/{{ total_nodes }}</span></p>
+    </div>
+  </div>
+
+  <!-- Contas Ativas -->
+  <div class="bg-paper rounded-lg shadow-sm border-l-4 border-green-500 p-4 flex items-center gap-4">
+    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+      <i class="bi bi-person-badge text-green-600 text-lg"></i>
+    </div>
+    <div>
+      <p class="text-sm text-muted">Contas Ativas</p>
+      <p class="text-2xl font-bold text-ink">{{ total_accounts }}</p>
+    </div>
+  </div>
+
+  <!-- Jobs na Fila -->
+  <div class="bg-paper rounded-lg shadow-sm border-l-4 border-yellow-500 p-4 flex items-center gap-4">
+    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center">
+      <i class="bi bi-list-task text-yellow-600 text-lg"></i>
+    </div>
+    <div>
+      <p class="text-sm text-muted">Jobs na Fila</p>
+      <p class="text-2xl font-bold text-ink">{{ jobs_queued }}</p>
+    </div>
+  </div>
+
+  <!-- Erros 24h -->
+  <div class="bg-paper rounded-lg shadow-sm border-l-4 border-red-500 p-4 flex items-center gap-4">
+    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+      <i class="bi bi-exclamation-triangle text-red-600 text-lg"></i>
+    </div>
+    <div>
+      <p class="text-sm text-muted">Erros 24h</p>
+      <p class="text-2xl font-bold text-ink">{{ jobs_error_24h }}</p>
+    </div>
+  </div>
+
+</div>

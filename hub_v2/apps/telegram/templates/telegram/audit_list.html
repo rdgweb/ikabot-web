@@ -1,0 +1,93 @@
+{% extends "base_list.html" %}
+
+{% block title %}Central de Mensagens{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'telegram:config' %}" class="hover:text-ink">Telegram</a>
+  <span class="mx-1">/</span> <span class="text-ink">Central de Mensagens</span>
+{% endblock %}
+
+{% block page_title %}Central de Mensagens{% endblock %}
+{% block page_subtitle %}Historico de notificacoes enviadas via Telegram{% endblock %}
+
+{% block filter_dropdown %}
+<div x-data="{ filterOpen: false }" class="relative">
+  <button @click="filterOpen = !filterOpen" class="btn btn-secondary btn-sm relative" type="button">
+    <i class="bi bi-funnel"></i> Filtros
+    {% if request.GET.status or request.GET.account or request.GET.game_account or request.GET.channel %}
+    <span class="filter-badge"></span>
+    {% endif %}
+  </button>
+  <div x-show="filterOpen" x-cloak
+       x-transition:enter="transition ease-out duration-150"
+       x-transition:enter-start="opacity-0 scale-95"
+       x-transition:enter-end="opacity-100 scale-100"
+       x-transition:leave="transition ease-in duration-100"
+       x-transition:leave-start="opacity-100 scale-100"
+       x-transition:leave-end="opacity-0 scale-95"
+       @click.away="filterOpen = false"
+       class="filter-panel right-0">
+    <h3 class="text-sm font-semibold text-ink mb-3">Filtros</h3>
+    <div class="grid grid-cols-1 gap-3">
+      <div>
+        <label class="filter-panel-label">Status</label>
+        <select name="status" class="filter-select"
+                hx-get="{{ request.path }}" hx-target="#table-content"
+                hx-swap="innerHTML" hx-trigger="change"
+                hx-include=".filter-panel [name]" hx-push-url="true">
+          <option value="">Todos</option>
+          {% for value, label in filter.form.status.field.choices %}
+            {% if value %}
+            <option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="filter-panel-label">Conta</label>
+        <select name="account" class="filter-select"
+                hx-get="{{ request.path }}" hx-target="#table-content"
+                hx-swap="innerHTML" hx-trigger="change"
+                hx-include=".filter-panel [name]" hx-push-url="true">
+          <option value="">Todas</option>
+          {% for account in filter.form.account.field.queryset %}
+          <option value="{{ account.pk }}" {% if request.GET.account == account.pk|stringformat:"s" %}selected{% endif %}>{{ account.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="filter-panel-label">Subconta</label>
+        <select name="game_account" class="filter-select"
+                hx-get="{{ request.path }}" hx-target="#table-content"
+                hx-swap="innerHTML" hx-trigger="change"
+                hx-include=".filter-panel [name]" hx-push-url="true">
+          <option value="">Todas</option>
+          {% for ga in filter.form.game_account.field.queryset %}
+          <option value="{{ ga.pk }}" {% if request.GET.game_account == ga.pk|stringformat:"s" %}selected{% endif %}>{{ ga.name|default:ga.server_id }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="filter-panel-label">Canal</label>
+        <select name="channel" class="filter-select"
+                hx-get="{{ request.path }}" hx-target="#table-content"
+                hx-swap="innerHTML" hx-trigger="change"
+                hx-include=".filter-panel [name]" hx-push-url="true">
+          <option value="">Todos</option>
+          <option value="notification" {% if request.GET.channel == "notification" %}selected{% endif %}>Notificacao</option>
+          <option value="alert" {% if request.GET.channel == "alert" %}selected{% endif %}>Alerta</option>
+          <option value="summary" {% if request.GET.channel == "summary" %}selected{% endif %}>Resumo</option>
+        </select>
+      </div>
+    </div>
+    <div class="flex justify-between items-center mt-4 pt-3" style="border-top: 1px solid var(--ik-line);">
+      <a href="{{ request.path }}" class="text-sm text-muted hover:text-ink">Limpar filtros</a>
+      <button type="button" @click="filterOpen = false" class="btn btn-primary btn-sm">Fechar</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block table_content %}
+{% include "telegram/partials/audit_table.html" %}
+{% endblock %}

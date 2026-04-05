@@ -1,0 +1,31 @@
+{% load hub_tags %}
+<!-- Top bar with breadcrumb and clock -->
+<header class="topbar">
+  <div class="flex items-center gap-3">
+    <!-- Mobile sidebar toggle -->
+    <button id="sidebar-toggle" class="lg:hidden text-muted hover:text-ink">
+      <i class="bi bi-list text-xl"></i>
+    </button>
+    {% block breadcrumb %}
+    <nav class="text-sm text-muted">
+      <a href="/" class="hover:text-ink">Dashboard</a>
+      {% block breadcrumb_items %}{% endblock %}
+    </nav>
+    {% endblock %}
+  </div>
+  <div class="flex items-center gap-3 text-sm text-muted">
+    {# ── Global "New Job" button ── #}
+    <button type="button"
+            class="btn btn-primary btn-sm"
+            hx-get="{% url 'jobs:job-create' %}"
+            hx-target="#job-modal-body"
+            hx-swap="innerHTML"
+            hx-push-url="false"
+            hx-boost="false"
+            onclick="event.stopPropagation(); this.dispatchEvent(new CustomEvent('open-modal-jobcreate', {bubbles: true}));">
+      <i class="bi bi-plus-lg"></i>
+      <span class="hidden sm:inline">Novo Job</span>
+    </button>
+    <span><i class="bi bi-clock"></i> <span data-clock>--:--</span></span>
+  </div>
+</header>

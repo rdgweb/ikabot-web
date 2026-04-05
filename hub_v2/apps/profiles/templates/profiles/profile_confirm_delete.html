@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Excluir {{ object.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'profiles:profile-list' %}" class="hover:text-ink">Perfis</a>
+  <span class="mx-1">/</span> <span class="text-ink">Excluir</span>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto mt-12">
+  <div class="card text-center">
+    <div class="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+      <i class="bi bi-exclamation-triangle text-red-600 text-xl"></i>
+    </div>
+    <h2 class="text-lg font-semibold text-ink mb-2">Excluir perfil "{{ object.name }}"?</h2>
+    <p class="text-sm text-muted mb-1">Código da ação: <span class="font-mono">{{ object.action_code }}</span></p>
+    <p class="text-sm text-muted mb-6">
+      Todos os dados associados a este perfil serão removidos.
+    </p>
+    <div class="flex justify-center gap-3">
+      <a href="{% url 'profiles:profile-detail' object.pk %}" class="btn btn-secondary">Cancelar</a>
+      <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Excluir</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

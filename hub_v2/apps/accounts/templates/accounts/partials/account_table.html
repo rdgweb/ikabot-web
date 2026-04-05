@@ -1,0 +1,73 @@
+{% if object_list or request.GET %}
+<div class="card overflow-hidden p-0">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Label</th>
+        <th>Email</th>
+        <th>Nó</th>
+        <th>Sub-contas</th>
+        <th>Status</th>
+        <th class="text-right">Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for account in object_list %}
+      <tr>
+        <td>
+          <a href="{% url 'accounts:account-detail' account.pk %}" class="font-medium link-sea">
+            {{ account.label }}
+          </a>
+        </td>
+        <td class="text-muted text-sm">{{ account.email }}</td>
+        <td>
+          <a href="{% url 'accounts:node-detail' account.node.pk %}" class="text-sm text-muted hover:text-sea">
+            {{ account.node.name }}
+          </a>
+        </td>
+        <td class="text-sm text-muted">{{ account.game_accounts.count }}</td>
+        <td>
+          {% if account.active %}
+            <span class="badge badge-success">Ativo</span>
+          {% else %}
+            <span class="badge badge-secondary">Inativo</span>
+          {% endif %}
+        </td>
+        <td class="text-right">
+          <button type="button"
+                  onclick="return openConfirm({
+                    title: '{% if account.active %}Desativar{% else %}Ativar{% endif %} conta',
+                    message: '{% if account.active %}Desativar{% else %}Ativar{% endif %} a conta {{ account.label|escapejs }}?',
+                    style: '{% if account.active %}danger{% else %}primary{% endif %}',
+                    confirmLabel: '{% if account.active %}Desativar{% else %}Ativar{% endif %}',
+                    onConfirm: () => htmx.ajax('POST', '{% url 'accounts:account-toggle' account.pk %}', {swap: 'none'})
+                  })"
+                  class="btn {% if account.active %}btn-secondary{% else %}btn-primary{% endif %} btn-sm"
+                  title="{% if account.active %}Desativar{% else %}Ativar{% endif %}">
+            <i class="bi {% if account.active %}bi-pause-circle{% else %}bi-play-circle{% endif %}"></i>
+          </button>
+          <a href="{% url 'accounts:account-detail' account.pk %}" class="btn btn-secondary btn-sm" title="Ver">
+            <i class="bi bi-eye"></i>
+          </a>
+          <a href="{% url 'accounts:account-edit' account.pk %}" class="btn btn-secondary btn-sm" title="Editar">
+            <i class="bi bi-pencil"></i>
+          </a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="6" class="text-center py-8 text-muted">
+          <i class="bi bi-person-badge text-2xl block mb-2"></i>
+          Nenhuma conta encontrada.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% include "components/table/pagination.html" %}
+
+{% else %}
+{% include "components/table/empty.html" with icon="bi-person-badge" message="Nenhuma conta cadastrada." action_url="/accounts/create/" action_label="Criar Conta" %}
+{% endif %}

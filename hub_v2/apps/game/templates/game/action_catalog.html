@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}Acoes do Jogo{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <span class="text-ink">Acoes do Jogo</span>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  {# ── Header ── #}
+  <div>
+    <h1 class="text-2xl font-bold text-ink">Catalogo de Acoes</h1>
+    <p class="text-sm text-muted mt-1">{{ total_actions }} acoes disponiveis para automacao — clique em uma acao para criar um job</p>
+  </div>
+
+  {# ── Categories ── #}
+  {% for group in action_groups %}
+  <div>
+    {# Category header #}
+    <div class="flex items-center gap-2 mb-3">
+      <div class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+           style="background: {{ group.color }}; opacity: 0.15;"></div>
+      <div class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 -ml-9"
+           style="color: {{ group.color }};">
+        <i class="bi {{ group.icon }} text-base"></i>
+      </div>
+      <h2 class="text-base font-bold text-ink">{{ group.label }}</h2>
+      <span class="text-[10px] text-muted font-medium px-1.5 py-0.5 rounded-full bg-[var(--ik-sand)]">
+        {{ group.actions|length }}
+      </span>
+    </div>
+
+    {# Action cards grid #}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+      {% for action in group.actions %}
+      {% if action.ready %}
+      <button type="button"
+              class="card !p-4 hover:shadow-md hover:border-[var(--ik-sea)]/50 transition-all group cursor-pointer text-left w-full"
+              hx-get="{% url 'jobs:job-create' %}?action={{ action.code }}"
+              hx-target="#job-modal-body"
+              hx-swap="innerHTML"
+              hx-push-url="false"
+              hx-boost="false"
+              onclick="event.stopPropagation(); this.dispatchEvent(new CustomEvent('open-modal-jobcreate', {bubbles: true}));">
+      {% else %}
+      <div class="card !p-4 opacity-45 cursor-not-allowed text-left w-full" title="Em breve">
+      {% endif %}
+        <div class="flex items-start gap-3">
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
+               style="background: var(--ik-sand);">
+            <i class="bi {{ action.icon }} text-sm" style="color: {{ group.color }};"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <h3 class="text-sm font-semibold text-ink truncate">{{ action.name }}</h3>
+              <span class="text-[9px] font-mono text-muted bg-[var(--ik-sand)] px-1.5 py-0.5 rounded shrink-0">
+                {{ action.code }}
+              </span>
+              {% if not action.ready %}
+              <span class="text-[9px] font-medium px-1.5 py-0.5 rounded-full"
+                    style="background: rgba(0,0,0,0.06); color: var(--ik-muted);">
+                Em breve
+              </span>
+              {% endif %}
+            </div>
+            {% if action.description %}
+            <p class="text-[11px] text-muted leading-relaxed mt-1 line-clamp-2">{{ action.description }}</p>
+            {% endif %}
+            <div class="flex items-center gap-1.5 mt-2">
+              {% if action.recurring %}
+              <span class="text-[9px] font-medium px-1.5 py-0.5 rounded-full"
+                    style="background: rgba(95,140,78,0.12); color: var(--ik-good);">
+                <i class="bi bi-arrow-repeat text-[8px]"></i> Loop
+              </span>
+              {% endif %}
+              {% if action.long_running %}
+              <span class="text-[9px] font-medium px-1.5 py-0.5 rounded-full"
+                    style="background: rgba(79,134,185,0.12); color: var(--ik-sea);">
+                <i class="bi bi-clock text-[8px]"></i> Longa
+              </span>
+              {% endif %}
+              {% if action.has_inputs %}
+              <span class="text-[9px] font-medium px-1.5 py-0.5 rounded-full"
+                    style="background: rgba(201,156,78,0.12); color: var(--ik-gold);">
+                <i class="bi bi-sliders text-[8px]"></i> Config
+              </span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      {% if action.ready %}
+      </button>
+      {% else %}
+      </div>
+      {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+
+  {% if not action_groups %}
+  <div class="text-center py-12">
+    <i class="bi bi-controller text-4xl text-muted opacity-40"></i>
+    <p class="mt-3 text-sm text-muted">Nenhuma acao configurada.</p>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

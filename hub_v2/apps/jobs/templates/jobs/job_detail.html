@@ -1,0 +1,1020 @@
+{% extends "base_detail.html" %}
+{% load static humanize hub_tags %}
+
+{% block title %}Job {{ object.pk|truncatechars:12 }}{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'jobs:job-list' %}" class="hover:text-ink">Jobs</a>
+  <span class="mx-1">/</span> <span class="text-ink">Job {{ object.pk|truncatechars:8 }}</span>
+{% endblock %}
+
+{% block detail_title %}Job {{ object.pk|truncatechars:12 }}{% endblock %}
+{% block detail_subtitle %}{% if action_name %}{{ action_name }}{% else %}Ação {{ object.action_code }}{% endif %}{% endblock %}
+
+{% block detail_actions %}
+{% if object.status == "queued" or object.status == "running" or object.status == "scheduled" or can_retry %}
+<div x-data="{ showCancel: false }" class="flex items-center gap-2">
+  {% if can_retry %}
+  <form method="post" action="{% url 'jobs:job-retry' object.pk %}">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-primary btn-sm">
+      <i class="bi bi-arrow-repeat"></i> Retry
+    </button>
+  </form>
+  {% endif %}
+  {% if can_execute_now %}
+  <form method="post" action="{% url 'jobs:job-run-now' object.pk %}">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-primary btn-sm">
+      <i class="bi bi-lightning-charge"></i> Executar agora
+    </button>
+  </form>
+  {% endif %}
+  {% if object.status == "queued" or object.status == "running" or object.status == "scheduled" %}
+  <button @click="showCancel = true" class="btn btn-danger btn-sm">
+    <i class="bi bi-x-circle"></i> Cancelar
+  </button>
+  <template x-if="showCancel">
+    <div class="fixed inset-0 z-50 flex items-center justify-center" @keydown.escape.window="showCancel = false">
+      <div class="fixed inset-0 bg-black/40" @click="showCancel = false"></div>
+      <div class="relative z-10 mx-4 w-full max-w-sm rounded-lg border border-[var(--ik-line)] bg-paper p-6 shadow-xl">
+        <div class="mb-4 flex items-center gap-3">
+          <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-red-100">
+            <i class="bi bi-exclamation-triangle-fill text-lg text-red-500"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-ink">Cancelar Job</h3>
+            <p class="mt-0.5 text-xs text-muted">Tem certeza que deseja cancelar este job?</p>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2">
+          <button @click="showCancel = false" class="btn btn-secondary btn-sm">Voltar</button>
+          <form method="post" action="{% url 'jobs:job-cancel' object.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger btn-sm">
+              <i class="bi bi-x-circle"></i> Confirmar cancelamento
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </template>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block detail_main %}
+<div class="card">
+  <h3 class="mb-3 text-sm font-semibold text-ink">Informações</h3>
+  <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+    <div {% if object.status == "running" or object.status == "queued" or object.status == "scheduled" %}
+         hx-get="{% url 'jobs:job-detail' object.pk %}"
+         hx-trigger="every 5s"
+         hx-select="#job-status-badge"
+         hx-target="this"
+         hx-swap="innerHTML"
+         hx-push-url="false"
+         {% endif %}>
+      <dt class="text-muted">Status</dt>
+      <dd class="mt-0.5" id="job-status-badge">
+        <span class="badge {{ object.status|status_badge_class }}">{{ object.get_status_display }}</span>
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted">Conta</dt>
+      <dd class="mt-0.5">
+        <a href="{% url 'accounts:account-detail' object.account.pk %}" class="link-sea">
+          {{ object.account.label }}
+        </a>
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted">Nó</dt>
+      <dd class="mt-0.5">
+        <a href="{% url 'accounts:node-detail' object.node.pk %}" class="link-sea">
+          {{ object.node.name }}
+        </a>
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted">Ação</dt>
+      <dd class="mt-0.5">{{ action_name|default:"—" }} <span class="text-xs text-muted">({{ object.action_code }})</span></dd>
+    </div>
+    <div>
+      <dt class="text-muted">Timeout</dt>
+      <dd class="mt-0.5">{{ object.timeout_sec|duration_human }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Exit Code</dt>
+      <dd class="mt-0.5 font-mono text-xs">{{ object.exit_code|default:"—" }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Agendado para</dt>
+      <dd class="mt-0.5">{{ object.scheduled_for|localtime_format|default:"—" }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Agente</dt>
+      <dd class="mt-0.5 font-mono text-xs">{{ object.agent|default:"—" }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Criado em</dt>
+      <dd class="mt-0.5">{{ object.created_at|localtime_format }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Iniciado em</dt>
+      <dd class="mt-0.5">{{ object.started_at|localtime_format|default:"—" }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Finalizado em</dt>
+      <dd class="mt-0.5">{{ object.finished_at|localtime_format|default:"—" }}</dd>
+    </div>
+  </dl>
+</div>
+
+{% if is_transport_job %}
+<div class="card">
+  <h3 class="mb-3 text-sm font-semibold text-ink">Transporte</h3>
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+    <div>
+      <div class="text-xs text-muted">Rota</div>
+      <div class="mt-1 text-sm font-medium text-ink">{{ transport_display.route|default:transport_route|default:"—" }}</div>
+      <div class="mt-2 flex flex-wrap gap-2">
+        {% if transport_display.mode_label %}
+        <span class="badge badge-info">{{ transport_display.mode_label }}</span>
+        {% endif %}
+        {% if transport_display.load_label %}
+        <span class="badge badge-secondary">Carga {{ transport_display.load_label }}</span>
+        {% endif %}
+        <span class="badge badge-secondary">Confirmar chegada: {{ transport_display.confirm_arrival }}</span>
+      </div>
+      {% if transport_display.confirmation_margin_minutes %}
+      <div class="mt-2 text-xs text-muted">Margem da confirmação: {{ transport_display.confirmation_margin_minutes }} min</div>
+      {% endif %}
+    </div>
+    <div>
+      <div class="text-xs text-muted">Itens</div>
+      {% if resource_items %}
+      <div class="mt-1 flex flex-wrap gap-2">
+        {% for resource in resource_items %}
+        <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs text-ink"
+              style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+          <img src="{% static resource.icon %}" alt="{{ resource.label }}" class="h-4 w-4">
+          <span>{{ resource.label }}</span>
+          <strong>{{ resource.amount|intcomma }}</strong>
+        </span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="mt-1 text-sm text-muted">—</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+    <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
+      <div class="text-[11px] text-muted uppercase tracking-wide">Despachado</div>
+      <div class="mt-1 text-base font-semibold text-ink">{{ transport_display.dispatched_total|intcomma|default:"0" }}</div>
+    </div>
+    <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
+      <div class="text-[11px] text-muted uppercase tracking-wide">Pendente</div>
+      <div class="mt-1 text-base font-semibold text-ink">{{ transport_display.pending_total|intcomma|default:"0" }}</div>
+    </div>
+    <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
+      <div class="text-[11px] text-muted uppercase tracking-wide">Próximo check</div>
+      <div class="mt-1 text-base font-semibold text-ink">{{ transport_display.next_check_human|default:"—" }}</div>
+    </div>
+  </div>
+  {% if transport_display.eta_items %}
+  <div class="mt-4">
+    <div class="mb-2 text-xs text-muted">Tempos</div>
+    <div class="grid grid-cols-1 gap-2 md:grid-cols-4">
+      {% for eta in transport_display.eta_items %}
+      <div class="rounded-lg border border-[var(--ik-line)] bg-[var(--ik-sand-light)] px-3 py-2">
+        <div class="text-[11px] text-muted uppercase tracking-wide">{{ eta.label }}</div>
+        <div class="mt-1 text-sm font-medium text-ink">{{ eta.human }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if donation_display %}
+<div class="card">
+  <h3 class="mb-3 text-sm font-semibold text-ink">Doação</h3>
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+    <div>
+      <div class="text-xs text-muted">{% if donation_display.is_loop %}Cidades participantes{% else %}Cidade{% endif %}</div>
+      <div class="mt-1 text-sm font-medium text-ink">{{ donation_display.city_summary|default:"—" }}</div>
+      {% if donation_display.cities|length > 1 %}
+      <div class="mt-2 flex flex-wrap gap-2">
+        {% for city in donation_display.cities %}
+        <span class="badge badge-secondary">{{ city }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    <div>
+      <div class="text-xs text-muted">Destino</div>
+      {% if donation_display.donation_items %}
+      <div class="mt-1 flex flex-wrap gap-2">
+        {% for item in donation_display.donation_items %}
+        <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs text-ink"
+              style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+          <img src="{% static item.icon %}" alt="{{ item.label }}" class="h-4 w-4">
+          <span>{{ item.label }}</span>
+        </span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="mt-1 text-sm text-muted">—</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+    {% if donation_display.is_loop %}
+    <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
+      <div class="text-[11px] text-muted uppercase tracking-wide">Método</div>
+      <div class="mt-1 text-base font-semibold text-ink">{{ donation_display.method_label|default:"—" }}</div>
+      {% if donation_display.method_value %}
+      <div class="mt-1 text-xs text-muted">Valor: {{ donation_display.method_value }}</div>
+      {% endif %}
+    </div>
+    <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
+      <div class="text-[11px] text-muted uppercase tracking-wide">Cadência</div>
+      <div class="mt-1 text-base font-semibold text-ink">
+        {{ donation_display.interval_minutes|default:"0" }} min
+      </div>
+      <div class="mt-1 text-xs text-muted">Jitter máx.: {{ donation_display.random_wait_minutes|default:"0" }} min</div>
+    </div>
+    <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
+      <div class="text-[11px] text-muted uppercase tracking-wide">Carry Over</div>
+      <div class="mt-1 text-base font-semibold text-ink">{{ donation_display.carry_over_amount|intcomma|default:"0" }}</div>
+      <div class="mt-1 text-xs text-muted">Próximo ciclo: {{ donation_display.next_check_human|default:"—" }}</div>
+    </div>
+    <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
+      <div class="text-[11px] text-muted uppercase tracking-wide">Parar no nível</div>
+      <div class="mt-1 text-base font-semibold text-ink">
+        {% if donation_display.target_level %}{{ donation_display.target_level }}{% else %}Infinito{% endif %}
+      </div>
+      <div class="mt-1 text-xs text-muted">Vazio no modal mantém o loop ativo.</div>
+    </div>
+    <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
+      <div class="text-[11px] text-muted uppercase tracking-wide">Pós-doação</div>
+      <div class="mt-1 text-base font-semibold text-ink">{{ donation_display.post_production_mode_label|default:"—" }}</div>
+      {% if donation_display.post_production_mode_label == "Usar % customizada" %}
+      <div class="mt-1 text-xs text-muted">Serraria {{ donation_display.post_sawmill_percent }}% · Luxo {{ donation_display.post_luxury_percent }}%</div>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
+      <div class="text-[11px] text-muted uppercase tracking-wide">Quantidade</div>
+      <div class="mt-1 text-base font-semibold text-ink">{{ donation_display.amount|intcomma|default:"0" }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if donation_display.modify_job_id %}
+  <div class="mt-4 rounded-lg border border-[var(--ik-line)] bg-[var(--ik-sand-light)] px-3 py-2">
+    <div class="text-[11px] text-muted uppercase tracking-wide">Ajuste de Produção</div>
+    <div class="mt-1 text-sm font-medium text-ink">
+      Job agendado:
+      <a href="{% url 'jobs:job-detail' donation_display.modify_job_id %}" class="link-sea font-mono text-xs">
+        {{ donation_display.modify_job_id }}
+      </a>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if daily_login_display %}
+<div class="card">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h3 class="text-sm font-semibold text-ink">Login Diario</h3>
+      <p class="mt-1 text-xs text-muted">Bonus, tasks e fonte de ambrosia no mesmo ciclo</p>
+    </div>
+    <div class="flex flex-wrap justify-end gap-2">
+      <span class="badge badge-secondary">Favor: {{ daily_login_display.collect_favor }}</span>
+      <span class="badge badge-secondary">Fonte: {{ daily_login_display.collect_fountain }}</span>
+      {% if daily_login_display.next_check_human %}
+      <span class="badge badge-info">Proximo check: {{ daily_login_display.next_check_human }}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.9fr)]">
+    <div>
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+        <div class="text-xs text-muted">Cidade do bonus</div>
+        <div class="mt-1 text-base font-semibold text-ink">{{ daily_login_display.city_name|default:"—" }}</div>
+        <div class="mt-1 text-xs text-muted">Fallback: {{ daily_login_display.fallback_interval_hours }} h • margem: {{ daily_login_display.reschedule_margin_minutes }} min</div>
+      </div>
+
+      <div class="mt-4">
+        <div class="text-xs text-muted">Tasks recolhidas nesta execucao</div>
+        {% if daily_login_display.collected_tasks %}
+        <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+          {% for task in daily_login_display.collected_tasks %}
+          <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(95,140,78,0.08);">
+            <div class="text-sm font-semibold text-ink">{{ task.name }}</div>
+            <div class="mt-1 text-xs text-muted">Task {{ task.task_id }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="mt-1 text-sm text-muted">Nenhuma task recolhida neste ciclo.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="space-y-3">
+      <div class="grid grid-cols-2 gap-3">
+        <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+          <div class="text-[11px] uppercase tracking-wide text-muted">Favor antes</div>
+          <div class="mt-1 text-base font-semibold text-ink">{{ daily_login_display.favor_before|default:"—" }}</div>
+        </div>
+        <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+          <div class="text-[11px] uppercase tracking-wide text-muted">Favor depois</div>
+          <div class="mt-1 text-base font-semibold text-ink">{{ daily_login_display.favor_after|default:"—" }}</div>
+        </div>
+        <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+          <div class="text-[11px] uppercase tracking-wide text-muted">Tasks</div>
+          <div class="mt-1 text-base font-semibold text-ink">{{ daily_login_display.tasks_done }}/{{ daily_login_display.tasks_count }}</div>
+          <div class="mt-1 text-xs text-muted">Coletaveis no inicio: {{ daily_login_display.collectible_tasks }}</div>
+        </div>
+        <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+          <div class="text-[11px] uppercase tracking-wide text-muted">Fonte</div>
+          <div class="mt-1 text-base font-semibold text-ink">{{ daily_login_display.fountain_state|default:"—" }}</div>
+          <div class="mt-1 text-xs text-muted">Limite de favor: {{ daily_login_display.favor_limit }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if attack_alert_display %}
+<div class="card">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h3 class="text-sm font-semibold text-ink">Alerta de Ataques</h3>
+      <p class="mt-1 text-xs text-muted">Leitura do advisor militar com deduplicacao por evento hostil</p>
+    </div>
+    <div class="flex flex-wrap justify-end gap-2">
+      <span class="badge badge-secondary">Intervalo: {{ attack_alert_display.interval_minutes }} min</span>
+      <span class="badge badge-secondary">Telegram: {{ attack_alert_display.notify_telegram }}</span>
+    </div>
+  </div>
+
+  <div class="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Movimentos</div>
+      <div class="mt-1 text-base font-semibold text-ink">{{ attack_alert_display.total_movements }}</div>
+    </div>
+    <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Hostis</div>
+      <div class="mt-1 text-base font-semibold text-ink">{{ attack_alert_display.hostile_count }}</div>
+    </div>
+    <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Alert&aacute;veis</div>
+      <div class="mt-1 text-base font-semibold text-ink">{{ attack_alert_display.matching_count }}</div>
+      <div class="mt-1 text-xs text-muted">Filtro: tropas &ge; {{ attack_alert_display.min_troops }} ou frotas &ge; {{ attack_alert_display.min_fleet }}</div>
+    </div>
+    <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Novos</div>
+      <div class="mt-1 text-base font-semibold text-ink">{{ attack_alert_display.new_count }}</div>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <div class="text-xs text-muted">Ataques novos detectados nesta execu&ccedil;&atilde;o</div>
+    {% if attack_alert_display.events %}
+    <div class="mt-2 grid grid-cols-1 gap-2">
+      {% for event in attack_alert_display.events %}
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(187,81,67,0.06);">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="text-sm font-semibold text-ink">{{ event.mission }}</div>
+          <span class="badge badge-danger">{{ event.eta }}</span>
+        </div>
+        <div class="mt-1 text-sm text-ink">{{ event.origin_player }} ({{ event.origin_city }}) &rarr; {{ event.target_city }}</div>
+        <div class="mt-1 text-xs text-muted">Tropas: {{ event.troops }} &bull; Frotas: {{ event.fleet }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="mt-1 text-sm text-muted">Nenhum ataque novo detectado neste ciclo.</div>
+    {% endif %}
+  </div>
+
+  {% if attack_alert_display.last_error %}
+  <div class="mt-4 rounded-xl border px-3 py-3" style="border-color: rgba(187,81,67,0.35); background: rgba(187,81,67,0.06);">
+    <div class="text-[11px] uppercase tracking-wide text-muted">Ultimo erro</div>
+    <div class="mt-1 text-sm font-medium text-ink">{{ attack_alert_display.last_error }}</div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if research_display %}
+<div class="card">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h3 class="text-sm font-semibold text-ink">Pesquisa</h3>
+      <p class="mt-1 text-xs text-muted">Leitura do conselheiro de pesquisa e descoberta de uma tecnologia</p>
+    </div>
+    <span class="badge badge-secondary">{{ research_display.state_label }}</span>
+  </div>
+
+  <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.9fr)]">
+    <div>
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+        <div class="text-sm font-semibold text-ink">Fila global de pesquisa</div>
+        <div class="mt-1 text-xs text-muted">Cidade de contexto: {{ research_display.city_name|default:"—" }}</div>
+        {% if research_display.selected_branches %}
+        <div class="mt-3 flex flex-wrap gap-2">
+          {% for branch in research_display.selected_branches %}
+          <span class="inline-flex items-center gap-2 rounded-full border px-2 py-1 text-xs text-ink"
+                style="border-color: var(--ik-line); background: rgba(255,255,255,0.82);">
+            <i class="bi {{ branch.icon }}"></i>
+            <span>{{ branch.label }}</span>
+          </span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      {% if research_display.discovered_name %}
+      <div class="mt-4 rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(95,140,78,0.08);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Descoberta nesta execucao</div>
+        <div class="mt-1 text-sm font-medium text-ink">{{ research_display.discovered_name }}</div>
+        {% if research_display.next_name %}
+        <div class="mt-1 text-[11px] text-muted">Proxima da fila: {{ research_display.next_name }}</div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="mt-4 rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(79,134,185,0.08);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Próxima prioridade</div>
+        <div class="mt-1 text-sm font-medium text-ink">{% if research_display.branch_name %}{{ research_display.branch_name }}{% else %}—{% endif %}</div>
+        {% if research_display.next_name %}
+        <div class="mt-1 text-[11px] text-muted">{{ research_display.next_name }}</div>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if research_display.branch_summary %}
+      <div class="mt-4 rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.82);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Painel lido do jogo</div>
+        <div class="mt-1 text-sm text-ink">{{ research_display.branch_summary }}</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="space-y-3">
+      <div class="grid grid-cols-2 gap-3">
+        <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+          <div class="text-[11px] uppercase tracking-wide text-muted">Custo</div>
+          <div class="mt-1 text-base font-semibold text-ink">{{ research_display.cost_text|default:"—" }}</div>
+        </div>
+        <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+          <div class="text-[11px] uppercase tracking-wide text-muted">ETA lido</div>
+          <div class="mt-1 text-base font-semibold text-ink">{{ research_display.eta_human|default:"—" }}</div>
+        </div>
+        <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+          <div class="text-[11px] uppercase tracking-wide text-muted">Fallback</div>
+          <div class="mt-1 text-base font-semibold text-ink">{{ research_display.fallback_interval_minutes }} min</div>
+        </div>
+        <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+          <div class="text-[11px] uppercase tracking-wide text-muted">Margem</div>
+          <div class="mt-1 text-base font-semibold text-ink">{{ research_display.ready_margin_minutes }} min</div>
+        </div>
+      </div>
+      {% if research_display.next_check_human %}
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(201,156,78,0.08);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Proximo check</div>
+        <div class="mt-1 text-sm font-medium text-ink">{{ research_display.next_check_human }}</div>
+      </div>
+      {% endif %}
+      {% if research_display.reason %}
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(201,156,78,0.08);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Observacao</div>
+        <div class="mt-1 text-sm font-medium text-ink">{{ research_display.reason }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if experiment_display %}
+<div class="card">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h3 class="text-sm font-semibold text-ink">Conduzir Ensaio</h3>
+      <p class="mt-1 text-xs text-muted">Leitura real da academia antes do consumo de cristal</p>
+    </div>
+    <span class="badge badge-secondary">{{ experiment_display.state_label }}</span>
+  </div>
+
+  <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.9fr)]">
+    <div>
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+        <div class="text-xs text-muted">Cidade</div>
+        <div class="mt-1 text-base font-semibold text-ink">{{ experiment_display.city_name|default:"—" }}</div>
+        <div class="mt-1 text-xs text-muted">Pergaminho de Atena: {{ experiment_display.use_athena_scroll }} • Ambrosia: {{ experiment_display.pay_with_ambrosia }}</div>
+      </div>
+      {% if experiment_display.reason %}
+      <div class="mt-4 rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(201,156,78,0.08);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Estado do experimento</div>
+        <div class="mt-1 text-sm font-medium text-ink">{{ experiment_display.reason }}</div>
+      </div>
+      {% endif %}
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Cristal antes</div>
+        <div class="mt-1 text-base font-semibold text-ink">{{ experiment_display.crystal|intcomma|default:"—" }}</div>
+      </div>
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Custo</div>
+        <div class="mt-1 text-base font-semibold text-ink">{{ experiment_display.crystal_cost|intcomma|default:"—" }}</div>
+      </div>
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Ganho</div>
+        <div class="mt-1 text-base font-semibold text-ink">{{ experiment_display.points_gain|intcomma|default:"—" }} RP</div>
+      </div>
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Cristal depois</div>
+        <div class="mt-1 text-base font-semibold text-ink">{% if experiment_display.crystal_after %}{{ experiment_display.crystal_after|intcomma }}{% else %}—{% endif %}</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if scientists_display %}
+<div class="card">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h3 class="text-sm font-semibold text-ink">Ajustar Cientistas</h3>
+      <p class="mt-1 text-xs text-muted">Aplicacao do alvo nas academias selecionadas</p>
+    </div>
+    <span class="badge badge-secondary">{{ scientists_display.state_label }}</span>
+  </div>
+
+  <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.9fr)]">
+    <div>
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+        <div class="text-xs text-muted">Regra do ajuste</div>
+        <div class="mt-1 text-base font-semibold text-ink">{{ scientists_display.target_mode_label }}</div>
+        <div class="mt-1 text-xs text-muted">Valor: {{ scientists_display.target_value }} • Reserva de cidadãos: {{ scientists_display.reserve_citizens }}</div>
+      </div>
+
+      {% if scientists_display.changed %}
+      <div class="mt-4">
+        <div class="text-xs text-muted">Cidades ajustadas</div>
+        <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+          {% for item in scientists_display.changed %}
+          <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(95,140,78,0.08);">
+            <div class="text-sm font-semibold text-ink">{{ item.city_name }}</div>
+            <div class="mt-1 text-xs text-muted">{{ item.before }} → {{ item.after }} cientistas</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      {% if scientists_display.failed %}
+      <div class="mt-4">
+        <div class="text-xs text-muted">Falhas</div>
+        <div class="mt-2 space-y-2">
+          {% for item in scientists_display.failed %}
+          <div class="rounded-xl border px-3 py-3" style="border-color: #f2c3b4; background: rgba(204,107,74,0.08);">
+            <div class="text-sm font-semibold text-ink">{{ item.city_name }}</div>
+            <div class="mt-1 text-xs text-muted">{{ item.reason }}</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="space-y-3">
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Cidades pedidas</div>
+        <div class="mt-1 text-base font-semibold text-ink">{% if scientists_display.requested_cities %}{{ scientists_display.requested_cities|length }}{% else %}Todas{% endif %}</div>
+      </div>
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Ajustadas</div>
+        <div class="mt-1 text-base font-semibold text-ink">{{ scientists_display.changed|length }}</div>
+      </div>
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Sem mudanca</div>
+        <div class="mt-1 text-base font-semibold text-ink">{{ scientists_display.skipped|length }}</div>
+      </div>
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Com erro</div>
+        <div class="mt-1 text-base font-semibold text-ink">{{ scientists_display.failed|length }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if miracle_display %}
+<div class="card">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h3 class="text-sm font-semibold text-ink">Milagre</h3>
+      <p class="mt-1 text-xs text-muted">Leitura real do templo e ativação da maravilha da ilha</p>
+    </div>
+    {% if miracle_display.activate_state %}
+    <span class="badge badge-secondary">Estado: {{ miracle_display.activate_state }}</span>
+    {% endif %}
+  </div>
+
+  <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.9fr)]">
+    <div>
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+        <div class="text-xs text-muted">Milagre selecionado</div>
+        <div class="mt-1 text-base font-semibold text-ink">{{ miracle_display.wonder_name|default:"—" }}</div>
+        <div class="mt-1 text-xs text-muted">{{ miracle_display.city_name|default:"—" }}{% if miracle_display.island_name %} • {{ miracle_display.island_name }}{% endif %}</div>
+      </div>
+
+      {% if miracle_display.effect %}
+      <div class="mt-4 rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(95,140,78,0.08);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Efeito registrado</div>
+        <div class="mt-1 text-sm font-medium text-ink">{{ miracle_display.effect }}</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="space-y-3">
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Templo</div>
+        <div class="mt-1 text-base font-semibold text-ink">Nível {{ miracle_display.temple_level|default:"—" }}</div>
+      </div>
+      {% if miracle_display.reason %}
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(201,156,78,0.08);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Motivo / regeneração</div>
+        <div class="mt-1 text-sm font-medium text-ink">{{ miracle_display.reason }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if shrine_display %}
+<div class="card">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h3 class="text-sm font-semibold text-ink">Santuario</h3>
+      <p class="mt-1 text-xs text-muted">{{ shrine_display.mode_label }}</p>
+    </div>
+    <div class="flex flex-wrap justify-end gap-2">
+      <span class="badge badge-secondary">{{ shrine_display.selected_gods|length }} deus(es)</span>
+      {% if shrine_display.next_check_human %}
+      <span class="badge badge-info">Proximo check: {{ shrine_display.next_check_human }}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.9fr)]">
+    <div>
+      <div class="text-xs text-muted">Deuses selecionados</div>
+      {% if shrine_display.selected_gods %}
+      <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {% for god in shrine_display.selected_gods %}
+        <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+          <div class="flex items-center gap-3">
+            <div class="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl border border-white bg-white shadow-sm">
+              <img src="{% static god.icon %}" alt="{{ god.label }}" class="h-9 w-9 object-contain">
+            </div>
+            <div class="min-w-0">
+              <div class="text-sm font-semibold text-ink">{{ god.label }}</div>
+              <div class="mt-0.5 inline-flex items-center gap-1 text-[11px] text-muted">
+                <img src="{% static god.effect_icon %}" alt="{{ god.subtitle }}" class="h-3.5 w-3.5 object-contain">
+                {{ god.subtitle }}
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="mt-1 text-sm text-muted">Nenhum deus selecionado.</div>
+      {% endif %}
+
+      {% if shrine_display.activated_names %}
+      <div class="mt-4 rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(95,140,78,0.08);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Ativados nesta execucao</div>
+        <div class="mt-2 flex flex-wrap gap-2">
+          {% for name in shrine_display.activated_names %}
+          <span class="badge badge-secondary">{{ name }}</span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="space-y-3">
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Santuario detectado</div>
+        <div class="mt-1 text-base font-semibold text-ink">{{ shrine_display.city_name|default:"—" }}</div>
+        <div class="mt-1 text-xs text-muted">Nivel {{ shrine_display.building_level|default:"—" }}{% if shrine_display.additional_cities %} • cidades extras: {{ shrine_display.additional_cities }}{% endif %}</div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+          <div class="text-[11px] uppercase tracking-wide text-muted">Favor antes</div>
+          <div class="mt-1 text-base font-semibold text-ink">{{ shrine_display.favor_before|default:"—" }}</div>
+        </div>
+        <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+          <div class="text-[11px] uppercase tracking-wide text-muted">Favor depois</div>
+          <div class="mt-1 text-base font-semibold text-ink">{{ shrine_display.favor_after|default:"—" }}</div>
+        </div>
+        <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+          <div class="text-[11px] uppercase tracking-wide text-muted">Custo previsto</div>
+          <div class="mt-1 text-base font-semibold text-ink">{{ shrine_display.favor_needed|default:"—" }}</div>
+        </div>
+        <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
+          <div class="text-[11px] uppercase tracking-wide text-muted">{% if shrine_display.is_loop %}Ciclo{% else %}Recheck{% endif %}</div>
+          <div class="mt-1 text-base font-semibold text-ink">{% if shrine_display.is_loop %}{{ shrine_display.cycle_hours|default:"—" }} h{% else %}{{ shrine_display.favor_recheck_minutes|default:"—" }} min{% endif %}</div>
+        </div>
+      </div>
+      {% if shrine_display.wait_reason %}
+      <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(201,156,78,0.08);">
+        <div class="text-[11px] uppercase tracking-wide text-muted">Estado</div>
+        <div class="mt-1 text-sm font-medium text-ink">{{ shrine_display.wait_reason }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if construction_display %}
+<div class="card">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h3 class="text-sm font-semibold text-ink">Plano de Construcao</h3>
+      <p class="mt-1 text-xs text-muted">{{ construction_display.step_count }} etapa(s) em {{ construction_display.city_count }} cidade(s)</p>
+    </div>
+    <div class="flex flex-wrap justify-end gap-2">
+      <span class="badge badge-secondary">Prioridade: {{ construction_display.queue_strategy_label }}</span>
+      <span class="badge badge-secondary">Auto transporte: {{ construction_display.auto_transport }}</span>
+    </div>
+  </div>
+
+  <div class="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-4">
+    <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
+      <div class="text-[11px] text-muted uppercase tracking-wide">Tempo estimado</div>
+      <div class="mt-1 text-base font-semibold text-ink">{{ construction_display.adjusted_human|default:"—" }}</div>
+      {% if construction_display.base_human %}
+      <div class="mt-1 text-xs text-muted">Base: {{ construction_display.base_human }}</div>
+      {% endif %}
+    </div>
+    <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2 lg:col-span-2">
+      <div class="text-[11px] text-muted uppercase tracking-wide">Custo total</div>
+      {% if construction_display.totals_by_resource %}
+      <div class="mt-2 flex flex-wrap gap-2">
+        {% for item in construction_display.totals_by_resource %}
+        <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs text-ink"
+              style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+          <img src="{% static item.icon %}" alt="{{ item.label }}" class="h-4 w-4">
+          <span>{{ item.label }}</span>
+          <strong>{{ item.amount|intcomma }}</strong>
+        </span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="mt-1 text-sm text-muted">—</div>
+      {% endif %}
+    </div>
+    <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
+      <div class="text-[11px] text-muted uppercase tracking-wide">Falta externa</div>
+      {% if construction_display.missing_by_resource %}
+      <div class="mt-2 space-y-1">
+        {% for item in construction_display.missing_by_resource %}
+        <div class="flex items-center justify-between gap-2 text-xs">
+          <span class="inline-flex items-center gap-1 text-muted">
+            <img src="{% static item.icon %}" alt="{{ item.label }}" class="h-4 w-4">
+            {{ item.label }}
+          </span>
+          <strong class="text-ink">{{ item.amount|intcomma }}</strong>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="mt-1 text-sm font-medium text-ink">Sem falta externa</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if construction_display.current_message or construction_display.blocker_message %}
+  <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+    {% if construction_display.current_message %}
+    <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+      <div class="text-[11px] uppercase tracking-wide text-emerald-700">Em andamento</div>
+      <div class="mt-1 text-sm font-medium text-emerald-900">{{ construction_display.current_message }}</div>
+    </div>
+    {% endif %}
+    {% if construction_display.blocker_message %}
+    <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+      <div class="text-[11px] uppercase tracking-wide text-amber-700">Atencao</div>
+      <div class="mt-1 text-sm font-medium text-amber-900">{{ construction_display.blocker_message }}</div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="mt-4 space-y-4">
+    {% for city in construction_display.city_cards %}
+    <div class="rounded-xl border border-[var(--ik-line)] bg-[var(--ik-sand-light)]/50 p-3">
+      <div>
+        <div class="text-sm font-semibold text-ink">{{ city.city_name }}</div>
+        <div class="mt-1 text-xs text-muted">{{ city.step_count }} etapa(s){% if city.shortfall_count %} · {{ city.shortfall_count }} com falta externa{% endif %}</div>
+      </div>
+
+      <div class="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
+        {% for step in city.steps %}
+        <div class="rounded-lg border border-[var(--ik-line)] bg-paper px-3 py-3">
+          <div class="flex items-start gap-3">
+            {% if step.building_icon %}
+            <img src="{% static 'game/buildings/'|add:step.building_icon %}" alt="{{ step.building_name }}" class="h-10 w-10 rounded-md border border-[var(--ik-line)] bg-[var(--ik-sand-light)] p-1">
+            {% endif %}
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <div class="truncate text-sm font-semibold text-ink">{{ step.index }}. {{ step.building_name }}</div>
+                <span class="badge badge-secondary">{{ step.mode_label }}</span>
+              </div>
+              <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
+                <span>{{ step.level_label }}</span>
+                {% if step.slot_label %}<span>{{ step.slot_label }}</span>{% endif %}
+                {% if step.adjusted_human %}<span>ETA {{ step.adjusted_human }}</span>{% endif %}
+              </div>
+            </div>
+          </div>
+
+          {% if step.resource_costs %}
+          <div class="mt-3">
+            <div class="mb-1 text-[11px] uppercase tracking-wide text-muted">Custos</div>
+            <div class="flex flex-wrap gap-2">
+              {% for item in step.resource_costs %}
+              <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs text-ink"
+                    style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+                <img src="{% static item.icon %}" alt="{{ item.label }}" class="h-4 w-4">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.amount|intcomma }}</strong>
+              </span>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+
+          {% if step.resource_reserved or step.resource_missing %}
+          <div class="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+            <div class="rounded-lg border border-[var(--ik-line)] px-2 py-2">
+              <div class="text-[11px] uppercase tracking-wide text-muted">Reserva local</div>
+              {% if step.resource_reserved %}
+              <div class="mt-1 space-y-1">
+                {% for item in step.resource_reserved %}
+                <div class="flex items-center justify-between gap-2 text-xs">
+                  <span class="inline-flex items-center gap-1 text-muted">
+                    <img src="{% static item.icon %}" alt="{{ item.label }}" class="h-4 w-4">
+                    {{ item.label }}
+                  </span>
+                  <strong class="text-ink">{{ item.amount|intcomma }}</strong>
+                </div>
+                {% endfor %}
+              </div>
+              {% else %}
+              <div class="mt-1 text-xs text-muted">Sem reserva</div>
+              {% endif %}
+            </div>
+            <div class="rounded-lg border border-[var(--ik-line)] px-2 py-2">
+              <div class="text-[11px] uppercase tracking-wide text-muted">Falta externa</div>
+              {% if step.resource_missing %}
+              <div class="mt-1 space-y-1">
+                {% for item in step.resource_missing %}
+                <div class="flex items-center justify-between gap-2 text-xs">
+                  <span class="inline-flex items-center gap-1 text-muted">
+                    <img src="{% static item.icon %}" alt="{{ item.label }}" class="h-4 w-4">
+                    {{ item.label }}
+                  </span>
+                  <strong class="text-ink">{{ item.amount|intcomma }}</strong>
+                </div>
+                {% endfor %}
+              </div>
+              {% else %}
+              <div class="mt-1 text-xs font-medium text-ink">Coberto localmente</div>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if construction_reservations and not construction_display %}
+<div class="card">
+  <h3 class="mb-3 text-sm font-semibold text-ink">Reservas de Recursos</h3>
+  <div class="space-y-2">
+    {% for item in construction_reservations %}
+    <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
+      <div class="text-sm font-medium text-ink">{{ item.city_name|default:item.city_id }} · {{ item.resource }}</div>
+      <div class="mt-1 text-xs text-muted">
+        Reservado local: {{ item.reserved_local_amount|intcomma }} · Falta externa: {{ item.shortfall_amount|intcomma }}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="mb-3 flex items-center justify-between">
+    <h3 class="text-sm font-semibold text-ink">Logs de execução</h3>
+    {% if object.status == "running" or object.status == "queued" or object.status == "scheduled" %}
+    <span class="flex items-center gap-1 text-[10px] text-muted">
+      <span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-green-500"></span>
+      Atualizando automaticamente
+    </span>
+    {% endif %}
+  </div>
+  {% include "jobs/partials/job_logs.html" %}
+</div>
+{% endblock %}
+
+{% block detail_sidebar %}
+<div class="card">
+  <h3 class="mb-3 text-sm font-semibold text-ink">Detalhes</h3>
+  <dl class="space-y-2 text-sm">
+    <div>
+      <dt class="text-muted">ID</dt>
+      <dd class="mt-0.5 font-mono text-xs">{{ object.pk }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Profile</dt>
+      <dd class="mt-0.5">
+        {% if object.profile %}
+        <a href="{% url 'profiles:profile-detail' object.profile.pk %}" class="link-sea">
+          {{ object.profile }}
+        </a>
+        {% else %}
+        <span class="text-muted">—</span>
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted">Source Job ID</dt>
+      <dd class="mt-0.5 font-mono text-xs">
+        {% if source_job %}
+        <a href="{% url 'jobs:job-detail' source_job.pk %}" class="link-sea">
+          {{ source_job.pk }}
+          <span class="font-sans text-muted">• {{ source_job.action_code|action_name }}</span>
+        </a>
+        {% else %}
+        {{ object.source_job_id|default:"—" }}
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted">Jobs derivados</dt>
+      <dd class="mt-1">
+        {% if child_jobs %}
+        <div class="space-y-1">
+          {% for child_job in child_jobs %}
+          <a href="{% url 'jobs:job-detail' child_job.pk %}"
+             class="flex items-center justify-between gap-2 rounded border border-[var(--ik-line)] px-2 py-1 text-xs hover:bg-sand">
+            <span class="truncate">
+              <span class="font-mono">{{ child_job.pk }}</span>
+              <span class="text-muted">• {{ child_job.action_code|action_name }}</span>
+            </span>
+            <span class="badge {{ child_job.status|status_badge_class }}">{{ child_job.get_status_display }}</span>
+          </a>
+          {% endfor %}
+        </div>
+        {% else %}
+        <span class="text-muted">—</span>
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt class="text-muted">Inputs JSON</dt>
+      <dd class="mt-1">
+        <details>
+          <summary class="cursor-pointer text-xs font-medium text-[var(--ik-sea)]">Mostrar JSON bruto</summary>
+          <pre class="mt-2 max-h-64 overflow-x-auto rounded bg-sand p-2 text-xs">{{ inputs_json_pretty }}</pre>
+        </details>
+      </dd>
+    </div>
+  </dl>
+</div>
+{% endblock %}

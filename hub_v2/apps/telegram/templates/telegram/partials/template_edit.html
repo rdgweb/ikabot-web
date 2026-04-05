@@ -1,0 +1,88 @@
+{# ── Template edit (expanded) ── #}
+
+<div id="tpl-row-{{ tpl.pk }}" class="border border-[var(--ik-sea)]/30 rounded-lg bg-[var(--ik-sand-light)]">
+  {# Header #}
+  <div class="px-4 py-3 border-b border-[var(--ik-line)]">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="text-lg">{{ tpl.icon }}</span>
+        <span class="text-sm font-semibold text-[var(--ik-ink)]">{{ label }}</span>
+      </div>
+      <span class="text-xs text-[var(--ik-muted)] font-mono">{{ tpl.event_key }}</span>
+    </div>
+  </div>
+
+  <div class="p-4">
+    <form hx-post="{% url 'telegram:template-edit' tpl.pk %}"
+          hx-target="#tpl-row-{{ tpl.pk }}"
+          hx-swap="outerHTML">
+      {% csrf_token %}
+
+      {# Icon + Title side by side #}
+      <div class="flex gap-3 items-end mb-3">
+        <div class="shrink-0">
+          <label class="form-label text-xs mb-1">{{ form.icon.label }}</label>
+          {{ form.icon }}
+        </div>
+        <div class="flex-1">
+          <label class="form-label text-xs mb-1">{{ form.title_template.label }}</label>
+          {{ form.title_template }}
+        </div>
+      </div>
+
+      {# Body #}
+      <div class="mb-3">
+        <label class="form-label text-xs mb-1">{{ form.body_template.label }}</label>
+        {{ form.body_template }}
+        <p class="text-[10px] text-[var(--ik-muted)] mt-0.5">Cada linha = uma linha na mensagem. Linhas vazias apos substituicao sao removidas.</p>
+      </div>
+
+      {# Variables reference — compact pills #}
+      <div class="mb-4 p-2.5 bg-[var(--ik-paper)] rounded border border-[var(--ik-line)]">
+        <p class="text-[10px] font-semibold text-[var(--ik-muted)] uppercase tracking-wide mb-1.5">
+          Variaveis disponiveis
+        </p>
+        <div class="grid grid-cols-2 gap-x-4 gap-y-0.5">
+          {% for var, desc in available_vars %}
+          <div class="flex items-center gap-1.5">
+            <code class="text-[11px] text-[var(--ik-sea)] font-mono whitespace-nowrap">{{ var }}</code>
+            <span class="text-[10px] text-[var(--ik-muted)] truncate">{{ desc }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      {# Live preview #}
+      <div class="mb-4">
+        <p class="text-[10px] font-semibold text-[var(--ik-muted)] uppercase tracking-wide mb-1.5">Preview</p>
+        <div class="p-3 bg-[#1e2c3a] text-[#e1e4e8] text-sm rounded-lg font-sans whitespace-pre-line leading-relaxed">
+          {{ preview|safe }}
+        </div>
+      </div>
+
+      {# Actions #}
+      <div class="flex items-center justify-between pt-3 border-t border-[var(--ik-line)]">
+        <button type="button"
+                hx-post="{% url 'telegram:template-reset' tpl.pk %}"
+                hx-target="#tpl-row-{{ tpl.pk }}"
+                hx-swap="outerHTML"
+                hx-confirm="Restaurar o template padrao?"
+                class="text-xs text-[var(--ik-bad)] hover:underline cursor-pointer">
+          <i class="bi bi-arrow-counterclockwise"></i> Restaurar padrao
+        </button>
+        <div class="flex gap-2">
+          <button type="button"
+                  hx-get="{% url 'telegram:template-row' tpl.pk %}"
+                  hx-target="#tpl-row-{{ tpl.pk }}"
+                  hx-swap="outerHTML"
+                  class="btn btn-secondary btn-sm">
+            Cancelar
+          </button>
+          <button type="submit" class="btn btn-primary btn-sm">
+            <i class="bi bi-check-lg"></i> Salvar
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
