@@ -18,14 +18,22 @@ class AgentTokenAuthentication(BaseAuthentication):
     """
 
     HEADER = "HTTP_X_AGENT_TOKEN"
+    NODE_HEADER = "HTTP_X_AGENT_NODE_ID"
 
     def authenticate(self, request):
         token = request.META.get(self.HEADER)
         if not token:
             return None
 
-        if token != settings.AGENT_TOKEN:
-            raise AuthenticationFailed("Invalid agent token.")
+        if token == settings.AGENT_TOKEN:
+            auth_kind = "agent"
+        else:
+            node_id = self._get_node_id(request)
+            if not node_id:
+                raise AuthenticationFailed("Invalid agent token.")
+            if not self._node_token_matches(node_id, token):
+                raise AuthenticationFailed("Invalid agent token.")
+            auth_kind = "agent"
 
         # Optional IP allow-list
         allowed_raw = settings.AGENT_ALLOWED_IPS
@@ -39,7 +47,7 @@ class AgentTokenAuthentication(BaseAuthentication):
                     f"Agent IP {remote_ip} not in allow-list."
                 )
 
-        return (AnonymousUser(), "agent")
+        return (AnonymousUser(), auth_kind)
 
     def authenticate_header(self, request):
         return "AgentToken"
@@ -50,6 +58,30 @@ class AgentTokenAuthentication(BaseAuthentication):
         if forwarded:
             return forwarded.split(",")[0].strip()
         return request.META.get("REMOTE_ADDR", "")
+
+    def _get_node_id(self, request) -> str:
+        header_value = request.META.get(self.NODE_HEADER, "").strip()
+        if header_value:
+            return header_value
+        query_value = request.query_params.get("node_id", "").strip()
+        if query_value:
+            return query_value
+        data = getattr(request, "data", None)
+        if isinstance(data, dict):
+            body_value = str(data.get("node_id", "")).strip()
+            if body_value:
+                return body_value
+        return ""
+
+    @staticmethod
+    def _node_token_matches(node_id: str, token: str) -> bool:
+        from apps.accounts.models import Node
+
+        try:
+            node = Node.objects.only("deploy_token").get(pk=node_id)
+        except Node.DoesNotExist:
+            return False
+        return bool(node.deploy_token) and token == node.deploy_token
 
     @staticmethod
     def _ip_allowed(ip: str, allowed: list[str]) -> bool:

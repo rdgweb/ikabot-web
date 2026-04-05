@@ -4,6 +4,7 @@ Node CRUD views + deploy page.
 
 import json
 from collections import Counter
+import os
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse
@@ -170,10 +171,15 @@ class NodeDeployView(LoginRequiredMixin, DetailView):
         # Build the hub URL for the deploy command
         request = self.request
         hub_url = f"{request.scheme}://{request.get_host()}"
+        hub_host = request.get_host().split(":")[0]
+        redis_port = os.environ.get("REDIS_PORT", "6379")
+        redis_password = os.environ.get("REDIS_PASSWORD", "change-me-redis-password")
+        redis_url = f"redis://:{redis_password}@{hub_host}:{redis_port}/0"
         ctx["hub_url"] = hub_url
         ctx["deploy_command"] = (
-            f"docker run -d --name ikabot-agent \\\n"
+            f"docker run -d --restart unless-stopped --name ikabot-agent \\\n"
             f"  -e HUB_URL={hub_url} \\\n"
+            f"  -e REDIS_URL={redis_url} \\\n"
             f"  -e AGENT_TOKEN={self.object.deploy_token} \\\n"
             f"  -e AGENT_NODE_ID={self.object.pk} \\\n"
             f"  blackoneal/ikabot-web-agent:latest"

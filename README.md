@@ -54,6 +54,7 @@ Copy-Item .env.example .env
 - `DJANGO_SECRET_KEY`
 - `DB_PASSWORD`
 - `MYSQL_ROOT_PASSWORD`
+- `REDIS_PASSWORD`
 - `APP_SECRET`
 - `AGENT_TOKEN`
 - `ADMIN_PASSWORD`
@@ -118,6 +119,23 @@ O agent extra `agent-vps-teste` ficou como perfil opcional:
 ```bash
 docker compose --profile extra-agent up -d
 ```
+
+### Agent remoto
+
+Para agent fora do mesmo `docker-compose`, o comando de deploy precisa incluir:
+
+- `HUB_URL`
+- `REDIS_URL`
+- `AGENT_TOKEN`
+- `AGENT_NODE_ID`
+
+O `REDIS_URL` remoto deve usar senha:
+
+```env
+REDIS_URL=redis://:SUA_SENHA_REDIS@SEU_HOST:6379/0
+```
+
+Se voce trocar a porta publicada do Redis depois, basta atualizar a URL do agent remoto.
 
 ## IkabotAPI
 
