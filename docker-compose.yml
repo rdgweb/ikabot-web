@@ -127,24 +127,6 @@ services:
       AGENT_NAME: ${AGENT_NAME:-ikabot-agent-01}
       TZ: America/Cuiaba
 
-  agent-vps-teste:
-    image: ${AGENT_IMAGE:-blackoneal/ikabot-web-agent:latest}
-    restart: unless-stopped
-    depends_on:
-      hub:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      HUB_URL: ${HUB_URL:-http://hub:8000}
-      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379/0}
-      AGENT_TOKEN: ${AGENT_TOKEN:-change-me-agent-token}
-      AGENT_NODE_ID: "37062b20-eb8e-4b8d-ada6-b8f6b77379c3"
-      AGENT_NAME: agent-vps-teste
-      TZ: America/Cuiaba
-    profiles:
-      - extra-agent
-
   phpmyadmin:
     image: phpmyadmin:latest
     restart: unless-stopped

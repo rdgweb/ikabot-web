@@ -1,273 +1,215 @@
 # ikabot-web
 
-Painel web + worker para operar automacoes do Ikabot com `hub_v2` e `agent_v2`.
+Web panel and automation agent for [Ikariam](https://www.ikariam.gameforge.com/) built on top of the [ikabot](https://github.com/Ikabot-Collective/ikabot) project.
 
-## O que este repositorio entrega
+Manage multiple game accounts from a single dashboard: schedule construction upgrades, send resources, train troops, collect daily rewards, and more -- all running 24/7 on your own server.
 
-- `hub_v2`: painel Django, API interna e integracoes de administracao.
-- `agent_v2`: worker que executa tarefas e conversa com o hub.
-- `docker-compose.yml`: stack pronta com MariaDB, Redis, hub, agent e worker do Telegram.
+## Architecture
 
-## O que este repositorio nao entrega
+| Service | Role |
+|---------|------|
+| **Hub** (`hub_v2`) | Django web panel, REST API, job queue |
+| **Agent** (`agent_v2`) | Worker that picks jobs from the hub and executes game actions |
+| **MariaDB** | Persistent storage |
+| **Redis** | Job queue and caching |
 
-- `IkabotAPI` nao faz parte deste repositorio.
-- Recursos de captcha e geracao de token dependem de uma instancia externa do projeto oficial:
-  `https://github.com/Ikabot-Collective/IkabotAPI`
+The hub and agent communicate over an internal API. You can run additional agents on remote servers (VPS) to distribute the workload.
 
-Sem `IKABOTAPI_URL`, o sistema sobe normalmente, mas recursos que dependem dessa API externa nao vao funcionar.
+## Requirements
 
-## Requisitos
+- [Docker](https://docs.docker.com/get-docker/) (v20+)
+- [Docker Compose](https://docs.docker.com/compose/install/) (v2+)
 
-- Docker
-- Docker Compose
-
-Verificacao rapida:
+Verify your installation:
 
 ```bash
 docker --version
 docker compose version
 ```
 
-## Instalacao do zero
+## Quick Start
 
-1. Clone o repositorio:
+### Option A -- Using prebuilt images (recommended)
 
-```bash
-git clone https://github.com/rdgweb/ikabot-web.git
-cd ikabot-web
-```
-
-2. Copie o arquivo de ambiente:
+No need to clone the full repository. Just grab the two config files:
 
 ```bash
+# Download docker-compose.yml and .env.example
+curl -LO https://raw.githubusercontent.com/rdgweb/ikabot-web/main/docker-compose.yml
+curl -LO https://raw.githubusercontent.com/rdgweb/ikabot-web/main/.env.example
+
+# Create your .env
 cp .env.example .env
 ```
 
-No Windows PowerShell:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-3. Edite o `.env` e troque pelo menos estes valores:
-
-- `DJANGO_SECRET_KEY`
-- `DB_PASSWORD`
-- `MYSQL_ROOT_PASSWORD`
-- `REDIS_PASSWORD`
-- `APP_SECRET`
-- `AGENT_TOKEN`
-- `ADMIN_PASSWORD`
-
-4. Suba a stack:
+Edit `.env` and **change every value that says `change-me`**:
 
 ```bash
-docker compose up -d --build
+nano .env    # or use any text editor
 ```
 
-5. Confira se os containers ficaram saudaveis:
-
-```bash
-docker compose ps
-```
-
-6. Abra o painel:
-
-- Hub: `http://localhost:8000`
-- phpMyAdmin opcional: `docker compose --profile tools up -d`
-
-## Primeiro acesso
-
-O hub cria automaticamente um usuario admin no primeiro boot usando as variaveis do `.env`:
-
-- `ADMIN_USERNAME`
-- `ADMIN_EMAIL`
-- `ADMIN_PASSWORD`
-
-Valores padrao do exemplo:
-
-- usuario: `admin`
-- email: `admin@ikabot.local`
-- senha: a definida em `ADMIN_PASSWORD`
-
-Depois do primeiro login, troque a senha se estiver usando um ambiente real.
-
-## Configuracao minima para o sistema funcionar
-
-### Hub
-
-O hub sobe com:
-
-- MariaDB
-- Redis
-- migracoes automaticas
-- `collectstatic`
-- criacao automatica do admin inicial
-
-### Agent
-
-O agent principal sobe junto com o hub por padrao.
-
-Ele usa:
-
-- `HUB_URL=http://hub:8000`
-- `AGENT_TOKEN`
-- `AGENT_NAME`
-
-O agent extra `agent-vps-teste` ficou como perfil opcional:
-
-```bash
-docker compose --profile extra-agent up -d
-```
-
-### Agent remoto
-
-Para agent fora do mesmo `docker-compose`, o comando de deploy precisa incluir:
-
-- `HUB_URL`
-- `REDIS_URL`
-- `AGENT_TOKEN`
-- `AGENT_NODE_ID`
-
-O `REDIS_URL` remoto deve usar senha:
-
-```env
-REDIS_URL=redis://:SUA_SENHA_REDIS@SEU_HOST:6379/0
-```
-
-Se voce trocar a porta publicada do Redis depois, basta atualizar a URL do agent remoto.
-
-## IkabotAPI
-
-`IkabotAPI` e uma dependencia externa.
-
-Se voce quiser usar captcha/token:
-
-1. Suba uma instancia propria do projeto oficial.
-2. Configure `IKABOTAPI_URL` no `.env`.
-3. Reinicie o hub:
-
-```bash
-docker compose restart hub
-```
-
-Exemplo de URL:
-
-```env
-IKABOTAPI_URL=http://ikabotapi:5005
-```
-
-Repositorio oficial:
-
-- `https://github.com/Ikabot-Collective/IkabotAPI`
-
-## Atualizacao
-
-Para atualizar a instalacao a partir do codigo:
-
-```bash
-git pull
-docker compose up -d --build
-```
-
-## Modo com imagens prebuild
-
-O compose tambem aceita imagens publicadas no Docker Hub via:
-
-- `HUB_IMAGE`
-- `AGENT_IMAGE`
-
-Fluxo:
+Start the stack:
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
 
-Padroes atuais do `.env.example`:
-
-- `blackoneal/ikabot-web-hub:latest`
-- `blackoneal/ikabot-web-agent:latest`
-
-## Publicar no Docker Hub
-
-Build local:
+### Option B -- Building from source
 
 ```bash
-docker build -t blackoneal/ikabot-web-hub:latest ./hub_v2
-docker build -t blackoneal/ikabot-web-agent:latest ./agent_v2
+git clone https://github.com/rdgweb/ikabot-web.git
+cd ikabot-web
+cp .env.example .env
 ```
 
-Push:
-
-```bash
-docker push blackoneal/ikabot-web-hub:latest
-docker push blackoneal/ikabot-web-agent:latest
-```
-
-Se quiser versionar:
-
-```bash
-docker tag blackoneal/ikabot-web-hub:latest blackoneal/ikabot-web-hub:v1
-docker tag blackoneal/ikabot-web-agent:latest blackoneal/ikabot-web-agent:v1
-docker push blackoneal/ikabot-web-hub:v1
-docker push blackoneal/ikabot-web-agent:v1
-```
-
-## Comandos uteis
-
-Subir:
+Edit `.env` and **change every value that says `change-me`**.
 
 ```bash
 docker compose up -d --build
 ```
 
-Parar:
+### Verify everything is running
 
 ```bash
-docker compose down
+docker compose ps
 ```
 
-Ver logs do hub:
+All services should show `healthy` or `running`. Open the panel at **http://localhost:8000**.
+
+## First Login
+
+On the first boot the hub automatically creates an admin user using the credentials from your `.env`:
+
+| Variable | Default |
+|----------|---------|
+| `ADMIN_USERNAME` | `admin` |
+| `ADMIN_PASSWORD` | *(what you set in `.env`)* |
+
+Log in at **http://localhost:8000** with those credentials.
+
+## Configuration Reference
+
+All configuration is done through the `.env` file. Here are the key variables:
+
+### Required (must change)
+
+| Variable | Purpose |
+|----------|---------|
+| `DJANGO_SECRET_KEY` | Django cryptographic key -- use a long random string |
+| `DB_PASSWORD` | MariaDB user password |
+| `MYSQL_ROOT_PASSWORD` | MariaDB root password |
+| `REDIS_PASSWORD` | Redis password |
+| `APP_SECRET` | Internal encryption key |
+| `AGENT_TOKEN` | Shared token between hub and agent -- must match on both |
+| `ADMIN_PASSWORD` | Password for the initial admin user |
+
+### Optional
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `DJANGO_ALLOWED_HOSTS` | Hostnames the hub accepts | `localhost,127.0.0.1` |
+| `WEBSHARE_API_KEY` | Proxy rotation API key (webshare.io) | *(empty)* |
+| `IKABOTAPI_URL` | External captcha/token solver URL | *(empty)* |
+| `HUB_PORT` | Port for the web panel | `8000` |
+| `DB_PORT` | Exposed MariaDB port | `3306` |
+| `REDIS_PORT` | Exposed Redis port | `6379` |
+
+## Adding a Game Account
+
+1. Open the panel at **http://localhost:8000**
+2. Go to **Accounts** and click **Add Account**
+3. Enter your Ikariam email and password
+4. The agent will log in and sync your cities automatically
+
+## Running a Remote Agent
+
+You can run extra agents on other machines (e.g. a VPS) to distribute actions across different IPs.
+
+On the remote machine:
 
 ```bash
-docker compose logs -f hub
+docker run -d --restart unless-stopped \
+  -e HUB_URL=http://YOUR_HUB_IP:8000 \
+  -e REDIS_URL=redis://:YOUR_REDIS_PASSWORD@YOUR_HUB_IP:6379/0 \
+  -e AGENT_TOKEN=YOUR_AGENT_TOKEN \
+  -e AGENT_NODE_ID=any-unique-id \
+  -e AGENT_NAME=agent-vps-01 \
+  blackoneal/ikabot-web-agent:latest
 ```
 
-Ver logs do agent:
+Make sure `AGENT_TOKEN` matches the one in your hub's `.env` and that ports `8000` and `6379` are accessible from the remote machine.
+
+## IkabotAPI (External Dependency)
+
+[IkabotAPI](https://github.com/Ikabot-Collective/IkabotAPI) provides captcha solving and token generation. It is **not included** in this repository.
+
+The system works without it, but some game actions that require captcha verification will fail.
+
+To enable it:
+
+1. Deploy your own IkabotAPI instance
+2. Set `IKABOTAPI_URL` in your `.env` (e.g. `http://ikabotapi:5005`)
+3. Restart: `docker compose restart hub`
+
+## Optional Tools
+
+### phpMyAdmin
 
 ```bash
-docker compose logs -f agent
+docker compose --profile tools up -d
 ```
 
-Refazer imagens:
+Access at **http://localhost:8080**.
+
+## Updating
+
+### Prebuilt images
 
 ```bash
-docker compose build --no-cache
+docker compose pull
+docker compose up -d
+```
+
+### From source
+
+```bash
+git pull
+docker compose up -d --build
 ```
 
 ## Troubleshooting
 
-### O painel nao abre
-
-Veja os logs:
+### Panel does not open
 
 ```bash
 docker compose logs -f hub
 ```
 
-### O agent nao conecta
+Check that `DJANGO_ALLOWED_HOSTS` includes the hostname or IP you are using.
 
-Confirme:
+### Agent does not connect
 
-- `AGENT_TOKEN` igual no hub e no agent
-- `HUB_URL=http://hub:8000`
-- container `hub` healthy
+- Verify `AGENT_TOKEN` is the same in both hub and agent
+- Check that the hub is healthy: `docker compose ps`
+- Check agent logs: `docker compose logs -f agent`
 
-### Captcha/token nao funciona
+### Captcha/token errors
 
-Confirme:
+- Verify `IKABOTAPI_URL` is set and reachable from the hub container
+- Test connectivity: `docker compose exec hub curl -s http://ikabotapi:5005/`
 
-- `IKABOTAPI_URL` preenchido
-- instancia externa do IkabotAPI respondendo
-- conectividade do container `hub` ate essa URL
+## Common Commands
+
+```bash
+docker compose up -d          # Start all services
+docker compose down            # Stop all services
+docker compose logs -f hub     # Follow hub logs
+docker compose logs -f agent   # Follow agent logs
+docker compose restart hub     # Restart hub only
+docker compose build --no-cache  # Rebuild images from scratch
+```
+
+## License
+
+This project builds upon [ikabot](https://github.com/Ikabot-Collective/ikabot) by the Ikabot Collective.

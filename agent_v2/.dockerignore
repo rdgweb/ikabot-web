@@ -4,7 +4,6 @@ __pycache__
 .git
 .env
 .env.*
-!.env.example
 node_modules
 *.sqlite3
 *.db
@@ -13,6 +12,7 @@ venv/
 .venv/
 *.log
 tmp/
+tmp_*.html
 .tmp_*
 .claude/
 .codex_tmp/
