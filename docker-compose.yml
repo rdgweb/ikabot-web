@@ -79,7 +79,7 @@ services:
       APP_SECRET: ${APP_SECRET:-change-me-app-secret}
       AGENT_TOKEN: ${AGENT_TOKEN:-change-me-agent-token}
       WEBSHARE_API_KEY: ${WEBSHARE_API_KEY:-}
-      IKABOTAPI_URL: ${IKABOTAPI_URL:-}
+      IKABOTAPI_URL: ${IKABOTAPI_URL:-http://ikabotapi:5005}
       TZ: America/Cuiaba
     ports:
       - "${HUB_PORT:-8000}:8000"
@@ -126,6 +126,15 @@ services:
       AGENT_NODE_ID: ${AGENT_NODE_ID:-}
       AGENT_NAME: ${AGENT_NAME:-ikabot-agent-01}
       TZ: America/Cuiaba
+
+  ikabotapi:
+    build:
+      context: https://github.com/Ikabot-Collective/IkabotAPI.git
+    restart: unless-stopped
+    ports:
+      - "5005:5005"
+    profiles:
+      - captcha
 
   phpmyadmin:
     image: phpmyadmin:latest

@@ -140,19 +140,27 @@ docker run -d --restart unless-stopped \
 
 Make sure `AGENT_TOKEN` matches the one in your hub's `.env` and that ports `8000` and `6379` are accessible from the remote machine.
 
-## IkabotAPI (External Dependency)
+## IkabotAPI (Optional -- Captcha Solver)
 
-[IkabotAPI](https://github.com/Ikabot-Collective/IkabotAPI) provides captcha solving and token generation. It is **not included** in this repository.
+[IkabotAPI](https://github.com/Ikabot-Collective/IkabotAPI) provides captcha solving and token generation. The system works without it, but some game actions that require captcha verification will fail.
 
-The system works without it, but some game actions that require captcha verification will fail.
+To enable it, just start the stack with the `captcha` profile:
 
-To enable it:
+```bash
+docker compose --profile captcha up -d
+```
 
-1. Deploy your own IkabotAPI instance
-2. Set `IKABOTAPI_URL` in your `.env` (e.g. `http://ikabotapi:5005`)
-3. Restart: `docker compose restart hub`
+This builds IkabotAPI directly from the official repository. The hub already points to it by default (`http://ikabotapi:5005`).
+
+> **Note:** The IkabotAPI image includes Playwright + Chromium and can take a few minutes to build the first time.
 
 ## Optional Tools
+
+### Captcha Solver (IkabotAPI)
+
+```bash
+docker compose --profile captcha up -d
+```
 
 ### phpMyAdmin
 
@@ -161,6 +169,12 @@ docker compose --profile tools up -d
 ```
 
 Access at **http://localhost:8080**.
+
+### All optional services at once
+
+```bash
+docker compose --profile captcha --profile tools up -d
+```
 
 ## Updating
 
