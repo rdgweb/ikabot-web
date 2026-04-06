@@ -28,7 +28,6 @@ class HubClient:
         import platform
         return self._post("/api/agent/register", {
             "node_id": settings.agent_node_id,
-            "deploy_token": settings.agent_token,
             "agent_name": settings.agent_name,
             "agent_host": platform.node(),
             "agent_version": settings.agent_version,

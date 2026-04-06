@@ -187,9 +187,26 @@ class JobCreateForm(forms.Form):
                         key=lambda entry: entry[1].get("name", entry[0]),
                     )
                 ]
+            if field_def.get("key") == "post_production_mode":
+                return forms.ChoiceField(
+                    label=label,
+                    required=required,
+                    choices=choices,
+                    help_text=help_text,
+                    widget=forms.RadioSelect(attrs={"class": "choice-radio"}),
+                    initial=field_def.get("default", "preserve"),
+                )
             widget = forms.Select(attrs={**base_attrs})
             field_choices = [("", "Selecione...")] + choices
-            if field_def.get("key") in {"donation_method", "transport_load_percent", "research_reduction", "build_time_reduction", "strategy", "queue_strategy"}:
+            if field_def.get("key") in {
+                "donation_method",
+                "transport_load_percent",
+                "research_reduction",
+                "build_time_reduction",
+                "strategy",
+                "queue_strategy",
+                "post_production_mode",
+            }:
                 widget = forms.RadioSelect(attrs={"class": "choice-radio"})
                 field_choices = choices
             return forms.ChoiceField(
