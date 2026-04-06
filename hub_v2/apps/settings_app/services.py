@@ -41,7 +41,7 @@ def test_ikabotapi(url: str) -> dict:
         return {"success": False, "detail": "", "error": "URL não configurada."}
 
     try:
-        resp = requests.get(f"{url.rstrip('/')}/v1/health", timeout=10)
+        resp = requests.get(f"{url.rstrip('/')}/health", timeout=10)
         if resp.status_code == 200:
             return {"success": True, "detail": "Serviço ativo", "error": ""}
         else:
