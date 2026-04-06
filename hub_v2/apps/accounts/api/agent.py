@@ -51,13 +51,15 @@ class AgentRegisterView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        try:
-            node = Node.objects.get(pk=data["node_id"])
-        except Node.DoesNotExist:
-            return Response(
-                {"error": "Node not found."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        node, created = Node.objects.get_or_create(
+            pk=data["node_id"],
+            defaults={
+                "name": data.get("agent_name", "") or str(data["node_id"])[:8],
+                "active": True,
+            },
+        )
+        if created:
+            logger.info("Auto-created node %s on first registration", node.pk)
 
         # Validate deploy token if provided
         deploy_token = data.get("deploy_token")
