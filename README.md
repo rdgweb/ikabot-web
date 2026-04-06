@@ -48,11 +48,11 @@ Edit `.env` and **change every value that says `change-me`**:
 nano .env    # or use any text editor
 ```
 
-Start the stack:
+Start the stack (with IkabotAPI for game login):
 
 ```bash
-docker compose pull
-docker compose up -d
+docker compose --profile captcha pull
+docker compose --profile captcha up -d
 ```
 
 ### Option B -- Building from source
@@ -140,11 +140,11 @@ docker run -d --restart unless-stopped \
 
 Make sure `AGENT_TOKEN` matches the one in your hub's `.env` and that ports `8000` and `6379` are accessible from the remote machine.
 
-## IkabotAPI (Optional -- Captcha Solver)
+## IkabotAPI (Blackbox Token & Captcha)
 
-[IkabotAPI](https://github.com/Ikabot-Collective/IkabotAPI) provides captcha solving and token generation. The system works without it, but some game actions that require captcha verification will fail.
+[IkabotAPI](https://github.com/Ikabot-Collective/IkabotAPI) generates blackbox tokens (required for game login) and solves captchas. **It is required for the system to work properly.**
 
-To enable it, just start the stack with the `captcha` profile:
+Start the stack with the `captcha` profile to include it:
 
 ```bash
 docker compose --profile captcha up -d
@@ -152,7 +152,7 @@ docker compose --profile captcha up -d
 
 This builds IkabotAPI directly from the official repository. The hub already points to it by default (`http://ikabotapi:5005`).
 
-> **Note:** The IkabotAPI image includes Playwright + Chromium and can take a few minutes to build the first time.
+> **Note:** The first build takes several minutes because it installs Playwright + Chromium.
 
 ## Optional Tools
 
@@ -216,7 +216,7 @@ Check that `DJANGO_ALLOWED_HOSTS` includes the hostname or IP you are using.
 ## Common Commands
 
 ```bash
-docker compose up -d          # Start all services
+docker compose --profile captcha up -d  # Start all services (recommended)
 docker compose down            # Stop all services
 docker compose logs -f hub     # Follow hub logs
 docker compose logs -f agent   # Follow agent logs
