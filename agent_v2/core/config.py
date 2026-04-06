@@ -1,5 +1,7 @@
 """Agent configuration from environment variables."""
 
+import uuid
+
 from pydantic_settings import BaseSettings
 
 
@@ -21,3 +23,7 @@ class AgentSettings(BaseSettings):
 
 
 settings = AgentSettings()
+
+# Auto-generate node ID if not provided
+if not settings.agent_node_id:
+    settings.agent_node_id = str(uuid.uuid4())
