@@ -337,7 +337,15 @@ class CheckStatusRunner(BaseRunner):
         for city in cities:
             options = city.get("available_build_options") or []
             synced_at_raw = city.get("build_options_synced_at")
-            if not options or not synced_at_raw:
+            buildings = city.get("buildings") or []
+            has_empty_slot = any(
+                str(item.get("building") or "").strip() == "empty"
+                for item in buildings
+                if isinstance(item, dict)
+            )
+            if not has_empty_slot:
+                continue
+            if not synced_at_raw:
                 return True
             try:
                 synced_at = datetime.fromisoformat(str(synced_at_raw).replace("Z", "+00:00"))
@@ -346,6 +354,8 @@ class CheckStatusRunner(BaseRunner):
                 if (now - synced_at.astimezone(timezone.utc)).total_seconds() > stale_seconds:
                     return True
             except Exception:
+                return True
+            if not options:
                 return True
         return False
 

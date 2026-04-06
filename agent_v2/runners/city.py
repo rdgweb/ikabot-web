@@ -136,6 +136,14 @@ def _find_empty_position(city: dict[str, Any], *, allowed_types: set[str] | None
 def _snapshot_time(raw: Any) -> datetime | None:
     if not raw:
         return None
+    try:
+        value = str(raw).replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
 
 
 def _empty_resource_map() -> dict[str, int]:
@@ -146,14 +154,6 @@ def _empty_resource_map() -> dict[str, int]:
         "crystal": 0,
         "sulfur": 0,
     }
-    try:
-        value = str(raw).replace("Z", "+00:00")
-        parsed = datetime.fromisoformat(value)
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
-    except Exception:
-        return None
 
 
 def _normalize_building_id(building_id: str) -> str:
@@ -280,19 +280,17 @@ class BuildingsSyncRunner(_CityActionMixin, BaseRunner):
 
         snapshot = self._get_snapshot(jid, ga_id)
         if snapshot is None:
-            self._ensure_status_refresh(jid)
+            self.log(jid, "warn", "Snapshot ausente para sincronizar edificios; aguardando novo check_status")
             return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "waiting_snapshot"})
 
         updated_at = _snapshot_time(snapshot.get("updated_at"))
         if updated_at is None or (datetime.now(timezone.utc) - updated_at).total_seconds() > self.get_snapshot_stale_seconds():
-            self.log(jid, "warn", "Snapshot antigo para sincronizar edificios; solicitando refresh")
-            self._ensure_status_refresh(jid)
+            self.log(jid, "warn", "Snapshot antigo para sincronizar edificios; aguardando refresh de status")
             return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "stale_snapshot"})
 
         cities = _as_city_list(snapshot.get("cities"))
         if not cities:
-            self.log(jid, "warn", "Snapshot sem cidades para sincronizar edificios")
-            self._ensure_status_refresh(jid)
+            self.log(jid, "warn", "Snapshot sem cidades para sincronizar edificios; aguardando refresh de status")
             return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "empty_snapshot"})
 
         try:
