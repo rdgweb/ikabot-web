@@ -156,3 +156,49 @@ class GameAccountToggleView(LoginRequiredMixin, View):
         resp = HttpResponse(status=204)
         resp["HX-Trigger"] = trigger
         return resp
+
+
+class GameAccountBuildTimeView(LoginRequiredMixin, View):
+    """POST: update build_time_reduction for a GameAccount."""
+
+    def post(self, request, pk):
+        ga = get_object_or_404(GameAccount, pk=pk)
+        try:
+            value = int(request.POST.get("build_time_reduction", 0))
+            value = max(0, min(100, value))
+        except (ValueError, TypeError):
+            value = 0
+        ga.build_time_reduction = value
+        ga.save(update_fields=["build_time_reduction"])
+        trigger = json.dumps({
+            "toast": {
+                "type": "success",
+                "message": f"Modificador de tempo de {ga.name or ga.server_id} atualizado para {value}%.",
+            },
+        })
+        resp = HttpResponse(status=204)
+        resp["HX-Trigger"] = trigger
+        return resp
+
+
+class GameAccountGovernmentTimeView(LoginRequiredMixin, View):
+    """POST: update government_time_reduction for a GameAccount."""
+
+    def post(self, request, pk):
+        ga = get_object_or_404(GameAccount, pk=pk)
+        try:
+            value = int(request.POST.get("government_time_reduction", 0))
+            value = max(0, min(100, value))
+        except (ValueError, TypeError):
+            value = 0
+        ga.government_time_reduction = value
+        ga.save(update_fields=["government_time_reduction"])
+        trigger = json.dumps({
+            "toast": {
+                "type": "success",
+                "message": f"Redução de governo de {ga.name or ga.server_id} atualizada para {value}%.",
+            },
+        })
+        resp = HttpResponse(status=204)
+        resp["HX-Trigger"] = trigger
+        return resp

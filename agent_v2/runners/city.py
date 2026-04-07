@@ -81,6 +81,20 @@ def _resolve_world_time_reduction(config: dict[str, Any], ga_id: str | None) -> 
     return 0
 
 
+def _resolve_government_time_reduction(config: dict[str, Any], ga_id: str | None) -> int:
+    """Extract government_time_reduction for a specific game account from hub config."""
+    if not ga_id:
+        return 0
+    try:
+        for account in (config.get("accounts") or []):
+            for ga in (account.get("game_accounts") or []):
+                if str(ga.get("id") or "") == str(ga_id):
+                    return int(ga.get("government_time_reduction") or 0)
+    except Exception:
+        pass
+    return 0
+
+
 def _as_city_list(raw: Any) -> list[dict[str, Any]]:
     if isinstance(raw, list):
         return [item for item in raw if isinstance(item, dict)]
@@ -526,8 +540,10 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 self._ensure_status_refresh(jid)
                 return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "waiting_post_build_snapshot"})
 
-        # Resolve world build-time reduction for this game account
-        world_time_reduction = _resolve_world_time_reduction(self.get_agent_config(), ga_id)
+        # Resolve time reductions for this game account
+        agent_config = self.get_agent_config()
+        world_time_reduction = _resolve_world_time_reduction(agent_config, ga_id)
+        government_time_reduction = _resolve_government_time_reduction(agent_config, ga_id)
 
         cities = _as_city_list(snapshot.get("cities"))
         plan_steps = self._normalized_plan(inputs)
@@ -570,6 +586,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         if in_flight_row is not None:
                             base_adj = _to_int(in_flight_row.get("adjusted_seconds"), 0)
                             real_seconds = _apply_world_time_reduction(base_adj, world_time_reduction)
+                            real_seconds = _apply_world_time_reduction(real_seconds, government_time_reduction)
                             wait_seconds = max(
                                 MIN_RECHECK_SECONDS,
                                 real_seconds + FINISH_BUFFER_SECONDS,

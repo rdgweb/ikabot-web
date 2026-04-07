@@ -113,6 +113,8 @@
           <th class="text-left py-2 px-2 text-muted font-semibold">Nome</th>
           <th class="text-left py-2 px-2 text-muted font-semibold">Lobby ID</th>
           <th class="text-left py-2 px-2 text-muted font-semibold">Grupo</th>
+          <th class="text-center py-2 px-2 text-muted font-semibold">Mod. Mundo</th>
+          <th class="text-center py-2 px-2 text-muted font-semibold">Governo</th>
           <th class="text-center py-2 px-2 text-muted font-semibold">Status</th>
           <th class="text-center py-2 px-2 text-muted font-semibold">Acoes</th>
         </tr>
@@ -125,6 +127,54 @@
           <td class="py-2 px-2 text-ink">{{ ga.name|default:"-" }}</td>
           <td class="py-2 px-2 font-mono text-muted">{{ ga.lobby_account_id }}</td>
           <td class="py-2 px-2 text-muted">{{ ga.account_group|default:"-" }}</td>
+          <td class="py-2 px-2 text-center"
+              x-data="{ editing: false, val: {{ ga.build_time_reduction }} }">
+            <span x-show="!editing" @click="editing = true"
+                  class="cursor-pointer font-mono text-ink hover:text-sea"
+                  title="Clique para editar">
+              <span x-text="val"></span>%
+            </span>
+            <form x-show="editing" x-cloak
+                  hx-post="{% url 'accounts:game-account-build-time' ga.pk %}"
+                  hx-swap="none"
+                  @htmx:after-request="editing = false"
+                  class="flex items-center justify-center gap-1">
+              {% csrf_token %}
+              <input type="number" name="build_time_reduction"
+                     :value="val" @change="val = $event.target.value"
+                     min="0" max="100"
+                     class="w-14 text-center text-xs border rounded px-1 py-0.5"
+                     style="border-color: var(--ik-line);"
+                     @keydown.escape="editing = false"
+                     x-ref="inp" x-init="$watch('editing', v => v && $nextTick(() => $refs.inp.focus()))">
+              <button type="submit" class="btn btn-primary btn-sm !px-1.5 !py-0.5 text-[10px]">✓</button>
+              <button type="button" @click="editing = false" class="btn btn-secondary btn-sm !px-1.5 !py-0.5 text-[10px]">✕</button>
+            </form>
+          </td>
+          <td class="py-2 px-2 text-center"
+              x-data="{ editing: false, val: {{ ga.government_time_reduction }} }">
+            <span x-show="!editing" @click="editing = true"
+                  class="cursor-pointer font-mono text-ink hover:text-sea"
+                  title="Clique para editar">
+              <span x-text="val"></span>%
+            </span>
+            <form x-show="editing" x-cloak
+                  hx-post="{% url 'accounts:game-account-government-time' ga.pk %}"
+                  hx-swap="none"
+                  @htmx:after-request="editing = false"
+                  class="flex items-center justify-center gap-1">
+              {% csrf_token %}
+              <input type="number" name="government_time_reduction"
+                     :value="val" @change="val = $event.target.value"
+                     min="0" max="100"
+                     class="w-14 text-center text-xs border rounded px-1 py-0.5"
+                     style="border-color: var(--ik-line);"
+                     @keydown.escape="editing = false"
+                     x-ref="govInp" x-init="$watch('editing', v => v && $nextTick(() => $refs.govInp.focus()))">
+              <button type="submit" class="btn btn-primary btn-sm !px-1.5 !py-0.5 text-[10px]">✓</button>
+              <button type="button" @click="editing = false" class="btn btn-secondary btn-sm !px-1.5 !py-0.5 text-[10px]">✕</button>
+            </form>
+          </td>
           <td class="py-2 px-2 text-center">
             {% if ga.blocked %}
               <span class="badge badge-danger">Bloqueado</span>

@@ -48,6 +48,8 @@ class GameAccountConfigSerializer(serializers.Serializer):
     account_group = serializers.CharField(allow_blank=True)
     blocked = serializers.BooleanField()
     active = serializers.BooleanField()
+    build_time_reduction = serializers.IntegerField(default=0)
+    government_time_reduction = serializers.IntegerField(default=0)
     cached_session = serializers.CharField(
         allow_blank=True, default="",
         help_text="Decrypted JSON of cached game session cookies",

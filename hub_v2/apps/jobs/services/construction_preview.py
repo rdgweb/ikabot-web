@@ -318,7 +318,12 @@ def _cost_after_reduction(base: int, research_reduction: int, building_reduction
     return max(0, int(math.ceil(reduced)))
 
 
-def _adjusted_time(seconds: int, time_modifier: str, chronos_reduction: float) -> int:
+def _adjusted_time(
+    seconds: int,
+    time_modifier: str,
+    chronos_reduction: float,
+    government_reduction: int = 0,
+) -> int:
     value = float(seconds)
     if time_modifier == ":3":
         value = value / 3.0
@@ -326,6 +331,8 @@ def _adjusted_time(seconds: int, time_modifier: str, chronos_reduction: float) -
         value *= 1 - (_parse_int(time_modifier) / 100.0)
     if chronos_reduction > 0:
         value *= 1 - (chronos_reduction / 100.0)
+    if government_reduction > 0:
+        value *= 1 - (government_reduction / 100.0)
     return max(0, int(math.ceil(value)))
 
 
@@ -365,7 +372,8 @@ def build_construction_preview(
     building_type: str | None = None,
     target_level: int,
     research_reduction: int = 14,
-    build_time_reduction: str = "25",
+    build_time_reduction: str = "0",
+    government_time_reduction: int = 0,
 ) -> ConstructionPreview | None:
     city = _get_snapshot_city(game_account, city_id)
     if not city:
@@ -418,7 +426,7 @@ def build_construction_preview(
     desired_level = max(current_level + 1 if current_level > 0 else 1, _parse_int(target_level, default=1))
     level_rows = [
         row for row in rows
-        if current_level < _parse_int(row.get("level")) <= desired_level
+        if _parse_int(row.get("level")) <= desired_level
     ]
 
     totals = {key: 0 for key in RESOURCE_KEYS}
@@ -438,7 +446,9 @@ def build_construction_preview(
             totals[resource_key] += final_cost
 
         base_row_seconds = _seconds_from_duration(str(row.get("building_time") or ""))
-        adjusted_row_seconds = _adjusted_time(base_row_seconds, build_time_reduction, simulated_chronos_reduction)
+        adjusted_row_seconds = _adjusted_time(
+            base_row_seconds, build_time_reduction, simulated_chronos_reduction, government_time_reduction
+        )
         base_seconds += base_row_seconds
         adjusted_seconds += adjusted_row_seconds
         normalized_rows.append({
@@ -502,7 +512,8 @@ def build_construction_plan_preview(
     game_account,
     steps: list[dict[str, Any]],
     research_reduction: int = 14,
-    build_time_reduction: str = "25",
+    build_time_reduction: str = "0",
+    government_time_reduction: int = 0,
 ) -> ConstructionPlanPreview:
     tables = get_ika_tools_tables()
     chronos_rows = tables.get("chronos_forge") or []
@@ -560,7 +571,7 @@ def build_construction_plan_preview(
         else:
             current_level = int(city_state["building_levels"].get(building_id, 0))
         target_level = max(current_level + 1 if current_level > 0 else 1, _parse_int(step.get("target_level"), 1))
-        level_rows = [row for row in rows if current_level < _parse_int(row.get("level")) <= target_level]
+        level_rows = [row for row in rows if _parse_int(row.get("level")) <= target_level]
         if not level_rows:
             notes.append(f"Etapa {idx}: nenhuma etapa calculada para {building_id} ate {target_level}.")
             continue
@@ -598,6 +609,7 @@ def build_construction_plan_preview(
                 base_row_seconds,
                 build_time_reduction,
                 float(city_state["chronos_reduction"]),
+                government_time_reduction,
             )
             step_base_seconds += base_row_seconds
             step_adjusted_seconds += adjusted_row_seconds

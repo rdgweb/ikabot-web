@@ -150,6 +150,18 @@ class GameAccount(UUIDTimestampModel):
         help_text="User can enable/disable individual game accounts",
     )
 
+    # World/server construction time modifier (set by game server, e.g. 10 for 10%)
+    build_time_reduction = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="World build time reduction percentage (e.g. 10 for 10%). Set per server.",
+    )
+
+    # Government type construction time reduction (e.g. 20 for Democracy -20%)
+    government_time_reduction = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Government type build time reduction percentage (e.g. 20 for 20%). Set per character.",
+    )
+
     # Cached session (persisted by agent after successful login)
     session_cookies_enc = models.TextField(
         blank=True,

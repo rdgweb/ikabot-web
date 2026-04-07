@@ -1030,7 +1030,8 @@ class ConstructionPlanPreviewView(LoginRequiredMixin, View):
                         game_account=ga,
                         steps=steps,
                         research_reduction=int(str(research_reduction or str(default_research)).replace("%", "").replace(":", "") or 0),
-                        build_time_reduction=str(build_time_reduction or str(default_time)),
+                        build_time_reduction=str(ga.build_time_reduction),
+                        government_time_reduction=ga.government_time_reduction,
                     )
             elif city_id and target_level and (building_position or building_type):
                 preview = build_construction_preview(
@@ -1041,6 +1042,7 @@ class ConstructionPlanPreviewView(LoginRequiredMixin, View):
                     target_level=int(target_level),
                     research_reduction=int(str(research_reduction or str(default_research)).replace("%", "").replace(":", "") or 0),
                     build_time_reduction=str(build_time_reduction or str(default_time)),
+                    government_time_reduction=ga.government_time_reduction,
                 )
         except Exception as exc:
             logger.warning("Construction preview failed: %s", exc)
@@ -1173,7 +1175,8 @@ class JobSubmitView(LoginRequiredMixin, View):
             game_account=ga,
             steps=clean_steps,
             research_reduction=_default_construction_modifiers(action_code)[0],
-            build_time_reduction=_default_construction_modifiers(action_code)[1],
+            build_time_reduction=str(ga.build_time_reduction),
+            government_time_reduction=ga.government_time_reduction,
         )
         inputs["construction_plan_json"] = clean_steps
         inputs["construction_plan_steps"] = plan_preview.steps
