@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -50,6 +52,35 @@ def _to_int(raw: Any, default: int = 0) -> int:
         return default
 
 
+def _to_float(raw: Any, default: float = 0.0) -> float:
+    try:
+        return float(raw)
+    except Exception:
+        return default
+
+
+def _apply_world_time_reduction(base_seconds: int, world_reduction_pct: int) -> int:
+    """Apply world/server build-time reduction percentage to a base duration."""
+    if world_reduction_pct <= 0 or base_seconds <= 0:
+        return base_seconds
+    factor = 1.0 - (world_reduction_pct / 100.0)
+    return max(1, int(math.ceil(base_seconds * factor)))
+
+
+def _resolve_world_time_reduction(config: dict[str, Any], ga_id: str | None) -> int:
+    """Extract build_time_reduction for a specific game account from hub config."""
+    if not ga_id:
+        return 0
+    try:
+        for account in (config.get("accounts") or []):
+            for ga in (account.get("game_accounts") or []):
+                if str(ga.get("id") or "") == str(ga_id):
+                    return int(ga.get("build_time_reduction") or 0)
+    except Exception:
+        pass
+    return 0
+
+
 def _as_city_list(raw: Any) -> list[dict[str, Any]]:
     if isinstance(raw, list):
         return [item for item in raw if isinstance(item, dict)]
@@ -89,17 +120,37 @@ def _find_city(cities: list[dict[str, Any]], city_id: str) -> dict[str, Any] | N
     return None
 
 
+def _building_ids_to_match(building_id: str) -> set[str]:
+    """Return all snapshot keys that correspond to the given building_id.
+
+    The snapshot may store a building under a different key than what the job
+    uses (e.g. job uses 'governorsResidence' but snapshot stores 'palaceColony').
+    We resolve in both directions so the lookup is alias-agnostic.
+    """
+    ids = {building_id}
+    # Direct alias: job key → snapshot key
+    if building_id in BUILDING_ALIASES:
+        ids.add(BUILDING_ALIASES[building_id])
+    # Reverse alias: snapshot key → job key
+    for k, v in BUILDING_ALIASES.items():
+        if v == building_id:
+            ids.add(k)
+    return ids
+
+
 def _find_building(city: dict[str, Any], building_id: str) -> tuple[int, int | None]:
+    candidates = _building_ids_to_match(building_id)
     for item in city.get("buildings") or []:
-        if str(item.get("building") or "").strip() != building_id:
+        if str(item.get("building") or "").strip() not in candidates:
             continue
         return _to_int(item.get("level"), 0), _to_int(item.get("position"), 0)
     return 0, None
 
 
 def _get_building_entry(city: dict[str, Any], building_id: str) -> dict[str, Any] | None:
+    candidates = _building_ids_to_match(building_id)
     for item in city.get("buildings") or []:
-        if str(item.get("building") or "").strip() == building_id:
+        if str(item.get("building") or "").strip() in candidates:
             return item
     return None
 
@@ -464,6 +515,20 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             self._ensure_status_refresh(jid)
             return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "stale_snapshot"})
 
+        # Ensure snapshot is newer than the last time we started builds.
+        # Without this, the agent would try to start builds on a stale snapshot
+        # that doesn't yet show the buildings as upgrading.
+        last_builds_started_at = _to_float(inputs.get("last_builds_started_at"), 0.0)
+        if last_builds_started_at > 0 and updated_at is not None:
+            if updated_at.timestamp() < last_builds_started_at:
+                age = int(time.time() - last_builds_started_at)
+                self.log(jid, "info", f"Snapshot anterior ao ultimo inicio de obra ({age}s atras); aguardando refresh")
+                self._ensure_status_refresh(jid)
+                return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "waiting_post_build_snapshot"})
+
+        # Resolve world build-time reduction for this game account
+        world_time_reduction = _resolve_world_time_reduction(self.get_agent_config(), ga_id)
+
         cities = _as_city_list(snapshot.get("cities"))
         plan_steps = self._normalized_plan(inputs)
         if not plan_steps:
@@ -492,17 +557,27 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 upgrading_name = str(upgrading.get("building") or "?")
                 upgrading_level = _to_int(upgrading.get("level"), 0)
                 wait_seconds = MIN_RECHECK_SECONDS
-                if upgrading_name == pending["building_id"]:
-                    in_flight_row = self._find_level_row(pending, upgrading_level + 1)
-                    if in_flight_row is not None:
-                        wait_seconds = max(
-                            MIN_RECHECK_SECONDS,
-                            _to_int(in_flight_row.get("adjusted_seconds"), 0) + FINISH_BUFFER_SECONDS,
-                        )
+                if upgrading_name in _building_ids_to_match(pending["building_id"]):
+                    # Prefer the game's own construction end timestamp when available.
+                    # Falls back to ika-tools adjusted_seconds (may be inaccurate for
+                    # some buildings like governorsResidence).
+                    construction_end_at = _to_int(upgrading.get("construction_end_at"), 0)
+                    if construction_end_at > 0:
+                        remaining = max(0, construction_end_at - int(time.time()))
+                        wait_seconds = max(MIN_RECHECK_SECONDS, remaining + FINISH_BUFFER_SECONDS)
+                    else:
+                        in_flight_row = self._find_level_row(pending, upgrading_level + 1)
+                        if in_flight_row is not None:
+                            base_adj = _to_int(in_flight_row.get("adjusted_seconds"), 0)
+                            real_seconds = _apply_world_time_reduction(base_adj, world_time_reduction)
+                            wait_seconds = max(
+                                MIN_RECHECK_SECONDS,
+                                real_seconds + FINISH_BUFFER_SECONDS,
+                            )
                 self.log(
                     jid,
                     "info",
-                    f"Cidade {_city_name(city)} ainda esta em obra ({upgrading_name} lvl {upgrading_level}); aguardando antes da proxima etapa",
+                    f"Cidade {_city_name(city)} ainda esta em obra ({upgrading_name} lvl {upgrading_level}); aguardando {wait_seconds}s antes da proxima etapa",
                 )
                 wait_reasons.append(
                     {
@@ -517,15 +592,22 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             next_level = pending["next_level"]
             level_row = self._find_level_row(pending, next_level)
             if level_row is None:
-                self.log(jid, "warn", f"Etapa sem detalhe de custo para o nivel {next_level}; aguardando novo snapshot")
-                refresh_needed = True
-                wait_reasons.append(
-                    {
+                stored_levels = [r.get("level") for r in (pending.get("level_rows") or [])]
+                self.log(
+                    jid, "error",
+                    f"Etapa sem custo para nivel {next_level} em {pending.get('building_name')} @ {pending.get('city_name')}. "
+                    f"Niveis armazenados: {stored_levels}. "
+                    f"Recrie o job para regenerar os dados de custo."
+                )
+                return RunnerResult(
+                    success=False,
+                    data={
                         "status": "missing_level_row",
-                        "wait_seconds": MIN_RECHECK_SECONDS,
                         "city_id": pending["city_id"],
                         "building_id": pending["building_id"],
-                    }
+                        "next_level": next_level,
+                        "stored_levels": stored_levels,
+                    },
                 )
                 continue
 
@@ -650,7 +732,12 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         f"Evolucao iniciada: {_city_name(city)} | {pending['building_name']} | lvl {current_level} -> {next_level}",
                     )
 
-                delay = max(90, _to_int(level_row.get("adjusted_seconds"), 0) + FINISH_BUFFER_SECONDS)
+                # Apply world time reduction to get the real finish time.
+                # level_rows store adjusted_seconds with city reducers but without
+                # the world modifier (set per-server). Re-apply it now.
+                base_adj = _to_int(level_row.get("adjusted_seconds"), 0)
+                real_seconds = _apply_world_time_reduction(base_adj, world_time_reduction)
+                delay = max(90, real_seconds + FINISH_BUFFER_SECONDS)
                 delays.append(delay)
                 started.append(
                     {
@@ -676,15 +763,25 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     data={"status": "waiting_parallel", "waiting": new_waits},
                 )
 
-            next_wait = min(delays + [int(reason.get("wait_seconds") or MIN_RECHECK_SECONDS) for reason in new_waits])
+            # next_wait = earliest of: first build finishing, or resource becoming available.
+            # We compute two pools separately to avoid inflating with MIN_RECHECK fallbacks
+            # from cities-busy that have no meaningful ETA.
+            resource_waits = [
+                int(r.get("wait_seconds") or MIN_RECHECK_SECONDS)
+                for r in new_waits
+                if r.get("status") == "waiting_resources"
+            ]
+            next_wait = min(delays + resource_waits) if resource_waits else min(delays)
+            now_ts = time.time()
             self.log(
                 jid,
                 "info",
-                f"{len(started)} obra(s) iniciada(s) neste ciclo; proximo check do plano em {next_wait}s",
+                f"{len(started)} obra(s) iniciada(s) neste ciclo; proximo check em {next_wait}s",
             )
             return RunnerResult(
                 success=True,
                 reschedule_seconds=next_wait,
+                reschedule_inputs={"last_builds_started_at": now_ts},
                 data={"status": "started_parallel", "started": started, "waiting": new_waits},
             )
         except Exception as exc:

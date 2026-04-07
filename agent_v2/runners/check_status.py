@@ -612,13 +612,33 @@ class CheckStatusRunner(BaseRunner):
                 if "buildingGround" in building_name:
                     building_name = "empty"
 
-                buildings.append({
+                # Extract construction end time when building is upgrading.
+                # The game's position JSON may provide constructionEnd or enddate
+                # as a Unix timestamp. Store it so runners can calculate accurate
+                # wait times instead of relying solely on ika-tools estimates.
+                construction_end_at = 0
+                if is_busy:
+                    raw_end = (
+                        pos.get("constructionEnd")
+                        or pos.get("enddate")
+                        or pos.get("construction_end")
+                        or 0
+                    )
+                    try:
+                        construction_end_at = int(float(raw_end or 0))
+                    except Exception:
+                        construction_end_at = 0
+
+                entry: dict = {
                     "position": i,
                     "building": building_name.strip(),
                     "type": slot_type,
                     "level": level,
                     "is_upgrading": is_busy,
-                })
+                }
+                if construction_end_at:
+                    entry["construction_end_at"] = construction_end_at
+                buildings.append(entry)
 
             def safe_int(val, default=0):
                 if val is None:
