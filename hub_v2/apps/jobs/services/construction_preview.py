@@ -328,7 +328,9 @@ def _adjusted_time(
     chronos_reduction: float,
     government_reduction: int = 0,
 ) -> int:
-    value = float(seconds)
+    # ika-tools bundle stores building_time at 1/3 of true base (3x-speed world reference).
+    # Multiply by 3 to restore the real 1x-speed base before applying user modifiers.
+    value = float(seconds) * 3.0
     if time_modifier == ":3":
         value = value / 3.0
     else:

@@ -188,7 +188,17 @@ class RescheduleJobView(APIView):
 
         delay = serializer.validated_data["delay_seconds"]
         scheduled_for = timezone.now() + timedelta(seconds=delay)
-        inputs = serializer.validated_data.get("inputs")
+        patch = serializer.validated_data.get("inputs")
+
+        if patch is None:
+            new_inputs_json = job.inputs_json
+        else:
+            try:
+                existing = json.loads(job.inputs_json or "{}")
+            except (json.JSONDecodeError, TypeError):
+                existing = {}
+            existing.update(patch)
+            new_inputs_json = json.dumps(existing)
 
         new_job = Job.objects.create(
             account=job.account,
@@ -197,7 +207,7 @@ class RescheduleJobView(APIView):
             profile=job.profile,
             action_code=job.action_code,
             source_job_id=job.pk,
-            inputs_json=job.inputs_json if inputs is None else json.dumps(inputs),
+            inputs_json=new_inputs_json,
             timeout_sec=job.timeout_sec,
             status="scheduled",
             scheduled_for=scheduled_for,

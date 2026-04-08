@@ -584,12 +584,12 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     else:
                         in_flight_row = self._find_level_row(pending, upgrading_level + 1)
                         if in_flight_row is not None:
+                            # adjusted_seconds already has world/government reductions
+                            # baked in from hub job creation — use it directly.
                             base_adj = _to_int(in_flight_row.get("adjusted_seconds"), 0)
-                            real_seconds = _apply_world_time_reduction(base_adj, world_time_reduction)
-                            real_seconds = _apply_world_time_reduction(real_seconds, government_time_reduction)
                             wait_seconds = max(
                                 MIN_RECHECK_SECONDS,
-                                real_seconds + FINISH_BUFFER_SECONDS,
+                                base_adj + FINISH_BUFFER_SECONDS,
                             )
                 self.log(
                     jid,
@@ -749,12 +749,10 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         f"Evolucao iniciada: {_city_name(city)} | {pending['building_name']} | lvl {current_level} -> {next_level}",
                     )
 
-                # Apply world time reduction to get the real finish time.
-                # level_rows store adjusted_seconds with city reducers but without
-                # the world modifier (set per-server). Re-apply it now.
+                # adjusted_seconds already has world/government reductions baked in
+                # from hub job creation — use it directly.
                 base_adj = _to_int(level_row.get("adjusted_seconds"), 0)
-                real_seconds = _apply_world_time_reduction(base_adj, world_time_reduction)
-                delay = max(90, real_seconds + FINISH_BUFFER_SECONDS)
+                delay = max(90, base_adj + FINISH_BUFFER_SECONDS)
                 delays.append(delay)
                 started.append(
                     {
