@@ -851,6 +851,7 @@ class ModifyProductionRunner(BaseRunner):
                     city_id=city_id,
                     island_id=context["island_id"],
                     resource_type="resource",
+                    tradegood_type="resource",
                     workers=resource_workers,
                 )
                 self._set_workers(
@@ -858,6 +859,7 @@ class ModifyProductionRunner(BaseRunner):
                     city_id=city_id,
                     island_id=context["island_id"],
                     resource_type="tradegood",
+                    tradegood_type=context.get("tradegood_type") or "1",
                     workers=luxury_workers,
                 )
 
@@ -913,20 +915,30 @@ class ModifyProductionRunner(BaseRunner):
         except Exception:
             return 100
 
-    def _set_workers(self, client, *, city_id: str, island_id: str, resource_type: str, workers: int) -> None:
+    def _set_workers(
+        self,
+        client,
+        *,
+        city_id: str,
+        island_id: str,
+        resource_type: str,
+        tradegood_type: str,
+        workers: int,
+    ) -> None:
         worker_key = "rw" if resource_type == "resource" else "tw"
         client._request(
             "POST",
             client._server_url,
             data={
-                "islandId": island_id,
-                "cityId": city_id,
-                "type": resource_type,
-                "screen": resource_type,
                 "action": "IslandScreen",
                 "function": "workerPlan",
-                worker_key: workers,
+                "cityId": city_id,
+                "islandId": island_id,
+                "currentIslandId": island_id,
+                "backgroundView": "island",
+                "type": tradegood_type,
                 "templateView": resource_type,
+                worker_key: workers,
                 "actionRequest": client._action_request,
                 "ajax": "1",
             },

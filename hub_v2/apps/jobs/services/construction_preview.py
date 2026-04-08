@@ -260,10 +260,14 @@ def get_ika_tools_tables() -> dict[str, list[dict[str, Any]]]:
         if not raw_array:
             continue
         try:
-            if raw_array.lstrip().startswith("["):
-                tables[slug] = json.loads(raw_array)
-            else:
-                tables[slug] = _js_object_array_to_python(raw_array)
+            # _extract_js_array returns content starting with '[' but missing
+            # the final ']'. The bundle uses unquoted JS keys so json.loads
+            # fails; strip the leading '[' and let _js_object_array_to_python
+            # quote the keys and re-wrap with '[...]'.
+            inner = raw_array.lstrip()
+            if inner.startswith("["):
+                inner = inner[1:]
+            tables[slug] = _js_object_array_to_python(inner)
         except Exception:
             continue
 
