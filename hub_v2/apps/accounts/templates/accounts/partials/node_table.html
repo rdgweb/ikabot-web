@@ -46,8 +46,25 @@
           {% endif %}
         </td>
         <td>
-          {% if node.agent_version %}
-            <span class="text-xs text-muted">v{{ node.agent_version }}</span>
+          {% if node.agent_version or node.agent_image %}
+            <div class="flex flex-col gap-1">
+              {% if node.agent_version %}
+                <span class="text-xs text-muted">
+                  v{{ node.agent_version }}
+                  {% if mixed_agent_versions %}
+                    <span class="badge badge-warning ml-1">divergente</span>
+                  {% endif %}
+                </span>
+              {% endif %}
+              {% if node.agent_image %}
+                <span class="font-mono text-[11px] text-muted" title="{{ node.agent_image }}">
+                  {{ node.agent_image|truncatechars:52 }}
+                  {% if mixed_agent_images %}
+                    <span class="badge badge-warning ml-1">rollout misto</span>
+                  {% endif %}
+                </span>
+              {% endif %}
+            </div>
           {% else %}
             <span class="text-xs text-muted">não registrado</span>
           {% endif %}

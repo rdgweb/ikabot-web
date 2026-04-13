@@ -202,3 +202,4 @@ class GameAccountGovernmentTimeView(LoginRequiredMixin, View):
         resp = HttpResponse(status=204)
         resp["HX-Trigger"] = trigger
         return resp
+

@@ -65,6 +65,35 @@ CITY_RESOURCE_FIELDS = (
     ("crystal", "Cristal", "game/resources/icon_glass.png"),
     ("sulfur", "Enxofre", "game/resources/icon_sulfur.png"),
 )
+WORKSHOP_UNITS_UI = (
+    # Tropas (12)
+    {"key": "hoplita",      "name": "Hoplita",           "tab": "land", "icon": "game/units/hoplita.png",           "bi": "bi-shield-fill",        "accent": "rgba(79,134,185,0.85)",  "surface": "rgba(79,134,185,0.08)"},
+    {"key": "gigante",      "name": "Gigante a Vapor",   "tab": "land", "icon": "game/units/gigante.png",           "bi": "bi-robot",              "accent": "rgba(50,145,210,0.85)",  "surface": "rgba(50,145,210,0.08)"},
+    {"key": "lanceiro",     "name": "Lanceiro",          "tab": "land", "icon": "game/units/lanceiro.png",          "bi": "bi-person-fill",        "accent": "rgba(80,100,160,0.85)",  "surface": "rgba(80,100,160,0.08)"},
+    {"key": "espadachim",   "name": "Espadachim",        "tab": "land", "icon": "game/units/espadachim.png",        "bi": "bi-person-fill",        "accent": "rgba(130,80,50,0.85)",   "surface": "rgba(130,80,50,0.08)"},
+    {"key": "fundeiro",     "name": "Fundeiro",          "tab": "land", "icon": "game/units/fundeiro.png",          "bi": "bi-person-fill",        "accent": "rgba(95,130,60,0.85)",   "surface": "rgba(95,130,60,0.08)"},
+    {"key": "arqueiro",     "name": "Arqueiro",          "tab": "land", "icon": "game/units/arqueiro.png",          "bi": "bi-person-fill",        "accent": "rgba(85,135,90,0.85)",   "surface": "rgba(85,135,90,0.08)"},
+    {"key": "atirador",     "name": "Carabineiro",       "tab": "land", "icon": "game/units/atirador.png",          "bi": "bi-person-fill",        "accent": "rgba(90,140,80,0.85)",   "surface": "rgba(90,140,80,0.08)"},
+    {"key": "ariete",       "name": "Ariete",            "tab": "land", "icon": "game/units/ariete.png",            "bi": "bi-arrow-right-square", "accent": "rgba(100,65,40,0.85)",   "surface": "rgba(100,65,40,0.08)"},
+    {"key": "catapulta",    "name": "Catapulta",         "tab": "land", "icon": "game/units/catapulta.png",         "bi": "bi-bullseye",           "accent": "rgba(140,105,60,0.85)",  "surface": "rgba(140,105,60,0.08)"},
+    {"key": "morteiro",     "name": "Morteiro",          "tab": "land", "icon": "game/units/morteiro.png",          "bi": "bi-bullseye",           "accent": "rgba(90,80,80,0.85)",    "surface": "rgba(90,80,80,0.08)"},
+    {"key": "girocoptero",  "name": "Girocóptero",       "tab": "land", "icon": "game/units/girocoptero.png",       "bi": "bi-wind",               "accent": "rgba(150,120,70,0.85)",  "surface": "rgba(150,120,70,0.08)"},
+    {"key": "balao",        "name": "Balão-Bombardeiro", "tab": "land", "icon": "game/units/balao.png",             "bi": "bi-balloon-fill",       "accent": "rgba(215,175,50,0.85)",  "surface": "rgba(215,175,50,0.08)"},
+    # Barcos (12)
+    {"key": "lancachamas",    "name": "Lança-Chamas",    "tab": "sea", "icon": "game/units/lancachamas.png",      "bi": "bi-fire",          "accent": "rgba(220,75,35,0.85)",   "surface": "rgba(220,75,35,0.08)"},
+    {"key": "ariete_vapor",   "name": "Aríete a Vapor",  "tab": "sea", "icon": "game/units/Aríete a Vapor.png",   "bi": "bi-tsunami",       "accent": "rgba(60,100,185,0.85)",  "surface": "rgba(60,100,185,0.08)"},
+    {"key": "trieme",         "name": "Trireme",         "tab": "sea", "icon": "game/units/trieme.png",           "bi": "bi-tsunami",       "accent": "rgba(50,130,205,0.85)",  "surface": "rgba(50,130,205,0.08)"},
+    {"key": "barco_balista",  "name": "Barco Balista",   "tab": "sea", "icon": "game/units/Barco Balista.png",   "bi": "bi-tsunami",       "accent": "rgba(75,130,175,0.85)",  "surface": "rgba(75,130,175,0.08)"},
+    {"key": "barcocatapulta", "name": "Barco Catapulta", "tab": "sea", "icon": "game/units/barcocatapulta.png",  "bi": "bi-tsunami",       "accent": "rgba(95,140,80,0.85)",   "surface": "rgba(95,140,80,0.08)"},
+    {"key": "barcomorteiro",  "name": "Barco Morteiro",  "tab": "sea", "icon": "game/units/barcomorteiro.png",   "bi": "bi-tsunami",       "accent": "rgba(90,65,55,0.85)",    "surface": "rgba(90,65,55,0.08)"},
+    {"key": "lanca_foguetes", "name": "Lança-Foguetes",  "tab": "sea", "icon": "game/units/Lança-Foguetes.png",  "bi": "bi-fire",          "accent": "rgba(205,75,35,0.85)",   "surface": "rgba(205,75,35,0.08)"},
+    {"key": "submergivel",    "name": "Submergível",     "tab": "sea", "icon": "game/units/Submergível.png",     "bi": "bi-water",         "accent": "rgba(25,80,145,0.85)",   "surface": "rgba(25,80,145,0.08)"},
+    {"key": "lancha_rapida",  "name": "Lancha Rápida",   "tab": "sea", "icon": "game/units/Lancha Rápida.png",   "bi": "bi-tsunami",       "accent": "rgba(45,165,120,0.85)",  "surface": "rgba(45,165,120,0.08)"},
+    {"key": "porta_balaos",   "name": "Porta-balões",    "tab": "sea", "icon": "game/units/Porta-balões.png",    "bi": "bi-box-seam",      "accent": "rgba(155,200,70,0.85)",  "surface": "rgba(155,200,70,0.08)"},
+    {"key": "barco_mercante", "name": "Barco Mercante",  "tab": "sea", "icon": "game/units/barco_mercante.png", "bi": "bi-shop",          "accent": "rgba(180,140,60,0.85)",  "surface": "rgba(180,140,60,0.08)"},
+    {"key": "cargueiro",      "name": "Cargueiro",       "tab": "sea", "icon": "game/units/cargueiro.png",      "bi": "bi-box-seam-fill", "accent": "rgba(110,90,70,0.85)",   "surface": "rgba(110,90,70,0.08)"},
+)
+
 SHRINE_GOD_FIELDS = (
     "god_pan",
     "god_dionysus",
@@ -208,11 +237,29 @@ RESEARCH_BRANCH_UI = (
 
 def _default_construction_modifiers(action_code: int) -> tuple[int, str]:
     if int(action_code) == 1002:
-        # For the planner, global modifiers must come from the game state.
-        # Until research/global bonus sync exists, use conservative zeroes
-        # and keep only city-derived reducers/Chronos in the preview.
-        return 0, "0"
+        return 14, "0"
     return 14, "25"
+
+
+def _parse_modifier_int(value, default: int = 0) -> int:
+    raw = str(value or "").replace("%", "").replace(":", "").strip()
+    if not raw:
+        return int(default)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _resolve_construction_modifiers(action_code: int, ga: GameAccount, source: dict | None = None) -> tuple[int, str, int]:
+    default_research, default_time = _default_construction_modifiers(action_code)
+    research_reduction = _parse_modifier_int((source or {}).get("research_reduction"), default_research)
+    if int(action_code) == 1002:
+        build_time_reduction = str(ga.build_time_reduction or 0)
+    else:
+        build_time_reduction = str((source or {}).get("build_time_reduction") or default_time)
+    government_time_reduction = int(ga.government_time_reduction or 0)
+    return research_reduction, build_time_reduction, government_time_reduction
 
 
 def _normalize_building_id(building_id: str) -> str:
@@ -753,6 +800,56 @@ def _scientists_form_context(snapshot, cities):
     }
 
 
+def _upgrade_units_form_context(cities):
+    """Build context for the Melhorar Unidades (action 1203) creation form."""
+    workshop_cities = []
+    for city in cities or []:
+        for building in city.get("buildings") or []:
+            if str(building.get("building") or "").strip() != "workshop":
+                continue
+            workshop_cities.append({
+                "id": city.get("id"),
+                "name": city.get("name", ""),
+                "x": city.get("x"),
+                "y": city.get("y"),
+                "tradegood_name": city.get("tradegood_name", ""),
+                "tradegood_icon": city.get("tradegood_icon", ""),
+                "position": int(building.get("position", 0) or 0),
+                "level": int(building.get("level", 0) or 0),
+            })
+            break
+    workshop_cities.sort(key=lambda item: str(item.get("name") or "").lower())
+
+    land_units = [
+        {**u, "icon_url": static(u["icon"]) if u.get("icon") else ""}
+        for u in WORKSHOP_UNITS_UI if u["tab"] == "land"
+    ]
+    sea_units = [
+        {**u, "icon_url": static(u["icon"]) if u.get("icon") else ""}
+        for u in WORKSHOP_UNITS_UI if u["tab"] == "sea"
+    ]
+
+    return {
+        "summary": {
+            "has_workshop": bool(workshop_cities),
+            "workshop_cities": workshop_cities,
+            "city_count": len(workshop_cities),
+            "workshop_icon": static("game/buildings/workshop.png"),
+            "crystal_icon": static("game/resources/icon_glass.png"),
+        },
+        "priority_modes": (
+            {"value": "offensive_first", "label": "Ataque primeiro"},
+            {"value": "defensive_first", "label": "Defesa primeiro"},
+            {"value": "shortest_first", "label": "Menor tempo primeiro"},
+            {"value": "cheapest_first", "label": "Menor custo primeiro"},
+        ),
+        "cities": workshop_cities,
+        "land_units": land_units,
+        "sea_units": sea_units,
+        "all_units": land_units + sea_units,
+    }
+
+
 def _custom_field_names(action_code: int) -> list[str]:
     if int(action_code) == 6:
         return ["city", "collect_favor", "collect_fountain", "fallback_interval_hours", "reschedule_margin_minutes"]
@@ -787,6 +884,8 @@ def _custom_field_names(action_code: int) -> list[str]:
         return [*SHRINE_GOD_FIELDS, "favor_recheck_minutes"]
     if int(action_code) == 1007:
         return [*SHRINE_GOD_FIELDS, "favor_recheck_minutes", "cycle_hours"]
+    if int(action_code) == 1203:
+        return ["unit_targets_json", "min_crystal_reserve", "min_gold_reserve", "priority_mode"]
     return []
 
 
@@ -810,6 +909,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities):
         "miracle_ui": _miracle_form_context(cities),
         "experiment_ui": _experiment_form_context(snapshot, cities),
         "scientists_ui": _scientists_form_context(snapshot, cities),
+        "upgrade_units_ui": _upgrade_units_form_context(cities),
     }
 
 
@@ -918,12 +1018,12 @@ class JobCreateModalView(LoginRequiredMixin, View):
     def _render_form(self, request, ga, action_code, action_meta):
         cities = _get_cities(ga)
         construction_cities = _construction_city_data(cities)
-        selected_city = request.GET.get("city", "")
+        selected_city = request.GET.get("city_id", request.GET.get("city", ""))
         form = JobCreateForm(
             action_code=action_code,
             game_account=ga,
             cities=construction_cities,
-            initial={"game_account": str(ga.pk), "action_code": action_code, "city": selected_city},
+            initial={"game_account": str(ga.pk), "action_code": action_code, "city_id": selected_city, "city": selected_city},
         )
         html = render_to_string(
             "jobs/partials/create_step_form.html",
@@ -976,12 +1076,12 @@ class JobFormView(LoginRequiredMixin, View):
 
         cities = _get_cities(ga)
         construction_cities = _construction_city_data(cities)
-        selected_city = request.GET.get("city", "")
+        selected_city = request.GET.get("city_id", request.GET.get("city", ""))
         form = JobCreateForm(
             action_code=action_code,
             game_account=ga,
             cities=construction_cities,
-            initial={"game_account": str(ga.pk), "action_code": action_code, "city": selected_city},
+            initial={"game_account": str(ga.pk), "action_code": action_code, "city_id": selected_city, "city": selected_city},
         )
 
         html = render_to_string(
@@ -1019,6 +1119,14 @@ class ConstructionPlanPreviewView(LoginRequiredMixin, View):
         build_time_reduction = request.POST.get("build_time_reduction", str(default_time))
         building_position = request.POST.get("building_position")
         building_type = request.POST.get("building_type")
+        resolved_research, resolved_build_time, resolved_government = _resolve_construction_modifiers(
+            action_code,
+            ga,
+            {
+                "research_reduction": research_reduction,
+                "build_time_reduction": build_time_reduction,
+            },
+        )
 
         preview = None
         plan_preview = None
@@ -1029,9 +1137,9 @@ class ConstructionPlanPreviewView(LoginRequiredMixin, View):
                     plan_preview = build_construction_plan_preview(
                         game_account=ga,
                         steps=steps,
-                        research_reduction=int(str(research_reduction or str(default_research)).replace("%", "").replace(":", "") or 0),
-                        build_time_reduction=str(ga.build_time_reduction),
-                        government_time_reduction=ga.government_time_reduction,
+                        research_reduction=resolved_research,
+                        build_time_reduction=resolved_build_time,
+                        government_time_reduction=resolved_government,
                     )
             elif city_id and target_level and (building_position or building_type):
                 preview = build_construction_preview(
@@ -1040,9 +1148,9 @@ class ConstructionPlanPreviewView(LoginRequiredMixin, View):
                     building_position=building_position,
                     building_type=building_type,
                     target_level=int(target_level),
-                    research_reduction=int(str(research_reduction or str(default_research)).replace("%", "").replace(":", "") or 0),
-                    build_time_reduction=str(build_time_reduction or str(default_time)),
-                    government_time_reduction=ga.government_time_reduction,
+                    research_reduction=resolved_research,
+                    build_time_reduction=resolved_build_time,
+                    government_time_reduction=resolved_government,
                 )
         except Exception as exc:
             logger.warning("Construction preview failed: %s", exc)
@@ -1088,6 +1196,9 @@ class JobSubmitView(LoginRequiredMixin, View):
         if int(action_code) == 1002:
             return self._submit_construction_plan(request, ga, action_code, action_meta, construction_cities)
 
+        if int(action_code) == 1203:
+            return self._submit_upgrade_units(request, ga, action_code, action_meta, cities)
+
         form = JobCreateForm(
             request.POST,
             action_code=action_code,
@@ -1124,6 +1235,104 @@ class JobSubmitView(LoginRequiredMixin, View):
             )
         )
         resp["HX-Trigger"] = trigger_data
+        return resp
+
+    def _submit_upgrade_units(self, request, ga, action_code, action_meta, cities):
+        # Parse unit targets JSON
+        raw_targets = request.POST.get("unit_targets_json", "[]").strip()
+        try:
+            unit_targets = json.loads(raw_targets) if raw_targets else []
+        except Exception:
+            unit_targets = []
+        if not isinstance(unit_targets, list):
+            unit_targets = []
+
+        # Sanitise each target entry
+        clean_targets = []
+        for t in unit_targets:
+            if not isinstance(t, dict):
+                continue
+            key = str(t.get("key") or "").strip()
+            if not key:
+                continue
+            attack_raw = t.get("attack_max")
+            defense_raw = t.get("defense_max")
+            legacy_raw = t.get("max_level")
+
+            def _coerce_branch(value):
+                if value in ("", None):
+                    return None
+                try:
+                    return max(0, int(value))
+                except (TypeError, ValueError):
+                    return None
+
+            attack_max = _coerce_branch(attack_raw)
+            defense_max = _coerce_branch(defense_raw)
+
+            if attack_max is None and defense_max is None and legacy_raw not in ("", None):
+                try:
+                    legacy_max = max(0, int(legacy_raw))
+                except (TypeError, ValueError):
+                    legacy_max = 0
+                attack_max = legacy_max
+                defense_max = legacy_max
+
+            if attack_max is None and defense_max is None:
+                continue
+
+            clean_targets.append({
+                "key": key,
+                "attack_max": attack_max,
+                "defense_max": defense_max,
+            })
+
+        # Resource reserves
+        try:
+            min_crystal = int(request.POST.get("min_crystal_reserve") or 0)
+        except (ValueError, TypeError):
+            min_crystal = 0
+        try:
+            min_gold = int(request.POST.get("min_gold_reserve") or 0)
+        except (ValueError, TypeError):
+            min_gold = 0
+        priority_mode = str(request.POST.get("priority_mode") or "offensive_first").strip() or "offensive_first"
+        if priority_mode not in {"offensive_first", "defensive_first", "shortest_first", "cheapest_first"}:
+            priority_mode = "offensive_first"
+
+        # Optional city filter from the standard city selector
+        city_id = str(request.POST.get("city_id") or request.POST.get("city") or "").strip()
+
+        inputs = {
+            "unit_targets": clean_targets,
+            "target_all": len(clean_targets) == 0,
+            "min_crystal_reserve": max(0, min_crystal),
+            "min_gold_reserve": max(0, min_gold),
+            "priority_mode": priority_mode,
+        }
+        if city_id:
+            inputs["city_id"] = city_id
+
+        Job.objects.create(
+            account=ga.account,
+            game_account=ga,
+            node=ga.account.node,
+            action_code=action_code,
+            inputs_json=json.dumps(inputs),
+            status="queued",
+        )
+
+        resp = HttpResponse(
+            render_to_string(
+                "jobs/partials/create_step_success.html",
+                {"jobs_created": 1, "action_name": action_meta["name"]},
+                request=request,
+            )
+        )
+        resp["HX-Trigger"] = json.dumps({
+            "toast": {"type": "success", "message": "Job Melhorar Unidades criado!"},
+            "jobsCreated": True,
+        })
         return resp
 
     def _submit_construction_plan(self, request, ga, action_code, action_meta, cities):
@@ -1171,13 +1380,21 @@ class JobSubmitView(LoginRequiredMixin, View):
         clean_steps = _resolve_construction_new_slots(clean_steps, cities)
 
         inputs = form.get_inputs_json()
+        research_reduction, build_time_reduction, government_time_reduction = _resolve_construction_modifiers(
+            action_code,
+            ga,
+            inputs,
+        )
         plan_preview = build_construction_plan_preview(
             game_account=ga,
             steps=clean_steps,
-            research_reduction=_default_construction_modifiers(action_code)[0],
-            build_time_reduction=str(ga.build_time_reduction),
-            government_time_reduction=ga.government_time_reduction,
+            research_reduction=research_reduction,
+            build_time_reduction=build_time_reduction,
+            government_time_reduction=government_time_reduction,
         )
+        inputs["research_reduction"] = research_reduction
+        inputs["build_time_reduction"] = build_time_reduction
+        inputs["government_time_reduction"] = government_time_reduction
         inputs["construction_plan_json"] = clean_steps
         inputs["construction_plan_steps"] = plan_preview.steps
         inputs["construction_summary"] = {

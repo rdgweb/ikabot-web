@@ -697,7 +697,7 @@
             {% if bld.building and bld.building != "empty" %}
             <div class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded
                          {% if bld.is_upgrading %}bg-amber-50 text-amber-700 ring-1 ring-amber-200{% else %}bg-gray-50 text-gray-500{% endif %}"
-                 title="{{ bld.building|building_name }} Lv.{{ bld.level }}{% if bld.is_upgrading %} (em construcao){% endif %}">
+                 title="{{ bld.building|building_name }} Lv.{{ bld.level }}{% if bld.is_upgrading %} (em construcao{% if bld.construction_remaining_human %} · {{ bld.construction_remaining_human }}{% endif %}){% endif %}">
               {% with bld.building|building_icon as icon_path %}
               {% if icon_path %}
               <img src="{% static icon_path %}" class="w-3.5 h-3.5">
@@ -708,6 +708,9 @@
               <span class="text-[9px] font-bold leading-none">{{ bld.level }}</span>
               {% if bld.is_upgrading %}
               <i class="bi bi-arrow-up-circle-fill text-amber-500 text-[9px]"></i>
+              {% if bld.construction_remaining_human %}
+              <span class="text-[9px] font-semibold leading-none">{{ bld.construction_remaining_human }}</span>
+              {% endif %}
               {% endif %}
             </div>
             {% endif %}

@@ -95,6 +95,7 @@ ACTIONS = {
         "inputs": [
             {"key": "auto_transport", "type": FIELD_BOOL, "label": "Transportar recursos automaticamente", "required": False, "default": True},
             {"key": "queue_strategy", "type": FIELD_CHOICE, "label": "Prioridade do plano", "required": False, "default": "eta_first", "choices": CONSTRUCTION_QUEUE_STRATEGY_CHOICES},
+            {"key": "research_reduction", "type": FIELD_CHOICE, "label": "Pesquisa economica", "required": False, "default": "14", "choices": RESEARCH_REDUCTION_CHOICES},
         ],
     },
     1004: {

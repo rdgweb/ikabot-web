@@ -119,6 +119,45 @@ def _write_wine_debug(city_id: int, city_name: str, html: str) -> None:
     (debug_dir / f"city-{city_id}.txt").write_text("\n".join(payload), encoding="utf-8")
 
 
+def _merge_existing_building_progress(city_data: dict[str, Any], existing_city: dict[str, Any] | None) -> dict[str, Any]:
+    """Preserve useful construction metadata from the previous snapshot.
+
+    The city page occasionally keeps `constructionSite` without re-sending a
+    reliable end timestamp. When the previous snapshot had a still-future
+    `construction_end_at` for the same building/position/level, keep it.
+    """
+    if not isinstance(city_data, dict) or not isinstance(existing_city, dict):
+        return city_data
+
+    now_ts = int(time.time())
+    existing_by_position = {
+        int(item.get("position")): item
+        for item in (existing_city.get("buildings") or [])
+        if isinstance(item, dict) and str(item.get("position", "")).strip() != ""
+    }
+
+    merged_buildings: list[dict[str, Any]] = []
+    for item in city_data.get("buildings") or []:
+        if not isinstance(item, dict):
+            merged_buildings.append(item)
+            continue
+        current = dict(item)
+        previous = existing_by_position.get(int(current.get("position", -1)))
+        if not isinstance(previous, dict):
+            merged_buildings.append(current)
+            continue
+
+        prev_end_at = _safe_num_like(previous.get("construction_end_at"), 0)
+        same_building = str(previous.get("building") or "") == str(current.get("building") or "")
+        same_level = _safe_num_like(previous.get("level"), 0) == _safe_num_like(current.get("level"), 0)
+        if current.get("is_upgrading") and prev_end_at > now_ts and same_building and same_level:
+            current.setdefault("construction_end_at", prev_end_at)
+        merged_buildings.append(current)
+
+    city_data["buildings"] = merged_buildings
+    return city_data
+
+
 @register_runner(100)
 class CheckStatusRunner(BaseRunner):
     """Full account status check — login + collect all game data.
@@ -235,6 +274,19 @@ class CheckStatusRunner(BaseRunner):
                 existing_snapshot = None
             existing_base = existing_snapshot.get("base_snapshot") if isinstance(existing_snapshot, dict) else {}
             existing_cities = existing_snapshot.get("cities") if isinstance(existing_snapshot, dict) else []
+            existing_city_map = {
+                str(city.get("id") or "").strip(): city
+                for city in (existing_cities if isinstance(existing_cities, list) else [])
+                if isinstance(city, dict) and str(city.get("id") or "").strip()
+            }
+            cities_data = [
+                _merge_existing_building_progress(
+                    city,
+                    existing_city_map.get(str(city.get("id") or "").strip()),
+                )
+                for city in cities_data
+                if isinstance(city, dict)
+            ]
             cities_data = self._merge_city_building_sync_data(cities_data, existing_cities)
             snapshot = {
                 "base_snapshot": {
@@ -598,6 +650,19 @@ class CheckStatusRunner(BaseRunner):
                 if slot_type:
                     slot_types_by_position[int(pos_match.group(1))] = slot_type
 
+            dom_state_by_position: dict[int, dict[str, Any]] = {}
+            for pos_match in re.finditer(
+                r'id=["\']position(\d+)["\'][^>]*class=["\']([^"\']+)["\']',
+                html,
+                re.IGNORECASE,
+            ):
+                classes = [part.strip() for part in pos_match.group(2).split() if part.strip()]
+                dom_state_by_position[int(pos_match.group(1))] = {
+                    "classes": classes,
+                    "is_busy": "constructionSite" in classes,
+                    "is_empty": "buildingGround" in classes,
+                }
+
             buildings = []
             positions = city.get("position", [])
             for i, pos in enumerate(positions):
@@ -606,10 +671,12 @@ class CheckStatusRunner(BaseRunner):
                 building_name = pos.get("building", "")
                 slot_type = str(pos.get("type") or slot_types_by_position.get(i) or "").strip()
                 level = int(pos.get("level", 0)) if "level" in pos else 0
-                is_busy = "constructionSite" in building_name
-                if is_busy:
+                json_is_busy = "constructionSite" in building_name
+                dom_state = dom_state_by_position.get(i) or {}
+                is_busy = bool(dom_state.get("is_busy")) if dom_state else json_is_busy
+                if json_is_busy:
                     building_name = building_name.replace("constructionSite", "")
-                if "buildingGround" in building_name:
+                if "buildingGround" in building_name or bool(dom_state.get("is_empty")):
                     building_name = "empty"
 
                 # Extract construction end time when building is upgrading.

@@ -6,6 +6,7 @@ production rates, gold, transporters, military, and resource projections.
 """
 
 from datetime import datetime
+from typing import Any
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.utils import timezone
@@ -65,6 +66,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                 for city in city_list:
                     if not isinstance(city, dict):
                         continue
+                    city = _annotate_building_remaining(city)
                     wood = _si(city.get("wood"))
                     wine = _si(city.get("wine"))
                     marble = _si(city.get("marble"))
@@ -429,6 +431,43 @@ def _build_military_columns(cities: list[dict], key: str) -> list[str]:
             key=lambda item: (-item[1], item[0]),
         )
     ]
+
+
+def _duration_human(seconds: int) -> str:
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m {seconds % 60}s"
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    if hours < 24:
+        return f"{hours}h {minutes}m"
+    days = hours // 24
+    return f"{days}d {hours % 24}h"
+
+
+def _annotate_building_remaining(city: dict[str, Any]) -> dict[str, Any]:
+    now_ts = int(timezone.now().timestamp())
+    buildings = city.get("buildings") or []
+    if not isinstance(buildings, list):
+        return city
+
+    out: list[dict[str, Any]] = []
+    for item in buildings:
+        if not isinstance(item, dict):
+            out.append(item)
+            continue
+        current = dict(item)
+        end_at = _si(current.get("construction_end_at"), 0)
+        if bool(current.get("is_upgrading")) and end_at > now_ts:
+            remaining = max(0, end_at - now_ts)
+            current["construction_remaining_seconds"] = remaining
+            current["construction_remaining_human"] = _duration_human(remaining)
+        out.append(current)
+
+    city = dict(city)
+    city["buildings"] = out
+    return city
 
 
 # Ikariam numbering: tradegood IDs and storage keys use the SAME mapping:

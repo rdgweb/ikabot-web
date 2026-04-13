@@ -372,7 +372,7 @@ class ConstructionSupportView(APIView):
 
             if not any(resources.values()):
                 continue
-            if child.status not in {"queued", "running", "scheduled", "finished"}:
+            if child.status not in {"queued", "running", "scheduled"}:
                 continue
 
             entries.append(

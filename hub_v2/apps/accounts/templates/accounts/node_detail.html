@@ -81,6 +81,10 @@
       <dt class="text-muted">Versão</dt>
       <dd class="mt-0.5 font-mono">{{ node.agent_version|default:"—" }}</dd>
     </div>
+    <div class="col-span-2">
+      <dt class="text-muted">Imagem</dt>
+      <dd class="mt-0.5 font-mono text-xs break-all">{{ node.agent_image|default:"—" }}</dd>
+    </div>
     <div>
       <dt class="text-muted">Host</dt>
       <dd class="mt-0.5 font-mono">{{ node.agent_host|default:"—" }}</dd>

@@ -13,7 +13,8 @@ from typing import Any
 from core.runner_registry import register_runner
 from game_client.constants import GAME_AJAX_HEADERS
 from runners.base import BaseRunner, RunnerResult
-from services.resource_transport import estimate_incoming_transport_wait_seconds
+from services.resource_transport import estimate_incoming_transport_wait_seconds, change_current_city
+from services.island_donation import extract_city_data
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +185,114 @@ def _get_upgrading_building(city: dict[str, Any]) -> dict[str, Any] | None:
         if bool(item.get("is_upgrading")):
             return item
     return None
+
+
+def _live_city_building_state(client, city_id: int, position: int) -> dict[str, Any] | None:
+    """Read the current state of one city position directly from the game page."""
+    resp = client._request("GET", client._server_url, params={"view": "city", "cityId": city_id})
+    html = resp.text
+    city = extract_city_data(html)
+    positions = city.get("position", [])
+    if position < 0 or position >= len(positions):
+        return None
+    pos = positions[position]
+    if not isinstance(pos, dict):
+        return None
+
+    dom_state = {}
+    match = re.search(
+        rf'id=["\']position{position}["\'][^>]*class=["\']([^"\']+)["\']',
+        html,
+        re.IGNORECASE,
+    )
+    if match:
+        classes = [part.strip() for part in match.group(1).split() if part.strip()]
+        dom_state = {
+            "is_busy": "constructionSite" in classes,
+            "is_empty": "buildingGround" in classes,
+        }
+
+    building_name = str(pos.get("building") or "").strip()
+    json_is_busy = "constructionSite" in building_name
+    if json_is_busy:
+        building_name = building_name.replace("constructionSite", "")
+    if "buildingGround" in building_name or bool(dom_state.get("is_empty")):
+        building_name = "empty"
+
+    construction_end_at = 0
+    if json_is_busy or bool(dom_state.get("is_busy")):
+        raw_end = pos.get("constructionEnd") or pos.get("enddate") or pos.get("construction_end") or 0
+        construction_end_at = _to_int(raw_end, 0)
+
+    state = {
+        "position": position,
+        "building": building_name,
+        "level": _to_int(pos.get("level"), 0),
+        "is_upgrading": bool(dom_state.get("is_busy")) if dom_state else json_is_busy,
+    }
+    if construction_end_at > 0:
+        state["construction_end_at"] = construction_end_at
+    return state
+
+
+def _action_feedback(parsed: dict[str, Any] | None) -> str:
+    if not isinstance(parsed, dict):
+        return ""
+    parts: list[str] = []
+    for key in ("errors", "notifications"):
+        values = parsed.get(key)
+        if not isinstance(values, list):
+            continue
+        for item in values:
+            text = str(item or "").strip()
+            if text:
+                parts.append(text)
+    return " | ".join(parts)
+
+
+def _confirm_building_state(
+    client,
+    *,
+    city_id: int,
+    position: int,
+    next_level: int,
+    building_name: str,
+    city_name: str,
+    expect_build: bool,
+    action_feedback: str = "",
+    attempts: int = 4,
+) -> dict[str, Any]:
+    """Retry live city reads briefly before declaring build/upgrade unconfirmed."""
+    last_state: dict[str, Any] | None = None
+    for attempt in range(1, max(1, attempts) + 1):
+        live_state = _live_city_building_state(client, city_id, position)
+        if live_state:
+            last_state = live_state
+            live_level = _to_int(live_state.get("level"), 0)
+            live_busy = bool(live_state.get("is_upgrading"))
+            live_building = str(live_state.get("building") or "").strip()
+            if expect_build:
+                if live_building not in {"", "empty"}:
+                    return live_state
+            else:
+                if live_busy or live_level >= next_level:
+                    return live_state
+        if attempt < attempts:
+            time.sleep(float(attempt))
+
+    if expect_build:
+        detail = (
+            f"build_not_confirmed:{city_name}:{building_name}:pos={position}:"
+            f"state={last_state or {}}"
+        )
+    else:
+        detail = (
+            f"upgrade_not_confirmed:{city_name}:{building_name}:pos={position}:"
+            f"state={last_state or {}}:target={next_level}"
+        )
+    if action_feedback:
+        detail = f"{detail}:feedback={action_feedback}"
+    raise RuntimeError(detail)
 
 
 def _find_empty_position(city: dict[str, Any], *, allowed_types: set[str] | None = None) -> int | None:
@@ -540,6 +649,14 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 self._ensure_status_refresh(jid)
                 return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "waiting_post_build_snapshot"})
 
+        last_transport_dispatched_at = _to_float(inputs.get("last_transport_dispatched_at"), 0.0)
+        if last_transport_dispatched_at > 0 and updated_at is not None:
+            if updated_at.timestamp() < last_transport_dispatched_at:
+                age = int(time.time() - last_transport_dispatched_at)
+                self.log(jid, "info", f"Snapshot anterior ao ultimo transporte de suporte ({age}s atras); aguardando refresh")
+                self._ensure_status_refresh(jid)
+                return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "waiting_post_transport_snapshot"})
+
         # Resolve time reductions for this game account
         agent_config = self.get_agent_config()
         world_time_reduction = _resolve_world_time_reduction(agent_config, ga_id)
@@ -557,7 +674,12 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
 
         ready_steps: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]] = []
         wait_reasons: list[dict[str, Any]] = []
+        # Cities where snapshot says a building is upgrading — need live verification
+        # before trusting the wait (snapshot can be stale after a manual cancel or after
+        # the previous execution completed the upgrade).
+        busy_pending: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]] = []
         refresh_needed = False
+        any_transport_dispatched = False
         support_by_city = self._get_open_construction_support(jid)
 
         for pending in pending_steps:
@@ -570,40 +692,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
 
             upgrading = _get_upgrading_building(city)
             if upgrading is not None:
-                upgrading_name = str(upgrading.get("building") or "?")
-                upgrading_level = _to_int(upgrading.get("level"), 0)
-                wait_seconds = MIN_RECHECK_SECONDS
-                if upgrading_name in _building_ids_to_match(pending["building_id"]):
-                    # Prefer the game's own construction end timestamp when available.
-                    # Falls back to ika-tools adjusted_seconds (may be inaccurate for
-                    # some buildings like governorsResidence).
-                    construction_end_at = _to_int(upgrading.get("construction_end_at"), 0)
-                    if construction_end_at > 0:
-                        remaining = max(0, construction_end_at - int(time.time()))
-                        wait_seconds = max(MIN_RECHECK_SECONDS, remaining + FINISH_BUFFER_SECONDS)
-                    else:
-                        in_flight_row = self._find_level_row(pending, upgrading_level + 1)
-                        if in_flight_row is not None:
-                            # adjusted_seconds already has world/government reductions
-                            # baked in from hub job creation — use it directly.
-                            base_adj = _to_int(in_flight_row.get("adjusted_seconds"), 0)
-                            wait_seconds = max(
-                                MIN_RECHECK_SECONDS,
-                                base_adj + FINISH_BUFFER_SECONDS,
-                            )
-                self.log(
-                    jid,
-                    "info",
-                    f"Cidade {_city_name(city)} ainda esta em obra ({upgrading_name} lvl {upgrading_level}); aguardando {wait_seconds}s antes da proxima etapa",
-                )
-                wait_reasons.append(
-                    {
-                        "status": "waiting_city_busy",
-                        "wait_seconds": wait_seconds,
-                        "city_id": pending["city_id"],
-                        "building_id": pending["building_id"],
-                    }
-                )
+                # Defer decision: verify live before committing to a long wait
+                busy_pending.append((pending, city, upgrading))
                 continue
 
             next_level = pending["next_level"]
@@ -632,7 +722,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             stock = _city_stock(city)
             missing = {key: max(0, costs[key] - stock.get(key, 0)) for key in RESOURCE_KEYS}
             if any(amount > 0 for amount in missing.values()):
-                reschedule_seconds = self._handle_missing_resources(
+                reschedule_seconds, transport_spawned = self._handle_missing_resources(
                     job=job,
                     pending=pending,
                     cities=cities,
@@ -640,6 +730,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     missing=missing,
                     support_by_city=support_by_city,
                 )
+                any_transport_dispatched = any_transport_dispatched or transport_spawned
                 wait_reasons.append(
                     {
                         "status": "waiting_resources",
@@ -656,13 +747,15 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         if refresh_needed:
             self._ensure_status_refresh(jid)
 
-        if not ready_steps:
+        if not ready_steps and not busy_pending:
             next_wait = min(
                 [int(reason.get("wait_seconds") or MIN_RECHECK_SECONDS) for reason in wait_reasons] or [MIN_RECHECK_SECONDS]
             )
+            reschedule_inputs = {"last_transport_dispatched_at": int(time.time())} if any_transport_dispatched else None
             return RunnerResult(
                 success=True,
                 reschedule_seconds=next_wait,
+                reschedule_inputs=reschedule_inputs,
                 data={"status": "waiting_parallel", "waiting": wait_reasons},
             )
 
@@ -671,102 +764,252 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             started: list[dict[str, Any]] = []
             delays: list[int] = []
             new_waits = list(wait_reasons)
+            step_failures: list[dict[str, Any]] = []
 
-            for pending, city, level_row in ready_steps:
-                next_level = pending["next_level"]
-                building_id = _normalize_building_id(pending["building_id"])
-                city_id = _to_int(pending["city_id"])
-                step_mode = str(pending.get("mode") or "upgrade")
-                if step_mode == "new":
-                    preferred_position = _to_int(pending.get("preferred_position"), 0)
-                    slot_entry = _get_building_entry_at_position(city, preferred_position)
-                    if slot_entry and str(slot_entry.get("building") or "").strip() == pending["building_id"]:
-                        current_level = _to_int(slot_entry.get("level"), 0)
-                        position = _to_int(slot_entry.get("position"), 0)
-                        current_entry = slot_entry
-                    else:
-                        current_level = 0
-                        position = preferred_position if preferred_position > 0 else None
-                        current_entry = None
-                else:
-                    current_level, position = _find_building(city, pending["building_id"])
-                    current_entry = _get_building_entry(city, pending["building_id"])
+            # Live-verify cities where snapshot indicated a building is upgrading.
+            # If the game doesn't confirm it (stale snapshot after cancel or completion),
+            # promote them to ready_steps instead of waiting.
+            for pending, city, upgrading in busy_pending:
+                city_id_int = _to_int(pending["city_id"])
+                upgrading_name = str(upgrading.get("building") or "?")
+                upgrading_level = _to_int(upgrading.get("level"), 0)
+                upgrading_position = _to_int(upgrading.get("position"), -1)
 
-                if current_entry and bool(current_entry.get("is_upgrading")):
-                    wait_seconds = max(MIN_RECHECK_SECONDS, _to_int(level_row.get("adjusted_seconds"), 0) + FINISH_BUFFER_SECONDS)
+                live_still_busy = True
+                if upgrading_position >= 0:
+                    try:
+                        logger.debug(
+                            "[%s] Verificando estado ao vivo da obra (pos=%d) antes de aguardar",
+                            _city_name(city), upgrading_position,
+                        )
+                        live_state = _live_city_building_state(client, city_id_int, upgrading_position)
+                        if live_state and not live_state.get("is_upgrading"):
+                            live_still_busy = False
+                            refresh_needed = True
+                            self.log(
+                                jid, "warn",
+                                f"[{_city_name(city)}] Snapshot indicava obra em andamento ({upgrading_name} lvl {upgrading_level}) "
+                                f"mas jogo nao confirma — snapshot desatualizado; adicionando a fila de upgrade",
+                            )
+                    except Exception as live_exc:
+                        logger.debug("[%s] Falha ao verificar estado ao vivo: %s", _city_name(city), live_exc)
+
+                if live_still_busy:
+                    wait_seconds = MIN_RECHECK_SECONDS
+                    if upgrading_name in _building_ids_to_match(pending["building_id"]):
+                        construction_end_at = _to_int(upgrading.get("construction_end_at"), 0)
+                        if construction_end_at > 0:
+                            remaining = max(0, construction_end_at - int(time.time()))
+                            wait_seconds = max(MIN_RECHECK_SECONDS, remaining + FINISH_BUFFER_SECONDS)
+                        else:
+                            in_flight_row = self._find_level_row(pending, upgrading_level + 1)
+                            if in_flight_row is not None:
+                                base_adj = _to_int(in_flight_row.get("adjusted_seconds"), 0)
+                                wait_seconds = max(MIN_RECHECK_SECONDS, base_adj + FINISH_BUFFER_SECONDS)
                     self.log(
-                        jid,
-                        "info",
-                        f"{pending['building_name']} ainda esta em progresso em {_city_name(city)}; aguardando conclusao",
+                        jid, "info",
+                        f"Cidade {_city_name(city)} ainda esta em obra ({upgrading_name} lvl {upgrading_level}); aguardando {wait_seconds}s antes da proxima etapa",
                     )
                     new_waits.append(
                         {
-                            "status": "waiting_step_busy",
+                            "status": "waiting_city_busy",
                             "wait_seconds": wait_seconds,
                             "city_id": pending["city_id"],
                             "building_id": pending["building_id"],
                         }
                     )
-                    continue
-
-                if current_level <= 0:
-                    allowed_types = set(pending.get("slot_types") or [])
-                    empty_position = None
-                    preferred_position = _to_int(pending.get("preferred_position"), 0)
-                    if preferred_position > 0:
-                        for item in city.get("buildings") or []:
-                            if _to_int(item.get("position"), -1) != preferred_position:
-                                continue
-                            if str(item.get("building") or "").strip() != "empty":
-                                continue
-                            slot_type = str(item.get("type") or "").strip()
-                            if allowed_types and slot_type and slot_type not in allowed_types:
-                                continue
-                            empty_position = preferred_position
-                            break
-                    if empty_position is None:
-                        empty_position = _find_empty_position(city, allowed_types=allowed_types or None)
-                    if empty_position is None:
-                        raise RuntimeError(f"no_empty_slot:{','.join(sorted(allowed_types)) or 'any'}")
-                    client.build(city_id=city_id, building_type=building_id, position=empty_position)
-                    self.log(
-                        jid,
-                        "info",
-                        f"Construcao iniciada: {_city_name(city)} | {pending['building_name']} | pos {empty_position} | tipo={','.join(sorted(allowed_types)) or 'any'} | lvl 0 -> 1",
-                    )
                 else:
-                    if position is None:
-                        raise RuntimeError("building_position_not_found")
-                    client.upgrade(
-                        city_id=city_id,
-                        building_position=position,
-                        current_level=current_level,
-                        template_view=building_id,
+                    # Snapshot was stale — try the upgrade
+                    next_level = pending["next_level"]
+                    level_row = self._find_level_row(pending, next_level)
+                    if level_row is None:
+                        stored_levels = [r.get("level") for r in (pending.get("level_rows") or [])]
+                        self.log(
+                            jid, "error",
+                            f"Etapa sem custo para nivel {next_level} em {pending.get('building_name')} @ {pending.get('city_name')}. "
+                            f"Niveis armazenados: {stored_levels}. Recrie o job.",
+                        )
+                    else:
+                        ready_steps.append((pending, city, level_row))
+
+            for pending, city, level_row in ready_steps:
+                try:
+                    next_level = pending["next_level"]
+                    building_id = _normalize_building_id(pending["building_id"])
+                    city_id = _to_int(pending["city_id"])
+                    step_mode = str(pending.get("mode") or "upgrade")
+                    if step_mode == "new":
+                        preferred_position = _to_int(pending.get("preferred_position"), 0)
+                        slot_entry = _get_building_entry_at_position(city, preferred_position)
+                        if slot_entry and str(slot_entry.get("building") or "").strip() == pending["building_id"]:
+                            current_level = _to_int(slot_entry.get("level"), 0)
+                            position = _to_int(slot_entry.get("position"), 0)
+                            current_entry = slot_entry
+                        else:
+                            current_level = 0
+                            position = preferred_position if preferred_position > 0 else None
+                            current_entry = None
+                    else:
+                        current_level, position = _find_building(city, pending["building_id"])
+                        current_entry = _get_building_entry(city, pending["building_id"])
+
+                    if current_entry and bool(current_entry.get("is_upgrading")):
+                        wait_seconds = max(MIN_RECHECK_SECONDS, _to_int(level_row.get("adjusted_seconds"), 0) + FINISH_BUFFER_SECONDS)
+                        self.log(
+                            jid,
+                            "info",
+                            f"{pending['building_name']} ainda esta em progresso em {_city_name(city)}; aguardando conclusao",
+                        )
+                        new_waits.append(
+                            {
+                                "status": "waiting_step_busy",
+                                "wait_seconds": wait_seconds,
+                                "city_id": pending["city_id"],
+                                "building_id": pending["building_id"],
+                            }
+                        )
+                        continue
+
+                    if current_level <= 0:
+                        allowed_types = set(pending.get("slot_types") or [])
+                        empty_position = None
+                        preferred_position = _to_int(pending.get("preferred_position"), 0)
+                        if preferred_position > 0:
+                            for item in city.get("buildings") or []:
+                                if _to_int(item.get("position"), -1) != preferred_position:
+                                    continue
+                                if str(item.get("building") or "").strip() != "empty":
+                                    continue
+                                slot_type = str(item.get("type") or "").strip()
+                                if allowed_types and slot_type and slot_type not in allowed_types:
+                                    continue
+                                empty_position = preferred_position
+                                break
+                        if empty_position is None:
+                            empty_position = _find_empty_position(city, allowed_types=allowed_types or None)
+                        if empty_position is None:
+                            raise RuntimeError(f"no_empty_slot:{','.join(sorted(allowed_types)) or 'any'}")
+                        logger.debug(
+                            "[%s] Entrando na cidade para construir %s na pos %d",
+                            _city_name(city), building_id, empty_position,
+                        )
+                        change_current_city(client, city_id)
+                        logger.debug(
+                            "[%s] Enviando build: building_type=%s pos=%d",
+                            _city_name(city), building_id, empty_position,
+                        )
+                        build_response = client.build(city_id=city_id, building_type=building_id, position=empty_position)
+                        live_entry = _confirm_building_state(
+                            client,
+                            city_id=city_id,
+                            position=empty_position,
+                            next_level=1,
+                            building_name=pending["building_name"],
+                            city_name=_city_name(city),
+                            expect_build=True,
+                            action_feedback=_action_feedback(build_response),
+                        )
+                        self.log(
+                            jid,
+                            "info",
+                            f"Construcao iniciada: {_city_name(city)} | {pending['building_name']} | pos {empty_position} | tipo={','.join(sorted(allowed_types)) or 'any'} | lvl 0 -> 1",
+                        )
+                        position = empty_position
+                        current_level = 0
+                    else:
+                        if position is None:
+                            raise RuntimeError("building_position_not_found")
+                        logger.debug(
+                            "[%s] Entrando na cidade (city_id=%s, building=%s, pos=%d, lvl %d->%d)",
+                            _city_name(city), city_id, building_id, position, current_level, next_level,
+                        )
+                        change_current_city(client, city_id)
+                        logger.debug(
+                            "[%s] Na cidade; consultando edificio %s na pos %d",
+                            _city_name(city), building_id, position,
+                        )
+                        logger.debug(
+                            "[%s] Enviando upgrade: city_id=%s pos=%d lvl=%d template=%s",
+                            _city_name(city), city_id, position, current_level, building_id,
+                        )
+                        upgrade_response = client.upgrade(
+                            city_id=city_id,
+                            building_position=position,
+                            current_level=current_level,
+                            template_view=building_id,
+                        )
+                        logger.debug(
+                            "[%s] Resposta do upgrade recebida; aguardando confirmacao",
+                            _city_name(city),
+                        )
+                        live_entry = _confirm_building_state(
+                            client,
+                            city_id=city_id,
+                            position=position,
+                            next_level=next_level,
+                            building_name=pending["building_name"],
+                            city_name=_city_name(city),
+                            expect_build=False,
+                            action_feedback=_action_feedback(upgrade_response),
+                        )
+                        self.log(
+                            jid,
+                            "info",
+                            f"Evolucao iniciada: {_city_name(city)} | {pending['building_name']} | lvl {current_level} -> {next_level}",
+                        )
+
+                    # adjusted_seconds already has world/government reductions baked in
+                    # from hub job creation — use it directly.
+                    construction_end_at = _to_int((live_entry or {}).get("construction_end_at"), 0)
+                    if construction_end_at > 0:
+                        delay = max(90, construction_end_at - int(time.time()) + FINISH_BUFFER_SECONDS)
+                    else:
+                        base_adj = _to_int(level_row.get("adjusted_seconds"), 0)
+                        delay = max(90, base_adj + FINISH_BUFFER_SECONDS)
+                    delays.append(delay)
+                    started.append(
+                        {
+                            "city_id": pending["city_id"],
+                            "city_name": pending["city_name"],
+                            "building_id": pending["building_id"],
+                            "building_name": pending["building_name"],
+                            "to_level": next_level,
+                            "delay": delay,
+                            "confirmed_level": _to_int((live_entry or {}).get("level"), 0),
+                            "confirmed_upgrading": bool((live_entry or {}).get("is_upgrading")),
+                        }
+                    )
+                except Exception as step_exc:
+                    step_failures.append(
+                        {
+                            "city_id": pending["city_id"],
+                            "city_name": pending["city_name"],
+                            "building_id": pending["building_id"],
+                            "building_name": pending["building_name"],
+                            "error": str(step_exc),
+                        }
                     )
                     self.log(
                         jid,
-                        "info",
-                        f"Evolucao iniciada: {_city_name(city)} | {pending['building_name']} | lvl {current_level} -> {next_level}",
+                        "warn",
+                        f"Etapa nao confirmada: {_city_name(city)} | {pending['building_name']} | {step_exc}",
                     )
-
-                # adjusted_seconds already has world/government reductions baked in
-                # from hub job creation — use it directly.
-                base_adj = _to_int(level_row.get("adjusted_seconds"), 0)
-                delay = max(90, base_adj + FINISH_BUFFER_SECONDS)
-                delays.append(delay)
-                started.append(
-                    {
-                        "city_id": pending["city_id"],
-                        "city_name": pending["city_name"],
-                        "building_id": pending["building_id"],
-                        "building_name": pending["building_name"],
-                        "to_level": next_level,
-                        "delay": delay,
-                    }
-                )
+                    refresh_needed = True
+                    new_waits.append(
+                        {
+                            "status": "waiting_refresh_after_failed_start",
+                            "wait_seconds": MIN_RECHECK_SECONDS,
+                            "city_id": pending["city_id"],
+                            "building_id": pending["building_id"],
+                            "error": str(step_exc),
+                        }
+                    )
+                    continue
 
             if ga_id:
                 self.save_game_client(ga_id, client)
+            if refresh_needed or step_failures:
+                self._ensure_status_refresh(jid)
 
             if not started:
                 next_wait = min(
@@ -775,7 +1018,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 return RunnerResult(
                     success=True,
                     reschedule_seconds=next_wait,
-                    data={"status": "waiting_parallel", "waiting": new_waits},
+                    data={"status": "waiting_parallel", "waiting": new_waits, "failed_steps": step_failures},
                 )
 
             # next_wait = earliest of: first build finishing, or resource becoming available.
@@ -797,7 +1040,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 success=True,
                 reschedule_seconds=next_wait,
                 reschedule_inputs={"last_builds_started_at": now_ts},
-                data={"status": "started_parallel", "started": started, "waiting": new_waits},
+                data={"status": "started_parallel", "started": started, "waiting": new_waits, "failed_steps": step_failures},
             )
         except Exception as exc:
             self.log(jid, "error", f"Plano de construcao falhou: {exc}")
@@ -941,7 +1184,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         city: dict[str, Any],
         missing: dict[str, int],
         support_by_city: dict[str, dict[str, int]],
-    ) -> int:
+    ) -> tuple[int, bool]:
+        """Returns (reschedule_seconds, transport_was_dispatched)."""
         jid = job["job_id"]
         inputs = job.get("inputs") or {}
         auto_transport = bool(inputs.get("auto_transport", True))
@@ -965,6 +1209,15 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     f"Suporte em aberto para {pending['city_name']} abatido do calculo: {', '.join(support_bits)}",
                 )
         missing = adjusted_missing
+
+        # If existing support already covers all missing resources, just wait for it to arrive.
+        if not any(amount > 0 for amount in missing.values()):
+            self.log(
+                jid,
+                "info",
+                f"Suporte em transito ja cobre {pending['building_name']} em {pending['city_name']}; aguardando chegada",
+            )
+            return TRANSPORT_RECHECK_SECONDS, False
 
         wait_seconds = self._estimate_local_wait_seconds(city, missing)
         if wait_seconds:
@@ -993,7 +1246,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         )
                         if ga_id:
                             self.save_game_client(ga_id, client)
-                        return max(wait_seconds or 0, incoming_wait + FINISH_BUFFER_SECONDS)
+                        return max(wait_seconds or 0, incoming_wait + FINISH_BUFFER_SECONDS), False
                     if ga_id:
                         self.save_game_client(ga_id, client)
             except Exception as exc:
@@ -1013,17 +1266,17 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     "info",
                     f"Suporte logistico criado para {pending['city_name']} | aguardando transporte antes da proxima obra",
                 )
-                return max(wait_seconds or 0, TRANSPORT_RECHECK_SECONDS)
+                return max(wait_seconds or 0, TRANSPORT_RECHECK_SECONDS), True
 
         if wait_seconds:
-            return max(MIN_RECHECK_SECONDS, wait_seconds + FINISH_BUFFER_SECONDS)
+            return max(MIN_RECHECK_SECONDS, wait_seconds + FINISH_BUFFER_SECONDS), False
 
         self.log(
             jid,
             "warn",
             f"{pending['city_name']} sem recurso suficiente para {pending['building_name']} e sem ETA local confiavel",
         )
-        return TRANSPORT_RECHECK_SECONDS
+        return TRANSPORT_RECHECK_SECONDS, False
 
     def _spawn_transport_cover(
         self,

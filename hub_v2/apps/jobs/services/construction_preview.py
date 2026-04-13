@@ -44,6 +44,7 @@ BUILDING_TO_IKA_TOOLS = {
     "forester": "forestersHouse",
     "glassblowing": "glassblower",
     "gods_shrine": "gods_shrine",
+    "shrineOfOlympus": "gods_shrine",
     "governorsResidence": "governorsResidence",
     "hideout": "hideout",
     "safehouse": "hideout",
@@ -63,7 +64,8 @@ BUILDING_TO_IKA_TOOLS = {
     "marketplace": "tradingPost",
     "warehouse": "warehouse",
     "winePress": "winePress",
-    "vineyard": "winegrower",
+    "winegrower": "winegrower",
+    "vineyard": "winePress",
     "workshop": "workshop",
 }
 REDUCER_BUILDINGS = {
@@ -72,6 +74,16 @@ REDUCER_BUILDINGS = {
     "marble": "architect",
     "glas": "optician",
     "sulfur": "fireworker",
+}
+BUILDING_ALIASES = {
+    "governorsResidence": "palaceColony",
+    "palaceColony": "governorsResidence",
+    "chronos_forge": "chronosForge",
+    "chronosForge": "chronos_forge",
+    "marketplace": "branchOffice",
+    "branchOffice": "marketplace",
+    "hideout": "safehouse",
+    "safehouse": "hideout",
 }
 
 
@@ -118,12 +130,42 @@ def _parse_int(raw: Any, default: int = 0) -> int:
         return default
 
 
+def _canonical_building_id(building_id: str) -> str:
+    raw = str(building_id or "").strip()
+    if raw == "palaceColony":
+        return "governorsResidence"
+    if raw == "chronosForge":
+        return "chronos_forge"
+    if raw == "safehouse":
+        return "hideout"
+    if raw == "branchOffice":
+        return "marketplace"
+    return raw
+
+
+def _building_ids_to_match(building_id: str) -> set[str]:
+    raw = str(building_id or "").strip()
+    if not raw:
+        return set()
+    ids = {raw}
+    alias = BUILDING_ALIASES.get(raw)
+    if alias:
+        ids.add(alias)
+    canonical = _canonical_building_id(raw)
+    if canonical:
+        ids.add(canonical)
+        alias = BUILDING_ALIASES.get(canonical)
+        if alias:
+            ids.add(alias)
+    return {value for value in ids if value}
+
+
 def _building_key_from_position(city: dict[str, Any], position: str | int) -> tuple[str, int]:
     wanted = _parse_int(position, default=-1)
     for item in city.get("buildings") or []:
         if _parse_int(item.get("position"), default=-2) != wanted:
             continue
-        return str(item.get("building") or "").strip(), _parse_int(item.get("level"))
+        return _canonical_building_id(str(item.get("building") or "").strip()), _parse_int(item.get("level"))
     return "", 0
 
 
@@ -226,11 +268,13 @@ def _extract_json_parse_array(source: str, var_name: str) -> str | None:
     match = re.search(rf"\b{re.escape(var_name)}=JSON\.parse\('((?:\\.|[^'])*)'\)", source)
     if not match:
         return None
-    raw = match.group(1)
-    try:
-        return json.loads(f'"{raw}"')
-    except Exception:
-        return None
+    raw = match.group(1).strip()
+    # The content is already valid JSON (e.g. '[{"level":1,...}]').
+    # Strip the outer brackets so the caller can re-wrap via _js_object_array_to_python,
+    # which matches the format returned by _extract_js_array.
+    if raw.startswith("[") and raw.endswith("]"):
+        return raw[1:-1]
+    return None
 
 
 @lru_cache(maxsize=1)
@@ -304,7 +348,7 @@ def _city_reducer_levels(city: dict[str, Any]) -> tuple[dict[str, int], int]:
     levels = {key: 0 for key in RESOURCE_KEYS}
     chronos_level = 0
     for item in city.get("buildings") or []:
-        building_id = str(item.get("building") or "").strip()
+        building_id = _canonical_building_id(str(item.get("building") or "").strip())
         level = _parse_int(item.get("level"))
         for resource_key, reducer_building in REDUCER_BUILDINGS.items():
             if building_id == reducer_building:
@@ -328,8 +372,8 @@ def _adjusted_time(
     chronos_reduction: float,
     government_reduction: int = 0,
 ) -> int:
-    # ika-tools bundle stores building_time at 1/3 of true base (3x-speed world reference).
-    # Multiply by 3 to restore the real 1x-speed base before applying user modifiers.
+    # ika-tools stores construction rows at 3x-speed reference; restore the
+    # real 1x base first, then apply world/government/Chronos reductions.
     value = float(seconds) * 3.0
     if time_modifier == ":3":
         value = value / 3.0
@@ -352,7 +396,7 @@ def _get_chronos_reduction(chronos_rows: list[dict[str, Any]], chronos_level: in
 def _get_city_building_levels(city: dict[str, Any]) -> dict[str, int]:
     levels: dict[str, int] = {}
     for item in city.get("buildings") or []:
-        building_id = str(item.get("building") or "").strip()
+        building_id = _canonical_building_id(str(item.get("building") or "").strip())
         if not building_id or building_id == "empty":
             continue
         levels[building_id] = _parse_int(item.get("level"))
@@ -366,7 +410,7 @@ def _get_city_building_at_position(city: dict[str, Any], position: str | int) ->
     for item in city.get("buildings") or []:
         if _parse_int(item.get("position"), default=-2) != wanted:
             continue
-        return str(item.get("building") or "").strip(), _parse_int(item.get("level"))
+        return _canonical_building_id(str(item.get("building") or "").strip()), _parse_int(item.get("level"))
     return "", 0
 
 
@@ -388,8 +432,8 @@ def build_construction_preview(
     if building_position not in (None, ""):
         building_id, current_level = _building_key_from_position(city, building_position)
     else:
-        building_id = str(building_type or "").strip()
-        current_level = 0
+        building_id = _canonical_building_id(str(building_type or "").strip())
+        current_level = int(_get_city_building_levels(city).get(building_id, 0))
     if not building_id:
         return None
 
@@ -432,7 +476,7 @@ def build_construction_preview(
     desired_level = max(current_level + 1 if current_level > 0 else 1, _parse_int(target_level, default=1))
     level_rows = [
         row for row in rows
-        if _parse_int(row.get("level")) <= desired_level
+        if current_level < _parse_int(row.get("level")) <= desired_level
     ]
 
     totals = {key: 0 for key in RESOURCE_KEYS}
@@ -555,7 +599,7 @@ def build_construction_plan_preview(
             city_states[city_id] = city_state
 
         city = city_state["city"]
-        building_id = str(step.get("building_id") or step.get("building_type") or "").strip()
+        building_id = _canonical_building_id(str(step.get("building_id") or step.get("building_type") or "").strip())
         if not building_id:
             if step.get("building_position") not in (None, ""):
                 building_id, _ = _building_key_from_position(city, step.get("building_position"))
@@ -577,7 +621,7 @@ def build_construction_plan_preview(
         else:
             current_level = int(city_state["building_levels"].get(building_id, 0))
         target_level = max(current_level + 1 if current_level > 0 else 1, _parse_int(step.get("target_level"), 1))
-        level_rows = [row for row in rows if _parse_int(row.get("level")) <= target_level]
+        level_rows = [row for row in rows if current_level < _parse_int(row.get("level")) <= target_level]
         if not level_rows:
             notes.append(f"Etapa {idx}: nenhuma etapa calculada para {building_id} ate {target_level}.")
             continue

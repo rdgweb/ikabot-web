@@ -1,0 +1,8 @@
+services:
+  hub:
+    build:
+      context: ./hub_v2
+
+  agent:
+    build:
+      context: ./agent_v2

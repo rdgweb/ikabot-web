@@ -42,6 +42,18 @@ class NodeListView(FilterSortListView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["ip_conflicts"] = _get_ip_conflicts()
+        rollout_versions = {
+            str(node.agent_version or "").strip()
+            for node in ctx["object_list"]
+            if node.active and node.is_online and str(node.agent_version or "").strip()
+        }
+        rollout_images = {
+            str(node.agent_image or "").strip()
+            for node in ctx["object_list"]
+            if node.active and node.is_online and str(node.agent_image or "").strip()
+        }
+        ctx["mixed_agent_versions"] = len(rollout_versions) > 1
+        ctx["mixed_agent_images"] = len(rollout_images) > 1
         return ctx
 
 
@@ -182,6 +194,8 @@ class NodeDeployView(LoginRequiredMixin, DetailView):
             f"  -e REDIS_URL={redis_url} \\\n"
             f"  -e AGENT_TOKEN={self.object.deploy_token} \\\n"
             f"  -e AGENT_NODE_ID={self.object.pk} \\\n"
+            f"  -e AGENT_VERSION=0.0.1 \\\n"
+            f"  -e AGENT_IMAGE=blackoneal/ikabot-web-agent:latest \\\n"
             f"  blackoneal/ikabot-web-agent:latest"
         )
         return ctx

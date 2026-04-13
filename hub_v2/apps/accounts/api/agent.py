@@ -120,14 +120,19 @@ class AgentHeartbeatView(APIView):
         serializer = AgentHeartbeatSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        node_id = serializer.validated_data["node_id"]
-        external_ip = serializer.validated_data.get("external_ip", "")
+        data = serializer.validated_data
+        node_id = data["node_id"]
+        external_ip = data.get("external_ip", "")
 
         update_fields = {"agent_last_seen_at": timezone.now()}
         if external_ip:
             update_fields["external_ip"] = external_ip
             update_fields["ip_source"] = "agent"
             update_fields["ip_checked_at"] = timezone.now()
+        for field in ("agent_name", "agent_host", "agent_version", "agent_image"):
+            value = str(data.get(field, "") or "").strip()
+            if value:
+                update_fields[field] = value
 
         updated = Node.objects.filter(pk=node_id).update(**update_fields)
 

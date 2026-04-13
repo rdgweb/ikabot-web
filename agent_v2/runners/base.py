@@ -176,6 +176,13 @@ class BaseRunner:
     def get_building_options_stale_seconds(self) -> int:
         return self.get_system_setting_int("building_options_stale_seconds", 6 * 60 * 60)
 
+    def get_snapshot(self, job_id: str, game_account_id: str) -> dict[str, Any] | None:
+        try:
+            return self.hub.get_snapshot(game_account_id=game_account_id)
+        except Exception as exc:
+            self.log(job_id, "warn", f"Falha ao buscar snapshot atual: {exc}")
+            return None
+
 
 class GenericRunner(BaseRunner):
     """Fallback runner used when no action-specific runner exists."""

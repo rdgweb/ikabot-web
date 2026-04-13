@@ -37,8 +37,18 @@ ACTIONS = {
         "requires_game_session": True,
         "recurring": True,
         "long_running": False,
-        "description": "Melhora unidades na oficina do inventor.",
-        "inputs": [],
+        "ready": True,
+        "description": "Pesquisa melhorias de unidades na Oficina do Inventor automaticamente. Selecione quais unidades evoluir, nivel maximo e reservas de recursos.",
+        "inputs": [
+            {
+                "key": "city_id",
+                "type": FIELD_CITY_SELECT,
+                "label": "Cidade",
+                "multiple": False,
+                "required": False,
+                "help": "Deixe em branco para processar todas as cidades que possuem Oficina do Inventor.",
+            },
+        ],
     },
     17: {
         "name": "Pirata Automatico",

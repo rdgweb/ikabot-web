@@ -2,6 +2,7 @@
 
 import logging
 import json
+import platform
 from typing import Any
 
 import requests
@@ -9,6 +10,16 @@ import requests
 from .config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _agent_image_identity() -> str:
+    image = str(settings.agent_image or "").strip()
+    digest = str(settings.agent_image_digest or "").strip()
+    if image and digest:
+        return f"{image}@{digest}"
+    if digest:
+        return digest
+    return image
 
 
 class HubClient:
@@ -25,17 +36,23 @@ class HubClient:
 
     def register(self) -> dict:
         """POST /api/agent/register"""
-        import platform
         return self._post("/api/agent/register", {
             "node_id": settings.agent_node_id,
             "agent_name": settings.agent_name,
             "agent_host": platform.node(),
             "agent_version": settings.agent_version,
+            "agent_image": _agent_image_identity(),
         })
 
     def heartbeat(self, external_ip: str = "") -> dict:
         """POST /api/agent/heartbeat"""
-        payload: dict = {"node_id": settings.agent_node_id}
+        payload: dict = {
+            "node_id": settings.agent_node_id,
+            "agent_name": settings.agent_name,
+            "agent_host": platform.node(),
+            "agent_version": settings.agent_version,
+            "agent_image": _agent_image_identity(),
+        }
         if external_ip:
             payload["external_ip"] = external_ip
         return self._post("/api/agent/heartbeat", payload)

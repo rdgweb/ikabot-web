@@ -18,9 +18,10 @@ from datetime import datetime, timezone
 from math import floor
 from typing import Any
 
+from game_client.constants import GAME_AJAX_HEADERS
 from core.runner_registry import register_runner
 from runners.base import BaseRunner, RunnerResult
-from services.island_donation import fetch_city_context, fetch_worker_baseline
+from services.island_donation import fetch_city_context
 from services.resource_transport import (
     RESOURCE_ORDER,
     change_current_city,
@@ -812,6 +813,16 @@ class ModifyProductionRunner(BaseRunner):
             self.log(jid, "error", "Nenhuma cidade informada para alterar producao")
             return RunnerResult(success=False, data={"error": "missing_city_id"})
 
+        snapshot_city_map: dict[str, dict[str, Any]] = {}
+        if ga_id:
+            snapshot = self.get_snapshot(jid, ga_id)
+            snapshot_cities = _as_city_list((snapshot or {}).get("cities"))
+            snapshot_city_map = {
+                str(city.get("id") or "").strip(): city
+                for city in snapshot_cities
+                if str(city.get("id") or "").strip()
+            }
+
         creds = self.resolve_credentials(aid, {}, game_account_id=ga_id)
         if not creds:
             self.log(jid, "error", "Credenciais nao encontradas")
@@ -825,51 +836,164 @@ class ModifyProductionRunner(BaseRunner):
             updated = []
             for city_id in city_ids:
                 change_current_city(client, city_id)
-                baseline = fetch_worker_baseline(client, int(city_id))
+                # fetch_city_context for island_id and tradegood_type only
                 context = fetch_city_context(client, int(city_id))
+                island_id = context["island_id"]
+                tradegood_type = context.get("tradegood_type") or "1"
+                snapshot_city = snapshot_city_map.get(str(city_id).strip()) or {}
+                snapshot_free_citizens = _to_int(snapshot_city.get("free_citizens"), 0, 0)
 
+                # --- Serraria (resource) ---
+                # Replicates ikabot: open the island resource view, read slider,
+                # then immediately set workers while that view is still "active".
+                resource_slider = self._open_view(
+                    client,
+                    city_id=city_id,
+                    island_id=island_id,
+                    resource_type="resource",
+                    page_type="resource",
+                )
                 resource_percent = self._resolve_target_percent(
                     sawmill_raw,
-                    baseline["resource"]["current_workers"],
-                    baseline["resource"]["max_workers"],
+                    resource_slider["current_workers"],
+                    resource_slider["max_workers"],
+                )
+                requested_resource_workers = self._target_workers(
+                    resource_slider["max_workers"], resource_percent
+                )
+                resource_cap_workers = resource_slider["current_workers"] + resource_slider["citizens"]
+                resource_workers = min(requested_resource_workers, resource_cap_workers)
+                resource_feedback = self._set_workers(
+                    client,
+                    city_id=city_id,
+                    island_id=island_id,
+                    resource_type="resource",
+                    page_type="resource",
+                    workers=resource_workers,
+                )
+                resource_after = self._open_view(
+                    client,
+                    city_id=city_id,
+                    island_id=island_id,
+                    resource_type="resource",
+                    page_type="resource",
+                )
+                resource_applied_workers = resource_after["current_workers"]
+                resource_partial = (
+                    resource_applied_workers != resource_workers
+                    and self._is_population_limited_feedback(resource_feedback)
+                    and resource_applied_workers < resource_workers
+                )
+                if resource_applied_workers != resource_workers and not resource_partial:
+                    raise RuntimeError(
+                        f"serraria nao aplicada em {context['city_name']}: "
+                        f"esperado={resource_workers} atual={resource_applied_workers} "
+                        f"feedback={resource_feedback.get('feedback') or []} "
+                        f"errors={resource_feedback.get('errors') or []}"
+                    )
+
+                # --- Bem de luxo (tradegood) ---
+                tradegood_slider = self._open_view(
+                    client,
+                    city_id=city_id,
+                    island_id=island_id,
+                    resource_type="tradegood",
+                    page_type=tradegood_type,
                 )
                 luxury_percent = self._resolve_target_percent(
                     luxury_raw,
-                    baseline["tradegood"]["current_workers"],
-                    baseline["tradegood"]["max_workers"],
+                    tradegood_slider["current_workers"],
+                    tradegood_slider["max_workers"],
                 )
-
-                resource_workers = self._target_workers(
-                    baseline["resource"]["max_workers"], resource_percent
+                requested_luxury_workers = self._target_workers(
+                    tradegood_slider["max_workers"], luxury_percent
                 )
-                luxury_workers = self._target_workers(
-                    baseline["tradegood"]["max_workers"], luxury_percent
-                )
-
-                self._set_workers(
+                luxury_cap_workers = tradegood_slider["current_workers"] + tradegood_slider["citizens"]
+                luxury_workers = min(requested_luxury_workers, luxury_cap_workers)
+                luxury_feedback = self._set_workers(
                     client,
                     city_id=city_id,
-                    island_id=context["island_id"],
-                    resource_type="resource",
-                    tradegood_type="resource",
-                    workers=resource_workers,
-                )
-                self._set_workers(
-                    client,
-                    city_id=city_id,
-                    island_id=context["island_id"],
+                    island_id=island_id,
                     resource_type="tradegood",
-                    tradegood_type=context.get("tradegood_type") or "1",
+                    page_type=tradegood_type,
                     workers=luxury_workers,
                 )
+                luxury_after = self._open_view(
+                    client,
+                    city_id=city_id,
+                    island_id=island_id,
+                    resource_type="tradegood",
+                    page_type=tradegood_type,
+                )
+                luxury_applied_workers = luxury_after["current_workers"]
+                luxury_partial = (
+                    luxury_applied_workers != luxury_workers
+                    and self._is_population_limited_feedback(luxury_feedback)
+                    and luxury_applied_workers < luxury_workers
+                )
+                if luxury_applied_workers != luxury_workers and not luxury_partial:
+                    raise RuntimeError(
+                        f"luxo nao aplicado em {context['city_name']}: "
+                        f"esperado={luxury_workers} atual={luxury_applied_workers} "
+                        f"feedback={luxury_feedback.get('feedback') or []} "
+                        f"errors={luxury_feedback.get('errors') or []}"
+                    )
+
+                if resource_partial:
+                    self.log(
+                        jid,
+                        "warn",
+                        (
+                            f"Serraria limitada pelo jogo em {context['city_name']}: "
+                            f"solicitado={resource_percent}% ({resource_workers}) | "
+                            f"aplicado={self._workers_to_percent(resource_applied_workers, resource_slider['max_workers'])}% "
+                            f"({resource_applied_workers}/{resource_slider['max_workers']})"
+                        ),
+                    )
+                elif resource_workers < requested_resource_workers:
+                    self.log(
+                        jid,
+                        "warn",
+                        (
+                            f"Serraria limitada antes do envio em {context['city_name']}: "
+                            f"solicitado={resource_percent}% ({requested_resource_workers}) | "
+                            f"max_viavel={resource_workers} "
+                            f"(atuais={resource_slider['current_workers']} + livres={resource_slider['citizens']})"
+                        ),
+                    )
+                if luxury_partial:
+                    self.log(
+                        jid,
+                        "warn",
+                        (
+                            f"Luxo limitado pelo jogo em {context['city_name']}: "
+                            f"solicitado={luxury_percent}% ({luxury_workers}) | "
+                            f"aplicado={self._workers_to_percent(luxury_applied_workers, tradegood_slider['max_workers'])}% "
+                            f"({luxury_applied_workers}/{tradegood_slider['max_workers']})"
+                        ),
+                    )
+                elif luxury_workers < requested_luxury_workers:
+                    self.log(
+                        jid,
+                        "warn",
+                        (
+                            f"Luxo limitado antes do envio em {context['city_name']}: "
+                            f"solicitado={luxury_percent}% ({requested_luxury_workers}) | "
+                            f"max_viavel={luxury_workers} "
+                            f"(atuais={tradegood_slider['current_workers']} + livres={tradegood_slider['citizens']})"
+                        ),
+                    )
 
                 self.log(
                     jid,
                     "info",
                     (
                         f"Producao ajustada: {context['city_name']} | serraria={resource_percent}% "
-                        f"({resource_workers}/{baseline['resource']['max_workers']}) | "
-                        f"luxo={luxury_percent}% ({luxury_workers}/{baseline['tradegood']['max_workers']})"
+                        f"({resource_applied_workers}/{resource_slider['max_workers']}) | "
+                        f"luxo={luxury_percent}% ({luxury_applied_workers}/{tradegood_slider['max_workers']}) | "
+                        f"cidadaos={{resource:header={resource_slider['header_citizens']},template={resource_slider['template_citizens']},usado={resource_slider['citizens']}; "
+                        f"luxo:header={tradegood_slider['header_citizens']},template={tradegood_slider['template_citizens']},usado={tradegood_slider['citizens']}}} | "
+                        f"snapshot={snapshot_free_citizens}"
                     ),
                 )
                 updated.append(
@@ -877,9 +1001,19 @@ class ModifyProductionRunner(BaseRunner):
                         "city_id": city_id,
                         "city_name": context["city_name"],
                         "resource_percent": resource_percent,
-                        "resource_workers": resource_workers,
+                        "resource_requested_workers": requested_resource_workers,
+                        "resource_workers": resource_applied_workers,
+                        "resource_applied_percent": self._workers_to_percent(
+                            resource_applied_workers, resource_slider["max_workers"]
+                        ),
+                        "resource_partial": resource_partial,
                         "luxury_percent": luxury_percent,
-                        "luxury_workers": luxury_workers,
+                        "luxury_requested_workers": requested_luxury_workers,
+                        "luxury_workers": luxury_applied_workers,
+                        "luxury_applied_percent": self._workers_to_percent(
+                            luxury_applied_workers, tradegood_slider["max_workers"]
+                        ),
+                        "luxury_partial": luxury_partial,
                     }
                 )
 
@@ -915,6 +1049,82 @@ class ModifyProductionRunner(BaseRunner):
         except Exception:
             return 100
 
+    @staticmethod
+    def _workers_to_percent(workers: int, max_workers: int) -> int:
+        if max_workers <= 0:
+            return 0
+        return max(0, min(150, int(round((workers / max_workers) * 100))))
+
+    @staticmethod
+    def _is_population_limited_feedback(feedback: dict[str, Any]) -> bool:
+        texts = [str(item or "").strip().lower() for item in feedback.get("feedback") or []]
+        return any("muitas pessoas vivendo" in text for text in texts)
+
+    def _open_view(
+        self,
+        client,
+        *,
+        city_id: str,
+        island_id: str,
+        resource_type: str,
+        page_type: str,
+    ) -> dict[str, int]:
+        """Open the island resource/tradegood view and return slider data.
+
+        Replicates ikabot's fetch step: the game requires the island view to be
+        opened immediately before the workerPlan call for the same resource type.
+        """
+        resp = client._request(
+            "POST",
+            client._server_url,
+            data={
+                "view": resource_type,
+                "type": page_type,
+                "islandId": island_id,
+                "cityId": city_id,
+                "backgroundView": "island",
+                "currentIslandId": island_id,
+                "actionRequest": client._action_request,
+                "ajax": "1",
+            },
+            headers=GAME_AJAX_HEADERS,
+        )
+        payload = resp.json()
+        self._update_action_request_from_payload(client, payload)
+        template_data = payload[2][1]
+        slider = template_data["js_ResourceSlider"]["slider"]
+        callback = slider.get("callback_data") or {}
+        header_data = {}
+        if isinstance(payload, list) and len(payload) > 0:
+            first = payload[0]
+            if (
+                isinstance(first, list)
+                and len(first) > 1
+                and isinstance(first[1], dict)
+            ):
+                header_data = first[1].get("headerData") or {}
+        current_resources = header_data.get("currentResources") or {}
+        max_workers = int(slider.get("max_value", callback.get("max_value", 0)) or 0)
+        current_workers = int(slider.get("ini_value", callback.get("ini_workers", 0)) or 0)
+        header_citizens = _to_int(current_resources.get("citizens"), 0, 0)
+        template_citizens = _to_int(
+            template_data.get("valueCitizens", callback.get("ini_citizens", callback.get("startCitizens", 0))),
+            0,
+            0,
+        )
+        citizens = _to_int(
+            header_citizens or template_citizens,
+            0,
+            0,
+        )
+        return {
+            "max_workers": max_workers,
+            "current_workers": current_workers,
+            "citizens": citizens,
+            "header_citizens": header_citizens,
+            "template_citizens": template_citizens,
+        }
+
     def _set_workers(
         self,
         client,
@@ -922,11 +1132,11 @@ class ModifyProductionRunner(BaseRunner):
         city_id: str,
         island_id: str,
         resource_type: str,
-        tradegood_type: str,
+        page_type: str,
         workers: int,
-    ) -> None:
+    ) -> dict[str, Any]:
         worker_key = "rw" if resource_type == "resource" else "tw"
-        client._request(
+        resp = client._request(
             "POST",
             client._server_url,
             data={
@@ -934,15 +1144,52 @@ class ModifyProductionRunner(BaseRunner):
                 "function": "workerPlan",
                 "cityId": city_id,
                 "islandId": island_id,
-                "currentIslandId": island_id,
+                "type": resource_type,
+                "screen": resource_type,
                 "backgroundView": "island",
-                "type": tradegood_type,
+                "currentCityId": city_id,
+                "currentIslandId": island_id,
                 "templateView": resource_type,
+                "pageType": page_type,
                 worker_key: workers,
                 "actionRequest": client._action_request,
                 "ajax": "1",
             },
+            headers=GAME_AJAX_HEADERS,
         )
+        payload = resp.json()
+        self._update_action_request_from_payload(client, payload)
+        return self._extract_worker_plan_feedback(payload)
+
+    @staticmethod
+    def _update_action_request_from_payload(client, payload: Any) -> None:
+        if not isinstance(payload, list):
+            return
+        for item in payload:
+            if not isinstance(item, list) or len(item) < 2:
+                continue
+            if item[0] != "updateGlobalData" or not isinstance(item[1], dict):
+                continue
+            token = str(item[1].get("actionRequest") or "").strip()
+            if token:
+                client._action_request = token
+                return
+
+    @staticmethod
+    def _extract_worker_plan_feedback(payload: Any) -> dict[str, Any]:
+        result: dict[str, Any] = {"feedback": [], "errors": []}
+        if not isinstance(payload, list):
+            return result
+        for item in payload:
+            if not isinstance(item, list) or len(item) < 2:
+                continue
+            if item[0] == "provideFeedback" and isinstance(item[1], list):
+                for entry in item[1]:
+                    if isinstance(entry, dict):
+                        result["feedback"].append(str(entry.get("text") or "").strip())
+            elif item[0] == "error" and item[1]:
+                result["errors"].append(str(item[1]).strip())
+        return result
 
 
 @register_runner(24)

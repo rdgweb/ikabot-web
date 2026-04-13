@@ -30,6 +30,10 @@ class AgentHeartbeatSerializer(serializers.Serializer):
 
     node_id = serializers.UUIDField()
     external_ip = serializers.IPAddressField(required=False, allow_blank=True, default="")
+    agent_name = serializers.CharField(required=False, allow_blank=True, default="")
+    agent_host = serializers.CharField(required=False, allow_blank=True, default="")
+    agent_version = serializers.CharField(required=False, allow_blank=True, default="")
+    agent_image = serializers.CharField(required=False, allow_blank=True, default="")
 
 
 # ── Config endpoint serializers ──────────────────────────────────────

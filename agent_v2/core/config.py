@@ -11,7 +11,9 @@ class AgentSettings(BaseSettings):
     agent_token: str = ""
     agent_node_id: str = ""
     agent_name: str = "ikabot-agent"
-    agent_version: str = "2.0.0"
+    agent_version: str = "0.0.1"
+    agent_image: str = ""
+    agent_image_digest: str = ""
     max_parallel: int = 12
     heartbeat_interval: int = 60
     log_level: str = "INFO"

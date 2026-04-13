@@ -11,7 +11,8 @@
 #   docker compose up -d
 #
 # Notes:
-# - hub_v2 and agent_v2 can be built locally or pulled from Docker Hub.
+# - By default hub and agent are always pulled from Docker Hub.
+# - For local source builds, use: docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 # - IkabotAPI is an external dependency and is not bundled in this repository.
 # =============================================================================
 
@@ -53,8 +54,6 @@ services:
 
   hub:
     image: ${HUB_IMAGE:-blackoneal/ikabot-web-hub:latest}
-    build:
-      context: ./hub_v2
     restart: unless-stopped
     depends_on:
       mariadb:
@@ -111,8 +110,6 @@ services:
 
   agent:
     image: ${AGENT_IMAGE:-blackoneal/ikabot-web-agent:latest}
-    build:
-      context: ./agent_v2
     restart: unless-stopped
     depends_on:
       hub:
@@ -125,6 +122,9 @@ services:
       AGENT_TOKEN: ${AGENT_TOKEN:-change-me-agent-token}
       AGENT_NODE_ID: ${AGENT_NODE_ID:-}
       AGENT_NAME: ${AGENT_NAME:-ikabot-agent-01}
+      AGENT_VERSION: ${AGENT_VERSION:-0.0.1}
+      AGENT_IMAGE: ${AGENT_IMAGE:-blackoneal/ikabot-web-agent:latest}
+      AGENT_IMAGE_DIGEST: ${AGENT_IMAGE_DIGEST:-}
       TZ: America/Cuiaba
 
   ikabotapi:

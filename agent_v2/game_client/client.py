@@ -36,6 +36,7 @@ from .actions.military import AttackAction, SendTroopsAction, TrainAction
 from .actions.research import ResearchAction
 from .actions.resources import CollectAction, DonateAction, SendResourcesAction
 from .actions.shrine import ShrineAction
+from .actions.workshop import WorkshopAction
 from .auth.login import IkariamAuth
 from .captcha.detector import CaptchaDetector, CaptchaSolver
 from .constants import (
@@ -436,6 +437,44 @@ class GameClient:
             position=position,
             use_athena_scroll=use_athena_scroll,
             pay_with_ambrosia=pay_with_ambrosia,
+        )
+
+    # ── Workshop ──
+
+    def get_workshop_state(self, city_id: int, position: int) -> dict[str, Any]:
+        """Fetch workshop state for a city.
+
+        Returns a dict with ``in_progress``, ``remaining_seconds``, ``improvements``
+        (list of available improvements) and current ``gold``.
+        """
+        action = WorkshopAction(self)
+        return action.get_state(city_id=city_id, position=position)
+
+    def start_workshop_improvement(
+        self,
+        city_id: int,
+        position: int,
+        improvement_id: int,
+        *,
+        upgrade_type: str = "offensive",
+    ) -> dict[str, Any]:
+        """Start researching a unit improvement in the Workshop.
+
+        Args:
+            city_id: City where the Workshop is located.
+            position: Building slot position of the Workshop.
+            improvement_id: ID of the improvement to research.
+            upgrade_type: Workshop branch to improve (usually ``offensive`` or ``defensive``).
+
+        Returns:
+            Parsed response with ``ok`` and updated ``gold``.
+        """
+        action = WorkshopAction(self)
+        return action.start_improvement(
+            city_id=city_id,
+            position=position,
+            improvement_id=improvement_id,
+            upgrade_type=upgrade_type,
         )
 
     # ── Military ──
