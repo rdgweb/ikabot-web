@@ -16,3 +16,7 @@ staticfiles/
 tmp/
 .claude/
 .codex_tmp/
+docs/
+templates/docs/
+nul
+token_compare_trace.log

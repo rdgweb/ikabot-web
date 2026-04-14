@@ -16,3 +16,11 @@ tmp_*.html
 .tmp_*
 .claude/
 .codex_tmp/
+docs/
+test_*.py
+debug_*.py
+debug_*.js
+inspect_*.py
+decode_*.py
+decode_*.js
+check_*.py
