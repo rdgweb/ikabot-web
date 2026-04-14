@@ -58,6 +58,26 @@ def _parse_duration_seconds(raw: str) -> int:
     return total
 
 
+def _now_utc_ts() -> int:
+    return int(datetime.now(timezone.utc).timestamp())
+
+
+def _coerce_remaining_seconds(end_time: int, current_time: int) -> int:
+    """Normalize workshop timers to a remaining-seconds delta.
+
+    Some servers send absolute Unix timestamps, others may already send deltas.
+    We treat 10-digit values as timestamps and smaller values as deltas.
+    """
+    end_time = int(end_time or 0)
+    current_time = int(current_time or 0)
+    if end_time <= 0:
+        return 0
+    if end_time >= 1_000_000_000:
+        reference = current_time if current_time > 0 else _now_utc_ts()
+        return max(0, end_time - reference)
+    return max(0, end_time)
+
+
 class WorkshopAction(BaseAction):
     """Interact with the Workshop building (Oficina do Inventor).
 
@@ -219,6 +239,7 @@ class WorkshopAction(BaseAction):
         html = ""
         gold = 0
         template_data: dict[str, Any] = {}
+        server_time = 0
 
         # Log all top-level keys for diagnostics
         found_keys: list[str] = []
@@ -242,6 +263,7 @@ class WorkshopAction(BaseAction):
                     self.client._action_request = token
                 header = data.get("headerData") or {}
                 gold = _to_int(header.get("gold") or 0, 0)
+                server_time = _to_int(data.get("time") or server_time, server_time)
 
             elif name == "changeView":
                 # data may be a list [viewName, html] or just a string
@@ -286,7 +308,7 @@ class WorkshopAction(BaseAction):
 
         # Primary: try structured template data (present on some server versions)
         if template_data:
-            result = self._parse_template_data(template_data, gold)
+            result = self._parse_template_data(template_data, gold, server_time=server_time)
             if result is not None:
                 return result
 
@@ -308,7 +330,12 @@ class WorkshopAction(BaseAction):
             action="workshop_get_state",
         )
 
-    def _parse_template_data(self, data: dict[str, Any], gold: int) -> dict[str, Any] | None:
+    def _parse_template_data(
+        self,
+        data: dict[str, Any],
+        gold: int,
+        server_time: int = 0,
+    ) -> dict[str, Any] | None:
         """Parse structured templateData returned by some Ikariam server versions.
 
         Expected structure (approximate):
@@ -351,7 +378,8 @@ class WorkshopAction(BaseAction):
             )
             if end_time > 0:
                 in_progress = True
-                remaining_seconds = max(0, end_time - current_date)
+                reference_time = current_date or server_time
+                remaining_seconds = _coerce_remaining_seconds(end_time, reference_time)
                 remaining_text = _duration_human(remaining_seconds)
             else:
                 raw_remaining = str(
@@ -362,7 +390,10 @@ class WorkshopAction(BaseAction):
                 ).strip()
                 if raw_remaining:
                     in_progress = True
-                    remaining_seconds = _parse_duration_seconds(raw_remaining)
+                    if raw_remaining.isdigit() and len(raw_remaining) >= 9:
+                        remaining_seconds = _coerce_remaining_seconds(_to_int(raw_remaining), current_date or server_time)
+                    else:
+                        remaining_seconds = _parse_duration_seconds(raw_remaining)
                     remaining_text = raw_remaining
 
         improvements = []

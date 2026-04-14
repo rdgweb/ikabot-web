@@ -1374,7 +1374,7 @@
            linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
          x-data="{
            cities: [],
-           cityId: '{{ form.city.value|default:''|escapejs }}',
+           cityId: '{{ form.city_id.value|default:''|escapejs }}',
            query: '',
            filteredCities() {
              const query = String(this.query || '').toLowerCase().trim();
@@ -1396,7 +1396,7 @@
            }
          }"
          x-init="cities = JSON.parse(document.getElementById('miracle-cities-data')?.textContent || '[]')">
-      <input type="hidden" name="{{ form.city.html_name }}" x-model="cityId">
+      <input type="hidden" name="{{ form.city_id.html_name }}" :value="cityId">
       <div class="border-b px-5 py-5 md:px-6"
            style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -1785,7 +1785,7 @@
            activeTab: 'land',
            priorityMode: 'offensive_first',
            cityQuery: '',
-           cityId: '{{ form.city.value|default:''|escapejs }}',
+           cityId: '{{ form.city_id.value|default:''|escapejs }}',
            cities: JSON.parse(document.getElementById('upgrade-units-cities-data')?.textContent || '[]'),
            units: {
              {% for unit in upgrade_units_ui.all_units %}{{ unit.key }}: { enabled: false, attack: false, attack_max: '', defense: false, defense_max: '' }{% if not forloop.last %}, {% endif %}{% endfor %}
@@ -1855,7 +1855,7 @@
       <input type="hidden" name="min_crystal_reserve" :value="parseInt(minCrystal) || 0">
       <input type="hidden" name="min_gold_reserve" :value="parseInt(minGold) || 0">
       <input type="hidden" name="priority_mode" :value="priorityMode">
-      <input type="hidden" name="{{ form.city.html_name }}" x-model="cityId">
+      <input type="hidden" name="{{ form.city_id.html_name }}" :value="cityId">
 
       {# ── Header ── #}
       <div class="border-b px-5 py-5 md:px-6"
