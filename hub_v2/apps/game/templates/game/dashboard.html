@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends base_template|default:"base.html" %}
 {% load humanize static hub_tags l10n %}
 
 {% block title %}Painel do Jogo{% endblock %}

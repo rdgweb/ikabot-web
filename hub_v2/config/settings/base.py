@@ -98,6 +98,7 @@ TEMPLATES = [
                 "django.template.context_processors.i18n",
                 "core.context_processors.nav_context",
                 "core.context_processors.hub_version",
+                "core.context_processors.htmx_context",
             ],
         },
     },

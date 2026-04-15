@@ -8,8 +8,13 @@ from django.conf import settings
 def nav_context(request):
     """Provide sidebar navigation context filtered by user permissions."""
     user = getattr(request, "user", None)
-    is_admin = _is_admin(user)
-    is_operator = _is_operator(user)
+    # Cache permission checks on the user object to avoid repeated DB queries
+    # within the same request (context processor runs once per render).
+    if not hasattr(user, "_perm_is_admin"):
+        user._perm_is_admin = _is_admin(user)
+        user._perm_is_operator = _is_operator(user)
+    is_admin = user._perm_is_admin
+    is_operator = user._perm_is_operator
 
     all_sections = [
         {
@@ -74,10 +79,10 @@ def _is_admin(user):
 
 
 def _is_operator(user):
-    if _is_admin(user):
-        return True
     if not user or not getattr(user, "is_authenticated", False):
         return False
+    if user.is_superuser or user.is_staff:
+        return True
     return user.groups.filter(name__in=["admin", "operator"]).exists()
 
 

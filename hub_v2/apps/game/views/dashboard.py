@@ -9,11 +9,14 @@ from datetime import datetime
 from typing import Any
 
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.cache import cache
 from django.utils import timezone
 from django.views.generic import TemplateView
 
 from apps.accounts.models import Account, Node
 from apps.game.models import AccountSnapshotHistory
+
+_DASHBOARD_CACHE_TTL = 60  # seconds
 
 
 class DashboardView(LoginRequiredMixin, TemplateView):
@@ -21,6 +24,12 @@ class DashboardView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        cache_key = f"game_dashboard_{self.request.user.pk}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            ctx.update(cached)
+            ctx["now_epoch"] = int(timezone.now().timestamp())
+            return ctx
 
         accounts = (
             Account.objects
@@ -391,9 +400,24 @@ class DashboardView(LoginRequiredMixin, TemplateView):
             "ships": total_ships,
         }
 
-        # Filter options for dropdowns
-        ctx["nodes"] = Node.objects.filter(active=True).order_by("name")
-        ctx["accounts"] = accounts
+        # Filter options for dropdowns — evaluate querysets before caching
+        nodes = list(Node.objects.filter(active=True).order_by("name"))
+        accounts_list = list(accounts)  # already evaluated by the loop above
+        ctx["nodes"] = nodes
+        ctx["accounts"] = accounts_list
+
+        cache_payload = {
+            "account_cards": account_cards,
+            "city_options": ctx["city_options"],
+            "kpi_history": history_map,
+            "resource_modal_data": resource_modal_data,
+            "account_detail_data": account_detail_data,
+            "now_epoch": ctx["now_epoch"],
+            "kpi": ctx["kpi"],
+            "nodes": nodes,
+            "accounts": accounts_list,
+        }
+        cache.set(cache_key, cache_payload, _DASHBOARD_CACHE_TTL)
 
         return ctx
 
