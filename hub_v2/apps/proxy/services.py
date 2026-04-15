@@ -4,6 +4,7 @@ Proxy services — connectivity testing, IP verification, and Webshare sync.
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 from django.conf import settings
@@ -254,5 +255,101 @@ def sync_webshare(api_key: str | None = None) -> dict:
     except Exception as exc:
         result["error"] = str(exc)
         logger.error("Webshare sync failed: %s", exc)
+
+    return result
+
+
+def test_all_proxies(
+    *,
+    auto_inactivate: bool = True,
+    auto_reassign: bool = True,
+    max_workers: int = 10,
+) -> dict:
+    """
+    Test all active proxies in parallel.
+
+    - auto_inactivate: mark proxies that fail as inactive.
+    - auto_reassign: if a failing proxy has a node assigned, find the best
+      passing proxy without a node and reassign it.
+
+    Returns: {tested, ok, failed, inactivated, reassigned, results[]}
+    """
+    from .models import ProxyProfile
+
+    proxies = list(ProxyProfile.objects.select_related("assigned_node").filter(active=True))
+
+    result = {
+        "tested": 0,
+        "ok": 0,
+        "failed": 0,
+        "inactivated": 0,
+        "reassigned": 0,
+        "results": [],
+    }
+
+    def _run_test(proxy):
+        r = test_proxy(proxy)
+        return proxy, r
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_run_test, p): p for p in proxies}
+        for future in as_completed(futures):
+            proxy, r = future.result()
+            result["tested"] += 1
+            entry = {
+                "proxy_id": proxy.pk,
+                "address": proxy.address,
+                "port": proxy.port,
+                "success": r["success"],
+                "ip": r.get("ip", ""),
+                "latency_ms": r.get("latency_ms", 0),
+                "error": r.get("error", ""),
+            }
+            if r["success"]:
+                result["ok"] += 1
+            else:
+                result["failed"] += 1
+                if auto_inactivate:
+                    ProxyProfile.objects.filter(pk=proxy.pk).update(active=False)
+                    result["inactivated"] += 1
+                    entry["inactivated"] = True
+            result["results"].append(entry)
+
+    if auto_reassign:
+        # For each failing proxy that has an assigned node, find the best
+        # available passing proxy (no node, lowest latency) and reassign.
+        failing_with_node = ProxyProfile.objects.filter(
+            assigned_node__isnull=False,
+            last_test_status=False,
+        ).select_related("assigned_node").order_by("assigned_node__name")
+
+        for failing in failing_with_node:
+            node = failing.assigned_node
+            best = (
+                ProxyProfile.objects.filter(
+                    assigned_node__isnull=True,
+                    last_test_status=True,
+                    active=True,
+                )
+                .exclude(pk=failing.pk)
+                .order_by("last_test_latency_ms")
+                .first()
+            )
+            if not best:
+                continue
+
+            best.assigned_node = node
+            best.save(update_fields=["assigned_node"])
+            failing.assigned_node = None
+            failing.save(update_fields=["assigned_node"])
+
+            node.proxy = best.proxy_url
+            node.save(update_fields=["proxy"])
+
+            result["reassigned"] += 1
+            logger.info(
+                "Node %s reassigned from failing proxy %s to %s (%sms)",
+                node.name, failing.address, best.address, best.last_test_latency_ms,
+            )
 
     return result

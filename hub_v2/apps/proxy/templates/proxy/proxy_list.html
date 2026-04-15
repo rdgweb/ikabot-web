@@ -13,14 +13,87 @@
 <a href="{% url 'proxy:create' %}" class="btn btn-primary btn-sm">
   <i class="bi bi-plus-lg"></i> Novo Proxy
 </a>
-<form method="post" action="{% url 'proxy:sync' %}" class="inline">
-  {% csrf_token %}
-  <button type="submit" class="btn btn-secondary btn-sm">
-    <i class="bi bi-arrow-repeat"></i> Sincronizar Webshare
-  </button>
+
+<!-- Test All -->
+<button
+  hx-post="{% url 'proxy:test-all' %}"
+  hx-swap="none"
+  hx-indicator="#test-all-spinner"
+  hx-confirm="Testar todos os proxies ativos? Falhas serão inativadas e nós reatribuídos automaticamente."
+  class="btn btn-secondary btn-sm relative"
+  title="Testar todos os proxies ativos">
+  <span id="test-all-spinner" class="htmx-indicator absolute inset-0 flex items-center justify-center bg-white/70 rounded">
+    <i class="bi bi-arrow-repeat animate-spin text-xs"></i>
+  </span>
+  <i class="bi bi-lightning-charge"></i> Testar Todos
+</button>
+
+<!-- Sync Webshare -->
+<button
+  hx-post="{% url 'proxy:sync' %}"
+  hx-swap="none"
+  hx-indicator="#sync-spinner"
+  class="btn btn-secondary btn-sm relative"
+  title="Sincronizar com Webshare.io">
+  <span id="sync-spinner" class="htmx-indicator absolute inset-0 flex items-center justify-center bg-white/70 rounded">
+    <i class="bi bi-arrow-repeat animate-spin text-xs"></i>
+  </span>
+  <i class="bi bi-arrow-repeat"></i> Sincronizar Webshare
+</button>
+{% endblock %}
+
+{% block filter_dropdown %}
+<form
+  id="proxy-filter-form"
+  method="get"
+  hx-get="{% url 'proxy:table' %}"
+  hx-target="#proxy-table-container"
+  hx-swap="innerHTML"
+  hx-trigger="change, submit"
+  hx-push-url="false"
+  class="flex items-center gap-2">
+
+  <!-- Status -->
+  <select name="status" class="input input-sm">
+    <option value="" {% if not filter_status %}selected{% endif %}>Todos</option>
+    <option value="active" {% if filter_status == "active" %}selected{% endif %}>Ativos</option>
+    <option value="inactive" {% if filter_status == "inactive" %}selected{% endif %}>Inativos</option>
+  </select>
+
+  <!-- Resultado do teste -->
+  <select name="test_result" class="input input-sm">
+    <option value="" {% if not filter_test_result %}selected{% endif %}>Qualquer teste</option>
+    <option value="ok" {% if filter_test_result == "ok" %}selected{% endif %}>OK</option>
+    <option value="fail" {% if filter_test_result == "fail" %}selected{% endif %}>Falha</option>
+    <option value="untested" {% if filter_test_result == "untested" %}selected{% endif %}>Não testado</option>
+  </select>
+
+  <!-- Atribuição -->
+  <select name="assigned" class="input input-sm">
+    <option value="" {% if not filter_assigned %}selected{% endif %}>Todos</option>
+    <option value="yes" {% if filter_assigned == "yes" %}selected{% endif %}>Com nó</option>
+    <option value="no" {% if filter_assigned == "no" %}selected{% endif %}>Livre</option>
+  </select>
+
+  <!-- País -->
+  {% if country_choices %}
+  <select name="country" class="input input-sm">
+    <option value="" {% if not filter_country %}selected{% endif %}>Todos os países</option>
+    {% for code in country_choices %}
+    <option value="{{ code }}" {% if filter_country == code %}selected{% endif %}>{{ code }}</option>
+    {% endfor %}
+  </select>
+  {% endif %}
 </form>
 {% endblock %}
 
 {% block table_content %}
-{% include "proxy/partials/proxy_table.html" %}
+<div
+  id="proxy-table-container"
+  hx-get="{% url 'proxy:table' %}"
+  hx-trigger="proxyTableRefresh from:body"
+  hx-swap="innerHTML"
+  hx-include="#proxy-filter-form">
+  {% include "proxy/partials/proxy_table.html" %}
+</div>
 {% endblock %}
