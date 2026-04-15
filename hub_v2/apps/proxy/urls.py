@@ -10,6 +10,7 @@ from .views import (
     ProxyTestView,
     ProxyTestAllView,
     ProxySyncView,
+    ProxyBulkDeleteView,
 )
 
 app_name = "proxy"
@@ -20,6 +21,7 @@ urlpatterns = [
     path("create/", ProxyCreateView.as_view(), name="create"),
     path("sync/", ProxySyncView.as_view(), name="sync"),
     path("test-all/", ProxyTestAllView.as_view(), name="test-all"),
+    path("bulk-delete/", ProxyBulkDeleteView.as_view(), name="bulk-delete"),
     path("<int:pk>/edit/", ProxyEditView.as_view(), name="edit"),
     path("<int:pk>/delete/", ProxyDeleteView.as_view(), name="delete"),
     path("<int:pk>/toggle/", ProxyToggleView.as_view(), name="toggle"),

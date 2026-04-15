@@ -14,12 +14,11 @@
   <i class="bi bi-plus-lg"></i> Novo Proxy
 </a>
 
-<!-- Test All -->
 <button
   hx-post="{% url 'proxy:test-all' %}"
   hx-swap="none"
   hx-indicator="#test-all-spinner"
-  hx-confirm="Testar todos os proxies ativos? Falhas serão inativadas e nós reatribuídos automaticamente."
+  hx-confirm="Testar todos os proxies ativos? Falhas serao inativadas e nos reatribuidos automaticamente."
   class="btn btn-secondary btn-sm relative"
   title="Testar todos os proxies ativos">
   <span id="test-all-spinner" class="htmx-indicator absolute inset-0 flex items-center justify-center bg-white/70 rounded">
@@ -28,7 +27,6 @@
   <i class="bi bi-lightning-charge"></i> Testar Todos
 </button>
 
-<!-- Sync Webshare -->
 <button
   hx-post="{% url 'proxy:sync' %}"
   hx-swap="none"
@@ -43,57 +41,95 @@
 {% endblock %}
 
 {% block filter_dropdown %}
-<form
-  id="proxy-filter-form"
-  method="get"
-  hx-get="{% url 'proxy:table' %}"
-  hx-target="#proxy-table-container"
-  hx-swap="innerHTML"
-  hx-trigger="change, submit"
-  hx-push-url="false"
-  class="flex items-center gap-2">
-
-  <!-- Status -->
-  <select name="status" class="input input-sm">
-    <option value="" {% if not filter_status %}selected{% endif %}>Todos</option>
-    <option value="active" {% if filter_status == "active" %}selected{% endif %}>Ativos</option>
-    <option value="inactive" {% if filter_status == "inactive" %}selected{% endif %}>Inativos</option>
-  </select>
-
-  <!-- Resultado do teste -->
-  <select name="test_result" class="input input-sm">
-    <option value="" {% if not filter_test_result %}selected{% endif %}>Qualquer teste</option>
-    <option value="ok" {% if filter_test_result == "ok" %}selected{% endif %}>OK</option>
-    <option value="fail" {% if filter_test_result == "fail" %}selected{% endif %}>Falha</option>
-    <option value="untested" {% if filter_test_result == "untested" %}selected{% endif %}>Não testado</option>
-  </select>
-
-  <!-- Atribuição -->
-  <select name="assigned" class="input input-sm">
-    <option value="" {% if not filter_assigned %}selected{% endif %}>Todos</option>
-    <option value="yes" {% if filter_assigned == "yes" %}selected{% endif %}>Com nó</option>
-    <option value="no" {% if filter_assigned == "no" %}selected{% endif %}>Livre</option>
-  </select>
-
-  <!-- País -->
-  {% if country_choices %}
-  <select name="country" class="input input-sm">
-    <option value="" {% if not filter_country %}selected{% endif %}>Todos os países</option>
-    {% for code in country_choices %}
-    <option value="{{ code }}" {% if filter_country == code %}selected{% endif %}>{{ code }}</option>
-    {% endfor %}
-  </select>
-  {% endif %}
-</form>
+<div x-data="{ filterOpen: false }" class="relative">
+  <button @click="filterOpen = !filterOpen" class="btn btn-secondary btn-sm relative" type="button">
+    <i class="bi bi-funnel"></i> Filtros
+    {% if request.GET.status or request.GET.test_result or request.GET.assigned or request.GET.country %}
+    <span class="filter-badge"></span>
+    {% endif %}
+  </button>
+  <div x-show="filterOpen" x-cloak
+       x-transition:enter="transition ease-out duration-150"
+       x-transition:enter-start="opacity-0 scale-95"
+       x-transition:enter-end="opacity-100 scale-100"
+       x-transition:leave="transition ease-in duration-100"
+       x-transition:leave-start="opacity-100 scale-100"
+       x-transition:leave-end="opacity-0 scale-95"
+       @click.away="filterOpen = false"
+       class="filter-panel right-0">
+    <h3 class="text-sm font-semibold text-ink mb-3">Filtros</h3>
+    <div class="grid grid-cols-1 gap-3">
+      <div>
+        <label class="filter-panel-label">Status</label>
+        <select name="status" class="filter-select"
+                hx-get="{% url 'proxy:table' %}"
+                hx-target="#proxy-table-container"
+                hx-swap="innerHTML"
+                hx-trigger="change"
+                hx-include=".filter-panel [name]">
+          <option value="">Todos</option>
+          <option value="active" {% if request.GET.status == "active" %}selected{% endif %}>Ativos</option>
+          <option value="inactive" {% if request.GET.status == "inactive" %}selected{% endif %}>Inativos</option>
+        </select>
+      </div>
+      <div>
+        <label class="filter-panel-label">Resultado do teste</label>
+        <select name="test_result" class="filter-select"
+                hx-get="{% url 'proxy:table' %}"
+                hx-target="#proxy-table-container"
+                hx-swap="innerHTML"
+                hx-trigger="change"
+                hx-include=".filter-panel [name]">
+          <option value="">Qualquer</option>
+          <option value="ok" {% if request.GET.test_result == "ok" %}selected{% endif %}>OK</option>
+          <option value="fail" {% if request.GET.test_result == "fail" %}selected{% endif %}>Falha</option>
+          <option value="untested" {% if request.GET.test_result == "untested" %}selected{% endif %}>Nao testado</option>
+        </select>
+      </div>
+      <div>
+        <label class="filter-panel-label">Atribuicao</label>
+        <select name="assigned" class="filter-select"
+                hx-get="{% url 'proxy:table' %}"
+                hx-target="#proxy-table-container"
+                hx-swap="innerHTML"
+                hx-trigger="change"
+                hx-include=".filter-panel [name]">
+          <option value="">Todos</option>
+          <option value="yes" {% if request.GET.assigned == "yes" %}selected{% endif %}>Com no</option>
+          <option value="no" {% if request.GET.assigned == "no" %}selected{% endif %}>Livre</option>
+        </select>
+      </div>
+      {% if country_choices %}
+      <div>
+        <label class="filter-panel-label">Pais</label>
+        <select name="country" class="filter-select"
+                hx-get="{% url 'proxy:table' %}"
+                hx-target="#proxy-table-container"
+                hx-swap="innerHTML"
+                hx-trigger="change"
+                hx-include=".filter-panel [name]">
+          <option value="">Todos</option>
+          {% for code in country_choices %}
+          <option value="{{ code }}" {% if request.GET.country == code %}selected{% endif %}>{{ code }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+    </div>
+    <div class="flex justify-between items-center mt-4 pt-3" style="border-top: 1px solid var(--ik-line);">
+      <a href="{% url 'proxy:list' %}" class="text-sm text-muted hover:text-ink">Limpar filtros</a>
+      <button type="button" @click="filterOpen = false" class="btn btn-primary btn-sm">Fechar</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block table_content %}
-<div
-  id="proxy-table-container"
-  hx-get="{% url 'proxy:table' %}"
-  hx-trigger="proxyTableRefresh from:body"
-  hx-swap="innerHTML"
-  hx-include="#proxy-filter-form">
+<div id="proxy-table-container"
+     hx-get="{% url 'proxy:table' %}"
+     hx-trigger="proxyTableRefresh from:body"
+     hx-swap="innerHTML"
+     hx-include=".filter-panel [name]">
   {% include "proxy/partials/proxy_table.html" %}
 </div>
 {% endblock %}

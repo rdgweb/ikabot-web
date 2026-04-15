@@ -1,5 +1,11 @@
 {% load hub_tags %}
 <tr id="proxy-row-{{ proxy.pk }}">
+  <td class="text-center">
+    <input type="checkbox"
+           value="{{ proxy.pk }}"
+           x-model="selected"
+           class="proxy-checkbox rounded border-gray-300">
+  </td>
   <td class="font-mono text-sm">
     {{ proxy.address }}
     {% if proxy.provider == "webshare" %}
@@ -58,7 +64,7 @@
         hx-swap="outerHTML"
         hx-indicator="#test-spin-{{ proxy.pk }}"
         class="btn btn-secondary btn-sm relative"
-        title="Testar conexão">
+        title="Testar conexao">
         <span id="test-spin-{{ proxy.pk }}" class="htmx-indicator absolute inset-0 flex items-center justify-center bg-white/70 rounded">
           <i class="bi bi-arrow-repeat animate-spin text-xs"></i>
         </span>
@@ -81,7 +87,7 @@
       <button type="button"
               onclick="return openConfirm({
                 title: 'Excluir proxy',
-                message: 'Excluir o proxy {{ proxy.address }}:{{ proxy.port }}?{% if proxy.assigned_node %} O nó {{ proxy.assigned_node.name }} ficará sem proxy.{% endif %}',
+                message: 'Excluir o proxy {{ proxy.address }}:{{ proxy.port }}?{% if proxy.assigned_node %} O no {{ proxy.assigned_node.name }} ficara sem proxy.{% endif %}',
                 style: 'danger',
                 confirmLabel: 'Excluir',
                 onConfirm: () => htmx.ajax('POST', '{% url 'proxy:delete' proxy.pk %}', {swap: 'none'})

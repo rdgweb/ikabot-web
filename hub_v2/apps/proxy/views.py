@@ -217,6 +217,36 @@ class ProxyTestAllView(LoginRequiredMixin, View):
         return resp
 
 
+# ── Bulk delete ───────────────────────────────────────────────────────────────
+
+class ProxyBulkDeleteView(LoginRequiredMixin, View):
+    """POST /proxy/bulk-delete/ — delete multiple proxies at once."""
+
+    def post(self, request):
+        proxy_ids = request.POST.getlist("proxy_ids")
+        if not proxy_ids:
+            resp = HttpResponse(status=204)
+            resp["HX-Trigger"] = _htmx_toast("Nenhum proxy selecionado.", "warning")
+            return resp
+
+        proxies = ProxyProfile.objects.filter(pk__in=proxy_ids).select_related("assigned_node")
+        count = proxies.count()
+
+        for proxy in proxies:
+            if proxy.assigned_node:
+                proxy.assigned_node.proxy = ""
+                proxy.assigned_node.save(update_fields=["proxy"])
+
+        ProxyProfile.objects.filter(pk__in=proxy_ids).delete()
+
+        resp = HttpResponse(status=200)
+        resp["HX-Trigger"] = json.dumps({
+            "toast": {"type": "success", "message": f"{count} proxy(s) excluido(s)."},
+            "proxyTableRefresh": True,
+        })
+        return resp
+
+
 # ── Sync ──────────────────────────────────────────────────────────────────────
 
 class ProxySyncView(LoginRequiredMixin, View):
