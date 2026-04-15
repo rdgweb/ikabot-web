@@ -125,11 +125,21 @@
 {% endblock %}
 
 {% block table_content %}
-<div id="proxy-table-container"
-     hx-get="{% url 'proxy:table' %}"
-     hx-trigger="proxyTableRefresh from:body"
-     hx-swap="innerHTML"
-     hx-include=".filter-panel [name]">
+<div id="proxy-table-container">
   {% include "proxy/partials/proxy_table.html" %}
 </div>
+
+<script>
+(function () {
+  function refreshProxyTable() {
+    var params = new URLSearchParams();
+    document.querySelectorAll('.filter-panel [name]').forEach(function (el) {
+      if (el.value) params.set(el.name, el.value);
+    });
+    var url = '{% url "proxy:table" %}' + (params.toString() ? '?' + params.toString() : '');
+    htmx.ajax('GET', url, { target: '#proxy-table-container', swap: 'innerHTML' });
+  }
+  window.addEventListener('proxyTableRefresh', refreshProxyTable);
+})();
+</script>
 {% endblock %}
