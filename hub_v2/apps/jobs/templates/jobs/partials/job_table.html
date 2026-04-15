@@ -44,6 +44,11 @@
               <span class="badge {{ status|status_badge_class }}">{{ amount }} {{ status }}</span>
               {% endfor %}
             </div>
+            {% elif row.chain_active_job %}
+            {# Root is terminal but chain continues — show active descendant status #}
+            <a href="{% url 'jobs:job-detail' row.jobs.0.object.pk %}" class="inline-block">
+              <span class="badge {{ row.chain_active_job.status|status_badge_class }}">{{ row.chain_active_job.get_status_display }}</span>
+            </a>
             {% else %}
             {% with job=row.jobs.0.object %}
             <a href="{% url 'jobs:job-detail' job.pk %}" class="inline-block">
@@ -81,7 +86,15 @@
               {% endif %}
             </div>
             {% endif %}
-            {% if row.summary_lines %}
+            {% if row.chain_active_job %}
+            <div class="mt-1 space-y-0.5">
+              {% if row.chain_active_job.scheduled_for %}
+              <div class="text-[11px] text-muted">
+                <i class="bi bi-clock"></i> Agendado {{ row.chain_active_job.scheduled_for|date:"d/m H:i" }}
+              </div>
+              {% endif %}
+            </div>
+            {% elif row.summary_lines %}
             <div class="mt-1 space-y-0.5">
               {% for line in row.summary_lines %}
               <div class="text-[11px] text-muted">{{ line }}</div>

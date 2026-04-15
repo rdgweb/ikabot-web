@@ -153,7 +153,8 @@ class JobListView(FilterSortListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         page_jobs = list(context.get("page_obj").object_list if context.get("page_obj") else context.get("object_list", []))
-        context["grouped_rows"] = self._build_grouped_rows(page_jobs)
+        active_descendants = self._load_active_descendants(page_jobs)
+        context["grouped_rows"] = self._build_grouped_rows(page_jobs, active_descendants)
         action_options = []
         seen_actions = set()
         full_jobs = context.get("object_list", [])
@@ -170,8 +171,33 @@ class JobListView(FilterSortListView):
         context["action_filter_options"] = action_options
         return context
 
-    def _build_grouped_rows(self, jobs):
+    @staticmethod
+    def _load_active_descendants(jobs):
+        """For terminal root jobs on this page, fetch the latest active descendant.
+
+        One extra query per page — returns {root_pk: latest_active_child}.
+        """
+        _TERMINAL = {"finished", "error", "cancelled"}
+        terminal_pks = [j.pk for j in jobs if j.status in _TERMINAL]
+        if not terminal_pks:
+            return {}
+        result = {}
+        qs = (
+            Job.objects.filter(
+                root_job_id__in=terminal_pks,
+                status__in=["queued", "running", "scheduled"],
+            )
+            .select_related("account", "game_account", "node")
+            .order_by("root_job_id", "-created_at")
+        )
+        for child in qs:
+            if child.root_job_id not in result:
+                result[child.root_job_id] = child
+        return result
+
+    def _build_grouped_rows(self, jobs, active_descendants=None):
         parent_map = self._load_parent_map(jobs)
+        active_descendants = active_descendants or {}
         grouped = {}
         ordered_keys = []
 
@@ -197,6 +223,8 @@ class JobListView(FilterSortListView):
                     "status_counts": Counter(),
                     "city_labels": [],
                     "resource_totals": Counter(),
+                    # Latest active descendant when the root itself is terminal
+                    "chain_active_job": active_descendants.get(root_job.pk),
                 }
                 ordered_keys.append(group_key)
 
@@ -223,8 +251,14 @@ class JobListView(FilterSortListView):
             city_labels = entry["city_labels"]
             entry["city_summary"] = self._city_summary(city_labels)
             entry["is_group"] = len(entry["jobs"]) > 1
-            entry["status_summary"] = self._status_summary(entry["status_counts"])
-            entry["status_badges"] = [(status, amount) for status, amount in entry["status_counts"].items()]
+            # When root is terminal but chain is still active, reflect the active status
+            chain_job = entry["chain_active_job"]
+            if chain_job:
+                display_counts = Counter({chain_job.status: 1})
+            else:
+                display_counts = entry["status_counts"]
+            entry["status_summary"] = self._status_summary(display_counts)
+            entry["status_badges"] = [(status, amount) for status, amount in display_counts.items()]
             if entry["group_type"] in {"construction", "transport"}:
                 entry["resource_items"] = self._resource_items(entry["root_job"])
             else:
