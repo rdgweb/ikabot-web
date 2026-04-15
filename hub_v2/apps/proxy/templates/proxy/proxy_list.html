@@ -15,15 +15,16 @@
 </a>
 
 <button
-  hx-post="{% url 'proxy:test-all' %}"
-  hx-swap="none"
-  hx-indicator="#test-all-spinner"
-  hx-confirm="Testar todos os proxies ativos? Falhas serao inativadas e nos reatribuidos automaticamente."
-  class="btn btn-secondary btn-sm relative"
+  type="button"
+  onclick="openConfirm({
+    title: 'Testar todos os proxies',
+    message: 'Testar todos os proxies ativos? Falhas serao inativadas e nos reatribuidos automaticamente.',
+    style: 'primary',
+    confirmLabel: 'Testar',
+    onConfirm: () => htmx.ajax('POST', '{% url "proxy:test-all" %}', { swap: 'none' })
+  })"
+  class="btn btn-secondary btn-sm"
   title="Testar todos os proxies ativos">
-  <span id="test-all-spinner" class="htmx-indicator absolute inset-0 flex items-center justify-center bg-white/70 rounded">
-    <i class="bi bi-arrow-repeat animate-spin text-xs"></i>
-  </span>
   <i class="bi bi-lightning-charge"></i> Testar Todos
 </button>
 
