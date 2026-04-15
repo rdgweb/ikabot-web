@@ -12,6 +12,7 @@ from django.urls import reverse_lazy
 from django.views import View
 from django.views.generic import CreateView, UpdateView, ListView
 
+from core.mixins.views import HtmxPartialMixin
 from .forms import ProxyForm
 from .models import ProxyProfile
 
@@ -54,9 +55,10 @@ def _build_queryset(request):
 
 # ── List / Table ─────────────────────────────────────────────────────────────
 
-class ProxyListView(LoginRequiredMixin, ListView):
+class ProxyListView(LoginRequiredMixin, HtmxPartialMixin, ListView):
     model = ProxyProfile
     template_name = "proxy/proxy_list.html"
+    partial_template_name = "proxy/partials/proxy_table.html"
     context_object_name = "object_list"
     paginate_by = 25
 
@@ -75,6 +77,9 @@ class ProxyListView(LoginRequiredMixin, ListView):
             .distinct()
             .order_by("country_code")
         )
+        query = self.request.GET.copy()
+        query.pop("page", None)
+        ctx["querystring_without_page"] = query.urlencode()
         return ctx
 
 
@@ -94,6 +99,9 @@ class ProxyTableView(LoginRequiredMixin, ListView):
         ctx["filter_test_result"] = self.request.GET.get("test_result", "")
         ctx["filter_assigned"] = self.request.GET.get("assigned", "")
         ctx["filter_country"] = self.request.GET.get("country", "")
+        query = self.request.GET.copy()
+        query.pop("page", None)
+        ctx["querystring_without_page"] = query.urlencode()
         return ctx
 
 

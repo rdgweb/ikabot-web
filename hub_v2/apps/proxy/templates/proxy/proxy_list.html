@@ -63,8 +63,8 @@
       <div>
         <label class="filter-panel-label">Status</label>
         <select name="status" class="filter-select"
-                hx-get="{% url 'proxy:table' %}"
-                hx-target="#proxy-table-container"
+                hx-get="{% url 'proxy:list' %}"
+                hx-target="#table-content"
                 hx-swap="innerHTML"
                 hx-trigger="change"
                 hx-include=".filter-panel [name]">
@@ -76,8 +76,8 @@
       <div>
         <label class="filter-panel-label">Resultado do teste</label>
         <select name="test_result" class="filter-select"
-                hx-get="{% url 'proxy:table' %}"
-                hx-target="#proxy-table-container"
+                hx-get="{% url 'proxy:list' %}"
+                hx-target="#table-content"
                 hx-swap="innerHTML"
                 hx-trigger="change"
                 hx-include=".filter-panel [name]">
@@ -90,8 +90,8 @@
       <div>
         <label class="filter-panel-label">Atribuicao</label>
         <select name="assigned" class="filter-select"
-                hx-get="{% url 'proxy:table' %}"
-                hx-target="#proxy-table-container"
+                hx-get="{% url 'proxy:list' %}"
+                hx-target="#table-content"
                 hx-swap="innerHTML"
                 hx-trigger="change"
                 hx-include=".filter-panel [name]">
@@ -104,8 +104,8 @@
       <div>
         <label class="filter-panel-label">Pais</label>
         <select name="country" class="filter-select"
-                hx-get="{% url 'proxy:table' %}"
-                hx-target="#proxy-table-container"
+                hx-get="{% url 'proxy:list' %}"
+                hx-target="#table-content"
                 hx-swap="innerHTML"
                 hx-trigger="change"
                 hx-include=".filter-panel [name]">
@@ -126,9 +126,7 @@
 {% endblock %}
 
 {% block table_content %}
-<div id="proxy-table-container">
-  {% include "proxy/partials/proxy_table.html" %}
-</div>
+{% include "proxy/partials/proxy_table.html" %}
 
 <script>
 (function () {
@@ -137,8 +135,8 @@
     document.querySelectorAll('.filter-panel [name]').forEach(function (el) {
       if (el.value) params.set(el.name, el.value);
     });
-    var url = '{% url "proxy:table" %}' + (params.toString() ? '?' + params.toString() : '');
-    htmx.ajax('GET', url, { target: '#proxy-table-container', swap: 'innerHTML' });
+    var url = '{% url "proxy:list" %}' + (params.toString() ? '?' + params.toString() : '');
+    htmx.ajax('GET', url, { target: '#table-content', swap: 'innerHTML' });
   }
   window.addEventListener('proxyTableRefresh', refreshProxyTable);
 })();
