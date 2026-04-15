@@ -268,6 +268,19 @@ class JobListView(FilterSortListView):
                 child_jobs=[item["object"] for item in entry["jobs"][1:]],
             ) if entry["group_type"] == "transport" else {}
             entry["summary_lines"] = self._summary_lines(entry)
+            # Resolve scheduled_for for the column display
+            if chain_job and chain_job.scheduled_for:
+                entry["scheduled_for"] = chain_job.scheduled_for
+            elif not entry["is_group"] and entry["jobs"][0]["object"].scheduled_for:
+                entry["scheduled_for"] = entry["jobs"][0]["object"].scheduled_for
+            else:
+                # For groups: pick the earliest scheduled_for among scheduled jobs
+                scheduled = [
+                    item["object"].scheduled_for
+                    for item in entry["jobs"]
+                    if item["object"].status == "scheduled" and item["object"].scheduled_for
+                ]
+                entry["scheduled_for"] = min(scheduled) if scheduled else None
             rows.append(entry)
         return rows
 

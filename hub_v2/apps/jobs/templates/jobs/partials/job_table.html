@@ -15,6 +15,7 @@
           <th>Cidade</th>
           <th>Itens</th>
           <th>No</th>
+          <th>Agendado para</th>
           <th>Criado em</th>
           <th>Iniciado em</th>
         </tr>
@@ -87,13 +88,6 @@
             </div>
             {% endif %}
             {% if row.chain_active_job %}
-            <div class="mt-1 space-y-0.5">
-              {% if row.chain_active_job.scheduled_for %}
-              <div class="text-[11px] text-muted">
-                <i class="bi bi-clock"></i> Agendado {{ row.chain_active_job.scheduled_for|date:"d/m H:i" }}
-              </div>
-              {% endif %}
-            </div>
             {% elif row.summary_lines %}
             <div class="mt-1 space-y-0.5">
               {% for line in row.summary_lines %}
@@ -124,6 +118,13 @@
               {{ row.node_name }}
             </a>
             {% endwith %}
+          </td>
+          <td class="align-top text-sm">
+            {% if row.scheduled_for %}
+            <span class="inline-flex items-center gap-1 text-amber-700">
+              <i class="bi bi-clock"></i> {{ row.scheduled_for|date:"d/m H:i" }}
+            </span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
           </td>
           <td class="align-top text-sm text-muted">{{ row.created_at|localtime_format }}</td>
           <td class="align-top text-sm text-muted">{{ row.started_at|localtime_format|default:"—" }}</td>
@@ -179,6 +180,13 @@
               {{ item.object.node.name }}
             </a>
           </td>
+          <td class="text-sm">
+            {% if item.object.scheduled_for %}
+            <span class="inline-flex items-center gap-1 text-amber-700">
+              <i class="bi bi-clock"></i> {{ item.object.scheduled_for|date:"d/m H:i" }}
+            </span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
           <td class="text-sm text-muted">{{ item.object.created_at|localtime_format }}</td>
           <td class="text-sm text-muted">{{ item.object.started_at|localtime_format|default:"—" }}</td>
         </tr>
@@ -188,7 +196,7 @@
       {% empty %}
       <tbody>
         <tr>
-          <td colspan="10" class="py-8 text-center text-muted">
+          <td colspan="11" class="py-8 text-center text-muted">
             <i class="bi bi-list-task mb-2 block text-2xl"></i>
             Nenhum job encontrado.
           </td>
