@@ -47,6 +47,7 @@ class Job(UUIDTimestampModel):
 
     action_code = models.IntegerField()
     source_job_id = models.UUIDField(null=True, blank=True, db_index=True)
+    root_job_id = models.UUIDField(null=True, blank=True, db_index=True)
     inputs_json = models.TextField(default="{}")
     timeout_sec = models.IntegerField(default=1800)
 

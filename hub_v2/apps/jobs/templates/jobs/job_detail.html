@@ -775,6 +775,50 @@
       <div class="mt-1 text-xs text-muted">Base: {{ construction_display.base_human }}</div>
       {% endif %}
     </div>
+
+    {% if construction_display.has_progress %}
+    <!-- Progresso: já gasto vs ainda a gastar -->
+    <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2 lg:col-span-3">
+      <div class="text-[11px] text-muted uppercase tracking-wide mb-2">Recursos</div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead>
+            <tr class="text-[10px] uppercase tracking-wide text-muted">
+              <th class="pb-1 text-left font-normal"></th>
+              <th class="pb-1 text-right font-normal">Total</th>
+              <th class="pb-1 text-right font-normal text-[var(--ik-good)]">Gasto</th>
+              <th class="pb-1 text-right font-normal">Restante</th>
+              {% if construction_display.missing_by_resource %}<th class="pb-1 text-right font-normal text-[var(--ik-bad)]">Falta</th>{% endif %}
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-[var(--ik-line)]">
+            {% for item in construction_display.totals_by_resource %}
+            <tr>
+              <td class="py-1 pr-3">
+                <span class="inline-flex items-center gap-1 text-muted">
+                  <img src="{% static item.icon %}" alt="{{ item.label }}" class="h-3.5 w-3.5">
+                  {{ item.label }}
+                </span>
+              </td>
+              <td class="py-1 text-right font-medium text-ink">{{ item.amount|intcomma }}</td>
+              <td class="py-1 text-right font-semibold text-[var(--ik-good)]">
+                {% for s in construction_display.spent_by_resource %}{% if s.key == item.key %}{{ s.amount|intcomma }}{% endif %}{% endfor %}
+              </td>
+              <td class="py-1 text-right text-ink">
+                {% for s in construction_display.spent_by_resource %}{% if s.key == item.key %}{{ s.remaining|intcomma }}{% endif %}{% endfor %}
+              </td>
+              {% if construction_display.missing_by_resource %}
+              <td class="py-1 text-right">
+                {% for m in construction_display.missing_by_resource %}{% if m.key == item.key %}<span class="font-semibold text-[var(--ik-bad)]">{{ m.amount|intcomma }}</span>{% endif %}{% endfor %}
+              </td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
     <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2 lg:col-span-2">
       <div class="text-[11px] text-muted uppercase tracking-wide">Custo total</div>
       {% if construction_display.totals_by_resource %}
@@ -810,6 +854,7 @@
       <div class="mt-1 text-sm font-medium text-ink">Sem falta externa</div>
       {% endif %}
     </div>
+    {% endif %}
   </div>
 
   {% if construction_display.current_message or construction_display.blocker_message %}
@@ -829,17 +874,37 @@
   </div>
   {% endif %}
 
-  <div class="mt-4 space-y-4">
+  <div class="mt-4 space-y-3">
     {% for city in construction_display.city_cards %}
-    <div class="rounded-xl border border-[var(--ik-line)] bg-[var(--ik-sand-light)]/50 p-3">
-      <div>
-        <div class="text-sm font-semibold text-ink">{{ city.city_name }}</div>
-        <div class="mt-1 text-xs text-muted">{{ city.step_count }} etapa(s){% if city.shortfall_count %} · {{ city.shortfall_count }} com falta externa{% endif %}</div>
-      </div>
+    <div x-data="{ open: {{ city.open_by_default|yesno:'true,false' }} }"
+         class="rounded-xl border border-[var(--ik-line)] bg-[var(--ik-sand-light)]/50 overflow-hidden">
 
-      <div class="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
+      <!-- Cabeçalho clicável -->
+      <button type="button" @click="open = !open"
+              class="w-full flex items-center justify-between gap-3 p-3 text-left hover:bg-[var(--ik-sand-light)] transition-colors">
+        <div class="min-w-0">
+          <div class="text-sm font-semibold text-ink">{{ city.city_name }}</div>
+          <div class="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted">
+            <span>{{ city.step_count }} etapa(s)</span>
+            {% if city.current_step %}
+            <span class="inline-flex items-center gap-1 text-emerald-700 font-medium">
+              <i class="bi bi-hammer"></i> {{ city.current_step }}
+            </span>
+            {% endif %}
+            {% if city.shortfall_count %}
+            <span class="text-amber-600">{{ city.shortfall_count }} com falta</span>
+            {% endif %}
+          </div>
+        </div>
+        <i class="bi shrink-0 text-muted transition-transform duration-200"
+           :class="open ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+      </button>
+
+      <!-- Detalhe expansível -->
+      <div x-show="open" x-cloak class="px-3 pb-3">
+      <div class="grid grid-cols-1 gap-3 xl:grid-cols-2">
         {% for step in city.steps %}
-        <div class="rounded-lg border border-[var(--ik-line)] bg-paper px-3 py-3">
+        <div class="rounded-lg border {% if step.is_current %}border-emerald-300 bg-emerald-50/60{% else %}border-[var(--ik-line)] bg-paper{% endif %} px-3 py-3">
           <div class="flex items-start gap-3">
             {% if step.building_icon %}
             <img src="{% static 'game/buildings/'|add:step.building_icon %}" alt="{{ step.building_name }}" class="h-10 w-10 rounded-md border border-[var(--ik-line)] bg-[var(--ik-sand-light)] p-1">
@@ -916,6 +981,7 @@
         </div>
         {% endfor %}
       </div>
+      </div><!-- /x-show -->
     </div>
     {% endfor %}
   </div>

@@ -143,7 +143,12 @@ class JobListView(FilterSortListView):
     paginate_by = 25
     ordering_fields = ["status", "action_code", "created_at", "started_at"]
     default_ordering = "-created_at"
-    queryset = Job.objects.select_related("account", "game_account", "node")
+    # Show only root jobs (root_job_id IS NULL) — child/rescheduled jobs are
+    # hidden from the list and grouped under their root. Legacy jobs without
+    # root_job_id are shown as-is (they predate the field).
+    queryset = Job.objects.select_related("account", "game_account", "node").filter(
+        root_job_id__isnull=True
+    )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -234,19 +239,12 @@ class JobListView(FilterSortListView):
 
     @staticmethod
     def _load_parent_map(jobs):
-        ids = {job.source_job_id for job in jobs if job.source_job_id}
-        parent_map = {}
-        while ids:
-            batch = Job.objects.select_related("account", "game_account", "node").in_bulk(ids)
-            if not batch:
-                break
-            parent_map.update(batch)
-            ids = {
-                job.source_job_id
-                for job in batch.values()
-                if job.source_job_id and job.source_job_id not in parent_map
-            }
-        return parent_map
+        # With root_job_id, we only need to fetch the root jobs themselves —
+        # O(1) queries instead of N walks up the source_job_id chain.
+        root_ids = {job.root_job_id for job in jobs if job.root_job_id}
+        if not root_ids:
+            return {}
+        return Job.objects.select_related("account", "game_account", "node").in_bulk(root_ids)
 
     @staticmethod
     def _group_type(job):
@@ -258,16 +256,9 @@ class JobListView(FilterSortListView):
         return "generic"
 
     def _resolve_root_job(self, job, parent_map):
-        current = job
-        current_type = self._group_type(job)
-        visited = set()
-        while current.source_job_id and current.source_job_id not in visited:
-            visited.add(current.source_job_id)
-            parent = parent_map.get(current.source_job_id)
-            if not parent or self._group_type(parent) != current_type:
-                break
-            current = parent
-        return current
+        if job.root_job_id:
+            return parent_map.get(job.root_job_id, job)
+        return job
 
     def _group_key(self, job, root_job):
         group_type = self._group_type(job)
@@ -1167,17 +1158,29 @@ class JobListView(FilterSortListView):
             }
             city_groups.setdefault(city_name, []).append(step_display)
 
+        # Compute remaining cost from steps still in the plan
+        remaining_totals: dict[str, int] = {}
+        for step in raw_steps:
+            step_totals = step.get("totals") or {}
+            for key in RESOURCE_ICON_MAP:
+                lookup_key = "glas" if key == "crystal" else key
+                remaining_totals[key] = remaining_totals.get(key, 0) + _to_int(step_totals.get(lookup_key), 0)
+
+        spent_by_resource = []
         for key, (label, icon) in RESOURCE_ICON_MAP.items():
             lookup_key = "glas" if key == "crystal" else key
             total_amount = _to_int((summary.get("totals") or {}).get(lookup_key), 0)
             reserved_amount = _to_int((summary.get("reserved_local") or {}).get(lookup_key), 0)
             missing_amount = _to_int((summary.get("missing") or {}).get(lookup_key), 0)
+            spent_amount = max(0, total_amount - remaining_totals.get(key, 0))
             if total_amount > 0:
                 totals_by_resource.append({"key": key, "label": label, "icon": icon, "amount": total_amount})
             if reserved_amount > 0:
                 reserved_by_resource.append({"key": key, "label": label, "icon": icon, "amount": reserved_amount})
             if missing_amount > 0:
                 missing_by_resource.append({"key": key, "label": label, "icon": icon, "amount": missing_amount})
+            if spent_amount > 0:
+                spent_by_resource.append({"key": key, "label": label, "icon": icon, "amount": spent_amount, "remaining": remaining_totals.get(key, 0)})
 
         current_message = ""
         blocker_message = ""
@@ -1197,10 +1200,21 @@ class JobListView(FilterSortListView):
 
         city_cards = []
         for city_name, city_steps in city_groups.items():
+            # Mark the current active step based on the last build-started log
+            current_step_name = ""
+            if current_message:
+                for step in city_steps:
+                    if step["building_name"].lower() in current_message.lower():
+                        step["is_current"] = True
+                        current_step_name = step["building_name"]
+                        break
             city_cards.append({
                 "city_name": city_name,
                 "step_count": len(city_steps),
                 "shortfall_count": sum(1 for step in city_steps if step["has_shortfall"]),
+                "current_step": current_step_name,
+                # Open cities with an active build or shortfall by default
+                "open_by_default": bool(current_step_name or any(s["has_shortfall"] for s in city_steps)),
                 "steps": city_steps,
             })
         city_cards.sort(key=lambda item: item["city_name"].lower())
@@ -1214,6 +1228,8 @@ class JobListView(FilterSortListView):
             "totals_by_resource": totals_by_resource,
             "reserved_by_resource": reserved_by_resource,
             "missing_by_resource": missing_by_resource,
+            "spent_by_resource": spent_by_resource,
+            "has_progress": bool(spent_by_resource),
             "base_human": _duration_human(summary.get("base_seconds")),
             "adjusted_human": _duration_human(summary.get("adjusted_seconds")),
             "current_message": current_message,

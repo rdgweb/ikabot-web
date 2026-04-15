@@ -207,6 +207,7 @@ class RescheduleJobView(APIView):
             profile=job.profile,
             action_code=job.action_code,
             source_job_id=job.pk,
+            root_job_id=job.root_job_id or job.pk,
             inputs_json=new_inputs_json,
             timeout_sec=job.timeout_sec,
             status="scheduled",
@@ -262,6 +263,7 @@ class SpawnJobView(APIView):
             profile=parent_job.profile,
             action_code=serializer.validated_data["action_code"],
             source_job_id=parent_job.pk,
+            root_job_id=parent_job.root_job_id or parent_job.pk,
             inputs_json=json.dumps(serializer.validated_data.get("inputs") or {}),
             timeout_sec=serializer.validated_data.get("timeout_sec") or parent_job.timeout_sec,
             status="scheduled" if delay > 0 else "queued",
@@ -311,31 +313,42 @@ class ConstructionSupportView(APIView):
         except Job.DoesNotExist:
             return Response({"error": "Job not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        lineage: list[UUID] = []
-        cursor = root_job
-        seen: set[UUID] = set()
-        while cursor and cursor.pk not in seen:
-            seen.add(cursor.pk)
-            lineage.append(cursor.pk)
-            if not cursor.source_job_id:
-                break
-            cursor = Job.objects.filter(pk=cursor.source_job_id).first()
+        # Resolve the tree root: use root_job_id if set, otherwise this job is the root.
+        # For legacy jobs without root_job_id, fall back to the old BFS walk.
+        root_id = root_job.root_job_id or root_job.pk
 
-        descendants: list[Job] = []
-        frontier = {jid for jid in lineage}
-        visited = set(frontier)
-        while frontier:
-            children = list(
-                Job.objects.filter(source_job_id__in=frontier)
+        if root_job.root_job_id is not None or root_job.source_job_id is None:
+            # Fast path: single indexed query covering the whole tree
+            descendants = list(
+                Job.objects.filter(root_job_id=root_id)
                 .only("id", "source_job_id", "action_code", "status", "inputs_json", "created_at")
             )
-            frontier = set()
-            for child in children:
-                if child.pk in visited:
-                    continue
-                visited.add(child.pk)
-                descendants.append(child)
-                frontier.add(child.pk)
+        else:
+            # Legacy fallback for old jobs without root_job_id
+            lineage: list[UUID] = []
+            cursor = root_job
+            seen: set[UUID] = set()
+            while cursor and cursor.pk not in seen:
+                seen.add(cursor.pk)
+                lineage.append(cursor.pk)
+                if not cursor.source_job_id:
+                    break
+                cursor = Job.objects.filter(pk=cursor.source_job_id).first()
+            descendants = []
+            frontier = set(lineage)
+            visited = set(frontier)
+            while frontier:
+                children = list(
+                    Job.objects.filter(source_job_id__in=frontier)
+                    .only("id", "source_job_id", "action_code", "status", "inputs_json", "created_at")
+                )
+                frontier = set()
+                for child in children:
+                    if child.pk in visited:
+                        continue
+                    visited.add(child.pk)
+                    descendants.append(child)
+                    frontier.add(child.pk)
 
         entries: list[dict] = []
         for child in descendants:
@@ -390,4 +403,4 @@ class ConstructionSupportView(APIView):
                 }
             )
 
-        return Response({"ok": True, "lineage": [str(item) for item in lineage], "entries": entries})
+        return Response({"ok": True, "lineage": [str(root_id)], "entries": entries})
