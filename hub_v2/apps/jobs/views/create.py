@@ -1405,6 +1405,18 @@ class JobSubmitView(LoginRequiredMixin, View):
             "base_seconds": plan_preview.base_seconds,
             "adjusted_seconds": plan_preview.adjusted_seconds,
         }
+        # Check for an existing active construction plan to merge into
+        existing_job = Job.objects.filter(
+            game_account=ga,
+            action_code=1002,
+            status__in=["queued", "running", "scheduled"],
+        ).order_by("-created_at").first()
+
+        if existing_job:
+            return self._merge_construction_plan(
+                request, existing_job, ga, clean_steps, action_meta,
+            )
+
         job = Job.objects.create(
             account=ga.account,
             game_account=ga,
@@ -1430,6 +1442,63 @@ class JobSubmitView(LoginRequiredMixin, View):
             )
         )
         resp["HX-Trigger"] = trigger_data
+        return resp
+
+    def _merge_construction_plan(self, request, existing_job, ga, new_steps, action_meta):
+        """Append new_steps to an existing active construction plan job."""
+        try:
+            existing_inputs = json.loads(existing_job.inputs_json or "{}")
+        except Exception:
+            existing_inputs = {}
+
+        existing_plan = existing_inputs.get("construction_plan_json") or []
+        merged_plan = list(existing_plan) + list(new_steps)
+
+        # Preserve modifiers from existing job
+        research_reduction = existing_inputs.get("research_reduction", 14)
+        build_time_reduction = existing_inputs.get("build_time_reduction", "0")
+        government_time_reduction = existing_inputs.get("government_time_reduction", 0)
+
+        plan_preview = build_construction_plan_preview(
+            game_account=ga,
+            steps=merged_plan,
+            research_reduction=research_reduction,
+            build_time_reduction=build_time_reduction,
+            government_time_reduction=government_time_reduction,
+        )
+
+        existing_inputs["construction_plan_json"] = merged_plan
+        existing_inputs["construction_plan_steps"] = plan_preview.steps
+        existing_inputs["construction_summary"] = {
+            "steps": len(merged_plan),
+            "totals": plan_preview.totals,
+            "reserved_local": plan_preview.reserved_local,
+            "missing": plan_preview.missing,
+            "base_seconds": plan_preview.base_seconds,
+            "adjusted_seconds": plan_preview.adjusted_seconds,
+        }
+        existing_job.inputs_json = json.dumps(existing_inputs)
+        existing_job.save(update_fields=["inputs_json", "updated_at"])
+
+        # Recreate reservations for the full merged plan
+        existing_job.construction_reservations.all().delete()
+        self._create_construction_reservations(existing_job, plan_preview)
+
+        n = len(new_steps)
+        resp = HttpResponse(
+            render_to_string(
+                "jobs/partials/create_step_success.html",
+                {"jobs_created": 0, "merged": True, "merged_count": n, "action_name": action_meta["name"]},
+                request=request,
+            )
+        )
+        resp["HX-Trigger"] = json.dumps({
+            "toast": {
+                "type": "success",
+                "message": f"{n} etapa(s) mesclada(s) ao plano de construcao existente.",
+            },
+            "jobsCreated": True,
+        })
         return resp
 
     @staticmethod

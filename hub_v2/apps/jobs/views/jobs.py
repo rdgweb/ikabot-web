@@ -154,7 +154,8 @@ class JobListView(FilterSortListView):
         context = super().get_context_data(**kwargs)
         page_jobs = list(context.get("page_obj").object_list if context.get("page_obj") else context.get("object_list", []))
         active_descendants = self._load_active_descendants(page_jobs)
-        context["grouped_rows"] = self._build_grouped_rows(page_jobs, active_descendants)
+        all_chain_children = self._load_all_chain_children(page_jobs)
+        context["grouped_rows"] = self._build_grouped_rows(page_jobs, active_descendants, all_chain_children)
         action_options = []
         seen_actions = set()
         full_jobs = context.get("object_list", [])
@@ -195,9 +196,30 @@ class JobListView(FilterSortListView):
                 result[child.root_job_id] = child
         return result
 
-    def _build_grouped_rows(self, jobs, active_descendants=None):
+    @staticmethod
+    def _load_all_chain_children(jobs):
+        """Load all child jobs for every root job on this page.
+
+        Returns {root_pk: [children ordered by created_at]}.
+        Used to show full chain history in the list.
+        """
+        root_pks = [j.pk for j in jobs]
+        if not root_pks:
+            return {}
+        result = {}
+        qs = (
+            Job.objects.filter(root_job_id__in=root_pks)
+            .select_related("account", "game_account", "node")
+            .order_by("root_job_id", "created_at")
+        )
+        for child in qs:
+            result.setdefault(child.root_job_id, []).append(child)
+        return result
+
+    def _build_grouped_rows(self, jobs, active_descendants=None, all_chain_children=None):
         parent_map = self._load_parent_map(jobs)
         active_descendants = active_descendants or {}
+        all_chain_children = all_chain_children or {}
         grouped = {}
         ordered_keys = []
 
@@ -225,6 +247,8 @@ class JobListView(FilterSortListView):
                     "resource_totals": Counter(),
                     # Latest active descendant when the root itself is terminal
                     "chain_active_job": active_descendants.get(root_job.pk),
+                    # All child jobs in the chain (for history expand)
+                    "chain_history": all_chain_children.get(root_job.pk, []),
                 }
                 ordered_keys.append(group_key)
 
@@ -1188,6 +1212,23 @@ class JobListView(FilterSortListView):
                 if missing_amount > 0:
                     resource_missing.append({"key": key, "label": label, "icon": icon, "amount": missing_amount})
 
+            # Build per-level queue from level_rows (each row = one level transition)
+            raw_level_rows = step.get("level_rows") or []
+            level_queue = []
+            for lr in raw_level_rows:
+                lvl = _to_int(lr.get("level"), 0)
+                if lvl <= 0:
+                    continue
+                level_queue.append({
+                    "from_level": lvl - 1,
+                    "to_level": lvl,
+                    "adjusted_duration": str(lr.get("adjusted_duration") or lr.get("adjusted_seconds") or ""),
+                    "adjusted_seconds": _to_int(lr.get("adjusted_seconds"), 0),
+                    "is_current": False,  # will be set after log parsing
+                })
+            has_level_queue = len(level_queue) > 1
+            last_to_level = level_queue[-1]["to_level"] if level_queue else target_level
+
             step_display = {
                 "index": idx,
                 "city_name": city_name,
@@ -1195,6 +1236,7 @@ class JobListView(FilterSortListView):
                 "building_icon": building_icon,
                 "mode_label": "Construir novo" if mode == "new" else "Evoluir",
                 "level_label": f"Lv {from_level} -> {target_level}" if from_level > 0 else f"Novo -> Lv {target_level}",
+                "level_range_label": f"Lv {from_level} → {last_to_level} ({len(level_queue)} níveis)" if has_level_queue else "",
                 "slot_label": f"Slot {preferred_position}" if preferred_position else "",
                 "adjusted_human": _duration_human(adjusted_seconds),
                 "base_human": _duration_human(base_seconds),
@@ -1202,6 +1244,8 @@ class JobListView(FilterSortListView):
                 "resource_reserved": resource_reserved,
                 "resource_missing": resource_missing,
                 "has_shortfall": any(item["amount"] > 0 for item in resource_missing),
+                "level_queue": level_queue,
+                "has_level_queue": has_level_queue,
             }
             city_groups.setdefault(city_name, []).append(step_display)
 
@@ -1254,14 +1298,23 @@ class JobListView(FilterSortListView):
                     if step["building_name"].lower() in current_message.lower():
                         step["is_current"] = True
                         current_step_name = step["building_name"]
+                        # Parse the current level target from the log message
+                        # e.g. "Academia 6->7 em Atenas" → current level target = 7
+                        m = re.search(r'(\d+)->(\d+)', current_message)
+                        if m and step.get("level_queue"):
+                            current_level_target = int(m.group(2))
+                            for lr in step["level_queue"]:
+                                if lr["to_level"] == current_level_target:
+                                    lr["is_current"] = True
+                                    break
                         break
             city_cards.append({
                 "city_name": city_name,
                 "step_count": len(city_steps),
                 "shortfall_count": sum(1 for step in city_steps if step["has_shortfall"]),
                 "current_step": current_step_name,
-                # Open cities with an active build or shortfall by default
-                "open_by_default": bool(current_step_name or any(s["has_shortfall"] for s in city_steps)),
+                # Open cities with an active build in progress by default
+                "open_by_default": bool(current_step_name),
                 "steps": city_steps,
             })
         city_cards.sort(key=lambda item: item["city_name"].lower())

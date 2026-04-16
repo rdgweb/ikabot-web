@@ -915,10 +915,29 @@
                 <span class="badge badge-secondary">{{ step.mode_label }}</span>
               </div>
               <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
+                {% if step.has_level_queue %}
+                <span>{{ step.level_range_label }}</span>
+                {% else %}
                 <span>{{ step.level_label }}</span>
-                {% if step.slot_label %}<span>{{ step.slot_label }}</span>{% endif %}
                 {% if step.adjusted_human %}<span>ETA {{ step.adjusted_human }}</span>{% endif %}
+                {% endif %}
+                {% if step.slot_label %}<span>{{ step.slot_label }}</span>{% endif %}
               </div>
+              {% if step.has_level_queue %}
+              <div class="mt-2 max-h-52 space-y-0.5 overflow-y-auto rounded-lg border border-[var(--ik-line)] bg-white/60 p-1.5">
+                {% for row in step.level_queue %}
+                <div class="flex items-center justify-between rounded px-2 py-0.5 text-xs
+                     {% if row.is_current %}bg-emerald-50 font-semibold text-emerald-900 ring-1 ring-inset ring-emerald-200
+                     {% else %}text-muted{% endif %}">
+                  <span>Lv {{ row.from_level }} → {{ row.to_level }}</span>
+                  <span class="ml-2 tabular-nums">{{ row.adjusted_duration }}</span>
+                  {% if row.is_current %}
+                  <span class="ml-2 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">agora</span>
+                  {% endif %}
+                </div>
+                {% endfor %}
+              </div>
+              {% endif %}
             </div>
           </div>
 
