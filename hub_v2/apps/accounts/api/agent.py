@@ -18,7 +18,7 @@ from core.auth.permissions import IsAgent
 from core.encryption import decrypt, encrypt
 from apps.accounts.models import GameAccount, Node
 from apps.settings_app.utils import get_int_setting
-from apps.jobs.services.recovery import recover_stale_running_jobs
+from apps.jobs.services.recovery import recover_stale_running_jobs, recover_stale_scheduled_jobs
 
 from .serializers import (
     AgentHeartbeatSerializer,
@@ -145,6 +145,7 @@ class AgentHeartbeatView(APIView):
         try:
             node = Node.objects.get(pk=node_id)
             recover_stale_running_jobs(node=node)
+            recover_stale_scheduled_jobs(node=node)
         except Exception as exc:
             logger.warning("Failed to recover stale jobs for node %s: %s", node_id, exc)
 

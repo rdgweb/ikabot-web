@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import logging
 import json
 
 from django.db import transaction
@@ -9,6 +10,8 @@ from django.utils import timezone
 from apps.accounts.models import Node
 from apps.jobs.models import Job, JobLog
 from apps.settings_app.utils import get_int_setting
+
+logger = logging.getLogger(__name__)
 
 SAFE_REQUEUE_ACTIONS = {
     2,
@@ -135,4 +138,88 @@ def recover_stale_running_jobs(*, node: Node | None = None) -> dict[str, int]:
         "recovered": recovered,
         "requeued": requeued,
         "marked_error": marked_error,
+    }
+
+
+# How long past scheduled_for before we consider it lost (avoids re-dispatching
+# a job that's still in the Redis queue but just hasn't started yet).
+_SCHEDULED_GRACE_MINUTES = 10
+
+# How long a "queued" job can sit without starting before we re-dispatch.
+_QUEUED_GRACE_MINUTES = 10
+
+# Minimum time since last updated_at before re-dispatching again (prevents
+# hammering if the agent is slow to start the job).
+_REDISPATCH_COOLDOWN_MINUTES = 5
+
+
+def recover_stale_scheduled_jobs(*, node: Node | None = None) -> dict[str, int]:
+    """Re-dispatch jobs that are stranded in 'scheduled' or 'queued' status.
+
+    This handles the case where the Celery task was lost (Redis restart without
+    persistence, or machine was off for a long time) but the Job record in the
+    DB still reflects the old status.
+
+    Called from the agent heartbeat so that when a node comes back online after
+    an extended outage, its pending jobs are automatically re-submitted.
+    """
+    from apps.jobs.services.dispatch import dispatch_job
+
+    now = timezone.now()
+    scheduled_cutoff = now - timedelta(minutes=_SCHEDULED_GRACE_MINUTES)
+    queued_cutoff = now - timedelta(minutes=_QUEUED_GRACE_MINUTES)
+    cooldown_cutoff = now - timedelta(minutes=_REDISPATCH_COOLDOWN_MINUTES)
+
+    requeued_scheduled = 0
+    requeued_queued = 0
+
+    # --- Stale "scheduled" jobs: scheduled_for is in the past by more than grace ---
+    scheduled_qs = Job.objects.filter(
+        status="scheduled",
+        scheduled_for__lt=scheduled_cutoff,
+        # Cooldown: skip if we already re-dispatched recently (updated_at is fresh)
+        updated_at__lt=cooldown_cutoff,
+    )
+    if node is not None:
+        scheduled_qs = scheduled_qs.filter(node=node)
+
+    for job in scheduled_qs:
+        try:
+            dispatch_job(job, eta=None)  # dispatch immediately, job is already overdue
+            Job.objects.filter(pk=job.pk).update(updated_at=now)
+            logger.warning(
+                "Re-dispatched stale scheduled job %s (was due %s)",
+                job.pk,
+                job.scheduled_for,
+            )
+            requeued_scheduled += 1
+        except Exception as exc:
+            logger.error("Failed to re-dispatch scheduled job %s: %s", job.pk, exc)
+
+    # --- Stale "queued" jobs: created long ago, never started ---
+    queued_qs = Job.objects.filter(
+        status="queued",
+        started_at__isnull=True,
+        created_at__lt=queued_cutoff,
+        updated_at__lt=cooldown_cutoff,
+    )
+    if node is not None:
+        queued_qs = queued_qs.filter(node=node)
+
+    for job in queued_qs:
+        try:
+            dispatch_job(job, eta=None)
+            Job.objects.filter(pk=job.pk).update(updated_at=now)
+            logger.warning(
+                "Re-dispatched stale queued job %s (queued since %s)",
+                job.pk,
+                job.created_at,
+            )
+            requeued_queued += 1
+        except Exception as exc:
+            logger.error("Failed to re-dispatch queued job %s: %s", job.pk, exc)
+
+    return {
+        "requeued_scheduled": requeued_scheduled,
+        "requeued_queued": requeued_queued,
     }
