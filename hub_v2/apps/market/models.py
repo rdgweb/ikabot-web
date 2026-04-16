@@ -37,6 +37,13 @@ class InternalMarketOrder(UUIDTimestampModel):
         on_delete=models.CASCADE,
         related_name="market_orders_as_buyer",
     )
+    buyer_game_account = models.ForeignKey(
+        "accounts.GameAccount",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="market_orders_as_buyer_ga",
+    )
     buyer_node = models.ForeignKey(
         "accounts.Node",
         on_delete=models.CASCADE,
@@ -44,6 +51,9 @@ class InternalMarketOrder(UUIDTimestampModel):
     )
     buyer_city_index = models.IntegerField(default=1)
     buyer_market_city_index = models.IntegerField(null=True, blank=True)
+    # Resolved at matching time — actual game city ID and Branch Office slot
+    buyer_city_id = models.IntegerField(null=True, blank=True)
+    buyer_branchoffice_pos = models.IntegerField(null=True, blank=True)
 
     # Seller (matched later)
     seller_account = models.ForeignKey(
@@ -53,6 +63,13 @@ class InternalMarketOrder(UUIDTimestampModel):
         blank=True,
         related_name="market_orders_as_seller",
     )
+    seller_game_account = models.ForeignKey(
+        "accounts.GameAccount",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="market_orders_as_seller_ga",
+    )
     seller_node = models.ForeignKey(
         "accounts.Node",
         on_delete=models.SET_NULL,
@@ -61,6 +78,9 @@ class InternalMarketOrder(UUIDTimestampModel):
         related_name="market_orders_seller_node",
     )
     seller_city_index = models.IntegerField(null=True, blank=True)
+    # Resolved at matching time — actual game city ID and Branch Office slot
+    seller_city_id = models.IntegerField(null=True, blank=True)
+    seller_branchoffice_pos = models.IntegerField(null=True, blank=True)
 
     # Order details
     resource_idx = models.IntegerField(choices=RESOURCE_CHOICES)

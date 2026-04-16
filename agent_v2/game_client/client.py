@@ -30,7 +30,7 @@ from core.proxy import StrictProxySession
 from .actions.academy import AcademyAction
 from .actions.city import BuildAction, DemolishAction, UpgradeAction
 from .actions.daily import DailyTasksAction
-from .actions.market import BuyAction, SellAction
+from .actions.market import BuyAction, CreateOfferAction, SellAction
 from .actions.miracle import MiracleAction
 from .actions.military import AttackAction, SendTroopsAction, TrainAction
 from .actions.research import ResearchAction
@@ -526,36 +526,106 @@ class GameClient:
 
     # ── Market ──
 
-    def buy_offer(self, city_id: int, offer_id: int) -> dict[str, Any]:
-        """Buy a marketplace offer.
+    def create_market_offer(
+        self,
+        city_id: int,
+        branchoffice_pos: int,
+        resource_idx: int,
+        amount: int,
+        unit_price: int,
+    ) -> dict[str, Any]:
+        """Create (or update) a sell offer on the player's own Branch Office.
 
         Args:
-            city_id: City to receive purchased resources.
-            offer_id: Marketplace offer ID.
+            city_id: Seller's city ID.
+            branchoffice_pos: Branch Office building slot in the city.
+            resource_idx: 0=wood, 1=wine, 2=marble, 3=crystal, 4=sulfur.
+            amount: Number of units to offer for sale.
+            unit_price: Price per unit in gold.
+
+        Returns:
+            Parsed AJAX response.
+        """
+        action = CreateOfferAction(self)
+        return action.execute(
+            city_id=city_id,
+            branchoffice_pos=branchoffice_pos,
+            resource_idx=resource_idx,
+            amount=amount,
+            unit_price=unit_price,
+        )
+
+    def buy_market_offer(
+        self,
+        buyer_city_id: int,
+        buyer_branchoffice_pos: int,
+        seller_city_id: int,
+        seller_branchoffice_pos: int,
+        resource_idx: int,
+        amount: int,
+    ) -> dict[str, Any]:
+        """Buy resources from a specific seller's Branch Office.
+
+        Internally scrapes the branch office listing, loads the takeOffer page,
+        and posts buyGoodsAtAnotherBranchOffice.
+
+        Args:
+            buyer_city_id: City ID where purchased goods will be delivered.
+            buyer_branchoffice_pos: Buyer's Branch Office slot (used in the POST).
+            seller_city_id: City ID where the sell offer is posted.
+            seller_branchoffice_pos: Seller's Branch Office slot (for takeOffer GET).
+            resource_idx: 0=wood, 1=wine, 2=marble, 3=crystal, 4=sulfur.
+            amount: Amount to buy.
 
         Returns:
             Parsed AJAX response.
         """
         action = BuyAction(self)
-        return action.execute(city_id=city_id, offer_id=offer_id)
+        return action.execute(
+            buyer_city_id=buyer_city_id,
+            buyer_branchoffice_pos=buyer_branchoffice_pos,
+            seller_city_id=seller_city_id,
+            seller_branchoffice_pos=seller_branchoffice_pos,
+            resource_idx=resource_idx,
+            amount=amount,
+        )
 
-    def sell_resources(
-        self, city_id: int, resource_type: int, amount: int, price: int
+    def sell_to_offer(
+        self,
+        city_id: int,
+        branchoffice_pos: int,
+        destination_city_id: int,
+        resource_idx: int,
+        amount: int,
+        price: int,
+        player_name: str = "",
+        dest_city_name: str = "",
     ) -> dict[str, Any]:
-        """Create a sell offer on the marketplace.
+        """Sell resources to an existing buy offer from another player.
 
         Args:
-            city_id: City to sell from.
-            resource_type: Resource type index.
-            amount: Amount to sell.
+            city_id: Seller's city ID.
+            branchoffice_pos: Seller's Branch Office slot.
+            destination_city_id: Buyer's city ID (where goods will be sent).
+            resource_idx: 0=wood, 1=wine, 2=marble, 3=crystal, 4=sulfur.
+            amount: Units to sell.
             price: Price per unit in gold.
+            player_name: Buyer's player name (from offer listing).
+            dest_city_name: Buyer's city name (from offer listing).
 
         Returns:
             Parsed AJAX response.
         """
         action = SellAction(self)
         return action.execute(
-            city_id=city_id, resource_type=resource_type, amount=amount, price=price
+            city_id=city_id,
+            branchoffice_pos=branchoffice_pos,
+            destination_city_id=destination_city_id,
+            resource_idx=resource_idx,
+            amount=amount,
+            price=price,
+            player_name=player_name,
+            dest_city_name=dest_city_name,
         )
 
     # ── Internal HTTP Methods ──

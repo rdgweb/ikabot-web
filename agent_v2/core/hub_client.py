@@ -181,6 +181,41 @@ class HubClient:
             logger.warning("Failed to report session: %s", e)
             return {}
 
+    # ── Internal Market ──
+
+    def market_order_sell_complete(self, order_id: str) -> dict:
+        """POST /api/agent/market/orders/<uuid>/sell-complete/
+
+        Called by Runner 802 after placing the sell offer in-game.
+        Hub creates the buy_job (801) on the buyer's node.
+        """
+        return self._post(f"/api/agent/market/orders/{order_id}/sell-complete", {})
+
+    def market_order_complete(self, order_id: str) -> dict:
+        """POST /api/agent/market/orders/<uuid>/complete/
+
+        Called by Runner 801 after the purchase is confirmed in-game.
+        """
+        return self._post(f"/api/agent/market/orders/{order_id}/complete", {})
+
+    def create_market_order(
+        self,
+        game_account_id: str,
+        resource_idx: int,
+        amount: int,
+        unit_price: int = 12,
+    ) -> dict:
+        """POST /api/agent/market/orders/create/
+
+        Request the hub to create an InternalMarketOrder (matching + sell_job).
+        """
+        return self._post("/api/agent/market/orders/create", {
+            "game_account_id": game_account_id,
+            "resource_idx": resource_idx,
+            "amount": amount,
+            "unit_price": unit_price,
+        })
+
     # ── Blackbox & Captcha (proxied via hub → ikabotapi) ──
 
     def get_blackbox_token(self, user_agent: str) -> str:

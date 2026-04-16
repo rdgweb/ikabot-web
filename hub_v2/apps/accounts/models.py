@@ -162,6 +162,12 @@ class GameAccount(UUIDTimestampModel):
         help_text="Government type build time reduction percentage (e.g. 20 for 20%). Set per character.",
     )
 
+    # Internal market participation
+    open_for_market = models.BooleanField(
+        default=False,
+        help_text="Account participates in the internal market as a potential seller.",
+    )
+
     # Cached session (persisted by agent after successful login)
     session_cookies_enc = models.TextField(
         blank=True,

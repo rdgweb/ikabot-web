@@ -99,8 +99,13 @@ class ActionID:
     # Resources / Trade
     DONATE = "IslandScreen&function=donate"
     SEND_RESOURCES = "TransportAction&function=loadTransporters"
-    MARKETPLACE_BUY = "MarketplaceAction&function=buy"
-    MARKETPLACE_SELL = "MarketplaceAction&function=sell"
+    # Marketplace — verified from Ikariam AJAX traffic (ikabot upstream)
+    # Create or update own sell offer on Branch Office
+    MARKETPLACE_UPDATE_OFFERS = "CityScreen&function=updateOffers"
+    # Buy goods from another player's Branch Office offer
+    MARKETPLACE_BUY = "transportOperations&function=buyGoodsAtAnotherBranchOffice"
+    # Sell goods to another player's buy offer
+    MARKETPLACE_SELL = "transportOperations&function=sellGoodsAtAnotherBranchOffice"
 
     # General
     CHANGE_CITY = "HeaderAction&function=changeCity"
