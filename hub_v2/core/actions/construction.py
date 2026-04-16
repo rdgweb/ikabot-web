@@ -12,6 +12,7 @@ RESEARCH_REDUCTION_CHOICES,
 CONSTRUCTION_QUEUE_STRATEGY_CHOICES = [
     ("fifo", "Ordem do plano"),
     ("eta_first", "Menor ETA primeiro"),
+    ("smart", "Balanceado (tempo + recursos)"),
 ]
 
 ACTIONS = {

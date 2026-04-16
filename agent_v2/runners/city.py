@@ -1142,17 +1142,24 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             city_candidates = candidates_by_city.get(city_id) or []
             if not city_candidates:
                 continue
-            if strategy == "eta_first":
+            if strategy in ("eta_first", "smart"):
                 city = _find_city(cities, city_id)
                 city_candidates = sorted(
                     city_candidates,
-                    key=lambda step: cls._pending_step_score(city, step),
+                    key=lambda step: cls._pending_step_score(city, step, strategy, cities),
                 )
             selected.append(city_candidates[0])
         return selected
 
     @classmethod
-    def _pending_step_score(cls, city: dict[str, Any] | None, step: dict[str, Any]) -> tuple[int, int, int, int]:
+    def _pending_step_score(
+        cls,
+        city: dict[str, Any] | None,
+        step: dict[str, Any],
+        strategy: str = "eta_first",
+        all_cities: list[dict[str, Any]] | None = None,
+    ) -> tuple[int | float, ...]:
+        import math
         next_level = _to_int(step.get("next_level"), 1)
         level_row = cls._find_level_row(step, next_level)
         if city is None or level_row is None:
@@ -1162,7 +1169,47 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         missing_total = sum(max(0, costs[key] - stock.get(key, 0)) for key in RESOURCE_KEYS)
         adjusted_seconds = max(0, _to_int(level_row.get("adjusted_seconds"), 0))
         cost_sum = sum(max(0, costs[key]) for key in RESOURCE_KEYS)
+        if strategy == "smart":
+            # base_seconds is the raw ika-tools reference time (Chronos-independent).
+            # adjusted_seconds was projected at plan-creation time with a future Chronos
+            # level, making builds planned for later appear artificially fast (e.g. 1s).
+            # Using base_seconds gives a stable, current baseline for comparison.
+            base_seconds = max(0, _to_int(level_row.get("base_seconds"), adjusted_seconds))
+            cost_penalty = math.log10(1 + cost_sum) * 3600
+            if missing_total > 0:
+                missing_by_key = {key: max(0, costs[key] - stock.get(key, 0)) for key in RESOURCE_KEYS}
+                if not cls._missing_can_be_sourced(city, missing_by_key, all_cities or []):
+                    # Resources unobtainable anywhere — fall back to eta_first behaviour
+                    return (9_999_999, adjusted_seconds, cost_sum, _to_int(step.get("index"), 0))
+                composite = base_seconds + missing_total * 2 + cost_penalty
+            else:
+                composite = base_seconds + cost_penalty
+            return (composite, _to_int(step.get("index"), 0))
+        # eta_first (default)
         return (missing_total, adjusted_seconds, cost_sum, _to_int(step.get("index"), 0))
+
+    @staticmethod
+    def _missing_can_be_sourced(
+        city: dict[str, Any],
+        missing: dict[str, int],
+        all_cities: list[dict[str, Any]],
+    ) -> bool:
+        """Return True if all missing resources can be obtained (local production or donor city)."""
+        prod = _city_prod_per_hour(city)
+        city_id = str(city.get("id") or "")
+        for key, amount in missing.items():
+            if amount <= 0:
+                continue
+            if prod.get(key, 0) > 0:
+                continue  # local production will cover it eventually
+            has_donor = any(
+                _city_stock(c).get(key, 0) > 0
+                for c in all_cities
+                if str(c.get("id") or "") != city_id
+            )
+            if not has_donor:
+                return False
+        return True
 
     @staticmethod
     def _find_level_row(step: dict[str, Any], level: int) -> dict[str, Any] | None:
