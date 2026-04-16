@@ -29,6 +29,6 @@ class AgentTask(Task):
     max_retries = 0
 
 
-@app.task(name="agent_v2.execute_job", bind=True, base=AgentTask)
+@app.task(name="agent_v2.execute_job", bind=True, base=AgentTask, ignore_result=True)
 def execute_job(self, job: dict) -> None:
     execute_job_payload(job=job, sessions=_sessions, proxy_url=_proxy_url)

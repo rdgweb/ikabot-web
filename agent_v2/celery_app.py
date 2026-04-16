@@ -9,6 +9,9 @@ app.conf.update(
     task_default_queue=settings.agent_node_id,
     task_ignore_result=True,
     task_track_started=False,
+    # Reconnect to broker automatically after Redis restart
     broker_connection_retry_on_startup=True,
+    broker_connection_retry=True,
+    broker_connection_max_retries=None,  # retry indefinitely
     imports=("tasks",),
 )
