@@ -4,7 +4,7 @@
 {% block title %}Ordem {{ order.pk|truncatechars:8 }}{% endblock %}
 
 {% block breadcrumb_items %}
-  <span class="mx-1">/</span> <a href="{% url 'market:order-list' %}" class="hover:text-ink">Mercado</a>
+  <span class="mx-1">/</span> <a href="{% url 'market:dashboard' %}" class="hover:text-ink">Mercado</a>
   <span class="mx-1">/</span> <span class="text-ink">Ordem {{ order.pk|truncatechars:8 }}</span>
 {% endblock %}
 

@@ -1,4 +1,4 @@
-{% load static hub_tags %}
+{% load static hub_tags humanize %}
 
 {% if object_list or request.GET %}
 <div class="card overflow-hidden p-0">
@@ -6,12 +6,13 @@
     <thead>
       <tr>
         <th>Recurso</th>
-        <th>Quantidade</th>
-        <th>Preço</th>
+        <th class="text-right">Qtd.</th>
+        <th class="text-right">Preço/un.</th>
         <th>Comprador</th>
         <th>Vendedor</th>
         <th>Status</th>
         <th>Criado em</th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -19,24 +20,26 @@
       <tr>
         <td>
           <a href="{% url 'market:order-detail' order.pk %}" class="flex items-center gap-2 link-sea">
-            <img src="{% static order.resource_idx|resource_icon %}" alt="" class="w-5 h-5" onerror="this.style.display='none'">
-            <span class="font-medium">{{ order.get_resource_idx_display }}</span>
+            <img src="{% static order.resource_idx|resource_icon %}" alt="" class="w-4 h-4" onerror="this.style.display='none'">
+            <span class="font-medium text-sm">{{ order.get_resource_idx_display }}</span>
           </a>
         </td>
-        <td class="text-sm">{{ order.amount|default:"0" }}</td>
-        <td class="text-sm">{{ order.unit_price }}</td>
+        <td class="text-sm text-right font-mono tabular-nums">{{ order.amount|intcomma }}</td>
+        <td class="text-sm text-right font-mono tabular-nums">{{ order.unit_price|intcomma }}</td>
         <td>
-          <a href="{% url 'accounts:account-detail' order.buyer_account.pk %}" class="text-sm text-muted hover:text-sea">
-            {{ order.buyer_account.label }}
-          </a>
+          <div class="text-sm text-ink leading-tight">{{ order.buyer_account.label }}</div>
+          {% if order.buyer_game_account %}
+          <div class="text-xs text-muted">{{ order.buyer_game_account.name|default:order.buyer_game_account.server_id }}</div>
+          {% endif %}
         </td>
         <td>
           {% if order.seller_account %}
-          <a href="{% url 'accounts:account-detail' order.seller_account.pk %}" class="text-sm text-muted hover:text-sea">
-            {{ order.seller_account.label }}
-          </a>
+          <div class="text-sm text-ink leading-tight">{{ order.seller_account.label }}</div>
+          {% if order.seller_game_account %}
+          <div class="text-xs text-muted">{{ order.seller_game_account.name|default:order.seller_game_account.server_id }}</div>
+          {% endif %}
           {% else %}
-          <span class="text-muted">&mdash;</span>
+          <span class="text-muted text-xs">Aguardando...</span>
           {% endif %}
         </td>
         <td>
@@ -52,11 +55,27 @@
             <span class="badge badge-info">{{ order.get_status_display }}</span>
           {% endif %}
         </td>
-        <td class="text-sm text-muted">{{ order.created_at|localtime_format }}</td>
+        <td class="text-xs text-muted">{{ order.created_at|localtime_format }}</td>
+        <td class="text-center">
+          {% if order.status == "created" or order.status == "matched" or order.status == "jobs_created" %}
+          <button type="button"
+                  onclick="return openConfirm({
+                    title: 'Cancelar ordem',
+                    message: 'Cancelar esta ordem de {{ order.amount }} x {{ order.get_resource_idx_display }}?',
+                    style: 'danger',
+                    confirmLabel: 'Cancelar',
+                    onConfirm: () => htmx.ajax('POST', '{% url 'market:order-cancel' order.pk %}', {swap: 'none'})
+                  })"
+                  class="btn btn-danger btn-sm !px-2 !py-0.5"
+                  title="Cancelar ordem">
+            <i class="bi bi-x-lg text-[10px]"></i>
+          </button>
+          {% endif %}
+        </td>
       </tr>
       {% empty %}
       <tr>
-        <td colspan="7" class="text-center py-8 text-muted">
+        <td colspan="8" class="text-center py-8 text-muted">
           <i class="bi bi-shop text-2xl block mb-2"></i>
           Nenhuma ordem encontrada.
         </td>

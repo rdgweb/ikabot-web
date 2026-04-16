@@ -18,4 +18,7 @@ from .accounts import (
     GameAccountToggleView,
     GameAccountBuildTimeView,
     GameAccountGovernmentTimeView,
+    GameAccountMarketToggleView,
+    GameAccountMarketStockView,
+    GameAccountMarketGoldView,
 )

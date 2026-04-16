@@ -1,0 +1,87 @@
+{% load static hub_tags %}
+
+<div class="mb-4 flex items-center justify-between gap-3">
+  <h3 class="text-sm font-semibold text-ink flex items-center gap-2">
+    <i class="bi bi-list-ul text-sea"></i> Ordens de Mercado
+  </h3>
+  <div x-data="{ filterOpen: false }" class="relative flex items-center gap-2">
+    <!-- Refresh button -->
+    <button type="button"
+            hx-get="{% url 'market:orders-partial' %}"
+            hx-target="#table-content"
+            hx-swap="innerHTML"
+            class="btn btn-secondary btn-sm !px-2"
+            title="Atualizar">
+      <i class="bi bi-arrow-clockwise"></i>
+    </button>
+    <!-- Filter dropdown -->
+    <button @click="filterOpen = !filterOpen" class="btn btn-secondary btn-sm relative" type="button">
+      <i class="bi bi-funnel"></i> Filtros
+      {% if request.GET.resource_idx or request.GET.status %}
+      <span class="filter-badge"></span>
+      {% endif %}
+    </button>
+    <div x-show="filterOpen" x-cloak
+         x-transition:enter="transition ease-out duration-150"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100"
+         x-transition:leave="transition ease-in duration-100"
+         x-transition:leave-start="opacity-100 scale-100"
+         x-transition:leave-end="opacity-0 scale-95"
+         @click.away="filterOpen = false"
+         class="filter-panel right-0">
+      <h3 class="text-sm font-semibold text-ink mb-3">Filtros</h3>
+      <div class="grid grid-cols-1 gap-3">
+        <div>
+          <label class="filter-panel-label">Recurso</label>
+          <select name="resource_idx" class="filter-select"
+                  hx-get="{% url 'market:orders-partial' %}" hx-target="#table-content"
+                  hx-swap="innerHTML" hx-trigger="change"
+                  hx-include=".filter-panel [name]" hx-push-url="false">
+            <option value="">Todos</option>
+            <option value="0" {% if request.GET.resource_idx == "0" %}selected{% endif %}>Madeira</option>
+            <option value="1" {% if request.GET.resource_idx == "1" %}selected{% endif %}>Vinho</option>
+            <option value="2" {% if request.GET.resource_idx == "2" %}selected{% endif %}>Mármore</option>
+            <option value="3" {% if request.GET.resource_idx == "3" %}selected{% endif %}>Cristal</option>
+            <option value="4" {% if request.GET.resource_idx == "4" %}selected{% endif %}>Enxofre</option>
+          </select>
+        </div>
+        <div>
+          <label class="filter-panel-label">Status</label>
+          <select name="status" class="filter-select"
+                  hx-get="{% url 'market:orders-partial' %}" hx-target="#table-content"
+                  hx-swap="innerHTML" hx-trigger="change"
+                  hx-include=".filter-panel [name]" hx-push-url="false">
+            <option value="">Todos</option>
+            <option value="created" {% if request.GET.status == "created" %}selected{% endif %}>Criado</option>
+            <option value="matched" {% if request.GET.status == "matched" %}selected{% endif %}>Pareado</option>
+            <option value="jobs_created" {% if request.GET.status == "jobs_created" %}selected{% endif %}>Jobs criados</option>
+            <option value="jobs_running" {% if request.GET.status == "jobs_running" %}selected{% endif %}>Jobs executando</option>
+            <option value="completed" {% if request.GET.status == "completed" %}selected{% endif %}>Concluído</option>
+            <option value="failed" {% if request.GET.status == "failed" %}selected{% endif %}>Falhou</option>
+            <option value="canceled" {% if request.GET.status == "canceled" %}selected{% endif %}>Cancelado</option>
+          </select>
+        </div>
+      </div>
+      <div class="flex justify-between items-center mt-4 pt-3" style="border-top: 1px solid var(--ik-line);">
+        <button type="button"
+                hx-get="{% url 'market:orders-partial' %}" hx-target="#table-content" hx-swap="innerHTML"
+                @click="filterOpen = false; document.querySelectorAll('.filter-panel select').forEach(el => el.value = '')"
+                class="text-sm text-muted hover:text-ink">Limpar filtros</button>
+        <button type="button" @click="filterOpen = false" class="btn btn-primary btn-sm">Fechar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="table-content"
+     hx-get="{% url 'market:orders-partial' %}"
+     hx-trigger="load, marketOrderCreated from:body, marketOrderCanceled from:body"
+     hx-target="#table-content"
+     hx-swap="innerHTML"
+     hx-push-url="false">
+  <div class="text-center py-8 text-muted text-sm">
+    <i class="bi bi-arrow-clockwise block mb-2 text-xl"></i>
+    Carregando ordens...
+  </div>
+</div>

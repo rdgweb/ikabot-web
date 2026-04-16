@@ -1,0 +1,165 @@
+{% load static hub_tags humanize %}
+
+<div class="flex items-center justify-between mb-4">
+  <h3 class="text-sm font-semibold text-ink flex items-center gap-2">
+    <i class="bi bi-people text-sea"></i>
+    Participantes do Mercado
+    <span class="text-xs text-muted font-normal">(todas as contas ativas)</span>
+  </h3>
+  <span class="text-xs text-muted">Clique nos valores para editar</span>
+</div>
+
+{% if participant_rows %}
+<div class="overflow-x-auto -mx-4 px-4">
+  <table class="w-full text-xs">
+    <thead>
+      <tr style="border-bottom: 2px solid var(--ik-line);">
+        <th class="text-left py-2 px-2 text-muted font-semibold">Conta / Personagem</th>
+        <th class="text-left py-2 px-2 text-muted font-semibold">Servidor</th>
+        <th class="text-left py-2 px-2 text-muted font-semibold">Nó</th>
+        <th class="text-center py-2 px-2 text-muted font-semibold">Aberto?</th>
+        <th class="text-center py-2 px-2 text-muted font-semibold" title="Estoque mínimo que o vendedor mantém antes de vender">
+          Res. Estoque <i class="bi bi-info-circle text-[10px]"></i>
+        </th>
+        <th class="text-center py-2 px-2 text-muted font-semibold" title="Saldo mínimo de ouro que o comprador mantém">
+          Res. Ouro <i class="bi bi-info-circle text-[10px]"></i>
+        </th>
+        <th class="text-right py-2 px-2 text-muted font-semibold">Ouro Atual</th>
+        <th class="text-right py-2 px-2 text-muted font-semibold">
+          <img src="{% static 0|resource_icon %}" alt="Madeira" class="inline w-3.5 h-3.5" title="Madeira">
+        </th>
+        <th class="text-right py-2 px-2 text-muted font-semibold">
+          <img src="{% static 1|resource_icon %}" alt="Vinho" class="inline w-3.5 h-3.5" title="Vinho">
+        </th>
+        <th class="text-right py-2 px-2 text-muted font-semibold">
+          <img src="{% static 2|resource_icon %}" alt="Mármore" class="inline w-3.5 h-3.5" title="Mármore">
+        </th>
+        <th class="text-right py-2 px-2 text-muted font-semibold">
+          <img src="{% static 3|resource_icon %}" alt="Cristal" class="inline w-3.5 h-3.5" title="Cristal">
+        </th>
+        <th class="text-right py-2 px-2 text-muted font-semibold">
+          <img src="{% static 4|resource_icon %}" alt="Enxofre" class="inline w-3.5 h-3.5" title="Enxofre">
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in participant_rows %}
+      {% with ga=row.ga %}
+      <tr class="hover:bg-[var(--ik-sand-light)] transition-colors {% if ga.open_for_market %}bg-green-50/30{% endif %}"
+          style="border-bottom: 1px solid var(--ik-line);">
+
+        <!-- Account / Name -->
+        <td class="py-2 px-2">
+          <a href="{% url 'accounts:account-detail' ga.account.pk %}" class="font-medium text-ink hover:text-sea">
+            {{ ga.account.label }}
+          </a>
+          <span class="text-muted"> / {{ ga.name|default:"?" }}</span>
+        </td>
+
+        <!-- Server -->
+        <td class="py-2 px-2 font-mono text-muted">{{ ga.server_id }}</td>
+
+        <!-- Node -->
+        <td class="py-2 px-2 text-muted">{{ ga.account.node.name }}</td>
+
+        <!-- Market toggle -->
+        <td class="py-2 px-2 text-center">
+          <button type="button"
+                  onclick="return openConfirm({
+                    title: '{% if ga.open_for_market %}Fechar{% else %}Abrir{% endif %} para o mercado',
+                    message: '{% if ga.open_for_market %}Remover{% else %}Adicionar{% endif %} {{ ga.name|default:ga.server_id }} como participante do mercado?',
+                    style: '{% if ga.open_for_market %}danger{% else %}primary{% endif %}',
+                    confirmLabel: '{% if ga.open_for_market %}Fechar{% else %}Abrir{% endif %}',
+                    onConfirm: () => htmx.ajax('POST', '{% url 'accounts:game-account-market-toggle' ga.pk %}', {swap: 'none'})
+                  })"
+                  class="btn {% if ga.open_for_market %}btn-primary{% else %}btn-secondary{% endif %} btn-sm !px-2 !py-0.5"
+                  title="{% if ga.open_for_market %}Fechar para o mercado{% else %}Abrir para o mercado{% endif %}">
+            {% if ga.open_for_market %}
+              <i class="bi bi-unlock-fill text-[10px]"></i> Aberto
+            {% else %}
+              <i class="bi bi-lock text-[10px]"></i> Fechado
+            {% endif %}
+          </button>
+        </td>
+
+        <!-- market_min_stock inline edit -->
+        <td class="py-2 px-2 text-center"
+            x-data="{ editing: false, val: {{ ga.market_min_stock }} }">
+          <span x-show="!editing" @click="editing = true"
+                class="cursor-pointer font-mono text-ink hover:text-sea tabular-nums"
+                title="Clique para editar reserva de estoque">
+            <span x-text="Number(val).toLocaleString('pt-BR')"></span>
+          </span>
+          <form x-show="editing" x-cloak
+                hx-post="{% url 'accounts:game-account-market-stock' ga.pk %}"
+                hx-swap="none"
+                @htmx:after-request="editing = false"
+                class="flex items-center justify-center gap-1">
+            {% csrf_token %}
+            <input type="number" name="market_min_stock"
+                   :value="val" @change="val = $event.target.value"
+                   min="0" step="1000"
+                   class="w-20 text-center text-xs border rounded px-1 py-0.5"
+                   style="border-color: var(--ik-line);"
+                   @keydown.escape="editing = false"
+                   x-ref="stockInp"
+                   x-init="$watch('editing', v => v && $nextTick(() => $refs.stockInp.focus()))">
+            <button type="submit" class="btn btn-primary btn-sm !px-1.5 !py-0.5 text-[10px]">✓</button>
+            <button type="button" @click="editing = false" class="btn btn-secondary btn-sm !px-1.5 !py-0.5 text-[10px]">✕</button>
+          </form>
+        </td>
+
+        <!-- market_min_gold inline edit -->
+        <td class="py-2 px-2 text-center"
+            x-data="{ editing: false, val: {{ ga.market_min_gold }} }">
+          <span x-show="!editing" @click="editing = true"
+                class="cursor-pointer font-mono text-ink hover:text-sea tabular-nums"
+                title="Clique para editar reserva de ouro">
+            <span x-text="val == 0 ? '—' : Number(val).toLocaleString('pt-BR')"></span>
+          </span>
+          <form x-show="editing" x-cloak
+                hx-post="{% url 'accounts:game-account-market-gold' ga.pk %}"
+                hx-swap="none"
+                @htmx:after-request="editing = false"
+                class="flex items-center justify-center gap-1">
+            {% csrf_token %}
+            <input type="number" name="market_min_gold"
+                   :value="val" @change="val = $event.target.value"
+                   min="0" step="100000"
+                   class="w-24 text-center text-xs border rounded px-1 py-0.5"
+                   style="border-color: var(--ik-line);"
+                   @keydown.escape="editing = false"
+                   x-ref="goldInp"
+                   x-init="$watch('editing', v => v && $nextTick(() => $refs.goldInp.focus()))">
+            <button type="submit" class="btn btn-primary btn-sm !px-1.5 !py-0.5 text-[10px]">✓</button>
+            <button type="button" @click="editing = false" class="btn btn-secondary btn-sm !px-1.5 !py-0.5 text-[10px]">✕</button>
+          </form>
+        </td>
+
+        <!-- Current gold from snapshot -->
+        <td class="py-2 px-2 text-right font-mono tabular-nums {% if row.gold > 0 %}text-yellow-700{% else %}text-muted{% endif %}">
+          {% if row.has_snapshot %}
+            {{ row.gold|intcomma }}
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </td>
+
+        <!-- Stock columns -->
+        <td class="py-2 px-2 text-right font-mono tabular-nums text-muted">{{ row.stock.wood|intcomma }}</td>
+        <td class="py-2 px-2 text-right font-mono tabular-nums text-muted">{{ row.stock.wine|intcomma }}</td>
+        <td class="py-2 px-2 text-right font-mono tabular-nums text-muted">{{ row.stock.marble|intcomma }}</td>
+        <td class="py-2 px-2 text-right font-mono tabular-nums text-muted">{{ row.stock.crystal|intcomma }}</td>
+        <td class="py-2 px-2 text-right font-mono tabular-nums text-muted">{{ row.stock.sulfur|intcomma }}</td>
+      </tr>
+      {% endwith %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="text-center py-8 text-sm text-muted">
+  <i class="bi bi-people text-2xl block mb-2"></i>
+  Nenhuma conta ativa encontrada.
+</div>
+{% endif %}

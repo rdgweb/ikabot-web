@@ -1,0 +1,150 @@
+{% extends base_template|default:"base.html" %}
+{% load static hub_tags %}
+
+{% block title %}Mercado Interno{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <span class="text-ink">Mercado Interno</span>
+{% endblock %}
+
+{% block content %}
+
+<!-- Header -->
+<div class="mb-6 flex items-start justify-between gap-4">
+  <div>
+    <h1 class="text-2xl font-bold text-ink">Mercado Interno</h1>
+    <p class="text-sm text-muted mt-1">Gestão de ordens, participantes e limites de negociação</p>
+  </div>
+  <div x-data="{ formOpen: false }" class="flex-shrink-0">
+    <button @click="formOpen = !formOpen"
+            class="btn btn-primary btn-sm flex items-center gap-1.5">
+      <i class="bi bi-plus-lg"></i> Nova Ordem
+    </button>
+
+    <!-- Create order slide-down form -->
+    <div x-show="formOpen" x-cloak
+         x-transition:enter="transition ease-out duration-150"
+         x-transition:enter-start="opacity-0 -translate-y-2"
+         x-transition:enter-end="opacity-100 translate-y-0"
+         x-transition:leave="transition ease-in duration-100"
+         x-transition:leave-start="opacity-100 translate-y-0"
+         x-transition:leave-end="opacity-0 -translate-y-2"
+         @click.away="formOpen = false"
+         class="absolute right-4 mt-2 z-30 bg-paper border rounded-xl shadow-lg p-5 w-80"
+         style="border-color: var(--ik-line);">
+      <h3 class="text-sm font-semibold text-ink mb-4 flex items-center gap-2">
+        <i class="bi bi-shop text-sea"></i> Nova Ordem de Compra
+      </h3>
+      <form hx-post="{% url 'market:order-create' %}"
+            hx-swap="none"
+            @htmx:after-request="if(event.detail.successful){ formOpen = false; htmx.trigger('#orders-section', 'refresh') }"
+            class="space-y-3">
+        {% csrf_token %}
+        <div>
+          <label class="block text-xs text-muted mb-1">Conta Compradora</label>
+          <select name="buyer_ga_id" required
+                  class="w-full text-sm border rounded-lg px-3 py-1.5 bg-white"
+                  style="border-color: var(--ik-line);">
+            <option value="">— selecionar —</option>
+            {% for ga in buyer_choices %}
+            <option value="{{ ga.id }}">{{ ga.account__label }} / {{ ga.name|default:"?" }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-muted mb-1">Recurso</label>
+          <select name="resource_idx" required
+                  class="w-full text-sm border rounded-lg px-3 py-1.5 bg-white"
+                  style="border-color: var(--ik-line);">
+            <option value="">— selecionar —</option>
+            {% for value, label in resource_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-xs text-muted mb-1">Quantidade</label>
+            <input type="number" name="amount" min="1" required placeholder="ex: 10000"
+                   class="w-full text-sm border rounded-lg px-3 py-1.5 bg-white"
+                   style="border-color: var(--ik-line);">
+          </div>
+          <div>
+            <label class="block text-xs text-muted mb-1">Preço/un.</label>
+            <input type="number" name="unit_price" min="1" value="12"
+                   class="w-full text-sm border rounded-lg px-3 py-1.5 bg-white"
+                   style="border-color: var(--ik-line);">
+          </div>
+        </div>
+        <div class="flex gap-2 pt-1">
+          <button type="submit" class="btn btn-primary btn-sm flex-1">
+            <i class="bi bi-check-lg"></i> Criar
+          </button>
+          <button type="button" @click="formOpen = false" class="btn btn-secondary btn-sm flex-1">
+            Cancelar
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  <div class="bg-paper rounded-xl shadow-sm border-l-4 border-sea p-4 flex items-center gap-3">
+    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-sand flex items-center justify-center">
+      <i class="bi bi-calendar-day text-sea text-lg"></i>
+    </div>
+    <div>
+      <p class="text-xs text-muted">Ordens Hoje</p>
+      <p class="text-2xl font-bold text-ink">{{ stats.today }}</p>
+    </div>
+  </div>
+
+  <div class="bg-paper rounded-xl shadow-sm border-l-4 border-yellow-500 p-4 flex items-center gap-3">
+    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-yellow-50 flex items-center justify-center">
+      <i class="bi bi-hourglass-split text-yellow-600 text-lg"></i>
+    </div>
+    <div>
+      <p class="text-xs text-muted">Em Andamento</p>
+      <p class="text-2xl font-bold text-ink">{{ stats.active }}</p>
+    </div>
+  </div>
+
+  <div class="bg-paper rounded-xl shadow-sm border-l-4 border-green-500 p-4 flex items-center gap-3">
+    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-green-50 flex items-center justify-center">
+      <i class="bi bi-check-circle text-green-600 text-lg"></i>
+    </div>
+    <div>
+      <p class="text-xs text-muted">Concluídas</p>
+      <p class="text-2xl font-bold text-ink">{{ stats.completed }}</p>
+    </div>
+  </div>
+
+  <div class="bg-paper rounded-xl shadow-sm border-l-4 border-red-500 p-4 flex items-center gap-3">
+    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-red-50 flex items-center justify-center">
+      <i class="bi bi-exclamation-triangle text-red-500 text-lg"></i>
+    </div>
+    <div>
+      <p class="text-xs text-muted">Falhou</p>
+      <p class="text-2xl font-bold text-ink">{{ stats.failed }}</p>
+    </div>
+  </div>
+</div>
+
+<!-- Participants section -->
+<div class="card mb-6" id="participants-section"
+     hx-trigger="marketParticipantsChanged from:body"
+     hx-get="{% url 'market:participants-partial' %}"
+     hx-swap="innerHTML"
+     hx-target="#participants-section"
+     hx-push-url="false">
+  {% include "market/partials/participants_table.html" %}
+</div>
+
+<!-- Orders section -->
+<div class="card" id="orders-section">
+  {% include "market/partials/order_filters.html" %}
+</div>
+
+{% endblock %}

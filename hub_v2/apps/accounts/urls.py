@@ -8,6 +8,9 @@ from .views import (
     GameAccountToggleView,
     GameAccountBuildTimeView,
     GameAccountGovernmentTimeView,
+    GameAccountMarketToggleView,
+    GameAccountMarketStockView,
+    GameAccountMarketGoldView,
 )
 
 app_name = "accounts"
@@ -33,4 +36,7 @@ urlpatterns = [
     path("game-account/<uuid:pk>/toggle/", GameAccountToggleView.as_view(), name="game-account-toggle"),
     path("game-account/<uuid:pk>/build-time/", GameAccountBuildTimeView.as_view(), name="game-account-build-time"),
     path("game-account/<uuid:pk>/government-time/", GameAccountGovernmentTimeView.as_view(), name="game-account-government-time"),
+    path("game-account/<uuid:pk>/market-toggle/", GameAccountMarketToggleView.as_view(), name="game-account-market-toggle"),
+    path("game-account/<uuid:pk>/market-stock-limit/", GameAccountMarketStockView.as_view(), name="game-account-market-stock"),
+    path("game-account/<uuid:pk>/market-gold-limit/", GameAccountMarketGoldView.as_view(), name="game-account-market-gold"),
 ]

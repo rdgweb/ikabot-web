@@ -238,6 +238,9 @@ class InternalMarketBuyRunner(BaseRunner):
             f"from city={seller_city_id}",
         )
 
+        MAX_OFFER_RETRIES = 5
+        offer_retry_count = int(inputs.get("offer_retry_count", 0))
+
         try:
             client = self.get_game_session(aid)
             client.buy_market_offer(
@@ -258,5 +261,18 @@ class InternalMarketBuyRunner(BaseRunner):
             return RunnerResult(success=True)
 
         except Exception as exc:
+            exc_str = str(exc)
+            # If the seller's offer is not yet visible in the listing, retry
+            if "not found" in exc_str.lower() and offer_retry_count < MAX_OFFER_RETRIES:
+                next_retry = offer_retry_count + 1
+                self.log(
+                    jid, "warn",
+                    f"[Order {order_id}] Offer not found in listing "
+                    f"(attempt {next_retry}/{MAX_OFFER_RETRIES}); retrying in 60s",
+                )
+                retry_inputs = dict(inputs)
+                retry_inputs["offer_retry_count"] = next_retry
+                self.hub.reschedule_job(jid, delay_seconds=60, inputs=retry_inputs)
+                return RunnerResult(success=True, data={"status": "retry_scheduled", "retry": next_retry})
             self.log(jid, "error", f"[Order {order_id}] Buy failed: {exc}")
-            return RunnerResult(success=False, data={"error": str(exc)})
+            return RunnerResult(success=False, data={"error": exc_str})

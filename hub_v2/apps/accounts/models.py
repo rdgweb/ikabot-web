@@ -167,6 +167,14 @@ class GameAccount(UUIDTimestampModel):
         default=False,
         help_text="Account participates in the internal market as a potential seller.",
     )
+    market_min_stock = models.PositiveIntegerField(
+        default=5000,
+        help_text="Minimum stock per city the seller keeps before accepting to sell (units).",
+    )
+    market_min_gold = models.PositiveIntegerField(
+        default=0,
+        help_text="Minimum gold balance the buyer keeps before creating a buy order (0 = no limit).",
+    )
 
     # Cached session (persisted by agent after successful login)
     session_cookies_enc = models.TextField(

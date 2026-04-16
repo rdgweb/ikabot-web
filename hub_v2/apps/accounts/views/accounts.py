@@ -203,3 +203,67 @@ class GameAccountGovernmentTimeView(LoginRequiredMixin, View):
         resp["HX-Trigger"] = trigger
         return resp
 
+
+class GameAccountMarketToggleView(LoginRequiredMixin, View):
+    """POST: toggle open_for_market for a GameAccount."""
+
+    def post(self, request, pk):
+        ga = get_object_or_404(GameAccount, pk=pk)
+        ga.open_for_market = not ga.open_for_market
+        ga.save(update_fields=["open_for_market"])
+        state = "aberta" if ga.open_for_market else "fechada"
+        trigger = json.dumps({
+            "toast": {
+                "type": "success",
+                "message": f"{ga.name or ga.server_id}: conta {state} para o mercado.",
+            },
+            "marketParticipantsChanged": True,
+        })
+        resp = HttpResponse(status=204)
+        resp["HX-Trigger"] = trigger
+        return resp
+
+
+class GameAccountMarketStockView(LoginRequiredMixin, View):
+    """POST: update market_min_stock for a GameAccount."""
+
+    def post(self, request, pk):
+        ga = get_object_or_404(GameAccount, pk=pk)
+        try:
+            value = max(0, int(request.POST.get("market_min_stock", 0)))
+        except (ValueError, TypeError):
+            value = 0
+        ga.market_min_stock = value
+        ga.save(update_fields=["market_min_stock"])
+        trigger = json.dumps({
+            "toast": {
+                "type": "success",
+                "message": f"Reserva de estoque de {ga.name or ga.server_id} atualizada para {value:,} unidades.",
+            },
+        })
+        resp = HttpResponse(status=204)
+        resp["HX-Trigger"] = trigger
+        return resp
+
+
+class GameAccountMarketGoldView(LoginRequiredMixin, View):
+    """POST: update market_min_gold for a GameAccount."""
+
+    def post(self, request, pk):
+        ga = get_object_or_404(GameAccount, pk=pk)
+        try:
+            value = max(0, int(request.POST.get("market_min_gold", 0)))
+        except (ValueError, TypeError):
+            value = 0
+        ga.market_min_gold = value
+        ga.save(update_fields=["market_min_gold"])
+        trigger = json.dumps({
+            "toast": {
+                "type": "success",
+                "message": f"Reserva de ouro de {ga.name or ga.server_id} atualizada para {value:,} moedas.",
+            },
+        })
+        resp = HttpResponse(status=204)
+        resp["HX-Trigger"] = trigger
+        return resp
+

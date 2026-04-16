@@ -136,7 +136,8 @@ def find_eligible_seller(
                 continue
 
             reserved = _active_reservation(seller_ga, int(city_id), resource_idx)
-            if stock - reserved >= amount:
+            min_stock = int(getattr(seller_ga, "market_min_stock", 0) or 0)
+            if stock - reserved - min_stock >= amount:
                 return seller_ga, city, bo_pos
 
     return None, None, -1
@@ -176,6 +177,21 @@ def create_internal_order(
 
     Returns the order on success, or None if no eligible seller was found.
     """
+    # Check buyer gold reserve before matching
+    min_gold = int(getattr(buyer_ga, "market_min_gold", 0) or 0)
+    if min_gold > 0:
+        try:
+            buyer_snap = AccountSnapshot.objects.filter(game_account=buyer_ga).first()
+            current_gold = int((buyer_snap.base_snapshot or {}).get("gold", 0)) if buyer_snap else 0
+        except Exception:
+            current_gold = 0
+        if current_gold < min_gold:
+            logger.warning(
+                "Buyer %s gold %s < market_min_gold %s; skipping order creation",
+                buyer_ga.pk, current_gold, min_gold,
+            )
+            return None
+
     seller_ga, seller_city, seller_bo_pos = find_eligible_seller(
         buyer_ga, resource_idx, amount
     )
