@@ -475,7 +475,7 @@
            }
          }"
          x-init="cities = JSON.parse(document.getElementById('daily-login-cities-data')?.textContent || '[]')">
-      <input type="hidden" name="{{ form.city_id.html_name }}" x-model="cityId">
+      <input type="hidden" name="{{ form.city.html_name }}" x-model="cityId">
       <div class="border-b px-5 py-5 md:px-6"
            style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
