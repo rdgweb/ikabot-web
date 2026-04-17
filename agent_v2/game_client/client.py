@@ -30,6 +30,7 @@ from core.proxy import StrictProxySession
 from .actions.academy import AcademyAction
 from .actions.city import BuildAction, DemolishAction, UpgradeAction
 from .actions.daily import DailyTasksAction
+from .actions.diplomacy import DiplomacyInboxAction, DiplomacySendAction
 from .actions.market import BuyAction, CreateOfferAction, SellAction
 from .actions.miracle import MiracleAction
 from .actions.military import AttackAction, SendTroopsAction, TrainAction
@@ -523,6 +524,65 @@ class GameClient:
         """
         action = SendTroopsAction(self)
         return action.execute(from_city=from_city, to_city=to_city, units=units)
+
+    # ── Diplomacy ──
+
+    def get_diplomacy_inbox(self, city_id: int | str) -> dict[str, Any]:
+        """Fetch the diplomacy advisor inbox and return parsed messages.
+
+        Args:
+            city_id: Any valid city ID for the account.
+
+        Returns:
+            Dict with "messages" (list of dicts) and "raw_html_length".
+            Each message contains: id, sender, subject, body, date,
+            unread, receiver_id, reply_to, is_treaty, treaty_receiver_id.
+        """
+        action = DiplomacyInboxAction(self)
+        return action.execute(city_id=city_id)
+
+    def send_diplomacy_message(
+        self,
+        receiver_id: int | str,
+        content: str,
+        reply_to: int | str | None = None,
+    ) -> dict[str, Any]:
+        """Send a regular message or reply to an existing one.
+
+        Args:
+            receiver_id: Target player ID.
+            content: Message text.
+            reply_to: Original message ID (optional, for replies).
+
+        Returns:
+            Parsed AJAX response.
+        """
+        action = DiplomacySendAction(self)
+        return action.execute(receiver_id=receiver_id, msg_type=50, content=content, reply_to=reply_to)
+
+    def accept_treaty(self, receiver_id: int | str) -> dict[str, Any]:
+        """Accept a cultural treaty offer.
+
+        Args:
+            receiver_id: Player ID who sent the treaty offer.
+
+        Returns:
+            Parsed AJAX response.
+        """
+        action = DiplomacySendAction(self)
+        return action.execute(receiver_id=receiver_id, msg_type=79)
+
+    def decline_treaty(self, receiver_id: int | str) -> dict[str, Any]:
+        """Decline a cultural treaty offer.
+
+        Args:
+            receiver_id: Player ID who sent the treaty offer.
+
+        Returns:
+            Parsed AJAX response.
+        """
+        action = DiplomacySendAction(self)
+        return action.execute(receiver_id=receiver_id, msg_type=80)
 
     # ── Market ──
 

@@ -444,6 +444,122 @@
     </div>
     {% endif %}
 
+    {% if action_code == 8 or action_code == 9 %}
+    {{ market_ui.cities|json_script:"market-job-cities-data" }}
+    <div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_40px_rgba(87,66,24,0.10)]"
+         style="border-color: var(--ik-line); background:
+           radial-gradient(900px 280px at 0% 0%, rgba(79,134,185,0.14), transparent 60%),
+           radial-gradient(760px 280px at 100% 100%, rgba(201,156,78,0.18), transparent 60%),
+           linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.92));"
+         x-data="{
+           cities: JSON.parse(document.getElementById('market-job-cities-data')?.textContent || '[]'),
+           selectedCityId: '{{ form.buyer_city_id.value|default:form.city_id.value|default:''|escapejs }}',
+           selectedResource: '{{ form.resource_idx.value|default:'0'|escapejs }}',
+           selectedCity() { return this.cities.find(city => String(city.id) === String(this.selectedCityId)); }
+         }">
+      {% if action_code == 8 %}
+      <input type="hidden" name="{{ form.buyer_city_id.html_name }}" x-model="selectedCityId">
+      {% else %}
+      <input type="hidden" name="{{ form.city_id.html_name }}" x-model="selectedCityId">
+      {% endif %}
+      <input type="hidden" name="{{ form.resource_idx.html_name }}" x-model="selectedResource">
+
+      <div class="border-b px-5 py-5 md:px-6"
+           style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
+        <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div class="max-w-2xl">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Mercado</div>
+            <h3 class="mt-2 text-xl font-bold text-ink">{% if action_code == 8 %}Comprar de um vendedor especifico{% else %}Publicar oferta de venda{% endif %}</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted">
+              {% if action_code == 8 %}
+              Escolha sua cidade com Branch Office, informe a cidade do vendedor e defina a carga. O slot do seu mercado eh resolvido automaticamente.
+              {% else %}
+              Escolha a cidade com Branch Office, o recurso e a quantidade. O slot do mercado eh resolvido automaticamente a partir do snapshot.
+              {% endif %}
+            </p>
+          </div>
+          <div class="rounded-2xl border px-4 py-3 md:min-w-[18rem]"
+               style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.76);">
+            <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Cidade selecionada</div>
+            <div class="mt-2 text-sm font-semibold text-ink" x-text="selectedCity() ? selectedCity().name : 'Selecione uma cidade'"></div>
+            <div class="mt-1 text-[11px] text-muted" x-text="selectedCity() ? `Branch Office pos ${selectedCity().branch_office_pos}` : 'Somente cidades com mercado aparecem aqui'"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="px-5 py-5 md:px-6">
+        <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <section class="rounded-[22px] border p-4"
+                   style="border-color: rgba(79,134,185,0.25); background: linear-gradient(180deg, rgba(79,134,185,0.08), rgba(255,255,255,0.78));">
+            <div class="mb-3">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">{% if action_code == 8 %}Cidade compradora{% else %}Cidade da oferta{% endif %}</div>
+              <div class="mt-1 text-sm font-semibold text-ink">Selecione uma cidade com Branch Office</div>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <template x-for="city in cities" :key="`market-city-${city.id}`">
+                <button type="button"
+                        class="rounded-[16px] border px-3 py-3 text-left transition-all"
+                        :class="String(selectedCityId) === String(city.id) ? 'ring-2 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.08)]' : 'hover:border-[var(--ik-sea)]/45'"
+                        style="border-color: var(--ik-line); background: rgba(247,241,229,0.68);"
+                        @click="selectedCityId = String(city.id)">
+                  <div class="text-sm font-semibold text-ink" x-text="city.name"></div>
+                  <div class="mt-1 text-[11px] text-muted" x-text="`Branch Office pos ${city.branch_office_pos}`"></div>
+                </button>
+              </template>
+            </div>
+            {% if action_code == 8 %}
+            {% for error in form.buyer_city_id.errors %}<p class="form-error mt-2"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+            {% else %}
+            {% for error in form.city_id.errors %}<p class="form-error mt-2"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+            {% endif %}
+          </section>
+
+          <section class="rounded-[22px] border p-4"
+                   style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Parametros</div>
+            {% if action_code == 8 %}
+            <label class="mt-3 block">
+              <span class="mb-1 block text-[11px] uppercase tracking-[0.12em] text-muted">Cidade vendedora (ID)</span>
+              <input type="text" name="{{ form.seller_city_id.html_name }}" value="{{ form.seller_city_id.value|default:'' }}" class="form-input" placeholder="ID da cidade do vendedor">
+            </label>
+            {% for error in form.seller_city_id.errors %}<p class="form-error mt-2"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+            {% endif %}
+            <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label class="block">
+                <span class="mb-1 block text-[11px] uppercase tracking-[0.12em] text-muted">Quantidade</span>
+                <input type="number" name="{{ form.amount.html_name }}" value="{{ form.amount.value|default:'' }}" min="1" class="form-input" placeholder="10000">
+              </label>
+              {% if action_code == 9 %}
+              <label class="block">
+                <span class="mb-1 block text-[11px] uppercase tracking-[0.12em] text-muted">Preco por unidade</span>
+                <input type="number" name="{{ form.unit_price.html_name }}" value="{{ form.unit_price.value|default:'12' }}" min="1" class="form-input" placeholder="12">
+              </label>
+              {% endif %}
+            </div>
+            <div class="mt-3 grid grid-cols-2 gap-2">
+              {% for choice in form.resource_idx.field.choices %}
+              <button type="button"
+                      class="rounded-[16px] border px-3 py-3 text-left transition-all"
+                      :class="String(selectedResource) === '{{ choice.0|escapejs }}' ? 'ring-2 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.08)]' : 'hover:border-[var(--ik-sea)]/45'"
+                      style="border-color: var(--ik-line); background: rgba(247,241,229,0.68);"
+                      @click="selectedResource='{{ choice.0|escapejs }}'">
+                <div class="text-sm font-semibold text-ink">{{ choice.1 }}</div>
+              </button>
+              {% endfor %}
+            </div>
+            <div class="mt-3 rounded-xl border border-[var(--ik-line)] bg-[var(--ik-sand-light)] px-3 py-3 text-xs text-muted">
+              {% if action_code == 8 %}
+              O slot do vendedor nao e mais digitado no modal. A compra localiza a oferta pelo listing do Branch Office.
+              {% else %}
+              O slot do seu Branch Office eh inferido automaticamente a partir do snapshot da cidade escolhida.
+              {% endif %}
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     {% if action_code == 6 %}
     {{ daily_login_ui.cities|json_script:"daily-login-cities-data" }}
     <div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_36px_rgba(60,45,18,0.10)]"

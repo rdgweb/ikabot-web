@@ -85,7 +85,8 @@ class ActionID:
     CITY_VIEW = "CityScreen"
     ISLAND_VIEW = "IslandScreen"
     WORLD_VIEW = "WorldScreen"
-    UPGRADE_BUILDING = "CityScreen&function=upgradeBuilding"
+    # Ikariam switched building upgrades to a dedicated action endpoint.
+    UPGRADE_BUILDING = "UpgradeExistingBuilding"
     BUILD = "CityScreen&function=build"
     DEMOLISH = "CityScreen&function=demolish"
     CHANGE_PRODUCTION = "CityScreen&function=changeProduction"

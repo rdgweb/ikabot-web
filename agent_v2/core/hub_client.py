@@ -181,6 +181,20 @@ class HubClient:
             logger.warning("Failed to report session: %s", e)
             return {}
 
+    # ── Diplomacy ──
+
+    def save_diplomacy_messages(self, game_account_id: str, messages: list[dict]) -> dict:
+        """POST /api/agent/diplomacy/messages/
+
+        Upserts a batch of diplomacy messages captured from the inbox.
+        Each message dict must have at minimum a 'game_msg_id' key.
+        Returns {"saved": N, "new_count": N}.
+        """
+        return self._post("/api/agent/diplomacy/messages", {
+            "game_account_id": game_account_id,
+            "messages": messages,
+        })
+
     # ── Internal Market ──
 
     def market_order_sell_complete(self, order_id: str) -> dict:

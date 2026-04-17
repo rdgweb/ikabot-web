@@ -26,9 +26,21 @@ def _get_token() -> str | None:
         return None
 
 
-def send_message(chat_id: str, text: str, parse_mode: str = "HTML") -> dict:
+def send_message(
+    chat_id: str,
+    text: str,
+    parse_mode: str = "HTML",
+    reply_markup: dict | None = None,
+) -> dict:
     """
     Send a text message to a Telegram chat.
+
+    Args:
+        chat_id: Telegram chat ID.
+        text: Message text (HTML or Markdown depending on parse_mode).
+        parse_mode: "HTML" or "Markdown".
+        reply_markup: Optional inline keyboard dict, e.g.
+            {"inline_keyboard": [[{"text": "Yes", "callback_data": "yes"}]]}.
 
     Returns the Telegram API response dict, or an error dict on failure.
     """
@@ -38,11 +50,14 @@ def send_message(chat_id: str, text: str, parse_mode: str = "HTML") -> dict:
         return {"ok": False, "description": "Bot token not configured"}
 
     url = f"{API_BASE.format(token=token)}/sendMessage"
-    payload = {
+    payload: dict = {
         "chat_id": chat_id,
         "text": text,
         "parse_mode": parse_mode,
     }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+
     try:
         resp = requests.post(url, json=payload, timeout=TIMEOUT)
         return resp.json()

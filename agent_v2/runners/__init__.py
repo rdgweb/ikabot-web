@@ -18,6 +18,7 @@ from runners import (  # noqa: F401
     piracy,
     misc,
     monitoring,
+    diplomacy,
     check_status,
     discover_characters,
     donate,

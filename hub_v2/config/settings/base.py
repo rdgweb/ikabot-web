@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "apps.dashboard",
     "apps.game",
     "apps.market",
+    "apps.diplomacy",
     "apps.telegram",
     "apps.proxy",
     "apps.captcha",

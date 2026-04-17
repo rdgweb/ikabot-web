@@ -79,6 +79,9 @@ def notify(
         return False
 
     # 3. Build template context from all available objects
+    # reply_markup is a Telegram-specific payload — extract before template rendering
+    reply_markup = extra.pop("reply_markup", None) if extra else None
+
     tpl_ctx = _build_template_context(
         game_account=game_account,
         account=account,
@@ -93,7 +96,7 @@ def notify(
     text = format_message(event_key, **tpl_ctx)
 
     # 4. Send
-    result = send_message(chat_id, text)
+    result = send_message(chat_id, text, reply_markup=reply_markup)
     ok = result.get("ok", False)
 
     # 5. Audit
@@ -160,7 +163,7 @@ def _build_template_context(
         ctx["server_id"] = str(game_account.server_id or "")
 
     if account:
-        ctx["account_name"] = getattr(account, "name", "") or str(account)
+        ctx["account_name"] = getattr(account, "label", "") or getattr(account, "name", "") or str(account)
 
     if node:
         ctx["node_name"] = getattr(node, "name", "") or str(node)

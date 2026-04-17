@@ -414,6 +414,43 @@ def _construction_city_data(cities):
     return prepared
 
 
+def _find_branch_office_pos(city: dict | None) -> int | None:
+    if not isinstance(city, dict):
+        return None
+    for item in city.get("buildings") or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("building") or "").strip() != "branchOffice":
+            continue
+        try:
+            return int(item.get("position") or 0)
+        except Exception:
+            return None
+    return None
+
+
+def _market_form_context(cities):
+    market_cities = []
+    for city in cities or []:
+        branch_office_pos = _find_branch_office_pos(city)
+        if branch_office_pos is None:
+            continue
+        market_cities.append(
+            {
+                "id": city.get("id"),
+                "name": city.get("name", ""),
+                "x": city.get("x"),
+                "y": city.get("y"),
+                "tradegood_name": city.get("tradegood_name", ""),
+                "tradegood_icon": city.get("tradegood_icon", ""),
+                "city_art": city.get("city_art", static("game/buildings/branchOffice.png")),
+                "branch_office_pos": branch_office_pos,
+                "resources": city.get("resources") or [],
+            }
+        )
+    return {"cities": market_cities}
+
+
 def _resolve_construction_new_slots(steps, cities):
     city_lookup = {str(city.get("id")): city for city in cities if city.get("id") is not None}
     used_positions_by_city: dict[str, set[int]] = {}
@@ -868,6 +905,10 @@ def _custom_field_names(action_code: int) -> list[str]:
             "from_city", "to_city", "transport_load_percent", "confirm_arrival",
             "confirmation_margin_minutes", "wood", "wine", "marble", "crystal", "sulfur",
         ]
+    if int(action_code) == 8:
+        return ["buyer_city_id", "seller_city_id", "resource_idx", "amount"]
+    if int(action_code) == 9:
+        return ["city_id", "resource_idx", "amount", "unit_price"]
     if int(action_code) in {902, 1006}:
         return [
             "donation_type",
@@ -910,6 +951,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities):
         "experiment_ui": _experiment_form_context(snapshot, cities),
         "scientists_ui": _scientists_form_context(snapshot, cities),
         "upgrade_units_ui": _upgrade_units_form_context(cities),
+        "market_ui": _market_form_context(cities),
     }
 
 
@@ -1561,8 +1603,14 @@ class JobSubmitView(LoginRequiredMixin, View):
             return count
         else:
             single_inputs = dict(inputs)
-            if int(action_code) in {2, 6, 11} and city_choices:
+            if int(action_code) in {2, 6, 8, 9, 11} and city_choices:
                 single_inputs["_city_choices"] = city_choices
+            if int(action_code) in {8, 9} and cities:
+                single_inputs["_city_objects"] = {
+                    str(city.get("id")): city
+                    for city in (cities or [])
+                    if city.get("id") is not None
+                }
             return self._create_single_job(ga, action_code, single_inputs)
 
     def _create_jobs_for_city(self, ga, action_code, inputs, city_id, city_name="", donation_types=None):
@@ -1601,6 +1649,25 @@ class JobSubmitView(LoginRequiredMixin, View):
             if city_id and city_map.get(city_id):
                 enriched_inputs["city_name"] = city_map[city_id]
             enriched_inputs.pop("_city_choices", None)
+        elif int(action_code) in {8, 9}:
+            selected_city_key = "buyer_city_id" if int(action_code) == 8 else "city_id"
+            city_map = inputs.get("_city_choices") if isinstance(inputs.get("_city_choices"), dict) else {}
+            city_id = str(enriched_inputs.get(selected_city_key) or "").strip()
+            city_choices = inputs.get("_city_objects") if isinstance(inputs.get("_city_objects"), dict) else {}
+            city_obj = city_choices.get(city_id) if city_id else None
+            branch_office_pos = _find_branch_office_pos(city_obj)
+            if city_id and city_map.get(city_id):
+                if int(action_code) == 8:
+                    enriched_inputs["buyer_city_name"] = city_map[city_id]
+                else:
+                    enriched_inputs["city_name"] = city_map[city_id]
+            if int(action_code) == 8:
+                enriched_inputs["buyer_branchoffice_pos"] = branch_office_pos if branch_office_pos is not None else 0
+                enriched_inputs["seller_branchoffice_pos"] = 0
+            else:
+                enriched_inputs["branchoffice_pos"] = branch_office_pos if branch_office_pos is not None else 0
+            enriched_inputs.pop("_city_choices", None)
+            enriched_inputs.pop("_city_objects", None)
         Job.objects.create(
             account=ga.account,
             game_account=ga,

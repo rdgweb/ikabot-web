@@ -1,0 +1,168 @@
+{% load static hub_tags %}
+
+{% if object_list or request.GET %}
+<div x-data="diplomacyBulk({ pageCount: {{ object_list|length|default:0 }} })" class="space-y-3">
+
+  <div class="card overflow-hidden p-0">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th class="w-8 text-center">
+            <input type="checkbox" @change="toggleAll($event)"
+                   class="rounded border-gray-300" title="Selecionar todos">
+          </th>
+          <th>Status</th>
+          <th>Subconta</th>
+          <th>Remetente</th>
+          <th>Assunto</th>
+          <th>Prévia</th>
+          <th>Tipo</th>
+          <th>Data no jogo</th>
+          <th>Recebido em</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for msg in object_list %}
+        <tr>
+          <td class="text-center align-top">
+            <input type="checkbox"
+                   value="{{ msg.pk }}"
+                   x-model="selected"
+                   class="msg-checkbox mt-1 rounded border-gray-300">
+          </td>
+          <td class="align-top">
+            {% if msg.status == "new" %}
+            <span class="badge badge-danger">Nova</span>
+            {% elif msg.status == "notified" %}
+            <span class="badge badge-warning">Notificada</span>
+            {% elif msg.status == "read" %}
+            <span class="badge badge-secondary">Lida</span>
+            {% elif msg.status == "replied" %}
+            <span class="badge badge-success">Respondida</span>
+            {% elif msg.status == "action_taken" %}
+            <span class="badge badge-info">Ação tomada</span>
+            {% else %}
+            <span class="badge badge-secondary">{{ msg.get_status_display }}</span>
+            {% endif %}
+          </td>
+          <td class="align-top text-sm text-ink">
+            {{ msg.game_account.name|default:msg.game_account.server_id }}
+          </td>
+          <td class="align-top text-sm font-medium text-ink">
+            {{ msg.sender|default:"—" }}
+          </td>
+          <td class="align-top text-sm text-ink">
+            {{ msg.subject|default:"(sem assunto)" }}
+          </td>
+          <td class="align-top text-sm text-muted max-w-xs truncate">
+            {{ msg.body|striptags|truncatechars:80|default:"—" }}
+          </td>
+          <td class="align-top">
+            {% if msg.has_actions %}
+            <span class="badge badge-info">
+              <i class="bi bi-hand-index"></i> Ação
+            </span>
+            {% else %}
+            <span class="badge badge-secondary">
+              <i class="bi bi-chat"></i> Mensagem
+            </span>
+            {% endif %}
+          </td>
+          <td class="align-top text-sm text-muted">
+            {{ msg.game_date|default:"—" }}
+          </td>
+          <td class="align-top text-sm text-muted">
+            {{ msg.created_at|localtime_format }}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="9" class="py-8 text-center text-muted">
+            <i class="bi bi-envelope mb-2 block text-2xl"></i>
+            Nenhuma mensagem encontrada.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div x-show="selected.length > 0" x-cloak x-transition
+       class="card !py-2 !px-4 flex items-center justify-between"
+       style="background: var(--ik-sand-light); border: 1px solid var(--ik-line);">
+    <span class="text-sm font-medium text-ink">
+      <i class="bi bi-check2-square text-sea"></i>
+      <span x-text="selected.length"></span> selecionada(s)
+    </span>
+    <div class="flex gap-2">
+      <button @click="bulkDelete()" class="btn btn-danger btn-sm" type="button">
+        <i class="bi bi-trash"></i> Excluir selecionadas
+      </button>
+      <button @click="selected = []" class="btn btn-secondary btn-sm" type="button">
+        Cancelar
+      </button>
+    </div>
+  </div>
+
+  {% include "components/table/pagination.html" %}
+</div>
+
+<script>
+function diplomacyBulk(config) {
+  return {
+    pageCount: Number(config?.pageCount || 0),
+    selected: [],
+    toggleAll(event) {
+      if (event.target.checked) {
+        this.selected = Array.from(document.querySelectorAll('.msg-checkbox')).map(el => el.value);
+      } else {
+        this.selected = [];
+      }
+    },
+    _doDelete() {
+      const form = new FormData();
+      this.selected.forEach(id => form.append('selected_ids', id));
+
+      const csrfToken = JSON.parse(document.body.getAttribute('hx-headers') || '{}')['X-CSRFToken'] || '';
+      form.append('csrfmiddlewaretoken', csrfToken);
+
+      fetch('{% url "diplomacy:bulk-delete" %}', {
+        method: 'POST',
+        body: form,
+        headers: { 'X-CSRFToken': csrfToken },
+      }).then(resp => {
+        const trigger = resp.headers.get('HX-Trigger');
+        if (trigger) {
+          try {
+            const data = JSON.parse(trigger);
+            if (data.toast) {
+              window.dispatchEvent(new CustomEvent('toast', { detail: data.toast }));
+            }
+            if (data.diplomacyMessagesChanged) {
+              htmx.ajax('GET', window.location.href, { target: '#table-content', swap: 'innerHTML' });
+            }
+          } catch {}
+        }
+        this.selected = [];
+      });
+    },
+    bulkDelete() {
+      const self = this;
+      const count = this.selected.length;
+      window.dispatchEvent(new CustomEvent('confirm', {
+        detail: {
+          title: 'Excluir mensagens',
+          message: `Excluir ${count} mensagem(ns) selecionada(s)? Esta ação não pode ser desfeita.`,
+          style: 'danger',
+          confirmLabel: 'Excluir',
+          onConfirm: () => self._doDelete(),
+        }
+      }));
+    }
+  }
+}
+</script>
+
+{% else %}
+{% include "components/table/empty.html" with icon="bi-envelope" message="Nenhuma mensagem de diplomacia encontrada." %}
+{% endif %}

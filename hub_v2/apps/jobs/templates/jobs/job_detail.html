@@ -874,6 +874,27 @@
   </div>
   {% endif %}
 
+  {% if progress.phase or progress.metadata.started or progress.metadata.waiting %}
+  <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+    <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
+      <div class="text-[11px] text-muted uppercase tracking-wide">Fase</div>
+      <div class="mt-1 text-sm font-semibold text-ink">{{ progress.phase|default:"—" }}</div>
+    </div>
+    <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
+      <div class="text-[11px] text-muted uppercase tracking-wide">Iniciadas no ciclo</div>
+      <div class="mt-1 text-sm font-semibold text-ink">{{ progress.metadata.started|length|default:"0" }}</div>
+    </div>
+    <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
+      <div class="text-[11px] text-muted uppercase tracking-wide">Aguardando</div>
+      <div class="mt-1 text-sm font-semibold text-ink">{{ progress.metadata.waiting|length|default:"0" }}</div>
+    </div>
+    <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
+      <div class="text-[11px] text-muted uppercase tracking-wide">Falhas no ciclo</div>
+      <div class="mt-1 text-sm font-semibold text-ink">{{ progress.metadata.failed_steps|length|default:"0" }}</div>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="mt-4 space-y-3">
     {% for city in construction_display.city_cards %}
     <div x-data="{ open: {{ city.open_by_default|yesno:'true,false' }} }"

@@ -143,7 +143,10 @@ def find_eligible_seller(
     return None, None, -1
 
 
-def find_buyer_branchoffice(buyer_ga: GameAccount) -> tuple[int | None, int]:
+def find_buyer_branchoffice(
+    buyer_ga: GameAccount,
+    preferred_city_id: int | None = None,
+) -> tuple[int | None, int]:
     """Pick the first buyer city that has a Branch Office.
 
     Returns (city_id, branchoffice_pos) or (None, -1).
@@ -155,7 +158,18 @@ def find_buyer_branchoffice(buyer_ga: GameAccount) -> tuple[int | None, int]:
     if snap is None:
         return None, -1
 
-    for city in _cities_from_snapshot(snap):
+    cities = _cities_from_snapshot(snap)
+
+    if preferred_city_id is not None:
+        for city in cities:
+            city_id = city.get("id")
+            if city_id is None or int(city_id) != int(preferred_city_id):
+                continue
+            bo_pos = _find_branchoffice(city)
+            if bo_pos >= 0:
+                return int(city_id), bo_pos
+
+    for city in cities:
         bo_pos = _find_branchoffice(city)
         if bo_pos >= 0:
             city_id = city.get("id")
@@ -172,6 +186,7 @@ def create_internal_order(
     resource_idx: int,
     amount: int,
     unit_price: int = 12,
+    preferred_buyer_city_id: int | None = None,
 ) -> InternalMarketOrder | None:
     """Create an InternalMarketOrder and queue the sell_job (802).
 
@@ -202,7 +217,17 @@ def create_internal_order(
         )
         return None
 
-    buyer_city_id, buyer_bo_pos = find_buyer_branchoffice(buyer_ga)
+    buyer_city_id, buyer_bo_pos = find_buyer_branchoffice(
+        buyer_ga,
+        preferred_city_id=preferred_buyer_city_id,
+    )
+    if buyer_city_id is None or buyer_bo_pos < 0:
+        logger.warning(
+            "Buyer %s has no eligible Branch Office city (preferred_city_id=%s)",
+            buyer_ga.pk,
+            preferred_buyer_city_id,
+        )
+        return None
     seller_city_id = int(seller_city["id"])
 
     order = InternalMarketOrder.objects.create(

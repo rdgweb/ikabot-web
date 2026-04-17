@@ -3,12 +3,12 @@ from .constants import (
     FIELD_CITY_SELECT,
     FIELD_INT,
     FIELD_RESOURCE_TYPE,
+    FIELD_STR,
 )
 
 
 ACTIONS = {
-    # ── Manual market actions (user-created via UI) ───────────────────────────
-
+    # Manual market actions (user-created via UI)
     8: {
         "name": "Comprar do Mercado",
         "name_en": "Buy from Market",
@@ -19,12 +19,10 @@ ACTIONS = {
         "recurring": False,
         "long_running": False,
         "ready": True,
-        "description": "Compra recursos de um vendedor específico no Branch Office.",
+        "description": "Compra recursos de um vendedor especifico no Branch Office.",
         "inputs": [
-            {"key": "buyer_city_id", "type": FIELD_INT, "label": "Cidade Compradora (ID)", "required": True, "min": 1},
-            {"key": "buyer_branchoffice_pos", "type": FIELD_INT, "label": "Slot Branch Office (Comprador)", "required": True, "min": 0},
-            {"key": "seller_city_id", "type": FIELD_INT, "label": "Cidade Vendedora (ID)", "required": True, "min": 1},
-            {"key": "seller_branchoffice_pos", "type": FIELD_INT, "label": "Slot Branch Office (Vendedor)", "required": True, "min": 0},
+            {"key": "buyer_city_id", "type": FIELD_CITY_SELECT, "label": "Cidade Compradora", "required": True},
+            {"key": "seller_city_id", "type": FIELD_STR, "label": "Cidade Vendedora (ID)", "required": True, "placeholder": "ID da cidade do vendedor"},
             {"key": "resource_idx", "type": FIELD_RESOURCE_TYPE, "label": "Recurso", "required": True},
             {"key": "amount", "type": FIELD_INT, "label": "Quantidade", "required": True, "min": 1},
         ],
@@ -41,16 +39,14 @@ ACTIONS = {
         "ready": True,
         "description": "Cria uma oferta de venda no Branch Office da conta.",
         "inputs": [
-            {"key": "city_id", "type": FIELD_INT, "label": "Cidade (ID)", "required": True, "min": 1},
-            {"key": "branchoffice_pos", "type": FIELD_INT, "label": "Slot Branch Office", "required": True, "min": 0},
+            {"key": "city_id", "type": FIELD_CITY_SELECT, "label": "Cidade", "required": True},
             {"key": "resource_idx", "type": FIELD_RESOURCE_TYPE, "label": "Recurso", "required": True},
             {"key": "amount", "type": FIELD_INT, "label": "Quantidade", "required": True, "min": 1},
-            {"key": "unit_price", "type": FIELD_INT, "label": "Preço por unidade", "required": True, "min": 1},
+            {"key": "unit_price", "type": FIELD_INT, "label": "Preco por unidade", "required": True, "min": 1},
         ],
     },
 
-    # ── Internal market runners (created automatically by hub — hidden from UI) ──
-
+    # Internal market runners (created automatically by hub - hidden from UI)
     801: {
         "name": "Compra Interna (auto)",
         "name_en": "Internal Buy (auto)",

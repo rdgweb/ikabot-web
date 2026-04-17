@@ -8,143 +8,217 @@
 {% endblock %}
 
 {% block content %}
-
-<!-- Header -->
-<div class="mb-6 flex items-start justify-between gap-4">
-  <div>
-    <h1 class="text-2xl font-bold text-ink">Mercado Interno</h1>
-    <p class="text-sm text-muted mt-1">Gestão de ordens, participantes e limites de negociação</p>
+<div x-data="marketOrderModal()" class="space-y-6">
+  <div class="relative overflow-hidden rounded-[28px] border border-[var(--ik-line)] bg-[linear-gradient(135deg,rgba(32,78,94,0.96),rgba(196,139,62,0.9))] px-6 py-6 text-white shadow-sm">
+    <div class="absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.22),transparent_58%)]"></div>
+    <div class="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div class="max-w-2xl">
+        <div class="text-[11px] uppercase tracking-[0.26em] text-white/70">Trade Hub</div>
+        <h1 class="mt-2 text-3xl font-bold tracking-tight">Mercado Interno</h1>
+        <p class="mt-2 text-sm text-white/80">Ordens, participantes e jobs da cadeia de compra/venda em uma visao unica.</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button type="button" @click="open()" class="btn btn-primary btn-sm border border-white/20 bg-white/15 text-white hover:bg-white/20">
+          <i class="bi bi-plus-lg"></i> Nova ordem
+        </button>
+      </div>
+    </div>
   </div>
-  <div x-data="{ formOpen: false }" class="flex-shrink-0">
-    <button @click="formOpen = !formOpen"
-            class="btn btn-primary btn-sm flex items-center gap-1.5">
-      <i class="bi bi-plus-lg"></i> Nova Ordem
-    </button>
 
-    <!-- Create order slide-down form -->
-    <div x-show="formOpen" x-cloak
-         x-transition:enter="transition ease-out duration-150"
-         x-transition:enter-start="opacity-0 -translate-y-2"
-         x-transition:enter-end="opacity-100 translate-y-0"
-         x-transition:leave="transition ease-in duration-100"
-         x-transition:leave-start="opacity-100 translate-y-0"
-         x-transition:leave-end="opacity-0 -translate-y-2"
-         @click.away="formOpen = false"
-         class="absolute right-4 mt-2 z-30 bg-paper border rounded-xl shadow-lg p-5 w-80"
-         style="border-color: var(--ik-line);">
-      <h3 class="text-sm font-semibold text-ink mb-4 flex items-center gap-2">
-        <i class="bi bi-shop text-sea"></i> Nova Ordem de Compra
-      </h3>
-      <form hx-post="{% url 'market:order-create' %}"
-            hx-swap="none"
-            @htmx:after-request="if(event.detail.successful){ formOpen = false; htmx.trigger('#orders-section', 'refresh') }"
-            class="space-y-3">
-        {% csrf_token %}
-        <div>
-          <label class="block text-xs text-muted mb-1">Conta Compradora</label>
-          <select name="buyer_ga_id" required
-                  class="w-full text-sm border rounded-lg px-3 py-1.5 bg-white"
-                  style="border-color: var(--ik-line);">
-            <option value="">— selecionar —</option>
-            {% for ga in buyer_choices %}
-            <option value="{{ ga.id }}">{{ ga.account__label }} / {{ ga.name|default:"?" }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div>
-          <label class="block text-xs text-muted mb-1">Recurso</label>
-          <select name="resource_idx" required
-                  class="w-full text-sm border rounded-lg px-3 py-1.5 bg-white"
-                  style="border-color: var(--ik-line);">
-            <option value="">— selecionar —</option>
-            {% for value, label in resource_choices %}
-            <option value="{{ value }}">{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="block text-xs text-muted mb-1">Quantidade</label>
-            <input type="number" name="amount" min="1" required placeholder="ex: 10000"
-                   class="w-full text-sm border rounded-lg px-3 py-1.5 bg-white"
-                   style="border-color: var(--ik-line);">
+  <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <div class="rounded-2xl border border-[var(--ik-line)] bg-paper px-4 py-4 shadow-sm">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Ordens hoje</div>
+      <div class="mt-2 flex items-end justify-between">
+        <div class="text-3xl font-bold text-ink">{{ stats.today }}</div>
+        <i class="bi bi-calendar-day text-xl text-[var(--ik-sea)]"></i>
+      </div>
+    </div>
+    <div class="rounded-2xl border border-[var(--ik-line)] bg-paper px-4 py-4 shadow-sm">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Em andamento</div>
+      <div class="mt-2 flex items-end justify-between">
+        <div class="text-3xl font-bold text-ink">{{ stats.active }}</div>
+        <i class="bi bi-hourglass-split text-xl text-amber-500"></i>
+      </div>
+    </div>
+    <div class="rounded-2xl border border-[var(--ik-line)] bg-paper px-4 py-4 shadow-sm">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Concluidas</div>
+      <div class="mt-2 flex items-end justify-between">
+        <div class="text-3xl font-bold text-ink">{{ stats.completed }}</div>
+        <i class="bi bi-check-circle text-xl text-emerald-600"></i>
+      </div>
+    </div>
+    <div class="rounded-2xl border border-[var(--ik-line)] bg-paper px-4 py-4 shadow-sm">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Falharam</div>
+      <div class="mt-2 flex items-end justify-between">
+        <div class="text-3xl font-bold text-ink">{{ stats.failed }}</div>
+        <i class="bi bi-exclamation-triangle text-xl text-[var(--ik-bad)]"></i>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-0" id="participants-section"
+       hx-trigger="marketParticipantsChanged from:body"
+       hx-get="{% url 'market:participants-partial' %}"
+       hx-swap="innerHTML"
+       hx-target="#participants-section"
+       hx-push-url="false">
+    {% include "market/partials/participants_table.html" %}
+  </div>
+
+  <div class="card" id="orders-section">
+    {% include "market/partials/order_filters.html" %}
+  </div>
+
+  <template x-if="isOpen">
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4" @keydown.escape.window="close()">
+      <div class="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]" @click="close()"></div>
+      <div class="relative z-10 w-full max-w-3xl overflow-hidden rounded-[28px] border border-[var(--ik-line)] bg-paper shadow-2xl">
+        <div class="border-b border-[var(--ik-line)] bg-[linear-gradient(135deg,rgba(32,78,94,0.08),rgba(196,139,62,0.12))] px-6 py-5">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <div class="text-[11px] uppercase tracking-[0.24em] text-muted">Nova ordem</div>
+              <h3 class="mt-1 text-xl font-semibold text-ink">Compra automatizada para o mercado interno</h3>
+              <p class="mt-1 text-sm text-muted">Selecione a subconta e a cidade com mercado. O hub resolve vendedor e jobs automaticamente.</p>
+            </div>
+            <button type="button" @click="close()" class="rounded-full border border-[var(--ik-line)] px-3 py-1.5 text-xs text-muted hover:text-ink">
+              <i class="bi bi-x-lg"></i>
+            </button>
           </div>
-          <div>
-            <label class="block text-xs text-muted mb-1">Preço/un.</label>
-            <input type="number" name="unit_price" min="1" value="12"
-                   class="w-full text-sm border rounded-lg px-3 py-1.5 bg-white"
-                   style="border-color: var(--ik-line);">
+        </div>
+
+        <form hx-post="{% url 'market:order-create' %}"
+              hx-swap="none"
+              @htmx:after-request="if (event.detail.successful) { close(); htmx.trigger('#orders-section', 'refresh'); }"
+              class="space-y-5 px-6 py-6">
+          {% csrf_token %}
+
+          <div class="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+            <div class="space-y-5">
+              <div>
+                <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Conta compradora</label>
+                <select name="buyer_ga_id"
+                        x-model="buyerGaId"
+                        @change="buyerCityId=''"
+                        required
+                        class="w-full rounded-xl border border-[var(--ik-line)] bg-white px-3 py-2.5 text-sm text-ink shadow-sm">
+                  <option value="">Selecione uma subconta</option>
+                  {% for ga in buyer_choices %}
+                  <option value="{{ ga.id }}">{{ ga.account__label }} / {{ ga.name|default:"?" }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div>
+                <div class="mb-1.5 flex items-center justify-between gap-2">
+                  <label class="block text-xs font-semibold uppercase tracking-wide text-muted">Cidade com mercado</label>
+                  <span class="text-[11px] text-muted" x-show="selectedCities.length">Somente cidades com Branch Office</span>
+                </div>
+                <select name="buyer_city_id"
+                        x-model="buyerCityId"
+                        :disabled="!selectedCities.length"
+                        class="w-full rounded-xl border border-[var(--ik-line)] bg-white px-3 py-2.5 text-sm text-ink shadow-sm disabled:cursor-not-allowed disabled:bg-slate-100">
+                  <option value="">Usar primeira cidade elegivel</option>
+                  <template x-for="city in selectedCities" :key="city.city_id">
+                    <option :value="city.city_id" x-text="`${city.name} (mercado pos ${city.branch_office_pos})`"></option>
+                  </template>
+                </select>
+              </div>
+
+              <div>
+                <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Recurso</label>
+                <div class="grid grid-cols-2 gap-2 md:grid-cols-5">
+                  {% for value, label in resource_choices %}
+                  <label class="cursor-pointer rounded-2xl border border-[var(--ik-line)] bg-white px-3 py-3 text-sm shadow-sm transition hover:border-[var(--ik-sea)] hover:bg-[var(--ik-sand-light)]">
+                    <input type="radio" name="resource_idx" value="{{ value }}" x-model="resourceIdx" class="sr-only" {% if forloop.first %}checked{% endif %}>
+                    <div class="flex items-center gap-2">
+                      <img src="{% static value|resource_icon %}" alt="{{ label }}" class="h-5 w-5">
+                      <span class="font-medium text-ink">{{ label }}</span>
+                    </div>
+                  </label>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+
+            <div class="rounded-[24px] border border-[var(--ik-line)] bg-[var(--ik-sand-light)]/70 p-4">
+              <div class="text-[11px] uppercase tracking-[0.24em] text-muted">Parametros</div>
+              <div class="mt-4 grid gap-4">
+                <div>
+                  <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Quantidade</label>
+                  <input type="number" name="amount" min="1" required value="10000" class="w-full rounded-xl border border-[var(--ik-line)] bg-white px-3 py-2.5 text-sm text-ink shadow-sm">
+                </div>
+                <div>
+                  <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Preco por unidade</label>
+                  <input type="number" name="unit_price" min="1" value="12" class="w-full rounded-xl border border-[var(--ik-line)] bg-white px-3 py-2.5 text-sm text-ink shadow-sm">
+                </div>
+              </div>
+
+              <div class="mt-4 rounded-2xl border border-dashed border-[var(--ik-line)] bg-white/70 p-3">
+                <div class="text-[11px] uppercase tracking-wide text-muted">Leitura rapida da cidade</div>
+                <template x-if="selectedCity">
+                  <div class="mt-2 space-y-2 text-xs text-ink">
+                    <div class="font-semibold" x-text="selectedCity.name"></div>
+                    <div class="grid grid-cols-2 gap-2">
+                      <div class="rounded-lg bg-[var(--ik-sand-light)] px-2 py-1">Madeira: <strong x-text="formatNumber(selectedCity.wood)"></strong></div>
+                      <div class="rounded-lg bg-[var(--ik-sand-light)] px-2 py-1">Vinho: <strong x-text="formatNumber(selectedCity.wine)"></strong></div>
+                      <div class="rounded-lg bg-[var(--ik-sand-light)] px-2 py-1">Marmore: <strong x-text="formatNumber(selectedCity.marble)"></strong></div>
+                      <div class="rounded-lg bg-[var(--ik-sand-light)] px-2 py-1">Cristal: <strong x-text="formatNumber(selectedCity.crystal)"></strong></div>
+                      <div class="rounded-lg bg-[var(--ik-sand-light)] px-2 py-1">Enxofre: <strong x-text="formatNumber(selectedCity.sulfur)"></strong></div>
+                    </div>
+                  </div>
+                </template>
+                <template x-if="!selectedCity">
+                  <div class="mt-2 text-xs text-muted">Selecione uma subconta para ver as cidades disponiveis.</div>
+                </template>
+              </div>
+            </div>
           </div>
-        </div>
-        <div class="flex gap-2 pt-1">
-          <button type="submit" class="btn btn-primary btn-sm flex-1">
-            <i class="bi bi-check-lg"></i> Criar
-          </button>
-          <button type="button" @click="formOpen = false" class="btn btn-secondary btn-sm flex-1">
-            Cancelar
-          </button>
-        </div>
-      </form>
+
+          <div class="flex justify-end gap-2 border-t border-[var(--ik-line)] pt-4">
+            <button type="button" @click="close()" class="btn btn-secondary btn-sm">Cancelar</button>
+            <button type="submit" class="btn btn-primary btn-sm">
+              <i class="bi bi-check-lg"></i> Criar ordem
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
-  </div>
+  </template>
 </div>
 
-<!-- Stats Cards -->
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-  <div class="bg-paper rounded-xl shadow-sm border-l-4 border-sea p-4 flex items-center gap-3">
-    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-sand flex items-center justify-center">
-      <i class="bi bi-calendar-day text-sea text-lg"></i>
-    </div>
-    <div>
-      <p class="text-xs text-muted">Ordens Hoje</p>
-      <p class="text-2xl font-bold text-ink">{{ stats.today }}</p>
-    </div>
-  </div>
-
-  <div class="bg-paper rounded-xl shadow-sm border-l-4 border-yellow-500 p-4 flex items-center gap-3">
-    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-yellow-50 flex items-center justify-center">
-      <i class="bi bi-hourglass-split text-yellow-600 text-lg"></i>
-    </div>
-    <div>
-      <p class="text-xs text-muted">Em Andamento</p>
-      <p class="text-2xl font-bold text-ink">{{ stats.active }}</p>
-    </div>
-  </div>
-
-  <div class="bg-paper rounded-xl shadow-sm border-l-4 border-green-500 p-4 flex items-center gap-3">
-    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-green-50 flex items-center justify-center">
-      <i class="bi bi-check-circle text-green-600 text-lg"></i>
-    </div>
-    <div>
-      <p class="text-xs text-muted">Concluídas</p>
-      <p class="text-2xl font-bold text-ink">{{ stats.completed }}</p>
-    </div>
-  </div>
-
-  <div class="bg-paper rounded-xl shadow-sm border-l-4 border-red-500 p-4 flex items-center gap-3">
-    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-red-50 flex items-center justify-center">
-      <i class="bi bi-exclamation-triangle text-red-500 text-lg"></i>
-    </div>
-    <div>
-      <p class="text-xs text-muted">Falhou</p>
-      <p class="text-2xl font-bold text-ink">{{ stats.failed }}</p>
-    </div>
-  </div>
-</div>
-
-<!-- Participants section -->
-<div class="card mb-6" id="participants-section"
-     hx-trigger="marketParticipantsChanged from:body"
-     hx-get="{% url 'market:participants-partial' %}"
-     hx-swap="innerHTML"
-     hx-target="#participants-section"
-     hx-push-url="false">
-  {% include "market/partials/participants_table.html" %}
-</div>
-
-<!-- Orders section -->
-<div class="card" id="orders-section">
-  {% include "market/partials/order_filters.html" %}
-</div>
-
+{{ buyer_choices|json_script:"market-buyer-choices" }}
+<script>
+function marketOrderModal() {
+  const raw = JSON.parse(document.getElementById('market-buyer-choices').textContent || '[]');
+  return {
+    isOpen: false,
+    buyerGaId: '',
+    buyerCityId: '',
+    resourceIdx: '0',
+    buyers: raw,
+    open() {
+      this.isOpen = true;
+    },
+    close() {
+      this.isOpen = false;
+      this.buyerGaId = '';
+      this.buyerCityId = '';
+      this.resourceIdx = '0';
+    },
+    get selectedBuyer() {
+      return this.buyers.find(item => String(item.id) === String(this.buyerGaId)) || null;
+    },
+    get selectedCities() {
+      return this.selectedBuyer?.city_options || [];
+    },
+    get selectedCity() {
+      const explicit = this.selectedCities.find(item => String(item.city_id) === String(this.buyerCityId));
+      return explicit || this.selectedCities[0] || null;
+    },
+    formatNumber(value) {
+      return Number(value || 0).toLocaleString('pt-BR');
+    }
+  }
+}
+</script>
 {% endblock %}

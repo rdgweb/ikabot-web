@@ -1,7 +1,45 @@
-from .constants import CAT_MONITORING, FIELD_BOOL, FIELD_CHOICE, FIELD_INT, TRANSPORT_LOAD_CHOICES
+from .constants import CAT_MONITORING, FIELD_BOOL, FIELD_CHOICE, FIELD_CITY_SELECT, FIELD_INT, FIELD_STR, TRANSPORT_LOAD_CHOICES
 
 
 ACTIONS = {
+    30: {
+        "name": "Verificar Diplomacia",
+        "name_en": "Check Diplomacy",
+        "category": CAT_MONITORING,
+        "icon": "bi-envelope",
+        "runner": "diplomacy_check",
+        "requires_game_session": True,
+        "recurring": True,
+        "long_running": False,
+        "ready": True,
+        "description": "Verifica inbox de diplomacia e envia novas mensagens para o Telegram. Permite responder e tratar pedidos de tratado direto pelo chat.",
+        "inputs": [
+            {"key": "city_id", "type": FIELD_CITY_SELECT, "label": "Cidade", "multiple": False, "required": True, "help": "Qualquer cidade do jogador (necessário para abrir o advisor de diplomacia)."},
+            {"key": "interval_minutes", "type": FIELD_INT, "label": "Intervalo de checagem (min)", "required": True, "min": 5, "default": 60, "help": "Frequência com que o inbox é verificado."},
+            {"key": "notify_telegram", "type": FIELD_BOOL, "label": "Notificar no Telegram", "required": False, "default": True, "help": "Envia novas mensagens para o Telegram."},
+        ],
+    },
+    31: {
+        "name": "Enviar Mensagem de Diplomacia",
+        "name_en": "Send Diplomacy Message",
+        "category": CAT_MONITORING,
+        "icon": "bi-send",
+        "runner": "diplomacy_send",
+        "requires_game_session": True,
+        "recurring": False,
+        "long_running": False,
+        "ready": True,
+        "ui_hidden": True,
+        "description": "Envia resposta ou ação de tratado. Criado automaticamente pelo webhook do Telegram.",
+        "inputs": [
+            {"key": "city_id", "type": FIELD_INT, "label": "ID da cidade", "required": True},
+            {"key": "receiver_id", "type": FIELD_INT, "label": "ID do jogador destinatário", "required": True},
+            {"key": "msg_type", "type": FIELD_INT, "label": "Tipo de mensagem (50=msg, 79=aceitar tratado, 80=recusar)", "required": True, "default": 50},
+            {"key": "content", "type": FIELD_STR, "label": "Conteúdo", "required": False},
+            {"key": "reply_to", "type": FIELD_INT, "label": "ID da mensagem original (para respostas)", "required": False},
+        ],
+    },
+
     701: {
         "name": "Alerta de Ataques",
         "name_en": "Attack alerts",

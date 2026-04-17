@@ -57,6 +57,7 @@ SHRINE_GOD_META = {
 CONSTRUCTION_QUEUE_STRATEGY_META = {
     "fifo": "Ordem do plano",
     "eta_first": "Menor ETA primeiro",
+    "smart": "Balanceado (tempo + recursos)",
 }
 RESEARCH_BRANCH_META = {
     "seafaring": {"label": "Navegacao Maritima", "subtitle": "Navios, porto e mar", "icon": "bi-water", "resource_icon": "game/resources/icon_wood.png"},
@@ -94,6 +95,19 @@ def _duration_human(seconds):
     days, rem = divmod(seconds, 86400)
     hours = rem // 3600
     return f"{days}d" if hours == 0 else f"{days}d {hours}h"
+
+
+def _parse_json_object(raw, default=None):
+    fallback = {} if default is None else default
+    if isinstance(raw, dict):
+        return raw
+    if not raw:
+        return fallback
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return fallback
+    return data if isinstance(data, dict) else fallback
 
 
 def _build_log_rows(job: Job, logs) -> list[dict]:
@@ -1100,6 +1114,14 @@ class JobListView(FilterSortListView):
             return []
 
         lines = [f"{len(steps)} etapa(s) no plano"]
+        progress = _parse_json_object(getattr(root_job, "progress_json", "{}"))
+        progress_meta = progress.get("metadata") if isinstance(progress.get("metadata"), dict) else {}
+        waiting_items = progress_meta.get("waiting") if isinstance(progress_meta.get("waiting"), list) else []
+        started_items = progress_meta.get("started") if isinstance(progress_meta.get("started"), list) else []
+        if started_items:
+            lines.append(f"{len(started_items)} obra(s) iniciada(s) no ultimo ciclo")
+        if waiting_items:
+            lines.append(f"{len(waiting_items)} cidade(s) em espera")
         current_message = ""
         blocker_message = ""
 
@@ -1420,6 +1442,7 @@ class JobDetailView(LoginRequiredMixin, DetailView):
         context["construction_plan"] = inputs.get("construction_plan_json") if isinstance(inputs.get("construction_plan_json"), list) else []
         context["construction_summary"] = inputs.get("construction_summary") if isinstance(inputs.get("construction_summary"), dict) else {}
         context["construction_reservations"] = self.object.construction_reservations.filter(status="active")
+        context["progress"] = _parse_json_object(self.object.progress_json or "{}")
         context["can_execute_now"] = _can_execute_now(self.object)
         context["can_retry"] = _can_retry(self.object)
         return context

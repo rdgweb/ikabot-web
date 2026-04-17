@@ -48,6 +48,7 @@ class TelegramBotConfig(TimestampModel):
     notify_research_complete = models.BooleanField(default=False)
     notify_low_wine = models.BooleanField(default=True)
     notify_daily_summary = models.BooleanField(default=False)
+    notify_diplomacy_message = models.BooleanField(default=True)
 
     class Meta:
         verbose_name = "Configuração do Bot Telegram"
@@ -108,6 +109,7 @@ class TelegramAccountConfig(TimestampModel):
     notify_research_complete = models.BooleanField(default=False)
     notify_low_wine = models.BooleanField(default=True)
     notify_daily_summary = models.BooleanField(default=False)
+    notify_diplomacy_message = models.BooleanField(default=True)
 
     @property
     def has_custom_chat(self):
@@ -150,17 +152,17 @@ class NotificationTemplate(TimestampModel):
         "attack_alert": {
             "icon": "⚠️",
             "title_template": "Alerta de Ataque",
-            "body_template": "{ga_name} esta sob ataque!",
+            "body_template": "{ga_name} | {server_id}\nConta: {account_name}\nNode: {node_name}\n{body}",
         },
         "job_failed": {
             "icon": "❌",
             "title_template": "{action_name} falhou",
-            "body_template": "Conta: {ga_name}\nExit code: {exit_code}",
+            "body_template": "{ga_name} | {server_id}\nConta: {account_name}\nNode: {node_name}\nExit code: {exit_code}\nJob: {job_id}\n{body}\n{error}",
         },
         "job_done": {
             "icon": "✅",
             "title_template": "{action_name} concluido",
-            "body_template": "Conta: {ga_name}",
+            "body_template": "{ga_name} | {server_id}\nConta: {account_name}\nNode: {node_name}\nJob: {job_id}\n{body}",
         },
         "build_complete": {
             "icon": "🏗️",
