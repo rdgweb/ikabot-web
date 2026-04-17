@@ -53,57 +53,80 @@ from .base_action import BaseAction
 logger = logging.getLogger(__name__)
 
 # Regex patterns for parsing diplomacy HTML
+# (Based on real HTML captured from Ikariam s78-br, 2026-04-17)
+#
+# Message row structure:
+#   <tr id="messageNNNNN" class="entry [alt] [new]" ...>
+#     <td class="smallright">...</td>
+#     <td class="smallleft">...</td>
+#     <td onclick="..."><a href="#"><span class='avatarName'>PlayerName</span></a></td>
+#     <td class="subject" onclick="..."> Subject text </td>
+#     <td title="Para a cidade do emissor">...</td>
+#     <td onclick="...">  dd.mm.yyyy h:mm:ss </td>  ← date (no class, plain text only)
+#   </tr>
+#   <tr id="tbl_mailNNNNN" class="text invisible">
+#     <td colspan="6" class="msgText">body text</td>
+#   </tr>
+#   <tr id="tbl_replyNNNNN" class="text invisible">
+#     <td colspan="6" class="reply">
+#       <!-- reply link: -->
+#       <a href="?view=sendIKMessage&receiverId=X&replyTo=Y">Resposta</a>
+#       <!-- OR treaty buttons: -->
+#       <a href="?view=sendIKMessage&receiverId=X&msgType=79">Aceitar</a>
+#       <a href="?view=sendIKMessage&receiverId=X&msgType=80">Negar</a>
+#     </td>
+#   </tr>
+
 _MSG_ROW_RE = re.compile(r'<tr[^>]+id="message(\d+)"', re.IGNORECASE)
-_MSG_BODY_RE = re.compile(
-    r'<tr[^>]+id="tbl_mail(\d+)"[\s\S]*?<td[^>]*class="[^"]*message[^"]*"[^>]*>([\s\S]*?)</td>',
-    re.IGNORECASE,
-)
-_MSG_SENDER_RE = re.compile(
-    r'<tr[^>]+id="message(\d+)"[\s\S]*?'
-    r'(?:sender_name|avatarName)[^>]*>([^<]+)<',
-    re.IGNORECASE,
-)
-# Alternative: find player name via the "from" cell in the message row
+
+# Sender: avatarName span inside the message row
 _MSG_FROM_RE = re.compile(
-    r'<tr[^>]+id="message(\d+)"[\s\S]{0,2000}?'
-    r'class="[^"]*from[^"]*"[^>]*>\s*([^<\n]+)',
+    r'<tr[^>]+id="message(\d+)"[\s\S]{0,3000}?'
+    r"<span class='avatarName'>([^<]+)</span>",
     re.IGNORECASE,
 )
-# Date cell inside message row
-_MSG_DATE_RE = re.compile(
-    r'<tr[^>]+id="message(\d+)"[\s\S]{0,2000}?'
-    r'class="[^"]*date[^"]*"[^>]*>\s*([^<\n]+)',
-    re.IGNORECASE,
-)
-# Subject cell
+
+# Subject: td with class="subject"
 _MSG_SUBJECT_RE = re.compile(
-    r'<tr[^>]+id="message(\d+)"[\s\S]{0,2000}?'
-    r'class="[^"]*subject[^"]*"[^>]*>\s*([^<\n]+)',
+    r'<tr[^>]+id="message(\d+)"[\s\S]{0,3000}?'
+    r'<td class="subject"[^>]*>\s*([^<\n]+)',
     re.IGNORECASE,
 )
+
+# Date: last <td onclick> with a bare date string (dd.mm.yyyy h:mm:ss), no child tags
+_MSG_DATE_RE = re.compile(
+    r'<tr[^>]+id="message(\d+)"[\s\S]{0,4000}?'
+    r'<td[^>]*onclick[^>]*>\s*(\d{2}\.\d{2}\.\d{4}\s+\d{1,2}:\d{2}:\d{2})\s*</td>',
+    re.IGNORECASE,
+)
+
 # Is-unread marker: "new" CSS class on the row
 _MSG_UNREAD_RE = re.compile(
     r'<tr[^>]+id="message(\d+)"[^>]*class="[^"]*\bnew\b',
     re.IGNORECASE,
 )
-# Reply button: receiverId and replyTo in the reply form
-_REPLY_RECEIVER_RE = re.compile(
-    r'<tr[^>]+id="tbl_reply(\d+)"[\s\S]*?'
-    r'name="receiverId"[^>]*value="(\d+)"',
+
+# Body: td with class="msgText" inside tbl_mail row
+_MSG_BODY_RE = re.compile(
+    r'<tr[^>]+id="tbl_mail(\d+)"[\s\S]*?'
+    r'<td[^>]*class="[^"]*msgText[^"]*"[^>]*>([\s\S]*?)</td>',
     re.IGNORECASE,
 )
-_REPLY_REPLYTO_RE = re.compile(
-    r'<tr[^>]+id="tbl_reply(\d+)"[\s\S]*?'
-    r'name="replyTo"[^>]*value="(\d+)"',
+
+# Reply href: view=sendIKMessage with replyTo param → regular reply
+# Groups: (msg_id, receiver_id, reply_to_msg_id)
+_REPLY_HREF_RE = re.compile(
+    r'<tr[^>]+id="tbl_reply(\d+)"[\s\S]{0,2000}?'
+    r'view=sendIKMessage&receiverId=(\d+)&replyTo=(\d+)',
     re.IGNORECASE,
 )
-# Action buttons: any non-50 msgType (treaties, IP sharing, etc.)
-# Captures: msg_id, msg_type, receiver_id
-# Each tbl_reply row may have MULTIPLE action buttons (e.g. accept=79 + decline=80)
+
+# Action buttons: view=sendIKMessage with msgType != 50 (treaty accept/decline etc.)
+# Groups: (msg_id, receiver_id, msg_type)
+# NOTE: for treaties both 79 (accept) and 80 (decline) appear in the same tbl_reply block
 _ACTION_BUTTON_RE = re.compile(
-    r'<tr[^>]+id="tbl_reply(\d+)"[\s\S]*?'
-    r'name="msgType"[^>]*value="(\d+)"[\s\S]*?'
-    r'name="receiverId"[^>]*value="(\d+)"',
+    r'<tr[^>]+id="tbl_reply(\d+)"[\s\S]{0,3000}?'
+    r'view=sendIKMessage&receiverId=(\d+)&msgType=(\d+)',
     re.IGNORECASE,
 )
 # Strip HTML tags for message body
@@ -226,26 +249,25 @@ class DiplomacyInboxAction(BaseAction):
         for m in _MSG_BODY_RE.finditer(html):
             body_map[m.group(1)] = _strip_html(m.group(2))
 
+        # Reply href: receiverId + replyTo for regular messages
+        # Groups: (msg_id, receiver_id, reply_to_msg_id)
         reply_receiver_map: dict[str, str] = {}
-        for m in _REPLY_RECEIVER_RE.finditer(html):
-            reply_receiver_map[m.group(1)] = m.group(2)
-
         reply_to_map: dict[str, str] = {}
-        for m in _REPLY_REPLYTO_RE.finditer(html):
-            reply_to_map[m.group(1)] = m.group(2)
+        for m in _REPLY_HREF_RE.finditer(html):
+            reply_receiver_map[m.group(1)] = m.group(2)
+            reply_to_map[m.group(1)] = m.group(3)
 
         # Action buttons: collect all non-regular actions per message
+        # Groups: (msg_id, receiver_id, msg_type) — href order: receiverId before msgType
         # A single tbl_reply block can have multiple buttons (e.g. 79=accept, 80=decline)
         actions_map: dict[str, list[dict]] = {}
         for m in _ACTION_BUTTON_RE.finditer(html):
             msg_id = m.group(1)
-            msg_type = int(m.group(2))
-            receiver_id = m.group(3)
-            if msg_type == 50:
-                continue  # skip regular reply button
+            receiver_id = m.group(2)
+            msg_type = int(m.group(3))
             if msg_id not in actions_map:
                 actions_map[msg_id] = []
-            # avoid duplicates (regex may match across wider HTML sections)
+            # avoid duplicates
             entry = {"msg_type": msg_type, "receiver_id": receiver_id}
             if entry not in actions_map[msg_id]:
                 actions_map[msg_id].append(entry)

@@ -67,6 +67,8 @@ class DiplomacyMessagesSaveView(APIView):
 
         saved = 0
         new_count = 0
+        # game_msg_id → str(db_uuid) — so the runner can reference messages by UUID
+        message_ids: dict[str, str] = {}
 
         for msg_data in data["messages"]:
             actions_json = json.dumps(msg_data.get("actions") or [])
@@ -94,7 +96,11 @@ class DiplomacyMessagesSaveView(APIView):
             else:
                 new_count += 1
 
+            message_ids[msg_data["game_msg_id"]] = str(obj.pk)
             saved += 1
 
         logger.info("DiplomacyMessages: %d salvas (%d novas) para GA %s", saved, new_count, ga.pk)
-        return Response({"saved": saved, "new_count": new_count}, status=status.HTTP_200_OK)
+        return Response(
+            {"saved": saved, "new_count": new_count, "message_ids": message_ids},
+            status=status.HTTP_200_OK,
+        )

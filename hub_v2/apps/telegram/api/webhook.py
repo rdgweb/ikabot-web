@@ -2,11 +2,10 @@
 Telegram webhook endpoint.
 
 Receives updates from Telegram, processes:
-  - /start <6-digit-code>         — account linking
-  - /replyto <msg_id>:<receiver_id>:<ga_id> <text>  — reply to diplomacy message
-  - callback_query dip_action:<msg_type>:<receiver_id>:<ga_id>  — diplomacy action (any type)
-  - callback_query treaty_accept:<receiver_id>:<ga_id>   — legacy format (backwards compat)
-  - callback_query treaty_decline:<receiver_id>:<ga_id>  — legacy format (backwards compat)
+  - /start <6-digit-code>                     — account linking
+  - /replyto <db_uuid> <text>                 — reply to regular diplomacy message
+  - /replyto <db_uuid> yes [text]             — accept treaty/action (optional extra text)
+  - /replyto <db_uuid> no [text]              — decline treaty/action (optional extra text)
 """
 
 import json
@@ -26,51 +25,83 @@ logger = logging.getLogger(__name__)
 # Regex for 6-digit code after /start
 CODE_RE = re.compile(r"^/start\s+(\d{6})$")
 
-# /replyto <msg_id>:<receiver_id>:<ga_id> <text>
-# ga_id is a UUID (36 chars)
+# /replyto <db_uuid> [yes|no] [text]
+# db_uuid: UUID of DiplomacyMessage in hub DB (36 chars)
+# After the UUID: optional "yes"/"no" keyword, then optional text
 REPLYTO_RE = re.compile(
-    r"^/replyto\s+(\d+):(\d+):([\w-]{36})\s+([\s\S]+)$",
+    r"^/replyto\s+([\w-]{36})\s+([\s\S]+)$",
     re.IGNORECASE,
 )
 
-# callback_data formats:
-#   dip_action:<msg_type>:<receiver_id>:<ga_id>   — generic (new)
-#   treaty_accept:<receiver_id>:<ga_id>            — legacy (backwards compat)
-#   treaty_decline:<receiver_id>:<ga_id>           — legacy (backwards compat)
-DIP_ACTION_CB_RE = re.compile(
-    r"^dip_action:(\d+):(\d+):([\w-]{36})$"
-)
-TREATY_CB_RE = re.compile(
-    r"^treaty_(accept|decline):(\d+):([\w-]{36})$"
-)
 
+def _create_diplomacy_send_job_from_uuid(
+    db_uuid: str,
+    yes_no: str,
+    extra_text: str,
+) -> tuple[bool, str]:
+    """Create a Job for action 31 (DiplomacySendRunner) using a DiplomacyMessage UUID.
 
-def _create_diplomacy_send_job(ga_id: str, receiver_id: str, msg_type: int, content: str = "", reply_to: str = "") -> bool:
-    """Create a Job for action 31 (DiplomacySendRunner).
+    Looks up receiver_id, game_account, and available actions from the DB record.
 
-    Returns True on success, False on failure.
+    Args:
+        db_uuid:    UUID of the DiplomacyMessage.
+        yes_no:     "yes", "no", or "" (empty = regular text reply).
+        extra_text: Text to include in the message (optional for yes/no, required for plain reply).
+
+    Returns:
+        (success: bool, error_msg: str)
     """
     from apps.accounts.models import GameAccount
+    from apps.diplomacy.models import DiplomacyMessage
     from apps.jobs.models import Job
 
     try:
-        ga = GameAccount.objects.select_related("account__node").get(pk=ga_id)
-    except GameAccount.DoesNotExist:
-        logger.warning("DiplomacySend: GameAccount %s not found", ga_id)
-        return False
+        dm = DiplomacyMessage.objects.select_related(
+            "game_account__account__node"
+        ).get(pk=db_uuid)
+    except DiplomacyMessage.DoesNotExist:
+        logger.warning("DiplomacySend: DiplomacyMessage %s not found", db_uuid)
+        return False, "Mensagem não encontrada. O ID pode ter expirado."
+
+    ga = dm.game_account
+    actions = dm.actions  # list of {"msg_type": int, "receiver_id": str}
+
+    if yes_no == "yes":
+        # Find the accept action (msg_type 79, or first available)
+        accept = next((a for a in actions if a["msg_type"] == 79), None) or (actions[0] if actions else None)
+        if not accept:
+            return False, "Esta mensagem não tem ação de aceitar disponível."
+        msg_type = accept["msg_type"]
+        receiver_id = accept["receiver_id"]
+
+    elif yes_no == "no":
+        # Find the decline action (msg_type 80, or second available)
+        decline = next((a for a in actions if a["msg_type"] == 80), None)
+        if not decline and len(actions) > 1:
+            decline = actions[1]
+        if not decline:
+            return False, "Esta mensagem não tem ação de recusar disponível."
+        msg_type = decline["msg_type"]
+        receiver_id = decline["receiver_id"]
+
+    else:
+        # Regular text reply
+        if not extra_text:
+            return False, "Forneça um texto para responder."
+        if not dm.receiver_id:
+            return False, "Esta mensagem não tem receiverId para resposta."
+        msg_type = 50
+        receiver_id = dm.receiver_id
 
     inputs: dict = {
         "receiver_id": int(receiver_id),
         "msg_type": msg_type,
+        "city_id": 0,  # runner doesn't need city_id
     }
-    if content:
-        inputs["content"] = content
-    if reply_to:
-        inputs["reply_to"] = int(reply_to)
-
-    # city_id is not strictly required in runner 31 (it will load action_request
-    # after login), but pass 0 as a placeholder — the runner ignores it
-    inputs["city_id"] = 0
+    if extra_text:
+        inputs["content"] = extra_text
+    if dm.reply_to_game_id:
+        inputs["reply_to"] = int(dm.reply_to_game_id)
 
     Job.objects.create(
         account=ga.account,
@@ -81,10 +112,10 @@ def _create_diplomacy_send_job(ga_id: str, receiver_id: str, msg_type: int, cont
         status="queued",
     )
     logger.info(
-        "Created diplomacy_send job: ga=%s receiver=%s msg_type=%s",
-        ga_id, receiver_id, msg_type,
+        "Created diplomacy_send job: ga=%s receiver=%s msg_type=%s uuid=%s",
+        ga.pk, receiver_id, msg_type, db_uuid,
     )
-    return True
+    return True, ""
 
 
 class TelegramWebhookView(APIView):
@@ -112,10 +143,8 @@ class TelegramWebhookView(APIView):
 
         data = request.data
 
-        # ── Callback query (inline keyboard button click) ──────────────────
-        callback_query = data.get("callback_query")
-        if callback_query:
-            self._handle_callback_query(callback_query)
+        # Callback queries no longer used (inline keyboard removed)
+        if data.get("callback_query"):
             return Response({"status": "ok"})
 
         # ── Text message ───────────────────────────────────────────────────
@@ -189,94 +218,28 @@ class TelegramWebhookView(APIView):
             )
 
     def _handle_replyto(self, match: re.Match, chat_id: str) -> None:
-        """Handle /replyto <msg_id>:<receiver_id>:<ga_id> <text>."""
-        msg_id = match.group(1)
-        receiver_id = match.group(2)
-        ga_id = match.group(3)
-        reply_text = match.group(4).strip()
+        """Handle /replyto <db_uuid> [yes|no] [text]."""
+        db_uuid = match.group(1)
+        rest = match.group(2).strip()
 
-        ok = _create_diplomacy_send_job(
-            ga_id=ga_id,
-            receiver_id=receiver_id,
-            msg_type=50,
-            content=reply_text,
-            reply_to=msg_id,
-        )
+        # Parse yes/no keyword
+        yes_no = ""
+        extra_text = rest
+        lower = rest.lower()
+        if lower.startswith("yes") and (len(lower) == 3 or lower[3] in (" ", "\n")):
+            yes_no = "yes"
+            extra_text = rest[3:].strip()
+        elif lower.startswith("no") and (len(lower) == 2 or lower[2] in (" ", "\n")):
+            yes_no = "no"
+            extra_text = rest[2:].strip()
+
+        ok, error = _create_diplomacy_send_job_from_uuid(db_uuid, yes_no, extra_text)
         if ok:
-            send_message(chat_id, "✅ Resposta enviada para o agente.")
+            if yes_no == "yes":
+                send_message(chat_id, "✅ Aceitar — job criado na fila.")
+            elif yes_no == "no":
+                send_message(chat_id, "❌ Recusar — job criado na fila.")
+            else:
+                send_message(chat_id, "↩️ Resposta enviada para o agente.")
         else:
-            send_message(chat_id, "❌ Falha ao criar job de resposta. Verifique o ID da subconta.")
-
-    def _handle_callback_query(self, callback_query: dict) -> None:
-        """Handle inline keyboard callback (treaty accept/decline)."""
-        callback_id = callback_query.get("id", "")
-        callback_data = callback_query.get("data", "")
-        message = callback_query.get("message", {})
-        chat = message.get("chat", {})
-        chat_id = str(chat.get("id", ""))
-
-        # Try new generic dip_action format first
-        match = DIP_ACTION_CB_RE.match(callback_data)
-        if match:
-            msg_type = int(match.group(1))
-            receiver_id = match.group(2)
-            ga_id = match.group(3)
-            ok = _create_diplomacy_send_job(
-                ga_id=ga_id,
-                receiver_id=receiver_id,
-                msg_type=msg_type,
-            )
-            if ok:
-                self._answer_callback(callback_id, text="✅ Job criado!")
-                if chat_id:
-                    send_message(chat_id, f"✅ Ação registrada (tipo {msg_type}). Job criado na fila.")
-            else:
-                self._answer_callback(callback_id, text="❌ Falha ao criar job.")
-                if chat_id:
-                    send_message(chat_id, "❌ Falha ao criar job. Verifique o painel.")
-            return
-
-        # Legacy treaty_accept / treaty_decline format (backwards compat)
-        match = TREATY_CB_RE.match(callback_data)
-        if match:
-            action = match.group(1)        # "accept" or "decline"
-            receiver_id = match.group(2)
-            ga_id = match.group(3)
-            msg_type = 79 if action == "accept" else 80
-            action_label = "Aceitar" if action == "accept" else "Recusar"
-            ok = _create_diplomacy_send_job(
-                ga_id=ga_id,
-                receiver_id=receiver_id,
-                msg_type=msg_type,
-            )
-            if ok:
-                self._answer_callback(callback_id, text=f"✅ {action_label} — job criado!")
-                if chat_id:
-                    verb = "aceito" if action == "accept" else "recusado"
-                    send_message(chat_id, f"✅ Tratado cultural {verb}. Job criado na fila.")
-            else:
-                self._answer_callback(callback_id, text="❌ Falha ao criar job.")
-                if chat_id:
-                    send_message(chat_id, "❌ Falha ao criar job de tratado. Verifique o painel.")
-            return
-
-        logger.debug("Unhandled callback_data: %s", callback_data)
-        self._answer_callback(callback_id)
-
-    def _answer_callback(self, callback_query_id: str, text: str = "") -> None:
-        """Answer a callback query to dismiss the loading spinner in Telegram."""
-        from apps.telegram.services.bot_api import _get_token
-        import requests as _requests
-
-        token = _get_token()
-        if not token or not callback_query_id:
-            return
-        try:
-            from apps.telegram.services.bot_api import API_BASE, TIMEOUT
-            url = f"{API_BASE.format(token=token)}/answerCallbackQuery"
-            payload: dict = {"callback_query_id": callback_query_id}
-            if text:
-                payload["text"] = text
-            _requests.post(url, json=payload, timeout=TIMEOUT)
-        except Exception:
-            pass
+            send_message(chat_id, f"❌ {error}")

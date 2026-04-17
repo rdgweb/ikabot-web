@@ -21,74 +21,46 @@ _SEEN_KEY = "diplomacy_seen_ids"
 # TTL máximo de IDs vistos (evitar crescimento infinito)
 _SEEN_MAX = 500
 
-# Labels para tipos de ação conhecidos (msg_type → label do botão)
-_ACTION_LABELS: dict[int, str] = {
-    79: "✅ Aceitar",
-    80: "❌ Recusar",
-}
-# Subject hint para tipos conhecidos (para formatar o texto do Telegram)
-_ACTION_SUBJECT: dict[int, str] = {
-    79: "Tratado Cultural — Aceitar",
-    80: "Tratado Cultural — Recusar",
-}
 
+def _build_telegram_text(msg: dict, db_uuid: str) -> str:
+    """Formata uma mensagem do inbox para enviar via Telegram (HTML).
 
-def _build_message_text(msg: dict) -> str:
-    """Formata uma mensagem do inbox para enviar via Telegram (HTML)."""
-    sender = msg.get("sender") or "Desconhecido"
-    subject = msg.get("subject") or "(sem assunto)"
-    body = msg.get("body") or ""
-    date = msg.get("date") or ""
-
-    lines = [
-        "📨 <b>Nova mensagem de diplomacia</b>",
-        f"<b>De:</b> {sender}",
-        f"<b>Assunto:</b> {subject}",
-    ]
-    if date:
-        lines.append(f"<b>Data:</b> {date}")
-    if body:
-        lines.append(f"\n{body}")
-
-    return "\n".join(lines)
-
-
-def _build_action_text(msg: dict) -> str:
-    """Formata uma mensagem com botões de ação para o Telegram."""
+    O UUID do DiplomacyMessage é incluído no comando /replyto para que
+    o webhook consiga identificar a mensagem e determinar a ação correta.
+    """
     sender = msg.get("sender") or "Desconhecido"
     subject = msg.get("subject") or "(sem assunto)"
     body = msg.get("body") or ""
     date = msg.get("date") or ""
     actions: list[dict] = msg.get("actions") or []
 
-    # Tenta inferir tipo da mensagem pelos tipos de ação disponíveis
+    # Determinar tipo de mensagem pelo set de ações disponíveis
     action_types = {a["msg_type"] for a in actions}
-    if {79, 80}.issubset(action_types) or 79 in action_types:
+    has_treaty = 79 in action_types
+
+    if has_treaty:
         header = "🤝 <b>Pedido de Tratado Cultural</b>"
-    else:
+    elif actions:
         header = "📋 <b>Mensagem requer ação</b>"
+    else:
+        header = "📨 <b>Nova mensagem de diplomacia</b>"
 
     lines = [header, f"<b>De:</b> {sender}", f"<b>Assunto:</b> {subject}"]
     if date:
         lines.append(f"<b>Data:</b> {date}")
     if body:
         lines.append(f"\n{body}")
-    lines.append("\nUse os botões abaixo para responder.")
+
+    # Instrução de resposta — formato unificado via UUID
+    lines.append("")
+    if actions:
+        lines.append(f"✅ Aceitar: <code>/replyto {db_uuid} yes</code>")
+        lines.append(f"❌ Recusar: <code>/replyto {db_uuid} no</code>")
+        lines.append(f"<i>(Opcional: adicione texto após yes/no)</i>")
+    else:
+        lines.append(f"↩️ Responder: <code>/replyto {db_uuid} &lt;texto&gt;</code>")
+
     return "\n".join(lines)
-
-
-def _build_inline_keyboard(actions: list[dict], game_account_id: str) -> dict:
-    """Monta o inline_keyboard com um botão por ação disponível."""
-    buttons = []
-    for action in actions:
-        msg_type = action["msg_type"]
-        receiver_id = action["receiver_id"]
-        label = _ACTION_LABELS.get(msg_type, f"Ação {msg_type}")
-        callback_data = f"dip_action:{msg_type}:{receiver_id}:{game_account_id}"
-        buttons.append({"text": label, "callback_data": callback_data})
-    # Agrupar em linhas de 2
-    rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
-    return {"inline_keyboard": rows}
 
 
 @register_runner(30)
@@ -133,7 +105,8 @@ class DiplomacyCheckRunner(BaseRunner):
             messages = result.get("messages", [])
             self.log(jid, "info", f"Inbox: {len(messages)} mensagens encontradas")
 
-            # Salvar todas as mensagens no hub (upsert)
+            # Salvar todas as mensagens no hub (upsert) e obter UUIDs para referência no Telegram
+            msg_uuid_map: dict[str, str] = {}  # game_msg_id → db_uuid
             if messages:
                 hub_messages = [
                     {
@@ -150,6 +123,7 @@ class DiplomacyCheckRunner(BaseRunner):
                 ]
                 try:
                     save_result = self.hub.save_diplomacy_messages(ga_id, hub_messages)
+                    msg_uuid_map = save_result.get("message_ids") or {}
                     self.log(jid, "info",
                              f"Mensagens salvas no hub: {save_result.get('saved', 0)} "
                              f"({save_result.get('new_count', 0)} novas)")
@@ -167,7 +141,8 @@ class DiplomacyCheckRunner(BaseRunner):
             for msg in new_unread:
                 seen_ids.add(msg["id"])
                 if notify_telegram:
-                    self._notify_message(jid, aid, ga_id, msg, job)
+                    db_uuid = msg_uuid_map.get(msg["id"], "")
+                    self._notify_message(jid, aid, ga_id, msg, job, db_uuid)
 
             # Também marcar mensagens lidas como vistas para não notificar depois
             for msg in messages:
@@ -211,25 +186,11 @@ class DiplomacyCheckRunner(BaseRunner):
         game_account_id: str,
         msg: dict,
         job: dict,
+        db_uuid: str = "",
     ) -> None:
         """Envia notificação Telegram para uma mensagem nova."""
         try:
-            actions: list[dict] = msg.get("actions") or []
-            msg_id = msg.get("id", "")
-            receiver_id = msg.get("receiver_id", "")
-
-            if actions:
-                # Mensagem com botões inline para aceitar/recusar/etc.
-                text = _build_action_text(msg)
-                reply_markup = _build_inline_keyboard(actions, game_account_id)
-            else:
-                # Mensagem regular — instrução de resposta via /replyto
-                text = _build_message_text(msg)
-                if receiver_id:
-                    reply_ref = f"{msg_id}:{receiver_id}:{game_account_id}"
-                    text += f"\n\n<i>Para responder: <code>/replyto {reply_ref} &lt;texto&gt;</code></i>"
-                reply_markup = None
-
+            text = _build_telegram_text(msg, db_uuid)
             agent_name = str(job.get("agent") or "")
             self.hub.send_notification(
                 event="diplomacy_message",
@@ -238,7 +199,7 @@ class DiplomacyCheckRunner(BaseRunner):
                 title="Nova mensagem de diplomacia",
                 body=text,
                 agent_name=agent_name,
-                metadata={"reply_markup": reply_markup} if reply_markup else {},
+                metadata={},
             )
         except Exception:
             logger.exception("Falha ao enviar notificação de diplomacia")
