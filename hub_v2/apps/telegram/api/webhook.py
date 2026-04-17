@@ -96,7 +96,6 @@ def _create_diplomacy_send_job_from_uuid(
     inputs: dict = {
         "receiver_id": int(receiver_id),
         "msg_type": msg_type,
-        "city_id": 0,  # runner doesn't need city_id
     }
     if extra_text:
         inputs["content"] = extra_text

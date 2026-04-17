@@ -227,23 +227,24 @@ class DiplomacySendRunner(BaseRunner):
         inputs = job.get("inputs") or {}
 
         if not ga_id:
+            self.log(jid, "error", "game_account_id é obrigatório")
             return RunnerResult(success=False, data={"error": "missing_game_account"})
 
-        city_id = inputs.get("city_id")
         receiver_id = inputs.get("receiver_id")
         msg_type = int(inputs.get("msg_type") or 50)
         content = inputs.get("content") or ""
         reply_to = inputs.get("reply_to")
 
-        if not city_id:
-            return RunnerResult(success=False, data={"error": "city_id é obrigatório"})
         if not receiver_id:
+            self.log(jid, "error", "receiver_id é obrigatório")
             return RunnerResult(success=False, data={"error": "receiver_id é obrigatório"})
         if msg_type == 50 and not content:
+            self.log(jid, "error", "content é obrigatório para msg_type=50")
             return RunnerResult(success=False, data={"error": "content é obrigatório para msg_type=50"})
 
         creds = self.resolve_credentials(aid, {}, game_account_id=ga_id)
         if not creds:
+            self.log(jid, "error", "Credenciais não encontradas para esta conta")
             return RunnerResult(success=False, data={"error": "missing_credentials"})
 
         try:

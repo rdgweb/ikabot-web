@@ -28,10 +28,12 @@ from django.core.management.base import BaseCommand
 from apps.telegram.models import TelegramBotConfig, TelegramAccountConfig
 from apps.telegram.services.bot_api import send_message
 from apps.telegram.services.linking import validate_link_code
+from apps.telegram.api.webhook import _create_diplomacy_send_job_from_uuid
 
 logger = logging.getLogger("telegram.poll")
 
 CODE_RE = re.compile(r"^/start\s+(\d{6})$")
+REPLYTO_RE = re.compile(r"^/replyto\s+([\w-]{36})\s+([\s\S]+)$", re.IGNORECASE)
 API_BASE = "https://api.telegram.org/bot{token}"
 
 # Backoff settings
@@ -93,7 +95,7 @@ class Command(BaseCommand):
         """Main polling loop with error recovery."""
         offset = self._get_latest_offset(token)
         backoff = MIN_BACKOFF
-        poll_timeout = 15  # Long-poll timeout
+        poll_timeout = 5  # Short-poll timeout (long-poll causes SSL issues on some networks)
 
         while self._running:
             try:
@@ -163,48 +165,78 @@ class Command(BaseCommand):
         if not text or not chat_id:
             return
 
+        text_stripped = text.strip()
+
         # Handle /start <code>
-        match = CODE_RE.match(text.strip())
-        if not match:
+        match = CODE_RE.match(text_stripped)
+        if match:
+            code = match.group(1)
+            config = validate_link_code(code, chat_id, username)
+            if config:
+                if isinstance(config, TelegramBotConfig):
+                    send_message(
+                        chat_id,
+                        "Vinculado com sucesso!\n\n"
+                        "Este chat recebera <b>todas</b> as notificacoes "
+                        "do ikabot hub.",
+                    )
+                    logger.info("GLOBAL linked -> chat %s (@%s)", chat_id, username)
+                    self.stdout.write(self.style.SUCCESS(
+                        f"Global linked -> chat {chat_id} (@{username})"
+                    ))
+                elif isinstance(config, TelegramAccountConfig):
+                    ga_name = (
+                        config.game_account.name
+                        or config.game_account.server_id
+                    )
+                    send_message(
+                        chat_id,
+                        f"Vinculado com sucesso!\n\n"
+                        f"Subconta: <b>{ga_name}</b>\n"
+                        f"Este chat recebera notificacoes desta subconta.",
+                    )
+                    logger.info(
+                        "GA %s linked -> chat %s (@%s)",
+                        config.game_account_id, chat_id, username,
+                    )
+                    self.stdout.write(self.style.SUCCESS(
+                        f"GA linked: {config.game_account_id} -> chat {chat_id}"
+                    ))
+            else:
+                send_message(
+                    chat_id,
+                    "Codigo invalido ou expirado.\n\n"
+                    "Gere um novo codigo no painel e tente novamente.",
+                )
+                logger.info("Invalid/expired code %s from chat %s", code, chat_id)
             return
 
-        code = match.group(1)
-        config = validate_link_code(code, chat_id, username)
+        # Handle /replyto <db_uuid> [yes|no] [text]
+        match = REPLYTO_RE.match(text_stripped)
+        if match:
+            db_uuid = match.group(1)
+            rest = match.group(2).strip()
+            yes_no = ""
+            extra_text = rest
+            lower = rest.lower()
+            if lower.startswith("yes") and (len(lower) == 3 or lower[3] in (" ", "\n")):
+                yes_no = "yes"
+                extra_text = rest[3:].strip()
+            elif lower.startswith("no") and (len(lower) == 2 or lower[2] in (" ", "\n")):
+                yes_no = "no"
+                extra_text = rest[2:].strip()
 
-        if config:
-            if isinstance(config, TelegramBotConfig):
-                send_message(
-                    chat_id,
-                    "Vinculado com sucesso!\n\n"
-                    "Este chat recebera <b>todas</b> as notificacoes "
-                    "do ikabot hub.",
-                )
-                logger.info("GLOBAL linked -> chat %s (@%s)", chat_id, username)
+            ok, error = _create_diplomacy_send_job_from_uuid(db_uuid, yes_no, extra_text)
+            if ok:
+                if yes_no == "yes":
+                    send_message(chat_id, "✅ Aceitar — job criado na fila.")
+                elif yes_no == "no":
+                    send_message(chat_id, "❌ Recusar — job criado na fila.")
+                else:
+                    send_message(chat_id, "↩️ Resposta enviada para o agente.")
                 self.stdout.write(self.style.SUCCESS(
-                    f"Global linked -> chat {chat_id} (@{username})"
+                    f"replyto {db_uuid} ({yes_no or 'text'}) from chat {chat_id}"
                 ))
-            elif isinstance(config, TelegramAccountConfig):
-                ga_name = (
-                    config.game_account.name
-                    or config.game_account.server_id
-                )
-                send_message(
-                    chat_id,
-                    f"Vinculado com sucesso!\n\n"
-                    f"Subconta: <b>{ga_name}</b>\n"
-                    f"Este chat recebera notificacoes desta subconta.",
-                )
-                logger.info(
-                    "GA %s linked -> chat %s (@%s)",
-                    config.game_account_id, chat_id, username,
-                )
-                self.stdout.write(self.style.SUCCESS(
-                    f"GA linked: {config.game_account_id} -> chat {chat_id}"
-                ))
-        else:
-            send_message(
-                chat_id,
-                "Codigo invalido ou expirado.\n\n"
-                "Gere um novo codigo no painel e tente novamente.",
-            )
-            logger.info("Invalid/expired code %s from chat %s", code, chat_id)
+            else:
+                send_message(chat_id, f"❌ {error}")
+                logger.warning("replyto failed: uuid=%s error=%s", db_uuid, error)
