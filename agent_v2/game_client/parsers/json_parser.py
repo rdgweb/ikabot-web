@@ -9,6 +9,8 @@ Ikariam AJAX responses use a list-of-lists format:
 
 Known commands observed in live traffic:
     "custom"           → ["reload", {"link": "?view=..."}]  — server rejected the action
+                         BUT if "provideFeedback" is also present with success type,
+                         the reload is just a page refresh after a successful action.
     "updateGlobalData" → {"actionRequest": "...", ...}       — fresh AR token + global state
     "updateBacklink"   → null | string                       — ignored
     "changeView"       → [[selector, html], ...]             — DOM updates (success)
@@ -16,6 +18,8 @@ Known commands observed in live traffic:
     "updateResources"  → {...}                               — resource bar update
     "showMessage"      → {"title": ..., "text": ...}         — server error message
     "error"            → string | {...}                      — explicit error
+    "provideFeedback"  → [{"type": 10, "text": "..."}]       — type 10 = success confirmation
+    "popupData"        → {...}                               — popup (achievement, etc.)
 """
 
 from __future__ import annotations
@@ -61,6 +65,7 @@ class AjaxResponseParser:
             "new_action_request": None,
             "raw": data,
             "reload": False,
+            "success_feedback": False,  # True when provideFeedback confirms success
         }
 
         if not isinstance(data, list):
@@ -102,11 +107,24 @@ class AjaxResponseParser:
                     result["errors"].append(msg)
                     logger.warning("AJAX error: %s", msg)
 
-            elif cmd in ("updateBacklink", "setVariable", "logData"):
+            elif cmd == "provideFeedback":
+                # type 10 = success (green confirmation); other types may be info/error
+                if isinstance(payload, (list, tuple)):
+                    for fb in payload:
+                        if isinstance(fb, dict) and int(fb.get("type", 0)) == 10:
+                            result["success_feedback"] = True
+                            logger.info("AJAX provideFeedback success: %s", fb.get("text", ""))
+
+            elif cmd in ("updateBacklink", "setVariable", "logData", "popupData"):
                 pass  # informational only
 
             else:
                 logger.debug("Unknown AJAX command: %s", cmd)
+
+        # custom reload alongside success feedback = page refresh after action, not rejection
+        if result["reload"] and result["success_feedback"]:
+            logger.info("AJAX custom reload after success feedback — treating as success (page refresh)")
+            result["reload"] = False
 
         self._check_critical_errors(result["errors"])
         return result
