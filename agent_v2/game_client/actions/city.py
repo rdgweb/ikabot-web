@@ -128,8 +128,13 @@ class BuildAction(BaseAction):
         """Build a new building using the exact button href from buildingGround."""
         building_type = self._normalize_building_type(building_type)
         build_params = self._resolve_build_href(city_id, position, building_type)
-        build_params.pop("actionRequest", None)
+        # The game embeds the pre-buildingGround AR in each build button href.
+        # _resolve_build_href updates client._action_request from updateGlobalData,
+        # but that AR is for subsequent navigation — the build itself needs the href AR.
+        href_ar = build_params.pop("actionRequest", None)
         action_name = build_params.pop("action", ActionID.BUILD)
+        if href_ar:
+            self.client._action_request = href_ar
         logger.info(
             "Building %s at pos %s city %s with params=%s",
             building_type,
