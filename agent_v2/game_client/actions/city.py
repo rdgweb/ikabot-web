@@ -6,12 +6,37 @@ import json
 import logging
 import re
 from typing import Any
+from urllib.parse import parse_qsl, urlparse
 
 from ..constants import ActionID, BUILDING_TYPES
 from ..exceptions import ActionError
 from .base_action import BaseAction
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_change_view_html(response_text: str, *, action: str) -> str:
+    try:
+        data = json.loads(response_text)
+    except Exception as exc:
+        raise ActionError(f"Invalid {action} response", action=action) from exc
+
+    for cmd in data:
+        if isinstance(cmd, (list, tuple)) and len(cmd) >= 2 and cmd[0] == "changeView":
+            payload = cmd[1]
+            if isinstance(payload, (list, tuple)):
+                for candidate in reversed(payload):
+                    if isinstance(candidate, str) and "<" in candidate:
+                        return candidate
+    raise ActionError(f"{action} response missing changeView HTML", action=action)
+
+
+def _parse_href_params(href: str) -> dict[str, Any]:
+    query = urlparse(href).query or href.lstrip("?")
+    parsed = {}
+    for key, value in parse_qsl(query, keep_blank_values=True):
+        parsed[key] = value
+    return parsed
 
 
 class BuildAction(BaseAction):
@@ -28,7 +53,7 @@ class BuildAction(BaseAction):
         }
         return aliases.get(key, key)
 
-    def _resolve_building_id(self, city_id: int, position: int, building_type: str) -> int:
+    def _resolve_build_href(self, city_id: int, position: int, building_type: str) -> dict[str, Any]:
         params = {
             "view": "buildingGround",
             "cityId": str(city_id),
@@ -48,24 +73,49 @@ class BuildAction(BaseAction):
                 "X-Requested-With": "XMLHttpRequest",
             },
         )
-        try:
-            data = json.loads(resp.text)
-            html = data[1][1][1]
-        except Exception as exc:
-            raise ActionError("Invalid buildingGround response", action="build") from exc
+        html = _extract_change_view_html(resp.text, action="build")
+
+        # Capture the new actionRequest the server embedded in this response so
+        # the caller can use it for the next request without a separate refresh.
+        data = json.loads(resp.text)
+        for cmd in data:
+            if isinstance(cmd, (list, tuple)) and len(cmd) >= 2 and cmd[0] == "updateGlobalData":
+                new_ar = (cmd[1] or {}).get("actionRequest") if isinstance(cmd[1], dict) else None
+                if new_ar:
+                    self.client._action_request = new_ar
+                    logger.info("buildingGround AR updated: %s...", new_ar[:8])
+                else:
+                    logger.warning("buildingGround updateGlobalData found but no actionRequest in: %s", cmd[1])
+                break
 
         matches = re.findall(
-            r'<li class="building ([^"]+)">[\s\S]*?buildingId=(\d+)&',
+            r'<li class="building ([^"]+)">[\s\S]*?<a[^>]+href="([^"]+)"[^>]+data-building="(\d+)"',
             html,
             re.IGNORECASE,
         )
+        logger.info("buildingGround matches for pos=%s: %s", position, matches[:10])
         wanted = self._normalize_building_type(building_type)
-        for candidate, building_id in matches:
+
+        for candidate, href, building_id in matches:
             if self._normalize_building_type(candidate.strip()) == wanted:
-                return int(building_id)
+                # Log 400 chars of HTML around the matched buildingId to understand JS/onclick structure
+                _idx = html.find(f"buildingId={building_id}")
+                _ctx = html[max(0, _idx-200):_idx+200] if _idx >= 0 else ""
+                logger.info("HTML context around buildingId=%s: %r", building_id, _ctx)
+                href_params = _parse_href_params(href)
+                href_params.setdefault("action", ActionID.BUILD)
+                href_params.setdefault("cityId", str(city_id))
+                href_params.setdefault("position", str(position))
+                href_params.setdefault("building", str(building_id))
+                return href_params
 
         if building_type in BUILDING_TYPES:
-            return BUILDING_TYPES[building_type]
+            return {
+                "action": ActionID.BUILD,
+                "cityId": str(city_id),
+                "position": str(position),
+                "building": str(BUILDING_TYPES[building_type]),
+            }
         raise ActionError(f"Building option not available for slot: {building_type}", action="build")
 
     def execute(
@@ -75,37 +125,56 @@ class BuildAction(BaseAction):
         position: int,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Build a new building.
-
-        Args:
-            city_id: Target city ID.
-            building_type: Building type name (must be in BUILDING_TYPES).
-            position: City slot position to build in.
-
-        Returns:
-            Parsed AJAX response.
-
-        Raises:
-            ActionError: If the building type is unknown or the action fails.
-        """
+        """Build a new building using the exact button href from buildingGround."""
         building_type = self._normalize_building_type(building_type)
-        building_id = self._resolve_building_id(city_id, position, building_type)
-        logger.info(f"Building {building_type} at position {position} in city {city_id}")
-
-        params = {
-            "cityId": city_id,
-            "position": position,
-            "building": building_id,
-            "backgroundView": "city",
-            "currentCityId": city_id,
-            "templateView": "buildingGround",
-        }
-
-        return self._ajax_request(ActionID.BUILD, params)
+        build_params = self._resolve_build_href(city_id, position, building_type)
+        build_params.pop("actionRequest", None)
+        action_name = build_params.pop("action", ActionID.BUILD)
+        logger.info(
+            "Building %s at pos %s city %s with params=%s",
+            building_type,
+            position,
+            city_id,
+            build_params,
+        )
+        return self._ajax_request(action_name, build_params)
 
 
 class UpgradeAction(BaseAction):
     """Upgrade an existing building to the next level."""
+
+    def _resolve_upgrade_href(
+        self,
+        city_id: int,
+        building_position: int,
+        template_view: str,
+    ) -> dict[str, Any]:
+        params = {
+            "view": template_view,
+            "cityId": str(city_id),
+            "position": str(building_position),
+            "backgroundView": "city",
+            "currentCityId": str(city_id),
+            "ajax": "1",
+        }
+        resp = self.client._request(
+            "GET",
+            self.client._server_url,
+            params=params,
+            headers=dict(self.client.session.headers) | {
+                "Accept": "text/plain, */*; q=0.01",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+        )
+        html = _extract_change_view_html(resp.text, action="upgrade")
+        match = re.search(
+            r'<a[^>]+id="js_buildingUpgradeButton"[^>]+href="([^"]+)"',
+            html,
+            re.IGNORECASE,
+        )
+        if not match:
+            raise ActionError("Upgrade button href not found", action="upgrade")
+        return _parse_href_params(match.group(1))
 
     def execute(
         self,
@@ -115,33 +184,33 @@ class UpgradeAction(BaseAction):
         template_view: str = "city",
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Upgrade a building.
-
-        Args:
-            city_id: Target city ID.
-            building_position: Position of the building to upgrade.
-
-        Returns:
-            Parsed AJAX response.
-
-        Raises:
-            ActionError: If the upgrade action fails.
-        """
+        """Upgrade a building using the exact upgrade button href from the page."""
         logger.info(f"Upgrading building at position {building_position} in city {city_id}")
-
-        # TODO: Verify the exact parameter names from game AJAX traffic
-        params = {
-            "cityId": city_id,
-            "position": building_position,
-            "backgroundView": "city",
-            "currentCityId": city_id,
-            "templateView": template_view,
-            "activeTab": "tabSendTransporter",
-        }
-        if current_level is not None:
-            params["level"] = current_level
-
-        return self._ajax_request(ActionID.UPGRADE_BUILDING, params)
+        upgrade_params = self._resolve_upgrade_href(city_id, building_position, template_view)
+        href_level = upgrade_params.get("level")
+        if current_level is not None and href_level and str(href_level) != str(current_level):
+            logger.warning(
+                "Upgrade href level mismatch for city=%s pos=%s: href=%s current=%s",
+                city_id,
+                building_position,
+                href_level,
+                current_level,
+            )
+        explicit_ar = upgrade_params.pop("actionRequest", "")
+        action_name = upgrade_params.pop("action", ActionID.UPGRADE_BUILDING)
+        old_ar = self.client._action_request
+        if explicit_ar:
+            self.client._action_request = explicit_ar
+        try:
+            # UpgradeExistingBuilding uses GET (ajaxHandlerCall with href in game UI)
+            if action_name == "UpgradeExistingBuilding":
+                upgrade_params["action"] = action_name
+                upgrade_params["actionRequest"] = self.client._action_request
+                upgrade_params["ajax"] = "1"
+                return self.client._ajax_get(action_name, upgrade_params)
+            return self._ajax_request(action_name, upgrade_params)
+        finally:
+            self.client._action_request = old_ar
 
 
 class DemolishAction(BaseAction):
@@ -168,13 +237,13 @@ class DemolishAction(BaseAction):
         """
         logger.info(f"Demolishing building at position {building_position} in city {city_id}")
 
-        # TODO: Verify the exact parameter names from game AJAX traffic
         params = {
             "cityId": city_id,
             "position": building_position,
             "backgroundView": "city",
             "currentCityId": city_id,
             "templateView": template_view,
+            "building": template_view,
         }
 
         return self._ajax_request(ActionID.DEMOLISH, params)

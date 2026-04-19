@@ -85,10 +85,10 @@ class ActionID:
     CITY_VIEW = "CityScreen"
     ISLAND_VIEW = "IslandScreen"
     WORLD_VIEW = "WorldScreen"
-    # Ikariam switched building upgrades to a dedicated action endpoint.
+    # Verified from live game button hrefs on 2026-04-17 (HAVIT / s78-br)
+    BUILD = "BuildNewBuilding"
     UPGRADE_BUILDING = "UpgradeExistingBuilding"
-    BUILD = "CityScreen&function=build"
-    DEMOLISH = "CityScreen&function=demolish"
+    DEMOLISH = "CityBuilding&function=demolish"
     CHANGE_PRODUCTION = "CityScreen&function=changeProduction"
 
     # Military

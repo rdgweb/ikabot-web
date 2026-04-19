@@ -3,7 +3,7 @@ from django.test import TestCase
 from apps.accounts.models import Account, GameAccount, Node
 
 from .models import Job
-from .views.create import JobCreateSubmitView
+from .views.create import JobSubmitView
 
 
 class MarketJobCreationTests(TestCase):
@@ -32,7 +32,7 @@ class MarketJobCreationTests(TestCase):
         }
 
     def test_sell_market_job_infers_branch_office_position(self):
-        JobCreateSubmitView._create_single_job(
+        JobSubmitView._create_single_job(
             self.ga,
             9,
             {
@@ -50,7 +50,7 @@ class MarketJobCreationTests(TestCase):
         self.assertIn('"city_name": "Capital"', job.inputs_json)
 
     def test_buy_market_job_infers_buyer_branch_office_position(self):
-        JobCreateSubmitView._create_single_job(
+        JobSubmitView._create_single_job(
             self.ga,
             8,
             {

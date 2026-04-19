@@ -1413,6 +1413,7 @@ class JobSubmitView(LoginRequiredMixin, View):
                 "building_id": building_id,
                 "building_type": building_id,
                 "building_name": str(step.get("building_name") or building_id),
+                "building_position": str(step.get("building_position") or ""),
                 "mode": str(step.get("mode") or "upgrade"),
                 "slot_types": list(step.get("slot_types") or []),
                 "preferred_position": str(step.get("preferred_position") or ""),

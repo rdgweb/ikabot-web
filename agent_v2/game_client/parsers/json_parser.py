@@ -1,21 +1,25 @@
 """AJAX JSON response parser for Ikariam.
 
-Ikariam AJAX responses use a custom JSON format: a list of "change" objects,
-each describing a DOM update, redirect, or other client-side action.
-
-Typical response structure:
+Ikariam AJAX responses use a list-of-lists format:
     [
-        {"type": 0, "data": [...]},       # background data
-        {"type": 1, "data": [...]},       # DOM updates (changeView)
-        {"type": 5, "data": "..."},       # redirect
-        {"type": 10, "data": [...]},      # errors
+        ["command_name", data],
+        ["command_name2", data2],
         ...
     ]
+
+Known commands observed in live traffic:
+    "custom"           → ["reload", {"link": "?view=..."}]  — server rejected the action
+    "updateGlobalData" → {"actionRequest": "...", ...}       — fresh AR token + global state
+    "updateBacklink"   → null | string                       — ignored
+    "changeView"       → [[selector, html], ...]             — DOM updates (success)
+    "loadContent"      → [[selector, html], ...]             — DOM load (success)
+    "updateResources"  → {...}                               — resource bar update
+    "showMessage"      → {"title": ..., "text": ...}         — server error message
+    "error"            → string | {...}                      — explicit error
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -23,38 +27,28 @@ from ..exceptions import ActionError, MaintenanceError, RateLimitError
 
 logger = logging.getLogger(__name__)
 
-# Known AJAX response type codes
-RESPONSE_TYPE_BACKGROUND = 0
-RESPONSE_TYPE_CHANGE_VIEW = 1
-RESPONSE_TYPE_UPDATE_TEMPLATE = 2
-RESPONSE_TYPE_LOAD_JS = 3
-RESPONSE_TYPE_NOTIFICATION = 4
-RESPONSE_TYPE_REDIRECT = 5
-RESPONSE_TYPE_UPDATE_GLOBAL = 6
-RESPONSE_TYPE_ERROR = 10
-RESPONSE_TYPE_CAPTCHA = 11
-
 
 class AjaxResponseParser:
-    """Parses Ikariam AJAX JSON responses into usable data."""
+    """Parses Ikariam AJAX JSON responses (list-of-lists format) into usable data."""
 
-    def parse_response(self, data: list[dict[str, Any]]) -> dict[str, Any]:
+    def parse_response(self, data: list[Any]) -> dict[str, Any]:
         """Parse a full AJAX response into categorized components.
 
         Args:
             data: Raw parsed JSON list from an AJAX response.
 
         Returns:
-            Dictionary with parsed components:
-                - "updates": list of DOM update directives
-                - "background": background data
-                - "redirect": redirect URL if any
-                - "errors": list of error messages
+            Dictionary with:
+                - "updates": list of DOM update directives (changeView / loadContent)
+                - "background": background / resource data
+                - "redirect": reload link if game sent a reload directive
+                - "errors": list of error message strings
                 - "notifications": list of notification strings
+                - "new_action_request": fresh AR token from updateGlobalData, or None
                 - "raw": the original data
+                - "reload": True if the game sent a custom reload (action rejected)
 
         Raises:
-            ActionError: If the response contains critical errors.
             MaintenanceError: If the server reports maintenance.
             RateLimitError: If the server indicates rate limiting.
         """
@@ -64,126 +58,113 @@ class AjaxResponseParser:
             "redirect": None,
             "errors": [],
             "notifications": [],
+            "new_action_request": None,
             "raw": data,
+            "reload": False,
         }
 
         if not isinstance(data, list):
-            logger.warning(f"AJAX response is not a list: {type(data)}")
+            logger.warning("AJAX response is not a list: %s", type(data))
             return result
 
         for entry in data:
-            if not isinstance(entry, dict):
+            if not isinstance(entry, (list, tuple)) or len(entry) < 1:
                 continue
 
-            entry_type = entry.get("type")
-            entry_data = entry.get("data")
+            cmd = entry[0]
+            payload = entry[1] if len(entry) > 1 else None
 
-            if entry_type == RESPONSE_TYPE_BACKGROUND:
-                result["background"].append(entry_data)
+            if cmd == "custom":
+                self._handle_custom(payload, result)
 
-            elif entry_type == RESPONSE_TYPE_CHANGE_VIEW:
-                result["updates"].append(entry_data)
+            elif cmd == "updateGlobalData":
+                if isinstance(payload, dict):
+                    ar = payload.get("actionRequest")
+                    if ar:
+                        result["new_action_request"] = ar
+                    result["background"].append(payload)
 
-            elif entry_type == RESPONSE_TYPE_UPDATE_TEMPLATE:
-                result["updates"].append(entry_data)
+            elif cmd in ("changeView", "loadContent", "updateTemplate"):
+                result["updates"].append(payload)
 
-            elif entry_type == RESPONSE_TYPE_REDIRECT:
-                result["redirect"] = entry_data
+            elif cmd == "updateResources":
+                result["background"].append(payload)
 
-            elif entry_type == RESPONSE_TYPE_ERROR:
-                errors = self._parse_errors(entry_data)
-                result["errors"].extend(errors)
+            elif cmd == "showMessage":
+                msg = self._extract_message(payload)
+                if msg:
+                    result["errors"].append(msg)
+                    logger.warning("AJAX showMessage: %s", msg)
 
-            elif entry_type == RESPONSE_TYPE_NOTIFICATION:
-                if isinstance(entry_data, str):
-                    result["notifications"].append(entry_data)
+            elif cmd == "error":
+                msg = self._extract_message(payload)
+                if msg:
+                    result["errors"].append(msg)
+                    logger.warning("AJAX error: %s", msg)
 
-            elif entry_type == RESPONSE_TYPE_CAPTCHA:
-                # Captcha required — handled at a higher level
-                logger.warning("AJAX response contains captcha challenge")
-                result["errors"].append("captcha_required")
+            elif cmd in ("updateBacklink", "setVariable", "logData"):
+                pass  # informational only
 
-        # Check for critical errors
+            else:
+                logger.debug("Unknown AJAX command: %s", cmd)
+
         self._check_critical_errors(result["errors"])
-
         return result
 
-    def extract_errors(self, data: list[dict[str, Any]]) -> list[str]:
-        """Extract only error messages from an AJAX response.
+    # ── backward-compat helpers used by other modules ──
 
-        Args:
-            data: Raw parsed JSON list from an AJAX response.
+    def extract_errors(self, data: list[Any]) -> list[str]:
+        """Extract only error messages from an AJAX response."""
+        try:
+            return self.parse_response(data)["errors"]
+        except Exception:
+            return []
 
-        Returns:
-            List of error message strings.
-        """
-        errors: list[str] = []
-
-        if not isinstance(data, list):
-            return errors
-
-        for entry in data:
-            if isinstance(entry, dict) and entry.get("type") == RESPONSE_TYPE_ERROR:
-                errors.extend(self._parse_errors(entry.get("data")))
-
-        return errors
-
-    def extract_redirect(self, data: list[dict[str, Any]]) -> str | None:
-        """Extract a redirect URL from an AJAX response.
-
-        Args:
-            data: Raw parsed JSON list from an AJAX response.
-
-        Returns:
-            Redirect URL string, or None if no redirect is present.
-        """
-        if not isinstance(data, list):
+    def extract_redirect(self, data: list[Any]) -> str | None:
+        """Extract a redirect/reload link from an AJAX response."""
+        try:
+            return self.parse_response(data)["redirect"]
+        except Exception:
             return None
 
-        for entry in data:
-            if isinstance(entry, dict) and entry.get("type") == RESPONSE_TYPE_REDIRECT:
-                redirect = entry.get("data")
-                if isinstance(redirect, str):
-                    return redirect
+    # ── Private helpers ──
 
+    def _handle_custom(self, payload: Any, result: dict[str, Any]) -> None:
+        """Handle the 'custom' command — usually a server-side reload directive."""
+        if not isinstance(payload, (list, tuple)) or len(payload) < 1:
+            return
+        action = payload[0]
+        action_data = payload[1] if len(payload) > 1 else {}
+        if action == "reload":
+            link = action_data.get("link", "") if isinstance(action_data, dict) else ""
+            result["reload"] = True
+            result["redirect"] = link
+            logger.warning("AJAX custom reload — server rejected the action (link=%s)", link)
+        else:
+            logger.debug("AJAX custom action: %s", action)
+
+    def _extract_message(self, payload: Any) -> str | None:
+        """Extract a human-readable string from a showMessage / error payload."""
+        if isinstance(payload, str):
+            return payload or None
+        if isinstance(payload, dict):
+            return (
+                payload.get("text")
+                or payload.get("message")
+                or payload.get("description")
+                or str(payload)
+            )
+        if isinstance(payload, (list, tuple)) and payload:
+            return self._extract_message(payload[0])
         return None
 
-    # ── Private Helpers ──
-
-    def _parse_errors(self, error_data: Any) -> list[str]:
-        """Parse error data into a list of human-readable strings."""
-        errors: list[str] = []
-
-        if isinstance(error_data, str):
-            errors.append(error_data)
-        elif isinstance(error_data, list):
-            for item in error_data:
-                if isinstance(item, str):
-                    errors.append(item)
-                elif isinstance(item, dict):
-                    msg = item.get("message") or item.get("text") or str(item)
-                    errors.append(msg)
-        elif isinstance(error_data, dict):
-            msg = error_data.get("message") or error_data.get("text") or str(error_data)
-            errors.append(msg)
-
-        return errors
-
     def _check_critical_errors(self, errors: list[str]) -> None:
-        """Raise exceptions for critical server errors.
-
-        Args:
-            errors: List of error strings from the response.
-
-        Raises:
-            MaintenanceError: If a maintenance message is detected.
-            RateLimitError: If rate limiting is indicated.
-        """
+        """Raise exceptions for critical server-side errors."""
         for error in errors:
-            error_lower = error.lower()
-            if "maintenance" in error_lower:
+            el = error.lower()
+            if "maintenance" in el:
                 raise MaintenanceError(f"Server maintenance: {error}")
-            if "rate" in error_lower and "limit" in error_lower:
+            if "rate" in el and "limit" in el:
                 raise RateLimitError(f"Rate limited: {error}")
-            if "too many" in error_lower:
+            if "too many" in el:
                 raise RateLimitError(f"Too many requests: {error}")

@@ -45,6 +45,39 @@ TRANSPORT_RECHECK_SECONDS = 30 * 60
 FINISH_BUFFER_SECONDS = 2 * 60
 DONOR_RESERVE_DEFAULT = 5_000
 
+RESOURCE_PT = {
+    "wood": "madeira",
+    "wine": "vinho",
+    "marble": "mármore",
+    "glas": "vidro",
+    "sulfur": "enxofre",
+}
+
+
+def _format_duration(seconds: int) -> str:
+    """Convert seconds to human-readable duration string."""
+    if seconds <= 0:
+        return "0s"
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    if h > 0:
+        return f"{h}h {m:02d}m" if m > 0 else f"{h}h"
+    if m > 0:
+        return f"{m}m {s:02d}s" if s > 0 else f"{m}m"
+    return f"{s}s"
+
+
+def _format_costs(costs: dict[str, int]) -> str:
+    """Format resource costs as 'madeira=15.000 | vidro=800' string."""
+    parts = []
+    for key in RESOURCE_KEYS:
+        amount = costs.get(key, 0)
+        if amount > 0:
+            label = RESOURCE_PT.get(key, key)
+            parts.append(f"{label}={amount:,}".replace(",", "."))
+    return " | ".join(parts) if parts else "sem custo"
+
 
 def _to_int(raw: Any, default: int = 0) -> int:
     try:
@@ -188,10 +221,21 @@ def _get_upgrading_building(city: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _live_city_building_state(client, city_id: int, position: int) -> dict[str, Any] | None:
-    """Read the current state of one city position directly from the game page."""
+    """Read the current state of one city position directly from the game page.
+
+    Uses the city JSON embedded in the page (updateBackgroundData) which has
+    authoritative isBusy / endUpgradeTime fields. The old CSS-class approach
+    (looking for 'constructionSite' in the DOM) is unreliable because the game
+    does not add that class when upgrading an existing building.
+    """
     resp = client._request("GET", client._server_url, params={"view": "city", "cityId": city_id})
     html = resp.text
-    city = extract_city_data(html)
+    try:
+        city = extract_city_data(html)
+    except Exception as exc:
+        logger.debug("extract_city_data failed for city %s: %s", city_id, exc)
+        return None
+
     positions = city.get("position", [])
     if position < 0 or position >= len(positions):
         return None
@@ -199,40 +243,96 @@ def _live_city_building_state(client, city_id: int, position: int) -> dict[str, 
     if not isinstance(pos, dict):
         return None
 
-    dom_state = {}
-    match = re.search(
-        rf'id=["\']position{position}["\'][^>]*class=["\']([^"\']+)["\']',
-        html,
-        re.IGNORECASE,
-    )
-    if match:
-        classes = [part.strip() for part in match.group(1).split() if part.strip()]
-        dom_state = {
-            "is_busy": "constructionSite" in classes,
-            "is_empty": "buildingGround" in classes,
-        }
-
     building_name = str(pos.get("building") or "").strip()
-    json_is_busy = "constructionSite" in building_name
-    if json_is_busy:
-        building_name = building_name.replace("constructionSite", "")
-    if "buildingGround" in building_name or bool(dom_state.get("is_empty")):
+    is_empty = "buildingGround" in building_name or building_name == ""
+    if is_empty:
         building_name = "empty"
 
-    construction_end_at = 0
-    if json_is_busy or bool(dom_state.get("is_busy")):
-        raw_end = pos.get("constructionEnd") or pos.get("enddate") or pos.get("construction_end") or 0
-        construction_end_at = _to_int(raw_end, 0)
+    # isBusy is the authoritative flag: True when this slot is currently upgrading
+    is_upgrading = bool(pos.get("isBusy"))
 
-    state = {
+    # endUpgradeTime is a city-level field that applies to whichever position is upgrading
+    construction_end_at = 0
+    if is_upgrading:
+        under_construction = _to_int(city.get("underConstruction"), -1)
+        if under_construction == position:
+            end_time = _to_int(city.get("endUpgradeTime"), 0)
+            if end_time > 0:
+                construction_end_at = end_time
+
+    state: dict[str, Any] = {
         "position": position,
         "building": building_name,
         "level": _to_int(pos.get("level"), 0),
-        "is_upgrading": bool(dom_state.get("is_busy")) if dom_state else json_is_busy,
+        "is_upgrading": is_upgrading,
     }
     if construction_end_at > 0:
         state["construction_end_at"] = construction_end_at
     return state
+
+
+def _get_active_constructions_via_advisor(client) -> dict[str, dict[str, Any]]:
+    """Query buildingAdvisor and return a map of city_id -> construction info.
+
+    Returns empty dict on any failure so callers can fall back gracefully.
+    Each value has: {city_id, building_name, end_time (unix timestamp or 0)}.
+    """
+    try:
+        resp = client._request(
+            "GET",
+            client._server_url,
+            params={"view": "buildingAdvisor", "ajax": "1"},
+            headers={"Accept": "*/*", "X-Requested-With": "XMLHttpRequest"},
+        )
+        payload = resp.json()
+    except Exception as exc:
+        logger.debug("buildingAdvisor request failed: %s", exc)
+        return {}
+
+    html = ""
+    try:
+        for cmd in payload:
+            if isinstance(cmd, (list, tuple)) and len(cmd) >= 2 and cmd[0] == "changeView":
+                inner = cmd[1]
+                if isinstance(inner, (list, tuple)) and len(inner) >= 2:
+                    html = str(inner[1] or "")
+                elif isinstance(inner, str):
+                    html = inner
+                if html:
+                    break
+    except Exception:
+        pass
+
+    if not html:
+        return {}
+
+    result: dict[str, dict[str, Any]] = {}
+    # Each city construction row has a data attribute with city id and building info.
+    # Pattern: data-cityid="12345" ... class="buildingname" ... data-end="1713400000"
+    # We also parse simple table rows: <tr ... data-cityid="...">
+    for row_match in re.finditer(
+        r'data-cityid=["\'](\d+)["\'][^>]*>.*?</tr>',
+        html,
+        re.DOTALL | re.IGNORECASE,
+    ):
+        city_id = row_match.group(1)
+        row_html = row_match.group(0)
+        end_time = 0
+        end_m = re.search(r'data-end(?:time)?=["\'](\d+)["\']', row_html, re.IGNORECASE)
+        if end_m:
+            end_time = _to_int(end_m.group(1), 0)
+        name_m = re.search(r'class=["\'][^"\']*building[^"\']*["\'][^>]*>\s*([^<]{2,40})', row_html, re.IGNORECASE)
+        building_name = name_m.group(1).strip() if name_m else ""
+        result[city_id] = {"city_id": city_id, "building_name": building_name, "end_time": end_time}
+
+    # Fallback: look for any occurrence of city ids next to finish times in the HTML
+    if not result:
+        for m in re.finditer(r'cityId=(\d+)[^"\']*["\']', html):
+            city_id = m.group(1)
+            if city_id not in result:
+                result[city_id] = {"city_id": city_id, "building_name": "", "end_time": 0}
+
+    return result
 
 
 def _action_feedback(parsed: dict[str, Any] | None) -> str:
@@ -260,9 +360,16 @@ def _confirm_building_state(
     city_name: str,
     expect_build: bool,
     action_feedback: str = "",
-    attempts: int = 4,
+    attempts: int = 5,
 ) -> dict[str, Any]:
-    """Retry live city reads briefly before declaring build/upgrade unconfirmed."""
+    """Retry live city reads briefly before declaring build/upgrade unconfirmed.
+
+    For a new build (expect_build=True), the game may briefly keep showing
+    the slot as empty even after accepting the build command — but isBusy will
+    become True almost immediately.  We accept either condition as confirmation.
+    """
+    # Give the game server a moment to register the command before first read.
+    time.sleep(2)
     last_state: dict[str, Any] | None = None
     for attempt in range(1, max(1, attempts) + 1):
         live_state = _live_city_building_state(client, city_id, position)
@@ -272,7 +379,9 @@ def _confirm_building_state(
             live_busy = bool(live_state.get("is_upgrading"))
             live_building = str(live_state.get("building") or "").strip()
             if expect_build:
-                if live_building not in {"", "empty"}:
+                # Accept: slot occupied with any building OR slot is now busy
+                # (game shows isBusy before the building name resolves).
+                if live_building not in {"", "empty"} or live_busy:
                     return live_state
             else:
                 if live_busy or live_level >= next_level:
@@ -769,14 +878,47 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             # Live-verify cities where snapshot indicated a building is upgrading.
             # If the game doesn't confirm it (stale snapshot after cancel or completion),
             # promote them to ready_steps instead of waiting.
+            # First, try a single buildingAdvisor call to check all busy cities at once.
+            advisor_active: dict[str, dict[str, Any]] = {}
+            if busy_pending:
+                try:
+                    advisor_active = _get_active_constructions_via_advisor(client)
+                    logger.debug("buildingAdvisor: %d cidades com obra ativa", len(advisor_active))
+                except Exception as adv_exc:
+                    logger.debug("buildingAdvisor falhou, usando fallback por cidade: %s", adv_exc)
+
             for pending, city, upgrading in busy_pending:
                 city_id_int = _to_int(pending["city_id"])
+                city_id_str = str(pending["city_id"])
                 upgrading_name = str(upgrading.get("building") or "?")
                 upgrading_level = _to_int(upgrading.get("level"), 0)
                 upgrading_position = _to_int(upgrading.get("position"), -1)
 
                 live_still_busy = True
-                if upgrading_position >= 0:
+                # Check advisor first (one request already made for all cities)
+                if advisor_active:
+                    advisor_info = advisor_active.get(city_id_str)
+                    if advisor_info is None:
+                        # City not in advisor → no active construction
+                        live_still_busy = False
+                        refresh_needed = True
+                        self.log(
+                            jid, "warn",
+                            f"[{_city_name(city)}] Snapshot indicava obra ({upgrading_name} Lv {upgrading_level}) "
+                            f"mas buildingAdvisor não confirma — snapshot desatualizado; retomando fila",
+                        )
+                    else:
+                        # City present in advisor → still busy; enrich end_time if available
+                        advisor_end = _to_int(advisor_info.get("end_time"), 0)
+                        if advisor_end > 0 and not upgrading.get("construction_end_at"):
+                            upgrading = dict(upgrading)
+                            upgrading["construction_end_at"] = advisor_end
+                        logger.debug(
+                            "[%s] buildingAdvisor confirma obra ativa (end_time=%s)",
+                            _city_name(city), advisor_info.get("end_time"),
+                        )
+                elif upgrading_position >= 0:
+                    # Advisor unavailable — fall back to per-city page read
                     try:
                         logger.debug(
                             "[%s] Verificando estado ao vivo da obra (pos=%d) antes de aguardar",
@@ -788,8 +930,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                             refresh_needed = True
                             self.log(
                                 jid, "warn",
-                                f"[{_city_name(city)}] Snapshot indicava obra em andamento ({upgrading_name} lvl {upgrading_level}) "
-                                f"mas jogo nao confirma — snapshot desatualizado; adicionando a fila de upgrade",
+                                f"[{_city_name(city)}] Snapshot indicava obra ({upgrading_name} Lv {upgrading_level}) "
+                                f"mas jogo não confirma — snapshot desatualizado; retomando fila",
                             )
                     except Exception as live_exc:
                         logger.debug("[%s] Falha ao verificar estado ao vivo: %s", _city_name(city), live_exc)
@@ -808,7 +950,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                 wait_seconds = max(MIN_RECHECK_SECONDS, base_adj + FINISH_BUFFER_SECONDS)
                     self.log(
                         jid, "info",
-                        f"Cidade {_city_name(city)} ainda esta em obra ({upgrading_name} lvl {upgrading_level}); aguardando {wait_seconds}s antes da proxima etapa",
+                        f"{_city_name(city)} em obra: {upgrading_name} Lv {upgrading_level} → {upgrading_level + 1}; próxima etapa em {_format_duration(wait_seconds)}",
                     )
                     new_waits.append(
                         {
@@ -850,8 +992,19 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                             position = preferred_position if preferred_position > 0 else None
                             current_entry = None
                     else:
-                        current_level, position = _find_building(city, pending["building_id"])
-                        current_entry = _get_building_entry(city, pending["building_id"])
+                        building_position = _to_int(pending.get("building_position"), 0)
+                        if building_position > 0:
+                            current_entry = _get_building_entry_at_position(city, building_position)
+                            if current_entry and str(current_entry.get("building") or "").strip() in _building_ids_to_match(pending["building_id"]):
+                                current_level = _to_int(current_entry.get("level"), 0)
+                                position = _to_int(current_entry.get("position"), 0)
+                            else:
+                                current_level = 0
+                                position = None
+                                current_entry = None
+                        else:
+                            current_level, position = _find_building(city, pending["building_id"])
+                            current_entry = _get_building_entry(city, pending["building_id"])
 
                     if current_entry and bool(current_entry.get("is_upgrading")):
                         wait_seconds = max(MIN_RECHECK_SECONDS, _to_int(level_row.get("adjusted_seconds"), 0) + FINISH_BUFFER_SECONDS)
@@ -893,7 +1046,15 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                             "[%s] Entrando na cidade para construir %s na pos %d",
                             _city_name(city), building_id, empty_position,
                         )
-                        change_current_city(client, city_id)
+                        # Navigate to city view — sets current city in session AND gives fresh AR
+                        _cr = client._request("GET", client._server_url, params={"view": "city", "cityId": city_id})
+                        logger.info("[%s] City page GET: status=%s len=%d snippet=%r", _city_name(city), _cr.status_code, len(_cr.text), _cr.text[:200])
+                        _ar = re.search(r'actionRequest\s*[=:]\s*["\']([a-zA-Z0-9_\-]+)["\']', _cr.text)
+                        if _ar:
+                            client._action_request = _ar.group(1)
+                            logger.info("[%s] Navegando para cidade (build), AR=%s...", _city_name(city), _ar.group(1)[:8])
+                        else:
+                            logger.warning("[%s] AR não encontrado na city page (build) — token anterior mantido. Resp: %r", _city_name(city), _cr.text[:500])
                         logger.debug(
                             "[%s] Enviando build: building_type=%s pos=%d",
                             _city_name(city), building_id, empty_position,
@@ -912,7 +1073,11 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         self.log(
                             jid,
                             "info",
-                            f"Construcao iniciada: {_city_name(city)} | {pending['building_name']} | pos {empty_position} | tipo={','.join(sorted(allowed_types)) or 'any'} | lvl 0 -> 1",
+                            f"Construção: {_city_name(city)} | {pending['building_name']} Lv 0 → 1"
+                            f" | pos {empty_position}"
+                            f" | {_format_duration(_to_int(level_row.get('adjusted_seconds'), 0))}"
+                            f" | {_format_costs(self._normalize_costs(level_row.get('costs') or {}))}"
+                            f" | #{pending['index']} de {len(plan_steps)}",
                         )
                         position = empty_position
                         current_level = 0
@@ -923,7 +1088,14 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                             "[%s] Entrando na cidade (city_id=%s, building=%s, pos=%d, lvl %d->%d)",
                             _city_name(city), city_id, building_id, position, current_level, next_level,
                         )
-                        change_current_city(client, city_id)
+                        # Navigate to city view — sets current city in session AND gives fresh AR
+                        _cr = client._request("GET", client._server_url, params={"view": "city", "cityId": city_id})
+                        _ar = re.search(r'actionRequest\s*[=:]\s*["\']([a-zA-Z0-9_\-]+)["\']', _cr.text)
+                        if _ar:
+                            client._action_request = _ar.group(1)
+                            logger.info("[%s] Navegando para cidade (upgrade), AR=%s...", _city_name(city), _ar.group(1)[:8])
+                        else:
+                            logger.warning("[%s] AR não encontrado na city page (upgrade) — token anterior mantido", _city_name(city))
                         logger.debug(
                             "[%s] Na cidade; consultando edificio %s na pos %d",
                             _city_name(city), building_id, position,
@@ -955,7 +1127,10 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         self.log(
                             jid,
                             "info",
-                            f"Evolucao iniciada: {_city_name(city)} | {pending['building_name']} | lvl {current_level} -> {next_level}",
+                            f"Evolução: {_city_name(city)} | {pending['building_name']} Lv {current_level} → {next_level}"
+                            f" | {_format_duration(_to_int(level_row.get('adjusted_seconds'), 0))}"
+                            f" | {_format_costs(self._normalize_costs(level_row.get('costs') or {}))}"
+                            f" | #{pending['index']} de {len(plan_steps)}",
                         )
 
                     # adjusted_seconds already has world/government reductions baked in
@@ -1065,6 +1240,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 "city_name": str(step.get("city_name") or city_id),
                 "building_id": building_id,
                 "building_name": str(step.get("building_name") or building_id),
+                "building_position": _to_int(step.get("building_position"), 0),
                 "mode": str(step.get("mode") or "upgrade"),
                 "slot_types": [str(x).strip() for x in (step.get("slot_types") or []) if str(x).strip()],
                 "preferred_position": _to_int(step.get("preferred_position"), 0),
@@ -1087,7 +1263,15 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 else:
                     current_level = 0
             else:
-                current_level, _ = _find_building(city, step["building_id"])
+                building_position = _to_int(step.get("building_position"), 0)
+                if building_position > 0:
+                    slot_entry = _get_building_entry_at_position(city, building_position)
+                    if slot_entry and str(slot_entry.get("building") or "").strip() in _building_ids_to_match(step["building_id"]):
+                        current_level = _to_int(slot_entry.get("level"), 0)
+                    else:
+                        current_level = 0
+                else:
+                    current_level, _ = _find_building(city, step["building_id"])
             target_level = _to_int(step.get("target_level"), 0)
             if current_level >= target_level > 0:
                 continue
@@ -1124,7 +1308,15 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     else:
                         current_level = 0
                 else:
-                    current_level, _ = _find_building(city, step["building_id"])
+                    building_position = _to_int(step.get("building_position"), 0)
+                    if building_position > 0:
+                        slot_entry = _get_building_entry_at_position(city, building_position)
+                        if slot_entry and str(slot_entry.get("building") or "").strip() in _building_ids_to_match(step["building_id"]):
+                            current_level = _to_int(slot_entry.get("level"), 0)
+                        else:
+                            current_level = 0
+                    else:
+                        current_level, _ = _find_building(city, step["building_id"])
                 target_level = _to_int(step.get("target_level"), 0)
                 if current_level >= target_level > 0:
                     continue

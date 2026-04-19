@@ -619,7 +619,12 @@ def build_construction_plan_preview(
             slot_building_id, slot_level = _get_city_building_at_position(city, preferred_position)
             current_level = slot_level if slot_building_id == building_id else 0
         else:
-            current_level = int(city_state["building_levels"].get(building_id, 0))
+            building_position = step.get("building_position")
+            if building_position not in (None, ""):
+                slot_building_id, slot_level = _get_city_building_at_position(city, building_position)
+                current_level = slot_level if slot_building_id == building_id else 0
+            else:
+                current_level = int(city_state["building_levels"].get(building_id, 0))
         target_level = max(current_level + 1 if current_level > 0 else 1, _parse_int(step.get("target_level"), 1))
         level_rows = [row for row in rows if current_level < _parse_int(row.get("level")) <= target_level]
         if not level_rows:
@@ -692,6 +697,7 @@ def build_construction_plan_preview(
             "building_id": building_id,
             "building_name": info.get("name", building_id),
             "building_icon": info.get("icon"),
+            "building_position": str(step.get("building_position") or ""),
             "mode": step_mode,
             "slot_types": list(step.get("slot_types") or []),
             "preferred_position": str(step.get("preferred_position") or ""),

@@ -54,3 +54,4 @@ tmp/
 
 # Local test artifacts
 tmp_modal_scroll_test.png
+/.codex

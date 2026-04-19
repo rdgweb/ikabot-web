@@ -755,6 +755,51 @@ class GameClient:
         # Should not reach here, but just in case
         raise GameClientError("Request failed after all retries")
 
+    def _ajax_get(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Send a GET AJAX request to the game server and parse the JSON response.
+
+        Same contract as _ajax but uses HTTP GET (query params) instead of POST.
+        Used for actions like UpgradeExistingBuilding that the game triggers via GET.
+
+        Args:
+            action: AJAX action string (used for logging).
+            params: Full parameter dict including actionRequest and ajax=1.
+
+        Returns:
+            Parsed response dictionary from AjaxResponseParser.
+        """
+        logger.debug("AJAX GET: %s", action)
+        logger.info("AJAX GET params: %s", {k: v for k, v in params.items() if k != "actionRequest"})
+
+        resp = self._request("GET", self._server_url, params=params, headers=GAME_AJAX_HEADERS)
+
+        try:
+            data = resp.json()
+        except ValueError:
+            raise ActionError(f"Invalid JSON in AJAX GET response for {action}", action=action)
+
+        logger.info("AJAX GET raw response for %s: %s", action, str(data)[:600])
+        parsed = self.ajax_parser.parse_response(data)
+
+        if parsed.get("new_action_request"):
+            self._action_request = parsed["new_action_request"]
+            logger.debug("actionRequest updated from AJAX GET response: %s...", self._action_request[:8])
+
+        if parsed.get("reload"):
+            raise ActionError(
+                f"Server rejected action '{action}' with reload directive",
+                action=action,
+            )
+
+        if parsed["errors"]:
+            raise ActionError(
+                f"Server errors for action {action}: {parsed['errors']}",
+                action=action,
+                server_errors=parsed["errors"],
+            )
+
+        return parsed
+
     def _ajax(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
         """Send an AJAX request to the game server and parse the JSON response.
 
@@ -769,6 +814,7 @@ class GameClient:
             ActionError: If the server returns errors for this action.
         """
         logger.debug(f"AJAX: {action}")
+        logger.info("AJAX POST params: %s", {k: v for k, v in params.items() if k != "actionRequest"})
 
         resp = self._request(
             "POST",
@@ -786,24 +832,28 @@ class GameClient:
                 action=action,
             )
 
+        logger.info("AJAX raw response for %s: %s", action, str(data)[:600])
         parsed = self.ajax_parser.parse_response(data)
 
-        # Check for action-level errors
+        # Persist any fresh actionRequest the server embedded in the response
+        if parsed.get("new_action_request"):
+            self._action_request = parsed["new_action_request"]
+            logger.debug("actionRequest updated from AJAX response: %s...", self._action_request[:8])
+
+        # Server-side reload = action was rejected (e.g. stale AR, wrong city context)
+        if parsed.get("reload"):
+            raise ActionError(
+                f"Server rejected action '{action}' with reload directive",
+                action=action,
+            )
+
+        # Check for explicit error messages
         if parsed["errors"]:
-            # Captcha error is special
-            if "captcha_required" in parsed["errors"]:
-                raise CaptchaRequiredError(
-                    f"Captcha required during action: {action}"
-                )
             raise ActionError(
                 f"Server errors for action {action}: {parsed['errors']}",
                 action=action,
                 server_errors=parsed["errors"],
             )
-
-        # Update actionRequest if a new one is present in the response
-        # TODO: Extract new actionRequest from AJAX response updates
-        self._update_action_request_from_response(parsed)
 
         return parsed
 
