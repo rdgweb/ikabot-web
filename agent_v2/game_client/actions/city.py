@@ -109,14 +109,14 @@ class BuildAction(BaseAction):
                 href_params.setdefault("building", str(building_id))
                 return href_params
 
-        if building_type in BUILDING_TYPES:
-            return {
-                "action": ActionID.BUILD,
-                "cityId": str(city_id),
-                "position": str(position),
-                "building": str(BUILDING_TYPES[building_type]),
-            }
-        raise ActionError(f"Building option not available for slot: {building_type}", action="build")
+        # No matches: slot is occupied or construction queue is full.
+        # Never fall back to hardcoded IDs — they diverge from game values and cause
+        # silent wrong-building submissions.
+        raise ActionError(
+            f"Building option not available for slot pos={position}: {building_type}"
+            f" — queue may be full or slot occupied",
+            action="build",
+        )
 
     def execute(
         self,

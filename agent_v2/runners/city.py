@@ -899,14 +899,35 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 if advisor_active:
                     advisor_info = advisor_active.get(city_id_str)
                     if advisor_info is None:
-                        # City not in advisor → no active construction
-                        live_still_busy = False
-                        refresh_needed = True
-                        self.log(
-                            jid, "warn",
-                            f"[{_city_name(city)}] Snapshot indicava obra ({upgrading_name} Lv {upgrading_level}) "
-                            f"mas buildingAdvisor não confirma — snapshot desatualizado; retomando fila",
-                        )
+                        # City not in advisor — do live read to confirm before assuming free.
+                        # The advisor HTML parser may miss some cities; trusting the absence
+                        # blindly caused spurious "build while busy" attempts.
+                        if upgrading_position >= 0:
+                            try:
+                                live_state = _live_city_building_state(client, city_id_int, upgrading_position)
+                                if live_state and not live_state.get("is_upgrading"):
+                                    live_still_busy = False
+                                    refresh_needed = True
+                                    self.log(
+                                        jid, "warn",
+                                        f"[{_city_name(city)}] Snapshot indicava obra ({upgrading_name} Lv {upgrading_level}) "
+                                        f"mas jogo não confirma — snapshot desatualizado; retomando fila",
+                                    )
+                                else:
+                                    logger.debug(
+                                        "[%s] buildingAdvisor ausente mas leitura ao vivo confirma obra em pos=%d",
+                                        _city_name(city), upgrading_position,
+                                    )
+                            except Exception as _live_exc:
+                                logger.debug("[%s] Falha ao verificar estado ao vivo: %s", _city_name(city), _live_exc)
+                        else:
+                            live_still_busy = False
+                            refresh_needed = True
+                            self.log(
+                                jid, "warn",
+                                f"[{_city_name(city)}] Snapshot indicava obra ({upgrading_name} Lv {upgrading_level}) "
+                                f"mas buildingAdvisor não confirma e posição desconhecida — retomando fila",
+                            )
                     else:
                         # City present in advisor → still busy; enrich end_time if available
                         advisor_end = _to_int(advisor_info.get("end_time"), 0)
