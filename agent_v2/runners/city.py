@@ -1122,13 +1122,13 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                 raise
                         if build_response is None:
                             # No slot accepted the build — check if building already exists elsewhere
+                            # (including Lv 0 = under construction: _find_building returns pos=None only when not found)
                             _existing_level, _existing_pos = _find_building(city, building_id)
-                            if _existing_level >= 1:
+                            if _existing_pos is not None:
                                 self.log(
                                     jid, "info",
                                     f"[{_city_name(city)}] {pending['building_name']} ja existe em pos={_existing_pos} lv={_existing_level}; etapa ignorada",
                                 )
-                                # Mark step as skipped in reschedule inputs so it won't be re-selected
                                 _skipped_idx = _to_int(pending.get("index"), 0)
                                 if _skipped_idx not in _skipped_step_indices:
                                     _skipped_step_indices.append(_skipped_idx)
