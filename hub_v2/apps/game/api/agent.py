@@ -137,6 +137,65 @@ class UpdateSnapshotView(APIView):
         )
 
 
+class PatchSnapshotBuildingView(APIView):
+    """PATCH /api/agent/snapshots/patch-building/
+
+    Surgically updates one building entry in the snapshot after a construction
+    action, so the snapshot immediately reflects the ongoing build without
+    waiting for the next full check_status run.
+
+    Body: {game_account_id, city_id, position, patch: {building, level, is_upgrading, construction_end_at}}
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def patch(self, request):
+        from django.utils import timezone
+
+        game_account_id = str(request.data.get("game_account_id") or "").strip()
+        city_id = str(request.data.get("city_id") or "").strip()
+        position = request.data.get("position")
+        patch = request.data.get("patch") or {}
+
+        if not game_account_id or not city_id or position is None:
+            return Response(
+                {"error": "game_account_id, city_id and position are required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            position = int(position)
+        except (TypeError, ValueError):
+            return Response({"error": "position must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            snapshot = AccountSnapshot.objects.get(game_account__id=game_account_id)
+        except AccountSnapshot.DoesNotExist:
+            return Response({"error": "snapshot not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        cities = snapshot.cities or []
+        patched = False
+        for city in cities:
+            if str(city.get("id") or "") == city_id:
+                for building in city.get("buildings") or []:
+                    if int(building.get("position", -1)) == position:
+                        building.update({k: v for k, v in patch.items() if v is not None})
+                        patched = True
+                        break
+                break
+
+        if not patched:
+            return Response({"error": "city or building position not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        snapshot.cities = cities
+        snapshot.updated_at = timezone.now()
+        snapshot.save(update_fields=["cities", "updated_at"])
+
+        logger.info("Snapshot building patched: ga=%s city=%s pos=%d", game_account_id, city_id, position)
+        return Response({"ok": True, "patched": True})
+
+
 class CurrentSnapshotView(APIView):
     """GET /api/agent/snapshots/current/?game_account_id=<uuid>"""
 

@@ -156,6 +156,21 @@ class HubClient:
             payload["game_account_id"] = game_account_id
         return self._post("/api/agent/snapshots", payload)
 
+    def patch_snapshot_building(
+        self,
+        game_account_id: str,
+        city_id: int | str,
+        position: int,
+        patch: dict,
+    ) -> dict:
+        """PATCH /api/agent/snapshots/patch-building/ — update one building in the snapshot."""
+        return self._patch("/api/agent/snapshots/patch-building", {
+            "game_account_id": game_account_id,
+            "city_id": str(city_id),
+            "position": position,
+            "patch": patch,
+        })
+
     def get_snapshot(self, *, game_account_id: str | None = None, account_id: str | None = None) -> dict:
         """GET /api/agent/snapshots/current"""
         params: dict[str, Any] = {}
@@ -253,6 +268,16 @@ class HubClient:
         resp = self.session.get(self._url(path), params=params, timeout=15)
         resp.raise_for_status()
         return resp.json()
+
+    def _patch(self, path: str, data: Any) -> dict:
+        resp = self.session.patch(self._url(path), json=data, timeout=15)
+        resp.raise_for_status()
+        if not resp.content:
+            return {}
+        try:
+            return resp.json()
+        except json.JSONDecodeError:
+            return {}
 
     def _post(self, path: str, data: Any) -> dict:
         resp = self.session.post(self._url(path), json=data, timeout=15)

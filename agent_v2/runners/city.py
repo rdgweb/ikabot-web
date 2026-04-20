@@ -1156,6 +1156,24 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         )
                         position = empty_position
                         current_level = 0
+                        # Patch snapshot immediately so next run sees the ongoing construction
+                        # without waiting for check_status to update it.
+                        if ga_id:
+                            try:
+                                _end_at = _to_int((live_entry or {}).get("construction_end_at"), 0) or None
+                                self.hub.patch_snapshot_building(
+                                    game_account_id=str(ga_id),
+                                    city_id=city_id,
+                                    position=empty_position,
+                                    patch={
+                                        "building": building_id,
+                                        "level": 0,
+                                        "is_upgrading": True,
+                                        "construction_end_at": _end_at,
+                                    },
+                                )
+                            except Exception as _patch_exc:
+                                logger.debug("[%s] Snapshot patch after build failed: %s", _city_name(city), _patch_exc)
                     else:
                         if position is None:
                             raise RuntimeError("building_position_not_found")
