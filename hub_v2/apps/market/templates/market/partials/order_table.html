@@ -1,7 +1,7 @@
 {% load static hub_tags humanize %}
 
 {% if object_list or request.GET %}
-<div class="card overflow-hidden p-0">
+<div class="overflow-x-auto">
   <table class="data-table">
     <thead>
       <tr>
@@ -77,7 +77,7 @@
       <tr>
         <td colspan="8" class="text-center py-8 text-muted">
           <i class="bi bi-shop text-2xl block mb-2"></i>
-          Nenhuma ordem encontrada.
+          Nenhuma ordem encontrada para os filtros aplicados.
         </td>
       </tr>
       {% endfor %}
@@ -85,8 +85,13 @@
   </table>
 </div>
 
-{% include "components/table/pagination.html" %}
+<div class="px-4 py-3">
+  {% include "components/table/pagination.html" %}
+</div>
 
 {% else %}
-{% include "components/table/empty.html" with icon="bi-shop" message="Nenhuma ordem encontrada." %}
+<div class="px-4 py-10 text-center text-sm text-muted">
+  <i class="bi bi-shop text-2xl block mb-2"></i>
+  Nenhuma ordem criada ainda.
+</div>
 {% endif %}

@@ -1,43 +1,47 @@
 {% load static hub_tags humanize %}
 
-<div class="flex items-center justify-between mb-4">
+<div class="flex items-center justify-between px-4 py-4" style="border-bottom: 1px solid var(--ik-line);">
   <h3 class="text-sm font-semibold text-ink flex items-center gap-2">
     <i class="bi bi-people text-sea"></i>
     Participantes do Mercado
-    <span class="text-xs text-muted font-normal">(todas as contas ativas)</span>
+    {% if participant_rows %}
+    <span class="badge badge-secondary">{{ participant_rows|length }}</span>
+    {% endif %}
   </h3>
-  <span class="text-xs text-muted">Clique nos valores para editar</span>
+  <span class="text-xs text-muted">Clique nos valores para editar inline</span>
 </div>
 
 {% if participant_rows %}
-<div class="overflow-x-auto -mx-4 px-4">
+<div class="overflow-x-auto">
   <table class="w-full text-xs">
     <thead>
-      <tr style="border-bottom: 2px solid var(--ik-line);">
-        <th class="text-left py-2 px-2 text-muted font-semibold">Conta / Personagem</th>
-        <th class="text-left py-2 px-2 text-muted font-semibold">Servidor</th>
-        <th class="text-left py-2 px-2 text-muted font-semibold">Nó</th>
-        <th class="text-center py-2 px-2 text-muted font-semibold">Aberto?</th>
-        <th class="text-center py-2 px-2 text-muted font-semibold" title="Estoque mínimo que o vendedor mantém antes de vender">
-          Res. Estoque <i class="bi bi-info-circle text-[10px]"></i>
+      <tr class="bg-[var(--ik-sand-light)]/60" style="border-bottom: 1px solid var(--ik-line);">
+        <th class="text-left py-2.5 px-3 text-muted font-semibold whitespace-nowrap">Conta / Personagem</th>
+        <th class="text-left py-2.5 px-3 text-muted font-semibold">Servidor</th>
+        <th class="text-left py-2.5 px-3 text-muted font-semibold">Nó</th>
+        <th class="text-center py-2.5 px-3 text-muted font-semibold">Mercado</th>
+        <th class="text-center py-2.5 px-3 text-muted font-semibold whitespace-nowrap" title="Estoque mínimo que o vendedor mantém antes de vender">
+          Res. Estoque <i class="bi bi-info-circle"></i>
         </th>
-        <th class="text-center py-2 px-2 text-muted font-semibold" title="Saldo mínimo de ouro que o comprador mantém">
-          Res. Ouro <i class="bi bi-info-circle text-[10px]"></i>
+        <th class="text-center py-2.5 px-3 text-muted font-semibold whitespace-nowrap" title="Saldo mínimo de ouro que o comprador mantém">
+          Res. Ouro <i class="bi bi-info-circle"></i>
         </th>
-        <th class="text-right py-2 px-2 text-muted font-semibold">Ouro Atual</th>
-        <th class="text-right py-2 px-2 text-muted font-semibold">
+        <th class="text-right py-2.5 px-3 text-muted font-semibold">
+          <i class="bi bi-coin text-yellow-600"></i>
+        </th>
+        <th class="text-right py-2.5 px-3 text-muted font-semibold">
           <img src="{% static 0|resource_icon %}" alt="Madeira" class="inline w-3.5 h-3.5" title="Madeira">
         </th>
-        <th class="text-right py-2 px-2 text-muted font-semibold">
+        <th class="text-right py-2.5 px-3 text-muted font-semibold">
           <img src="{% static 1|resource_icon %}" alt="Vinho" class="inline w-3.5 h-3.5" title="Vinho">
         </th>
-        <th class="text-right py-2 px-2 text-muted font-semibold">
+        <th class="text-right py-2.5 px-3 text-muted font-semibold">
           <img src="{% static 2|resource_icon %}" alt="Mármore" class="inline w-3.5 h-3.5" title="Mármore">
         </th>
-        <th class="text-right py-2 px-2 text-muted font-semibold">
+        <th class="text-right py-2.5 px-3 text-muted font-semibold">
           <img src="{% static 3|resource_icon %}" alt="Cristal" class="inline w-3.5 h-3.5" title="Cristal">
         </th>
-        <th class="text-right py-2 px-2 text-muted font-semibold">
+        <th class="text-right py-2.5 px-3 text-muted font-semibold">
           <img src="{% static 4|resource_icon %}" alt="Enxofre" class="inline w-3.5 h-3.5" title="Enxofre">
         </th>
       </tr>
@@ -45,25 +49,34 @@
     <tbody>
       {% for row in participant_rows %}
       {% with ga=row.ga %}
-      <tr class="hover:bg-[var(--ik-sand-light)] transition-colors {% if ga.open_for_market %}bg-green-50/30{% endif %}"
+      <tr class="hover:bg-[var(--ik-sand-light)]/50 transition-colors"
           style="border-bottom: 1px solid var(--ik-line);">
 
         <!-- Account / Name -->
-        <td class="py-2 px-2">
-          <a href="{% url 'accounts:account-detail' ga.account.pk %}" class="font-medium text-ink hover:text-sea">
-            {{ ga.account.label }}
-          </a>
-          <span class="text-muted"> / {{ ga.name|default:"?" }}</span>
+        <td class="py-2.5 px-3">
+          <div class="flex items-center gap-2">
+            {% if ga.open_for_market %}
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" title="Aberto para o mercado"></span>
+            {% else %}
+            <span class="w-1.5 h-1.5 rounded-full bg-[var(--ik-line)] flex-shrink-0" title="Fechado para o mercado"></span>
+            {% endif %}
+            <div>
+              <a href="{% url 'accounts:account-detail' ga.account.pk %}" class="font-medium text-ink hover:text-sea">
+                {{ ga.account.label }}
+              </a>
+              <span class="text-muted"> / {{ ga.name|default:"?" }}</span>
+            </div>
+          </div>
         </td>
 
         <!-- Server -->
-        <td class="py-2 px-2 font-mono text-muted">{{ ga.server_id }}</td>
+        <td class="py-2.5 px-3 font-mono text-muted">{{ ga.server_id }}</td>
 
         <!-- Node -->
-        <td class="py-2 px-2 text-muted">{{ ga.account.node.name }}</td>
+        <td class="py-2.5 px-3 text-muted">{{ ga.account.node.name }}</td>
 
         <!-- Market toggle -->
-        <td class="py-2 px-2 text-center">
+        <td class="py-2.5 px-3 text-center">
           <button type="button"
                   onclick="return openConfirm({
                     title: '{% if ga.open_for_market %}Fechar{% else %}Abrir{% endif %} para o mercado',
@@ -83,7 +96,7 @@
         </td>
 
         <!-- market_min_stock inline edit -->
-        <td class="py-2 px-2 text-center"
+        <td class="py-2.5 px-3 text-center"
             x-data="{ editing: false, val: {{ ga.market_min_stock }} }">
           <span x-show="!editing" @click="editing = true"
                 class="cursor-pointer font-mono text-ink hover:text-sea tabular-nums"
@@ -110,7 +123,7 @@
         </td>
 
         <!-- market_min_gold inline edit -->
-        <td class="py-2 px-2 text-center"
+        <td class="py-2.5 px-3 text-center"
             x-data="{ editing: false, val: {{ ga.market_min_gold }} }">
           <span x-show="!editing" @click="editing = true"
                 class="cursor-pointer font-mono text-ink hover:text-sea tabular-nums"
@@ -137,20 +150,40 @@
         </td>
 
         <!-- Current gold from snapshot -->
-        <td class="py-2 px-2 text-right font-mono tabular-nums {% if row.gold > 0 %}text-yellow-700{% else %}text-muted{% endif %}">
+        <td class="py-2.5 px-3 text-right font-mono tabular-nums {% if row.gold > 0 %}text-yellow-700 font-semibold{% else %}text-muted{% endif %}">
           {% if row.has_snapshot %}
             {{ row.gold|intcomma }}
           {% else %}
-            <span class="text-muted">—</span>
+            <span class="text-muted" title="Sem snapshot">—</span>
           {% endif %}
         </td>
 
         <!-- Stock columns -->
-        <td class="py-2 px-2 text-right font-mono tabular-nums text-muted">{{ row.stock.wood|intcomma }}</td>
-        <td class="py-2 px-2 text-right font-mono tabular-nums text-muted">{{ row.stock.wine|intcomma }}</td>
-        <td class="py-2 px-2 text-right font-mono tabular-nums text-muted">{{ row.stock.marble|intcomma }}</td>
-        <td class="py-2 px-2 text-right font-mono tabular-nums text-muted">{{ row.stock.crystal|intcomma }}</td>
-        <td class="py-2 px-2 text-right font-mono tabular-nums text-muted">{{ row.stock.sulfur|intcomma }}</td>
+        {% if row.stock.wood > 0 %}
+        <td class="py-2.5 px-3 text-right font-mono tabular-nums text-ink">{{ row.stock.wood|intcomma }}</td>
+        {% else %}
+        <td class="py-2.5 px-3 text-right font-mono tabular-nums text-muted">—</td>
+        {% endif %}
+        {% if row.stock.wine > 0 %}
+        <td class="py-2.5 px-3 text-right font-mono tabular-nums text-ink">{{ row.stock.wine|intcomma }}</td>
+        {% else %}
+        <td class="py-2.5 px-3 text-right font-mono tabular-nums text-muted">—</td>
+        {% endif %}
+        {% if row.stock.marble > 0 %}
+        <td class="py-2.5 px-3 text-right font-mono tabular-nums text-ink">{{ row.stock.marble|intcomma }}</td>
+        {% else %}
+        <td class="py-2.5 px-3 text-right font-mono tabular-nums text-muted">—</td>
+        {% endif %}
+        {% if row.stock.crystal > 0 %}
+        <td class="py-2.5 px-3 text-right font-mono tabular-nums text-ink">{{ row.stock.crystal|intcomma }}</td>
+        {% else %}
+        <td class="py-2.5 px-3 text-right font-mono tabular-nums text-muted">—</td>
+        {% endif %}
+        {% if row.stock.sulfur > 0 %}
+        <td class="py-2.5 px-3 text-right font-mono tabular-nums text-ink">{{ row.stock.sulfur|intcomma }}</td>
+        {% else %}
+        <td class="py-2.5 px-3 text-right font-mono tabular-nums text-muted">—</td>
+        {% endif %}
       </tr>
       {% endwith %}
       {% endfor %}

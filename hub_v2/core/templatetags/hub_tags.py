@@ -42,8 +42,11 @@ def resource_name(idx):
 @register.filter
 def resource_icon(idx):
     """Return path to resource icon: {{ 0|resource_icon }}"""
-    name = RESOURCE_NAMES.get(idx, "unknown")
-    return f"game/resources/{name}.png"
+    try:
+        idx = int(idx)
+    except (TypeError, ValueError):
+        return ""
+    return TRADEGOOD_ICONS.get(idx, "")
 
 
 @register.filter

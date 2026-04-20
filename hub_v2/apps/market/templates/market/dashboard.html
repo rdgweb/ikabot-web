@@ -9,20 +9,16 @@
 
 {% block content %}
 <div x-data="marketOrderModal()" class="space-y-6">
-  <div class="relative overflow-hidden rounded-[28px] border border-[var(--ik-line)] bg-[linear-gradient(135deg,rgba(32,78,94,0.96),rgba(196,139,62,0.9))] px-6 py-6 text-white shadow-sm">
-    <div class="absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.22),transparent_58%)]"></div>
-    <div class="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-      <div class="max-w-2xl">
-        <div class="text-[11px] uppercase tracking-[0.26em] text-white/70">Trade Hub</div>
-        <h1 class="mt-2 text-3xl font-bold tracking-tight">Mercado Interno</h1>
-        <p class="mt-2 text-sm text-white/80">Ordens, participantes e jobs da cadeia de compra/venda em uma visao unica.</p>
-      </div>
-      <div class="flex flex-wrap gap-2">
-        <button type="button" @click="open()" class="btn btn-primary btn-sm border border-white/20 bg-white/15 text-white hover:bg-white/20">
-          <i class="bi bi-plus-lg"></i> Nova ordem
-        </button>
-      </div>
+  <div class="flex items-center justify-between gap-4">
+    <div>
+      <h1 class="text-xl font-bold text-ink flex items-center gap-2">
+        <i class="bi bi-shop text-sea"></i> Mercado Interno
+      </h1>
+      <p class="mt-0.5 text-sm text-muted">Ordens, participantes e cadeia de compra/venda entre contas.</p>
     </div>
+    <button type="button" @click="open()" class="btn btn-primary btn-sm flex-shrink-0">
+      <i class="bi bi-plus-lg"></i> Nova ordem
+    </button>
   </div>
 
   <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -56,7 +52,7 @@
     </div>
   </div>
 
-  <div class="card mb-0" id="participants-section"
+  <div class="card overflow-hidden p-0" id="participants-section"
        hx-trigger="marketParticipantsChanged from:body"
        hx-get="{% url 'market:participants-partial' %}"
        hx-swap="innerHTML"
@@ -65,125 +61,142 @@
     {% include "market/partials/participants_table.html" %}
   </div>
 
-  <div class="card" id="orders-section">
+  <div class="card overflow-hidden p-0" id="orders-section">
     {% include "market/partials/order_filters.html" %}
   </div>
 
-  <template x-if="isOpen">
-    <div class="fixed inset-0 z-50 flex items-center justify-center p-4" @keydown.escape.window="close()">
-      <div class="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]" @click="close()"></div>
-      <div class="relative z-10 w-full max-w-3xl overflow-hidden rounded-[28px] border border-[var(--ik-line)] bg-paper shadow-2xl">
-        <div class="border-b border-[var(--ik-line)] bg-[linear-gradient(135deg,rgba(32,78,94,0.08),rgba(196,139,62,0.12))] px-6 py-5">
-          <div class="flex items-start justify-between gap-4">
+  {# Modal sempre no DOM (x-show), para HTMX processar o form no page load #}
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4"
+       x-show="isOpen"
+       x-cloak
+       @keydown.escape.window="close()"
+       @marketordercreated.window="close()">
+    <div class="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]"
+         x-show="isOpen"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         @click="close()"></div>
+    <div class="relative z-10 w-full max-w-3xl overflow-hidden rounded-[28px] border border-[var(--ik-line)] bg-paper shadow-2xl"
+         x-show="isOpen"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100 scale-100"
+         x-transition:leave-end="opacity-0 scale-95">
+      <div class="border-b border-[var(--ik-line)] bg-[linear-gradient(135deg,rgba(32,78,94,0.08),rgba(196,139,62,0.12))] px-6 py-5">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <div class="text-[11px] uppercase tracking-[0.24em] text-muted">Nova ordem</div>
+            <h3 class="mt-1 text-xl font-semibold text-ink">Compra automatizada para o mercado interno</h3>
+            <p class="mt-1 text-sm text-muted">Selecione a subconta e a cidade com mercado. O hub resolve vendedor e jobs automaticamente.</p>
+          </div>
+          <button type="button" @click="close()" class="rounded-full border border-[var(--ik-line)] px-3 py-1.5 text-xs text-muted hover:text-ink">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </div>
+      </div>
+
+      <form hx-post="{% url 'market:order-create' %}"
+            hx-swap="none"
+            hx-push-url="false"
+            class="space-y-5 px-6 py-6">
+        {% csrf_token %}
+
+        <div class="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+          <div class="space-y-5">
             <div>
-              <div class="text-[11px] uppercase tracking-[0.24em] text-muted">Nova ordem</div>
-              <h3 class="mt-1 text-xl font-semibold text-ink">Compra automatizada para o mercado interno</h3>
-              <p class="mt-1 text-sm text-muted">Selecione a subconta e a cidade com mercado. O hub resolve vendedor e jobs automaticamente.</p>
+              <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Conta compradora</label>
+              <select name="buyer_ga_id"
+                      x-model="buyerGaId"
+                      @change="buyerCityId=''"
+                      required
+                      class="w-full rounded-xl border border-[var(--ik-line)] bg-white px-3 py-2.5 text-sm text-ink shadow-sm">
+                <option value="">Selecione uma subconta</option>
+                {% for ga in buyer_choices %}
+                <option value="{{ ga.id }}">{{ ga.account__label }} / {{ ga.name|default:"?" }}</option>
+                {% endfor %}
+              </select>
             </div>
-            <button type="button" @click="close()" class="rounded-full border border-[var(--ik-line)] px-3 py-1.5 text-xs text-muted hover:text-ink">
-              <i class="bi bi-x-lg"></i>
-            </button>
+
+            <div>
+              <div class="mb-1.5 flex items-center justify-between gap-2">
+                <label class="block text-xs font-semibold uppercase tracking-wide text-muted">Cidade com mercado</label>
+                <span class="text-[11px] text-muted" x-show="selectedCities.length">Somente cidades com Branch Office</span>
+              </div>
+              <select name="buyer_city_id"
+                      x-model="buyerCityId"
+                      :disabled="!selectedCities.length"
+                      class="w-full rounded-xl border border-[var(--ik-line)] bg-white px-3 py-2.5 text-sm text-ink shadow-sm disabled:cursor-not-allowed disabled:bg-slate-100">
+                <option value="">Usar primeira cidade elegivel</option>
+                <template x-for="city in selectedCities" :key="city.city_id">
+                  <option :value="city.city_id" x-text="`${city.name} (mercado pos ${city.branch_office_pos})`"></option>
+                </template>
+              </select>
+            </div>
+
+            <div>
+              <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Recurso</label>
+              <div class="grid grid-cols-2 gap-2 md:grid-cols-5">
+                {% for value, label in resource_choices %}
+                <label class="cursor-pointer rounded-2xl border px-3 py-3 text-sm shadow-sm transition"
+                       :class="resourceIdx == '{{ value }}'
+                         ? 'border-[var(--ik-sea)] bg-[var(--ik-sand-light)] ring-2 ring-[var(--ik-sea)]/30'
+                         : 'border-[var(--ik-line)] bg-white hover:border-[var(--ik-sea)] hover:bg-[var(--ik-sand-light)]'">
+                  <input type="radio" name="resource_idx" value="{{ value }}" x-model="resourceIdx" class="sr-only" {% if forloop.first %}checked{% endif %}>
+                  <div class="flex items-center gap-2">
+                    <img src="{% static value|resource_icon %}" alt="{{ label }}" class="h-5 w-5">
+                    <span class="font-medium text-ink">{{ label }}</span>
+                  </div>
+                </label>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-[24px] border border-[var(--ik-line)] bg-[var(--ik-sand-light)]/70 p-4">
+            <div class="text-[11px] uppercase tracking-[0.24em] text-muted">Parametros</div>
+            <div class="mt-4 grid gap-4">
+              <div>
+                <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Quantidade</label>
+                <input type="number" name="amount" min="1" required value="10000" class="w-full rounded-xl border border-[var(--ik-line)] bg-white px-3 py-2.5 text-sm text-ink shadow-sm">
+              </div>
+              <div>
+                <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Preco por unidade</label>
+                <input type="number" name="unit_price" min="1" value="12" class="w-full rounded-xl border border-[var(--ik-line)] bg-white px-3 py-2.5 text-sm text-ink shadow-sm">
+              </div>
+            </div>
+
+            <div class="mt-4 rounded-2xl border border-dashed border-[var(--ik-line)] bg-white/70 p-3">
+              <div class="text-[11px] uppercase tracking-wide text-muted">Leitura rapida da cidade</div>
+              <div x-show="selectedCity" class="mt-2 space-y-2 text-xs text-ink">
+                <div class="font-semibold" x-text="selectedCity?.name"></div>
+                <div class="grid grid-cols-2 gap-2">
+                  <div class="rounded-lg bg-[var(--ik-sand-light)] px-2 py-1">Madeira: <strong x-text="formatNumber(selectedCity?.wood)"></strong></div>
+                  <div class="rounded-lg bg-[var(--ik-sand-light)] px-2 py-1">Vinho: <strong x-text="formatNumber(selectedCity?.wine)"></strong></div>
+                  <div class="rounded-lg bg-[var(--ik-sand-light)] px-2 py-1">Marmore: <strong x-text="formatNumber(selectedCity?.marble)"></strong></div>
+                  <div class="rounded-lg bg-[var(--ik-sand-light)] px-2 py-1">Cristal: <strong x-text="formatNumber(selectedCity?.crystal)"></strong></div>
+                  <div class="rounded-lg bg-[var(--ik-sand-light)] px-2 py-1">Enxofre: <strong x-text="formatNumber(selectedCity?.sulfur)"></strong></div>
+                </div>
+              </div>
+              <div x-show="!selectedCity" class="mt-2 text-xs text-muted">Selecione uma subconta para ver as cidades disponiveis.</div>
+            </div>
           </div>
         </div>
 
-        <form hx-post="{% url 'market:order-create' %}"
-              hx-swap="none"
-              @htmx:after-request="if (event.detail.successful) { close(); htmx.trigger('#orders-section', 'refresh'); }"
-              class="space-y-5 px-6 py-6">
-          {% csrf_token %}
-
-          <div class="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
-            <div class="space-y-5">
-              <div>
-                <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Conta compradora</label>
-                <select name="buyer_ga_id"
-                        x-model="buyerGaId"
-                        @change="buyerCityId=''"
-                        required
-                        class="w-full rounded-xl border border-[var(--ik-line)] bg-white px-3 py-2.5 text-sm text-ink shadow-sm">
-                  <option value="">Selecione uma subconta</option>
-                  {% for ga in buyer_choices %}
-                  <option value="{{ ga.id }}">{{ ga.account__label }} / {{ ga.name|default:"?" }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-
-              <div>
-                <div class="mb-1.5 flex items-center justify-between gap-2">
-                  <label class="block text-xs font-semibold uppercase tracking-wide text-muted">Cidade com mercado</label>
-                  <span class="text-[11px] text-muted" x-show="selectedCities.length">Somente cidades com Branch Office</span>
-                </div>
-                <select name="buyer_city_id"
-                        x-model="buyerCityId"
-                        :disabled="!selectedCities.length"
-                        class="w-full rounded-xl border border-[var(--ik-line)] bg-white px-3 py-2.5 text-sm text-ink shadow-sm disabled:cursor-not-allowed disabled:bg-slate-100">
-                  <option value="">Usar primeira cidade elegivel</option>
-                  <template x-for="city in selectedCities" :key="city.city_id">
-                    <option :value="city.city_id" x-text="`${city.name} (mercado pos ${city.branch_office_pos})`"></option>
-                  </template>
-                </select>
-              </div>
-
-              <div>
-                <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Recurso</label>
-                <div class="grid grid-cols-2 gap-2 md:grid-cols-5">
-                  {% for value, label in resource_choices %}
-                  <label class="cursor-pointer rounded-2xl border border-[var(--ik-line)] bg-white px-3 py-3 text-sm shadow-sm transition hover:border-[var(--ik-sea)] hover:bg-[var(--ik-sand-light)]">
-                    <input type="radio" name="resource_idx" value="{{ value }}" x-model="resourceIdx" class="sr-only" {% if forloop.first %}checked{% endif %}>
-                    <div class="flex items-center gap-2">
-                      <img src="{% static value|resource_icon %}" alt="{{ label }}" class="h-5 w-5">
-                      <span class="font-medium text-ink">{{ label }}</span>
-                    </div>
-                  </label>
-                  {% endfor %}
-                </div>
-              </div>
-            </div>
-
-            <div class="rounded-[24px] border border-[var(--ik-line)] bg-[var(--ik-sand-light)]/70 p-4">
-              <div class="text-[11px] uppercase tracking-[0.24em] text-muted">Parametros</div>
-              <div class="mt-4 grid gap-4">
-                <div>
-                  <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Quantidade</label>
-                  <input type="number" name="amount" min="1" required value="10000" class="w-full rounded-xl border border-[var(--ik-line)] bg-white px-3 py-2.5 text-sm text-ink shadow-sm">
-                </div>
-                <div>
-                  <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Preco por unidade</label>
-                  <input type="number" name="unit_price" min="1" value="12" class="w-full rounded-xl border border-[var(--ik-line)] bg-white px-3 py-2.5 text-sm text-ink shadow-sm">
-                </div>
-              </div>
-
-              <div class="mt-4 rounded-2xl border border-dashed border-[var(--ik-line)] bg-white/70 p-3">
-                <div class="text-[11px] uppercase tracking-wide text-muted">Leitura rapida da cidade</div>
-                <template x-if="selectedCity">
-                  <div class="mt-2 space-y-2 text-xs text-ink">
-                    <div class="font-semibold" x-text="selectedCity.name"></div>
-                    <div class="grid grid-cols-2 gap-2">
-                      <div class="rounded-lg bg-[var(--ik-sand-light)] px-2 py-1">Madeira: <strong x-text="formatNumber(selectedCity.wood)"></strong></div>
-                      <div class="rounded-lg bg-[var(--ik-sand-light)] px-2 py-1">Vinho: <strong x-text="formatNumber(selectedCity.wine)"></strong></div>
-                      <div class="rounded-lg bg-[var(--ik-sand-light)] px-2 py-1">Marmore: <strong x-text="formatNumber(selectedCity.marble)"></strong></div>
-                      <div class="rounded-lg bg-[var(--ik-sand-light)] px-2 py-1">Cristal: <strong x-text="formatNumber(selectedCity.crystal)"></strong></div>
-                      <div class="rounded-lg bg-[var(--ik-sand-light)] px-2 py-1">Enxofre: <strong x-text="formatNumber(selectedCity.sulfur)"></strong></div>
-                    </div>
-                  </div>
-                </template>
-                <template x-if="!selectedCity">
-                  <div class="mt-2 text-xs text-muted">Selecione uma subconta para ver as cidades disponiveis.</div>
-                </template>
-              </div>
-            </div>
-          </div>
-
-          <div class="flex justify-end gap-2 border-t border-[var(--ik-line)] pt-4">
-            <button type="button" @click="close()" class="btn btn-secondary btn-sm">Cancelar</button>
-            <button type="submit" class="btn btn-primary btn-sm">
-              <i class="bi bi-check-lg"></i> Criar ordem
-            </button>
-          </div>
-        </form>
-      </div>
+        <div class="flex justify-end gap-2 border-t border-[var(--ik-line)] pt-4">
+          <button type="button" @click="close()" class="btn btn-secondary btn-sm">Cancelar</button>
+          <button type="submit" class="btn btn-primary btn-sm">
+            <i class="bi bi-check-lg"></i> Criar ordem
+          </button>
+        </div>
+      </form>
     </div>
-  </template>
+  </div>
 </div>
 
 {{ buyer_choices|json_script:"market-buyer-choices" }}

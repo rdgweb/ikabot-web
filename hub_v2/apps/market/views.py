@@ -88,7 +88,7 @@ def _build_participant_rows() -> list[dict]:
     game_accounts = (
         GameAccount.objects.filter(active=True)
         .select_related("account", "account__node")
-        .order_by("open_for_market", "account__node__name", "name")
+        .order_by("-open_for_market", "account__node__name", "name")
     )
     snaps = {
         s.game_account_id: s
@@ -234,6 +234,20 @@ class MarketOrderCreateView(LoginRequiredMixin, View):
             resp["HX-Trigger"] = trigger
             return resp
 
+        buyer_city_id_resolved, buyer_bo_pos = services.find_buyer_branchoffice(
+            buyer_ga, preferred_city_id=buyer_city_id_value
+        )
+        if buyer_city_id_resolved is None:
+            trigger = json.dumps({
+                "toast": {
+                    "type": "warning",
+                    "message": f"A subconta {buyer_ga.name} nao tem Branch Office (Filial de Mercado) em nenhuma cidade. Construa o edificio primeiro.",
+                }
+            })
+            resp = HttpResponse(status=200)
+            resp["HX-Trigger"] = trigger
+            return resp
+
         try:
             order = services.create_internal_order(
                 buyer_ga,
@@ -251,7 +265,7 @@ class MarketOrderCreateView(LoginRequiredMixin, View):
 
         if order is None:
             trigger = json.dumps(
-                {"toast": {"type": "warning", "message": "Nenhum vendedor elegivel encontrado para esta ordem."}}
+                {"toast": {"type": "warning", "message": "Nenhum vendedor elegivel encontrado em outro no com estoque suficiente."}}
             )
             resp = HttpResponse(status=200)
             resp["HX-Trigger"] = trigger

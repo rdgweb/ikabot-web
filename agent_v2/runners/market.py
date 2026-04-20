@@ -51,6 +51,7 @@ class SellMarketRunner(BaseRunner):
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
+        ga_id = job.get("game_account_id")
         inputs = job.get("inputs", {})
 
         city_id = inputs.get("city_id")
@@ -65,8 +66,13 @@ class SellMarketRunner(BaseRunner):
 
         self.log(jid, "info", f"Creating sell offer: city={city_id} res={resource_idx} x{amount} @{unit_price}")
 
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        if not creds:
+            self.log(jid, "error", "Credenciais não encontradas")
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
+
         try:
-            client = self.get_game_session(aid)
+            client = self.get_or_login_game_client(jid, aid, ga_id, creds)
             client.create_market_offer(
                 city_id=int(city_id),
                 branchoffice_pos=int(bo_pos),
@@ -74,7 +80,7 @@ class SellMarketRunner(BaseRunner):
                 amount=amount,
                 unit_price=unit_price,
             )
-            self.save_game_session(aid, client)
+            self.save_game_client(ga_id or aid, client)
             self.log(jid, "info", "Sell offer created")
             return RunnerResult(success=True)
         except Exception as exc:
@@ -98,6 +104,7 @@ class BuyMarketRunner(BaseRunner):
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
+        ga_id = job.get("game_account_id")
         inputs = job.get("inputs", {})
 
         buyer_city_id = inputs.get("buyer_city_id")
@@ -113,8 +120,13 @@ class BuyMarketRunner(BaseRunner):
 
         self.log(jid, "info", f"Buying res={resource_idx} x{amount} from city={seller_city_id}")
 
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        if not creds:
+            self.log(jid, "error", "Credenciais não encontradas")
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
+
         try:
-            client = self.get_game_session(aid)
+            client = self.get_or_login_game_client(jid, aid, ga_id, creds)
             client.buy_market_offer(
                 buyer_city_id=int(buyer_city_id),
                 buyer_branchoffice_pos=int(buyer_bo),
@@ -123,7 +135,7 @@ class BuyMarketRunner(BaseRunner):
                 resource_idx=resource_idx,
                 amount=amount,
             )
-            self.save_game_session(aid, client)
+            self.save_game_client(ga_id or aid, client)
             self.log(jid, "info", "Market purchase complete")
             return RunnerResult(success=True)
         except Exception as exc:
@@ -152,6 +164,7 @@ class InternalMarketSellRunner(BaseRunner):
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
+        ga_id = job.get("game_account_id")
         inputs = job.get("inputs", {})
 
         city_id = inputs.get("city_id")
@@ -171,8 +184,13 @@ class InternalMarketSellRunner(BaseRunner):
             f"res={resource_idx} x{amount} @{unit_price}",
         )
 
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        if not creds:
+            self.log(jid, "error", f"[Order {order_id}] Credenciais não encontradas")
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
+
         try:
-            client = self.get_game_session(aid)
+            client = self.get_or_login_game_client(jid, aid, ga_id, creds)
             client.create_market_offer(
                 city_id=int(city_id),
                 branchoffice_pos=int(bo_pos),
@@ -180,7 +198,7 @@ class InternalMarketSellRunner(BaseRunner):
                 amount=amount,
                 unit_price=unit_price,
             )
-            self.save_game_session(aid, client)
+            self.save_game_client(ga_id or aid, client)
             self.log(jid, "info", f"[Order {order_id}] Sell offer placed in game")
 
             # Notify hub → creates buy_job (801) on buyer's node
@@ -214,6 +232,7 @@ class InternalMarketBuyRunner(BaseRunner):
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
+        ga_id = job.get("game_account_id")
         inputs = job.get("inputs", {})
 
         buyer_city_id = inputs.get("buyer_city_id")
@@ -241,8 +260,13 @@ class InternalMarketBuyRunner(BaseRunner):
         MAX_OFFER_RETRIES = 5
         offer_retry_count = int(inputs.get("offer_retry_count", 0))
 
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        if not creds:
+            self.log(jid, "error", f"[Order {order_id}] Credenciais não encontradas")
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
+
         try:
-            client = self.get_game_session(aid)
+            client = self.get_or_login_game_client(jid, aid, ga_id, creds)
             client.buy_market_offer(
                 buyer_city_id=int(buyer_city_id),
                 buyer_branchoffice_pos=int(buyer_bo),
@@ -251,7 +275,7 @@ class InternalMarketBuyRunner(BaseRunner):
                 resource_idx=resource_idx,
                 amount=amount,
             )
-            self.save_game_session(aid, client)
+            self.save_game_client(ga_id or aid, client)
             self.log(jid, "info", f"[Order {order_id}] Purchase executed")
 
             # Notify hub → order marked as completed

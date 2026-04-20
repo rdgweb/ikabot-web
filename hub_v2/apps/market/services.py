@@ -250,7 +250,7 @@ def create_internal_order(
     sell_job = Job.objects.create(
         account=seller_ga.account,
         game_account=seller_ga,
-        node=seller_ga.account.node,
+        node=buyer_ga.account.node,
         action_code=802,
         inputs_json=json.dumps({
             "city_id": seller_city_id,
