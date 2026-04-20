@@ -364,7 +364,13 @@
                   <span class="text-muted text-[10px]">[{{ city.x }}:{{ city.y }}]</span>
                   {% endif %}
                   {% if city.upgrading_count %}
-                  <i class="bi bi-arrow-up-circle-fill text-amber-500 text-[10px]" title="{{ city.upgrading_count }} construcao em andamento"></i>
+                  <span class="inline-flex items-center gap-0.5 text-amber-500"
+                        x-data="cityCountdown({{ city.construction_end_at|default:0 }})"
+                        x-init="start()"
+                        title="{{ city.upgrading_count }} construcao em andamento">
+                    <i class="bi bi-arrow-up-circle-fill text-[10px]"></i>
+                    <span x-show="label" x-text="label" class="text-[9px] font-mono font-semibold leading-none tabular-nums"></span>
+                  </span>
                   {% endif %}
                   {% if city.wine_hours is not None and city.wine_hours < 24 %}
                   <i class="bi bi-exclamation-triangle-fill text-red-500 text-[10px]" title="Vinho: {{ city.wine_hours|hours_display }}"></i>

@@ -101,6 +101,12 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                         if isinstance(b, dict) and b.get("is_upgrading")
                     )
                     total_buildings += building_count
+                    city_construction_end_at = 0
+                    for b in buildings:
+                        if isinstance(b, dict) and b.get("is_upgrading"):
+                            _end = _si(b.get("construction_end_at"), 0)
+                            if _end > city_construction_end_at:
+                                city_construction_end_at = _end
 
                     # Resource projection: hours until wine runs out
                     # wine_cons from city HTML may be 0; we compute per-city share below
@@ -128,6 +134,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                         "wine_savings": wine_savings,
                         "wine_hours": wine_hours,
                         "population": _si(city.get("population")),
+                        "construction_end_at": city_construction_end_at,
                     })
                     city_name = str(city.get("name") or "").strip()
                     if city_name:

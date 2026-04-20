@@ -220,3 +220,35 @@ function gameDashboard() {
 }
 
 window.gameDashboard = gameDashboard;
+
+
+function cityCountdown(endAt) {
+  return {
+    endAt: endAt,
+    label: '',
+    _timer: null,
+    start() {
+      if (!this.endAt) return;
+      this._tick();
+      this._timer = setInterval(() => this._tick(), 1000);
+    },
+    _tick() {
+      const remaining = Math.max(0, this.endAt - Math.floor(Date.now() / 1000));
+      if (remaining === 0) {
+        this.label = '';
+        clearInterval(this._timer);
+        return;
+      }
+      const h = Math.floor(remaining / 3600);
+      const m = Math.floor((remaining % 3600) / 60);
+      const s = remaining % 60;
+      if (h > 0) {
+        this.label = h + 'h' + String(m).padStart(2, '0') + 'm';
+      } else {
+        this.label = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+      }
+    },
+    destroy() { clearInterval(this._timer); },
+  };
+}
+window.cityCountdown = cityCountdown;
