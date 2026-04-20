@@ -1064,9 +1064,11 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         if empty_position is None:
                             raise RuntimeError(f"no_empty_slot:{','.join(sorted(allowed_types)) or 'any'}")
 
-                        # Build fallback position list (preferred first, then other empties)
+                        # Build fallback position list (preferred first, then up to 4 other empties)
                         _alt_positions = [empty_position]
                         for _item in city.get("buildings") or []:
+                            if len(_alt_positions) >= 5:
+                                break
                             _p = _to_int(_item.get("position"), -1)
                             if _p >= 0 and _p != empty_position and str(_item.get("building") or "").strip() == "empty":
                                 _st = str(_item.get("type") or "").strip()
@@ -1094,11 +1096,37 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                 empty_position = _try_pos
                                 break
                             except Exception as _pos_exc:
-                                if "position_locked" in str(_pos_exc):
+                                _exc_str = str(_pos_exc)
+                                if "position_locked" in _exc_str:
                                     self.log(jid, "info", f"[{_city_name(city)}] Slot pos={_try_pos} bloqueado por pesquisa; tentando proximo slot")
+                                    continue
+                                if "not available for slot" in _exc_str or "slot occupied" in _exc_str or "queue may be full" in _exc_str:
+                                    self.log(jid, "info", f"[{_city_name(city)}] Slot pos={_try_pos} ocupado ou fila cheia; tentando proximo slot")
                                     continue
                                 raise
                         if build_response is None:
+                            # No slot accepted the build — check if building already exists elsewhere
+                            _existing_level, _existing_pos = _find_building(city, building_id)
+                            if _existing_level >= 1:
+                                self.log(
+                                    jid, "info",
+                                    f"[{_city_name(city)}] {pending['building_name']} ja existe em pos={_existing_pos} lv={_existing_level}; etapa ignorada",
+                                )
+                                position = _existing_pos
+                                current_level = _existing_level
+                                # Skip confirm + log; go straight to delay calculation with zero delay
+                                started.append({
+                                    "city_id": pending["city_id"],
+                                    "city_name": pending["city_name"],
+                                    "building_id": pending["building_id"],
+                                    "building_name": pending["building_name"],
+                                    "to_level": next_level,
+                                    "delay": 90,
+                                    "confirmed_level": _existing_level,
+                                    "confirmed_upgrading": False,
+                                })
+                                delays.append(90)
+                                continue
                             raise RuntimeError(f"no_unlocked_slot:{building_id}")
                         live_entry = _confirm_building_state(
                             client,
