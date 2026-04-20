@@ -1063,9 +1063,19 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                             empty_position = _find_empty_position(city, allowed_types=allowed_types or None)
                         if empty_position is None:
                             raise RuntimeError(f"no_empty_slot:{','.join(sorted(allowed_types)) or 'any'}")
+
+                        # Build fallback position list (preferred first, then other empties)
+                        _alt_positions = [empty_position]
+                        for _item in city.get("buildings") or []:
+                            _p = _to_int(_item.get("position"), -1)
+                            if _p >= 0 and _p != empty_position and str(_item.get("building") or "").strip() == "empty":
+                                _st = str(_item.get("type") or "").strip()
+                                if not allowed_types or not _st or _st in allowed_types:
+                                    _alt_positions.append(_p)
+
                         logger.debug(
-                            "[%s] Entrando na cidade para construir %s na pos %d",
-                            _city_name(city), building_id, empty_position,
+                            "[%s] Entrando na cidade para construir %s; candidatos: %s",
+                            _city_name(city), building_id, _alt_positions[:5],
                         )
                         # Navigate to city view — sets current city in session AND gives fresh AR
                         _cr = client._request("GET", client._server_url, params={"view": "city", "cityId": city_id})
@@ -1076,11 +1086,20 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                             logger.info("[%s] Navegando para cidade (build), AR=%s...", _city_name(city), _ar.group(1)[:8])
                         else:
                             logger.warning("[%s] AR não encontrado na city page (build) — token anterior mantido. Resp: %r", _city_name(city), _cr.text[:500])
-                        logger.debug(
-                            "[%s] Enviando build: building_type=%s pos=%d",
-                            _city_name(city), building_id, empty_position,
-                        )
-                        build_response = client.build(city_id=city_id, building_type=building_id, position=empty_position)
+
+                        build_response = None
+                        for _try_pos in _alt_positions:
+                            try:
+                                build_response = client.build(city_id=city_id, building_type=building_id, position=_try_pos)
+                                empty_position = _try_pos
+                                break
+                            except Exception as _pos_exc:
+                                if "position_locked" in str(_pos_exc):
+                                    self.log(jid, "info", f"[{_city_name(city)}] Slot pos={_try_pos} bloqueado por pesquisa; tentando proximo slot")
+                                    continue
+                                raise
+                        if build_response is None:
+                            raise RuntimeError(f"no_unlocked_slot:{building_id}")
                         live_entry = _confirm_building_state(
                             client,
                             city_id=city_id,

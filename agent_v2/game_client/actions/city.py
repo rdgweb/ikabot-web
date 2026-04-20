@@ -21,14 +21,42 @@ def _extract_change_view_html(response_text: str, *, action: str) -> str:
     except Exception as exc:
         raise ActionError(f"Invalid {action} response", action=action) from exc
 
+    VIEW_CMDS = {"changeView", "loadContent", "updateTemplate", "updateTemplateData"}
+    all_cmds = []
     for cmd in data:
-        if isinstance(cmd, (list, tuple)) and len(cmd) >= 2 and cmd[0] == "changeView":
-            payload = cmd[1]
-            if isinstance(payload, (list, tuple)):
-                for candidate in reversed(payload):
-                    if isinstance(candidate, str) and "<" in candidate:
-                        return candidate
-    raise ActionError(f"{action} response missing changeView HTML", action=action)
+        if not isinstance(cmd, (list, tuple)) or len(cmd) < 2:
+            continue
+        cmd_name = cmd[0]
+        all_cmds.append(cmd_name)
+        if cmd_name not in VIEW_CMDS:
+            continue
+        payload = cmd[1]
+        # List-of-pairs format: [["selector", "<html>", ...], ...]
+        if isinstance(payload, (list, tuple)):
+            for candidate in reversed(payload):
+                if isinstance(candidate, str) and "<" in candidate:
+                    return candidate
+                if isinstance(candidate, (list, tuple)):
+                    for sub in candidate:
+                        if isinstance(sub, str) and "<" in sub:
+                            return sub
+        # String payload
+        if isinstance(payload, str) and "<" in payload:
+            return payload
+        # Dict payload: {"id": "...", "html": "<...>"} (updateTemplateData format)
+        if isinstance(payload, dict):
+            for key in ("html", "content", "template"):
+                val = payload.get(key)
+                if isinstance(val, str) and "<" in val:
+                    return val
+
+    # Dump full response for diagnosis
+    logger.warning("%s no HTML in view cmds. Commands: %s", action, all_cmds)
+    logger.warning("  raw response (first 1000): %r", response_text[:1000])
+    for cmd in data:
+        if isinstance(cmd, (list, tuple)) and len(cmd) >= 1 and cmd[0] in VIEW_CMDS:
+            logger.warning("  %s len=%d repr: %r", cmd[0], len(cmd), cmd[:5])
+    raise ActionError(f"{action} response missing changeView HTML — commands: {all_cmds}", action=action)
 
 
 def _parse_href_params(href: str) -> dict[str, Any]:
@@ -64,15 +92,32 @@ class BuildAction(BaseAction):
             "ajax": "1",
         }
         resp = self.client._request(
-            "POST",
+            "GET",
             self.client._server_url,
-            data=params,
+            params=params,
             headers=dict(self.client.session.headers) | {
                 "Accept": "text/plain, */*; q=0.01",
-                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
                 "X-Requested-With": "XMLHttpRequest",
             },
         )
+
+        # Check for locked position before attempting HTML extraction.
+        # The game returns updateTemplateData '' + provideFeedback type=11 for locked slots.
+        try:
+            _resp_data = json.loads(resp.text)
+        except Exception:
+            _resp_data = []
+        for _cmd in _resp_data:
+            if isinstance(_cmd, (list, tuple)) and len(_cmd) >= 2 and _cmd[0] == "updateGlobalData":
+                _bg = ((_cmd[1] or {}).get("backgroundData") or {}) if isinstance(_cmd[1], dict) else {}
+                _locked = _bg.get("lockedPosition") or {}
+                if str(position) in _locked:
+                    raise ActionError(
+                        f"position_locked:{position}:{_locked[str(position)]}",
+                        action="build",
+                    )
+                break
+
         html = _extract_change_view_html(resp.text, action="build")
 
         # Capture the new actionRequest the server embedded in this response so
