@@ -74,6 +74,10 @@ class CreateOfferAction(BaseAction):
             city_id, resource_idx, amount, unit_price,
         )
 
+        # Navigate to the city first so the game sets the correct server-side
+        # city context before accepting updateOffers (required by Ikariam).
+        self._change_city(city_id)
+
         # Base params — all resources default to 0 / placeholder price
         params: dict[str, Any] = {
             "cityId": city_id,
@@ -107,7 +111,21 @@ class CreateOfferAction(BaseAction):
             params[f"tradegood{resource_idx}"] = str(amount)
             params[f"tradegood{resource_idx}Price"] = str(unit_price)
 
-        return self._ajax_request(ActionID.MARKETPLACE_UPDATE_OFFERS, params)
+        result = self._ajax_request(ActionID.MARKETPLACE_UPDATE_OFFERS, params)
+        logger.info("updateOffers response: %s", result)
+        return result
+
+    def _change_city(self, city_id: int) -> None:
+        """Set server-side city context before Branch Office operations."""
+        try:
+            self._ajax_request(ActionID.CHANGE_CITY, {
+                "cityId": city_id,
+                "backgroundView": "city",
+                "currentCityId": city_id,
+                "templateView": "city",
+            })
+        except Exception as exc:
+            logger.warning("changeCity city=%s failed (continuing): %s", city_id, exc)
 
 
 class BuyAction(BaseAction):
