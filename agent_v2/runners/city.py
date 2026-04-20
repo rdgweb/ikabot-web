@@ -248,17 +248,17 @@ def _live_city_building_state(client, city_id: int, position: int) -> dict[str, 
     if is_empty:
         building_name = "empty"
 
-    # isBusy is the authoritative flag: True when this slot is currently upgrading
-    is_upgrading = bool(pos.get("isBusy"))
+    # isBusy is the authoritative flag for upgrades; for new builds the slot still shows
+    # as buildingGround (empty) so isBusy is False, but the city-level underConstruction
+    # field points to that position and endUpgradeTime is set.
+    under_construction = _to_int(city.get("underConstruction"), -1)
+    is_upgrading = bool(pos.get("isBusy")) or (under_construction == position)
 
-    # endUpgradeTime is a city-level field that applies to whichever position is upgrading
     construction_end_at = 0
-    if is_upgrading:
-        under_construction = _to_int(city.get("underConstruction"), -1)
-        if under_construction == position:
-            end_time = _to_int(city.get("endUpgradeTime"), 0)
-            if end_time > 0:
-                construction_end_at = end_time
+    if is_upgrading and under_construction == position:
+        end_time = _to_int(city.get("endUpgradeTime"), 0)
+        if end_time > 0:
+            construction_end_at = end_time
 
     state: dict[str, Any] = {
         "position": position,
@@ -776,7 +776,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         if not plan_steps:
             return RunnerResult(success=False, data={"error": "missing_plan"})
 
-        pending_steps = self._pick_pending_steps(cities, plan_steps, str(inputs.get("queue_strategy") or "fifo"))
+        skipped_step_indices: list[int] = list(inputs.get("skipped_step_indices") or [])
+        pending_steps = self._pick_pending_steps(cities, plan_steps, str(inputs.get("queue_strategy") or "fifo"), skipped_step_indices)
         if not pending_steps:
             self.log(jid, "info", "Plano de construcao concluido")
             return RunnerResult(success=True, data={"status": "complete"})
@@ -860,11 +861,15 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             next_wait = min(
                 [int(reason.get("wait_seconds") or MIN_RECHECK_SECONDS) for reason in wait_reasons] or [MIN_RECHECK_SECONDS]
             )
-            reschedule_inputs = {"last_transport_dispatched_at": int(time.time())} if any_transport_dispatched else None
+            reschedule_inputs: dict[str, Any] = {}
+            if any_transport_dispatched:
+                reschedule_inputs["last_transport_dispatched_at"] = int(time.time())
+            if skipped_step_indices:
+                reschedule_inputs["skipped_step_indices"] = skipped_step_indices
             return RunnerResult(
                 success=True,
                 reschedule_seconds=next_wait,
-                reschedule_inputs=reschedule_inputs,
+                reschedule_inputs=reschedule_inputs or None,
                 data={"status": "waiting_parallel", "waiting": wait_reasons},
             )
 
@@ -874,6 +879,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             delays: list[int] = []
             new_waits = list(wait_reasons)
             step_failures: list[dict[str, Any]] = []
+            _skipped_step_indices: list[int] = list(inputs.get("skipped_step_indices") or [])
 
             # Live-verify cities where snapshot indicated a building is upgrading.
             # If the game doesn't confirm it (stale snapshot after cancel or completion),
@@ -918,6 +924,11 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                         "[%s] buildingAdvisor ausente mas leitura ao vivo confirma obra em pos=%d",
                                         _city_name(city), upgrading_position,
                                     )
+                                    if live_state:
+                                        live_end = _to_int(live_state.get("construction_end_at"), 0)
+                                        if live_end > 0 and not upgrading.get("construction_end_at"):
+                                            upgrading = dict(upgrading)
+                                            upgrading["construction_end_at"] = live_end
                             except Exception as _live_exc:
                                 logger.debug("[%s] Falha ao verificar estado ao vivo: %s", _city_name(city), _live_exc)
                         else:
@@ -954,6 +965,11 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                 f"[{_city_name(city)}] Snapshot indicava obra ({upgrading_name} Lv {upgrading_level}) "
                                 f"mas jogo não confirma — snapshot desatualizado; retomando fila",
                             )
+                        elif live_state:
+                            live_end = _to_int(live_state.get("construction_end_at"), 0)
+                            if live_end > 0 and not upgrading.get("construction_end_at"):
+                                upgrading = dict(upgrading)
+                                upgrading["construction_end_at"] = live_end
                     except Exception as live_exc:
                         logger.debug("[%s] Falha ao verificar estado ao vivo: %s", _city_name(city), live_exc)
 
@@ -1112,19 +1128,10 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                     jid, "info",
                                     f"[{_city_name(city)}] {pending['building_name']} ja existe em pos={_existing_pos} lv={_existing_level}; etapa ignorada",
                                 )
-                                position = _existing_pos
-                                current_level = _existing_level
-                                # Skip confirm + log; go straight to delay calculation with zero delay
-                                started.append({
-                                    "city_id": pending["city_id"],
-                                    "city_name": pending["city_name"],
-                                    "building_id": pending["building_id"],
-                                    "building_name": pending["building_name"],
-                                    "to_level": next_level,
-                                    "delay": 90,
-                                    "confirmed_level": _existing_level,
-                                    "confirmed_upgrading": False,
-                                })
+                                # Mark step as skipped in reschedule inputs so it won't be re-selected
+                                _skipped_idx = _to_int(pending.get("index"), 0)
+                                if _skipped_idx not in _skipped_step_indices:
+                                    _skipped_step_indices.append(_skipped_idx)
                                 delays.append(90)
                                 continue
                             raise RuntimeError(f"no_unlocked_slot:{building_id}")
@@ -1258,9 +1265,13 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 next_wait = min(
                     [int(reason.get("wait_seconds") or MIN_RECHECK_SECONDS) for reason in new_waits] or [MIN_RECHECK_SECONDS]
                 )
+                _ri_no_start: dict[str, Any] = {}
+                if _skipped_step_indices:
+                    _ri_no_start["skipped_step_indices"] = _skipped_step_indices
                 return RunnerResult(
                     success=True,
                     reschedule_seconds=next_wait,
+                    reschedule_inputs=_ri_no_start or None,
                     data={"status": "waiting_parallel", "waiting": new_waits, "failed_steps": step_failures},
                 )
 
@@ -1279,10 +1290,13 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 "info",
                 f"{len(started)} obra(s) iniciada(s) neste ciclo; proximo check em {next_wait}s",
             )
+            _ri_started: dict[str, Any] = {"last_builds_started_at": now_ts}
+            if _skipped_step_indices:
+                _ri_started["skipped_step_indices"] = _skipped_step_indices
             return RunnerResult(
                 success=True,
                 reschedule_seconds=next_wait,
-                reschedule_inputs={"last_builds_started_at": now_ts},
+                reschedule_inputs=_ri_started,
                 data={"status": "started_parallel", "started": started, "waiting": new_waits, "failed_steps": step_failures},
             )
         except Exception as exc:
@@ -1355,10 +1369,14 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         cities: list[dict[str, Any]],
         plan_steps: list[dict[str, Any]],
         queue_strategy: str = "fifo",
+        skipped_step_indices: list[int] | None = None,
     ) -> list[dict[str, Any]]:
+        _skipped = set(skipped_step_indices or [])
         candidates_by_city: dict[str, list[dict[str, Any]]] = {}
         city_order: list[str] = []
         for step in sorted(plan_steps, key=lambda item: (_to_int(item.get("index"), 0), str(item.get("city_id")))):
+            if _to_int(step.get("index"), 0) in _skipped:
+                continue
             city_id = str(step.get("city_id") or "")
             if not city_id:
                 continue

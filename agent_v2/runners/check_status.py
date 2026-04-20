@@ -695,6 +695,15 @@ class CheckStatusRunner(BaseRunner):
                         construction_end_at = int(float(raw_end or 0))
                     except Exception:
                         construction_end_at = 0
+                    # Ikariam puts the construction end time at city level (endUpgradeTime)
+                    # for new builds; the per-position fields may be absent.
+                    if not construction_end_at:
+                        under = city.get("underConstruction")
+                        if under is not None and int(float(under or -1)) == i:
+                            try:
+                                construction_end_at = int(float(city.get("endUpgradeTime") or 0))
+                            except Exception:
+                                construction_end_at = 0
 
                 entry: dict = {
                     "position": i,
