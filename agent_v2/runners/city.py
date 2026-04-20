@@ -1611,6 +1611,31 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 )
                 return max(wait_seconds or 0, TRANSPORT_RECHECK_SECONDS), True
 
+            # No donor city available — try buying from the public market
+            if bool(inputs.get("auto_market_buy", True)):
+                try:
+                    aid = job["account_id"]
+                    ga_id = job.get("game_account_id")
+                    creds = self.resolve_credentials(aid, {}, game_account_id=ga_id)
+                    if creds:
+                        client = self.get_or_login_game_client(jid, aid, ga_id, creds)
+                        market_eta = self._try_buy_from_market(
+                            jid=jid,
+                            client=client,
+                            ga_id=ga_id,
+                            cities=cities,
+                            target_city=city,
+                            pending=pending,
+                            missing=missing,
+                            level_rows=pending.get("level_rows") or [],
+                        )
+                        if ga_id:
+                            self.save_game_client(ga_id, client)
+                        if market_eta is not None:
+                            return max(market_eta, TRANSPORT_RECHECK_SECONDS), True
+                except Exception as exc:
+                    self.log(jid, "warn", f"Compra no mercado falhou: {exc}")
+
         if wait_seconds:
             return max(MIN_RECHECK_SECONDS, wait_seconds + FINISH_BUFFER_SECONDS), False
 
@@ -1620,6 +1645,159 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             f"{pending['city_name']} sem recurso suficiente para {pending['building_name']} e sem ETA local confiavel",
         )
         return TRANSPORT_RECHECK_SECONDS, False
+
+    # Resource index mapping matching game_client constants
+    _RESOURCE_KEY_TO_IDX = {"wood": 0, "wine": 1, "marble": 2, "glas": 3, "sulfur": 4}
+
+    def _try_buy_from_market(
+        self,
+        *,
+        jid: str,
+        client: Any,
+        ga_id: str | None,
+        cities: list[dict[str, Any]],
+        target_city: dict[str, Any],
+        pending: dict[str, Any],
+        missing: dict[str, int],
+        level_rows: list[dict[str, Any]],
+    ) -> int | None:
+        """Buy missing resources from the public market when no donor is available.
+
+        Finds the account's branchOffice city, fetches offers, calculates a buffered
+        buy amount (next level + 1 extra if possible, else ×1.20), buys the cheapest
+        offers in order, then transports to the target city if needed.
+
+        Returns the estimated ETA in seconds until resources arrive, or None on failure.
+        """
+        target_city_id = _to_int(target_city.get("id"))
+
+        # Find a city in the account that has a branchOffice
+        bo_city: dict[str, Any] | None = None
+        bo_position: int = -1
+        for c in cities:
+            for b in c.get("buildings") or []:
+                if str(b.get("building") or "").strip() in ("branchOffice", "marketplace"):
+                    bo_city = c
+                    bo_position = _to_int(b.get("position"), -1)
+                    break
+            if bo_city:
+                break
+
+        if bo_city is None or bo_position < 0:
+            self.log(jid, "warn", "Nenhuma cidade da conta tem Mercado; compra no mercado indisponivel")
+            return None
+
+        bo_city_id = _to_int(bo_city.get("id"))
+
+        # Determine how much to buy per resource
+        next_level = _to_int(pending.get("next_level"), 1)
+        level_rows_sorted = sorted(level_rows, key=lambda r: _to_int(r.get("level"), 0))
+        next_rows = [r for r in level_rows_sorted if _to_int(r.get("level"), 0) >= next_level]
+
+        costs_next = self._normalize_costs((next_rows[0].get("costs") or {}) if next_rows else {})
+        costs_after = self._normalize_costs((next_rows[1].get("costs") or {}) if len(next_rows) > 1 else {})
+
+        bought_any = False
+        for resource_key, needed in missing.items():
+            if needed <= 0:
+                continue
+            resource_idx = self._RESOURCE_KEY_TO_IDX.get(resource_key)
+            if resource_idx is None:
+                continue
+
+            # Buy amount: next level + 1 extra level if possible, else ×1.20
+            extra = costs_after.get(resource_key, 0)
+            buy_amount = needed + extra if extra > 0 else math.ceil(needed * 1.20)
+
+            try:
+                offers = client.get_market_offers(
+                    buyer_city_id=bo_city_id,
+                    buyer_branchoffice_pos=bo_position,
+                    resource_idx=resource_idx,
+                )
+            except Exception as exc:
+                self.log(jid, "warn", f"Nao foi possivel buscar ofertas de {resource_key}: {exc}")
+                continue
+
+            if not offers:
+                self.log(jid, "warn", f"Nenhuma oferta disponivel no mercado para {resource_key}")
+                continue
+
+            # Average price of available offers (weighted by amount)
+            total_available = sum(o["amount"] for o in offers)
+            if total_available == 0:
+                continue
+            avg_price = sum(o["price_per_unit"] * o["amount"] for o in offers) / total_available
+            self.log(
+                jid, "info",
+                f"Mercado: {len(offers)} oferta(s) de {resource_key}, preco medio={avg_price:.1f}, total={total_available}",
+            )
+
+            # Buy from cheapest offers until buy_amount is covered
+            remaining = buy_amount
+            for offer in offers:
+                if remaining <= 0:
+                    break
+                to_buy = min(remaining, offer["amount"])
+                try:
+                    client.buy_market_offer(
+                        buyer_city_id=bo_city_id,
+                        buyer_branchoffice_pos=bo_position,
+                        seller_city_id=offer["seller_city_id"],
+                        seller_branchoffice_pos=offer["seller_bo_pos"],
+                        resource_idx=resource_idx,
+                        amount=to_buy,
+                    )
+                    remaining -= to_buy
+                    bought_any = True
+                    self.log(
+                        jid, "info",
+                        f"Comprado {to_buy} {resource_key} no mercado @ {offer['price_per_unit']}/un"
+                        f" (cidade vendedora={offer['seller_city_id']})",
+                    )
+                except Exception as exc:
+                    self.log(jid, "warn", f"Falha ao comprar {to_buy} {resource_key}: {exc}")
+                    break
+
+            if remaining > 0:
+                self.log(jid, "warn", f"Mercado sem quantidade suficiente de {resource_key}: faltam {remaining}")
+
+        if not bought_any:
+            return None
+
+        # If branchOffice city ≠ target city, we need to transport the resources
+        if bo_city_id != target_city_id:
+            try:
+                from services.resource_transport import prepare_transport, submit_transport
+                SNAPSHOT_TO_TRANSPORT = {"wood": "wood", "wine": "wine", "marble": "marble", "glas": "crystal", "sulfur": "sulfur"}
+                transport_resources = {
+                    SNAPSHOT_TO_TRANSPORT.get(k, k): math.ceil(v * 1.05)
+                    for k, v in missing.items() if v > 0
+                }
+                plan = prepare_transport(
+                    client,
+                    from_city_id=bo_city_id,
+                    to_city_id=target_city_id,
+                    requested=transport_resources,
+                )
+                submit_transport(client, plan)
+                self.log(
+                    jid, "info",
+                    f"Transporte criado de Mercado ({bo_city.get('name')}) → {target_city.get('name')}",
+                )
+            except Exception as exc:
+                self.log(jid, "warn", f"Falha ao criar transporte pós-compra: {exc}")
+
+        # Estimate arrival ETA
+        try:
+            eta = estimate_incoming_transport_wait_seconds(client, target_city_id)
+            if eta:
+                self.log(jid, "info", f"Recurso comprado no mercado; chegada estimada em {_format_duration(eta)}")
+                return eta + FINISH_BUFFER_SECONDS
+        except Exception as exc:
+            logger.debug("Nao foi possivel estimar ETA pós-compra: %s", exc)
+
+        return TRANSPORT_RECHECK_SECONDS
 
     def _spawn_transport_cover(
         self,

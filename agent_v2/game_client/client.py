@@ -31,7 +31,7 @@ from .actions.academy import AcademyAction
 from .actions.city import BuildAction, DemolishAction, UpgradeAction
 from .actions.daily import DailyTasksAction
 from .actions.diplomacy import DiplomacyInboxAction, DiplomacySendAction
-from .actions.market import BuyAction, CreateOfferAction, SellAction
+from .actions.market import BuyAction, CreateOfferAction, GetOffersAction, SellAction
 from .actions.miracle import MiracleAction
 from .actions.military import AttackAction, SendTroopsAction, TrainAction
 from .actions.research import ResearchAction
@@ -613,6 +613,19 @@ class GameClient:
             resource_idx=resource_idx,
             amount=amount,
             unit_price=unit_price,
+        )
+
+    def get_market_offers(
+        self,
+        buyer_city_id: int,
+        buyer_branchoffice_pos: int,
+        resource_idx: int,
+    ) -> list[dict]:
+        """Fetch all sell offers for a resource at a Branch Office, sorted cheapest-first."""
+        return GetOffersAction(self).execute(
+            buyer_city_id=buyer_city_id,
+            buyer_branchoffice_pos=buyer_branchoffice_pos,
+            resource_idx=resource_idx,
         )
 
     def buy_market_offer(

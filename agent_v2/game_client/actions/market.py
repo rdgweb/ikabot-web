@@ -326,6 +326,93 @@ class BuyAction(BaseAction):
             return ""
 
 
+class GetOffersAction(BaseAction):
+    """Fetch all sell offers available at a Branch Office for a given resource."""
+
+    def execute(
+        self,
+        buyer_city_id: int,
+        buyer_branchoffice_pos: int,
+        resource_idx: int,
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        """Return a list of available sell offers sorted cheapest-first.
+
+        Each item: {seller_city_id, seller_bo_pos, offer_type, amount, price_per_unit, resource_str}
+        """
+        resource_str = _IDX_TO_RESOURCE_STR.get(resource_idx, "resource")
+        html = self._get_branch_office_html(buyer_city_id, buyer_branchoffice_pos, resource_str)
+        return self._parse_all_offers(html, resource_str)
+
+    def _get_branch_office_html(self, city_id: int, bo_pos: int, resource_str: str) -> str:
+        params = {
+            "view": "branchOffice",
+            "cityId": city_id,
+            "position": bo_pos,
+            "currentCityId": city_id,
+            "activeTab": "bargain",
+            "type": "444",
+            "searchResource": resource_str,
+            "range": 24,
+            "backgroundView": "city",
+            "templateView": "branchOffice",
+            "currentTab": "bargain",
+            "actionRequest": self.client._action_request,
+            "ajax": "1",
+        }
+        resp = self.client._request("POST", self.client._server_url, data=params, headers=GAME_AJAX_HEADERS)
+        try:
+            data = resp.json()
+            return data[1][1][1]
+        except (ValueError, IndexError, TypeError, KeyError):
+            logger.warning("GetOffers: could not parse branchOffice HTML")
+            return ""
+
+    def _parse_all_offers(self, html: str, resource_str: str) -> list[dict[str, Any]]:
+        """Parse offer rows from Branch Office listing HTML.
+
+        Each row looks like:
+          <td ...>AMOUNT</td>
+          <td ...>PRICE</td>
+          ...href="?view=takeOffer&...&cityId=SELLER&position=POS&type=TYPE&resource=RES"
+        """
+        offers: list[dict[str, Any]] = []
+        # Match each offer block: amount, price, then the href
+        pattern = re.compile(
+            r'class="[^"]*amount[^"]*"[^>]*>\s*([\d\s.]+)\s*<'
+            r'|class="[^"]*price[^"]*"[^>]*>\s*([\d\s.]+)\s*<'
+            r'|href="\?view=takeOffer[^"]*&cityId=(\d+)&position=(\d+)&type=(\d+)&resource=(\w+)"',
+            re.IGNORECASE,
+        )
+        amount = price = None
+        for m in pattern.finditer(html):
+            if m.group(1) is not None:
+                try:
+                    amount = int(m.group(1).replace(" ", "").replace(".", ""))
+                except ValueError:
+                    amount = None
+            elif m.group(2) is not None:
+                try:
+                    price = int(m.group(2).replace(" ", "").replace(".", ""))
+                except ValueError:
+                    price = None
+            elif m.group(6) == resource_str and m.group(3):
+                if amount is not None and price is not None:
+                    offers.append({
+                        "seller_city_id": int(m.group(3)),
+                        "seller_bo_pos": int(m.group(4)),
+                        "offer_type": int(m.group(5)),
+                        "amount": amount,
+                        "price_per_unit": price,
+                        "resource_str": resource_str,
+                    })
+                amount = price = None
+
+        offers.sort(key=lambda o: o["price_per_unit"])
+        logger.info("GetOffers: %d offers for %s", len(offers), resource_str)
+        return offers
+
+
 class SellAction(BaseAction):
     """Sell goods to another player's buy offer on the Branch Office.
 
