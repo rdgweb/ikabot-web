@@ -108,12 +108,19 @@ class AjaxResponseParser:
                     logger.warning("AJAX error: %s", msg)
 
             elif cmd == "provideFeedback":
-                # type 10 = success (green confirmation); other types may be info/error
+                # type 10 = success (green); type 11 = error (red); others = info
                 if isinstance(payload, (list, tuple)):
                     for fb in payload:
-                        if isinstance(fb, dict) and int(fb.get("type", 0)) == 10:
+                        if not isinstance(fb, dict):
+                            continue
+                        fb_type = int(fb.get("type", 0))
+                        fb_text = fb.get("text", "")
+                        if fb_type == 10:
                             result["success_feedback"] = True
-                            logger.info("AJAX provideFeedback success: %s", fb.get("text", ""))
+                            logger.info("AJAX provideFeedback success: %s", fb_text)
+                        elif fb_type == 11:
+                            result["errors"].append(fb_text)
+                            logger.warning("AJAX provideFeedback error: %s", fb_text)
 
             elif cmd in ("updateBacklink", "setVariable", "logData", "popupData"):
                 pass  # informational only
