@@ -185,7 +185,7 @@ def create_internal_order(
     buyer_ga: GameAccount,
     resource_idx: int,
     amount: int,
-    unit_price: int = 12,
+    unit_price: int = 0,
     preferred_buyer_city_id: int | None = None,
 ) -> InternalMarketOrder | None:
     """Create an InternalMarketOrder and queue the sell_job (802).

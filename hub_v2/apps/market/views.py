@@ -218,7 +218,7 @@ class MarketOrderCreateView(LoginRequiredMixin, View):
         buyer_city_id = request.POST.get("buyer_city_id")
         resource_idx = request.POST.get("resource_idx")
         amount = request.POST.get("amount")
-        unit_price = request.POST.get("unit_price", "12")
+        unit_price = request.POST.get("unit_price", "0")
 
         try:
             buyer_ga = GameAccount.objects.get(pk=ga_id)
@@ -226,7 +226,7 @@ class MarketOrderCreateView(LoginRequiredMixin, View):
             resource_idx = int(resource_idx)
             amount = int(amount)
             unit_price = int(unit_price)
-            if resource_idx not in range(5) or amount <= 0 or unit_price <= 0:
+            if resource_idx not in range(5) or amount <= 0 or unit_price < 0:
                 raise ValueError("invalid params")
         except Exception as exc:
             trigger = json.dumps({"toast": {"type": "error", "message": f"Dados invalidos: {exc}"}})

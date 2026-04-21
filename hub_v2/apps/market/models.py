@@ -85,7 +85,7 @@ class InternalMarketOrder(UUIDTimestampModel):
     # Order details
     resource_idx = models.IntegerField(choices=RESOURCE_CHOICES)
     amount = models.IntegerField(default=0)
-    unit_price = models.IntegerField(default=12)
+    unit_price = models.IntegerField(default=0)
     status = models.CharField(max_length=32, default="created", choices=STATUS_CHOICES)
 
     # Related jobs

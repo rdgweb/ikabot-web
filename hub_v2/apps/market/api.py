@@ -110,7 +110,8 @@ class MarketOrderCreateView(APIView):
     Create an InternalMarketOrder from an agent runner (e.g., construction
     runner requesting resource transport via internal market).
 
-    Body: { "game_account_id": "<uuid>", "resource_idx": 2, "amount": 5000, "unit_price": 12 }
+    Body: { "game_account_id": "<uuid>", "resource_idx": 2, "amount": 5000, "unit_price": 0 }
+    unit_price=0 means auto (agent fetches limits from game and uses midpoint).
     """
 
     authentication_classes = [AgentTokenAuthentication]
@@ -120,7 +121,7 @@ class MarketOrderCreateView(APIView):
         game_account_id = request.data.get("game_account_id")
         resource_idx = request.data.get("resource_idx")
         amount = request.data.get("amount")
-        unit_price = int(request.data.get("unit_price", 12))
+        unit_price = int(request.data.get("unit_price", 0))
 
         if not game_account_id or resource_idx is None or not amount:
             return Response(
