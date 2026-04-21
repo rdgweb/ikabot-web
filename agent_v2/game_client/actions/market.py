@@ -280,10 +280,12 @@ class BuyAction(BaseAction):
 
         # Step 4: POST the purchase
         params: dict[str, Any] = {
-            "cityId": offer["city_id"],         # seller's city
-            "destinationCityId": buyer_city_id,  # buyer's city (where goods arrive)
+            # The buy POST keeps the same city direction as the takeOffer view:
+            # cityId/currentCityId stay on the buyer context, destinationCityId is the seller.
+            "cityId": offer.get("buyer_city_id", buyer_city_id),
+            "destinationCityId": offer["city_id"],
             "oldView": "branchOffice",
-            "position": buyer_branchoffice_pos,  # buyer's BO slot
+            "position": offer.get("buyer_bo_pos", buyer_branchoffice_pos),
             "avatar2Name": offer.get("player_name", ""),
             "city2Name": offer.get("city_name", ""),
             "type": offer["type"],
@@ -296,7 +298,7 @@ class BuyAction(BaseAction):
             "jetPropulsion": 0,
             "transporters": ships,
             "backgroundView": "city",
-            "currentCityId": offer["city_id"],
+            "currentCityId": offer.get("buyer_city_id", buyer_city_id),
             "templateView": "takeOffer",
             "currentTab": "bargain",
         }
