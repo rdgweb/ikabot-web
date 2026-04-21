@@ -1746,6 +1746,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     amount=buy_amount,
                     unit_price=0,
                     preferred_buyer_city_id=target_city_id,
+                    source_job_id=jid,
                     source_action_code=1002,
                     source_reason="construction_missing_resources",
                     reason_detail=(

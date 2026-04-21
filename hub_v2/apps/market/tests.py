@@ -2,8 +2,9 @@ from django.test import TestCase
 
 from apps.accounts.models import Account, GameAccount, Node
 from apps.game.models import AccountSnapshot
+from apps.jobs.models import Job
 
-from .services import create_internal_order
+from .services import create_buy_job, create_internal_order
 
 
 class MarketServiceTests(TestCase):
@@ -89,3 +90,55 @@ class MarketServiceTests(TestCase):
         self.assertIsNotNone(order)
         self.assertEqual(order.buyer_city_id, 202)
         self.assertEqual(order.buyer_branchoffice_pos, 8)
+
+    def test_create_internal_order_matches_crystal_from_snapshot_aliases(self):
+        seller_snapshot = AccountSnapshot.objects.get(game_account=self.seller_ga)
+        seller_snapshot.cities = [
+            {
+                "id": 303,
+                "name": "Seller Port",
+                "wood": 0,
+                "wine": 0,
+                "marble": 0,
+                "crystal": 5000,
+                "buildings": [{"building": "branchOffice", "position": 4}],
+            }
+        ]
+        seller_snapshot.save(update_fields=["cities"])
+
+        order = create_internal_order(
+            self.buyer_ga,
+            resource_idx=3,
+            amount=2000,
+            unit_price=0,
+        )
+
+        self.assertIsNotNone(order)
+        self.assertEqual(order.resource_idx, 3)
+        self.assertEqual(order.seller_city_id, 303)
+
+    def test_market_jobs_keep_source_chain(self):
+        parent_job = Job.objects.create(
+            account=self.buyer_account,
+            game_account=self.buyer_ga,
+            node=self.buyer_node,
+            action_code=1002,
+            inputs_json="{}",
+            status="queued",
+        )
+        order = create_internal_order(
+            self.buyer_ga,
+            resource_idx=0,
+            amount=500,
+            unit_price=0,
+            source_job_id=str(parent_job.pk),
+        )
+
+        self.assertIsNotNone(order)
+        self.assertEqual(str(order.sell_job.source_job_id), str(parent_job.pk))
+        self.assertEqual(str(order.sell_job.root_job_id), str(parent_job.pk))
+
+        buy_job = create_buy_job(order)
+        self.assertIsNotNone(buy_job)
+        self.assertEqual(str(buy_job.source_job_id), str(order.sell_job.pk))
+        self.assertEqual(str(buy_job.root_job_id), str(parent_job.pk))

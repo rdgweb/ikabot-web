@@ -20,6 +20,7 @@ from django.db.models import Sum
 from apps.accounts.models import GameAccount
 from apps.game.models import AccountSnapshot
 from apps.jobs.models import ConstructionResourceReservation, Job
+
 from .models import InternalMarketOrder
 
 if TYPE_CHECKING:
@@ -27,14 +28,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Map resource_idx → snapshot city key
-_IDX_TO_KEY = {0: "wood", 1: "wine", 2: "marble", 3: "glas", 4: "sulfur"}
-
-# resource_idx → "resource" string used in Ikariam AJAX / ikabot
+_IDX_TO_KEY = {0: "wood", 1: "wine", 2: "marble", 3: "crystal", 4: "sulfur"}
 _IDX_TO_RESOURCE_STR = {0: "resource", 1: "1", 2: "2", 3: "3", 4: "4"}
-
-
-# ── Snapshot helpers ────────────────────────────────────────────────────────
 
 
 def _cities_from_snapshot(snap: AccountSnapshot) -> list[dict]:
@@ -47,15 +42,15 @@ def _cities_from_snapshot(snap: AccountSnapshot) -> list[dict]:
 
 
 def _city_stock(city: dict, resource_idx: int) -> int:
-    """Return the city's stored amount for resource_idx (0–4)."""
     key = _IDX_TO_KEY.get(resource_idx)
     if key is None:
         return 0
+    if key == "crystal":
+        return int(city.get("crystal") or city.get("glas") or 0)
     return int(city.get(key) or 0)
 
 
 def _find_branchoffice(city: dict) -> int:
-    """Return the Branch Office position in the city, or -1 if absent."""
     buildings = city.get("buildings") or city.get("position") or []
     for b in buildings:
         if not isinstance(b, dict):
@@ -64,7 +59,6 @@ def _find_branchoffice(city: dict) -> int:
             pos = b.get("position")
             if pos is not None:
                 return int(pos)
-            # Fallback: use list index
             try:
                 return buildings.index(b)
             except ValueError:
@@ -73,22 +67,44 @@ def _find_branchoffice(city: dict) -> int:
 
 
 def _active_reservation(seller_ga: GameAccount, city_id: int, resource_idx: int) -> int:
-    """Sum of locally-reserved resource amounts in active construction plans."""
     resource_key = _IDX_TO_KEY.get(resource_idx, "")
     if not resource_key:
         return 0
+    resource_keys = [resource_key]
+    if resource_key == "crystal":
+        resource_keys = ["crystal", "glas"]
     return (
         ConstructionResourceReservation.objects.filter(
             game_account=seller_ga,
             city_id=str(city_id),
-            resource=resource_key,
+            resource__in=resource_keys,
             status="active",
         ).aggregate(total=Sum("reserved_local_amount"))["total"]
         or 0
     )
 
 
-# ── Matching ────────────────────────────────────────────────────────────────
+def _city_name(city: dict | None, fallback: int | None = None) -> str:
+    if isinstance(city, dict):
+        raw = str(city.get("name") or "").strip()
+        if raw:
+            return raw
+        city_id = city.get("id")
+        if city_id not in (None, ""):
+            return f"Cidade {city_id}"
+    if fallback not in (None, ""):
+        return f"Cidade {fallback}"
+    return ""
+
+
+def _resolve_job_chain(source_job_id) -> tuple[str | None, str | None]:
+    if not source_job_id:
+        return None, None
+    parent = Job.objects.filter(pk=source_job_id).only("id", "root_job_id").first()
+    if not parent:
+        sid = str(source_job_id)
+        return sid, sid
+    return str(parent.pk), str(parent.root_job_id or parent.pk)
 
 
 def find_eligible_seller(
@@ -96,16 +112,6 @@ def find_eligible_seller(
     resource_idx: int,
     amount: int,
 ) -> tuple[GameAccount | None, dict | None, int]:
-    """Find a seller GameAccount + city that can supply the resource.
-
-    Returns:
-        (seller_ga, seller_city_dict, branchoffice_pos) or (None, None, -1).
-
-    Rules:
-    - Different node from buyer.
-    - open_for_market=True, active=True, not blocked.
-    - Has a snapshot with enough free stock in at least one city that has a Branch Office.
-    """
     buyer_node = buyer_ga.node
 
     candidates = (
@@ -147,10 +153,6 @@ def find_buyer_branchoffice(
     buyer_ga: GameAccount,
     preferred_city_id: int | None = None,
 ) -> tuple[int | None, int]:
-    """Pick the first buyer city that has a Branch Office.
-
-    Returns (city_id, branchoffice_pos) or (None, -1).
-    """
     try:
         snap = AccountSnapshot.objects.filter(game_account=buyer_ga).first()
     except Exception:
@@ -178,27 +180,21 @@ def find_buyer_branchoffice(
     return None, -1
 
 
-# ── Order creation ──────────────────────────────────────────────────────────
-
-
 def create_internal_order(
     buyer_ga: GameAccount,
     resource_idx: int,
     amount: int,
     unit_price: int = 0,
     preferred_buyer_city_id: int | None = None,
+    source_job_id: str | None = None,
     source_action_code: int | None = None,
     source_reason: str = "",
     reason_detail: str = "",
     production_eta_seconds: int | None = None,
     missing_resource_keys: str = "",
 ) -> InternalMarketOrder | None:
-    """Create an InternalMarketOrder and queue the sell_job (802).
-
-    Returns the order on success, or None if no eligible seller was found.
-    """
-    # Check buyer gold reserve before matching
     min_gold = int(getattr(buyer_ga, "market_min_gold", 0) or 0)
+    buyer_snap = None
     if min_gold > 0:
         try:
             buyer_snap = AccountSnapshot.objects.filter(game_account=buyer_ga).first()
@@ -211,10 +207,10 @@ def create_internal_order(
                 buyer_ga.pk, current_gold, min_gold,
             )
             return None
+    elif buyer_snap is None:
+        buyer_snap = AccountSnapshot.objects.filter(game_account=buyer_ga).first()
 
-    seller_ga, seller_city, seller_bo_pos = find_eligible_seller(
-        buyer_ga, resource_idx, amount
-    )
+    seller_ga, seller_city, seller_bo_pos = find_eligible_seller(buyer_ga, resource_idx, amount)
     if seller_ga is None:
         logger.warning(
             "No eligible seller for resource_idx=%s amount=%s buyer_ga=%s",
@@ -233,7 +229,16 @@ def create_internal_order(
             preferred_buyer_city_id,
         )
         return None
+
     seller_city_id = int(seller_city["id"])
+    buyer_city_name = _city_name(None, buyer_city_id)
+    if buyer_snap:
+        for city in _cities_from_snapshot(buyer_snap):
+            if int(city.get("id") or 0) == int(buyer_city_id):
+                buyer_city_name = _city_name(city, buyer_city_id)
+                break
+    seller_city_name = _city_name(seller_city, seller_city_id)
+    sell_source_job_id, root_job_id = _resolve_job_chain(source_job_id)
 
     order = InternalMarketOrder.objects.create(
         buyer_account=buyer_ga.account,
@@ -262,12 +267,17 @@ def create_internal_order(
         game_account=seller_ga,
         node=seller_ga.account.node,
         action_code=802,
+        source_job_id=sell_source_job_id,
+        root_job_id=root_job_id,
         inputs_json=json.dumps({
             "city_id": seller_city_id,
+            "city_name": seller_city_name,
             "branchoffice_pos": seller_bo_pos,
             "resource_idx": resource_idx,
             "amount": amount,
             "unit_price": unit_price,
+            "buyer_city_id": buyer_city_id,
+            "buyer_city_name": buyer_city_name,
             "internal_order_id": str(order.pk),
         }),
         status="queued",
@@ -285,11 +295,6 @@ def create_internal_order(
 
 
 def create_buy_job(order: InternalMarketOrder) -> Job | None:
-    """Create the buy_job (801) for an order whose sell_job has completed.
-
-    Called by the hub API when Runner 802 signals completion.
-    Returns the new Job, or None if the order has no buyer_game_account.
-    """
     buyer_ga = order.buyer_game_account
     if buyer_ga is None:
         logger.error("Order %s has no buyer_game_account; cannot create buy_job", order.pk)
@@ -300,10 +305,14 @@ def create_buy_job(order: InternalMarketOrder) -> Job | None:
         game_account=buyer_ga,
         node=buyer_ga.account.node,
         action_code=801,
+        source_job_id=order.sell_job_id,
+        root_job_id=(order.sell_job.root_job_id if order.sell_job else None) or order.sell_job_id,
         inputs_json=json.dumps({
             "buyer_city_id": order.buyer_city_id,
+            "buyer_city_name": _city_name(None, order.buyer_city_id),
             "buyer_branchoffice_pos": order.buyer_branchoffice_pos,
             "seller_city_id": order.seller_city_id,
+            "seller_city_name": _city_name(None, order.seller_city_id),
             "seller_branchoffice_pos": order.seller_branchoffice_pos,
             "resource_idx": order.resource_idx,
             "amount": order.amount,
@@ -316,7 +325,5 @@ def create_buy_job(order: InternalMarketOrder) -> Job | None:
     order.status = "jobs_running"
     order.save(update_fields=["buy_job", "status", "updated_at"])
 
-    logger.info(
-        "buy_job %s created for order %s (buyer=%s)", buy_job.pk, order.pk, buyer_ga,
-    )
+    logger.info("buy_job %s created for order %s (buyer=%s)", buy_job.pk, order.pk, buyer_ga)
     return buy_job

@@ -32,6 +32,14 @@ from runners.base import BaseRunner, RunnerResult
 
 logger = logging.getLogger(__name__)
 
+RESOURCE_LABELS = {
+    0: "Madeira",
+    1: "Vinho",
+    2: "Marmore",
+    3: "Cristal",
+    4: "Enxofre",
+}
+
 
 # ── Generic runners (manual / external market use) ──────────────────────────
 
@@ -176,6 +184,9 @@ class InternalMarketSellRunner(BaseRunner):
         # unit_price=0 means "auto" — CreateOfferAction fetches limits and uses midpoint
         unit_price = int(inputs.get("unit_price", 0))
         order_id = inputs.get("internal_order_id")
+        city_name = str(inputs.get("city_name") or city_id or "").strip()
+        buyer_city_name = str(inputs.get("buyer_city_name") or inputs.get("buyer_city_id") or "").strip()
+        resource_label = RESOURCE_LABELS.get(resource_idx, f"res={resource_idx}")
 
         if not city_id or bo_pos is None or amount <= 0 or not order_id:
             self.log(jid, "error", "Missing required inputs for InternalMarketSellRunner")
@@ -183,8 +194,8 @@ class InternalMarketSellRunner(BaseRunner):
 
         self.log(
             jid, "info",
-            f"[Order {order_id}] Creating sell offer: city={city_id} "
-            f"res={resource_idx} x{amount} @{unit_price}",
+            f"[Order {order_id}] Venda interna: {city_name} -> {buyer_city_name} | "
+            f"{resource_label} x{amount} @{'auto' if unit_price <= 0 else unit_price}",
         )
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
@@ -202,12 +213,12 @@ class InternalMarketSellRunner(BaseRunner):
                 unit_price=unit_price,
             )
             self.save_game_client(ga_id or aid, client)
-            self.log(jid, "info", f"[Order {order_id}] Sell offer placed in game")
+            self.log(jid, "info", f"[Order {order_id}] Oferta publicada em {city_name} | bo={bo_pos} | {resource_label} x{amount}")
 
             # Notify hub → creates buy_job (801) on buyer's node
             resp = self.hub.market_order_sell_complete(order_id)
             buy_job_id = resp.get("buy_job_id", "?")
-            self.log(jid, "info", f"[Order {order_id}] Buy job created: {buy_job_id}")
+            self.log(jid, "info", f"[Order {order_id}] Job derivado de compra criado: {buy_job_id}")
 
             return RunnerResult(success=True, data={"buy_job_id": buy_job_id})
 
@@ -245,6 +256,9 @@ class InternalMarketBuyRunner(BaseRunner):
         resource_idx = int(inputs.get("resource_idx", 0))
         amount = int(inputs.get("amount", 0))
         order_id = inputs.get("internal_order_id")
+        buyer_city_name = str(inputs.get("buyer_city_name") or buyer_city_id or "").strip()
+        seller_city_name = str(inputs.get("seller_city_name") or seller_city_id or "").strip()
+        resource_label = RESOURCE_LABELS.get(resource_idx, f"res={resource_idx}")
 
         if not all([
             buyer_city_id, buyer_bo is not None,
@@ -256,8 +270,8 @@ class InternalMarketBuyRunner(BaseRunner):
 
         self.log(
             jid, "info",
-            f"[Order {order_id}] Buying res={resource_idx} x{amount} "
-            f"from city={seller_city_id}",
+            f"[Order {order_id}] Compra interna: {seller_city_name} -> {buyer_city_name} | "
+            f"{resource_label} x{amount}",
         )
 
         MAX_OFFER_RETRIES = 5
@@ -279,7 +293,7 @@ class InternalMarketBuyRunner(BaseRunner):
                 amount=amount,
             )
             self.save_game_client(ga_id or aid, client)
-            self.log(jid, "info", f"[Order {order_id}] Purchase executed")
+            self.log(jid, "info", f"[Order {order_id}] Compra executada | destino={buyer_city_name} | origem={seller_city_name}")
 
             # Notify hub → order marked as completed
             self.hub.market_order_complete(order_id)
@@ -295,7 +309,7 @@ class InternalMarketBuyRunner(BaseRunner):
                 self.log(
                     jid, "warn",
                     f"[Order {order_id}] Offer not found in listing "
-                    f"(attempt {next_retry}/{MAX_OFFER_RETRIES}); retrying in 60s",
+                    f"(attempt {next_retry}/{MAX_OFFER_RETRIES}) | origem={seller_city_name} | destino={buyer_city_name}; retrying in 60s",
                 )
                 retry_inputs = dict(inputs)
                 retry_inputs["offer_retry_count"] = next_retry

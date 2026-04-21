@@ -123,6 +123,7 @@ class MarketOrderCreateView(APIView):
         amount = request.data.get("amount")
         unit_price = int(request.data.get("unit_price", 0))
         preferred_buyer_city_id = request.data.get("preferred_buyer_city_id")
+        source_job_id = request.data.get("source_job_id")
         source_action_code = request.data.get("source_action_code")
         source_reason = str(request.data.get("source_reason") or "").strip()
         reason_detail = str(request.data.get("reason_detail") or "").strip()
@@ -151,6 +152,7 @@ class MarketOrderCreateView(APIView):
             amount=int(amount),
             unit_price=unit_price,
             preferred_buyer_city_id=int(preferred_buyer_city_id) if preferred_buyer_city_id not in (None, "") else None,
+            source_job_id=str(source_job_id).strip() if source_job_id not in (None, "") else None,
             source_action_code=int(source_action_code) if source_action_code not in (None, "") else None,
             source_reason=source_reason,
             reason_detail=reason_detail,

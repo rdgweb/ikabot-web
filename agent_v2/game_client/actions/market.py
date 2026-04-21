@@ -82,7 +82,7 @@ class CreateOfferAction(BaseAction):
             raise ActionError(f"Invalid resource_idx={resource_idx}", action="updateOffers")
 
         # Fetch current price limits — they are server-specific and change over time.
-        limits = self.get_price_limits(city_id, branchoffice_pos)
+        limits, current_offer_state = self.get_market_context(city_id, branchoffice_pos)
         min_price, max_price = limits[resource_idx]
 
         if unit_price <= 0:
@@ -107,20 +107,20 @@ class CreateOfferAction(BaseAction):
             "cityId": city_id,
             "position": branchoffice_pos,
             "resourceTradeType": "444",
-            "resource": "0",
-            "resourcePrice": str(limits[0][0]),  # valid placeholder (min price)
+            "resource": str(current_offer_state.get("resource", 0)),
+            "resourcePrice": str(current_offer_state.get("resourcePrice", limits[0][0])),
             "tradegood1TradeType": "444",
-            "tradegood1": "0",
-            "tradegood1Price": str(limits[1][0]),
+            "tradegood1": str(current_offer_state.get("tradegood1", 0)),
+            "tradegood1Price": str(current_offer_state.get("tradegood1Price", limits[1][0])),
             "tradegood2TradeType": "444",
-            "tradegood2": "0",
-            "tradegood2Price": str(limits[2][0]),
+            "tradegood2": str(current_offer_state.get("tradegood2", 0)),
+            "tradegood2Price": str(current_offer_state.get("tradegood2Price", limits[2][0])),
             "tradegood3TradeType": "444",
-            "tradegood3": "0",
-            "tradegood3Price": str(limits[3][0]),
+            "tradegood3": str(current_offer_state.get("tradegood3", 0)),
+            "tradegood3Price": str(current_offer_state.get("tradegood3Price", limits[3][0])),
             "tradegood4TradeType": "444",
-            "tradegood4": "0",
-            "tradegood4Price": str(limits[4][0]),
+            "tradegood4": str(current_offer_state.get("tradegood4", 0)),
+            "tradegood4Price": str(current_offer_state.get("tradegood4Price", limits[4][0])),
             "backgroundView": "city",
             "currentCityId": city_id,
             "templateView": "branchOfficeOwnOffers",
@@ -139,6 +139,14 @@ class CreateOfferAction(BaseAction):
         logger.info("updateOffers response: %s", result)
         return result
 
+    def get_market_context(
+        self, city_id: int, branchoffice_pos: int
+    ) -> tuple[list[tuple[int, int]], dict[str, int]]:
+        html = self._get_own_offers_html(city_id, branchoffice_pos)
+        limits = self._parse_price_limits(html)
+        current_state = self._parse_current_offer_state(html, limits)
+        return limits, current_state
+
     def get_price_limits(
         self, city_id: int, branchoffice_pos: int
     ) -> list[tuple[int, int]]:
@@ -150,6 +158,10 @@ class CreateOfferAction(BaseAction):
         Raises:
             ActionError: If the limits cannot be retrieved.
         """
+        html = self._get_own_offers_html(city_id, branchoffice_pos)
+        return self._parse_price_limits(html)
+
+    def _get_own_offers_html(self, city_id: int, branchoffice_pos: int) -> str:
         resp = self.client._request(
             "GET",
             self.client._server_url,
@@ -177,10 +189,15 @@ class CreateOfferAction(BaseAction):
             if isinstance(entry, (list, tuple)) and len(entry) >= 2 and entry[0] == "changeView":
                 payload = entry[1]
                 if isinstance(payload, (list, tuple)):
-                    for item in payload:
-                        if isinstance(item, str) and len(item) > 100:
-                            html = item
-                            break
+                        for item in payload:
+                            if isinstance(item, str) and len(item) > 100:
+                                html = item
+                                break
+        if not html:
+            raise ActionError("Could not extract own offers HTML", action="get_price_limits")
+        return html
+
+    def _parse_price_limits(self, html: str) -> list[tuple[int, int]]:
 
         # Parse <td>MIN - MAX</td> rows (one per resource in form order)
         limit_cells = re.findall(r"<td>(\d+)\s+-\s+(\d+)</td>", html)
@@ -193,6 +210,29 @@ class CreateOfferAction(BaseAction):
         limits = [(int(mn), int(mx)) for mn, mx in limit_cells[:5]]
         logger.info("Price limits fetched: %s", limits)
         return limits
+
+    def _parse_current_offer_state(self, html: str, limits: list[tuple[int, int]]) -> dict[str, int]:
+        state = {
+            "resource": 0,
+            "resourcePrice": limits[0][0],
+            "tradegood1": 0,
+            "tradegood1Price": limits[1][0],
+            "tradegood2": 0,
+            "tradegood2Price": limits[2][0],
+            "tradegood3": 0,
+            "tradegood3Price": limits[3][0],
+            "tradegood4": 0,
+            "tradegood4Price": limits[4][0],
+        }
+        for match in re.finditer(r'name="([^"]+)"[^>]*value="([^"]*)"', html):
+            name = str(match.group(1) or "").strip()
+            if name not in state:
+                continue
+            try:
+                state[name] = int(str(match.group(2) or "0").strip() or 0)
+            except ValueError:
+                continue
+        return state
 
 
 class BuyAction(BaseAction):

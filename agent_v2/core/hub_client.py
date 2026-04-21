@@ -234,6 +234,7 @@ class HubClient:
         amount: int,
         unit_price: int = 12,
         preferred_buyer_city_id: int | None = None,
+        source_job_id: str | None = None,
         source_action_code: int | None = None,
         source_reason: str = "",
         reason_detail: str = "",
@@ -252,6 +253,8 @@ class HubClient:
         }
         if preferred_buyer_city_id is not None:
             payload["preferred_buyer_city_id"] = preferred_buyer_city_id
+        if source_job_id:
+            payload["source_job_id"] = source_job_id
         if source_action_code is not None:
             payload["source_action_code"] = source_action_code
         if source_reason:

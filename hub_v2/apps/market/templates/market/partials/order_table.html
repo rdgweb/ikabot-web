@@ -9,7 +9,9 @@
         <th class="text-right">Qtd.</th>
         <th class="text-right">Preço/un.</th>
         <th>Comprador</th>
+        <th>Cidade compra</th>
         <th>Vendedor</th>
+        <th>Cidade venda</th>
         <th>Status</th>
         <th>Criado em</th>
         <th></th>
@@ -32,6 +34,9 @@
           <div class="text-xs text-muted">{{ order.buyer_game_account.name|default:order.buyer_game_account.server_id }}</div>
           {% endif %}
         </td>
+        <td class="text-xs text-muted">
+          {% if order.buyer_city_name_display %}{{ order.buyer_city_name_display }}{% elif order.buyer_city_id %}Cidade #{{ order.buyer_city_id }}{% else %}-{% endif %}
+        </td>
         <td>
           {% if order.seller_account %}
           <div class="text-sm text-ink leading-tight">{{ order.seller_account.label }}</div>
@@ -41,6 +46,9 @@
           {% else %}
           <span class="text-muted text-xs">Aguardando...</span>
           {% endif %}
+        </td>
+        <td class="text-xs text-muted">
+          {% if order.seller_city_name_display %}{{ order.seller_city_name_display }}{% elif order.seller_city_id %}Cidade #{{ order.seller_city_id }}{% else %}-{% endif %}
         </td>
         <td>
           {% if order.status == "completed" %}
@@ -70,12 +78,25 @@
                   title="Cancelar ordem">
             <i class="bi bi-x-lg text-[10px]"></i>
           </button>
+          {% elif order.status == "completed" or order.status == "failed" or order.status == "canceled" %}
+          <button type="button"
+                  onclick="return openConfirm({
+                    title: 'Excluir ordem',
+                    message: 'Excluir esta ordem de {{ order.amount }} x {{ order.get_resource_idx_display }}?',
+                    style: 'danger',
+                    confirmLabel: 'Excluir',
+                    onConfirm: () => htmx.ajax('POST', '{% url 'market:order-delete' order.pk %}', {swap: 'none'})
+                  })"
+                  class="btn btn-danger btn-sm !px-2 !py-0.5"
+                  title="Excluir ordem">
+            <i class="bi bi-trash text-[10px]"></i>
+          </button>
           {% endif %}
         </td>
       </tr>
       {% empty %}
       <tr>
-        <td colspan="8" class="text-center py-8 text-muted">
+        <td colspan="10" class="text-center py-8 text-muted">
           <i class="bi bi-shop text-2xl block mb-2"></i>
           Nenhuma ordem encontrada para os filtros aplicados.
         </td>

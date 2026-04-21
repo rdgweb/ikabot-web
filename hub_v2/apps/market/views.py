@@ -71,11 +71,14 @@ def _market_city_options(game_account: GameAccount) -> list[dict]:
             {
                 "city_id": int(city_id),
                 "name": str(city.get("name") or city_id),
+                "x": int(city.get("x") or 0) if city.get("x") not in (None, "") else None,
+                "y": int(city.get("y") or 0) if city.get("y") not in (None, "") else None,
+                "tradegood_id": int(city.get("produced_tradegood") or city.get("tradegood") or 0),
                 "branch_office_pos": branch_office_pos,
                 "wood": int(city.get("wood") or 0),
                 "wine": int(city.get("wine") or 0),
                 "marble": int(city.get("marble") or 0),
-                "crystal": int(city.get("crystal") or 0),
+                "crystal": int(city.get("crystal") or city.get("glas") or 0),
                 "sulfur": int(city.get("sulfur") or 0),
             }
         )
@@ -84,7 +87,6 @@ def _market_city_options(game_account: GameAccount) -> list[dict]:
 
 
 def _build_participant_rows() -> list[dict]:
-    """Return all GameAccounts with snapshot data for the participants table."""
     game_accounts = (
         GameAccount.objects.filter(active=True)
         .select_related("account", "account__node")
@@ -106,7 +108,7 @@ def _build_participant_rows() -> list[dict]:
             stock["wood"] += int(city.get("wood") or 0)
             stock["wine"] += int(city.get("wine") or 0)
             stock["marble"] += int(city.get("marble") or 0)
-            stock["crystal"] += int(city.get("crystal") or 0)
+            stock["crystal"] += int(city.get("crystal") or city.get("glas") or 0)
             stock["sulfur"] += int(city.get("sulfur") or 0)
 
         rows.append(
@@ -179,6 +181,14 @@ class MarketOrdersPartialView(FilterSortListView):
         "seller_node",
     )
 
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        object_list = ctx.get("object_list") or []
+        for order in object_list:
+            order.buyer_city_name_display = _find_city_name(order.buyer_game_account, order.buyer_city_id)
+            order.seller_city_name_display = _find_city_name(order.seller_game_account, order.seller_city_id)
+        return ctx
+
 
 class MarketOrderDetailView(LoginRequiredMixin, DetailView):
     model = InternalMarketOrder
@@ -211,30 +221,43 @@ class MarketOrderDetailView(LoginRequiredMixin, DetailView):
 
 
 class MarketOrderCreateView(LoginRequiredMixin, View):
-    """POST: create an InternalMarketOrder from the dashboard form."""
+    """POST: create one or more InternalMarketOrders from the dashboard form."""
 
     def post(self, request):
         ga_id = request.POST.get("buyer_ga_id")
         buyer_city_id = request.POST.get("buyer_city_id")
-        resource_idx = request.POST.get("resource_idx")
-        amount = request.POST.get("amount")
-        unit_price = request.POST.get("unit_price", "0")
 
         try:
             buyer_ga = GameAccount.objects.get(pk=ga_id)
             buyer_city_id_value = int(buyer_city_id) if str(buyer_city_id or "").strip() else None
-            resource_idx = int(resource_idx)
-            amount = int(amount)
-            unit_price = int(unit_price)
-            if resource_idx not in range(5) or amount <= 0 or unit_price < 0:
-                raise ValueError("invalid params")
         except Exception as exc:
             trigger = json.dumps({"toast": {"type": "error", "message": f"Dados invalidos: {exc}"}})
             resp = HttpResponse(status=400)
             resp["HX-Trigger"] = trigger
             return resp
 
-        buyer_city_id_resolved, buyer_bo_pos = services.find_buyer_branchoffice(
+        requested_items: list[tuple[int, int, int]] = []
+        for raw_idx in request.POST.getlist("resource_idx"):
+            try:
+                resource_idx = int(raw_idx)
+                amount = int(request.POST.get(f"amount_{resource_idx}") or 0)
+                unit_price = int(request.POST.get(f"unit_price_{resource_idx}") or 0)
+            except Exception as exc:
+                trigger = json.dumps({"toast": {"type": "error", "message": f"Dados invalidos: {exc}"}})
+                resp = HttpResponse(status=400)
+                resp["HX-Trigger"] = trigger
+                return resp
+            if resource_idx not in range(5) or amount <= 0 or unit_price < 0:
+                continue
+            requested_items.append((resource_idx, amount, unit_price))
+
+        if not requested_items:
+            trigger = json.dumps({"toast": {"type": "error", "message": "Selecione ao menos um recurso com quantidade valida."}})
+            resp = HttpResponse(status=400)
+            resp["HX-Trigger"] = trigger
+            return resp
+
+        buyer_city_id_resolved, _buyer_bo_pos = services.find_buyer_branchoffice(
             buyer_ga, preferred_city_id=buyer_city_id_value
         )
         if buyer_city_id_resolved is None:
@@ -248,36 +271,44 @@ class MarketOrderCreateView(LoginRequiredMixin, View):
             resp["HX-Trigger"] = trigger
             return resp
 
-        try:
-            order = services.create_internal_order(
-                buyer_ga,
-                resource_idx,
-                amount,
-                unit_price,
-                preferred_buyer_city_id=buyer_city_id_value,
-            )
-        except Exception as exc:
-            logger.exception("Error creating market order")
-            trigger = json.dumps({"toast": {"type": "error", "message": f"Erro ao criar ordem: {exc}"}})
-            resp = HttpResponse(status=500)
-            resp["HX-Trigger"] = trigger
-            return resp
+        created_orders = []
+        failures = []
+        for resource_idx, amount, unit_price in requested_items:
+            try:
+                order = services.create_internal_order(
+                    buyer_ga,
+                    resource_idx,
+                    amount,
+                    unit_price,
+                    preferred_buyer_city_id=buyer_city_id_value,
+                )
+            except Exception as exc:
+                logger.exception("Error creating market order")
+                failures.append(f"{RESOURCE_LABELS.get(resource_idx, resource_idx)}: {exc}")
+                continue
+            if order is None:
+                failures.append(f"{RESOURCE_LABELS.get(resource_idx, resource_idx)}: sem vendedor elegivel")
+                continue
+            created_orders.append(order)
 
-        if order is None:
+        if not created_orders:
             trigger = json.dumps(
-                {"toast": {"type": "warning", "message": "Nenhum vendedor elegivel encontrado em outro no com estoque suficiente."}}
+                {"toast": {"type": "warning", "message": "Nenhuma ordem criada. " + (" | ".join(failures) if failures else "Nenhum vendedor elegivel encontrado.")}}
             )
             resp = HttpResponse(status=200)
             resp["HX-Trigger"] = trigger
             return resp
 
-        resource_label = RESOURCE_LABELS.get(resource_idx, str(resource_idx))
+        created_labels = ", ".join(
+            f"{order.amount}x {RESOURCE_LABELS.get(order.resource_idx, str(order.resource_idx))}"
+            for order in created_orders
+        )
+        message = f"{len(created_orders)} ordem(ns) criada(s): {created_labels}."
+        if failures:
+            message += " Falhas: " + " | ".join(failures)
         trigger = json.dumps(
             {
-                "toast": {
-                    "type": "success",
-                    "message": f"Ordem criada: {amount}x {resource_label} @ {unit_price} ouro/un.",
-                },
+                "toast": {"type": "success", "message": message},
                 "marketOrderCreated": True,
             }
         )
@@ -308,6 +339,31 @@ class MarketOrderCancelView(LoginRequiredMixin, View):
                     "message": f"Ordem de {order.amount}x {resource_label} cancelada.",
                 },
                 "marketOrderCanceled": True,
+            }
+        )
+        resp = HttpResponse(status=200)
+        resp["HX-Trigger"] = trigger
+        return resp
+
+
+class MarketOrderDeleteView(LoginRequiredMixin, View):
+    """POST: delete a terminal/canceled InternalMarketOrder."""
+
+    def post(self, request, pk):
+        order = get_object_or_404(InternalMarketOrder, pk=pk)
+        if order.status not in ("completed", "failed", "canceled"):
+            trigger = json.dumps({"toast": {"type": "error", "message": "So e possivel excluir ordens concluidas, falhas ou canceladas."}})
+            resp = HttpResponse(status=400)
+            resp["HX-Trigger"] = trigger
+            return resp
+
+        resource_label = RESOURCE_LABELS.get(order.resource_idx, str(order.resource_idx))
+        amount = order.amount
+        order.delete()
+        trigger = json.dumps(
+            {
+                "toast": {"type": "success", "message": f"Ordem excluida: {amount}x {resource_label}."},
+                "marketOrderDeleted": True,
             }
         )
         resp = HttpResponse(status=200)
