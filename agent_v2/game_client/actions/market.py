@@ -252,10 +252,10 @@ class BuyAction(BaseAction):
         # Step 2: Load the takeOffer page to get transport price inputs
         take_html = self._get_take_offer_html(
             seller_city_id=offer["city_id"],
-            seller_bo_pos=offer["position"],
+            buyer_city_id=buyer_city_id,
+            buyer_bo_pos=buyer_branchoffice_pos,
             offer_type=offer["type"],
             resource_str=resource_str,
-            buyer_city_id=buyer_city_id,
         )
 
         # Step 3: Extract per-resource prices from takeOffer HTML
@@ -331,43 +331,48 @@ class BuyAction(BaseAction):
             data=params,
             headers=GAME_AJAX_HEADERS,
         )
-        try:
-            data = resp.json()
-            return data[1][1][1]
-        except (ValueError, IndexError, TypeError, KeyError):
+        html = self._extract_html_from_response(resp)
+        if not html:
             logger.warning("Could not parse branchOffice HTML from response")
-            return ""
+        return html
 
     def _find_offer_in_listing(
         self, html: str, seller_city_id: int, resource_str: str
     ) -> dict | None:
-        """Search Branch Office listing HTML for an offer from seller_city_id."""
-        # Each offer row has a link like:
-        # href="?view=takeOffer&destinationCityId=D&oldView=branchOffice&activeTab=bargain
-        #       &cityId=C&position=P&type=T&resource=R"
+        """Search Branch Office listing HTML for an offer from seller_city_id.
+
+        Ikariam takeOffer href structure (confirmed from live HTML):
+          href="?view=takeOffer
+                &destinationCityId=SELLER_CITY   ← seller's city
+                &oldView=branchOffice&activeTab=bargain
+                &cityId=BUYER_CITY               ← buyer's Branch Office city
+                &position=BUYER_BO_POS           ← buyer's BO position
+                &type=TYPE&resource=RES"
+        """
         pattern = (
-            r'class="short_text80">(.*?)\s*<br'  # city_name
+            r'class="short_text80">(.*?)\s*<br'  # city_name (seller's city name)
             r'[\s\S]{0,100}?\((.*?)\)'            # player_name
             r'[\s\S]*?'
             r'href="\?view=takeOffer'
-            r'&destinationCityId=(\d+)'
+            r'&destinationCityId=(\d+)'           # group 3 = seller's city ID
             r'&oldView=branchOffice&activeTab=bargain'
-            r'&cityId=(\d+)'
-            r'&position=(\d+)'
-            r'&type=(\d+)'
-            r'&resource=(\w+)"'
+            r'&cityId=(\d+)'                      # group 4 = buyer's city ID
+            r'&position=(\d+)'                    # group 5 = buyer's BO position
+            r'&type=(\d+)'                        # group 6 = offer type
+            r'&resource=(\w+)"'                   # group 7 = resource string
         )
         for m in re.finditer(pattern, html, re.DOTALL):
             city_name, player_name, dest_city_id, city_id, position, offer_type, resource = (
                 m.groups()
             )
-            if str(city_id) == str(seller_city_id) and resource == resource_str:
+            # dest_city_id is the seller's city; city_id is the buyer's city
+            if str(dest_city_id) == str(seller_city_id) and resource == resource_str:
                 return {
                     "city_name": city_name.strip(),
                     "player_name": player_name.strip(),
-                    "destination_city_id": int(dest_city_id),
-                    "city_id": int(city_id),
-                    "position": int(position),
+                    "city_id": int(dest_city_id),       # seller's city
+                    "buyer_city_id": int(city_id),      # buyer's city
+                    "buyer_bo_pos": int(position),      # buyer's BO position
                     "type": int(offer_type),
                     "resource": resource,
                 }
@@ -376,23 +381,27 @@ class BuyAction(BaseAction):
     def _get_take_offer_html(
         self,
         seller_city_id: int,
-        seller_bo_pos: int,
+        buyer_city_id: int,
+        buyer_bo_pos: int,
         offer_type: int,
         resource_str: str,
-        buyer_city_id: int,
     ) -> str:
-        """Fetch the takeOffer dialog HTML (contains transport price inputs)."""
+        """Fetch the takeOffer dialog HTML (contains transport price inputs).
+
+        Uses the same parameters as the takeOffer href in the listing:
+          cityId=buyer_city, destinationCityId=seller_city, position=buyer_bo_pos
+        """
         params = {
             "view": "takeOffer",
-            "destinationCityId": buyer_city_id,
+            "destinationCityId": seller_city_id,   # seller's city
             "oldView": "branchOffice",
             "activeTab": "bargain",
-            "cityId": seller_city_id,
-            "position": seller_bo_pos,
+            "cityId": buyer_city_id,               # buyer's city
+            "position": buyer_bo_pos,              # buyer's BO position
             "type": offer_type,
             "resource": resource_str,
             "backgroundView": "city",
-            "currentCityId": seller_city_id,
+            "currentCityId": buyer_city_id,
             "templateView": "branchOffice",
             "actionRequest": self.client._action_request,
             "ajax": "1",
@@ -403,12 +412,25 @@ class BuyAction(BaseAction):
             data=params,
             headers=GAME_AJAX_HEADERS,
         )
+        html = self._extract_html_from_response(resp)
+        if not html:
+            logger.warning("Could not parse takeOffer HTML from response")
+        return html
+
+    def _extract_html_from_response(self, resp: Any) -> str:
+        """Extract the first large HTML string from a changeView AJAX response."""
         try:
             data = resp.json()
-            return data[1][1][1]
-        except (ValueError, IndexError, TypeError, KeyError):
-            logger.warning("Could not parse takeOffer HTML from response")
-            return ""
+            for entry in data:
+                if isinstance(entry, (list, tuple)) and len(entry) >= 2 and entry[0] == "changeView":
+                    payload = entry[1]
+                    if isinstance(payload, (list, tuple)):
+                        for item in payload:
+                            if isinstance(item, str) and len(item) > 100:
+                                return item
+        except Exception:
+            pass
+        return ""
 
 
 class GetOffersAction(BaseAction):
@@ -446,12 +468,10 @@ class GetOffersAction(BaseAction):
             "ajax": "1",
         }
         resp = self.client._request("POST", self.client._server_url, data=params, headers=GAME_AJAX_HEADERS)
-        try:
-            data = resp.json()
-            return data[1][1][1]
-        except (ValueError, IndexError, TypeError, KeyError):
+        html = self._extract_html_from_response(resp)
+        if not html:
             logger.warning("GetOffers: could not parse branchOffice HTML")
-            return ""
+        return html
 
     def _parse_all_offers(self, html: str, resource_str: str) -> list[dict[str, Any]]:
         """Parse offer rows from Branch Office listing HTML.
@@ -459,14 +479,15 @@ class GetOffersAction(BaseAction):
         Each row looks like:
           <td ...>AMOUNT</td>
           <td ...>PRICE</td>
-          ...href="?view=takeOffer&...&cityId=SELLER&position=POS&type=TYPE&resource=RES"
+          ...href="?view=takeOffer&...&destinationCityId=SELLER&cityId=BUYER&position=BUYER_POS&type=TYPE&resource=RES"
         """
         offers: list[dict[str, Any]] = []
         # Match each offer block: amount, price, then the href
+        # takeOffer href: destinationCityId=SELLER_CITY, cityId=BUYER_CITY
         pattern = re.compile(
             r'class="[^"]*amount[^"]*"[^>]*>\s*([\d\s.]+)\s*<'
             r'|class="[^"]*price[^"]*"[^>]*>\s*([\d\s.]+)\s*<'
-            r'|href="\?view=takeOffer[^"]*&cityId=(\d+)&position=(\d+)&type=(\d+)&resource=(\w+)"',
+            r'|href="\?view=takeOffer[^"]*&destinationCityId=(\d+)[^"]*&type=(\d+)&resource=(\w+)"',
             re.IGNORECASE,
         )
         amount = price = None
@@ -481,12 +502,11 @@ class GetOffersAction(BaseAction):
                     price = int(m.group(2).replace(" ", "").replace(".", ""))
                 except ValueError:
                     price = None
-            elif m.group(6) == resource_str and m.group(3):
+            elif m.group(5) == resource_str and m.group(3):
                 if amount is not None and price is not None:
                     offers.append({
-                        "seller_city_id": int(m.group(3)),
-                        "seller_bo_pos": int(m.group(4)),
-                        "offer_type": int(m.group(5)),
+                        "seller_city_id": int(m.group(3)),   # destinationCityId = seller
+                        "offer_type": int(m.group(4)),
                         "amount": amount,
                         "price_per_unit": price,
                         "resource_str": resource_str,
