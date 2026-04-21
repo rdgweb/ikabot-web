@@ -1,13 +1,25 @@
 """Marketplace actions — create sell offers, buy from offers.
 
-Action parameter reference (verified from ikabot upstream source):
+Action parameter reference (verified from live traffic on s78-br):
 
   Create/update own sell offer:
-    action=CityScreen&function=updateOffers
-    cityId, position (Branch Office slot), resourceTradeType=444,
-    resource / tradegoodN (amount), resourcePrice / tradegoodNPrice,
-    backgroundView=city, currentCityId, templateView=branchOfficeOwnOffers,
-    currentTab=tab_branchOfficeOwnOffers
+    GET  view=branchOfficeOwnOffers (to read current price limits per resource)
+    POST action=CityScreen&function=updateOffers
+         cityId, position (Branch Office slot), resourceTradeType=444,
+         resource / tradegoodN (amount), resourcePrice / tradegoodNPrice,
+         backgroundView=city, currentCityId, templateView=branchOfficeOwnOffers,
+         currentTab=tab_branchOfficeOwnOffers
+    NOTE: price limits are DYNAMIC (server-specific, change over time).
+          The branchOfficeOwnOffers tab shows a "Limites" column with
+          min-max per resource as "<td>MIN - MAX</td>" table cells.
+          Confirmed limits on s78-br (snapshot 2026-04-20):
+            Madeira  (resource):   21 – 50
+            Vinho    (tradegood1):  6 – 16
+            Mármore  (tradegood2):  5 – 15
+            Cristal  (tradegood3): 11 – 32
+            Enxofre  (tradegood4):  7 – 18
+          Setting amount=0 clears the offer regardless of price.
+          Setting amount>0 with price out of range returns type=11 error.
 
   Buy from another player's offer:
     Two-step:
@@ -57,53 +69,65 @@ class CreateOfferAction(BaseAction):
             branchoffice_pos: Branch Office building slot in the city.
             resource_idx: 0=wood, 1=wine, 2=marble, 3=crystal, 4=sulfur.
             amount: Number of units to list for sale.
-            unit_price: Price per unit in gold.
+            unit_price: Price per unit in gold. Must be within server limits
+                        (limits are dynamic — fetched live from the game).
+                        Pass 0 to auto-select the midpoint of the valid range.
 
         Returns:
             Parsed AJAX response.
         """
         if amount <= 0:
             raise ActionError("Sell amount must be positive", action="updateOffers")
-        if unit_price <= 0:
-            raise ActionError("Sell price must be positive", action="updateOffers")
         if resource_idx not in range(5):
             raise ActionError(f"Invalid resource_idx={resource_idx}", action="updateOffers")
 
+        # Fetch current price limits — they are server-specific and change over time.
+        limits = self.get_price_limits(city_id, branchoffice_pos)
+        min_price, max_price = limits[resource_idx]
+
+        if unit_price <= 0:
+            # Auto-select midpoint if caller didn't specify a price
+            unit_price = (min_price + max_price) // 2
+            logger.info("Auto-selected price=%s (mid of %s–%s)", unit_price, min_price, max_price)
+        elif not (min_price <= unit_price <= max_price):
+            raise ActionError(
+                f"Price {unit_price} out of server range [{min_price}–{max_price}] "
+                f"for resource_idx={resource_idx}",
+                action="updateOffers",
+            )
+
         logger.info(
-            "Creating sell offer city=%s res=%s amount=%s price=%s",
-            city_id, resource_idx, amount, unit_price,
+            "Creating sell offer city=%s res=%s amount=%s price=%s (limits %s–%s)",
+            city_id, resource_idx, amount, unit_price, min_price, max_price,
         )
 
-        # Navigate to the city first so the game sets the correct server-side
-        # city context before accepting updateOffers (required by Ikariam).
-        self._change_city(city_id)
-
-        # Base params — all resources default to 0 / placeholder price
+        # Build params with amount=0 (clear) for all resources except the target.
+        # When amount=0, the price field is ignored by the server.
         params: dict[str, Any] = {
             "cityId": city_id,
             "position": branchoffice_pos,
             "resourceTradeType": "444",
             "resource": "0",
-            "resourcePrice": "10",
+            "resourcePrice": str(limits[0][0]),  # valid placeholder (min price)
             "tradegood1TradeType": "444",
             "tradegood1": "0",
-            "tradegood1Price": "11",
+            "tradegood1Price": str(limits[1][0]),
             "tradegood2TradeType": "444",
             "tradegood2": "0",
-            "tradegood2Price": "12",
+            "tradegood2Price": str(limits[2][0]),
             "tradegood3TradeType": "444",
             "tradegood3": "0",
-            "tradegood3Price": "17",
+            "tradegood3Price": str(limits[3][0]),
             "tradegood4TradeType": "444",
             "tradegood4": "0",
-            "tradegood4Price": "5",
+            "tradegood4Price": str(limits[4][0]),
             "backgroundView": "city",
             "currentCityId": city_id,
             "templateView": "branchOfficeOwnOffers",
             "currentTab": "tab_branchOfficeOwnOffers",
         }
 
-        # Override the target resource
+        # Override the target resource with actual amount and price
         if resource_idx == 0:
             params["resource"] = str(amount)
             params["resourcePrice"] = str(unit_price)
@@ -115,17 +139,60 @@ class CreateOfferAction(BaseAction):
         logger.info("updateOffers response: %s", result)
         return result
 
-    def _change_city(self, city_id: int) -> None:
-        """Set server-side city context before Branch Office operations."""
-        try:
-            self._ajax_request(ActionID.CHANGE_CITY, {
+    def get_price_limits(
+        self, city_id: int, branchoffice_pos: int
+    ) -> list[tuple[int, int]]:
+        """Fetch current price limits per resource from the Branch Office own-offers tab.
+
+        Returns a list of (min_price, max_price) tuples indexed by resource_idx:
+          [0]=wood, [1]=wine, [2]=marble, [3]=crystal, [4]=sulfur
+
+        Raises:
+            ActionError: If the limits cannot be retrieved.
+        """
+        resp = self.client._request(
+            "GET",
+            self.client._server_url,
+            params={
+                "view": "branchOfficeOwnOffers",
+                "activeTab": "tab_branchOfficeOwnOffers",
                 "cityId": city_id,
+                "position": branchoffice_pos,
                 "backgroundView": "city",
                 "currentCityId": city_id,
-                "templateView": "city",
-            })
-        except Exception as exc:
-            logger.warning("changeCity city=%s failed (continuing): %s", city_id, exc)
+                "templateView": "branchOfficeOwnOffers",
+                "currentTab": "tab_branchOfficeOwnOffers",
+                "actionRequest": self.client._action_request,
+                "ajax": "1",
+            },
+            headers=GAME_AJAX_HEADERS,
+        )
+        try:
+            data = resp.json()
+        except Exception:
+            raise ActionError("Could not parse price limits response", action="get_price_limits")
+
+        html = ""
+        for entry in data:
+            if isinstance(entry, (list, tuple)) and len(entry) >= 2 and entry[0] == "changeView":
+                payload = entry[1]
+                if isinstance(payload, (list, tuple)):
+                    for item in payload:
+                        if isinstance(item, str) and len(item) > 100:
+                            html = item
+                            break
+
+        # Parse <td>MIN - MAX</td> rows (one per resource in form order)
+        limit_cells = re.findall(r"<td>(\d+)\s+-\s+(\d+)</td>", html)
+        if len(limit_cells) < 5:
+            raise ActionError(
+                f"Expected 5 price limit rows, found {len(limit_cells)}",
+                action="get_price_limits",
+            )
+
+        limits = [(int(mn), int(mx)) for mn, mx in limit_cells[:5]]
+        logger.info("Price limits fetched: %s", limits)
+        return limits
 
 
 class BuyAction(BaseAction):

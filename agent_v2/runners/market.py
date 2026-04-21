@@ -58,13 +58,15 @@ class SellMarketRunner(BaseRunner):
         bo_pos = inputs.get("branchoffice_pos")
         resource_idx = int(inputs.get("resource_idx", 0))
         amount = int(inputs.get("amount", 0))
-        unit_price = int(inputs.get("unit_price", 12))
+        # unit_price=0 means "auto" — CreateOfferAction will fetch limits and use midpoint
+        unit_price = int(inputs.get("unit_price", 0))
 
         if not city_id or bo_pos is None or amount <= 0:
             self.log(jid, "error", "Missing required inputs: city_id, branchoffice_pos, amount")
             return RunnerResult(success=False, data={"error": "missing inputs"})
 
-        self.log(jid, "info", f"Creating sell offer: city={city_id} res={resource_idx} x{amount} @{unit_price}")
+        price_str = str(unit_price) if unit_price > 0 else "auto"
+        self.log(jid, "info", f"Creating sell offer: city={city_id} res={resource_idx} x{amount} @{price_str}")
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
         if not creds:
@@ -171,7 +173,8 @@ class InternalMarketSellRunner(BaseRunner):
         bo_pos = inputs.get("branchoffice_pos")
         resource_idx = int(inputs.get("resource_idx", 0))
         amount = int(inputs.get("amount", 0))
-        unit_price = int(inputs.get("unit_price", 12))
+        # unit_price=0 means "auto" — CreateOfferAction fetches limits and uses midpoint
+        unit_price = int(inputs.get("unit_price", 0))
         order_id = inputs.get("internal_order_id")
 
         if not city_id or bo_pos is None or amount <= 0 or not order_id:
