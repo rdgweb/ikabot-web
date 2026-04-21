@@ -57,6 +57,23 @@ class MarketSellCompleteView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        price_used = request.data.get("unit_price")
+        price_min = request.data.get("price_min")
+        price_max = request.data.get("price_max")
+        updates = []
+        if price_used not in (None, ""):
+            order.unit_price = int(price_used)
+            updates.append("unit_price")
+        if price_min not in (None, ""):
+            order.price_min = int(price_min)
+            updates.append("price_min")
+        if price_max not in (None, ""):
+            order.price_max = int(price_max)
+            updates.append("price_max")
+        if updates:
+            updates.append("updated_at")
+            order.save(update_fields=updates)
+
         buy_job = create_buy_job(order)
         if buy_job is None:
             return Response(

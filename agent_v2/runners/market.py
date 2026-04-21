@@ -1,25 +1,5 @@
 """
-Market runners — internal market buy/sell via Branch Office.
-
-Action codes:
-    8   BuyMarketRunner        — buy from any listing (generic, manual use)
-    9   SellMarketRunner       — create a sell offer (generic, manual use)
-    801 InternalMarketBuyRunner  — buy half of an InternalMarketOrder
-    802 InternalMarketSellRunner — sell half of an InternalMarketOrder
-
-Internal market flow
---------------------
-1. Hub creates InternalMarketOrder + sell_job (802) via services.create_internal_order().
-2. Runner 802 (seller's node):
-   - Logs in to game as seller.
-   - Posts a sell offer via CityScreen&function=updateOffers.
-   - Calls hub: POST /api/agent/market/orders/<id>/sell-complete/
-   - Hub creates buy_job (801) on buyer's node.
-3. Runner 801 (buyer's node):
-   - Logs in to game as buyer.
-   - Scrapes buyer's Branch Office listing to locate seller's offer.
-   - Buys the offer via transportOperations&function=buyGoodsAtAnotherBranchOffice.
-   - Calls hub: POST /api/agent/market/orders/<id>/complete/
+Market runners for generic and internal Branch Office operations.
 """
 
 from __future__ import annotations
@@ -41,21 +21,8 @@ RESOURCE_LABELS = {
 }
 
 
-# ── Generic runners (manual / external market use) ──────────────────────────
-
-
 @register_runner(9)
 class SellMarketRunner(BaseRunner):
-    """Create a sell offer on the Branch Office (generic).
-
-    Inputs:
-        city_id            — seller city ID
-        branchoffice_pos   — Branch Office slot in the city
-        resource_idx       — 0=wood 1=wine 2=marble 3=crystal 4=sulfur
-        amount             — units to list
-        unit_price         — gold per unit
-    """
-
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
@@ -66,7 +33,6 @@ class SellMarketRunner(BaseRunner):
         bo_pos = inputs.get("branchoffice_pos")
         resource_idx = int(inputs.get("resource_idx", 0))
         amount = int(inputs.get("amount", 0))
-        # unit_price=0 means "auto" — CreateOfferAction will fetch limits and use midpoint
         unit_price = int(inputs.get("unit_price", 0))
 
         if not city_id or bo_pos is None or amount <= 0:
@@ -78,7 +44,7 @@ class SellMarketRunner(BaseRunner):
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
         if not creds:
-            self.log(jid, "error", "Credenciais não encontradas")
+            self.log(jid, "error", "Credenciais nao encontradas")
             return RunnerResult(success=False, data={"error": "missing_credentials"})
 
         try:
@@ -100,17 +66,6 @@ class SellMarketRunner(BaseRunner):
 
 @register_runner(8)
 class BuyMarketRunner(BaseRunner):
-    """Buy a resource offer from a specific Branch Office (generic).
-
-    Inputs:
-        buyer_city_id          — city where goods are received
-        buyer_branchoffice_pos — buyer's Branch Office slot
-        seller_city_id         — seller's city ID
-        seller_branchoffice_pos — seller's Branch Office slot
-        resource_idx           — resource type (0–4)
-        amount                 — units to buy
-    """
-
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
@@ -132,7 +87,7 @@ class BuyMarketRunner(BaseRunner):
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
         if not creds:
-            self.log(jid, "error", "Credenciais não encontradas")
+            self.log(jid, "error", "Credenciais nao encontradas")
             return RunnerResult(success=False, data={"error": "missing_credentials"})
 
         try:
@@ -153,24 +108,8 @@ class BuyMarketRunner(BaseRunner):
             return RunnerResult(success=False, data={"error": str(exc)})
 
 
-# ── Internal market runners ──────────────────────────────────────────────────
-
-
 @register_runner(802)
 class InternalMarketSellRunner(BaseRunner):
-    """Create a sell offer for an InternalMarketOrder (action 802).
-
-    Inputs (set by hub matching service):
-        city_id            — seller city ID
-        branchoffice_pos   — Branch Office slot
-        resource_idx       — resource type (0–4)
-        amount             — units to sell
-        unit_price         — gold per unit
-        internal_order_id  — UUID of InternalMarketOrder
-
-    On success: notifies hub → hub creates buy_job (801) on buyer's node.
-    """
-
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
@@ -181,7 +120,6 @@ class InternalMarketSellRunner(BaseRunner):
         bo_pos = inputs.get("branchoffice_pos")
         resource_idx = int(inputs.get("resource_idx", 0))
         amount = int(inputs.get("amount", 0))
-        # unit_price=0 means "auto" — CreateOfferAction fetches limits and uses midpoint
         unit_price = int(inputs.get("unit_price", 0))
         order_id = inputs.get("internal_order_id")
         city_name = str(inputs.get("city_name") or city_id or "").strip()
@@ -193,19 +131,20 @@ class InternalMarketSellRunner(BaseRunner):
             return RunnerResult(success=False, data={"error": "missing inputs"})
 
         self.log(
-            jid, "info",
+            jid,
+            "info",
             f"[Order {order_id}] Venda interna: {city_name} -> {buyer_city_name} | "
             f"{resource_label} x{amount} @{'auto' if unit_price <= 0 else unit_price}",
         )
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
         if not creds:
-            self.log(jid, "error", f"[Order {order_id}] Credenciais não encontradas")
+            self.log(jid, "error", f"[Order {order_id}] Credenciais nao encontradas")
             return RunnerResult(success=False, data={"error": "missing_credentials"})
 
         try:
             client = self.get_or_login_game_client(jid, aid, ga_id, creds)
-            client.create_market_offer(
+            offer_result = client.create_market_offer(
                 city_id=int(city_id),
                 branchoffice_pos=int(bo_pos),
                 resource_idx=resource_idx,
@@ -213,10 +152,23 @@ class InternalMarketSellRunner(BaseRunner):
                 unit_price=unit_price,
             )
             self.save_game_client(ga_id or aid, client)
-            self.log(jid, "info", f"[Order {order_id}] Oferta publicada em {city_name} | bo={bo_pos} | {resource_label} x{amount}")
 
-            # Notify hub → creates buy_job (801) on buyer's node
-            resp = self.hub.market_order_sell_complete(order_id)
+            used_unit_price = int(offer_result.get("used_unit_price", 0)) if isinstance(offer_result, dict) else 0
+            price_min = int(offer_result.get("price_min", 0)) if isinstance(offer_result, dict) else 0
+            price_max = int(offer_result.get("price_max", 0)) if isinstance(offer_result, dict) else 0
+            self.log(
+                jid,
+                "info",
+                f"[Order {order_id}] Oferta publicada em {city_name} | bo={bo_pos} | "
+                f"{resource_label} x{amount} | preco={used_unit_price} | limites={price_min}-{price_max}",
+            )
+
+            resp = self.hub.market_order_sell_complete(
+                order_id,
+                unit_price=used_unit_price,
+                price_min=price_min,
+                price_max=price_max,
+            )
             buy_job_id = resp.get("buy_job_id", "?")
             self.log(jid, "info", f"[Order {order_id}] Job derivado de compra criado: {buy_job_id}")
 
@@ -229,20 +181,6 @@ class InternalMarketSellRunner(BaseRunner):
 
 @register_runner(801)
 class InternalMarketBuyRunner(BaseRunner):
-    """Buy the offer placed by InternalMarketSellRunner (action 801).
-
-    Inputs (set by hub when creating this job):
-        buyer_city_id          — buyer's city ID
-        buyer_branchoffice_pos — buyer's Branch Office slot
-        seller_city_id         — seller's city ID
-        seller_branchoffice_pos — seller's Branch Office slot
-        resource_idx           — resource type (0–4)
-        amount                 — units to buy
-        internal_order_id      — UUID of InternalMarketOrder
-
-    On success: notifies hub → order marked as completed.
-    """
-
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
@@ -269,17 +207,18 @@ class InternalMarketBuyRunner(BaseRunner):
             return RunnerResult(success=False, data={"error": "missing inputs"})
 
         self.log(
-            jid, "info",
+            jid,
+            "info",
             f"[Order {order_id}] Compra interna: {seller_city_name} -> {buyer_city_name} | "
             f"{resource_label} x{amount}",
         )
 
-        MAX_OFFER_RETRIES = 5
+        max_offer_retries = 5
         offer_retry_count = int(inputs.get("offer_retry_count", 0))
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
         if not creds:
-            self.log(jid, "error", f"[Order {order_id}] Credenciais não encontradas")
+            self.log(jid, "error", f"[Order {order_id}] Credenciais nao encontradas")
             return RunnerResult(success=False, data={"error": "missing_credentials"})
 
         try:
@@ -294,22 +233,18 @@ class InternalMarketBuyRunner(BaseRunner):
             )
             self.save_game_client(ga_id or aid, client)
             self.log(jid, "info", f"[Order {order_id}] Compra executada | destino={buyer_city_name} | origem={seller_city_name}")
-
-            # Notify hub → order marked as completed
             self.hub.market_order_complete(order_id)
             self.log(jid, "info", f"[Order {order_id}] Order marked as completed")
-
             return RunnerResult(success=True)
-
         except Exception as exc:
             exc_str = str(exc)
-            # If the seller's offer is not yet visible in the listing, retry
-            if "not found" in exc_str.lower() and offer_retry_count < MAX_OFFER_RETRIES:
+            if "not found" in exc_str.lower() and offer_retry_count < max_offer_retries:
                 next_retry = offer_retry_count + 1
                 self.log(
-                    jid, "warn",
+                    jid,
+                    "warn",
                     f"[Order {order_id}] Offer not found in listing "
-                    f"(attempt {next_retry}/{MAX_OFFER_RETRIES}) | origem={seller_city_name} | destino={buyer_city_name}; retrying in 60s",
+                    f"(attempt {next_retry}/{max_offer_retries}) | origem={seller_city_name} | destino={buyer_city_name}; retrying in 60s",
                 )
                 retry_inputs = dict(inputs)
                 retry_inputs["offer_retry_count"] = next_retry

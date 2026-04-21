@@ -103,6 +103,7 @@ class CreateOfferAction(BaseAction):
 
         # Build params with amount=0 (clear) for all resources except the target.
         # When amount=0, the price field is ignored by the server.
+        current_offer_state = self._normalize_offer_state(current_offer_state, limits)
         params: dict[str, Any] = {
             "cityId": city_id,
             "position": branchoffice_pos,
@@ -136,6 +137,10 @@ class CreateOfferAction(BaseAction):
             params[f"tradegood{resource_idx}Price"] = str(unit_price)
 
         result = self._ajax_request(ActionID.MARKETPLACE_UPDATE_OFFERS, params)
+        if isinstance(result, dict):
+            result["used_unit_price"] = unit_price
+            result["price_min"] = min_price
+            result["price_max"] = max_price
         logger.info("updateOffers response: %s", result)
         return result
 
@@ -233,6 +238,35 @@ class CreateOfferAction(BaseAction):
             except ValueError:
                 continue
         return state
+
+    def _normalize_offer_state(self, current_state: dict[str, int], limits: list[tuple[int, int]]) -> dict[str, int]:
+        normalized = dict(current_state)
+        field_pairs = (
+            ("resource", "resourcePrice", 0),
+            ("tradegood1", "tradegood1Price", 1),
+            ("tradegood2", "tradegood2Price", 2),
+            ("tradegood3", "tradegood3Price", 3),
+            ("tradegood4", "tradegood4Price", 4),
+        )
+        for amount_field, price_field, idx in field_pairs:
+            amount = int(normalized.get(amount_field, 0) or 0)
+            minimum, maximum = limits[idx]
+            if amount <= 0:
+                normalized[price_field] = minimum
+                continue
+            raw_price = int(normalized.get(price_field, minimum) or minimum)
+            clamped = min(max(raw_price, minimum), maximum)
+            if clamped != raw_price:
+                logger.info(
+                    "Adjusted preserved offer price %s from %s to %s within [%s-%s]",
+                    price_field,
+                    raw_price,
+                    clamped,
+                    minimum,
+                    maximum,
+                )
+            normalized[price_field] = clamped
+        return normalized
 
 
 class BuyAction(BaseAction):

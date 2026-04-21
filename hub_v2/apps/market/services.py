@@ -254,6 +254,8 @@ def create_internal_order(
         resource_idx=resource_idx,
         amount=amount,
         unit_price=unit_price,
+        price_min=0,
+        price_max=0,
         status="matched",
         source_action_code=source_action_code,
         source_reason=source_reason,

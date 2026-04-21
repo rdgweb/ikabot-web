@@ -90,6 +90,8 @@ class MarketServiceTests(TestCase):
         self.assertIsNotNone(order)
         self.assertEqual(order.buyer_city_id, 202)
         self.assertEqual(order.buyer_branchoffice_pos, 8)
+        self.assertEqual(order.price_min, 0)
+        self.assertEqual(order.price_max, 0)
 
     def test_create_internal_order_matches_crystal_from_snapshot_aliases(self):
         seller_snapshot = AccountSnapshot.objects.get(game_account=self.seller_ga)

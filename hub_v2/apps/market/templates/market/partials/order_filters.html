@@ -78,7 +78,7 @@
 
 <div id="table-content"
      hx-get="{% url 'market:orders-partial' %}"
-     hx-trigger="load, marketOrderCreated from:body, marketOrderCanceled from:body, marketOrderDeleted from:body"
+     hx-trigger="load, market-order-created from:body, market-order-canceled from:body, market-order-deleted from:body"
      hx-target="#table-content"
      hx-swap="innerHTML"
      hx-push-url="false">

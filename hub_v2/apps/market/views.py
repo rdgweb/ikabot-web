@@ -309,7 +309,7 @@ class MarketOrderCreateView(LoginRequiredMixin, View):
         trigger = json.dumps(
             {
                 "toast": {"type": "success", "message": message},
-                "marketOrderCreated": True,
+                "market-order-created": True,
             }
         )
         resp = HttpResponse(status=200)
@@ -338,7 +338,7 @@ class MarketOrderCancelView(LoginRequiredMixin, View):
                     "type": "success",
                     "message": f"Ordem de {order.amount}x {resource_label} cancelada.",
                 },
-                "marketOrderCanceled": True,
+                "market-order-canceled": True,
             }
         )
         resp = HttpResponse(status=200)
@@ -363,7 +363,7 @@ class MarketOrderDeleteView(LoginRequiredMixin, View):
         trigger = json.dumps(
             {
                 "toast": {"type": "success", "message": f"Ordem excluida: {amount}x {resource_label}."},
-                "marketOrderDeleted": True,
+                "market-order-deleted": True,
             }
         )
         resp = HttpResponse(status=200)

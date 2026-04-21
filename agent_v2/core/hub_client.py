@@ -212,13 +212,27 @@ class HubClient:
 
     # ── Internal Market ──
 
-    def market_order_sell_complete(self, order_id: str) -> dict:
+    def market_order_sell_complete(
+        self,
+        order_id: str,
+        *,
+        unit_price: int | None = None,
+        price_min: int | None = None,
+        price_max: int | None = None,
+    ) -> dict:
         """POST /api/agent/market/orders/<uuid>/sell-complete/
 
         Called by Runner 802 after placing the sell offer in-game.
         Hub creates the buy_job (801) on the buyer's node.
         """
-        return self._post(f"/api/agent/market/orders/{order_id}/sell-complete", {})
+        payload: dict[str, Any] = {}
+        if unit_price is not None:
+            payload["unit_price"] = unit_price
+        if price_min is not None:
+            payload["price_min"] = price_min
+        if price_max is not None:
+            payload["price_max"] = price_max
+        return self._post(f"/api/agent/market/orders/{order_id}/sell-complete", payload)
 
     def market_order_complete(self, order_id: str) -> dict:
         """POST /api/agent/market/orders/<uuid>/complete/

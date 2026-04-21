@@ -65,11 +65,13 @@
     {% include "market/partials/order_filters.html" %}
   </div>
 
+  <!-- ── Modal Nova Ordem ── -->
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4"
        x-show="isOpen"
        x-cloak
        @keydown.escape.window="close()"
-       @marketordercreated.window="close()">
+       @market-order-created.window="close()">
+
     <div class="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]"
          x-show="isOpen"
          x-transition:enter="transition ease-out duration-200"
@@ -79,7 +81,8 @@
          x-transition:leave-start="opacity-100"
          x-transition:leave-end="opacity-0"
          @click="close()"></div>
-    <div class="relative z-10 w-full max-w-6xl overflow-hidden rounded-[28px] border border-[var(--ik-line)] bg-paper shadow-2xl"
+
+    <div class="relative z-10 w-full max-w-4xl overflow-hidden rounded-2xl border border-[var(--ik-line)] bg-paper shadow-2xl"
          x-show="isOpen"
          x-transition:enter="transition ease-out duration-200"
          x-transition:enter-start="opacity-0 scale-95"
@@ -87,34 +90,35 @@
          x-transition:leave="transition ease-in duration-150"
          x-transition:leave-start="opacity-100 scale-100"
          x-transition:leave-end="opacity-0 scale-95">
-      <div class="border-b border-[var(--ik-line)] bg-[linear-gradient(135deg,rgba(32,78,94,0.08),rgba(196,139,62,0.12))] px-6 py-5">
-        <div class="flex items-start justify-between gap-4">
-          <div>
-            <div class="text-[11px] uppercase tracking-[0.24em] text-muted">Nova ordem</div>
-            <h3 class="mt-1 text-xl font-semibold text-ink">Criar compra interna em lote</h3>
-            <p class="mt-1 text-sm text-muted">Escolha a subconta, a cidade com mercado e marque varios recursos de uma vez. O hub resolve vendedor e jobs automaticamente.</p>
-          </div>
-          <button type="button" @click="close()" class="rounded-full border border-[var(--ik-line)] px-3 py-1.5 text-xs text-muted hover:text-ink">
-            <i class="bi bi-x-lg"></i>
-          </button>
+
+      <!-- Header -->
+      <div class="flex items-center justify-between border-b border-[var(--ik-line)] px-6 py-4">
+        <div>
+          <h3 class="font-semibold text-ink">Nova ordem de compra interna</h3>
+          <p class="mt-0.5 text-xs text-muted">Escolha subconta, cidade e recursos. O hub resolve o vendedor e os jobs automaticamente.</p>
         </div>
+        <button type="button" @click="close()" class="btn btn-secondary btn-sm">
+          <i class="bi bi-x-lg"></i>
+        </button>
       </div>
 
+      <!-- Body -->
       <form hx-post="{% url 'market:order-create' %}"
             hx-swap="none"
-            hx-push-url="false"
-            class="space-y-5 px-6 py-6">
+            hx-push-url="false">
         {% csrf_token %}
 
-        <div class="grid gap-5 xl:grid-cols-[1.1fr_1.4fr]">
-          <div class="space-y-5">
+        <div class="grid max-h-[62vh] overflow-y-auto lg:grid-cols-2 lg:divide-x lg:divide-[var(--ik-line)]">
+
+          <!-- Esquerda: conta + cidade -->
+          <div class="space-y-4 p-6">
             <div>
               <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Conta compradora</label>
               <select name="buyer_ga_id"
                       x-model="buyerGaId"
                       @change="buyerCityId=''; cityQuery=''"
                       required
-                      class="w-full rounded-xl border border-[var(--ik-line)] bg-white px-3 py-2.5 text-sm text-ink shadow-sm">
+                      class="form-input">
                 <option value="">Selecione uma subconta</option>
                 {% for ga in buyer_choices %}
                 <option value="{{ ga.id }}">{{ ga.account__label }} / {{ ga.name|default:"?" }}</option>
@@ -122,142 +126,89 @@
               </select>
             </div>
 
-            <section class="rounded-[22px] border p-4"
-                     style="border-color: rgba(79,134,185,0.25); background: linear-gradient(180deg, rgba(79,134,185,0.08), rgba(255,255,255,0.78));">
-              <div class="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Cidade compradora</div>
-                  <div class="mt-1 text-sm font-semibold text-ink">Use o mesmo seletor rico do ajuste de producao</div>
-                </div>
-                <div class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
-                     style="background: rgba(79,134,185,0.14); color: var(--ik-sea);">
-                  <i class="bi bi-buildings text-base"></i>
-                </div>
-              </div>
-              <label class="mb-3 block">
-                <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Filtrar cidades</span>
-                <input type="text" x-model="cityQuery" class="form-input" placeholder="Buscar por nome, luxo ou coordenada">
-              </label>
+            <div>
+              <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">Cidade compradora</label>
+              <input type="text" x-model="cityQuery" class="form-input mb-2" placeholder="Filtrar por nome ou coordenada">
               <input type="hidden" name="buyer_city_id" :value="buyerCityId">
-              <div class="grid max-h-[22rem] grid-cols-2 gap-2 overflow-y-auto p-1 xl:grid-cols-3">
+
+              <div class="grid grid-cols-2 gap-1.5 max-h-52 overflow-y-auto pr-0.5">
                 <template x-for="city in filteredCities()" :key="city.city_id">
                   <button type="button"
-                          class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                          class="rounded-xl border px-3 py-2 text-left transition-colors"
                           :class="String(buyerCityId) === String(city.city_id)
-                            ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]'
-                            : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
-                          :style="String(buyerCityId) === String(city.city_id)
-                            ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.88));'
-                            : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'"
+                            ? 'border-[var(--ik-sea)] bg-[var(--ik-sea)]/10 ring-1 ring-[var(--ik-sea)]'
+                            : 'border-[var(--ik-line)] bg-white/70 hover:border-[var(--ik-sea)]/40 hover:bg-white'"
                           @click="buyerCityId = String(city.city_id)">
-                    <div class="absolute inset-x-0 top-0 h-14"
-                         style="background: linear-gradient(135deg, rgba(79,134,185,0.16), rgba(79,134,185,0.02));"></div>
-                    <div class="relative p-3">
-                      <div class="flex items-start gap-3">
-                        <div class="min-w-0 flex-1">
-                          <div class="flex items-start justify-between gap-2">
-                            <div class="min-w-0">
-                              <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
-                              <div class="mt-1 text-[11px] text-muted">
-                                <span x-show="city.x && city.y" x-text="`[${city.x}:${city.y}]`"></span>
-                                <span x-show="city.branch_office_pos" x-text="` • mercado pos ${city.branch_office_pos}`"></span>
-                              </div>
-                            </div>
-                            <span class="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border"
-                                  :style="String(buyerCityId) === String(city.city_id)
-                                    ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
-                                    : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
-                              <i class="bi" :class="String(buyerCityId) === String(city.city_id) ? 'bi-check-lg' : 'bi-geo-alt'"></i>
-                            </span>
-                          </div>
-                          <div class="mt-2 grid grid-cols-2 gap-1">
-                            <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]" style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">M <strong x-text="formatNumber(city.wood)"></strong></span>
-                            <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]" style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">V <strong x-text="formatNumber(city.wine)"></strong></span>
-                            <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]" style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">Ma <strong x-text="formatNumber(city.marble)"></strong></span>
-                            <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]" style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">C <strong x-text="formatNumber(city.crystal)"></strong></span>
-                            <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] col-span-2" style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">E <strong x-text="formatNumber(city.sulfur)"></strong></span>
-                          </div>
-                        </div>
-                      </div>
+                    <div class="truncate text-sm font-medium text-ink" x-text="city.name"></div>
+                    <div class="mt-0.5 text-[11px] text-muted">
+                      <span x-show="city.x && city.y" x-text="`[${city.x}:${city.y}]`"></span>
+                      <span x-show="city.branch_office_pos" x-text="` · pos ${city.branch_office_pos}`"></span>
                     </div>
                   </button>
                 </template>
               </div>
-              <div x-show="!filteredCities().length" class="mt-3 text-xs text-muted">Selecione uma subconta com Branch Office para listar cidades elegiveis.</div>
-            </section>
+
+              <p x-show="!buyerGaId" class="mt-2 text-xs text-muted">Selecione uma subconta para listar as cidades elegíveis.</p>
+              <p x-show="buyerGaId && !filteredCities().length" class="mt-2 text-xs text-muted">Nenhuma cidade com Branch Office encontrada para esta subconta.</p>
+            </div>
           </div>
 
-          <div class="space-y-5">
-            <div class="rounded-[24px] border border-[var(--ik-line)] bg-[var(--ik-sand-light)]/70 p-4">
-              <div class="text-[11px] uppercase tracking-[0.24em] text-muted">Recursos</div>
-              <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {% for value, label in resource_choices %}
-                <label class="rounded-[20px] border p-4 transition-all duration-150"
-                       :class="isSelectedResource('{{ value }}')
-                         ? 'border-[var(--ik-sea)] bg-white shadow-[0_10px_28px_rgba(79,134,185,0.14)]'
-                         : 'border-[var(--ik-line)] bg-white/80 hover:border-[var(--ik-sea)]/45'">
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="flex items-center gap-2">
-                      <input type="checkbox" name="resource_idx" value="{{ value }}" x-model="selectedResources" class="mt-1 rounded border-gray-300 text-[var(--ik-sea)] focus:ring-[var(--ik-sea)]">
-                      <img src="{% static value|resource_icon %}" alt="{{ label }}" class="h-5 w-5">
-                      <span class="font-medium text-ink">{{ label }}</span>
-                    </div>
-                    <span class="text-[10px] uppercase tracking-wide text-muted">lote</span>
-                  </div>
-                  <div class="mt-3 grid grid-cols-2 gap-2">
-                    <div>
-                      <div class="mb-1 text-[11px] uppercase tracking-wide text-muted">Quantidade</div>
-                      <input type="number"
-                             :name="'amount_{{ value }}'"
-                             min="1"
-                             x-model="resourceConfig['{{ value }}'].amount"
-                             :disabled="!isSelectedResource('{{ value }}')"
-                             class="w-full rounded-xl border border-[var(--ik-line)] bg-white px-3 py-2 text-sm text-ink shadow-sm disabled:cursor-not-allowed disabled:bg-slate-100">
-                    </div>
-                    <div>
-                      <div class="mb-1 text-[11px] uppercase tracking-wide text-muted">Preco/un.</div>
-                      <input type="number"
-                             :name="'unit_price_{{ value }}'"
-                             min="0"
-                             x-model="resourceConfig['{{ value }}'].unit_price"
-                             :disabled="!isSelectedResource('{{ value }}')"
-                             class="w-full rounded-xl border border-[var(--ik-line)] bg-white px-3 py-2 text-sm text-ink shadow-sm disabled:cursor-not-allowed disabled:bg-slate-100">
-                    </div>
-                  </div>
+          <!-- Direita: recursos -->
+          <div class="p-6">
+            <div class="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">Recursos</div>
+            <div class="space-y-2">
+              {% for value, label in resource_choices %}
+              <div class="overflow-hidden rounded-xl border transition-colors"
+                   :class="isSelectedResource('{{ value }}')
+                     ? 'border-[var(--ik-sea)] bg-[var(--ik-sea)]/5'
+                     : 'border-[var(--ik-line)] bg-white/70'">
+                <label class="flex cursor-pointer items-center gap-3 px-4 py-3">
+                  <input type="checkbox" name="resource_idx" value="{{ value }}"
+                         x-model="selectedResources"
+                         class="h-4 w-4 rounded border-[var(--ik-line)] text-[var(--ik-sea)] focus:ring-[var(--ik-sea)]">
+                  <img src="{% static value|resource_icon %}" alt="{{ label }}" class="h-5 w-5 flex-shrink-0">
+                  <span class="text-sm font-medium text-ink">{{ label }}</span>
                 </label>
-                {% endfor %}
-              </div>
-            </div>
-
-            <div class="rounded-[24px] border border-[var(--ik-line)] bg-[var(--ik-sand-light)]/70 p-4">
-              <div class="text-[11px] uppercase tracking-[0.24em] text-muted">Resumo rapido</div>
-              <div x-show="selectedCity" class="mt-3 space-y-3 text-sm text-ink">
-                <div>
-                  <div class="font-semibold" x-text="selectedCity?.name"></div>
-                  <div class="text-xs text-muted" x-text="selectedCity?.branch_office_pos ? `Mercado pos ${selectedCity.branch_office_pos}` : ''"></div>
-                </div>
-                <div class="text-xs text-muted">
-                  Recursos marcados:
-                  <span class="font-medium text-ink" x-text="selectedResources.length ? selectedResources.map(resourceLabel).join(', ') : 'nenhum'"></span>
-                </div>
-                <div class="grid grid-cols-2 gap-2">
-                  <div class="rounded-lg bg-white/70 px-3 py-2">Madeira: <strong x-text="formatNumber(selectedCity?.wood)"></strong></div>
-                  <div class="rounded-lg bg-white/70 px-3 py-2">Vinho: <strong x-text="formatNumber(selectedCity?.wine)"></strong></div>
-                  <div class="rounded-lg bg-white/70 px-3 py-2">Marmore: <strong x-text="formatNumber(selectedCity?.marble)"></strong></div>
-                  <div class="rounded-lg bg-white/70 px-3 py-2">Cristal: <strong x-text="formatNumber(selectedCity?.crystal)"></strong></div>
-                  <div class="rounded-lg bg-white/70 px-3 py-2 col-span-2">Enxofre: <strong x-text="formatNumber(selectedCity?.sulfur)"></strong></div>
+                <div x-show="isSelectedResource('{{ value }}')"
+                     x-transition:enter="transition ease-out duration-100"
+                     x-transition:enter-start="opacity-0 -translate-y-1"
+                     x-transition:enter-end="opacity-100 translate-y-0"
+                     class="grid grid-cols-2 gap-3 px-4 pb-3">
+                  <div>
+                    <label class="mb-1 block text-[11px] uppercase tracking-wide text-muted">Quantidade</label>
+                    <input type="number" name="amount_{{ value }}" min="1"
+                           x-model="resourceConfig['{{ value }}'].amount"
+                           class="form-input form-input-sm">
+                  </div>
+                  <div>
+                    <label class="mb-1 block text-[11px] uppercase tracking-wide text-muted">Preço/un.</label>
+                    <input type="number" name="unit_price_{{ value }}" min="0"
+                           placeholder="0 = auto"
+                           x-model="resourceConfig['{{ value }}'].unit_price"
+                           class="form-input form-input-sm">
+                  </div>
                 </div>
               </div>
-              <div x-show="!selectedCity" class="mt-3 text-xs text-muted">Selecione uma cidade para revisar o destino antes de criar as ordens.</div>
+              {% endfor %}
             </div>
           </div>
         </div>
 
-        <div class="flex justify-end gap-2 border-t border-[var(--ik-line)] pt-4">
-          <button type="button" @click="close()" class="btn btn-secondary btn-sm">Cancelar</button>
-          <button type="submit" class="btn btn-primary btn-sm" :disabled="!canSubmit()">
-            <i class="bi bi-check-lg"></i> Criar ordens
-          </button>
+        <!-- Footer -->
+        <div class="flex items-center justify-between gap-4 border-t border-[var(--ik-line)] bg-[var(--ik-sand-light)]/60 px-6 py-4">
+          <div class="min-w-0 text-xs text-muted">
+            <span x-show="canSubmit()">
+              <strong class="text-ink" x-text="selectedCity?.name"></strong> —
+              <span x-text="selectedResources.map(resourceLabel).join(', ')"></span>
+            </span>
+            <span x-show="!canSubmit()">Selecione conta, cidade e ao menos um recurso com quantidade válida.</span>
+          </div>
+          <div class="flex flex-shrink-0 gap-2">
+            <button type="button" @click="close()" class="btn btn-secondary btn-sm">Cancelar</button>
+            <button type="submit" class="btn btn-primary btn-sm" :disabled="!canSubmit()">
+              <i class="bi bi-check-lg"></i> Criar ordens
+            </button>
+          </div>
         </div>
       </form>
     </div>
@@ -282,9 +233,7 @@ function marketOrderModal() {
       '3': { amount: 10000, unit_price: 0 },
       '4': { amount: 10000, unit_price: 0 },
     },
-    open() {
-      this.isOpen = true;
-    },
+    open() { this.isOpen = true; },
     close() {
       this.isOpen = false;
       this.buyerGaId = '';
@@ -296,12 +245,7 @@ function marketOrderModal() {
       const query = String(this.cityQuery || '').toLowerCase().trim();
       return this.selectedCities.filter(city => {
         if (!query) return true;
-        const hay = [
-          city.name || '',
-          city.x ? `${city.x}` : '',
-          city.y ? `${city.y}` : '',
-          city.tradegood_id ? `${city.tradegood_id}` : '',
-        ].join(' ').toLowerCase();
+        const hay = [city.name || '', String(city.x || ''), String(city.y || '')].join(' ').toLowerCase();
         return hay.includes(query);
       });
     },
@@ -309,17 +253,11 @@ function marketOrderModal() {
       return this.selectedResources.includes(String(value));
     },
     resourceLabel(value) {
-      return ({
-        '0': 'Madeira',
-        '1': 'Vinho',
-        '2': 'Marmore',
-        '3': 'Cristal',
-        '4': 'Enxofre',
-      })[String(value)] || value;
+      return ({ '0': 'Madeira', '1': 'Vinho', '2': 'Mármore', '3': 'Cristal', '4': 'Enxofre' })[String(value)] || value;
     },
     canSubmit() {
       if (!this.buyerGaId || !this.buyerCityId || !this.selectedResources.length) return false;
-      return this.selectedResources.every(value => Number(this.resourceConfig[String(value)]?.amount || 0) > 0);
+      return this.selectedResources.every(v => Number(this.resourceConfig[String(v)]?.amount || 0) > 0);
     },
     get selectedBuyer() {
       return this.buyers.find(item => String(item.id) === String(this.buyerGaId)) || null;
@@ -332,8 +270,8 @@ function marketOrderModal() {
     },
     formatNumber(value) {
       return Number(value || 0).toLocaleString('pt-BR');
-    }
-  }
+    },
+  };
 }
 </script>
 {% endblock %}
