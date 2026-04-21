@@ -187,6 +187,11 @@ def create_internal_order(
     amount: int,
     unit_price: int = 0,
     preferred_buyer_city_id: int | None = None,
+    source_action_code: int | None = None,
+    source_reason: str = "",
+    reason_detail: str = "",
+    production_eta_seconds: int | None = None,
+    missing_resource_keys: str = "",
 ) -> InternalMarketOrder | None:
     """Create an InternalMarketOrder and queue the sell_job (802).
 
@@ -245,6 +250,11 @@ def create_internal_order(
         amount=amount,
         unit_price=unit_price,
         status="matched",
+        source_action_code=source_action_code,
+        source_reason=source_reason,
+        reason_detail=reason_detail,
+        production_eta_seconds=production_eta_seconds,
+        missing_resource_keys=missing_resource_keys,
     )
 
     sell_job = Job.objects.create(

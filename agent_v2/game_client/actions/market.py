@@ -475,6 +475,21 @@ class GetOffersAction(BaseAction):
             logger.warning("GetOffers: could not parse branchOffice HTML")
         return html
 
+    def _extract_html_from_response(self, resp: Any) -> str:
+        """Extract the first large HTML string from a changeView-style AJAX response."""
+        try:
+            data = resp.json()
+            for entry in data:
+                if isinstance(entry, (list, tuple)) and len(entry) >= 2 and entry[0] == "changeView":
+                    payload = entry[1]
+                    if isinstance(payload, (list, tuple)):
+                        for item in payload:
+                            if isinstance(item, str) and len(item) > 100:
+                                return item
+        except Exception:
+            pass
+        return ""
+
     def _parse_all_offers(self, html: str, resource_str: str) -> list[dict[str, Any]]:
         """Parse offer rows from Branch Office listing HTML.
 

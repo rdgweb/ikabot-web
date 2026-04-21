@@ -213,6 +213,14 @@ def _get_building_entry_at_position(city: dict[str, Any], position: int) -> dict
     return None
 
 
+def _find_branch_office_position(city: dict[str, Any]) -> int:
+    for item in city.get("buildings") or []:
+        building = str(item.get("building") or "").strip()
+        if building in {"branchOffice", "marketplace"}:
+            return _to_int(item.get("position"), -1)
+    return -1
+
+
 def _get_upgrading_building(city: dict[str, Any]) -> dict[str, Any] | None:
     for item in city.get("buildings") or []:
         if bool(item.get("is_upgrading")):
@@ -347,7 +355,35 @@ def _action_feedback(parsed: dict[str, Any] | None) -> str:
             text = str(item or "").strip()
             if text:
                 parts.append(text)
+    for key in ("error", "message"):
+        text = str(parsed.get(key) or "").strip()
+        if text:
+            parts.append(text)
     return " | ".join(parts)
+
+
+def _feedback_indicates_missing_resources(feedback: str) -> bool:
+    text = str(feedback or "").strip().lower()
+    if not text:
+        return False
+    markers = (
+        "recurso",
+        "recursos",
+        "mat[ée]ria",
+        "wood",
+        "madeira",
+        "marble",
+        "m[áa]rmore",
+        "cristal",
+        "glas",
+        "sulfur",
+        "enxofre",
+        "não há recursos",
+        "nao ha recursos",
+        "insufficient resources",
+        "not enough resources",
+    )
+    return any(re.search(marker, text) for marker in markers)
 
 
 def _confirm_building_state(
@@ -400,6 +436,11 @@ def _confirm_building_state(
             f"state={last_state or {}}:target={next_level}"
         )
     if action_feedback:
+        if _feedback_indicates_missing_resources(action_feedback):
+            raise RuntimeError(
+                f"missing_resources:{city_name}:{building_name}:pos={position}:"
+                f"state={last_state or {}}:feedback={action_feedback}"
+            )
         detail = f"{detail}:feedback={action_feedback}"
     raise RuntimeError(detail)
 
@@ -766,6 +807,14 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 self._ensure_status_refresh(jid)
                 return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "waiting_post_transport_snapshot"})
 
+        last_market_order_requested_at = _to_float(inputs.get("last_market_order_requested_at"), 0.0)
+        if last_market_order_requested_at > 0 and updated_at is not None:
+            if updated_at.timestamp() < last_market_order_requested_at:
+                age = int(time.time() - last_market_order_requested_at)
+                self.log(jid, "info", f"Snapshot anterior a ordem de mercado interno ({age}s atras); aguardando refresh")
+                self._ensure_status_refresh(jid)
+                return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "waiting_post_market_snapshot"})
+
         # Resolve time reductions for this game account
         agent_config = self.get_agent_config()
         world_time_reduction = _resolve_world_time_reduction(agent_config, ga_id)
@@ -790,6 +839,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         busy_pending: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]] = []
         refresh_needed = False
         any_transport_dispatched = False
+        reschedule_context: dict[str, Any] = {}
         support_by_city = self._get_open_construction_support(jid)
 
         for pending in pending_steps:
@@ -832,7 +882,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             stock = _city_stock(city)
             missing = {key: max(0, costs[key] - stock.get(key, 0)) for key in RESOURCE_KEYS}
             if any(amount > 0 for amount in missing.values()):
-                reschedule_seconds, transport_spawned = self._handle_missing_resources(
+                reschedule_seconds, transport_spawned, extra_inputs = self._handle_missing_resources(
                     job=job,
                     pending=pending,
                     cities=cities,
@@ -841,6 +891,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     support_by_city=support_by_city,
                 )
                 any_transport_dispatched = any_transport_dispatched or transport_spawned
+                if extra_inputs:
+                    reschedule_context.update(extra_inputs)
                 wait_reasons.append(
                     {
                         "status": "waiting_resources",
@@ -864,6 +916,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             reschedule_inputs: dict[str, Any] = {}
             if any_transport_dispatched:
                 reschedule_inputs["last_transport_dispatched_at"] = int(time.time())
+            if reschedule_context:
+                reschedule_inputs.update(reschedule_context)
             if skipped_step_indices:
                 reschedule_inputs["skipped_step_indices"] = skipped_step_indices
             return RunnerResult(
@@ -1527,8 +1581,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         city: dict[str, Any],
         missing: dict[str, int],
         support_by_city: dict[str, dict[str, int]],
-    ) -> tuple[int, bool]:
-        """Returns (reschedule_seconds, transport_was_dispatched)."""
+    ) -> tuple[int, bool, dict[str, Any] | None]:
+        """Returns (reschedule_seconds, transport_was_dispatched, reschedule_inputs)."""
         jid = job["job_id"]
         inputs = job.get("inputs") or {}
         auto_transport = bool(inputs.get("auto_transport", True))
@@ -1560,7 +1614,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 "info",
                 f"Suporte em transito ja cobre {pending['building_name']} em {pending['city_name']}; aguardando chegada",
             )
-            return TRANSPORT_RECHECK_SECONDS, False
+            return TRANSPORT_RECHECK_SECONDS, False, None
 
         wait_seconds = self._estimate_local_wait_seconds(city, missing)
         if wait_seconds:
@@ -1589,7 +1643,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         )
                         if ga_id:
                             self.save_game_client(ga_id, client)
-                        return max(wait_seconds or 0, incoming_wait + FINISH_BUFFER_SECONDS), False
+                        return max(wait_seconds or 0, incoming_wait + FINISH_BUFFER_SECONDS), False, None
                     if ga_id:
                         self.save_game_client(ga_id, client)
             except Exception as exc:
@@ -1609,59 +1663,50 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     "info",
                     f"Suporte logistico criado para {pending['city_name']} | aguardando transporte antes da proxima obra",
                 )
-                return max(wait_seconds or 0, TRANSPORT_RECHECK_SECONDS), True
+                return max(wait_seconds or 0, TRANSPORT_RECHECK_SECONDS), True, None
 
             # No donor city available — try buying from the public market
             if bool(inputs.get("auto_market_buy", True)):
                 try:
-                    aid = job["account_id"]
                     ga_id = job.get("game_account_id")
-                    creds = self.resolve_credentials(aid, {}, game_account_id=ga_id)
-                    if creds:
-                        client = self.get_or_login_game_client(jid, aid, ga_id, creds)
-                        market_eta = self._try_buy_from_market(
+                    if ga_id:
+                        market_eta, extra_inputs = self._try_cover_with_internal_market(
                             jid=jid,
-                            client=client,
-                            ga_id=ga_id,
-                            cities=cities,
+                            ga_id=str(ga_id),
                             target_city=city,
                             pending=pending,
                             missing=missing,
                             level_rows=pending.get("level_rows") or [],
                         )
-                        if ga_id:
-                            self.save_game_client(ga_id, client)
                         if market_eta is not None:
-                            return max(market_eta, TRANSPORT_RECHECK_SECONDS), True
+                            return max(market_eta, TRANSPORT_RECHECK_SECONDS), False, extra_inputs
                 except Exception as exc:
-                    self.log(jid, "warn", f"Compra no mercado falhou: {exc}")
+                    self.log(jid, "warn", f"Mercado interno falhou: {exc}")
 
         if wait_seconds:
-            return max(MIN_RECHECK_SECONDS, wait_seconds + FINISH_BUFFER_SECONDS), False
+            return max(MIN_RECHECK_SECONDS, wait_seconds + FINISH_BUFFER_SECONDS), False, None
 
         self.log(
             jid,
             "warn",
             f"{pending['city_name']} sem recurso suficiente para {pending['building_name']} e sem ETA local confiavel",
         )
-        return TRANSPORT_RECHECK_SECONDS, False
+        return TRANSPORT_RECHECK_SECONDS, False, None
 
     # Resource index mapping matching game_client constants
     _RESOURCE_KEY_TO_IDX = {"wood": 0, "wine": 1, "marble": 2, "glas": 3, "sulfur": 4}
 
-    def _try_buy_from_market(
+    def _try_cover_with_internal_market(
         self,
         *,
         jid: str,
-        client: Any,
-        ga_id: str | None,
-        cities: list[dict[str, Any]],
+        ga_id: str,
         target_city: dict[str, Any],
         pending: dict[str, Any],
         missing: dict[str, int],
         level_rows: list[dict[str, Any]],
-    ) -> int | None:
-        """Buy missing resources from the public market when no donor is available.
+    ) -> tuple[int | None, dict[str, Any] | None]:
+        """Create internal market orders for the missing resources.
 
         Finds the account's branchOffice city, fetches offers, calculates a buffered
         buy amount (next level + 1 extra if possible, else ×1.20), buys the cheapest
@@ -1670,24 +1715,75 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         Returns the estimated ETA in seconds until resources arrive, or None on failure.
         """
         target_city_id = _to_int(target_city.get("id"))
+        target_bo_pos = _find_branch_office_position(target_city)
+        if target_bo_pos < 0:
+            self.log(
+                jid,
+                "warn",
+                f"{pending['city_name']} sem Branch Office; mercado interno nao entrega direto na cidade da obra",
+            )
+            return None, None
 
-        # Find a city in the account that has a branchOffice
-        bo_city: dict[str, Any] | None = None
-        bo_position: int = -1
-        for c in cities:
-            for b in c.get("buildings") or []:
-                if str(b.get("building") or "").strip() in ("branchOffice", "marketplace"):
-                    bo_city = c
-                    bo_position = _to_int(b.get("position"), -1)
-                    break
-            if bo_city:
-                break
+        next_level = _to_int(pending.get("next_level"), 1)
+        level_rows_sorted = sorted(level_rows, key=lambda r: _to_int(r.get("level"), 0))
+        next_rows = [r for r in level_rows_sorted if _to_int(r.get("level"), 0) >= next_level]
+        costs_after = self._normalize_costs((next_rows[1].get("costs") or {}) if len(next_rows) > 1 else {})
 
-        if bo_city is None or bo_position < 0:
-            self.log(jid, "warn", "Nenhuma cidade da conta tem Mercado; compra no mercado indisponivel")
-            return None
+        created_any = False
+        for resource_key, needed in missing.items():
+            if needed <= 0:
+                continue
+            resource_idx = self._RESOURCE_KEY_TO_IDX.get(resource_key)
+            if resource_idx is None:
+                continue
 
-        bo_city_id = _to_int(bo_city.get("id"))
+            extra = costs_after.get(resource_key, 0)
+            buy_amount = needed + extra if extra > 0 else math.ceil(needed * 1.20)
+            try:
+                order = self.hub.create_market_order(
+                    game_account_id=ga_id,
+                    resource_idx=resource_idx,
+                    amount=buy_amount,
+                    unit_price=0,
+                    preferred_buyer_city_id=target_city_id,
+                    source_action_code=1002,
+                    source_reason="construction_missing_resources",
+                    reason_detail=(
+                        f"{pending['city_name']} | {pending['building_name']} | "
+                        f"missing {resource_key}={needed} for level {next_level}"
+                    ),
+                    missing_resource_keys=resource_key,
+                )
+            except Exception as exc:
+                self.log(jid, "warn", f"Nao foi possivel criar ordem interna para {resource_key}: {exc}")
+                continue
+
+            if not order or not order.get("ok"):
+                self.log(
+                    jid,
+                    "warn",
+                    f"Nenhum vendedor elegivel no mercado interno para {resource_key} "
+                    f"(cidade={pending['city_name']}, falta={needed}, pedido={buy_amount})",
+                )
+                continue
+
+            created_any = True
+            self.log(
+                jid,
+                "info",
+                f"Mercado interno: ordem {order.get('order_id')} criada para {resource_key} "
+                f"x{buy_amount} em {pending['city_name']} (faltando {needed})",
+            )
+
+        if not created_any:
+            return None, None
+
+        self.log(
+            jid,
+            "info",
+            f"Mercado interno solicitado para {pending['city_name']} via Branch Office pos={target_bo_pos}; aguardando processamento",
+        )
+        return TRANSPORT_RECHECK_SECONDS, {"last_market_order_requested_at": int(time.time())}
 
         # Determine how much to buy per resource
         next_level = _to_int(pending.get("next_level"), 1)

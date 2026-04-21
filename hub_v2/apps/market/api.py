@@ -122,6 +122,12 @@ class MarketOrderCreateView(APIView):
         resource_idx = request.data.get("resource_idx")
         amount = request.data.get("amount")
         unit_price = int(request.data.get("unit_price", 0))
+        preferred_buyer_city_id = request.data.get("preferred_buyer_city_id")
+        source_action_code = request.data.get("source_action_code")
+        source_reason = str(request.data.get("source_reason") or "").strip()
+        reason_detail = str(request.data.get("reason_detail") or "").strip()
+        production_eta_seconds = request.data.get("production_eta_seconds")
+        missing_resource_keys = str(request.data.get("missing_resource_keys") or "").strip()
 
         if not game_account_id or resource_idx is None or not amount:
             return Response(
@@ -144,6 +150,12 @@ class MarketOrderCreateView(APIView):
             resource_idx=int(resource_idx),
             amount=int(amount),
             unit_price=unit_price,
+            preferred_buyer_city_id=int(preferred_buyer_city_id) if preferred_buyer_city_id not in (None, "") else None,
+            source_action_code=int(source_action_code) if source_action_code not in (None, "") else None,
+            source_reason=source_reason,
+            reason_detail=reason_detail,
+            production_eta_seconds=int(production_eta_seconds) if production_eta_seconds not in (None, "") else None,
+            missing_resource_keys=missing_resource_keys,
         )
 
         if order is None:

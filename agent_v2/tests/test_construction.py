@@ -272,6 +272,87 @@ class ConstructionRunnerExecutionTests(unittest.TestCase):
         self.assertEqual(result.data["status"], "waiting_parallel")
         self.assertEqual(result.data["waiting"][0]["status"], "waiting_resources")
 
+    def test_handle_missing_resources_requests_internal_market_for_target_city(self):
+        runner = ConstructionPlanRunner.__new__(ConstructionPlanRunner)
+        logs = []
+        calls = []
+        runner.log = lambda jid, level, msg: logs.append((jid, level, msg))
+        runner.hub = pytypes.SimpleNamespace(
+            create_market_order=lambda **kwargs: (calls.append(kwargs) or {"ok": True, "order_id": "ord-1"})
+        )
+        runner.resolve_credentials = lambda *_args, **_kwargs: None
+        runner.get_or_login_game_client = lambda *_args, **_kwargs: None
+        runner.save_game_client = lambda *_args, **_kwargs: None
+        runner._estimate_local_wait_seconds = lambda *_args, **_kwargs: 0
+        runner._spawn_transport_cover = lambda **_kwargs: False
+
+        city = {
+            "id": "39274",
+            "name": "Mercado",
+            "wood": 0,
+            "wine": 0,
+            "marble": 0,
+            "crystal": 0,
+            "sulfur": 0,
+            "buildings": [{"building": "branchOffice", "position": 7}],
+        }
+        pending = {
+            "city_name": "Mercado",
+            "building_name": "Templo",
+            "next_level": 1,
+            "level_rows": [
+                {"level": 1, "costs": {"wood": 100, "wine": 0, "marble": 0, "glas": 50, "sulfur": 0}},
+                {"level": 2, "costs": {"wood": 120, "wine": 0, "marble": 0, "glas": 75, "sulfur": 0}},
+            ],
+        }
+        job = {
+            "job_id": "job-1",
+            "account_id": "acc-1",
+            "game_account_id": "ga-1",
+            "inputs": {"auto_transport": True, "auto_market_buy": True},
+        }
+
+        wait_seconds, transport_spawned, reschedule_inputs = runner._handle_missing_resources(
+            job=job,
+            pending=pending,
+            cities=[city],
+            city=city,
+            missing={"wood": 0, "wine": 0, "marble": 0, "glas": 50, "sulfur": 0},
+            support_by_city={},
+        )
+
+        self.assertEqual(wait_seconds, CITY_MODULE.TRANSPORT_RECHECK_SECONDS)
+        self.assertFalse(transport_spawned)
+        self.assertIn("last_market_order_requested_at", reschedule_inputs)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["preferred_buyer_city_id"], 39274)
+        self.assertEqual(calls[0]["resource_idx"], 3)
+        self.assertEqual(calls[0]["source_action_code"], 1002)
+
+    def test_confirm_building_state_raises_missing_resources_when_feedback_says_so(self):
+        CITY_MODULE.time.sleep = lambda *_args, **_kwargs: None
+        CITY_MODULE._live_city_building_state = lambda *_args, **_kwargs: {
+            "position": 10,
+            "building": "empty",
+            "level": 0,
+            "is_upgrading": False,
+        }
+
+        with self.assertRaises(RuntimeError) as ctx:
+            CITY_MODULE._confirm_building_state(
+                object(),
+                city_id=1,
+                position=10,
+                next_level=1,
+                building_name="Torre do Alquimista",
+                city_name="lll3lll",
+                expect_build=True,
+                action_feedback="Nao ha recursos suficientes para esta acao",
+                attempts=1,
+            )
+
+        self.assertIn("missing_resources:lll3lll:Torre do Alquimista:pos=10", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
