@@ -40,6 +40,11 @@ import math
 import re
 from typing import Any
 
+from ...services.resource_transport import (
+    _capacity_step_from_percent,
+    _parse_free_transporters,
+    _parse_ship_capacity,
+)
 from ..constants import ActionID, GAME_AJAX_HEADERS
 from ..exceptions import ActionError
 from .base_action import BaseAction
@@ -348,9 +353,24 @@ class BuyAction(BaseAction):
         else:
             prices[f"cargo_tradegood{resource_idx}"] = amount
 
-        # Estimate ships needed (Ikariam default ship capacity = 5 units per ship)
-        ship_capacity = 5
-        ships = max(1, math.ceil(amount / ship_capacity))
+        ships_available = _parse_free_transporters(take_html, use_freighters=False)
+        ship_capacity = _parse_ship_capacity(
+            take_html,
+            ships_available,
+            use_freighters=False,
+        )
+        capacity_step = _capacity_step_from_percent(100)
+        ships = max(1, math.ceil(amount / max(1, ship_capacity)))
+        if ships > ships_available:
+            raise ActionError(
+                (
+                    "Not enough free transporters for market purchase: "
+                    f"need {ships}, have {ships_available} "
+                    f"(amount={amount}, ship_capacity={ship_capacity})"
+                ),
+                action="buyGoodsAtAnotherBranchOffice",
+                server_errors=["Os seus barcos de comércio não têm espaço suficiente!"],
+            )
 
         # Step 4: POST the purchase
         params: dict[str, Any] = {
@@ -366,9 +386,9 @@ class BuyAction(BaseAction):
             "activeTab": "bargain",
             "transportDisplayPrice": 0,
             "premiumTransporter": 0,
-            "normalTransportersMax": ships,
-            "capacity": 5,
-            "max_capacity": 5,
+            "normalTransportersMax": ships_available,
+            "capacity": capacity_step,
+            "max_capacity": capacity_step,
             "jetPropulsion": 0,
             "transporters": ships,
             "backgroundView": "city",
