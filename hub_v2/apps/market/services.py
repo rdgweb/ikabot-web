@@ -120,6 +120,7 @@ def find_eligible_seller(
         GameAccount.objects.filter(open_for_market=True, active=True, blocked=False)
         .exclude(account__node=buyer_node)
         .select_related("account", "account__node")
+        .order_by("?")
     )
 
     for seller_ga in candidates:
