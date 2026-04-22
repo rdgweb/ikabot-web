@@ -593,6 +593,7 @@ class GameClient:
         resource_idx: int,
         amount: int,
         unit_price: int,
+        offer_mode: str = "add",
     ) -> dict[str, Any]:
         """Create (or update) a sell offer on the player's own Branch Office.
 
@@ -613,6 +614,7 @@ class GameClient:
             resource_idx=resource_idx,
             amount=amount,
             unit_price=unit_price,
+            offer_mode=offer_mode,
         )
 
     def get_market_offers(

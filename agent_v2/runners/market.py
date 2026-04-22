@@ -34,6 +34,7 @@ class SellMarketRunner(BaseRunner):
         resource_idx = int(inputs.get("resource_idx", 0))
         amount = int(inputs.get("amount", 0))
         unit_price = int(inputs.get("unit_price", 0))
+        offer_mode = str(inputs.get("offer_mode") or "add").strip().lower()
 
         if not city_id or bo_pos is None or amount <= 0:
             self.log(jid, "error", "Missing required inputs: city_id, branchoffice_pos, amount")
@@ -55,6 +56,7 @@ class SellMarketRunner(BaseRunner):
                 resource_idx=resource_idx,
                 amount=amount,
                 unit_price=unit_price,
+                offer_mode=offer_mode,
             )
             self.save_game_client(ga_id or aid, client)
             self.log(jid, "info", "Sell offer created")
@@ -122,6 +124,7 @@ class InternalMarketSellRunner(BaseRunner):
         amount = int(inputs.get("amount", 0))
         unit_price = int(inputs.get("unit_price", 0))
         order_id = inputs.get("internal_order_id")
+        offer_mode = str(inputs.get("offer_mode") or "add").strip().lower()
         city_name = str(inputs.get("city_name") or city_id or "").strip()
         buyer_city_name = str(inputs.get("buyer_city_name") or inputs.get("buyer_city_id") or "").strip()
         resource_label = RESOURCE_LABELS.get(resource_idx, f"res={resource_idx}")
@@ -150,17 +153,19 @@ class InternalMarketSellRunner(BaseRunner):
                 resource_idx=resource_idx,
                 amount=amount,
                 unit_price=unit_price,
+                offer_mode=offer_mode,
             )
             self.save_game_client(ga_id or aid, client)
 
             used_unit_price = int(offer_result.get("used_unit_price", 0)) if isinstance(offer_result, dict) else 0
             price_min = int(offer_result.get("price_min", 0)) if isinstance(offer_result, dict) else 0
             price_max = int(offer_result.get("price_max", 0)) if isinstance(offer_result, dict) else 0
+            final_offer_amount = int(offer_result.get("final_offer_amount", amount)) if isinstance(offer_result, dict) else amount
             self.log(
                 jid,
                 "info",
                 f"[Order {order_id}] Oferta publicada em {city_name} | bo={bo_pos} | "
-                f"{resource_label} x{amount} | preco={used_unit_price} | limites={price_min}-{price_max}",
+                f"{resource_label} pedido={amount} total={final_offer_amount} | modo={offer_mode} | preco={used_unit_price} | limites={price_min}-{price_max}",
             )
 
             resp = self.hub.market_order_sell_complete(

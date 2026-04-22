@@ -65,6 +65,7 @@ class CreateOfferAction(BaseAction):
         resource_idx: int,
         amount: int,
         unit_price: int,
+        offer_mode: str = "add",
         **kwargs: Any,
     ) -> dict[str, Any]:
         """Post a sell offer on the Branch Office.
@@ -81,7 +82,12 @@ class CreateOfferAction(BaseAction):
         Returns:
             Parsed AJAX response.
         """
-        if amount <= 0:
+        offer_mode = str(offer_mode or "add").strip().lower()
+        if offer_mode not in {"add", "replace", "clear"}:
+            raise ActionError(f"Invalid offer_mode={offer_mode}", action="updateOffers")
+        if offer_mode == "clear":
+            amount = 0
+        elif amount <= 0:
             raise ActionError("Sell amount must be positive", action="updateOffers")
         if resource_idx not in range(5):
             raise ActionError(f"Invalid resource_idx={resource_idx}", action="updateOffers")
@@ -133,16 +139,26 @@ class CreateOfferAction(BaseAction):
             "currentTab": "tab_branchOfficeOwnOffers",
         }
 
-        # Override the target resource with actual amount and price
-        if resource_idx == 0:
-            params["resource"] = str(amount)
-            params["resourcePrice"] = str(unit_price)
+        target_field = "resource" if resource_idx == 0 else f"tradegood{resource_idx}"
+        target_price_field = "resourcePrice" if resource_idx == 0 else f"tradegood{resource_idx}Price"
+        existing_amount = int(current_offer_state.get(target_field, 0) or 0)
+        if offer_mode == "add":
+            final_amount = existing_amount + amount
+        elif offer_mode == "replace":
+            final_amount = amount
         else:
-            params[f"tradegood{resource_idx}"] = str(amount)
-            params[f"tradegood{resource_idx}Price"] = str(unit_price)
+            final_amount = 0
+
+        # Override the target resource with the resolved amount and price.
+        params[target_field] = str(final_amount)
+        params[target_price_field] = str(unit_price)
 
         result = self._ajax_request(ActionID.MARKETPLACE_UPDATE_OFFERS, params)
         if isinstance(result, dict):
+            result["existing_offer_amount"] = existing_amount
+            result["requested_amount"] = amount
+            result["final_offer_amount"] = final_amount
+            result["offer_mode"] = offer_mode
             result["used_unit_price"] = unit_price
             result["price_min"] = min_price
             result["price_max"] = max_price

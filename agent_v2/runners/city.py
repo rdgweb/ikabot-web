@@ -1000,41 +1000,30 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         reschedule_context: dict[str, Any] = {}
         support_by_city = self._get_open_construction_support(jid)
 
-        for pending in pending_steps:
-            city = _find_city(cities, pending["city_id"])
+        def _queue_pending_candidate(pending_step: dict[str, Any]) -> None:
+            nonlocal any_transport_dispatched
+            city = _find_city(cities, pending_step["city_id"])
             if city is None:
-                self.log(jid, "warn", f"Cidade {pending['city_id']} nao encontrada no snapshot atual")
-                refresh_needed = True
+                self.log(jid, "warn", f"Cidade {pending_step['city_id']} nao encontrada no snapshot atual")
                 wait_reasons.append({"status": "city_missing", "wait_seconds": MIN_RECHECK_SECONDS})
-                continue
+                return
 
             upgrading = _get_upgrading_building(city)
             if upgrading is not None:
-                # Defer decision: verify live before committing to a long wait
-                busy_pending.append((pending, city, upgrading))
-                continue
+                busy_pending.append((pending_step, city, upgrading))
+                return
 
-            next_level = pending["next_level"]
-            level_row = self._find_level_row(pending, next_level)
+            next_level = pending_step["next_level"]
+            level_row = self._find_level_row(pending_step, next_level)
             if level_row is None:
-                stored_levels = [r.get("level") for r in (pending.get("level_rows") or [])]
+                stored_levels = [r.get("level") for r in (pending_step.get("level_rows") or [])]
                 self.log(
                     jid, "error",
-                    f"Etapa sem custo para nivel {next_level} em {pending.get('building_name')} @ {pending.get('city_name')}. "
+                    f"Etapa sem custo para nivel {next_level} em {pending_step.get('building_name')} @ {pending_step.get('city_name')}. "
                     f"Niveis armazenados: {stored_levels}. "
                     f"Recrie o job para regenerar os dados de custo."
                 )
-                return RunnerResult(
-                    success=False,
-                    data={
-                        "status": "missing_level_row",
-                        "city_id": pending["city_id"],
-                        "building_id": pending["building_id"],
-                        "next_level": next_level,
-                        "stored_levels": stored_levels,
-                    },
-                )
-                continue
+                raise RuntimeError("missing_level_row")
 
             costs = self._normalize_costs(level_row.get("costs") or {})
             stock = _city_stock(city)
@@ -1042,7 +1031,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             if any(amount > 0 for amount in missing.values()):
                 reschedule_seconds, transport_spawned, extra_inputs = self._handle_missing_resources(
                     job=job,
-                    pending=pending,
+                    pending=pending_step,
                     cities=cities,
                     city=city,
                     missing=missing,
@@ -1055,14 +1044,33 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     {
                         "status": "waiting_resources",
                         "wait_seconds": reschedule_seconds,
-                        "city_id": pending["city_id"],
-                        "building_id": pending["building_id"],
+                        "city_id": pending_step["city_id"],
+                        "building_id": pending_step["building_id"],
                         "missing": missing,
                     }
                 )
-                continue
+                return
 
-            ready_steps.append((pending, city, level_row))
+            ready_steps.append((pending_step, city, level_row))
+
+        for pending in pending_steps:
+            try:
+                _queue_pending_candidate(pending)
+            except RuntimeError as queue_exc:
+                if str(queue_exc) == "missing_level_row":
+                    next_level = pending["next_level"]
+                    stored_levels = [r.get("level") for r in (pending.get("level_rows") or [])]
+                    return RunnerResult(
+                        success=False,
+                        data={
+                            "status": "missing_level_row",
+                            "city_id": pending["city_id"],
+                            "building_id": pending["building_id"],
+                            "next_level": next_level,
+                            "stored_levels": stored_levels,
+                        },
+                    )
+                raise
 
         if refresh_needed:
             self._ensure_status_refresh(jid)
@@ -1196,10 +1204,30 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                             )
                             live_level = _to_int(live_state.get("level"), 0)
                             if live_level > upgrading_level:
+                                completed_idx = _to_int(pending.get("index"), 0)
+                                if completed_idx not in _skipped_step_indices:
+                                    _skipped_step_indices.append(completed_idx)
                                 self.log(
                                     jid, "info",
                                     f"[{_city_name(city)}] Obra concluida no jogo: {upgrading_name} Lv {upgrading_level} -> {live_level}; snapshot atualizado",
                                 )
+                                promoted = self._pick_pending_step_for_city(
+                                    cities,
+                                    plan_steps,
+                                    pending["city_id"],
+                                    str(inputs.get("queue_strategy") or "fifo"),
+                                    _skipped_step_indices + _blocked_step_indices,
+                                )
+                                if promoted is not None:
+                                    self.log(
+                                        jid,
+                                        "info",
+                                        f"[{_city_name(city)}] Promovendo proxima etapa no mesmo ciclo: {promoted['building_name']} Lv {promoted['next_level']}",
+                                    )
+                                    try:
+                                        _queue_pending_candidate(promoted)
+                                    except RuntimeError:
+                                        pass
                                 continue
                             self.log(
                                 jid, "warn",
@@ -1672,12 +1700,12 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             # next_wait = earliest of: first build finishing, or resource becoming available.
             # We compute two pools separately to avoid inflating with MIN_RECHECK fallbacks
             # from cities-busy that have no meaningful ETA.
-            resource_waits = [
+            timed_waits = [
                 int(r.get("wait_seconds") or MIN_RECHECK_SECONDS)
                 for r in new_waits
-                if r.get("status") == "waiting_resources"
+                if str(r.get("status") or "") not in {"blocked_structural"}
             ]
-            next_wait = min(delays + resource_waits) if resource_waits else min(delays)
+            next_wait = min(delays + timed_waits) if timed_waits else min(delays)
             now_ts = time.time()
             self.log(
                 jid,
@@ -2014,17 +2042,62 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         strategy = str(queue_strategy or "fifo").strip().lower()
         selected: list[dict[str, Any]] = []
         for city_id in city_order:
-            city_candidates = candidates_by_city.get(city_id) or []
-            if not city_candidates:
-                continue
-            if strategy in ("eta_first", "smart"):
-                city = _find_city(cities, city_id)
-                city_candidates = sorted(
-                    city_candidates,
-                    key=lambda step: cls._pending_step_score(city, step, strategy, cities),
-                )
-            selected.append(city_candidates[0])
+            selected_step = cls._pick_pending_step_for_city(
+                cities,
+                plan_steps,
+                city_id,
+                strategy,
+                skipped_step_indices,
+            )
+            if selected_step is not None:
+                selected.append(selected_step)
         return selected
+
+    @classmethod
+    def _pick_pending_step_for_city(
+        cls,
+        cities: list[dict[str, Any]],
+        plan_steps: list[dict[str, Any]],
+        city_id: str,
+        queue_strategy: str = "fifo",
+        skipped_step_indices: list[int] | None = None,
+    ) -> dict[str, Any] | None:
+        _skipped = set(skipped_step_indices or [])
+        city_candidates: list[dict[str, Any]] = []
+        city_id = str(city_id or "")
+        if not city_id:
+            return None
+        for step in sorted(plan_steps, key=lambda item: (_to_int(item.get("index"), 0), str(item.get("city_id")))):
+            if str(step.get("city_id") or "") != city_id:
+                continue
+            if _to_int(step.get("index"), 0) in _skipped:
+                continue
+            city = _find_city(cities, city_id)
+            if city is None:
+                pending = dict(step)
+                pending["current_level"] = 0
+                pending["next_level"] = max(1, _to_int(step.get("target_level"), 1))
+            else:
+                current_level, _, _ = cls._resolve_step_state(city, step)
+                target_level = _to_int(step.get("target_level"), 0)
+                if current_level >= target_level > 0:
+                    continue
+                pending = dict(step)
+                pending["current_level"] = current_level
+                pending["next_level"] = max(1, current_level + 1)
+            city_candidates.append(pending)
+
+        if not city_candidates:
+            return None
+
+        strategy = str(queue_strategy or "fifo").strip().lower()
+        if strategy in ("eta_first", "smart"):
+            city = _find_city(cities, city_id)
+            city_candidates = sorted(
+                city_candidates,
+                key=lambda step: cls._pending_step_score(city, step, strategy, cities),
+            )
+        return city_candidates[0]
 
     @classmethod
     def _pending_step_score(
