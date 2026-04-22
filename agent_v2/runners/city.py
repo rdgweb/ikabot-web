@@ -568,6 +568,30 @@ def _parse_live_sidebar_button_state(html: str) -> dict[str, Any]:
 
 def _live_city_stock_from_game(client, city_id: int) -> dict[str, int] | None:
     try:
+        resp = client._request(
+            "GET",
+            client._server_url,
+            params={"view": "updateGlobalData", "ajax": "1"},
+            headers={"Accept": "*/*", "X-Requested-With": "XMLHttpRequest", "Referer": client._server_url},
+        )
+        payload = resp.json()
+        for cmd in payload:
+            if not isinstance(cmd, (list, tuple)) or len(cmd) < 2 or cmd[0] != "updateGlobalData":
+                continue
+            header = (cmd[1] or {}).get("headerData") if isinstance(cmd[1], dict) else None
+            current = (header or {}).get("currentResources") if isinstance(header, dict) else None
+            if isinstance(current, dict):
+                return {
+                    "wood": _to_int(current.get("resource"), 0),
+                    "wine": _to_int(current.get("1"), 0),
+                    "marble": _to_int(current.get("2"), 0),
+                    "glas": _to_int(current.get("3"), 0),
+                    "sulfur": _to_int(current.get("4"), 0),
+                }
+    except Exception as exc:
+        logger.debug("Failed to read live header stock for city %s: %s", city_id, exc)
+
+    try:
         resp = client._request("GET", client._server_url, params={"view": "city", "cityId": city_id})
         city = extract_city_data(resp.text)
     except Exception as exc:
@@ -1253,10 +1277,17 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     if live_costs is not None:
                         live_missing = {key: max(0, live_costs[key] - live_stock.get(key, 0)) for key in RESOURCE_KEYS}
                         if any(amount > 0 for amount in live_missing.values()):
+                            estimated_costs = self._normalize_costs(level_row.get("costs") or {})
                             self.log(
                                 jid,
                                 "info",
-                                f"Custo real do jogo bloqueia {pending['building_name']} em {_city_name(city)}; aguardando recursos reais",
+                                (
+                                    f"Custo real do jogo bloqueia {pending['building_name']} em {_city_name(city)}"
+                                    f" | estimado: {_format_costs(estimated_costs)}"
+                                    f" | custo_real: {_format_costs(live_costs)}"
+                                    f" | estoque_real: {_format_costs(live_stock)}"
+                                    f" | faltando: {_format_costs(live_missing)}"
+                                ),
                             )
                             reschedule_seconds, transport_spawned, extra_inputs = self._handle_missing_resources(
                                 job=job,
@@ -1275,6 +1306,9 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                     "wait_seconds": reschedule_seconds,
                                     "city_id": pending["city_id"],
                                     "building_id": pending["building_id"],
+                                    "estimated_costs": estimated_costs,
+                                    "live_costs": live_costs,
+                                    "live_stock": live_stock,
                                     "missing": live_missing,
                                 }
                             )
