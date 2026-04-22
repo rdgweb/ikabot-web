@@ -193,6 +193,44 @@ class ConstructionQueueStrategyTests(unittest.TestCase):
         self.assertEqual(selected[0]["current_level"], 11)
         self.assertEqual(selected[0]["next_level"], 12)
 
+    def test_new_mode_recognizes_existing_building_by_alias_and_skips_completed_step(self):
+        city = {
+            "id": "37440",
+            "name": "MH4",
+            "wood": 1000,
+            "wine": 0,
+            "marble": 1000,
+            "crystal": 0,
+            "sulfur": 0,
+            "resource_production_per_hour": 0,
+            "tradegood_production_per_hour": 0,
+            "buildings": [
+                {"building": "chronosForge", "level": 1, "position": 21, "is_upgrading": False},
+            ],
+        }
+        step = {
+            "index": 1,
+            "city_id": "37440",
+            "city_name": "MH4",
+            "building_id": "chronos_forge",
+            "building_name": "Forja de Chronos",
+            "mode": "new",
+            "preferred_position": 21,
+            "target_level": 1,
+            "level_rows": [
+                {
+                    "level": 1,
+                    "adjusted_seconds": 594,
+                    "base_seconds": 220,
+                    "costs": {"wood": 25063, "wine": 0, "marble": 22929, "glas": 0, "sulfur": 0},
+                }
+            ],
+        }
+
+        selected = ConstructionPlanRunner._pick_pending_steps([city], [step], "fifo")
+
+        self.assertEqual(selected, [])
+
 
 class ConstructionRunnerExecutionTests(unittest.TestCase):
     def _runner_with_snapshot(self, snapshot):
@@ -352,6 +390,85 @@ class ConstructionRunnerExecutionTests(unittest.TestCase):
             )
 
         self.assertIn("missing_resources:lll3lll:Torre do Alquimista:pos=10", str(ctx.exception))
+
+    def test_execute_uses_live_costs_before_upgrade(self):
+        snapshot = {
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "cities": [
+                {
+                    "id": "500",
+                    "name": "Polis",
+                    "wood": 100,
+                    "wine": 0,
+                    "marble": 50,
+                    "crystal": 0,
+                    "sulfur": 0,
+                    "resource_production_per_hour": 0,
+                    "tradegood": 2,
+                    "tradegood_production_per_hour": 0,
+                    "buildings": [
+                        {"building": "branchOffice", "level": 4, "position": 8, "is_upgrading": False},
+                    ],
+                }
+            ],
+        }
+        runner = self._runner_with_snapshot(snapshot)
+        runner.resolve_credentials = lambda *_args, **_kwargs: {}
+        runner.save_game_client = lambda *_args, **_kwargs: None
+        runner._handle_missing_resources = lambda **kwargs: (321, False, None)
+        runner._resolve_step_state = ConstructionPlanRunner._resolve_step_state
+        fake_client = pytypes.SimpleNamespace()
+        runner._get_client = lambda _job: (fake_client, "ga-1")
+        CITY_MODULE._live_city_stock_from_game = lambda *_args, **_kwargs: {
+            "wood": 100,
+            "wine": 0,
+            "marble": 50,
+            "glas": 0,
+            "sulfur": 0,
+        }
+        runner._get_live_step_costs = lambda **_kwargs: {
+            "wood": 200,
+            "wine": 0,
+            "marble": 100,
+            "glas": 0,
+            "sulfur": 0,
+        }
+
+        job = {
+            "job_id": "job-live-cost",
+            "account_id": "acc-1",
+            "game_account_id": "ga-1",
+            "inputs": {
+                "queue_strategy": "fifo",
+                "auto_transport": False,
+                "construction_plan_steps": [
+                    {
+                        "index": 1,
+                        "city_id": "500",
+                        "city_name": "Polis",
+                        "building_id": "marketplace",
+                        "building_name": "Mercado",
+                        "building_position": 8,
+                        "mode": "upgrade",
+                        "target_level": 5,
+                        "level_rows": [
+                            {
+                                "level": 5,
+                                "adjusted_seconds": 300,
+                                "base_seconds": 300,
+                                "costs": {"wood": 10, "wine": 0, "marble": 10, "glas": 0, "sulfur": 0},
+                            }
+                        ],
+                    }
+                ],
+            },
+        }
+
+        result = runner.execute(job)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.kwargs["reschedule_seconds"], 321)
+        self.assertEqual(result.data["waiting"][0]["status"], "waiting_real_cost_resources")
 
 
 if __name__ == "__main__":

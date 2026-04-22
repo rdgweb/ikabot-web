@@ -485,6 +485,114 @@ def _normalize_building_id(building_id: str) -> str:
     return BUILDING_ALIASES.get(key, key)
 
 
+def _clean_number(raw: Any) -> int:
+    text = str(raw or "").strip()
+    if not text:
+        return 0
+    text = re.sub(r"<[^>]+>", "", text)
+    digits = re.sub(r"[^\d]", "", text)
+    if not digits:
+        return 0
+    try:
+        return int(digits)
+    except Exception:
+        return 0
+
+
+def _extract_ajax_html(response_text: str) -> str:
+    try:
+        data = json.loads(response_text)
+    except Exception:
+        return ""
+    view_cmds = {"changeView", "loadContent", "updateTemplate", "updateTemplateData"}
+    for cmd in data:
+        if not isinstance(cmd, (list, tuple)) or len(cmd) < 2:
+            continue
+        if cmd[0] not in view_cmds:
+            continue
+        payload = cmd[1]
+        if isinstance(payload, str) and "<" in payload:
+            return payload
+        if isinstance(payload, dict):
+            for key in ("html", "content", "template"):
+                val = payload.get(key)
+                if isinstance(val, str) and "<" in val:
+                    return val
+        if isinstance(payload, (list, tuple)):
+            for candidate in reversed(payload):
+                if isinstance(candidate, str) and "<" in candidate:
+                    return candidate
+                if isinstance(candidate, (list, tuple)):
+                    for sub in candidate:
+                        if isinstance(sub, str) and "<" in sub:
+                            return sub
+    return ""
+
+
+def _parse_live_sidebar_costs(html: str) -> dict[str, int]:
+    costs = {key: 0 for key in RESOURCE_KEYS}
+    if not html:
+        return costs
+    for match in re.finditer(r'<li class="([^"]+)"[^>]*>(.*?)</li>', html, re.IGNORECASE | re.DOTALL):
+        classes = {token for token in str(match.group(1) or "").split() if token}
+        body = str(match.group(2) or "")
+        if "time" in classes:
+            continue
+        if "wood" in classes:
+            costs["wood"] = _clean_number(body)
+        elif "wine" in classes:
+            costs["wine"] = _clean_number(body)
+        elif "marble" in classes:
+            costs["marble"] = _clean_number(body)
+        elif "glass" in classes or "crystal" in classes or "glas" in classes:
+            costs["glas"] = _clean_number(body)
+        elif "sulfur" in classes:
+            costs["sulfur"] = _clean_number(body)
+    return costs
+
+
+def _parse_live_sidebar_button_state(html: str) -> dict[str, Any]:
+    match = re.search(
+        r'<a[^>]+id="js_buildingUpgradeButton"[^>]+class="([^"]*)"[^>]*(?:href="([^"]*)")?',
+        html,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return {"button_found": False, "button_enabled": False, "href": ""}
+    classes = {token for token in str(match.group(1) or "").split() if token}
+    href = str(match.group(2) or "").strip()
+    disabled_tokens = {"disabled", "inactive", "grayedOut", "greyedOut"}
+    enabled = not any(token in classes for token in disabled_tokens)
+    return {"button_found": True, "button_enabled": enabled, "href": href}
+
+
+def _live_city_stock_from_game(client, city_id: int) -> dict[str, int] | None:
+    try:
+        resp = client._request("GET", client._server_url, params={"view": "city", "cityId": city_id})
+        city = extract_city_data(resp.text)
+    except Exception as exc:
+        logger.debug("Failed to read live city stock for city %s: %s", city_id, exc)
+        return None
+    if not isinstance(city, dict):
+        return None
+    current = city.get("current_resources") if isinstance(city.get("current_resources"), dict) else {}
+    if current:
+        return {
+            "wood": _to_int(current.get("resource"), 0),
+            "wine": _to_int(current.get("1"), 0),
+            "marble": _to_int(current.get("2"), 0),
+            "glas": _to_int(current.get("3"), 0),
+            "sulfur": _to_int(current.get("4"), 0),
+        }
+    return {
+        "wood": _to_int(city.get("wood"), 0),
+        "wine": _to_int(city.get("wine"), 0),
+        "marble": _to_int(city.get("marble"), 0),
+        "glas": _to_int(city.get("crystal"), 0),
+        "sulfur": _to_int(city.get("sulfur"), 0),
+    }
+
+
 def _parse_building_options_html(html: str, slot_type: str) -> list[dict[str, Any]]:
     matches = list(
         re.finditer(
@@ -826,7 +934,14 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             return RunnerResult(success=False, data={"error": "missing_plan"})
 
         skipped_step_indices: list[int] = list(inputs.get("skipped_step_indices") or [])
-        pending_steps = self._pick_pending_steps(cities, plan_steps, str(inputs.get("queue_strategy") or "fifo"), skipped_step_indices)
+        blocked_step_indices: list[int] = list(inputs.get("blocked_step_indices") or [])
+        ignored_step_indices = sorted(set(skipped_step_indices + blocked_step_indices))
+        pending_steps = self._pick_pending_steps(
+            cities,
+            plan_steps,
+            str(inputs.get("queue_strategy") or "fifo"),
+            ignored_step_indices,
+        )
         if not pending_steps:
             self.log(jid, "info", "Plano de construcao concluido")
             return RunnerResult(success=True, data={"status": "complete"})
@@ -920,6 +1035,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 reschedule_inputs.update(reschedule_context)
             if skipped_step_indices:
                 reschedule_inputs["skipped_step_indices"] = skipped_step_indices
+            if blocked_step_indices:
+                reschedule_inputs["blocked_step_indices"] = blocked_step_indices
             return RunnerResult(
                 success=True,
                 reschedule_seconds=next_wait,
@@ -934,6 +1051,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             new_waits = list(wait_reasons)
             step_failures: list[dict[str, Any]] = []
             _skipped_step_indices: list[int] = list(inputs.get("skipped_step_indices") or [])
+            _blocked_step_indices: list[int] = list(inputs.get("blocked_step_indices") or [])
 
             # Live-verify cities where snapshot indicated a building is upgrading.
             # If the game doesn't confirm it (stale snapshot after cancel or completion),
@@ -968,6 +1086,12 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                 if live_state and not live_state.get("is_upgrading"):
                                     live_still_busy = False
                                     refresh_needed = True
+                                    self._reconcile_snapshot_building_state(
+                                        ga_id=str(ga_id),
+                                        city=city,
+                                        position=upgrading_position,
+                                        live_state=live_state,
+                                    )
                                     self.log(
                                         jid, "warn",
                                         f"[{_city_name(city)}] Snapshot indicava obra ({upgrading_name} Lv {upgrading_level}) "
@@ -988,6 +1112,12 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         else:
                             live_still_busy = False
                             refresh_needed = True
+                            self._reconcile_snapshot_building_state(
+                                ga_id=str(ga_id),
+                                city=city,
+                                position=upgrading_position,
+                                live_state=live_state,
+                            )
                             self.log(
                                 jid, "warn",
                                 f"[{_city_name(city)}] Snapshot indicava obra ({upgrading_name} Lv {upgrading_level}) "
@@ -1070,32 +1200,30 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     next_level = pending["next_level"]
                     building_id = _normalize_building_id(pending["building_id"])
                     city_id = _to_int(pending["city_id"])
-                    step_mode = str(pending.get("mode") or "upgrade")
-                    if step_mode == "new":
-                        preferred_position = _to_int(pending.get("preferred_position"), 0)
-                        slot_entry = _get_building_entry_at_position(city, preferred_position)
-                        if slot_entry and str(slot_entry.get("building") or "").strip() == pending["building_id"]:
-                            current_level = _to_int(slot_entry.get("level"), 0)
-                            position = _to_int(slot_entry.get("position"), 0)
-                            current_entry = slot_entry
-                        else:
-                            current_level = 0
-                            position = preferred_position if preferred_position > 0 else None
-                            current_entry = None
-                    else:
-                        building_position = _to_int(pending.get("building_position"), 0)
-                        if building_position > 0:
-                            current_entry = _get_building_entry_at_position(city, building_position)
-                            if current_entry and str(current_entry.get("building") or "").strip() in _building_ids_to_match(pending["building_id"]):
-                                current_level = _to_int(current_entry.get("level"), 0)
-                                position = _to_int(current_entry.get("position"), 0)
-                            else:
-                                current_level = 0
-                                position = None
-                                current_entry = None
-                        else:
-                            current_level, position = _find_building(city, pending["building_id"])
-                            current_entry = _get_building_entry(city, pending["building_id"])
+                    current_level, position, current_entry = self._resolve_step_state(city, pending)
+
+                    if current_level >= _to_int(pending.get("target_level"), 0) > 0:
+                        self.log(
+                            jid,
+                            "info",
+                            f"Etapa concluida no jogo: {_city_name(city)} | {pending['building_name']} Lv {current_level}",
+                        )
+                        _skipped_idx = _to_int(pending.get("index"), 0)
+                        if _skipped_idx not in _skipped_step_indices:
+                            _skipped_step_indices.append(_skipped_idx)
+                        if position is not None:
+                            self._reconcile_snapshot_building_state(
+                                ga_id=str(ga_id),
+                                city=city,
+                                position=position,
+                                live_state={
+                                    "position": position,
+                                    "building": building_id,
+                                    "level": current_level,
+                                    "is_upgrading": False,
+                                },
+                            )
+                        continue
 
                     if current_entry and bool(current_entry.get("is_upgrading")):
                         wait_seconds = max(MIN_RECHECK_SECONDS, _to_int(level_row.get("adjusted_seconds"), 0) + FINISH_BUFFER_SECONDS)
@@ -1113,6 +1241,44 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                             }
                         )
                         continue
+
+                    live_stock = _live_city_stock_from_game(client, city_id) or _city_stock(city)
+                    live_costs = self._get_live_step_costs(
+                        client=client,
+                        city_id=city_id,
+                        pending=pending,
+                        current_level=current_level,
+                        position=position,
+                    )
+                    if live_costs is not None:
+                        live_missing = {key: max(0, live_costs[key] - live_stock.get(key, 0)) for key in RESOURCE_KEYS}
+                        if any(amount > 0 for amount in live_missing.values()):
+                            self.log(
+                                jid,
+                                "info",
+                                f"Custo real do jogo bloqueia {pending['building_name']} em {_city_name(city)}; aguardando recursos reais",
+                            )
+                            reschedule_seconds, transport_spawned, extra_inputs = self._handle_missing_resources(
+                                job=job,
+                                pending=pending,
+                                cities=cities,
+                                city=city,
+                                missing=live_missing,
+                                support_by_city=support_by_city,
+                            )
+                            any_transport_dispatched = any_transport_dispatched or transport_spawned
+                            if extra_inputs:
+                                reschedule_context.update(extra_inputs)
+                            new_waits.append(
+                                {
+                                    "status": "waiting_real_cost_resources",
+                                    "wait_seconds": reschedule_seconds,
+                                    "city_id": pending["city_id"],
+                                    "building_id": pending["building_id"],
+                                    "missing": live_missing,
+                                }
+                            )
+                            continue
 
                     if current_level <= 0:
                         allowed_types = set(pending.get("slot_types") or [])
@@ -1215,11 +1381,12 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         if ga_id:
                             try:
                                 _end_at = _to_int((live_entry or {}).get("construction_end_at"), 0) or None
-                                self.hub.patch_snapshot_building(
-                                    game_account_id=str(ga_id),
-                                    city_id=city_id,
+                                self._reconcile_snapshot_building_state(
+                                    ga_id=str(ga_id),
+                                    city=city,
                                     position=empty_position,
-                                    patch={
+                                    live_state={
+                                        "position": empty_position,
                                         "building": building_id,
                                         "level": 0,
                                         "is_upgrading": True,
@@ -1280,6 +1447,24 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                             f" | #{pending['index']} de {len(plan_steps)}",
                         )
 
+                    if ga_id and position is not None:
+                        try:
+                            _end_at = _to_int((live_entry or {}).get("construction_end_at"), 0) or None
+                            self._reconcile_snapshot_building_state(
+                                ga_id=str(ga_id),
+                                city=city,
+                                position=position,
+                                live_state={
+                                    "position": position,
+                                    "building": building_id,
+                                    "level": current_level,
+                                    "is_upgrading": True,
+                                    "construction_end_at": _end_at,
+                                },
+                            )
+                        except Exception as _patch_exc:
+                            logger.debug("[%s] Snapshot patch after upgrade failed: %s", _city_name(city), _patch_exc)
+
                     # adjusted_seconds already has world/government reductions baked in
                     # from hub job creation — use it directly.
                     construction_end_at = _to_int((live_entry or {}).get("construction_end_at"), 0)
@@ -1302,6 +1487,26 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         }
                     )
                 except Exception as step_exc:
+                    err = str(step_exc)
+                    if err.startswith("no_empty_slot:") or err.startswith("no_unlocked_slot:"):
+                        blocked_idx = _to_int(pending.get("index"), 0)
+                        if blocked_idx not in _blocked_step_indices:
+                            _blocked_step_indices.append(blocked_idx)
+                        self.log(
+                            jid,
+                            "warn",
+                            f"Etapa bloqueada estruturalmente: {_city_name(city)} | {pending['building_name']} | {err}",
+                        )
+                        new_waits.append(
+                            {
+                                "status": "blocked_structural",
+                                "wait_seconds": TRANSPORT_RECHECK_SECONDS,
+                                "city_id": pending["city_id"],
+                                "building_id": pending["building_id"],
+                                "error": err,
+                            }
+                        )
+                        continue
                     step_failures.append(
                         {
                             "city_id": pending["city_id"],
@@ -1340,6 +1545,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 _ri_no_start: dict[str, Any] = {}
                 if _skipped_step_indices:
                     _ri_no_start["skipped_step_indices"] = _skipped_step_indices
+                if _blocked_step_indices:
+                    _ri_no_start["blocked_step_indices"] = _blocked_step_indices
                 return RunnerResult(
                     success=True,
                     reschedule_seconds=next_wait,
@@ -1365,6 +1572,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             _ri_started: dict[str, Any] = {"last_builds_started_at": now_ts}
             if _skipped_step_indices:
                 _ri_started["skipped_step_indices"] = _skipped_step_indices
+            if _blocked_step_indices:
+                _ri_started["blocked_step_indices"] = _blocked_step_indices
             return RunnerResult(
                 success=True,
                 reschedule_seconds=next_wait,
@@ -1404,28 +1613,108 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         return out
 
     @staticmethod
+    def _resolve_step_state(city: dict[str, Any], step: dict[str, Any]) -> tuple[int, int | None, dict[str, Any] | None]:
+        if str(step.get("mode") or "upgrade") == "new":
+            preferred_position = _to_int(step.get("preferred_position"), 0)
+            slot_entry = _get_building_entry_at_position(city, preferred_position) if preferred_position > 0 else None
+            if slot_entry and str(slot_entry.get("building") or "").strip() in _building_ids_to_match(step["building_id"]):
+                return _to_int(slot_entry.get("level"), 0), _to_int(slot_entry.get("position"), 0), slot_entry
+            current_level, position = _find_building(city, step["building_id"])
+            current_entry = _get_building_entry(city, step["building_id"])
+            if position is not None:
+                return current_level, position, current_entry
+            return 0, preferred_position if preferred_position > 0 else None, None
+
+        building_position = _to_int(step.get("building_position"), 0)
+        if building_position > 0:
+            slot_entry = _get_building_entry_at_position(city, building_position)
+            if slot_entry and str(slot_entry.get("building") or "").strip() in _building_ids_to_match(step["building_id"]):
+                return _to_int(slot_entry.get("level"), 0), _to_int(slot_entry.get("position"), 0), slot_entry
+            return 0, None, None
+        current_level, position = _find_building(city, step["building_id"])
+        current_entry = _get_building_entry(city, step["building_id"])
+        return current_level, position, current_entry
+
+    def _reconcile_snapshot_building_state(
+        self,
+        *,
+        ga_id: str,
+        city: dict[str, Any],
+        position: int,
+        live_state: dict[str, Any] | None,
+    ) -> None:
+        if position < 0:
+            return
+        live = live_state or {}
+        live_building = str(live.get("building") or "").strip()
+        if not live_building or live_building == "empty":
+            patch = {"building": "empty", "level": 0, "is_upgrading": False, "construction_end_at": None}
+        else:
+            patch = {
+                "building": live_building,
+                "level": _to_int(live.get("level"), 0),
+                "is_upgrading": bool(live.get("is_upgrading")),
+                "construction_end_at": _to_int(live.get("construction_end_at"), 0) or None,
+            }
+
+        entry = _get_building_entry_at_position(city, position)
+        if entry is not None:
+            entry.update(patch)
+            if patch["construction_end_at"] is None:
+                entry.pop("construction_end_at", None)
+
+        self.hub.patch_snapshot_building(
+            game_account_id=ga_id,
+            city_id=str(city.get("id") or ""),
+            position=position,
+            patch=patch,
+        )
+
+    def _get_live_step_costs(
+        self,
+        *,
+        client,
+        city_id: int,
+        pending: dict[str, Any],
+        current_level: int,
+        position: int | None,
+    ) -> dict[str, int] | None:
+        if position is None or current_level <= 0:
+            return None
+        template_view = _normalize_building_id(str(pending.get("building_id") or "city"))
+        try:
+            resp = client._request(
+                "GET",
+                client._server_url,
+                params={
+                    "view": template_view,
+                    "cityId": str(city_id),
+                    "position": str(position),
+                    "backgroundView": "city",
+                    "currentCityId": str(city_id),
+                    "ajax": "1",
+                },
+                headers={
+                    "Accept": "text/plain, */*; q=0.01",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            )
+        except Exception as exc:
+            logger.debug("Failed to load live sidebar for %s in city %s: %s", template_view, city_id, exc)
+            return None
+        html = _extract_ajax_html(resp.text)
+        if not html:
+            return None
+        costs = _parse_live_sidebar_costs(html)
+        return costs if any(costs.values()) else None
+
+    @staticmethod
     def _pick_pending_step(cities: list[dict[str, Any]], plan_steps: list[dict[str, Any]]) -> dict[str, Any] | None:
         for step in sorted(plan_steps, key=lambda item: (_to_int(item.get("index"), 0), str(item.get("city_id")))):
             city = _find_city(cities, step["city_id"])
             if city is None:
                 continue
-            if str(step.get("mode") or "upgrade") == "new":
-                preferred_position = _to_int(step.get("preferred_position"), 0)
-                slot_entry = _get_building_entry_at_position(city, preferred_position)
-                if slot_entry and str(slot_entry.get("building") or "").strip() == step["building_id"]:
-                    current_level = _to_int(slot_entry.get("level"), 0)
-                else:
-                    current_level = 0
-            else:
-                building_position = _to_int(step.get("building_position"), 0)
-                if building_position > 0:
-                    slot_entry = _get_building_entry_at_position(city, building_position)
-                    if slot_entry and str(slot_entry.get("building") or "").strip() in _building_ids_to_match(step["building_id"]):
-                        current_level = _to_int(slot_entry.get("level"), 0)
-                    else:
-                        current_level = 0
-                else:
-                    current_level, _ = _find_building(city, step["building_id"])
+            current_level, _, _ = ConstructionPlanRunner._resolve_step_state(city, step)
             target_level = _to_int(step.get("target_level"), 0)
             if current_level >= target_level > 0:
                 continue
@@ -1458,23 +1747,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 pending["current_level"] = 0
                 pending["next_level"] = max(1, _to_int(step.get("target_level"), 1))
             else:
-                if str(step.get("mode") or "upgrade") == "new":
-                    preferred_position = _to_int(step.get("preferred_position"), 0)
-                    slot_entry = _get_building_entry_at_position(city, preferred_position)
-                    if slot_entry and str(slot_entry.get("building") or "").strip() == step["building_id"]:
-                        current_level = _to_int(slot_entry.get("level"), 0)
-                    else:
-                        current_level = 0
-                else:
-                    building_position = _to_int(step.get("building_position"), 0)
-                    if building_position > 0:
-                        slot_entry = _get_building_entry_at_position(city, building_position)
-                        if slot_entry and str(slot_entry.get("building") or "").strip() in _building_ids_to_match(step["building_id"]):
-                            current_level = _to_int(slot_entry.get("level"), 0)
-                        else:
-                            current_level = 0
-                    else:
-                        current_level, _ = _find_building(city, step["building_id"])
+                current_level, _, _ = cls._resolve_step_state(city, step)
                 target_level = _to_int(step.get("target_level"), 0)
                 if current_level >= target_level > 0:
                     continue
