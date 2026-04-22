@@ -187,6 +187,8 @@ class MarketOrdersPartialView(FilterSortListView):
         for order in object_list:
             order.buyer_city_name_display = _find_city_name(order.buyer_game_account, order.buyer_city_id)
             order.seller_city_name_display = _find_city_name(order.seller_game_account, order.seller_city_id)
+            order.can_delete = order.status in ("completed", "failed", "canceled")
+            order.can_cancel = order.status in ("created", "matched", "jobs_created")
         return ctx
 
 
@@ -363,6 +365,53 @@ class MarketOrderDeleteView(LoginRequiredMixin, View):
         trigger = json.dumps(
             {
                 "toast": {"type": "success", "message": f"Ordem excluida: {amount}x {resource_label}."},
+                "market-order-deleted": True,
+            }
+        )
+        resp = HttpResponse(status=200)
+        resp["HX-Trigger"] = trigger
+        return resp
+
+
+class MarketOrderBulkDeleteView(LoginRequiredMixin, View):
+    """POST: delete multiple terminal/canceled InternalMarketOrders."""
+
+    def post(self, request):
+        order_ids = [str(item).strip() for item in request.POST.getlist("order_ids") if str(item).strip()]
+        if not order_ids:
+            trigger = json.dumps({"toast": {"type": "error", "message": "Selecione ao menos uma ordem para excluir."}})
+            resp = HttpResponse(status=400)
+            resp["HX-Trigger"] = trigger
+            return resp
+
+        orders = list(InternalMarketOrder.objects.filter(pk__in=order_ids))
+        if not orders:
+            trigger = json.dumps({"toast": {"type": "error", "message": "Nenhuma ordem valida encontrada para exclusao."}})
+            resp = HttpResponse(status=404)
+            resp["HX-Trigger"] = trigger
+            return resp
+
+        deletable_statuses = {"completed", "failed", "canceled"}
+        deletable = [order for order in orders if order.status in deletable_statuses]
+        skipped = len(orders) - len(deletable)
+
+        if not deletable:
+            trigger = json.dumps(
+                {"toast": {"type": "error", "message": "So e possivel excluir ordens concluidas, falhas ou canceladas."}}
+            )
+            resp = HttpResponse(status=400)
+            resp["HX-Trigger"] = trigger
+            return resp
+
+        deleted_count = len(deletable)
+        InternalMarketOrder.objects.filter(pk__in=[order.pk for order in deletable]).delete()
+
+        message = f"{deleted_count} ordem(ns) excluida(s)."
+        if skipped:
+            message += f" {skipped} ordem(ns) foram ignoradas por nao estarem finalizadas."
+        trigger = json.dumps(
+            {
+                "toast": {"type": "success", "message": message},
                 "market-order-deleted": True,
             }
         )

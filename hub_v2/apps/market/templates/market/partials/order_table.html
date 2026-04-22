@@ -1,117 +1,186 @@
 {% load static hub_tags humanize %}
 
 {% if object_list or request.GET %}
-<div class="overflow-x-auto">
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Recurso</th>
-        <th class="text-right">Qtd.</th>
-        <th class="text-right">Preco/un.</th>
-        <th>Comprador</th>
-        <th>Cidade compra</th>
-        <th>Vendedor</th>
-        <th>Cidade venda</th>
-        <th>Status</th>
-        <th>Criado em</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for order in object_list %}
-      <tr>
-        <td>
-          <a href="{% url 'market:order-detail' order.pk %}" class="flex items-center gap-2 link-sea">
-            <img src="{% static order.resource_idx|resource_icon %}" alt="" class="w-4 h-4" onerror="this.style.display='none'">
-            <span class="font-medium text-sm">{{ order.get_resource_idx_display }}</span>
-          </a>
-        </td>
-        <td class="text-sm text-right font-mono tabular-nums">{{ order.amount|intcomma }}</td>
-        <td class="text-sm text-right font-mono tabular-nums">
-          <div>{{ order.unit_price|intcomma }}</div>
-          <div class="text-[10px] text-muted">min {{ order.price_min|intcomma }} / max {{ order.price_max|intcomma }}</div>
-        </td>
-        <td>
-          <div class="text-sm text-ink leading-tight">{{ order.buyer_account.label }}</div>
-          {% if order.buyer_game_account %}
-          <div class="text-xs text-muted">{{ order.buyer_game_account.name|default:order.buyer_game_account.server_id }}</div>
-          {% endif %}
-        </td>
-        <td class="text-xs text-muted">
-          {% if order.buyer_city_name_display %}{{ order.buyer_city_name_display }}{% elif order.buyer_city_id %}Cidade #{{ order.buyer_city_id }}{% else %}-{% endif %}
-        </td>
-        <td>
-          {% if order.seller_account %}
-          <div class="text-sm text-ink leading-tight">{{ order.seller_account.label }}</div>
-          {% if order.seller_game_account %}
-          <div class="text-xs text-muted">{{ order.seller_game_account.name|default:order.seller_game_account.server_id }}</div>
-          {% endif %}
-          {% else %}
-          <span class="text-muted text-xs">Aguardando...</span>
-          {% endif %}
-        </td>
-        <td class="text-xs text-muted">
-          {% if order.seller_city_name_display %}{{ order.seller_city_name_display }}{% elif order.seller_city_id %}Cidade #{{ order.seller_city_id }}{% else %}-{% endif %}
-        </td>
-        <td>
-          {% if order.status == "completed" %}
-            <span class="badge badge-success">{{ order.get_status_display }}</span>
-          {% elif order.status == "failed" %}
-            <span class="badge badge-danger">{{ order.get_status_display }}</span>
-          {% elif order.status == "canceled" %}
-            <span class="badge badge-secondary">{{ order.get_status_display }}</span>
-          {% elif order.status == "jobs_running" %}
-            <span class="badge badge-warning">{{ order.get_status_display }}</span>
-          {% else %}
-            <span class="badge badge-info">{{ order.get_status_display }}</span>
-          {% endif %}
-        </td>
-        <td class="text-xs text-muted">{{ order.created_at|localtime_format }}</td>
-        <td class="text-center">
-          {% if order.status == "created" or order.status == "matched" or order.status == "jobs_created" %}
-          <button type="button"
-                  onclick="return openConfirm({
-                    title: 'Cancelar ordem',
-                    message: 'Cancelar esta ordem de {{ order.amount }} x {{ order.get_resource_idx_display }}?',
-                    style: 'danger',
-                    confirmLabel: 'Cancelar',
-                    onConfirm: () => htmx.ajax('POST', '{% url 'market:order-cancel' order.pk %}', {swap: 'none'})
-                  })"
-                  class="btn btn-danger btn-sm !px-2 !py-0.5"
-                  title="Cancelar ordem">
-            <i class="bi bi-x-lg text-[10px]"></i>
-          </button>
-          {% elif order.status == "completed" or order.status == "failed" or order.status == "canceled" %}
-          <button type="button"
-                  onclick="return openConfirm({
-                    title: 'Excluir ordem',
-                    message: 'Excluir esta ordem de {{ order.amount }} x {{ order.get_resource_idx_display }}?',
-                    style: 'danger',
-                    confirmLabel: 'Excluir',
-                    onConfirm: () => htmx.ajax('POST', '{% url 'market:order-delete' order.pk %}', {swap: 'none'})
-                  })"
-                  class="btn btn-danger btn-sm !px-2 !py-0.5"
-                  title="Excluir ordem">
-            <i class="bi bi-trash text-[10px]"></i>
-          </button>
-          {% endif %}
-        </td>
-      </tr>
-      {% empty %}
-      <tr>
-        <td colspan="10" class="text-center py-8 text-muted">
-          <i class="bi bi-shop text-2xl block mb-2"></i>
-          Nenhuma ordem encontrada para os filtros aplicados.
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<div x-data="marketBulkDeleteTable()">
+  <form hx-post="{% url 'market:order-bulk-delete' %}" hx-swap="none" class="mb-3">
+    {% csrf_token %}
+    <div class="flex items-center justify-between gap-3 px-1">
+      <div class="text-xs text-muted">
+        <span x-text="selectedCount"></span> selecionada(s)
+      </div>
+      <button type="button"
+              class="btn btn-danger btn-sm"
+              :disabled="selectedCount === 0"
+              x-bind:class="{ 'opacity-50 pointer-events-none': selectedCount === 0 }"
+              @click="confirmBulkDelete($el.form)">
+        <i class="bi bi-trash"></i> Excluir selecionadas
+      </button>
+    </div>
+
+    <div class="overflow-x-auto mt-3">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th class="w-10 text-center">
+              <input type="checkbox"
+                     x-ref="master"
+                     @change="toggleAll($event)"
+                     title="Selecionar todas as ordens excluiveis">
+            </th>
+            <th>Recurso</th>
+            <th class="text-right">Qtd.</th>
+            <th class="text-right">Preco/un.</th>
+            <th>Comprador</th>
+            <th>Cidade compra</th>
+            <th>Vendedor</th>
+            <th>Cidade venda</th>
+            <th>Status</th>
+            <th>Criado em</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for order in object_list %}
+          <tr>
+            <td class="text-center">
+              <input type="checkbox"
+                     name="order_ids"
+                     value="{{ order.pk }}"
+                     {% if not order.can_delete %}disabled{% endif %}
+                     @change="sync()"
+                     title="{% if order.can_delete %}Selecionar ordem{% else %}Apenas ordens finalizadas podem ser excluidas{% endif %}">
+            </td>
+            <td>
+              <a href="{% url 'market:order-detail' order.pk %}" class="flex items-center gap-2 link-sea">
+                <img src="{% static order.resource_idx|resource_icon %}" alt="" class="w-4 h-4" onerror="this.style.display='none'">
+                <span class="font-medium text-sm">{{ order.get_resource_idx_display }}</span>
+              </a>
+            </td>
+            <td class="text-sm text-right font-mono tabular-nums">{{ order.amount|intcomma }}</td>
+            <td class="text-sm text-right font-mono tabular-nums">
+              <div>{{ order.unit_price|intcomma }}</div>
+              <div class="text-[10px] text-muted">min {{ order.price_min|intcomma }} / max {{ order.price_max|intcomma }}</div>
+            </td>
+            <td>
+              <div class="text-sm text-ink leading-tight">{{ order.buyer_account.label }}</div>
+              {% if order.buyer_game_account %}
+              <div class="text-xs text-muted">{{ order.buyer_game_account.name|default:order.buyer_game_account.server_id }}</div>
+              {% endif %}
+            </td>
+            <td class="text-xs text-muted">
+              {% if order.buyer_city_name_display %}{{ order.buyer_city_name_display }}{% elif order.buyer_city_id %}Cidade #{{ order.buyer_city_id }}{% else %}-{% endif %}
+            </td>
+            <td>
+              {% if order.seller_account %}
+              <div class="text-sm text-ink leading-tight">{{ order.seller_account.label }}</div>
+              {% if order.seller_game_account %}
+              <div class="text-xs text-muted">{{ order.seller_game_account.name|default:order.seller_game_account.server_id }}</div>
+              {% endif %}
+              {% else %}
+              <span class="text-muted text-xs">Aguardando...</span>
+              {% endif %}
+            </td>
+            <td class="text-xs text-muted">
+              {% if order.seller_city_name_display %}{{ order.seller_city_name_display }}{% elif order.seller_city_id %}Cidade #{{ order.seller_city_id }}{% else %}-{% endif %}
+            </td>
+            <td>
+              {% if order.status == "completed" %}
+                <span class="badge badge-success">{{ order.get_status_display }}</span>
+              {% elif order.status == "failed" %}
+                <span class="badge badge-danger">{{ order.get_status_display }}</span>
+              {% elif order.status == "canceled" %}
+                <span class="badge badge-secondary">{{ order.get_status_display }}</span>
+              {% elif order.status == "jobs_running" %}
+                <span class="badge badge-warning">{{ order.get_status_display }}</span>
+              {% else %}
+                <span class="badge badge-info">{{ order.get_status_display }}</span>
+              {% endif %}
+            </td>
+            <td class="text-xs text-muted">{{ order.created_at|localtime_format }}</td>
+            <td class="text-center">
+              {% if order.can_cancel %}
+              <button type="button"
+                      onclick="return openConfirm({
+                        title: 'Cancelar ordem',
+                        message: 'Cancelar esta ordem de {{ order.amount }} x {{ order.get_resource_idx_display }}?',
+                        style: 'danger',
+                        confirmLabel: 'Cancelar',
+                        onConfirm: () => htmx.ajax('POST', '{% url 'market:order-cancel' order.pk %}', {swap: 'none'})
+                      })"
+                      class="btn btn-danger btn-sm !px-2 !py-0.5"
+                      title="Cancelar ordem">
+                <i class="bi bi-x-lg text-[10px]"></i>
+              </button>
+              {% elif order.can_delete %}
+              <button type="button"
+                      onclick="return openConfirm({
+                        title: 'Excluir ordem',
+                        message: 'Excluir esta ordem de {{ order.amount }} x {{ order.get_resource_idx_display }}?',
+                        style: 'danger',
+                        confirmLabel: 'Excluir',
+                        onConfirm: () => htmx.ajax('POST', '{% url 'market:order-delete' order.pk %}', {swap: 'none'})
+                      })"
+                      class="btn btn-danger btn-sm !px-2 !py-0.5"
+                      title="Excluir ordem">
+                <i class="bi bi-trash text-[10px]"></i>
+              </button>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="11" class="text-center py-8 text-muted">
+              <i class="bi bi-shop text-2xl block mb-2"></i>
+              Nenhuma ordem encontrada para os filtros aplicados.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
 </div>
 
 <div class="px-4 py-3">
   {% include "components/table/pagination.html" %}
 </div>
+
+<script>
+  function marketBulkDeleteTable() {
+    return {
+      selectedCount: 0,
+      sync() {
+        const checked = Array.from(this.$root.querySelectorAll('input[name="order_ids"]:checked'));
+        const enabled = Array.from(this.$root.querySelectorAll('input[name="order_ids"]:not(:disabled)'));
+        this.selectedCount = checked.length;
+        if (this.$refs.master) {
+          this.$refs.master.checked = enabled.length > 0 && checked.length === enabled.length;
+          this.$refs.master.indeterminate = checked.length > 0 && checked.length < enabled.length;
+        }
+      },
+      toggleAll(event) {
+        const checked = event.target.checked;
+        const boxes = this.$root.querySelectorAll('input[name="order_ids"]:not(:disabled)');
+        boxes.forEach((box) => {
+          box.checked = checked;
+        });
+        this.sync();
+      },
+      confirmBulkDelete(form) {
+        if (this.selectedCount === 0) {
+          return false;
+        }
+        return openConfirm({
+          title: 'Excluir ordens',
+          message: `Excluir ${this.selectedCount} ordem(ns) selecionada(s)?`,
+          style: 'danger',
+          confirmLabel: 'Excluir',
+          onConfirm: () => form.requestSubmit()
+        });
+      }
+    }
+  }
+</script>
 
 {% else %}
 <div class="px-4 py-10 text-center text-sm text-muted">

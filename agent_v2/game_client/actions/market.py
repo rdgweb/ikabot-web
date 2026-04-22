@@ -40,7 +40,7 @@ import math
 import re
 from typing import Any
 
-from ...services.resource_transport import (
+from services.resource_transport import (
     _capacity_step_from_percent,
     _parse_free_transporters,
     _parse_ship_capacity,
