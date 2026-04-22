@@ -566,7 +566,26 @@ def _parse_live_sidebar_button_state(html: str) -> dict[str, Any]:
     return {"button_found": True, "button_enabled": enabled, "href": href}
 
 
+def _ensure_city_context(client, city_id: int) -> None:
+    """Force the current session context to the target city before city-scoped reads."""
+    try:
+        change_current_city(client, city_id)
+        return
+    except Exception as exc:
+        logger.debug("change_current_city failed for city %s: %s", city_id, exc)
+
+    try:
+        resp = client._request("GET", client._server_url, params={"view": "city", "cityId": city_id})
+    except Exception as exc:
+        logger.debug("Fallback city GET failed for city %s: %s", city_id, exc)
+        return
+    token_match = re.search(r'actionRequest\s*[=:]\s*["\']([a-zA-Z0-9_\-]+)["\']', resp.text)
+    if token_match:
+        client._action_request = token_match.group(1)
+
+
 def _live_city_stock_from_game(client, city_id: int) -> dict[str, int] | None:
+    _ensure_city_context(client, city_id)
     try:
         resp = client._request(
             "GET",
@@ -1116,6 +1135,13 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                         position=upgrading_position,
                                         live_state=live_state,
                                     )
+                                    live_level = _to_int(live_state.get("level"), 0)
+                                    if live_level > upgrading_level:
+                                        self.log(
+                                            jid, "info",
+                                            f"[{_city_name(city)}] Obra concluida no jogo: {upgrading_name} Lv {upgrading_level} -> {live_level}; snapshot atualizado",
+                                        )
+                                        continue
                                     self.log(
                                         jid, "warn",
                                         f"[{_city_name(city)}] Snapshot indicava obra ({upgrading_name} Lv {upgrading_level}) "
@@ -1136,12 +1162,6 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         else:
                             live_still_busy = False
                             refresh_needed = True
-                            self._reconcile_snapshot_building_state(
-                                ga_id=str(ga_id),
-                                city=city,
-                                position=upgrading_position,
-                                live_state=live_state,
-                            )
                             self.log(
                                 jid, "warn",
                                 f"[{_city_name(city)}] Snapshot indicava obra ({upgrading_name} Lv {upgrading_level}) "
@@ -1168,6 +1188,19 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         if live_state and not live_state.get("is_upgrading"):
                             live_still_busy = False
                             refresh_needed = True
+                            self._reconcile_snapshot_building_state(
+                                ga_id=str(ga_id),
+                                city=city,
+                                position=upgrading_position,
+                                live_state=live_state,
+                            )
+                            live_level = _to_int(live_state.get("level"), 0)
+                            if live_level > upgrading_level:
+                                self.log(
+                                    jid, "info",
+                                    f"[{_city_name(city)}] Obra concluida no jogo: {upgrading_name} Lv {upgrading_level} -> {live_level}; snapshot atualizado",
+                                )
+                                continue
                             self.log(
                                 jid, "warn",
                                 f"[{_city_name(city)}] Snapshot indicava obra ({upgrading_name} Lv {upgrading_level}) "
@@ -1225,6 +1258,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     building_id = _normalize_building_id(pending["building_id"])
                     city_id = _to_int(pending["city_id"])
                     current_level, position, current_entry = self._resolve_step_state(city, pending)
+                    estimated_costs = self._normalize_costs(level_row.get("costs") or {})
 
                     if current_level >= _to_int(pending.get("target_level"), 0) > 0:
                         self.log(
@@ -1266,28 +1300,24 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         )
                         continue
 
-                    live_stock = _live_city_stock_from_game(client, city_id) or _city_stock(city)
-                    live_costs = self._get_live_step_costs(
+                    live_debug = self._collect_live_step_debug(
                         client=client,
-                        city_id=city_id,
+                        city=city,
                         pending=pending,
                         current_level=current_level,
+                        next_level=next_level,
                         position=position,
+                        estimated_costs=estimated_costs,
                     )
+                    live_stock = live_debug["live_stock"]
+                    live_costs = live_debug["live_costs"]
                     if live_costs is not None:
-                        live_missing = {key: max(0, live_costs[key] - live_stock.get(key, 0)) for key in RESOURCE_KEYS}
+                        live_missing = live_debug["live_missing"] or {key: 0 for key in RESOURCE_KEYS}
                         if any(amount > 0 for amount in live_missing.values()):
-                            estimated_costs = self._normalize_costs(level_row.get("costs") or {})
                             self.log(
                                 jid,
                                 "info",
-                                (
-                                    f"Custo real do jogo bloqueia {pending['building_name']} em {_city_name(city)}"
-                                    f" | estimado: {_format_costs(estimated_costs)}"
-                                    f" | custo_real: {_format_costs(live_costs)}"
-                                    f" | estoque_real: {_format_costs(live_stock)}"
-                                    f" | faltando: {_format_costs(live_missing)}"
-                                ),
+                                f"Custo real do jogo bloqueia {pending['building_name']} | {live_debug['debug_line']}",
                             )
                             reschedule_seconds, transport_spawned, extra_inputs = self._handle_missing_resources(
                                 job=job,
@@ -1405,7 +1435,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                             f"Construção: {_city_name(city)} | {pending['building_name']} Lv 0 → 1"
                             f" | pos {empty_position}"
                             f" | {_format_duration(_to_int(level_row.get('adjusted_seconds'), 0))}"
-                            f" | {_format_costs(self._normalize_costs(level_row.get('costs') or {}))}"
+                            f" | {_format_costs(estimated_costs)}"
                             f" | #{pending['index']} de {len(plan_steps)}",
                         )
                         position = empty_position
@@ -1432,6 +1462,11 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     else:
                         if position is None:
                             raise RuntimeError("building_position_not_found")
+                        self.log(
+                            jid,
+                            "info",
+                            f"Executando etapa | {self._format_step_debug(city=city, pending=pending, current_level=current_level, next_level=next_level, position=position, estimated_costs=estimated_costs, live_costs=live_costs, live_stock=live_stock, live_missing=live_debug['live_missing'], button_state=live_debug['button_state'])}",
+                        )
                         logger.debug(
                             "[%s] Entrando na cidade (city_id=%s, building=%s, pos=%d, lvl %d->%d)",
                             _city_name(city), city_id, building_id, position, current_level, next_level,
@@ -1462,22 +1497,68 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                             "[%s] Resposta do upgrade recebida; aguardando confirmacao",
                             _city_name(city),
                         )
-                        live_entry = _confirm_building_state(
-                            client,
-                            city_id=city_id,
-                            position=position,
-                            next_level=next_level,
-                            building_name=pending["building_name"],
-                            city_name=_city_name(city),
-                            expect_build=False,
-                            action_feedback=_action_feedback(upgrade_response),
-                        )
+                        action_feedback = _action_feedback(upgrade_response)
+                        try:
+                            live_entry = _confirm_building_state(
+                                client,
+                                city_id=city_id,
+                                position=position,
+                                next_level=next_level,
+                                building_name=pending["building_name"],
+                                city_name=_city_name(city),
+                                expect_build=False,
+                                action_feedback=action_feedback,
+                            )
+                        except RuntimeError as confirm_exc:
+                            post_debug = self._collect_live_step_debug(
+                                client=client,
+                                city=city,
+                                pending=pending,
+                                current_level=current_level,
+                                next_level=next_level,
+                                position=position,
+                                estimated_costs=estimated_costs,
+                                feedback=action_feedback,
+                            )
+                            post_missing = post_debug["live_missing"] or {key: 0 for key in RESOURCE_KEYS}
+                            if any(amount > 0 for amount in post_missing.values()):
+                                self.log(
+                                    jid,
+                                    "info",
+                                    f"Upgrade rejeitado por recurso insuficiente | {post_debug['debug_line']}",
+                                )
+                                reschedule_seconds, transport_spawned, extra_inputs = self._handle_missing_resources(
+                                    job=job,
+                                    pending=pending,
+                                    cities=cities,
+                                    city=city,
+                                    missing=post_missing,
+                                    support_by_city=support_by_city,
+                                )
+                                any_transport_dispatched = any_transport_dispatched or transport_spawned
+                                if extra_inputs:
+                                    reschedule_context.update(extra_inputs)
+                                new_waits.append(
+                                    {
+                                        "status": "waiting_real_cost_resources",
+                                        "wait_seconds": reschedule_seconds,
+                                        "city_id": pending["city_id"],
+                                        "building_id": pending["building_id"],
+                                        "estimated_costs": estimated_costs,
+                                        "live_costs": post_debug["live_costs"],
+                                        "live_stock": post_debug["live_stock"],
+                                        "missing": post_missing,
+                                        "feedback": action_feedback,
+                                    }
+                                )
+                                continue
+                            raise RuntimeError(f"{confirm_exc} | {post_debug['debug_line']}") from confirm_exc
                         self.log(
                             jid,
                             "info",
                             f"Evolução: {_city_name(city)} | {pending['building_name']} Lv {current_level} → {next_level}"
                             f" | {_format_duration(_to_int(level_row.get('adjusted_seconds'), 0))}"
-                            f" | {_format_costs(self._normalize_costs(level_row.get('costs') or {}))}"
+                            f" | {_format_costs(estimated_costs)}"
                             f" | #{pending['index']} de {len(plan_steps)}",
                         )
 
@@ -1704,6 +1785,47 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             patch=patch,
         )
 
+    @staticmethod
+    def _format_step_debug(
+        *,
+        city: dict[str, Any],
+        pending: dict[str, Any],
+        current_level: int,
+        next_level: int,
+        position: int | None,
+        estimated_costs: dict[str, int] | None = None,
+        live_costs: dict[str, int] | None = None,
+        live_stock: dict[str, int] | None = None,
+        live_missing: dict[str, int] | None = None,
+        button_state: dict[str, Any] | None = None,
+        feedback: str = "",
+    ) -> str:
+        parts = [
+            f"cidade={_city_name(city)}",
+            f"city_id={city.get('id')}",
+            f"predio={pending.get('building_name')}",
+            f"building_id={pending.get('building_id')}",
+            f"pos={position if position is not None else '?'}",
+            f"nivel={current_level}->{next_level}",
+        ]
+        if estimated_costs is not None:
+            parts.append(f"estimado={_format_costs(estimated_costs)}")
+        if live_costs is not None:
+            parts.append(f"custo_real={_format_costs(live_costs)}")
+        if live_stock is not None:
+            parts.append(f"estoque_real={_format_costs(live_stock)}")
+        if live_missing is not None:
+            parts.append(f"faltando={_format_costs(live_missing)}")
+        if button_state:
+            parts.append(
+                "botao_upgrade="
+                f"found:{bool(button_state.get('button_found'))}"
+                f"/enabled:{bool(button_state.get('button_enabled'))}"
+            )
+        if feedback:
+            parts.append(f"feedback={feedback}")
+        return " | ".join(parts)
+
     def _get_live_step_costs(
         self,
         *,
@@ -1715,6 +1837,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
     ) -> dict[str, int] | None:
         if position is None or current_level <= 0:
             return None
+        _ensure_city_context(client, city_id)
         template_view = _normalize_building_id(str(pending.get("building_id") or "city"))
         try:
             resp = client._request(
@@ -1741,6 +1864,101 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             return None
         costs = _parse_live_sidebar_costs(html)
         return costs if any(costs.values()) else None
+
+    def _get_live_step_button_state(
+        self,
+        *,
+        client,
+        city_id: int,
+        pending: dict[str, Any],
+        current_level: int,
+        position: int | None,
+    ) -> dict[str, Any] | None:
+        if position is None or current_level <= 0:
+            return None
+        _ensure_city_context(client, city_id)
+        template_view = _normalize_building_id(str(pending.get("building_id") or "city"))
+        try:
+            resp = client._request(
+                "GET",
+                client._server_url,
+                params={
+                    "view": template_view,
+                    "cityId": str(city_id),
+                    "position": str(position),
+                    "backgroundView": "city",
+                    "currentCityId": str(city_id),
+                    "ajax": "1",
+                },
+                headers={
+                    "Accept": "text/plain, */*; q=0.01",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            )
+        except Exception as exc:
+            logger.debug("Failed to load live button state for %s in city %s: %s", template_view, city_id, exc)
+            return None
+        html = _extract_ajax_html(resp.text)
+        if not html:
+            return None
+        return _parse_live_sidebar_button_state(html)
+
+    def _collect_live_step_debug(
+        self,
+        *,
+        client,
+        city: dict[str, Any],
+        pending: dict[str, Any],
+        current_level: int,
+        next_level: int,
+        position: int | None,
+        estimated_costs: dict[str, int] | None = None,
+        feedback: str = "",
+    ) -> dict[str, Any]:
+        city_id = _to_int(pending.get("city_id"), 0)
+        live_stock = _live_city_stock_from_game(client, city_id) or _city_stock(city)
+        live_costs = self._get_live_step_costs(
+            client=client,
+            city_id=city_id,
+            pending=pending,
+            current_level=current_level,
+            position=position,
+        )
+        button_state = self._get_live_step_button_state(
+            client=client,
+            city_id=city_id,
+            pending=pending,
+            current_level=current_level,
+            position=position,
+        )
+        live_missing = None
+        if live_costs is not None:
+            live_missing = {key: max(0, live_costs[key] - live_stock.get(key, 0)) for key in RESOURCE_KEYS}
+        return {
+            "city_id": city_id,
+            "current_level": current_level,
+            "next_level": next_level,
+            "position": position,
+            "estimated_costs": estimated_costs,
+            "live_costs": live_costs,
+            "live_stock": live_stock,
+            "live_missing": live_missing,
+            "button_state": button_state,
+            "feedback": feedback,
+            "debug_line": self._format_step_debug(
+                city=city,
+                pending=pending,
+                current_level=current_level,
+                next_level=next_level,
+                position=position,
+                estimated_costs=estimated_costs,
+                live_costs=live_costs,
+                live_stock=live_stock,
+                live_missing=live_missing,
+                button_state=button_state,
+                feedback=feedback,
+            ),
+        }
 
     @staticmethod
     def _pick_pending_step(cities: list[dict[str, Any]], plan_steps: list[dict[str, Any]]) -> dict[str, Any] | None:
