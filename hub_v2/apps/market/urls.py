@@ -7,6 +7,7 @@ from .views import (
     MarketOrderDetailView,
     MarketOrderCreateView,
     MarketOrderCancelView,
+    MarketOrderBulkCancelView,
     MarketOrderBulkDeleteView,
     MarketOrderDeleteView,
 )
@@ -18,6 +19,7 @@ urlpatterns = [
     path("orders/", MarketOrdersPartialView.as_view(), name="orders-partial"),
     path("orders/create/", MarketOrderCreateView.as_view(), name="order-create"),
     path("orders/<uuid:pk>/cancel/", MarketOrderCancelView.as_view(), name="order-cancel"),
+    path("orders/cancel/", MarketOrderBulkCancelView.as_view(), name="order-bulk-cancel"),
     path("orders/delete/", MarketOrderBulkDeleteView.as_view(), name="order-bulk-delete"),
     path("orders/<uuid:pk>/delete/", MarketOrderDeleteView.as_view(), name="order-delete"),
     path("participants/", MarketParticipantsPartialView.as_view(), name="participants-partial"),

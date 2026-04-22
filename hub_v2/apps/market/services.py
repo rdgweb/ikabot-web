@@ -15,11 +15,13 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
+from django.db import transaction
 from django.db.models import Sum
+from django.utils import timezone
 
 from apps.accounts.models import GameAccount
 from apps.game.models import AccountSnapshot
-from apps.jobs.models import ConstructionResourceReservation, Job
+from apps.jobs.models import ConstructionResourceReservation, Job, JobLog
 
 from .models import InternalMarketOrder
 
@@ -329,3 +331,62 @@ def create_buy_job(order: InternalMarketOrder) -> Job | None:
 
     logger.info("buy_job %s created for order %s (buyer=%s)", buy_job.pk, order.pk, buyer_ga)
     return buy_job
+
+
+def cancel_internal_order(order: InternalMarketOrder) -> dict[str, int]:
+    """Cancel an internal market order and any active jobs in its chain."""
+    active_job_statuses = {"queued", "running", "scheduled"}
+
+    direct_job_ids = [job_id for job_id in [order.sell_job_id, order.buy_job_id, order.redistribution_job_id] if job_id]
+    root_ids = set(direct_job_ids)
+    for root_id in direct_job_ids:
+        root_job = Job.objects.filter(pk=root_id).only("pk", "root_job_id").first()
+        if root_job and root_job.root_job_id:
+            root_ids.add(root_job.root_job_id)
+
+    active_jobs: list[Job] = []
+    if root_ids:
+        active_jobs = list(
+            Job.objects.filter(root_job_id__in=root_ids, status__in=active_job_statuses)
+            .only("pk", "status")
+        )
+        direct_active = list(
+            Job.objects.filter(pk__in=direct_job_ids, status__in=active_job_statuses)
+            .only("pk", "status")
+        )
+        seen = {job.pk for job in active_jobs}
+        for job in direct_active:
+            if job.pk not in seen:
+                active_jobs.append(job)
+                seen.add(job.pk)
+
+    now = timezone.now()
+    cancelled_job_ids = [job.pk for job in active_jobs]
+
+    with transaction.atomic():
+        if cancelled_job_ids:
+            Job.objects.filter(pk__in=cancelled_job_ids).update(
+                status="cancelled",
+                finished_at=now,
+                updated_at=now,
+                lease_expires_at=None,
+            )
+            JobLog.objects.bulk_create(
+                [
+                    JobLog(
+                        job_id=job_id,
+                        level="warn",
+                        message=f"Cancelado pelo mercado interno ao cancelar a ordem {order.pk}.",
+                    )
+                    for job_id in cancelled_job_ids
+                ]
+            )
+
+        order.status = "canceled"
+        order.result_note = "Cancelada manualmente no Mercado Interno."
+        order.updated_at = now
+        order.save(update_fields=["status", "result_note", "updated_at"])
+
+    return {
+        "jobs_cancelled": len(cancelled_job_ids),
+    }

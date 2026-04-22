@@ -134,6 +134,17 @@ def _parse_free_transporters(html: str, *, use_freighters: bool = False) -> int:
     )
     if menu_match:
         return _num(menu_match.group(1), default=0)
+
+    if not use_freighters:
+        # takeOffer/transport fragments may omit the global menu counters but still
+        # expose the slider max for merchant ships as normalTransportersMax.
+        max_match = re.search(
+            r'name=["\']normalTransportersMax["\'].*?value=["\']([\d.,]+)["\']',
+            html,
+            re.I | re.S,
+        )
+        if max_match:
+            return _num(max_match.group(1), default=0)
     return 0
 
 

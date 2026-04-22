@@ -1,20 +1,30 @@
 {% load static hub_tags humanize %}
 
 {% if object_list or request.GET %}
-<div x-data="marketBulkDeleteTable()">
-  <form hx-post="{% url 'market:order-bulk-delete' %}" hx-swap="none" class="mb-3">
+<div>
+  <form id="market-bulk-action-form" class="mb-3">
     {% csrf_token %}
     <div class="flex items-center justify-between gap-3 px-1">
       <div class="text-xs text-muted">
-        <span x-text="selectedCount"></span> selecionada(s)
+        <span id="market-bulk-action-count">0</span> selecionada(s)
+        {% if cancelable_count == 0 and deletable_count == 0 %}
+        <span class="ml-2">Nenhuma ordem desta lista aceita acao em lote.</span>
+        {% endif %}
       </div>
-      <button type="button"
-              class="btn btn-danger btn-sm"
-              :disabled="selectedCount === 0"
-              x-bind:class="{ 'opacity-50 pointer-events-none': selectedCount === 0 }"
-              @click="confirmBulkDelete($el.form)">
-        <i class="bi bi-trash"></i> Excluir selecionadas
-      </button>
+      <div class="flex items-center gap-2">
+        <button type="button"
+                id="market-bulk-cancel-button"
+                class="btn btn-danger btn-sm opacity-50 pointer-events-none"
+                onclick="return marketConfirmBulkAction('cancel', this.form);">
+          <i class="bi bi-x-lg"></i> Cancelar selecionadas
+        </button>
+        <button type="button"
+                id="market-bulk-delete-button"
+                class="btn btn-danger btn-sm opacity-50 pointer-events-none"
+                onclick="return marketConfirmBulkAction('delete', this.form);">
+          <i class="bi bi-trash"></i> Excluir selecionadas
+        </button>
+      </div>
     </div>
 
     <div class="overflow-x-auto mt-3">
@@ -23,9 +33,10 @@
           <tr>
             <th class="w-10 text-center">
               <input type="checkbox"
-                     x-ref="master"
-                     @change="toggleAll($event)"
-                     title="Selecionar todas as ordens excluiveis">
+                     id="market-bulk-action-master"
+                     {% if cancelable_count == 0 and deletable_count == 0 %}disabled{% endif %}
+                     onchange="marketToggleAllBulkAction(this)"
+                     title="Selecionar todas as ordens com acao em lote">
             </th>
             <th>Recurso</th>
             <th class="text-right">Qtd.</th>
@@ -46,12 +57,14 @@
               <input type="checkbox"
                      name="order_ids"
                      value="{{ order.pk }}"
-                     {% if not order.can_delete %}disabled{% endif %}
-                     @change="sync()"
-                     title="{% if order.can_delete %}Selecionar ordem{% else %}Apenas ordens finalizadas podem ser excluidas{% endif %}">
+                     data-can-cancel="{% if order.can_cancel %}1{% else %}0{% endif %}"
+                     data-can-delete="{% if order.can_delete %}1{% else %}0{% endif %}"
+                     {% if not order.can_cancel and not order.can_delete %}disabled{% endif %}
+                     onchange="marketSyncBulkActionState()"
+                     title="{% if order.can_cancel %}Selecionar ordem cancelavel{% elif order.can_delete %}Selecionar ordem excluivel{% else %}Esta ordem nao aceita acao em lote{% endif %}">
             </td>
             <td>
-              <a href="{% url 'market:order-detail' order.pk %}" class="flex items-center gap-2 link-sea">
+              <a href="{% url 'market:order-detail' order.pk %}" hx-boost="false" class="flex items-center gap-2 link-sea">
                 <img src="{% static order.resource_idx|resource_icon %}" alt="" class="w-4 h-4" onerror="this.style.display='none'">
                 <span class="font-medium text-sm">{{ order.get_resource_idx_display }}</span>
               </a>
@@ -146,40 +159,74 @@
 </div>
 
 <script>
-  function marketBulkDeleteTable() {
-    return {
-      selectedCount: 0,
-      sync() {
-        const checked = Array.from(this.$root.querySelectorAll('input[name="order_ids"]:checked'));
-        const enabled = Array.from(this.$root.querySelectorAll('input[name="order_ids"]:not(:disabled)'));
-        this.selectedCount = checked.length;
-        if (this.$refs.master) {
-          this.$refs.master.checked = enabled.length > 0 && checked.length === enabled.length;
-          this.$refs.master.indeterminate = checked.length > 0 && checked.length < enabled.length;
-        }
-      },
-      toggleAll(event) {
-        const checked = event.target.checked;
-        const boxes = this.$root.querySelectorAll('input[name="order_ids"]:not(:disabled)');
-        boxes.forEach((box) => {
-          box.checked = checked;
-        });
-        this.sync();
-      },
-      confirmBulkDelete(form) {
-        if (this.selectedCount === 0) {
-          return false;
-        }
-        return openConfirm({
-          title: 'Excluir ordens',
-          message: `Excluir ${this.selectedCount} ordem(ns) selecionada(s)?`,
-          style: 'danger',
-          confirmLabel: 'Excluir',
-          onConfirm: () => form.requestSubmit()
-        });
-      }
+  function marketGetBulkActionForm() {
+    return document.getElementById('market-bulk-action-form');
+  }
+
+  function marketGetBulkActionBoxes() {
+    const form = marketGetBulkActionForm();
+    if (!form) {
+      return [];
+    }
+    return Array.from(form.querySelectorAll('input[name="order_ids"]:not(:disabled)'));
+  }
+
+  function marketSyncBulkActionState() {
+    const boxes = marketGetBulkActionBoxes();
+    const checked = boxes.filter((box) => box.checked);
+    const countEl = document.getElementById('market-bulk-action-count');
+    const cancelButton = document.getElementById('market-bulk-cancel-button');
+    const deleteButton = document.getElementById('market-bulk-delete-button');
+    const master = document.getElementById('market-bulk-action-master');
+    const hasCancelable = checked.some((box) => box.dataset.canCancel === '1');
+    const hasDeletable = checked.some((box) => box.dataset.canDelete === '1');
+
+    if (countEl) {
+      countEl.textContent = String(checked.length);
+    }
+    if (cancelButton) {
+      cancelButton.classList.toggle('opacity-50', !hasCancelable);
+      cancelButton.classList.toggle('pointer-events-none', !hasCancelable);
+    }
+    if (deleteButton) {
+      deleteButton.classList.toggle('opacity-50', !hasDeletable);
+      deleteButton.classList.toggle('pointer-events-none', !hasDeletable);
+    }
+    if (master) {
+      master.checked = boxes.length > 0 && checked.length === boxes.length;
+      master.indeterminate = checked.length > 0 && checked.length < boxes.length;
     }
   }
+
+  function marketToggleAllBulkAction(master) {
+    const boxes = marketGetBulkActionBoxes();
+    boxes.forEach((box) => {
+      box.checked = !!master.checked;
+    });
+    marketSyncBulkActionState();
+  }
+
+  function marketConfirmBulkAction(action, form) {
+    const boxes = marketGetBulkActionBoxes().filter((box) => box.checked);
+    const selected = boxes.filter((box) => box.dataset[action === 'cancel' ? 'canCancel' : 'canDelete'] === '1');
+    if (selected.length === 0) {
+      return false;
+    }
+    const url = action === 'cancel'
+      ? "{% url 'market:order-bulk-cancel' %}"
+      : "{% url 'market:order-bulk-delete' %}";
+    const title = action === 'cancel' ? 'Cancelar ordens' : 'Excluir ordens';
+    const verb = action === 'cancel' ? 'Cancelar' : 'Excluir';
+    return openConfirm({
+      title: title,
+      message: `${verb} ${selected.length} ordem(ns) selecionada(s)?`,
+      style: 'danger',
+      confirmLabel: verb,
+      onConfirm: () => htmx.ajax('POST', url, { source: form, swap: 'none' })
+    });
+  }
+
+  marketSyncBulkActionState();
 </script>
 
 {% else %}

@@ -184,11 +184,19 @@ class MarketOrdersPartialView(FilterSortListView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         object_list = ctx.get("object_list") or []
+        deletable_count = 0
+        cancelable_count = 0
         for order in object_list:
             order.buyer_city_name_display = _find_city_name(order.buyer_game_account, order.buyer_city_id)
             order.seller_city_name_display = _find_city_name(order.seller_game_account, order.seller_city_id)
             order.can_delete = order.status in ("completed", "failed", "canceled")
-            order.can_cancel = order.status in ("created", "matched", "jobs_created")
+            order.can_cancel = order.status in ("created", "matched", "jobs_created", "jobs_running")
+            if order.can_delete:
+                deletable_count += 1
+            if order.can_cancel:
+                cancelable_count += 1
+        ctx["deletable_count"] = deletable_count
+        ctx["cancelable_count"] = cancelable_count
         return ctx
 
 
@@ -324,21 +332,23 @@ class MarketOrderCancelView(LoginRequiredMixin, View):
 
     def post(self, request, pk):
         order = get_object_or_404(InternalMarketOrder, pk=pk)
-        if order.status not in ("created", "matched", "jobs_created"):
+        if order.status not in ("created", "matched", "jobs_created", "jobs_running"):
             trigger = json.dumps({"toast": {"type": "error", "message": "Ordem nao pode ser cancelada neste estado."}})
             resp = HttpResponse(status=400)
             resp["HX-Trigger"] = trigger
             return resp
 
-        order.status = "canceled"
-        order.save(update_fields=["status", "updated_at"])
+        result = services.cancel_internal_order(order)
 
         resource_label = RESOURCE_LABELS.get(order.resource_idx, str(order.resource_idx))
         trigger = json.dumps(
             {
                 "toast": {
                     "type": "success",
-                    "message": f"Ordem de {order.amount}x {resource_label} cancelada.",
+                    "message": (
+                        f"Ordem de {order.amount}x {resource_label} cancelada. "
+                        f"Jobs cancelados: {result.get('jobs_cancelled', 0)}."
+                    ),
                 },
                 "market-order-canceled": True,
             }
@@ -366,6 +376,57 @@ class MarketOrderDeleteView(LoginRequiredMixin, View):
             {
                 "toast": {"type": "success", "message": f"Ordem excluida: {amount}x {resource_label}."},
                 "market-order-deleted": True,
+            }
+        )
+        resp = HttpResponse(status=200)
+        resp["HX-Trigger"] = trigger
+        return resp
+
+
+class MarketOrderBulkCancelView(LoginRequiredMixin, View):
+    """POST: cancel multiple pending InternalMarketOrders."""
+
+    def post(self, request):
+        order_ids = [str(item).strip() for item in request.POST.getlist("order_ids") if str(item).strip()]
+        if not order_ids:
+            trigger = json.dumps({"toast": {"type": "error", "message": "Selecione ao menos uma ordem para cancelar."}})
+            resp = HttpResponse(status=400)
+            resp["HX-Trigger"] = trigger
+            return resp
+
+        orders = list(InternalMarketOrder.objects.filter(pk__in=order_ids))
+        if not orders:
+            trigger = json.dumps({"toast": {"type": "error", "message": "Nenhuma ordem valida encontrada para cancelamento."}})
+            resp = HttpResponse(status=404)
+            resp["HX-Trigger"] = trigger
+            return resp
+
+        cancelable_statuses = {"created", "matched", "jobs_created", "jobs_running"}
+        cancelable = [order for order in orders if order.status in cancelable_statuses]
+        skipped = len(orders) - len(cancelable)
+
+        if not cancelable:
+            trigger = json.dumps(
+                {"toast": {"type": "error", "message": "So e possivel cancelar ordens criadas, pareadas, com jobs criados ou em execucao."}}
+            )
+            resp = HttpResponse(status=400)
+            resp["HX-Trigger"] = trigger
+            return resp
+
+        canceled_count = len(cancelable)
+        cancelled_jobs = 0
+        for order in cancelable:
+            result = services.cancel_internal_order(order)
+            cancelled_jobs += int(result.get("jobs_cancelled", 0) or 0)
+
+        message = f"{canceled_count} ordem(ns) cancelada(s)."
+        message += f" Jobs cancelados: {cancelled_jobs}."
+        if skipped:
+            message += f" {skipped} ordem(ns) foram ignoradas por nao estarem pendentes."
+        trigger = json.dumps(
+            {
+                "toast": {"type": "success", "message": message},
+                "market-order-canceled": True,
             }
         )
         resp = HttpResponse(status=200)

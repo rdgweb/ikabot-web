@@ -186,6 +186,12 @@ class RescheduleJobView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        if job.status in _TERMINAL_STATUSES:
+            return Response(
+                {"error": f"Job is already in terminal status '{job.status}'."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
         delay = serializer.validated_data["delay_seconds"]
         scheduled_for = timezone.now() + timedelta(seconds=delay)
         patch = serializer.validated_data.get("inputs")
@@ -253,6 +259,12 @@ class SpawnJobView(APIView):
             parent_job = Job.objects.get(pk=job_id)
         except Job.DoesNotExist:
             return Response({"error": "Job not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if parent_job.status in _TERMINAL_STATUSES:
+            return Response(
+                {"error": f"Job is already in terminal status '{parent_job.status}'."},
+                status=status.HTTP_409_CONFLICT,
+            )
 
         delay = serializer.validated_data["delay_seconds"]
         scheduled_for = timezone.now() + timedelta(seconds=delay) if delay > 0 else None

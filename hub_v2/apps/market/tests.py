@@ -4,7 +4,7 @@ from apps.accounts.models import Account, GameAccount, Node
 from apps.game.models import AccountSnapshot
 from apps.jobs.models import Job
 
-from .services import create_buy_job, create_internal_order
+from .services import cancel_internal_order, create_buy_job, create_internal_order
 
 
 class MarketServiceTests(TestCase):
@@ -144,3 +144,41 @@ class MarketServiceTests(TestCase):
         self.assertIsNotNone(buy_job)
         self.assertEqual(str(buy_job.source_job_id), str(order.sell_job.pk))
         self.assertEqual(str(buy_job.root_job_id), str(parent_job.pk))
+
+    def test_cancel_internal_order_cancels_active_job_chain(self):
+        order = create_internal_order(
+            self.buyer_ga,
+            resource_idx=0,
+            amount=500,
+            unit_price=0,
+        )
+        self.assertIsNotNone(order)
+        buy_job = create_buy_job(order)
+        self.assertIsNotNone(buy_job)
+
+        order.sell_job.status = "finished"
+        order.sell_job.save(update_fields=["status", "updated_at"])
+        buy_job.status = "running"
+        buy_job.save(update_fields=["status", "updated_at"])
+
+        retry_job = Job.objects.create(
+            account=self.buyer_account,
+            game_account=self.buyer_ga,
+            node=self.buyer_node,
+            action_code=801,
+            source_job_id=buy_job.pk,
+            root_job_id=order.sell_job.pk,
+            inputs_json="{}",
+            status="scheduled",
+        )
+
+        result = cancel_internal_order(order)
+
+        order.refresh_from_db()
+        buy_job.refresh_from_db()
+        retry_job.refresh_from_db()
+
+        self.assertEqual(order.status, "canceled")
+        self.assertEqual(buy_job.status, "cancelled")
+        self.assertEqual(retry_job.status, "cancelled")
+        self.assertEqual(result["jobs_cancelled"], 2)
