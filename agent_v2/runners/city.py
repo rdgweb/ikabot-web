@@ -1229,9 +1229,12 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                             )
                             live_level = _to_int(live_state.get("level"), 0)
                             if live_level > upgrading_level:
-                                completed_idx = _to_int(pending.get("index"), 0)
-                                if completed_idx not in _skipped_step_indices:
-                                    _skipped_step_indices.append(completed_idx)
+                                target_level = _to_int(pending.get("target_level"), 0)
+                                reached_target = target_level > 0 and live_level >= target_level
+                                if reached_target:
+                                    completed_idx = _to_int(pending.get("index"), 0)
+                                    if completed_idx not in _skipped_step_indices:
+                                        _skipped_step_indices.append(completed_idx)
                                 self.log(
                                     jid, "info",
                                     f"[{_city_name(city)}] Obra concluida no jogo: {upgrading_name} Lv {upgrading_level} -> {live_level}; snapshot atualizado",
