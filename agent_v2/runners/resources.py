@@ -273,6 +273,26 @@ class SendResourcesRunner(BaseRunner):
                 f"despachado={plan.total_dispatched:,}"
             ),
         )
+        if ga_id:
+            origin_after_dispatch = {
+                name: max(0, int(plan.origin.available_resources.get(name, 0)) - int(plan.dispatched.get(name, 0)))
+                for name in RESOURCE_ORDER
+            }
+            self._patch_city_resources(
+                jid,
+                ga_id,
+                from_city,
+                origin_after_dispatch,
+                reason=f"saida de transporte para {plan.destination.city_name}",
+            )
+            self._patch_city_resources(
+                jid,
+                ga_id,
+                to_city,
+                {},
+                incoming_delta=plan.dispatched,
+                reason=f"transporte em rota de {plan.origin.city_name}",
+            )
 
         monitor_payload = None
         monitor_delay = 0
@@ -402,6 +422,15 @@ class SendResourcesRunner(BaseRunner):
                     f"{int(result.get('sent_total', 0)):,}"
                 ),
             )
+            if ga_id and isinstance(result.get("current"), dict):
+                self._patch_city_resources(
+                    jid,
+                    ga_id,
+                    to_city,
+                    result["current"],
+                    incoming_delta={name: -int(sent.get(name, 0) or 0) for name in RESOURCE_ORDER},
+                    reason=f"chegada de transporte de {from_city_name}",
+                )
             if ga_id:
                 self.save_game_client(ga_id, client)
             return RunnerResult(success=True, data={"status": "arrival_confirmed", **result})
@@ -434,9 +463,48 @@ class SendResourcesRunner(BaseRunner):
                 "movimento nao esta mais ativo"
             ),
         )
+        if ga_id and isinstance(result.get("current"), dict):
+            self._patch_city_resources(
+                jid,
+                ga_id,
+                to_city,
+                result["current"],
+                incoming_delta={name: -int(sent.get(name, 0) or 0) for name in RESOURCE_ORDER},
+                reason=f"chegada fraca de transporte de {from_city_name}",
+            )
         if ga_id:
             self.save_game_client(ga_id, client)
         return RunnerResult(success=True, data={"status": "arrival_confirmed_weak", **result})
+
+    def _patch_city_resources(
+        self,
+        job_id: str,
+        game_account_id: str,
+        city_id: str,
+        resources: dict[str, int],
+        *,
+        incoming_delta: dict[str, int] | None = None,
+        reason: str,
+    ) -> None:
+        try:
+            clean = {
+                name: max(0, int(resources.get(name, 0) or 0))
+                for name in RESOURCE_ORDER
+                if name in resources
+            }
+            clean_delta = {
+                name: int((incoming_delta or {}).get(name, 0) or 0)
+                for name in RESOURCE_ORDER
+            }
+            self.hub.patch_snapshot_resources(
+                game_account_id,
+                city_id,
+                resources=clean,
+                incoming_delta=clean_delta,
+            )
+            self.log(job_id, "debug", f"Snapshot de recursos atualizado: cidade={city_id} | motivo={reason}")
+        except Exception as exc:
+            self.log(job_id, "warn", f"Nao foi possivel atualizar snapshot de recursos: {exc}")
 
 
 @register_runner(3)

@@ -641,18 +641,22 @@ class AlertWineRunner(BaseRunner):
         )
 
         wine = _to_int(city_effective.get("wine", 0), 0)
+        incoming_resources = city_effective.get("incoming_resources") if isinstance(city_effective.get("incoming_resources"), dict) else {}
+        incoming_wine = _to_int(incoming_resources.get("wine", 0), 0)
+        effective_wine = wine + incoming_wine
         net = _city_wine_net_per_hour(city_effective)
         hours = _city_wine_hours(city_effective)
         desired_net = _city_wine_production_per_hour(city_effective) - desired_wine_consumption
-        desired_hours = (wine / abs(desired_net)) if desired_net < 0 and wine > 0 else (0.0 if desired_net < 0 else None)
+        desired_hours = (effective_wine / abs(desired_net)) if desired_net < 0 and effective_wine > 0 else (0.0 if desired_net < 0 else None)
         wine_happiness = _wine_happiness_from_breakdown(townhall.breakdown)
         non_wine_happiness = int(townhall.total_happiness) - int(wine_happiness)
 
+        incoming_text = f" (+{incoming_wine:,} em rota)" if incoming_wine > 0 else ""
         self.log(
             job_id,
             "info",
             (
-                f"Cidade avaliada: {_city_name(city_effective)} | vinho={wine:,} | "
+                f"Cidade avaliada: {_city_name(city_effective)} | vinho={wine:,}{incoming_text} | "
                 f"cobertura_atual={self._format_hours(hours)} | cobertura_alvo={self._format_hours(desired_hours)} | "
                 f"felicidade={int(townhall.total_happiness)} | taverna={int((tavern_data or {}).get('current_amount') or 0)}"
             ),
@@ -663,6 +667,8 @@ class AlertWineRunner(BaseRunner):
             "id": city_id,
             "name": _city_name(city_effective),
             "wine": wine,
+            "incoming_wine": incoming_wine,
+            "effective_wine": effective_wine,
             "net": net,
             "hours": hours,
             "desired_wine_consumption": desired_wine_consumption,
@@ -870,13 +876,14 @@ class AlertWineRunner(BaseRunner):
         protect_hours: int,
     ) -> int:
         wine = _to_int(city_info.get("wine", 0), 0)
+        effective_wine = _to_int(city_info.get("effective_wine", wine), wine)
         net = int(city_info.get("desired_net", city_info.get("net", 0)))
         hours = city_info.get("desired_hours", city_info.get("hours"))
         if net >= 0:
             return 0
 
         target_stock = int(ceil(abs(net) * cover_hours))
-        deficit = max(0, target_stock - wine)
+        deficit = max(0, target_stock - effective_wine)
         if deficit <= 0:
             return 0
 

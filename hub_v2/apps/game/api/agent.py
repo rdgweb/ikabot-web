@@ -196,6 +196,112 @@ class PatchSnapshotBuildingView(APIView):
         return Response({"ok": True, "patched": True})
 
 
+class PatchSnapshotResourcesView(APIView):
+    """PATCH /api/agent/snapshots/patch-resources/
+
+    Updates resource fields for one city without running a full check_status.
+    Body: {
+      game_account_id, city_id,
+      resources: {wood, wine, marble, crystal, sulfur},
+      incoming_delta: {wood, wine, marble, crystal, sulfur}
+    }
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    RESOURCE_KEYS = ("wood", "wine", "marble", "crystal", "sulfur")
+    CURRENT_RESOURCE_KEYS = {
+        "wood": "resource",
+        "wine": "1",
+        "marble": "2",
+        "crystal": "3",
+        "sulfur": "4",
+    }
+
+    def patch(self, request):
+        from django.db import transaction
+        from django.utils import timezone
+
+        game_account_id = str(request.data.get("game_account_id") or "").strip()
+        city_id = str(request.data.get("city_id") or "").strip()
+        resources = request.data.get("resources") or {}
+        incoming_delta = request.data.get("incoming_delta") or {}
+
+        if not game_account_id or not city_id:
+            return Response(
+                {"error": "game_account_id and city_id are required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not isinstance(resources, dict):
+            return Response({"error": "resources must be an object"}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(incoming_delta, dict):
+            return Response({"error": "incoming_delta must be an object"}, status=status.HTTP_400_BAD_REQUEST)
+
+        patch: dict[str, int] = {}
+        for key in self.RESOURCE_KEYS:
+            if key not in resources:
+                continue
+            try:
+                patch[key] = max(0, int(float(resources.get(key) or 0)))
+            except (TypeError, ValueError):
+                return Response({"error": f"{key} must be numeric"}, status=status.HTTP_400_BAD_REQUEST)
+
+        incoming_patch: dict[str, int] = {}
+        for key in self.RESOURCE_KEYS:
+            if key not in incoming_delta:
+                continue
+            try:
+                incoming_patch[key] = int(float(incoming_delta.get(key) or 0))
+            except (TypeError, ValueError):
+                return Response({"error": f"incoming_delta.{key} must be numeric"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not patch and not incoming_patch:
+            return Response({"error": "no resource fields to patch"}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            try:
+                snapshot = AccountSnapshot.objects.select_for_update().get(game_account__id=game_account_id)
+            except AccountSnapshot.DoesNotExist:
+                return Response({"error": "snapshot not found"}, status=status.HTTP_404_NOT_FOUND)
+
+            cities = snapshot.cities or []
+            patched = False
+            for city in cities:
+                if str(city.get("id") or "") != city_id:
+                    continue
+                city.update(patch)
+                current_resources = city.get("current_resources")
+                if not isinstance(current_resources, dict):
+                    current_resources = {}
+                    city["current_resources"] = current_resources
+                for key, amount in patch.items():
+                    current_resources[self.CURRENT_RESOURCE_KEYS[key]] = amount
+                incoming_resources = city.get("incoming_resources")
+                if not isinstance(incoming_resources, dict):
+                    incoming_resources = {}
+                    city["incoming_resources"] = incoming_resources
+                for key, delta in incoming_patch.items():
+                    incoming_resources[key] = max(0, int(incoming_resources.get(key) or 0) + int(delta))
+                patched = True
+                break
+
+            if not patched:
+                return Response({"error": "city not found"}, status=status.HTTP_404_NOT_FOUND)
+
+            snapshot.cities = cities
+            snapshot.updated_at = timezone.now()
+            snapshot.save(update_fields=["cities", "updated_at"])
+
+        logger.info(
+            "Snapshot resources patched: ga=%s city=%s resources=%s",
+            game_account_id,
+            city_id,
+            {"resources": sorted(patch.keys()), "incoming_delta": incoming_patch},
+        )
+        return Response({"ok": True, "patched": True, "resources": patch, "incoming_delta": incoming_patch})
+
+
 class CurrentSnapshotView(APIView):
     """GET /api/agent/snapshots/current/?game_account_id=<uuid>"""
 

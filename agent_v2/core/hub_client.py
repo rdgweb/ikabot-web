@@ -171,6 +171,21 @@ class HubClient:
             "patch": patch,
         })
 
+    def patch_snapshot_resources(
+        self,
+        game_account_id: str,
+        city_id: int | str,
+        resources: dict[str, int] | None = None,
+        incoming_delta: dict[str, int] | None = None,
+    ) -> dict:
+        """PATCH /api/agent/snapshots/patch-resources/ - update one city's resource stock."""
+        return self._patch("/api/agent/snapshots/patch-resources", {
+            "game_account_id": game_account_id,
+            "city_id": str(city_id),
+            "resources": resources or {},
+            "incoming_delta": incoming_delta or {},
+        })
+
     def get_snapshot(self, *, game_account_id: str | None = None, account_id: str | None = None) -> dict:
         """GET /api/agent/snapshots/current"""
         params: dict[str, Any] = {}
