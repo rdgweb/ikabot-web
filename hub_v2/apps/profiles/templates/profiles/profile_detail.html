@@ -11,6 +11,18 @@
 {% block detail_subtitle %}Código da ação: {{ profile.action_code }}{% endblock %}
 
 {% block detail_actions %}
+<button type="button"
+        onclick="return openConfirm({
+          title: 'Executar perfil',
+          message: 'Criar um job de {{ profile.name|escapejs }} para todas as subcontas ativas?',
+          action: '{% url 'profiles:profile-run-active' profile.pk %}',
+          method: 'post',
+          style: 'primary',
+          confirmLabel: 'Criar jobs'
+        })"
+        class="btn btn-primary btn-sm">
+  <i class="bi bi-play-fill"></i> Executar ativas
+</button>
 <a href="{% url 'profiles:profile-edit' profile.pk %}" class="btn btn-secondary btn-sm">
   <i class="bi bi-pencil"></i> Editar
 </a>

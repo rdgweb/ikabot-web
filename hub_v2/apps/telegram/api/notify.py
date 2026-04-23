@@ -18,6 +18,7 @@ from core.auth.permissions import IsAgent
 from apps.accounts.models import Account, GameAccount
 
 from apps.telegram.services.notifications import notify
+from apps.telegram.models import TelegramIncomingCommand
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,17 @@ class AgentNotifyView(APIView):
             except Account.DoesNotExist:
                 pass
 
+        metadata = dict(data.get("metadata", {}))
+        if data["event"] == "diplomacy_message":
+            reply_command = TelegramIncomingCommand.command_for(
+                TelegramIncomingCommand.COMMAND_DIPLOMACY_REPLY
+            )
+            db_uuid = str(metadata.get("db_uuid") or "").strip()
+            if db_uuid:
+                metadata.setdefault("reply_command", f"{reply_command} {db_uuid} <texto>")
+                metadata.setdefault("accept_command", f"{reply_command} {db_uuid} yes")
+                metadata.setdefault("decline_command", f"{reply_command} {db_uuid} no")
+
         sent = notify(
             event_key=data["event"],
             game_account=game_account,
@@ -75,7 +87,7 @@ class AgentNotifyView(APIView):
             title=data.get("title", ""),
             body=data.get("body", ""),
             agent_name=data.get("agent_name", ""),
-            **data.get("metadata", {}),
+            **metadata,
         )
 
         return Response(

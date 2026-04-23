@@ -63,6 +63,26 @@ def _build_telegram_text(msg: dict, db_uuid: str) -> str:
     return "\n".join(lines)
 
 
+def _diplomacy_notification_metadata(msg: dict, db_uuid: str) -> dict:
+    actions: list[dict] = msg.get("actions") or []
+    action_types = {a["msg_type"] for a in actions}
+    if 79 in action_types:
+        message_kind = "treaty"
+    elif actions:
+        message_kind = "action"
+    else:
+        message_kind = "message"
+    return {
+        "db_uuid": db_uuid,
+        "sender": msg.get("sender") or "Desconhecido",
+        "subject": msg.get("subject") or "(sem assunto)",
+        "message_body": msg.get("body") or "",
+        "game_date": msg.get("date") or "",
+        "has_actions": bool(actions),
+        "message_kind": message_kind,
+    }
+
+
 @register_runner(30)
 class DiplomacyCheckRunner(BaseRunner):
     """Verifica o inbox de diplomacia e envia notificações via Telegram.
@@ -190,16 +210,16 @@ class DiplomacyCheckRunner(BaseRunner):
     ) -> None:
         """Envia notificação Telegram para uma mensagem nova."""
         try:
-            text = _build_telegram_text(msg, db_uuid)
             agent_name = str(job.get("agent") or "")
+            metadata = _diplomacy_notification_metadata(msg, db_uuid)
             self.hub.send_notification(
                 event="diplomacy_message",
                 game_account_id=game_account_id,
                 account_id=account_id,
                 title="Nova mensagem de diplomacia",
-                body=text,
+                body=msg.get("body") or "",
                 agent_name=agent_name,
-                metadata={},
+                metadata=metadata,
             )
         except Exception:
             logger.exception("Falha ao enviar notificação de diplomacia")

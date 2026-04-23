@@ -2,6 +2,8 @@
 Views para o app Telegram — configuracao do bot, auditoria e partials HTMX.
 """
 
+import json
+
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -20,8 +22,15 @@ from .forms import (
     TelegramGlobalNotificationForm,
     TelegramNotificationForm,
     NotificationTemplateForm,
+    TelegramIncomingCommandForm,
 )
-from .models import TelegramBotConfig, TelegramAccountConfig, MessageAudit, NotificationTemplate
+from .models import (
+    TelegramBotConfig,
+    TelegramAccountConfig,
+    MessageAudit,
+    NotificationTemplate,
+    TelegramIncomingCommand,
+)
 from .services.linking import (
     generate_link_code,
     generate_global_link_code,
@@ -78,6 +87,16 @@ class TelegramConfigView(LoginRequiredMixin, UpdateView):
                 "description": meta["description"] if meta else "",
             })
         ctx["template_items"] = template_items
+
+        TelegramIncomingCommand.seed_defaults()
+        ctx["command_items"] = [
+            {
+                "command": command,
+                "form": TelegramIncomingCommandForm(instance=command),
+                "label": command.get_key_display(),
+            }
+            for command in TelegramIncomingCommand.objects.all()
+        ]
 
         return ctx
 
@@ -279,6 +298,35 @@ class TemplateResetView(LoginRequiredMixin, View):
 
 # ── Audit ───────────────────────────────────────────────────────────
 
+class IncomingCommandSaveView(LoginRequiredMixin, View):
+    """POST: save one configurable Telegram inbound command."""
+
+    def post(self, request, pk):
+        command = get_object_or_404(TelegramIncomingCommand, pk=pk)
+        form = TelegramIncomingCommandForm(request.POST, instance=command)
+        if form.is_valid():
+            form.save()
+
+        TelegramIncomingCommand.seed_defaults()
+        command_items = [
+            {
+                "command": item,
+                "form": form if item.pk == command.pk else TelegramIncomingCommandForm(instance=item),
+                "label": item.get_key_display(),
+            }
+            for item in TelegramIncomingCommand.objects.all()
+        ]
+        html = render_to_string(
+            "telegram/partials/incoming_commands.html",
+            {"command_items": command_items},
+            request=request,
+        )
+        response = HttpResponse(html)
+        if form.is_valid():
+            response["HX-Trigger"] = "showToast"
+        return response
+
+
 class TelegramAuditView(FilterSortListView):
     model = MessageAudit
     filterset_class = MessageAuditFilter
@@ -291,6 +339,27 @@ class TelegramAuditView(FilterSortListView):
 
     def get_queryset(self):
         return super().get_queryset().select_related("account", "game_account", "node")
+
+
+class TelegramAuditBulkDeleteView(LoginRequiredMixin, View):
+    """POST: exclui mensagens selecionadas do historico Telegram."""
+
+    def post(self, request):
+        pks = request.POST.getlist("selected_ids")
+        if not pks:
+            resp = HttpResponse(status=200)
+            resp["HX-Trigger"] = json.dumps({
+                "toast": {"type": "error", "message": "Nenhuma mensagem selecionada."},
+            })
+            return resp
+
+        deleted, _ = MessageAudit.objects.filter(pk__in=pks).delete()
+        resp = HttpResponse(status=200)
+        resp["HX-Trigger"] = json.dumps({
+            "toast": {"type": "success", "message": f"{deleted} mensagem(ns) excluida(s)."},
+            "telegramMessagesChanged": True,
+        })
+        return resp
 
 
 # ── Account Telegram Overview (HTMX partial) ───────────────────────

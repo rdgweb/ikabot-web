@@ -1,0 +1,45 @@
+<div class="card">
+  <h2 class="text-lg font-semibold text-ink mb-2">
+    <i class="bi bi-terminal"></i> Comandos de Entrada
+  </h2>
+  <p class="text-xs text-muted mb-4">
+    Configure os comandos que o bot aceita quando uma mensagem chega pelo Telegram.
+  </p>
+
+  <div class="space-y-3">
+    {% for item in command_items %}
+    <form hx-post="{% url 'telegram:command-save' item.command.pk %}"
+          hx-target="#incoming-commands-area"
+          hx-swap="outerHTML"
+          class="rounded-lg border border-line p-3 bg-surface">
+      {% csrf_token %}
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <div class="text-sm font-semibold text-ink">{{ item.label }}</div>
+          <div class="text-[11px] text-muted font-mono">{{ item.command.key }}</div>
+        </div>
+        <label class="flex items-center gap-2 text-xs text-muted">
+          {{ item.form.enabled }}
+          Ativo
+        </label>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-[180px_1fr_auto] gap-3 items-end mt-3">
+        <div>
+          <label class="form-label text-xs">{{ item.form.command.label }}</label>
+          {{ item.form.command }}
+          {% for error in item.form.command.errors %}
+          <p class="form-error">{{ error }}</p>
+          {% endfor %}
+        </div>
+        <div>
+          <label class="form-label text-xs">{{ item.form.description.label }}</label>
+          {{ item.form.description }}
+        </div>
+        <button type="submit" class="btn btn-secondary btn-sm">
+          <i class="bi bi-check-lg"></i> Salvar
+        </button>
+      </div>
+    </form>
+    {% endfor %}
+  </div>
+</div>

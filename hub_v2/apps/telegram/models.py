@@ -128,6 +128,83 @@ class TelegramAccountConfig(TimestampModel):
         return f"Telegram config for GA {self.game_account_id}"
 
 
+class TelegramIncomingCommand(TimestampModel):
+    """
+    Configurable Telegram inbound commands.
+
+    The webhook still owns the parsing logic for each command type, but the
+    command text can be changed from the Telegram configuration screen.
+    """
+
+    COMMAND_LINK = "link"
+    COMMAND_DIPLOMACY_REPLY = "diplomacy_reply"
+
+    COMMAND_TYPE_CHOICES = [
+        (COMMAND_LINK, "Vincular chat"),
+        (COMMAND_DIPLOMACY_REPLY, "Responder diplomacia"),
+    ]
+
+    DEFAULTS = {
+        COMMAND_LINK: {
+            "command": "/start",
+            "description": "Vincula um chat usando o codigo gerado no painel.",
+        },
+        COMMAND_DIPLOMACY_REPLY: {
+            "command": "/replyto",
+            "description": "Cria job de resposta ou acao para mensagem de diplomacia.",
+        },
+        "diplomacy_message": {
+            "icon": "\U0001f4e8",
+            "title_template": "Diplomacia - {ga_name}",
+            "body_template": (
+                "De: {sender}\n"
+                "Assunto: {subject}\n"
+                "Data: {game_date}\n"
+                "{message_body}\n"
+                "Responder: <code>{reply_command}</code>\n"
+                "Aceitar: <code>{accept_command}</code>\n"
+                "Recusar: <code>{decline_command}</code>"
+            ),
+        },
+    }
+
+    key = models.CharField(max_length=32, unique=True, choices=COMMAND_TYPE_CHOICES)
+    command = models.CharField(max_length=32, default="")
+    enabled = models.BooleanField(default=True)
+    description = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["key"]
+        verbose_name = "Comando de Entrada Telegram"
+        verbose_name_plural = "Comandos de Entrada Telegram"
+
+    def __str__(self):
+        return f"{self.command} ({self.key})"
+
+    @classmethod
+    def seed_defaults(cls):
+        for key, defaults in cls.DEFAULTS.items():
+            cls.objects.get_or_create(
+                key=key,
+                defaults={
+                    "command": defaults["command"],
+                    "description": defaults["description"],
+                },
+            )
+
+    @classmethod
+    def command_for(cls, key: str) -> str:
+        defaults = cls.DEFAULTS.get(key, {})
+        default_command = defaults.get("command", "")
+        try:
+            item = cls.objects.filter(key=key).first()
+        except Exception:
+            return default_command
+        if item and not item.enabled:
+            return ""
+        return (item.command if item else default_command).strip() or default_command
+
+
 class NotificationTemplate(TimestampModel):
     """
     Customizable message templates per event type.
@@ -198,6 +275,12 @@ class NotificationTemplate(TimestampModel):
         ("{job_id}", "ID do job"),
         ("{status}", "Status (finished, error)"),
         ("{error}", "Mensagem de erro"),
+        ("{sender}", "Remetente da mensagem"),
+        ("{subject}", "Assunto da mensagem"),
+        ("{message_body}", "Corpo da mensagem de diplomacia"),
+        ("{reply_command}", "Comando para responder"),
+        ("{accept_command}", "Comando para aceitar"),
+        ("{decline_command}", "Comando para recusar"),
     ]
 
     event_key = models.CharField(max_length=32, unique=True)

@@ -15,6 +15,8 @@ from .views import (
     TemplateEditView,
     TemplateRowView,
     TemplateResetView,
+    IncomingCommandSaveView,
+    TelegramAuditBulkDeleteView,
 )
 
 app_name = "telegram"
@@ -24,11 +26,13 @@ urlpatterns = [
     path("", TelegramConfigView.as_view(), name="config"),
     path("save-notifications/", TelegramSaveNotificationsView.as_view(), name="save-notifications"),
     path("audit/", TelegramAuditView.as_view(), name="audit"),
+    path("audit/delete/", TelegramAuditBulkDeleteView.as_view(), name="audit-bulk-delete"),
 
     # Notification templates
     path("template/<int:pk>/", TemplateRowView.as_view(), name="template-row"),
     path("template/<int:pk>/edit/", TemplateEditView.as_view(), name="template-edit"),
     path("template/<int:pk>/reset/", TemplateResetView.as_view(), name="template-reset"),
+    path("commands/<int:pk>/save/", IncomingCommandSaveView.as_view(), name="command-save"),
 
     # Global linking
     path("start-link/", GlobalStartLinkingView.as_view(), name="global-start-link"),

@@ -16,22 +16,15 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.telegram.models import TelegramBotConfig, TelegramAccountConfig
+from apps.telegram.models import (
+    TelegramBotConfig,
+    TelegramAccountConfig,
+    TelegramIncomingCommand,
+)
 from apps.telegram.services.bot_api import send_message
 from apps.telegram.services.linking import validate_link_code
 
 logger = logging.getLogger(__name__)
-
-# Regex for 6-digit code after /start
-CODE_RE = re.compile(r"^/start\s+(\d{6})$")
-
-# /replyto <db_uuid> [yes|no] [text]
-# db_uuid: UUID of DiplomacyMessage in hub DB (36 chars)
-# After the UUID: optional "yes"/"no" keyword, then optional text
-REPLYTO_RE = re.compile(
-    r"^/replyto\s+([\w-]{36})\s+([\s\S]+)$",
-    re.IGNORECASE,
-)
 
 
 def _create_diplomacy_send_job_from_uuid(
@@ -158,15 +151,32 @@ class TelegramWebhookView(APIView):
             return Response({"status": "ok"})
 
         text_stripped = text.strip()
+        link_command = TelegramIncomingCommand.command_for(
+            TelegramIncomingCommand.COMMAND_LINK
+        )
+        reply_command = TelegramIncomingCommand.command_for(
+            TelegramIncomingCommand.COMMAND_DIPLOMACY_REPLY
+        )
+        code_re = (
+            re.compile(rf"^{re.escape(link_command)}\s+(\d{{6}})$")
+            if link_command else None
+        )
+        replyto_re = (
+            re.compile(
+                rf"^{re.escape(reply_command)}\s+([\w-]{{36}})\s+([\s\S]+)$",
+                re.IGNORECASE,
+            )
+            if reply_command else None
+        )
 
         # Handle /start <code>
-        match = CODE_RE.match(text_stripped)
+        match = code_re.match(text_stripped) if code_re else None
         if match:
             self._handle_start(match.group(1), chat_id, username)
             return Response({"status": "ok"})
 
-        # Handle /replyto <msg_id>:<receiver_id>:<ga_id> <text>
-        match = REPLYTO_RE.match(text_stripped)
+        # Handle configured reply command: <command> <db_uuid> [yes|no] [text]
+        match = replyto_re.match(text_stripped) if replyto_re else None
         if match:
             self._handle_replyto(match, chat_id)
             return Response({"status": "ok"})

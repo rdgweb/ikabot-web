@@ -1,102 +1,186 @@
 {% load humanize %}
 
 {% if object_list or request.GET %}
-<div class="card overflow-hidden p-0">
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Data</th>
-        <th>Conta</th>
-        <th>Subconta</th>
-        <th>Canal</th>
-        <th>Titulo</th>
-        <th>Status</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for msg in object_list %}
-      <tr class="group cursor-pointer"
-          @click="$refs['detail_{{ msg.pk }}'].classList.toggle('hidden')">
-        <td class="text-xs text-muted whitespace-nowrap">
-          {{ msg.created_at|date:"d/m/Y H:i" }}
-        </td>
-        <td>
-          {% if msg.account %}
-            <span class="text-sm">{{ msg.account.label }}</span>
-          {% else %}
-            <span class="text-muted">-</span>
-          {% endif %}
-        </td>
-        <td>
-          {% if msg.game_account %}
-            <span class="text-sm">{{ msg.game_account.name|default:msg.game_account.server_id }}</span>
-            <span class="text-[10px] text-muted font-mono">{{ msg.game_account.server_id }}</span>
-          {% else %}
-            <span class="text-muted">-</span>
-          {% endif %}
-        </td>
-        <td>
-          <span class="text-xs text-muted">{{ msg.channel }}</span>
-        </td>
-        <td class="text-sm max-w-xs truncate">{{ msg.title|truncatechars:60 }}</td>
-        <td>
-          {% if msg.status == "sent" %}
-            <span class="badge badge-success">Enviado</span>
-          {% elif msg.status == "pending" %}
-            <span class="badge badge-warning">Pendente</span>
-          {% elif msg.status == "failed" %}
-            <span class="badge badge-danger">Falhou</span>
-          {% elif msg.status == "retried" %}
-            <span class="badge badge-secondary">Reenviado</span>
-          {% else %}
-            <span class="badge badge-secondary">{{ msg.status }}</span>
-          {% endif %}
-        </td>
-      </tr>
-      {# ── Expandable detail row ── #}
-      <tr x-ref="detail_{{ msg.pk }}" class="hidden">
-        <td colspan="6" class="!p-0">
-          <div class="bg-[var(--ik-sand-light)] px-4 py-3 text-xs space-y-2 border-t border-line">
-            {% if msg.body %}
-            <div>
-              <span class="font-semibold text-muted uppercase tracking-wide text-[10px]">Mensagem</span>
-              <pre class="mt-1 text-ink whitespace-pre-wrap font-mono text-[11px] bg-white rounded p-2 border border-line">{{ msg.body }}</pre>
-            </div>
+<div x-data="telegramAuditBulk({ pageCount: {{ object_list|length|default:0 }} })" class="space-y-3">
+  <div class="card overflow-hidden p-0">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th class="w-8 text-center">
+            <input type="checkbox" @change="toggleAll($event)"
+                   class="rounded border-gray-300" title="Selecionar todos">
+          </th>
+          <th>Data</th>
+          <th>Conta</th>
+          <th>Subconta</th>
+          <th>Canal</th>
+          <th>Titulo</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for msg in object_list %}
+        <tr class="group cursor-pointer"
+            @click="$refs['detail_{{ msg.pk }}'].classList.toggle('hidden')">
+          <td class="text-center align-top" @click.stop>
+            <input type="checkbox"
+                   value="{{ msg.pk }}"
+                   x-model="selected"
+                   class="telegram-msg-checkbox mt-1 rounded border-gray-300">
+          </td>
+          <td class="text-xs text-muted whitespace-nowrap">
+            {{ msg.created_at|date:"d/m/Y H:i" }}
+          </td>
+          <td>
+            {% if msg.account %}
+              <span class="text-sm">{{ msg.account.label }}</span>
+            {% else %}
+              <span class="text-muted">-</span>
             {% endif %}
-            {% if msg.error %}
-            <div>
-              <span class="font-semibold text-red-500 uppercase tracking-wide text-[10px]">Erro</span>
-              <pre class="mt-1 text-red-600 whitespace-pre-wrap font-mono text-[11px] bg-red-50 rounded p-2 border border-red-200">{{ msg.error }}</pre>
-            </div>
+          </td>
+          <td>
+            {% if msg.game_account %}
+              <span class="text-sm">{{ msg.game_account.name|default:msg.game_account.server_id }}</span>
+              <span class="text-[10px] text-muted font-mono">{{ msg.game_account.server_id }}</span>
+            {% else %}
+              <span class="text-muted">-</span>
             {% endif %}
-            <div class="flex gap-4 text-muted">
-              {% if msg.node %}
-              <span><i class="bi bi-hdd-rack"></i> {{ msg.node.name }}</span>
+          </td>
+          <td>
+            <span class="text-xs text-muted">{{ msg.channel }}</span>
+          </td>
+          <td class="text-sm max-w-xs truncate">{{ msg.title|truncatechars:60 }}</td>
+          <td>
+            {% if msg.status == "sent" %}
+              <span class="badge badge-success">Enviado</span>
+            {% elif msg.status == "pending" %}
+              <span class="badge badge-warning">Pendente</span>
+            {% elif msg.status == "failed" %}
+              <span class="badge badge-danger">Falhou</span>
+            {% elif msg.status == "retried" %}
+              <span class="badge badge-secondary">Reenviado</span>
+            {% else %}
+              <span class="badge badge-secondary">{{ msg.status }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr x-ref="detail_{{ msg.pk }}" class="hidden">
+          <td colspan="7" class="!p-0">
+            <div class="bg-[var(--ik-sand-light)] px-4 py-3 text-xs space-y-2 border-t border-line">
+              {% if msg.body %}
+              <div>
+                <span class="font-semibold text-muted uppercase tracking-wide text-[10px]">Mensagem</span>
+                <pre class="mt-1 text-ink whitespace-pre-wrap font-mono text-[11px] bg-white rounded p-2 border border-line">{{ msg.body }}</pre>
+              </div>
               {% endif %}
-              {% if msg.agent_name %}
-              <span><i class="bi bi-robot"></i> {{ msg.agent_name }}</span>
+              {% if msg.error %}
+              <div>
+                <span class="font-semibold text-red-500 uppercase tracking-wide text-[10px]">Erro</span>
+                <pre class="mt-1 text-red-600 whitespace-pre-wrap font-mono text-[11px] bg-red-50 rounded p-2 border border-red-200">{{ msg.error }}</pre>
+              </div>
               {% endif %}
-              {% if msg.external_ref %}
-              <span><i class="bi bi-link-45deg"></i> {{ msg.external_ref }}</span>
-              {% endif %}
-              <span><i class="bi bi-tag"></i> {{ msg.provider }}</span>
+              <div class="flex gap-4 text-muted">
+                {% if msg.node %}
+                <span><i class="bi bi-hdd-rack"></i> {{ msg.node.name }}</span>
+                {% endif %}
+                {% if msg.agent_name %}
+                <span><i class="bi bi-robot"></i> {{ msg.agent_name }}</span>
+                {% endif %}
+                {% if msg.external_ref %}
+                <span><i class="bi bi-link-45deg"></i> {{ msg.external_ref }}</span>
+                {% endif %}
+                <span><i class="bi bi-tag"></i> {{ msg.provider }}</span>
+              </div>
             </div>
-          </div>
-        </td>
-      </tr>
-      {% empty %}
-      <tr>
-        <td colspan="6" class="text-center py-8 text-muted">
-          <i class="bi bi-send text-2xl block mb-2"></i>
-          Nenhuma mensagem encontrada.
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center py-8 text-muted">
+            <i class="bi bi-send text-2xl block mb-2"></i>
+            Nenhuma mensagem encontrada.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div x-show="selected.length > 0" x-cloak x-transition
+       class="card !py-2 !px-4 flex items-center justify-between"
+       style="background: var(--ik-sand-light); border: 1px solid var(--ik-line);">
+    <span class="text-sm font-medium text-ink">
+      <i class="bi bi-check2-square text-sea"></i>
+      <span x-text="selected.length"></span> selecionada(s)
+    </span>
+    <div class="flex gap-2">
+      <button @click="bulkDelete()" class="btn btn-danger btn-sm" type="button">
+        <i class="bi bi-trash"></i> Excluir selecionadas
+      </button>
+      <button @click="selected = []" class="btn btn-secondary btn-sm" type="button">
+        Cancelar
+      </button>
+    </div>
+  </div>
+
+  {% include "components/table/pagination.html" %}
 </div>
 
-{% include "components/table/pagination.html" %}
+<script>
+function telegramAuditBulk(config) {
+  return {
+    pageCount: Number(config?.pageCount || 0),
+    selected: [],
+    toggleAll(event) {
+      if (event.target.checked) {
+        this.selected = Array.from(document.querySelectorAll('.telegram-msg-checkbox')).map(el => el.value);
+      } else {
+        this.selected = [];
+      }
+    },
+    _doDelete() {
+      const form = new FormData();
+      this.selected.forEach(id => form.append('selected_ids', id));
+
+      const csrfToken = JSON.parse(document.body.getAttribute('hx-headers') || '{}')['X-CSRFToken'] || '';
+      form.append('csrfmiddlewaretoken', csrfToken);
+
+      fetch('{% url "telegram:audit-bulk-delete" %}', {
+        method: 'POST',
+        body: form,
+        headers: { 'X-CSRFToken': csrfToken },
+      }).then(resp => {
+        const trigger = resp.headers.get('HX-Trigger');
+        if (trigger) {
+          try {
+            const data = JSON.parse(trigger);
+            if (data.toast) {
+              window.dispatchEvent(new CustomEvent('toast', { detail: data.toast }));
+            }
+            if (data.telegramMessagesChanged) {
+              htmx.ajax('GET', window.location.href, { target: '#table-content', swap: 'innerHTML' });
+            }
+          } catch {}
+        }
+        this.selected = [];
+      });
+    },
+    bulkDelete() {
+      const self = this;
+      const count = this.selected.length;
+      window.dispatchEvent(new CustomEvent('confirm', {
+        detail: {
+          title: 'Excluir mensagens',
+          message: `Excluir ${count} mensagem(ns) selecionada(s)? Esta acao nao pode ser desfeita.`,
+          style: 'danger',
+          confirmLabel: 'Excluir',
+          onConfirm: () => self._doDelete(),
+        }
+      }));
+    }
+  }
+}
+</script>
 
 {% else %}
 {% include "components/table/empty.html" with icon="bi-send" message="Nenhuma mensagem registrada." %}

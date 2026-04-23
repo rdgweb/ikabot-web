@@ -4,7 +4,12 @@ Forms para o app Telegram.
 
 from django import forms
 
-from .models import TelegramBotConfig, TelegramAccountConfig, NotificationTemplate
+from .models import (
+    TelegramBotConfig,
+    TelegramAccountConfig,
+    NotificationTemplate,
+    TelegramIncomingCommand,
+)
 from .constants import EVENT_TYPES
 
 
@@ -42,6 +47,7 @@ class TelegramGlobalNotificationForm(forms.ModelForm):
             "notify_research_complete",
             "notify_low_wine",
             "notify_daily_summary",
+            "notify_diplomacy_message",
         ]
         labels = {
             "notify_attack_alert": "Alerta de ataque",
@@ -51,6 +57,7 @@ class TelegramGlobalNotificationForm(forms.ModelForm):
             "notify_research_complete": "Pesquisa concluida",
             "notify_low_wine": "Vinho baixo",
             "notify_daily_summary": "Resumo diario",
+            "notify_diplomacy_message": "Mensagem de diplomacia",
         }
 
 
@@ -69,6 +76,7 @@ class TelegramAccountConfigForm(forms.ModelForm):
             "notify_research_complete",
             "notify_low_wine",
             "notify_daily_summary",
+            "notify_diplomacy_message",
         ]
         widgets = {
             "chat_id": forms.TextInput(attrs={
@@ -86,6 +94,7 @@ class TelegramAccountConfigForm(forms.ModelForm):
             "notify_research_complete": "Pesquisa concluida",
             "notify_low_wine": "Vinho baixo",
             "notify_daily_summary": "Resumo diario",
+            "notify_diplomacy_message": "Mensagem de diplomacia",
         }
 
 
@@ -108,6 +117,7 @@ class TelegramNotificationForm(forms.ModelForm):
             "notify_research_complete",
             "notify_low_wine",
             "notify_daily_summary",
+            "notify_diplomacy_message",
         ]
         labels = {
             "enabled": "Notificacoes ativadas",
@@ -118,6 +128,7 @@ class TelegramNotificationForm(forms.ModelForm):
             "notify_research_complete": "Pesquisa concluida",
             "notify_low_wine": "Vinho baixo",
             "notify_daily_summary": "Resumo diario",
+            "notify_diplomacy_message": "Mensagem de diplomacia",
         }
 
 
@@ -146,4 +157,35 @@ class NotificationTemplateForm(forms.ModelForm):
             "icon": "Icone",
             "title_template": "Titulo",
             "body_template": "Corpo",
+        }
+
+
+class TelegramIncomingCommandForm(forms.ModelForm):
+    """Form para editar um comando de entrada do Telegram."""
+
+    def clean_command(self):
+        command = str(self.cleaned_data.get("command") or "").strip()
+        if command and not command.startswith("/"):
+            command = f"/{command}"
+        if " " in command:
+            raise forms.ValidationError("Use apenas o comando base, sem espacos.")
+        return command
+
+    class Meta:
+        model = TelegramIncomingCommand
+        fields = ["command", "enabled", "description"]
+        widgets = {
+            "command": forms.TextInput(attrs={
+                "class": "form-input font-mono text-sm",
+                "placeholder": "/replyto",
+            }),
+            "description": forms.Textarea(attrs={
+                "class": "form-input text-sm",
+                "rows": 2,
+            }),
+        }
+        labels = {
+            "command": "Comando",
+            "enabled": "Ativo",
+            "description": "Descricao",
         }

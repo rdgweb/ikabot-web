@@ -59,6 +59,14 @@ EVENT_TYPES = [
         "icon": "bi-clipboard-data",
         "field": "notify_daily_summary",
     },
+    {
+        "key": "diplomacy_message",
+        "label": "Mensagem de diplomacia",
+        "description": "Notifica novas mensagens de diplomacia capturadas pelo agente.",
+        "category": "operational",
+        "icon": "bi-envelope",
+        "field": "notify_diplomacy_message",
+    },
 ]
 
 # Lookup by field name -> event info

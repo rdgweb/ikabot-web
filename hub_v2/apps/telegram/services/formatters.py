@@ -48,6 +48,7 @@ def format_message(event_key: str, **kwargs) -> str:
         "research_complete": ("Pesquisa concluida", "\U0001f4a1"),
         "low_wine": ("Vinho baixo", "\U0001f377"),
         "daily_summary": ("Resumo diario", "\U0001f4ca"),
+        "diplomacy_message": ("Mensagem de diplomacia", "\U0001f4e8"),
     }
     title, icon = title_map.get(event_key, (action_name, "\U0001f514"))
 
