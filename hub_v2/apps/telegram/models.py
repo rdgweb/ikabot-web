@@ -153,19 +153,6 @@ class TelegramIncomingCommand(TimestampModel):
             "command": "/replyto",
             "description": "Cria job de resposta ou acao para mensagem de diplomacia.",
         },
-        "diplomacy_message": {
-            "icon": "\U0001f4e8",
-            "title_template": "Diplomacia - {ga_name}",
-            "body_template": (
-                "De: {sender}\n"
-                "Assunto: {subject}\n"
-                "Data: {game_date}\n"
-                "{message_body}\n"
-                "Responder: <code>{reply_command}</code>\n"
-                "Aceitar: <code>{accept_command}</code>\n"
-                "Recusar: <code>{decline_command}</code>"
-            ),
-        },
     }
 
     key = models.CharField(max_length=32, unique=True, choices=COMMAND_TYPE_CHOICES)
@@ -226,6 +213,19 @@ class NotificationTemplate(TimestampModel):
     """
 
     DEFAULTS = {
+        "diplomacy_message": {
+            "icon": "\U0001f4e8",
+            "title_template": "Diplomacia - {ga_name}",
+            "body_template": (
+                "De: {sender}\n"
+                "Assunto: {subject}\n"
+                "Data: {game_date}\n"
+                "{message_body}\n"
+                "Responder: <code>{reply_command}</code>\n"
+                "Aceitar: <code>{accept_command}</code>\n"
+                "Recusar: <code>{decline_command}</code>"
+            ),
+        },
         "attack_alert": {
             "icon": "⚠️",
             "title_template": "Alerta de Ataque",

@@ -1029,7 +1029,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             stock = _city_stock(city)
             missing = {key: max(0, costs[key] - stock.get(key, 0)) for key in RESOURCE_KEYS}
             if any(amount > 0 for amount in missing.values()):
-                reschedule_seconds, transport_spawned, extra_inputs = self._handle_missing_resources(
+                reschedule_seconds, transport_spawned, extra_inputs, should_skip_now = self._handle_missing_resources(
                     job=job,
                     pending=pending_step,
                     cities=cities,
@@ -1049,9 +1049,34 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         "missing": missing,
                     }
                 )
+                if should_skip_now:
+                    _promote_next_pending_candidate(
+                        pending_step,
+                        [*ignored_step_indices, _to_int(pending_step.get("index"), 0)],
+                    )
                 return
 
             ready_steps.append((pending_step, city, level_row))
+
+        def _promote_next_pending_candidate(pending_step: dict[str, Any], ignored_indices: list[int]) -> None:
+            promoted = self._pick_pending_step_for_city(
+                cities,
+                plan_steps,
+                pending_step["city_id"],
+                str(inputs.get("queue_strategy") or "fifo"),
+                ignored_indices,
+            )
+            if promoted is None:
+                return
+            self.log(
+                jid,
+                "info",
+                (
+                    f"[{pending_step['city_name']}] Etapa {pending_step['building_name']} bloqueada neste ciclo; "
+                    f"promovendo {promoted['building_name']} Lv {promoted['next_level']}"
+                ),
+            )
+            _queue_pending_candidate(promoted)
 
         for pending in pending_steps:
             try:
@@ -1099,7 +1124,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             client, ga_id = self._get_client(job)
             started: list[dict[str, Any]] = []
             delays: list[int] = []
-            new_waits = list(wait_reasons)
+            new_waits = wait_reasons
             step_failures: list[dict[str, Any]] = []
             _skipped_step_indices: list[int] = list(inputs.get("skipped_step_indices") or [])
             _blocked_step_indices: list[int] = list(inputs.get("blocked_step_indices") or [])
@@ -1347,7 +1372,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                 "info",
                                 f"Custo real do jogo bloqueia {pending['building_name']} | {live_debug['debug_line']}",
                             )
-                            reschedule_seconds, transport_spawned, extra_inputs = self._handle_missing_resources(
+                            reschedule_seconds, transport_spawned, extra_inputs, should_skip_now = self._handle_missing_resources(
                                 job=job,
                                 pending=pending,
                                 cities=cities,
@@ -1370,6 +1395,11 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                     "missing": live_missing,
                                 }
                             )
+                            if should_skip_now:
+                                _promote_next_pending_candidate(
+                                    pending,
+                                    [*_skipped_step_indices, *_blocked_step_indices, _to_int(pending.get("index"), 0)],
+                                )
                             continue
 
                     if current_level <= 0:
@@ -1555,7 +1585,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                     "info",
                                     f"Upgrade rejeitado por recurso insuficiente | {post_debug['debug_line']}",
                                 )
-                                reschedule_seconds, transport_spawned, extra_inputs = self._handle_missing_resources(
+                                reschedule_seconds, transport_spawned, extra_inputs, should_skip_now = self._handle_missing_resources(
                                     job=job,
                                     pending=pending,
                                     cities=cities,
@@ -1579,6 +1609,11 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                         "feedback": action_feedback,
                                     }
                                 )
+                                if should_skip_now:
+                                    _promote_next_pending_candidate(
+                                        pending,
+                                        [*_skipped_step_indices, *_blocked_step_indices, _to_int(pending.get("index"), 0)],
+                                    )
                                 continue
                             raise RuntimeError(f"{confirm_exc} | {post_debug['debug_line']}") from confirm_exc
                         self.log(
@@ -2179,8 +2214,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         city: dict[str, Any],
         missing: dict[str, int],
         support_by_city: dict[str, dict[str, int]],
-    ) -> tuple[int, bool, dict[str, Any] | None]:
-        """Returns (reschedule_seconds, transport_was_dispatched, reschedule_inputs)."""
+    ) -> tuple[int, bool, dict[str, Any] | None, bool]:
+        """Returns (reschedule_seconds, transport_was_dispatched, reschedule_inputs, should_skip_city_step_now)."""
         jid = job["job_id"]
         inputs = job.get("inputs") or {}
         auto_transport = bool(inputs.get("auto_transport", True))
@@ -2212,7 +2247,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 "info",
                 f"Suporte em transito ja cobre {pending['building_name']} em {pending['city_name']}; aguardando chegada",
             )
-            return TRANSPORT_RECHECK_SECONDS, False, None
+            return TRANSPORT_RECHECK_SECONDS, False, None, False
 
         wait_seconds = self._estimate_local_wait_seconds(city, missing)
         if wait_seconds:
@@ -2241,7 +2276,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         )
                         if ga_id:
                             self.save_game_client(ga_id, client)
-                        return max(wait_seconds or 0, incoming_wait + FINISH_BUFFER_SECONDS), False, None
+                        return max(wait_seconds or 0, incoming_wait + FINISH_BUFFER_SECONDS), False, None, False
                     if ga_id:
                         self.save_game_client(ga_id, client)
             except Exception as exc:
@@ -2261,7 +2296,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     "info",
                     f"Suporte logistico criado para {pending['city_name']} | aguardando transporte antes da proxima obra",
                 )
-                return max(wait_seconds or 0, TRANSPORT_RECHECK_SECONDS), True, None
+                return max(wait_seconds or 0, TRANSPORT_RECHECK_SECONDS), True, None, False
 
             # No donor city available — try buying from the public market
             if bool(inputs.get("auto_market_buy", True)):
@@ -2277,19 +2312,19 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                             level_rows=pending.get("level_rows") or [],
                         )
                         if market_eta is not None:
-                            return max(market_eta, TRANSPORT_RECHECK_SECONDS), False, extra_inputs
+                            return max(market_eta, TRANSPORT_RECHECK_SECONDS), False, extra_inputs, False
                 except Exception as exc:
                     self.log(jid, "warn", f"Mercado interno falhou: {exc}")
 
         if wait_seconds:
-            return max(MIN_RECHECK_SECONDS, wait_seconds + FINISH_BUFFER_SECONDS), False, None
+            return max(MIN_RECHECK_SECONDS, wait_seconds + FINISH_BUFFER_SECONDS), False, None, False
 
         self.log(
             jid,
             "warn",
             f"{pending['city_name']} sem recurso suficiente para {pending['building_name']} e sem ETA local confiavel",
         )
-        return TRANSPORT_RECHECK_SECONDS, False, None
+        return TRANSPORT_RECHECK_SECONDS, False, None, True
 
     # Resource index mapping matching game_client constants
     _RESOURCE_KEY_TO_IDX = {"wood": 0, "wine": 1, "marble": 2, "glas": 3, "sulfur": 4}
@@ -2524,6 +2559,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             key: max(0, desired_cover[key] - target_stock.get(key, 0))
             for key in RESOURCE_KEYS
         }
+        for key in RESOURCE_KEYS:
+            transport_need[key] = max(transport_need[key], max(0, _to_int(missing.get(key), 0)))
         existing_support = support_by_city.get(str(target_city.get("id") or "")) or _empty_resource_map()
         for key in RESOURCE_KEYS:
             input_key = SNAPSHOT_RESOURCE_TO_INPUT[key]
