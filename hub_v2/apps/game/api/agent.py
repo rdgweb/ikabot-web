@@ -18,6 +18,7 @@ from core.auth.backends import AgentTokenAuthentication
 from core.auth.permissions import IsAgent
 from apps.accounts.models import Account, GameAccount
 from apps.game.models import AccountSnapshot, AccountSnapshotHistory
+from apps.game.services.dashboard_cache import bump_dashboard_cache_version
 
 from .serializers import (
     CaptchaSolveSerializer,
@@ -119,6 +120,7 @@ class UpdateSnapshotView(APIView):
             military=military,
             captured_at=timezone.now(),
         )
+        bump_dashboard_cache_version()
 
         logger.info(
             "Snapshot %s for %s (created=%s)",
@@ -191,6 +193,7 @@ class PatchSnapshotBuildingView(APIView):
         snapshot.cities = cities
         snapshot.updated_at = timezone.now()
         snapshot.save(update_fields=["cities", "updated_at"])
+        bump_dashboard_cache_version()
 
         logger.info("Snapshot building patched: ga=%s city=%s pos=%d", game_account_id, city_id, position)
         return Response({"ok": True, "patched": True})
@@ -292,6 +295,7 @@ class PatchSnapshotResourcesView(APIView):
             snapshot.cities = cities
             snapshot.updated_at = timezone.now()
             snapshot.save(update_fields=["cities", "updated_at"])
+            bump_dashboard_cache_version()
 
         logger.info(
             "Snapshot resources patched: ga=%s city=%s resources=%s",

@@ -1,0 +1,48 @@
+{% load hub_tags %}
+
+<div class="border-t border-[var(--ik-line)] bg-slate-50/70 px-4 py-3">
+  <div class="mb-3 flex items-center justify-between gap-3">
+    <div>
+      <div class="text-sm font-semibold text-ink">Historico da cadeia</div>
+      <div class="text-[11px] text-muted">
+        Job raiz <a href="{% url 'jobs:job-detail' root_job.pk %}" class="link-sea">{{ root_job.pk|truncatechars:12 }}</a>
+        • {{ child_count }} ciclo(s)
+      </div>
+    </div>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="w-full text-left text-xs">
+      <thead class="text-muted">
+        <tr>
+          <th class="px-2 py-2 font-semibold">Ciclo</th>
+          <th class="px-2 py-2 font-semibold">Status</th>
+          <th class="px-2 py-2 font-semibold">Acao</th>
+          <th class="px-2 py-2 font-semibold">Agendado</th>
+          <th class="px-2 py-2 font-semibold">Criado</th>
+          <th class="px-2 py-2 font-semibold">Iniciado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for child in child_jobs %}
+        <tr class="border-t border-[var(--ik-line)]/70">
+          <td class="px-2 py-2 text-muted">{{ forloop.revcounter }}</td>
+          <td class="px-2 py-2">
+            <a href="{% url 'jobs:job-detail' child.pk %}" class="inline-block">
+              <span class="badge {{ child.status|status_badge_class }}">{{ child.get_status_display }}</span>
+            </a>
+          </td>
+          <td class="px-2 py-2 text-ink">{{ child.action_code|action_name }}</td>
+          <td class="px-2 py-2 text-muted">{{ child.scheduled_for|localtime_format|default:"-" }}</td>
+          <td class="px-2 py-2 text-muted">{{ child.created_at|localtime_format }}</td>
+          <td class="px-2 py-2 text-muted">{{ child.started_at|localtime_format|default:"-" }}</td>
+        </tr>
+        {% empty %}
+        <tr class="border-t border-[var(--ik-line)]/70">
+          <td colspan="6" class="px-2 py-3 text-muted">Nenhum ciclo anterior encontrado.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

@@ -69,6 +69,8 @@ class Job(UUIDTimestampModel):
             models.Index(fields=["account", "status"]),
             models.Index(fields=["action_code"]),
             models.Index(fields=["lease_expires_at"]),
+            models.Index(fields=["-created_at"]),
+            models.Index(fields=["status", "-created_at"]),
         ]
 
     def __str__(self):

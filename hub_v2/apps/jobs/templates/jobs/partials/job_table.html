@@ -21,14 +21,14 @@
         </tr>
       </thead>
       {% for row in grouped_rows %}
-      <tbody {% if row.is_group or row.chain_history %}x-data="{ open: false }"{% endif %}>
+      <tbody {% if row.is_group %}x-data="{ open: false }"{% endif %}>
         <tr>
           <td class="text-center align-top">
-            {% if row.is_group or row.chain_history %}
+            {% if row.is_group %}
             <button type="button"
                     @click="open = !open"
                     class="mt-1 text-muted hover:text-ink"
-                    title="{% if row.is_group %}Expandir grupo{% else %}Ver histórico da cadeia{% endif %}">
+                    title="Expandir grupo">
               <i class="bi" :class="open ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
             </button>
             {% else %}
@@ -46,7 +46,6 @@
               {% endfor %}
             </div>
             {% elif row.chain_active_job %}
-            {# Root is terminal but chain continues — link directly to active descendant #}
             <a href="{% url 'jobs:job-detail' row.chain_active_job.pk %}" class="inline-block">
               <span class="badge {{ row.chain_active_job.status|status_badge_class }}">{{ row.chain_active_job.get_status_display }}</span>
             </a>
@@ -68,9 +67,21 @@
           <td class="align-top">
             <div class="text-sm text-ink">{{ row.subaccount_label }}</div>
             {% if row.is_group %}
-            <div class="text-[11px] text-muted">{{ row.jobs|length }} jobs • {{ row.status_summary }}</div>
-            {% elif row.chain_history %}
-            <div class="text-[11px] text-muted">{{ row.chain_history|length }} ciclo(s) anteriores</div>
+            <div class="text-[11px] text-muted">{{ row.jobs|length }} jobs Ã¢â‚¬Â¢ {{ row.status_summary }}</div>
+            {% endif %}
+            {% if row.chain_history_count %}
+            <div class="mt-1">
+              <button type="button"
+                      class="inline-flex items-center gap-1 text-[11px] text-muted hover:text-ink"
+                      onclick="toggleJobChainHistory('{{ row.root_job.pk }}', this)"
+                      hx-get="{% url 'jobs:job-chain-history' row.root_job.pk %}"
+                      hx-trigger="click once"
+                      hx-target="#job-chain-history-body-{{ row.root_job.pk }}"
+                      hx-swap="innerHTML">
+                <i class="bi bi-clock-history"></i>
+                <span>{{ row.chain_history_count }} ciclo(s) anteriores</span>
+              </button>
+            </div>
             {% endif %}
           </td>
           <td class="align-top text-sm text-ink">{{ row.action_name }}</td>
@@ -89,8 +100,7 @@
               {% endif %}
             </div>
             {% endif %}
-            {% if row.chain_active_job %}
-            {% elif row.summary_lines %}
+            {% if not row.chain_active_job and row.summary_lines %}
             <div class="mt-1 space-y-0.5">
               {% for line in row.summary_lines %}
               <div class="text-[11px] text-muted">{{ line }}</div>
@@ -111,7 +121,7 @@
               {% endfor %}
             </div>
             {% else %}
-            <span class="text-sm text-muted">—</span>
+            <span class="text-sm text-muted">Ã¢â‚¬â€</span>
             {% endif %}
           </td>
           <td class="align-top">
@@ -126,10 +136,10 @@
             <span class="inline-flex items-center gap-1 text-amber-700">
               <i class="bi bi-clock"></i> {{ row.scheduled_for|date:"d/m H:i" }}
             </span>
-            {% else %}<span class="text-muted">—</span>{% endif %}
+            {% else %}<span class="text-muted">Ã¢â‚¬â€</span>{% endif %}
           </td>
           <td class="align-top text-sm text-muted">{{ row.created_at|localtime_format }}</td>
-          <td class="align-top text-sm text-muted">{{ row.started_at|localtime_format|default:"—" }}</td>
+          <td class="align-top text-sm text-muted">{{ row.started_at|localtime_format|default:"Ã¢â‚¬â€" }}</td>
         </tr>
 
         {% if row.is_group %}
@@ -156,11 +166,11 @@
             {{ item.object.game_account.name|default:item.object.game_account.server_id }}
             <div class="text-[10px] text-muted">{{ item.object.game_account.server_id }}</div>
             {% else %}
-            —
+            Ã¢â‚¬â€
             {% endif %}
           </td>
           <td class="text-sm text-ink">{{ item.object.action_code|action_name }}</td>
-          <td class="text-sm text-ink">{{ item.city_label|default:"—" }}</td>
+          <td class="text-sm text-ink">{{ item.city_label|default:"Ã¢â‚¬â€" }}</td>
           <td>
             {% if item.resource_items %}
             <div class="flex flex-wrap gap-1.5">
@@ -174,7 +184,7 @@
               {% endfor %}
             </div>
             {% else %}
-            <span class="text-sm text-muted">—</span>
+            <span class="text-sm text-muted">Ã¢â‚¬â€</span>
             {% endif %}
           </td>
           <td>
@@ -187,67 +197,20 @@
             <span class="inline-flex items-center gap-1 text-amber-700">
               <i class="bi bi-clock"></i> {{ item.object.scheduled_for|date:"d/m H:i" }}
             </span>
-            {% else %}<span class="text-muted">—</span>{% endif %}
+            {% else %}<span class="text-muted">Ã¢â‚¬â€</span>{% endif %}
           </td>
           <td class="text-sm text-muted">{{ item.object.created_at|localtime_format }}</td>
-          <td class="text-sm text-muted">{{ item.object.started_at|localtime_format|default:"—" }}</td>
+          <td class="text-sm text-muted">{{ item.object.started_at|localtime_format|default:"Ã¢â‚¬â€" }}</td>
         </tr>
         {% endfor %}
         {% endif %}
 
-        {% if row.chain_history %}
-        {# Root job row (always shown first when history is expanded) #}
-        <tr x-show="open" x-cloak class="bg-slate-50/60 opacity-75">
-          <td class="text-center">
-            <input type="checkbox"
-                   value="{{ row.jobs.0.object.pk }}"
-                   x-model="selected"
-                   class="job-checkbox rounded border-gray-300">
+        {% if row.chain_history_count %}
+        <tr id="job-chain-history-row-{{ row.root_job.pk }}" class="hidden bg-slate-50/40">
+          <td colspan="11" class="p-0">
+            <div id="job-chain-history-body-{{ row.root_job.pk }}"></div>
           </td>
-          <td>
-            <a href="{% url 'jobs:job-detail' row.jobs.0.object.pk %}" class="inline-block">
-              <span class="badge {{ row.jobs.0.object.status|status_badge_class }}">{{ row.jobs.0.object.get_status_display }}</span>
-            </a>
-            <div class="text-[10px] text-muted mt-0.5">raiz</div>
-          </td>
-          <td colspan="3" class="text-xs text-muted">{{ row.jobs.0.object.action_code|action_name }}</td>
-          <td class="text-xs text-muted">—</td>
-          <td class="text-xs text-muted">—</td>
-          <td class="text-xs text-muted">{{ row.node_name }}</td>
-          <td class="text-xs text-muted">—</td>
-          <td class="text-xs text-muted">{{ row.jobs.0.object.created_at|localtime_format }}</td>
-          <td class="text-xs text-muted">{{ row.jobs.0.object.started_at|localtime_format|default:"—" }}</td>
         </tr>
-        {# Child jobs (iterations / recovery cycles) #}
-        {% for child in row.chain_history %}
-        <tr x-show="open" x-cloak class="bg-white/70">
-          <td class="text-center">
-            <input type="checkbox"
-                   value="{{ child.pk }}"
-                   x-model="selected"
-                   class="job-checkbox rounded border-gray-300">
-          </td>
-          <td>
-            <a href="{% url 'jobs:job-detail' child.pk %}" class="inline-block">
-              <span class="badge {{ child.status|status_badge_class }}">{{ child.get_status_display }}</span>
-            </a>
-            <div class="text-[10px] text-muted mt-0.5">ciclo {{ forloop.counter }}</div>
-          </td>
-          <td colspan="3" class="text-xs text-muted">{{ child.action_code|action_name }}</td>
-          <td class="text-xs text-muted">—</td>
-          <td class="text-xs text-muted">—</td>
-          <td class="text-xs text-muted">{{ row.node_name }}</td>
-          <td class="text-xs">
-            {% if child.scheduled_for %}
-            <span class="inline-flex items-center gap-1 text-amber-700">
-              <i class="bi bi-clock"></i> {{ child.scheduled_for|date:"d/m H:i" }}
-            </span>
-            {% else %}<span class="text-muted">—</span>{% endif %}
-          </td>
-          <td class="text-xs text-muted">{{ child.created_at|localtime_format }}</td>
-          <td class="text-xs text-muted">{{ child.started_at|localtime_format|default:"—" }}</td>
-        </tr>
-        {% endfor %}
         {% endif %}
       </tbody>
       {% empty %}
@@ -281,7 +244,7 @@
               @click="selectCurrentPage()"
               class="btn btn-secondary btn-sm"
               type="button">
-        <i class="bi bi-check2"></i> Selecionar página
+        <i class="bi bi-check2"></i> Selecionar pÃƒÂ¡gina
       </button>
       <button @click="bulkDelete()" class="btn btn-danger btn-sm" type="button">
         <i class="bi bi-trash"></i> Excluir selecionados
@@ -296,6 +259,16 @@
 </div>
 
 <script>
+function toggleJobChainHistory(rootId, button) {
+  const row = document.getElementById(`job-chain-history-row-${rootId}`);
+  if (!row) return;
+  row.classList.toggle('hidden');
+  const icon = button ? button.querySelector('i.bi') : null;
+  if (icon) {
+    icon.className = row.classList.contains('hidden') ? 'bi bi-clock-history' : 'bi bi-chevron-down';
+  }
+}
+
 function jobBulk(config) {
   return {
     filteredCount: Number(config?.filteredCount || 0),

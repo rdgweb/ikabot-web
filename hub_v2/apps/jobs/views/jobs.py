@@ -7,6 +7,7 @@ import re
 from collections import Counter
 
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db.models import Count
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.db import transaction
@@ -168,8 +169,8 @@ class JobListView(FilterSortListView):
         context = super().get_context_data(**kwargs)
         page_jobs = list(context.get("page_obj").object_list if context.get("page_obj") else context.get("object_list", []))
         active_descendants = self._load_active_descendants(page_jobs)
-        all_chain_children = self._load_all_chain_children(page_jobs)
-        context["grouped_rows"] = self._build_grouped_rows(page_jobs, active_descendants, all_chain_children)
+        chain_history_counts = self._load_chain_history_counts(page_jobs)
+        context["grouped_rows"] = self._build_grouped_rows(page_jobs, active_descendants, chain_history_counts)
         action_options = []
         seen_actions = set()
         full_jobs = context.get("object_list", [])
@@ -211,29 +212,26 @@ class JobListView(FilterSortListView):
         return result
 
     @staticmethod
-    def _load_all_chain_children(jobs):
-        """Load all child jobs for every root job on this page.
+    def _load_chain_history_counts(jobs):
+        """Load only the number of child jobs for each root job on the page.
 
-        Returns {root_pk: [children ordered by created_at]}.
-        Used to show full chain history in the list.
+        Returns {root_pk: child_count}.
+        The full child rows are fetched on demand via HTMX.
         """
         root_pks = [j.pk for j in jobs]
         if not root_pks:
             return {}
-        result = {}
-        qs = (
+        rows = (
             Job.objects.filter(root_job_id__in=root_pks)
-            .select_related("account", "game_account", "node")
-            .order_by("root_job_id", "created_at")
+            .values("root_job_id")
+            .annotate(total=Count("id"))
         )
-        for child in qs:
-            result.setdefault(child.root_job_id, []).append(child)
-        return result
+        return {row["root_job_id"]: int(row["total"]) for row in rows}
 
-    def _build_grouped_rows(self, jobs, active_descendants=None, all_chain_children=None):
+    def _build_grouped_rows(self, jobs, active_descendants=None, chain_history_counts=None):
         parent_map = self._load_parent_map(jobs)
         active_descendants = active_descendants or {}
-        all_chain_children = all_chain_children or {}
+        chain_history_counts = chain_history_counts or {}
         grouped = {}
         ordered_keys = []
 
@@ -261,8 +259,8 @@ class JobListView(FilterSortListView):
                     "resource_totals": Counter(),
                     # Latest active descendant when the root itself is terminal
                     "chain_active_job": active_descendants.get(root_job.pk),
-                    # All child jobs in the chain (for history expand)
-                    "chain_history": all_chain_children.get(root_job.pk, []),
+                    # Child jobs are fetched on demand for history expand
+                    "chain_history_count": int(chain_history_counts.get(root_job.pk, 0)),
                 }
                 ordered_keys.append(group_key)
 
@@ -1459,6 +1457,33 @@ class JobLogsPartialView(LoginRequiredMixin, View):
         html = render_to_string(
             "jobs/partials/job_logs.html",
             {"object": job, "logs": logs, "log_rows": _build_log_rows(job, list(logs))},
+            request=request,
+        )
+        return HttpResponse(html)
+
+
+class JobChainHistoryPartialView(LoginRequiredMixin, View):
+    """HTMX partial: returns chain history rows only when expanded."""
+
+    def get(self, request, pk):
+        from django.template.loader import render_to_string
+
+        root_job = get_object_or_404(
+            Job.objects.select_related("account", "game_account", "node"),
+            pk=pk,
+        )
+        child_jobs = list(
+            Job.objects.filter(root_job_id=root_job.pk)
+            .select_related("account", "game_account", "node")
+            .order_by("-created_at")
+        )
+        html = render_to_string(
+            "jobs/partials/job_chain_history.html",
+            {
+                "root_job": root_job,
+                "child_jobs": child_jobs,
+                "child_count": len(child_jobs),
+            },
             request=request,
         )
         return HttpResponse(html)

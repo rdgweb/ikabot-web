@@ -1,4 +1,13 @@
-from .jobs import JobListView, JobDetailView, JobLogsPartialView, JobCancelView, JobRunNowView, JobRetryView, JobBulkDeleteView
+from .jobs import (
+    JobListView,
+    JobDetailView,
+    JobLogsPartialView,
+    JobChainHistoryPartialView,
+    JobCancelView,
+    JobRunNowView,
+    JobRetryView,
+    JobBulkDeleteView,
+)
 from .create import (
     JobCreateModalView,
     JobActionPickerView,

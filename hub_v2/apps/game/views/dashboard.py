@@ -9,12 +9,17 @@ from datetime import datetime
 from typing import Any
 
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db.models import F, Prefetch, Window
+from django.db.models.functions import RowNumber
 from django.core.cache import cache
+from django.http import JsonResponse
 from django.utils import timezone
+from django.views import View
 from django.views.generic import TemplateView
 
-from apps.accounts.models import Account, Node
+from apps.accounts.models import Account, GameAccount, Node
 from apps.game.models import AccountSnapshotHistory
+from apps.game.services.dashboard_cache import get_dashboard_cache_key
 
 _DASHBOARD_CACHE_TTL = 60  # seconds
 
@@ -24,7 +29,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        cache_key = f"game_dashboard_{self.request.user.pk}"
+        cache_key = get_dashboard_cache_key(self.request.user.pk)
         cached = cache.get(cache_key)
         if cached is not None:
             ctx.update(cached)
@@ -36,8 +41,11 @@ class DashboardView(LoginRequiredMixin, TemplateView):
             .filter(active=True)
             .select_related("node")
             .prefetch_related(
-                "game_accounts",
-                "game_accounts__snapshot",
+                Prefetch(
+                    "game_accounts",
+                    queryset=GameAccount.objects.filter(active=True).select_related("snapshot"),
+                    to_attr="active_game_accounts",
+                ),
             )
             .order_by("label")
         )
@@ -53,7 +61,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         city_options: set[str] = set()
 
         for acct in accounts:
-            game_accounts = acct.game_accounts.filter(active=True)
+            game_accounts = getattr(acct, "active_game_accounts", [])
             for ga in game_accounts:
                 snapshot = getattr(ga, "snapshot", None)
                 base = snapshot.base_snapshot if snapshot else {}
@@ -386,15 +394,9 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                 ],
             })
 
-        history_map = _build_history_map([
-            card["game_account"].pk
-            for card in account_cards
-            if card.get("game_account")
-        ])
-
         ctx["account_cards"] = account_cards
         ctx["city_options"] = sorted(city_options, key=str.lower)
-        ctx["kpi_history"] = history_map
+        ctx["kpi_history"] = {}
         ctx["resource_modal_data"] = resource_modal_data
         ctx["account_detail_data"] = account_detail_data
         ctx["now_epoch"] = int(timezone.now().timestamp())
@@ -416,7 +418,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         cache_payload = {
             "account_cards": account_cards,
             "city_options": ctx["city_options"],
-            "kpi_history": history_map,
+            "kpi_history": {},
             "resource_modal_data": resource_modal_data,
             "account_detail_data": account_detail_data,
             "now_epoch": ctx["now_epoch"],
@@ -427,6 +429,22 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         cache.set(cache_key, cache_payload, _DASHBOARD_CACHE_TTL)
 
         return ctx
+
+
+class DashboardHistoryView(LoginRequiredMixin, View):
+    def get(self, request, *args, **kwargs):
+        cache_key = f"{get_dashboard_cache_key(request.user.pk)}:history"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return JsonResponse({"history": cached})
+
+        game_account_ids = list(
+            GameAccount.objects.filter(active=True, account__active=True, snapshot__isnull=False)
+            .values_list("pk", flat=True)
+        )
+        history_map = _build_history_map(game_account_ids)
+        cache.set(cache_key, history_map, _DASHBOARD_CACHE_TTL)
+        return JsonResponse({"history": history_map})
 
 
 def _si(value, default=0) -> int:
@@ -625,6 +643,14 @@ def _build_history_map(game_account_ids: list) -> dict[str, dict]:
     rows = (
         AccountSnapshotHistory.objects
         .filter(game_account_id__in=game_account_ids)
+        .annotate(
+            history_rank=Window(
+                expression=RowNumber(),
+                partition_by=[F("game_account_id")],
+                order_by=F("captured_at").desc(),
+            )
+        )
+        .filter(history_rank__lte=12)
         .only("game_account_id", "captured_at", "base_snapshot", "cities", "military")
         .order_by("game_account_id", "-captured_at")
     )

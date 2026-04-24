@@ -4,6 +4,7 @@ from .views import (
     JobListView,
     JobDetailView,
     JobLogsPartialView,
+    JobChainHistoryPartialView,
     JobCancelView,
     JobRunNowView,
     JobRetryView,
@@ -28,6 +29,7 @@ urlpatterns = [
     path("new/submit/", JobSubmitView.as_view(), name="job-submit"),
     # Job detail
     path("<uuid:pk>/", JobDetailView.as_view(), name="job-detail"),
+    path("<uuid:pk>/chain-history/", JobChainHistoryPartialView.as_view(), name="job-chain-history"),
     path("<uuid:pk>/logs/", JobLogsPartialView.as_view(), name="job-logs"),
     path("<uuid:pk>/cancel/", JobCancelView.as_view(), name="job-cancel"),
     path("<uuid:pk>/run-now/", JobRunNowView.as_view(), name="job-run-now"),

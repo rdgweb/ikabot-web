@@ -12,6 +12,8 @@ function gameDashboard() {
     filterCity: '',
     kpiModal: null,
     historyMap: {},
+    historyLoaded: false,
+    _historyPromise: null,
     resourceModalData: [],
     accountDetailData: [],
     kpi: { gold: 0, income: 0, cities: 0, resources: 0, troops: 0, ships: 0, wood: 0, wine: 0, marble: 0, crystal: 0, sulfur: 0 },
@@ -22,10 +24,14 @@ function gameDashboard() {
 
     init() {
       this.historyMap = this.loadHistoryMap();
+      this.historyLoaded = Object.keys(this.historyMap || {}).length > 0;
       this.resourceModalData = this.loadJsonScript('game-dashboard-resource-data');
       this.accountDetailData = this.loadJsonScript('game-dashboard-account-detail-data');
-      this.$watch('kpiModal', (value) => {
+      this.$watch('kpiModal', async (value) => {
         this.syncModalScrollLock(Boolean(value));
+        if (value) {
+          await this.ensureHistoryLoaded();
+        }
         this.$nextTick(() => this.renderKpiCharts());
       });
       this.syncModalScrollLock(Boolean(this.kpiModal));
@@ -79,6 +85,34 @@ function gameDashboard() {
 
     loadHistoryMap() {
       return this.loadJsonScript('game-dashboard-history');
+    },
+
+    async ensureHistoryLoaded() {
+      if (this.historyLoaded) return this.historyMap;
+      if (this._historyPromise) return this._historyPromise;
+
+      this._historyPromise = fetch('/game/history/', {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin',
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error(`History request failed: ${response.status}`);
+          return response.json();
+        })
+        .then((payload) => {
+          this.historyMap = payload?.history || {};
+          this.historyLoaded = true;
+          return this.historyMap;
+        })
+        .catch((error) => {
+          console.error('Falha ao carregar historico do dashboard', error);
+          return {};
+        })
+        .finally(() => {
+          this._historyPromise = null;
+        });
+
+      return this._historyPromise;
     },
 
     loadJsonScript(id) {
