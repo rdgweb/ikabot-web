@@ -29,11 +29,15 @@ class HtmxBoostMiddleware(MiddlewareMixin):
     """
 
     def process_response(self, request, response):
-        # Only process HTML responses for boosted requests
-        is_boosted = request.headers.get("HX-Boosted") == "true"
+        # Process any HTMX HTML response that contains a #page-content div.
+        # Covers both hx-boost (HX-Boosted) and explicit hx-get/hx-post (HX-Request).
+        is_htmx = (
+            request.headers.get("HX-Boosted") == "true"
+            or request.headers.get("HX-Request") == "true"
+        )
         is_html = "text/html" in response.get("Content-Type", "")
 
-        if not is_boosted or not is_html:
+        if not is_htmx or not is_html:
             return response
 
         content = response.content.decode(response.charset)

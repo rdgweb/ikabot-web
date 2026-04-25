@@ -32,6 +32,8 @@ def _workflow_type(action_code: int, inputs: dict) -> str:
     if action_code == 1002:
         return "construction_plan"
     if action_code == 2:
+        if inputs.get("monitor_mode") == "arrival_check":
+            return "arrival_monitor"
         return "transport_route"
     if action_code in {801, 802}:
         return "internal_market_order"
@@ -74,9 +76,12 @@ def _workflow_scope(action_code: int, account, game_account, node, inputs: dict)
 
 def _workflow_config(action_code: int, inputs: dict) -> dict:
     meta = ACTION_CATALOG.get(int(action_code), {})
+    action_name = meta.get("name", f"Acao #{action_code}")
+    if int(action_code) == 2 and inputs.get("monitor_mode") == "arrival_check":
+        action_name = "Monitor de Chegada"
     return {
         "action_code": int(action_code),
-        "action_name": meta.get("name", f"Acao #{action_code}"),
+        "action_name": action_name,
         "runner": meta.get("runner", ""),
         "recurring": bool(meta.get("recurring", False)),
         "long_running": bool(meta.get("long_running", False)),
@@ -358,7 +363,12 @@ def ensure_workflow_for_job(job: Job, *, start_new_run: bool = False) -> tuple[W
 
         # Link all jobs in this chain that aren't linked yet
         if use_group:
-            Job.objects.filter(pk=job.pk, workflow__isnull=True).update(workflow=workflow)
+            # Grouped types: link ALL jobs from same GA+action_code (all cities)
+            Job.objects.filter(
+                game_account=job.game_account,
+                action_code=job.action_code,
+                workflow__isnull=True,
+            ).update(workflow=workflow)
         else:
             Job.objects.filter(root_job_id=chain_root_id, workflow__isnull=True).update(workflow=workflow)
             if job.root_job_id is None:
@@ -382,8 +392,26 @@ def ensure_workflow_for_job(job: Job, *, start_new_run: bool = False) -> tuple[W
         job.save(update_fields=["workflow", "workflow_run", "updated_at"])
 
         workflow.active_run = workflow_run
-        workflow.status = _workflow_status_from_job(job.status)
-        workflow.next_scheduled_for = job.scheduled_for
+        # For grouped types, derive status from most recent active job across all cities
+        if use_group:
+            active_job = (
+                Job.objects.filter(
+                    game_account=job.game_account,
+                    action_code=job.action_code,
+                    status__in=("queued", "running", "scheduled"),
+                )
+                .order_by("-created_at")
+                .first()
+            )
+            if active_job:
+                workflow.status = _workflow_status_from_job(active_job.status)
+                workflow.next_scheduled_for = active_job.scheduled_for
+            else:
+                workflow.status = "finished"
+                workflow.next_scheduled_for = None
+        else:
+            workflow.status = _workflow_status_from_job(job.status)
+            workflow.next_scheduled_for = job.scheduled_for
         workflow.last_event_at = timezone.now()
         workflow.save(update_fields=["active_run", "status", "next_scheduled_for", "last_event_at", "updated_at"])
 

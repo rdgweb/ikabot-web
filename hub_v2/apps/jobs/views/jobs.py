@@ -1803,7 +1803,7 @@ class WorkflowListView(FilterSortListView):
                     if len(job_map[job.workflow_run_id]) < 3:
                         job_map[job.workflow_run_id].append(job)
 
-        # Load recent jobs per workflow (for status derivation + preview)
+        # Load recent jobs per workflow (for preview display)
         recent_job_map: dict = {}
         if workflow_ids:
             for job in (
@@ -1814,19 +1814,38 @@ class WorkflowListView(FilterSortListView):
                 if len(bucket) < 5:
                     bucket.append(job)
 
+        # Workflows that have ANY active job — used for correct status derivation.
+        # Recent-jobs-only check misses rescheduled jobs created before newer finished jobs.
+        active_workflow_ids = set(
+            Job.objects.filter(
+                workflow_id__in=workflow_ids,
+                status__in=("queued", "running", "scheduled"),
+            ).values_list("workflow_id", flat=True).distinct()
+        )
+
         workflow_rows = [
-            self._build_workflow_row(workflow, run_map.get(workflow.pk, []), job_map, recent_job_map.get(workflow.pk, []))
+            self._build_workflow_row(
+                workflow,
+                run_map.get(workflow.pk, []),
+                job_map,
+                recent_job_map.get(workflow.pk, []),
+                has_active_job=workflow.pk in active_workflow_ids,
+            )
             for workflow in workflows
         ]
         context["workflow_rows"] = workflow_rows
-        context["workflow_summary"] = self._workflow_summary(workflow_rows)
+        context["workflow_summary"] = self._global_workflow_summary(context)
         context["job_view_mode"] = "ops"
         return context
 
     @staticmethod
     def _backfill_recent_workflows(limit=200):
+        # Only backfill ACTIVE jobs — finished/cancelled history is not auto-recreated
         legacy_jobs = list(
-            Job.objects.filter(workflow__isnull=True)
+            Job.objects.filter(
+                workflow__isnull=True,
+                status__in=("queued", "running", "scheduled"),
+            )
             .values_list("pk", "root_job_id")
             .order_by("-created_at")[:limit]
         )
@@ -1855,6 +1874,28 @@ class WorkflowListView(FilterSortListView):
             elif key in summary:
                 summary[key] += 1
         return summary
+
+    def _global_workflow_summary(self, context) -> dict:
+        """Count workflows across ALL pages using the full filtered queryset."""
+        paginator = context.get("paginator")
+        if paginator:
+            total = paginator.count
+            pk_qs = paginator.object_list.values_list("pk", flat=True)
+        else:
+            total = Workflow.objects.count()
+            pk_qs = Workflow.objects.values_list("pk", flat=True)
+
+        status_counts = {
+            row["status"]: row["n"]
+            for row in Workflow.objects.filter(pk__in=pk_qs).values("status").annotate(n=Count("id"))
+        }
+        return {
+            "total": total,
+            "active": status_counts.get("active", 0) + status_counts.get("waiting", 0),
+            "problem": status_counts.get("problem", 0),
+            "paused": status_counts.get("paused", 0),
+            "finished": status_counts.get("finished", 0),
+        }
 
     @staticmethod
     def _effective_status(workflow, recent_job_statuses: set) -> str:
@@ -1885,7 +1926,7 @@ class WorkflowListView(FilterSortListView):
         return workflow.workflow_type.replace("_", " ").title()
 
     @classmethod
-    def _build_workflow_row(cls, workflow, runs, job_map, recent_jobs=None):
+    def _build_workflow_row(cls, workflow, runs, job_map, recent_jobs=None, has_active_job=False):
         scope = cls._parse_workflow_json(workflow.scope_json)
         config = cls._parse_workflow_json(workflow.config_json)
         active_run = workflow.active_run or (runs[0] if runs else None)
@@ -1897,8 +1938,13 @@ class WorkflowListView(FilterSortListView):
         if city_label:
             scope_parts.append(str(city_label))
 
-        recent_statuses = {j.status for j in (recent_jobs or [])}
-        effective_status = cls._effective_status(workflow, recent_statuses)
+        # has_active_job checks ALL jobs in the chain — prevents false "finished" when
+        # a rescheduled job was created before newer finished jobs (e.g. vinho monitor flow).
+        if has_active_job:
+            effective_status = "waiting"
+        else:
+            recent_statuses = {j.status for j in (recent_jobs or [])}
+            effective_status = cls._effective_status(workflow, recent_statuses)
         status_choices = dict(Workflow.STATUS_CHOICES)
         recent_active_job = next((j for j in (recent_jobs or []) if j.status in ("running", "queued", "scheduled")), None)
 
@@ -1966,12 +2012,28 @@ class WorkflowRunsPartialView(LoginRequiredMixin, View):
         total = jobs_qs.count()
         total_pages = max(1, (total + per_page - 1) // per_page)
         page = min(page, total_pages)
-        jobs = list(jobs_qs[(page - 1) * per_page: page * per_page])
-        action_catalog = ACTION_CATALOG
+        raw_jobs = list(jobs_qs[(page - 1) * per_page: page * per_page])
+        job_rows = []
+        for job in raw_jobs:
+            try:
+                inputs = json.loads(job.inputs_json or "{}")
+            except Exception:
+                inputs = {}
+            display_name = ACTION_CATALOG.get(job.action_code, {}).get("name", f"Ação {job.action_code}")
+            if job.action_code == 2 and inputs.get("monitor_mode") == "arrival_check":
+                display_name = "Monitor de Chegada"
+            city = inputs.get("city_name") or inputs.get("from_city_name") or inputs.get("to_city_name") or ""
+            job_rows.append({
+                "job": job,
+                "display_name": display_name,
+                "city": city,
+                "can_cancel": job.status in ("queued", "running", "scheduled"),
+                "can_run_now": _can_execute_now(job),
+                "can_retry": _can_retry(job),
+            })
         return render(request, "jobs/partials/workflow_runs.html", {
             "workflow": workflow,
-            "jobs": jobs,
-            "action_catalog": action_catalog,
+            "job_rows": job_rows,
             "page": page,
             "per_page": per_page,
             "total": total,

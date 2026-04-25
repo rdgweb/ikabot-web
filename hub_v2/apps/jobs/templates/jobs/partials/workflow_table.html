@@ -143,18 +143,11 @@
       <span class="text-sm text-muted">
         <strong class="text-ink" x-text="selected.length"></strong> selecionado(s)
       </span>
-      <form hx-post="{% url 'jobs:workflow-bulk-delete' %}"
-            hx-swap="none"
-            hx-push-url="false"
-            @submit.prevent="submitBulk($el)"
-            onsubmit="return confirm('Excluir os workflows selecionados? Apenas finalizados e cancelados serão removidos.')">
-        {% csrf_token %}
-        <button type="submit" class="btn btn-danger btn-sm">
-          <i class="bi bi-trash3"></i> Excluir selecionados
-        </button>
-      </form>
+      <button @click="confirmDelete()" class="btn btn-danger btn-sm">
+        <i class="bi bi-trash3"></i> Excluir selecionados
+      </button>
       <button @click="selected = []" class="btn btn-secondary btn-sm">
-        Limpar seleção
+        Limpar
       </button>
     </div>
   </div>
@@ -171,17 +164,21 @@ function workflowBulk() {
         this.selected = this.selected.filter(id => id !== pk);
       }
     },
-    submitBulk(form) {
-      // Add hidden inputs for each selected PK
-      this.selected.forEach(pk => {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'workflow_ids[]';
-        input.value = pk;
-        form.appendChild(input);
+    confirmDelete() {
+      if (!confirm('Excluir ' + this.selected.length + ' workflow(s) selecionado(s)?\nApenas finalizados e cancelados serão removidos.')) return;
+      const csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
+      const body = new URLSearchParams();
+      body.append('csrfmiddlewaretoken', csrf);
+      this.selected.forEach(pk => body.append('workflow_ids[]', pk));
+      const self = this;
+      fetch('{% url "jobs:workflow-bulk-delete" %}', {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrf},
+        body: body,
+      }).then(() => {
+        self.selected = [];
+        location.reload();
       });
-      htmx.trigger(form, 'submit');
-      this.selected = [];
     },
   };
 }

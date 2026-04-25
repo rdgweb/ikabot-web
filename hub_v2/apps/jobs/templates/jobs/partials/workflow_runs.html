@@ -1,49 +1,60 @@
 {% load humanize hub_tags %}
 
-{% if jobs %}
+{% if job_rows %}
 <div class="divide-y divide-[var(--ik-line)]">
-  {% for job in jobs %}
-  <div x-data="{ expanded: false }">
+  {% for row in job_rows %}
+  <div class="flex items-center justify-between gap-3 px-5 py-3 hover:bg-[var(--ik-sand-light)]/40 transition-colors">
 
-    <button type="button"
-            @click="expanded = !expanded"
-            hx-get="{% url 'jobs:workflow-run-jobs' workflow.pk job.pk %}"
-            hx-trigger="click once"
-            hx-target="#job-children-{{ job.pk }}"
-            hx-swap="innerHTML"
-            hx-push-url="false"
-            class="flex w-full items-center justify-between gap-4 px-5 py-3 text-left transition-colors hover:bg-[var(--ik-sand-light)]/60">
-      <div class="flex min-w-0 items-center gap-3">
-        <i class="bi text-xs text-muted flex-shrink-0"
-           :class="expanded ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
-        <a href="{% url 'jobs:job-detail' job.pk %}"
-           class="text-sm font-medium link-sea"
-           @click.stop>
-          {{ job.action_code|action_name }}
+    <div class="flex min-w-0 flex-1 items-center gap-3">
+      <span class="badge {{ row.job.status|status_badge_class }} shrink-0">{{ row.job.get_status_display }}</span>
+      <div class="min-w-0">
+        <a href="{% url 'jobs:job-detail' row.job.pk %}"
+           hx-target="#page-content"
+           hx-swap="innerHTML"
+           hx-push-url="true"
+           class="text-sm font-medium link-sea truncate block">
+          {{ row.display_name }}{% if row.city %} — {{ row.city }}{% endif %}
         </a>
-        <span class="badge {{ job.status|status_badge_class }}">{{ job.get_status_display }}</span>
+        <div class="mt-0.5 text-[11px] text-muted">
+          {% if row.job.started_at and row.job.finished_at %}
+          {{ row.job.started_at|date:"d/m H:i" }} → {{ row.job.finished_at|date:"H:i" }}
+          {% elif row.job.started_at %}
+          Início {{ row.job.started_at|date:"d/m H:i" }}
+          {% elif row.job.scheduled_for %}
+          <i class="bi bi-clock"></i> {{ row.job.scheduled_for|date:"d/m H:i" }}
+          {% else %}
+          Criado {{ row.job.created_at|date:"d/m H:i" }}
+          {% endif %}
+        </div>
       </div>
-      <div class="flex shrink-0 items-center gap-4 text-xs text-muted">
-        {% if job.started_at and job.finished_at %}
-        <span>{{ job.started_at|date:"d/m H:i" }} → {{ job.finished_at|date:"H:i" }}</span>
-        {% elif job.started_at %}
-        <span>Início {{ job.started_at|date:"d/m H:i" }}</span>
-        {% elif job.scheduled_for %}
-        <span>Agenda {{ job.scheduled_for|date:"d/m H:i" }}</span>
-        {% else %}
-        <span>{{ job.created_at|date:"d/m H:i" }}</span>
-        {% endif %}
-      </div>
-    </button>
+    </div>
 
-    <div x-show="expanded"
-         x-transition:enter="transition ease-out duration-100"
-         x-transition:enter-start="opacity-0"
-         x-transition:enter-end="opacity-100"
-         class="border-t border-[var(--ik-line)] bg-[var(--ik-sand-light)]/40 px-5 py-3">
-      <div id="job-children-{{ job.pk }}" class="text-xs text-muted">
-        Carregando jobs derivados...
-      </div>
+    <div class="flex shrink-0 items-center gap-1">
+      {% if row.can_run_now %}
+      <form method="post" action="{% url 'jobs:job-run-now' row.job.pk %}" class="inline">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-secondary btn-sm !px-2" title="Executar agora">
+          <i class="bi bi-lightning-charge text-amber-500"></i>
+        </button>
+      </form>
+      {% endif %}
+      {% if row.can_retry %}
+      <form method="post" action="{% url 'jobs:job-retry' row.job.pk %}" class="inline">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-secondary btn-sm !px-2" title="Retry">
+          <i class="bi bi-arrow-repeat text-sea"></i>
+        </button>
+      </form>
+      {% endif %}
+      {% if row.can_cancel %}
+      <form method="post" action="{% url 'jobs:job-cancel' row.job.pk %}" class="inline"
+            onsubmit="return confirm('Cancelar este job?')">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-secondary btn-sm !px-2" title="Cancelar">
+          <i class="bi bi-x-lg text-[var(--ik-bad)]"></i>
+        </button>
+      </form>
+      {% endif %}
     </div>
 
   </div>
@@ -53,7 +64,7 @@
 {% if total_pages > 1 %}
 <div class="flex items-center justify-between border-t border-[var(--ik-line)] px-5 py-3">
   <span class="text-xs text-muted">
-    {{ total }} job{{ total|pluralize:"s" }} · página {{ page }} de {{ total_pages }}
+    {{ total }} execução/execuções · página {{ page }} de {{ total_pages }}
   </span>
   <div class="flex gap-2">
     {% if has_prev %}
@@ -79,5 +90,5 @@
 {% endif %}
 
 {% else %}
-<div class="px-5 py-6 text-center text-sm text-muted">Nenhum job registrado neste workflow.</div>
+<div class="px-5 py-6 text-center text-sm text-muted">Nenhuma execução registrada.</div>
 {% endif %}
