@@ -1,0 +1,83 @@
+{% load humanize hub_tags %}
+
+{% if jobs %}
+<div class="divide-y divide-[var(--ik-line)]">
+  {% for job in jobs %}
+  <div x-data="{ expanded: false }">
+
+    <button type="button"
+            @click="expanded = !expanded"
+            hx-get="{% url 'jobs:workflow-run-jobs' workflow.pk job.pk %}"
+            hx-trigger="click once"
+            hx-target="#job-children-{{ job.pk }}"
+            hx-swap="innerHTML"
+            hx-push-url="false"
+            class="flex w-full items-center justify-between gap-4 px-5 py-3 text-left transition-colors hover:bg-[var(--ik-sand-light)]/60">
+      <div class="flex min-w-0 items-center gap-3">
+        <i class="bi text-xs text-muted flex-shrink-0"
+           :class="expanded ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+        <a href="{% url 'jobs:job-detail' job.pk %}"
+           class="text-sm font-medium link-sea"
+           @click.stop>
+          {{ job.action_code|action_name }}
+        </a>
+        <span class="badge {{ job.status|status_badge_class }}">{{ job.get_status_display }}</span>
+      </div>
+      <div class="flex shrink-0 items-center gap-4 text-xs text-muted">
+        {% if job.started_at and job.finished_at %}
+        <span>{{ job.started_at|date:"d/m H:i" }} → {{ job.finished_at|date:"H:i" }}</span>
+        {% elif job.started_at %}
+        <span>Início {{ job.started_at|date:"d/m H:i" }}</span>
+        {% elif job.scheduled_for %}
+        <span>Agenda {{ job.scheduled_for|date:"d/m H:i" }}</span>
+        {% else %}
+        <span>{{ job.created_at|date:"d/m H:i" }}</span>
+        {% endif %}
+      </div>
+    </button>
+
+    <div x-show="expanded"
+         x-transition:enter="transition ease-out duration-100"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="border-t border-[var(--ik-line)] bg-[var(--ik-sand-light)]/40 px-5 py-3">
+      <div id="job-children-{{ job.pk }}" class="text-xs text-muted">
+        Carregando jobs derivados...
+      </div>
+    </div>
+
+  </div>
+  {% endfor %}
+</div>
+
+{% if total_pages > 1 %}
+<div class="flex items-center justify-between border-t border-[var(--ik-line)] px-5 py-3">
+  <span class="text-xs text-muted">
+    {{ total }} job{{ total|pluralize:"s" }} · página {{ page }} de {{ total_pages }}
+  </span>
+  <div class="flex gap-2">
+    {% if has_prev %}
+    <button class="btn btn-secondary btn-sm"
+            hx-get="{% url 'jobs:workflow-runs' workflow.pk %}?page={{ page|add:'-1' }}"
+            hx-target="#workflow-runs"
+            hx-swap="innerHTML"
+            hx-push-url="false">
+      <i class="bi bi-chevron-left"></i>
+    </button>
+    {% endif %}
+    {% if has_next %}
+    <button class="btn btn-secondary btn-sm"
+            hx-get="{% url 'jobs:workflow-runs' workflow.pk %}?page={{ page|add:'1' }}"
+            hx-target="#workflow-runs"
+            hx-swap="innerHTML"
+            hx-push-url="false">
+      <i class="bi bi-chevron-right"></i>
+    </button>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% else %}
+<div class="px-5 py-6 text-center text-sm text-muted">Nenhum job registrado neste workflow.</div>
+{% endif %}

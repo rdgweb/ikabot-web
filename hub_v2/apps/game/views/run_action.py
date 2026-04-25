@@ -13,7 +13,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views import View
 
 from apps.accounts.models import Account, GameAccount
-from apps.jobs.models import Job
+from apps.jobs.services.workflows import create_job_with_workflow
 
 ACTION_NAMES = {
     100: "Check Status",
@@ -49,12 +49,12 @@ class RunActionView(LoginRequiredMixin, View):
             if not node:
                 return self._toast("Conta sem no atribuido.", "error")
 
-            Job.objects.create(
+            create_job_with_workflow(
                 account=account,
                 game_account=ga,
                 node=node,
                 action_code=action_code,
-                inputs_json=json.dumps({}),
+                inputs={},
                 status="queued",
             )
             return self._toast(
@@ -73,11 +73,11 @@ class RunActionView(LoginRequiredMixin, View):
             if not node:
                 return self._toast("Conta sem no atribuido.", "error")
 
-            Job.objects.create(
+            create_job_with_workflow(
                 account=account,
                 node=node,
                 action_code=action_code,
-                inputs_json=json.dumps({}),
+                inputs={},
                 status="queued",
             )
             return self._toast(

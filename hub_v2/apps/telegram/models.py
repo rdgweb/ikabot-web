@@ -310,19 +310,24 @@ class NotificationTemplate(TimestampModel):
 
         Returns the full HTML message ready for Telegram.
         """
+        import html as _html
+
+        def _esc(v):
+            return _html.escape(str(v)) if v is not None else ""
+
         ctx = _SafeDict({
-            "action_name": kwargs.get("action_name", ""),
-            "ga_name": kwargs.get("ga_name", ""),
-            "server_id": kwargs.get("server_id", ""),
-            "account_name": kwargs.get("account_name", ""),
-            "node_name": kwargs.get("node_name", ""),
-            "agent_name": kwargs.get("agent_name", ""),
-            "title": kwargs.get("title", ""),
-            "body": kwargs.get("body", ""),
-            "exit_code": kwargs.get("exit_code", ""),
-            "job_id": kwargs.get("job_id", ""),
-            "status": kwargs.get("status", ""),
-            "error": kwargs.get("error", ""),
+            "action_name": _esc(kwargs.get("action_name", "")),
+            "ga_name": _esc(kwargs.get("ga_name", "")),
+            "server_id": _esc(kwargs.get("server_id", "")),
+            "account_name": _esc(kwargs.get("account_name", "")),
+            "node_name": _esc(kwargs.get("node_name", "")),
+            "agent_name": _esc(kwargs.get("agent_name", "")),
+            "title": _esc(kwargs.get("title", "")),
+            "body": _esc(kwargs.get("body", "")),
+            "exit_code": _esc(kwargs.get("exit_code", "")),
+            "job_id": _esc(kwargs.get("job_id", "")),
+            "status": _esc(kwargs.get("status", "")),
+            "error": _esc(kwargs.get("error", "")),
         })
         for key, value in kwargs.items():
             if key in ctx:
@@ -330,9 +335,9 @@ class NotificationTemplate(TimestampModel):
             if value is None:
                 ctx[key] = ""
             elif isinstance(value, (str, int, float, bool)):
-                ctx[key] = value
+                ctx[key] = _esc(value)
             else:
-                ctx[key] = str(value)
+                ctx[key] = _esc(str(value))
 
         try:
             title = self.title_template.format_map(ctx)

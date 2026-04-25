@@ -3,6 +3,12 @@ from django.urls import path
 from .views import (
     JobListView,
     JobDetailView,
+    WorkflowDetailView,
+    WorkflowRunsPartialView,
+    WorkflowRunJobsPartialView,
+    WorkflowLogsPartialView,
+    WorkflowActionView,
+    WorkflowBulkDeleteView,
     JobLogsPartialView,
     JobChainHistoryPartialView,
     JobCancelView,
@@ -20,7 +26,13 @@ app_name = "jobs"
 
 urlpatterns = [
     path("", JobListView.as_view(), name="job-list"),
+    path("workflows/<uuid:pk>/", WorkflowDetailView.as_view(), name="workflow-detail"),
+    path("workflows/<uuid:pk>/runs/", WorkflowRunsPartialView.as_view(), name="workflow-runs"),
+    path("workflows/<uuid:pk>/runs/<uuid:run_pk>/jobs/", WorkflowRunJobsPartialView.as_view(), name="workflow-run-jobs"),
+    path("workflows/<uuid:pk>/logs/", WorkflowLogsPartialView.as_view(), name="workflow-logs"),
+    path("workflows/<uuid:pk>/action/", WorkflowActionView.as_view(), name="workflow-action"),
     path("bulk-delete/", JobBulkDeleteView.as_view(), name="job-bulk-delete"),
+    path("workflows/bulk-delete/", WorkflowBulkDeleteView.as_view(), name="workflow-bulk-delete"),
     # Job creation modal flow
     path("new/", JobCreateModalView.as_view(), name="job-create"),
     path("new/actions/", JobActionPickerView.as_view(), name="job-actions"),

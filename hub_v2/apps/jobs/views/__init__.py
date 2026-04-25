@@ -1,6 +1,12 @@
 from .jobs import (
-    JobListView,
+    WorkflowAwareJobListView,
     JobDetailView,
+    WorkflowDetailView,
+    WorkflowRunsPartialView,
+    WorkflowRunJobsPartialView,
+    WorkflowLogsPartialView,
+    WorkflowActionView,
+    WorkflowBulkDeleteView,
     JobLogsPartialView,
     JobChainHistoryPartialView,
     JobCancelView,
@@ -15,3 +21,5 @@ from .create import (
     JobSubmitView,
     ConstructionPlanPreviewView,
 )
+
+JobListView = WorkflowAwareJobListView

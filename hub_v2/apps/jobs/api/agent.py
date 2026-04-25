@@ -13,6 +13,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.jobs.models import Job, JobLog
+from apps.jobs.services.workflows import create_job_with_workflow
 from core.auth.backends import AgentTokenAuthentication
 from core.auth.permissions import IsAgent
 from apps.settings_app.utils import get_int_setting
@@ -206,18 +207,19 @@ class RescheduleJobView(APIView):
             existing.update(patch)
             new_inputs_json = json.dumps(existing)
 
-        new_job = Job.objects.create(
+        new_job = create_job_with_workflow(
             account=job.account,
             game_account=job.game_account,
             node=job.node,
             profile=job.profile,
             action_code=job.action_code,
-            source_job_id=job.pk,
-            root_job_id=job.root_job_id or job.pk,
-            inputs_json=new_inputs_json,
+            inputs=new_inputs_json,
             timeout_sec=job.timeout_sec,
+            source_job=job,
             status="scheduled",
             scheduled_for=scheduled_for,
+            start_new_run=True,
+            trigger_type="agent_reschedule",
         )
 
         logger.info(
@@ -268,18 +270,19 @@ class SpawnJobView(APIView):
 
         delay = serializer.validated_data["delay_seconds"]
         scheduled_for = timezone.now() + timedelta(seconds=delay) if delay > 0 else None
-        new_job = Job.objects.create(
+        new_job = create_job_with_workflow(
             account=parent_job.account,
             game_account=parent_job.game_account,
             node=parent_job.node,
             profile=parent_job.profile,
             action_code=serializer.validated_data["action_code"],
-            source_job_id=parent_job.pk,
-            root_job_id=parent_job.root_job_id or parent_job.pk,
-            inputs_json=json.dumps(serializer.validated_data.get("inputs") or {}),
+            inputs=serializer.validated_data.get("inputs") or {},
             timeout_sec=serializer.validated_data.get("timeout_sec") or parent_job.timeout_sec,
+            source_job=parent_job,
             status="scheduled" if delay > 0 else "queued",
             scheduled_for=scheduled_for,
+            start_new_run=False,
+            trigger_type="agent_spawn",
         )
 
         logger.info(

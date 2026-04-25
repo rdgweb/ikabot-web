@@ -8,6 +8,7 @@ with variables like {action_name}, {ga_name}, {server_id}, etc.
 Supported HTML tags: <b>, <i>, <u>, <s>, <code>, <pre>, <a href="">
 """
 
+import html
 import logging
 
 logger = logging.getLogger(__name__)
@@ -29,16 +30,18 @@ def format_message(event_key: str, **kwargs) -> str:
     except Exception as exc:
         logger.warning("Failed to load template for %s: %s", event_key, exc)
 
-    action_name = str(kwargs.get("action_name") or event_key)
-    ga_name = str(kwargs.get("ga_name") or "")
-    server_id = str(kwargs.get("server_id") or "")
-    account_name = str(kwargs.get("account_name") or "")
-    node_name = str(kwargs.get("node_name") or "")
-    body = str(kwargs.get("body") or "")
-    status = str(kwargs.get("status") or "")
-    exit_code = str(kwargs.get("exit_code") or "")
-    error = str(kwargs.get("error") or "")
-    job_id = str(kwargs.get("job_id") or "")
+    def _e(v): return html.escape(str(v)) if v else ""
+
+    action_name = _e(kwargs.get("action_name") or event_key)
+    ga_name = _e(kwargs.get("ga_name") or "")
+    server_id = _e(kwargs.get("server_id") or "")
+    account_name = _e(kwargs.get("account_name") or "")
+    node_name = _e(kwargs.get("node_name") or "")
+    body = _e(kwargs.get("body") or "")
+    status = _e(kwargs.get("status") or "")
+    exit_code = _e(kwargs.get("exit_code") or "")
+    error = _e(kwargs.get("error") or "")
+    job_id = _e(kwargs.get("job_id") or "")
 
     title_map = {
         "attack_alert": ("Alerta de ataque", "\u26a0\ufe0f"),

@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from apps.accounts.models import Node
 from apps.jobs.models import Job, JobLog
+from apps.jobs.services.workflows import create_job_with_workflow
 from apps.settings_app.utils import get_int_setting
 
 logger = logging.getLogger(__name__)
@@ -100,17 +101,19 @@ def recover_stale_running_jobs(*, node: Node | None = None) -> dict[str, int]:
                 recovery["recovered_from_job_id"] = str(locked.pk)
                 recovery["previous_progress"] = progress
                 next_inputs["__recovery"] = recovery
-                next_job = Job.objects.create(
+                next_job = create_job_with_workflow(
                     account=locked.account,
                     game_account=locked.game_account,
                     node=locked.node,
                     profile=locked.profile,
                     action_code=locked.action_code,
-                    source_job_id=locked.pk,
-                    inputs_json=json.dumps(next_inputs),
+                    inputs=next_inputs,
                     timeout_sec=locked.timeout_sec,
+                    source_job=locked,
                     status="scheduled",
                     scheduled_for=now + timedelta(seconds=_requeue_delay_seconds()),
+                    start_new_run=True,
+                    trigger_type="recovery_requeue",
                 )
                 requeued += 1
                 action = f"reagendada como {next_job.pk}"

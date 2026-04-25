@@ -1,0 +1,16 @@
+{% load static humanize %}
+
+{% if resource_items %}
+<div class="flex flex-wrap gap-1.5">
+  {% for resource in resource_items %}
+  <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] text-ink"
+        style="border-color: var(--ik-line); background: var(--ik-sand-light);"
+        title="{{ resource.label }}">
+    <img src="{% static resource.icon %}" alt="{{ resource.label }}" class="h-3.5 w-3.5">
+    <span>{{ resource.amount|intcomma }}</span>
+  </span>
+  {% endfor %}
+</div>
+{% else %}
+<span class="text-sm text-muted">-</span>
+{% endif %}

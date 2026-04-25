@@ -1,22 +1,20 @@
 {% extends "base_list.html" %}
 
-{% block title %}Fila de Jobs{% endblock %}
+{% block title %}Workflows{% endblock %}
 
 {% block breadcrumb_items %}
-  <span class="mx-1">/</span> <span class="text-ink">Fila de Jobs</span>
+  <span class="mx-1">/</span> <span class="text-ink">Workflows</span>
 {% endblock %}
 
-{% block page_title %}Fila de Jobs{% endblock %}
-{% block page_subtitle %}Visao operacional por workflow, ciclos e execucoes tecnicas{% endblock %}
+{% block page_title %}Workflows{% endblock %}
+{% block page_subtitle %}Operacao por workflow persistido, runs e jobs tecnicos{% endblock %}
 
 {% block page_actions %}
 <div class="flex items-center gap-2">
-  <a href="?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}view=ops"
-     class="btn btn-sm {% if job_view_mode != 'tech' %}btn-primary{% else %}btn-secondary{% endif %}">
+  <a href="{{ request.path }}" class="btn btn-sm btn-primary">
     <i class="bi bi-kanban"></i> Operacional
   </a>
-  <a href="?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}view=tech"
-     class="btn btn-sm {% if job_view_mode == 'tech' %}btn-primary{% else %}btn-secondary{% endif %}">
+  <a href="?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}view=tech" class="btn btn-sm btn-secondary">
     <i class="bi bi-braces"></i> Tecnica
   </a>
 </div>
@@ -26,7 +24,7 @@
 <div x-data="{ filterOpen: false }" class="relative">
   <button @click="filterOpen = !filterOpen" class="btn btn-secondary btn-sm relative" type="button">
     <i class="bi bi-funnel"></i> Filtros
-    {% if request.GET.workflow_state or request.GET.workflow_type or request.GET.category or request.GET.status or request.GET.account or request.GET.game_account or request.GET.city or request.GET.action_code or request.GET.node or request.GET.search %}
+    {% if request.GET.status or request.GET.account or request.GET.game_account or request.GET.city or request.GET.category or request.GET.node or request.GET.search or request.GET.workflow_type %}
     <span class="filter-badge"></span>
     {% endif %}
   </button>
@@ -39,42 +37,26 @@
        x-transition:leave-end="opacity-0 scale-95"
        @click.away="filterOpen = false"
        class="filter-panel right-0">
-    <h3 class="text-sm font-semibold text-ink mb-3">Filtros operacionais</h3>
-    <input type="hidden" name="view" value="{{ job_view_mode }}">
+    <h3 class="text-sm font-semibold text-ink mb-3">Filtros de workflow</h3>
     <div class="grid grid-cols-1 gap-3">
       <div>
-        <label class="filter-panel-label">Busca geral</label>
-        <input type="text" name="search"
-               value="{{ request.GET.search|default:'' }}"
-               class="filter-input" placeholder="Conta, cidade, no, texto..."
+        <label class="filter-panel-label">Busca</label>
+        <input type="text" name="search" value="{{ request.GET.search|default:'' }}"
+               class="filter-input" placeholder="Conta, workflow, cidade..."
                hx-get="{{ request.path }}" hx-target="#table-content"
                hx-swap="innerHTML" hx-trigger="keyup changed delay:300ms"
                hx-include=".filter-panel [name]" hx-push-url="true">
       </div>
       <div>
-        <label class="filter-panel-label">Estado operacional</label>
-        <select name="workflow_state" class="filter-select"
+        <label class="filter-panel-label">Status</label>
+        <select name="status" class="filter-select"
                 hx-get="{{ request.path }}" hx-target="#table-content"
                 hx-swap="innerHTML" hx-trigger="change"
                 hx-include=".filter-panel [name]" hx-push-url="true">
           <option value="">Todos</option>
-          {% for value, label in filter.form.workflow_state.field.choices %}
+          {% for value, label in filter.form.status.field.choices %}
             {% if value %}
-            <option value="{{ value }}" {% if request.GET.workflow_state == value %}selected{% endif %}>{{ label }}</option>
-            {% endif %}
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="filter-panel-label">Tipo de workflow</label>
-        <select name="workflow_type" class="filter-select"
-                hx-get="{{ request.path }}" hx-target="#table-content"
-                hx-swap="innerHTML" hx-trigger="change"
-                hx-include=".filter-panel [name]" hx-push-url="true">
-          <option value="">Todos</option>
-          {% for value, label in filter.form.workflow_type.field.choices %}
-            {% if value %}
-            <option value="{{ value }}" {% if request.GET.workflow_type == value %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>
             {% endif %}
           {% endfor %}
         </select>
@@ -86,8 +68,10 @@
                 hx-swap="innerHTML" hx-trigger="change"
                 hx-include=".filter-panel [name]" hx-push-url="true">
           <option value="">Todas</option>
-          {% for category in category_filter_options %}
-          <option value="{{ category.key }}" {% if request.GET.category == category.key %}selected{% endif %}>{{ category.label }}</option>
+          {% for value, label in filter.form.category.field.choices %}
+            {% if value %}
+            <option value="{{ value }}" {% if request.GET.category == value %}selected{% endif %}>{{ label }}</option>
+            {% endif %}
           {% endfor %}
         </select>
       </div>
@@ -119,40 +103,11 @@
       </div>
       <div>
         <label class="filter-panel-label">Cidade</label>
-        <input type="text" name="city"
-               value="{{ request.GET.city|default:'' }}"
+        <input type="text" name="city" value="{{ request.GET.city|default:'' }}"
                class="filter-input" placeholder="Cidade..."
                hx-get="{{ request.path }}" hx-target="#table-content"
                hx-swap="innerHTML" hx-trigger="keyup changed delay:300ms"
                hx-include=".filter-panel [name]" hx-push-url="true">
-      </div>
-      <div>
-        <label class="filter-panel-label">Acao</label>
-        <select name="action_code" class="filter-select"
-                hx-get="{{ request.path }}" hx-target="#table-content"
-                hx-swap="innerHTML" hx-trigger="change"
-                hx-include=".filter-panel [name]" hx-push-url="true">
-          <option value="">Todas</option>
-          {% for action in action_filter_options %}
-          <option value="{{ action.code }}" {% if request.GET.action_code == action.code|stringformat:"s" %}selected{% endif %}>
-            {{ action.label }}
-          </option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="filter-panel-label">Status tecnico</label>
-        <select name="status" class="filter-select"
-                hx-get="{{ request.path }}" hx-target="#table-content"
-                hx-swap="innerHTML" hx-trigger="change"
-                hx-include=".filter-panel [name]" hx-push-url="true">
-          <option value="">Todos</option>
-          {% for value, label in filter.form.status.field.choices %}
-            {% if value %}
-            <option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>
-            {% endif %}
-          {% endfor %}
-        </select>
       </div>
       <div>
         <label class="filter-panel-label">No</label>
@@ -176,5 +131,5 @@
 {% endblock %}
 
 {% block table_content %}
-{% include "jobs/partials/job_table.html" %}
+{% include "jobs/partials/workflow_table.html" %}
 {% endblock %}

@@ -9,18 +9,20 @@ from collections import Counter
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Count
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.db import transaction
 from django.utils import timezone
 from django.views import View
 from django.views.generic import DetailView
 
+from core.actions.constants import CATEGORY_META
 from core.catalogs import get_building_info
 from core.contracts import ACTION_CATALOG, RESOURCE_CHOICES
 from core.mixins.views import FilterSortListView
-from ..filters import JobFilter
-from ..models import Job, JobLog
+from ..filters import JobFilter, WorkflowFilter
+from ..models import Job, JobLog, Workflow, WorkflowRun
 from ..services.dispatch import dispatch_job
+from ..services.workflows import create_job_with_workflow, ensure_workflow_for_job
 
 
 RESOURCE_ICON_MAP = {
@@ -71,6 +73,20 @@ SCIENTIST_TARGET_MODE_META = {
     "absolute": "Quantidade fixa",
     "percent_max": "% do maximo",
 }
+
+
+_WORKFLOW_BORDER_COLOR = {
+    "active": "var(--ik-sea)",
+    "waiting": "#f59e0b",
+    "problem": "var(--ik-bad)",
+    "paused": "var(--ik-muted)",
+    "finished": "var(--ik-good)",
+    "cancelled": "var(--ik-line)",
+    "draft": "var(--ik-line)",
+}
+
+_WORKFLOW_CANCELABLE = {"draft", "active", "paused", "waiting", "problem"}
+_WORKFLOW_DELETABLE = {"finished", "cancelled"}
 
 
 def _to_int(raw, default=0):
@@ -170,7 +186,8 @@ class JobListView(FilterSortListView):
         page_jobs = list(context.get("page_obj").object_list if context.get("page_obj") else context.get("object_list", []))
         active_descendants = self._load_active_descendants(page_jobs)
         chain_history_counts = self._load_chain_history_counts(page_jobs)
-        context["grouped_rows"] = self._build_grouped_rows(page_jobs, active_descendants, chain_history_counts)
+        grouped_rows = self._build_grouped_rows(page_jobs, active_descendants, chain_history_counts)
+        context["grouped_rows"] = grouped_rows
         action_options = []
         seen_actions = set()
         full_jobs = context.get("object_list", [])
@@ -185,6 +202,9 @@ class JobListView(FilterSortListView):
             })
         action_options.sort(key=lambda item: item["label"].lower())
         context["action_filter_options"] = action_options
+        context["category_filter_options"] = self._category_filter_options(full_jobs)
+        context["workflow_summary"] = self._workflow_summary(grouped_rows)
+        context["job_view_mode"] = self.request.GET.get("view", "ops").strip().lower() or "ops"
         return context
 
     @staticmethod
@@ -287,12 +307,17 @@ class JobListView(FilterSortListView):
             city_labels = entry["city_labels"]
             entry["city_summary"] = self._city_summary(city_labels)
             entry["is_group"] = len(entry["jobs"]) > 1
+            entry["total_jobs"] = len(entry["jobs"])
+            entry["cycle_count"] = int(entry["chain_history_count"]) + 1
             # When root is terminal but chain is still active, reflect the active status
             chain_job = entry["chain_active_job"]
             if chain_job:
                 display_counts = Counter({chain_job.status: 1})
             else:
                 display_counts = entry["status_counts"]
+            entry["effective_job"] = chain_job or entry["root_job"]
+            entry["workflow_state"] = self._workflow_state(entry["effective_job"])
+            entry["workflow_state_label"] = self._workflow_state_label(entry["workflow_state"])
             entry["status_summary"] = self._status_summary(display_counts)
             entry["status_badges"] = [(status, amount) for status, amount in display_counts.items()]
             if entry["group_type"] in {"construction", "transport"}:
@@ -304,6 +329,14 @@ class JobListView(FilterSortListView):
                 child_jobs=[item["object"] for item in entry["jobs"][1:]],
             ) if entry["group_type"] == "transport" else {}
             entry["summary_lines"] = self._summary_lines(entry)
+            entry["workflow_kind_label"] = self._workflow_kind_label(entry)
+            entry["workflow_category"] = self._workflow_category(entry["root_job"])
+            entry["workflow_category_label"] = self._workflow_category_label(entry["root_job"])
+            entry["workflow_label"] = self._workflow_label(entry)
+            entry["workflow_scope"] = self._workflow_scope(entry)
+            entry["active_job_label"] = self._active_job_label(entry)
+            entry["detail_job"] = entry["effective_job"]
+            entry["progress_label"] = self._progress_label(entry)
             # Resolve scheduled_for for the column display
             if chain_job and chain_job.scheduled_for:
                 entry["scheduled_for"] = chain_job.scheduled_for
@@ -336,7 +369,7 @@ class JobListView(FilterSortListView):
             return "construction"
         if action_code == 2:
             return "transport"
-        return "generic"
+        return "single"
 
     def _resolve_root_job(self, job, parent_map):
         if job.root_job_id:
@@ -374,6 +407,114 @@ class JobListView(FilterSortListView):
     @staticmethod
     def _bool_label(value):
         return "Sim" if bool(value) else "Nao"
+
+    @staticmethod
+    def _category_filter_options(jobs):
+        options = {}
+        for job in jobs:
+            meta = _action_meta(int(job.action_code))
+            category_key = str(meta.get("category") or "").strip()
+            if not category_key:
+                continue
+            options[category_key] = CATEGORY_META.get(category_key, {}).get("label", category_key.title())
+        return [
+            {"key": key, "label": label}
+            for key, label in sorted(options.items(), key=lambda item: item[1].lower())
+        ]
+
+    @staticmethod
+    def _workflow_state(job):
+        if job.status in {"queued", "running", "scheduled"}:
+            return "active"
+        if job.status == "error":
+            return "problem"
+        if job.status == "finished":
+            return "done"
+        if job.status == "cancelled":
+            return "stopped"
+        return "done"
+
+    @staticmethod
+    def _workflow_state_label(state):
+        return {
+            "active": "Ativo",
+            "problem": "Com problema",
+            "done": "Concluido",
+            "stopped": "Cancelado",
+        }.get(state, "Desconhecido")
+
+    @staticmethod
+    def _workflow_category(job):
+        return str(_action_meta(int(job.action_code)).get("category") or "").strip()
+
+    @classmethod
+    def _workflow_category_label(cls, job):
+        category_key = cls._workflow_category(job)
+        return CATEGORY_META.get(category_key, {}).get("label", "Operacional")
+
+    def _workflow_kind_label(self, entry):
+        if entry["group_type"] == "construction":
+            return "Plano"
+        if entry["group_type"] == "transport":
+            return "Rota"
+        if entry["is_group"]:
+            return "Workflow agregado"
+        return "Execucao pontual"
+
+    def _workflow_label(self, entry):
+        action_name = self._action_name(entry["root_job"].action_code)
+        if entry["group_type"] in {"construction", "transport"}:
+            return f"{action_name} operacional"
+        if entry["is_group"]:
+            return f"{action_name} agrupado"
+        return action_name
+
+    @staticmethod
+    def _workflow_scope(entry):
+        parts = [entry["account_label"]]
+        if entry["subaccount_label"] and entry["subaccount_label"] != entry["account_label"]:
+            parts.append(entry["subaccount_label"])
+        if entry["city_summary"] and entry["city_summary"] != "-":
+            parts.append(entry["city_summary"])
+        return " / ".join(parts)
+
+    def _active_job_label(self, entry):
+        job = entry["effective_job"]
+        if entry["chain_active_job"]:
+            return f"Ciclo ativo #{str(job.pk)[:8]}"
+        if entry["cycle_count"] > 1:
+            return f"Ultimo ciclo #{str(job.pk)[:8]}"
+        return f"Job #{str(job.pk)[:8]}"
+
+    @staticmethod
+    def _progress_label(entry):
+        if entry["group_type"] == "construction":
+            summary_lines = entry.get("summary_lines") or []
+            if summary_lines:
+                return summary_lines[0]
+        if entry["cycle_count"] > 1:
+            return f"{entry['cycle_count']} ciclo(s) registrados"
+        if entry["is_group"]:
+            return f"{entry['total_jobs']} job(s) agregados nesta pagina"
+        return "Execucao unica"
+
+    @staticmethod
+    def _workflow_summary(rows):
+        summary = {
+            "total": len(rows),
+            "active": 0,
+            "problem": 0,
+            "done": 0,
+            "stopped": 0,
+            "scheduled": 0,
+        }
+        for row in rows:
+            state = row.get("workflow_state")
+            if state in summary:
+                summary[state] += 1
+            if row.get("scheduled_for"):
+                summary["scheduled"] += 1
+        return summary
 
     @classmethod
     def _transport_mode_label(cls, inputs):
@@ -1363,7 +1504,7 @@ class JobDetailView(LoginRequiredMixin, DetailView):
     context_object_name = "object"
 
     def get_queryset(self):
-        return super().get_queryset().select_related("account", "node", "profile")
+        return super().get_queryset().select_related("account", "node", "profile", "workflow", "workflow_run")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1373,6 +1514,20 @@ class JobDetailView(LoginRequiredMixin, DetailView):
         context["log_rows"] = _build_log_rows(self.object, list(logs_qs))
         action_info = ACTION_CATALOG.get(self.object.action_code)
         context["action_name"] = action_info["name"] if action_info else None
+
+        # Workflow context for breadcrumb and sidebar
+        job_workflow = self.object.workflow
+        if job_workflow is None and self.object.root_job_id:
+            job_workflow = Workflow.objects.filter(root_job_id=self.object.root_job_id).first()
+        if job_workflow is None and self.object.root_job_id is None:
+            job_workflow = Workflow.objects.filter(root_job_id=self.object.pk).first()
+        context["job_workflow"] = job_workflow
+        if job_workflow:
+            inputs_wf = WorkflowListView._parse_workflow_json(job_workflow.config_json)
+            context["job_workflow_title"] = WorkflowListView._workflow_title(job_workflow, inputs_wf)
+            context["job_workflow_status_label"] = dict(Workflow.STATUS_CHOICES).get(job_workflow.status, job_workflow.status)
+        context["job_workflow_run"] = self.object.workflow_run
+
         context["source_job"] = (
             Job.objects.filter(pk=self.object.source_job_id).first()
             if self.object.source_job_id
@@ -1513,16 +1668,18 @@ class JobRunNowView(LoginRequiredMixin, View):
             locked.exit_code = 97
             locked.save(update_fields=["status", "finished_at", "exit_code", "updated_at"])
 
-            immediate_job = Job.objects.create(
+            immediate_job = create_job_with_workflow(
                 account=locked.account,
                 game_account=locked.game_account,
                 node=locked.node,
                 profile=locked.profile,
                 action_code=locked.action_code,
-                source_job_id=locked.pk,
-                inputs_json=locked.inputs_json,
+                inputs=locked.inputs_json,
                 timeout_sec=locked.timeout_sec,
+                source_job=locked,
                 status="queued",
+                start_new_run=True,
+                trigger_type="manual_run_now",
             )
 
             JobLog.objects.create(
@@ -1547,16 +1704,18 @@ class JobRetryView(LoginRequiredMixin, View):
             if not _can_retry(locked):
                 return redirect("jobs:job-detail", pk=locked.pk)
 
-            immediate_job = Job.objects.create(
+            immediate_job = create_job_with_workflow(
                 account=locked.account,
                 game_account=locked.game_account,
                 node=locked.node,
                 profile=locked.profile,
                 action_code=locked.action_code,
-                source_job_id=locked.pk,
-                inputs_json=locked.inputs_json,
+                inputs=locked.inputs_json,
                 timeout_sec=locked.timeout_sec,
+                source_job=locked,
                 status="queued",
+                start_new_run=True,
+                trigger_type="manual_retry",
             )
 
             JobLog.objects.create(
@@ -1602,3 +1761,347 @@ class JobBulkDeleteView(LoginRequiredMixin, View):
         resp = HttpResponse(status=204)
         resp["HX-Trigger"] = trigger
         return resp
+
+
+class WorkflowListView(FilterSortListView):
+    model = Workflow
+    filterset_class = WorkflowFilter
+    template_name = "jobs/workflow_list.html"
+    partial_template_name = "jobs/partials/workflow_table.html"
+    paginate_by = 20
+    ordering_fields = ["status", "updated_at", "last_event_at", "next_scheduled_for", "created_at"]
+    default_ordering = "-updated_at"
+    queryset = Workflow.objects.select_related("account", "game_account", "node", "active_run")
+
+    def get_queryset(self):
+        self._backfill_recent_workflows()
+        return super().get_queryset()
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        workflows = list(context.get("page_obj").object_list if context.get("page_obj") else context.get("object_list", []))
+        workflow_ids = [workflow.pk for workflow in workflows]
+        run_map = {}
+        job_map = {}
+        if workflow_ids:
+            for run in (
+                WorkflowRun.objects.filter(workflow_id__in=workflow_ids)
+                .order_by("workflow_id", "-sequence", "-created_at")
+            ):
+                run_map.setdefault(run.workflow_id, [])
+                if len(run_map[run.workflow_id]) < 3:
+                    run_map[run.workflow_id].append(run)
+
+            active_run_ids = [workflow.active_run_id for workflow in workflows if workflow.active_run_id]
+            if active_run_ids:
+                for job in (
+                    Job.objects.filter(workflow_run_id__in=active_run_ids)
+                    .select_related("account", "game_account", "node")
+                    .order_by("workflow_run_id", "-created_at")
+                ):
+                    job_map.setdefault(job.workflow_run_id, [])
+                    if len(job_map[job.workflow_run_id]) < 3:
+                        job_map[job.workflow_run_id].append(job)
+
+        # Load recent jobs per workflow (for status derivation + preview)
+        recent_job_map: dict = {}
+        if workflow_ids:
+            for job in (
+                Job.objects.filter(workflow_id__in=workflow_ids)
+                .order_by("workflow_id", "-created_at")
+            ):
+                bucket = recent_job_map.setdefault(job.workflow_id, [])
+                if len(bucket) < 5:
+                    bucket.append(job)
+
+        workflow_rows = [
+            self._build_workflow_row(workflow, run_map.get(workflow.pk, []), job_map, recent_job_map.get(workflow.pk, []))
+            for workflow in workflows
+        ]
+        context["workflow_rows"] = workflow_rows
+        context["workflow_summary"] = self._workflow_summary(workflow_rows)
+        context["job_view_mode"] = "ops"
+        return context
+
+    @staticmethod
+    def _backfill_recent_workflows(limit=200):
+        legacy_jobs = list(
+            Job.objects.filter(workflow__isnull=True)
+            .values_list("pk", "root_job_id")
+            .order_by("-created_at")[:limit]
+        )
+        # Collect unique chain root IDs
+        chain_root_ids = {root_id if root_id else pk for pk, root_id in legacy_jobs}
+        processed = set()
+        for chain_root_id in chain_root_ids:
+            if chain_root_id in processed:
+                continue
+            processed.add(chain_root_id)
+            root_job = (
+                Job.objects.filter(pk=chain_root_id)
+                .select_related("account", "game_account", "node")
+                .first()
+            )
+            if root_job is not None:
+                ensure_workflow_for_job(root_job)
+
+    @staticmethod
+    def _workflow_summary(workflow_rows):
+        summary = {"total": len(workflow_rows), "active": 0, "problem": 0, "waiting": 0, "paused": 0, "finished": 0}
+        for row in workflow_rows:
+            key = row["status"] if isinstance(row, dict) else row.status
+            if key in ("active", "waiting"):
+                summary["active"] += 1
+            elif key in summary:
+                summary[key] += 1
+        return summary
+
+    @staticmethod
+    def _effective_status(workflow, recent_job_statuses: set) -> str:
+        """Derive display status from actual job reality, not stale workflow.status."""
+        if "running" in recent_job_statuses:
+            return "active"
+        if recent_job_statuses & {"queued", "scheduled"}:
+            return "waiting"
+        if "error" in recent_job_statuses:
+            return "problem"
+        if recent_job_statuses and recent_job_statuses <= {"finished", "cancelled"}:
+            return "finished"
+        return workflow.status
+
+    @staticmethod
+    def _parse_workflow_json(raw):
+        try:
+            data = json.loads(raw or "{}")
+        except Exception:
+            data = {}
+        return data if isinstance(data, dict) else {}
+
+    @classmethod
+    def _workflow_title(cls, workflow, config):
+        action_name = str(config.get("action_name") or "").strip()
+        if action_name:
+            return action_name
+        return workflow.workflow_type.replace("_", " ").title()
+
+    @classmethod
+    def _build_workflow_row(cls, workflow, runs, job_map, recent_jobs=None):
+        scope = cls._parse_workflow_json(workflow.scope_json)
+        config = cls._parse_workflow_json(workflow.config_json)
+        active_run = workflow.active_run or (runs[0] if runs else None)
+        preview_jobs = job_map.get(active_run.pk, []) if active_run else []
+        city_label = scope.get("city_name") or (f"{scope.get('city_count')} cidades" if scope.get("city_count") else "")
+        scope_parts = [workflow.account.label]
+        if workflow.game_account:
+            scope_parts.append(workflow.game_account.name or workflow.game_account.server_id)
+        if city_label:
+            scope_parts.append(str(city_label))
+
+        recent_statuses = {j.status for j in (recent_jobs or [])}
+        effective_status = cls._effective_status(workflow, recent_statuses)
+        status_choices = dict(Workflow.STATUS_CHOICES)
+        recent_active_job = next((j for j in (recent_jobs or []) if j.status in ("running", "queued", "scheduled")), None)
+
+        return {
+            "workflow": workflow,
+            "title": cls._workflow_title(workflow, config),
+            "category_label": CATEGORY_META.get(workflow.category, {}).get("label", workflow.category or "Operacional"),
+            "category_icon": CATEGORY_META.get(workflow.category, {}).get("icon", "bi-diagram-3"),
+            "scope_label": " / ".join(scope_parts),
+            "scope": scope,
+            "config": config,
+            "status": effective_status,
+            "status_label": status_choices.get(effective_status, effective_status),
+            "status_border_color": _WORKFLOW_BORDER_COLOR.get(effective_status, "var(--ik-line)"),
+            "active_run": active_run,
+            "recent_runs": runs,
+            "preview_jobs": preview_jobs,
+            "recent_active_job": recent_active_job,
+            "job_count": len(recent_jobs) if recent_jobs is not None else workflow.jobs.count(),
+            "run_count": workflow.runs.count(),
+            "can_pause": effective_status in ("active", "waiting"),
+            "can_resume": effective_status == "paused",
+            "can_cancel": effective_status in _WORKFLOW_CANCELABLE,
+            "can_delete": effective_status in _WORKFLOW_DELETABLE,
+        }
+
+
+class WorkflowDetailView(LoginRequiredMixin, DetailView):
+    model = Workflow
+    template_name = "jobs/workflow_detail.html"
+    context_object_name = "workflow"
+
+    def get_queryset(self):
+        return super().get_queryset().select_related("account", "game_account", "node", "active_run")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        workflow = self.object
+        scope = WorkflowListView._parse_workflow_json(workflow.scope_json)
+        config = WorkflowListView._parse_workflow_json(workflow.config_json)
+        context["scope"] = scope
+        context["config"] = config
+        context["workflow_title"] = WorkflowListView._workflow_title(workflow, config)
+        context["category_label"] = CATEGORY_META.get(workflow.category, {}).get("label", workflow.category or "Operacional")
+        context["category_icon"] = CATEGORY_META.get(workflow.category, {}).get("icon", "bi-diagram-3")
+        context["status_label"] = dict(Workflow.STATUS_CHOICES).get(workflow.status, workflow.status)
+        context["run_count"] = workflow.runs.count()
+        context["can_pause"] = workflow.status in ("active", "waiting")
+        context["can_resume"] = workflow.status == "paused"
+        context["can_cancel"] = workflow.status in _WORKFLOW_CANCELABLE
+        context["can_delete"] = workflow.status in _WORKFLOW_DELETABLE
+        return context
+
+
+class WorkflowRunsPartialView(LoginRequiredMixin, View):
+    def get(self, request, pk):
+        workflow = get_object_or_404(Workflow, pk=pk)
+        page = max(1, int(request.GET.get("page", 1) or 1))
+        per_page = 20
+        jobs_qs = (
+            Job.objects.filter(workflow=workflow)
+            .select_related("account", "game_account")
+            .order_by("-created_at")
+        )
+        total = jobs_qs.count()
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, total_pages)
+        jobs = list(jobs_qs[(page - 1) * per_page: page * per_page])
+        action_catalog = ACTION_CATALOG
+        return render(request, "jobs/partials/workflow_runs.html", {
+            "workflow": workflow,
+            "jobs": jobs,
+            "action_catalog": action_catalog,
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages,
+            "has_prev": page > 1,
+            "has_next": page < total_pages,
+        })
+
+
+class WorkflowRunJobsPartialView(LoginRequiredMixin, View):
+    """Child jobs of a given job in the workflow chain."""
+    def get(self, request, pk, run_pk):
+        workflow = get_object_or_404(Workflow, pk=pk)
+        parent_job = get_object_or_404(Job, pk=run_pk)
+        jobs = list(
+            Job.objects.filter(source_job_id=parent_job.pk)
+            .select_related("account", "game_account")
+            .order_by("-created_at")
+        )
+        return render(request, "jobs/partials/workflow_run_jobs.html", {
+            "workflow": workflow,
+            "parent_job": parent_job,
+            "jobs": jobs,
+        })
+
+
+class WorkflowLogsPartialView(LoginRequiredMixin, View):
+    def get(self, request, pk):
+        workflow = get_object_or_404(Workflow, pk=pk)
+        page = max(1, int(request.GET.get("page", 1) or 1))
+        per_page = 50
+        logs_qs = JobLog.objects.filter(job__workflow=workflow).select_related("job").order_by("-created_at")
+        total = logs_qs.count()
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, total_pages)
+        logs = list(logs_qs[(page - 1) * per_page: page * per_page])
+        return render(request, "jobs/partials/workflow_logs.html", {
+            "workflow": workflow,
+            "logs": logs,
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages,
+            "has_prev": page > 1,
+            "has_next": page < total_pages,
+        })
+
+
+class WorkflowActionView(LoginRequiredMixin, View):
+    _TRANSITIONS = {
+        "pause": {"from": {"active", "waiting"}, "to": "paused"},
+        "resume": {"from": {"paused"}, "to": "active"},
+        "cancel": {"from": _WORKFLOW_CANCELABLE, "to": "cancelled"},
+    }
+
+    def post(self, request, pk):
+        workflow = get_object_or_404(Workflow, pk=pk)
+        action = request.POST.get("workflow_action", "").strip()
+
+        if action == "delete":
+            if workflow.status not in _WORKFLOW_DELETABLE:
+                resp = HttpResponse(status=400)
+                resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": "Só é possível excluir workflows finalizados ou cancelados."}})
+                return resp
+            workflow.delete()
+            resp = HttpResponse(status=200)
+            resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": "Workflow excluído."}})
+            resp["HX-Redirect"] = "/jobs/"
+            return resp
+
+        transition = self._TRANSITIONS.get(action)
+        if not transition or workflow.status not in transition["from"]:
+            resp = HttpResponse(status=400)
+            resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": f"Ação '{action}' não permitida no estado atual ({workflow.status})."}})
+            return resp
+
+        now = timezone.now()
+        workflow.status = transition["to"]
+        update_fields = ["status", "updated_at"]
+        if action == "pause":
+            workflow.paused_at = now
+            update_fields.append("paused_at")
+        workflow.save(update_fields=update_fields)
+
+        if action == "pause":
+            # Cancel only scheduled (future) jobs — let running jobs finish naturally
+            Job.objects.filter(
+                workflow=workflow,
+                status="scheduled",
+            ).update(status="cancelled", finished_at=now, updated_at=now, lease_expires_at=None)
+        elif action == "cancel":
+            # Cancel all active jobs in the chain
+            Job.objects.filter(
+                workflow=workflow,
+                status__in=("queued", "running", "scheduled"),
+            ).update(status="cancelled", finished_at=now, updated_at=now, lease_expires_at=None)
+
+        labels = {"pause": "Workflow pausado.", "resume": "Workflow retomado.", "cancel": "Workflow cancelado."}
+        resp = HttpResponse(status=200)
+        resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": labels[action]}})
+        resp["HX-Refresh"] = "true"
+        return resp
+
+
+class WorkflowBulkDeleteView(LoginRequiredMixin, View):
+    def post(self, request):
+        pks = request.POST.getlist("workflow_ids[]")
+        if not pks:
+            resp = HttpResponse(status=400)
+            resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": "Nenhum workflow selecionado."}})
+            return resp
+
+        deleted_count, _ = Workflow.objects.filter(
+            pk__in=pks,
+            status__in=("finished", "cancelled"),
+        ).delete()
+
+        skipped = len(pks) - deleted_count
+        msg = f"{deleted_count} workflow(s) excluído(s)."
+        if skipped:
+            msg += f" {skipped} ignorado(s) (status não permite exclusão)."
+
+        resp = HttpResponse(status=200)
+        resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": msg}})
+        resp["HX-Refresh"] = "true"
+        return resp
+
+
+class WorkflowAwareJobListView(View):
+    def get(self, request, *args, **kwargs):
+        if request.GET.get("view", "").strip().lower() == "tech":
+            return JobListView.as_view()(request, *args, **kwargs)
+        return WorkflowListView.as_view()(request, *args, **kwargs)

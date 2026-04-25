@@ -1,10 +1,119 @@
 """
-Models: Job, JobLog — execution tracking.
+Models for workflow, run, and job execution tracking.
 """
 
+from django.conf import settings
 from django.db import models
 
 from core.mixins.models import UUIDTimestampModel
+
+
+class Workflow(UUIDTimestampModel):
+    STATUS_CHOICES = [
+        ("draft", "Rascunho"),
+        ("active", "Ativo"),
+        ("paused", "Pausado"),
+        ("waiting", "Aguardando"),
+        ("problem", "Com problema"),
+        ("finished", "Concluido"),
+        ("cancelled", "Cancelado"),
+    ]
+
+    account = models.ForeignKey(
+        "accounts.Account",
+        on_delete=models.CASCADE,
+        related_name="workflows",
+    )
+    game_account = models.ForeignKey(
+        "accounts.GameAccount",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="workflows",
+    )
+    node = models.ForeignKey(
+        "accounts.Node",
+        on_delete=models.CASCADE,
+        related_name="workflows",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_workflows",
+    )
+    workflow_type = models.CharField(max_length=64, db_index=True)
+    category = models.CharField(max_length=32, blank=True, default="", db_index=True)
+    scope_json = models.TextField(default="{}")
+    config_json = models.TextField(default="{}")
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default="draft", db_index=True)
+    active_run = models.ForeignKey(
+        "WorkflowRun",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="active_for_workflows",
+    )
+    root_job_id = models.UUIDField(null=True, blank=True, unique=True, db_index=True)
+    next_scheduled_for = models.DateTimeField(null=True, blank=True)
+    last_event_at = models.DateTimeField(null=True, blank=True)
+    last_error_at = models.DateTimeField(null=True, blank=True)
+    last_error_summary = models.TextField(blank=True, default="")
+    paused_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        indexes = [
+            models.Index(fields=["status", "-updated_at"]),
+            models.Index(fields=["workflow_type", "status"]),
+            models.Index(fields=["account", "status"]),
+            models.Index(fields=["game_account", "status"]),
+            models.Index(fields=["node", "status"]),
+        ]
+
+    def __str__(self):
+        return f"Workflow {self.id} [{self.workflow_type}:{self.status}]"
+
+
+class WorkflowRun(UUIDTimestampModel):
+    STATUS_CHOICES = [
+        ("scheduled", "Agendado"),
+        ("running", "Executando"),
+        ("waiting", "Aguardando"),
+        ("problem", "Com problema"),
+        ("finished", "Concluido"),
+        ("cancelled", "Cancelado"),
+    ]
+
+    workflow = models.ForeignKey(
+        Workflow,
+        on_delete=models.CASCADE,
+        related_name="runs",
+    )
+    sequence = models.PositiveIntegerField()
+    trigger_type = models.CharField(max_length=32, blank=True, default="manual")
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default="scheduled", db_index=True)
+    scheduled_for = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    summary_json = models.TextField(default="{}")
+    stats_json = models.TextField(default="{}")
+    error_summary = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-sequence", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["workflow", "sequence"], name="jobs_workflowrun_sequence_uniq"),
+        ]
+        indexes = [
+            models.Index(fields=["workflow", "-sequence"]),
+            models.Index(fields=["status", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"Run {self.id} [wf={self.workflow_id} seq={self.sequence} status={self.status}]"
 
 
 class Job(UUIDTimestampModel):
@@ -17,13 +126,15 @@ class Job(UUIDTimestampModel):
         ("queued", "Na fila"),
         ("running", "Executando"),
         ("scheduled", "Agendado"),
-        ("finished", "Concluído"),
+        ("finished", "Concluido"),
         ("error", "Erro"),
         ("cancelled", "Cancelado"),
     ]
 
     account = models.ForeignKey(
-        "accounts.Account", on_delete=models.CASCADE, related_name="jobs",
+        "accounts.Account",
+        on_delete=models.CASCADE,
+        related_name="jobs",
         help_text="Lobby account (always set)",
     )
     game_account = models.ForeignKey(
@@ -35,7 +146,9 @@ class Job(UUIDTimestampModel):
         help_text="Game account (set for per-server jobs like check_status)",
     )
     node = models.ForeignKey(
-        "accounts.Node", on_delete=models.CASCADE, related_name="jobs"
+        "accounts.Node",
+        on_delete=models.CASCADE,
+        related_name="jobs",
     )
     profile = models.ForeignKey(
         "profiles.Profile",
@@ -46,6 +159,20 @@ class Job(UUIDTimestampModel):
     )
 
     action_code = models.IntegerField()
+    workflow = models.ForeignKey(
+        Workflow,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="jobs",
+    )
+    workflow_run = models.ForeignKey(
+        WorkflowRun,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="jobs",
+    )
     source_job_id = models.UUIDField(null=True, blank=True, db_index=True)
     root_job_id = models.UUIDField(null=True, blank=True, db_index=True)
     inputs_json = models.TextField(default="{}")
@@ -71,6 +198,8 @@ class Job(UUIDTimestampModel):
             models.Index(fields=["lease_expires_at"]),
             models.Index(fields=["-created_at"]),
             models.Index(fields=["status", "-created_at"]),
+            models.Index(fields=["workflow", "status"]),
+            models.Index(fields=["workflow_run", "status"]),
         ]
 
     def __str__(self):

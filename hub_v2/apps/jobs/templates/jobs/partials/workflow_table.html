@@ -1,0 +1,192 @@
+{% load humanize hub_tags %}
+
+{% if object_list or request.GET %}
+<div x-data="workflowBulk()" class="space-y-3">
+
+  <div class="grid grid-cols-3 gap-2 sm:grid-cols-6">
+    <div class="card !p-3 text-center">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Total</div>
+      <div class="mt-1 text-xl font-bold text-ink">{{ workflow_summary.total }}</div>
+    </div>
+    <div class="card !p-3 text-center">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Ativos</div>
+      <div class="mt-1 text-xl font-bold text-sea">{{ workflow_summary.active }}</div>
+    </div>
+    <div class="card !p-3 text-center">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Aguardando</div>
+      <div class="mt-1 text-xl font-bold text-amber-500">{{ workflow_summary.waiting }}</div>
+    </div>
+    <div class="card !p-3 text-center">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Problema</div>
+      <div class="mt-1 text-xl font-bold text-[var(--ik-bad)]">{{ workflow_summary.problem }}</div>
+    </div>
+    <div class="card !p-3 text-center">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Pausados</div>
+      <div class="mt-1 text-xl font-bold text-muted">{{ workflow_summary.paused }}</div>
+    </div>
+    <div class="card !p-3 text-center">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Finalizados</div>
+      <div class="mt-1 text-xl font-bold text-[var(--ik-good)]">{{ workflow_summary.finished }}</div>
+    </div>
+  </div>
+
+  <div class="space-y-2">
+    {% for row in workflow_rows %}
+    <article class="card !p-0 overflow-hidden border-l-[3px]"
+             style="border-left-color: {{ row.status_border_color }};">
+      <div class="flex items-start justify-between gap-4 px-5 py-4">
+
+        <div class="flex items-start gap-3 min-w-0 flex-1">
+          <input type="checkbox"
+                 value="{{ row.workflow.pk }}"
+                 @change="toggle($event.target.value, $event.target.checked)"
+                 class="mt-1 h-4 w-4 flex-shrink-0 rounded border-[var(--ik-line)]">
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <i class="bi {{ row.category_icon }} text-muted text-sm flex-shrink-0"></i>
+              <a href="{% url 'jobs:workflow-detail' row.workflow.pk %}"
+                 class="text-sm font-semibold link-sea truncate">{{ row.title }}</a>
+              <span class="badge badge-secondary">{{ row.category_label }}</span>
+              <span class="badge {{ row.status|status_badge_class }}">{{ row.status_label }}</span>
+            </div>
+
+            <div class="mt-0.5 text-xs text-muted">{{ row.scope_label }}</div>
+
+            <div class="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
+              {% if row.active_run %}
+              <span>
+                <i class="bi bi-arrow-repeat"></i>
+                Ciclo {{ row.active_run.sequence }} · {{ row.active_run.get_status_display }}
+              </span>
+              {% endif %}
+              {% if row.workflow.next_scheduled_for %}
+              <span>
+                <i class="bi bi-clock"></i>
+                Próxima {{ row.workflow.next_scheduled_for|date:"d/m H:i" }}
+              </span>
+              {% endif %}
+              {% if row.workflow.last_event_at %}
+              <span>
+                <i class="bi bi-activity"></i>
+                {{ row.workflow.last_event_at|timesince }} atrás
+              </span>
+              {% endif %}
+              {% if row.workflow.last_error_at and row.status == "problem" %}
+              <span class="text-[var(--ik-bad)]">
+                <i class="bi bi-exclamation-circle"></i>
+                Erro {{ row.workflow.last_error_at|timesince }} atrás
+              </span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        <div class="flex flex-shrink-0 items-center gap-1.5">
+          {% if row.can_pause %}
+          <form hx-post="{% url 'jobs:workflow-action' row.workflow.pk %}"
+                hx-swap="none" hx-push-url="false" class="inline">
+            {% csrf_token %}
+            <button name="workflow_action" value="pause"
+                    class="btn btn-secondary btn-sm" title="Pausar">
+              <i class="bi bi-pause-fill"></i>
+            </button>
+          </form>
+          {% elif row.can_resume %}
+          <form hx-post="{% url 'jobs:workflow-action' row.workflow.pk %}"
+                hx-swap="none" hx-push-url="false" class="inline">
+            {% csrf_token %}
+            <button name="workflow_action" value="resume"
+                    class="btn btn-secondary btn-sm" title="Retomar">
+              <i class="bi bi-play-fill"></i>
+            </button>
+          </form>
+          {% endif %}
+
+          {% if row.can_cancel %}
+          <form hx-post="{% url 'jobs:workflow-action' row.workflow.pk %}"
+                hx-swap="none" hx-push-url="false" class="inline"
+                onsubmit="return confirm('Cancelar este workflow?')">
+            {% csrf_token %}
+            <button name="workflow_action" value="cancel"
+                    class="btn btn-secondary btn-sm text-[var(--ik-bad)]" title="Cancelar">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </form>
+          {% endif %}
+
+          <a href="{% url 'jobs:workflow-detail' row.workflow.pk %}"
+             class="btn btn-secondary btn-sm" title="Abrir detalhes">
+            <i class="bi bi-box-arrow-up-right"></i>
+          </a>
+        </div>
+
+      </div>
+    </article>
+    {% empty %}
+    <div class="card p-8 text-center text-muted">
+      <i class="bi bi-diagram-3 mb-2 block text-2xl"></i>
+      Nenhum workflow encontrado.
+    </div>
+    {% endfor %}
+  </div>
+
+  {% include "components/table/pagination.html" %}
+
+  <!-- Barra de bulk delete -->
+  <div x-show="selected.length > 0"
+       x-transition:enter="transition ease-out duration-150"
+       x-transition:enter-start="opacity-0 translate-y-2"
+       x-transition:enter-end="opacity-100 translate-y-0"
+       x-cloak
+       class="fixed bottom-6 left-1/2 z-40 -translate-x-1/2">
+    <div class="flex items-center gap-4 rounded-2xl border border-[var(--ik-line)] bg-paper px-5 py-3 shadow-xl">
+      <span class="text-sm text-muted">
+        <strong class="text-ink" x-text="selected.length"></strong> selecionado(s)
+      </span>
+      <form hx-post="{% url 'jobs:workflow-bulk-delete' %}"
+            hx-swap="none"
+            hx-push-url="false"
+            @submit.prevent="submitBulk($el)"
+            onsubmit="return confirm('Excluir os workflows selecionados? Apenas finalizados e cancelados serão removidos.')">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger btn-sm">
+          <i class="bi bi-trash3"></i> Excluir selecionados
+        </button>
+      </form>
+      <button @click="selected = []" class="btn btn-secondary btn-sm">
+        Limpar seleção
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+function workflowBulk() {
+  return {
+    selected: [],
+    toggle(pk, checked) {
+      if (checked) {
+        if (!this.selected.includes(pk)) this.selected.push(pk);
+      } else {
+        this.selected = this.selected.filter(id => id !== pk);
+      }
+    },
+    submitBulk(form) {
+      // Add hidden inputs for each selected PK
+      this.selected.forEach(pk => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'workflow_ids[]';
+        input.value = pk;
+        form.appendChild(input);
+      });
+      htmx.trigger(form, 'submit');
+      this.selected = [];
+    },
+  };
+}
+</script>
+
+{% else %}
+{% include "components/table/empty.html" with icon="bi-diagram-3" message="Nenhum workflow encontrado." %}
+{% endif %}

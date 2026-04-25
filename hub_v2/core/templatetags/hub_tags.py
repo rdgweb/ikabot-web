@@ -24,12 +24,19 @@ TRADEGOOD_ICONS = {
 }
 
 STATUS_CLASSES = {
-    "queued": "bg-blue-100 text-blue-800",
-    "running": "bg-yellow-100 text-yellow-800",
+    # Job statuses
+    "queued": "badge-info",
+    "running": "badge-warning",
     "scheduled": "bg-purple-100 text-purple-800",
-    "finished": "bg-green-100 text-green-800",
-    "error": "bg-red-100 text-red-800",
-    "cancelled": "bg-gray-100 text-gray-800",
+    "finished": "badge-success",
+    "error": "badge-danger",
+    "cancelled": "badge-secondary",
+    # Workflow statuses
+    "draft": "badge-secondary",
+    "active": "badge-info",
+    "paused": "badge-secondary",
+    "waiting": "badge-warning",
+    "problem": "badge-danger",
 }
 
 

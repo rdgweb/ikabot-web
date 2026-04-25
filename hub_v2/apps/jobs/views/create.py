@@ -25,6 +25,7 @@ from core.catalogs import BUILDING_CATALOG
 from core.contracts import ACTION_CATALOG, get_actions_for_ui
 from ..forms import JobCreateForm
 from ..models import ConstructionResourceReservation, Job
+from ..services.workflows import create_job_with_workflow
 from ..services.construction_preview import (
     IKA_TOOLS_URL,
     RESOURCE_ICON_MAP,
@@ -1355,12 +1356,12 @@ class JobSubmitView(LoginRequiredMixin, View):
         if city_id:
             inputs["city_id"] = city_id
 
-        Job.objects.create(
+        create_job_with_workflow(
             account=ga.account,
             game_account=ga,
             node=ga.account.node,
             action_code=action_code,
-            inputs_json=json.dumps(inputs),
+            inputs=inputs,
             status="queued",
         )
 
@@ -1460,12 +1461,12 @@ class JobSubmitView(LoginRequiredMixin, View):
                 request, existing_job, ga, clean_steps, action_meta,
             )
 
-        job = Job.objects.create(
+        job = create_job_with_workflow(
             account=ga.account,
             game_account=ga,
             node=ga.account.node,
             action_code=action_code,
-            inputs_json=json.dumps(inputs),
+            inputs=inputs,
             status="queued",
         )
         self._create_construction_reservations(job, plan_preview)
@@ -1669,12 +1670,12 @@ class JobSubmitView(LoginRequiredMixin, View):
                 enriched_inputs["branchoffice_pos"] = branch_office_pos if branch_office_pos is not None else 0
             enriched_inputs.pop("_city_choices", None)
             enriched_inputs.pop("_city_objects", None)
-        Job.objects.create(
+        create_job_with_workflow(
             account=ga.account,
             game_account=ga,
             node=ga.account.node,
             action_code=action_code,
-            inputs_json=json.dumps(enriched_inputs),
+            inputs=enriched_inputs,
             status="queued",
         )
         return 1

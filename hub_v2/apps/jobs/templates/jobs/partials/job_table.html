@@ -3,9 +3,33 @@
 {% if object_list or request.GET %}
 <div x-data="jobBulk({ filteredCount: {{ page_obj.paginator.count|default:0 }}, pageCount: {{ object_list|length|default:0 }} })" class="space-y-3">
 
+  <div class="grid gap-3 md:grid-cols-5">
+    <div class="card !p-4">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Workflows</div>
+      <div class="mt-1 text-2xl font-semibold text-ink">{{ workflow_summary.total }}</div>
+    </div>
+    <div class="card !p-4">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Ativos</div>
+      <div class="mt-1 text-2xl font-semibold text-sea">{{ workflow_summary.active }}</div>
+    </div>
+    <div class="card !p-4">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Problemas</div>
+      <div class="mt-1 text-2xl font-semibold text-[var(--ik-bad)]">{{ workflow_summary.problem }}</div>
+    </div>
+    <div class="card !p-4">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Concluidos</div>
+      <div class="mt-1 text-2xl font-semibold text-[var(--ik-good)]">{{ workflow_summary.done }}</div>
+    </div>
+    <div class="card !p-4">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Com agenda</div>
+      <div class="mt-1 text-2xl font-semibold text-[var(--ik-warn)]">{{ workflow_summary.scheduled }}</div>
+    </div>
+  </div>
+
   <div class="card overflow-hidden p-0">
     <table class="data-table">
       <thead>
+        {% if job_view_mode == "tech" %}
         <tr>
           <th class="w-8 text-center"></th>
           <th>Status</th>
@@ -15,59 +39,49 @@
           <th>Cidade</th>
           <th>Itens</th>
           <th>No</th>
-          <th>Agendado para</th>
+          <th>Agendado</th>
           <th>Criado em</th>
           <th>Iniciado em</th>
         </tr>
+        {% else %}
+        <tr>
+          <th class="w-8 text-center"></th>
+          <th>Workflow</th>
+          <th>Estado</th>
+          <th>Escopo</th>
+          <th>Progresso</th>
+          <th>Ciclo / detalhe</th>
+          <th>Recursos</th>
+          <th>Agendado</th>
+          <th>Atualizado</th>
+        </tr>
+        {% endif %}
       </thead>
       {% for row in grouped_rows %}
-      <tbody {% if row.is_group %}x-data="{ open: false }"{% endif %}>
+      <tbody x-data="{ open: false }">
+        {% if job_view_mode == "tech" %}
         <tr>
           <td class="text-center align-top">
             {% if row.is_group %}
-            <button type="button"
-                    @click="open = !open"
-                    class="mt-1 text-muted hover:text-ink"
-                    title="Expandir grupo">
+            <button type="button" @click="open = !open" class="mt-1 text-muted hover:text-ink" title="Expandir grupo">
               <i class="bi" :class="open ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
             </button>
             {% else %}
-            <input type="checkbox"
-                   value="{{ row.jobs.0.object.pk }}"
-                   x-model="selected"
-                   class="job-checkbox mt-1 rounded border-gray-300">
+            <input type="checkbox" value="{{ row.jobs.0.object.pk }}" x-model="selected" class="job-checkbox mt-1 rounded border-gray-300">
             {% endif %}
           </td>
           <td class="align-top">
-            {% if row.is_group %}
-            <div class="flex flex-wrap gap-1">
-              {% for status, amount in row.status_badges %}
-              <span class="badge {{ status|status_badge_class }}">{{ amount }} {{ status }}</span>
-              {% endfor %}
-            </div>
-            {% elif row.chain_active_job %}
-            <a href="{% url 'jobs:job-detail' row.chain_active_job.pk %}" class="inline-block">
-              <span class="badge {{ row.chain_active_job.status|status_badge_class }}">{{ row.chain_active_job.get_status_display }}</span>
+            <a href="{% url 'jobs:job-detail' row.detail_job.pk %}" class="inline-block">
+              <span class="badge {{ row.effective_job.status|status_badge_class }}">{{ row.effective_job.get_status_display }}</span>
             </a>
-            {% else %}
-            {% with job=row.jobs.0.object %}
-            <a href="{% url 'jobs:job-detail' job.pk %}" class="inline-block">
-              <span class="badge {{ job.status|status_badge_class }}">{{ job.get_status_display }}</span>
-            </a>
-            {% endwith %}
-            {% endif %}
           </td>
           <td class="align-top">
-            {% with account=row.jobs.0.object.account %}
-            <a href="{% url 'accounts:account-detail' account.pk %}" class="text-sm font-medium link-sea">
-              {{ row.account_label }}
-            </a>
-            {% endwith %}
+            <a href="{% url 'accounts:account-detail' row.jobs.0.object.account.pk %}" class="text-sm font-medium link-sea">{{ row.account_label }}</a>
           </td>
           <td class="align-top">
             <div class="text-sm text-ink">{{ row.subaccount_label }}</div>
             {% if row.is_group %}
-            <div class="text-[11px] text-muted">{{ row.jobs|length }} jobs Ã¢â‚¬Â¢ {{ row.status_summary }}</div>
+            <div class="text-[11px] text-muted">{{ row.total_jobs }} job(s) nesta pagina</div>
             {% endif %}
             {% if row.chain_history_count %}
             <div class="mt-1">
@@ -87,20 +101,7 @@
           <td class="align-top text-sm text-ink">{{ row.action_name }}</td>
           <td class="align-top">
             <div class="text-sm text-ink">{{ row.city_summary }}</div>
-            {% if row.group_type == "transport" and row.transport_display %}
-            <div class="mt-1 flex flex-wrap gap-1">
-              {% if row.transport_display.mode_label %}
-              <span class="badge badge-info">{{ row.transport_display.mode_label }}</span>
-              {% endif %}
-              {% if row.transport_display.load_label %}
-              <span class="badge badge-secondary">Carga {{ row.transport_display.load_label }}</span>
-              {% endif %}
-              {% if row.transport_display.next_check_human %}
-              <span class="badge badge-warning">Check em {{ row.transport_display.next_check_human }}</span>
-              {% endif %}
-            </div>
-            {% endif %}
-            {% if not row.chain_active_job and row.summary_lines %}
+            {% if row.summary_lines %}
             <div class="mt-1 space-y-0.5">
               {% for line in row.summary_lines %}
               <div class="text-[11px] text-muted">{{ line }}</div>
@@ -109,105 +110,162 @@
             {% endif %}
           </td>
           <td class="align-top">
-            {% if row.resource_items %}
-            <div class="flex flex-wrap gap-1.5">
-              {% for resource in row.resource_items %}
-              <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] text-ink"
-                    style="border-color: var(--ik-line); background: var(--ik-sand-light);"
-                    title="{{ resource.label }}">
-                <img src="{% static resource.icon %}" alt="{{ resource.label }}" class="h-3.5 w-3.5">
-                <span>{{ resource.amount|intcomma }}</span>
-              </span>
-              {% endfor %}
-            </div>
-            {% else %}
-            <span class="text-sm text-muted">Ã¢â‚¬â€</span>
-            {% endif %}
+            {% include "jobs/partials/job_table_resource_chips.html" with resource_items=row.resource_items %}
           </td>
           <td class="align-top">
-            {% with node=row.jobs.0.object.node %}
-            <a href="{% url 'accounts:node-detail' node.pk %}" class="text-sm text-muted hover:text-sea">
-              {{ row.node_name }}
-            </a>
-            {% endwith %}
+            <a href="{% url 'accounts:node-detail' row.jobs.0.object.node.pk %}" class="text-sm text-muted hover:text-sea">{{ row.node_name }}</a>
           </td>
           <td class="align-top text-sm">
             {% if row.scheduled_for %}
-            <span class="inline-flex items-center gap-1 text-amber-700">
-              <i class="bi bi-clock"></i> {{ row.scheduled_for|date:"d/m H:i" }}
-            </span>
-            {% else %}<span class="text-muted">Ã¢â‚¬â€</span>{% endif %}
+            <span class="inline-flex items-center gap-1 text-amber-700"><i class="bi bi-clock"></i> {{ row.scheduled_for|date:"d/m H:i" }}</span>
+            {% else %}<span class="text-muted">-</span>{% endif %}
           </td>
           <td class="align-top text-sm text-muted">{{ row.created_at|localtime_format }}</td>
-          <td class="align-top text-sm text-muted">{{ row.started_at|localtime_format|default:"Ã¢â‚¬â€" }}</td>
+          <td class="align-top text-sm text-muted">{{ row.started_at|localtime_format|default:"-" }}</td>
         </tr>
-
-        {% if row.is_group %}
-        {% for item in row.jobs %}
-        <tr x-show="open" x-cloak class="bg-white/70">
-          <td class="text-center">
-            <input type="checkbox"
-                   value="{{ item.object.pk }}"
-                   x-model="selected"
-                   class="job-checkbox rounded border-gray-300">
+        {% else %}
+        <tr>
+          <td class="text-center align-top">
+            <button type="button" @click="open = !open" class="mt-1 text-muted hover:text-ink" title="Expandir workflow">
+              <i class="bi" :class="open ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+            </button>
           </td>
-          <td>
-            <a href="{% url 'jobs:job-detail' item.object.pk %}" class="inline-block">
-              <span class="badge {{ item.object.status|status_badge_class }}">{{ item.object.get_status_display }}</span>
-            </a>
-          </td>
-          <td>
-            <a href="{% url 'accounts:account-detail' item.object.account.pk %}" class="text-sm link-sea">
-              {{ item.object.account.label }}
-            </a>
-          </td>
-          <td class="text-sm text-ink">
-            {% if item.object.game_account %}
-            {{ item.object.game_account.name|default:item.object.game_account.server_id }}
-            <div class="text-[10px] text-muted">{{ item.object.game_account.server_id }}</div>
-            {% else %}
-            Ã¢â‚¬â€
+          <td class="align-top">
+            <div class="flex flex-wrap items-center gap-2">
+              <a href="{% url 'jobs:job-detail' row.detail_job.pk %}" class="text-sm font-semibold link-sea">{{ row.workflow_label }}</a>
+              <span class="badge badge-secondary">{{ row.workflow_kind_label }}</span>
+              <span class="badge badge-secondary">{{ row.workflow_category_label }}</span>
+            </div>
+            <div class="mt-1 text-[11px] text-muted">{{ row.action_name }}</div>
+            {% if row.chain_history_count %}
+            <div class="mt-1">
+              <button type="button"
+                      class="inline-flex items-center gap-1 text-[11px] text-muted hover:text-ink"
+                      onclick="toggleJobChainHistory('{{ row.root_job.pk }}', this)"
+                      hx-get="{% url 'jobs:job-chain-history' row.root_job.pk %}"
+                      hx-trigger="click once"
+                      hx-target="#job-chain-history-body-{{ row.root_job.pk }}"
+                      hx-swap="innerHTML">
+                <i class="bi bi-clock-history"></i>
+                <span>{{ row.chain_history_count }} ciclo(s) anteriores</span>
+              </button>
+            </div>
             {% endif %}
           </td>
-          <td class="text-sm text-ink">{{ item.object.action_code|action_name }}</td>
-          <td class="text-sm text-ink">{{ item.city_label|default:"Ã¢â‚¬â€" }}</td>
-          <td>
-            {% if item.resource_items %}
-            <div class="flex flex-wrap gap-1.5">
-              {% for resource in item.resource_items %}
-              <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] text-ink"
-                    style="border-color: var(--ik-line); background: var(--ik-sand-light);"
-                    title="{{ resource.label }}">
-                <img src="{% static resource.icon %}" alt="{{ resource.label }}" class="h-3.5 w-3.5">
-                <span>{{ resource.amount|intcomma }}</span>
-              </span>
+          <td class="align-top">
+            <div class="flex flex-wrap gap-1">
+              <a href="{% url 'jobs:job-detail' row.detail_job.pk %}" class="inline-block">
+                <span class="badge {{ row.effective_job.status|status_badge_class }}">{{ row.workflow_state_label }}</span>
+              </a>
+              {% for status, amount in row.status_badges %}
+              <span class="badge {{ status|status_badge_class }}">{{ amount }} {{ status }}</span>
               {% endfor %}
             </div>
-            {% else %}
-            <span class="text-sm text-muted">Ã¢â‚¬â€</span>
+          </td>
+          <td class="align-top">
+            <div class="text-sm text-ink">{{ row.workflow_scope }}</div>
+            <div class="mt-1 text-[11px] text-muted">No {{ row.node_name }}</div>
+          </td>
+          <td class="align-top">
+            <div class="text-sm text-ink">{{ row.progress_label }}</div>
+            {% if row.summary_lines %}
+            <div class="mt-1 space-y-0.5">
+              {% for line in row.summary_lines|slice:":2" %}
+              <div class="text-[11px] text-muted">{{ line }}</div>
+              {% endfor %}
+            </div>
             {% endif %}
           </td>
-          <td>
-            <a href="{% url 'accounts:node-detail' item.object.node.pk %}" class="text-sm text-muted hover:text-sea">
-              {{ item.object.node.name }}
-            </a>
+          <td class="align-top">
+            <div class="text-sm text-ink">{{ row.active_job_label }}</div>
+            <div class="mt-1 text-[11px] text-muted">{{ row.cycle_count }} ciclo(s) conhecidos</div>
+            <div class="mt-1 text-[11px] text-muted">{{ row.total_jobs }} job(s) nesta pagina</div>
           </td>
-          <td class="text-sm">
-            {% if item.object.scheduled_for %}
-            <span class="inline-flex items-center gap-1 text-amber-700">
-              <i class="bi bi-clock"></i> {{ item.object.scheduled_for|date:"d/m H:i" }}
-            </span>
-            {% else %}<span class="text-muted">Ã¢â‚¬â€</span>{% endif %}
+          <td class="align-top">
+            {% include "jobs/partials/job_table_resource_chips.html" with resource_items=row.resource_items %}
           </td>
-          <td class="text-sm text-muted">{{ item.object.created_at|localtime_format }}</td>
-          <td class="text-sm text-muted">{{ item.object.started_at|localtime_format|default:"Ã¢â‚¬â€" }}</td>
+          <td class="align-top text-sm">
+            {% if row.scheduled_for %}
+            <span class="inline-flex items-center gap-1 text-amber-700"><i class="bi bi-clock"></i> {{ row.scheduled_for|date:"d/m H:i" }}</span>
+            {% else %}
+            <span class="text-muted">Sem agenda</span>
+            {% endif %}
+          </td>
+          <td class="align-top text-sm text-muted">
+            <div>{{ row.created_at|localtime_format }}</div>
+            {% if row.started_at %}<div class="text-[11px]">Inicio {{ row.started_at|localtime_format }}</div>{% endif %}
+          </td>
         </tr>
-        {% endfor %}
         {% endif %}
+
+        <tr x-show="open" x-cloak class="bg-white/70">
+          <td></td>
+          <td colspan="{% if job_view_mode == 'tech' %}10{% else %}8{% endif %}" class="px-4 py-3">
+            <div class="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.9fr)]">
+              <div class="rounded-2xl border p-4" style="border-color: var(--ik-line); background: rgba(255,255,255,0.86);">
+                <div class="flex items-center justify-between gap-3">
+                  <div>
+                    <div class="text-sm font-semibold text-ink">Execucoes desta pagina</div>
+                    <div class="text-[11px] text-muted">Workflow, jobs agregados e proximos detalhes tecnicos</div>
+                  </div>
+                  <a href="{% url 'jobs:job-detail' row.detail_job.pk %}" class="btn btn-secondary btn-sm">
+                    <i class="bi bi-box-arrow-up-right"></i> Abrir detalhe
+                  </a>
+                </div>
+                <div class="mt-3 space-y-2">
+                  {% for item in row.jobs %}
+                  <div class="rounded-xl border px-3 py-2" style="border-color: var(--ik-line); background: rgba(248,250,252,0.75);">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <div class="min-w-0">
+                        <a href="{% url 'jobs:job-detail' item.object.pk %}" class="text-sm font-medium link-sea">
+                          {{ item.object.action_code|action_name }} #{{ item.object.pk|truncatechars:8 }}
+                        </a>
+                        <div class="text-[11px] text-muted">
+                          {{ item.subaccount_label }}{% if item.city_label %} / {{ item.city_label }}{% endif %}
+                        </div>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <span class="badge {{ item.object.status|status_badge_class }}">{{ item.object.get_status_display }}</span>
+                        <input type="checkbox" value="{{ item.object.pk }}" x-model="selected" class="job-checkbox rounded border-gray-300">
+                      </div>
+                    </div>
+                    <div class="mt-2 flex flex-wrap gap-2 text-[11px] text-muted">
+                      <span>Criado {{ item.object.created_at|localtime_format }}</span>
+                      {% if item.object.scheduled_for %}<span>Agenda {{ item.object.scheduled_for|date:"d/m H:i" }}</span>{% endif %}
+                      {% if item.object.started_at %}<span>Inicio {{ item.object.started_at|localtime_format }}</span>{% endif %}
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+              <div class="space-y-3">
+                <div class="rounded-2xl border p-4" style="border-color: var(--ik-line); background: rgba(255,255,255,0.86);">
+                  <div class="text-sm font-semibold text-ink">Resumo operacional</div>
+                  <div class="mt-3 space-y-2 text-sm text-ink">
+                    <div class="flex items-center justify-between gap-3"><span class="text-muted">Escopo</span><span class="text-right">{{ row.workflow_scope }}</span></div>
+                    <div class="flex items-center justify-between gap-3"><span class="text-muted">Categoria</span><span class="text-right">{{ row.workflow_category_label }}</span></div>
+                    <div class="flex items-center justify-between gap-3"><span class="text-muted">Ciclo ativo</span><span class="text-right">{{ row.active_job_label }}</span></div>
+                    <div class="flex items-center justify-between gap-3"><span class="text-muted">Status</span><span class="text-right">{{ row.workflow_state_label }}</span></div>
+                  </div>
+                </div>
+                {% if row.summary_lines %}
+                <div class="rounded-2xl border p-4" style="border-color: var(--ik-line); background: rgba(255,255,255,0.86);">
+                  <div class="text-sm font-semibold text-ink">Sinais do workflow</div>
+                  <div class="mt-3 space-y-1.5">
+                    {% for line in row.summary_lines %}
+                    <div class="text-[12px] text-muted">{{ line }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                {% endif %}
+              </div>
+            </div>
+          </td>
+        </tr>
 
         {% if row.chain_history_count %}
         <tr id="job-chain-history-row-{{ row.root_job.pk }}" class="hidden bg-slate-50/40">
-          <td colspan="11" class="p-0">
+          <td colspan="{% if job_view_mode == 'tech' %}11{% else %}9{% endif %}" class="p-0">
             <div id="job-chain-history-body-{{ row.root_job.pk }}"></div>
           </td>
         </tr>
@@ -216,9 +274,9 @@
       {% empty %}
       <tbody>
         <tr>
-          <td colspan="11" class="py-8 text-center text-muted">
+          <td colspan="{% if job_view_mode == 'tech' %}11{% else %}9{% endif %}" class="py-8 text-center text-muted">
             <i class="bi bi-list-task mb-2 block text-2xl"></i>
-            Nenhum job encontrado.
+            Nenhum workflow encontrado.
           </td>
         </tr>
       </tbody>
@@ -234,17 +292,11 @@
       <span x-text="selectAllFiltered ? filteredCount : selected.length"></span> selecionado(s)
     </span>
     <div class="flex gap-2">
-      <button x-show="!selectAllFiltered"
-              @click="selectFiltered()"
-              class="btn btn-secondary btn-sm"
-              type="button">
+      <button x-show="!selectAllFiltered" @click="selectFiltered()" class="btn btn-secondary btn-sm" type="button">
         <i class="bi bi-funnel-fill"></i> Selecionar filtrados
       </button>
-      <button x-show="!selectAllFiltered"
-              @click="selectCurrentPage()"
-              class="btn btn-secondary btn-sm"
-              type="button">
-        <i class="bi bi-check2"></i> Selecionar pÃƒÂ¡gina
+      <button x-show="!selectAllFiltered" @click="selectCurrentPage()" class="btn btn-secondary btn-sm" type="button">
+        <i class="bi bi-check2"></i> Selecionar pagina
       </button>
       <button @click="bulkDelete()" class="btn btn-danger btn-sm" type="button">
         <i class="bi bi-trash"></i> Excluir selecionados
@@ -344,5 +396,5 @@ function jobBulk(config) {
 </script>
 
 {% else %}
-{% include "components/table/empty.html" with icon="bi-list-task" message="Nenhum job encontrado." %}
+{% include "components/table/empty.html" with icon="bi-list-task" message="Nenhum workflow encontrado." %}
 {% endif %}

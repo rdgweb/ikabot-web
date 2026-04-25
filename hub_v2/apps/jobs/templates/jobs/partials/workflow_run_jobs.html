@@ -1,0 +1,23 @@
+{% load hub_tags %}
+
+{% if jobs %}
+<div class="space-y-1.5 pt-1">
+  {% for job in jobs %}
+  <div class="flex items-center justify-between gap-3 rounded-lg bg-white/70 px-3 py-2">
+    <div class="min-w-0">
+      <a href="{% url 'jobs:job-detail' job.pk %}" class="text-xs font-medium link-sea">
+        {{ job.action_code|action_name }}
+      </a>
+      <div class="text-[11px] text-muted">
+        {{ job.created_at|date:"d/m H:i" }}
+        {% if job.started_at %} · início {{ job.started_at|date:"H:i" }}{% endif %}
+        {% if job.finished_at %} · fim {{ job.finished_at|date:"H:i" }}{% endif %}
+      </div>
+    </div>
+    <span class="badge {{ job.status|status_badge_class }} shrink-0">{{ job.get_status_display }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="py-1 text-xs text-muted">Nenhum job derivado deste.</p>
+{% endif %}

@@ -1,0 +1,60 @@
+{% load hub_tags %}
+
+{% if logs %}
+<div class="divide-y divide-[var(--ik-line)]">
+  {% for log in logs %}
+  <div class="flex items-start gap-3 px-5 py-2.5
+    {% if log.level == 'error' %}bg-red-50/50
+    {% elif log.level == 'warn' %}bg-amber-50/50
+    {% endif %}">
+    <span class="mt-0.5 shrink-0 text-[11px] font-semibold uppercase
+      {% if log.level == 'error' %}text-[var(--ik-bad)]
+      {% elif log.level == 'warn' %}text-amber-600
+      {% elif log.level == 'debug' %}text-muted
+      {% else %}text-sea{% endif %}">
+      {{ log.level }}
+    </span>
+    <div class="min-w-0 flex-1">
+      <div class="text-sm text-ink">{{ log.message }}</div>
+      <div class="mt-0.5 text-[11px] text-muted">
+        {{ log.created_at|date:"d/m/Y H:i:s" }} ·
+        <a href="{% url 'jobs:job-detail' log.job.pk %}" class="link-sea">
+          Job {{ log.job.pk|truncatechars:8 }}
+        </a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% if total_pages > 1 %}
+<div class="flex items-center justify-between border-t border-[var(--ik-line)] px-5 py-3">
+  <span class="text-xs text-muted">
+    {{ total }} log{{ total|pluralize:"s" }} · página {{ page }} de {{ total_pages }}
+  </span>
+  <div class="flex gap-2">
+    {% if has_prev %}
+    <button class="btn btn-secondary btn-sm"
+            hx-get="{% url 'jobs:workflow-logs' workflow.pk %}?page={{ page|add:'-1' }}"
+            hx-target="#workflow-logs"
+            hx-swap="innerHTML"
+            hx-push-url="false">
+      <i class="bi bi-chevron-left"></i>
+    </button>
+    {% endif %}
+    {% if has_next %}
+    <button class="btn btn-secondary btn-sm"
+            hx-get="{% url 'jobs:workflow-logs' workflow.pk %}?page={{ page|add:'1' }}"
+            hx-target="#workflow-logs"
+            hx-swap="innerHTML"
+            hx-push-url="false">
+      <i class="bi bi-chevron-right"></i>
+    </button>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% else %}
+<div class="px-5 py-6 text-center text-sm text-muted">Nenhum log encontrado.</div>
+{% endif %}

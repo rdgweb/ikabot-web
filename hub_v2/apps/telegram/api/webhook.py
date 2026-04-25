@@ -46,7 +46,7 @@ def _create_diplomacy_send_job_from_uuid(
     """
     from apps.accounts.models import GameAccount
     from apps.diplomacy.models import DiplomacyMessage
-    from apps.jobs.models import Job
+    from apps.jobs.services.workflows import create_job_with_workflow
 
     try:
         dm = DiplomacyMessage.objects.select_related(
@@ -95,12 +95,12 @@ def _create_diplomacy_send_job_from_uuid(
     if dm.reply_to_game_id:
         inputs["reply_to"] = int(dm.reply_to_game_id)
 
-    Job.objects.create(
+    create_job_with_workflow(
         account=ga.account,
         game_account=ga,
         node=ga.account.node,
         action_code=31,
-        inputs_json=json.dumps(inputs),
+        inputs=inputs,
         status="queued",
     )
     logger.info(

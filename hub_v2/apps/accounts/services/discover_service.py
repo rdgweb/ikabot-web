@@ -118,8 +118,7 @@ def create_discover_job(account: Account) -> "Job | None":
 
     Returns the created Job or None if the account has no node.
     """
-    from apps.jobs.models import Job
-    import json
+    from apps.jobs.services.workflows import create_job_with_workflow
 
     if not account.node_id:
         logger.warning(
@@ -128,11 +127,11 @@ def create_discover_job(account: Account) -> "Job | None":
         )
         return None
 
-    job = Job.objects.create(
+    job = create_job_with_workflow(
         account=account,
         node=account.node,
         action_code=101,
-        inputs_json=json.dumps({}),
+        inputs={},
         status="queued",
     )
     logger.info(

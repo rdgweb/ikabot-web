@@ -4,12 +4,21 @@
 {% block title %}Job {{ object.pk|truncatechars:12 }}{% endblock %}
 
 {% block breadcrumb_items %}
-  <span class="mx-1">/</span> <a href="{% url 'jobs:job-list' %}" class="hover:text-ink">Jobs</a>
-  <span class="mx-1">/</span> <span class="text-ink">Job {{ object.pk|truncatechars:8 }}</span>
+  <span class="mx-1">/</span>
+  <a href="{% url 'jobs:job-list' %}" class="hover:text-ink">Workflows</a>
+  {% if job_workflow %}
+  <span class="mx-1">/</span>
+  <a href="{% url 'jobs:workflow-detail' job_workflow.pk %}" class="hover:text-ink">{{ job_workflow_title }}</a>
+  {% endif %}
+  <span class="mx-1">/</span>
+  <span class="text-ink">{{ object.action_code|action_name }}</span>
 {% endblock %}
 
-{% block detail_title %}Job {{ object.pk|truncatechars:12 }}{% endblock %}
-{% block detail_subtitle %}{% if action_name %}{{ action_name }}{% else %}Ação {{ object.action_code }}{% endif %}{% endblock %}
+{% block detail_title %}{{ action_name|default:"Job" }}{% endblock %}
+{% block detail_subtitle %}
+  <span class="font-mono text-xs">{{ object.pk|truncatechars:16 }}</span>
+  <span class="badge {{ object.status|status_badge_class }} ml-2">{{ object.get_status_display }}</span>
+{% endblock %}
 
 {% block detail_actions %}
 {% if object.status == "queued" or object.status == "running" or object.status == "scheduled" or can_retry %}
@@ -1059,6 +1068,35 @@
 {% endblock %}
 
 {% block detail_sidebar %}
+{% if job_workflow %}
+<div class="card">
+  <h3 class="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">Workflow</h3>
+  <div class="space-y-2 text-sm">
+    <div class="flex items-center justify-between gap-2">
+      <a href="{% url 'jobs:workflow-detail' job_workflow.pk %}" class="link-sea font-medium truncate">
+        {{ job_workflow_title }}
+      </a>
+      <span class="badge {{ job_workflow.status|status_badge_class }} shrink-0">{{ job_workflow_status_label }}</span>
+    </div>
+    {% if job_workflow_run %}
+    <div class="text-xs text-muted">
+      Ciclo #{{ job_workflow_run.sequence }} · {{ job_workflow_run.get_status_display }}
+    </div>
+    {% endif %}
+    {% if object.root_job_id and object.root_job_id != object.pk %}
+    <div class="text-xs text-muted">
+      <span>Posição na cadeia: </span>
+      {% if object.source_job_id == object.root_job_id %}filho direto do root
+      {% else %}derivado
+      {% endif %}
+    </div>
+    {% elif not object.root_job_id %}
+    <div class="text-xs text-muted">Job raiz da cadeia</div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 <div class="card">
   <h3 class="mb-3 text-sm font-semibold text-ink">Detalhes</h3>
   <dl class="space-y-2 text-sm">

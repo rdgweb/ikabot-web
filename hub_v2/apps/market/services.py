@@ -22,6 +22,7 @@ from django.utils import timezone
 from apps.accounts.models import GameAccount
 from apps.game.models import AccountSnapshot
 from apps.jobs.models import ConstructionResourceReservation, Job, JobLog
+from apps.jobs.services.workflows import create_job_with_workflow
 
 from .models import InternalMarketOrder
 
@@ -267,14 +268,14 @@ def create_internal_order(
         missing_resource_keys=missing_resource_keys,
     )
 
-    sell_job = Job.objects.create(
+    sell_source_job = Job.objects.filter(pk=sell_source_job_id).first() if sell_source_job_id else None
+    sell_job = create_job_with_workflow(
         account=seller_ga.account,
         game_account=seller_ga,
         node=seller_ga.account.node,
         action_code=802,
-        source_job_id=sell_source_job_id,
-        root_job_id=root_job_id,
-        inputs_json=json.dumps({
+        source_job=sell_source_job,
+        inputs={
             "city_id": seller_city_id,
             "city_name": seller_city_name,
             "branchoffice_pos": seller_bo_pos,
@@ -284,8 +285,10 @@ def create_internal_order(
             "buyer_city_id": buyer_city_id,
             "buyer_city_name": buyer_city_name,
             "internal_order_id": str(order.pk),
-        }),
+        },
         status="queued",
+        start_new_run=sell_source_job is not None,
+        trigger_type="internal_market_sell",
     )
 
     order.sell_job = sell_job
@@ -305,14 +308,13 @@ def create_buy_job(order: InternalMarketOrder) -> Job | None:
         logger.error("Order %s has no buyer_game_account; cannot create buy_job", order.pk)
         return None
 
-    buy_job = Job.objects.create(
+    buy_job = create_job_with_workflow(
         account=buyer_ga.account,
         game_account=buyer_ga,
         node=buyer_ga.account.node,
         action_code=801,
-        source_job_id=order.sell_job_id,
-        root_job_id=(order.sell_job.root_job_id if order.sell_job else None) or order.sell_job_id,
-        inputs_json=json.dumps({
+        source_job=order.sell_job,
+        inputs={
             "buyer_city_id": order.buyer_city_id,
             "buyer_city_name": _city_name(None, order.buyer_city_id),
             "buyer_branchoffice_pos": order.buyer_branchoffice_pos,
@@ -322,8 +324,10 @@ def create_buy_job(order: InternalMarketOrder) -> Job | None:
             "resource_idx": order.resource_idx,
             "amount": order.amount,
             "internal_order_id": str(order.pk),
-        }),
+        },
         status="queued",
+        start_new_run=False,
+        trigger_type="internal_market_buy",
     )
 
     order.buy_job = buy_job
