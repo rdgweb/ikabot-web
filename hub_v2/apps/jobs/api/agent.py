@@ -179,48 +179,69 @@ class RescheduleJobView(APIView):
         serializer = JobRescheduleSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        try:
-            job = Job.objects.get(pk=job_id)
-        except Job.DoesNotExist:
-            return Response(
-                {"error": "Job not found."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        if job.status in _TERMINAL_STATUSES:
-            return Response(
-                {"error": f"Job is already in terminal status '{job.status}'."},
-                status=status.HTTP_409_CONFLICT,
-            )
-
-        delay = serializer.validated_data["delay_seconds"]
-        scheduled_for = timezone.now() + timedelta(seconds=delay)
-        patch = serializer.validated_data.get("inputs")
-
-        if patch is None:
-            new_inputs_json = job.inputs_json
-        else:
+        from django.db import transaction
+        with transaction.atomic():
             try:
-                existing = json.loads(job.inputs_json or "{}")
-            except (json.JSONDecodeError, TypeError):
-                existing = {}
-            existing.update(patch)
-            new_inputs_json = json.dumps(existing)
+                job = Job.objects.select_for_update().get(pk=job_id)
+            except Job.DoesNotExist:
+                return Response(
+                    {"error": "Job not found."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
 
-        new_job = create_job_with_workflow(
-            account=job.account,
-            game_account=job.game_account,
-            node=job.node,
-            profile=job.profile,
-            action_code=job.action_code,
-            inputs=new_inputs_json,
-            timeout_sec=job.timeout_sec,
-            source_job=job,
-            status="scheduled",
-            scheduled_for=scheduled_for,
-            start_new_run=True,
-            trigger_type="agent_reschedule",
-        )
+            if job.status in _TERMINAL_STATUSES:
+                return Response(
+                    {"error": f"Job is already in terminal status '{job.status}'."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            # Idempotency: if a child already exists from this job, return it (handles agent retries).
+            existing_child = Job.objects.filter(
+                source_job_id=job.pk,
+                created_at__gte=timezone.now() - timedelta(seconds=300),
+            ).order_by("-created_at").first()
+            if existing_child:
+                logger.info(
+                    "Job %s already rescheduled as %s (idempotent return)",
+                    job_id, existing_child.pk,
+                )
+                return Response(
+                    JobRescheduleResponseSerializer({
+                        "ok": True,
+                        "new_job_id": str(existing_child.pk),
+                        "scheduled_for": existing_child.scheduled_for,
+                    }).data,
+                    status=status.HTTP_201_CREATED,
+                )
+
+            delay = serializer.validated_data["delay_seconds"]
+            scheduled_for = timezone.now() + timedelta(seconds=delay)
+            patch = serializer.validated_data.get("inputs")
+
+            if patch is None:
+                new_inputs_json = job.inputs_json
+            else:
+                try:
+                    existing = json.loads(job.inputs_json or "{}")
+                except (json.JSONDecodeError, TypeError):
+                    existing = {}
+                existing.update(patch)
+                new_inputs_json = json.dumps(existing)
+
+            new_job = create_job_with_workflow(
+                account=job.account,
+                game_account=job.game_account,
+                node=job.node,
+                profile=job.profile,
+                action_code=job.action_code,
+                inputs=new_inputs_json,
+                timeout_sec=job.timeout_sec,
+                source_job=job,
+                status="scheduled",
+                scheduled_for=scheduled_for,
+                start_new_run=True,
+                trigger_type="agent_reschedule",
+            )
 
         logger.info(
             "Job %s rescheduled as %s (delay=%ds, at=%s)",

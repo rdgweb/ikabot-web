@@ -1,7 +1,42 @@
 {% load humanize hub_tags %}
 
 {% if object_list or request.GET %}
-<div x-data="workflowBulk()" class="space-y-3">
+<div x-data="{
+  selected: [],
+  selectAllFiltered: false,
+  filteredCount: {{ paginator.count|default:0 }},
+  clearSelection() { this.selected = []; this.selectAllFiltered = false; },
+  selectCurrentPage() {
+    this.selectAllFiltered = false;
+    this.selected = Array.from(document.querySelectorAll('.wf-bulk-check')).map(el => el.value);
+  },
+  confirmDelete() {
+    const self = this;
+    const count = this.selectAllFiltered ? this.filteredCount : this.selected.length;
+    window.dispatchEvent(new CustomEvent('confirm', {
+      detail: {
+        title: 'Excluir workflows',
+        message: 'Excluir ' + count + ' workflow(s)? Jobs ativos serão cancelados primeiro.',
+        style: 'danger',
+        confirmLabel: 'Excluir',
+        onConfirm: () => self._doDelete()
+      }
+    }));
+  },
+  _doDelete() {
+    const csrf = JSON.parse(document.body.getAttribute('hx-headers') || '{}')['X-CSRFToken'] || '';
+    const form = new FormData();
+    form.append('csrfmiddlewaretoken', csrf);
+    if (this.selectAllFiltered) { form.append('delete_all', 'true'); }
+    else { this.selected.forEach(pk => form.append('workflow_ids[]', pk)); }
+    const self = this;
+    fetch('/jobs/workflows/bulk-delete/', { method:'POST', body:form, headers:{'X-CSRFToken':csrf} })
+      .then(resp => {
+        try { const d = JSON.parse(resp.headers.get('HX-Trigger')||'{}'); if(d.toast) window.dispatchEvent(new CustomEvent('toast',{detail:d.toast})); } catch{}
+        self.clearSelection(); location.reload();
+      });
+  }
+}" class="space-y-3">
 
   <div class="grid grid-cols-3 gap-2 sm:grid-cols-6">
     <div class="card !p-3 text-center">
@@ -39,14 +74,17 @@
         <div class="flex items-start gap-3 min-w-0 flex-1">
           <input type="checkbox"
                  value="{{ row.workflow.pk }}"
-                 @change="toggle($event.target.value, $event.target.checked)"
-                 class="mt-1 h-4 w-4 flex-shrink-0 rounded border-[var(--ik-line)]">
+                 x-model="selected"
+                 class="wf-bulk-check mt-1 h-4 w-4 flex-shrink-0 rounded border-[var(--ik-line)]">
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-2">
               <i class="bi {{ row.category_icon }} text-muted text-sm flex-shrink-0"></i>
               <a href="{% url 'jobs:workflow-detail' row.workflow.pk %}"
                  class="text-sm font-semibold link-sea truncate">{{ row.title }}</a>
-              <span class="badge badge-secondary">{{ row.category_label }}</span>
+              <a href="?category={{ row.workflow.category }}"
+                 hx-get="{% url 'jobs:job-list' %}?category={{ row.workflow.category }}"
+                 hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+                 class="badge badge-secondary hover:opacity-80 cursor-pointer">{{ row.category_label }}</a>
               <span class="badge {{ row.status|status_badge_class }}">{{ row.status_label }}</span>
             </div>
 
@@ -130,59 +168,34 @@
     {% endfor %}
   </div>
 
-  {% include "components/table/pagination.html" %}
-
-  <!-- Barra de bulk delete -->
-  <div x-show="selected.length > 0"
-       x-transition:enter="transition ease-out duration-150"
-       x-transition:enter-start="opacity-0 translate-y-2"
-       x-transition:enter-end="opacity-100 translate-y-0"
-       x-cloak
-       class="fixed bottom-6 left-1/2 z-40 -translate-x-1/2">
-    <div class="flex items-center gap-4 rounded-2xl border border-[var(--ik-line)] bg-paper px-5 py-3 shadow-xl">
-      <span class="text-sm text-muted">
-        <strong class="text-ink" x-text="selected.length"></strong> selecionado(s)
-      </span>
-      <button @click="confirmDelete()" class="btn btn-danger btn-sm">
+  <div x-show="selected.length > 0 || selectAllFiltered" x-cloak x-transition
+       class="card !py-2 !px-4 flex items-center justify-between"
+       style="background: var(--ik-sand-light); border: 1px solid var(--ik-line);">
+    <span class="text-sm font-medium text-ink">
+      <i class="bi bi-check2-square text-sea"></i>
+      <span x-text="selectAllFiltered ? filteredCount : selected.length"></span> selecionado(s)
+    </span>
+    <div class="flex gap-2">
+      <button x-show="!selectAllFiltered" @click="selectCurrentPage()" class="btn btn-secondary btn-sm" type="button">
+        <i class="bi bi-check2"></i> Selecionar página
+      </button>
+      <button x-show="selected.length > 0 && !selectAllFiltered" @click="selectAllFiltered = true; selected = []" class="btn btn-secondary btn-sm" type="button">
+        <i class="bi bi-check2-all"></i> Selecionar todos (<span x-text="filteredCount"></span>)
+      </button>
+      <button @click="confirmDelete()" class="btn btn-danger btn-sm" type="button">
         <i class="bi bi-trash3"></i> Excluir selecionados
       </button>
-      <button @click="selected = []" class="btn btn-secondary btn-sm">
-        Limpar
+      <button @click="clearSelection()" class="btn btn-secondary btn-sm" type="button">
+        Cancelar
       </button>
     </div>
   </div>
+
+  {% include "components/table/pagination.html" %}
+
 </div>
 
-<script>
-function workflowBulk() {
-  return {
-    selected: [],
-    toggle(pk, checked) {
-      if (checked) {
-        if (!this.selected.includes(pk)) this.selected.push(pk);
-      } else {
-        this.selected = this.selected.filter(id => id !== pk);
-      }
-    },
-    confirmDelete() {
-      if (!confirm('Excluir ' + this.selected.length + ' workflow(s) selecionado(s)?\nApenas finalizados e cancelados serão removidos.')) return;
-      const csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
-      const body = new URLSearchParams();
-      body.append('csrfmiddlewaretoken', csrf);
-      this.selected.forEach(pk => body.append('workflow_ids[]', pk));
-      const self = this;
-      fetch('{% url "jobs:workflow-bulk-delete" %}', {
-        method: 'POST',
-        headers: {'X-CSRFToken': csrf},
-        body: body,
-      }).then(() => {
-        self.selected = [];
-        location.reload();
-      });
-    },
-  };
-}
-</script>
+
 
 {% else %}
 {% include "components/table/empty.html" with icon="bi-diagram-3" message="Nenhum workflow encontrado." %}

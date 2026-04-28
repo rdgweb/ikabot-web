@@ -21,7 +21,7 @@ from apps.telegram.models import (
     TelegramAccountConfig,
     TelegramIncomingCommand,
 )
-from apps.telegram.services.bot_api import send_message
+from apps.telegram.services.bot_api import answer_callback_query, edit_message_text, send_message
 from apps.telegram.services.linking import validate_link_code
 
 logger = logging.getLogger(__name__)
@@ -135,8 +135,57 @@ class TelegramWebhookView(APIView):
 
         data = request.data
 
-        # Callback queries no longer used (inline keyboard removed)
+        # ── Callback queries (inline keyboard buttons) ────────────────────────
         if data.get("callback_query"):
+            cq = data["callback_query"]
+            cq_id = str(cq.get("id", ""))
+            cq_data = str(cq.get("data", ""))
+            cq_msg = cq.get("message", {})
+            cq_chat_id = str(cq_msg.get("chat", {}).get("id", ""))
+            cq_message_id = cq_msg.get("message_id")
+            cq_message_text = cq_msg.get("text", "")
+            cq_user_id = str(cq.get("from", {}).get("id", ""))
+
+            if cq_data.startswith("accept:") or cq_data.startswith("decline:") or cq_data.startswith("reply:"):
+                if cq_data.startswith("accept:"):
+                    dm_uuid, yes_no = cq_data[7:], "yes"
+                elif cq_data.startswith("decline:"):
+                    dm_uuid, yes_no = cq_data[8:], "no"
+                else:
+                    dm_uuid, yes_no = cq_data[6:], "reply"
+
+                # Guard: reject if already actioned
+                if _dm_already_actioned(dm_uuid):
+                    answer_callback_query(cq_id, "⚠️ Esta mensagem já foi respondida anteriormente.", show_alert=True)
+                    return Response({"status": "ok"})
+
+                from django.utils import timezone as tz
+                now_str = tz.localtime().strftime("%d/%m %H:%M")
+
+                if yes_no == "reply":
+                    _store_pending_reply(cq_user_id, dm_uuid)
+                    answer_callback_query(cq_id, "Escreva sua resposta")
+                    send_message(
+                        cq_chat_id,
+                        "✏️ <b>Escreva sua resposta:</b>",
+                        reply_markup={"force_reply": True, "selective": True},
+                    )
+                else:
+                    ok, err = _create_diplomacy_send_job_from_uuid(dm_uuid, yes_no, "")
+                    if ok:
+                        label = "✅ Aceito" if yes_no == "yes" else "❌ Recusado"
+                        answer_callback_query(cq_id, label)
+                        _update_dm_status(dm_uuid, "action_taken")
+                        # Edit original message to replace buttons with status line
+                        if cq_message_id and cq_chat_id:
+                            edited_text = f"{cq_message_text}\n\n<i>{label} · {now_str}</i>"
+                            edit_message_text(cq_chat_id, cq_message_id, edited_text)
+                    else:
+                        answer_callback_query(cq_id, err[:200])
+                        send_message(cq_chat_id, f"❌ {err}")
+            else:
+                answer_callback_query(cq_id)
+
             return Response({"status": "ok"})
 
         # ── Text message ───────────────────────────────────────────────────
@@ -151,6 +200,21 @@ class TelegramWebhookView(APIView):
             return Response({"status": "ok"})
 
         text_stripped = text.strip()
+        user_id = str(from_user.get("id", ""))
+
+        # Check if user has a pending reply waiting (after tapping ↩️ Responder)
+        pending_uuid = _get_pending_reply(user_id)
+        if pending_uuid:
+            _clear_pending_reply(user_id)
+            ok, err = _create_diplomacy_send_job_from_uuid(pending_uuid, "", text_stripped)
+            if ok:
+                _update_dm_status(pending_uuid, "replied")
+                from django.utils import timezone as tz
+                now_str = tz.localtime().strftime("%d/%m %H:%M")
+                send_message(chat_id, f"↩️ <i>Respondido · {now_str}</i>\n\n{text_stripped}")
+            else:
+                send_message(chat_id, f"❌ {err}")
+            return Response({"status": "ok"})
         link_command = TelegramIncomingCommand.command_for(
             TelegramIncomingCommand.COMMAND_LINK
         )
@@ -246,9 +310,49 @@ class TelegramWebhookView(APIView):
         if ok:
             if yes_no == "yes":
                 send_message(chat_id, "✅ Aceitar — job criado na fila.")
+                _update_dm_status(db_uuid, "action_taken")
             elif yes_no == "no":
                 send_message(chat_id, "❌ Recusar — job criado na fila.")
+                _update_dm_status(db_uuid, "action_taken")
             else:
                 send_message(chat_id, "↩️ Resposta enviada para o agente.")
+                _update_dm_status(db_uuid, "replied")
         else:
             send_message(chat_id, f"❌ {error}")
+
+
+# ── Module-level helpers ───────────────────────────────────────────────────────
+
+_PENDING_REPLY_TTL = 300  # 5 minutes
+
+
+def _store_pending_reply(user_id: str, dm_uuid: str) -> None:
+    from django.core.cache import cache
+    cache.set(f"tg_pending_reply:{user_id}", dm_uuid, timeout=_PENDING_REPLY_TTL)
+
+
+def _get_pending_reply(user_id: str) -> str | None:
+    from django.core.cache import cache
+    return cache.get(f"tg_pending_reply:{user_id}")
+
+
+def _clear_pending_reply(user_id: str) -> None:
+    from django.core.cache import cache
+    cache.delete(f"tg_pending_reply:{user_id}")
+
+
+def _update_dm_status(dm_uuid: str, status: str) -> None:
+    try:
+        from apps.diplomacy.models import DiplomacyMessage
+        DiplomacyMessage.objects.filter(pk=dm_uuid).update(status=status)
+    except Exception:
+        pass
+
+
+def _dm_already_actioned(dm_uuid: str) -> bool:
+    try:
+        from apps.diplomacy.models import DiplomacyMessage
+        dm = DiplomacyMessage.objects.filter(pk=dm_uuid).only("status").first()
+        return dm is not None and dm.status in ("action_taken", "replied")
+    except Exception:
+        return False

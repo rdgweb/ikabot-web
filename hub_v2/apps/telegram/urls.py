@@ -17,6 +17,7 @@ from .views import (
     TemplateResetView,
     IncomingCommandSaveView,
     TelegramAuditBulkDeleteView,
+    TelegramAuditRetryView,
 )
 
 app_name = "telegram"
@@ -27,6 +28,7 @@ urlpatterns = [
     path("save-notifications/", TelegramSaveNotificationsView.as_view(), name="save-notifications"),
     path("audit/", TelegramAuditView.as_view(), name="audit"),
     path("audit/delete/", TelegramAuditBulkDeleteView.as_view(), name="audit-bulk-delete"),
+    path("audit/<int:pk>/retry/", TelegramAuditRetryView.as_view(), name="audit-retry"),
 
     # Notification templates
     path("template/<int:pk>/", TemplateRowView.as_view(), name="template-row"),

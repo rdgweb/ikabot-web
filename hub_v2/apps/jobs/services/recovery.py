@@ -92,6 +92,29 @@ def recover_stale_running_jobs(*, node: Node | None = None) -> dict[str, int]:
                 progress = {}
 
             if locked.action_code in SAFE_REQUEUE_ACTIONS:
+                # Guard: if job already rescheduled itself (child exists from agent reschedule),
+                # don't create a second child — just cancel the orphan.
+                has_recent_child = Job.objects.filter(
+                    source_job_id=locked.pk,
+                    created_at__gte=now - timedelta(seconds=300),
+                ).exists()
+                if has_recent_child:
+                    locked.status = "cancelled"
+                    locked.exit_code = 98
+                    locked.finished_at = now
+                    locked.lease_expires_at = None
+                    locked.save(update_fields=["status", "exit_code", "finished_at", "lease_expires_at", "updated_at"])
+                    JobLog.objects.create(
+                        job=locked,
+                        level="warn",
+                        message=(
+                            f"Execucao orfa recuperada apos {elapsed_seconds}s — "
+                            f"job ja reschedulado pelo agent, apenas cancelando o orphan."
+                        ),
+                    )
+                    recovered += 1
+                    continue
+
                 try:
                     next_inputs = json.loads(locked.inputs_json or "{}")
                 except Exception:

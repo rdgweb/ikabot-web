@@ -1814,12 +1814,25 @@ class WorkflowListView(FilterSortListView):
                 if len(bucket) < 5:
                     bucket.append(job)
 
-        # Workflows that have ANY active job — used for correct status derivation.
-        # Recent-jobs-only check misses rescheduled jobs created before newer finished jobs.
-        active_workflow_ids = set(
+        # Workflows with running jobs (truly active right now)
+        running_workflow_ids = set(
             Job.objects.filter(
                 workflow_id__in=workflow_ids,
-                status__in=("queued", "running", "scheduled"),
+                status="running",
+            ).values_list("workflow_id", flat=True).distinct()
+        )
+        # Workflows with any active job (running OR scheduled/queued)
+        active_workflow_ids = running_workflow_ids | set(
+            Job.objects.filter(
+                workflow_id__in=workflow_ids,
+                status__in=("queued", "scheduled"),
+            ).values_list("workflow_id", flat=True).distinct()
+        )
+        # Workflows with error jobs (shown as problem even if also active)
+        error_workflow_ids = set(
+            Job.objects.filter(
+                workflow_id__in=workflow_ids,
+                status="error",
             ).values_list("workflow_id", flat=True).distinct()
         )
 
@@ -1830,6 +1843,8 @@ class WorkflowListView(FilterSortListView):
                 job_map,
                 recent_job_map.get(workflow.pk, []),
                 has_active_job=workflow.pk in active_workflow_ids,
+                has_running_job=workflow.pk in running_workflow_ids,
+                has_error_job=workflow.pk in error_workflow_ids,
             )
             for workflow in workflows
         ]
@@ -1866,12 +1881,10 @@ class WorkflowListView(FilterSortListView):
 
     @staticmethod
     def _workflow_summary(workflow_rows):
-        summary = {"total": len(workflow_rows), "active": 0, "problem": 0, "waiting": 0, "paused": 0, "finished": 0}
+        summary = {"total": len(workflow_rows), "active": 0, "waiting": 0, "problem": 0, "paused": 0, "finished": 0}
         for row in workflow_rows:
             key = row["status"] if isinstance(row, dict) else row.status
-            if key in ("active", "waiting"):
-                summary["active"] += 1
-            elif key in summary:
+            if key in summary:
                 summary[key] += 1
         return summary
 
@@ -1891,7 +1904,8 @@ class WorkflowListView(FilterSortListView):
         }
         return {
             "total": total,
-            "active": status_counts.get("active", 0) + status_counts.get("waiting", 0),
+            "active": status_counts.get("active", 0),
+            "waiting": status_counts.get("waiting", 0),
             "problem": status_counts.get("problem", 0),
             "paused": status_counts.get("paused", 0),
             "finished": status_counts.get("finished", 0),
@@ -1926,7 +1940,7 @@ class WorkflowListView(FilterSortListView):
         return workflow.workflow_type.replace("_", " ").title()
 
     @classmethod
-    def _build_workflow_row(cls, workflow, runs, job_map, recent_jobs=None, has_active_job=False):
+    def _build_workflow_row(cls, workflow, runs, job_map, recent_jobs=None, has_active_job=False, has_running_job=False, has_error_job=False):
         scope = cls._parse_workflow_json(workflow.scope_json)
         config = cls._parse_workflow_json(workflow.config_json)
         active_run = workflow.active_run or (runs[0] if runs else None)
@@ -1941,7 +1955,15 @@ class WorkflowListView(FilterSortListView):
         # has_active_job checks ALL jobs in the chain — prevents false "finished" when
         # a rescheduled job was created before newer finished jobs (e.g. vinho monitor flow).
         if has_active_job:
-            effective_status = "waiting"
+            # Error jobs flag as problem even when also active
+            if has_error_job:
+                effective_status = "problem"
+            elif has_running_job:
+                effective_status = "active"
+            else:
+                effective_status = "waiting"
+        elif has_error_job:
+            effective_status = "problem"
         else:
             recent_statuses = {j.status for j in (recent_jobs or [])}
             effective_status = cls._effective_status(workflow, recent_statuses)
@@ -1968,7 +1990,7 @@ class WorkflowListView(FilterSortListView):
             "can_pause": effective_status in ("active", "waiting"),
             "can_resume": effective_status == "paused",
             "can_cancel": effective_status in _WORKFLOW_CANCELABLE,
-            "can_delete": effective_status in _WORKFLOW_DELETABLE,
+            "can_delete": True,
         }
 
 
@@ -2094,10 +2116,11 @@ class WorkflowActionView(LoginRequiredMixin, View):
         action = request.POST.get("workflow_action", "").strip()
 
         if action == "delete":
-            if workflow.status not in _WORKFLOW_DELETABLE:
-                resp = HttpResponse(status=400)
-                resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": "Só é possível excluir workflows finalizados ou cancelados."}})
-                return resp
+            # Cancel active jobs before deleting
+            Job.objects.filter(
+                workflow=workflow,
+                status__in=("queued", "running", "scheduled"),
+            ).update(status="cancelled", finished_at=now, updated_at=now, lease_expires_at=None)
             workflow.delete()
             resp = HttpResponse(status=200)
             resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": "Workflow excluído."}})
@@ -2141,20 +2164,27 @@ class WorkflowActionView(LoginRequiredMixin, View):
 class WorkflowBulkDeleteView(LoginRequiredMixin, View):
     def post(self, request):
         pks = request.POST.getlist("workflow_ids[]")
-        if not pks:
+        delete_all = request.POST.get("delete_all") == "true"
+
+        if not pks and not delete_all:
             resp = HttpResponse(status=400)
             resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": "Nenhum workflow selecionado."}})
             return resp
 
-        deleted_count, _ = Workflow.objects.filter(
-            pk__in=pks,
-            status__in=("finished", "cancelled"),
-        ).delete()
+        now = timezone.now()
 
-        skipped = len(pks) - deleted_count
+        if delete_all:
+            qs = Workflow.objects.all()
+        else:
+            qs = Workflow.objects.filter(pk__in=pks)
+
+        Job.objects.filter(
+            workflow__in=qs,
+            status__in=("queued", "running", "scheduled"),
+        ).update(status="cancelled", finished_at=now, updated_at=now, lease_expires_at=None)
+
+        deleted_count, _ = qs.delete()
         msg = f"{deleted_count} workflow(s) excluído(s)."
-        if skipped:
-            msg += f" {skipped} ignorado(s) (status não permite exclusão)."
 
         resp = HttpResponse(status=200)
         resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": msg}})

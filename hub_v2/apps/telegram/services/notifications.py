@@ -95,6 +95,10 @@ def notify(
 
     text = format_message(event_key, **tpl_ctx)
 
+    # Auto-build inline keyboard for diplomacy_message when not overridden
+    if event_key == "diplomacy_message" and reply_markup is None:
+        reply_markup = _build_diplomacy_keyboard(tpl_ctx)
+
     # 4. Send
     result = send_message(chat_id, text, reply_markup=reply_markup)
     ok = result.get("ok", False)
@@ -112,6 +116,7 @@ def notify(
         node=node,
         job=job,
         agent_name=agent_name,
+        context=tpl_ctx,
     )
 
     if ok:
@@ -249,8 +254,10 @@ def _create_audit(
     node=None,
     job=None,
     agent_name: str = "",
+    context: dict | None = None,
 ):
     """Create a MessageAudit record."""
+    import json as _json
     from apps.telegram.models import MessageAudit
 
     try:
@@ -267,6 +274,35 @@ def _create_audit(
             body=body,
             error=error,
             external_ref=external_ref,
+            context_json=_json.dumps(context or {}),
         )
     except Exception as e:
         logger.exception("Failed to create MessageAudit: %s", e)
+
+
+def _build_diplomacy_keyboard(ctx: dict) -> dict | None:
+    """Build Telegram inline keyboard for diplomacy_message notifications."""
+    import re
+
+    accept_cmd = str(ctx.get("accept_command") or "")
+    decline_cmd = str(ctx.get("decline_command") or "")
+    reply_cmd = str(ctx.get("reply_command") or "")
+
+    # Extract UUID from any available command
+    uuid_match = re.search(r"[\w-]{36}", accept_cmd or reply_cmd or decline_cmd)
+    if not uuid_match:
+        return None
+    uuid = uuid_match.group()
+
+    row1 = []
+    if accept_cmd:
+        row1.append({"text": "✅ Aceitar", "callback_data": f"accept:{uuid}"})
+    if decline_cmd:
+        row1.append({"text": "❌ Recusar", "callback_data": f"decline:{uuid}"})
+
+    row2 = []
+    if reply_cmd:
+        row2.append({"text": "↩️ Responder", "callback_data": f"reply:{uuid}"})
+
+    keyboard = [r for r in [row1, row2] if r]
+    return {"inline_keyboard": keyboard} if keyboard else None

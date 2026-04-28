@@ -65,6 +65,7 @@ services:
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-to-a-long-random-string}
       DJANGO_DEBUG: ${DJANGO_DEBUG:-false}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,hub}
+      DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:-}
       ADMIN_CREATE: ${ADMIN_CREATE:-true}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@ikabot.local}
@@ -89,24 +90,6 @@ services:
       timeout: 6s
       retries: 10
 
-  telegram-worker:
-    image: ${HUB_IMAGE:-blackoneal/ikabot-web-hub:latest}
-    restart: unless-stopped
-    depends_on:
-      hub:
-        condition: service_healthy
-    environment:
-      DJANGO_SETTINGS_MODULE: config.settings.base
-      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-to-a-long-random-string}
-      DB_NAME: ${DB_NAME:-ikabot_hub}
-      DB_USER: ${DB_USER:-ikabot}
-      DB_PASSWORD: ${DB_PASSWORD:-change-me-db-password}
-      DB_HOST: mariadb
-      DB_PORT: "3306"
-      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379/0}
-      TZ: America/Cuiaba
-    entrypoint: ["python", "manage.py"]
-    command: ["telegram_poll"]
 
   agent:
     image: ${AGENT_IMAGE:-blackoneal/ikabot-web-agent:latest}

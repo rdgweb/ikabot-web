@@ -407,6 +407,7 @@ class MessageAudit(models.Model):
     body = models.TextField(blank=True, default="")
     error = models.TextField(blank=True, default="")
     external_ref = models.CharField(max_length=128, blank=True, default="")
+    context_json = models.TextField(blank=True, default="{}")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

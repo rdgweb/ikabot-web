@@ -66,6 +66,25 @@ def send_message(
         return {"ok": False, "description": str(exc)}
 
 
+def answer_callback_query(callback_query_id: str, text: str = "", show_alert: bool = False) -> dict:
+    """Dismiss the loading indicator on an inline keyboard button."""
+    token = _get_token()
+    if not token:
+        return {"ok": False}
+    url = f"{API_BASE.format(token=token)}/answerCallbackQuery"
+    payload: dict = {"callback_query_id": callback_query_id}
+    if text:
+        payload["text"] = text
+    if show_alert:
+        payload["show_alert"] = True
+    try:
+        resp = requests.post(url, json=payload, timeout=TIMEOUT)
+        return resp.json()
+    except requests.RequestException as exc:
+        logger.exception("Failed to answer callback query: %s", exc)
+        return {"ok": False, "description": str(exc)}
+
+
 def get_bot_info() -> dict | None:
     """
     Call getMe to retrieve bot information.
@@ -88,6 +107,32 @@ def get_bot_info() -> dict | None:
         return None
 
 
+def edit_message_text(
+    chat_id: str,
+    message_id: int,
+    text: str,
+    parse_mode: str = "HTML",
+) -> dict:
+    """Edit a sent message, removing its inline keyboard."""
+    token = _get_token()
+    if not token:
+        return {"ok": False}
+    url = f"{API_BASE.format(token=token)}/editMessageText"
+    payload = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text,
+        "parse_mode": parse_mode,
+        "reply_markup": {"inline_keyboard": []},
+    }
+    try:
+        resp = requests.post(url, json=payload, timeout=TIMEOUT)
+        return resp.json()
+    except requests.RequestException as exc:
+        logger.exception("Failed to edit message: %s", exc)
+        return {"ok": False, "description": str(exc)}
+
+
 def set_webhook(webhook_url: str, secret_token: str = "") -> dict:
     """
     Register a webhook URL with Telegram.
@@ -99,7 +144,10 @@ def set_webhook(webhook_url: str, secret_token: str = "") -> dict:
         return {"ok": False, "description": "Bot token not configured"}
 
     url = f"{API_BASE.format(token=token)}/setWebhook"
-    payload = {"url": webhook_url}
+    payload = {
+        "url": webhook_url,
+        "allowed_updates": ["message", "callback_query"],
+    }
     if secret_token:
         payload["secret_token"] = secret_token
 

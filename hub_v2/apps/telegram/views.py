@@ -362,6 +362,51 @@ class TelegramAuditBulkDeleteView(LoginRequiredMixin, View):
         return resp
 
 
+class TelegramAuditRetryView(LoginRequiredMixin, View):
+    """POST: reenviar notificação que falhou usando context_json salvo."""
+
+    def post(self, request, pk):
+        from apps.telegram.models import MessageAudit
+        from apps.telegram.services.notifications import notify
+
+        audit = get_object_or_404(MessageAudit, pk=pk)
+        if audit.status not in ("failed",):
+            resp = HttpResponse(status=400)
+            resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": "Só notificações com falha podem ser reenviadas."}})
+            return resp
+
+        try:
+            ctx = json.loads(audit.context_json or "{}")
+        except Exception:
+            ctx = {}
+
+        if not ctx:
+            resp = HttpResponse(status=400)
+            resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": "Contexto não disponível para reenvio (notificação antiga)."}})
+            return resp
+
+        ok = notify(
+            event_key=audit.channel,
+            game_account=audit.game_account,
+            account=audit.account,
+            node=audit.node,
+            job=audit.job,
+            agent_name=audit.agent_name or "",
+            **{k: v for k, v in ctx.items() if k not in ("ga_name", "server_id", "account_name", "node_name", "agent_name", "title", "body", "exit_code", "job_id", "status", "error", "action_name")},
+        )
+
+        if ok:
+            audit.status = "retried"
+            audit.save(update_fields=["status"])
+
+        resp = HttpResponse(status=200)
+        resp["HX-Trigger"] = json.dumps({
+            "toast": {"type": "success" if ok else "error", "message": "Reenviado com sucesso." if ok else "Falha ao reenviar."},
+            "telegramMessagesChanged": True,
+        })
+        return resp
+
+
 # ── Account Telegram Overview (HTMX partial) ───────────────────────
 
 class AccountTelegramOverviewView(LoginRequiredMixin, View):

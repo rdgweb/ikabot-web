@@ -3,6 +3,9 @@
  * HTMX config, Alpine.js components, toast manager, sidebar, clock
  */
 
+// ── Alpine.js components registered via alpine:init ──────────────────────────
+
+
 // ── HTMX Configuration ──
 
 document.addEventListener("htmx:configRequest", (e) => {

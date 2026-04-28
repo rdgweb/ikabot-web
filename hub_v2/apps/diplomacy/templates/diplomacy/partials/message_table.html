@@ -19,6 +19,7 @@
           <th>Tipo</th>
           <th>Data no jogo</th>
           <th>Recebido em</th>
+          <th>Ações</th>
         </tr>
       </thead>
       <tbody>
@@ -74,10 +75,51 @@
           <td class="align-top text-sm text-muted">
             {{ msg.created_at|localtime_format }}
           </td>
+          <td class="align-top">
+            {% if msg.status == "replied" or msg.status == "action_taken" %}
+            <span class="text-xs text-muted">—</span>
+            {% else %}
+            <div class="flex flex-wrap gap-1" x-data="{ replyOpen: false }">
+              {% if msg.has_actions %}
+              <form hx-post="{% url 'diplomacy:message-action' msg.pk %}"
+                    hx-swap="none" hx-push-url="false" class="inline">
+                {% csrf_token %}<input type="hidden" name="action" value="accept">
+                <button type="submit" class="btn btn-secondary btn-sm !px-2" title="Aceitar">
+                  <i class="bi bi-check-lg text-[var(--ik-good)]"></i>
+                </button>
+              </form>
+              <form hx-post="{% url 'diplomacy:message-action' msg.pk %}"
+                    hx-swap="none" hx-push-url="false" class="inline"
+                    onsubmit="return confirm('Recusar este tratado?')">
+                {% csrf_token %}<input type="hidden" name="action" value="decline">
+                <button type="submit" class="btn btn-secondary btn-sm !px-2" title="Recusar">
+                  <i class="bi bi-x-lg text-[var(--ik-bad)]"></i>
+                </button>
+              </form>
+              {% endif %}
+              <button @click="replyOpen = !replyOpen"
+                      class="btn btn-secondary btn-sm !px-2" title="Responder">
+                <i class="bi bi-reply text-sea"></i>
+              </button>
+              <div x-show="replyOpen" x-transition class="mt-1 w-full">
+                <form hx-post="{% url 'diplomacy:message-action' msg.pk %}"
+                      hx-swap="none" hx-push-url="false">
+                  {% csrf_token %}<input type="hidden" name="action" value="reply">
+                  <div class="flex gap-1">
+                    <input type="text" name="text" required
+                           placeholder="Sua resposta..."
+                           class="form-input form-input-sm flex-1">
+                    <button type="submit" class="btn btn-primary btn-sm">Enviar</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+            {% endif %}
+          </td>
         </tr>
         {% empty %}
         <tr>
-          <td colspan="9" class="py-8 text-center text-muted">
+          <td colspan="10" class="py-8 text-center text-muted">
             <i class="bi bi-envelope mb-2 block text-2xl"></i>
             Nenhuma mensagem encontrada.
           </td>

@@ -57,6 +57,13 @@
               <span class="badge badge-warning">Pendente</span>
             {% elif msg.status == "failed" %}
               <span class="badge badge-danger">Falhou</span>
+              <form hx-post="{% url 'telegram:audit-retry' msg.pk %}"
+                    hx-swap="none" hx-push-url="false" class="inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-secondary btn-sm !px-2 !py-0.5 ml-1" title="Reenviar">
+                  <i class="bi bi-arrow-repeat text-sea"></i>
+                </button>
+              </form>
             {% elif msg.status == "retried" %}
               <span class="badge badge-secondary">Reenviado</span>
             {% else %}

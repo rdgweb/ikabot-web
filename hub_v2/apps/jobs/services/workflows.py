@@ -35,6 +35,8 @@ def _workflow_type(action_code: int, inputs: dict) -> str:
         if inputs.get("monitor_mode") == "arrival_check":
             return "arrival_monitor"
         return "transport_route"
+    if action_code in {30, 31}:
+        return "diplomacy"
     if action_code in {801, 802}:
         return "internal_market_order"
     meta = ACTION_CATALOG.get(action_code, {})
@@ -175,7 +177,28 @@ def create_workflow_run(
     )
 
 
-_GROUPED_BY_GA_TYPE = frozenset({"donate", "donate_loop"})
+_GROUPED_BY_GA_TYPE = frozenset({"donate", "donate_loop", "diplomacy"})
+
+# Maps workflow_type → set of action codes that belong to it (for bulk linking)
+_GROUPED_ACTION_CODES: dict[str, set] = {
+    "donate": {901},
+    "donate_loop": {902, 1006},
+    "diplomacy": {30, 31},
+}
+
+
+def _link_grouped_jobs(game_account, wtype: str, workflow: Workflow) -> None:
+    """Link unlinked jobs of all action codes for this workflow_type+GA."""
+    codes = _GROUPED_ACTION_CODES.get(wtype)
+    if codes:
+        Job.objects.filter(
+            game_account=game_account,
+            action_code__in=codes,
+            workflow__isnull=True,
+        ).update(workflow=workflow)
+    else:
+        # Fallback: link by workflow_type derivation is not possible; skip bulk link
+        pass
 
 
 def _find_or_create_workflow_for_chain(
@@ -363,12 +386,8 @@ def ensure_workflow_for_job(job: Job, *, start_new_run: bool = False) -> tuple[W
 
         # Link all jobs in this chain that aren't linked yet
         if use_group:
-            # Grouped types: link ALL jobs from same GA+action_code (all cities)
-            Job.objects.filter(
-                game_account=job.game_account,
-                action_code=job.action_code,
-                workflow__isnull=True,
-            ).update(workflow=workflow)
+            # Grouped by (GA, workflow_type) — covers multiple action codes with same type
+            _link_grouped_jobs(job.game_account, wtype, workflow)
         else:
             Job.objects.filter(root_job_id=chain_root_id, workflow__isnull=True).update(workflow=workflow)
             if job.root_job_id is None:
@@ -392,12 +411,12 @@ def ensure_workflow_for_job(job: Job, *, start_new_run: bool = False) -> tuple[W
         job.save(update_fields=["workflow", "workflow_run", "updated_at"])
 
         workflow.active_run = workflow_run
-        # For grouped types, derive status from most recent active job across all cities
+        # For grouped types, derive status from most recent active job in the group
         if use_group:
             active_job = (
                 Job.objects.filter(
                     game_account=job.game_account,
-                    action_code=job.action_code,
+                    workflow=workflow,
                     status__in=("queued", "running", "scheduled"),
                 )
                 .order_by("-created_at")
