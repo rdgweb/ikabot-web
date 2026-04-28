@@ -66,6 +66,27 @@ def tradegood_icon(tradegood_id):
     return TRADEGOOD_ICONS.get(tid, "")
 
 
+_EXIT_CODE_LABELS = {
+    0: ("success", "Concluído com sucesso"),
+    1: ("error", "Erro de execução"),
+    97: ("info", "Cancelado — executado imediatamente"),
+    98: ("info", "Cancelado — job órfão recuperado pelo hub"),
+    99: ("info", "Cancelado — duplicata removida"),
+}
+
+
+@register.filter
+def exit_code_label(code):
+    """Return (badge_type, human_label) for a job exit code."""
+    if code is None:
+        return None
+    try:
+        code = int(code)
+    except (TypeError, ValueError):
+        return None
+    return _EXIT_CODE_LABELS.get(code)
+
+
 @register.filter
 def status_badge_class(status):
     """Return Tailwind classes for a status badge."""

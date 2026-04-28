@@ -67,7 +67,33 @@ def notify_on_terminal_status(sender, instance, created, update_fields, **kwargs
 
     # Send notification — template handles all formatting
     try:
+        import json as _json
+        import os as _os
         from apps.telegram.services.notifications import notify
+
+        # Extract last error log for richer notification
+        last_error = (
+            instance.logs.filter(level="error")
+            .order_by("-created_at")
+            .values_list("message", flat=True)
+            .first()
+        ) or ""
+
+        # Extract city_name from inputs
+        try:
+            _inputs = _json.loads(instance.inputs_json or "{}")
+            city_name = str(_inputs.get("city_name") or _inputs.get("from_city_name") or "")
+        except Exception:
+            city_name = ""
+
+        # Build hub URL for the job detail (optional — uses HUB_PUBLIC_URL env var)
+        hub_url = _os.environ.get("HUB_PUBLIC_URL", "").rstrip("/")
+        job_url = f"{hub_url}/jobs/{instance.pk}/" if hub_url else ""
+
+        reply_markup = None
+        if job_url:
+            reply_markup = {"inline_keyboard": [[{"text": "🔗 Ver detalhes", "url": job_url}]]}
+
         notify(
             event_key=event_key,
             game_account=instance.game_account,
@@ -76,6 +102,9 @@ def notify_on_terminal_status(sender, instance, created, update_fields, **kwargs
             job=instance,
             agent_name=instance.agent,
             exit_code=instance.exit_code,
+            body=last_error,
+            city_name=city_name,
+            reply_markup=reply_markup,
         )
     except Exception as e:
         logger.warning("Telegram notification failed for job %s: %s", instance.pk, e)

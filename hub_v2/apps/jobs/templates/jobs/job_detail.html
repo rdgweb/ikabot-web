@@ -116,7 +116,16 @@
     </div>
     <div>
       <dt class="text-muted">Exit Code</dt>
-      <dd class="mt-0.5 font-mono text-xs">{{ object.exit_code|default:"—" }}</dd>
+      <dd class="mt-0.5">
+        {% if object.exit_code is not None %}
+        <span class="font-mono text-xs">{{ object.exit_code }}</span>
+        {% with hint=object.exit_code|exit_code_label %}
+        {% if hint %}
+        <span class="ml-1 text-xs text-muted">— {{ hint.1 }}</span>
+        {% endif %}
+        {% endwith %}
+        {% else %}—{% endif %}
+      </dd>
     </div>
     <div>
       <dt class="text-muted">Agendado para</dt>

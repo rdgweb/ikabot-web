@@ -1828,13 +1828,28 @@ class WorkflowListView(FilterSortListView):
                 status__in=("queued", "scheduled"),
             ).values_list("workflow_id", flat=True).distinct()
         )
-        # Workflows with error jobs (shown as problem even if also active)
-        error_workflow_ids = set(
-            Job.objects.filter(
+        from django.db.models import Max as _Max
+        # Latest error time per workflow
+        _error_times = {
+            row["workflow_id"]: row["max_t"]
+            for row in Job.objects.filter(
+                workflow_id__in=workflow_ids, status="error"
+            ).values("workflow_id").annotate(max_t=_Max("created_at"))
+        }
+        # Latest active time per workflow
+        _active_times = {
+            row["workflow_id"]: row["max_t"]
+            for row in Job.objects.filter(
                 workflow_id__in=workflow_ids,
-                status="error",
-            ).values_list("workflow_id", flat=True).distinct()
-        )
+                status__in=("queued", "running", "scheduled"),
+            ).values("workflow_id").annotate(max_t=_Max("created_at"))
+        }
+        error_workflow_ids = set(_error_times.keys())
+        # Errors superseded by newer active jobs → don't show as problem
+        superseded_error_ids = {
+            wf_id for wf_id, err_t in _error_times.items()
+            if _active_times.get(wf_id) and _active_times[wf_id] > err_t
+        }
 
         workflow_rows = [
             self._build_workflow_row(
@@ -1844,7 +1859,7 @@ class WorkflowListView(FilterSortListView):
                 recent_job_map.get(workflow.pk, []),
                 has_active_job=workflow.pk in active_workflow_ids,
                 has_running_job=workflow.pk in running_workflow_ids,
-                has_error_job=workflow.pk in error_workflow_ids,
+                has_error_job=workflow.pk in error_workflow_ids and workflow.pk not in superseded_error_ids,
             )
             for workflow in workflows
         ]

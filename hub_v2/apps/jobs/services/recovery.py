@@ -92,10 +92,13 @@ def recover_stale_running_jobs(*, node: Node | None = None) -> dict[str, int]:
                 progress = {}
 
             if locked.action_code in SAFE_REQUEUE_ACTIONS:
-                # Guard: if job already rescheduled itself (child exists from agent reschedule),
-                # don't create a second child — just cancel the orphan.
+                # Guard: if job already rescheduled itself, don't create a second child.
+                # Filter by trigger_type="agent_reschedule" to avoid confusing spawn children
+                # (e.g. ac=2 transport spawns ac=2 arrival monitor — that's NOT a reschedule).
                 has_recent_child = Job.objects.filter(
                     source_job_id=locked.pk,
+                    action_code=locked.action_code,
+                    workflow_run__trigger_type="agent_reschedule",
                     created_at__gte=now - timedelta(seconds=300),
                 ).exists()
                 if has_recent_child:

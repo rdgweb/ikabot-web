@@ -274,14 +274,25 @@ class DonateLoopRunner(BaseRunner):
                 },
             )
         except Exception as exc:
-            logger.exception("DonateLoopRunner failed for job %s", jid)
-            retry_delay = 60
-            self.log(jid, "error", f"Erro no ciclo: {exc} | retry_em={retry_delay}s")
+            exc_str = str(exc)
+            # Transient game states that should reschedule silently (not mark as error)
+            _TRANSIENT_PATTERNS = (
+                "ainda está em construção",
+                "still under construction",
+                "serraria",
+                "sawmill",
+            )
+            is_transient = any(p in exc_str.lower() for p in _TRANSIENT_PATTERNS)
+            retry_delay = 3600 if is_transient else 60
+            level = "info" if is_transient else "error"
+            self.log(jid, level, f"Erro no ciclo: {exc_str} | retry_em={retry_delay}s")
+            if not is_transient:
+                logger.exception("DonateLoopRunner failed for job %s", jid)
             return RunnerResult(
-                success=False,
+                success=is_transient,  # transient = finished (not error), non-transient = error
                 reschedule_seconds=retry_delay,
                 reschedule_inputs=self._next_inputs(inputs, carry_over_amount),
-                data={"error": str(exc), "retry_delay": retry_delay},
+                data={"error": exc_str, "retry_delay": retry_delay},
             )
 
     @staticmethod

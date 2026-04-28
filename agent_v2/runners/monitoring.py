@@ -648,6 +648,18 @@ class AlertWineRunner(BaseRunner):
         hours = _city_wine_hours(city_effective)
         desired_net = _city_wine_production_per_hour(city_effective) - desired_wine_consumption
         desired_hours = (effective_wine / abs(desired_net)) if desired_net < 0 and effective_wine > 0 else (0.0 if desired_net < 0 else None)
+        if townhall is None:
+            # City data unavailable (e.g. full city with no townhall access) — return minimal info
+            return {
+                "raw": city_effective, "id": city_id, "name": _city_name(city_effective),
+                "wine": wine, "incoming_wine": incoming_wine, "effective_wine": effective_wine,
+                "net": net, "hours": hours, "desired_wine_consumption": desired_wine_consumption,
+                "desired_net": desired_net, "desired_hours": desired_hours, "is_full": is_full,
+                "total_happiness": 0, "happiness_text": "", "growth_per_hour": 0.0,
+                "wine_happiness": 0, "non_wine_happiness": 0,
+                "floor_unmet": False, "tavern": tavern_data or {},
+            }
+
         wine_happiness = _wine_happiness_from_breakdown(townhall.breakdown)
         non_wine_happiness = int(townhall.total_happiness) - int(wine_happiness)
 

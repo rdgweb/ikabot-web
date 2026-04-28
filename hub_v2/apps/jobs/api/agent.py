@@ -195,10 +195,14 @@ class RescheduleJobView(APIView):
                     status=status.HTTP_409_CONFLICT,
                 )
 
-            # Idempotency: if a child already exists from this job, return it (handles agent retries).
+            # Idempotency: if this exact job was already rescheduled recently, return existing child.
+            # Filter by trigger_type="agent_reschedule" to distinguish from spawn_job children
+            # (e.g. ac=2 transport spawns ac=2 monitor, but that's NOT a reschedule).
             existing_child = Job.objects.filter(
                 source_job_id=job.pk,
-                created_at__gte=timezone.now() - timedelta(seconds=300),
+                action_code=job.action_code,
+                workflow_run__trigger_type="agent_reschedule",
+                created_at__gte=timezone.now() - timedelta(seconds=120),
             ).order_by("-created_at").first()
             if existing_child:
                 logger.info(
