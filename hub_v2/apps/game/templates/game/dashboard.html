@@ -375,6 +375,29 @@
                   {% if city.wine_hours is not None and city.wine_hours < 24 %}
                   <i class="bi bi-exclamation-triangle-fill text-red-500 text-[10px]" title="Vinho: {{ city.wine_hours|hours_display }}"></i>
                   {% endif %}
+                  {% if city.city_occupied %}
+                  <span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-red-100 text-red-700 text-[9px] font-semibold"
+                        title="{{ city.city_occupied }}">
+                    <i class="bi bi-flag-fill text-[9px]"></i>
+                    Ocupada{% if city.occupier_name %}: {{ city.occupier_name }}{% endif %}
+                  </span>
+                  {% endif %}
+                  {% if city.harbour_occupied %}
+                  <span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-orange-100 text-orange-700 text-[9px] font-semibold"
+                        title="{{ city.harbour_occupied }}">
+                    <i class="bi bi-anchor text-[9px]"></i>
+                    Porto bloq.{% if city.port_controller_name %}: {{ city.port_controller_name }}{% endif %}
+                  </span>
+                  {% endif %}
+                  {% if city.city_occupied or city.harbour_occupied %}
+                  <button hx-post="{% url 'game:run-action' %}"
+                          hx-vals='{"game_account_id": "{{ card.game_account.pk }}", "action_code": "9002", "input_city_id": "{{ city.id }}", "input_city_name": "{{ city.name|escapejs }}"}'
+                          hx-swap="none"
+                          class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-red-600 text-white text-[9px] font-semibold hover:bg-red-700 transition-colors"
+                          title="Iniciar revolta em {{ city.name }}">
+                    <i class="bi bi-lightning-fill text-[9px]"></i> Revolta
+                  </button>
+                  {% endif %}
                 </div>
               </td>
               {# ── Resource cells — hover triggers Alpine tooltip ── #}

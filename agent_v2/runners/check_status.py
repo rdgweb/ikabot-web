@@ -751,6 +751,13 @@ class CheckStatusRunner(BaseRunner):
                 "citizens": citizens,
                 "free_citizens": free_citizens,
                 "buildings": buildings,
+                # Occupation fields (present when city/port is occupied by an enemy)
+                "city_occupied": city.get("cityOccupied") or None,
+                "harbour_occupied": city.get("harbourOccupied") or None,
+                "occupier_id": city.get("occupierId") or None,
+                "occupier_name": city.get("occupierName") or None,
+                "port_controller_id": city.get("portControllerId") or None,
+                "port_controller_name": city.get("portControllerName") or None,
             }
 
         except json.JSONDecodeError as e:

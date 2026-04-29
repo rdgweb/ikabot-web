@@ -37,6 +37,12 @@ class RunActionView(LoginRequiredMixin, View):
         action_code = int(action_code)
         action_name = ACTION_NAMES.get(action_code, f"Action {action_code}")
 
+        inputs = {
+            k[6:]: v
+            for k, v in request.POST.items()
+            if k.startswith("input_")
+        }
+
         # Per-server job (game_account_id provided)
         if ga_id:
             try:
@@ -54,7 +60,7 @@ class RunActionView(LoginRequiredMixin, View):
                 game_account=ga,
                 node=node,
                 action_code=action_code,
-                inputs={},
+                inputs=inputs,
                 status="queued",
             )
             return self._toast(
@@ -77,7 +83,7 @@ class RunActionView(LoginRequiredMixin, View):
                 account=account,
                 node=node,
                 action_code=action_code,
-                inputs={},
+                inputs=inputs,
                 status="queued",
             )
             return self._toast(

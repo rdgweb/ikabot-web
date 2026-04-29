@@ -74,4 +74,20 @@ ACTIONS = {
         "description": "Investiga uma cidade inimiga.",
         "inputs": [],
     },
+    9002: {
+        "name": "Revolta",
+        "name_en": "Revolt",
+        "category": CAT_MILITARY,
+        "icon": "bi-flag-fill",
+        "runner": "revolt",
+        "requires_game_session": True,
+        "recurring": False,
+        "long_running": False,
+        "ready": True,
+        "description": "Inicia uma revolta para libertar cidade ocupada ou porto bloqueado por inimigo.",
+        "inputs": [
+            {"key": "city_id", "type": "int", "label": "ID da Cidade", "required": True, "help": "ID numérico da cidade ocupada."},
+            {"key": "city_name", "type": "str", "label": "Nome da Cidade", "required": False},
+        ],
+    },
 }
