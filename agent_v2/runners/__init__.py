@@ -23,4 +23,5 @@ from runners import (  # noqa: F401
     discover_characters,
     donate,
     donate_loop,
+    revolt,
 )
