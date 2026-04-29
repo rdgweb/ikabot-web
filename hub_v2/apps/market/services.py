@@ -87,6 +87,23 @@ def _active_reservation(seller_ga: GameAccount, city_id: int, resource_idx: int)
     )
 
 
+def _estimate_committed_buy_gold(buyer_ga: GameAccount) -> int:
+    """Sum estimated gold cost of all active buy orders for this buyer.
+
+    Used to prevent creating new orders when pending orders will already
+    exhaust gold below the min_gold floor.
+    """
+    total = 0
+    for order in InternalMarketOrder.objects.filter(
+        buyer_game_account=buyer_ga,
+        status__in=["matched", "jobs_created", "jobs_running"],
+    ):
+        price = order.price_max or order.unit_price or 0
+        if price > 0:
+            total += order.amount * price
+    return total
+
+
 def _city_name(city: dict | None, fallback: int | None = None) -> str:
     if isinstance(city, dict):
         raw = str(city.get("name") or "").strip()
@@ -205,10 +222,12 @@ def create_internal_order(
             current_gold = int((buyer_snap.base_snapshot or {}).get("gold", 0)) if buyer_snap else 0
         except Exception:
             current_gold = 0
-        if current_gold < min_gold:
+        committed_gold = _estimate_committed_buy_gold(buyer_ga)
+        available_gold = current_gold - committed_gold
+        if available_gold < min_gold:
             logger.warning(
-                "Buyer %s gold %s < market_min_gold %s; skipping order creation",
-                buyer_ga.pk, current_gold, min_gold,
+                "Buyer %s available gold %s (current=%s - committed=%s) < market_min_gold %s; skipping order",
+                buyer_ga.pk, available_gold, current_gold, committed_gold, min_gold,
             )
             return None
     elif buyer_snap is None:

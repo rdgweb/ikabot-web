@@ -1016,14 +1016,15 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             next_level = pending_step["next_level"]
             level_row = self._find_level_row(pending_step, next_level)
             if level_row is None:
-                stored_levels = [r.get("level") for r in (pending_step.get("level_rows") or [])]
+                # No pre-calculated cost row; use empty placeholder so live fetch
+                # (_collect_live_step_debug) can determine real costs from the game.
                 self.log(
-                    jid, "error",
-                    f"Etapa sem custo para nivel {next_level} em {pending_step.get('building_name')} @ {pending_step.get('city_name')}. "
-                    f"Niveis armazenados: {stored_levels}. "
-                    f"Recrie o job para regenerar os dados de custo."
+                    jid, "warn",
+                    f"Sem custo pre-calculado para nivel {next_level} de "
+                    f"{pending_step.get('building_name')} em {pending_step.get('city_name')} "
+                    f"— usando custo real do jogo"
                 )
-                raise RuntimeError("missing_level_row")
+                level_row = {"level": next_level, "costs": {}, "adjusted_seconds": 0}
 
             costs = self._normalize_costs(level_row.get("costs") or {})
             stock = _city_stock(city)
@@ -1082,19 +1083,6 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             try:
                 _queue_pending_candidate(pending)
             except RuntimeError as queue_exc:
-                if str(queue_exc) == "missing_level_row":
-                    next_level = pending["next_level"]
-                    stored_levels = [r.get("level") for r in (pending.get("level_rows") or [])]
-                    return RunnerResult(
-                        success=False,
-                        data={
-                            "status": "missing_level_row",
-                            "city_id": pending["city_id"],
-                            "building_id": pending["building_id"],
-                            "next_level": next_level,
-                            "stored_levels": stored_levels,
-                        },
-                    )
                 raise
 
         if refresh_needed:

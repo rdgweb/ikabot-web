@@ -255,5 +255,22 @@ class InternalMarketBuyRunner(BaseRunner):
                 retry_inputs["offer_retry_count"] = next_retry
                 self.hub.reschedule_job(jid, delay_seconds=60, inputs=retry_inputs)
                 return RunnerResult(success=True, data={"status": "retry_scheduled", "retry": next_retry})
+            gold_insufficient = any(kw in exc_str.lower() for kw in ["ouro suficiente", "not enough gold", "sem ouro"])
+            if gold_insufficient:
+                gold_retry_count = int(inputs.get("gold_retry_count", 0))
+                max_gold_retries = 6  # ~1h total wait
+                if gold_retry_count < max_gold_retries:
+                    next_retry = gold_retry_count + 1
+                    self.log(
+                        jid,
+                        "warn",
+                        f"[Order {order_id}] Ouro insuficiente (tentativa {next_retry}/{max_gold_retries}) | "
+                        f"destino={buyer_city_name}; reagendando em 10min",
+                    )
+                    retry_inputs = dict(inputs)
+                    retry_inputs["gold_retry_count"] = next_retry
+                    self.hub.reschedule_job(jid, delay_seconds=600, inputs=retry_inputs)
+                    return RunnerResult(success=True, data={"status": "gold_retry", "retry": next_retry})
+                self.log(jid, "error", f"[Order {order_id}] Ouro insuficiente após {max_gold_retries} tentativas — cancelando")
             self.log(jid, "error", f"[Order {order_id}] Buy failed: {exc}")
             return RunnerResult(success=False, data={"error": exc_str})
