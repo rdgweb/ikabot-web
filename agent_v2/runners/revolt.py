@@ -10,6 +10,7 @@ Inputs:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from core.runner_registry import register_runner
@@ -21,6 +22,60 @@ logger = logging.getLogger(__name__)
 
 @register_runner(9002)
 class RevoltRunner(BaseRunner):
+    @staticmethod
+    def _extract_action_request(text: str) -> str:
+        match = re.search(r'"actionRequest"\s*:\s*"([a-f0-9]{32})"', text or "")
+        return match.group(1) if match else ""
+
+    def _resolve_revolt_href(
+        self,
+        *,
+        session,
+        url: str,
+        city_id: str,
+        action_request: str,
+        revolt_function: str,
+    ) -> tuple[str, str]:
+        resp = session.get(
+            url,
+            params={
+                "view": "cityMilitary",
+                "cityId": city_id,
+                "currentCityId": city_id,
+                "backgroundView": "city",
+                "actionRequest": action_request,
+                "ajax": "1",
+            },
+            timeout=30,
+        )
+
+        new_action_request = self._extract_action_request(resp.text) or action_request
+
+        html = ""
+        try:
+            data = resp.json()
+            for entry in data:
+                if not isinstance(entry, list) or len(entry) < 2:
+                    continue
+                items = entry[1]
+                if not isinstance(items, list):
+                    continue
+                for item in items:
+                    if isinstance(item, str) and len(item) > 500:
+                        html = item
+                        break
+                if html:
+                    break
+        except Exception:
+            html = resp.text or ""
+
+        href_match = re.search(
+            rf'href="([^"]*function={re.escape(revolt_function)}[^"]*)"',
+            html,
+            re.IGNORECASE,
+        )
+        return (href_match.group(1) if href_match else ""), new_action_request
+
     def execute(self, job: dict) -> RunnerResult:
         jid = job["job_id"]
         aid = job.get("account_id", "")
@@ -57,24 +112,32 @@ class RevoltRunner(BaseRunner):
         headers = dict(GAME_AJAX_HEADERS)
 
         ok = False
+        explicit_error = False
         try:
-            resp = session.post(
-                url,
-                data={
-                    "action": "transportOperations",
-                    "function": revolt_function,
-                    "cityId": city_id,
-                    "currentCityId": city_id,
-                    "backgroundView": "city",
-                    "templateView": "cityMilitary",
-                    "actionRequest": action_request,
-                    "ajax": "1",
-                },
-                headers=headers,
-                timeout=20,
+            revolt_href, action_request = self._resolve_revolt_href(
+                session=session,
+                url=url,
+                city_id=city_id,
+                action_request=action_request,
+                revolt_function=revolt_function,
             )
+            client._action_request = action_request
 
-            import re
+            if not revolt_href:
+                msg = (
+                    "O porto nao esta ocupado segundo a pagina do jogo."
+                    if revolt_type == "ships"
+                    else "Esta cidade nao esta ocupada segundo a pagina do jogo."
+                )
+                self.log(jid, "error", msg)
+                self.save_game_client(game_account_id, client)
+                return RunnerResult(success=False, data={"error": "revolt_link_not_available"})
+
+            target_url = url + revolt_href.lstrip("?")
+            if "?" in url:
+                target_url = url.split("?", 1)[0] + "?" + revolt_href.lstrip("?")
+
+            resp = session.get(target_url, headers=headers, timeout=20)
 
             action_request_match = re.search(r'"actionRequest"\s*:\s*"([a-f0-9]{32})"', resp.text)
             if action_request_match:
@@ -94,17 +157,23 @@ class RevoltRunner(BaseRunner):
                             self.log(jid, "info", f"Revolta iniciada: {feedback_text}")
                             ok = True
                         elif feedback_type == 11:
+                            explicit_error = True
                             self.log(jid, "error", f"Revolta falhou: {feedback_text}")
             except Exception as parse_exc:
                 logger.debug("Revolt parse error: %s", parse_exc)
 
+            if explicit_error:
+                self.save_game_client(game_account_id, client)
+                return RunnerResult(success=False, data={"error": "game_rejected_revolt"})
+
             if not ok:
                 self.log(
                     jid,
-                    "info",
-                    f"Revolta ({type_label}) enviada para {city_name} - verificar resultado no jogo",
+                    "warn",
+                    f"Revolta ({type_label}) sem confirmacao explicita do jogo para {city_name}",
                 )
-                ok = True
+                self.save_game_client(game_account_id, client)
+                return RunnerResult(success=False, data={"error": "revolt_unconfirmed"})
 
         except Exception as exc:
             self.log(jid, "error", f"Revolta falhou: {exc}")
