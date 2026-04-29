@@ -573,6 +573,42 @@
           </div>
         </div>
 
+        {# ── Occupation / Blockade alerts ── #}
+        {% for city in card.cities %}
+        {% if city.city_occupied or city.harbour_occupied %}
+        <div class="rounded-lg p-3 mb-3" style="background:#fef2f2;border:1px solid #fca5a5;">
+          <div class="flex items-start gap-2">
+            <i class="bi bi-exclamation-triangle-fill text-red-600 mt-0.5 text-xs flex-shrink-0"></i>
+            <div class="text-xs">
+              <span class="font-semibold text-red-700">{{ city.name }}</span>
+              {% if city.city_occupied %}
+              <div class="text-red-600 mt-0.5">
+                <i class="bi bi-flag-fill text-[10px]"></i>
+                Forças de ocupação:
+                {% if city.occupation_forces %}
+                  {% for f in city.occupation_forces %}<strong>{{ f.player }}</strong> ({{ f.total }}){% if not forloop.last %}, {% endif %}{% endfor %}
+                {% else %}
+                  nenhuma tropa ({{ city.occupier_name|default:"inimigo" }})
+                {% endif %}
+              </div>
+              {% endif %}
+              {% if city.harbour_occupied %}
+              <div class="text-orange-700 mt-0.5">
+                <i class="bi bi-anchor text-[10px]"></i>
+                Porto bloqueado:
+                {% if city.blockade_forces %}
+                  {% for f in city.blockade_forces %}<strong>{{ f.player }}</strong> ({{ f.total }} navios){% if not forloop.last %}, {% endif %}{% endfor %}
+                {% else %}
+                  {{ city.port_controller_name|default:"inimigo" }} — rode Check Status para ver quantidade
+                {% endif %}
+              </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+
         <div class="space-y-4">
           <div>
             <h5 class="text-[11px] font-semibold text-muted uppercase tracking-wider mb-2">

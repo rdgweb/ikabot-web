@@ -242,6 +242,8 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                             "fleet": city_fleet,
                             "troop_total": sum(unit["count"] for unit in city_troops),
                             "fleet_total": sum(unit["count"] for unit in city_fleet),
+                            "occupation_forces": city_military.get("occupation_forces") or [],
+                            "blockade_forces": city_military.get("blockade_forces") or [],
                         }
 
                 for ec in enriched_cities:
@@ -252,6 +254,8 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                     ec["fleet_total"] = city_military.get("fleet_total", 0)
                     ec["troop_map"] = {unit["name"]: unit["count"] for unit in ec["troops"]}
                     ec["fleet_map"] = {unit["name"]: unit["count"] for unit in ec["fleet"]}
+                    ec["occupation_forces"] = city_military.get("occupation_forces", [])
+                    ec["blockade_forces"] = city_military.get("blockade_forces", [])
 
                 troop_columns = _build_military_columns(enriched_cities, "troop")
                 fleet_columns = _build_military_columns(enriched_cities, "fleet")

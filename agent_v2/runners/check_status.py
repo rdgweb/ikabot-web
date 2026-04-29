@@ -248,7 +248,7 @@ class CheckStatusRunner(BaseRunner):
 
             # 3d. Fetch military data
             self.log(jid, "info", "Buscando dados militares...")
-            military_data = self._fetch_military_data(session, url_base, html, city_ids)
+            military_data = self._fetch_military_data(session, url_base, html, city_ids, cities_data)
 
             # ── 4. Build and push snapshot ──
             self.log(jid, "info", "Enviando snapshot ao hub...")
@@ -777,6 +777,7 @@ class CheckStatusRunner(BaseRunner):
         url_base: str,
         homepage_html: str,
         city_ids: list[dict],
+        cities_data: list[dict] | None = None,
     ) -> dict:
         """Fetch military units from cityMilitary view for each city.
 
@@ -793,6 +794,17 @@ class CheckStatusRunner(BaseRunner):
         all_fleet: dict[str, int] = {}
         by_city: list[dict[str, Any]] = []
 
+        # Build set of occupied/blockaded city IDs so we fetch extra data
+        occupied_ids: set[int] = set()
+        if cities_data:
+            for city in cities_data:
+                if city.get("city_occupied") or city.get("harbour_occupied"):
+                    cid_val = city.get("id")
+                    try:
+                        occupied_ids.add(int(cid_val))
+                    except (TypeError, ValueError):
+                        pass
+
         for cid_info in city_ids:
             cid = cid_info["id"]
             try:
@@ -806,10 +818,24 @@ class CheckStatusRunner(BaseRunner):
                     all_troops[name] = all_troops.get(name, 0) + count
                 for name, count in city_fleet.items():
                     all_fleet[name] = all_fleet.get(name, 0) + count
+
+                occupation_forces: list[dict] = []
+                blockade_forces: list[dict] = []
+                if cid in occupied_ids:
+                    occ = self._fetch_occupation_forces(session, url_base, cid, action_request)
+                    occupation_forces = occ.get("occupation_forces", [])
+                    blockade_forces = occ.get("blockade_forces", [])
+                    logger.info(
+                        "City %d: occupation=%s blockade=%s",
+                        cid, occupation_forces, blockade_forces,
+                    )
+
                 by_city.append({
                     "city_id": cid,
                     "troops": city_troops,
                     "fleet": city_fleet,
+                    "occupation_forces": occupation_forces,
+                    "blockade_forces": blockade_forces,
                 })
 
             except Exception as e:
@@ -819,6 +845,94 @@ class CheckStatusRunner(BaseRunner):
             logger.info("Military data: %d troop types, %d fleet types", len(all_troops), len(all_fleet))
 
         return {"troops": all_troops, "fleet": all_fleet, "by_city": by_city}
+
+    def _fetch_occupation_forces(
+        self,
+        session: requests.Session,
+        url_base: str,
+        city_id: int,
+        action_request: str,
+    ) -> dict:
+        """Fetch occupation/blockade forces visible in cityMilitary for occupied cities."""
+        time.sleep(random.uniform(0.5, 1.2))
+        try:
+            resp = session.get(
+                f"{url_base}view=cityMilitary&activeTab=tabUnits"
+                f"&cityId={city_id}&backgroundView=city&currentCityId={city_id}"
+                f"&currentTab=multiTab1&actionRequest={action_request}&ajax=1",
+                timeout=30,
+            )
+            data = json.loads(resp.text, strict=False)
+            full_html = data[1][1][1] if len(data) > 1 and len(data[1]) > 1 else ""
+        except Exception as e:
+            logger.warning("Failed to fetch occupation forces for city %d: %s", city_id, e)
+            return {}
+        if not full_html:
+            return {}
+        return self._parse_occupation_html(full_html)
+
+    @staticmethod
+    def _parse_occupation_html(html: str) -> dict:
+        """Parse 'Forças de ocupação' and 'Tropas bloqueadas' sections from cityMilitary HTML."""
+        result: dict[str, list[dict]] = {"occupation_forces": [], "blockade_forces": []}
+
+        # Work on plain text — strips HTML tags, normalises whitespace
+        text = re.sub(r'<[^>]+>', '\n', html)
+        text = re.sub(r'[ \t]+', ' ', text)
+        text = re.sub(r'\n{3,}', '\n\n', text)
+
+        def find_section(text: str, *keywords: str) -> str:
+            for kw in keywords:
+                m = re.search(re.escape(kw), text, re.IGNORECASE)
+                if m:
+                    rest = text[m.end():]
+                    # Cut at next recognisable section heading
+                    next_sec = re.search(
+                        r'\n\s*(?:Forças|Tropas\s+(?:aliadas|próprias|bloqueadas|de\s+ocupação)|'
+                        r'Garrison|Own\s+troops|Allied|Occupation|Blockade|Stationierte)',
+                        rest, re.IGNORECASE,
+                    )
+                    return rest[:next_sec.start()] if next_sec else rest[:3000]
+            return ""
+
+        def parse_forces(section: str) -> list[dict]:
+            if not section:
+                return []
+            if re.search(r'não existe|nenhuma|no units|keine', section, re.IGNORECASE):
+                return []
+
+            entries: dict[str, int] = {}
+            lines = [ln.strip() for ln in section.split('\n') if ln.strip()]
+            i = 0
+            while i < len(lines):
+                line = lines[i]
+                # Player name: non-empty, not purely numeric, not a UI label
+                if line and not re.match(r'^[\d\s,./\-]+$', line) and len(line) > 1:
+                    # Gather numbers from the next 1-3 lines
+                    total = 0
+                    j = i + 1
+                    while j < min(i + 4, len(lines)):
+                        nums = re.findall(r'\d+', lines[j])
+                        if nums:
+                            total += sum(int(n) for n in nums)
+                            j += 1
+                        else:
+                            break
+                    if j > i + 1:
+                        if total > 0:
+                            entries[line] = entries.get(line, 0) + total
+                        i = j
+                        continue
+                i += 1
+
+            return [{"player": p, "total": t} for p, t in entries.items()]
+
+        occ = find_section(text, "Forças de ocupação", "occupation force", "Besatzungstruppen")
+        blk = find_section(text, "Tropas bloqueadas", "blockade", "Blockierende")
+
+        result["occupation_forces"] = parse_forces(occ)
+        result["blockade_forces"] = parse_forces(blk)
+        return result
 
     def _fetch_military_tab(
         self,
