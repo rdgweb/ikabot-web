@@ -1272,16 +1272,18 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
 
                 if live_still_busy:
                     wait_seconds = MIN_RECHECK_SECONDS
-                    if upgrading_name in _building_ids_to_match(pending["building_id"]):
-                        construction_end_at = _to_int(upgrading.get("construction_end_at"), 0)
-                        if construction_end_at > 0:
-                            remaining = max(0, construction_end_at - int(time.time()))
-                            wait_seconds = max(MIN_RECHECK_SECONDS, remaining + FINISH_BUFFER_SECONDS)
-                        else:
-                            in_flight_row = self._find_level_row(pending, upgrading_level + 1)
-                            if in_flight_row is not None:
-                                base_adj = _to_int(in_flight_row.get("adjusted_seconds"), 0)
-                                wait_seconds = max(MIN_RECHECK_SECONDS, base_adj + FINISH_BUFFER_SECONDS)
+                    # Always try to read construction_end_at regardless of which building
+                    # is being upgraded — city might be building something unrelated to our plan
+                    construction_end_at = _to_int(upgrading.get("construction_end_at"), 0)
+                    if construction_end_at > 0:
+                        remaining = max(0, construction_end_at - int(time.time()))
+                        wait_seconds = max(MIN_RECHECK_SECONDS, remaining + FINISH_BUFFER_SECONDS)
+                    elif upgrading_name in _building_ids_to_match(pending["building_id"]):
+                        # Same building type — use plan's adjusted_seconds as fallback
+                        in_flight_row = self._find_level_row(pending, upgrading_level + 1)
+                        if in_flight_row is not None:
+                            base_adj = _to_int(in_flight_row.get("adjusted_seconds"), 0)
+                            wait_seconds = max(MIN_RECHECK_SECONDS, base_adj + FINISH_BUFFER_SECONDS)
                     self.log(
                         jid, "info",
                         f"{_city_name(city)} em obra: {upgrading_name} Lv {upgrading_level} → {upgrading_level + 1}; próxima etapa em {_format_duration(wait_seconds)}",

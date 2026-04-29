@@ -7,8 +7,9 @@ import logging
 from django.db import transaction
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.utils import timezone
 
-from .models import Job
+from .models import Job, Workflow
 from .services.dispatch import dispatch_job
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,37 @@ def enqueue_job_on_create(sender, instance, created, **kwargs):
         )
 
     transaction.on_commit(_dispatch)
+
+
+@receiver(post_save, sender=Job)
+def update_workflow_status_on_terminal(sender, instance, created, update_fields, **kwargs):
+    """When a job reaches terminal status, check if its workflow should be marked finished."""
+    if created:
+        return
+    if update_fields and "status" not in update_fields:
+        return
+    if instance.status not in _TERMINAL_STATUSES:
+        return
+    if not instance.workflow_id:
+        return
+
+    def _check():
+        try:
+            wf = Workflow.objects.filter(pk=instance.workflow_id).select_for_update(skip_locked=True).first()
+            if wf is None or wf.status in ("finished", "cancelled", "paused"):
+                return
+            has_active = Job.objects.filter(
+                workflow_id=instance.workflow_id,
+                status__in=("queued", "running", "scheduled"),
+            ).exists()
+            if not has_active:
+                wf.status = "finished"
+                wf.finished_at = timezone.now()
+                wf.save(update_fields=["status", "finished_at", "updated_at"])
+        except Exception as exc:
+            logger.debug("Workflow status update skipped: %s", exc)
+
+    transaction.on_commit(_check)
 
 
 @receiver(post_save, sender=Job)

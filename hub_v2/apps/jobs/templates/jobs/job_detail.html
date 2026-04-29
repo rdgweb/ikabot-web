@@ -74,6 +74,48 @@
 {% endblock %}
 
 {% block detail_main %}
+
+{% if object.created_at %}
+<div class="card !py-3 !px-4">
+  <div class="flex items-center gap-0 text-xs overflow-x-auto">
+    {% with phases=object.created_at|date:"d/m H:i" %}
+    <div class="flex flex-col items-center shrink-0">
+      <div class="w-2.5 h-2.5 rounded-full bg-[var(--ik-sea)]"></div>
+      <div class="text-muted mt-1 whitespace-nowrap">Criado</div>
+      <div class="text-ink font-medium whitespace-nowrap">{{ object.created_at|date:"d/m H:i" }}</div>
+    </div>
+    {% if object.scheduled_for %}
+    <div class="flex-1 h-px bg-[var(--ik-line)] min-w-[20px]"></div>
+    <div class="flex flex-col items-center shrink-0">
+      <div class="w-2.5 h-2.5 rounded-full bg-purple-400"></div>
+      <div class="text-muted mt-1 whitespace-nowrap">Agendado</div>
+      <div class="text-ink font-medium whitespace-nowrap">{{ object.scheduled_for|date:"d/m H:i" }}</div>
+    </div>
+    {% endif %}
+    {% if object.started_at %}
+    <div class="flex-1 h-px bg-[var(--ik-line)] min-w-[20px]"></div>
+    <div class="flex flex-col items-center shrink-0">
+      <div class="w-2.5 h-2.5 rounded-full bg-amber-400"></div>
+      <div class="text-muted mt-1 whitespace-nowrap">Iniciou</div>
+      <div class="text-ink font-medium whitespace-nowrap">{{ object.started_at|date:"d/m H:i" }}</div>
+    </div>
+    {% endif %}
+    {% if object.finished_at %}
+    <div class="flex-1 h-px bg-[var(--ik-line)] min-w-[20px]"></div>
+    <div class="flex flex-col items-center shrink-0">
+      <div class="w-2.5 h-2.5 rounded-full {% if object.status == 'finished' %}bg-[var(--ik-good)]{% elif object.status == 'error' %}bg-[var(--ik-bad)]{% else %}bg-[var(--ik-muted)]{% endif %}"></div>
+      <div class="text-muted mt-1 whitespace-nowrap">Finalizou</div>
+      <div class="text-ink font-medium whitespace-nowrap">{{ object.finished_at|date:"d/m H:i" }}</div>
+      {% if object.started_at %}
+      <div class="text-[10px] text-muted whitespace-nowrap">{{ object.started_at|timesince:object.finished_at }}</div>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% endwith %}
+  </div>
+</div>
+{% endif %}
+
 <div class="card">
   <h3 class="mb-3 text-sm font-semibold text-ink">Informações</h3>
   <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
@@ -1125,32 +1167,30 @@
         {% endif %}
       </dd>
     </div>
+    {% if source_job %}
     <div>
-      <dt class="text-muted">Source Job ID</dt>
-      <dd class="mt-0.5 font-mono text-xs">
-        {% if source_job %}
-        <a href="{% url 'jobs:job-detail' source_job.pk %}" class="link-sea">
-          {{ source_job.pk }}
-          <span class="font-sans text-muted">• {{ source_job.action_code|action_name }}</span>
+      <dt class="text-muted">Job anterior</dt>
+      <dd class="mt-0.5">
+        <a href="{% url 'jobs:job-detail' source_job.pk %}"
+           hx-target="#page-content" hx-push-url="true"
+           class="flex items-center justify-between gap-2 rounded border border-[var(--ik-line)] px-2 py-1 text-xs hover:bg-sand">
+          <span class="text-muted truncate">{{ source_job.action_code|action_name }}</span>
+          <span class="badge {{ source_job.status|status_badge_class }} shrink-0">{{ source_job.get_status_display }}</span>
         </a>
-        {% else %}
-        {{ object.source_job_id|default:"—" }}
-        {% endif %}
       </dd>
     </div>
+    {% endif %}
     <div>
-      <dt class="text-muted">Jobs derivados</dt>
+      <dt class="text-muted">Próximos jobs</dt>
       <dd class="mt-1">
         {% if child_jobs %}
         <div class="space-y-1">
           {% for child_job in child_jobs %}
           <a href="{% url 'jobs:job-detail' child_job.pk %}"
+             hx-target="#page-content" hx-push-url="true"
              class="flex items-center justify-between gap-2 rounded border border-[var(--ik-line)] px-2 py-1 text-xs hover:bg-sand">
-            <span class="truncate">
-              <span class="font-mono">{{ child_job.pk }}</span>
-              <span class="text-muted">• {{ child_job.action_code|action_name }}</span>
-            </span>
-            <span class="badge {{ child_job.status|status_badge_class }}">{{ child_job.get_status_display }}</span>
+            <span class="text-muted truncate">{{ child_job.action_code|action_name }}</span>
+            <span class="badge {{ child_job.status|status_badge_class }} shrink-0">{{ child_job.get_status_display }}</span>
           </a>
           {% endfor %}
         </div>
