@@ -391,6 +391,12 @@ def _construction_city_data(cities):
             "name": city.get("name", ""),
             "x": x,
             "y": y,
+            "city_occupied": bool(city.get("city_occupied")),
+            "harbour_occupied": bool(city.get("harbour_occupied")),
+            "occupier_name": city.get("occupier_name", ""),
+            "port_controller_name": city.get("port_controller_name", ""),
+            "occupation_forces": city.get("occupation_forces") or [],
+            "blockade_forces": city.get("blockade_forces") or [],
             "population": int(city.get("population", 0) or 0),
             "free_citizens": int(city.get("free_citizens", 0) or 0),
             "storage_capacity": int(city.get("storage_capacity", 0) or 0),
@@ -928,6 +934,8 @@ def _custom_field_names(action_code: int) -> list[str]:
         return [*SHRINE_GOD_FIELDS, "favor_recheck_minutes", "cycle_hours"]
     if int(action_code) == 1203:
         return ["unit_targets_json", "min_crystal_reserve", "min_gold_reserve", "priority_mode"]
+    if int(action_code) == 9002:
+        return ["city_id", "revolt_type"]
     return []
 
 
@@ -1062,11 +1070,18 @@ class JobCreateModalView(LoginRequiredMixin, View):
         cities = _get_cities(ga)
         construction_cities = _construction_city_data(cities)
         selected_city = request.GET.get("city_id", request.GET.get("city", ""))
+        selected_revolt_type = request.GET.get("revolt_type", "")
         form = JobCreateForm(
             action_code=action_code,
             game_account=ga,
             cities=construction_cities,
-            initial={"game_account": str(ga.pk), "action_code": action_code, "city_id": selected_city, "city": selected_city},
+            initial={
+                "game_account": str(ga.pk),
+                "action_code": action_code,
+                "city_id": selected_city,
+                "city": selected_city,
+                "revolt_type": selected_revolt_type,
+            },
         )
         html = render_to_string(
             "jobs/partials/create_step_form.html",
@@ -1120,11 +1135,18 @@ class JobFormView(LoginRequiredMixin, View):
         cities = _get_cities(ga)
         construction_cities = _construction_city_data(cities)
         selected_city = request.GET.get("city_id", request.GET.get("city", ""))
+        selected_revolt_type = request.GET.get("revolt_type", "")
         form = JobCreateForm(
             action_code=action_code,
             game_account=ga,
             cities=construction_cities,
-            initial={"game_account": str(ga.pk), "action_code": action_code, "city_id": selected_city, "city": selected_city},
+            initial={
+                "game_account": str(ga.pk),
+                "action_code": action_code,
+                "city_id": selected_city,
+                "city": selected_city,
+                "revolt_type": selected_revolt_type,
+            },
         )
 
         html = render_to_string(
@@ -1605,7 +1627,7 @@ class JobSubmitView(LoginRequiredMixin, View):
             return count
         else:
             single_inputs = dict(inputs)
-            if int(action_code) in {2, 6, 8, 9, 11} and city_choices:
+            if int(action_code) in {2, 6, 8, 9, 11, 9002} and city_choices:
                 single_inputs["_city_choices"] = city_choices
             if int(action_code) in {8, 9} and cities:
                 single_inputs["_city_objects"] = {
@@ -1648,6 +1670,12 @@ class JobSubmitView(LoginRequiredMixin, View):
         elif int(action_code) in {6, 11}:
             city_map = inputs.get("_city_choices") if isinstance(inputs.get("_city_choices"), dict) else {}
             city_id = str(enriched_inputs.get("city") or "").strip()
+            if city_id and city_map.get(city_id):
+                enriched_inputs["city_name"] = city_map[city_id]
+            enriched_inputs.pop("_city_choices", None)
+        elif int(action_code) == 9002:
+            city_map = inputs.get("_city_choices") if isinstance(inputs.get("_city_choices"), dict) else {}
+            city_id = str(enriched_inputs.get("city_id") or "").strip()
             if city_id and city_map.get(city_id):
                 enriched_inputs["city_name"] = city_map[city_id]
             enriched_inputs.pop("_city_choices", None)

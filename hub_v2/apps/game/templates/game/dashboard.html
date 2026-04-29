@@ -626,20 +626,26 @@
             {# Revolt action buttons #}
             <div class="flex flex-col gap-1.5 flex-shrink-0">
               {% if city.city_occupied %}
-              <button hx-post="{% url 'game:run-action' %}"
-                      hx-vals='{"game_account_id": "{{ card.game_account.pk }}", "action_code": "9002", "input_city_id": "{{ city.id }}", "input_city_name": "{{ city.name|escapejs }}", "input_revolt_type": "troops"}'
-                      hx-swap="none"
+              <button hx-get="{% url 'jobs:job-create' %}?ga={{ card.game_account.pk }}&action=9002&city_id={{ city.id }}&revolt_type=troops"
+                      hx-target="#job-modal-body"
+                      hx-swap="innerHTML"
+                      hx-push-url="false"
+                      hx-boost="false"
                       class="btn btn-danger btn-sm whitespace-nowrap"
+                      onclick="event.stopPropagation(); this.dispatchEvent(new CustomEvent('open-modal-jobcreate', {bubbles: true}));"
                       title="Revolta contra tropas de ocupação em {{ city.name }}">
                 <i class="bi bi-shield-exclamation"></i> Revolta (tropas)
               </button>
               {% endif %}
               {% if city.harbour_occupied %}
-              <button hx-post="{% url 'game:run-action' %}"
-                      hx-vals='{"game_account_id": "{{ card.game_account.pk }}", "action_code": "9002", "input_city_id": "{{ city.id }}", "input_city_name": "{{ city.name|escapejs }}", "input_revolt_type": "ships"}'
-                      hx-swap="none"
+              <button hx-get="{% url 'jobs:job-create' %}?ga={{ card.game_account.pk }}&action=9002&city_id={{ city.id }}&revolt_type=ships"
+                      hx-target="#job-modal-body"
+                      hx-swap="innerHTML"
+                      hx-push-url="false"
+                      hx-boost="false"
                       class="btn btn-sm whitespace-nowrap"
                       style="background:#c2410c;color:#fff;border-color:#c2410c;"
+                      onclick="event.stopPropagation(); this.dispatchEvent(new CustomEvent('open-modal-jobcreate', {bubbles: true}));"
                       title="Revolta contra frota bloqueante em {{ city.name }}">
                 <i class="bi bi-water"></i> Revolta (frotas)
               </button>

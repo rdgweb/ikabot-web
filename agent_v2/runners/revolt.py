@@ -25,12 +25,9 @@ class RevoltRunner(BaseRunner):
         jid = job["job_id"]
         aid = job.get("account_id", "")
         game_account_id = job.get("game_account_id", "")
-        inputs: dict[str, Any] = {}
-        try:
-            import json
-            inputs = json.loads(job.get("inputs_json") or "{}")
-        except Exception:
-            pass
+        inputs = job.get("inputs") or {}
+        if not isinstance(inputs, dict):
+            inputs = {}
 
         city_id = str(inputs.get("city_id") or "").strip()
         city_name = str(inputs.get("city_name") or city_id)

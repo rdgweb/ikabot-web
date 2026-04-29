@@ -1,4 +1,4 @@
-from .constants import CAT_AUTOMATION, CAT_MILITARY, FIELD_CITY_SELECT
+from .constants import CAT_AUTOMATION, CAT_MILITARY, FIELD_CHOICE, FIELD_CITY_SELECT
 
 
 ACTIONS = {
@@ -86,8 +86,26 @@ ACTIONS = {
         "ready": True,
         "description": "Inicia uma revolta para libertar cidade ocupada ou porto bloqueado por inimigo.",
         "inputs": [
-            {"key": "city_id", "type": "int", "label": "ID da Cidade", "required": True, "help": "ID numérico da cidade ocupada."},
-            {"key": "city_name", "type": "str", "label": "Nome da Cidade", "required": False},
+            {
+                "key": "city_id",
+                "type": FIELD_CITY_SELECT,
+                "label": "Cidade",
+                "multiple": False,
+                "required": True,
+                "help": "Selecione a cidade com ocupacao terrestre ou bloqueio naval.",
+            },
+            {
+                "key": "revolt_type",
+                "type": FIELD_CHOICE,
+                "label": "Tipo de revolta",
+                "required": True,
+                "default": "troops",
+                "choices": [
+                    ("troops", "Forcas de ocupacao (tropas)"),
+                    ("ships", "Bloqueio do porto (frotas)"),
+                ],
+                "help": "Escolha se a revolta deve mirar tropas em terra ou a frota que bloqueia o porto.",
+            },
         ],
     },
 }

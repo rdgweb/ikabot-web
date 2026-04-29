@@ -20,6 +20,7 @@ ACTION_NAMES = {
     101: "Discover Characters",
     102: "Donate",
     103: "Login Daily",
+    9002: "Revolta",
 }
 
 
