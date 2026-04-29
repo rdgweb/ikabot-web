@@ -389,15 +389,6 @@
                     Porto bloq.{% if city.port_controller_name %}: {{ city.port_controller_name }}{% endif %}
                   </span>
                   {% endif %}
-                  {% if city.city_occupied or city.harbour_occupied %}
-                  <button hx-post="{% url 'game:run-action' %}"
-                          hx-vals='{"game_account_id": "{{ card.game_account.pk }}", "action_code": "9002", "input_city_id": "{{ city.id }}", "input_city_name": "{{ city.name|escapejs }}"}'
-                          hx-swap="none"
-                          class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-red-600 text-white text-[9px] font-semibold hover:bg-red-700 transition-colors"
-                          title="Iniciar revolta em {{ city.name }}">
-                    <i class="bi bi-lightning-fill text-[9px]"></i> Revolta
-                  </button>
-                  {% endif %}
                 </div>
               </td>
               {# ── Resource cells — hover triggers Alpine tooltip ── #}
@@ -573,35 +564,85 @@
           </div>
         </div>
 
-        {# ── Occupation / Blockade alerts ── #}
+        {# ── Occupation / Blockade alerts with revolt actions ── #}
         {% for city in card.cities %}
         {% if city.city_occupied or city.harbour_occupied %}
         <div class="rounded-lg p-3 mb-3" style="background:#fef2f2;border:1px solid #fca5a5;">
-          <div class="flex items-start gap-2">
-            <i class="bi bi-exclamation-triangle-fill text-red-600 mt-0.5 text-xs flex-shrink-0"></i>
-            <div class="text-xs">
-              <span class="font-semibold text-red-700">{{ city.name }}</span>
-              {% if city.city_occupied %}
-              <div class="text-red-600 mt-0.5">
-                <i class="bi bi-flag-fill text-[10px]"></i>
-                Forças de ocupação:
-                {% if city.occupation_forces %}
-                  {% for f in city.occupation_forces %}<strong>{{ f.player }}</strong> ({{ f.total }}){% if not forloop.last %}, {% endif %}{% endfor %}
-                {% else %}
-                  nenhuma tropa ({{ city.occupier_name|default:"inimigo" }})
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-start gap-2 min-w-0">
+              <i class="bi bi-exclamation-triangle-fill text-red-600 mt-0.5 text-sm flex-shrink-0"></i>
+              <div class="text-xs min-w-0">
+                <div class="font-bold text-red-800 mb-1">{{ city.name }}</div>
+
+                {% if city.city_occupied %}
+                <div class="mb-1">
+                  <span class="font-semibold text-red-700"><i class="bi bi-flag-fill"></i> Forças de ocupação (tropas):</span>
+                  {% if city.occupation_forces %}
+                  <div class="mt-0.5 space-y-0.5">
+                    {% for f in city.occupation_forces %}
+                    <div class="text-red-700">
+                      <span class="font-semibold">{{ f.player }}</span> —
+                      {% if f.units %}
+                        {% for unit_name, unit_count in f.units.items %}{{ unit_name }}: <strong>{{ unit_count }}</strong>{% if not forloop.last %}, {% endif %}{% endfor %}
+                        (total: {{ f.total }})
+                      {% else %}
+                        {{ f.total }} unidades
+                      {% endif %}
+                    </div>
+                    {% endfor %}
+                  </div>
+                  {% else %}
+                  <span class="text-red-600 ml-1">nenhuma tropa — {{ city.occupier_name|default:"inimigo" }}</span>
+                  {% endif %}
+                </div>
                 {% endif %}
+
+                {% if city.harbour_occupied %}
+                <div>
+                  <span class="font-semibold text-orange-700"><i class="bi bi-anchor"></i> Porto bloqueado (frotas):</span>
+                  {% if city.blockade_forces %}
+                  <div class="mt-0.5 space-y-0.5">
+                    {% for f in city.blockade_forces %}
+                    <div class="text-orange-700">
+                      <span class="font-semibold">{{ f.player }}</span> —
+                      {% if f.units %}
+                        {% for unit_name, unit_count in f.units.items %}{{ unit_name }}: <strong>{{ unit_count }}</strong>{% if not forloop.last %}, {% endif %}{% endfor %}
+                        (total: {{ f.total }})
+                      {% else %}
+                        {{ f.total }} navios
+                      {% endif %}
+                    </div>
+                    {% endfor %}
+                  </div>
+                  {% else %}
+                  <span class="text-orange-600 ml-1">{{ city.port_controller_name|default:"inimigo" }} — rode Check Status para ver quantidades</span>
+                  {% endif %}
+                </div>
+                {% endif %}
+
               </div>
+            </div>
+
+            {# Revolt action buttons #}
+            <div class="flex flex-col gap-1.5 flex-shrink-0">
+              {% if city.city_occupied %}
+              <button hx-post="{% url 'game:run-action' %}"
+                      hx-vals='{"game_account_id": "{{ card.game_account.pk }}", "action_code": "9002", "input_city_id": "{{ city.id }}", "input_city_name": "{{ city.name|escapejs }}", "input_revolt_type": "troops"}'
+                      hx-swap="none"
+                      class="btn btn-danger btn-sm whitespace-nowrap"
+                      title="Revolta contra tropas de ocupação em {{ city.name }}">
+                <i class="bi bi-shield-exclamation"></i> Revolta (tropas)
+              </button>
               {% endif %}
               {% if city.harbour_occupied %}
-              <div class="text-orange-700 mt-0.5">
-                <i class="bi bi-anchor text-[10px]"></i>
-                Porto bloqueado:
-                {% if city.blockade_forces %}
-                  {% for f in city.blockade_forces %}<strong>{{ f.player }}</strong> ({{ f.total }} navios){% if not forloop.last %}, {% endif %}{% endfor %}
-                {% else %}
-                  {{ city.port_controller_name|default:"inimigo" }} — rode Check Status para ver quantidade
-                {% endif %}
-              </div>
+              <button hx-post="{% url 'game:run-action' %}"
+                      hx-vals='{"game_account_id": "{{ card.game_account.pk }}", "action_code": "9002", "input_city_id": "{{ city.id }}", "input_city_name": "{{ city.name|escapejs }}", "input_revolt_type": "ships"}'
+                      hx-swap="none"
+                      class="btn btn-sm whitespace-nowrap"
+                      style="background:#c2410c;color:#fff;border-color:#c2410c;"
+                      title="Revolta contra frota bloqueante em {{ city.name }}">
+                <i class="bi bi-water"></i> Revolta (frotas)
+              </button>
               {% endif %}
             </div>
           </div>

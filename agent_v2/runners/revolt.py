@@ -34,12 +34,14 @@ class RevoltRunner(BaseRunner):
 
         city_id = str(inputs.get("city_id") or "").strip()
         city_name = str(inputs.get("city_name") or city_id)
+        revolt_type = str(inputs.get("revolt_type") or "troops").strip()  # "troops" | "ships"
 
         if not city_id:
             self.log(jid, "error", "city_id obrigatório")
             return RunnerResult(success=False, data={"error": "city_id_missing"})
 
-        self.log(jid, "info", f"Revolt: iniciando para {city_name} (id={city_id})")
+        type_label = "frotas" if revolt_type == "ships" else "tropas"
+        self.log(jid, "info", f"Revolt: iniciando contra {type_label} em {city_name} (id={city_id})")
         client = self.get_game_client(game_account_id)
         session = client.session
         url = client._server_url
@@ -84,7 +86,7 @@ class RevoltRunner(BaseRunner):
                 logger.debug("Revolt parse error: %s", parse_exc)
 
             if not ok:
-                self.log(jid, "info", f"Revolta enviada para {city_name} (verificar resultado no jogo)")
+                self.log(jid, "info", f"Revolta ({type_label}) enviada para {city_name} — verificar resultado no jogo")
                 ok = True
 
         except Exception as exc:
@@ -93,4 +95,4 @@ class RevoltRunner(BaseRunner):
             return RunnerResult(success=False, data={"error": str(exc)})
 
         self.save_game_client(game_account_id, client)
-        return RunnerResult(success=ok, data={"city_id": city_id, "city_name": city_name})
+        return RunnerResult(success=ok, data={"city_id": city_id, "city_name": city_name, "revolt_type": revolt_type})

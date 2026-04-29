@@ -873,65 +873,84 @@ class CheckStatusRunner(BaseRunner):
 
     @staticmethod
     def _parse_occupation_html(html: str) -> dict:
-        """Parse 'Forças de ocupação' and 'Tropas bloqueadas' sections from cityMilitary HTML."""
+        """Parse 'Forças de ocupação' and 'Tropas bloqueadas' from cityMilitary HTML.
+
+        Returns per-player, per-unit breakdown:
+          {"occupation_forces": [{"player": "X", "total": N, "units": {"Hoplita": 5, ...}}], ...}
+        """
         result: dict[str, list[dict]] = {"occupation_forces": [], "blockade_forces": []}
 
-        # Work on plain text — strips HTML tags, normalises whitespace
-        text = re.sub(r'<[^>]+>', '\n', html)
-        text = re.sub(r'[ \t]+', ' ', text)
-        text = re.sub(r'\n{3,}', '\n\n', text)
-
-        def find_section(text: str, *keywords: str) -> str:
+        def find_section_html(full_html: str, *keywords: str) -> str:
             for kw in keywords:
-                m = re.search(re.escape(kw), text, re.IGNORECASE)
+                m = re.search(
+                    rf'(?:<h[1-6][^>]*>|<[^>]+class="[^"]*header[^"]*"[^>]*>)[^<]*{re.escape(kw)}',
+                    full_html, re.IGNORECASE,
+                )
                 if m:
-                    rest = text[m.end():]
-                    # Cut at next recognisable section heading
-                    next_sec = re.search(
-                        r'\n\s*(?:Forças|Tropas\s+(?:aliadas|próprias|bloqueadas|de\s+ocupação)|'
-                        r'Garrison|Own\s+troops|Allied|Occupation|Blockade|Stationierte)',
-                        rest, re.IGNORECASE,
-                    )
-                    return rest[:next_sec.start()] if next_sec else rest[:3000]
+                    rest = full_html[m.end():]
+                    next_h = re.search(r'<h[1-6][^>]*>', rest)
+                    return rest[:next_h.start()] if next_h else rest[:6000]
             return ""
 
-        def parse_forces(section: str) -> list[dict]:
-            if not section:
+        def parse_section_forces(section_html: str) -> list[dict]:
+            if not section_html:
                 return []
-            if re.search(r'não existe|nenhuma|no units|keine', section, re.IGNORECASE):
+            text_only = re.sub(r'<[^>]+>', ' ', section_html)
+            if re.search(r'não existe|nenhuma|no units|keine', text_only, re.IGNORECASE):
                 return []
 
-            entries: dict[str, int] = {}
-            lines = [ln.strip() for ln in section.split('\n') if ln.strip()]
-            i = 0
-            while i < len(lines):
-                line = lines[i]
-                # Player name: non-empty, not purely numeric, not a UI label
-                if line and not re.match(r'^[\d\s,./\-]+$', line) and len(line) > 1:
-                    # Gather numbers from the next 1-3 lines
-                    total = 0
-                    j = i + 1
-                    while j < min(i + 4, len(lines)):
-                        nums = re.findall(r'\d+', lines[j])
-                        if nums:
-                            total += sum(int(n) for n in nums)
-                            j += 1
-                        else:
-                            break
-                    if j > i + 1:
-                        if total > 0:
-                            entries[line] = entries.get(line, 0) + total
-                        i = j
+            player_forces: dict[str, dict] = {}
+
+            for table_html in re.findall(r'<table[^>]*>(.*?)</table>', section_html, re.DOTALL):
+                # Extract ordered unit names from header tooltips
+                unit_names: list[str] = []
+                thead_m = re.search(r'<thead[^>]*>(.*?)</thead>', table_html, re.DOTALL)
+                if thead_m:
+                    for _, name_raw in re.findall(
+                        r'<div[^>]+class="(?:army|fleet)\s+s\d+"[^>]*>.*?'
+                        r'<div[^>]+class="tooltip"[^>]*>(.*?)</div>',
+                        thead_m.group(1), re.DOTALL,
+                    ):
+                        unit_names.append(re.sub(r'<[^>]+>', '', name_raw).strip())
+
+                # Parse rows: first cell = player name, rest = counts
+                tbody_m = re.search(r'<tbody[^>]*>(.*?)</tbody>', table_html, re.DOTALL)
+                body_html = tbody_m.group(1) if tbody_m else table_html
+
+                for row in re.findall(r'<tr[^>]*>(.*?)</tr>', body_html, re.DOTALL):
+                    cells = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL)
+                    if not cells:
                         continue
-                i += 1
+                    clean = [re.sub(r'<[^>]+>', '', c).strip().replace('\xa0', '') for c in cells]
+                    player = clean[0].strip()
+                    if not player or re.match(r'^[\d\s,./\-]+$', player):
+                        continue
 
-            return [{"player": p, "total": t} for p, t in entries.items()]
+                    if player not in player_forces:
+                        player_forces[player] = {"total": 0, "units": {}}
 
-        occ = find_section(text, "Forças de ocupação", "occupation force", "Besatzungstruppen")
-        blk = find_section(text, "Tropas bloqueadas", "blockade", "Blockierende")
+                    for i, raw in enumerate(clean[1:]):
+                        try:
+                            count = int(raw.strip().replace(',', '').replace('.', ''))
+                        except ValueError:
+                            count = 0
+                        if count <= 0:
+                            continue
+                        name = unit_names[i] if i < len(unit_names) else f"Unidade {i + 1}"
+                        player_forces[player]["units"][name] = (
+                            player_forces[player]["units"].get(name, 0) + count
+                        )
+                        player_forces[player]["total"] += count
 
-        result["occupation_forces"] = parse_forces(occ)
-        result["blockade_forces"] = parse_forces(blk)
+            return [
+                {"player": p, "total": d["total"], "units": d["units"]}
+                for p, d in player_forces.items()
+            ]
+
+        occ_html = find_section_html(html, "ocupação", "occupation force", "Besatzungstruppen")
+        blk_html = find_section_html(html, "bloqueadas", "blockade", "Blockierende")
+        result["occupation_forces"] = parse_section_forces(occ_html)
+        result["blockade_forces"] = parse_section_forces(blk_html)
         return result
 
     def _fetch_military_tab(
