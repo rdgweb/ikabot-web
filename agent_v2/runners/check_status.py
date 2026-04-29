@@ -918,14 +918,28 @@ class CheckStatusRunner(BaseRunner):
             for table_html in re.findall(r'<table[^>]*>(.*?)</table>', section_html, re.DOTALL):
                 # Extract ordered unit names from header tooltips
                 unit_names: list[str] = []
+                header_html = ""
                 thead_m = re.search(r'<thead[^>]*>(.*?)</thead>', table_html, re.DOTALL)
                 if thead_m:
-                    for _, name_raw in re.findall(
+                    header_html = thead_m.group(1)
+                else:
+                    title_row_m = re.search(
+                        r'<tr[^>]+class="[^"]*title_img_row[^"]*"[^>]*>(.*?)</tr>',
+                        table_html,
+                        re.DOTALL,
+                    )
+                    if title_row_m:
+                        header_html = title_row_m.group(1)
+                if header_html:
+                    for name_raw in re.findall(
                         r'<div[^>]+class="(?:army|fleet)\s+s\d+"[^>]*>.*?'
                         r'<div[^>]+class="tooltip"[^>]*>(.*?)</div>',
-                        thead_m.group(1), re.DOTALL,
+                        header_html,
+                        re.DOTALL,
                     ):
-                        unit_names.append(re.sub(r'<[^>]+>', '', name_raw).strip())
+                        unit_name = re.sub(r'<[^>]+>', '', name_raw).strip()
+                        if unit_name:
+                            unit_names.append(unit_name)
 
                 # Parse rows: first cell = player name, rest = counts
                 tbody_m = re.search(r'<tbody[^>]*>(.*?)</tbody>', table_html, re.DOTALL)
@@ -937,7 +951,11 @@ class CheckStatusRunner(BaseRunner):
                         continue
                     clean = [re.sub(r'<[^>]+>', '', c).strip().replace('\xa0', '') for c in cells]
                     player = clean[0].strip()
-                    if not player or re.match(r'^[\d\s,./\-]+$', player):
+                    if (
+                        not player
+                        or re.match(r'^[\d\s,./\-]+$', player)
+                        or player.lower() in {"player", "jogador"}
+                    ):
                         continue
 
                     if player not in player_forces:

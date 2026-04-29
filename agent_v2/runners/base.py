@@ -15,6 +15,9 @@ if TYPE_CHECKING:
     from sessions import SessionManager
 
 logger = logging.getLogger(__name__)
+_LOG_LEVEL_ALIASES = {
+    "warning": "warn",
+}
 
 
 @dataclass
@@ -43,7 +46,8 @@ class BaseRunner:
 
     def log(self, job_id: str, level: str, msg: str) -> None:
         """Send a structured log line to the hub."""
-        self.hub.report_log(job_id, level, msg)
+        normalized_level = _LOG_LEVEL_ALIASES.get(str(level or "").strip().lower(), str(level or "info").strip().lower() or "info")
+        self.hub.report_log(job_id, normalized_level, msg)
 
     def checkpoint(self, job_id: str, *, phase: str, metadata: dict[str, Any] | None = None) -> None:
         self.hub.report_status(
