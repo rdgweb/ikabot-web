@@ -41,7 +41,8 @@ class RevoltRunner(BaseRunner):
             return RunnerResult(success=False, data={"error": "city_id_missing"})
 
         type_label = "frotas" if revolt_type == "ships" else "tropas"
-        self.log(jid, "info", f"Revolt: iniciando contra {type_label} em {city_name} (id={city_id})")
+        revolt_function = "revoltPort" if revolt_type == "ships" else "revolting"
+        self.log(jid, "info", f"Revolt: iniciando contra {type_label} em {city_name} (id={city_id}) via {revolt_function}")
         client = self.get_game_client(game_account_id)
         session = client.session
         url = client._server_url
@@ -53,7 +54,7 @@ class RevoltRunner(BaseRunner):
         try:
             resp = session.post(url, data={
                 "action": "transportOperations",
-                "function": "revolting",
+                "function": revolt_function,
                 "cityId": city_id,
                 "currentCityId": city_id,
                 "backgroundView": "city",

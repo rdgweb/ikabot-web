@@ -106,7 +106,7 @@ services:
       AGENT_TOKEN: ${AGENT_TOKEN:-change-me-agent-token}
       AGENT_NODE_ID: ${AGENT_NODE_ID:-}
       AGENT_NAME: ${AGENT_NAME:-ikabot-agent-01}
-      AGENT_VERSION: ${AGENT_VERSION:-0.0.1}
+
       AGENT_IMAGE: ${AGENT_IMAGE:-blackoneal/ikabot-web-agent:latest}
       AGENT_IMAGE_DIGEST: ${AGENT_IMAGE_DIGEST:-}
       TZ: America/Cuiaba

@@ -856,14 +856,28 @@ class CheckStatusRunner(BaseRunner):
         """Fetch occupation/blockade forces visible in cityMilitary for occupied cities."""
         time.sleep(random.uniform(0.5, 1.2))
         try:
+            # Fetch full cityMilitary template (no activeTab) to get occupation/blockade sections
+            # which are outside the tab content and only appear in the full template response.
             resp = session.get(
-                f"{url_base}view=cityMilitary&activeTab=tabUnits"
+                f"{url_base}view=cityMilitary"
                 f"&cityId={city_id}&backgroundView=city&currentCityId={city_id}"
-                f"&currentTab=multiTab1&actionRequest={action_request}&ajax=1",
+                f"&actionRequest={action_request}&ajax=1",
                 timeout=30,
             )
             data = json.loads(resp.text, strict=False)
-            full_html = data[1][1][1] if len(data) > 1 and len(data[1]) > 1 else ""
+            full_html = ""
+            for entry in data:
+                if not isinstance(entry, list) or len(entry) < 2:
+                    continue
+                items = entry[1]
+                if not isinstance(items, list):
+                    continue
+                for item in items:
+                    if isinstance(item, str) and len(item) > 500:
+                        full_html = item
+                        break
+                if full_html:
+                    break
         except Exception as e:
             logger.warning("Failed to fetch occupation forces for city %d: %s", city_id, e)
             return {}
