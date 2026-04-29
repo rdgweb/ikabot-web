@@ -1,82 +1,79 @@
-"""Debug runner: dump raw city data to detect occupation fields."""
+"""Debug runner: dump raw city data to detect occupation fields. Action code: 9001."""
 import json
 import time
+import re
 
 from runners.base import BaseRunner, RunnerResult
 from core.runner_registry import register_runner
+from game_client.constants import GAME_AJAX_HEADERS
 
 
 @register_runner(9001)
 class DebugCityDumpRunner(BaseRunner):
-    """Temporary debug runner — dumps raw game city data to logs."""
+    """Temporary debug runner — dumps raw game city data to logs for analysis."""
 
     def execute(self, job: dict) -> RunnerResult:
         jid = job["job_id"]
-        aid = job["account_id"]
+        game_account_id = job.get("game_account_id", "")
 
         self.log(jid, "info", "DebugCityDump starting")
-        client = self.get_game_session(aid)
+        client = self.get_game_client(game_account_id)
+        session = client.session
+        url_base = client._server_url
 
-        try:
-            # Get global data (city list)
-            global_data = client.get_global_data()
-            cities = global_data.get("cities", [])
-            self.log(jid, "info", f"Cities in global_data: {len(cities)}")
-            for city in cities:
-                self.log(jid, "info", f"GlobalData city: {json.dumps(city, ensure_ascii=False)}")
+        # Fetch homepage to get city list
+        self.log(jid, "info", "Fetching homepage...")
+        html = session.get(url_base, timeout=30).text
 
-        except Exception as exc:
-            self.log(jid, "warn", f"get_global_data failed: {exc}")
+        # Extract city IDs from HTML
+        city_ids = re.findall(r'currentCityId=(\d+)', html)
+        city_ids = list(dict.fromkeys(city_ids))  # deduplicate
+        self.log(jid, "info", f"City IDs found: {city_ids}")
 
-        try:
-            # Try individual city screens for each city
-            from apps.game.models import AccountSnapshot
-            snap = AccountSnapshot.objects.filter(
-                game_account__id=job.get("game_account_id")
-            ).first()
-            if snap:
-                cities_snap = snap.cities or {}
-                if isinstance(cities_snap, dict):
-                    city_list = list(cities_snap.values())
+        # Update action_request
+        ar_match = re.search(r'"actionRequest"\s*:\s*"([a-f0-9]{32})"', html)
+        ar = ar_match.group(1) if ar_match else client._action_request
+
+        for city_id in city_ids[:10]:
+            time.sleep(1)
+            self.log(jid, "info", f"Fetching city {city_id}...")
+            try:
+                resp = session.get(
+                    url_base,
+                    params={
+                        "view": "city",
+                        "cityId": city_id,
+                        "backgroundView": "island",
+                        "currentCityId": city_id,
+                        "templateView": "city",
+                        "actionRequest": ar,
+                        "ajax": "1",
+                    },
+                    headers=dict(GAME_AJAX_HEADERS),
+                    timeout=20,
+                )
+                ar_m = re.search(r'"actionRequest"\s*:\s*"([a-f0-9]{32})"', resp.text)
+                if ar_m:
+                    ar = ar_m.group(1)
+
+                # Extract updateBackgroundData
+                bg_match = re.search(
+                    r'"updateBackgroundData",\s?([\s\S]*?)\],\s*\["updateTemplateData"',
+                    resp.text,
+                )
+                if bg_match:
+                    city_json = json.loads(bg_match.group(1), strict=False)
+                    city_name = city_json.get("name", city_id)
+                    self.log(jid, "info", f"CITY {city_name} keys: {sorted(city_json.keys())}")
+                    self.log(jid, "info", f"CITY {city_name} raw: {json.dumps(city_json, ensure_ascii=False)[:3000]}")
                 else:
-                    city_list = cities_snap
+                    self.log(jid, "warn", f"City {city_id}: could not extract updateBackgroundData")
+                    # Log first 500 chars of response for debugging
+                    self.log(jid, "debug", f"Response snippet: {resp.text[:500]}")
 
-                for city in city_list:
-                    city_id = str(city.get("id") or "")
-                    city_name = city.get("name", "?")
-                    if not city_id:
-                        continue
-                    try:
-                        self.log(jid, "info", f"Fetching raw data for {city_name} (id={city_id})")
-                        raw = client._session.get(
-                            client._server_url,
-                            params={
-                                "view": "city",
-                                "cityId": city_id,
-                                "backgroundView": "island",
-                                "currentCityId": city_id,
-                                "templateView": "city",
-                                "actionRequest": client._action_request,
-                                "ajax": "1",
-                            },
-                            timeout=15,
-                        )
-                        data = raw.json()
-                        # Log updateGlobalData entry which has city details
-                        for entry in data:
-                            if isinstance(entry, list) and entry and entry[0] == "updateGlobalData":
-                                payload = entry[1] if len(entry) > 1 else {}
-                                cities_in_update = payload.get("cities", [])
-                                for c in cities_in_update:
-                                    if str(c.get("id") or c.get("cityId") or "") == city_id:
-                                        self.log(jid, "info", f"RAW city {city_name}: {json.dumps(c, ensure_ascii=False)}")
-                        time.sleep(1)
-                    except Exception as exc2:
-                        self.log(jid, "warn", f"City {city_name}: {exc2}")
-        except Exception as exc:
-            self.log(jid, "error", f"Dump failed: {exc}")
-            import traceback
-            self.log(jid, "error", traceback.format_exc())
+            except Exception as exc:
+                self.log(jid, "error", f"City {city_id} failed: {exc}")
 
-        self.save_game_session(aid, client)
+        self.save_game_client(game_account_id, client)
+        self.log(jid, "info", "DebugCityDump complete")
         return RunnerResult(success=True, data={"status": "dump_complete"})
