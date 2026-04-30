@@ -3255,7 +3255,8 @@
     </div>
     {% endif %}
 
-    <div class="grid grid-cols-1 gap-x-4 gap-y-3 {% if action_code == 3 %}sm:grid-cols-2 md:grid-cols-3{% else %}sm:grid-cols-2{% endif %}">
+    <div class="grid grid-cols-1 gap-x-4 gap-y-3 {% if action_code == 3 %}sm:grid-cols-2 md:grid-cols-3{% else %}sm:grid-cols-2{% endif %}"
+         {% if action_code == 3 %}x-data="{ distStrategy: '{{ form.strategy.value|default:'targets'|escapejs }}' }"{% endif %}>
 
       {# ── Distribuir Recursos: recursos como pills compactos + estratégia ── #}
       {% if action_code == 3 %}
@@ -3545,6 +3546,7 @@
             <label class="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[var(--ik-line)] cursor-pointer transition-all hover:border-[var(--ik-sea)]/60 has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[var(--ik-sea)]/10">
               <input type="radio" name="{{ field.html_name }}" value="{{ choice.0 }}"
                      {% if field.value == choice.0|stringformat:"s" %}checked{% endif %}
+                     {% if action_code == 3 and field.name == "strategy" %}@change="distStrategy = '{{ choice.0|escapejs }}'"{% endif %}
                      class="sr-only peer">
               <span class="text-xs font-medium text-muted peer-checked:text-[var(--ik-sea)] peer-checked:font-semibold">{{ choice.1 }}</span>
             </label>
@@ -3650,7 +3652,7 @@
 
         {# Default rendering — single column cell #}
         {% else %}
-        <div>
+        <div {% if action_code == 3 %}{% if field.name == "minimum_stock" or field.name == "target_stock" or field.name == "origin_reserve_stock" %}x-show="distStrategy !== 'evenly'"{% endif %}{% endif %}>
           <label for="{{ field.id_for_label }}" class="form-label text-xs mb-1 block">
             {{ field.label }}
             {% if field.field.required %}<span class="text-[var(--ik-bad)]">*</span>{% endif %}

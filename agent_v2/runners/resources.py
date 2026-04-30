@@ -668,32 +668,58 @@ class DistributeResourcesRunner(BaseRunner):
             total_need = 0
             total_available = 0
 
-            for city in cities:
-                city_id = str(city.get("id"))
-                amount = _resource_amount(city, resource)
-                total_amount += amount
-                capacity = _resource_capacity(city, resource)
-                effective_target = min(target_stock, capacity) if capacity > 0 else target_stock
-                effective_minimum = min(minimum_stock, effective_target)
-                need = max(0, effective_target - amount)
-                critical_gap = max(0, effective_minimum - amount)
-                reserve = min(origin_reserve_stock, amount)
-                available = max(0, amount - reserve)
-                if need > 0:
-                    deficits[city_id] = {
-                        "city": city,
-                        "need": need,
-                        "critical_gap": critical_gap,
-                        "is_producer": _resource_production_per_hour(city, resource) > 0,
-                    }
-                    total_need += need
-                if available >= useful_transfer_min:
-                    donors[city_id] = {
-                        "city": city,
-                        "available": available,
-                        "is_producer": _resource_production_per_hour(city, resource) > 0,
-                    }
-                    total_available += available
+            # Pre-compute totals for evenly
+            if strategy == "evenly":
+                total_amount = sum(_resource_amount(c, resource) for c in cities)
+                avg_stock = floor(total_amount / max(1, len(cities)))
+                for city in cities:
+                    city_id = str(city.get("id"))
+                    amount = _resource_amount(city, resource)
+                    is_producer = _resource_production_per_hour(city, resource) > 0
+                    need = max(0, avg_stock - amount)
+                    available = max(0, amount - avg_stock)
+                    if need > 0:
+                        deficits[city_id] = {
+                            "city": city,
+                            "need": need,
+                            "critical_gap": 0,
+                            "is_producer": is_producer,
+                        }
+                        total_need += need
+                    if available >= useful_transfer_min:
+                        donors[city_id] = {
+                            "city": city,
+                            "available": available,
+                            "is_producer": is_producer,
+                        }
+                        total_available += available
+            else:
+                for city in cities:
+                    city_id = str(city.get("id"))
+                    amount = _resource_amount(city, resource)
+                    total_amount += amount
+                    capacity = _resource_capacity(city, resource)
+                    effective_target = min(target_stock, capacity) if capacity > 0 else target_stock
+                    effective_minimum = min(minimum_stock, effective_target)
+                    need = max(0, effective_target - amount)
+                    critical_gap = max(0, effective_minimum - amount)
+                    reserve = min(origin_reserve_stock, amount)
+                    available = max(0, amount - reserve)
+                    if need > 0:
+                        deficits[city_id] = {
+                            "city": city,
+                            "need": need,
+                            "critical_gap": critical_gap,
+                            "is_producer": _resource_production_per_hour(city, resource) > 0,
+                        }
+                        total_need += need
+                    if available >= useful_transfer_min:
+                        donors[city_id] = {
+                            "city": city,
+                            "available": available,
+                            "is_producer": _resource_production_per_hour(city, resource) > 0,
+                        }
+                        total_available += available
 
             logs.append(
                 (
@@ -722,12 +748,6 @@ class DistributeResourcesRunner(BaseRunner):
                 ),
                 reverse=True,
             )
-
-            if strategy == "evenly":
-                avg_stock = floor(total_amount / max(1, len(cities)))
-                for recipient in recipient_order:
-                    recipient["need"] = max(0, min(recipient["need"], avg_stock - _resource_amount(recipient["city"], resource)))
-                recipient_order = [item for item in recipient_order if item["need"] > 0]
 
             for recipient in recipient_order:
                 remaining = int(recipient["need"])

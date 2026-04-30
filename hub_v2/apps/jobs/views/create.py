@@ -1608,7 +1608,9 @@ class JobSubmitView(LoginRequiredMixin, View):
             donation_types = [donation_types]
 
         if multi_city_key and multi_city_key in inputs:
-            if int(action_code) == 27:
+            if int(action_code) in {3, 27}:
+                # ac=3 (distribute): single job with full cities list so runner can plan routes
+                # ac=27: single job by design
                 return self._create_single_job(ga, action_code, dict(inputs))
             selected_city_ids = inputs.pop(multi_city_key)
             if not isinstance(selected_city_ids, list):
