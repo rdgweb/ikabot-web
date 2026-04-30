@@ -12,6 +12,7 @@ Flow:
 
 import json
 import logging
+import re
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse
@@ -391,6 +392,7 @@ def _construction_city_data(cities):
             "name": city.get("name", ""),
             "x": x,
             "y": y,
+            "island_id": city.get("island_id"),
             "city_occupied": bool(city.get("city_occupied")),
             "harbour_occupied": bool(city.get("harbour_occupied")),
             "occupier_name": city.get("occupier_name", ""),
@@ -1280,6 +1282,8 @@ class JobSubmitView(LoginRequiredMixin, View):
             return HttpResponse(html)
 
         inputs = form.get_inputs_json()
+        if int(action_code) == 601:
+            inputs = self._normalize_island_monitor_inputs(inputs)
         if int(action_code) == 18 and not any(bool(inputs.get(key)) for key in ("branch_seafaring", "branch_economy", "branch_knowledge", "branch_military", "branch_mythology")):
             return self._error("Selecione pelo menos um ramo de pesquisa.")
         jobs_created = self._create_jobs(ga, action_code, action_meta, inputs, construction_cities)
@@ -1608,9 +1612,9 @@ class JobSubmitView(LoginRequiredMixin, View):
             donation_types = [donation_types]
 
         if multi_city_key and multi_city_key in inputs:
-            if int(action_code) in {3, 27}:
+            if int(action_code) in {3, 27, 601}:
                 # ac=3 (distribute): single job with full cities list so runner can plan routes
-                # ac=27: single job by design
+                # ac=27, ac=601 (island monitor): single job by design
                 return self._create_single_job(ga, action_code, dict(inputs))
             selected_city_ids = inputs.pop(multi_city_key)
             if not isinstance(selected_city_ids, list):
@@ -1709,6 +1713,45 @@ class JobSubmitView(LoginRequiredMixin, View):
             status="queued",
         )
         return 1
+
+    @staticmethod
+    def _normalize_island_monitor_inputs(inputs):
+        normalized = dict(inputs)
+        extra_raw = normalized.get("extra_island_ids") or []
+        tokens = []
+
+        if isinstance(extra_raw, str):
+            compact = extra_raw.replace("\r", "\n")
+            for part in re.split(r"[\n,;]+", compact):
+                part = str(part or "").strip()
+                if part:
+                    tokens.append(part)
+        elif isinstance(extra_raw, list):
+            for item in extra_raw:
+                part = str(item or "").strip()
+                if part:
+                    tokens.append(part)
+
+        resolved = []
+        seen = set()
+        for token in tokens:
+            match = re.search(r"(?:islandId|island_id)=(\d+)", token, re.IGNORECASE)
+            if match:
+                normalized_token = match.group(1)
+            else:
+                coord_match = re.fullmatch(r"\[?\s*(\d{1,3})\s*[:xX]\s*(\d{1,3})\s*\]?", token)
+                if coord_match:
+                    normalized_token = f"{coord_match.group(1)}:{coord_match.group(2)}"
+                elif re.fullmatch(r"\d+", token):
+                    normalized_token = token
+                else:
+                    continue
+            if normalized_token not in seen:
+                seen.add(normalized_token)
+                resolved.append(normalized_token)
+
+        normalized["extra_island_ids"] = resolved
+        return normalized
 
     @staticmethod
     def _get_city_name(city_id, cities):

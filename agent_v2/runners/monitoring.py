@@ -2,6 +2,7 @@
 Monitoring runners.
 
 Action codes:
+    601  island_monitor
     702  alert_wine
 """
 
@@ -969,3 +970,256 @@ class AlertWineRunner(BaseRunner):
 
         chosen = min(candidates)
         return max(MIN_RECHECK_SECONDS, min(MAX_RECHECK_SECONDS, chosen))
+
+
+# ══════════════════════════════════════════════════════════════════
+# ISLAND MONITOR (ac=601)
+# ══════════════════════════════════════════════════════════════════
+
+_RESOURCE_NAMES = ["Madeira", "Vinho", "Mármore", "Cristal", "Enxofre"]
+
+
+def _island_to_bool(raw: Any, default: bool = False) -> bool:
+    if raw is None:
+        return default
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).strip().lower() in {"1", "true", "y", "yes", "sim", "on"}
+
+
+def _island_to_int(raw: Any, default: int = 0) -> int:
+    try:
+        return int(float(raw))
+    except Exception:
+        return default
+
+
+@register_runner(601)
+class IslandMonitorRunner(BaseRunner):
+    """Monitor islands for city changes and alert via Telegram.
+
+    Action code: 601
+
+    Inputs (user-configured):
+        monitor_mode        str   "islands" | "region" (default: "islands")
+        own_city_ids        list  city IDs whose islands to monitor automatically
+        extra_island_ids    list  additional island IDs to monitor
+        region              dict  {x_min, y_min, x_max, y_max} for mode=region
+        notify_new          bool  alert when a new city appears (default True)
+        notify_removed      bool  alert when a city disappears (default True)
+        notify_change       bool  alert when same slot changes player (default True)
+        notify_fight        bool  alert when a fight starts on the island (default False)
+        recheck_minutes     int   interval between checks (default 60)
+
+    Runtime state (in reschedule_inputs):
+        island_state        dict  {island_id: {city_id: {owner_name, city_name, ally_tag, first_seen, in_fight}}}
+        discovered_ids      list  island IDs found in region scan
+    """
+
+    def execute(self, job: dict) -> RunnerResult:
+        jid = job["job_id"]
+        aid = job["account_id"]
+        ga_id = job.get("game_account_id")
+        inputs = job.get("inputs") or {}
+
+        monitor_mode = str(inputs.get("monitor_mode") or "islands")
+        notify_new = _island_to_bool(inputs.get("notify_new"), True)
+        notify_removed = _island_to_bool(inputs.get("notify_removed"), True)
+        notify_change = _island_to_bool(inputs.get("notify_change"), True)
+        notify_fight = _island_to_bool(inputs.get("notify_fight"), False)
+        recheck_minutes = max(5, _island_to_int(inputs.get("recheck_minutes"), 60))
+
+        island_state: dict[str, dict] = dict(inputs.get("island_state") or {})
+        discovered_ids: list[str] = list(inputs.get("discovered_ids") or [])
+
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        if not creds:
+            self.log(jid, "error", "Credenciais não encontradas")
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
+
+        client = self.get_or_login_game_client(jid, aid, ga_id, creds)
+
+        # ── Resolve island IDs ──
+        island_ids: list[str] = []
+
+        if monitor_mode == "region":
+            region = inputs.get("region") or {}
+            x_min = _island_to_int(region.get("x_min") or inputs.get("region_x_min"))
+            y_min = _island_to_int(region.get("y_min") or inputs.get("region_y_min"))
+            x_max = _island_to_int(region.get("x_max") or inputs.get("region_x_max"))
+            y_max = _island_to_int(region.get("y_max") or inputs.get("region_y_max"))
+
+            if not discovered_ids:
+                self.log(jid, "info", f"Descobrindo ilhas na região [{x_min}:{y_min}] → [{x_max}:{y_max}]...")
+                try:
+                    area = client.fetch_island_area(x_min, y_min, x_max, y_max)
+                    discovered_ids = [i["island_id"] for i in area if i.get("island_id")]
+                    self.log(jid, "info", f"{len(discovered_ids)} ilhas encontradas na região")
+                except Exception as exc:
+                    self.log(jid, "error", f"Falha ao escanear região: {exc}")
+                    self.save_game_client(ga_id or aid, client)
+                    return RunnerResult(success=False, data={"error": str(exc)})
+
+            island_ids = discovered_ids
+        else:
+            # islands mode: own cities + extra IDs
+            own_city_ids = [str(c) for c in (inputs.get("own_city_ids") or []) if str(c).strip()]
+            for city_id in own_city_ids:
+                try:
+                    import time as _t
+                    _t.sleep(0.3)
+                    island_id = client.get_city_island_id(int(city_id))
+                    if island_id and island_id not in island_ids:
+                        island_ids.append(island_id)
+                except Exception as exc:
+                    self.log(jid, "warn", f"Cidade {city_id}: erro ao resolver island_id — {exc}")
+
+            extra_raw = inputs.get("extra_island_ids") or []
+            if isinstance(extra_raw, str):
+                extra_raw = [x.strip() for x in extra_raw.replace(",", " ").split() if x.strip()]
+            for iid in extra_raw:
+                sid = str(iid).strip()
+                if not sid:
+                    continue
+                coord_match = re.fullmatch(r"\[?\s*(\d{1,3})\s*[:xX]\s*(\d{1,3})\s*\]?", sid)
+                if coord_match:
+                    try:
+                        island = client.fetch_island_by_coords(int(coord_match.group(1)), int(coord_match.group(2)))
+                        resolved_id = str(island.get("island_id") or "").strip()
+                        if resolved_id and resolved_id not in island_ids:
+                            island_ids.append(resolved_id)
+                    except Exception as exc:
+                        self.log(jid, "warn", f"Coordenada {sid}: erro ao resolver ilha - {exc}")
+                    continue
+                if sid and sid not in island_ids:
+                    island_ids.append(sid)
+
+        if not island_ids:
+            self.log(jid, "warn", "Nenhuma ilha configurada para monitorar")
+            self.save_game_client(ga_id or aid, client)
+            return RunnerResult(success=False, data={"error": "no_islands"})
+
+        self.log(jid, "info", f"Monitorando {len(island_ids)} ilhas...")
+
+        # ── Check each island ──
+        import time as _time
+        total_changes = 0
+
+        for island_id in island_ids:
+            try:
+                _time.sleep(0.6)
+                island = client.fetch_island_by_id(island_id)
+                if not island or not island.get("island_id"):
+                    self.log(jid, "warn", f"Ilha {island_id}: sem dados")
+                    continue
+
+                x, y = island.get("x", 0), island.get("y", 0)
+                coords = f"[{x}:{y}]"
+                miracle = island.get("miracle_name", "")
+                resource = island.get("resource_name", "")
+                island_label = f"Ilha {coords}" + (f" — {miracle}" if miracle else "")
+
+                current: dict[str, dict] = {
+                    c["id"]: c
+                    for c in island.get("cities", [])
+                    if c.get("type") == "city" and c.get("id")
+                }
+
+                prev_state: dict[str, dict] = island_state.get(island_id, {})
+
+                if not prev_state:
+                    # First observation — save state, no alerts
+                    island_state[island_id] = {
+                        cid: {
+                            "owner_name": c["owner_name"],
+                            "city_name": c["name"],
+                            "ally_tag": c.get("ally_tag", ""),
+                            "first_seen": _time.time(),
+                            "in_fight": c.get("in_fight", False),
+                        }
+                        for cid, c in current.items()
+                    }
+                    self.log(jid, "info", f"{island_label}: {len(current)} cidades registradas (1ª verificação)")
+                    continue
+
+                changes: list[str] = []
+
+                if notify_new:
+                    for cid, city in current.items():
+                        if cid not in prev_state:
+                            ally = f" [{city['ally_tag']}]" if city.get("ally_tag") else ""
+                            changes.append(f"➕ *{city['owner_name']}{ally}* colonizou *{city['name']}*")
+                            self.log(jid, "info", f"{island_label}: nova cidade — {city['owner_name']} / {city['name']}")
+                            total_changes += 1
+
+                if notify_removed:
+                    for cid, prev in prev_state.items():
+                        if cid not in current:
+                            changes.append(f"➖ *{prev['city_name']}* sumiu (era de *{prev['owner_name']}*)")
+                            self.log(jid, "info", f"{island_label}: cidade sumida — {prev['owner_name']} / {prev['city_name']}")
+                            total_changes += 1
+
+                if notify_change:
+                    for cid, city in current.items():
+                        if cid in prev_state:
+                            prev = prev_state[cid]
+                            if city["owner_name"] != prev["owner_name"]:
+                                ally = f" [{city['ally_tag']}]" if city.get("ally_tag") else ""
+                                changes.append(
+                                    f"🔄 *{city['name']}*: {prev['owner_name']} → *{city['owner_name']}{ally}*"
+                                )
+                                self.log(jid, "info", f"{island_label}: troca de jogador — {prev['owner_name']} → {city['owner_name']}")
+                                total_changes += 1
+
+                if notify_fight:
+                    for cid, city in current.items():
+                        in_fight_now = city.get("in_fight", False)
+                        was_in_fight = prev_state.get(cid, {}).get("in_fight", False)
+                        if in_fight_now and not was_in_fight:
+                            changes.append(f"⚔️ Batalha em *{city['name']}* (de *{city['owner_name']}*)")
+                            total_changes += 1
+                        elif not in_fight_now and was_in_fight:
+                            changes.append(f"🏳 Batalha encerrada em *{city['name']}*")
+
+                if changes:
+                    header = f"🏝 *{island_label}* · {resource} · {miracle}"
+                    body_text = "\n".join(changes)
+                    try:
+                        self.hub.send_notification(
+                            event="island_monitor",
+                            game_account_id=ga_id,
+                            title=f"Mudança na ilha {coords}",
+                            body=f"{header}\n{body_text}",
+                        )
+                    except Exception as ne:
+                        self.log(jid, "warn", f"Telegram falhou: {ne}")
+
+                # Update saved state
+                island_state[island_id] = {
+                    cid: {
+                        "owner_name": c["owner_name"],
+                        "city_name": c["name"],
+                        "ally_tag": c.get("ally_tag", ""),
+                        "first_seen": prev_state.get(cid, {}).get("first_seen", _time.time()),
+                        "in_fight": c.get("in_fight", False),
+                    }
+                    for cid, c in current.items()
+                }
+
+            except Exception as exc:
+                self.log(jid, "warn", f"Ilha {island_id}: erro — {exc}")
+
+        self.save_game_client(ga_id or aid, client)
+        self.log(jid, "info", f"Concluído: {len(island_ids)} ilhas, {total_changes} mudanças")
+
+        reschedule_inputs = dict(inputs)
+        reschedule_inputs["island_state"] = island_state
+        if discovered_ids:
+            reschedule_inputs["discovered_ids"] = discovered_ids
+
+        return RunnerResult(
+            success=True,
+            reschedule_seconds=recheck_minutes * 60,
+            reschedule_inputs=reschedule_inputs,
+            data={"islands_checked": len(island_ids), "changes": total_changes},
+        )

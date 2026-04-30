@@ -2,6 +2,37 @@ from .constants import CAT_MONITORING, FIELD_BOOL, FIELD_CHOICE, FIELD_CITY_SELE
 
 
 ACTIONS = {
+    601: {
+        "name": "Monitor de Ilha",
+        "name_en": "Island monitor",
+        "category": CAT_MONITORING,
+        "icon": "bi-geo-fill",
+        "runner": "island_monitor",
+        "requires_game_session": True,
+        "recurring": True,
+        "long_running": False,
+        "ready": True,
+        "description": "Monitora ilhas e alerta no Telegram quando cidades aparecem, somem ou trocam de jogador. Suporta monitorar ilhas próprias, ilhas inimigas por ID, ou toda uma região do mapa.",
+        "inputs": [
+            {"key": "monitor_mode", "type": FIELD_CHOICE, "label": "Modo de monitoramento", "required": True,
+             "choices": [("islands", "Ilhas específicas"), ("region", "Região do mapa")],
+             "default": "islands",
+             "help": "Ilhas específicas: selecione cidades próprias e/ou IDs. Região: define um retângulo no mapa."},
+            {"key": "own_city_ids", "type": FIELD_CITY_SELECT, "label": "Minhas cidades (monitor a ilha delas)", "multiple": True, "required": False,
+             "help": "O sistema detecta automaticamente a ilha de cada cidade selecionada."},
+            {"key": "extra_island_ids", "type": FIELD_STR, "label": "IDs de ilhas extras (separados por vírgula)", "required": False,
+             "help": "IDs numéricos de ilhas inimigas ou neutras que deseja monitorar."},
+            {"key": "region_x_min", "type": FIELD_INT, "label": "X mínimo da região", "required": False, "min": 0, "default": 0},
+            {"key": "region_y_min", "type": FIELD_INT, "label": "Y mínimo da região", "required": False, "min": 0, "default": 0},
+            {"key": "region_x_max", "type": FIELD_INT, "label": "X máximo da região", "required": False, "min": 0, "default": 0},
+            {"key": "region_y_max", "type": FIELD_INT, "label": "Y máximo da região", "required": False, "min": 0, "default": 0},
+            {"key": "notify_new", "type": FIELD_BOOL, "label": "Alertar nova cidade", "required": False, "default": True},
+            {"key": "notify_removed", "type": FIELD_BOOL, "label": "Alertar cidade sumida", "required": False, "default": True},
+            {"key": "notify_change", "type": FIELD_BOOL, "label": "Alertar troca de jogador no slot", "required": False, "default": True},
+            {"key": "notify_fight", "type": FIELD_BOOL, "label": "Alertar batalha na ilha", "required": False, "default": False},
+            {"key": "recheck_minutes", "type": FIELD_INT, "label": "Intervalo de verificação (min)", "required": True, "min": 5, "default": 60},
+        ],
+    },
     30: {
         "name": "Verificar Diplomacia",
         "name_en": "Check Diplomacy",

@@ -28,6 +28,7 @@ import requests
 from core.proxy import StrictProxySession
 
 from .actions.academy import AcademyAction
+from .actions.island import IslandActions
 from .actions.city import BuildAction, DemolishAction, UpgradeAction
 from .actions.daily import DailyTasksAction
 from .actions.diplomacy import DiplomacyInboxAction, DiplomacySendAction
@@ -67,7 +68,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class GameClient:
+class GameClient(IslandActions):
     """Main game client — facade for all Ikariam operations.
 
     Wraps authentication, AJAX requests, response parsing, captcha handling,
