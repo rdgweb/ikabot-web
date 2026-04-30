@@ -383,10 +383,10 @@
                   </span>
                   {% endif %}
                   {% if city.harbour_occupied %}
-                  <span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-orange-100 text-orange-700 text-[9px] font-semibold"
+                  <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-orange-300 bg-gradient-to-r from-orange-50 to-amber-100 text-orange-800 text-[9px] font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]"
                         title="{{ city.harbour_occupied }}">
-                    <i class="bi bi-anchor text-[9px]"></i>
-                    Porto bloq.{% if city.port_controller_name %}: {{ city.port_controller_name }}{% endif %}
+                    <i class="bi bi-anchor-fill text-[9px]"></i>
+                    Porto bloqueado{% if city.port_controller_name %}: {{ city.port_controller_name }}{% endif %}
                   </span>
                   {% endif %}
                 </div>
@@ -598,8 +598,14 @@
                 {% endif %}
 
                 {% if city.harbour_occupied %}
-                <div>
-                  <span class="font-semibold text-orange-700"><i class="bi bi-anchor"></i> Porto bloqueado (frotas):</span>
+                <div class="rounded-md border border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 px-2 py-1.5">
+                  <div class="flex items-center gap-1 text-orange-800 mb-0.5">
+                    <i class="bi bi-anchor-fill"></i>
+                    <span class="font-semibold">Porto bloqueado (frotas)</span>
+                    {% if city.port_controller_name %}
+                    <span class="inline-flex items-center rounded-full bg-orange-200/80 px-1.5 py-0.5 text-[10px] font-bold text-orange-900">{{ city.port_controller_name }}</span>
+                    {% endif %}
+                  </div>
                   {% if city.blockade_forces %}
                   <div class="mt-0.5 space-y-0.5">
                     {% for f in city.blockade_forces %}

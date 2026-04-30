@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+from urllib.parse import parse_qs
 from typing import Any
 
 from core.runner_registry import register_runner
@@ -22,10 +23,92 @@ logger = logging.getLogger(__name__)
 
 @register_runner(9002)
 class RevoltRunner(BaseRunner):
+    def _patch_snapshot_after_success(
+        self,
+        *,
+        job_id: str,
+        account_id: str,
+        game_account_id: str,
+        city_id: str,
+        revolt_type: str,
+    ) -> None:
+        snapshot = self.get_snapshot(job_id, game_account_id)
+        if not snapshot:
+            return
+
+        cities = [dict(city) for city in (snapshot.get("cities") or [])]
+        military = dict(snapshot.get("military") or {})
+        changed = False
+
+        for city in cities:
+            if str(city.get("id") or "").strip() != str(city_id).strip():
+                continue
+            if revolt_type == "ships":
+                if city.get("harbour_occupied") or city.get("port_controller_name"):
+                    city["harbour_occupied"] = None
+                    city["port_controller_name"] = None
+                    changed = True
+            else:
+                if city.get("city_occupied") or city.get("occupier_name"):
+                    city["city_occupied"] = None
+                    city["occupier_name"] = None
+                    changed = True
+            break
+
+        by_city = []
+        for entry in (military.get("by_city") or []):
+            item = dict(entry) if isinstance(entry, dict) else entry
+            if not isinstance(item, dict):
+                by_city.append(item)
+                continue
+            if str(item.get("city_id") or "").strip() == str(city_id).strip():
+                if revolt_type == "ships":
+                    if item.get("blockade_forces"):
+                        item["blockade_forces"] = []
+                        changed = True
+                else:
+                    if item.get("occupation_forces"):
+                        item["occupation_forces"] = []
+                        changed = True
+            by_city.append(item)
+        if by_city:
+            military["by_city"] = by_city
+
+        if not changed:
+            return
+
+        try:
+            self.hub.update_snapshot(
+                account_id,
+                {
+                    "base_snapshot": snapshot.get("base_snapshot") or {},
+                    "cities": cities,
+                    "military": military,
+                    "source_job_id": job_id,
+                },
+                game_account_id=game_account_id,
+            )
+            self.log(job_id, "info", "Snapshot ajustado apos revolta bem-sucedida")
+        except Exception as exc:
+            self.log(job_id, "warn", f"Nao foi possivel ajustar snapshot apos revolta: {exc}")
+
+    def _schedule_snapshot_refresh(self, *, job_id: str) -> None:
+        try:
+            self.hub.spawn_job(job_id, action_code=100, inputs={}, delay_seconds=15)
+            self.log(job_id, "info", "Check Status agendado para reconciliar o snapshot")
+        except Exception as exc:
+            self.log(job_id, "warn", f"Nao foi possivel agendar Check Status apos revolta: {exc}")
+
     @staticmethod
     def _extract_action_request(text: str) -> str:
-        match = re.search(r'"actionRequest"\s*:\s*"([a-f0-9]{32})"', text or "")
-        return match.group(1) if match else ""
+        for pattern in (
+            r'"actionRequest"\s*:\s*"([a-f0-9]{32})"',
+            r"actionRequest.*?([a-f0-9]{32})",
+        ):
+            match = re.search(pattern, text or "", re.IGNORECASE | re.DOTALL)
+            if match:
+                return match.group(1)
+        return ""
 
     def _resolve_revolt_href(
         self,
@@ -133,11 +216,15 @@ class RevoltRunner(BaseRunner):
                 self.save_game_client(game_account_id, client)
                 return RunnerResult(success=False, data={"error": "revolt_link_not_available"})
 
-            target_url = url + revolt_href.lstrip("?")
-            if "?" in url:
-                target_url = url.split("?", 1)[0] + "?" + revolt_href.lstrip("?")
+            request_params = {k: values[0] for k, values in parse_qs(revolt_href.lstrip("?")).items()}
+            request_params["actionRequest"] = client._action_request or request_params.get("actionRequest", "")
+            request_params["ajax"] = "1"
+            request_params["currentCityId"] = city_id
+            request_params["backgroundView"] = "city"
+            request_params["templateView"] = "cityMilitary"
+            request_params["currentTab"] = "tabUnits"
 
-            resp = session.get(target_url, headers=headers, timeout=20)
+            resp = session.post(url, data=request_params, headers=headers, timeout=20)
 
             action_request_match = re.search(r'"actionRequest"\s*:\s*"([a-f0-9]{32})"', resp.text)
             if action_request_match:
@@ -181,6 +268,15 @@ class RevoltRunner(BaseRunner):
             return RunnerResult(success=False, data={"error": str(exc)})
 
         self.save_game_client(game_account_id, client)
+        if game_account_id:
+            self._patch_snapshot_after_success(
+                job_id=jid,
+                account_id=aid,
+                game_account_id=game_account_id,
+                city_id=city_id,
+                revolt_type=revolt_type,
+            )
+            self._schedule_snapshot_refresh(job_id=jid)
         return RunnerResult(
             success=ok,
             data={"city_id": city_id, "city_name": city_name, "revolt_type": revolt_type},
