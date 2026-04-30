@@ -580,6 +580,12 @@
                   {% if city.occupation_forces %}
                   <div class="mt-0.5 space-y-0.5">
                     {% for f in city.occupation_forces %}
+                    <div class="text-red-700"><span class="font-semibold">{{ f.player }}</span> â€” {{ f.total }} unidades</div>
+                    {% endfor %}
+                  </div>
+                  <div class="hidden">
+                  <div class="mt-0.5 space-y-0.5">
+                    {% for f in city.occupation_forces %}
                     <div class="text-red-700">
                       <span class="font-semibold">{{ f.player }}</span> —
                       {% if f.units %}
@@ -590,6 +596,7 @@
                       {% endif %}
                     </div>
                     {% endfor %}
+                  </div>
                   </div>
                   {% else %}
                   <span class="text-red-600 ml-1">nenhuma tropa — {{ city.occupier_name|default:"inimigo" }}</span>
@@ -609,6 +616,12 @@
                   {% if city.blockade_forces %}
                   <div class="mt-0.5 space-y-0.5">
                     {% for f in city.blockade_forces %}
+                    <div class="text-orange-700"><span class="font-semibold">{{ f.player }}</span> â€” {{ f.total }} navios</div>
+                    {% endfor %}
+                  </div>
+                  <div class="hidden">
+                  <div class="mt-0.5 space-y-0.5">
+                    {% for f in city.blockade_forces %}
                     <div class="text-orange-700">
                       <span class="font-semibold">{{ f.player }}</span> —
                       {% if f.units %}
@@ -619,6 +632,7 @@
                       {% endif %}
                     </div>
                     {% endfor %}
+                  </div>
                   </div>
                   {% else %}
                   <span class="text-orange-600 ml-1">{{ city.port_controller_name|default:"inimigo" }} — rode Check Status para ver quantidades</span>
@@ -667,6 +681,7 @@
                 <thead>
                   <tr style="border-bottom: 2px solid var(--ik-line);">
                     <th class="text-left py-2 px-2 text-muted font-semibold min-w-[180px]">Cidade</th>
+                    <th class="text-left py-2 px-2 text-muted font-semibold min-w-[180px]">Grupo</th>
                     {% for unit in card.troop_columns %}
                     <th class="text-center py-2 px-1 text-muted font-semibold min-w-[82px]">
                       <div class="flex flex-col items-center gap-1">
@@ -685,9 +700,11 @@
                 </thead>
                 <tbody>
                   {% for city in card.cities %}
-                  <tr class="hover:bg-[var(--ik-sand-light)] transition-colors"
+                  {% for row in city.troop_rows %}
+                  <tr class="transition-colors {% if row.kind == 'enemy' %}bg-red-50/70 hover:bg-red-100/70{% else %}hover:bg-[var(--ik-sand-light)]{% endif %}"
                       style="border-bottom: 1px solid var(--ik-line);">
-                    <td class="py-2 px-2">
+                    {% if forloop.first %}
+                    <td class="py-2 px-2 align-top" rowspan="{{ city.troop_rows|length }}">
                       <div class="flex items-center gap-1">
                         <i class="bi bi-geo-alt-fill text-sea text-[10px]"></i>
                         <span class="font-medium text-ink">{{ city.name|default:"Cidade" }}</span>
@@ -696,18 +713,37 @@
                         {% endif %}
                       </div>
                     </td>
-                    {% for count in city.troop_counts %}
-                    <td class="py-1 px-1 text-center font-mono text-ink">{{ count|intcomma }}</td>
+                    {% endif %}
+                    <td class="py-1.5 px-2 text-left min-w-[180px]">
+                      <div class="flex items-center gap-1.5">
+                        {% if row.kind == 'enemy' %}
+                        <span class="inline-flex items-center gap-1 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                          <i class="bi bi-flag-fill text-[9px]"></i>{{ row.label }}
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center gap-1 rounded-full bg-stone-100 px-1.5 py-0.5 text-[10px] font-semibold text-stone-700">
+                          <i class="bi bi-shield text-[9px]"></i>{{ row.label }}
+                        </span>
+                        {% endif %}
+                        {% if row.owner_name %}
+                        <span class="font-medium {% if row.kind == 'enemy' %}text-red-800{% else %}text-ink{% endif %}">{{ row.owner_name }}</span>
+                        {% endif %}
+                      </div>
+                    </td>
+                    {% for count in row.counts %}
+                    <td class="py-1 px-1 text-center font-mono {% if row.kind == 'enemy' %}text-red-800 font-semibold{% else %}text-ink{% endif %}">{{ count|intcomma }}</td>
                     {% endfor %}
-                    <td class="py-1 px-2 text-right font-mono font-semibold text-ink">{{ city.troop_total|intcomma }}</td>
+                    <td class="py-1 px-2 text-right font-mono font-semibold {% if row.kind == 'enemy' %}text-red-800{% else %}text-ink{% endif %}">{{ row.total|intcomma }}</td>
                   </tr>
                   {% endfor %}
+                  {% endfor %}
                   <tr style="border-top: 2px solid var(--ik-line); background: var(--ik-sand-light);">
-                    <td class="py-2 px-2 font-semibold text-ink text-[11px]">Total ({{ card.cities|length }})</td>
+                    <td class="py-2 px-2 font-semibold text-ink text-[11px]">Total exibido ({{ card.cities|length }})</td>
+                    <td class="py-2 px-2 font-semibold text-ink text-[11px]">Todos os grupos</td>
                     {% for unit in card.troop_columns %}
                     <td class="py-2 px-1 text-center font-mono font-bold text-ink">{{ unit.total|intcomma }}</td>
                     {% endfor %}
-                    <td class="py-2 px-2 text-right font-mono font-bold text-ink">{{ card.troop_total|intcomma }}</td>
+                    <td class="py-2 px-2 text-right font-mono font-bold text-ink">{{ card.troop_display_total|intcomma }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -727,6 +763,7 @@
                 <thead>
                   <tr style="border-bottom: 2px solid var(--ik-line);">
                     <th class="text-left py-2 px-2 text-muted font-semibold min-w-[180px]">Cidade</th>
+                    <th class="text-left py-2 px-2 text-muted font-semibold min-w-[180px]">Grupo</th>
                     {% for unit in card.fleet_columns %}
                     <th class="text-center py-2 px-1 text-muted font-semibold min-w-[82px]">
                       <div class="flex flex-col items-center gap-1">
@@ -745,9 +782,11 @@
                 </thead>
                 <tbody>
                   {% for city in card.cities %}
-                  <tr class="hover:bg-[var(--ik-sand-light)] transition-colors"
+                  {% for row in city.fleet_rows %}
+                  <tr class="transition-colors {% if row.kind == 'enemy' %}bg-orange-50/70 hover:bg-orange-100/70{% else %}hover:bg-[var(--ik-sand-light)]{% endif %}"
                       style="border-bottom: 1px solid var(--ik-line);">
-                    <td class="py-2 px-2">
+                    {% if forloop.first %}
+                    <td class="py-2 px-2 align-top" rowspan="{{ city.fleet_rows|length }}">
                       <div class="flex items-center gap-1">
                         <i class="bi bi-geo-alt-fill text-sea text-[10px]"></i>
                         <span class="font-medium text-ink">{{ city.name|default:"Cidade" }}</span>
@@ -756,18 +795,37 @@
                         {% endif %}
                       </div>
                     </td>
-                    {% for count in city.fleet_counts %}
-                    <td class="py-1 px-1 text-center font-mono text-ink">{{ count|intcomma }}</td>
+                    {% endif %}
+                    <td class="py-1.5 px-2 text-left min-w-[180px]">
+                      <div class="flex items-center gap-1.5">
+                        {% if row.kind == 'enemy' %}
+                        <span class="inline-flex items-center gap-1 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold text-orange-700">
+                          <i class="bi bi-anchor-fill text-[9px]"></i>{{ row.label }}
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center gap-1 rounded-full bg-stone-100 px-1.5 py-0.5 text-[10px] font-semibold text-stone-700">
+                          <i class="bi bi-water text-[9px]"></i>{{ row.label }}
+                        </span>
+                        {% endif %}
+                        {% if row.owner_name %}
+                        <span class="font-medium {% if row.kind == 'enemy' %}text-orange-800{% else %}text-ink{% endif %}">{{ row.owner_name }}</span>
+                        {% endif %}
+                      </div>
+                    </td>
+                    {% for count in row.counts %}
+                    <td class="py-1 px-1 text-center font-mono {% if row.kind == 'enemy' %}text-orange-800 font-semibold{% else %}text-ink{% endif %}">{{ count|intcomma }}</td>
                     {% endfor %}
-                    <td class="py-1 px-2 text-right font-mono font-semibold text-ink">{{ city.fleet_total|intcomma }}</td>
+                    <td class="py-1 px-2 text-right font-mono font-semibold {% if row.kind == 'enemy' %}text-orange-800{% else %}text-ink{% endif %}">{{ row.total|intcomma }}</td>
                   </tr>
                   {% endfor %}
+                  {% endfor %}
                   <tr style="border-top: 2px solid var(--ik-line); background: var(--ik-sand-light);">
-                    <td class="py-2 px-2 font-semibold text-ink text-[11px]">Total ({{ card.cities|length }})</td>
+                    <td class="py-2 px-2 font-semibold text-ink text-[11px]">Total exibido ({{ card.cities|length }})</td>
+                    <td class="py-2 px-2 font-semibold text-ink text-[11px]">Todos os grupos</td>
                     {% for unit in card.fleet_columns %}
                     <td class="py-2 px-1 text-center font-mono font-bold text-ink">{{ unit.total|intcomma }}</td>
                     {% endfor %}
-                    <td class="py-2 px-2 text-right font-mono font-bold text-ink">{{ card.ship_total|intcomma }}</td>
+                    <td class="py-2 px-2 text-right font-mono font-bold text-ink">{{ card.fleet_display_total|intcomma }}</td>
                   </tr>
                 </tbody>
               </table>

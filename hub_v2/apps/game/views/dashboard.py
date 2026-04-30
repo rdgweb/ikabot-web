@@ -256,6 +256,8 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                     ec["fleet_map"] = {unit["name"]: unit["count"] for unit in ec["fleet"]}
                     ec["occupation_forces"] = city_military.get("occupation_forces", [])
                     ec["blockade_forces"] = city_military.get("blockade_forces", [])
+                    ec["troop_rows"] = _build_city_military_rows(ec, "troop")
+                    ec["fleet_rows"] = _build_city_military_rows(ec, "fleet")
 
                 troop_columns = _build_military_columns(enriched_cities, "troop")
                 fleet_columns = _build_military_columns(enriched_cities, "fleet")
@@ -263,6 +265,10 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                 for ec in enriched_cities:
                     ec["troop_counts"] = [ec["troop_map"].get(name, 0) for name in troop_columns]
                     ec["fleet_counts"] = [ec["fleet_map"].get(name, 0) for name in fleet_columns]
+                    for row in ec["troop_rows"]:
+                        row["counts"] = [row["unit_map"].get(name, 0) for name in troop_columns]
+                    for row in ec["fleet_rows"]:
+                        row["counts"] = [row["unit_map"].get(name, 0) for name in fleet_columns]
 
                 # --- KPIs ---
                 acct_gold = _si(base.get("gold"))
@@ -311,13 +317,15 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                     "troop_total": troop_total,
                     "ship_total": ship_total,
                     "troop_columns": [
-                        {"name": name, "total": sum(city["troop_map"].get(name, 0) for city in enriched_cities)}
+                        {"name": name, "total": sum(row["unit_map"].get(name, 0) for city in enriched_cities for row in city.get("troop_rows", []))}
                         for name in troop_columns
                     ],
                     "fleet_columns": [
-                        {"name": name, "total": sum(city["fleet_map"].get(name, 0) for city in enriched_cities)}
+                        {"name": name, "total": sum(row["unit_map"].get(name, 0) for city in enriched_cities for row in city.get("fleet_rows", []))}
                         for name in fleet_columns
                     ],
+                    "troop_display_total": sum(row["total"] for city in enriched_cities for row in city.get("troop_rows", [])),
+                    "fleet_display_total": sum(row["total"] for city in enriched_cities for row in city.get("fleet_rows", [])),
                     "is_online": acct.node.is_online if acct.node else False,
                     "snapshot_epoch": int(snapshot.updated_at.timestamp()) if snapshot else None,
                     "city_names": [
@@ -474,16 +482,58 @@ def _sf(value, default=0.0) -> float:
 def _build_military_columns(cities: list[dict], key: str) -> list[str]:
     """Build a stable ordered list of military unit names for table columns."""
     totals: dict[str, int] = {}
-    field = "troop_map" if key == "troop" else "fleet_map"
+    field = "troop_rows" if key == "troop" else "fleet_rows"
     for city in cities:
-        for name, count in city.get(field, {}).items():
-            totals[name] = totals.get(name, 0) + count
+        for row in city.get(field, []):
+            if not isinstance(row, dict):
+                continue
+            for name, count in (row.get("unit_map") or {}).items():
+                totals[name] = totals.get(name, 0) + count
     return [
         name for name, _ in sorted(
             totals.items(),
             key=lambda item: (-item[1], item[0]),
         )
     ]
+
+
+def _build_city_military_rows(city: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    own_map_source = city.get("troop_map") if key == "troop" else city.get("fleet_map")
+    own_map = dict(own_map_source or {})
+    own_total = _si(city.get("troop_total") if key == "troop" else city.get("fleet_total"))
+    enemy_forces = city.get("occupation_forces") if key == "troop" else city.get("blockade_forces")
+    enemy_label = "Ocupantes" if key == "troop" else "Bloqueio"
+
+    rows: list[dict[str, Any]] = []
+    if own_total > 0 or not enemy_forces:
+        rows.append({
+            "kind": "own",
+            "label": "Proprias",
+            "owner_name": "",
+            "unit_map": own_map,
+            "total": own_total,
+        })
+
+    for force in enemy_forces or []:
+        if not isinstance(force, dict):
+            continue
+        unit_map = {
+            str(name): _si(count)
+            for name, count in (force.get("units") or {}).items()
+            if _si(count) > 0
+        }
+        total = _si(force.get("total"))
+        if total <= 0 and not unit_map:
+            continue
+        rows.append({
+            "kind": "enemy",
+            "label": enemy_label,
+            "owner_name": str(force.get("player") or "").strip(),
+            "unit_map": unit_map,
+            "total": total if total > 0 else sum(unit_map.values()),
+        })
+
+    return rows
 
 
 def _duration_human(seconds: int) -> str:
