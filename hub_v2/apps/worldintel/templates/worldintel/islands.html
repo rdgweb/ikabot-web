@@ -1,0 +1,151 @@
+{% extends base_template|default:"base.html" %}
+{% load humanize %}
+
+{% block title %}Inteligência — Ilhas{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span>
+  <a href="{% url 'worldintel:players' %}" class="text-ink">Inteligência</a>
+  <span class="mx-1">/</span>
+  <span class="text-muted">Ilhas</span>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-bold text-ink">Inteligência do Mundo</h1>
+    <a href="{{ dump_job_create_url }}"
+       hx-get="{{ dump_job_create_url }}"
+       hx-target="#jobCreateModal"
+       hx-swap="innerHTML"
+       class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-circle"></i> Novo dump
+    </a>
+  </div>
+
+  <div class="flex gap-1">
+    <a href="{% url 'worldintel:players' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}"
+       class="px-3 py-1.5 rounded text-xs font-semibold text-muted hover:text-ink transition-colors">
+      <i class="bi bi-people-fill"></i> Players
+    </a>
+    <a href="{% url 'worldintel:islands' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}"
+       class="px-3 py-1.5 rounded text-xs font-semibold bg-[var(--ik-sea)] text-white transition-colors">
+      <i class="bi bi-geo-fill"></i> Ilhas
+    </a>
+    <a href="{% url 'worldintel:dumps' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}"
+       class="px-3 py-1.5 rounded text-xs font-semibold text-muted hover:text-ink transition-colors">
+      <i class="bi bi-database"></i> Dumps
+    </a>
+  </div>
+
+  <form method="get" class="card !p-3 flex flex-wrap items-end gap-3">
+    <div class="flex-shrink-0">
+      <label class="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Conta</label>
+      <select name="ga" class="filter-select">
+        <option value="">Todas</option>
+        {% for ga in game_accounts %}
+          <option value="{{ ga.pk }}" {% if selected_game_account and selected_game_account.pk == ga.pk %}selected{% endif %}>{{ ga.name|default:ga.server_id }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex-shrink-0">
+      <label class="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Dump</label>
+      <select name="dump" class="filter-select">
+        {% for dump in dump_choices %}
+          <option value="{{ dump.pk }}" {% if selected_dump and selected_dump.pk == dump.pk %}selected{% endif %}>
+            {{ dump.captured_at|date:"d/m H:i" }} — {{ dump.title|default:"Dump"|truncatechars:30 }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex-1 min-w-[180px]">
+      <label class="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Busca</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="ilha, milagre, player, aliança..."
+             class="form-input !py-1.5 !text-xs w-full">
+    </div>
+    <div class="flex-shrink-0">
+      <label class="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Recurso</label>
+      <select name="resource" class="filter-select">
+        <option value="">Todos</option>
+        <option value="0" {% if resource == "0" %}selected{% endif %}>Madeira</option>
+        <option value="1" {% if resource == "1" %}selected{% endif %}>Vinho</option>
+        <option value="2" {% if resource == "2" %}selected{% endif %}>Mármore</option>
+        <option value="3" {% if resource == "3" %}selected{% endif %}>Cristal</option>
+        <option value="4" {% if resource == "4" %}selected{% endif %}>Enxofre</option>
+      </select>
+    </div>
+    <button type="submit" class="btn btn-secondary btn-sm flex-shrink-0">Filtrar</button>
+  </form>
+
+  {% if selected_dump %}
+  {% if islands %}
+  <div class="card !p-0 overflow-hidden">
+    <div class="px-4 py-3 text-xs text-muted" style="border-bottom:1px solid var(--ik-line);">
+      <strong class="text-ink">{{ islands|length }}</strong> ilha(s) · dump {{ selected_dump.captured_at|date:"d/m/Y H:i" }}
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead>
+          <tr style="border-bottom:2px solid var(--ik-line);">
+            <th class="py-2 px-3 text-left text-muted font-semibold">Coordenada</th>
+            <th class="py-2 px-3 text-left text-muted font-semibold">Ilha</th>
+            <th class="py-2 px-3 text-left text-muted font-semibold">Recurso</th>
+            <th class="py-2 px-3 text-left text-muted font-semibold">Milagre</th>
+            <th class="py-2 px-3 text-right text-muted font-semibold">Cidades</th>
+            <th class="py-2 px-3 text-left text-muted font-semibold">Ocupantes</th>
+            <th class="py-2 px-3"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for island in islands %}
+          <tr class="hover:bg-[var(--ik-sand-light)] transition-colors" style="border-bottom:1px solid var(--ik-line);">
+            <td class="py-2 px-3 font-mono font-semibold text-ink">[{{ island.x }}:{{ island.y }}]</td>
+            <td class="py-2 px-3 text-ink">{{ island.name|default:"—" }}</td>
+            <td class="py-2 px-3 text-muted">{{ island.resource_name|default:"—" }}</td>
+            <td class="py-2 px-3 text-muted">{{ island.miracle_name|default:"—" }}</td>
+            <td class="py-2 px-3 text-right font-mono font-bold text-ink">{{ island.city_count }}</td>
+            <td class="py-2 px-3 text-muted text-[11px]">
+              {% for owner in island.owners %}
+              <span class="mr-1">{{ owner }}</span>
+              {% empty %}
+              &mdash;
+              {% endfor %}
+            </td>
+            <td class="py-2 px-3 text-right">
+              {% if island.monitor_url %}
+              <a href="{{ island.monitor_url }}"
+                 hx-get="{{ island.monitor_url }}"
+                 hx-target="#jobCreateModal"
+                 hx-swap="innerHTML"
+                 class="btn btn-secondary btn-sm !py-0.5 !px-2 text-[10px]">Monitor</a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="card text-center py-8">
+    <i class="bi bi-geo text-2xl text-muted block mb-2"></i>
+    <p class="text-sm text-muted">Nenhuma ilha encontrada neste corte.</p>
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="card text-center py-10">
+    <i class="bi bi-database text-3xl text-muted block mb-3"></i>
+    <p class="text-sm text-muted">Crie um dump primeiro para explorar ilhas.</p>
+    <a href="{{ dump_job_create_url }}"
+       hx-get="{{ dump_job_create_url }}"
+       hx-target="#jobCreateModal"
+       hx-swap="innerHTML"
+       class="btn btn-primary btn-sm mt-4">
+      <i class="bi bi-plus-circle"></i> Criar dump
+    </a>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

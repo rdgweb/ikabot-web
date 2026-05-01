@@ -195,6 +195,43 @@ class HubClient:
             params["account_id"] = account_id
         return self._get("/api/agent/snapshots/current", params=params)
 
+    def save_world_dump(
+        self,
+        *,
+        account_id: str,
+        islands: list[dict[str, Any]],
+        game_account_id: str | None = None,
+        source_job_id: str | None = None,
+        scope_mode: str = "own_islands",
+        title: str = "",
+        filters: dict[str, Any] | None = None,
+        dump_status: str = "complete",
+    ) -> dict:
+        payload: dict[str, Any] = {
+            "account_id": account_id,
+            "scope_mode": scope_mode,
+            "title": title,
+            "filters": filters or {},
+            "islands": islands,
+            "dump_status": dump_status,
+        }
+        if game_account_id:
+            payload["game_account_id"] = game_account_id
+        if source_job_id:
+            payload["source_job_id"] = source_job_id
+        return self._post("/api/agent/world-dumps", payload)
+
+    def append_world_dump(
+        self,
+        dump_id: str,
+        islands: list[dict[str, Any]],
+        is_final: bool = False,
+    ) -> dict:
+        return self._post(
+            f"/api/agent/world-dumps/{dump_id}/append",
+            {"islands": islands, "is_final": is_final},
+        )
+
     # ── Session Persistence ──
 
     def report_session(self, game_account_id: str, cookies: dict, lobby_token: str = "") -> dict:

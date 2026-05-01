@@ -1,0 +1,102 @@
+{% extends base_template|default:"base.html" %}
+{% load humanize hub_tags %}
+
+{% block title %}Inteligência — Players{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span>
+  <a href="{% url 'worldintel:players' %}" class="text-ink">Inteligência</a>
+  <span class="mx-1">/</span>
+  <span class="text-muted">Players</span>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+
+  {# ── Header ── #}
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-bold text-ink">Inteligência do Mundo</h1>
+      <p class="text-xs text-muted mt-0.5">Players, ilhas e histórico de dumps do servidor</p>
+    </div>
+    <a href="{{ dump_job_create_url }}"
+       hx-get="{{ dump_job_create_url }}"
+       hx-target="#jobCreateModal"
+       hx-swap="innerHTML"
+       class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-circle"></i> Novo dump
+    </a>
+  </div>
+
+  {# ── Tabs ── #}
+  <div class="flex gap-1">
+    <a href="{% url 'worldintel:players' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}"
+       class="px-3 py-1.5 rounded text-xs font-semibold transition-colors {% if active_tab == 'players' %}bg-[var(--ik-sea)] text-white{% else %}text-muted hover:text-ink{% endif %}">
+      <i class="bi bi-people-fill"></i> Players
+    </a>
+    <a href="{% url 'worldintel:islands' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}"
+       class="px-3 py-1.5 rounded text-xs font-semibold transition-colors {% if active_tab == 'islands' %}bg-[var(--ik-sea)] text-white{% else %}text-muted hover:text-ink{% endif %}">
+      <i class="bi bi-geo-fill"></i> Ilhas
+    </a>
+    <a href="{% url 'worldintel:dumps' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}"
+       class="px-3 py-1.5 rounded text-xs font-semibold transition-colors {% if active_tab == 'dumps' %}bg-[var(--ik-sea)] text-white{% else %}text-muted hover:text-ink{% endif %}">
+      <i class="bi bi-database"></i> Dumps
+    </a>
+  </div>
+
+  {# ── Filter bar ── #}
+  <form class="card !p-3 flex flex-wrap items-end gap-3"
+        hx-get="{% url 'worldintel:players' %}"
+        hx-target="#intel-results"
+        hx-swap="innerHTML"
+        hx-push-url="true"
+        hx-trigger="change from:select, keyup changed delay:300ms from:[name=q]">
+    <div class="flex-shrink-0">
+      <label class="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Conta</label>
+      <select name="ga" class="filter-select">
+        <option value="">Todas</option>
+        {% for ga in game_accounts %}
+          <option value="{{ ga.pk }}" {% if selected_game_account and selected_game_account.pk == ga.pk %}selected{% endif %}>{{ ga.name|default:ga.server_id }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex-shrink-0">
+      <label class="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Dump</label>
+      <select name="dump" class="filter-select">
+        {% if not dump_choices %}<option value="">Nenhum dump</option>{% endif %}
+        {% for dump in dump_choices %}
+          <option value="{{ dump.pk }}" {% if selected_dump and selected_dump.pk == dump.pk %}selected{% endif %}>
+            {{ dump.captured_at|date:"d/m H:i" }} — {{ dump.title|default:"Dump"|truncatechars:30 }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex-1 min-w-[180px]">
+      <label class="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Busca</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="player, aliança..."
+             class="form-input !py-1.5 !text-xs w-full"
+             hx-get="{% url 'worldintel:players' %}"
+             hx-trigger="keyup changed delay:250ms"
+             hx-target="#intel-results"
+             hx-swap="innerHTML"
+             hx-include="closest form"
+             hx-push-url="true">
+    </div>
+    <div class="flex-shrink-0">
+      <label class="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Linhas</label>
+      <select name="limit" class="filter-select">
+        {% for v in limit_choices %}
+          <option value="{{ v }}" {% if limit == v %}selected{% endif %}>{{ v }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-secondary btn-sm flex-shrink-0">Filtrar</button>
+  </form>
+
+  {# ── Results ── #}
+  <div id="intel-results">
+    {% include "worldintel/partials/players_table.html" %}
+  </div>
+
+</div>
+{% endblock %}

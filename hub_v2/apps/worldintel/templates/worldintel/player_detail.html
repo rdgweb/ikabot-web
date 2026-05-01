@@ -1,0 +1,134 @@
+{% extends base_template|default:"base.html" %}
+{% load humanize hub_tags %}
+
+{% block title %}{{ player.owner_name }} — Inteligência{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span>
+  <a href="{% url 'worldintel:players' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}" class="text-ink">Inteligência</a>
+  <span class="mx-1">/</span>
+  <a href="{% url 'worldintel:players' %}?dump={{ selected_dump.pk }}{% if selected_game_account %}&ga={{ selected_game_account.pk }}{% endif %}" class="text-muted">Players</a>
+  <span class="mx-1">/</span>
+  <span class="text-muted">{{ player.owner_name }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+
+  {# ── Header ── #}
+  <div class="card">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <i class="bi bi-person-fill text-sea text-lg"></i>
+          <h1 class="text-xl font-bold text-ink">{{ player.owner_name }}</h1>
+          {% if player.ally_tag %}
+          <span class="badge badge-secondary font-mono">[{{ player.ally_tag }}]</span>
+          {% endif %}
+          {% if player.fight_count %}
+          <span class="badge badge-danger"><i class="bi bi-exclamation-triangle-fill text-[10px]"></i> Em batalha</span>
+          {% endif %}
+        </div>
+        <p class="text-xs text-muted">
+          ID: {{ player.owner_id|default:"—" }} ·
+          {{ player.city_count }} cidades em {{ player.island_count }} ilha(s)
+          {% if selected_dump %} · dump {{ selected_dump.captured_at|date:"d/m/Y H:i" }}{% endif %}
+        </p>
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <a href="{% url 'worldintel:players' %}?dump={{ selected_dump.pk }}{% if selected_game_account %}&ga={{ selected_game_account.pk }}{% endif %}"
+           class="btn btn-secondary btn-sm">
+          <i class="bi bi-arrow-left text-[10px]"></i> Voltar
+        </a>
+        {% if monitor_url %}
+        <a href="{{ monitor_url }}"
+           hx-get="{{ monitor_url }}"
+           hx-target="#jobCreateModal"
+           hx-swap="innerHTML"
+           class="btn btn-primary btn-sm">
+          <i class="bi bi-geo-fill text-[10px]"></i> Monitorar ilhas
+        </a>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Scores ── shown only when available #}
+    {% if player.score %}
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4" style="border-top:1px solid var(--ik-line);">
+      <div class="text-center">
+        <div class="text-[10px] font-semibold uppercase tracking-wider text-muted mb-0.5">Rank</div>
+        <div class="text-lg font-bold text-ink">#{{ player.score.world_rank|intcomma }}</div>
+      </div>
+      <div class="text-center">
+        <div class="text-[10px] font-semibold uppercase tracking-wider text-muted mb-0.5">Construção</div>
+        <div class="text-lg font-bold text-ink">{{ player.score.building_score|intcomma }}</div>
+      </div>
+      <div class="text-center">
+        <div class="text-[10px] font-semibold uppercase tracking-wider text-muted mb-0.5">Pesquisa</div>
+        <div class="text-lg font-bold text-ink">{{ player.score.research_score|intcomma }}</div>
+      </div>
+      <div class="text-center">
+        <div class="text-[10px] font-semibold uppercase tracking-wider text-muted mb-0.5">Exército</div>
+        <div class="text-lg font-bold text-ink">{{ player.score.army_score|intcomma }}</div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Cities table ── #}
+  <div class="card !p-0 overflow-hidden">
+    <div class="px-4 py-3" style="border-bottom:1px solid var(--ik-line);">
+      <h2 class="text-sm font-semibold text-ink">Cidades no dump</h2>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead>
+          <tr style="border-bottom:2px solid var(--ik-line);">
+            <th class="py-2 px-3 text-left text-muted font-semibold">Cidade</th>
+            <th class="py-2 px-3 text-left text-muted font-semibold">Coordenada</th>
+            <th class="py-2 px-3 text-left text-muted font-semibold">Ilha</th>
+            <th class="py-2 px-3 text-left text-muted font-semibold">Recurso</th>
+            <th class="py-2 px-3 text-left text-muted font-semibold">Milagre</th>
+            <th class="py-2 px-3 text-right text-muted font-semibold">Nível</th>
+            <th class="py-2 px-3 text-center text-muted font-semibold">Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for city in cities %}
+          <tr class="hover:bg-[var(--ik-sand-light)] transition-colors" style="border-bottom:1px solid var(--ik-line);">
+            <td class="py-2 px-3 font-medium text-ink">{{ city.name }}</td>
+            <td class="py-2 px-3 font-mono text-muted">[{{ city.island.x }}:{{ city.island.y }}]</td>
+            <td class="py-2 px-3 text-muted">{{ city.island.name|default:"—" }}</td>
+            <td class="py-2 px-3 text-muted">
+              {{ city.island.resource_name|default:"—" }}
+              {% if city.island.resource_level %}<span class="text-[10px]"> Lv{{ city.island.resource_level }}</span>{% endif %}
+            </td>
+            <td class="py-2 px-3 text-muted">
+              {{ city.island.miracle_name|default:"—" }}
+              {% if city.island.miracle_level %}<span class="text-[10px]"> Lv{{ city.island.miracle_level }}</span>{% endif %}
+            </td>
+            <td class="py-2 px-3 text-right font-mono font-semibold text-ink">{{ city.level }}</td>
+            <td class="py-2 px-3 text-center">
+              {% if city.in_fight %}
+              <span class="badge badge-danger text-[10px]">⚔️ Batalha</span>
+              {% elif city.state == "vacation" %}
+              <span class="badge badge-warning text-[10px]">Férias</span>
+              {% elif city.state %}
+              <span class="badge badge-secondary text-[10px]">{{ city.state }}</span>
+              {% else %}
+              <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" class="py-6 text-center text-sm text-muted">Nenhuma cidade encontrada.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

@@ -95,39 +95,72 @@ def _parse_island_html(html: str) -> dict[str, Any]:
 
         island_data = json.loads(m.group(1))[1][1]
 
+        def _safe_int(v: Any, default: int = 0) -> int:
+            try:
+                return int(str(v).replace(".", "").replace(",", ""))
+            except Exception:
+                return default
+
         cities: list[dict[str, Any]] = []
         for city in island_data.get("cities", []):
             if not isinstance(city, dict):
                 continue
             city_type = str(city.get("type") or "empty")
+            infos = city.get("infos") or {}
+            in_fight = isinstance(infos, dict) and infos.get("armyAction") == "fight"
+            actions = city.get("actions") or []
             cities.append({
                 "id": str(city.get("id") or ""),
                 "name": str(city.get("name") or ""),
                 "owner_id": str(city.get("ownerId") or ""),
                 "owner_name": str(city.get("ownerName") or ""),
+                "ally_id": str(city.get("ownerAllyId") or ""),
                 "ally_tag": str(city.get("ownerAllyTag") or ""),
                 "level": int(city.get("level") or 0),
                 "type": city_type,
                 "state": str(city.get("state") or ""),
-                "in_fight": (
-                    isinstance(city.get("infos"), dict)
-                    and city["infos"].get("armyAction") == "fight"
-                ),
+                "in_fight": in_fight,
+                "has_treaties": bool(city.get("hasTreaties")),
+                "view_able": int(city.get("viewAble") or 0),
+                "infested_by_plague": bool(city.get("infestedByPlague")),
+                "actions": actions if isinstance(actions, list) else [],
             })
 
         resource_type = island_data.get("tradegood", 0)
+        resource_type_int = int(resource_type) if resource_type is not None else 0
+        wonder_type = int(island_data.get("wonder") or 0)
+
+        # avatarScores: {owner_id: {place, building_score_main, research_score_main, army_score_main, trader_score_secondary}}
+        avatar_scores: dict[str, dict[str, Any]] = {}
+        raw_scores = island_data.get("avatarScores") or {}
+        if isinstance(raw_scores, dict):
+            for pid, score in raw_scores.items():
+                if not isinstance(score, dict):
+                    continue
+                avatar_scores[str(pid)] = {
+                    "avatar_id": str(score.get("avatar_id") or pid),
+                    "place": _safe_int(score.get("place")),
+                    "building_score": _safe_int(score.get("building_score_main")),
+                    "research_score": _safe_int(score.get("research_score_main")),
+                    "army_score": _safe_int(score.get("army_score_main")),
+                    "trader_score": _safe_int(score.get("trader_score_secondary")),
+                }
+
         return {
             "island_id": str(island_data.get("id") or ""),
             "name": str(island_data.get("name") or ""),
             "x": int(island_data.get("xCoord") or 0),
             "y": int(island_data.get("yCoord") or 0),
-            "resource_type": int(resource_type) if resource_type is not None else 0,
-            "resource_name": RESOURCE_NAMES.get(int(resource_type) if resource_type is not None else 0, ""),
-            "resource_level": str(island_data.get("tradegoodLevel") or ""),
-            "wood_level": str(island_data.get("resourceLevel") or ""),
+            "resource_type": resource_type_int,
+            "resource_name": RESOURCE_NAMES.get(resource_type_int, ""),
+            "resource_level": _safe_int(island_data.get("tradegoodLevel")),
+            "wood_level": _safe_int(island_data.get("resourceLevel")),
+            "miracle_type": wonder_type,
             "miracle_name": str(island_data.get("wonderName") or ""),
-            "miracle_level": str(island_data.get("wonderLevel") or ""),
+            "miracle_level": _safe_int(island_data.get("wonderLevel")),
+            "helios_built": bool(island_data.get("isHeliosTowerBuilt")),
             "cities": cities,
+            "avatar_scores": avatar_scores,
         }
     except Exception:
         return {}

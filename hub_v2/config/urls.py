@@ -27,6 +27,7 @@ urlpatterns = [
     path("", include("apps.dashboard.urls")),
     path("jobs/", include("apps.jobs.urls")),
     path("game/", include("apps.game.urls")),
+    path("intel/", include("apps.worldintel.urls")),
     path("market/", include("apps.market.urls")),
     path("diplomacy/", include("apps.diplomacy.urls")),
     # --- Admin ---
@@ -43,6 +44,7 @@ urlpatterns = [
     path("api/agent/", include("apps.accounts.api_urls", namespace="agent-accounts")),
     path("api/agent/", include("apps.jobs.api_urls", namespace="agent-jobs")),
     path("api/agent/", include("apps.game.api_urls", namespace="agent-game")),
+    path("api/agent/", include("apps.worldintel.api_urls", namespace="agent-worldintel")),
     path("api/agent/", include("apps.telegram.api.agent_urls", namespace="agent-telegram")),
     path("api/agent/", include("apps.market.api_urls", namespace="agent-market")),
     path("api/agent/", include("apps.diplomacy.api_urls", namespace="agent-diplomacy")),

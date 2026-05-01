@@ -1,0 +1,91 @@
+{% load humanize %}
+{% if selected_dump %}
+<div class="card !p-0 overflow-hidden">
+  <div class="flex items-center justify-between px-4 py-3" style="border-bottom:1px solid var(--ik-line);">
+    <div class="text-xs text-muted">
+      <strong class="text-ink">{{ players|length }}</strong> player(s) ·
+      dump <strong>{{ selected_dump.captured_at|date:"d/m/Y H:i" }}</strong>
+      {% if selected_dump.player_count %} · {{ selected_dump.player_count|intcomma }} no corte total{% endif %}
+    </div>
+    {% if has_scores %}
+    <div class="flex gap-1">
+      {% for label, key in sort_options %}
+      <a href="?{{ base_qs }}&sort={{ key }}"
+         class="px-2 py-0.5 rounded text-[10px] font-semibold transition-colors {% if sort == key %}bg-[var(--ik-sea)] text-white{% else %}text-muted hover:text-ink{% endif %}">
+        {{ label }}
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead>
+        <tr style="border-bottom:2px solid var(--ik-line);">
+          {% if has_scores %}<th class="py-2 px-3 text-right text-muted font-semibold w-12">#</th>{% endif %}
+          <th class="py-2 px-3 text-left text-muted font-semibold">Player</th>
+          <th class="py-2 px-3 text-left text-muted font-semibold">Aliança</th>
+          <th class="py-2 px-3 text-right text-muted font-semibold">Cidades</th>
+          {% if has_scores %}
+          <th class="py-2 px-3 text-right text-muted font-semibold">Construção</th>
+          <th class="py-2 px-3 text-right text-muted font-semibold">Pesquisa</th>
+          <th class="py-2 px-3 text-right text-muted font-semibold">Exército</th>
+          {% else %}
+          <th class="py-2 px-3 text-right text-muted font-semibold">Ilhas</th>
+          {% endif %}
+          <th class="py-2 px-3"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in players %}
+        <tr class="hover:bg-[var(--ik-sand-light)] transition-colors" style="border-bottom:1px solid var(--ik-line);">
+          {% if has_scores %}
+          <td class="py-1.5 px-3 text-right font-mono text-muted">{{ row.world_rank|intcomma }}</td>
+          {% endif %}
+          <td class="py-1.5 px-3">
+            <a href="{% url 'worldintel:player-detail' %}?dump={{ selected_dump.pk }}{% if selected_game_account %}&ga={{ selected_game_account.pk }}{% endif %}{% if row.owner_id %}&owner_id={{ row.owner_id|urlencode }}{% else %}&owner_name={{ row.owner_name|urlencode }}{% endif %}"
+               class="font-semibold text-ink hover:text-sea transition-colors">{{ row.owner_name|default:"Sem nome" }}</a>
+            {% if row.owner_id %}<div class="text-[10px] text-muted font-mono">{{ row.owner_id }}</div>{% endif %}
+          </td>
+          <td class="py-1.5 px-3 font-mono text-[11px] text-muted">
+            {% if has_scores %}{% if row.ally_tag %}[{{ row.ally_tag }}]{% else %}&mdash;{% endif %}
+            {% else %}{% if row.ally_tag %}[{{ row.ally_tag }}]{% else %}&mdash;{% endif %}{% endif %}
+          </td>
+          <td class="py-1.5 px-3 text-right font-mono font-bold text-ink">{{ row.city_count|intcomma }}</td>
+          {% if has_scores %}
+          <td class="py-1.5 px-3 text-right font-mono text-muted">{{ row.building_score|intcomma }}</td>
+          <td class="py-1.5 px-3 text-right font-mono text-muted">{{ row.research_score|intcomma }}</td>
+          <td class="py-1.5 px-3 text-right font-mono text-muted">{{ row.army_score|intcomma }}</td>
+          {% else %}
+          <td class="py-1.5 px-3 text-right font-mono text-muted">{{ row.island_count|default:"—" }}</td>
+          {% endif %}
+          <td class="py-1.5 px-3 text-right">
+            <a href="{% url 'worldintel:player-detail' %}?dump={{ selected_dump.pk }}{% if selected_game_account %}&ga={{ selected_game_account.pk }}{% endif %}{% if row.owner_id %}&owner_id={{ row.owner_id|urlencode }}{% else %}&owner_name={{ row.owner_name|urlencode }}{% endif %}"
+               class="btn btn-secondary btn-sm !py-0.5 !px-2 text-[10px]">Ver</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="py-8 text-center text-sm text-muted">
+            <i class="bi bi-search block text-xl mb-2"></i>
+            Nenhum player encontrado.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card text-center py-10">
+  <i class="bi bi-database text-3xl text-muted block mb-3"></i>
+  <p class="text-sm text-muted">Nenhum dump disponível.</p>
+  <a href="{{ dump_job_create_url }}"
+     hx-get="{{ dump_job_create_url }}"
+     hx-target="#jobCreateModal"
+     hx-swap="innerHTML"
+     class="btn btn-primary btn-sm mt-4">
+    <i class="bi bi-plus-circle"></i> Criar dump
+  </a>
+</div>
+{% endif %}

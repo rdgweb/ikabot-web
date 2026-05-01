@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     "apps.jobs",
     "apps.dashboard",
     "apps.game",
+    "apps.worldintel",
     "apps.market",
     "apps.diplomacy",
     "apps.telegram",

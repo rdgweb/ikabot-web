@@ -1,6 +1,4 @@
-"""
-Template context processors for global template data.
-"""
+"""Template context processors for global template data."""
 
 from django.conf import settings
 
@@ -8,8 +6,6 @@ from django.conf import settings
 def nav_context(request):
     """Provide sidebar navigation context filtered by user permissions."""
     user = getattr(request, "user", None)
-    # Cache permission checks on the user object to avoid repeated DB queries
-    # within the same request (context processor runs once per render).
     if not hasattr(user, "_perm_is_admin"):
         user._perm_is_admin = _is_admin(user)
         user._perm_is_operator = _is_operator(user)
@@ -22,8 +18,9 @@ def nav_context(request):
             "items": [
                 {"name": "Dashboard", "url": "/", "icon": "bi-speedometer2"},
                 {"name": "Painel do Jogo", "url": "/game/", "icon": "bi-joystick"},
-                {"name": "Ações do Jogo", "url": "/game/actions/", "icon": "bi-controller"},
-                {"name": "Construções", "url": "/game/construction/", "icon": "bi-building"},
+                {"name": "Inteligencia", "url": "/intel/players/", "icon": "bi-binoculars"},
+                {"name": "Acoes do Jogo", "url": "/game/actions/", "icon": "bi-controller"},
+                {"name": "Construcoes", "url": "/game/construction/", "icon": "bi-building"},
                 {"name": "Mercado Interno", "url": "/market/", "icon": "bi-shop"},
                 {"name": "Diplomacia", "url": "/diplomacy/", "icon": "bi-envelope"},
                 {"name": "Fila de Jobs", "url": "/jobs/", "icon": "bi-list-task"},
@@ -33,20 +30,19 @@ def nav_context(request):
             "label": "Administrativo",
             "perm": "operator",
             "items": [
-                {"name": "Nós & Agents", "url": "/accounts/nodes/", "icon": "bi-hdd-network"},
+                {"name": "Nos & Agents", "url": "/accounts/nodes/", "icon": "bi-hdd-network"},
                 {"name": "Contas do Jogo", "url": "/accounts/", "icon": "bi-person-badge"},
                 {"name": "Presets", "url": "/profiles/", "icon": "bi-collection"},
                 {"name": "Proxy", "url": "/proxy/", "icon": "bi-shield-lock"},
                 {"name": "Telegram", "url": "/telegram/", "icon": "bi-telegram"},
                 {"name": "Mensagens", "url": "/telegram/audit/", "icon": "bi-chat-dots"},
                 {"name": "Captcha", "url": "/captcha/", "icon": "bi-robot"},
-                {"name": "Configurações", "url": "/settings/", "icon": "bi-gear", "perm": "admin"},
-                {"name": "Usuários", "url": "/users/", "icon": "bi-people", "perm": "admin"},
+                {"name": "Configuracoes", "url": "/settings/", "icon": "bi-gear", "perm": "admin"},
+                {"name": "Usuarios", "url": "/users/", "icon": "bi-people", "perm": "admin"},
             ],
         },
     ]
 
-    # Filter sections and items by permission
     filtered = []
     for section in all_sections:
         section_perm = section.get("perm")
@@ -93,21 +89,8 @@ def hub_version(request):
 
 
 def htmx_context(request):
-    """Provide HTMX-aware base template selection.
-
-    When navigating via hx-boost, only the #page-content needs to be
-    swapped — not the entire HTML document. Templates use::
-
-        {% extends base_template %}
-
-    instead of ``{% extends "base.html" %}``.
-    """
+    """Provide HTMX-aware base template selection."""
     is_htmx = request.headers.get("HX-Request") == "true"
     is_boosted = request.headers.get("HX-Boosted") == "true"
-
-    if is_htmx and is_boosted:
-        base = "base_partial.html"
-    else:
-        base = "base.html"
-
+    base = "base_partial.html" if is_htmx and is_boosted else "base.html"
     return {"base_template": base, "is_htmx": is_htmx}

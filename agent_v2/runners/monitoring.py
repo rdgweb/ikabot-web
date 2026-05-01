@@ -1223,3 +1223,210 @@ class IslandMonitorRunner(BaseRunner):
             reschedule_inputs=reschedule_inputs,
             data={"islands_checked": len(island_ids), "changes": total_changes},
         )
+
+
+_DUMP_BATCH_SIZE = 50  # islands per job execution
+
+
+@register_runner(602)
+class WorldDumpRunner(BaseRunner):
+    """Create a queryable world dump from own islands or a map region.
+
+    Supports resumable batch processing — large dumps span multiple job
+    executions, all writing to the same WorldDump record.
+
+    Runtime state in reschedule_inputs:
+        _dump_id            str   existing WorldDump pk (batch mode)
+        _pending_ids        list  island IDs not yet fetched
+        _dump_title         str   preserved across cycles
+        _total_islands      int   total discovered (for progress)
+        _fetched_count      int   islands already fetched
+    """
+
+    def execute(self, job: dict) -> RunnerResult:
+        jid = job["job_id"]
+        aid = job["account_id"]
+        ga_id = job.get("game_account_id")
+        inputs = job.get("inputs") or {}
+
+        import time as _time
+
+        # ── Resuming an existing dump ──
+        existing_dump_id = str(inputs.get("_dump_id") or "").strip()
+        pending_ids: list[str] = list(inputs.get("_pending_ids") or [])
+        dump_title: str = str(inputs.get("_dump_title") or "")
+        total_islands: int = _island_to_int(inputs.get("_total_islands"), 0)
+        fetched_count: int = _island_to_int(inputs.get("_fetched_count"), 0)
+
+        if existing_dump_id and pending_ids:
+            # Continuation cycle
+            creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+            if not creds:
+                self.log(jid, "error", "Credenciais nao encontradas")
+                return RunnerResult(success=False, data={"error": "missing_credentials"})
+            client = self.get_or_login_game_client(jid, aid, ga_id, creds)
+
+            batch = pending_ids[:_DUMP_BATCH_SIZE]
+            remaining = pending_ids[_DUMP_BATCH_SIZE:]
+            is_final = not remaining
+
+            self.log(
+                jid, "info",
+                f"Dump {existing_dump_id[:8]}: batch {fetched_count + 1}–{fetched_count + len(batch)}"
+                f" de {total_islands} | restam {len(remaining)}",
+            )
+            dump_islands, city_total, player_count = self._fetch_batch(
+                jid, client, batch, include_empty=_island_to_bool(inputs.get("include_empty"), False)
+            )
+            if dump_islands:
+                self.hub.append_world_dump(existing_dump_id, dump_islands, is_final=is_final)
+
+            self.save_game_client(ga_id or aid, client)
+            fetched_count += len(batch)
+            self.log(jid, "info", f"Batch salvo: {len(dump_islands)} ilhas, {city_total} cidades")
+
+            if is_final:
+                self.log(jid, "info", f"Dump completo: {dump_title} ({fetched_count} ilhas no total)")
+                return RunnerResult(success=True, data={"dump_id": existing_dump_id, "status": "complete"})
+
+            return RunnerResult(
+                success=True,
+                reschedule_seconds=30,
+                reschedule_inputs={
+                    **{k: v for k, v in inputs.items() if not k.startswith("_")},
+                    "_dump_id": existing_dump_id,
+                    "_pending_ids": remaining,
+                    "_dump_title": dump_title,
+                    "_total_islands": total_islands,
+                    "_fetched_count": fetched_count,
+                },
+                data={"dump_id": existing_dump_id, "status": "in_progress", "remaining": len(remaining)},
+            )
+
+        # ── First execution: discover islands ──
+        dump_mode = str(inputs.get("dump_mode") or "own_islands").strip()
+        include_empty = _island_to_bool(inputs.get("include_empty"), False)
+
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        if not creds:
+            self.log(jid, "error", "Credenciais nao encontradas")
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
+        client = self.get_or_login_game_client(jid, aid, ga_id, creds)
+
+        all_ids: list[str] = []
+        filters: dict[str, Any] = {"dump_mode": dump_mode, "include_empty": include_empty}
+
+        if dump_mode == "region":
+            x_min = _island_to_int(inputs.get("region_x_min"))
+            y_min = _island_to_int(inputs.get("region_y_min"))
+            x_max = _island_to_int(inputs.get("region_x_max"))
+            y_max = _island_to_int(inputs.get("region_y_max"))
+            filters.update({"x_min": x_min, "y_min": y_min, "x_max": x_max, "y_max": y_max})
+            dump_title = f"Regiao [{x_min}:{y_min}] ate [{x_max}:{y_max}]"
+            try:
+                area = client.fetch_island_area(x_min, y_min, x_max, y_max)
+            except Exception as exc:
+                self.log(jid, "error", f"Falha ao escanear regiao: {exc}")
+                self.save_game_client(ga_id or aid, client)
+                return RunnerResult(success=False, data={"error": str(exc)})
+            for item in area:
+                if not include_empty and int(item.get("city_count") or 0) <= 0:
+                    continue
+                sid = str(item.get("island_id") or "").strip()
+                if sid and sid not in all_ids:
+                    all_ids.append(sid)
+        else:
+            own_city_ids = [str(c).strip() for c in (inputs.get("own_city_ids") or []) if str(c).strip()]
+            if not own_city_ids and ga_id:
+                try:
+                    snapshot = self.hub.get_snapshot(game_account_id=ga_id)
+                    own_city_ids = [str(c.get("id") or "").strip() for c in (snapshot.get("cities") or []) if str(c.get("id") or "").strip()]
+                except Exception:
+                    own_city_ids = []
+            filters["own_city_ids"] = own_city_ids
+            dump_title = f"Ilhas de {len(own_city_ids)} cidade(s)"
+            for city_id in own_city_ids:
+                try:
+                    island_id = client.get_city_island_id(int(city_id))
+                except Exception as exc:
+                    self.log(jid, "warn", f"Cidade {city_id}: erro - {exc}")
+                    continue
+                if island_id and island_id not in all_ids:
+                    all_ids.append(island_id)
+
+        if not all_ids:
+            self.log(jid, "warn", "Nenhuma ilha encontrada")
+            self.save_game_client(ga_id or aid, client)
+            return RunnerResult(success=False, data={"error": "no_islands"})
+
+        total_islands = len(all_ids)
+        batch = all_ids[:_DUMP_BATCH_SIZE]
+        remaining = all_ids[_DUMP_BATCH_SIZE:]
+        is_final = not remaining
+
+        self.log(jid, "info", f"{total_islands} ilhas descobertas. Batch 1/{-(-total_islands // _DUMP_BATCH_SIZE)} ({len(batch)} ilhas)")
+
+        dump_islands, city_total, player_count = self._fetch_batch(jid, client, batch, include_empty=include_empty)
+
+        result = self.hub.save_world_dump(
+            account_id=aid,
+            game_account_id=ga_id,
+            source_job_id=jid,
+            scope_mode=dump_mode,
+            title=dump_title,
+            filters=filters,
+            islands=dump_islands,
+            dump_status="complete" if is_final else "in_progress",
+        )
+        dump_id = str(result.get("dump_id") or "")
+        self.save_game_client(ga_id or aid, client)
+        self.log(jid, "info", f"Dump {dump_id[:8]} criado: {len(dump_islands)} ilhas, {city_total} cidades")
+
+        if is_final:
+            return RunnerResult(success=True, data={"dump_id": dump_id, "status": "complete"})
+
+        return RunnerResult(
+            success=True,
+            reschedule_seconds=30,
+            reschedule_inputs={
+                **{k: v for k, v in inputs.items() if not k.startswith("_")},
+                "_dump_id": dump_id,
+                "_pending_ids": remaining,
+                "_dump_title": dump_title,
+                "_total_islands": total_islands,
+                "_fetched_count": len(batch),
+            },
+            data={"dump_id": dump_id, "status": "in_progress", "remaining": len(remaining)},
+        )
+
+    def _fetch_batch(
+        self,
+        jid: str,
+        client: Any,
+        island_ids: list[str],
+        include_empty: bool = False,
+    ) -> tuple[list[dict], int, int]:
+        """Fetch a batch of islands. Returns (islands, city_count, player_count)."""
+        import time as _time
+        dump_islands = []
+        city_total = 0
+        player_keys: set[str] = set()
+        for island_id in island_ids:
+            try:
+                _time.sleep(0.5)
+                island = client.fetch_island_by_id(island_id)
+            except Exception as exc:
+                self.log(jid, "warn", f"Ilha {island_id}: erro - {exc}")
+                continue
+            if not island or not island.get("island_id"):
+                continue
+            if not include_empty and not any(str(c.get("type") or "") == "city" for c in (island.get("cities") or [])):
+                continue
+            for city in island.get("cities") or []:
+                if str(city.get("type") or "") == "city":
+                    city_total += 1
+                    owner_key = str(city.get("owner_id") or city.get("owner_name") or "").strip()
+                    if owner_key:
+                        player_keys.add(owner_key)
+            dump_islands.append(island)
+        return dump_islands, city_total, len(player_keys)

@@ -96,6 +96,26 @@ WORKSHOP_UNITS_UI = (
     {"key": "cargueiro",      "name": "Cargueiro",       "tab": "sea", "icon": "game/units/cargueiro.png",      "bi": "bi-box-seam-fill", "accent": "rgba(110,90,70,0.85)",   "surface": "rgba(110,90,70,0.08)"},
 )
 
+
+def _build_job_form_initial(request, ga, action_code: int) -> dict:
+    selected_city = request.GET.get("city_id", request.GET.get("city", ""))
+    initial = {
+        "game_account": str(ga.pk),
+        "action_code": action_code,
+        "city_id": selected_city,
+        "city": selected_city,
+        "revolt_type": request.GET.get("revolt_type", ""),
+    }
+    for key in request.GET.keys():
+        if not key.startswith("input_"):
+            continue
+        clean_key = key[6:]
+        values = [str(v).strip() for v in request.GET.getlist(key) if str(v).strip()]
+        if not values:
+            continue
+        initial[clean_key] = values if len(values) > 1 else values[0]
+    return initial
+
 SHRINE_GOD_FIELDS = (
     "god_pan",
     "god_dionysus",
@@ -938,6 +958,8 @@ def _custom_field_names(action_code: int) -> list[str]:
         return ["unit_targets_json", "min_crystal_reserve", "min_gold_reserve", "priority_mode"]
     if int(action_code) == 9002:
         return ["city_id", "revolt_type"]
+    if int(action_code) == 602:
+        return ["dump_mode", "own_city_ids", "region_x_min", "region_y_min", "region_x_max", "region_y_max", "include_empty"]
     return []
 
 
@@ -1071,19 +1093,11 @@ class JobCreateModalView(LoginRequiredMixin, View):
     def _render_form(self, request, ga, action_code, action_meta):
         cities = _get_cities(ga)
         construction_cities = _construction_city_data(cities)
-        selected_city = request.GET.get("city_id", request.GET.get("city", ""))
-        selected_revolt_type = request.GET.get("revolt_type", "")
         form = JobCreateForm(
             action_code=action_code,
             game_account=ga,
             cities=construction_cities,
-            initial={
-                "game_account": str(ga.pk),
-                "action_code": action_code,
-                "city_id": selected_city,
-                "city": selected_city,
-                "revolt_type": selected_revolt_type,
-            },
+            initial=_build_job_form_initial(request, ga, action_code),
         )
         html = render_to_string(
             "jobs/partials/create_step_form.html",
@@ -1136,19 +1150,11 @@ class JobFormView(LoginRequiredMixin, View):
 
         cities = _get_cities(ga)
         construction_cities = _construction_city_data(cities)
-        selected_city = request.GET.get("city_id", request.GET.get("city", ""))
-        selected_revolt_type = request.GET.get("revolt_type", "")
         form = JobCreateForm(
             action_code=action_code,
             game_account=ga,
             cities=construction_cities,
-            initial={
-                "game_account": str(ga.pk),
-                "action_code": action_code,
-                "city_id": selected_city,
-                "city": selected_city,
-                "revolt_type": selected_revolt_type,
-            },
+            initial=_build_job_form_initial(request, ga, action_code),
         )
 
         html = render_to_string(
@@ -1612,9 +1618,9 @@ class JobSubmitView(LoginRequiredMixin, View):
             donation_types = [donation_types]
 
         if multi_city_key and multi_city_key in inputs:
-            if int(action_code) in {3, 27, 601}:
+            if int(action_code) in {3, 27, 601, 602}:
                 # ac=3 (distribute): single job with full cities list so runner can plan routes
-                # ac=27, ac=601 (island monitor): single job by design
+                # ac=27, ac=601, ac=602: single job by design
                 return self._create_single_job(ga, action_code, dict(inputs))
             selected_city_ids = inputs.pop(multi_city_key)
             if not isinstance(selected_city_ids, list):

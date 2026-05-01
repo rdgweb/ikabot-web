@@ -1,0 +1,274 @@
+from urllib.parse import urlencode
+
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db.models import Count, Max, Min, Q
+from django.http import Http404
+from django.views.generic import TemplateView
+
+from apps.accounts.models import GameAccount
+
+from .models import WorldDump, WorldDumpCity, WorldDumpIsland, WorldDumpPlayer
+
+
+class WorldIntelBaseView(LoginRequiredMixin, TemplateView):
+    active_tab = "players"
+
+    def _game_accounts(self):
+        return (
+            GameAccount.objects.select_related("account")
+            .filter(active=True)
+            .order_by("name", "server_id")
+        )
+
+    def _selected_game_account(self):
+        ga_id = str(self.request.GET.get("ga") or "").strip()
+        if not ga_id:
+            return None
+        return self._game_accounts().filter(pk=ga_id).first()
+
+    def _selected_dump(self):
+        dump_id = str(self.request.GET.get("dump") or "").strip()
+        qs = WorldDump.objects.select_related("account", "game_account")
+        selected_ga = self._selected_game_account()
+        if selected_ga:
+            qs = qs.filter(game_account=selected_ga)
+        if dump_id:
+            selected = qs.filter(pk=dump_id).first()
+            if selected:
+                return selected
+        return qs.order_by("-captured_at").first()
+
+    def _dump_choices(self, selected_ga):
+        qs = WorldDump.objects.select_related("game_account").order_by("-captured_at")
+        if selected_ga:
+            qs = qs.filter(game_account=selected_ga)
+        return qs[:30]
+
+    def _base_context(self):
+        selected_ga = self._selected_game_account()
+        selected_dump = self._selected_dump()
+        return {
+            "active_tab": self.active_tab,
+            "game_accounts": self._game_accounts(),
+            "selected_game_account": selected_ga,
+            "selected_dump": selected_dump,
+            "dump_choices": self._dump_choices(selected_ga),
+            "dump_job_create_url": "/jobs/new/?action=602" + (f"&ga={selected_ga.pk}" if selected_ga else ""),
+        }
+
+    @staticmethod
+    def _monitor_url(game_account, island_ids):
+        if not game_account or not island_ids:
+            return ""
+        params = urlencode(
+            {
+                "ga": str(game_account.pk),
+                "action": "601",
+                "input_monitor_mode": "islands",
+                "input_extra_island_ids": ",".join(island_ids),
+            }
+        )
+        return f"/jobs/new/form/?{params}"
+
+
+class WorldDumpListView(WorldIntelBaseView):
+    template_name = "worldintel/dumps.html"
+    active_tab = "dumps"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        base = self._base_context()
+        ctx.update(base)
+        dumps = WorldDump.objects.select_related("account", "game_account").order_by("-captured_at")
+        if base["selected_game_account"]:
+            dumps = dumps.filter(game_account=base["selected_game_account"])
+        ctx["dumps"] = dumps[:100]
+        return ctx
+
+
+class WorldPlayerListView(WorldIntelBaseView):
+    template_name = "worldintel/players.html"
+    active_tab = "players"
+
+    def get_template_names(self):
+        if getattr(self.request, "htmx", False):
+            return ["worldintel/partials/players_table.html"]
+        return [self.template_name]
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        base = self._base_context()
+        ctx.update(base)
+        current_dump = base["selected_dump"]
+        q = str(self.request.GET.get("q") or "").strip()
+        limit = min(250, max(25, int(str(self.request.GET.get("limit") or "100")) if str(self.request.GET.get("limit") or "").isdigit() else 100))
+        ctx["q"] = q
+        ctx["limit"] = limit
+        ctx["limit_choices"] = [50, 100, 150, 250]
+        if not current_dump:
+            ctx["players"] = []
+            ctx["has_scores"] = False
+            return ctx
+
+        # Try WorldDumpPlayer first (has scores)
+        players_qs = WorldDumpPlayer.objects.filter(dump=current_dump)
+        has_scores = players_qs.exists()
+
+        if has_scores:
+            if q:
+                players_qs = players_qs.filter(
+                    Q(owner_name__icontains=q) | Q(ally_tag__icontains=q)
+                )
+            sort = str(self.request.GET.get("sort") or "rank")
+            order_map = {
+                "rank": "world_rank",
+                "building": "-building_score",
+                "army": "-army_score",
+                "research": "-research_score",
+                "cities": "-city_count",
+                "name": "owner_name",
+            }
+            players_qs = players_qs.order_by(order_map.get(sort, "world_rank"))
+            ctx["players"] = list(players_qs[:limit])
+            ctx["sort"] = sort
+        else:
+            # Fallback: aggregate from cities
+            cities = WorldDumpCity.objects.filter(dump=current_dump, type="city").select_related("island")
+            if q:
+                cities = cities.filter(
+                    Q(owner_name__icontains=q)
+                    | Q(ally_tag__icontains=q)
+                    | Q(name__icontains=q)
+                )
+            ctx["players"] = list(
+                cities.values("owner_id", "owner_name", "ally_tag")
+                .annotate(city_count=Count("id"), island_count=Count("island_id", distinct=True))
+                .order_by("-city_count", "owner_name")
+            )[:limit]
+            ctx["sort"] = "cities"
+
+        ctx["has_scores"] = has_scores
+        ctx["sort_options"] = [
+            ("Rank", "rank"), ("Construção", "building"), ("Exército", "army"),
+            ("Pesquisa", "research"), ("Cidades", "cities"), ("Nome", "name"),
+        ]
+        # Base query string without sort for sort links
+        qs_parts = []
+        if current_dump:
+            qs_parts.append(f"dump={current_dump.pk}")
+        if base.get("selected_game_account"):
+            qs_parts.append(f"ga={base['selected_game_account'].pk}")
+        if q:
+            qs_parts.append(f"q={q}")
+        qs_parts.append(f"limit={limit}")
+        ctx["base_qs"] = "&".join(qs_parts)
+        return ctx
+
+
+class WorldPlayerDetailView(WorldIntelBaseView):
+    template_name = "worldintel/player_detail.html"
+    active_tab = "players"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        base = self._base_context()
+        ctx.update(base)
+        current_dump = base["selected_dump"]
+        if not current_dump:
+            raise Http404("Nenhum dump disponivel.")
+
+        owner_id = str(self.request.GET.get("owner_id") or "").strip()
+        owner_name = str(self.request.GET.get("owner_name") or "").strip()
+        if not owner_id and not owner_name:
+            raise Http404("Player nao informado.")
+
+        cities = WorldDumpCity.objects.filter(dump=current_dump, type="city").select_related("island")
+        if owner_id:
+            cities = cities.filter(owner_id=owner_id)
+        else:
+            cities = cities.filter(owner_name=owner_name)
+        cities = cities.order_by("island__x", "island__y", "name")
+        city_list = list(cities)
+        if not city_list:
+            raise Http404("Player nao encontrado neste dump.")
+
+        first = city_list[0]
+        island_ids = []
+        seen_islands = set()
+        for city in city_list:
+            sid = str(city.island.island_id or "").strip()
+            if sid and sid not in seen_islands:
+                seen_islands.add(sid)
+                island_ids.append(sid)
+
+        player_score = WorldDumpPlayer.objects.filter(
+            dump=current_dump, owner_id=first.owner_id
+        ).first() if first.owner_id else None
+
+        ctx["player"] = {
+            "owner_id": first.owner_id,
+            "owner_name": first.owner_name,
+            "ally_tag": first.ally_tag,
+            "city_count": len(city_list),
+            "island_count": len(island_ids),
+            "fight_count": sum(1 for city in city_list if city.in_fight),
+            "score": player_score,
+        }
+        ctx["cities"] = city_list
+        ctx["monitor_url"] = self._monitor_url(current_dump.game_account, island_ids)
+        return ctx
+
+
+class WorldIslandListView(WorldIntelBaseView):
+    template_name = "worldintel/islands.html"
+    active_tab = "islands"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        base = self._base_context()
+        ctx.update(base)
+        current_dump = base["selected_dump"]
+        q = str(self.request.GET.get("q") or "").strip()
+        resource = str(self.request.GET.get("resource") or "").strip()
+        ctx["q"] = q
+        ctx["resource"] = resource
+        if not current_dump:
+            ctx["islands"] = []
+            return ctx
+
+        islands = WorldDumpIsland.objects.filter(dump=current_dump).prefetch_related("cities")
+        if q:
+            islands = islands.filter(
+                Q(name__icontains=q)
+                | Q(miracle_name__icontains=q)
+                | Q(cities__owner_name__icontains=q)
+                | Q(cities__ally_tag__icontains=q)
+            ).distinct()
+        if resource.isdigit():
+            islands = islands.filter(resource_type=int(resource))
+
+        rows = []
+        for island in islands.order_by("x", "y")[:300]:
+            owners = []
+            for city in island.cities.all():
+                if city.type != "city" or not city.owner_name:
+                    continue
+                label = city.owner_name
+                if city.ally_tag:
+                    label += f" [{city.ally_tag}]"
+                owners.append(label)
+            rows.append(
+                {
+                    "island_id": island.island_id,
+                    "name": island.name,
+                    "x": island.x,
+                    "y": island.y,
+                    "resource_name": island.resource_name,
+                    "miracle_name": island.miracle_name,
+                    "city_count": island.city_count,
+                    "owners": owners[:4],
+                    "monitor_url": self._monitor_url(current_dump.game_account, [str(island.island_id)]),
+                }
+            )
+        ctx["islands"] = rows
+        return ctx
