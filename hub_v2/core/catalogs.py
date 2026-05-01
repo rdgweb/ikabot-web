@@ -253,6 +253,40 @@ SHIP_UNIT_KEYS = {
     key for key, value in UNIT_CATALOG.items() if value.get("type") == "ship"
 }
 
+# Numeric unit ID → training metadata
+# Names and IDs from live game data. CSS class = "s{id}".
+# Costs are base values (before research reductions).
+TRAINING_UNITS: dict[str, list[dict]] = {
+    "troops": [
+        {"id": 303, "name": "Hoplita",             "css": "s303", "wood": 20,  "sulfur": 14,  "upkeep": 3},
+        {"id": 302, "name": "Espadachim",           "css": "s302", "wood": 15,  "sulfur": 14,  "upkeep": 4},
+        {"id": 301, "name": "Fundeiro",             "css": "s301", "wood": 10,  "upkeep": 2},
+        {"id": 315, "name": "Lanceiro",             "css": "s315", "wood": 15,  "upkeep": 1},
+        {"id": 313, "name": "Arqueiro",             "css": "s313", "wood": 15,  "sulfur": 12,  "upkeep": 4},
+        {"id": 304, "name": "Carabineiro",          "css": "s306", "wood": 25,  "sulfur": 73,  "upkeep": 3},
+        {"id": 307, "name": "Aríete",               "css": "s307", "wood": 110, "upkeep": 15},
+        {"id": 306, "name": "Catapulta",            "css": "s308", "wood": 130, "sulfur": 146, "upkeep": 25},
+        {"id": 308, "name": "Gigante a Vapor",      "css": "s308", "wood": 65,  "sulfur": 87,  "upkeep": 12},
+        {"id": 305, "name": "Morteiro",             "css": "s305", "wood": 150, "sulfur": 609, "upkeep": 30},
+        {"id": 312, "name": "Girocóptero",          "css": "s310", "wood": 12,  "sulfur": 48,  "upkeep": 15},
+        {"id": 309, "name": "Balão-Bombardeiro",    "css": "s309", "wood": 20,  "sulfur": 121, "upkeep": 45},
+        {"id": 310, "name": "Cozinheiro",           "css": "s312", "wood": 25,  "wine": 73,    "upkeep": 10},
+        {"id": 311, "name": "Médico",               "css": "s313", "wood": 25,  "crystal": 222,"upkeep": 20},
+    ],
+    "fleet": [
+        {"id": 210, "name": "Trireme",              "css": "s210", "wood": 167, "upkeep": 15},
+        {"id": 211, "name": "Lança-Chamas",         "css": "s211", "wood": 53,  "sulfur": 156, "upkeep": 25},
+        {"id": 213, "name": "Barco Balista",        "css": "s202", "wood": 120, "sulfur": 108, "upkeep": 20},
+        {"id": 214, "name": "Barco Catapulta",      "css": "s204", "wood": 120, "sulfur": 95,  "upkeep": 35},
+        {"id": 215, "name": "Barco Morteiro",       "css": "s205", "wood": 147, "sulfur": 612, "upkeep": 50},
+        {"id": 216, "name": "Aríete a Vapor",       "css": "s212", "wood": 268, "sulfur": 544, "upkeep": 45},
+        {"id": 217, "name": "Lança-Foguetes",       "css": "s211", "wood": 134, "sulfur": 815, "upkeep": 55},
+        {"id": 212, "name": "Submergível",          "css": "s206", "wood": 107, "crystal": 502,"sulfur": 68, "upkeep": 50},
+        {"id": 218, "name": "Lancha Rápida",        "css": "s207", "wood": 26,  "sulfur": 190, "upkeep": 5},
+        {"id": 219, "name": "Porta-balões",         "css": "s204", "wood": 468, "sulfur": 475, "upkeep": 100},
+    ],
+}
+
 
 def get_unit_info(unit_name: str) -> dict:
     """Return display info for a unit name."""

@@ -449,112 +449,187 @@ class UpgradeUnitsRunner(BaseRunner):
         return results
 
 
-@register_runner(15)
-class TrainTroopsRunner(BaseRunner):
-    """Queue land-unit training in a city barracks.
+@register_runner(1005)
+class TrainUnitsRunner(BaseRunner):
+    """Train troops or fleet — one-time or maintain-garrison policy.
 
     Inputs:
-        city_id    — city with the barracks
-        unit_type  — unit identifier (e.g. ``hoplite``, ``steam_giant``)
-        quantity   — number of units to train
+        city_id         str     city with barracks/shipyard
+        building_type   str     "troops" | "fleet"
+        position        int     building slot position
+        mode            str     "once" | "maintain"
+        units           dict    {unit_id_str: quantity} — train these amounts
+        target_garrison dict    {unit_id_str: target_count} — maintain mode targets
+        recheck_minutes int     interval for maintain mode (default 120)
     """
 
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
-        inputs = job.get("inputs", {})
+        ga_id = job.get("game_account_id")
+        inputs = job.get("inputs") or {}
 
-        self.log(jid, "info", f"Training troops for account {aid}")
+        city_id = _to_int(inputs.get("city_id"))
+        building_type = str(inputs.get("building_type") or "troops").strip()
+        position = _to_int(inputs.get("position"), 0)
+        mode = str(inputs.get("mode") or "once").strip()
+        recheck_minutes = max(30, _to_int(inputs.get("recheck_minutes"), 120))
+
+        if not city_id:
+            self.log(jid, "error", "city_id obrigatório")
+            return RunnerResult(success=False, data={"error": "missing_city_id"})
+
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        if not creds:
+            self.log(jid, "error", "Credenciais não encontradas")
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
+
+        client = self.get_or_login_game_client(jid, aid, ga_id, creds)
 
         try:
-            client = self.get_game_session(aid)
+            # Fetch current state from game
+            state = client.fetch_barracks_state(city_id, position, building_type)
+            units_in_game = {str(u["unit_id"]): u for u in state.get("units", [])}
+            occupied = state.get("occupied", False)
 
-            # TODO: call client.train_troops(city_id, unit_type, quantity)
-            # city_id   = inputs["city_id"]
-            # unit_type = inputs["unit_type"]
-            # quantity  = inputs["quantity"]
-            # client.train_troops(city_id, unit_type, quantity)
+            if occupied:
+                self.log(jid, "warn", "Cidade ocupada — custo dobrado para treinar")
 
-            self.save_game_session(aid, client)
-            self.log(jid, "info", "Troop training queued")
+            if mode == "maintain":
+                # Build train order based on deficit vs target
+                target_garrison: dict[str, int] = {}
+                raw_target = inputs.get("target_garrison") or {}
+                if isinstance(raw_target, dict):
+                    target_garrison = {str(k): _to_int(v) for k, v in raw_target.items()}
 
-            return RunnerResult(success=True)
+                to_train: dict[int, int] = {}
+                for unit_id_str, target_qty in target_garrison.items():
+                    if target_qty <= 0:
+                        continue
+                    current = _to_int((units_in_game.get(unit_id_str) or {}).get("current_count"), 0)
+                    deficit = max(0, target_qty - current)
+                    if deficit > 0:
+                        to_train[int(unit_id_str)] = deficit
+
+                if not to_train:
+                    self.log(jid, "info", f"Guarnição já no alvo — próxima verificação em {recheck_minutes}min")
+                    self.save_game_client(ga_id or aid, client)
+                    return RunnerResult(
+                        success=True,
+                        reschedule_seconds=recheck_minutes * 60,
+                        reschedule_inputs=inputs,
+                        data={"status": "at_target"},
+                    )
+            else:
+                # One-time: train exactly what was specified
+                raw_units = inputs.get("units") or {}
+                to_train = {int(k): _to_int(v) for k, v in raw_units.items() if _to_int(v) > 0}
+
+            if not to_train:
+                self.log(jid, "warn", "Nenhuma unidade para treinar")
+                self.save_game_client(ga_id or aid, client)
+                return RunnerResult(success=False, data={"error": "no_units"})
+
+            # Log what we're training
+            unit_names = {str(u["unit_id"]): u["name"] for u in state.get("units", [])}
+            summary = ", ".join(
+                f"{unit_names.get(str(uid), uid)} x{qty}"
+                for uid, qty in to_train.items()
+            )
+            self.log(jid, "info", f"Treinando: {summary}")
+
+            result = client.train_units(city_id, position, to_train, building_type)
+            self.save_game_client(ga_id or aid, client)
+            self.log(jid, "info", f"Treino iniciado: {summary}")
+
+            if mode == "maintain":
+                return RunnerResult(
+                    success=True,
+                    reschedule_seconds=recheck_minutes * 60,
+                    reschedule_inputs=inputs,
+                    data={"status": "trained", "units": to_train},
+                )
+            return RunnerResult(success=True, data={"units_trained": to_train})
 
         except Exception as exc:
-            self.log(jid, "error", f"Train troops failed: {exc}")
+            self.log(jid, "error", f"Treino falhou: {exc}")
+            self.save_game_client(ga_id or aid, client)
             return RunnerResult(success=False, data={"error": str(exc)})
+
+
+@register_runner(1202)
+class StationUnitsRunner(BaseRunner):
+    """Station troops from one city to garrison another.
+
+    Inputs:
+        from_city_id    int    source city
+        to_city_id      int    destination city
+        units           dict   {unit_id_str: quantity}
+    """
+
+    def execute(self, job: dict[str, Any]) -> RunnerResult:
+        jid = job["job_id"]
+        aid = job["account_id"]
+        ga_id = job.get("game_account_id")
+        inputs = job.get("inputs") or {}
+
+        from_city = _to_int(inputs.get("from_city_id"))
+        to_city = _to_int(inputs.get("to_city_id"))
+        raw_units = inputs.get("units") or {}
+        units = {int(k): _to_int(v) for k, v in raw_units.items() if _to_int(v) > 0}
+
+        if not from_city or not to_city:
+            self.log(jid, "error", "from_city_id e to_city_id obrigatórios")
+            return RunnerResult(success=False, data={"error": "missing_cities"})
+        if not units:
+            self.log(jid, "error", "Nenhuma unidade selecionada")
+            return RunnerResult(success=False, data={"error": "no_units"})
+
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        if not creds:
+            self.log(jid, "error", "Credenciais não encontradas")
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
+
+        client = self.get_or_login_game_client(jid, aid, ga_id, creds)
+        try:
+            summary = ", ".join(f"{uid} x{qty}" for uid, qty in units.items())
+            self.log(jid, "info", f"Estacionando {summary} de {from_city} → {to_city}")
+            client.station_units(from_city, to_city, units)
+            self.save_game_client(ga_id or aid, client)
+            self.log(jid, "info", "Tropas estacionadas com sucesso")
+            return RunnerResult(success=True, data={"from": from_city, "to": to_city, "units": units})
+        except Exception as exc:
+            self.log(jid, "error", f"Estacionamento falhou: {exc}")
+            self.save_game_client(ga_id or aid, client)
+            return RunnerResult(success=False, data={"error": str(exc)})
+
+
+@register_runner(15)
+class TrainTroopsRunner(BaseRunner):
+    """Legacy stub — use TrainUnitsRunner (1005) instead."""
+
+    def execute(self, job: dict[str, Any]) -> RunnerResult:
+        return RunnerResult(success=False, data={"error": "use_action_1005"})
 
 
 @register_runner(7)
 class TrainFleetRunner(BaseRunner):
-    """Queue naval-unit training in a city shipyard.
-
-    Inputs:
-        city_id    — city with the shipyard
-        ship_type  — ship identifier (e.g. ``ram_ship``, ``catapult_ship``)
-        quantity   — number of ships to build
-    """
+    """Legacy stub — use TrainUnitsRunner (1005) with building_type=fleet instead."""
 
     def execute(self, job: dict[str, Any]) -> RunnerResult:
-        jid = job["job_id"]
-        aid = job["account_id"]
-        inputs = job.get("inputs", {})
-
-        self.log(jid, "info", f"Training fleet for account {aid}")
-
-        try:
-            client = self.get_game_session(aid)
-
-            # TODO: call client.train_fleet(city_id, ship_type, quantity)
-            # city_id   = inputs["city_id"]
-            # ship_type = inputs["ship_type"]
-            # quantity  = inputs["quantity"]
-            # client.train_fleet(city_id, ship_type, quantity)
-
-            self.save_game_session(aid, client)
-            self.log(jid, "info", "Fleet training queued")
-
-            return RunnerResult(success=True)
-
-        except Exception as exc:
-            self.log(jid, "error", f"Train fleet failed: {exc}")
-            return RunnerResult(success=False, data={"error": str(exc)})
+        return RunnerResult(success=False, data={"error": "use_action_1005"})
 
 
 @register_runner(11)
 class SendTroopsRunner(BaseRunner):
-    """Send troops from one city to another (reinforcement or garrison).
-
-    Inputs:
-        source_city_id  — origin city
-        target_city_id  — destination city
-        units           — dict of {unit_type: quantity}
-    """
+    """Send troops from one city to another (reinforcement or garrison)."""
 
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
         inputs = job.get("inputs", {})
-
-        self.log(jid, "info", f"Sending troops for account {aid}")
-
-        try:
-            client = self.get_game_session(aid)
-
-            # TODO: call client.send_troops(source, target, units)
-            # source_city_id = inputs["source_city_id"]
-            # target_city_id = inputs["target_city_id"]
-            # units          = inputs["units"]
-            # client.send_troops(source_city_id, target_city_id, units)
-
-            self.save_game_session(aid, client)
-            self.log(jid, "info", "Troops dispatched")
-
-            return RunnerResult(success=True)
-
-        except Exception as exc:
-            self.log(jid, "error", f"Send troops failed: {exc}")
-            return RunnerResult(success=False, data={"error": str(exc)})
+        self.log(jid, "info", "SendTroops — use StationUnitsRunner (1202) for garrison")
+        return RunnerResult(success=False, data={"error": "use_action_1202"})
 
 
 @register_runner(12)

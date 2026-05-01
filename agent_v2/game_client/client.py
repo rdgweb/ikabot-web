@@ -34,7 +34,7 @@ from .actions.daily import DailyTasksAction
 from .actions.diplomacy import DiplomacyInboxAction, DiplomacySendAction
 from .actions.market import BuyAction, CreateOfferAction, GetOffersAction, SellAction
 from .actions.miracle import MiracleAction
-from .actions.military import AttackAction, SendTroopsAction, TrainAction
+from .actions.military import AttackAction, FetchBarracksStateAction, SendTroopsAction, StationAction, TrainAction
 from .actions.research import ResearchAction
 from .actions.resources import CollectAction, DonateAction, SendResourcesAction
 from .actions.shrine import ShrineAction
@@ -481,16 +481,40 @@ class GameClient(IslandActions):
 
     # ── Military ──
 
-    def train_troops(self, city_id: int, units: dict[str, int]) -> dict[str, Any]:
-        """Train military units at barracks/shipyard.
+    def fetch_barracks_state(
+        self, city_id: int, position: int, building_type: str = "troops"
+    ) -> dict[str, Any]:
+        """Fetch unit list, costs and garrison state from barracks or shipyard."""
+        action = FetchBarracksStateAction(self)
+        return action.execute(city_id=city_id, position=position, building_type=building_type)
+
+    def train_units(
+        self,
+        city_id: int,
+        position: int,
+        units: dict[int, int],
+        building_type: str = "troops",
+    ) -> dict[str, Any]:
+        """Train units in barracks (BuildUnits) or shipyard (BuildShips).
 
         Args:
-            city_id: City with the barracks.
-            units: Dict mapping unit type to quantity.
-
-        Returns:
-            Parsed AJAX response.
+            city_id: City with the building.
+            position: Building slot position.
+            units: {unit_id: quantity} — numeric game unit IDs.
+            building_type: "troops" or "fleet".
         """
+        action = TrainAction(self)
+        return action.execute(city_id=city_id, position=position, units=units, building_type=building_type)
+
+    def station_units(
+        self, from_city_id: int, to_city_id: int, units: dict[int, int]
+    ) -> dict[str, Any]:
+        """Station troops from one city to garrison another."""
+        action = StationAction(self)
+        return action.execute(from_city_id=from_city_id, to_city_id=to_city_id, units=units)
+
+    def train_troops(self, city_id: int, units: dict[str, int]) -> dict[str, Any]:
+        """Legacy stub — use train_units instead."""
         action = TrainAction(self)
         return action.execute(city_id=city_id, units=units)
 

@@ -458,6 +458,59 @@ def _find_branch_office_pos(city: dict | None) -> int | None:
     return None
 
 
+def _training_form_context(snapshot, cities):
+    """Build context for the train units (ac=1005) and station (ac=1202) form sections."""
+    from core.catalogs import TRAINING_UNITS, UNIT_ICON_MAP, get_unit_info
+
+    # Current troop/fleet counts from snapshot military data
+    military = {}
+    if snapshot:
+        mil = snapshot.military or {}
+        for city_mil in mil.get("by_city", []):
+            if not isinstance(city_mil, dict):
+                continue
+            cid = str(city_mil.get("city_id") or "")
+            if cid:
+                military[cid] = {
+                    "troops": dict(city_mil.get("troops") or {}),
+                    "fleet": dict(city_mil.get("fleet") or {}),
+                }
+
+    # Find barracks and shipyard positions per city
+    city_buildings: dict[str, dict] = {}
+    for city in (cities or []):
+        cid = str(city.get("id") or "")
+        barracks_pos = None
+        shipyard_pos = None
+        for b in (city.get("buildings") or []):
+            if isinstance(b, dict):
+                bname = str(b.get("building") or "")
+                pos = b.get("position")
+                if bname == "barracks" and barracks_pos is None:
+                    barracks_pos = pos
+                elif bname == "shipyard" and shipyard_pos is None:
+                    shipyard_pos = pos
+        city_buildings[cid] = {
+            "barracks_pos": barracks_pos,
+            "shipyard_pos": shipyard_pos,
+        }
+
+    # Add icon_path to each unit in TRAINING_UNITS
+    def enrich(units):
+        result = []
+        for u in units:
+            icon = UNIT_ICON_MAP.get(u["css"]) or UNIT_ICON_MAP.get(u["name"]) or ""
+            result.append({**u, "icon": icon})
+        return result
+
+    return {
+        "troops_units": enrich(TRAINING_UNITS["troops"]),
+        "fleet_units": enrich(TRAINING_UNITS["fleet"]),
+        "military": military,
+        "city_buildings": city_buildings,
+    }
+
+
 def _market_form_context(cities):
     market_cities = []
     for city in cities or []:
@@ -960,6 +1013,10 @@ def _custom_field_names(action_code: int) -> list[str]:
         return ["city_id", "revolt_type"]
     if int(action_code) == 602:
         return ["dump_mode", "own_city_ids", "region_x_min", "region_y_min", "region_x_max", "region_y_max", "include_empty"]
+    if int(action_code) == 1005:
+        return ["city_id", "building_type", "mode", "position", "recheck_minutes"]
+    if int(action_code) == 1202:
+        return ["from_city_id", "to_city_id"]
     return []
 
 
@@ -985,6 +1042,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities):
         "scientists_ui": _scientists_form_context(snapshot, cities),
         "upgrade_units_ui": _upgrade_units_form_context(cities),
         "market_ui": _market_form_context(cities),
+        "training_ui": _training_form_context(snapshot, cities),
     }
 
 
@@ -1290,6 +1348,10 @@ class JobSubmitView(LoginRequiredMixin, View):
         inputs = form.get_inputs_json()
         if int(action_code) == 601:
             inputs = self._normalize_island_monitor_inputs(inputs)
+        if int(action_code) == 1005:
+            inputs = self._normalize_train_units_inputs(inputs, request)
+        if int(action_code) == 1202:
+            inputs = self._normalize_station_units_inputs(inputs, request)
         if int(action_code) == 18 and not any(bool(inputs.get(key)) for key in ("branch_seafaring", "branch_economy", "branch_knowledge", "branch_military", "branch_mythology")):
             return self._error("Selecione pelo menos um ramo de pesquisa.")
         jobs_created = self._create_jobs(ga, action_code, action_meta, inputs, construction_cities)
@@ -1765,6 +1827,44 @@ class JobSubmitView(LoginRequiredMixin, View):
             if str(city.get("id")) == str(city_id):
                 return city.get("name", "")
         return ""
+
+    @staticmethod
+    def _normalize_train_units_inputs(inputs, request):
+        """Collect units_XXX POST fields into inputs['units'] dict."""
+        normalized = dict(inputs)
+        mode = str(normalized.get("mode") or "once")
+        units = {}
+        for key, val in request.POST.items():
+            if key.startswith("units_"):
+                try:
+                    uid = key[6:]
+                    qty = int(val or 0)
+                    if qty > 0:
+                        units[uid] = qty
+                except (ValueError, TypeError):
+                    pass
+        if mode == "maintain":
+            normalized["target_garrison"] = units
+        else:
+            normalized["units"] = units
+        return normalized
+
+    @staticmethod
+    def _normalize_station_units_inputs(inputs, request):
+        """Collect units_XXX POST fields into inputs['units'] dict for station."""
+        normalized = dict(inputs)
+        units = {}
+        for key, val in request.POST.items():
+            if key.startswith("units_"):
+                try:
+                    uid = key[6:]
+                    qty = int(val or 0)
+                    if qty > 0:
+                        units[uid] = qty
+                except (ValueError, TypeError):
+                    pass
+        normalized["units"] = units
+        return normalized
 
     @staticmethod
     def _error(message):

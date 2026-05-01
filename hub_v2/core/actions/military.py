@@ -1,4 +1,4 @@
-from .constants import CAT_AUTOMATION, CAT_MILITARY, FIELD_CHOICE, FIELD_CITY_SELECT
+from .constants import CAT_AUTOMATION, CAT_MILITARY, FIELD_BOOL, FIELD_CHOICE, FIELD_CITY_SELECT, FIELD_INT, FIELD_STR
 
 
 ACTIONS = {
@@ -7,13 +7,22 @@ ACTIONS = {
         "name_en": "Train units",
         "category": CAT_MILITARY,
         "icon": "bi-people-fill",
-        "runner": "train",
+        "runner": "train_units",
         "requires_game_session": True,
         "recurring": True,
         "long_running": False,
-        "description": "Treina tropas ou navios em uma cidade.",
+        "ready": True,
+        "description": "Treina tropas ou navios em uma cidade. Suporta treino único ou manutenção automática de efetivo.",
         "inputs": [
-            {"key": "city", "type": FIELD_CITY_SELECT, "label": "Cidade", "multiple": False, "required": True},
+            {"key": "city_id", "type": FIELD_CITY_SELECT, "label": "Cidade", "multiple": False, "required": True},
+            {"key": "building_type", "type": FIELD_CHOICE, "label": "Tipo", "required": True,
+             "default": "troops", "choices": [("troops", "Tropas (Quartel)"), ("fleet", "Frotas (Estaleiro)")]},
+            {"key": "mode", "type": FIELD_CHOICE, "label": "Modo", "required": True,
+             "default": "once", "choices": [("once", "Treinar agora"), ("maintain", "Manter efetivo")]},
+            {"key": "position", "type": FIELD_INT, "label": "Posição do edifício", "required": False, "default": 0,
+             "help": "Posição do Quartel/Estaleiro no mapa da cidade (0 = detectar automaticamente)."},
+            {"key": "recheck_minutes", "type": FIELD_INT, "label": "Verificar a cada (min)", "required": False,
+             "default": 120, "min": 30, "help": "Apenas no modo Manter efetivo."},
         ],
     },
     1202: {
@@ -21,12 +30,16 @@ ACTIONS = {
         "name_en": "Station units",
         "category": CAT_MILITARY,
         "icon": "bi-geo-alt-fill",
-        "runner": "station",
+        "runner": "station_units",
         "requires_game_session": True,
         "recurring": False,
         "long_running": False,
-        "description": "Estaciona tropas em outra cidade.",
-        "inputs": [],
+        "ready": True,
+        "description": "Move tropas de uma cidade para guarnecer outra.",
+        "inputs": [
+            {"key": "from_city_id", "type": FIELD_CITY_SELECT, "label": "Cidade de origem", "multiple": False, "required": True},
+            {"key": "to_city_id", "type": FIELD_CITY_SELECT, "label": "Cidade de destino", "multiple": False, "required": True},
+        ],
     },
     1203: {
         "name": "Melhorar Unidades",
