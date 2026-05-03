@@ -473,27 +473,62 @@ class TrainUnitsRunner(BaseRunner):
         building_type = str(inputs.get("building_type") or "troops").strip()
         position = _to_int(inputs.get("position"), 0)
         mode = str(inputs.get("mode") or "once").strip()
+        maintain_scope = str(inputs.get("maintain_scope") or "local").strip()
         recheck_minutes = max(30, _to_int(inputs.get("recheck_minutes"), 120))
 
+        # Multi-city maintain: selected_custom or selected_uniform
+        if mode == "maintain" and maintain_scope in ("selected_custom", "selected_uniform"):
+            return self._maintain_multi_city(jid, aid, ga_id, inputs, building_type, maintain_scope, recheck_minutes)
+
         if not city_id:
-            self.log(jid, "error", "city_id obrigatório")
+            self.log(jid, "error", 'city_id obrigatorio para modo local')
             return RunnerResult(success=False, data={"error": "missing_city_id"})
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
         if not creds:
-            self.log(jid, "error", "Credenciais não encontradas")
+            self.log(jid, "error", 'Credenciais nao encontradas')
             return RunnerResult(success=False, data={"error": "missing_credentials"})
 
         client = self.get_or_login_game_client(jid, aid, ga_id, creds)
 
         try:
+            # Auto-detect building position from snapshot if not provided
+            if not position:
+                try:
+                    snap = self.hub.get_snapshot(game_account_id=ga_id)
+                    bname = 'shipyard' if building_type == 'fleet' else 'barracks'
+                    for city in (snap or {}).get('cities') or []:
+                        if _to_int(city.get('id')) == city_id:
+                            for b in city.get('buildings') or []:
+                                if str(b.get('building') or '').strip() == bname:
+                                    position = _to_int(b.get('position'))
+                                    if position:
+                                        self.log(jid, 'info', f'Posicao {bname} detectada: {position}')
+                                        break
+                            break
+                except Exception:
+                    pass
+            if not position:
+                bname = 'estaleiro' if building_type == 'fleet' else 'quartel'
+                self.log(jid, 'error', f'Nenhum {bname} encontrado na cidade {city_id}')
+                return RunnerResult(success=False, data={"error": "no_building_found"})
+
             # Fetch current state from game
             state = client.fetch_barracks_state(city_id, position, building_type)
             units_in_game = {str(u["unit_id"]): u for u in state.get("units", [])}
-            occupied = state.get("occupied", False)
+            # Use snapshot occupation data (more reliable than HTML parse)
+            occupied = False
+            try:
+                snap = self.hub.get_snapshot(game_account_id=ga_id)
+                for city in (snap or {}).get('cities') or []:
+                    if _to_int(city.get('id')) == city_id:
+                        occupied = bool(city.get('city_occupied'))
+                        break
+            except Exception:
+                occupied = state.get("occupied", False)
 
             if occupied:
-                self.log(jid, "warn", "Cidade ocupada — custo dobrado para treinar")
+                self.log(jid, 'warn', f'Cidade {city_id} ocupada -- custo dobrado para treinar')
 
             if mode == "maintain":
                 # Build train order based on deficit vs target
@@ -530,8 +565,18 @@ class TrainUnitsRunner(BaseRunner):
                 self.save_game_client(ga_id or aid, client)
                 return RunnerResult(success=False, data={"error": "no_units"})
 
-            # Log what we're training
-            unit_names = {str(u["unit_id"]): u["name"] for u in state.get("units", [])}
+            # Log what we're training — combine game state names + static catalog fallback
+            unit_names = {str(u["unit_id"]): u["name"] for u in state.get("units", []) if u.get("unit_id")}
+            # Fallback: catalog with numeric ID -> name (e.g. "303" -> "Hoplita")
+            try:
+                from core.catalogs import TRAINING_UNITS
+                for bt_units in TRAINING_UNITS.values():
+                    for u in bt_units:
+                        uid_str = str(u["id"])
+                        if uid_str not in unit_names:
+                            unit_names[uid_str] = u["name"]
+            except Exception:
+                pass
             summary = ", ".join(
                 f"{unit_names.get(str(uid), uid)} x{qty}"
                 for uid, qty in to_train.items()
@@ -554,6 +599,181 @@ class TrainUnitsRunner(BaseRunner):
         except Exception as exc:
             self.log(jid, "error", f"Treino falhou: {exc}")
             self.save_game_client(ga_id or aid, client)
+            return RunnerResult(success=False, data={"error": str(exc)})
+
+    def _maintain_multi_city(self, jid, aid, ga_id, inputs, building_type, maintain_scope, recheck_minutes):
+        """Maintain garrison across multiple cities (selected_custom or selected_uniform)."""
+        city_ids = [_to_int(c) for c in (inputs.get('city_ids') or []) if _to_int(c)]
+        uniform_target = {str(k): _to_int(v) for k, v in (inputs.get('target_garrison') or {}).items() if _to_int(v) > 0}
+        city_targets_raw = inputs.get('city_targets') or {}
+        bname = 'shipyard' if building_type == 'fleet' else 'barracks'
+
+        if not city_ids:
+            self.log(jid, 'error', 'Nenhuma cidade selecionada')
+            return RunnerResult(success=False, data={"error": "no_cities"})
+
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        if not creds:
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
+
+        client = self.get_or_login_game_client(jid, aid, ga_id, creds)
+
+        try:
+            snap = self.hub.get_snapshot(game_account_id=ga_id)
+            city_list = (snap or {}).get('cities') or []
+
+            # Build city_id -> {name, position} from snapshot
+            city_meta = {}
+            for city in city_list:
+                cid = _to_int(city.get('id'))
+                for b in city.get('buildings') or []:
+                    if str(b.get('building') or '').strip() == bname:
+                        pos = _to_int(b.get('position'))
+                        if pos:
+                            city_meta[cid] = {'name': str(city.get('name') or cid), 'position': pos}
+                        break
+
+            try:
+                from core.catalogs import TRAINING_UNITS
+                catalog = {u['id']: u['name'] for bt in TRAINING_UNITS.values() for u in bt}
+            except Exception:
+                catalog = {}
+
+            # Build island_id map for station dispatch
+            island_map = {_to_int(c.get('id')): _to_int(c.get('island_id')) for c in city_list if c.get('id')}
+
+            import time as _time
+
+            # Phase 1: fetch current counts for all cities
+            city_current: dict[int, dict[str, int]] = {}
+            city_target_map: dict[int, dict[str, int]] = {}
+
+            for city_id in city_ids:
+                meta = city_meta.get(city_id)
+                if not meta:
+                    continue
+                target = dict(uniform_target)
+                if maintain_scope == 'selected_custom':
+                    raw = city_targets_raw.get(str(city_id)) or {}
+                    if raw:
+                        target = {str(k): _to_int(v) for k, v in raw.items() if _to_int(v) > 0}
+                    # else: no custom target for this city -> keep uniform_target as fallback
+                city_target_map[city_id] = target
+                try:
+                    _time.sleep(0.4)
+                    state = client.fetch_barracks_state(city_id, meta['position'], building_type)
+                    city_current[city_id] = {
+                        str(u['unit_id']): _to_int(u.get('current_count'), 0)
+                        for u in state.get('units', []) if u.get('unit_id')
+                    }
+                except Exception as exc:
+                    self.log(jid, 'warn', f'{meta.get("name", city_id)}: erro ao buscar estado -- {exc}')
+                    city_current[city_id] = {}
+
+            # Phase 2: compute surplus and deficit per city per unit
+            # surplus[city_id][uid_str] = how many above target
+            # deficit[city_id][uid_str] = how many below target
+            surplus: dict[int, dict[str, int]] = {}
+            deficit: dict[int, dict[str, int]] = {}
+            for city_id in city_ids:
+                target = city_target_map.get(city_id, {})
+                current = city_current.get(city_id, {})
+                surplus[city_id] = {}
+                deficit[city_id] = {}
+                # Surplus: current > target for any unit type
+                for uid_str, cur_qty in current.items():
+                    tgt_qty = _to_int(target.get(uid_str), 0)
+                    if cur_qty > tgt_qty and tgt_qty >= 0:
+                        surplus[city_id][uid_str] = cur_qty - tgt_qty
+                # Deficit: target > current
+                for uid_str, tgt_qty in target.items():
+                    cur_qty = _to_int(current.get(uid_str), 0)
+                    if tgt_qty > cur_qty:
+                        deficit[city_id][uid_str] = tgt_qty - cur_qty
+
+            # Phase 3: redistribute surplus to deficit cities
+            transfers_done = []
+            for donor_id, donor_surplus in surplus.items():
+                donor_meta = city_meta.get(donor_id)
+                if not donor_meta or not donor_surplus:
+                    continue
+                for recv_id, recv_deficit in deficit.items():
+                    if recv_id == donor_id or not recv_deficit:
+                        continue
+                    recv_meta = city_meta.get(recv_id)
+                    if not recv_meta:
+                        continue
+                    to_move = {}
+                    for uid_str, needed in list(recv_deficit.items()):
+                        available = donor_surplus.get(uid_str, 0)
+                        move_qty = min(needed, available)
+                        if move_qty > 0:
+                            to_move[int(uid_str)] = move_qty
+                            donor_surplus[uid_str] = available - move_qty
+                            recv_deficit[uid_str] = needed - move_qty
+                            if recv_deficit[uid_str] == 0:
+                                del recv_deficit[uid_str]
+                    if to_move:
+                        try:
+                            to_island = island_map.get(recv_id, 0)
+                            scope = 'fleet' if building_type == 'fleet' else 'troops'
+                            client.station_units(donor_id, recv_id, to_move, scope=scope, to_island_id=to_island)
+                            summary = ', '.join(f'{catalog.get(uid, uid)} x{qty}' for uid, qty in to_move.items())
+                            self.log(jid, 'info', f'Redistribuindo: {donor_meta["name"]} -> {recv_meta["name"]} | {summary}')
+                            transfers_done.append({'from': donor_id, 'to': recv_id, 'units': to_move})
+                        except Exception as exc:
+                            self.log(jid, 'warn', f'Transferencia {donor_id}->{recv_id} falhou -- {exc}')
+
+            if transfers_done:
+                self.log(jid, 'info', f'{len(transfers_done)} redistribuicao(oes) de excesso despachada(s)')
+
+            # Phase 4: train remaining deficit
+            trained_any = False
+            at_target = []
+            errors = []
+
+            for city_id in city_ids:
+                remaining_deficit = deficit.get(city_id, {})
+                meta = city_meta.get(city_id)
+                if not meta:
+                    continue
+                if not remaining_deficit:
+                    at_target.append(city_id)
+                    continue
+                to_train = {int(uid_str): qty for uid_str, qty in remaining_deficit.items() if qty > 0}
+                if not to_train:
+                    at_target.append(city_id)
+                    continue
+                try:
+                    _time.sleep(0.4)
+                    summary = ', '.join(f'{catalog.get(uid, uid)} x{qty}' for uid, qty in to_train.items())
+                    self.log(jid, 'info', f'{meta["name"]}: treinando {summary}')
+                    client.train_units(city_id, meta['position'], to_train, building_type)
+                    trained_any = True
+                except Exception as exc:
+                    self.log(jid, 'warn', f'{meta.get("name", city_id)}: treino falhou -- {exc}')
+                    errors.append(str(city_id))
+
+            self.save_game_client(ga_id or aid, client)
+
+            if at_target:
+                self.log(jid, 'info', f'{len(at_target)} cidade(s) no alvo')
+            if not trained_any and not transfers_done and not errors:
+                self.log(jid, 'info', f'Sistema equilibrado -- proxima verificacao em {recheck_minutes}min')
+
+            return RunnerResult(
+                success=True,
+                reschedule_seconds=recheck_minutes * 60,
+                reschedule_inputs=inputs,
+                data={
+                    "status": "trained" if trained_any else ("redistributed" if transfers_done else "at_target"),
+                    "at_target": at_target,
+                    "transfers": len(transfers_done),
+                    "errors": errors,
+                },
+            )
+        except Exception as exc:
+            self.log(jid, 'error', f'Treino multi-cidade falhou: {exc}')
             return RunnerResult(success=False, data={"error": str(exc)})
 
 
@@ -592,12 +812,58 @@ class StationUnitsRunner(BaseRunner):
 
         client = self.get_or_login_game_client(jid, aid, ga_id, creds)
         try:
-            summary = ", ".join(f"{uid} x{qty}" for uid, qty in units.items())
-            self.log(jid, "info", f"Estacionando {summary} de {from_city} → {to_city}")
-            client.station_units(from_city, to_city, units)
+            # Get destination island_id from snapshot (required for deployArmy)
+            to_island_id = 0
+            try:
+                snap = self.hub.get_snapshot(game_account_id=ga_id)
+                for city in (snap or {}).get('cities') or []:
+                    if _to_int(city.get('id')) == to_city:
+                        to_island_id = _to_int(city.get('island_id'))
+                        break
+            except Exception:
+                pass
+
+            # Separate troops (300-399) and fleet (200-299)
+            troop_units = {uid: qty for uid, qty in units.items() if 300 <= uid < 400}
+            fleet_units = {uid: qty for uid, qty in units.items() if 200 <= uid < 300}
+
+            results = []
+            max_eta = 0
+
+            # Resolve unit names from catalog
+            try:
+                from core.catalogs import TRAINING_UNITS
+                catalog = {u['id']: u['name'] for bt in TRAINING_UNITS.values() for u in bt}
+            except Exception:
+                catalog = {}
+
+            if troop_units:
+                summary = ', '.join(f'{catalog.get(uid, uid)} x{qty}' for uid, qty in troop_units.items())
+                self.log(jid, 'info', f'Estacionando tropas [{summary}] de {from_city} -> {to_city}')
+                result = client.station_units(from_city, to_city, troop_units, scope='troops', to_island_id=to_island_id)
+                eta = _to_int((result or {}).get('eta_seconds'), 0)
+                if eta:
+                    max_eta = max(max_eta, eta)
+                    self.log(jid, 'info', f'Tropas chegam em {_duration_human(eta)}')
+                results.append('tropas')
+
+            if fleet_units:
+                summary = ', '.join(f'{catalog.get(uid, uid)} x{qty}' for uid, qty in fleet_units.items())
+                self.log(jid, 'info', f'Estacionando frotas [{summary}] de {from_city} -> {to_city}')
+                result = client.station_units(from_city, to_city, fleet_units, scope='fleet', to_island_id=to_island_id)
+                eta = _to_int((result or {}).get('eta_seconds'), 0)
+                if eta:
+                    max_eta = max(max_eta, eta)
+                    self.log(jid, 'info', f'Frotas chegam em {_duration_human(eta)}')
+                results.append('frotas')
+
             self.save_game_client(ga_id or aid, client)
-            self.log(jid, "info", "Tropas estacionadas com sucesso")
-            return RunnerResult(success=True, data={"from": from_city, "to": to_city, "units": units})
+            label = ', '.join(results)
+            if max_eta:
+                self.log(jid, 'info', f'Movimentacao iniciada: {label} | ETA {_duration_human(max_eta)}')
+            else:
+                self.log(jid, 'info', f'Movimentacao iniciada: {label}')
+            return RunnerResult(success=True, data={"from": from_city, "to": to_city, "island": to_island_id, "units": units, "eta_seconds": max_eta})
         except Exception as exc:
             self.log(jid, "error", f"Estacionamento falhou: {exc}")
             self.save_game_client(ga_id or aid, client)

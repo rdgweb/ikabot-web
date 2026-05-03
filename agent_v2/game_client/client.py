@@ -34,7 +34,7 @@ from .actions.daily import DailyTasksAction
 from .actions.diplomacy import DiplomacyInboxAction, DiplomacySendAction
 from .actions.market import BuyAction, CreateOfferAction, GetOffersAction, SellAction
 from .actions.miracle import MiracleAction
-from .actions.military import AttackAction, FetchBarracksStateAction, SendTroopsAction, StationAction, TrainAction
+from .actions.military import AttackAction, FetchBarracksStateAction, FetchStationedUnitsAction, SendTroopsAction, StationAction, TrainAction
 from .actions.research import ResearchAction
 from .actions.resources import CollectAction, DonateAction, SendResourcesAction
 from .actions.shrine import ShrineAction
@@ -488,6 +488,13 @@ class GameClient(IslandActions):
         action = FetchBarracksStateAction(self)
         return action.execute(city_id=city_id, position=position, building_type=building_type)
 
+    def fetch_stationed_units(
+        self, city_id: int, building_type: str = "troops"
+    ) -> dict[str, Any]:
+        """Fetch stationed troop/fleet counts from cityMilitary."""
+        action = FetchStationedUnitsAction(self)
+        return action.execute(city_id=city_id, building_type=building_type)
+
     def train_units(
         self,
         city_id: int,
@@ -507,11 +514,22 @@ class GameClient(IslandActions):
         return action.execute(city_id=city_id, position=position, units=units, building_type=building_type)
 
     def station_units(
-        self, from_city_id: int, to_city_id: int, units: dict[int, int]
+        self,
+        from_city_id: int,
+        to_city_id: int,
+        units: dict[int, int],
+        scope: str = "troops",
+        to_island_id: int | None = None,
     ) -> dict[str, Any]:
-        """Station troops from one city to garrison another."""
+        """Station troops or fleet from one city to another."""
         action = StationAction(self)
-        return action.execute(from_city_id=from_city_id, to_city_id=to_city_id, units=units)
+        return action.execute(
+            from_city_id=from_city_id,
+            to_city_id=to_city_id,
+            units=units,
+            scope=scope,
+            to_island_id=to_island_id,
+        )
 
     def train_troops(self, city_id: int, units: dict[str, int]) -> dict[str, Any]:
         """Legacy stub — use train_units instead."""

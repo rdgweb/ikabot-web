@@ -350,6 +350,108 @@
 </div>
 {% endif %}
 
+{% if train_display and train_display.unit_rows or train_display and train_display.city_breakdown %}
+<div class="card">
+  <h3 class="mb-1 text-sm font-semibold text-ink">
+    <i class="bi {% if train_display.building_type == 'fleet' %}bi-water{% else %}bi-shield-shaded{% endif %} text-sea"></i>
+    {% if train_display.building_type == 'fleet' %}Frotas{% else %}Tropas{% endif %} —
+    {% if train_display.mode == 'maintain' %}Manter efetivo{% elif train_display.mode == 'distribute' %}Distribuir{% else %}Treinar agora{% endif %}
+    {% if train_display.city_count > 1 %}<span class="badge badge-secondary ml-2">{{ train_display.city_count }} cidades</span>{% endif %}
+  </h3>
+  {% if train_display.maintain_scope == 'selected_custom' and train_display.city_breakdown %}
+  <p class="text-[10px] text-muted mb-3">Alvos customizados por cidade — o runner treina o déficit em cada uma periodicamente.</p>
+  {% for cb in train_display.city_breakdown %}
+  <div class="mb-3">
+    <div class="flex items-center gap-2 mb-1">
+      <span class="text-[10px] font-semibold text-muted">Cidade {{ cb.city_id }}</span>
+      {% if cb.label == "padrao" %}<span class="badge badge-secondary text-[9px]">alvo padrão</span>{% endif %}
+    </div>
+    <div class="flex flex-wrap gap-2">
+      {% for row in cb.unit_rows %}
+      <div class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs" style="background:var(--ik-sand-light);border:1px solid var(--ik-line);">
+        {% if row.icon %}<img src="{% static row.icon %}" class="h-4 w-4 object-contain">{% endif %}
+        <span class="font-semibold text-ink">{{ row.name }}</span>
+        <span class="font-mono font-bold text-ink">x{{ row.qty }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="overflow-x-auto mb-4">
+    <table class="w-full text-xs">
+      <thead>
+        <tr style="border-bottom:2px solid var(--ik-line);">
+          <th class="py-1.5 px-2 text-left text-muted">Unidade</th>
+          <th class="py-1.5 px-2 text-right text-muted">Qtd</th>
+          <th class="py-1.5 px-2 text-right text-muted"><img src="{% static 'game/resources/icon_wood.png' %}" class="h-4 w-4 inline" title="Madeira"></th>
+          <th class="py-1.5 px-2 text-right text-muted"><img src="{% static 'game/resources/icon_sulfur.png' %}" class="h-4 w-4 inline" title="Enxofre"></th>
+          <th class="py-1.5 px-2 text-right text-muted"><img src="{% static 'game/resources/icon_wine.png' %}" class="h-4 w-4 inline" title="Vinho"></th>
+          <th class="py-1.5 px-2 text-right text-muted"><img src="{% static 'game/resources/icon_glass.png' %}" class="h-4 w-4 inline" title="Cristal"></th>
+          <th class="py-1.5 px-2 text-right text-muted" title="Manutenção ouro/hora"><i class="bi bi-arrow-repeat text-amber-600"></i>/h</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in train_display.unit_rows %}
+        <tr class="hover:bg-[var(--ik-sand-light)]" style="border-bottom:1px solid var(--ik-line);">
+          <td class="py-1.5 px-2 font-semibold text-ink">
+            {% if row.icon %}<img src="{% static row.icon %}" class="h-5 w-5 inline me-1 object-contain">{% endif %}{{ row.name }}
+          </td>
+          <td class="py-1.5 px-2 text-right font-mono font-bold text-ink">{{ row.qty }}</td>
+          <td class="py-1.5 px-2 text-right font-mono text-muted">{% if row.wood %}{{ row.wood|intcomma }}{% else %}—{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono text-muted">{% if row.sulfur %}{{ row.sulfur|intcomma }}{% else %}—{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono text-muted">{% if row.wine %}{{ row.wine|intcomma }}{% else %}—{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono text-muted">{% if row.crystal %}{{ row.crystal|intcomma }}{% else %}—{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono {% if row.upkeep %}text-amber-600{% else %}text-muted{% endif %}">{{ row.upkeep|intcomma }}/h</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr style="border-top:2px solid var(--ik-line); background:var(--ik-sand-light);">
+          <td class="py-1.5 px-2 font-semibold text-ink text-[11px]">Total</td>
+          <td class="py-1.5 px-2 text-right font-mono font-bold text-ink">{{ train_display.unit_rows|length }} tipo(s)</td>
+          <td class="py-1.5 px-2 text-right font-mono font-bold text-ink">{% if train_display.totals.wood %}{{ train_display.totals.wood|intcomma }}{% else %}—{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono font-bold text-ink">{% if train_display.totals.sulfur %}{{ train_display.totals.sulfur|intcomma }}{% else %}—{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono font-bold text-ink">{% if train_display.totals.wine %}{{ train_display.totals.wine|intcomma }}{% else %}—{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono font-bold text-ink">{% if train_display.totals.crystal %}{{ train_display.totals.crystal|intcomma }}{% else %}—{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono font-bold text-amber-600">{{ train_display.totals.upkeep|intcomma }}/h</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  <p class="text-[11px] text-muted"><i class="bi bi-info-circle"></i> Custos baseados em valores base sem aplicar reduções de pesquisa.</p>
+  {% endif %}{# end selected_custom else #}
+</div>
+{% endif %}
+
+{% if station_display and station_display.unit_rows %}
+<div class="card">
+  <h3 class="mb-3 text-sm font-semibold text-ink">
+    <i class="bi bi-arrows-move text-sea"></i> Movimentação de Forças
+  </h3>
+  <div class="flex items-center gap-3 mb-3 text-sm">
+    <span class="badge badge-secondary">De: cidade {{ station_display.from_city_id }}</span>
+    <i class="bi bi-arrow-right text-muted"></i>
+    <span class="badge badge-secondary">Para: cidade {{ station_display.to_city_id }}</span>
+  </div>
+  <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+    {% for row in station_display.unit_rows %}
+    <div class="rounded-lg p-2 text-xs" style="background:var(--ik-sand-light); border:1px solid var(--ik-line);">
+      <div class="flex items-center gap-1.5 mb-1">
+        {% if row.icon %}
+        <img src="{% static row.icon %}" class="h-6 w-6 object-contain flex-shrink-0">
+        {% else %}
+        <i class="bi {% if row.type == 'fleet' %}bi-water text-sea{% else %}bi-shield-shaded{% endif %} text-[10px] flex-shrink-0"></i>
+        {% endif %}
+        <span class="font-semibold text-ink truncate">{{ row.name }}</span>
+      </div>
+      <div class="font-mono font-bold text-ink text-sm">{{ row.qty }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {% if daily_login_display %}
 <div class="card">
   <div class="flex items-start justify-between gap-4">

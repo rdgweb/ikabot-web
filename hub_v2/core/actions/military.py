@@ -3,8 +3,8 @@ from .constants import CAT_AUTOMATION, CAT_MILITARY, FIELD_BOOL, FIELD_CHOICE, F
 
 ACTIONS = {
     1005: {
-        "name": "Treinar Unidades",
-        "name_en": "Train units",
+        "name": "Gerenciar Treino Militar",
+        "name_en": "Manage military training",
         "category": CAT_MILITARY,
         "icon": "bi-people-fill",
         "runner": "train_units",
@@ -14,11 +14,14 @@ ACTIONS = {
         "ready": True,
         "description": "Treina tropas ou navios em uma cidade. Suporta treino único ou manutenção automática de efetivo.",
         "inputs": [
-            {"key": "city_id", "type": FIELD_CITY_SELECT, "label": "Cidade", "multiple": False, "required": True},
+            {"key": "city_id", "type": FIELD_CITY_SELECT, "label": "Cidade", "multiple": False, "required": False},
             {"key": "building_type", "type": FIELD_CHOICE, "label": "Tipo", "required": True,
              "default": "troops", "choices": [("troops", "Tropas (Quartel)"), ("fleet", "Frotas (Estaleiro)")]},
             {"key": "mode", "type": FIELD_CHOICE, "label": "Modo", "required": True,
-             "default": "once", "choices": [("once", "Treinar agora"), ("maintain", "Manter efetivo")]},
+             "default": "once", "choices": [("once", "Treinar agora"), ("distribute", "Distribuir treino"), ("maintain", "Manter efetivo")]},
+            {"key": "maintain_scope", "type": FIELD_CHOICE, "label": "Escopo da manutencao", "required": False,
+             "default": "local", "choices": [("local", "Cidade unica"), ("selected_uniform", "Mesmo alvo em cidades selecionadas"), ("selected_custom", "Alvo customizado por cidade")]},
+            {"key": "consolidate_city_id", "type": FIELD_CITY_SELECT, "label": "Consolidar em", "multiple": False, "required": False},
             {"key": "position", "type": FIELD_INT, "label": "Posição do edifício", "required": False, "default": 0,
              "help": "Posição do Quartel/Estaleiro no mapa da cidade (0 = detectar automaticamente)."},
             {"key": "recheck_minutes", "type": FIELD_INT, "label": "Verificar a cada (min)", "required": False,
@@ -26,8 +29,8 @@ ACTIONS = {
         ],
     },
     1202: {
-        "name": "Estacionar Unidades",
-        "name_en": "Station units",
+        "name": "Mover Forcas",
+        "name_en": "Move forces",
         "category": CAT_MILITARY,
         "icon": "bi-geo-alt-fill",
         "runner": "station_units",
@@ -35,8 +38,10 @@ ACTIONS = {
         "recurring": False,
         "long_running": False,
         "ready": True,
-        "description": "Move tropas de uma cidade para guarnecer outra.",
+        "description": "Move tropas terrestres de uma cidade para guarnecer outra.",
         "inputs": [
+            {"key": "scope", "type": FIELD_CHOICE, "label": "Tipo", "required": True,
+             "default": "troops", "choices": [("troops", "Tropas"), ("fleet", "Frotas")]},
             {"key": "from_city_id", "type": FIELD_CITY_SELECT, "label": "Cidade de origem", "multiple": False, "required": True},
             {"key": "to_city_id", "type": FIELD_CITY_SELECT, "label": "Cidade de destino", "multiple": False, "required": True},
         ],

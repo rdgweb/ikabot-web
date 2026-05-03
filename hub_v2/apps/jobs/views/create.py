@@ -495,19 +495,43 @@ def _training_form_context(snapshot, cities):
             "shipyard_pos": shipyard_pos,
         }
 
-    # Add icon_path to each unit in TRAINING_UNITS
+    # Add icon_path to each unit — keep name from TRAINING_UNITS (live game data), only add icon
     def enrich(units):
         result = []
         for u in units:
-            icon = UNIT_ICON_MAP.get(u["css"]) or UNIT_ICON_MAP.get(u["name"]) or ""
+            icon = (UNIT_ICON_MAP.get(u.get("name") or "")
+                    or UNIT_ICON_MAP.get(u.get("css") or "")
+                    or "")
             result.append({**u, "icon": icon})
         return result
+
+    # Enrich cities for JSON data in template (used by Alpine.js)
+    training_cities = []
+    for city in (cities or []):
+        cid = str(city.get("id") or "")
+        cb = city_buildings.get(cid, {})
+        city_mil = military.get(cid, {})
+        training_cities.append({
+            "id": city.get("id"),
+            "name": city.get("name", ""),
+            "x": city.get("x", 0),
+            "y": city.get("y", 0),
+            "tradegood_name": city.get("resource_name") or city.get("tradegood_name") or "",
+            "tradegood_icon": city.get("tradegood_icon") or "",
+            "city_art": city.get("city_art") or "",
+            "barracks_pos": cb.get("barracks_pos"),
+            "shipyard_pos": cb.get("shipyard_pos"),
+            "has_barracks": cb.get("barracks_pos") is not None,
+            "has_shipyard": cb.get("shipyard_pos") is not None,
+            "troops": city_mil.get("troops") or {},
+            "fleet": city_mil.get("fleet") or {},
+        })
 
     return {
         "troops_units": enrich(TRAINING_UNITS["troops"]),
         "fleet_units": enrich(TRAINING_UNITS["fleet"]),
         "military": military,
-        "city_buildings": city_buildings,
+        "training_cities": training_cities,
     }
 
 
@@ -1014,9 +1038,9 @@ def _custom_field_names(action_code: int) -> list[str]:
     if int(action_code) == 602:
         return ["dump_mode", "own_city_ids", "region_x_min", "region_y_min", "region_x_max", "region_y_max", "include_empty"]
     if int(action_code) == 1005:
-        return ["city_id", "building_type", "mode", "position", "recheck_minutes"]
+        return ["city_id", "city_ids", "building_type", "mode", "maintain_scope", "consolidate_city_id", "position", "recheck_minutes", "city_targets_json"]
     if int(action_code) == 1202:
-        return ["from_city_id", "to_city_id"]
+        return ["scope", "from_city_id", "to_city_id"]
     return []
 
 
@@ -1833,6 +1857,7 @@ class JobSubmitView(LoginRequiredMixin, View):
         """Collect units_XXX POST fields into inputs['units'] dict."""
         normalized = dict(inputs)
         mode = str(normalized.get("mode") or "once")
+        maintain_scope = str(normalized.get("maintain_scope") or "local")
         units = {}
         for key, val in request.POST.items():
             if key.startswith("units_"):
@@ -1843,8 +1868,24 @@ class JobSubmitView(LoginRequiredMixin, View):
                         units[uid] = qty
                 except (ValueError, TypeError):
                     pass
+        selected_city_ids = [str(v).strip() for v in request.POST.getlist("city_ids") if str(v).strip()]
+        selected_city_ids = list(dict.fromkeys(selected_city_ids))
+        if selected_city_ids:
+            normalized["city_ids"] = selected_city_ids
+        consolidate_city_id = str(request.POST.get("consolidate_city_id") or "").strip()
+        if consolidate_city_id:
+            normalized["consolidate_city_id"] = consolidate_city_id
         if mode == "maintain":
             normalized["target_garrison"] = units
+            normalized["maintain_scope"] = maintain_scope
+            city_targets_raw = str(request.POST.get("city_targets_json") or "").strip()
+            if city_targets_raw:
+                try:
+                    city_targets = json.loads(city_targets_raw)
+                except Exception:
+                    city_targets = {}
+                if isinstance(city_targets, dict) and city_targets:
+                    normalized["city_targets"] = city_targets
         else:
             normalized["units"] = units
         return normalized
@@ -1853,6 +1894,7 @@ class JobSubmitView(LoginRequiredMixin, View):
     def _normalize_station_units_inputs(inputs, request):
         """Collect units_XXX POST fields into inputs['units'] dict for station."""
         normalized = dict(inputs)
+        normalized["scope"] = str(normalized.get("scope") or request.POST.get("scope") or "troops")
         units = {}
         for key, val in request.POST.items():
             if key.startswith("units_"):

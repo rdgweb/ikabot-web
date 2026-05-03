@@ -229,6 +229,34 @@ UNIT_ICON_MAP: dict[str, str] = {
     "s213": "game/units/Lancha Rápida.png",
 }
 
+# Correct name-based icon entries for all TRAINING_UNITS (live game data, s78-br)
+UNIT_ICON_MAP.update({
+    # Troops — by exact PT name from live game
+    "Aríete": "game/units/ariete.png",
+    "Girocóptero": "game/units/girocoptero.png",
+    "Girocoptero": "game/units/girocoptero.png",
+    "Balão-Bombardeiro": "game/units/balao.png",
+    "Balao-Bombardeiro": "game/units/balao.png",
+    "Gigante a Vapor": "game/units/gigante.png",
+    "Gigante A Vapor": "game/units/gigante.png",
+    # Fleet — by exact PT name from live game
+    "Trireme": "game/units/trieme.png",
+    "Lança-Chamas": "game/units/lancachamas.png",
+    "Barco Balista": "game/units/Barco Balista.png",
+    "Barco Catapulta": "game/units/barcocatapulta.png",
+    "Barco Morteiro": "game/units/barcomorteiro.png",
+    "Aríete a Vapor": "game/units/Aríete a Vapor.png",
+    "Ariete a Vapor": "game/units/Aríete a Vapor.png",
+    "Lança-Foguetes": "game/units/Lança-Foguetes.png",
+    "Lanca-Foguetes": "game/units/Lança-Foguetes.png",
+    "Submergível": "game/units/Submergível.png",
+    "Submergivel": "game/units/Submergível.png",
+    "Lancha Rápida": "game/units/Lancha Rápida.png",
+    "Lancha Rapida": "game/units/Lancha Rápida.png",
+    "Porta-balões": "game/units/Porta-balões.png",
+    "Porta-baloes": "game/units/Porta-balões.png",
+})
+
 UNIT_CATALOG.update({
     "Gigante A Vapor": {"name": "Gigante a Vapor", "type": "troop"},
     "Gigante a Vapor": {"name": "Gigante a Vapor", "type": "troop"},
@@ -246,7 +274,15 @@ UNIT_ICON_MAP.update({
     "Steam Giant": "game/units/gigante.png",
     "Girocoptero": "game/units/girocoptero.png",
     "Balao-Bombardeiro": "game/units/balao.png",
-    "Ariete A Vapor": "game/units/Ar?ete a Vapor.png",
+    "Ariete A Vapor": "game/units/Aríete a Vapor.png",
+    "Ariete a Vapor": "game/units/Aríete a Vapor.png",
+    "Ariete": "game/units/ariete.png",
+    "Medico": "game/units/medico.png",
+    "Lanca-Chamas": "game/units/lancachamas.png",
+    "Submergivel": "game/units/Submergível.png",
+    "Lancha Rapida": "game/units/Lancha Rápida.png",
+    "Lanca-Foguetes": "game/units/Lança-Foguetes.png",
+    "Porta-Baloes": "game/units/Porta-balões.png",
 })
 
 SHIP_UNIT_KEYS = {
@@ -257,33 +293,34 @@ SHIP_UNIT_KEYS = {
 # Names and IDs from live game data. CSS class = "s{id}".
 # Costs are base values (before research reductions).
 TRAINING_UNITS: dict[str, list[dict]] = {
+    # CSS class = "s" + str(unit_id) — always. From live game data (BlackShadow701 s78-br).
     "troops": [
-        {"id": 303, "name": "Hoplita",             "css": "s303", "wood": 20,  "sulfur": 14,  "upkeep": 3},
-        {"id": 302, "name": "Espadachim",           "css": "s302", "wood": 15,  "sulfur": 14,  "upkeep": 4},
-        {"id": 301, "name": "Fundeiro",             "css": "s301", "wood": 10,  "upkeep": 2},
-        {"id": 315, "name": "Lanceiro",             "css": "s315", "wood": 15,  "upkeep": 1},
-        {"id": 313, "name": "Arqueiro",             "css": "s313", "wood": 15,  "sulfur": 12,  "upkeep": 4},
-        {"id": 304, "name": "Carabineiro",          "css": "s306", "wood": 25,  "sulfur": 73,  "upkeep": 3},
-        {"id": 307, "name": "Aríete",               "css": "s307", "wood": 110, "upkeep": 15},
-        {"id": 306, "name": "Catapulta",            "css": "s308", "wood": 130, "sulfur": 146, "upkeep": 25},
-        {"id": 308, "name": "Gigante a Vapor",      "css": "s308", "wood": 65,  "sulfur": 87,  "upkeep": 12},
-        {"id": 305, "name": "Morteiro",             "css": "s305", "wood": 150, "sulfur": 609, "upkeep": 30},
-        {"id": 312, "name": "Girocóptero",          "css": "s310", "wood": 12,  "sulfur": 48,  "upkeep": 15},
-        {"id": 309, "name": "Balão-Bombardeiro",    "css": "s309", "wood": 20,  "sulfur": 121, "upkeep": 45},
-        {"id": 310, "name": "Cozinheiro",           "css": "s312", "wood": 25,  "wine": 73,    "upkeep": 10},
-        {"id": 311, "name": "Médico",               "css": "s313", "wood": 25,  "crystal": 222,"upkeep": 20},
+        {"id": 303, "name": "Hoplita",           "css": "s303", "wood": 20,  "sulfur": 14,  "upkeep": 3},
+        {"id": 302, "name": "Espadachim",         "css": "s302", "wood": 15,  "sulfur": 14,  "upkeep": 4},
+        {"id": 301, "name": "Fundeiro",           "css": "s301", "wood": 10,  "upkeep": 2},
+        {"id": 315, "name": "Lanceiro",           "css": "s315", "wood": 15,  "upkeep": 1},
+        {"id": 313, "name": "Arqueiro",           "css": "s313", "wood": 15,  "sulfur": 12,  "upkeep": 4},
+        {"id": 304, "name": "Carabineiro",        "css": "s304", "wood": 25,  "sulfur": 73,  "upkeep": 3},
+        {"id": 307, "name": "Aríete",             "css": "s307", "wood": 110, "upkeep": 15},
+        {"id": 306, "name": "Catapulta",          "css": "s306", "wood": 130, "sulfur": 146, "upkeep": 25},
+        {"id": 308, "name": "Gigante a Vapor",    "css": "s308", "wood": 65,  "sulfur": 87,  "upkeep": 12},
+        {"id": 305, "name": "Morteiro",           "css": "s305", "wood": 150, "sulfur": 609, "upkeep": 30},
+        {"id": 312, "name": "Girocóptero",        "css": "s312", "wood": 12,  "sulfur": 48,  "upkeep": 15},
+        {"id": 309, "name": "Balão-Bombardeiro",  "css": "s309", "wood": 20,  "sulfur": 121, "upkeep": 45},
+        {"id": 310, "name": "Cozinheiro",         "css": "s310", "wood": 25,  "wine": 73,    "upkeep": 10},
+        {"id": 311, "name": "Médico",             "css": "s311", "wood": 25,  "crystal": 222,"upkeep": 20},
     ],
     "fleet": [
-        {"id": 210, "name": "Trireme",              "css": "s210", "wood": 167, "upkeep": 15},
-        {"id": 211, "name": "Lança-Chamas",         "css": "s211", "wood": 53,  "sulfur": 156, "upkeep": 25},
-        {"id": 213, "name": "Barco Balista",        "css": "s202", "wood": 120, "sulfur": 108, "upkeep": 20},
-        {"id": 214, "name": "Barco Catapulta",      "css": "s204", "wood": 120, "sulfur": 95,  "upkeep": 35},
-        {"id": 215, "name": "Barco Morteiro",       "css": "s205", "wood": 147, "sulfur": 612, "upkeep": 50},
-        {"id": 216, "name": "Aríete a Vapor",       "css": "s212", "wood": 268, "sulfur": 544, "upkeep": 45},
-        {"id": 217, "name": "Lança-Foguetes",       "css": "s211", "wood": 134, "sulfur": 815, "upkeep": 55},
-        {"id": 212, "name": "Submergível",          "css": "s206", "wood": 107, "crystal": 502,"sulfur": 68, "upkeep": 50},
-        {"id": 218, "name": "Lancha Rápida",        "css": "s207", "wood": 26,  "sulfur": 190, "upkeep": 5},
-        {"id": 219, "name": "Porta-balões",         "css": "s204", "wood": 468, "sulfur": 475, "upkeep": 100},
+        {"id": 210, "name": "Trireme",            "css": "s210", "wood": 167, "upkeep": 15},
+        {"id": 211, "name": "Lança-Chamas",       "css": "s211", "wood": 53,  "sulfur": 156, "upkeep": 25},
+        {"id": 213, "name": "Barco Balista",      "css": "s213", "wood": 120, "sulfur": 108, "upkeep": 20},
+        {"id": 214, "name": "Barco Catapulta",    "css": "s214", "wood": 120, "sulfur": 95,  "upkeep": 35},
+        {"id": 215, "name": "Barco Morteiro",     "css": "s215", "wood": 147, "sulfur": 612, "upkeep": 50},
+        {"id": 216, "name": "Aríete a Vapor",     "css": "s216", "wood": 268, "sulfur": 544, "upkeep": 45},
+        {"id": 217, "name": "Lança-Foguetes",     "css": "s217", "wood": 134, "sulfur": 815, "upkeep": 55},
+        {"id": 212, "name": "Submergível",        "css": "s212", "wood": 107, "crystal": 502,"sulfur": 68, "upkeep": 50},
+        {"id": 218, "name": "Lancha Rápida",      "css": "s218", "wood": 26,  "sulfur": 190, "upkeep": 5},
+        {"id": 219, "name": "Porta-balões",       "css": "s219", "wood": 468, "sulfur": 475, "upkeep": 100},
     ],
 }
 

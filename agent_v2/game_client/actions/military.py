@@ -43,6 +43,11 @@ def _parse_barracks_units(template_data: dict, building_type: str) -> list[dict[
         img = str(template_data.get(f"js_barracksUnitHelpPic{slot}", {}).get("src") or "")
         current = int(template_data.get(f"js_barracksUnitUnitsAvailable{slot}", {}).get("text") or 0)
         costs_html = str(template_data.get(f"js_barracksCosts{slot}", {}).get("text") or "")
+        slider = template_data.get(f"js_barracksSlider{slot}", {}).get("slider") or {}
+        try:
+            max_build = int(slider.get("max_value") or 0)
+        except Exception:
+            max_build = 0
 
         # Parse resource costs from HTML
         costs: dict[str, int] = {}
@@ -71,6 +76,7 @@ def _parse_barracks_units(template_data: dict, building_type: str) -> list[dict[
             "img_url": img,
             "type": building_type,
             "current_count": current,
+            "max_build": max_build,
             "citizens": costs.get("citizens", 0),
             "wood": costs.get("wood", 0),
             "wine": costs.get("wine", 0),
@@ -83,6 +89,56 @@ def _parse_barracks_units(template_data: dict, building_type: str) -> list[dict[
         slot += 1
 
     return units
+
+
+def _parse_city_military_counts(html: str, building_type: str) -> dict[int, int]:
+    """Parse stationed troop/fleet counts from cityMilitary HTML."""
+    counts: dict[int, int] = {}
+    table_matches = re.findall(
+        r'<table[^>]+class="[^"]*militaryList[^"]*"[^>]*>(.*?)</table>',
+        html,
+        re.DOTALL,
+    )
+    for table_html in table_matches:
+        headers = re.findall(
+            r'<th[^>]*>\s*<div[^>]+class="(?:army|fleet)\s+(s\d+)"[^>]*>.*?'
+            r'<div[^>]+class="tooltip"[^>]*>(.*?)</div>',
+            table_html,
+            re.DOTALL,
+        )
+        count_row_match = re.search(
+            r'<tr[^>]+class="count"[^>]*>(.*?)</tr>',
+            table_html,
+            re.DOTALL,
+        )
+        if not headers or not count_row_match:
+            continue
+        count_cells = re.findall(
+            r"<td[^>]*>(.*?)</td>",
+            count_row_match.group(1),
+            re.DOTALL,
+        )
+        if len(count_cells) < len(headers) + 1:
+            continue
+        for (css_class, _unit_name), td_content in zip(headers, count_cells[1:]):
+            raw = re.sub(r"<[^>]+>", "", td_content).strip().replace("\xa0", "")
+            if not raw or raw == "-":
+                continue
+            try:
+                amount = int(raw.replace(",", "").replace(".", ""))
+                unit_id = int(css_class[1:])
+            except Exception:
+                continue
+            if amount <= 0:
+                continue
+            if building_type == "fleet" and not (200 <= unit_id < 300):
+                continue
+            if building_type == "troops" and not (300 <= unit_id < 400):
+                continue
+            counts[unit_id] = counts.get(unit_id, 0) + amount
+        if counts:
+            break
+    return counts
 
 
 class FetchBarracksStateAction(BaseAction):
@@ -107,16 +163,16 @@ class FetchBarracksStateAction(BaseAction):
             garrison_sea_max, occupied (bool).
         """
         view = "barracks" if building_type == "troops" else "shipyard"
-        resp = self._request(
+        resp = self.client._request(
             "GET",
-            self._server_url,
+            self.client._server_url,
             params={
                 "view": view,
                 "cityId": city_id,
                 "position": position,
                 "currentCityId": city_id,
                 "backgroundView": "city",
-                "actionRequest": self._action_request,
+                "actionRequest": self.client._action_request,
                 "ajax": "1",
             },
             timeout=30,
@@ -127,7 +183,7 @@ class FetchBarracksStateAction(BaseAction):
         if data and isinstance(data[0], list) and len(data[0]) > 1:
             global_data = data[0][1]
             if isinstance(global_data, dict) and "actionRequest" in global_data:
-                self._action_request = global_data["actionRequest"]
+                self.client._action_request = global_data["actionRequest"]
 
         template_data = data[2][1] if len(data) > 2 and len(data[2]) > 1 else {}
         html = data[1][1][1] if len(data) > 1 and len(data[1]) > 1 and len(data[1][1]) > 1 else ""
@@ -151,7 +207,9 @@ class FetchBarracksStateAction(BaseAction):
             garrison_sea = int(gs_m.group(1))
         if gsm_m:
             garrison_sea_max = int(gsm_m.group(1))
-        if "js_barracksOccupyNotice" in html and "red_box" in html:
+        # Check occupation: the notice div must itself contain red_box, not just any red_box on page
+        occ_m = re.search(r'id="js_barracksOccupyNotice"[^>]*>([\s\S]{0,500}?)</div>', html)
+        if occ_m and "red_box" in occ_m.group(0):
             occupied = True
 
         units = _parse_barracks_units(template_data, building_type)
@@ -163,6 +221,40 @@ class FetchBarracksStateAction(BaseAction):
             "garrison_sea": garrison_sea,
             "garrison_sea_max": garrison_sea_max,
             "occupied": occupied,
+        }
+
+
+class FetchStationedUnitsAction(BaseAction):
+    """Fetch stationed troop or fleet counts from cityMilitary."""
+
+    def execute(
+        self,
+        city_id: int,
+        building_type: str = "troops",
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        active_tab = "tabShips" if building_type == "fleet" else "tabUnits"
+        current_tab = "multiTab2" if building_type == "fleet" else "multiTab1"
+        resp = self.client._request(
+            "GET",
+            self.client._server_url,
+            params={
+                "view": "cityMilitary",
+                "activeTab": active_tab,
+                "cityId": city_id,
+                "backgroundView": "city",
+                "currentCityId": city_id,
+                "currentTab": current_tab,
+                "actionRequest": self.client._action_request,
+                "ajax": "1",
+            },
+            timeout=30,
+        )
+        data = resp.json()
+        html = data[1][1][1] if len(data) > 1 and len(data[1]) > 1 and len(data[1][1]) > 1 else ""
+        return {
+            "counts": _parse_city_military_counts(html, building_type),
+            "building_type": building_type,
         }
 
 
@@ -198,14 +290,14 @@ class TrainAction(BaseAction):
             "action": action,
             "cityId": city_id,
             "position": position,
-            "actionRequest": self._action_request,
+            "actionRequest": self.client._action_request,
         }
         for unit_id, qty in units.items():
             if int(qty) > 0:
                 payload[str(unit_id)] = int(qty)
 
         logger.info("Train %s city=%s pos=%s units=%s", building_type, city_id, position, units)
-        resp = self._request("POST", self._server_url, data=payload, timeout=30)
+        resp = self.client._request("POST", self.client._server_url, data=payload, timeout=30)
 
         # Update actionRequest
         try:
@@ -213,7 +305,7 @@ class TrainAction(BaseAction):
             if resp_data and isinstance(resp_data[0], list) and len(resp_data[0]) > 1:
                 ar = resp_data[0][1].get("actionRequest")
                 if ar:
-                    self._action_request = ar
+                    self.client._action_request = ar
             # Check for error feedback
             for entry in resp_data:
                 if isinstance(entry, list) and entry[0] == "provideFeedback":
@@ -230,45 +322,126 @@ class TrainAction(BaseAction):
 
 
 class StationAction(BaseAction):
-    """Send troops/fleet to garrison another city."""
+    """Send troops/fleet to garrison another city.
+
+    Two-step flow (confirmed from live game HTML):
+    1. GET view=deployment to validate ship capacity and get unit weights/journey times
+    2. POST transportOperations&function=deployArmy with cargo_army_{id}=qty format
+    """
+
+    def fetch_deployment_state(
+        self,
+        from_city_id: int,
+        to_city_id: int,
+        deployment_type: str = "army",
+    ) -> dict[str, Any]:
+        """Phase 1: fetch available units, ship capacity and journey time."""
+        resp = self.client._request(
+            "POST",
+            self.client._server_url,
+            data={
+                "view": "deployment",
+                "deploymentType": deployment_type,
+                "destinationCityId": to_city_id,
+                "backgroundView": "city",
+                "currentCityId": from_city_id,
+                "actionRequest": self.client._action_request,
+                "ajax": "1",
+            },
+            timeout=30,
+        )
+        data = resp.json()
+        # Update AR
+        if data and isinstance(data[0], list) and len(data[0]) > 1:
+            global_data = data[0][1]
+            if isinstance(global_data, dict) and "actionRequest" in global_data:
+                self.client._action_request = global_data["actionRequest"]
+
+        # Extract unit journey times and weights from JS sliders in HTML
+        html = ""
+        for entry in data:
+            if isinstance(entry, list) and entry[0] == "changeView":
+                for item in (entry[1] or []):
+                    if isinstance(item, str) and len(item) > 100:
+                        html = item
+                        break
+
+        unit_info: dict[int, dict[str, Any]] = {}
+        for m in re.finditer(
+            r'slider_(\d+)"?\s*\);\s*(?:.*?\n)*?.*?weight\s*=\s*([\d.]+).*?'
+            r'unitJourneyTime\s*=\s*([\d.]+)',
+            html, re.DOTALL
+        ):
+            uid = int(m.group(1))
+            unit_info[uid] = {
+                "weight": float(m.group(2)),
+                "journey_seconds": int(float(m.group(3))),
+            }
+
+        # Simpler fallback: iterate slider definitions
+        if not unit_info:
+            for m in re.finditer(r'cargo_army_(\d+)', html):
+                uid = int(m.group(1))
+                if uid not in unit_info:
+                    unit_info[uid] = {"weight": 1.0, "journey_seconds": 0}
+            for m in re.finditer(r's\.weight\s*=\s*([\d.]+)', html):
+                pass  # weight per unit, order may not match
+
+        return {"unit_info": unit_info, "html": html}
 
     def execute(
         self,
         from_city_id: int,
         to_city_id: int,
         units: dict[int, int],
+        scope: str = "troops",
+        to_island_id: int | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Station units from one city to another.
-
-        Args:
-            from_city_id: Source city.
-            to_city_id: Destination city.
-            units: {unit_id: quantity}.
-        """
+        """Station units. Returns eta_seconds for reschedule."""
         if not units or not any(int(q) > 0 for q in units.values()):
             raise ActionError("No units to station", action="station")
 
+        scope = str(scope or "troops").strip().lower() or "troops"
+        is_fleet = scope == "fleet"
+        deployment_type = "fleet" if is_fleet else "army"
+
+        # Phase 1: validate capacity and get journey time
+        state = self.fetch_deployment_state(from_city_id, to_city_id, deployment_type)
+        unit_info = state.get("unit_info", {})
+
+        # Compute max journey time (slowest unit sets convoy speed)
+        eta_seconds = 0
+        for uid, qty in units.items():
+            if int(qty) > 0 and uid in unit_info:
+                eta_seconds = max(eta_seconds, unit_info[uid].get("journey_seconds", 0))
+
+        # Phase 2: actual deployment
+        prefix = "cargo_fleet_" if is_fleet else "cargo_army_"
         payload: dict[str, Any] = {
             "action": "transportOperations",
-            "function": "deployArmy",
+            "function": "deployFleet" if is_fleet else "deployArmy",
+            "deploymentType": deployment_type,
             "backgroundView": "city",
             "currentCityId": from_city_id,
-            "templateView": "military",
-            "actionRequest": self._action_request,
+            "destinationCityId": to_city_id,
+            "islandId": int(to_island_id or 0),
+            "actionRequest": self.client._action_request,
             "ajax": "1",
-            "islandId": "",
-            "cityId": to_city_id,
         }
-        for unit_id, qty in units.items():
+        for uid, qty in units.items():
             if int(qty) > 0:
-                payload[f"army[{unit_id}]"] = int(qty)
+                payload[f"{prefix}{uid}"] = int(qty)
 
-        logger.info("Station troops from=%s to=%s units=%s", from_city_id, to_city_id, units)
-        resp = self._request("POST", self._server_url, data=payload, timeout=30)
+        logger.info("Station %s from=%s to=%s units=%s eta=%ss", scope, from_city_id, to_city_id, units, eta_seconds)
+        resp = self.client._request("POST", self.client._server_url, data=payload, timeout=30)
 
         try:
             resp_data = resp.json()
+            if resp_data and isinstance(resp_data[0], list) and len(resp_data[0]) > 1:
+                gd = resp_data[0][1]
+                if isinstance(gd, dict) and "actionRequest" in gd:
+                    self.client._action_request = gd["actionRequest"]
             for entry in resp_data:
                 if isinstance(entry, list) and entry[0] == "provideFeedback":
                     for fb in (entry[1] or []):
@@ -279,7 +452,7 @@ class StationAction(BaseAction):
         except Exception:
             pass
 
-        return {"ok": True, "from": from_city_id, "to": to_city_id}
+        return {"ok": True, "from": from_city_id, "to": to_city_id, "scope": scope, "eta_seconds": eta_seconds}
 
 
 class AttackAction(BaseAction):

@@ -1322,6 +1322,107 @@ class JobListView(FilterSortListView):
         return lines
 
 
+    @staticmethod
+    def _train_display(job):
+        if int(job.action_code) != 1005:
+            return {}
+        try:
+            inputs = json.loads(job.inputs_json or "{}")
+        except Exception:
+            return {}
+
+        from core.catalogs import TRAINING_UNITS, UNIT_ICON_MAP
+        building_type = str(inputs.get("building_type") or "troops")
+        mode = str(inputs.get("mode") or "once")
+        maintain_scope = str(inputs.get("maintain_scope") or "local")
+        city_id = inputs.get("city_id")
+        city_ids = inputs.get("city_ids") or []
+        city_targets_raw = inputs.get("city_targets") or {}
+
+        catalog = {str(u["id"]): u for bt in TRAINING_UNITS.values() for u in bt}
+
+        def _make_rows(units_dict):
+            rows = []
+            tots = {"wood": 0, "sulfur": 0, "wine": 0, "crystal": 0, "upkeep": 0}
+            for uid_str, qty in units_dict.items():
+                qty = int(qty or 0)
+                if qty <= 0:
+                    continue
+                meta = catalog.get(str(uid_str)) or {}
+                name = meta.get("name") or f"Unidade {uid_str}"
+                icon_path = UNIT_ICON_MAP.get(name) or UNIT_ICON_MAP.get(meta.get("css") or "") or ""
+                row = {
+                    "name": name, "qty": qty, "icon": icon_path,
+                    "wood": (meta.get("wood") or 0) * qty,
+                    "sulfur": (meta.get("sulfur") or 0) * qty,
+                    "wine": (meta.get("wine") or 0) * qty,
+                    "crystal": (meta.get("crystal") or 0) * qty,
+                    "upkeep": (meta.get("upkeep") or 0) * qty,
+                }
+                rows.append(row)
+                for res in ("wood", "sulfur", "wine", "crystal", "upkeep"):
+                    tots[res] += row[res]
+            return rows, tots
+
+        # Per-city breakdown for selected_custom
+        city_breakdown = []
+        if maintain_scope == "selected_custom" and city_ids:
+            uniform_target = inputs.get("target_garrison") or {}
+            for cid in city_ids:
+                # Use custom target if available, else fall back to uniform
+                ct = city_targets_raw.get(str(cid)) or uniform_target
+                if ct:
+                    rows, tots = _make_rows(ct)
+                    label = "custom" if str(cid) in city_targets_raw else "padrao"
+                    if rows:
+                        city_breakdown.append({"city_id": str(cid), "unit_rows": rows, "totals": tots, "label": label})
+
+        # Fallback: uniform target or once units
+        units_raw = inputs.get("units") or inputs.get("target_garrison") or {}
+        unit_rows, totals = _make_rows(units_raw)
+
+        return {
+            "unit_rows": unit_rows,
+            "totals": totals,
+            "city_breakdown": city_breakdown,
+            "building_type": building_type,
+            "mode": mode,
+            "maintain_scope": maintain_scope,
+            "city_id": city_id,
+            "city_count": len(city_ids) if city_ids else (1 if city_id else 0),
+        }
+
+    @staticmethod
+    def _station_display(job):
+        if int(job.action_code) != 1202:
+            return {}
+        try:
+            inputs = json.loads(job.inputs_json or "{}")
+        except Exception:
+            return {}
+
+        from core.catalogs import TRAINING_UNITS, UNIT_ICON_MAP
+        catalog = {str(u["id"]): u for bt in TRAINING_UNITS.values() for u in bt}
+        units_raw = inputs.get("units") or {}
+
+        unit_rows = []
+        for uid_str, qty in units_raw.items():
+            qty = int(qty or 0)
+            if qty <= 0:
+                continue
+            meta = catalog.get(str(uid_str)) or {}
+            name = meta.get("name") or f"Unidade {uid_str}"
+            uid = int(uid_str)
+            unit_type = "fleet" if 200 <= uid < 300 else "troops"
+            icon_path = UNIT_ICON_MAP.get(name) or UNIT_ICON_MAP.get(meta.get("css") or "") or ""
+            unit_rows.append({"name": name, "qty": qty, "type": unit_type, "icon": icon_path})
+
+        return {
+            "unit_rows": unit_rows,
+            "from_city_id": inputs.get("from_city_id"),
+            "to_city_id": inputs.get("to_city_id"),
+        }
+
     @classmethod
     def _construction_display(cls, job, *, logs=None):
         inputs = cls._parse_inputs(job)
@@ -1592,6 +1693,8 @@ class JobDetailView(LoginRequiredMixin, DetailView):
             self.object,
             logs=list(logs_qs.values_list("message", flat=True)),
         )
+        context["train_display"] = JobListView._train_display(self.object)
+        context["station_display"] = JobListView._station_display(self.object)
         context["construction_plan"] = inputs.get("construction_plan_json") if isinstance(inputs.get("construction_plan_json"), list) else []
         context["construction_summary"] = inputs.get("construction_summary") if isinstance(inputs.get("construction_summary"), dict) else {}
         context["construction_reservations"] = self.object.construction_reservations.filter(status="active")
