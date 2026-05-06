@@ -993,22 +993,26 @@ def _upgrade_units_form_context(cities):
     }
 
 
+_DIPLOMACY_STATIC_TYPES = [
+    ("50", "Mensagem"),
+    ("60", "Proposta de Tratado Comercial"),
+    ("77", "Proposta de Tratado Cultural"),
+    ("89", "Candidatura para Aliança"),
+    ("100", "Pedido de Amizade"),
+    ("110", "Oferecer Partilha de IP"),
+    ("115", "Declarar Desafio de Guerra"),
+]
+
+
 def _diplomacy_msg_types(receiver_id: str) -> list[tuple[str, str]]:
-    """Build available msgType choices for action 31 using worldintel city data."""
+    """Build available msgType choices for action 31, always includes static types."""
     from apps.worldintel.models import WorldDumpCity
-    options = [
-        ("50", "Mensagem"),
-        ("60", "Proposta de Tratado Comercial"),
-        ("77", "Proposta de Tratado Cultural"),
-        ("89", "Candidatura para Aliança"),
-        ("100", "Pedido de Amizade"),
-        ("110", "Oferecer Partilha de IP"),
-        ("115", "Declarar Desafio de Guerra"),
-    ]
+    options = list(_DIPLOMACY_STATIC_TYPES)
     if receiver_id:
         cities = (
             WorldDumpCity.objects.filter(owner_id=str(receiver_id), type="city")
             .exclude(game_city_id="")
+            .exclude(game_city_id="-1")
             .order_by("-dump__captured_at", "name")
             .values("game_city_id", "name")
             .distinct()[:20]

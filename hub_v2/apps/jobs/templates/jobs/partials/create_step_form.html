@@ -3768,23 +3768,31 @@
            selectedCity() { return this.cities.find(c => String(c.id) === String(this.selectedCityId)); }
          }">
       <input type="hidden" name="{{ form.city_id.html_name }}" x-model="selectedCityId">
-      <input type="hidden" name="{{ form.receiver_id.html_name }}" value="{{ form.receiver_id.value|default:'' }}">
       <input type="hidden" name="{{ form.receiver_name.html_name }}" value="{{ form.receiver_name.value|default:'' }}">
 
-      {# Para: card #}
+      {# Para: card — read-only when pre-filled, input when opened manually #}
+      {% if form.receiver_id.value and form.receiver_id.value != "None" %}
+      <input type="hidden" name="{{ form.receiver_id.html_name }}" value="{{ form.receiver_id.value }}">
       <div class="flex items-center gap-3 rounded-xl px-4 py-3" style="background: var(--ik-sand-light); border: 1px solid var(--ik-line);">
         <i class="bi bi-person-fill text-sea text-lg"></i>
         <div class="min-w-0 flex-1">
           <div class="text-[10px] font-semibold uppercase tracking-wider text-muted">Para</div>
           <div class="text-sm font-bold text-ink truncate">
-            {% if form.receiver_name.value %}{{ form.receiver_name.value }}{% else %}ID {{ form.receiver_id.value }}{% endif %}
+            {% if form.receiver_name.value and form.receiver_name.value != "None" %}{{ form.receiver_name.value }}{% else %}Jogador {{ form.receiver_id.value }}{% endif %}
           </div>
-          {% if form.receiver_id.value %}
           <div class="text-[10px] text-muted font-mono">ID: {{ form.receiver_id.value }}</div>
-          {% endif %}
         </div>
         <i class="bi bi-send-fill text-sea text-base flex-shrink-0"></i>
       </div>
+      {% else %}
+      <div>
+        <label class="form-label text-xs mb-1 block">ID do jogador destinatário <span class="text-[var(--ik-bad)]">*</span></label>
+        <p class="text-[10px] text-muted mb-1">Use o botão "Enviar Mensagem" na lista de players para pré-preencher automaticamente.</p>
+        <input type="number" name="{{ form.receiver_id.html_name }}" value="{{ form.receiver_id.value|default:'' }}"
+               class="form-input w-full text-sm" placeholder="Ex: 104197" required>
+        {% for error in form.receiver_id.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+      </div>
+      {% endif %}
 
       {# Cidade de origem (card picker) #}
       <div>
