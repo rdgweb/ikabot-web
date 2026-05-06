@@ -102,11 +102,15 @@ class JobCreateForm(forms.Form):
             )
 
         if ftype == FIELD_STR:
+            if field_def.get("textarea"):
+                widget = forms.Textarea(attrs={**base_attrs, "rows": field_def.get("rows", 4)})
+            else:
+                widget = forms.TextInput(attrs=base_attrs)
             return forms.CharField(
                 label=label,
                 required=required,
                 help_text=help_text,
-                widget=forms.TextInput(attrs=base_attrs),
+                widget=widget,
                 initial=field_def.get("default", ""),
             )
 

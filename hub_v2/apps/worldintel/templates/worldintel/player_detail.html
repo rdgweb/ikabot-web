@@ -49,8 +49,8 @@
         </a>
         {% if player.owner_id and selected_game_account %}
         {% url 'jobs:job-create' as send_msg_url %}
-        <a href="{{ send_msg_url }}?ga={{ selected_game_account.pk }}&action=31&input_receiver_id={{ player.owner_id }}&input_msg_type=50"
-           hx-get="{{ send_msg_url }}?ga={{ selected_game_account.pk }}&action=31&input_receiver_id={{ player.owner_id }}&input_msg_type=50"
+        <a href="{{ send_msg_url }}?ga={{ selected_game_account.pk }}&action=31&input_receiver_id={{ player.owner_id }}&input_receiver_name={{ player.owner_name|urlencode }}&input_msg_type=50"
+           hx-get="{{ send_msg_url }}?ga={{ selected_game_account.pk }}&action=31&input_receiver_id={{ player.owner_id }}&input_receiver_name={{ player.owner_name|urlencode }}&input_msg_type=50"
            hx-target="#job-modal-body"
            hx-swap="innerHTML"
            hx-push-url="false"

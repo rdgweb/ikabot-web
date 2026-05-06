@@ -1033,6 +1033,8 @@ def _custom_field_names(action_code: int) -> list[str]:
         return [*SHRINE_GOD_FIELDS, "favor_recheck_minutes", "cycle_hours"]
     if int(action_code) == 1203:
         return ["unit_targets_json", "min_crystal_reserve", "min_gold_reserve", "priority_mode"]
+    if int(action_code) == 31:
+        return ["receiver_name", "receiver_id", "msg_type", "content", "city_id"]
     if int(action_code) == 9002:
         return ["city_id", "revolt_type"]
     if int(action_code) == 602:

@@ -3757,6 +3757,47 @@
     </div>
     {% endif %}
 
+    {# ── Enviar Mensagem (action 31) ── #}
+    {% if action_code == 31 %}
+    <div class="space-y-4 mb-4">
+      {# Para: header card #}
+      <div class="flex items-center gap-3 rounded-lg px-4 py-3" style="background: var(--ik-sand-light); border: 1px solid var(--ik-line);">
+        <i class="bi bi-person-fill text-sea text-base"></i>
+        <div class="min-w-0 flex-1">
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-muted mb-0.5">Para</div>
+          <div class="text-sm font-semibold text-ink truncate">
+            {% if form.receiver_name.value %}{{ form.receiver_name.value }}{% else %}Jogador ID {{ form.receiver_id.value }}{% endif %}
+          </div>
+          {% if form.receiver_name.value and form.receiver_id.value %}
+          <div class="text-[10px] text-muted font-mono">ID: {{ form.receiver_id.value }}</div>
+          {% endif %}
+        </div>
+      </div>
+      {# hidden receiver_id + receiver_name #}
+      <input type="hidden" name="{{ form.receiver_id.html_name }}" value="{{ form.receiver_id.value|default:'' }}">
+      <input type="hidden" name="{{ form.receiver_name.html_name }}" value="{{ form.receiver_name.value|default:'' }}">
+      {# city_id — needed for game session #}
+      <div>
+        <label class="form-label text-xs">{{ form.city_id.label }} <span class="text-[var(--ik-bad)]">*</span></label>
+        {% if form.city_id.help_text %}<p class="text-[10px] text-muted mb-1">{{ form.city_id.help_text }}</p>{% endif %}
+        {{ form.city_id }}
+        {% for error in form.city_id.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+      </div>
+      {# msg_type — hidden (always mensagem from UI) #}
+      <input type="hidden" name="{{ form.msg_type.html_name }}" value="{{ form.msg_type.value|default:'50' }}">
+      {# content — textarea #}
+      <div>
+        <label class="form-label text-xs">{{ form.content.label }} <span class="text-[var(--ik-bad)]">*</span></label>
+        <textarea name="{{ form.content.html_name }}"
+                  rows="5"
+                  class="form-input w-full text-sm resize-y"
+                  placeholder="Escreva sua mensagem aqui..."
+                  required>{{ form.content.value|default:'' }}</textarea>
+        {% for error in form.content.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
     {# Dynamic fields — 2 col layout for wider modal #}
     {% if action_code == 9002 %}
     {{ cities|json_script:"revolt-cities-data" }}
@@ -5060,7 +5101,7 @@
         <i class="bi bi-arrow-left text-[10px]"></i> Voltar
       </button>
       <button type="submit" class="btn btn-primary btn-sm">
-        <i class="bi bi-plus-circle"></i> {% if action_code == 2 %}Criar Transporte{% elif action_code == 3 or action_code == 1003 %}Criar Distribuição{% elif action_code == 601 %}Iniciar Monitor{% elif action_code == 1005 %}Criar Treino Militar{% elif action_code == 1202 %}Criar Movimentação{% else %}Criar Job{% endif %}
+        <i class="bi bi-plus-circle"></i> {% if action_code == 31 %}Enviar Mensagem{% elif action_code == 2 %}Criar Transporte{% elif action_code == 3 or action_code == 1003 %}Criar Distribuição{% elif action_code == 601 %}Iniciar Monitor{% elif action_code == 1005 %}Criar Treino Militar{% elif action_code == 1202 %}Criar Movimentação{% else %}Criar Job{% endif %}
       </button>
     </div>
   </form>

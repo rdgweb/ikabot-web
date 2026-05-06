@@ -77,8 +77,8 @@ ACTIONS = {
         ],
     },
     31: {
-        "name": "Enviar Mensagem de Diplomacia",
-        "name_en": "Send Diplomacy Message",
+        "name": "Enviar Mensagem",
+        "name_en": "Send Message",
         "category": CAT_MONITORING,
         "icon": "bi-send",
         "runner": "diplomacy_send",
@@ -86,14 +86,23 @@ ACTIONS = {
         "recurring": False,
         "long_running": False,
         "ready": True,
-        "ui_hidden": True,
-        "description": "Envia resposta ou ação de tratado. Criado automaticamente pelo webhook do Telegram.",
+        "description": "Envia uma mensagem de diplomacia para outro jogador.",
         "inputs": [
-            {"key": "city_id", "type": FIELD_INT, "label": "ID da cidade", "required": True},
-            {"key": "receiver_id", "type": FIELD_INT, "label": "ID do jogador destinatário", "required": True},
-            {"key": "msg_type", "type": FIELD_INT, "label": "Tipo de mensagem (50=msg, 79=aceitar tratado, 80=recusar)", "required": True, "default": 50},
-            {"key": "content", "type": FIELD_STR, "label": "Conteúdo", "required": False},
-            {"key": "reply_to", "type": FIELD_INT, "label": "ID da mensagem original (para respostas)", "required": False},
+            # receiver_name: display only — shown in UI, ignored by runner
+            {"key": "receiver_name", "type": FIELD_STR, "label": "Para (jogador)", "required": False, "default": ""},
+            # receiver_id: required by runner, rendered as hidden in custom form block
+            {"key": "receiver_id", "type": FIELD_INT, "label": "ID do jogador", "required": True},
+            # city_id: needed by runner to get session/actionRequest
+            {"key": "city_id", "type": FIELD_CITY_SELECT, "label": "Sua cidade", "multiple": False, "required": True,
+             "help": "Cidade usada para abrir a sessão de jogo."},
+            # msg_type: friendly choice — treaties handled by Telegram, not here
+            {"key": "msg_type", "type": FIELD_CHOICE, "label": "Tipo", "required": True, "default": "50",
+             "choices": [
+                 ("50", "Mensagem"),
+             ]},
+            # content: main textarea
+            {"key": "content", "type": FIELD_STR, "label": "Mensagem", "required": True,
+             "textarea": True, "rows": 5, "default": ""},
         ],
     },
 

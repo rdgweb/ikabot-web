@@ -75,8 +75,8 @@
             <div class="flex items-center justify-end gap-1">
               {% if row.owner_id %}
               {% url 'jobs:job-create' as new_job_url %}
-              <a href="{{ new_job_url }}?{% if selected_game_account %}ga={{ selected_game_account.pk }}&{% endif %}action=31&input_receiver_id={{ row.owner_id }}&input_msg_type=50"
-                 hx-get="{{ new_job_url }}?{% if selected_game_account %}ga={{ selected_game_account.pk }}&{% endif %}action=31&input_receiver_id={{ row.owner_id }}&input_msg_type=50"
+              <a href="{{ new_job_url }}?{% if selected_game_account %}ga={{ selected_game_account.pk }}&{% endif %}action=31&input_receiver_id={{ row.owner_id }}&input_receiver_name={{ row.owner_name|urlencode }}&input_msg_type=50"
+                 hx-get="{{ new_job_url }}?{% if selected_game_account %}ga={{ selected_game_account.pk }}&{% endif %}action=31&input_receiver_id={{ row.owner_id }}&input_receiver_name={{ row.owner_name|urlencode }}&input_msg_type=50"
                  hx-target="#job-modal-body"
                  hx-swap="innerHTML"
                  hx-push-url="false"
