@@ -4047,10 +4047,9 @@
                 <div class="flex flex-col items-center gap-1.5 px-2 py-3">
                   <div class="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-xl border"
                        style="border-color: rgba(79,134,185,0.18); background: rgba(79,134,185,0.05);">
-                    <img :src="'{{ piracy_img_base }}' + mission.picActive"
+                    <img :src="mission.pic"
                          :alt="mission.name"
-                         class="h-full w-full object-contain p-1"
-                         @error="$el.src = '{{ piracy_img_base }}' + mission.picInactive">
+                         class="h-full w-full object-contain p-1">
                   </div>
                   <div class="w-full text-center">
                     <div class="text-xs font-bold text-ink leading-tight" x-text="mission.name"></div>

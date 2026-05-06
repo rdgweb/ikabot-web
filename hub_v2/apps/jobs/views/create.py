@@ -558,113 +558,26 @@ def _market_form_context(cities):
 
 
 PIRACY_MISSIONS = [
-    {
-        "buildingLevel": 1,
-        "duration": 150,
-        "gold": 40,
-        "capturePoints": 115,
-        "name": "Contrabandistas",
-        "picActive": "2012-11-09_IK_Kaperfahrt_Ruderboot_aktiv.png",
-        "picInactive": "2012-11-09_IK_Kaperfahrt_Ruderboot_inaktiv.png",
-        "durationLabel": "2m 30s",
-    },
-    {
-        "buildingLevel": 3,
-        "duration": 450,
-        "gold": 96,
-        "capturePoints": 276,
-        "name": "Barco de Pesca",
-        "picActive": "2012-11-09_IK_Kaperfahrt_Fischerboot_aktiv.png",
-        "picInactive": "2012-11-09_IK_Kaperfahrt_Fischerboot_inaktiv.png",
-        "durationLabel": "7m 30s",
-    },
-    {
-        "buildingLevel": 5,
-        "duration": 900,
-        "gold": 173,
-        "capturePoints": 442,
-        "name": "Transporte de Vinho",
-        "picActive": "2012-11-09_IK_Kaperfahrt_Weinhaendler_aktiv.png",
-        "picInactive": "2012-11-09_IK_Kaperfahrt_Weinhaendler_inaktiv.png",
-        "durationLabel": "15m",
-    },
-    {
-        "buildingLevel": 7,
-        "duration": 1800,
-        "gold": 311,
-        "capturePoints": 707,
-        "name": "Barco Mercante",
-        "picActive": "2012-11-09_IK_Kaperfahrt_Haendler_aktiv.png",
-        "picInactive": "2012-11-09_IK_Kaperfahrt_Haendler_inaktiv.png",
-        "durationLabel": "30m",
-    },
-    {
-        "buildingLevel": 9,
-        "duration": 3600,
-        "gold": 560,
-        "capturePoints": 1131,
-        "name": "Trireme",
-        "picActive": "2012-11-09_IK_Kaperfahrt_leichtes_Kriegsschiff_aktiv.png",
-        "picInactive": "2012-11-09_IK_Kaperfahrt_leichtes_Kriegsschiff_inaktiv.png",
-        "durationLabel": "1h",
-    },
-    {
-        "buildingLevel": 11,
-        "duration": 7200,
-        "gold": 1008,
-        "capturePoints": 1810,
-        "name": "Submergivel",
-        "picActive": "2012-11-09_IK_Kaperfahrt_UBoot_aktiv.png",
-        "picInactive": "2012-11-09_IK_Kaperfahrt_UBoot_inaktiv.png",
-        "durationLabel": "2h",
-    },
-    {
-        "buildingLevel": 13,
-        "duration": 14400,
-        "gold": 1814,
-        "capturePoints": 2896,
-        "name": "Navio de Diplomata",
-        "picActive": "2012-11-09_IK_Kaperfahrt_Diplomatenschiff_aktiv.png",
-        "picInactive": "2012-11-09_IK_Kaperfahrt_Diplomatenschiff_inaktiv.png",
-        "durationLabel": "4h",
-    },
-    {
-        "buildingLevel": 15,
-        "duration": 28800,
-        "gold": 3265,
-        "capturePoints": 4634,
-        "name": "Naufragos",
-        "picActive": "2012-11-09_IK_Kaperfahrt_Schiffbruechige_aktiv.png",
-        "picInactive": "2012-11-09_IK_Kaperfahrt_Schiffbruechige_inaktiv.png",
-        "durationLabel": "8h",
-    },
-    {
-        "buildingLevel": 17,
-        "duration": 57600,
-        "gold": 5877,
-        "capturePoints": 7414,
-        "name": "Fenicios",
-        "picActive": "2012-11-09_IK_Kaperfahrt_Phoenizier_aktiv.png",
-        "picInactive": "2012-11-09_IK_Kaperfahrt_Phoenizier_inaktiv.png",
-        "durationLabel": "16h",
-    },
+    {"buildingLevel": 1,  "duration": 150,   "gold": 40,   "capturePoints": 115,  "name": "Contrabandistas",    "durationLabel": "2m 30s", "localPic": "game/pirate/PirateContrabandistas.png"},
+    {"buildingLevel": 3,  "duration": 450,   "gold": 96,   "capturePoints": 276,  "name": "Barco de Pesca",     "durationLabel": "7m 30s", "localPic": "game/pirate/PirateBarcoPesca.png"},
+    {"buildingLevel": 5,  "duration": 900,   "gold": 173,  "capturePoints": 442,  "name": "Transporte de Vinho","durationLabel": "15m",    "localPic": "game/pirate/PirateTransporteVinho.png"},
+    {"buildingLevel": 7,  "duration": 1800,  "gold": 311,  "capturePoints": 707,  "name": "Barco Mercante",     "durationLabel": "30m",    "localPic": "game/pirate/PirateBarcoMercante.png"},
+    {"buildingLevel": 9,  "duration": 3600,  "gold": 560,  "capturePoints": 1131, "name": "Trireme",            "durationLabel": "1h",     "localPic": "game/pirate/PirateTrieme.png"},
+    {"buildingLevel": 11, "duration": 7200,  "gold": 1008, "capturePoints": 1810, "name": "Submergível",        "durationLabel": "2h",     "localPic": "game/pirate/PirateSubmergivel.png"},
+    {"buildingLevel": 13, "duration": 14400, "gold": 1814, "capturePoints": 2896, "name": "Navio de Diplomata", "durationLabel": "4h",     "localPic": "game/pirate/PirateDiplomata.png"},
+    {"buildingLevel": 15, "duration": 28800, "gold": 3265, "capturePoints": 4634, "name": "Náufragos",          "durationLabel": "8h",     "localPic": "game/pirate/PirateNaufragos.png"},
+    {"buildingLevel": 17, "duration": 57600, "gold": 5877, "capturePoints": 7414, "name": "Fenícios",           "durationLabel": "16h",    "localPic": "game/pirate/PirateFenicios.png"},
 ]
 
 
 def _piracy_context(ga) -> dict:
     """Build context for the Pirata Automatico (action 17) creation form."""
-    server_id = str(ga.server_id or "").strip()
-    # server_id like "s78-br" → "s78-br.ikariam.gameforge.com"
-    if server_id and not server_id.endswith(".ikariam.gameforge.com"):
-        piracy_img_base = f"https://{server_id}.ikariam.gameforge.com/skin/piracy/"
-    elif server_id:
-        piracy_img_base = f"https://{server_id}/skin/piracy/"
-    else:
-        piracy_img_base = "https://s78-br.ikariam.gameforge.com/skin/piracy/"
-    return {
-        "piracy_missions": PIRACY_MISSIONS,
-        "piracy_img_base": piracy_img_base,
-    }
+    from django.templatetags.static import static
+    missions = [
+        {**m, "pic": static(m["localPic"])}
+        for m in PIRACY_MISSIONS
+    ]
+    return {"piracy_missions": missions}
 
 
 def _resolve_construction_new_slots(steps, cities):
