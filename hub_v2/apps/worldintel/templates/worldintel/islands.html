@@ -17,8 +17,11 @@
     <h1 class="text-xl font-bold text-ink">Inteligência do Mundo</h1>
     <a href="{{ dump_job_create_url }}"
        hx-get="{{ dump_job_create_url }}"
-       hx-target="#jobCreateModal"
+       hx-target="#job-modal-body"
        hx-swap="innerHTML"
+       hx-push-url="false"
+       hx-boost="false"
+       onclick="openModal('jobcreate')"
        class="btn btn-primary btn-sm">
       <i class="bi bi-plus-circle"></i> Novo dump
     </a>
@@ -116,8 +119,11 @@
               {% if island.monitor_url %}
               <a href="{{ island.monitor_url }}"
                  hx-get="{{ island.monitor_url }}"
-                 hx-target="#jobCreateModal"
+                 hx-target="#job-modal-body"
                  hx-swap="innerHTML"
+                 hx-push-url="false"
+                 hx-boost="false"
+                 onclick="openModal('jobcreate')"
                  class="btn btn-secondary btn-sm !py-0.5 !px-2 text-[10px]">Monitor</a>
               {% endif %}
             </td>
@@ -139,8 +145,11 @@
     <p class="text-sm text-muted">Crie um dump primeiro para explorar ilhas.</p>
     <a href="{{ dump_job_create_url }}"
        hx-get="{{ dump_job_create_url }}"
-       hx-target="#jobCreateModal"
+       hx-target="#job-modal-body"
        hx-swap="innerHTML"
+       hx-push-url="false"
+       hx-boost="false"
+       onclick="openModal('jobcreate')"
        class="btn btn-primary btn-sm mt-4">
       <i class="bi bi-plus-circle"></i> Criar dump
     </a>

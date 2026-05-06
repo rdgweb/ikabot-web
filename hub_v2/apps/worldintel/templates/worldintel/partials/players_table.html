@@ -31,6 +31,7 @@
           <th class="py-2 px-3 text-left text-muted font-semibold">Aliança</th>
           <th class="py-2 px-3 text-right text-muted font-semibold">Cidades</th>
           {% if has_scores %}
+          <th class="py-2 px-3 text-right text-muted font-semibold">Pontos</th>
           <th class="py-2 px-3 text-right text-muted font-semibold">Construção</th>
           <th class="py-2 px-3 text-right text-muted font-semibold">Pesquisa</th>
           <th class="py-2 px-3 text-right text-muted font-semibold">Exército</th>
@@ -59,8 +60,11 @@
           <td class="py-1.5 px-3 font-mono text-[11px] text-muted">
             {% if row.ally_tag %}[{{ row.ally_tag }}]{% else %}&mdash;{% endif %}
           </td>
-          <td class="py-1.5 px-3 text-right font-mono font-bold text-ink">{{ row.city_count|intcomma }}</td>
+          <td class="py-1.5 px-3 text-right font-mono font-bold text-ink">
+            {{ row.actual_city_count|default:row.city_count|intcomma }}
+          </td>
           {% if has_scores %}
+          <td class="py-1.5 px-3 text-right font-mono font-bold text-sea">{{ row.total_score|intcomma }}</td>
           <td class="py-1.5 px-3 text-right font-mono text-muted">{{ row.building_score|intcomma }}</td>
           <td class="py-1.5 px-3 text-right font-mono text-muted">{{ row.research_score|intcomma }}</td>
           <td class="py-1.5 px-3 text-right font-mono text-muted">{{ row.army_score|intcomma }}</td>
@@ -70,12 +74,14 @@
           <td class="py-1.5 px-3 text-right">
             <div class="flex items-center justify-end gap-1">
               {% if row.owner_id %}
-              {% url 'jobs:job-form' as new_job_url %}
+              {% url 'jobs:job-create' as new_job_url %}
               <a href="{{ new_job_url }}?{% if selected_game_account %}ga={{ selected_game_account.pk }}&{% endif %}action=31&input_receiver_id={{ row.owner_id }}&input_msg_type=50"
                  hx-get="{{ new_job_url }}?{% if selected_game_account %}ga={{ selected_game_account.pk }}&{% endif %}action=31&input_receiver_id={{ row.owner_id }}&input_msg_type=50"
-                 hx-target="#jobCreateModal"
+                 hx-target="#job-modal-body"
                  hx-swap="innerHTML"
                  hx-push-url="false"
+                 hx-boost="false"
+                 onclick="openModal('jobcreate')"
                  title="Enviar mensagem"
                  class="btn btn-secondary btn-sm !py-0.5 !px-2 text-[10px]">
                 <i class="bi bi-send"></i>
@@ -88,7 +94,7 @@
         </tr>
         {% empty %}
         <tr>
-          <td colspan="8" class="py-8 text-center text-sm text-muted">
+          <td colspan="9" class="py-8 text-center text-sm text-muted">
             <i class="bi bi-search block text-xl mb-2"></i>
             Nenhum player encontrado.
           </td>
@@ -146,8 +152,11 @@
   <p class="text-sm text-muted">Nenhum dump disponível.</p>
   <a href="{{ dump_job_create_url }}"
      hx-get="{{ dump_job_create_url }}"
-     hx-target="#jobCreateModal"
+     hx-target="#job-modal-body"
      hx-swap="innerHTML"
+     hx-push-url="false"
+     hx-boost="false"
+     onclick="openModal('jobcreate')"
      class="btn btn-primary btn-sm mt-4">
     <i class="bi bi-plus-circle"></i> Criar dump
   </a>

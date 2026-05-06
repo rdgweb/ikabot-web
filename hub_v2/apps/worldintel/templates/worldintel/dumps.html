@@ -17,8 +17,11 @@
     <h1 class="text-xl font-bold text-ink">Inteligência do Mundo</h1>
     <a href="{{ dump_job_create_url }}"
        hx-get="{{ dump_job_create_url }}"
-       hx-target="#jobCreateModal"
+       hx-target="#job-modal-body"
        hx-swap="innerHTML"
+       hx-push-url="false"
+       hx-boost="false"
+       onclick="openModal('jobcreate')"
        class="btn btn-primary btn-sm">
       <i class="bi bi-plus-circle"></i> Novo dump
     </a>
@@ -96,8 +99,11 @@
     <p class="text-sm text-muted">Nenhum dump salvo ainda.</p>
     <a href="{{ dump_job_create_url }}"
        hx-get="{{ dump_job_create_url }}"
-       hx-target="#jobCreateModal"
+       hx-target="#job-modal-body"
        hx-swap="innerHTML"
+       hx-push-url="false"
+       hx-boost="false"
+       onclick="openModal('jobcreate')"
        class="btn btn-primary btn-sm mt-4">
       <i class="bi bi-plus-circle"></i> Criar primeiro dump
     </a>

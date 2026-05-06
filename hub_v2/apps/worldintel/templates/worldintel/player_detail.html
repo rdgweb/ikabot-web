@@ -48,12 +48,14 @@
           <i class="bi bi-arrow-left text-[10px]"></i> Voltar
         </a>
         {% if player.owner_id and selected_game_account %}
-        {% url 'jobs:job-form' as send_msg_url %}
+        {% url 'jobs:job-create' as send_msg_url %}
         <a href="{{ send_msg_url }}?ga={{ selected_game_account.pk }}&action=31&input_receiver_id={{ player.owner_id }}&input_msg_type=50"
            hx-get="{{ send_msg_url }}?ga={{ selected_game_account.pk }}&action=31&input_receiver_id={{ player.owner_id }}&input_msg_type=50"
-           hx-target="#jobCreateModal"
+           hx-target="#job-modal-body"
            hx-swap="innerHTML"
            hx-push-url="false"
+           hx-boost="false"
+           onclick="openModal('jobcreate')"
            class="btn btn-secondary btn-sm">
           <i class="bi bi-send text-[10px]"></i> Enviar Mensagem
         </a>
@@ -61,8 +63,11 @@
         {% if monitor_url %}
         <a href="{{ monitor_url }}"
            hx-get="{{ monitor_url }}"
-           hx-target="#jobCreateModal"
+           hx-target="#job-modal-body"
            hx-swap="innerHTML"
+           hx-push-url="false"
+           hx-boost="false"
+           onclick="openModal('jobcreate')"
            class="btn btn-primary btn-sm">
           <i class="bi bi-geo-fill text-[10px]"></i> Monitorar ilhas
         </a>

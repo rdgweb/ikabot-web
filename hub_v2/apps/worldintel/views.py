@@ -2,7 +2,7 @@ from urllib.parse import urlencode
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.paginator import Paginator
-from django.db.models import Count, Max, Min, Q
+from django.db.models import BigIntegerField, Count, ExpressionWrapper, F, Max, Min, Q
 from django.http import Http404
 from django.views.generic import TemplateView
 
@@ -120,6 +120,12 @@ class WorldPlayerListView(WorldIntelBaseView):
         has_scores = players_qs.exists()
 
         if has_scores:
+            players_qs = players_qs.annotate(
+                total_score=ExpressionWrapper(
+                    F("building_score") + F("research_score") + F("army_score"),
+                    output_field=BigIntegerField(),
+                )
+            )
             if q:
                 players_qs = players_qs.filter(
                     Q(owner_name__icontains=q) | Q(ally_tag__icontains=q)
@@ -127,6 +133,7 @@ class WorldPlayerListView(WorldIntelBaseView):
             sort = str(self.request.GET.get("sort") or "rank")
             order_map = {
                 "rank": "world_rank",
+                "total": "-total_score",
                 "building": "-building_score",
                 "army": "-army_score",
                 "research": "-research_score",
@@ -157,9 +164,24 @@ class WorldPlayerListView(WorldIntelBaseView):
         ctx["page_obj"] = page_obj
         ctx["has_scores"] = has_scores
         ctx["sort_options"] = [
-            ("Rank", "rank"), ("Construção", "building"), ("Exército", "army"),
+            ("Rank", "rank"), ("Pontos", "total"), ("Construção", "building"), ("Exército", "army"),
             ("Pesquisa", "research"), ("Cidades", "cities"), ("Nome", "name"),
         ]
+
+        # Actual city counts for this page (WorldDumpPlayer.city_count can be stale)
+        if has_scores and ctx["players"]:
+            page_owner_ids = [p.owner_id for p in ctx["players"] if p.owner_id]
+            if page_owner_ids:
+                actual_counts = dict(
+                    WorldDumpCity.objects.filter(
+                        dump=current_dump, owner_id__in=page_owner_ids, type="city"
+                    )
+                    .values("owner_id")
+                    .annotate(c=Count("id"))
+                    .values_list("owner_id", "c")
+                )
+                for player in ctx["players"]:
+                    player.actual_city_count = actual_counts.get(player.owner_id, player.city_count)
 
         # Vacation/inactive state sets for player list icons
         player_list = ctx["players"]
