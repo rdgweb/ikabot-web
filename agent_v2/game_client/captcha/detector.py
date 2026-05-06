@@ -20,7 +20,8 @@ CAPTCHA_INDICATORS = [
     "captchaNeeded",
     "showCaptcha",
     "captcha_challenge",
-    "Piracy_trainer_trainer",  # Piracy captcha variant
+    # "Piracy_trainer_trainer" removed — it's a JS class name in ALL piracy responses (false positive)
+    # Real piracy captcha uses "captchaNeeded" or "createCaptcha" in the JSON entries
 ]
 
 
