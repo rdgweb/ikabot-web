@@ -95,11 +95,8 @@ ACTIONS = {
             # city_id: needed by runner to get session/actionRequest
             {"key": "city_id", "type": FIELD_CITY_SELECT, "label": "Sua cidade", "multiple": False, "required": True,
              "help": "Cidade usada para abrir a sessão de jogo."},
-            # msg_type: friendly choice — treaties handled by Telegram, not here
-            {"key": "msg_type", "type": FIELD_CHOICE, "label": "Tipo", "required": True, "default": "50",
-             "choices": [
-                 ("50", "Mensagem"),
-             ]},
+            # msg_type: string — valid values are dynamic (50, 60, 77, 89, 100, 110, 115, 66c*)
+            {"key": "msg_type", "type": FIELD_STR, "label": "Tipo", "required": True, "default": "50"},
             # content: main textarea
             {"key": "content", "type": FIELD_STR, "label": "Mensagem", "required": True,
              "textarea": True, "rows": 5, "default": ""},
