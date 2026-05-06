@@ -587,21 +587,13 @@ class GameClient(IslandActions):
     def send_diplomacy_message(
         self,
         receiver_id: int | str,
-        content: str,
+        content: str = "",
         reply_to: int | str | None = None,
+        msg_type: int | str = 50,
     ) -> dict[str, Any]:
-        """Send a regular message or reply to an existing one.
-
-        Args:
-            receiver_id: Target player ID.
-            content: Message text.
-            reply_to: Original message ID (optional, for replies).
-
-        Returns:
-            Parsed AJAX response.
-        """
+        """Send a message or diplomatic proposal to another player."""
         action = DiplomacySendAction(self)
-        return action.execute(receiver_id=receiver_id, msg_type=50, content=content, reply_to=reply_to)
+        return action.execute(receiver_id=receiver_id, msg_type=msg_type, content=content, reply_to=reply_to)
 
     def accept_treaty(self, receiver_id: int | str) -> dict[str, Any]:
         """Accept a cultural treaty offer.

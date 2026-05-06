@@ -3794,19 +3794,29 @@
       </div>
       {% endif %}
 
-      {# Cidade de origem (card picker) #}
+      {# Cidade de origem (card picker — padrão do sistema) #}
       <div>
         <label class="form-label text-xs mb-2 block">Sua cidade <span class="text-[var(--ik-bad)]">*</span></label>
-        <div class="grid grid-cols-2 gap-2">
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
           <template x-for="city in cities" :key="`sm-city-${city.id}`">
             <button type="button"
-                    class="rounded-xl border px-3 py-2.5 text-left text-xs transition-all"
+                    class="rounded-xl border p-3 text-left text-xs transition-all"
                     :class="String(selectedCityId) === String(city.id)
-                      ? 'ring-2 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.08)] font-semibold'
+                      ? 'ring-2 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.08)]'
                       : 'hover:border-[var(--ik-sea)]/40'"
-                    style="border-color: var(--ik-line);"
+                    style="border-color: var(--ik-line); background: var(--ik-paper);"
                     @click="selectedCityId = String(city.id)">
-              <span class="font-medium text-ink" x-text="city.name"></span>
+              <div class="flex items-start gap-2">
+                <img :src="city.city_art" alt="" class="w-6 h-6 object-contain flex-shrink-0 mt-0.5">
+                <div class="min-w-0">
+                  <div class="font-semibold text-ink truncate" x-text="city.name"></div>
+                  <div class="text-[10px] text-muted" x-text="city.x && city.y ? `[${city.x}:${city.y}]` : ''"></div>
+                  <div class="flex items-center gap-1 mt-0.5" x-show="city.tradegood_icon">
+                    <img :src="city.tradegood_icon" alt="" class="w-3 h-3 object-contain">
+                    <span class="text-[10px] text-muted" x-text="city.tradegood_name"></span>
+                  </div>
+                </div>
+              </div>
             </button>
           </template>
         </div>

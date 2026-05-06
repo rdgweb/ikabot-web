@@ -1275,16 +1275,19 @@ class JobFormView(LoginRequiredMixin, View):
 
         cities = _get_cities(ga)
         construction_cities = _construction_city_data(cities)
+        initial = _build_job_form_initial(request, ga, action_code)
         form = JobCreateForm(
             action_code=action_code,
             game_account=ga,
             cities=construction_cities,
-            initial=_build_job_form_initial(request, ga, action_code),
+            initial=initial,
         )
-
+        ctx = _job_form_context(form, action_meta, action_code, ga, construction_cities)
+        if action_code == 31:
+            ctx["diplomacy_msg_types"] = _diplomacy_msg_types(initial.get("receiver_id") or "")
         html = render_to_string(
             "jobs/partials/create_step_form.html",
-            _job_form_context(form, action_meta, action_code, ga, construction_cities),
+            ctx,
             request=request,
         )
         return HttpResponse(html)
