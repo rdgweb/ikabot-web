@@ -3890,28 +3890,39 @@
     <script>
     function piracyForm() {
       return {
-        cities: [],
-        missions: [],
+        cities: [], missions: [],
         selectedCityId: '',
         selectedMissionLevel: 7,
-        convertMode: 'all',
-        convertThreshold: 500,
+        scheduleByTime: false,
+        dayMissionLevel: 7, dayStartHour: 8, dayEndHour: 22,
+        nightMissionLevel: 13, nightStartHour: 22, nightEndHour: 8,
+        maxRandomWait: 0,
+        convertMode: 'all', convertPercent: 100, convertThreshold: 500,
         convertOptions: [
-          {val: 'never',     icon: 'bi-slash-circle',   label: 'Nunca converter',              desc: 'Acumula os pontos sem converter.'},
-          {val: 'all',       icon: 'bi-arrow-repeat',   label: 'Converter tudo após cada missão', desc: 'Converte todos os pontos acumulados a cada retorno.'},
-          {val: 'threshold', icon: 'bi-bar-chart-fill', label: 'Converter ao atingir mínimo', desc: 'Só converte quando atingir o mínimo configurado.'}
+          {val: 'never',     icon: 'bi-slash-circle',   label: 'Nunca converter',                  desc: 'Acumula os pontos sem converter.'},
+          {val: 'all',       icon: 'bi-arrow-repeat',   label: 'Converter tudo após cada missão',  desc: 'Converte todos os pontos acumulados a cada retorno.'},
+          {val: 'percent',   icon: 'bi-percent',        label: 'Converter X% dos pontos',          desc: 'Converte uma porcentagem dos pontos acumulados.'},
+          {val: 'threshold', icon: 'bi-bar-chart-fill', label: 'Converter ao atingir mínimo',      desc: 'Só converte quando atingir o mínimo configurado.'}
         ],
-        init(cityId, missionLevel, convertMode, convertThreshold) {
+        init(cityId, missionLevel, scheduleByTime, dayMissionLevel, dayStartHour, dayEndHour,
+             nightMissionLevel, nightStartHour, nightEndHour, maxRandomWait,
+             convertMode, convertPercent, convertThreshold) {
           this.cities = JSON.parse(document.getElementById('piracy-cities-data')?.textContent || '[]');
           this.missions = JSON.parse(document.getElementById('piracy-missions-data')?.textContent || '[]');
           this.selectedMissionLevel = parseInt(missionLevel) || 7;
+          this.scheduleByTime = !!scheduleByTime;
+          this.dayMissionLevel = parseInt(dayMissionLevel) || 7;
+          this.dayStartHour = parseInt(dayStartHour) || 8;
+          this.dayEndHour = parseInt(dayEndHour) || 22;
+          this.nightMissionLevel = parseInt(nightMissionLevel) || 13;
+          this.nightStartHour = parseInt(nightStartHour) || 22;
+          this.nightEndHour = parseInt(nightEndHour) || 8;
+          this.maxRandomWait = parseInt(maxRandomWait) || 0;
           this.convertMode = convertMode || 'all';
+          this.convertPercent = parseInt(convertPercent) || 100;
           this.convertThreshold = parseInt(convertThreshold) || 500;
-          if (cityId) {
-            this.selectedCityId = String(cityId);
-          } else if (this.cities.length) {
-            this.selectedCityId = String(this.cities[0].id);
-          }
+          if (cityId) { this.selectedCityId = String(cityId); }
+          else if (this.cities.length) { this.selectedCityId = String(this.cities[0].id); }
         },
         selectedCity() { return this.cities.find(c => String(c.id) === String(this.selectedCityId)) || null; },
         fortressLevel() { const c = this.selectedCity(); return c ? (c.fortress_level || 0) : 0; },
@@ -3919,17 +3930,41 @@
         selectedMission() { return this.missions.find(m => m.buildingLevel === this.selectedMissionLevel) || null; },
         selectCity(id) { this.selectedCityId = String(id || ''); },
         selectMission(level) { if (this.missionAvailable({buildingLevel: level})) this.selectedMissionLevel = level; },
+        selectDayMission(level) { this.dayMissionLevel = level; },
+        selectNightMission(level) { this.nightMissionLevel = level; },
         setConvertMode(val) { this.convertMode = val; },
       };
     }
     </script>
     <div class="space-y-4"
          x-data="piracyForm()"
-         x-init="init('{{ form.city_id.value|default:''|escapejs }}', {{ form.mission_level.value|default:7 }}, '{{ form.convert_mode.value|default:'all'|escapejs }}', {{ form.convert_threshold.value|default:500 }})">
+         x-init="init(
+           '{{ form.city_id.value|default:''|escapejs }}',
+           {{ form.mission_level.value|default:7 }},
+           {{ form.schedule_by_time.value|yesno:'true,false,false' }},
+           {{ form.day_mission_level.value|default:7 }},
+           {{ form.day_start_hour.value|default:8 }},
+           {{ form.day_end_hour.value|default:22 }},
+           {{ form.night_mission_level.value|default:13 }},
+           {{ form.night_start_hour.value|default:22 }},
+           {{ form.night_end_hour.value|default:8 }},
+           {{ form.max_random_wait.value|default:0 }},
+           '{{ form.convert_mode.value|default:'all'|escapejs }}',
+           {{ form.convert_percent.value|default:100 }},
+           {{ form.convert_threshold.value|default:500 }})">
 
       <input type="hidden" name="{{ form.city_id.html_name }}" x-model="selectedCityId">
       <input type="hidden" name="{{ form.mission_level.html_name }}" :value="selectedMissionLevel">
+      <input type="hidden" name="{{ form.schedule_by_time.html_name }}" :value="scheduleByTime ? 'true' : 'false'">
+      <input type="hidden" name="{{ form.day_mission_level.html_name }}" :value="dayMissionLevel">
+      <input type="hidden" name="{{ form.day_start_hour.html_name }}" :value="dayStartHour">
+      <input type="hidden" name="{{ form.day_end_hour.html_name }}" :value="dayEndHour">
+      <input type="hidden" name="{{ form.night_mission_level.html_name }}" :value="nightMissionLevel">
+      <input type="hidden" name="{{ form.night_start_hour.html_name }}" :value="nightStartHour">
+      <input type="hidden" name="{{ form.night_end_hour.html_name }}" :value="nightEndHour">
+      <input type="hidden" name="{{ form.max_random_wait.html_name }}" :value="maxRandomWait">
       <input type="hidden" name="{{ form.convert_mode.html_name }}" :value="convertMode">
+      <input type="hidden" name="{{ form.convert_percent.html_name }}" :value="convertPercent">
       <input type="hidden" name="{{ form.convert_threshold.html_name }}" :value="convertThreshold">
 
       {# Cidade — padrão de cards do sistema #}
@@ -3984,19 +4019,34 @@
 
       {# Missão #}
       <div class="card !p-4">
-        <label class="form-label text-xs mb-1 block"><i class="bi bi-ship text-sea mr-1"></i>Missão</label>
-        <p class="text-[10px] text-muted mb-3">Missões acima do nível da fortaleza ficam desabilitadas. O runner usa o máximo disponível se necessário.</p>
-        <div class="grid grid-cols-3 gap-2 sm:grid-cols-4 xl:grid-cols-5">
-          <template x-for="mission in missions" :key="mission.buildingLevel">
-            <button type="button"
-                    class="relative rounded-xl border p-2 text-center transition-all"
-                    :class="[
-                      !missionAvailable(mission) ? 'opacity-35 cursor-not-allowed' : 'hover:border-[var(--ik-sea)]/50',
-                      selectedMissionLevel === mission.buildingLevel ? 'ring-2 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.06)]' : ''
-                    ]"
-                    style="border-color: var(--ik-line); background: var(--ik-paper);"
-                    @click="selectMission(mission.buildingLevel)"
-                    :title="mission.name + ' — ' + mission.durationLabel">
+        <div class="flex items-center justify-between mb-3">
+          <label class="form-label text-xs"><i class="bi bi-ship text-sea mr-1"></i>Missão</label>
+          <label class="flex items-center gap-2 cursor-pointer select-none text-xs text-muted">
+            <span>Horário diferente dia/noite</span>
+            <div class="relative">
+              <input type="checkbox" class="sr-only peer" x-model="scheduleByTime">
+              <div class="w-9 h-5 rounded-full border transition-colors"
+                   :class="scheduleByTime ? 'bg-[var(--ik-sea)] border-[var(--ik-sea)]' : 'border-[var(--ik-line)] bg-[var(--ik-sand)]'"></div>
+              <div class="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                   :class="scheduleByTime ? 'translate-x-4' : 'translate-x-0'"></div>
+            </div>
+          </label>
+        </div>
+        <p class="text-[10px] text-muted mb-3">Missões acima do nível da fortaleza ficam desabilitadas.</p>
+
+        {# Modo simples #}
+        <div x-show="!scheduleByTime">
+          <div class="grid grid-cols-3 gap-2 sm:grid-cols-4 xl:grid-cols-5">
+            <template x-for="mission in missions" :key="'s-' + mission.buildingLevel">
+              <button type="button"
+                      class="relative rounded-xl border p-2 text-center transition-all"
+                      :class="[
+                        !missionAvailable(mission) ? 'opacity-35 cursor-not-allowed' : 'hover:border-[var(--ik-sea)]/50',
+                        selectedMissionLevel === mission.buildingLevel ? 'ring-2 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.06)]' : ''
+                      ]"
+                      style="border-color: var(--ik-line); background: var(--ik-paper);"
+                      @click="selectMission(mission.buildingLevel)"
+                      :title="mission.name + ' — ' + mission.durationLabel">
               <img :src="mission.pic" :alt="mission.name" class="h-10 w-10 object-contain mx-auto mb-1">
               <div class="text-[10px] font-semibold text-ink leading-tight" x-text="mission.name"></div>
               <div class="text-[9px] text-sea font-bold" x-text="mission.durationLabel"></div>
@@ -4008,6 +4058,78 @@
                  :class="selectedMissionLevel === mission.buildingLevel ? 'opacity-100' : 'opacity-0'"></i>
             </button>
           </template>
+        </div>
+        </div>{# end x-show simple #}
+
+        {# Modo dia/noite #}
+        <div x-show="scheduleByTime" class="space-y-4">
+          <div>
+            <div class="flex items-center gap-2 mb-2">
+              <i class="bi bi-sun-fill text-[var(--ik-gold)] text-xs"></i>
+              <span class="text-xs font-semibold text-ink">Missão de DIA</span>
+              <span class="text-[10px] text-muted">das</span>
+              <input type="number" min="0" max="23" x-model.number="dayStartHour" class="form-input !py-0.5 !text-xs w-14 text-center">
+              <span class="text-[10px] text-muted">h até</span>
+              <input type="number" min="0" max="23" x-model.number="dayEndHour" class="form-input !py-0.5 !text-xs w-14 text-center">
+              <span class="text-[10px] text-muted">h</span>
+            </div>
+            <div class="grid grid-cols-3 gap-1.5 sm:grid-cols-4 xl:grid-cols-5">
+              <template x-for="mission in missions" :key="'d-' + mission.buildingLevel">
+                <button type="button"
+                        class="relative rounded-xl border p-2 text-center transition-all"
+                        :class="[!missionAvailable(mission) ? 'opacity-35 cursor-not-allowed' : 'hover:border-[var(--ik-sea)]/50',
+                                 dayMissionLevel === mission.buildingLevel ? 'ring-2 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.06)]' : '']"
+                        style="border-color: var(--ik-line); background: var(--ik-paper);"
+                        @click="selectDayMission(mission.buildingLevel)">
+                  <img :src="mission.pic" :alt="mission.name" class="h-8 w-8 object-contain mx-auto mb-0.5">
+                  <div class="text-[9px] font-semibold text-ink leading-tight" x-text="mission.name"></div>
+                  <div class="text-[9px] text-sea font-bold" x-text="mission.durationLabel"></div>
+                  <i class="bi bi-check-circle-fill text-sea text-[10px] absolute top-1 right-1"
+                     :class="dayMissionLevel === mission.buildingLevel ? 'opacity-100' : 'opacity-0'"></i>
+                </button>
+              </template>
+            </div>
+          </div>
+          <div>
+            <div class="flex items-center gap-2 mb-2">
+              <i class="bi bi-moon-fill text-[var(--ik-sea)] text-xs"></i>
+              <span class="text-xs font-semibold text-ink">Missão de NOITE</span>
+              <span class="text-[10px] text-muted">das</span>
+              <input type="number" min="0" max="23" x-model.number="nightStartHour" class="form-input !py-0.5 !text-xs w-14 text-center">
+              <span class="text-[10px] text-muted">h até</span>
+              <input type="number" min="0" max="23" x-model.number="nightEndHour" class="form-input !py-0.5 !text-xs w-14 text-center">
+              <span class="text-[10px] text-muted">h</span>
+            </div>
+            <div class="grid grid-cols-3 gap-1.5 sm:grid-cols-4 xl:grid-cols-5">
+              <template x-for="mission in missions" :key="'n-' + mission.buildingLevel">
+                <button type="button"
+                        class="relative rounded-xl border p-2 text-center transition-all"
+                        :class="[!missionAvailable(mission) ? 'opacity-35 cursor-not-allowed' : 'hover:border-[var(--ik-sea)]/50',
+                                 nightMissionLevel === mission.buildingLevel ? 'ring-2 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.06)]' : '']"
+                        style="border-color: var(--ik-line); background: var(--ik-paper);"
+                        @click="selectNightMission(mission.buildingLevel)">
+                  <img :src="mission.pic" :alt="mission.name" class="h-8 w-8 object-contain mx-auto mb-0.5">
+                  <div class="text-[9px] font-semibold text-ink leading-tight" x-text="mission.name"></div>
+                  <div class="text-[9px] text-sea font-bold" x-text="mission.durationLabel"></div>
+                  <i class="bi bi-check-circle-fill text-sea text-[10px] absolute top-1 right-1"
+                     :class="nightMissionLevel === mission.buildingLevel ? 'opacity-100' : 'opacity-0'"></i>
+                </button>
+              </template>
+            </div>
+          </div>
+        </div>{# end x-show day/night #}
+      </div>
+
+      {# Espera aleatória #}
+      <div class="card !p-4">
+        <label class="form-label text-xs mb-1 block"><i class="bi bi-shuffle text-sea mr-1"></i>Espera aleatória</label>
+        <p class="text-[10px] text-muted mb-2">Aguarda um tempo aleatório antes de iniciar cada missão. Ajuda a evitar padrões detectáveis.</p>
+        <div class="flex items-center gap-3">
+          <input type="range" min="0" max="3600" step="30" x-model.number="maxRandomWait" class="flex-1 accent-[var(--ik-sea)]">
+          <div class="text-xs font-semibold text-ink w-20 text-right" x-text="maxRandomWait === 0 ? 'Desativado' : 'até ' + maxRandomWait + 's'"></div>
+        </div>
+        <div class="flex justify-between text-[10px] text-muted mt-1">
+          <span>0 (desativado)</span><span>30 min</span><span>1 hora</span>
         </div>
       </div>
 
@@ -4033,6 +4155,11 @@
               </div>
             </label>
           </template>
+        </div>
+        <div x-show="convertMode === 'percent'" class="mt-2 flex items-center gap-2">
+          <label class="text-xs font-semibold text-ink flex-shrink-0">Percentual:</label>
+          <input type="number" min="1" max="100" x-model.number="convertPercent" class="form-input !py-1 !text-xs w-20" placeholder="100">
+          <span class="text-xs text-muted">% dos pontos acumulados</span>
         </div>
         <div x-show="convertMode === 'threshold'" class="mt-2 flex items-center gap-2">
           <label class="text-xs font-semibold text-ink flex-shrink-0">Mínimo de pontos:</label>

@@ -9,6 +9,9 @@ Action codes:
 from __future__ import annotations
 
 import logging
+import random
+import time
+from datetime import datetime
 from typing import Any
 
 from core.runner_registry import register_runner
@@ -36,19 +39,34 @@ MISSION_BUFFER = 60               # seconds of extra buffer after mission comple
 COLLECT_INTERVAL = 8 * 3600       # 8 h — legacy collect runner interval
 
 
+def _mission_level_for_time(inputs: dict, now_hour: int) -> int:
+    """Return mission level based on current hour and day/night configuration."""
+    try:
+        day_start = int(inputs.get("day_start_hour") or 8)
+        day_end   = int(inputs.get("day_end_hour")   or 22)
+        day_level = int(inputs.get("day_mission_level") or 7)
+        night_level = int(inputs.get("night_mission_level") or 13)
+    except (ValueError, TypeError):
+        return 7
+
+    if day_start <= day_end:
+        is_day = day_start <= now_hour < day_end
+    else:
+        # wraps midnight (e.g. day_start=22, day_end=8)
+        is_day = now_hour >= day_start or now_hour < day_end
+
+    return day_level if is_day else night_level
+
+
 @register_runner(17)
 class PiracyMissionRunner(BaseRunner):
     """Send crew on a piracy mission from the pirate fortress.
 
     Recurring — reschedules to keep piracy running continuously.
-
-    Inputs:
-        city_id       (required) — ID of city with pirate fortress
-        mission_level (int, default=7) — buildingLevel of mission to run
-                      (1,3,5,7,9,11,13,15,17). Capped to fortress level.
-        auto_convert  (bool, default=True) — convert capture points to crew
-                      after each mission completes
     """
+
+    def _select_mission_by_time(self, inputs: dict) -> int:
+        return _mission_level_for_time(inputs, datetime.now().hour)
 
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
@@ -63,16 +81,31 @@ class PiracyMissionRunner(BaseRunner):
             self.log(jid, "error", "city_id obrigatorio para missao pirata")
             return RunnerResult(success=False, data={"error": "city_id_missing"})
 
+        # Mission level: schedule_by_time overrides simple mission_level
+        schedule_by_time = bool(inputs.get("schedule_by_time") or False)
+        if schedule_by_time:
+            mission_level = self._select_mission_by_time(inputs)
+        else:
+            try:
+                mission_level = int(inputs.get("mission_level") or 7)
+            except (ValueError, TypeError):
+                mission_level = 7
+
+        # Random wait before starting (anti-detection)
         try:
-            mission_level = int(inputs.get("mission_level") or 7)
+            max_random_wait = int(inputs.get("max_random_wait") or 0)
         except (ValueError, TypeError):
-            mission_level = 7
+            max_random_wait = 0
 
         convert_mode = str(inputs.get("convert_mode") or "all").strip().lower()
         try:
             convert_threshold = int(inputs.get("convert_threshold") or 0)
         except (ValueError, TypeError):
             convert_threshold = 0
+        try:
+            convert_percent = max(1, min(100, int(inputs.get("convert_percent") or 100)))
+        except (ValueError, TypeError):
+            convert_percent = 100
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=game_account_id)
         if not creds:
@@ -108,13 +141,22 @@ class PiracyMissionRunner(BaseRunner):
 
             # Step 3: ship in port — optionally convert, then start new mission
             # a) convert capture points to crew based on mode
-            should_convert = (
-                convert_mode == "all"
-                or (convert_mode == "threshold" and capture_points >= max(convert_threshold, 1))
-            )
-            if should_convert and capture_points > 0:
+            if convert_mode == "all":
+                should_convert = capture_points > 0
+                points_to_convert = capture_points
+            elif convert_mode == "percent":
+                should_convert = capture_points > 0
+                points_to_convert = int(capture_points * convert_percent / 100)
+            elif convert_mode == "threshold":
+                should_convert = capture_points >= max(convert_threshold, 1)
+                points_to_convert = capture_points
+            else:
+                should_convert = False
+                points_to_convert = 0
+
+            if should_convert and points_to_convert > 0:
                 conversion_factor = int(state.get("conversion_factor") or 10)
-                crew_to_create = capture_points // conversion_factor
+                crew_to_create = points_to_convert // conversion_factor
                 if crew_to_create > 0:
                     self.log(
                         jid,
@@ -152,7 +194,14 @@ class PiracyMissionRunner(BaseRunner):
                     f"(fortaleza nível {fortress_level})",
                 )
 
-            # c) start the mission
+            # c) optional random wait before mission (anti-detection)
+            if max_random_wait > 0:
+                wait_secs = random.randint(0, max_random_wait)
+                if wait_secs > 0:
+                    self.log(jid, "info", f"Aguardando {wait_secs}s antes de iniciar (espera aleatória)")
+                    time.sleep(wait_secs)
+
+            # d) start the mission
             self.log(jid, "info", f"Iniciando missão pirata nível {effective_level}")
             result = client.start_piracy_mission(city_id, effective_level)
 

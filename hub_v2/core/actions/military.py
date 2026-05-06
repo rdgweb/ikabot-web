@@ -81,16 +81,32 @@ ACTIONS = {
         "description": "Envia a tripulacao em missoes piratas automaticamente e converte pontos de captura em forca da tripulacao.",
         "inputs": [
             {"key": "city_id", "type": FIELD_CITY_SELECT, "label": "Cidade (com Fortaleza Pirata)", "multiple": False, "required": True},
+            # Missão simples (sem agendamento por horário)
             {"key": "mission_level", "type": FIELD_INT, "label": "Nível da missão", "required": True, "default": 7,
-             "help": "Nível da fortaleza da missão (1,3,5,7,9,11,13,15,17)."},
+             "help": "Nível de fortaleza para a missão (1,3,5,7,9,11,13,15,17). Ignorado se agendamento por horário estiver ativo."},
+            # Agendamento por horário (dia vs noite)
+            {"key": "schedule_by_time", "type": FIELD_BOOL, "label": "Agendar por horário (missão diferente de dia e de noite)", "required": False, "default": False},
+            {"key": "day_mission_level",  "type": FIELD_INT, "label": "Missão de dia — nível",           "required": False, "default": 7},
+            {"key": "day_start_hour",     "type": FIELD_INT, "label": "Missão de dia — hora início",     "required": False, "default": 8,  "min": 0, "max": 23},
+            {"key": "day_end_hour",       "type": FIELD_INT, "label": "Missão de dia — hora fim",        "required": False, "default": 22, "min": 0, "max": 23},
+            {"key": "night_mission_level","type": FIELD_INT, "label": "Missão de noite — nível",         "required": False, "default": 13},
+            {"key": "night_start_hour",   "type": FIELD_INT, "label": "Missão de noite — hora início",   "required": False, "default": 22, "min": 0, "max": 23},
+            {"key": "night_end_hour",     "type": FIELD_INT, "label": "Missão de noite — hora fim",      "required": False, "default": 8,  "min": 0, "max": 23},
+            # Espera aleatória (anti-detecção)
+            {"key": "max_random_wait", "type": FIELD_INT, "label": "Espera aleatória máxima (segundos)", "required": False, "default": 0,
+             "min": 0, "max": 3600, "help": "Aguarda um tempo aleatório de 0 a N segundos antes de iniciar cada missão."},
+            # Conversão de pontos
             {"key": "convert_mode", "type": FIELD_CHOICE, "label": "Conversão de pontos de captura", "required": True, "default": "all",
              "choices": [
                  ("never",     "Nunca converter"),
                  ("all",       "Converter tudo após cada missão"),
-                 ("threshold", "Converter quando atingir um mínimo de pontos"),
+                 ("percent",   "Converter X% dos pontos"),
+                 ("threshold", "Converter quando atingir mínimo de pontos"),
              ]},
+            {"key": "convert_percent",   "type": FIELD_INT, "label": "Percentual a converter (%)", "required": False, "default": 100,
+             "min": 1, "max": 100, "help": "Só usado no modo porcentagem."},
             {"key": "convert_threshold", "type": FIELD_INT, "label": "Mínimo de pontos para converter", "required": False, "default": 500,
-             "min": 1, "help": "Só usado quando modo = 'Converter quando atingir mínimo'."},
+             "min": 1, "help": "Só usado no modo mínimo."},
         ],
     },
     15: {

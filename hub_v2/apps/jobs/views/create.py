@@ -1113,7 +1113,13 @@ def _custom_field_names(action_code: int) -> list[str]:
     if int(action_code) == 31:
         return ["receiver_name", "receiver_id", "msg_type", "content", "city_id"]
     if int(action_code) == 17:
-        return ["city_id", "mission_level", "convert_mode", "convert_threshold"]
+        return [
+            "city_id", "mission_level",
+            "schedule_by_time", "day_mission_level", "day_start_hour", "day_end_hour",
+            "night_mission_level", "night_start_hour", "night_end_hour",
+            "max_random_wait",
+            "convert_mode", "convert_percent", "convert_threshold",
+        ]
     if int(action_code) == 9002:
         return ["city_id", "revolt_type"]
     if int(action_code) == 602:
