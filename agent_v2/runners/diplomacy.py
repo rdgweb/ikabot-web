@@ -251,16 +251,16 @@ class DiplomacySendRunner(BaseRunner):
             return RunnerResult(success=False, data={"error": "missing_game_account"})
 
         receiver_id = inputs.get("receiver_id")
-        msg_type = int(inputs.get("msg_type") or 50)
+        msg_type = str(inputs.get("msg_type") or "50").strip()
         content = inputs.get("content") or ""
         reply_to = inputs.get("reply_to")
 
         if not receiver_id:
             self.log(jid, "error", "receiver_id é obrigatório")
             return RunnerResult(success=False, data={"error": "receiver_id é obrigatório"})
-        if msg_type == 50 and not content:
-            self.log(jid, "error", "content é obrigatório para msg_type=50")
-            return RunnerResult(success=False, data={"error": "content é obrigatório para msg_type=50"})
+        if msg_type in ("50", "60") and not content:
+            self.log(jid, "error", f"content é obrigatório para msg_type={msg_type}")
+            return RunnerResult(success=False, data={"error": f"content é obrigatório para msg_type={msg_type}"})
 
         creds = self.resolve_credentials(aid, {}, game_account_id=ga_id)
         if not creds:
@@ -270,22 +270,23 @@ class DiplomacySendRunner(BaseRunner):
         try:
             client = self.get_or_login_game_client(jid, aid, ga_id, creds)
 
-            if msg_type == 79:
+            if msg_type == "79":
                 self.log(jid, "info", f"Aceitando tratado cultural de player_id={receiver_id}")
                 client.accept_treaty(receiver_id)
                 action_label = "Tratado aceito"
-            elif msg_type == 80:
+            elif msg_type == "80":
                 self.log(jid, "info", f"Recusando tratado cultural de player_id={receiver_id}")
                 client.decline_treaty(receiver_id)
                 action_label = "Tratado recusado"
             else:
-                self.log(jid, "info", f"Enviando mensagem para player_id={receiver_id} (replyTo={reply_to})")
+                self.log(jid, "info", f"Enviando msg para player_id={receiver_id} msg_type={msg_type}")
                 client.send_diplomacy_message(
                     receiver_id=receiver_id,
+                    msg_type=msg_type,
                     content=content,
                     reply_to=reply_to,
                 )
-                action_label = "Mensagem enviada"
+                action_label = f"Enviado (tipo {msg_type})"
 
             self.save_game_client(ga_id, client)
             self.log(jid, "info", action_label)

@@ -3759,39 +3759,74 @@
 
     {# ── Enviar Mensagem (action 31) ── #}
     {% if action_code == 31 %}
-    <div class="space-y-4 mb-4">
-      {# Para: header card #}
-      <div class="flex items-center gap-3 rounded-lg px-4 py-3" style="background: var(--ik-sand-light); border: 1px solid var(--ik-line);">
-        <i class="bi bi-person-fill text-sea text-base"></i>
+    {% load static %}
+    {{ cities|json_script:"send-msg-cities-data" }}
+    <div class="space-y-4 mb-4"
+         x-data="{
+           cities: JSON.parse(document.getElementById('send-msg-cities-data')?.textContent || '[]'),
+           selectedCityId: '{{ form.city_id.value|default:''|escapejs }}' || (JSON.parse(document.getElementById('send-msg-cities-data')?.textContent || '[]')[0]?.id || ''),
+           selectedCity() { return this.cities.find(c => String(c.id) === String(this.selectedCityId)); }
+         }">
+      <input type="hidden" name="{{ form.city_id.html_name }}" x-model="selectedCityId">
+      <input type="hidden" name="{{ form.receiver_id.html_name }}" value="{{ form.receiver_id.value|default:'' }}">
+      <input type="hidden" name="{{ form.receiver_name.html_name }}" value="{{ form.receiver_name.value|default:'' }}">
+
+      {# Para: card #}
+      <div class="flex items-center gap-3 rounded-xl px-4 py-3" style="background: var(--ik-sand-light); border: 1px solid var(--ik-line);">
+        <i class="bi bi-person-fill text-sea text-lg"></i>
         <div class="min-w-0 flex-1">
-          <div class="text-[10px] font-semibold uppercase tracking-wider text-muted mb-0.5">Para</div>
-          <div class="text-sm font-semibold text-ink truncate">
-            {% if form.receiver_name.value %}{{ form.receiver_name.value }}{% else %}Jogador ID {{ form.receiver_id.value }}{% endif %}
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-muted">Para</div>
+          <div class="text-sm font-bold text-ink truncate">
+            {% if form.receiver_name.value %}{{ form.receiver_name.value }}{% else %}ID {{ form.receiver_id.value }}{% endif %}
           </div>
-          {% if form.receiver_name.value and form.receiver_id.value %}
+          {% if form.receiver_id.value %}
           <div class="text-[10px] text-muted font-mono">ID: {{ form.receiver_id.value }}</div>
           {% endif %}
         </div>
+        <i class="bi bi-send-fill text-sea text-base flex-shrink-0"></i>
       </div>
-      {# hidden receiver_id + receiver_name #}
-      <input type="hidden" name="{{ form.receiver_id.html_name }}" value="{{ form.receiver_id.value|default:'' }}">
-      <input type="hidden" name="{{ form.receiver_name.html_name }}" value="{{ form.receiver_name.value|default:'' }}">
-      {# city_id — needed for game session #}
+
+      {# Cidade de origem (card picker) #}
       <div>
-        <label class="form-label text-xs">{{ form.city_id.label }} <span class="text-[var(--ik-bad)]">*</span></label>
-        {% if form.city_id.help_text %}<p class="text-[10px] text-muted mb-1">{{ form.city_id.help_text }}</p>{% endif %}
-        {{ form.city_id }}
+        <label class="form-label text-xs mb-2 block">Sua cidade <span class="text-[var(--ik-bad)]">*</span></label>
+        <div class="grid grid-cols-2 gap-2">
+          <template x-for="city in cities" :key="`sm-city-${city.id}`">
+            <button type="button"
+                    class="rounded-xl border px-3 py-2.5 text-left text-xs transition-all"
+                    :class="String(selectedCityId) === String(city.id)
+                      ? 'ring-2 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.08)] font-semibold'
+                      : 'hover:border-[var(--ik-sea)]/40'"
+                    style="border-color: var(--ik-line);"
+                    @click="selectedCityId = String(city.id)">
+              <span class="font-medium text-ink" x-text="city.name"></span>
+            </button>
+          </template>
+        </div>
         {% for error in form.city_id.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
       </div>
-      {# msg_type — hidden (always mensagem from UI) #}
-      <input type="hidden" name="{{ form.msg_type.html_name }}" value="{{ form.msg_type.value|default:'50' }}">
-      {# content — textarea #}
+
+      {# Tipo de mensagem #}
+      {% if diplomacy_msg_types %}
       <div>
-        <label class="form-label text-xs">{{ form.content.label }} <span class="text-[var(--ik-bad)]">*</span></label>
+        <label class="form-label text-xs mb-2 block">Tipo <span class="text-[var(--ik-bad)]">*</span></label>
+        <select name="{{ form.msg_type.html_name }}" class="form-input w-full text-sm">
+          {% for val, label in diplomacy_msg_types %}
+          <option value="{{ val }}" {% if form.msg_type.value == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        {% for error in form.msg_type.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+      </div>
+      {% else %}
+      <input type="hidden" name="{{ form.msg_type.html_name }}" value="{{ form.msg_type.value|default:'50' }}">
+      {% endif %}
+
+      {# Mensagem #}
+      <div>
+        <label class="form-label text-xs mb-1 block">Mensagem <span class="text-[var(--ik-bad)]">*</span></label>
         <textarea name="{{ form.content.html_name }}"
                   rows="5"
                   class="form-input w-full text-sm resize-y"
-                  placeholder="Escreva sua mensagem aqui..."
+                  placeholder="Escreva sua mensagem..."
                   required>{{ form.content.value|default:'' }}</textarea>
         {% for error in form.content.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
       </div>
