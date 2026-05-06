@@ -1732,7 +1732,10 @@
              });
            },
            visibleSourceCities() {
-             return this.filteredCities(this.buildingType, this.sourceQuery);
+             // maintain: any city can be a garrison target (training happens where barracks exist, then moves)
+             // distribute/once: only cities with barracks/shipyard can train
+             const bt = this.mode === 'maintain' ? '' : this.buildingType;
+             return this.filteredCities(bt, this.sourceQuery);
            },
            isSourceSelected(cityId) {
              return this.selectedCities.includes(String(cityId));
@@ -1957,7 +1960,7 @@
           <p class="mb-3 text-xs text-muted">Se informar uma cidade alvo, o sistema agenda a movimentação das unidades treinadas para lá após o tempo estimado de treino.</p>
           <input type="hidden" name="consolidate_city_id" x-model="consolidateCityId">
           <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[12rem] overflow-y-auto pr-1">
-            <template x-for="city in filteredCities(buildingType, '')" :key="'consolidate-' + city.id">
+            <template x-for="city in filteredCities('', '')" :key="'consolidate-' + city.id">
               <button type="button"
                 @click="consolidateCityId = String(consolidateCityId) === String(city.id) ? '' : String(city.id)"
                 class="rounded-[14px] border px-3 py-2 text-left text-xs transition-all"

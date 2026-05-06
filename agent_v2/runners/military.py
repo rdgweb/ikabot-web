@@ -645,20 +645,39 @@ class TrainUnitsRunner(BaseRunner):
             import time as _time
 
             # Phase 1: fetch current counts for all cities
+            # - Cities WITH barracks: use live barracks state (accurate, includes max_build)
+            # - Cities WITHOUT barracks: use snapshot military data (may be stale, but enables redistribution)
             city_current: dict[int, dict[str, int]] = {}
             city_target_map: dict[int, dict[str, int]] = {}
 
-            for city_id in city_ids:
-                meta = city_meta.get(city_id)
-                if not meta:
+            # Build snapshot garrison map for cities without barracks
+            snap_military = {}
+            for bc in ((snap or {}).get('military') or {}).get('by_city') or []:
+                if not isinstance(bc, dict):
                     continue
+                cid = _to_int(bc.get('city_id'))
+                if cid:
+                    troop_fleet = bc.get('fleet' if building_type == 'fleet' else 'troops') or {}
+                    # Convert name-keyed to catalog-id-keyed using catalog already built above
+                    name_to_id = {v: str(k) for k, v in catalog.items()} if catalog else {}
+                    snap_military[cid] = {name_to_id.get(k, k): _to_int(v) for k, v in troop_fleet.items()}
+
+            for city_id in city_ids:
                 target = dict(uniform_target)
                 if maintain_scope == 'selected_custom':
                     raw = city_targets_raw.get(str(city_id)) or {}
                     if raw:
                         target = {str(k): _to_int(v) for k, v in raw.items() if _to_int(v) > 0}
-                    # else: no custom target for this city -> keep uniform_target as fallback
                 city_target_map[city_id] = target
+
+                meta = city_meta.get(city_id)
+                if not meta:
+                    # No barracks: use snapshot data — can receive redistributed troops but can't train
+                    city_current[city_id] = snap_military.get(city_id, {})
+                    city_name = next((str(c.get('name') or city_id) for c in city_list if _to_int(c.get('id')) == city_id), str(city_id))
+                    self.log(jid, 'info', f'{city_name}: sem {bname} -- usando snapshot para calculo de deficit (so pode receber redistribuicao)')
+                    continue
+
                 try:
                     _time.sleep(0.4)
                     state = client.fetch_barracks_state(city_id, meta['position'], building_type)
@@ -668,7 +687,7 @@ class TrainUnitsRunner(BaseRunner):
                     }
                 except Exception as exc:
                     self.log(jid, 'warn', f'{meta.get("name", city_id)}: erro ao buscar estado -- {exc}')
-                    city_current[city_id] = {}
+                    city_current[city_id] = snap_military.get(city_id, {})
 
             # Phase 2: compute surplus and deficit per city per unit
             # surplus[city_id][uid_str] = how many above target
@@ -736,6 +755,10 @@ class TrainUnitsRunner(BaseRunner):
                 remaining_deficit = deficit.get(city_id, {})
                 meta = city_meta.get(city_id)
                 if not meta:
+                    # No barracks: deficit can only be resolved via redistribution, not training
+                    if remaining_deficit:
+                        city_name = next((str(c.get('name') or city_id) for c in city_list if _to_int(c.get('id')) == city_id), str(city_id))
+                        self.log(jid, 'warn', f'{city_name}: deficit restante sem {bname} para treinar -- necessario mais excesso em outras cidades')
                     continue
                 if not remaining_deficit:
                     at_target.append(city_id)
