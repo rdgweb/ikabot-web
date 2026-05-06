@@ -121,11 +121,15 @@ _REPLY_HREF_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Action buttons: view=sendIKMessage with msgType != 50 (treaty accept/decline etc.)
-# Groups: (msg_id, receiver_id, msg_type)
-# NOTE: for treaties both 79 (accept) and 80 (decline) appear in the same tbl_reply block
-_ACTION_BUTTON_RE = re.compile(
-    r'<tr[^>]+id="tbl_reply(\d+)"[\s\S]{0,3000}?'
+# Step 1: capture the tbl_reply block content
+# Groups: (msg_id, block_content)
+_REPLY_BLOCK_RE = re.compile(
+    r'<tr[^>]+id="tbl_reply(\d+)"([\s\S]{0,4000}?)</tr>',
+    re.IGNORECASE,
+)
+# Step 2: extract individual sendIKMessage links within a block
+# Groups: (receiver_id, msg_type)
+_ACTION_LINK_RE = re.compile(
     r'view=sendIKMessage&receiverId=(\d+)&msgType=(\d+)',
     re.IGNORECASE,
 )
@@ -257,20 +261,20 @@ class DiplomacyInboxAction(BaseAction):
             reply_receiver_map[m.group(1)] = m.group(2)
             reply_to_map[m.group(1)] = m.group(3)
 
-        # Action buttons: collect all non-regular actions per message
-        # Groups: (msg_id, receiver_id, msg_type) — href order: receiverId before msgType
-        # A single tbl_reply block can have multiple buttons (e.g. 79=accept, 80=decline)
+        # Action buttons: two-pass to capture ALL links per tbl_reply block
+        # (single-pass regex only captures the first link per block)
         actions_map: dict[str, list[dict]] = {}
-        for m in _ACTION_BUTTON_RE.finditer(html):
-            msg_id = m.group(1)
-            receiver_id = m.group(2)
-            msg_type = int(m.group(3))
-            if msg_id not in actions_map:
-                actions_map[msg_id] = []
-            # avoid duplicates
-            entry = {"msg_type": msg_type, "receiver_id": receiver_id}
-            if entry not in actions_map[msg_id]:
-                actions_map[msg_id].append(entry)
+        for block_m in _REPLY_BLOCK_RE.finditer(html):
+            msg_id = block_m.group(1)
+            block_content = block_m.group(2)
+            for link_m in _ACTION_LINK_RE.finditer(block_content):
+                receiver_id = link_m.group(1)
+                msg_type = int(link_m.group(2))
+                if msg_id not in actions_map:
+                    actions_map[msg_id] = []
+                entry = {"msg_type": msg_type, "receiver_id": receiver_id}
+                if entry not in actions_map[msg_id]:
+                    actions_map[msg_id].append(entry)
 
         messages = []
         for msg_id in msg_ids:

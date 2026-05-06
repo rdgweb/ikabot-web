@@ -60,18 +60,18 @@ def _create_diplomacy_send_job_from_uuid(
     actions = dm.actions  # list of {"msg_type": int, "receiver_id": str}
 
     if yes_no == "yes":
-        # Find the accept action (msg_type 79, or first available)
-        accept = next((a for a in actions if a["msg_type"] == 79), None) or (actions[0] if actions else None)
+        # Accept = action with lowest msg_type (79 for treaty, 102 for friend, etc.)
+        sorted_actions = sorted(actions, key=lambda a: a["msg_type"])
+        accept = sorted_actions[0] if sorted_actions else None
         if not accept:
             return False, "Esta mensagem não tem ação de aceitar disponível."
         msg_type = accept["msg_type"]
         receiver_id = accept["receiver_id"]
 
     elif yes_no == "no":
-        # Find the decline action (msg_type 80, or second available)
-        decline = next((a for a in actions if a["msg_type"] == 80), None)
-        if not decline and len(actions) > 1:
-            decline = actions[1]
+        # Decline = action with highest msg_type (80 for treaty, 103 for friend, etc.)
+        sorted_actions = sorted(actions, key=lambda a: a["msg_type"])
+        decline = sorted_actions[-1] if len(sorted_actions) > 1 else None
         if not decline:
             return False, "Esta mensagem não tem ação de recusar disponível."
         msg_type = decline["msg_type"]

@@ -90,7 +90,7 @@
               </form>
               <form hx-post="{% url 'diplomacy:message-action' msg.pk %}"
                     hx-swap="none" hx-push-url="false" class="inline"
-                    onsubmit="return confirm('Recusar este tratado?')">
+                    onsubmit="return confirm('Confirmar recusa?')">
                 {% csrf_token %}<input type="hidden" name="action" value="decline">
                 <button type="submit" class="btn btn-secondary btn-sm !px-2" title="Recusar">
                   <i class="bi bi-x-lg text-[var(--ik-bad)]"></i>

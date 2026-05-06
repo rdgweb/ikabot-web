@@ -3803,7 +3803,8 @@
       <div x-data="{ query: '' }">
         <label class="form-label text-xs mb-2 block">Sua cidade <span class="text-[var(--ik-bad)]">*</span></label>
         <input type="text" x-model="query" class="form-input w-full mb-2 text-xs" placeholder="Buscar por nome, recurso ou coordenada">
-        <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 max-h-64 overflow-y-auto p-0.5">
+        <div class="max-h-64 overflow-y-auto -mx-1 px-1">
+        <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 py-1 pb-1">
           <template x-for="city in cities.filter(c => !query || [c.name,c.tradegood_name,String(c.x),String(c.y)].join(' ').toLowerCase().includes(query.toLowerCase()))" :key="`sm-city-${city.id}`">
             <button type="button"
                     class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
@@ -3848,6 +3849,7 @@
               </div>
             </button>
           </template>
+        </div>
         </div>
         {% for error in form.city_id.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
       </div>
