@@ -999,6 +999,11 @@ def _diplomacy_msg_types(receiver_id: str) -> list[tuple[str, str]]:
     options = [
         ("50", "Mensagem"),
         ("60", "Proposta de Tratado Comercial"),
+        ("77", "Proposta de Tratado Cultural"),
+        ("89", "Candidatura para Aliança"),
+        ("100", "Pedido de Amizade"),
+        ("110", "Oferecer Partilha de IP"),
+        ("115", "Declarar Desafio de Guerra"),
     ]
     if receiver_id:
         cities = (

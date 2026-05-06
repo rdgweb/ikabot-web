@@ -258,9 +258,9 @@ class DiplomacySendRunner(BaseRunner):
         if not receiver_id:
             self.log(jid, "error", "receiver_id é obrigatório")
             return RunnerResult(success=False, data={"error": "receiver_id é obrigatório"})
-        if msg_type in ("50", "60") and not content:
-            self.log(jid, "error", f"content é obrigatório para msg_type={msg_type}")
-            return RunnerResult(success=False, data={"error": f"content é obrigatório para msg_type={msg_type}"})
+        if msg_type == "50" and not content:
+            self.log(jid, "error", "content é obrigatório para msg_type=50")
+            return RunnerResult(success=False, data={"error": "content é obrigatório para msg_type=50"})
 
         creds = self.resolve_credentials(aid, {}, game_account_id=ga_id)
         if not creds:

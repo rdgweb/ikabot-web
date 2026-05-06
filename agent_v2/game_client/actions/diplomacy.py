@@ -316,8 +316,8 @@ class DiplomacySendAction(BaseAction):
             Parsed AJAX response (usually empty for this old-format action).
         """
         msg_type_str = str(msg_type)
-        if msg_type_str in ("50", "60") and not content:
-            raise ActionError(f"content is required for msgType={msg_type_str}", action="Messages&function=send")
+        if msg_type_str == "50" and not content:
+            raise ActionError("content is required for msgType=50", action="Messages&function=send")
 
         params: dict[str, Any] = {
             "receiverId": str(receiver_id),
