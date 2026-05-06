@@ -595,6 +595,21 @@ class GameClient(IslandActions):
         action = DiplomacySendAction(self)
         return action.execute(receiver_id=receiver_id, msg_type=msg_type, content=content, reply_to=reply_to)
 
+    def get_piracy_state(self, city_id: int | str) -> dict:
+        """Get pirate fortress state for a city."""
+        from .actions.piracy import PiracyStateAction
+        return PiracyStateAction(self).execute(city_id=city_id)
+
+    def start_piracy_mission(self, city_id: int | str, building_level: int) -> dict:
+        """Start a piracy mission from the pirate fortress."""
+        from .actions.piracy import PiracyMissionAction
+        return PiracyMissionAction(self).execute(city_id=city_id, building_level=building_level)
+
+    def convert_piracy_points(self, city_id: int | str, crew_points: int) -> dict:
+        """Convert capture points to crew strength."""
+        from .actions.piracy import PiracyConvertAction
+        return PiracyConvertAction(self).execute(city_id=city_id, crew_points=crew_points)
+
     def accept_treaty(self, receiver_id: int | str) -> dict[str, Any]:
         """Accept a cultural treaty offer.
 
