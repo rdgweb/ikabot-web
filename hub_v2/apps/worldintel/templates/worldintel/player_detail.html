@@ -28,6 +28,11 @@
           {% if player.fight_count %}
           <span class="badge badge-danger"><i class="bi bi-exclamation-triangle-fill text-[10px]"></i> Em batalha</span>
           {% endif %}
+          {% if player.vacation_count %}
+          <span class="badge badge-warning">🌴 Férias</span>
+          {% elif player.inactive_count %}
+          <span class="badge badge-secondary">💤 Inativo</span>
+          {% endif %}
         </div>
         <p class="text-xs text-muted">
           ID: {{ player.owner_id|default:"—" }} ·
@@ -40,6 +45,17 @@
            class="btn btn-secondary btn-sm">
           <i class="bi bi-arrow-left text-[10px]"></i> Voltar
         </a>
+        {% if player.owner_id and selected_game_account %}
+        {% url 'jobs:job-form' as send_msg_url %}
+        <a href="{{ send_msg_url }}?ga={{ selected_game_account.pk }}&action=31&input_receiver_id={{ player.owner_id }}&input_msg_type=50"
+           hx-get="{{ send_msg_url }}?ga={{ selected_game_account.pk }}&action=31&input_receiver_id={{ player.owner_id }}&input_msg_type=50"
+           hx-target="#jobCreateModal"
+           hx-swap="innerHTML"
+           hx-push-url="false"
+           class="btn btn-secondary btn-sm">
+          <i class="bi bi-send text-[10px]"></i> Enviar Mensagem
+        </a>
+        {% endif %}
         {% if monitor_url %}
         <a href="{{ monitor_url }}"
            hx-get="{{ monitor_url }}"
@@ -112,7 +128,7 @@
               {% if city.in_fight %}
               <span class="badge badge-danger text-[10px]">⚔️ Batalha</span>
               {% elif city.state == "vacation" %}
-              <span class="badge badge-warning text-[10px]">Férias</span>
+              <span class="badge badge-warning text-[10px]">🌴 Férias</span>
               {% elif city.state %}
               <span class="badge badge-secondary text-[10px]">{{ city.state }}</span>
               {% else %}

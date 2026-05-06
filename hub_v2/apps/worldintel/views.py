@@ -91,7 +91,9 @@ class WorldPlayerListView(WorldIntelBaseView):
     active_tab = "players"
 
     def get_template_names(self):
-        if getattr(self.request, "htmx", False):
+        htmx = getattr(self.request, "htmx", None)
+        # Return partial only for inline HTMX updates (not boosted navigation)
+        if htmx and not getattr(htmx, "boosted", False):
             return ["worldintel/partials/players_table.html"]
         return [self.template_name]
 
@@ -152,6 +154,34 @@ class WorldPlayerListView(WorldIntelBaseView):
             ("Rank", "rank"), ("Construção", "building"), ("Exército", "army"),
             ("Pesquisa", "research"), ("Cidades", "cities"), ("Nome", "name"),
         ]
+
+        # Vacation/inactive state sets for player list icons
+        player_list = ctx["players"]
+        owner_ids = [
+            (p.owner_id if hasattr(p, "owner_id") else p.get("owner_id"))
+            for p in player_list
+        ]
+        owner_ids = [oid for oid in owner_ids if oid]
+        if owner_ids:
+            state_qs = (
+                WorldDumpCity.objects.filter(dump=current_dump, owner_id__in=owner_ids)
+                .exclude(state="")
+                .values("owner_id", "state")
+                .distinct()
+            )
+            vacation_ids = set()
+            inactive_ids = set()
+            for row in state_qs:
+                if row["state"] == "vacation":
+                    vacation_ids.add(row["owner_id"])
+                elif row["state"] == "inactive":
+                    inactive_ids.add(row["owner_id"])
+            ctx["vacation_owner_ids"] = vacation_ids
+            ctx["inactive_owner_ids"] = inactive_ids
+        else:
+            ctx["vacation_owner_ids"] = set()
+            ctx["inactive_owner_ids"] = set()
+
         # Base query string without sort for sort links
         qs_parts = []
         if current_dump:
@@ -212,6 +242,8 @@ class WorldPlayerDetailView(WorldIntelBaseView):
             "city_count": len(city_list),
             "island_count": len(island_ids),
             "fight_count": sum(1 for city in city_list if city.in_fight),
+            "vacation_count": sum(1 for city in city_list if city.state == "vacation"),
+            "inactive_count": sum(1 for city in city_list if city.state == "inactive"),
             "score": player_score,
         }
         ctx["cities"] = city_list

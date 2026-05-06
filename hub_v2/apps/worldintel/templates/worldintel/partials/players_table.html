@@ -43,8 +43,12 @@
           <td class="py-1.5 px-3 text-right font-mono text-muted">{{ row.world_rank|intcomma }}</td>
           {% endif %}
           <td class="py-1.5 px-3">
-            <a href="{% url 'worldintel:player-detail' %}?dump={{ selected_dump.pk }}{% if selected_game_account %}&ga={{ selected_game_account.pk }}{% endif %}{% if row.owner_id %}&owner_id={{ row.owner_id|urlencode }}{% else %}&owner_name={{ row.owner_name|urlencode }}{% endif %}"
-               class="font-semibold text-ink hover:text-sea transition-colors">{{ row.owner_name|default:"Sem nome" }}</a>
+            <div class="flex items-center gap-1.5">
+              <a href="{% url 'worldintel:player-detail' %}?dump={{ selected_dump.pk }}{% if selected_game_account %}&ga={{ selected_game_account.pk }}{% endif %}{% if row.owner_id %}&owner_id={{ row.owner_id|urlencode }}{% else %}&owner_name={{ row.owner_name|urlencode }}{% endif %}"
+                 class="font-semibold text-ink hover:text-sea transition-colors">{{ row.owner_name|default:"Sem nome" }}</a>
+              {% if row.owner_id in vacation_owner_ids %}<span title="De férias">🌴</span>{% endif %}
+              {% if row.owner_id in inactive_owner_ids %}<span title="Inativo" class="text-muted text-[11px]">💤</span>{% endif %}
+            </div>
             {% if row.owner_id %}<div class="text-[10px] text-muted font-mono">{{ row.owner_id }}</div>{% endif %}
           </td>
           <td class="py-1.5 px-3 font-mono text-[11px] text-muted">
@@ -60,8 +64,22 @@
           <td class="py-1.5 px-3 text-right font-mono text-muted">{{ row.island_count|default:"—" }}</td>
           {% endif %}
           <td class="py-1.5 px-3 text-right">
-            <a href="{% url 'worldintel:player-detail' %}?dump={{ selected_dump.pk }}{% if selected_game_account %}&ga={{ selected_game_account.pk }}{% endif %}{% if row.owner_id %}&owner_id={{ row.owner_id|urlencode }}{% else %}&owner_name={{ row.owner_name|urlencode }}{% endif %}"
-               class="btn btn-secondary btn-sm !py-0.5 !px-2 text-[10px]">Ver</a>
+            <div class="flex items-center justify-end gap-1">
+              {% if row.owner_id and selected_game_account %}
+              {% url 'jobs:job-form' as new_job_url %}
+              <a href="{{ new_job_url }}?ga={{ selected_game_account.pk }}&action=31&input_receiver_id={{ row.owner_id }}&input_msg_type=50"
+                 hx-get="{{ new_job_url }}?ga={{ selected_game_account.pk }}&action=31&input_receiver_id={{ row.owner_id }}&input_msg_type=50"
+                 hx-target="#jobCreateModal"
+                 hx-swap="innerHTML"
+                 hx-push-url="false"
+                 title="Enviar mensagem"
+                 class="btn btn-secondary btn-sm !py-0.5 !px-2 text-[10px]">
+                <i class="bi bi-send"></i>
+              </a>
+              {% endif %}
+              <a href="{% url 'worldintel:player-detail' %}?dump={{ selected_dump.pk }}{% if selected_game_account %}&ga={{ selected_game_account.pk }}{% endif %}{% if row.owner_id %}&owner_id={{ row.owner_id|urlencode }}{% else %}&owner_name={{ row.owner_name|urlencode }}{% endif %}"
+                 class="btn btn-secondary btn-sm !py-0.5 !px-2 text-[10px]">Ver</a>
+            </div>
           </td>
         </tr>
         {% empty %}
