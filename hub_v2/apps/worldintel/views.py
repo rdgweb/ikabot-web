@@ -121,7 +121,7 @@ class WorldPlayerListView(WorldIntelBaseView):
 
         if has_scores:
             players_qs = players_qs.annotate(
-                total_score=ExpressionWrapper(
+                score_sum=ExpressionWrapper(
                     F("building_score") + F("research_score") + F("army_score"),
                     output_field=BigIntegerField(),
                 )
@@ -133,7 +133,7 @@ class WorldPlayerListView(WorldIntelBaseView):
             sort = str(self.request.GET.get("sort") or "rank")
             order_map = {
                 "rank": "world_rank",
-                "total": "-total_score",
+                "total": "-score_sum",
                 "building": "-building_score",
                 "army": "-army_score",
                 "research": "-research_score",

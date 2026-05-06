@@ -64,7 +64,7 @@
             {{ row.actual_city_count|default:row.city_count|intcomma }}
           </td>
           {% if has_scores %}
-          <td class="py-1.5 px-3 text-right font-mono font-bold text-sea">{{ row.total_score|intcomma }}</td>
+          <td class="py-1.5 px-3 text-right font-mono font-bold text-sea">{{ row.score_sum|default:row.total_score|intcomma }}</td>
           <td class="py-1.5 px-3 text-right font-mono text-muted">{{ row.building_score|intcomma }}</td>
           <td class="py-1.5 px-3 text-right font-mono text-muted">{{ row.research_score|intcomma }}</td>
           <td class="py-1.5 px-3 text-right font-mono text-muted">{{ row.army_score|intcomma }}</td>
