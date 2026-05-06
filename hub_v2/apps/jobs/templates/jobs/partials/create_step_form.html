@@ -3887,250 +3887,137 @@
     {% if action_code == 17 %}
     {{ piracy_missions|json_script:"piracy-missions-data" }}
     {{ piracy_cities|json_script:"piracy-cities-data" }}
-    <div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_40px_rgba(0,80,140,0.10)]"
-         style="border-color: rgba(79,134,185,0.28); background:
-           radial-gradient(900px 280px at 0% 0%, rgba(79,134,185,0.10), transparent 60%),
-           radial-gradient(760px 280px at 100% 100%, rgba(201,156,78,0.10), transparent 60%),
-           linear-gradient(180deg, rgba(248,251,255,0.98), rgba(241,246,253,0.94));"
-         x-data="{
-           cities: JSON.parse(document.getElementById('piracy-cities-data')?.textContent || '[]'),
-           missions: JSON.parse(document.getElementById('piracy-missions-data')?.textContent || '[]'),
-           selectedCityId: '{{ form.city_id.value|default:''|escapejs }}',
-           selectedMissionLevel: parseInt('{{ form.mission_level.value|default:'7'|escapejs }}') || 7,
-           convertMode: '{{ form.convert_mode.value|default:'all'|escapejs }}',
-           convertThreshold: parseInt('{{ form.convert_threshold.value|default:'500'|escapejs }}') || 500,
-           selectedCity() {
-             return this.cities.find(c => String(c.id) === String(this.selectedCityId)) || null;
-           },
-           fortressLevel() {
-             const city = this.selectedCity();
-             return city ? (city.fortress_level || 0) : 0;
-           },
-           missionAvailable(mission) {
-             const fl = this.fortressLevel();
-             return fl === 0 || mission.buildingLevel <= fl;
-           },
-           selectedMission() {
-             return this.missions.find(m => m.buildingLevel === this.selectedMissionLevel) || null;
-           },
-           selectCity(cityId) {
-             this.selectedCityId = String(cityId || '');
-           },
-           selectMission(level) {
-             if (this.missionAvailable({buildingLevel: level})) this.selectedMissionLevel = level;
-           },
-         }"
-         x-init="if (!selectedCityId && cities.length) { selectCity(String(cities[0].id)); }"
+    <script>
+    function piracyForm() {
+      return {
+        cities: [],
+        missions: [],
+        selectedCityId: '',
+        selectedMissionLevel: 7,
+        convertMode: 'all',
+        convertThreshold: 500,
+        convertOptions: [
+          {val: 'never',     icon: 'bi-slash-circle',   label: 'Nunca converter',              desc: 'Acumula os pontos sem converter.'},
+          {val: 'all',       icon: 'bi-arrow-repeat',   label: 'Converter tudo após cada missão', desc: 'Converte todos os pontos acumulados a cada retorno.'},
+          {val: 'threshold', icon: 'bi-bar-chart-fill', label: 'Converter ao atingir mínimo', desc: 'Só converte quando atingir o mínimo configurado.'}
+        ],
+        init(cityId, missionLevel, convertMode, convertThreshold) {
+          this.cities = JSON.parse(document.getElementById('piracy-cities-data')?.textContent || '[]');
+          this.missions = JSON.parse(document.getElementById('piracy-missions-data')?.textContent || '[]');
+          this.selectedMissionLevel = parseInt(missionLevel) || 7;
+          this.convertMode = convertMode || 'all';
+          this.convertThreshold = parseInt(convertThreshold) || 500;
+          if (cityId) {
+            this.selectedCityId = String(cityId);
+          } else if (this.cities.length) {
+            this.selectedCityId = String(this.cities[0].id);
+          }
+        },
+        selectedCity() { return this.cities.find(c => String(c.id) === String(this.selectedCityId)) || null; },
+        fortressLevel() { const c = this.selectedCity(); return c ? (c.fortress_level || 0) : 0; },
+        missionAvailable(m) { const fl = this.fortressLevel(); return fl === 0 || m.buildingLevel <= fl; },
+        selectedMission() { return this.missions.find(m => m.buildingLevel === this.selectedMissionLevel) || null; },
+        selectCity(id) { this.selectedCityId = String(id || ''); },
+        selectMission(level) { if (this.missionAvailable({buildingLevel: level})) this.selectedMissionLevel = level; },
+        setConvertMode(val) { this.convertMode = val; },
+      };
+    }
+    </script>
+    <div class="space-y-4"
+         x-data="piracyForm()"
+         x-init="init('{{ form.city_id.value|default:''|escapejs }}', {{ form.mission_level.value|default:7 }}, '{{ form.convert_mode.value|default:'all'|escapejs }}', {{ form.convert_threshold.value|default:500 }})">
 
       <input type="hidden" name="{{ form.city_id.html_name }}" x-model="selectedCityId">
       <input type="hidden" name="{{ form.mission_level.html_name }}" :value="selectedMissionLevel">
       <input type="hidden" name="{{ form.convert_mode.html_name }}" :value="convertMode">
       <input type="hidden" name="{{ form.convert_threshold.html_name }}" :value="convertThreshold">
 
-      {# Header #}
-      <div class="border-b px-5 py-5 md:px-6"
-           style="border-color: rgba(79,134,185,0.22); background: linear-gradient(180deg, rgba(255,255,255,0.60), rgba(255,255,255,0));">
-        <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div class="max-w-2xl">
-            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Missao recorrente</div>
-            <h3 class="mt-2 text-xl font-bold text-ink flex items-center gap-2">
-              <i class="bi bi-flag-fill" style="color: var(--ik-sea);"></i>
-              Pirata Automatico
-            </h3>
-            <p class="mt-2 text-sm leading-relaxed text-muted">
-              Envia a tripulacao em missoes piratas automaticamente e converte pontos de captura em forca da tripulacao. O runner reagenda apos cada missao.
-            </p>
-          </div>
-          <div class="rounded-2xl border px-4 py-3 md:min-w-[17rem]"
-               style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.82);">
-            <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Resumo</div>
-            <template x-if="selectedCity() && selectedMission()">
-              <div class="mt-2 space-y-1.5">
-                <div class="text-sm font-semibold text-ink" x-text="selectedCity().name"></div>
-                <div class="text-[11px] text-muted">
-                  <span x-text="selectedMission().name"></span>
-                  &nbsp;&middot;&nbsp;
-                  <span x-text="selectedMission().durationLabel"></span>
-                </div>
-                <div class="flex items-center gap-2 text-[11px]">
-                  <span class="font-semibold" style="color: var(--ik-gold);">
-                    <i class="bi bi-coin"></i> <span x-text="selectedMission().gold"></span> ouro
-                  </span>
-                  <span class="text-muted">&middot;</span>
-                  <span class="text-muted">
-                    <span x-text="selectedMission().capturePoints"></span> pts
-                  </span>
-                </div>
-                <div class="text-[11px] text-muted">
-                  <i class="bi bi-arrow-repeat"></i>
-                  <span x-text="convertMode === 'never' ? 'Sem conversão' : convertMode === 'all' ? 'Converter tudo' : 'Converter ao atingir ' + convertThreshold + ' pts'"></span>
-                </div>
+      {# Cidade #}
+      <div class="card !p-4">
+        <label class="form-label text-xs mb-2 block"><i class="bi bi-flag-fill text-sea mr-1"></i>Cidade (com Fortaleza Pirata) <span class="text-[var(--ik-bad)]">*</span></label>
+        {% if piracy_cities %}
+        <div class="grid grid-cols-1 gap-2 xl:grid-cols-2">
+          {% for city in piracy_cities %}
+          <button type="button"
+                  class="rounded-xl border p-3 text-left text-xs transition-all"
+                  :class="selectedCityId === '{{ city.id }}' ? 'ring-2 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.06)]' : 'hover:border-[var(--ik-sea)]/40'"
+                  style="border-color: var(--ik-line); background: var(--ik-paper);"
+                  @click="selectCity('{{ city.id }}')">
+            <div class="flex items-center gap-2">
+              <img src="{{ city.city_art }}" alt="" class="h-8 w-8 object-contain rounded flex-shrink-0">
+              <div class="min-w-0">
+                <div class="font-semibold text-ink truncate">{{ city.name }}</div>
+                <div class="text-[10px] text-muted">Fortaleza nív. {{ city.fortress_level }} · [{{ city.x }}:{{ city.y }}]</div>
               </div>
-            </template>
-            <template x-if="!selectedCity() || !selectedMission()">
-              <div class="mt-2 text-[11px] text-muted">Escolha uma cidade e uma missao.</div>
-            </template>
-          </div>
+              <i class="bi bi-check-circle-fill text-sea ml-auto flex-shrink-0"
+                 :class="selectedCityId === '{{ city.id }}' ? 'opacity-100' : 'opacity-0'"></i>
+            </div>
+          </button>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-sm text-muted">Nenhuma cidade com Fortaleza Pirata no snapshot. Execute um snapshot primeiro.</p>
+        {% endif %}
+      </div>
+
+      {# Missão #}
+      <div class="card !p-4">
+        <label class="form-label text-xs mb-1 block"><i class="bi bi-ship text-sea mr-1"></i>Missão</label>
+        <p class="text-[10px] text-muted mb-3">Missões acima do nível da fortaleza ficam desabilitadas. O runner usa o máximo disponível se necessário.</p>
+        <div class="grid grid-cols-3 gap-2 sm:grid-cols-4 xl:grid-cols-5">
+          <template x-for="mission in missions" :key="mission.buildingLevel">
+            <button type="button"
+                    class="relative rounded-xl border p-2 text-center transition-all"
+                    :class="[
+                      !missionAvailable(mission) ? 'opacity-35 cursor-not-allowed' : 'hover:border-[var(--ik-sea)]/50',
+                      selectedMissionLevel === mission.buildingLevel ? 'ring-2 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.06)]' : ''
+                    ]"
+                    style="border-color: var(--ik-line); background: var(--ik-paper);"
+                    @click="selectMission(mission.buildingLevel)"
+                    :title="mission.name + ' — ' + mission.durationLabel">
+              <img :src="mission.pic" :alt="mission.name" class="h-10 w-10 object-contain mx-auto mb-1">
+              <div class="text-[10px] font-semibold text-ink leading-tight" x-text="mission.name"></div>
+              <div class="text-[9px] text-sea font-bold" x-text="mission.durationLabel"></div>
+              <div class="text-[9px] text-muted mt-0.5">
+                <i class="bi bi-coin" style="color: var(--ik-gold);"></i> <span x-text="mission.gold"></span>
+                · <span x-text="mission.capturePoints"></span> pts
+              </div>
+              <i class="bi bi-check-circle-fill text-sea text-[10px] absolute top-1 right-1"
+                 :class="selectedMissionLevel === mission.buildingLevel ? 'opacity-100' : 'opacity-0'"></i>
+            </button>
+          </template>
         </div>
       </div>
 
-      <div class="px-5 py-5 md:px-6 space-y-5">
-
-        {# City picker #}
-        <section class="rounded-[22px] border p-4"
-                 style="border-color: rgba(79,134,185,0.24); background: linear-gradient(180deg, rgba(79,134,185,0.06), rgba(255,255,255,0.82));">
-          <div class="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Cidade</div>
-              <div class="mt-1 text-sm font-semibold text-ink">Selecione a cidade com Fortaleza Pirata</div>
-            </div>
-            <div class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
-                 style="background: rgba(79,134,185,0.12); color: var(--ik-sea);">
-              <i class="bi bi-flag-fill text-base"></i>
-            </div>
-          </div>
-          {% if cities %}
-          <div class="grid grid-cols-1 gap-2 xl:grid-cols-2">
-            {% for city in cities %}
-            <button type="button"
-                    class="group overflow-hidden rounded-[18px] border text-left transition-all duration-150 hover:translate-y-[-1px] hover:shadow-[0_10px_24px_rgba(79,134,185,0.10)]"
-                    :class="selectedCityId === '{{ city.id|stringformat:'s'|escapejs }}' ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_10px_26px_rgba(79,134,185,0.18)]' : ''"
-                    :style="selectedCityId === '{{ city.id|stringformat:'s'|escapejs }}'
-                      ? 'border-color: rgba(79,134,185,0.62); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.92));'
-                      : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'"
-                    @click="selectCity('{{ city.id|stringformat:'s'|escapejs }}')">
-              <div class="flex items-center gap-3 px-3 py-2.5">
-                <div class="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-xl border"
-                     style="border-color: rgba(219,201,167,0.6);">
-                  <img src="{{ city.city_art }}" alt="" class="h-full w-full object-cover">
-                </div>
-                <div class="min-w-0 flex-1">
-                  <div class="truncate text-sm font-semibold text-ink">{{ city.name }}</div>
-                  <div class="mt-0.5 flex items-center gap-1 text-[10px] text-muted">
-                    {% if city.tradegood_icon %}<img src="{{ city.tradegood_icon }}" alt="" class="h-3 w-3 object-contain">{% endif %}
-                    <span>{{ city.tradegood_name }}</span>
-                    <span>&middot;</span>
-                    <span>{{ city.x }},{{ city.y }}</span>
-                  </div>
-                </div>
-                <div class="flex-shrink-0 opacity-0 transition-opacity duration-100"
-                     :class="selectedCityId === '{{ city.id|stringformat:'s'|escapejs }}' ? 'opacity-100' : 'group-hover:opacity-40'">
-                  <i class="bi bi-check-circle-fill text-sm" style="color: var(--ik-sea);"></i>
-                </div>
+      {# Conversão de pontos #}
+      <div class="card !p-4">
+        <label class="form-label text-xs mb-2 block"><i class="bi bi-arrow-repeat text-sea mr-1"></i>Converter pontos de captura em tripulação?</label>
+        <div class="space-y-1.5">
+          <template x-for="opt in convertOptions" :key="opt.val">
+            <label class="flex items-center gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-all"
+                   :class="convertMode === opt.val ? 'border-[var(--ik-sea)] bg-[rgba(79,134,185,0.05)]' : 'border-[var(--ik-line)] hover:border-[var(--ik-sea)]/40'"
+                   @click.prevent="setConvertMode(opt.val)">
+              <div class="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
+                   :class="convertMode === opt.val ? 'bg-[var(--ik-sea)] text-white' : 'bg-[var(--ik-sand)] text-muted'">
+                <i class="bi text-[10px]" :class="opt.icon"></i>
               </div>
-            </button>
-            {% endfor %}
-          </div>
-          {% else %}
-          <p class="text-sm text-muted py-2">Nenhuma cidade encontrada no snapshot. Sincronize a conta primeiro.</p>
-          {% endif %}
-        </section>
-
-        {# Mission picker #}
-        <section class="rounded-[22px] border p-4"
-                 style="border-color: rgba(79,134,185,0.24); background: linear-gradient(180deg, rgba(79,134,185,0.04), rgba(255,255,255,0.80));">
-          <div class="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Missao</div>
-              <div class="mt-1 text-sm font-semibold text-ink">Escolha o nivel de missao a executar</div>
-            </div>
-            <div class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
-                 style="background: rgba(79,134,185,0.12); color: var(--ik-sea);">
-              <i class="bi bi-ship text-base"></i>
-            </div>
-          </div>
-          <p class="mb-3 text-[11px] text-muted">
-            O nivel selecionado sera usado se a fortaleza ja tiver esse nivel. Caso a fortaleza ainda nao suporte, o runner usa o maximo disponivel.
-          </p>
-          <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3">
-            <template x-for="mission in missions" :key="mission.buildingLevel">
-              <button type="button"
-                      class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
-                      :class="[
-                        !missionAvailable(mission) ? 'opacity-40 cursor-not-allowed' : 'hover:translate-y-[-1px]',
-                        selectedMissionLevel === mission.buildingLevel
-                          ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_10px_26px_rgba(79,134,185,0.18)]'
-                          : 'hover:shadow-[0_6px_18px_rgba(79,134,185,0.08)]'
-                      ]"
-                      :style="selectedMissionLevel === mission.buildingLevel
-                        ? 'border-color: rgba(79,134,185,0.62); background: linear-gradient(180deg, rgba(79,134,185,0.12), rgba(255,255,255,0.94));'
-                        : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'"
-                      @click="selectMission(mission.buildingLevel)"
-                      :title="!missionAvailable(mission) ? 'Fortaleza nível ' + mission.buildingLevel + '+ necessária' : mission.name">
-                <div class="flex flex-col items-center gap-1.5 px-2 py-3">
-                  <div class="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-xl border"
-                       style="border-color: rgba(79,134,185,0.18); background: rgba(79,134,185,0.05);">
-                    <img :src="mission.pic"
-                         :alt="mission.name"
-                         class="h-full w-full object-contain p-1">
-                  </div>
-                  <div class="w-full text-center">
-                    <div class="text-xs font-bold text-ink leading-tight" x-text="mission.name"></div>
-                    <div class="mt-0.5 text-[10px] font-semibold" style="color: var(--ik-sea);" x-text="mission.durationLabel"></div>
-                  </div>
-                  <div class="flex w-full items-center justify-center gap-2 text-[10px]">
-                    <span style="color: var(--ik-gold);">
-                      <i class="bi bi-coin"></i> <span x-text="mission.gold"></span>
-                    </span>
-                    <span class="text-muted">
-                      <i class="bi bi-star-fill text-[8px]"></i> <span x-text="mission.capturePoints"></span>
-                    </span>
-                  </div>
-                  <div class="text-[9px] text-muted">
-                    Fortaleza niv. <span x-text="mission.buildingLevel"></span>+
-                  </div>
-                </div>
-                <div class="absolute right-1.5 top-1.5 opacity-0 transition-opacity duration-100"
-                     :class="selectedMissionLevel === mission.buildingLevel ? 'opacity-100' : 'group-hover:opacity-40'">
-                  <i class="bi bi-check-circle-fill text-xs" style="color: var(--ik-sea);"></i>
-                </div>
-              </button>
-            </template>
-          </div>
-        </section>
-
-        {# Conversão de pontos de captura #}
-        <section class="rounded-[22px] border p-4"
-                 style="border-color: rgba(79,134,185,0.20); background: rgba(255,255,255,0.70);">
-          <div class="mb-3">
-            <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Pontos de Captura</div>
-            <div class="mt-1 text-sm font-semibold text-ink">Quando converter em força da tripulação?</div>
-          </div>
-          <div class="space-y-2">
-            <template x-for="opt in [
-              {val: 'never',     icon: 'bi-slash-circle',    label: 'Nunca converter',                    desc: 'Acumula os pontos sem converter.'},
-              {val: 'all',       icon: 'bi-arrow-repeat',    label: 'Converter tudo após cada missão',    desc: 'Converte todos os pontos acumulados a cada retorno do navio.'},
-              {val: 'threshold', icon: 'bi-bar-chart-fill',  label: 'Converter ao atingir mínimo',        desc: 'Só converte quando a quantidade de pontos atingir o mínimo configurado.'}
-            ]" :key="opt.val">
-              <label class="flex cursor-pointer items-center gap-3 rounded-[14px] border px-3 py-2.5 transition-all select-none"
-                     :style="convertMode === opt.val
-                       ? 'border-color: rgba(79,134,185,0.60); background: rgba(79,134,185,0.06);'
-                       : 'border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.70);'">
-                <input type="radio" class="sr-only" :value="opt.val" x-model="convertMode">
-                <div class="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center"
-                     :style="convertMode === opt.val ? 'background: var(--ik-sea); color: white;' : 'background: rgba(219,201,167,0.40); color: var(--ik-muted);'">
-                  <i class="bi text-xs" :class="opt.icon"></i>
-                </div>
-                <div class="min-w-0 flex-1">
-                  <div class="text-xs font-semibold text-ink" x-text="opt.label"></div>
-                  <div class="text-[10px] text-muted" x-text="opt.desc"></div>
-                </div>
-                <div class="flex-shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center"
-                     :style="convertMode === opt.val ? 'border-color: var(--ik-sea);' : 'border-color: rgba(79,134,185,0.30);'">
-                  <div class="w-2 h-2 rounded-full transition-all"
-                       :style="convertMode === opt.val ? 'background: var(--ik-sea);' : 'background: transparent;'"></div>
-                </div>
-              </label>
-            </template>
-          </div>
-          <div x-show="convertMode === 'threshold'" x-transition class="mt-3 flex items-center gap-2">
-            <label class="text-xs font-semibold text-ink flex-shrink-0">Mínimo de pontos:</label>
-            <input type="number" min="1" x-model.number="convertThreshold"
-                   class="form-input !py-1 !text-xs w-28" placeholder="500">
-          </div>
-        </section>
-
+              <div class="min-w-0 flex-1">
+                <div class="text-xs font-semibold text-ink" x-text="opt.label"></div>
+                <div class="text-[10px] text-muted" x-text="opt.desc"></div>
+              </div>
+              <div class="w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center"
+                   :class="convertMode === opt.val ? 'border-[var(--ik-sea)]' : 'border-[var(--ik-line)]'">
+                <div class="w-2 h-2 rounded-full" :class="convertMode === opt.val ? 'bg-[var(--ik-sea)]' : ''"></div>
+              </div>
+            </label>
+          </template>
+        </div>
+        <div x-show="convertMode === 'threshold'" class="mt-2 flex items-center gap-2">
+          <label class="text-xs font-semibold text-ink flex-shrink-0">Mínimo de pontos:</label>
+          <input type="number" min="1" x-model.number="convertThreshold" class="form-input !py-1 !text-xs w-28" placeholder="500">
+        </div>
       </div>
+
     </div>
     {% endif %}
 
