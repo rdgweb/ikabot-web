@@ -108,19 +108,22 @@ class PiracyStateAction(BaseAction):
             "activeTab": "tabBootyQuest",
             "backgroundView": "city",
             "currentCityId": str(city_id),
-        }
-        headers = dict(GAME_AJAX_HEADERS)
-        resp = self.client._request("GET", self.client._server_url, params={
-            **params,
             "actionRequest": self.client._action_request,
             "ajax": "1",
-        }, headers=headers)
-        # Update action request token from response
-        self.client._update_action_request(resp.text)
+        }
+        resp = self.client._request("GET", self.client._server_url, params=params, headers=dict(GAME_AJAX_HEADERS))
         try:
             data = resp.json()
         except Exception as exc:
             raise ActionError(f"Failed to parse piracy state response: {exc}", action="pirateFortress")
+
+        # Update action request token from response (same as _ajax_get does internally)
+        for entry in data:
+            if isinstance(entry, list) and entry[0] == "updateGlobalData" and isinstance(entry[1], dict):
+                new_ar = entry[1].get("actionRequest")
+                if new_ar:
+                    self.client._action_request = str(new_ar)
+                break
 
         js = _extract_js_params(data)
         if not js:
