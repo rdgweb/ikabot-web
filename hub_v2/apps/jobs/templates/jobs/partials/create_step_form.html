@@ -4023,11 +4023,11 @@
           <label class="form-label text-xs"><i class="bi bi-ship text-sea mr-1"></i>Missão</label>
           <button type="button" class="flex items-center gap-2 cursor-pointer select-none text-xs text-muted" @click="scheduleByTime = !scheduleByTime">
             <span :class="scheduleByTime ? 'text-ink font-semibold' : ''">Horário diferente dia/noite</span>
-            <div class="relative w-9 h-5 flex-shrink-0">
-              <div class="w-9 h-5 rounded-full transition-colors"
-                   :class="scheduleByTime ? 'bg-[var(--ik-sea)]' : 'bg-[var(--ik-sand)] border border-[var(--ik-line)]'"></div>
-              <div class="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform"
-                   :class="scheduleByTime ? 'translate-x-4' : 'translate-x-0.5'"></div>
+            <div class="relative w-10 h-6 rounded-full flex-shrink-0 transition-colors duration-200"
+                 :class="scheduleByTime ? 'bg-[var(--ik-sea)]' : 'bg-[var(--ik-sand)]'"
+                 style="border: 1px solid rgba(0,0,0,0.08);">
+              <div class="absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all duration-200"
+                   :class="scheduleByTime ? 'left-5' : 'left-1'"></div>
             </div>
           </button>
         </div>
