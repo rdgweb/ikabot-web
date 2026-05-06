@@ -1,6 +1,7 @@
 from urllib.parse import urlencode
 
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.paginator import Paginator
 from django.db.models import Count, Max, Min, Q
 from django.http import Http404
 from django.views.generic import TemplateView
@@ -104,12 +105,14 @@ class WorldPlayerListView(WorldIntelBaseView):
         current_dump = base["selected_dump"]
         q = str(self.request.GET.get("q") or "").strip()
         limit = min(250, max(25, int(str(self.request.GET.get("limit") or "100")) if str(self.request.GET.get("limit") or "").isdigit() else 100))
+        page_num = max(1, int(str(self.request.GET.get("page") or "1")) if str(self.request.GET.get("page") or "").isdigit() else 1)
         ctx["q"] = q
         ctx["limit"] = limit
         ctx["limit_choices"] = [50, 100, 150, 250]
         if not current_dump:
             ctx["players"] = []
             ctx["has_scores"] = False
+            ctx["page_obj"] = None
             return ctx
 
         # Try WorldDumpPlayer first (has scores)
@@ -131,24 +134,27 @@ class WorldPlayerListView(WorldIntelBaseView):
                 "name": "owner_name",
             }
             players_qs = players_qs.order_by(order_map.get(sort, "world_rank"))
-            ctx["players"] = list(players_qs[:limit])
             ctx["sort"] = sort
         else:
             # Fallback: aggregate from cities
-            cities = WorldDumpCity.objects.filter(dump=current_dump, type="city").select_related("island")
+            cities_qs = WorldDumpCity.objects.filter(dump=current_dump, type="city")
             if q:
-                cities = cities.filter(
+                cities_qs = cities_qs.filter(
                     Q(owner_name__icontains=q)
                     | Q(ally_tag__icontains=q)
                     | Q(name__icontains=q)
                 )
-            ctx["players"] = list(
-                cities.values("owner_id", "owner_name", "ally_tag")
+            players_qs = (
+                cities_qs.values("owner_id", "owner_name", "ally_tag")
                 .annotate(city_count=Count("id"), island_count=Count("island_id", distinct=True))
                 .order_by("-city_count", "owner_name")
-            )[:limit]
+            )
             ctx["sort"] = "cities"
 
+        paginator = Paginator(players_qs, limit)
+        page_obj = paginator.get_page(page_num)
+        ctx["players"] = list(page_obj.object_list)
+        ctx["page_obj"] = page_obj
         ctx["has_scores"] = has_scores
         ctx["sort_options"] = [
             ("Rank", "rank"), ("Construção", "building"), ("Exército", "army"),
@@ -171,18 +177,23 @@ class WorldPlayerListView(WorldIntelBaseView):
             )
             vacation_ids = set()
             inactive_ids = set()
+            inactive_banned_ids = set()
             for row in state_qs:
                 if row["state"] == "vacation":
                     vacation_ids.add(row["owner_id"])
+                elif row["state"] == "inactive_banned":
+                    inactive_banned_ids.add(row["owner_id"])
                 elif row["state"] == "inactive":
                     inactive_ids.add(row["owner_id"])
             ctx["vacation_owner_ids"] = vacation_ids
             ctx["inactive_owner_ids"] = inactive_ids
+            ctx["inactive_banned_owner_ids"] = inactive_banned_ids
         else:
             ctx["vacation_owner_ids"] = set()
             ctx["inactive_owner_ids"] = set()
+            ctx["inactive_banned_owner_ids"] = set()
 
-        # Base query string without sort for sort links
+        # Base query string (without sort/page) for sort links and pagination links
         qs_parts = []
         if current_dump:
             qs_parts.append(f"dump={current_dump.pk}")
@@ -243,6 +254,7 @@ class WorldPlayerDetailView(WorldIntelBaseView):
             "island_count": len(island_ids),
             "fight_count": sum(1 for city in city_list if city.in_fight),
             "vacation_count": sum(1 for city in city_list if city.state == "vacation"),
+            "inactive_banned_count": sum(1 for city in city_list if city.state == "inactive_banned"),
             "inactive_count": sum(1 for city in city_list if city.state == "inactive"),
             "score": player_score,
         }

@@ -30,6 +30,8 @@
           {% endif %}
           {% if player.vacation_count %}
           <span class="badge badge-warning">🌴 Férias</span>
+          {% elif player.inactive_banned_count %}
+          <span class="badge badge-danger">🚫 Banido</span>
           {% elif player.inactive_count %}
           <span class="badge badge-secondary">💤 Inativo</span>
           {% endif %}
@@ -129,6 +131,10 @@
               <span class="badge badge-danger text-[10px]">⚔️ Batalha</span>
               {% elif city.state == "vacation" %}
               <span class="badge badge-warning text-[10px]">🌴 Férias</span>
+              {% elif city.state == "inactive_banned" %}
+              <span class="badge badge-danger text-[10px]">🚫 Banido</span>
+              {% elif city.state == "inactive" %}
+              <span class="badge badge-secondary text-[10px]">💤 Inativo</span>
               {% elif city.state %}
               <span class="badge badge-secondary text-[10px]">{{ city.state }}</span>
               {% else %}
