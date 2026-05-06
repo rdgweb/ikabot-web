@@ -3761,13 +3761,18 @@
     {% if action_code == 31 %}
     {% load static %}
     {{ cities|json_script:"send-msg-cities-data" }}
+    {# Default city: form value if set, else first city #}
+    {% with first_city=cities|first %}
     <div class="space-y-4 mb-4"
          x-data="{
            cities: JSON.parse(document.getElementById('send-msg-cities-data')?.textContent || '[]'),
-           selectedCityId: '{{ form.city_id.value|default:''|escapejs }}' || (JSON.parse(document.getElementById('send-msg-cities-data')?.textContent || '[]')[0]?.id || ''),
+           selectedCityId: String('{{ form.city_id.value|default:''|escapejs }}' || '{{ first_city.id|default:''|escapejs }}'),
            selectedCity() { return this.cities.find(c => String(c.id) === String(this.selectedCityId)); }
          }">
-      <input type="hidden" name="{{ form.city_id.html_name }}" x-model="selectedCityId">
+      {# Static value fallback — works even if Alpine hasn't initialized yet #}
+      <input type="hidden" name="{{ form.city_id.html_name }}"
+             value="{{ form.city_id.value|default:first_city.id }}"
+             x-model="selectedCityId">
       <input type="hidden" name="{{ form.receiver_name.html_name }}" value="{{ form.receiver_name.value|default:'' }}">
 
       {# Para: card — read-only when pre-filled, input when opened manually #}
@@ -3849,6 +3854,7 @@
         {% for error in form.content.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
       </div>
     </div>
+    {% endwith %}
     {% endif %}
 
     {# Dynamic fields — 2 col layout for wider modal #}

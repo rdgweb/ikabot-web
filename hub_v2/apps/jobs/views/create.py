@@ -1408,9 +1408,14 @@ class JobSubmitView(LoginRequiredMixin, View):
         )
 
         if not form.is_valid():
+            ctx = _job_form_context(form, action_meta, action_code, ga, construction_cities)
+            if action_code == 31:
+                ctx["diplomacy_msg_types"] = _diplomacy_msg_types(
+                    request.POST.get("receiver_id") or ""
+                )
             html = render_to_string(
                 "jobs/partials/create_step_form.html",
-                _job_form_context(form, action_meta, action_code, ga, construction_cities),
+                ctx,
                 request=request,
             )
             return HttpResponse(html)
