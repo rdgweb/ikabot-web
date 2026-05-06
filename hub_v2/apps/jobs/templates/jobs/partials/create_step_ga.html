@@ -38,7 +38,7 @@
         <button type="button"
                 class="w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-all hover:border-[var(--ik-sea)]/50 hover:shadow-sm"
                 style="border-color: var(--ik-line); background: var(--ik-paper);"
-                hx-get="{% if action_code %}{% url 'jobs:job-form' %}?ga={{ ga.pk }}&action={{ action_code }}{% else %}{% url 'jobs:job-actions' %}?ga={{ ga.pk }}{% endif %}"
+                hx-get="{% if action_code %}{% url 'jobs:job-form' %}?ga={{ ga.pk }}&action={{ action_code }}{{ extra_qs }}{% else %}{% url 'jobs:job-actions' %}?ga={{ ga.pk }}{% endif %}"
                 hx-target="#job-modal-body"
                 hx-swap="innerHTML"
                 hx-push-url="false">

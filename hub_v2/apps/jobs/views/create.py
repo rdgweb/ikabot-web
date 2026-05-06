@@ -1185,12 +1185,16 @@ class JobCreateModalView(LoginRequiredMixin, View):
         return self._render_ga_picker(request, account_groups, action_code, action_meta)
 
     def _render_ga_picker(self, request, account_groups, action_code=None, action_meta=None):
+        from urllib.parse import urlencode
+        extra_params = {k: v for k, v in request.GET.items() if k not in ("ga", "action")}
+        extra_qs = ("&" + urlencode(extra_params)) if extra_params else ""
         html = render_to_string(
             "jobs/partials/create_step_ga.html",
             {
                 "account_groups": account_groups,
                 "action_code": action_code,
                 "action_meta": action_meta,
+                "extra_qs": extra_qs,
             },
             request=request,
         )
