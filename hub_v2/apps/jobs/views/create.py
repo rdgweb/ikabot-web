@@ -570,14 +570,33 @@ PIRACY_MISSIONS = [
 ]
 
 
-def _piracy_context(ga) -> dict:
-    """Build context for the Pirata Automatico (action 17) creation form."""
+def _piracy_context(ga, all_cities: list) -> dict:
+    """Build piracy form context — filters cities with pirate fortress and annotates fortress level."""
     from django.templatetags.static import static
+
     missions = [
         {**m, "pic": static(m["localPic"])}
         for m in PIRACY_MISSIONS
     ]
-    return {"piracy_missions": missions}
+
+    piracy_cities = []
+    for city in all_cities:
+        fortress_level = 0
+        for b in (city.get("buildings") or []):
+            bid = str(b.get("building") or "").lower()
+            if bid in ("piratefortress", "pirate_fortress", "piratefort"):
+                fortress_level = int(b.get("level") or 0)
+                break
+        if fortress_level > 0:
+            piracy_cities.append({
+                **city,
+                "fortress_level": fortress_level,
+            })
+
+    return {
+        "piracy_missions": missions,
+        "piracy_cities": piracy_cities,
+    }
 
 
 def _resolve_construction_new_slots(steps, cities):
@@ -1094,7 +1113,7 @@ def _custom_field_names(action_code: int) -> list[str]:
     if int(action_code) == 31:
         return ["receiver_name", "receiver_id", "msg_type", "content", "city_id"]
     if int(action_code) == 17:
-        return ["city_id", "mission_level", "auto_convert"]
+        return ["city_id", "mission_level", "convert_mode", "convert_threshold"]
     if int(action_code) == 9002:
         return ["city_id", "revolt_type"]
     if int(action_code) == 602:
@@ -1131,7 +1150,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities):
         "training_ui": _training_form_context(snapshot, cities),
     }
     if int(action_code) == 17:
-        ctx.update(_piracy_context(ga))
+        ctx.update(_piracy_context(ga, cities))
     return ctx
 
 

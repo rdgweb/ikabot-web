@@ -81,9 +81,16 @@ ACTIONS = {
         "description": "Envia a tripulacao em missoes piratas automaticamente e converte pontos de captura em forca da tripulacao.",
         "inputs": [
             {"key": "city_id", "type": FIELD_CITY_SELECT, "label": "Cidade (com Fortaleza Pirata)", "multiple": False, "required": True},
-            {"key": "mission_level", "type": FIELD_INT, "label": "Nivel da missao", "required": True, "default": 7,
-             "help": "Nivel minimo da fortaleza para a missao (1,3,5,7,9,11,13,15,17). 7=30min, 9=1h, 11=2h, 13=4h..."},
-            {"key": "auto_convert", "type": FIELD_BOOL, "label": "Converter pontos de captura em tripulacao automaticamente", "required": False, "default": True},
+            {"key": "mission_level", "type": FIELD_INT, "label": "Nível da missão", "required": True, "default": 7,
+             "help": "Nível da fortaleza da missão (1,3,5,7,9,11,13,15,17)."},
+            {"key": "convert_mode", "type": FIELD_CHOICE, "label": "Conversão de pontos de captura", "required": True, "default": "all",
+             "choices": [
+                 ("never",     "Nunca converter"),
+                 ("all",       "Converter tudo após cada missão"),
+                 ("threshold", "Converter quando atingir um mínimo de pontos"),
+             ]},
+            {"key": "convert_threshold", "type": FIELD_INT, "label": "Mínimo de pontos para converter", "required": False, "default": 500,
+             "min": 1, "help": "Só usado quando modo = 'Converter quando atingir mínimo'."},
         ],
     },
     15: {

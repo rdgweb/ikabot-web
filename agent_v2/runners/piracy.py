@@ -68,13 +68,11 @@ class PiracyMissionRunner(BaseRunner):
         except (ValueError, TypeError):
             mission_level = 7
 
-        auto_convert = inputs.get("auto_convert")
-        if auto_convert is None:
-            auto_convert = True
-        elif isinstance(auto_convert, str):
-            auto_convert = auto_convert.lower() not in ("false", "0", "no", "")
-        else:
-            auto_convert = bool(auto_convert)
+        convert_mode = str(inputs.get("convert_mode") or "all").strip().lower()
+        try:
+            convert_threshold = int(inputs.get("convert_threshold") or 0)
+        except (ValueError, TypeError):
+            convert_threshold = 0
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=game_account_id)
         if not creds:
@@ -109,8 +107,12 @@ class PiracyMissionRunner(BaseRunner):
                 return RunnerResult(success=True, reschedule_seconds=wait)
 
             # Step 3: ship in port — optionally convert, then start new mission
-            # a) auto-convert capture points to crew
-            if auto_convert and capture_points > 0:
+            # a) convert capture points to crew based on mode
+            should_convert = (
+                convert_mode == "all"
+                or (convert_mode == "threshold" and capture_points >= max(convert_threshold, 1))
+            )
+            if should_convert and capture_points > 0:
                 conversion_factor = int(state.get("conversion_factor") or 10)
                 crew_to_create = capture_points // conversion_factor
                 if crew_to_create > 0:
