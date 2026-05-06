@@ -4021,16 +4021,15 @@
       <div class="card !p-4">
         <div class="flex items-center justify-between mb-3">
           <label class="form-label text-xs"><i class="bi bi-ship text-sea mr-1"></i>Missão</label>
-          <label class="flex items-center gap-2 cursor-pointer select-none text-xs text-muted">
-            <span>Horário diferente dia/noite</span>
-            <div class="relative">
-              <input type="checkbox" class="sr-only peer" x-model="scheduleByTime">
-              <div class="w-9 h-5 rounded-full border transition-colors"
-                   :class="scheduleByTime ? 'bg-[var(--ik-sea)] border-[var(--ik-sea)]' : 'border-[var(--ik-line)] bg-[var(--ik-sand)]'"></div>
-              <div class="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
-                   :class="scheduleByTime ? 'translate-x-4' : 'translate-x-0'"></div>
+          <button type="button" class="flex items-center gap-2 cursor-pointer select-none text-xs text-muted" @click="scheduleByTime = !scheduleByTime">
+            <span :class="scheduleByTime ? 'text-ink font-semibold' : ''">Horário diferente dia/noite</span>
+            <div class="relative w-9 h-5 flex-shrink-0">
+              <div class="w-9 h-5 rounded-full transition-colors"
+                   :class="scheduleByTime ? 'bg-[var(--ik-sea)]' : 'bg-[var(--ik-sand)] border border-[var(--ik-line)]'"></div>
+              <div class="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform"
+                   :class="scheduleByTime ? 'translate-x-4' : 'translate-x-0.5'"></div>
             </div>
-          </label>
+          </button>
         </div>
         <p class="text-[10px] text-muted mb-3">Missões acima do nível da fortaleza ficam desabilitadas.</p>
 
