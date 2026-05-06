@@ -14,4 +14,14 @@ app.conf.update(
     broker_connection_retry=True,
     broker_connection_max_retries=None,  # retry indefinitely
     imports=("tasks",),
+    # Keep Redis TCP connection alive to prevent idle disconnects
+    broker_transport_options={
+        "socket_keepalive": True,
+        "socket_keepalive_options": {
+            "TCP_KEEPIDLE": 60,
+            "TCP_KEEPINTVL": 10,
+            "TCP_KEEPCNT": 5,
+        },
+        "health_check_interval": 25,
+    },
 )
