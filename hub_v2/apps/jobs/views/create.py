@@ -999,6 +999,8 @@ _DIPLOMACY_STATIC_TYPES = [
     ("77", "Proposta de Tratado Cultural"),
     ("89", "Candidatura para Aliança"),
     ("100", "Pedido de Amizade"),
+    ("102", "Aceitar Pedido de Amizade"),
+    ("103", "Recusar Pedido de Amizade"),
     ("110", "Oferecer Partilha de IP"),
     ("115", "Declarar Desafio de Guerra"),
 ]
