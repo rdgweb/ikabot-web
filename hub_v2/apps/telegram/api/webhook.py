@@ -146,6 +146,17 @@ class TelegramWebhookView(APIView):
             cq_message_text = cq_msg.get("text", "")
             cq_user_id = str(cq.get("from", {}).get("id", ""))
 
+            if cq_data.startswith("captcha_reply:"):
+                challenge_id = cq_data[14:]
+                _store_pending_captcha(cq_user_id, int(challenge_id))
+                answer_callback_query(cq_id)
+                send_message(
+                    cq_chat_id,
+                    f"🔑 <b>Digite o texto do captcha #{challenge_id}:</b>",
+                    reply_markup={"force_reply": True, "selective": True},
+                )
+                return Response({"status": "ok"})
+
             if cq_data.startswith("accept:") or cq_data.startswith("decline:") or cq_data.startswith("reply:"):
                 if cq_data.startswith("accept:"):
                     dm_uuid, yes_no = cq_data[7:], "yes"
@@ -201,6 +212,23 @@ class TelegramWebhookView(APIView):
 
         text_stripped = text.strip()
         user_id = str(from_user.get("id", ""))
+
+        # Check if user has a pending captcha waiting (after tapping 🔑 Digitar resposta)
+        pending_captcha_id = _get_pending_captcha(user_id)
+        if pending_captcha_id:
+            _clear_pending_captcha(user_id)
+            from apps.captcha.models import CaptchaChallenge
+            try:
+                challenge = CaptchaChallenge.objects.get(pk=int(pending_captcha_id))
+                answer = text_stripped.strip().upper()
+                if challenge.is_pending:
+                    challenge.mark_solved(answer, "telegram")
+                    send_message(chat_id, f"✅ Captcha #{pending_captcha_id} resolvido: <code>{answer}</code>")
+                else:
+                    send_message(chat_id, f"❌ Captcha #{pending_captcha_id} já expirou ou foi resolvido.")
+            except CaptchaChallenge.DoesNotExist:
+                send_message(chat_id, f"❌ Captcha #{pending_captcha_id} não encontrado.")
+            return Response({"status": "ok"})
 
         # Check if user has a pending reply waiting (after tapping ↩️ Responder)
         pending_uuid = _get_pending_reply(user_id)
@@ -350,6 +378,22 @@ class TelegramWebhookView(APIView):
 # ── Module-level helpers ───────────────────────────────────────────────────────
 
 _PENDING_REPLY_TTL = 300  # 5 minutes
+_PENDING_CAPTCHA_TTL = 300
+
+
+def _store_pending_captcha(user_id: str, challenge_id: int) -> None:
+    from django.core.cache import cache
+    cache.set(f"tg_pending_captcha:{user_id}", str(challenge_id), timeout=_PENDING_CAPTCHA_TTL)
+
+
+def _get_pending_captcha(user_id: str) -> str | None:
+    from django.core.cache import cache
+    return cache.get(f"tg_pending_captcha:{user_id}")
+
+
+def _clear_pending_captcha(user_id: str) -> None:
+    from django.core.cache import cache
+    cache.delete(f"tg_pending_captcha:{user_id}")
 
 
 def _store_pending_reply(user_id: str, dm_uuid: str) -> None:

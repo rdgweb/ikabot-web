@@ -66,16 +66,26 @@ def send_message(
         return {"ok": False, "description": str(exc)}
 
 
-def send_photo(chat_id: str, photo_bytes: bytes, caption: str = "", parse_mode: str = "HTML") -> dict:
+def send_photo(
+    chat_id: str,
+    photo_bytes: bytes,
+    caption: str = "",
+    parse_mode: str = "HTML",
+    reply_markup: dict | None = None,
+) -> dict:
     """Send a photo to a Telegram chat."""
+    import json as _json
     token = _get_token()
     if not token:
         return {"ok": False, "description": "Bot token not configured"}
     url = f"{API_BASE.format(token=token)}/sendPhoto"
+    payload: dict = {"chat_id": chat_id, "caption": caption, "parse_mode": parse_mode}
+    if reply_markup:
+        payload["reply_markup"] = _json.dumps(reply_markup)
     try:
         resp = requests.post(
             url,
-            data={"chat_id": chat_id, "caption": caption, "parse_mode": parse_mode},
+            data=payload,
             files={"photo": ("captcha.png", photo_bytes, "image/png")},
             timeout=TIMEOUT,
         )

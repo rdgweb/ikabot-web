@@ -660,9 +660,19 @@ class CaptchaChallengeCreateView(APIView):
                 caption = (
                     f"🏴‍☠️ <b>Captcha #{challenge.pk}</b> — {captcha_type}\n"
                     f"Conta: <b>{ga_label}</b>\n\n"
-                    f"Responda com:\n<code>/captcha {challenge.pk} RESPOSTA</code>"
+                    f"Clique no botão abaixo e digite o texto da imagem."
                 )
-                result = send_photo(chat_id, img_bytes, caption=caption)
+                result = send_photo(
+                    chat_id,
+                    img_bytes,
+                    caption=caption,
+                    reply_markup={
+                        "inline_keyboard": [[{
+                            "text": "🔑 Digitar resposta",
+                            "callback_data": f"captcha_reply:{challenge.pk}",
+                        }]]
+                    },
+                )
                 if not result.get("ok"):
                     logger.warning(
                         "CaptchaChallenge: falha ao enviar foto Telegram pk=%d: %s",
