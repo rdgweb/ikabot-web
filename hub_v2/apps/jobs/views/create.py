@@ -573,8 +573,10 @@ SPY_MISSIONS_UI = [
 ]
 
 
-def _spy_context(ga, all_cities: list) -> dict:
-    """Build spy form context — filters cities with safehouse and annotates safehouse level."""
+def _spy_context(ga, all_cities: list, initial: dict | None = None) -> dict:
+    """Build spy form context — source cities with safehouse + target cities from worldintel."""
+    from django.templatetags.static import static as _static
+
     spy_cities = []
     for city in all_cities:
         safehouse_level = 0
@@ -584,14 +586,38 @@ def _spy_context(ga, all_cities: list) -> dict:
                 safehouse_level = int(b.get("level") or 0)
                 break
         if safehouse_level > 0:
-            spy_cities.append({
-                **city,
-                "safehouse_level": safehouse_level,
+            spy_cities.append({**city, "safehouse_level": safehouse_level})
+
+    # Target cities: load from worldintel when target_owner_id is pre-filled
+    target_cities = []
+    target_owner_id = (initial or {}).get("target_owner_id") or ""
+    if target_owner_id:
+        from apps.worldintel.models import WorldDumpCity
+        wdc_qs = (
+            WorldDumpCity.objects.filter(owner_id=str(target_owner_id), type="city")
+            .exclude(game_city_id="").exclude(game_city_id="-1")
+            .select_related("island")
+            .order_by("-dump__captured_at", "island__x", "island__y")
+        )
+        seen = set()
+        for c in wdc_qs[:20]:
+            if c.game_city_id in seen:
+                continue
+            seen.add(c.game_city_id)
+            target_cities.append({
+                "game_city_id": c.game_city_id,
+                "name": c.name,
+                "level": c.level,
+                "island_id": c.island.island_id if c.island else "",
+                "x": c.island.x if c.island else 0,
+                "y": c.island.y if c.island else 0,
+                "island_name": c.island.name if c.island else "",
             })
 
     return {
         "spy_missions": SPY_MISSIONS_UI,
         "spy_cities": spy_cities,
+        "spy_target_cities": target_cities,
     }
 
 
@@ -1153,7 +1179,7 @@ def _custom_field_names(action_code: int) -> list[str]:
             "city_id", "target_city_id", "island_id", "mission_id",
             "max_detection_risk", "auto_agents", "agents", "decoys",
             "save_reports", "delete_after_save",
-            "target_city_name", "target_owner",
+            "target_city_name", "target_owner", "target_owner_id",
         ]
     if int(action_code) == 31:
         return ["receiver_name", "receiver_id", "msg_type", "content", "city_id"]
@@ -1201,7 +1227,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities):
         "training_ui": _training_form_context(snapshot, cities),
     }
     if int(action_code) == 15:
-        ctx.update(_spy_context(ga, cities))
+        ctx.update(_spy_context(ga, cities, getattr(form, "initial", {})))
     if int(action_code) == 17:
         ctx.update(_piracy_context(ga, cities))
     return ctx

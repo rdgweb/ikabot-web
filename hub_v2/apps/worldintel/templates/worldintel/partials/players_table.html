@@ -82,17 +82,15 @@
                  class="btn btn-secondary btn-sm !py-0.5 !px-2 text-[10px]">
                 <i class="bi bi-send"></i>
               </a>
-              {% with spy_city=spy_target_map|get_item:row.owner_id %}
-              {% if spy_city and selected_game_account %}
-              <a href="{{ new_job_url }}?ga={{ selected_game_account.pk }}&action=15&input_target_city_id={{ spy_city.game_city_id }}&input_island_id={{ spy_city.island.island_id }}&input_target_city_name={{ spy_city.name|urlencode }}&input_target_owner={{ row.owner_name|urlencode }}"
-                 hx-get="{{ new_job_url }}?ga={{ selected_game_account.pk }}&action=15&input_target_city_id={{ spy_city.game_city_id }}&input_island_id={{ spy_city.island.island_id }}&input_target_city_name={{ spy_city.name|urlencode }}&input_target_owner={{ row.owner_name|urlencode }}"
+              {% if selected_game_account and row.owner_id %}
+              <a href="{{ new_job_url }}?ga={{ selected_game_account.pk }}&action=15&input_target_owner_id={{ row.owner_id }}&input_target_owner={{ row.owner_name|urlencode }}"
+                 hx-get="{{ new_job_url }}?ga={{ selected_game_account.pk }}&action=15&input_target_owner_id={{ row.owner_id }}&input_target_owner={{ row.owner_name|urlencode }}"
                  hx-target="#job-modal-body" hx-swap="innerHTML" hx-push-url="false" hx-boost="false"
                  onclick="openModal('jobcreate')" title="Enviar espião"
                  class="btn btn-secondary btn-sm !py-0.5 !px-2 text-[10px]">
                 <i class="bi bi-binoculars"></i>
               </a>
               {% endif %}
-              {% endwith %}
               {% endif %}
               <a href="{% url 'worldintel:player-detail' %}?dump={{ selected_dump.pk }}{% if selected_game_account %}&ga={{ selected_game_account.pk }}{% endif %}{% if row.owner_id %}&owner_id={{ row.owner_id|urlencode }}{% else %}&owner_name={{ row.owner_name|urlencode }}{% endif %}"
                  class="btn btn-secondary btn-sm !py-0.5 !px-2 text-[10px]">Ver</a>

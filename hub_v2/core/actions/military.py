@@ -141,6 +141,7 @@ ACTIONS = {
              "label": "Apagar do jogo após salvar"},
             {"key": "target_city_name", "type": FIELD_STR, "required": False, "label": "Nome da cidade alvo"},
             {"key": "target_owner", "type": FIELD_STR, "required": False, "label": "Dono da cidade alvo"},
+            {"key": "target_owner_id", "type": FIELD_STR, "required": False, "label": "ID do dono alvo"},
         ],
     },
     9002: {

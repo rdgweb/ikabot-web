@@ -4179,6 +4179,7 @@
       return {
         cities: [], missions: [],
         selectedCityId: '',
+        targetCityId: '', targetIslandId: '', targetCityName: '',
         selectedMissionIds: [],
         autoAgents: true,
         maxRisk: 25,
@@ -4189,6 +4190,8 @@
           this.cities = JSON.parse(document.getElementById('spy-cities-data')?.textContent || '[]');
           this.missions = JSON.parse(document.getElementById('spy-missions-data')?.textContent || '[]');
           this.selectedCityId = String(cityId || (this.cities[0]?.id || ''));
+          this.targetCityId = String(targetCityId || '');
+          this.targetCityName = String(targetCityName || '');
           const mids = String(missionId || '1').split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x));
           this.selectedMissionIds = mids.length ? mids : [1];
           this.maxRisk = parseInt(maxRisk) || 25;
@@ -4240,10 +4243,11 @@
            {{ form.save_reports.value|yesno:'true,false,true' }})">
 
       <input type="hidden" name="{{ form.city_id.html_name }}" x-model="selectedCityId">
-      <input type="hidden" name="{{ form.target_city_id.html_name }}" value="{{ form.target_city_id.value|default:'' }}">
-      <input type="hidden" name="{{ form.island_id.html_name }}" value="{{ form.island_id.value|default:'' }}">
-      <input type="hidden" name="{{ form.target_city_name.html_name }}" value="{{ form.target_city_name.value|default:'' }}">
+      <input type="hidden" name="{{ form.target_city_id.html_name }}" :value="targetCityId || '{{ form.target_city_id.value|default:''|escapejs }}'">
+      <input type="hidden" name="{{ form.island_id.html_name }}" :value="targetIslandId || '{{ form.island_id.value|default:''|escapejs }}'">
+      <input type="hidden" name="{{ form.target_city_name.html_name }}" :value="targetCityName || '{{ form.target_city_name.value|default:''|escapejs }}'">
       <input type="hidden" name="{{ form.target_owner.html_name }}" value="{{ form.target_owner.value|default:'' }}">
+      <input type="hidden" name="{{ form.target_owner_id.html_name }}" value="{{ form.target_owner_id.value|default:'' }}">
       <input type="hidden" name="{{ form.mission_id.html_name }}" :value="missionIds()">
       <input type="hidden" name="{{ form.max_detection_risk.html_name }}" :value="maxRisk">
       <input type="hidden" name="{{ form.auto_agents.html_name }}" :value="autoAgents ? 'true' : 'false'">
@@ -4252,42 +4256,73 @@
       <input type="hidden" name="{{ form.save_reports.html_name }}" :value="saveReports ? 'true' : 'false'">
       <input type="hidden" name="{{ form.delete_after_save.html_name }}" value="false">
 
-      {# Alvo — card de informação pré-preenchido #}
+      {# Alvo — picker de cidades do alvo (do dump) ou input manual #}
+      {% if spy_target_cities %}
+      {{ spy_target_cities|json_script:"spy-target-cities-data" }}
+      <div class="card !p-4"
+           x-data="{
+             targetCities: JSON.parse(document.getElementById('spy-target-cities-data')?.textContent || '[]'),
+             init() {
+               if (this.targetCities.length && !this.$root.__x?.$data.targetCityId) {
+                 const first = this.targetCities[0];
+                 this.$root.__x.$data.targetCityId = String(first.game_city_id);
+                 this.$root.__x.$data.targetIslandId = String(first.island_id);
+                 this.$root.__x.$data.targetCityName = first.name;
+               }
+             }
+           }"
+           x-init="init()">
+        <div class="flex items-center justify-between mb-2">
+          <label class="form-label text-xs"><i class="bi bi-crosshair text-sea mr-1"></i>
+            Cidade alvo —
+            {% if form.target_owner.value %}<span class="font-semibold">{{ form.target_owner.value }}</span>{% endif %}
+          </label>
+          <span class="text-[10px] text-muted">{{ spy_target_cities|length }} cidades no dump</span>
+        </div>
+        <div class="max-h-44 overflow-y-auto px-0.5">
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+            <template x-for="city in targetCities" :key="city.game_city_id">
+              <button type="button"
+                      class="rounded-xl border p-2 text-left text-xs transition-all"
+                      :class="targetCityId === String(city.game_city_id) ? 'ring-2 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.06)]' : 'hover:border-[var(--ik-sea)]/40'"
+                      style="border-color: var(--ik-line); background: var(--ik-paper);"
+                      @click="targetCityId=String(city.game_city_id); targetIslandId=String(city.island_id); targetCityName=city.name">
+                <div class="font-semibold text-ink truncate" x-text="city.name"></div>
+                <div class="text-[10px] text-muted" x-text="'['+city.x+':'+city.y+'] · lv'+city.level"></div>
+              </button>
+            </template>
+          </div>
+        </div>
+      </div>
+      {% else %}
       <div class="card !p-4">
         <label class="form-label text-xs mb-2 block"><i class="bi bi-crosshair text-sea mr-1"></i>Alvo da espionagem <span class="text-[var(--ik-bad)]">*</span></label>
-        {% if form.target_city_id.value and form.target_city_name.value %}
+        {% if form.target_city_id.value %}
         <div class="flex items-center gap-3 rounded-xl border px-4 py-3"
              style="border-color: rgba(79,134,185,0.28); background: rgba(79,134,185,0.05);">
-          <div class="flex h-10 w-10 items-center justify-center rounded-[12px] shrink-0"
-               style="background: rgba(79,134,185,0.10); color: var(--ik-sea);">
-            <i class="bi bi-building text-base"></i>
-          </div>
+          <i class="bi bi-building text-sea text-base"></i>
           <div class="min-w-0 flex-1">
-            <div class="text-sm font-semibold text-ink">{{ form.target_city_name.value }}</div>
-            <div class="text-[11px] text-muted">
-              {% if form.target_owner.value %}<span class="font-medium text-ink">{{ form.target_owner.value }}</span> · {% endif %}
-              ID {{ form.target_city_id.value }}
-              {% if form.island_id.value %} · Ilha {{ form.island_id.value }}{% endif %}
-            </div>
+            <div class="text-sm font-semibold text-ink">{{ form.target_city_name.value|default:form.target_city_id.value }}</div>
+            <div class="text-[11px] text-muted">{{ form.target_owner.value }} · ID {{ form.target_city_id.value }}</div>
           </div>
-          <span class="badge badge-secondary text-[10px]"><i class="bi bi-check-circle-fill text-[var(--ik-good)] mr-1"></i>Pré-selecionado</span>
         </div>
         {% else %}
-        <p class="text-xs text-muted mb-3">Informe o ID da cidade alvo e da ilha (obtidos via Inteligência Mundial).</p>
+        <p class="text-xs text-muted mb-3">Use o botão 🔭 na Inteligência Mundial para pré-preencher, ou informe manualmente.</p>
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="form-label text-[11px] mb-1 block">ID da cidade alvo <span class="text-[var(--ik-bad)]">*</span></label>
             <input type="number" name="{{ form.target_city_id.html_name }}" value="{{ form.target_city_id.value|default:'' }}"
-                   class="form-input !text-sm w-full" placeholder="ex: 12345" required>
+                   x-model="targetCityId" class="form-input !text-sm w-full" placeholder="ex: 37430" required>
           </div>
           <div>
             <label class="form-label text-[11px] mb-1 block">ID da ilha <span class="text-[var(--ik-bad)]">*</span></label>
             <input type="number" name="{{ form.island_id.html_name }}" value="{{ form.island_id.value|default:'' }}"
-                   class="form-input !text-sm w-full" placeholder="ex: 9876" required>
+                   x-model="targetIslandId" class="form-input !text-sm w-full" placeholder="ex: 4475" required>
           </div>
         </div>
         {% endif %}
       </div>
+      {% endif %}
 
       {# Cidade de origem (com Casa de Espionagem) #}
       <div class="card !p-4">

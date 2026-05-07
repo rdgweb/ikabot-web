@@ -59,10 +59,10 @@
            class="btn btn-secondary btn-sm">
           <i class="bi bi-send text-[10px]"></i> Enviar Mensagem
         </a>
-        {% if spy_target %}
+        {% if player.owner_id %}
         {% url 'jobs:job-create' as spy_url %}
-        <a href="{{ spy_url }}?ga={{ selected_game_account.pk }}&action=15&input_target_city_id={{ spy_target.game_city_id }}&input_island_id={{ spy_target.island.island_id }}&input_target_city_name={{ spy_target.name|urlencode }}&input_target_owner={{ player.owner_name|urlencode }}"
-           hx-get="{{ spy_url }}?ga={{ selected_game_account.pk }}&action=15&input_target_city_id={{ spy_target.game_city_id }}&input_island_id={{ spy_target.island.island_id }}&input_target_city_name={{ spy_target.name|urlencode }}&input_target_owner={{ player.owner_name|urlencode }}"
+        <a href="{{ spy_url }}?{% if selected_game_account %}ga={{ selected_game_account.pk }}&{% endif %}action=15&input_target_owner_id={{ player.owner_id }}&input_target_owner={{ player.owner_name|urlencode }}"
+           hx-get="{{ spy_url }}?{% if selected_game_account %}ga={{ selected_game_account.pk }}&{% endif %}action=15&input_target_owner_id={{ player.owner_id }}&input_target_owner={{ player.owner_name|urlencode }}"
            hx-target="#job-modal-body"
            hx-swap="innerHTML"
            hx-push-url="false"
