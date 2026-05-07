@@ -333,19 +333,42 @@ class SpySafehouseAction(BaseAction):
             state["total_spies"] - state["in_use_spies"] - state["training_count"]
         )
 
-        # Parse active spy missions (SpyCountDown{spy_id} pattern)
+        # Parse "Espião em Missão" section for stationed and in-transit counts per city
+        state["stationed_by_city"] = {}   # {city_name: count} — waiting for orders
+        state["in_transit_by_city"] = {}  # {city_name: count} — still travelling
+
+        mission_idx = html.find("Espião em Missão")
+        if mission_idx >= 0:
+            mission_section = html[mission_idx:mission_idx + 20000]
+            # Each <div class="spyinfo"> is one group at one location
+            for block in re.findall(r'<div class="spyinfo">([\s\S]{0,3000}?)</div>\s*</div>', mission_section):
+                # City: appears as "CityName (x:y)"
+                city_m = re.search(r'<li[^>]*>([^<(]+\s*\(\s*\d+\s*:\s*\d+\s*\))', block)
+                city_name = city_m.group(1).strip() if city_m else ""
+                # Stationed: "N estão em uso" + "esperam novas ordens"
+                stationed_m = re.search(r'(\d+)\s+est[aã]o em uso', block)
+                if stationed_m and city_name:
+                    count = int(stationed_m.group(1))
+                    state["stationed_by_city"][city_name] = (
+                        state["stationed_by_city"].get(city_name, 0) + count
+                    )
+                # In-transit: has SpyCountDown but no "em uso" waiting text
+                elif "SpyCountDown" in block:
+                    target_m = re.search(r'<li class="user">[^<]*<a[^>]*>([^<]+)</a>', block)
+                    tgt = target_m.group(1).strip() if target_m else city_name
+                    spy_count = len(re.findall(r'SpyCountDown\d+', block))
+                    if tgt:
+                        state["in_transit_by_city"][tgt] = (
+                            state["in_transit_by_city"].get(tgt, 0) + spy_count
+                        )
+
+        # Legacy active_missions list (countdowns)
         spy_ids = re.findall(r'SpyCountDown(\d+)', html)
         countdowns = re.findall(r'enddate:\s*(\d+)', html)
-        abort_links = re.findall(
-            r'function=abortInvasion&cityId=(\d+)&position=(\d+)&spy=(\d+)', html
-        )
         for i, spy_id in enumerate(spy_ids):
             mission: dict[str, Any] = {"spy_id": spy_id}
             if i < len(countdowns):
                 mission["return_timestamp"] = int(countdowns[i])
-            if i < len(abort_links):
-                mission["source_city_id"] = abort_links[i][0]
-                mission["position"] = abort_links[i][1]
             state["active_missions"].append(mission)
 
         return state

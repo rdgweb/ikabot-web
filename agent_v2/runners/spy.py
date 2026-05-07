@@ -1,7 +1,13 @@
 """
-Runner de espionagem — ação 18 (SpyRunner).
+Runner de espionagem — ação 15 (SpyRunner).
 
-Envia espiões em missões e salva os relatórios no hub.
+State machine:
+  accumulating → executing → recalling → done
+
+  accumulating: envia missões de infiltração (1) até ter suficientes na cidade
+  executing:    executa missões de inteligência uma a uma
+  recalling:    envia missão 8 (chamar) para retirar todos
+  done:         termina sem reagendar
 """
 
 from __future__ import annotations
@@ -11,43 +17,32 @@ import random
 from typing import Any
 
 from core.runner_registry import register_runner
-from game_client.actions.spy import (
-    MISSION_DATA,
-    compute_agents_for_success,
-    find_optimal_agents_decoys,
-)
+from game_client.actions.spy import MISSION_DATA, find_optimal_agents_decoys
 from runners.base import BaseRunner, RunnerResult
 
 logger = logging.getLogger(__name__)
 
-ERROR_RESCHEDULE = 10 * 60       # 10 min — recuo em caso de erro
-MISSION_MIN_WAIT = 5 * 60        # 5 min — missão básica (missão 1)
-MISSION_MAX_WAIT = 15 * 60       # 15 min — buffer padrão após missão
+ARRIVAL_WAIT = 7 * 60     # 7 min — tempo para espião chegar
+MISSION_WAIT = 10 * 60    # 10 min — tempo para missão completar
+ERROR_RESCHEDULE = 10 * 60
 
 
 @register_runner(15)
 class SpyRunner(BaseRunner):
-    """Envia espiões em missões e opcionalmente salva os relatórios no hub.
+    """State machine de espionagem:
 
-    Recurring — reagenda automaticamente para manter a espionagem contínua.
+    Fase 1 - ACCUMULATING: infiltra espiões até ter o suficiente para a missão mais exigente
+    Fase 2 - EXECUTING: executa cada missão de inteligência com otimizador real
+    Fase 3 - RECALLING: chama todos de volta (missão 8)
+    Fase 4 - DONE: job concluído
 
-    Inputs:
-        city_id            — cidade com Casa Segura (origem)
-        target_city_id     — ID da cidade alvo
-        island_id          — ID da ilha da cidade alvo
-        mission_id         — tipo da missão (padrão: 1)
-        max_detection_risk — risco máximo de detecção em % (padrão: 25)
-        auto_agents        — calcular agentes pelo risco (padrão: True)
-        agents             — agentes manuais se auto_agents=False (padrão: 1)
-        decoys             — número de chamarizes (padrão: 0)
-        save_reports       — salvar relatórios no hub (padrão: True)
-        delete_after_save  — apagar do jogo após salvar (padrão: False)
+    Durante execução, se perder espiões → volta para accumulating automaticamente.
     """
 
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
-        game_account_id = job.get("game_account_id", "")
+        ga_id = job.get("game_account_id", "")
         inputs = job.get("inputs") or {}
         if not isinstance(inputs, dict):
             inputs = {}
@@ -55,271 +50,363 @@ class SpyRunner(BaseRunner):
         city_id = str(inputs.get("city_id") or "").strip()
         target_city_id = str(inputs.get("target_city_id") or "").strip()
         island_id = str(inputs.get("island_id") or "").strip()
+        target_city_name = str(inputs.get("target_city_name") or "").strip()
+        target_owner = str(inputs.get("target_owner") or "").strip()
+        save_reports = bool(inputs.get("save_reports") if inputs.get("save_reports") is not None else True)
+        delete_after_save = bool(inputs.get("delete_after_save") or False)
 
-        if not city_id:
-            self.log(jid, "error", "city_id obrigatório para espionagem")
-            return RunnerResult(success=False, data={"error": "city_id_missing"})
-        if not target_city_id:
-            self.log(jid, "error", "target_city_id obrigatório para espionagem")
-            return RunnerResult(success=False, data={"error": "target_city_id_missing"})
-        if not island_id:
-            self.log(jid, "error", "island_id obrigatório para espionagem")
-            return RunnerResult(success=False, data={"error": "island_id_missing"})
+        if not city_id or not target_city_id or not island_id:
+            self.log(jid, "error", "city_id, target_city_id e island_id obrigatórios")
+            return RunnerResult(success=False, data={"error": "missing_inputs"})
 
-        # mission_id pode ser int ou lista de ints separados por vírgula
-        raw_mission = inputs.get("mission_id") or "1"
         try:
-            if isinstance(raw_mission, list):
-                mission_ids = [int(x) for x in raw_mission]
-            else:
-                mission_ids = [int(x.strip()) for x in str(raw_mission).split(",") if x.strip()]
+            max_risk = float(inputs.get("max_detection_risk") or 35)
         except (ValueError, TypeError):
-            mission_ids = [1]
-        if not mission_ids:
-            mission_ids = [1]
-        # Compatibilidade: mission_id singular
-        mission_id = mission_ids[0]
-
-        # max_detection_risk now interpreted as minimum SUCCESS % target for auto calc
-        try:
-            target_success_pct = int(inputs.get("max_detection_risk") or 80)
-        except (ValueError, TypeError):
-            target_success_pct = 80
+            max_risk = 35.0
 
         auto_agents = bool(inputs.get("auto_agents") if inputs.get("auto_agents") is not None else True)
-
         try:
             manual_agents = max(1, int(inputs.get("agents") or 1))
         except (ValueError, TypeError):
             manual_agents = 1
 
+        # Parse mission IDs (string or list)
+        raw_mission = inputs.get("mission_id") or "1"
         try:
-            decoys = max(0, int(inputs.get("decoys") or 0))
+            if isinstance(raw_mission, list):
+                all_mission_ids = [int(x) for x in raw_mission]
+            else:
+                all_mission_ids = [int(x.strip()) for x in str(raw_mission).split(",") if x.strip()]
         except (ValueError, TypeError):
-            decoys = 0
+            all_mission_ids = [1]
+        if not all_mission_ids:
+            all_mission_ids = [1]
 
-        save_reports = bool(inputs.get("save_reports") if inputs.get("save_reports") is not None else True)
-        delete_after_save = bool(inputs.get("delete_after_save") or False)
+        # Determine phases: mission 1 = infiltration; others = intelligence
+        infiltration_missions = [m for m in all_mission_ids if m == 1]
+        intel_missions = [m for m in all_mission_ids if m != 1 and m != 8]
 
-        mission_name = MISSION_DATA.get(mission_id, {}).get("name", f"missão {mission_id}")
-        missions_label = ", ".join(str(m) for m in mission_ids)
+        # Load state from recovery
+        recovery = inputs.get("__recovery") if isinstance(inputs.get("__recovery"), dict) else {}
+        phase = recovery.get("phase", "accumulating" if intel_missions else "infiltrating_only")
+        missions_pending = recovery.get("missions_pending", list(intel_missions))
+        missions_done = recovery.get("missions_done", [])
 
-        creds = self.resolve_credentials(aid, inputs, game_account_id=game_account_id)
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
         if not creds:
             self.log(jid, "error", "Credenciais não encontradas")
-            return RunnerResult(
-                success=False,
-                reschedule_seconds=ERROR_RESCHEDULE,
-                data={"error": "credentials_missing"},
-            )
+            return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE)
 
         try:
-            client = self.get_or_login_game_client(jid, aid, game_account_id, creds)
+            client = self.get_or_login_game_client(jid, aid, ga_id, creds)
 
-            # Etapa 1: ler estado da Casa Segura — varrer todas as cidades com espionagem
-            self.log(jid, "info", f"Lendo estado da Casa Segura")
+            # ── Always: collect pending reports ───────────────────────────────
+            if save_reports:
+                self._collect_reports(jid, client, ga_id, city_id, delete_after_save)
+
+            # ── Read safehouse state ──────────────────────────────────────────
+            self.log(jid, "info", f"Lendo safehouse | fase={phase}")
             state = client.get_safehouse_state(city_id)
-            available_spies = int(state.get("available_spies") or 0)
-            total_spies = int(state.get("total_spies") or 0)
+            available = int(state.get("available_spies") or 0)
+            total = int(state.get("total_spies") or 0)
+            in_use = int(state.get("in_use_spies") or 0)
+            training = int(state.get("training_count") or 0)
 
-            # Se a cidade configurada não tem espiões disponíveis, tenta as demais
-            if available_spies == 0:
-                snap = self.hub.get_snapshot(game_account_id=game_account_id)
-                for candidate in (snap.get("cities") or []):
-                    cid = str(candidate.get("id") or "")
-                    if not cid or cid == city_id:
-                        continue
-                    has_safehouse = any(
-                        "safehouse" in str(b.get("building","")).lower()
-                        for b in (candidate.get("buildings") or [])
-                    )
-                    if not has_safehouse:
-                        continue
-                    try:
-                        cand_state = client.get_safehouse_state(cid)
-                        cand_avail = int(cand_state.get("available_spies") or 0)
-                        if cand_avail > available_spies:
-                            self.log(jid, "info",
-                                f"Cidade {cid} ({candidate.get('name','?')}) tem {cand_avail} espiões disponíveis — usando esta")
-                            city_id = cid
-                            state = cand_state
-                            available_spies = cand_avail
-                            total_spies = int(cand_state.get("total_spies") or 0)
-                    except Exception:
-                        continue
-            in_use_spies = int(state.get("in_use_spies") or 0)
+            # If configured city has 0 available, scan others
+            if available == 0:
+                city_id, state, available = self._find_best_city(jid, city_id, client, inputs)
 
-            self.log(
-                jid, "info",
-                f"Espiões: total={total_spies} disponíveis={available_spies} em uso={in_use_spies}",
-            )
+            self.log(jid, "info",
+                f"Safehouse: total={total} disponíveis={available} em_uso={in_use} treinando={training}")
 
-            # Etapa 2: coletar relatórios existentes se houver missão ativa
-            if in_use_spies > 0 and save_reports:
-                self.log(jid, "info", "Missão ativa detectada — coletando relatórios pendentes")
-                self._collect_and_save_reports(
-                    jid, client, game_account_id, city_id, delete_after_save
-                )
-                # Re-ler estado após coleta
-                state = client.get_safehouse_state(city_id)
-                available_spies = int(state.get("available_spies") or 0)
+            # Stationed at target city
+            stationed = self._get_stationed(state, target_city_name, target_city_id)
+            self.log(jid, "info",
+                f"Estacionados em {target_city_name or target_city_id}: {stationed}")
 
-            # Etapa 3: buscar dados de risco REAIS para este alvo
-            live_mission_data: dict = {}
-            live_mission_data_params: dict = {}
+            # ── Get live risk data ─────────────────────────────────────────────
+            live_params: dict = {}
             try:
-                self.log(jid, "info", f"Buscando riscos reais para cidade alvo {target_city_id}")
                 md_result = client.get_spy_mission_data(city_id, target_city_id, island_id)
-                live_mission_data = md_result.get("missions", {})
-                live_mission_data_params = md_result.get("raw_params", {})
-                target_info = md_result.get("target", {})
-                if target_info:
-                    self.log(jid, "info",
-                        f"Alvo: nível={target_info.get('city_level')} "
-                        f"inativo={target_info.get('is_inactive')} "
-                        f"espiões livres={target_info.get('free_spies')}")
+                live_params = md_result.get("raw_params", {})
+                ti = md_result.get("target", {})
+                self.log(jid, "info",
+                    f"Alvo: lv={ti.get('city_level')} inativo={ti.get('is_inactive')} "
+                    f"free_spies={ti.get('free_spies')} remaining_risk={live_params.get('remainingRisk',0)}")
             except Exception as exc:
-                self.log(jid, "warn", f"Não foi possível buscar dados reais: {exc}. Usando valores padrão.")
+                self.log(jid, "warn", f"Não foi possível buscar riscos: {exc}")
 
-            # Etapa 4: calcular agentes para a primeira missão da lista
-            mission_id = mission_ids[0]
-            if auto_agents:
-                # Use exact game formula to find optimal agents+decoys
-                # max_detection_risk = target_success_pct (repurposed field)
-                optimal = find_optimal_agents_decoys(
-                    live_mission_data_params if live_mission_data_params else {},
-                    mission_id,
-                    max_agent_risk=target_success_pct,   # max detection risk %
-                    max_decoy_risk=target_success_pct + 20,
-                    min_success=50.0,
-                    available=available_spies,
-                )
-                if optimal:
-                    agents = optimal["agents"]
-                    decoys = optimal.get("decoys", 0)
-                    self.log(jid, "info",
-                        f"Ótimo calculado (fórmula real): {agents} agentes + {decoys} chamarizes → "
-                        f"sucesso={optimal['success']}% risco_agente={optimal['agent_risk']}% "
-                        f"risco_chamariz={optimal['decoy_risk']}%")
+            # ── Phase: infiltrating_only (just mission 1, no intelligence) ────
+            if phase == "infiltrating_only":
+                result = self._send_one_mission(jid, client, city_id, target_city_id, island_id,
+                                                1, available, max_risk, manual_agents, auto_agents, live_params)
+                if result:
+                    wait = random.randint(ARRIVAL_WAIT, ARRIVAL_WAIT + 120)
+                    self.log(jid, "info", f"Missão 1 enviada. Reagendando em {wait}s.")
+                    self.save_game_client(ga_id, client)
+                    return RunnerResult(success=True, reschedule_seconds=wait,
+                        reschedule_inputs={**inputs, "__recovery": {"phase": "done"}})
                 else:
-                    # No combination meets thresholds — use 1 agent as minimum
-                    self.log(jid, "warn",
-                        f"Missão {mission_id}: nenhuma combinação atinge os limites "
-                        f"(risco≤{target_success_pct}%, sucesso≥50%) com {available_spies} espiões. "
-                        f"Usando 1 agente como mínimo.")
-                    agents = 1
-                    decoys = 0
-            else:
-                agents = manual_agents
+                    wait = random.randint(MISSION_MIN_WAIT := 5*60, MISSION_MAX_WAIT := 15*60)
+                    self.save_game_client(ga_id, client)
+                    return RunnerResult(success=True, reschedule_seconds=wait)
 
-            # Verificar disponibilidade
-            if available_spies < agents:
-                wait = random.randint(MISSION_MIN_WAIT, MISSION_MAX_WAIT)
-                self.log(jid, "warn",
-                    f"Espiões insuficientes: necessário={agents} disponível={available_spies}. "
-                    f"Reagendando em {wait}s.")
-                self.save_game_client(game_account_id, client)
-                return RunnerResult(success=True, reschedule_seconds=wait)
+            # ── Phase: accumulating ────────────────────────────────────────────
+            if phase == "accumulating":
+                # How many do we need for the most demanding pending mission?
+                needed = self._total_needed(missions_pending, live_params, available)
+                self.log(jid, "info", f"Necessários: {needed} | estacionados: {stationed}")
 
-            # Etapa 5: enviar todas as missões da lista
-            missions_sent = 0
-            for mid in mission_ids:
-                # Verificar se missão é executável
-                live_md = live_mission_data.get(mid)
-                if live_md and not live_md.get("executable", True):
-                    self.log(jid, "info", f"Missão {mid} não executável neste alvo — pulando")
-                    continue
+                if stationed >= needed and stationed > 0:
+                    self.log(jid, "info", f"Suficientes! Passando para execução.")
+                    phase = "executing"
+                else:
+                    # Send optimal infiltration batch
+                    to_send = max(1, needed - stationed)
+                    opt = find_optimal_agents_decoys(live_params, 1, max_risk, max_risk + 25, 30.0, available)
+                    if opt:
+                        batch_agents = min(opt["agents"], to_send, available)
+                        self.log(jid, "info",
+                            f"Infiltrando {batch_agents} agentes (precisamos {needed - stationed} mais) "
+                            f"→ sucesso={opt['success']}% risco={opt['agent_risk']}%")
+                        ok, msg = self._send_spy_raw(client, city_id, target_city_id, island_id,
+                                                     1, batch_agents, 0)
+                        if ok:
+                            self.log(jid, "info", f"Infiltração enviada: {msg}")
+                            wait = ARRIVAL_WAIT + random.randint(0, 60)
+                        else:
+                            self.log(jid, "warn", f"Infiltração falhou: {msg}")
+                            wait = ERROR_RESCHEDULE
+                    else:
+                        self.log(jid, "warn",
+                            f"Sem espiões disponíveis ou impossível com risco≤{max_risk}%. Aguardando.")
+                        wait = random.randint(5*60, 15*60)
+                    self.save_game_client(ga_id, client)
+                    return RunnerResult(success=True, reschedule_seconds=wait,
+                        reschedule_inputs={**inputs, "__recovery": {
+                            "phase": "accumulating", "missions_pending": missions_pending,
+                            "missions_done": missions_done,
+                        }})
 
-                # Recalcular agentes+chamarizes para cada missão (fórmula real do jogo)
-                decoys_this = decoys
-                if auto_agents and mid != mission_ids[0]:
+            # ── Phase: executing ──────────────────────────────────────────────
+            if phase == "executing":
+                if not missions_pending:
+                    self.log(jid, "info", "Todas as missões concluídas. Chamando espiões de volta.")
+                    phase = "recalling"
+                else:
+                    current_mission = missions_pending[0]
                     opt = find_optimal_agents_decoys(
-                        live_mission_data_params, mid,
-                        max_agent_risk=target_success_pct,
-                        max_decoy_risk=target_success_pct + 20,
-                        min_success=50.0,
-                        available=available_spies,
+                        live_params, current_mission, max_risk, max_risk + 25, 40.0, stationed
                     )
                     if opt:
-                        agents_this = opt["agents"]
-                        decoys_this = opt.get("decoys", 0)
+                        agents_needed = opt["agents"]
+                        if stationed < agents_needed:
+                            self.log(jid, "info",
+                                f"Missão {current_mission} precisa {agents_needed} espiões, "
+                                f"só temos {stationed}. Voltando para acumulação.")
+                            phase = "accumulating"
+                        else:
+                            mname = MISSION_DATA.get(current_mission, {}).get("name", f"missão {current_mission}")
+                            self.log(jid, "info",
+                                f"Executando {mname} com {opt['agents']} agentes + {opt.get('decoys',0)} cham "
+                                f"→ sucesso={opt['success']}% risco={opt['agent_risk']}%")
+                            ok, msg = self._send_spy_raw(client, city_id, target_city_id, island_id,
+                                                         current_mission, opt["agents"], opt.get("decoys", 0))
+                            if ok:
+                                self.log(jid, "info", f"Missão enviada: {msg}")
+                                missions_done.append(current_mission)
+                                missions_pending = missions_pending[1:]
+                                wait = MISSION_WAIT + random.randint(0, 60)
+                                self.save_game_client(ga_id, client)
+                                return RunnerResult(success=True, reschedule_seconds=wait,
+                                    reschedule_inputs={**inputs, "__recovery": {
+                                        "phase": "executing" if missions_pending else "recalling",
+                                        "missions_pending": missions_pending,
+                                        "missions_done": missions_done,
+                                    }})
+                            else:
+                                self.log(jid, "warn", f"Missão falhou: {msg}")
+                                wait = ERROR_RESCHEDULE
+                                self.save_game_client(ga_id, client)
+                                return RunnerResult(success=False, reschedule_seconds=wait,
+                                    reschedule_inputs={**inputs, "__recovery": {
+                                        "phase": "accumulating", "missions_pending": missions_pending,
+                                        "missions_done": missions_done,
+                                    }})
                     else:
-                        self.log(jid, "warn", f"Missão {mid}: impossível atingir limites — pulando")
-                        continue
-                else:
-                    agents_this = agents
+                        self.log(jid, "warn",
+                            f"Impossível executar missão {current_mission} com {stationed} espiões e risco≤{max_risk}%. "
+                            f"Voltando para acumulação.")
+                        phase = "accumulating"
 
-                mid_name = (live_md or MISSION_DATA.get(mid, {})).get("name", f"missão {mid}")
+                if phase == "accumulating":
+                    self.save_game_client(ga_id, client)
+                    return RunnerResult(success=True, reschedule_seconds=ARRIVAL_WAIT,
+                        reschedule_inputs={**inputs, "__recovery": {
+                            "phase": "accumulating", "missions_pending": missions_pending,
+                            "missions_done": missions_done,
+                        }})
+
+            # ── Phase: recalling ──────────────────────────────────────────────
+            if phase == "recalling":
+                if stationed > 0:
+                    self.log(jid, "info", f"Chamando {stationed} espião(ões) de volta (missão 8)")
+                    ok, msg = self._send_spy_raw(client, city_id, target_city_id, island_id, 8, 1, 0)
+                    self.log(jid, "info", f"Recall: {msg}")
+                    wait = ARRIVAL_WAIT
+                    self.save_game_client(ga_id, client)
+                    return RunnerResult(success=True, reschedule_seconds=wait,
+                        reschedule_inputs={**inputs, "__recovery": {"phase": "done",
+                            "missions_done": missions_done}})
+                else:
+                    phase = "done"
+
+            # ── Phase: done ───────────────────────────────────────────────────
+            if phase == "done":
                 self.log(jid, "info",
-                    f"Enviando missão {mid} ({mid_name}) com {agents_this} agente(s), {decoys} chamariz(es)")
-                result = client.send_spy(
-                    source_city_id=city_id,
-                    target_city_id=target_city_id,
-                    island_id=island_id,
-                    mission_id=mid,
-                    agents=agents_this,
-                    decoys=decoys,
-                )
-                if result.get("success"):
-                    missions_sent += 1
-                    self.log(jid, "info", f"Missão {mid} enviada: {result.get('message', 'ok')}")
-                else:
-                    self.log(jid, "warn", f"Missão {mid} falhou: {result.get('message', '?')}")
+                    f"Espionagem concluída! Missões realizadas: {missions_done}")
+                self.save_game_client(ga_id, client)
+                return RunnerResult(success=True, data={"missions_done": missions_done})
 
-            self.log(jid, "info", f"{missions_sent}/{len(mission_ids)} missões enviadas")
-
-            # Etapa 6: salvar novos relatórios (se configurado)
-            if save_reports and missions_sent > 0:
-                self._collect_and_save_reports(
-                    jid, client, game_account_id, city_id, delete_after_save
-                )
-
-            # Etapa 7: reagendar
-            wait = random.randint(MISSION_MIN_WAIT, MISSION_MAX_WAIT)
-            self.log(jid, "info", f"Reagendando em {wait}s")
-            self.save_game_client(game_account_id, client)
-            return RunnerResult(success=True, reschedule_seconds=wait)
+            self.save_game_client(ga_id, client)
+            return RunnerResult(success=True, reschedule_seconds=ERROR_RESCHEDULE)
 
         except Exception as exc:
-            self.log(jid, "error", f"Espionagem falhou: {exc}")
-            return RunnerResult(
-                success=False,
-                reschedule_seconds=ERROR_RESCHEDULE,
-                data={"error": str(exc)},
-            )
+            self.log(jid, "error", f"Erro na espionagem: {exc}")
+            return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE, data={"error": str(exc)})
 
-    def _collect_and_save_reports(
-        self,
-        jid: str,
-        client: Any,
-        game_account_id: str,
-        city_id: str,
-        delete_after_save: bool,
-    ) -> None:
-        """Busca relatórios, envia ao hub e opcionalmente apaga do jogo."""
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _get_stationed(self, state: dict, city_name: str, city_id: str) -> int:
+        """Count spies stationed at target (fuzzy match on city name)."""
+        stationed = state.get("stationed_by_city", {})
+        if not stationed:
+            return 0
+        # Exact match
+        for key, count in stationed.items():
+            if city_name and city_name.lower() in key.lower():
+                return count
+            if city_id and city_id in key:
+                return count
+        # Partial match — take first match
+        city_name_lower = (city_name or "").lower()
+        for key, count in stationed.items():
+            words = city_name_lower.split()
+            if words and any(w in key.lower() for w in words if len(w) > 3):
+                return count
+        return 0
+
+    def _total_needed(self, mission_ids: list, live_params: dict, available: int) -> int:
+        """Max optimal agents across all pending intelligence missions."""
+        needed = 1
+        for mid in mission_ids:
+            opt = find_optimal_agents_decoys(live_params, mid, 50.0, 75.0, 30.0, available)
+            if opt:
+                needed = max(needed, opt["agents"])
+        return needed
+
+    def _send_spy_raw(self, client, city_id, target_city_id, island_id, mission_id, agents, decoys):
+        """Send a spy mission and return (success, message)."""
+        result = client.send_spy(
+            source_city_id=city_id, target_city_id=target_city_id,
+            island_id=island_id, mission_id=mission_id,
+            agents=agents, decoys=decoys,
+        )
+        return result.get("success", False), result.get("message", "")
+
+    def _send_one_mission(self, jid, client, city_id, target_city_id, island_id,
+                          mission_id, available, max_risk, manual_agents, auto_agents, live_params):
+        """Send single mission, return True if sent."""
+        if auto_agents:
+            opt = find_optimal_agents_decoys(live_params, mission_id, max_risk, max_risk+25, 30.0, available)
+            if opt:
+                agents, decoys = opt["agents"], opt.get("decoys", 0)
+                self.log(jid, "info",
+                    f"Ótimo: {agents}+{decoys}cham → sucesso={opt['success']}% risco={opt['agent_risk']}%")
+            else:
+                if available > 0:
+                    agents, decoys = 1, 0
+                    self.log(jid, "warn", "Impossível atingir limites, usando 1 agente mínimo.")
+                else:
+                    self.log(jid, "warn", "0 espiões disponíveis.")
+                    return False
+        else:
+            agents, decoys = manual_agents, 0
+        ok, msg = self._send_spy_raw(client, city_id, target_city_id, island_id, mission_id, agents, decoys)
+        if ok:
+            self.log(jid, "info", f"Missão {mission_id} enviada: {msg}")
+        else:
+            self.log(jid, "warn", f"Missão {mission_id} falhou: {msg}")
+        return ok
+
+    def _find_best_city(self, jid, city_id, client, inputs):
+        """Find city with most available spies if configured city has 0."""
+        snap = self.hub.get_snapshot(game_account_id=inputs.get("game_account_id") or "")
+        best_state = client.get_safehouse_state(city_id)
+        best_avail = int(best_state.get("available_spies") or 0)
+        best_city = city_id
+        for candidate in (snap.get("cities") or []):
+            cid = str(candidate.get("id") or "")
+            if not cid or cid == city_id:
+                continue
+            has_safe = any("safehouse" in str(b.get("building","")).lower()
+                          for b in (candidate.get("buildings") or []))
+            if not has_safe:
+                continue
+            try:
+                cs = client.get_safehouse_state(cid)
+                ca = int(cs.get("available_spies") or 0)
+                if ca > best_avail:
+                    self.log(jid, "info",
+                        f"Usando {candidate.get('name','?')} (id={cid}) com {ca} disponíveis")
+                    best_avail = ca
+                    best_state = cs
+                    best_city = cid
+            except Exception:
+                continue
+        return best_city, best_state, best_avail
+
+    def _collect_reports(self, jid, client, ga_id, city_id, delete_after_save):
+        """Collect and save spy reports from the safehouse."""
         try:
             reports = client.get_spy_reports(city_id)
             if not reports:
                 self.log(jid, "info", "Nenhum relatório encontrado na Casa Segura")
                 return
-
             self.log(jid, "info", f"{len(reports)} relatório(s) encontrado(s) — salvando no hub")
-            result = self.hub.save_spy_reports(game_account_id, reports)
-            saved = result.get("saved", 0)
-            new_count = result.get("new_count", 0)
-            self.log(jid, "info", f"Relatórios salvos: {saved} ({new_count} novos)")
-
-            if delete_after_save:
-                for rpt in reports:
-                    report_id = rpt.get("report_id")
-                    if report_id:
-                        try:
-                            client.delete_spy_report(city_id, report_id)
-                        except Exception as del_exc:
-                            self.log(
-                                jid, "warn",
-                                f"Falha ao apagar relatório {report_id}: {del_exc}",
-                            )
-
+            report_dicts = []
+            for r in reports:
+                report_dicts.append({
+                    "report_id": r.get("report_id", ""),
+                    "target_owner": r.get("target_owner", ""),
+                    "target_city_id": r.get("target_city_id", ""),
+                    "target_city_name": r.get("target_city_name", ""),
+                    "target_x": r.get("target_x"),
+                    "target_y": r.get("target_y"),
+                    "subject": r.get("subject", ""),
+                    "status": r.get("status", ""),
+                    "result_status": r.get("result_status", ""),
+                    "agents_sent": r.get("agents_sent", 0),
+                    "agents_lost": r.get("agents_lost", 0),
+                    "report_html": r.get("report_html", ""),
+                    "report_text": r.get("report_text", ""),
+                    "data_json": r.get("data_json", {}),
+                    "date_str": r.get("date_str", ""),
+                    "mission_id": r.get("mission_id"),
+                    "unread": r.get("unread", False),
+                })
+            save_result = self.hub.save_spy_reports(ga_id, report_dicts)
+            saved = save_result.get("saved", 0)
+            new = save_result.get("new_count", 0)
+            self.log(jid, "info", f"Relatórios salvos: {saved} ({new} novos)")
+            if delete_after_save and new > 0:
+                for r in reports[:new]:
+                    try:
+                        client.delete_spy_report(city_id, r.get("report_id"))
+                    except Exception:
+                        pass
         except Exception as exc:
-            self.log(jid, "warn", f"Falha ao coletar/salvar relatórios: {exc}")
+            self.log(jid, "warn", f"Erro ao coletar relatórios: {exc}")
+
+MISSION_MIN_WAIT = 5 * 60
+MISSION_MAX_WAIT = 15 * 60
