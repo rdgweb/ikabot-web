@@ -228,21 +228,10 @@ class PiracyMissionRunner(BaseRunner):
             self.save_game_client(game_account_id, client)
             return RunnerResult(success=True, reschedule_seconds=wait)
 
-        except CaptchaRequiredError:
-            # Captcha detected in response — but the mission POST was already sent and likely accepted.
-            # Treat as success: reschedule for the mission duration so the ship is not re-sent early.
-            wait = _MISSION_DURATIONS.get(effective_level, 1800) + MISSION_BUFFER
-            self.log(
-                jid,
-                "info",
-                f"Missão pirata nível {effective_level} enviada (captcha detectado na resposta, será tratado no próximo ciclo). "
-                f"Reagendando em {wait}s.",
-            )
-            try:
-                self.save_game_client(game_account_id, client)
-            except Exception:
-                pass
-            return RunnerResult(success=True, reschedule_seconds=wait)
+        except CaptchaRequiredError as exc:
+            # CaptchaRequiredError from something other than PiracyMissionAction (e.g. state GET)
+            self.log(jid, "warn", f"Captcha inesperado fora do fluxo de missão: {exc}. Reagendando em 5 min.")
+            return RunnerResult(success=False, reschedule_seconds=CAPTCHA_RESCHEDULE, data={"error": "captcha_unexpected"})
         except Exception as exc:
             self.log(jid, "error", f"Missão pirata falhou: {exc}")
             return RunnerResult(

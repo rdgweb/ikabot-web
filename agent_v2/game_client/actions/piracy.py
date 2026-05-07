@@ -146,7 +146,20 @@ class PiracyStateAction(BaseAction):
 
 
 class PiracyMissionAction(BaseAction):
-    """Start a piracy mission (function=capture)."""
+    """Start a piracy mission (function=capture) with captcha solving.
+
+    Flow (per ikabot reference implementation):
+    1. POST function=capture
+    2. If response has "function=createCaptcha":
+       a. Check "showPirateFortressShip":1 → crew still in town (captcha blocked start)
+       b. GET action=Options&function=createCaptcha → raw image bytes
+       c. Solve via hub.solve_captcha("pirate", {"image": base64})
+       d. Re-POST with captchaNeeded=1&captcha=ANSWER
+       e. Check showPirateFortressShip:0 → success
+    3. If no captcha OR showPirateFortressShip:0 → crew departed → success
+    """
+
+    _MAX_CAPTCHA_RETRIES = 5
 
     def execute(
         self,
@@ -154,21 +167,7 @@ class PiracyMissionAction(BaseAction):
         building_level: int,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Start a piracy mission.
-
-        Args:
-            city_id: City with pirate fortress.
-            building_level: Mission level (1,3,5,7,9,11,13,15,17).
-
-        Returns:
-            {
-                "success": bool,
-                "captcha_required": bool,
-                "time_remaining": int,  # from new state
-                "message": str,
-            }
-        """
-        params = {
+        base_params = {
             "buildingLevel": str(building_level),
             "view": "pirateFortress",
             "cityId": str(city_id),
@@ -176,40 +175,118 @@ class PiracyMissionAction(BaseAction):
             "activeTab": "tabBootyQuest",
             "backgroundView": "city",
             "currentCityId": str(city_id),
+            "actionRequest": self.client._action_request,
+            "ajax": "1",
         }
-        data = self._ajax_request(f"{ActionID.PIRACY}&function=capture", params)
 
-        # Check for captcha
-        captcha_required = any(
-            isinstance(e, list) and e[0] in ("createCaptcha", "provideCaptcha")
-            for e in data
+        # POST directly — bypass _request captcha detection so we can handle it ourselves
+        resp = self.client.session.post(
+            self.client._server_url,
+            data={**base_params, "action": ActionID.PIRACY, "function": "capture"},
+            headers=dict(GAME_AJAX_HEADERS),
+            timeout=30,
         )
-        if captcha_required:
-            raise CaptchaRequiredError(
-                "Piracy mission requires captcha",
-                captcha_type="pirate",
-                city_id=int(city_id),
-            )
+        resp_text = resp.text
+        # Update action request token from response
+        import re as _re
+        ar_m = _re.search(r'"actionRequest"\s*:\s*"([a-f0-9]+)"', resp_text)
+        if ar_m:
+            self.client._action_request = ar_m.group(1)
 
-        # Check feedback
-        success = False
+        try:
+            data = resp.json()
+        except Exception as exc:
+            raise ActionError(f"Failed to parse piracy mission response: {exc}", action="capture")
+
+        # Captcha solve loop
+        for attempt in range(self._MAX_CAPTCHA_RETRIES):
+            if "function=createCaptcha" not in resp_text:
+                break  # No captcha in this response
+
+            js = _extract_js_params(data)
+            ship_in_port = str(js.get("showPirateFortressShip", "0")) == "1"
+            if not ship_in_port:
+                # Ship departed — mission started, captcha in response is for next attempt
+                logger.info("Piracy: ship departed despite captcha in response (no action needed)")
+                break
+
+            # Captcha blocked the mission start — need to solve
+            logger.info("Piracy: captcha required (attempt %d/%d)", attempt + 1, self._MAX_CAPTCHA_RETRIES)
+
+            # Fetch captcha image from game
+            img_resp = self.client.session.get(
+                self.client._server_url,
+                params={
+                    "action": "Options",
+                    "function": "createCaptcha",
+                    "actionRequest": self.client._action_request,
+                    "ajax": "1",
+                },
+                headers=dict(GAME_AJAX_HEADERS),
+                timeout=20,
+            )
+            if not img_resp.content or len(img_resp.content) < 10:
+                logger.warning("Piracy: captcha image empty, retrying in 5s")
+                import time as _t; _t.sleep(5)
+                continue
+
+            # Solve via hub
+            import base64 as _b64
+            img_b64 = _b64.b64encode(img_resp.content).decode("ascii")
+            try:
+                solve_result = self.client.hub.solve_captcha("pirate", {"image": img_b64})
+                solution = str(solve_result.get("solution") or solve_result.get("result") or "").strip().upper()
+            except Exception as exc:
+                logger.warning("Piracy: captcha solving failed: %s", exc)
+                import time as _t; _t.sleep(5)
+                continue
+
+            if not solution:
+                logger.warning("Piracy: empty captcha solution, retrying")
+                import time as _t; _t.sleep(5)
+                continue
+
+            logger.info("Piracy: captcha solution = %s", solution)
+
+            # Re-POST with solution
+            retry_params = {
+                **base_params,
+                "action": ActionID.PIRACY,
+                "function": "capture",
+                "captchaNeeded": "1",
+                "captcha": solution,
+                "actionRequest": self.client._action_request,
+            }
+            resp = self.client.session.post(
+                self.client._server_url,
+                data=retry_params,
+                headers=dict(GAME_AJAX_HEADERS),
+                timeout=30,
+            )
+            resp_text = resp.text
+            ar_m2 = _re.search(r'"actionRequest"\s*:\s*"([a-f0-9]+)"', resp_text)
+            if ar_m2:
+                self.client._action_request = ar_m2.group(1)
+            try:
+                data = resp.json()
+            except Exception:
+                break
+
+        # Parse final result
+        js_final = _extract_js_params(data)
+        time_remaining = int(js_final.get("ongoingMissionTimeRemaining") or 0)
+        ship_in_port_final = str(js_final.get("showPirateFortressShip", "0")) == "1"
+
+        success = not ship_in_port_final  # ship departed = success
         message = ""
         for entry in data:
             if isinstance(entry, list) and entry[0] == "provideFeedback":
-                feedback_list = entry[1] or []
-                for fb in feedback_list:
-                    if isinstance(fb, dict):
-                        message = fb.get("text", "")
-                        if fb.get("type") == 10:
-                            success = True
-
-        # Get new state
-        js = _extract_js_params(data)
-        time_remaining = int(js.get("ongoingMissionTimeRemaining") or 0)
+                for fb in (entry[1] or []):
+                    if isinstance(fb, dict) and fb.get("text"):
+                        message = fb["text"]
 
         return {
-            "success": success or (not message),  # silent success if no error
-            "captcha_required": False,
+            "success": success,
             "time_remaining": time_remaining,
             "message": message,
         }
