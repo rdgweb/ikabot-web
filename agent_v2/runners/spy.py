@@ -119,10 +119,11 @@ class SpyRunner(BaseRunner):
             self.log(jid, "info",
                 f"Safehouse: total={total} disponíveis={available} em_uso={in_use} treinando={training}")
 
-            # Stationed at target city
-            stationed = self._get_stationed(state, target_city_name, target_city_id)
+            # Stationed at target city — aggregate from ALL safehouses
+            stationed = self._get_total_stationed(jid, client, city_id, state,
+                                                   target_city_name, target_city_id, inputs)
             self.log(jid, "info",
-                f"Estacionados em {target_city_name or target_city_id}: {stationed}")
+                f"Estacionados em {target_city_name or target_city_id}: {stationed} (todas as cidades)")
 
             # ── Get live risk data ─────────────────────────────────────────────
             live_params: dict = {}
@@ -276,6 +277,35 @@ class SpyRunner(BaseRunner):
             return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE, data={"error": str(exc)})
 
     # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _get_total_stationed(self, jid, client, primary_city_id, primary_state,
+                             city_name: str, city_id: str, inputs: dict) -> int:
+        """Aggregate stationed spies from ALL safehouses for the target city."""
+        total = self._get_stationed(primary_state, city_name, city_id)
+        # Check other cities with safehouses
+        try:
+            ga_id = inputs.get("game_account_id") or ""
+            snap = self.hub.get_snapshot(game_account_id=ga_id)
+            for candidate in (snap.get("cities") or []):
+                cid = str(candidate.get("id") or "")
+                if not cid or cid == primary_city_id:
+                    continue
+                has_safe = any("safehouse" in str(b.get("building","")).lower()
+                              for b in (candidate.get("buildings") or []))
+                if not has_safe:
+                    continue
+                try:
+                    cs = client.get_safehouse_state(cid)
+                    count = self._get_stationed(cs, city_name, city_id)
+                    if count > 0:
+                        self.log(jid, "info",
+                            f"  +{count} espiões de {candidate.get('name','?')} estacionados no alvo")
+                        total += count
+                except Exception:
+                    continue
+        except Exception as exc:
+            self.log(jid, "warn", f"Não foi possível agregar estacionados: {exc}")
+        return total
 
     def _get_stationed(self, state: dict, city_name: str, city_id: str) -> int:
         """Count spies stationed at target (fuzzy match on city name)."""
