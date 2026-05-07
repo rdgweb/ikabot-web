@@ -116,12 +116,37 @@ class SpyRunner(BaseRunner):
         try:
             client = self.get_or_login_game_client(jid, aid, game_account_id, creds)
 
-            # Etapa 1: ler estado da Casa Segura
-            self.log(jid, "info", f"Lendo estado da Casa Segura na cidade {city_id}")
+            # Etapa 1: ler estado da Casa Segura — varrer todas as cidades com espionagem
+            self.log(jid, "info", f"Lendo estado da Casa Segura")
             state = client.get_safehouse_state(city_id)
-
-            total_spies = int(state.get("total_spies") or 0)
             available_spies = int(state.get("available_spies") or 0)
+            total_spies = int(state.get("total_spies") or 0)
+
+            # Se a cidade configurada não tem espiões disponíveis, tenta as demais
+            if available_spies == 0:
+                snap = self.hub.get_snapshot(game_account_id=game_account_id)
+                for candidate in (snap.get("cities") or []):
+                    cid = str(candidate.get("id") or "")
+                    if not cid or cid == city_id:
+                        continue
+                    has_safehouse = any(
+                        "safehouse" in str(b.get("building","")).lower()
+                        for b in (candidate.get("buildings") or [])
+                    )
+                    if not has_safehouse:
+                        continue
+                    try:
+                        cand_state = client.get_safehouse_state(cid)
+                        cand_avail = int(cand_state.get("available_spies") or 0)
+                        if cand_avail > available_spies:
+                            self.log(jid, "info",
+                                f"Cidade {cid} ({candidate.get('name','?')}) tem {cand_avail} espiões disponíveis — usando esta")
+                            city_id = cid
+                            state = cand_state
+                            available_spies = cand_avail
+                            total_spies = int(cand_state.get("total_spies") or 0)
+                    except Exception:
+                        continue
             in_use_spies = int(state.get("in_use_spies") or 0)
 
             self.log(
