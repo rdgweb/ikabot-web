@@ -4280,41 +4280,44 @@
           </label>
           <span class="text-[10px] text-muted">{{ spy_target_cities|length }} cidades no dump</span>
         </div>
-        {# Ring fix: outer div scrolls, inner grid has padding for ring breathing room #}
-        <div class="max-h-52 overflow-y-auto -mx-1 px-1">
-          <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 py-1">
+        {# Ring fix: p-1 -m-1 gives space all sides for outline #}
+        <div class="max-h-52 overflow-y-auto" style="margin:-4px; padding:4px;">
+          <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
             <template x-for="city in targetCities" :key="city.game_city_id">
               <button type="button"
                       class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
                       :style="targetCityId === String(city.game_city_id)
-                        ? 'transform:translateY(-1px); outline: 2px solid rgba(185,79,79,0.7); outline-offset: 2px; border-color: rgba(185,79,79,0.55); background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(185,79,79,0.08)); box-shadow: 0 8px 20px rgba(185,79,79,0.18);'
-                        : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'"
+                        ? 'transform:translateY(-1px); outline:2px solid rgba(185,79,79,0.65); outline-offset:2px; border-color:rgba(185,79,79,0.50); background:linear-gradient(180deg,rgba(255,255,255,0.94),rgba(185,79,79,0.09)); box-shadow:0 8px 20px rgba(185,79,79,0.16);'
+                        : 'border-color:rgba(219,201,167,0.9); background:rgba(255,255,255,0.82);'"
                       @click="targetCityId=String(city.game_city_id); targetIslandId=String(city.island_id); targetCityName=city.name">
-                <div class="absolute inset-x-0 top-0 h-10" style="background: linear-gradient(135deg, rgba(185,79,79,0.12), rgba(185,79,79,0.01));"></div>
+                <div class="absolute inset-x-0 top-0 h-10" style="background:linear-gradient(135deg,rgba(185,79,79,0.13),rgba(185,79,79,0.01));"></div>
                 <div class="relative p-2.5">
-                  <div class="flex items-center gap-2">
-                    {# Enemy city icon placeholder #}
-                    <div class="flex h-9 w-9 items-center justify-center rounded-[12px] border shrink-0"
-                         :style="targetCityId === String(city.game_city_id)
-                           ? 'border-color: rgba(185,79,79,0.25); background: rgba(185,79,79,0.10);'
-                           : 'border-color: rgba(219,201,167,0.6); background: linear-gradient(180deg,#fffdf8,#f4ecda);'">
-                      <i class="bi bi-building text-sm" :style="targetCityId === String(city.game_city_id) ? 'color: var(--ik-bad);' : 'color: var(--ik-muted);'"></i>
+                  <div class="flex items-start gap-2">
+                    {# City art + tradegood badge — same as source city picker #}
+                    <div class="relative shrink-0">
+                      <div class="flex h-10 w-10 items-center justify-center rounded-[14px] border"
+                           style="border-color:rgba(185,79,79,0.18); background:linear-gradient(180deg,#fffdf8,#f4ecda);">
+                        <img :src="city.city_art" alt="" class="h-7 w-7 object-contain">
+                      </div>
+                      <div class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm" x-show="city.tradegood_icon">
+                        <img :src="city.tradegood_icon" :alt="city.resource_name" class="h-3.5 w-3.5 object-contain">
+                      </div>
                     </div>
                     <div class="min-w-0 flex-1">
                       <div class="flex items-start justify-between gap-1">
                         <div class="min-w-0">
                           <div class="truncate text-xs font-semibold text-ink" x-text="city.name"></div>
-                          <div class="text-[10px] text-muted" x-text="'['+city.x+':'+city.y+']'"></div>
+                          <div class="text-[10px] text-muted" x-text="(city.resource_name||'') + ' · ['+city.x+':'+city.y+']'"></div>
                         </div>
                         <span class="flex-shrink-0 mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border"
-                              :style="targetCityId === String(city.game_city_id)
-                                ? 'border-color: var(--ik-bad); background: var(--ik-bad); color: white;'
-                                : 'border-color: rgba(185,79,79,0.24); color: var(--ik-bad); background: rgba(185,79,79,0.06);'">
-                          <i class="bi text-[9px]" :class="targetCityId === String(city.game_city_id) ? 'bi-check-lg' : 'bi-circle'"></i>
+                              :style="targetCityId===String(city.game_city_id)
+                                ? 'border-color:var(--ik-bad);background:var(--ik-bad);color:white;'
+                                : 'border-color:rgba(185,79,79,0.24);color:var(--ik-bad);background:rgba(185,79,79,0.06);'">
+                          <i class="bi text-[9px]" :class="targetCityId===String(city.game_city_id)?'bi-check-lg':'bi-circle'"></i>
                         </span>
                       </div>
-                      <div class="mt-1 text-[10px]" :style="targetCityId === String(city.game_city_id) ? 'color: var(--ik-bad);' : 'color: var(--ik-muted);'">
-                        <i class="bi bi-shield-fill text-[8px]"></i> lv<span x-text="city.level"></span>
+                      <div class="mt-1 text-[10px] font-semibold" :style="targetCityId===String(city.game_city_id)?'color:var(--ik-bad);':'color:var(--ik-muted);'">
+                        lv<span x-text="city.level"></span>
                       </div>
                     </div>
                   </div>

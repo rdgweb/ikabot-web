@@ -604,6 +604,14 @@ def _spy_context(ga, all_cities: list, initial: dict | None = None) -> dict:
             if c.game_city_id in seen:
                 continue
             seen.add(c.game_city_id)
+            _RESOURCE_ICONS = {
+                0: "game/resources/icon_wood.png",
+                1: "game/resources/icon_wine.png",
+                2: "game/resources/icon_marble.png",
+                3: "game/resources/icon_glass.png",
+                4: "game/resources/icon_sulfur.png",
+            }
+            rtype = c.island.resource_type if c.island else 0
             target_cities.append({
                 "game_city_id": c.game_city_id,
                 "name": c.name,
@@ -612,6 +620,9 @@ def _spy_context(ga, all_cities: list, initial: dict | None = None) -> dict:
                 "x": c.island.x if c.island else 0,
                 "y": c.island.y if c.island else 0,
                 "island_name": c.island.name if c.island else "",
+                "resource_name": c.island.resource_name if c.island else "",
+                "city_art": _static("game/buildings/townhall.png"),
+                "tradegood_icon": _static(_RESOURCE_ICONS.get(rtype, "game/resources/icon_wood.png")),
             })
 
     return {
