@@ -24,4 +24,5 @@ from runners import (  # noqa: F401
     donate,
     donate_loop,
     revolt,
+    spy,
 )

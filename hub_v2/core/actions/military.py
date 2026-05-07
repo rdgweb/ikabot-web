@@ -139,6 +139,8 @@ ACTIONS = {
              "label": "Salvar relatórios no hub"},
             {"key": "delete_after_save", "type": FIELD_BOOL, "required": False, "default": False,
              "label": "Apagar do jogo após salvar"},
+            {"key": "target_city_name", "type": FIELD_STR, "required": False, "label": "Nome da cidade alvo"},
+            {"key": "target_owner", "type": FIELD_STR, "required": False, "label": "Dono da cidade alvo"},
         ],
     },
     9002: {

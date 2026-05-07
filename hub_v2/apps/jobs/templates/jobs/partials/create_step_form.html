@@ -4170,6 +4170,293 @@
     </div>
     {% endif %}
 
+    {# ── Espionagem (action 15) ── #}
+    {% if action_code == 15 %}
+    {{ spy_missions|json_script:"spy-missions-data" }}
+    {{ spy_cities|json_script:"spy-cities-data" }}
+    <script>
+    function spyForm() {
+      return {
+        cities: [], missions: [],
+        selectedCityId: '',
+        selectedMissionIds: [],
+        autoAgents: true,
+        maxRisk: 25,
+        manualAgents: 1,
+        decoys: 0,
+        saveReports: true,
+        init(cityId, targetCityId, targetCityName, targetOwner, missionId, maxRisk, autoAgents, agents, decoys, saveReports) {
+          this.cities = JSON.parse(document.getElementById('spy-cities-data')?.textContent || '[]');
+          this.missions = JSON.parse(document.getElementById('spy-missions-data')?.textContent || '[]');
+          this.selectedCityId = String(cityId || (this.cities[0]?.id || ''));
+          const mids = String(missionId || '1').split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x));
+          this.selectedMissionIds = mids.length ? mids : [1];
+          this.maxRisk = parseInt(maxRisk) || 25;
+          this.autoAgents = autoAgents !== false && autoAgents !== 'false' && autoAgents !== '';
+          this.manualAgents = parseInt(agents) || 1;
+          this.decoys = parseInt(decoys) || 0;
+          this.saveReports = saveReports !== false && saveReports !== 'false';
+        },
+        selectedCity() { return this.cities.find(c => String(c.id) === String(this.selectedCityId)) || null; },
+        toggleMission(id) {
+          if (this.selectedMissionIds.includes(id)) {
+            this.selectedMissionIds = this.selectedMissionIds.filter(x => x !== id);
+          } else {
+            this.selectedMissionIds = [...this.selectedMissionIds, id];
+          }
+        },
+        isMissionSelected(id) { return this.selectedMissionIds.includes(id); },
+        missionIds() { return this.selectedMissionIds.join(',') || '1'; },
+        computedAgents(mission) {
+          if (!this.autoAgents) return this.manualAgents;
+          const rb = mission.risk_before, rs = mission.risk_per_spy;
+          if (rb <= this.maxRisk) return 1;
+          return Math.max(1, Math.ceil((rb - this.maxRisk) / rs));
+        },
+        riskAfterAgents(mission) {
+          const a = this.computedAgents(mission);
+          return Math.max(mission.risk_after, mission.risk_before - mission.risk_per_spy * a);
+        },
+        riskColor(risk) {
+          if (risk <= 25) return 'var(--ik-good)';
+          if (risk <= 50) return 'var(--ik-gold)';
+          return 'var(--ik-bad)';
+        },
+      };
+    }
+    </script>
+    <div class="space-y-4"
+         x-data="spyForm()"
+         x-init="init(
+           '{{ form.city_id.value|default:''|escapejs }}',
+           '{{ form.target_city_id.value|default:''|escapejs }}',
+           '{{ form.target_city_name.value|default:''|escapejs }}',
+           '{{ form.target_owner.value|default:''|escapejs }}',
+           '{{ form.mission_id.value|default:'1'|escapejs }}',
+           {{ form.max_detection_risk.value|default:25 }},
+           {{ form.auto_agents.value|yesno:'true,false,true' }},
+           {{ form.agents.value|default:1 }},
+           {{ form.decoys.value|default:0 }},
+           {{ form.save_reports.value|yesno:'true,false,true' }})">
+
+      <input type="hidden" name="{{ form.city_id.html_name }}" x-model="selectedCityId">
+      <input type="hidden" name="{{ form.target_city_id.html_name }}" value="{{ form.target_city_id.value|default:'' }}">
+      <input type="hidden" name="{{ form.island_id.html_name }}" value="{{ form.island_id.value|default:'' }}">
+      <input type="hidden" name="{{ form.target_city_name.html_name }}" value="{{ form.target_city_name.value|default:'' }}">
+      <input type="hidden" name="{{ form.target_owner.html_name }}" value="{{ form.target_owner.value|default:'' }}">
+      <input type="hidden" name="{{ form.mission_id.html_name }}" :value="missionIds()">
+      <input type="hidden" name="{{ form.max_detection_risk.html_name }}" :value="maxRisk">
+      <input type="hidden" name="{{ form.auto_agents.html_name }}" :value="autoAgents ? 'true' : 'false'">
+      <input type="hidden" name="{{ form.agents.html_name }}" :value="autoAgents ? 1 : manualAgents">
+      <input type="hidden" name="{{ form.decoys.html_name }}" :value="decoys">
+      <input type="hidden" name="{{ form.save_reports.html_name }}" :value="saveReports ? 'true' : 'false'">
+      <input type="hidden" name="{{ form.delete_after_save.html_name }}" value="false">
+
+      {# Alvo — card de informação pré-preenchido #}
+      <div class="card !p-4">
+        <label class="form-label text-xs mb-2 block"><i class="bi bi-crosshair text-sea mr-1"></i>Alvo da espionagem <span class="text-[var(--ik-bad)]">*</span></label>
+        {% if form.target_city_id.value and form.target_city_name.value %}
+        <div class="flex items-center gap-3 rounded-xl border px-4 py-3"
+             style="border-color: rgba(79,134,185,0.28); background: rgba(79,134,185,0.05);">
+          <div class="flex h-10 w-10 items-center justify-center rounded-[12px] shrink-0"
+               style="background: rgba(79,134,185,0.10); color: var(--ik-sea);">
+            <i class="bi bi-building text-base"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold text-ink">{{ form.target_city_name.value }}</div>
+            <div class="text-[11px] text-muted">
+              {% if form.target_owner.value %}<span class="font-medium text-ink">{{ form.target_owner.value }}</span> · {% endif %}
+              ID {{ form.target_city_id.value }}
+              {% if form.island_id.value %} · Ilha {{ form.island_id.value }}{% endif %}
+            </div>
+          </div>
+          <span class="badge badge-secondary text-[10px]"><i class="bi bi-check-circle-fill text-[var(--ik-good)] mr-1"></i>Pré-selecionado</span>
+        </div>
+        {% else %}
+        <p class="text-xs text-muted mb-3">Informe o ID da cidade alvo e da ilha (obtidos via Inteligência Mundial).</p>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="form-label text-[11px] mb-1 block">ID da cidade alvo <span class="text-[var(--ik-bad)]">*</span></label>
+            <input type="number" name="{{ form.target_city_id.html_name }}" value="{{ form.target_city_id.value|default:'' }}"
+                   class="form-input !text-sm w-full" placeholder="ex: 12345" required>
+          </div>
+          <div>
+            <label class="form-label text-[11px] mb-1 block">ID da ilha <span class="text-[var(--ik-bad)]">*</span></label>
+            <input type="number" name="{{ form.island_id.html_name }}" value="{{ form.island_id.value|default:'' }}"
+                   class="form-input !text-sm w-full" placeholder="ex: 9876" required>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      {# Cidade de origem (com Casa de Espionagem) #}
+      <div class="card !p-4">
+        <label class="form-label text-xs mb-2 block"><i class="bi bi-house-fill text-sea mr-1"></i>Cidade de origem (com Casa de Espionagem) <span class="text-[var(--ik-bad)]">*</span></label>
+        {% if spy_cities %}
+        <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
+          {% for city in spy_cities %}
+          <button type="button"
+                  class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                  :class="selectedCityId === '{{ city.id }}' ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
+                  :style="selectedCityId === '{{ city.id }}' ? 'border-color: rgba(79,134,185,0.50); background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(79,134,185,0.10));' : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'"
+                  @click="selectedCityId = '{{ city.id }}'">
+            <div class="absolute inset-x-0 top-0 h-14" style="background: linear-gradient(135deg, rgba(79,134,185,0.16), rgba(79,134,185,0.02));"></div>
+            <div class="relative p-3">
+              <div class="flex items-start gap-2">
+                <div class="relative shrink-0">
+                  <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                       style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                    <img src="{{ city.city_art }}" alt="" class="h-8 w-8 object-contain">
+                  </div>
+                  {% if city.tradegood_icon %}
+                  <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                    <img src="{{ city.tradegood_icon }}" alt="" class="h-4 w-4 object-contain">
+                  </div>
+                  {% endif %}
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-start justify-between gap-1">
+                    <div class="min-w-0">
+                      <div class="truncate text-xs font-semibold text-ink">{{ city.name }}</div>
+                      <div class="text-[10px] text-muted">{{ city.tradegood_name }} · [{{ city.x }}:{{ city.y }}]</div>
+                    </div>
+                    <span class="mt-0.5 flex-shrink-0 inline-flex h-5 w-5 items-center justify-center rounded-full border"
+                          :style="selectedCityId === '{{ city.id }}' ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);' : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
+                      <i class="bi text-[9px]" :class="selectedCityId === '{{ city.id }}' ? 'bi-check-lg' : 'bi-circle'"></i>
+                    </span>
+                  </div>
+                  <div class="mt-1 text-[10px] font-semibold" style="color: var(--ik-sea);">
+                    <i class="bi bi-binoculars text-[8px]"></i> Espionagem nív. {{ city.safehouse_level }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </button>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-sm text-muted">Nenhuma cidade com Casa de Espionagem no snapshot. Execute um snapshot primeiro.</p>
+        {% endif %}
+      </div>
+
+      {# Missões — seleção múltipla #}
+      <div class="card !p-4">
+        <label class="form-label text-xs mb-1 block"><i class="bi bi-list-check text-sea mr-1"></i>Missões de espionagem</label>
+        <p class="text-[10px] text-muted mb-3">Selecione uma ou mais missões. O runner executará todas em sequência.</p>
+        <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
+          {% for mission in spy_missions %}
+          <button type="button"
+                  class="relative rounded-xl border p-2.5 text-left transition-all"
+                  :class="isMissionSelected({{ mission.id }}) ? 'ring-2 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.06)]' : 'hover:border-[var(--ik-sea)]/50'"
+                  style="border-color: var(--ik-line); background: var(--ik-paper);"
+                  @click="toggleMission({{ mission.id }})">
+            <div class="flex items-start justify-between gap-1 mb-1.5">
+              <div class="text-[11px] font-semibold text-ink leading-tight">{{ mission.name }}</div>
+              <i class="bi bi-check-circle-fill text-sea text-[11px] flex-shrink-0 mt-0.5 transition-opacity"
+                 :class="isMissionSelected({{ mission.id }}) ? 'opacity-100' : 'opacity-0'"></i>
+            </div>
+            <div class="space-y-0.5">
+              <div class="flex items-center gap-1 text-[10px]">
+                <span class="text-muted">Risco:</span>
+                <span class="font-semibold" :style="{ color: riskColor({{ mission.risk_before }}) }">{{ mission.risk_before }}%</span>
+                <span class="text-muted text-[9px]">→</span>
+                <span class="font-semibold" x-text="riskAfterAgents(missions.find(m => m.id === {{ mission.id }}) || {risk_before:{{ mission.risk_before }},risk_after:{{ mission.risk_after }},risk_per_spy:{{ mission.risk_per_spy }}}) + '%'" :style="{ color: riskColor(riskAfterAgents(missions.find(m => m.id === {{ mission.id }}) || {risk_before:{{ mission.risk_before }},risk_after:{{ mission.risk_after }},risk_per_spy:{{ mission.risk_per_spy }}})) }"></span>
+              </div>
+              <div class="flex items-center gap-2 text-[10px] text-muted">
+                <span><i class="bi bi-check2" style="color: var(--ik-good);"></i> {{ mission.success }}%</span>
+                <span><i class="bi bi-clock"></i> {{ mission.completion_min }}min</span>
+              </div>
+            </div>
+          </button>
+          {% endfor %}
+        </div>
+        <div x-show="selectedMissionIds.length === 0" class="mt-2 text-[11px] text-[var(--ik-bad)]">
+          <i class="bi bi-exclamation-circle mr-1"></i>Selecione pelo menos uma missão.
+        </div>
+      </div>
+
+      {# Configuração de risco e agentes #}
+      <div class="card !p-4">
+        <div class="flex items-center justify-between mb-3">
+          <label class="form-label text-xs"><i class="bi bi-sliders text-sea mr-1"></i>Agentes e risco</label>
+          <button type="button" role="switch" :aria-checked="autoAgents"
+                  class="flex items-center gap-2 select-none text-xs text-muted"
+                  @click="autoAgents = !autoAgents">
+            <span :class="autoAgents ? 'text-ink font-semibold' : ''">Calcular automaticamente</span>
+            <span class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out"
+                  :class="autoAgents ? 'bg-[var(--ik-sea)]' : 'bg-gray-300'">
+              <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform duration-200 ease-in-out"
+                    :style="autoAgents ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
+            </span>
+          </button>
+        </div>
+
+        <div x-show="autoAgents" class="space-y-2">
+          <p class="text-[10px] text-muted">Número de agentes calculado automaticamente para manter o risco abaixo do máximo configurado.</p>
+          <div class="flex items-center gap-3">
+            <input type="range" min="0" max="100" step="5" x-model.number="maxRisk" class="flex-1 accent-[var(--ik-sea)]">
+            <div class="text-sm font-bold w-28 text-right" :style="{ color: riskColor(maxRisk) }" x-text="'Máx ' + maxRisk + '%'"></div>
+          </div>
+          <div class="flex justify-between text-[10px] text-muted">
+            <span>0%</span><span>50%</span><span>100%</span>
+          </div>
+          <template x-if="selectedMissionIds.length > 0">
+            <div class="mt-2 space-y-1">
+              <template x-for="mid in selectedMissionIds" :key="'agents-' + mid">
+                <template x-if="missions.find(m => m.id === mid)">
+                  <div class="flex items-center justify-between text-[11px] rounded-lg px-3 py-1.5"
+                       style="background: rgba(79,134,185,0.06); border: 1px solid rgba(79,134,185,0.14);">
+                    <span class="text-muted" x-text="missions.find(m => m.id === mid)?.name || ''"></span>
+                    <span class="font-semibold text-ink" x-text="computedAgents(missions.find(m => m.id === mid)) + ' agente(s)'"></span>
+                  </div>
+                </template>
+              </template>
+            </div>
+          </template>
+        </div>
+
+        <div x-show="!autoAgents" class="flex items-center gap-3 mt-1">
+          <label class="text-xs font-semibold text-ink flex-shrink-0">Nº de agentes:</label>
+          <input type="number" min="1" x-model.number="manualAgents" class="form-input !py-1 !text-xs w-24" placeholder="1">
+          <span class="text-[10px] text-muted">agentes por missão</span>
+        </div>
+      </div>
+
+      {# Chamariz #}
+      <div class="card !p-4">
+        <label class="form-label text-xs mb-1 block"><i class="bi bi-person-slash text-sea mr-1"></i>Chamariz (opcional)</label>
+        <p class="text-[10px] text-muted mb-2">Agentes de distração que reduzem a chance de detecção do espião real.</p>
+        <div class="flex items-center gap-3">
+          <input type="range" min="0" max="10" step="1" x-model.number="decoys" class="flex-1 accent-[var(--ik-sea)]">
+          <div class="text-xs font-semibold text-ink w-28 text-right" x-text="decoys === 0 ? 'Nenhum' : decoys + ' chamariz'"></div>
+        </div>
+        <div class="flex justify-between text-[10px] text-muted mt-1">
+          <span>0 (desativado)</span><span>5</span><span>10</span>
+        </div>
+      </div>
+
+      {# Salvar relatórios #}
+      <div class="card !p-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <label class="form-label text-xs"><i class="bi bi-file-earmark-text text-sea mr-1"></i>Salvar relatórios no hub</label>
+            <p class="text-[10px] text-muted mt-0.5">Os relatórios de espionagem serão arquivados no hub para consulta posterior.</p>
+          </div>
+          <button type="button" role="switch" :aria-checked="saveReports"
+                  class="flex-shrink-0"
+                  @click="saveReports = !saveReports">
+            <span class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out"
+                  :class="saveReports ? 'bg-[var(--ik-sea)]' : 'bg-gray-300'">
+              <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform duration-200 ease-in-out"
+                    :style="saveReports ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
+            </span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+    {% endif %}
+
     {# Dynamic fields — 2 col layout for wider modal #}
     {% if action_code == 9002 %}
     {{ cities|json_script:"revolt-cities-data" }}

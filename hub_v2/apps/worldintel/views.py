@@ -282,6 +282,11 @@ class WorldPlayerDetailView(WorldIntelBaseView):
         }
         ctx["cities"] = city_list
         ctx["monitor_url"] = self._monitor_url(current_dump.game_account, island_ids)
+        spy_target = next(
+            (c for c in city_list if c.game_city_id and c.game_city_id != "-1"),
+            None,
+        )
+        ctx["spy_target"] = spy_target
         return ctx
 
 

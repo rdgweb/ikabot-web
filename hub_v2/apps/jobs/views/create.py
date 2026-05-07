@@ -557,6 +557,44 @@ def _market_form_context(cities):
     return {"cities": market_cities}
 
 
+SPY_MISSIONS_UI = [
+    {"id": 1,  "name": "Enviar espião",      "risk_before": 30, "risk_after": 5,  "risk_per_spy": 3, "success": 60, "completion_min": 5},
+    {"id": 3,  "name": "Nível de pesquisa",  "risk_before": 35, "risk_after": 10, "risk_per_spy": 4, "success": 50, "completion_min": 10},
+    {"id": 5,  "name": "Inspecionar armazém","risk_before": 60, "risk_after": 15, "risk_per_spy": 6, "success": 30, "completion_min": 15},
+    {"id": 6,  "name": "Guarnição militar",  "risk_before": 70, "risk_after": 20, "risk_per_spy": 6, "success": 55, "completion_min": 15},
+    {"id": 7,  "name": "Tropas e frotas",    "risk_before": 50, "risk_after": 22, "risk_per_spy": 2, "success": 20, "completion_min": 15},
+    {"id": 21, "name": "Ver estado",         "risk_before": 40, "risk_after": 25, "risk_per_spy": 7, "success": 50, "completion_min": 10},
+    {"id": 23, "name": "Produção militar",   "risk_before": 65, "risk_after": 15, "risk_per_spy": 6, "success": 45, "completion_min": 15},
+    {"id": 25, "name": "Forma de governo",   "risk_before": 30, "risk_after": 5,  "risk_per_spy": 4, "success": 60, "completion_min": 5},
+    {"id": 26, "name": "Invenções",          "risk_before": 55, "risk_after": 10, "risk_per_spy": 4, "success": 40, "completion_min": 10},
+    {"id": 27, "name": "Colônias",           "risk_before": 30, "risk_after": 5,  "risk_per_spy": 3, "success": 45, "completion_min": 5},
+    {"id": 10, "name": "Comunicação",        "risk_before": 90, "risk_after": 26, "risk_per_spy": 5, "success": 40, "completion_min": 20},
+    {"id": 24, "name": "Cargo na aliança",   "risk_before": 60, "risk_after": 15, "risk_per_spy": 6, "success": 50, "completion_min": 15},
+]
+
+
+def _spy_context(ga, all_cities: list) -> dict:
+    """Build spy form context — filters cities with safehouse and annotates safehouse level."""
+    spy_cities = []
+    for city in all_cities:
+        safehouse_level = 0
+        for b in (city.get("buildings") or []):
+            bid = str(b.get("building") or "").lower()
+            if bid in ("safehouse", "safe_house", "hideout", "spyhouse", "spy_house"):
+                safehouse_level = int(b.get("level") or 0)
+                break
+        if safehouse_level > 0:
+            spy_cities.append({
+                **city,
+                "safehouse_level": safehouse_level,
+            })
+
+    return {
+        "spy_missions": SPY_MISSIONS_UI,
+        "spy_cities": spy_cities,
+    }
+
+
 PIRACY_MISSIONS = [
     {"buildingLevel": 1,  "duration": 150,   "gold": 40,   "capturePoints": 115,  "name": "Contrabandistas",    "durationLabel": "2m 30s", "localPic": "game/pirate/PirateContrabandistas.png"},
     {"buildingLevel": 3,  "duration": 450,   "gold": 96,   "capturePoints": 276,  "name": "Barco de Pesca",     "durationLabel": "7m 30s", "localPic": "game/pirate/PirateBarcoPesca.png"},
@@ -1110,6 +1148,13 @@ def _custom_field_names(action_code: int) -> list[str]:
         return [*SHRINE_GOD_FIELDS, "favor_recheck_minutes", "cycle_hours"]
     if int(action_code) == 1203:
         return ["unit_targets_json", "min_crystal_reserve", "min_gold_reserve", "priority_mode"]
+    if int(action_code) == 15:
+        return [
+            "city_id", "target_city_id", "island_id", "mission_id",
+            "max_detection_risk", "auto_agents", "agents", "decoys",
+            "save_reports", "delete_after_save",
+            "target_city_name", "target_owner",
+        ]
     if int(action_code) == 31:
         return ["receiver_name", "receiver_id", "msg_type", "content", "city_id"]
     if int(action_code) == 17:
@@ -1155,6 +1200,8 @@ def _job_form_context(form, action_meta, action_code, ga, cities):
         "market_ui": _market_form_context(cities),
         "training_ui": _training_form_context(snapshot, cities),
     }
+    if int(action_code) == 15:
+        ctx.update(_spy_context(ga, cities))
     if int(action_code) == 17:
         ctx.update(_piracy_context(ga, cities))
     return ctx

@@ -59,6 +59,19 @@
            class="btn btn-secondary btn-sm">
           <i class="bi bi-send text-[10px]"></i> Enviar Mensagem
         </a>
+        {% if spy_target %}
+        {% url 'jobs:job-create' as spy_url %}
+        <a href="{{ spy_url }}?ga={{ selected_game_account.pk }}&action=15&input_target_city_id={{ spy_target.game_city_id }}&input_island_id={{ spy_target.island.island_id }}&input_target_city_name={{ spy_target.name|urlencode }}&input_target_owner={{ player.owner_name|urlencode }}"
+           hx-get="{{ spy_url }}?ga={{ selected_game_account.pk }}&action=15&input_target_city_id={{ spy_target.game_city_id }}&input_island_id={{ spy_target.island.island_id }}&input_target_city_name={{ spy_target.name|urlencode }}&input_target_owner={{ player.owner_name|urlencode }}"
+           hx-target="#job-modal-body"
+           hx-swap="innerHTML"
+           hx-push-url="false"
+           hx-boost="false"
+           onclick="openModal('jobcreate')"
+           class="btn btn-secondary btn-sm">
+          <i class="bi bi-binoculars text-[10px]"></i> Enviar Espião
+        </a>
+        {% endif %}
         {% endif %}
         {% if monitor_url %}
         <a href="{{ monitor_url }}"
