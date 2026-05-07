@@ -246,14 +246,41 @@ class SpySafehouseAction(BaseAction):
 # Map Portuguese resource names → standard keys for data_json
 _RESOURCE_NAME_MAP = {
     "material de construção": "wood", "madeira": "wood",
-    "vinho": "wine",
+    "vinho": "wine", "vinho (produção)": "wine",
     "mármore": "marble",
     "cristal": "crystal",
     "enxofre": "sulfur",
     "ouro": "gold",
     "população": "population",
     "cidadãos livres": "free_citizens",
+    "nível de pesquisa": "research_level",
+    "nível de ciência": "science_level",
+    "pontos de pesquisa": "research_points",
 }
+
+# Map report subject keywords → mission_id
+_SUBJECT_TO_MISSION_ID: list[tuple[str, int]] = [
+    ("chegou a", 1), ("enviado", 1),
+    ("nível de pesquisa", 3), ("pesquisa", 3),
+    ("sala do tesouro", 4), ("tesouro", 4),
+    ("recursos em", 5), ("armazém", 5), ("inspecionar", 5),
+    ("guarnição", 6), ("garrison", 6),
+    ("tropas", 7), ("frotas", 7),
+    ("estado", 21),
+    ("produção militar", 23),
+    ("cargo", 24),
+    ("forma de governo", 25), ("governo", 25),
+    ("invenções", 26),
+    ("colônias", 27),
+]
+
+
+def _infer_mission_id(subject: str) -> int | None:
+    s = subject.lower()
+    for keyword, mid in _SUBJECT_TO_MISSION_ID:
+        if keyword in s:
+            return mid
+    return None
 
 
 def _parse_number(s: str) -> int:
@@ -555,7 +582,7 @@ class SpyReportsAction(BaseAction):
             re.DOTALL,
         )
         body_pattern = re.compile(
-            r'id="tbl_mail(\d+)"[^>]*>(.*?)(?=id="tbl_mail\d+"|id="message\d+"|</table>)',
+            r'id="tbl_mail(\d+)"[^>]*>([\s\S]{0,15000}?)(?=id="tbl_mail\d+"|id="message\d+"\s)',
             re.DOTALL,
         )
 
@@ -607,28 +634,56 @@ class SpyReportsAction(BaseAction):
             m6 = re.search(r'class="date[^"]*"[^>]*>([^<]+)', header_html)
             report["date_str"] = m6.group(1).strip() if m6 else ""
 
+            # Infer mission_id from subject
+            report["mission_id"] = _infer_mission_id(report.get("subject", ""))
+
             # Report body
             body_html = body_map.get(report_id, "")
             if body_html:
-                # Parse status
-                m_status = re.search(r'class="status".*?<td>([^<]+)</td>', body_html, re.DOTALL)
+                # Parse status (second <td> in the status row — skip label "Estado:")
+                m_status = re.search(r'class="status"[^>]*>[\s\S]*?<td[^>]*>[^<]*</td>\s*<td[^>]*>([^<]+)</td>', body_html, re.DOTALL)
                 report["status"] = _strip_html(m_status.group(1)) if m_status else ""
 
-                # Parse report text (may contain tables with resources, troops, etc.)
-                m_report = re.search(r'class="report">([\s\S]*?)(?:</td>|</tr>)', body_html)
+                # Parse report content — look for the Relatório row's second <td>
+                m_report = re.search(
+                    r'[Rr]elat[oó]rio[^<]*</td>\s*<td[^>]*>([\s\S]*?)</td>',
+                    body_html,
+                )
+                if not m_report:
+                    m_report = re.search(r'<td[^>]*class="[^"]*report[^"]*"[^>]*>([\s\S]*?)</td>', body_html)
                 if m_report:
                     report_content = m_report.group(1)
                     report["report_html"] = report_content.strip()
                     report["report_text"] = _strip_html(report_content)
 
-                # Parse structured data from tables (resources, troops, gold, etc.)
-                # data_json is usable for automation: {"wood": 5876, "wine": 34, ...}
-                if "resourcesTable" in body_html or "reportTable" in body_html or "unitTable" in body_html:
-                    rows = re.findall(r'<tr[^>]*>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>\s*</tr>', body_html, re.DOTALL)
-                    raw_pairs = [(_strip_html(r[0]), _strip_html(r[1])) for r in rows if _strip_html(r[0]) and _strip_html(r[1])]
-                    report["data_table"] = raw_pairs
-                    # Normalise to structured dict for systematic use
-                    report["data_json"] = _normalise_report_data(raw_pairs)
+                # Extract INNER tables only (resourcesTable, unitTable etc.)
+                inner_tables = re.findall(
+                    r'<table[^>]*class="[^"]*(?:resourcesTable|reportTable|unitTable)[^"]*"[^>]*>([\s\S]*?)</table>',
+                    body_html, re.DOTALL,
+                )
+                # Fallback: any inner table with 2 columns and data (not just th rows)
+                if not inner_tables:
+                    # Look for tables that have actual <td> rows (not just headers)
+                    all_tables = re.findall(r'<table[^>]*>([\s\S]*?)</table>', body_html, re.DOTALL)
+                    for t in all_tables:
+                        # Only include if it has td (data) rows
+                        if '<td' in t and 'class="job"' not in t:
+                            inner_tables.append(t)
+                if inner_tables:
+                    all_pairs = []
+                    for table_content in inner_tables:
+                        # Only <td> rows (skip <th> header rows)
+                        rows = re.findall(
+                            r'<tr[^>]*>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>\s*</tr>',
+                            table_content, re.DOTALL,
+                        )
+                        for r in rows:
+                            k, v = _strip_html(r[0]), _strip_html(r[1])
+                            if k and v:
+                                all_pairs.append((k, v))
+                    if all_pairs:
+                        report["data_table"] = all_pairs
+                        report["data_json"] = _normalise_report_data(all_pairs)
 
             reports.append(report)
 
