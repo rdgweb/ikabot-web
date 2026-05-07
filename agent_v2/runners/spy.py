@@ -21,7 +21,7 @@ MISSION_MIN_WAIT = 5 * 60        # 5 min — missão básica (missão 1)
 MISSION_MAX_WAIT = 15 * 60       # 15 min — buffer padrão após missão
 
 
-@register_runner(18)
+@register_runner(15)
 class SpyRunner(BaseRunner):
     """Envia espiões em missões e opcionalmente salva os relatórios no hub.
 

@@ -893,12 +893,7 @@ class StationUnitsRunner(BaseRunner):
             return RunnerResult(success=False, data={"error": str(exc)})
 
 
-@register_runner(15)
-class TrainTroopsRunner(BaseRunner):
-    """Legacy stub — use TrainUnitsRunner (1005) instead."""
-
-    def execute(self, job: dict[str, Any]) -> RunnerResult:
-        return RunnerResult(success=False, data={"error": "use_action_1005"})
+# Action 15 is now SpyRunner (see runners/spy.py).
 
 
 @register_runner(7)

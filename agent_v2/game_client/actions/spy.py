@@ -199,6 +199,48 @@ class SpySafehouseAction(BaseAction):
         return state
 
 
+# Map Portuguese resource names → standard keys for data_json
+_RESOURCE_NAME_MAP = {
+    "material de construção": "wood", "madeira": "wood",
+    "vinho": "wine",
+    "mármore": "marble",
+    "cristal": "crystal",
+    "enxofre": "sulfur",
+    "ouro": "gold",
+    "população": "population",
+    "cidadãos livres": "free_citizens",
+}
+
+
+def _parse_number(s: str) -> int:
+    """Parse Portuguese number string like '5.876' → 5876."""
+    try:
+        return int(re.sub(r"[.\s]", "", s.replace(",", ".")))
+    except (ValueError, TypeError):
+        return 0
+
+
+def _normalise_report_data(raw_pairs: list) -> dict:
+    """Convert raw (name, value) table rows to structured JSON usable for automation.
+
+    Example output for mission 5 (warehouse):
+        {"wood": 5876, "wine": 34, "marble": 557, "crystal": 0, "sulfur": 0}
+    Example output for mission 6 (garrison):
+        {"swordsman": 120, "slinger": 0, ...}
+    """
+    result: dict = {}
+    for name, value in raw_pairs:
+        key = _RESOURCE_NAME_MAP.get(name.lower().strip())
+        if key:
+            result[key] = _parse_number(value)
+        else:
+            # Store unknown fields with normalised key
+            key_clean = re.sub(r"[^a-z0-9_]", "_", name.lower().strip())[:40]
+            if key_clean:
+                result[key_clean] = _parse_number(value) if re.search(r"\d", value) else value
+    return result
+
+
 class SpyMissionDataAction(BaseAction):
     """Fetch real-time mission risk/success data for a specific target city."""
 
@@ -535,13 +577,14 @@ class SpyReportsAction(BaseAction):
                     report["report_html"] = report_content.strip()
                     report["report_text"] = _strip_html(report_content)
 
-                # Parse resource table if present
-                if "resourcesTable" in body_html or "reportTable" in body_html:
-                    rows = re.findall(r'<tr>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>\s*</tr>', body_html, re.DOTALL)
-                    report["data_table"] = [
-                        (_strip_html(r[0]), _strip_html(r[1]))
-                        for r in rows if _strip_html(r[0]) and _strip_html(r[1])
-                    ]
+                # Parse structured data from tables (resources, troops, gold, etc.)
+                # data_json is usable for automation: {"wood": 5876, "wine": 34, ...}
+                if "resourcesTable" in body_html or "reportTable" in body_html or "unitTable" in body_html:
+                    rows = re.findall(r'<tr[^>]*>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>\s*</tr>', body_html, re.DOTALL)
+                    raw_pairs = [(_strip_html(r[0]), _strip_html(r[1])) for r in rows if _strip_html(r[0]) and _strip_html(r[1])]
+                    report["data_table"] = raw_pairs
+                    # Normalise to structured dict for systematic use
+                    report["data_json"] = _normalise_report_data(raw_pairs)
 
             reports.append(report)
 
