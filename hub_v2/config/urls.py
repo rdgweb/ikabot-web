@@ -30,6 +30,7 @@ urlpatterns = [
     path("intel/", include("apps.worldintel.urls")),
     path("market/", include("apps.market.urls")),
     path("diplomacy/", include("apps.diplomacy.urls")),
+    path("espionage/", include("apps.espionage.urls")),
     # --- Admin ---
     path("accounts/", include("apps.accounts.urls")),
     path("profiles/", include("apps.profiles.urls")),
@@ -48,4 +49,5 @@ urlpatterns = [
     path("api/agent/", include("apps.telegram.api.agent_urls", namespace="agent-telegram")),
     path("api/agent/", include("apps.market.api_urls", namespace="agent-market")),
     path("api/agent/", include("apps.diplomacy.api_urls", namespace="agent-diplomacy")),
+    path("api/agent/", include("apps.espionage.api_urls", namespace="agent-espionage")),
 ]

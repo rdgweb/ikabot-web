@@ -23,6 +23,7 @@ def nav_context(request):
                 {"name": "Construcoes", "url": "/game/construction/", "icon": "bi-building"},
                 {"name": "Mercado Interno", "url": "/market/", "icon": "bi-shop"},
                 {"name": "Diplomacia", "url": "/diplomacy/", "icon": "bi-envelope"},
+                {"name": "Espionagem", "url": "/espionage/", "icon": "bi-binoculars"},
                 {"name": "Fila de Jobs", "url": "/jobs/", "icon": "bi-list-task"},
             ],
         },

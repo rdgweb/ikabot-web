@@ -1,0 +1,90 @@
+{% load static hub_tags %}
+
+{% if object_list or request.GET %}
+<div class="space-y-3">
+  <div class="card overflow-hidden p-0">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Subconta</th>
+          <th>Alvo</th>
+          <th>Cidade alvo</th>
+          <th>Coordenadas</th>
+          <th>Missão</th>
+          <th>Resultado</th>
+          <th>Agentes</th>
+          <th>Perdas</th>
+          <th>Data no jogo</th>
+          <th>Recebido em</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for report in object_list %}
+        <tr>
+          <td class="text-sm text-ink">
+            {% if report.game_account %}
+              {{ report.game_account.name|default:report.game_account.server_id }}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="text-sm font-medium text-ink">
+            {{ report.target_owner|default:"—" }}
+          </td>
+          <td class="text-sm text-ink">
+            {{ report.target_city_name|default:report.target_city_id|default:"—" }}
+          </td>
+          <td class="text-sm text-muted">
+            {% if report.target_x is not None and report.target_y is not None %}
+              [{{ report.target_x }}:{{ report.target_y }}]
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td class="text-sm text-muted">
+            {{ report.mission_name|default:report.subject|default:"—" }}
+          </td>
+          <td class="text-sm">
+            {% if report.result_status %}
+              <span class="badge {% if 'sucesso' in report.result_status|lower or 'success' in report.result_status|lower %}badge-success{% elif 'falhou' in report.result_status|lower or 'fail' in report.result_status|lower %}badge-danger{% else %}badge-secondary{% endif %}">
+                {{ report.result_status }}
+              </span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="text-sm text-muted text-center">
+            {{ report.agents_sent }}
+          </td>
+          <td class="text-sm text-center">
+            {% if report.agents_lost > 0 %}
+              <span class="text-[var(--ik-bad)] font-medium">{{ report.agents_lost }}</span>
+            {% else %}
+              <span class="text-muted">0</span>
+            {% endif %}
+          </td>
+          <td class="text-sm text-muted">
+            {{ report.date_str|default:"—" }}
+          </td>
+          <td class="text-sm text-muted">
+            {{ report.created_at|localtime_format }}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="10" class="py-8 text-center text-muted">
+            <i class="bi bi-binoculars mb-2 block text-2xl"></i>
+            Nenhum relatório de espionagem encontrado.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% include "components/table/pagination.html" %}
+</div>
+
+{% else %}
+{% include "components/table/empty.html" with icon="bi-binoculars" message="Nenhum relatório de espionagem encontrado." %}
+{% endif %}

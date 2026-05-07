@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     "apps.worldintel",
     "apps.market",
     "apps.diplomacy",
+    "apps.espionage",
     "apps.telegram",
     "apps.proxy",
     "apps.captcha",

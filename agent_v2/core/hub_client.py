@@ -250,6 +250,17 @@ class HubClient:
 
     # ── Diplomacy ──
 
+    def save_spy_reports(self, game_account_id: str, reports: list[dict]) -> dict:
+        """POST /api/agent/espionage/reports/
+
+        Upserts a batch of spy reports captured from the safehouse.
+        Returns {"saved": N, "new_count": N}.
+        """
+        return self._post("/api/agent/espionage/reports", {
+            "game_account_id": game_account_id,
+            "reports": reports,
+        })
+
     def save_diplomacy_messages(self, game_account_id: str, messages: list[dict]) -> dict:
         """POST /api/agent/diplomacy/messages/
 

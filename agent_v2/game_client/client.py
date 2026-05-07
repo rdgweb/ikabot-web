@@ -610,6 +610,59 @@ class GameClient(IslandActions):
         from .actions.piracy import PiracyConvertAction
         return PiracyConvertAction(self).execute(city_id=city_id, crew_points=crew_points)
 
+    def get_safehouse_state(self, city_id: int | str, position: int = 19) -> dict:
+        """Get safehouse state: spy counts, active missions, training queue."""
+        from .actions.spy import SpySafehouseAction
+        return SpySafehouseAction(self).execute(city_id=city_id, position=position)
+
+    def get_spy_mission_data(self, source_city_id: int | str, target_city_id: int | str, island_id: int | str) -> dict:
+        """Fetch real-time risk/success data for all missions against a specific target."""
+        from .actions.spy import SpyMissionDataAction
+        return SpyMissionDataAction(self).execute(
+            source_city_id=source_city_id, target_city_id=target_city_id, island_id=island_id,
+        )
+
+    def send_spy(
+        self,
+        source_city_id: int | str,
+        target_city_id: int | str,
+        island_id: int | str,
+        mission_id: int = 1,
+        agents: int = 1,
+        decoys: int = 0,
+    ) -> dict:
+        """Send spies on a mission."""
+        from .actions.spy import SpySendAction
+        return SpySendAction(self).execute(
+            source_city_id=source_city_id,
+            target_city_id=target_city_id,
+            island_id=island_id,
+            mission_id=mission_id,
+            agents=agents,
+            decoys=decoys,
+        )
+
+    def train_spies(self, city_id: int | str, count: int = 1, position: int = 19) -> dict:
+        """Train spies at the safehouse."""
+        from .actions.spy import SpyTrainAction
+        return SpyTrainAction(self).execute(city_id=city_id, count=count, position=position)
+
+    def get_spy_reports(
+        self, city_id: int | str, position: int = 19, tab: str = "tabReports"
+    ) -> list:
+        """Fetch and parse spy reports from the safehouse."""
+        from .actions.spy import SpyReportsAction
+        return SpyReportsAction(self).execute(city_id=city_id, position=position, tab=tab)
+
+    def delete_spy_report(
+        self, city_id: int | str, report_id: int | str, position: int = 19
+    ) -> dict:
+        """Delete a spy report."""
+        from .actions.spy import SpyDeleteReportAction
+        return SpyDeleteReportAction(self).execute(
+            city_id=city_id, report_id=report_id, position=position
+        )
+
     def accept_treaty(self, receiver_id: int | str) -> dict[str, Any]:
         """Accept a cultural treaty offer.
 
