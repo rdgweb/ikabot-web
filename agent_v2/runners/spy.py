@@ -14,7 +14,7 @@ from core.runner_registry import register_runner
 from game_client.actions.spy import (
     MISSION_DATA,
     compute_agents_for_success,
-    compute_agents_for_success_dynamic,
+    find_optimal_agents_decoys,
 )
 from runners.base import BaseRunner, RunnerResult
 
@@ -166,10 +166,12 @@ class SpyRunner(BaseRunner):
 
             # Etapa 3: buscar dados de risco REAIS para este alvo
             live_mission_data: dict = {}
+            live_mission_data_params: dict = {}
             try:
                 self.log(jid, "info", f"Buscando riscos reais para cidade alvo {target_city_id}")
                 md_result = client.get_spy_mission_data(city_id, target_city_id, island_id)
                 live_mission_data = md_result.get("missions", {})
+                live_mission_data_params = md_result.get("raw_params", {})
                 target_info = md_result.get("target", {})
                 if target_info:
                     self.log(jid, "info",
@@ -182,17 +184,29 @@ class SpyRunner(BaseRunner):
             # Etapa 4: calcular agentes para a primeira missão da lista
             mission_id = mission_ids[0]
             if auto_agents:
-                live_mdata = live_mission_data.get(mission_id)
-                if live_mdata:
-                    agents = compute_agents_for_success_dynamic(live_mdata, target_success_pct)
-                    base_s = live_mdata.get("success_chance", 60)
-                    risk_min = agents * live_mdata.get("risk_per_spy", 3)
+                # Use exact game formula to find optimal agents+decoys
+                # max_detection_risk = target_success_pct (repurposed field)
+                optimal = find_optimal_agents_decoys(
+                    live_mission_data_params if live_mission_data_params else {},
+                    mission_id,
+                    max_agent_risk=target_success_pct,   # max detection risk %
+                    max_decoy_risk=target_success_pct + 20,
+                    min_success=50.0,
+                    available=available_spies,
+                )
+                if optimal:
+                    agents = optimal["agents"]
+                    decoys = optimal.get("decoys", 0)
                     self.log(jid, "info",
-                        f"Agentes calculados para sucesso ≥{target_success_pct}%: {agents} agente(s) "
-                        f"(sucesso_base={base_s}% risco_mínimo={risk_min}%)")
+                        f"Ótimo calculado (fórmula real): {agents} agentes + {decoys} chamarizes → "
+                        f"sucesso={optimal['success']}% risco_agente={optimal['agent_risk']}% "
+                        f"risco_chamariz={optimal['decoy_risk']}%")
                 else:
-                    agents = compute_agents_for_success(mission_id, target_success_pct)
-                    self.log(jid, "info", f"Agentes calculados (padrão) para sucesso ≥{target_success_pct}%: {agents}")
+                    # No combination meets thresholds → skip mission, log warning
+                    self.log(jid, "warn",
+                        f"Missão {mission_id}: impossível atingir limites configurados "
+                        f"(risco≤{target_success_pct}%, sucesso≥50%) com {available_spies} espiões disponíveis. Missão ignorada.")
+                    continue
             else:
                 agents = manual_agents
 
@@ -214,14 +228,21 @@ class SpyRunner(BaseRunner):
                     self.log(jid, "info", f"Missão {mid} não executável neste alvo — pulando")
                     continue
 
-                # Recalcular agentes para cada missão se auto
+                # Recalcular agentes+chamarizes para cada missão (fórmula real do jogo)
+                decoys_this = decoys
                 if auto_agents and mid != mission_ids[0]:
-                    if live_md:
-                        agents_this = compute_agents_for_success_dynamic(live_md, target_success_pct)
+                    opt = find_optimal_agents_decoys(
+                        live_mission_data_params, mid,
+                        max_agent_risk=target_success_pct,
+                        max_decoy_risk=target_success_pct + 20,
+                        min_success=50.0,
+                        available=available_spies,
+                    )
+                    if opt:
+                        agents_this = opt["agents"]
+                        decoys_this = opt.get("decoys", 0)
                     else:
-                        agents_this = compute_agents_for_success(mid, target_success_pct)
-                    if available_spies < agents_this:
-                        self.log(jid, "warn", f"Espiões insuficientes para missão {mid} — pulando")
+                        self.log(jid, "warn", f"Missão {mid}: impossível atingir limites — pulando")
                         continue
                 else:
                     agents_this = agents

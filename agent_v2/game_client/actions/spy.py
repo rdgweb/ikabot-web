@@ -100,6 +100,114 @@ def _strip_html(html: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def compute_spy_risks(live_params: dict, mission_id: int, agents: int, decoys: int) -> dict[str, float]:
+    """Exact replication of the game's JS risk/success formula.
+
+    Verified against live game: 3 agents + 1 decoy → agentRisk=29%, decoyRisk=22%, success=67% ✓
+
+    Key insight: basicRisk = freeSpies*5 - cityLevel*2
+    (higher city level = LOWER risk, more enemy free spies = HIGHER risk)
+    """
+    md = live_params.get("missionData", {}).get(str(mission_id), {})
+    if not md:
+        return {"agents": agents, "decoys": decoys, "agent_risk": 100.0, "decoy_risk": 100.0, "success": 0.0}
+
+    target_level = float(live_params.get("targetCityLevel", 0))
+    free_spies = float(live_params.get("targetFreeSpies", 0))
+    is_inactive = bool(live_params.get("isTargetInactive", False))
+    remaining_risk = float(live_params.get("remainingRisk", 0))
+    gov_factor = float(live_params.get("targetGovFactor", 20))
+    safehouse_level = float(live_params.get("targetSafehouseLevel", 0))
+
+    min_chance = float(live_params.get("cEspionageMinChance", 5))
+    max_chance = float(live_params.get("cEspionageMaxChance", 95))
+    max_success_cap = float(live_params.get("cEspionageMaxSuccessChance", 99))
+    risk_red_inactive = float(live_params.get("cSpyRiskReductionFactorInactivity", 10))
+    risk_red_no_safe = float(live_params.get("cSpyRiskReductionFactorNoSafehouse", 2))
+    decoy_risk_red = float(live_params.get("cEspionageDecoyRiskREduction", 10))
+    min_decoy_risk = float(live_params.get("cEspionageMinDecoyRisk", 2))
+    basic_decoy_risk_k = float(live_params.get("cEspionageBasicDecoyRisk", 5))
+
+    risk_before = float(md.get("riskBefore", 0))
+    risk_per_spy = float(md.get("riskPerSpy", 3))
+    base_success = float(md.get("successChance", 60))
+
+    # Core formula (JS: basicRisk = targetFreeSpies*5 - targetCityLevel*2)
+    basic_risk = free_spies * 5 - target_level * 2
+    mission_risk = basic_risk + risk_before + remaining_risk
+    min_risk = max(min_chance, agents * risk_per_spy)
+
+    if is_inactive:
+        mission_risk /= risk_red_inactive
+        min_risk /= risk_red_inactive
+    elif safehouse_level == 0:
+        mission_risk /= risk_red_no_safe
+        min_risk /= risk_red_no_safe
+
+    # Agent detection risk (decoys reduce the missionRisk component)
+    agent_risk_raw = gov_factor + max(min_risk, mission_risk - decoys * decoy_risk_red)
+    agent_risk = max(min_chance, min(max_chance, round(agent_risk_raw * 10) / 10))
+
+    # Decoy detection risk
+    decoy_risk_raw = gov_factor + max(decoys * min_decoy_risk, mission_risk / 4 - 50 + decoys * basic_decoy_risk_k)
+    decoy_risk = max(min_chance, min(max_chance, round(decoy_risk_raw)))
+
+    # Success probability
+    import math as _math
+    try:
+        base_chance = min(round((1 - (1 - base_success / 100) ** agents) * 100), max_success_cap)
+    except Exception:
+        base_chance = 0
+    final_success = max(min_chance, min(max_chance, round((100 - agent_risk) * base_chance / 100)))
+    if agents == 0:
+        final_success = 0.0
+
+    return {
+        "agents": agents,
+        "decoys": decoys,
+        "agent_risk": agent_risk,
+        "decoy_risk": decoy_risk,
+        "success": final_success,
+        "min_risk": min_risk,
+    }
+
+
+def find_optimal_agents_decoys(
+    live_params: dict,
+    mission_id: int,
+    max_agent_risk: float,
+    max_decoy_risk: float,
+    min_success: float,
+    available: int,
+) -> dict | None:
+    """Find optimal (agents, decoys) that meets user's thresholds.
+
+    Tries all combinations up to available spies and returns the one that
+    maximises success while keeping risks within limits.
+    Returns None if no combination meets the thresholds.
+    """
+    best: dict | None = None
+    best_score = float("-inf")
+
+    max_agents = min(available, 28)
+    for agents in range(1, max_agents + 1):
+        for decoys in range(0, min(available - agents + 1, 15)):
+            r = compute_spy_risks(live_params, mission_id, agents, decoys)
+            if r["agent_risk"] > max_agent_risk:
+                continue
+            if r["decoy_risk"] > max_decoy_risk:
+                continue
+            if r["success"] < min_success:
+                continue
+            # Score: maximize success, penalise risk and total spies used
+            score = r["success"] - r["agent_risk"] * 0.5 - r["decoy_risk"] * 0.3 - (agents + decoys) * 0.1
+            if score > best_score:
+                best_score = score
+                best = r
+
+    return best
+
+
 def compute_agents_for_success(mission_id: int, target_success_pct: int = 80) -> int:
     """Calculate agents needed to reach target_success_pct% success probability.
 
@@ -396,7 +504,7 @@ class SpyMissionDataAction(BaseAction):
             "SpyMissionData: target=%s level=%d inactive=%s missions=%d",
             target_city_id, target_info["city_level"], target_info["is_inactive"], len(missions),
         )
-        return {"missions": missions, "target": target_info}
+        return {"missions": missions, "target": target_info, "raw_params": js_params}
 
 
 def compute_agents_for_risk_dynamic(mission_data: dict, max_detection_risk: int) -> int:
