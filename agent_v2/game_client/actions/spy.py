@@ -100,22 +100,64 @@ def _strip_html(html: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def compute_agents_for_risk(mission_id: int, max_detection_risk: int) -> int:
-    """Calculate minimum agents needed to keep detection risk ≤ max_detection_risk."""
-    mdata = MISSION_DATA.get(mission_id, {})
-    risk_before = mdata.get("risk_before", 0)
-    risk_after = mdata.get("risk_after", 0)
-    risk_per_spy = mdata.get("risk_per_spy", 1)
+def compute_agents_for_success(mission_id: int, target_success_pct: int = 80) -> int:
+    """Calculate agents needed to reach target_success_pct% success probability.
 
-    if risk_before <= max_detection_risk:
-        return 1  # base mission always acceptable
-    if risk_per_spy <= 0:
+    Real game formula: success = 1 - (1 - base_success/100)^N
+    Solving for N: N = log(1 - target/100) / log(1 - base/100)
+
+    NOTE: More agents = higher success BUT also higher minimum detection risk
+    (minimumRisk = N * riskPerSpy). There is no way to reduce risk below this minimum.
+    The actual detection risk also depends on target city level + free spies.
+    """
+    mdata = MISSION_DATA.get(mission_id, {})
+    base_success = mdata.get("success", 60)
+    if base_success <= 0:
+        return 1
+    if base_success >= target_success_pct:
         return 1
 
-    needed = math.ceil((risk_before - max_detection_risk) / risk_per_spy)
-    # Clamp: at most enough to reach risk_after
-    max_needed = math.ceil((risk_before - risk_after) / risk_per_spy) if risk_per_spy > 0 else needed
-    return max(1, min(needed, max_needed))
+    p_base = base_success / 100.0
+    p_target = target_success_pct / 100.0
+    if p_base >= 1.0:
+        return 1
+
+    try:
+        import math as _m
+        n = _m.log(1 - p_target) / _m.log(1 - p_base)
+        return max(1, math.ceil(n))
+    except (ValueError, ZeroDivisionError):
+        return 1
+
+
+def compute_agents_for_success_dynamic(mission_data: dict, target_success_pct: int = 80) -> int:
+    """Same as above but using live mission data for a specific target."""
+    base_success = mission_data.get("success_chance", 60)
+    if base_success <= 0:
+        return 1
+    if base_success >= target_success_pct:
+        return 1
+    p_base = base_success / 100.0
+    p_target = target_success_pct / 100.0
+    if p_base >= 1.0:
+        return 1
+    try:
+        import math as _m
+        n = _m.log(1 - p_target) / _m.log(1 - p_base)
+        return max(1, math.ceil(n))
+    except (ValueError, ZeroDivisionError):
+        return 1
+
+
+# Keep old name for compatibility — was completely wrong, now delegates to success-based
+def compute_agents_for_risk(mission_id: int, max_detection_risk: int) -> int:
+    """Deprecated: use compute_agents_for_success. Returns 1 agent as safe default."""
+    return 1
+
+
+def compute_agents_for_risk_dynamic(mission_data: dict, max_detection_risk: int) -> int:
+    """Deprecated: use compute_agents_for_success_dynamic. Returns 1 agent as safe default."""
+    return 1
 
 
 class SpySafehouseAction(BaseAction):
@@ -176,9 +218,11 @@ class SpySafehouseAction(BaseAction):
         if m4:
             state["in_use_spies"] = int(m4.group(1))
 
-        state["available_spies"] = (
-            state["total_spies"] - state["defending_spies"]
-            - state["in_use_spies"] - state["training_count"]
+        # "Trabalhando na defesa" = pool disponível para missões (ficam em casa na defesa
+        # quando não estão em missão). available = total - em_uso - em_treinamento
+        state["available_spies"] = max(
+            0,
+            state["total_spies"] - state["in_use_spies"] - state["training_count"]
         )
 
         # Parse active spy missions (SpyCountDown{spy_id} pattern)

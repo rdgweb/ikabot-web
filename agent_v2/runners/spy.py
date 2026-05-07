@@ -11,7 +11,11 @@ import random
 from typing import Any
 
 from core.runner_registry import register_runner
-from game_client.actions.spy import MISSION_DATA, compute_agents_for_risk, compute_agents_for_risk_dynamic
+from game_client.actions.spy import (
+    MISSION_DATA,
+    compute_agents_for_success,
+    compute_agents_for_success_dynamic,
+)
 from runners.base import BaseRunner, RunnerResult
 
 logger = logging.getLogger(__name__)
@@ -76,10 +80,11 @@ class SpyRunner(BaseRunner):
         # Compatibilidade: mission_id singular
         mission_id = mission_ids[0]
 
+        # max_detection_risk now interpreted as minimum SUCCESS % target for auto calc
         try:
-            max_detection_risk = int(inputs.get("max_detection_risk") or 25)
+            target_success_pct = int(inputs.get("max_detection_risk") or 80)
         except (ValueError, TypeError):
-            max_detection_risk = 25
+            target_success_pct = 80
 
         auto_agents = bool(inputs.get("auto_agents") if inputs.get("auto_agents") is not None else True)
 
@@ -154,13 +159,15 @@ class SpyRunner(BaseRunner):
             if auto_agents:
                 live_mdata = live_mission_data.get(mission_id)
                 if live_mdata:
-                    agents = compute_agents_for_risk_dynamic(live_mdata, max_detection_risk)
+                    agents = compute_agents_for_success_dynamic(live_mdata, target_success_pct)
+                    base_s = live_mdata.get("success_chance", 60)
+                    risk_min = agents * live_mdata.get("risk_per_spy", 3)
                     self.log(jid, "info",
-                        f"Agentes calculados (dados reais) para risco máximo {max_detection_risk}%: {agents} "
-                        f"(riskBefore={live_mdata.get('risk_before')} riskPerSpy={live_mdata.get('risk_per_spy')})")
+                        f"Agentes calculados para sucesso ≥{target_success_pct}%: {agents} agente(s) "
+                        f"(sucesso_base={base_s}% risco_mínimo={risk_min}%)")
                 else:
-                    agents = compute_agents_for_risk(mission_id, max_detection_risk)
-                    self.log(jid, "info", f"Agentes calculados (dados padrão) para risco máximo {max_detection_risk}%: {agents}")
+                    agents = compute_agents_for_success(mission_id, target_success_pct)
+                    self.log(jid, "info", f"Agentes calculados (padrão) para sucesso ≥{target_success_pct}%: {agents}")
             else:
                 agents = manual_agents
 
@@ -185,9 +192,9 @@ class SpyRunner(BaseRunner):
                 # Recalcular agentes para cada missão se auto
                 if auto_agents and mid != mission_ids[0]:
                     if live_md:
-                        agents_this = compute_agents_for_risk_dynamic(live_md, max_detection_risk)
+                        agents_this = compute_agents_for_success_dynamic(live_md, target_success_pct)
                     else:
-                        agents_this = compute_agents_for_risk(mid, max_detection_risk)
+                        agents_this = compute_agents_for_success(mid, target_success_pct)
                     if available_spies < agents_this:
                         self.log(jid, "warn", f"Espiões insuficientes para missão {mid} — pulando")
                         continue
