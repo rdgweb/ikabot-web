@@ -93,17 +93,9 @@ class CaptchaSaveConfigView(LoginRequiredMixin, View):
         form = CaptchaConfigForm(request.POST, instance=config)
         if form.is_valid():
             form.save()
-            config.refresh_from_db()
-
-        ctx = {
-            "config": config,
-            "config_form": CaptchaConfigForm(instance=config),
-        }
-        html = render_to_string(
-            "captcha/partials/config_card.html", ctx, request=request,
-        )
-        response = HttpResponse(html)
-        response["HX-Trigger"] = "showToast"
+        # Full page refresh so stats, strategy cards and config all update together
+        response = HttpResponse()
+        response["HX-Redirect"] = "/captcha/"
         return response
 
 

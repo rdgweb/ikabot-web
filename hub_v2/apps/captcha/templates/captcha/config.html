@@ -126,11 +126,18 @@
   {# ══════════════════════════════════════════════════════════════════ #}
   {# Row 4: Historico recente                                          #}
   {# ══════════════════════════════════════════════════════════════════ #}
-  {% if history %}
-  <div class="card">
+  <div class="card"
+       id="captcha-history-area"
+       hx-get="{% url 'captcha:config' %}"
+       hx-trigger="captchaSolved from:body"
+       hx-target="#captcha-history-area"
+       hx-select="#captcha-history-area"
+       hx-swap="outerHTML"
+       hx-push-url="false">
     <h2 class="text-lg font-semibold text-ink mb-4">
       <i class="bi bi-clock-history"></i> Historico Recente
     </h2>
+  {% if history %}
     <div class="overflow-x-auto">
       <table class="data-table">
         <thead>
@@ -178,7 +185,13 @@
       </table>
     </div>
   </div>
+  {% else %}
+    <div class="text-center py-8 text-muted">
+      <i class="bi bi-clock-history text-3xl opacity-30"></i>
+      <p class="text-sm mt-2">Nenhum captcha resolvido ainda</p>
+    </div>
   {% endif %}
+  </div>
 
 </div>
 {% endblock %}
