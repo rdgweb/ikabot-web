@@ -81,7 +81,7 @@
 
     <div id="captcha-pending-area"
          hx-get="{% url 'captcha:pending' %}"
-         hx-trigger="every 5s, captchaSolved from:body"
+         hx-trigger="every 5s[!document.querySelector('#captcha-pending-area input:focus,#captcha-pending-area textarea:focus')], captchaSolved from:body"
          hx-target="this"
          hx-swap="innerHTML"
          hx-push-url="false">
