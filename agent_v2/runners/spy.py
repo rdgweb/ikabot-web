@@ -202,11 +202,13 @@ class SpyRunner(BaseRunner):
                         f"sucesso={optimal['success']}% risco_agente={optimal['agent_risk']}% "
                         f"risco_chamariz={optimal['decoy_risk']}%")
                 else:
-                    # No combination meets thresholds → skip mission, log warning
+                    # No combination meets thresholds — use 1 agent as minimum
                     self.log(jid, "warn",
-                        f"Missão {mission_id}: impossível atingir limites configurados "
-                        f"(risco≤{target_success_pct}%, sucesso≥50%) com {available_spies} espiões disponíveis. Missão ignorada.")
-                    continue
+                        f"Missão {mission_id}: nenhuma combinação atinge os limites "
+                        f"(risco≤{target_success_pct}%, sucesso≥50%) com {available_spies} espiões. "
+                        f"Usando 1 agente como mínimo.")
+                    agents = 1
+                    decoys = 0
             else:
                 agents = manual_agents
 
