@@ -82,9 +82,9 @@
                  class="btn btn-secondary btn-sm !py-0.5 !px-2 text-[10px]">
                 <i class="bi bi-send"></i>
               </a>
-              {% if selected_game_account and row.owner_id %}
-              <a href="{{ new_job_url }}?ga={{ selected_game_account.pk }}&action=15&input_target_owner_id={{ row.owner_id }}&input_target_owner={{ row.owner_name|urlencode }}"
-                 hx-get="{{ new_job_url }}?ga={{ selected_game_account.pk }}&action=15&input_target_owner_id={{ row.owner_id }}&input_target_owner={{ row.owner_name|urlencode }}"
+              {% if row.owner_id %}
+              <a href="{{ new_job_url }}?{% if selected_game_account %}ga={{ selected_game_account.pk }}&{% endif %}action=15&input_target_owner_id={{ row.owner_id }}&input_target_owner={{ row.owner_name|urlencode }}"
+                 hx-get="{{ new_job_url }}?{% if selected_game_account %}ga={{ selected_game_account.pk }}&{% endif %}action=15&input_target_owner_id={{ row.owner_id }}&input_target_owner={{ row.owner_name|urlencode }}"
                  hx-target="#job-modal-body" hx-swap="innerHTML" hx-push-url="false" hx-boost="false"
                  onclick="openModal('jobcreate')" title="Enviar espião"
                  class="btn btn-secondary btn-sm !py-0.5 !px-2 text-[10px]">
