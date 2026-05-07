@@ -235,7 +235,13 @@ class PiracyMissionAction(BaseAction):
             img_b64 = _b64.b64encode(img_resp.content).decode("ascii")
             try:
                 solve_result = self.client.hub.solve_captcha("pirate", {"image": img_b64})
-                solution = str(solve_result.get("solution") or solve_result.get("result") or "").strip().upper()
+                # hub normalises to {"solution": "..."} or raw string
+                if isinstance(solve_result, str):
+                    solution = solve_result.strip().upper()
+                else:
+                    solution = str(
+                        solve_result.get("solution") or solve_result.get("result") or ""
+                    ).strip().upper()
             except Exception as exc:
                 logger.warning("Piracy: captcha solving failed: %s", exc)
                 import time as _t; _t.sleep(5)

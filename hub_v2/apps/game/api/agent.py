@@ -476,18 +476,52 @@ class SolveCaptchaView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
+        import base64 as _b64
         captcha_type = data["type"]
         images = data["images"]
         endpoint = f"/v1/decaptcha/{captcha_type}"
 
+        # ikabotapi expects multipart/form-data with file(s), not JSON
+        # For pirate: field "image" with the PNG file
+        # For lobby: fields "text_image" and "icons_image"
+        files = {}
+        if captcha_type == "pirate":
+            img_b64 = images.get("image", "")
+            if not img_b64:
+                return Response({"error": "image base64 required for pirate captcha"}, status=400)
+            files = {"image": ("captcha.png", _b64.b64decode(img_b64), "image/png")}
+        elif captcha_type == "lobby":
+            for field in ("text_image", "icons_image"):
+                b64 = images.get(field, "")
+                if b64:
+                    files[field] = (f"{field}.png", _b64.b64decode(b64), "image/png")
+        else:
+            # Fallback: send as JSON for unknown types
+            pass
+
         try:
-            resp = http_requests.post(
-                f"{settings.IKABOTAPI_URL}{endpoint}",
-                json=images,
-                timeout=_IKABOTAPI_TIMEOUT,
-            )
+            if files:
+                resp = http_requests.post(
+                    f"{settings.IKABOTAPI_URL}{endpoint}",
+                    files=files,
+                    timeout=_IKABOTAPI_TIMEOUT,
+                )
+            else:
+                resp = http_requests.post(
+                    f"{settings.IKABOTAPI_URL}{endpoint}",
+                    json=images,
+                    timeout=_IKABOTAPI_TIMEOUT,
+                )
             resp.raise_for_status()
-            return Response(resp.json())
+            result = resp.json()
+            # Normalise: always return {"solution": "..."} regardless of ikabotapi format
+            if isinstance(result, str):
+                return Response({"solution": result})
+            if isinstance(result, dict) and "solution" not in result:
+                # ikabotapi might return the string directly or {"result": ...}
+                sol = result.get("result") or result.get("text") or ""
+                return Response({"solution": sol, **result})
+            return Response(result)
         except http_requests.ConnectionError:
             logger.error("ikabotapi unreachable for captcha solve request")
             return Response(
