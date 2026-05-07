@@ -581,8 +581,9 @@ class SpyReportsAction(BaseAction):
             r'id="message(\d+)"[^>]*>(.*?)(?=id="tbl_mail\d+"|id="message\d+"|</table>)',
             re.DOTALL,
         )
+        # Lookahead stops at next row OR end-of-table; covers last report too
         body_pattern = re.compile(
-            r'id="tbl_mail(\d+)"[^>]*>([\s\S]{0,15000}?)(?=id="tbl_mail\d+"|id="message\d+"\s)',
+            r'id="tbl_mail(\d+)"[^>]*>([\s\S]{0,15000}?)(?=id="tbl_mail\d+"|id="message\d+"|</tbody>|</table>)',
             re.DOTALL,
         )
 

@@ -42,7 +42,28 @@
             {% endif %}
           </td>
           <td class="text-sm text-muted">
-            {{ report.mission_name|default:report.subject|default:"—" }}
+            {{ report.subject|default:"—" }}
+            {% if report.data_json %}
+            <div class="mt-1 flex flex-wrap gap-1">
+              {% for key, val in report.data_json.items %}
+              {% if val %}
+              <span class="inline-flex items-center gap-0.5 text-[10px] font-mono bg-[var(--ik-sand)] rounded px-1.5 py-0.5">
+                {% if key == "wood" %}<img src="{% static 'game/resources/icon_wood.png' %}" class="h-3 w-3 object-contain">
+                {% elif key == "wine" %}<img src="{% static 'game/resources/icon_wine.png' %}" class="h-3 w-3 object-contain">
+                {% elif key == "marble" %}<img src="{% static 'game/resources/icon_marble.png' %}" class="h-3 w-3 object-contain">
+                {% elif key == "crystal" %}<img src="{% static 'game/resources/icon_glass.png' %}" class="h-3 w-3 object-contain">
+                {% elif key == "sulfur" %}<img src="{% static 'game/resources/icon_sulfur.png' %}" class="h-3 w-3 object-contain">
+                {% elif key == "gold" %}<i class="bi bi-coin" style="color:var(--ik-gold);"></i>
+                {% else %}<i class="bi bi-info-circle text-muted"></i>
+                {% endif %}
+                {{ val|default:"—" }}
+              </span>
+              {% endif %}
+              {% endfor %}
+            </div>
+            {% elif report.report_text and report.mission_id != 1 %}
+            <div class="text-[10px] text-muted italic mt-0.5">{{ report.report_text|truncatechars:80 }}</div>
+            {% endif %}
           </td>
           <td class="text-sm">
             {% if report.result_status %}
