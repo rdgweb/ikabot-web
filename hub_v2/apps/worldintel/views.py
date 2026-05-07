@@ -210,10 +210,27 @@ class WorldPlayerListView(WorldIntelBaseView):
             ctx["vacation_owner_ids"] = vacation_ids
             ctx["inactive_owner_ids"] = inactive_ids
             ctx["inactive_banned_owner_ids"] = inactive_banned_ids
+
+            # First valid spy target city per player (for "Enviar Espião" button)
+            spy_targets_qs = (
+                WorldDumpCity.objects.filter(
+                    dump=current_dump, owner_id__in=owner_ids, type="city"
+                )
+                .exclude(game_city_id="")
+                .exclude(game_city_id="-1")
+                .select_related("island")
+                .order_by("owner_id", "island__x", "island__y")
+            )
+            spy_target_map: dict = {}
+            for city in spy_targets_qs:
+                if city.owner_id not in spy_target_map:
+                    spy_target_map[city.owner_id] = city
+            ctx["spy_target_map"] = spy_target_map
         else:
             ctx["vacation_owner_ids"] = set()
             ctx["inactive_owner_ids"] = set()
             ctx["inactive_banned_owner_ids"] = set()
+            ctx["spy_target_map"] = {}
 
         # Base query string (without sort/page) for sort links and pagination links
         qs_parts = []
