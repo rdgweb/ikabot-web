@@ -66,6 +66,25 @@ def send_message(
         return {"ok": False, "description": str(exc)}
 
 
+def send_photo(chat_id: str, photo_bytes: bytes, caption: str = "", parse_mode: str = "HTML") -> dict:
+    """Send a photo to a Telegram chat."""
+    token = _get_token()
+    if not token:
+        return {"ok": False, "description": "Bot token not configured"}
+    url = f"{API_BASE.format(token=token)}/sendPhoto"
+    try:
+        resp = requests.post(
+            url,
+            data={"chat_id": chat_id, "caption": caption, "parse_mode": parse_mode},
+            files={"photo": ("captcha.png", photo_bytes, "image/png")},
+            timeout=TIMEOUT,
+        )
+        return resp.json()
+    except requests.RequestException as exc:
+        logger.exception("Failed to send Telegram photo: %s", exc)
+        return {"ok": False, "description": str(exc)}
+
+
 def answer_callback_query(callback_query_id: str, text: str = "", show_alert: bool = False) -> dict:
     """Dismiss the loading indicator on an inline keyboard button."""
     token = _get_token()

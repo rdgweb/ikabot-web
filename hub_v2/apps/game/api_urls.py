@@ -2,6 +2,8 @@ from django.urls import path
 
 from .api.agent import (
     BlackboxTokenView,
+    CaptchaChallengeCreateView,
+    CaptchaChallengePollView,
     CurrentSnapshotView,
     PatchSnapshotBuildingView,
     PatchSnapshotResourcesView,
@@ -18,4 +20,6 @@ urlpatterns = [
     path("snapshots/patch-resources/", PatchSnapshotResourcesView.as_view(), name="snapshots-patch-resources"),
     path("blackbox/token/", BlackboxTokenView.as_view(), name="blackbox-token"),
     path("captcha/solve/", SolveCaptchaView.as_view(), name="captcha-solve"),
+    path("captcha/challenge/", CaptchaChallengeCreateView.as_view(), name="captcha-challenge-create"),
+    path("captcha/challenge/<int:pk>/", CaptchaChallengePollView.as_view(), name="captcha-challenge-poll"),
 ]

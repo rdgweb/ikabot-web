@@ -32,6 +32,30 @@ logger = logging.getLogger(__name__)
 # Timeout for proxied requests to the ikabotapi container
 _IKABOTAPI_TIMEOUT = 90  # Blackbox token via Playwright can take 30-60s
 
+# Helper: resolve Telegram chat_id for a game_account (or global fallback)
+
+
+def _resolve_telegram_chat_id(game_account=None) -> str | None:
+    """Return the Telegram chat_id for the given game_account, or the global chat."""
+    from apps.telegram.models import TelegramAccountConfig, TelegramBotConfig
+
+    if game_account:
+        try:
+            ga_cfg = TelegramAccountConfig.objects.get(game_account=game_account)
+            if ga_cfg.enabled and ga_cfg.chat_id:
+                return ga_cfg.chat_id
+        except TelegramAccountConfig.DoesNotExist:
+            pass
+
+    try:
+        bot = TelegramBotConfig.objects.get(pk=1)
+        if bot.is_active and bot.chat_id:
+            return bot.chat_id
+    except TelegramBotConfig.DoesNotExist:
+        pass
+
+    return None
+
 
 class UpdateSnapshotView(APIView):
     """
@@ -540,3 +564,141 @@ class SolveCaptchaView(APIView):
                 {"error": f"ikabotapi error: {exc}"},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
+
+
+class CaptchaChallengeCreateView(APIView):
+    """
+    POST /api/agent/captcha/challenge/
+
+    Tenta resolver o captcha automaticamente via ikabotapi.
+    Se falhar, cria um CaptchaChallenge pendente e envia a imagem via Telegram
+    (se configurado). Retorna a solução imediata ou o ID do desafio para polling.
+
+    Body: {"type": "pirate", "image_b64": "...", "game_account_id": "optional-uuid"}
+    Response success: {"solution": "XXXXX", "challenge_id": null}
+    Response pending: {"solution": null, "challenge_id": 42}
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request):
+        import base64 as _b64
+        from datetime import timedelta
+        from django.utils import timezone
+        from apps.captcha.models import CaptchaChallenge, CaptchaConfig
+        from apps.telegram.services.bot_api import send_photo
+
+        captcha_type = str(request.data.get("type") or "pirate").strip()
+        image_b64 = str(request.data.get("image_b64") or "").strip()
+        game_account_id = str(request.data.get("game_account_id") or "").strip()
+
+        if not image_b64:
+            return Response({"error": "image_b64 obrigatorio."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Decode image for ikabotapi
+        try:
+            img_bytes = _b64.b64decode(image_b64)
+        except Exception:
+            return Response({"error": "image_b64 invalido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 1. Attempt auto-solve via ikabotapi
+        solution = ""
+        auto_failed = False
+        try:
+            endpoint = f"/v1/decaptcha/{captcha_type}"
+            files = {"image": ("captcha.png", img_bytes, "image/png")}
+            resp = http_requests.post(
+                f"{settings.IKABOTAPI_URL}{endpoint}",
+                files=files,
+                timeout=_IKABOTAPI_TIMEOUT,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            if isinstance(result, str):
+                solution = result.strip().upper()
+            elif isinstance(result, dict):
+                solution = str(result.get("solution") or result.get("result") or "").strip().upper()
+        except Exception as exc:
+            logger.warning("CaptchaChallenge: auto-solve falhou: %s", exc)
+            auto_failed = True
+
+        if solution:
+            logger.info("CaptchaChallenge: resolvido automaticamente type=%s", captcha_type)
+            return Response({"solution": solution, "challenge_id": None})
+
+        # 2. Auto-solve failed — create a pending challenge
+        captcha_cfg, _ = CaptchaConfig.objects.get_or_create(pk=1)
+
+        game_account = None
+        if game_account_id:
+            try:
+                game_account = GameAccount.objects.get(pk=game_account_id)
+            except GameAccount.DoesNotExist:
+                logger.warning("CaptchaChallenge: GameAccount %s nao encontrado", game_account_id)
+
+        expires_at = timezone.now() + timedelta(seconds=captcha_cfg.timeout_sec)
+        challenge = CaptchaChallenge.objects.create(
+            captcha_type=captcha_type,
+            image_data=image_b64,
+            status="pending",
+            game_account=game_account,
+            expires_at=expires_at,
+        )
+
+        logger.info(
+            "CaptchaChallenge: criado pk=%d type=%s ga=%s",
+            challenge.pk, captcha_type, game_account_id or "global",
+        )
+
+        # 3. Send via Telegram if configured
+        use_telegram = captcha_cfg.solve_method == "telegram" or captcha_cfg.fallback_method == "telegram"
+        if use_telegram:
+            chat_id = _resolve_telegram_chat_id(game_account)
+            if chat_id:
+                ga_label = game_account.name or game_account_id if game_account else "global"
+                caption = (
+                    f"🏴‍☠️ <b>Captcha #{challenge.pk}</b> — {captcha_type}\n"
+                    f"Conta: <b>{ga_label}</b>\n\n"
+                    f"Responda com:\n<code>/captcha {challenge.pk} RESPOSTA</code>"
+                )
+                result = send_photo(chat_id, img_bytes, caption=caption)
+                if not result.get("ok"):
+                    logger.warning(
+                        "CaptchaChallenge: falha ao enviar foto Telegram pk=%d: %s",
+                        challenge.pk, result.get("description"),
+                    )
+            else:
+                logger.warning("CaptchaChallenge: Telegram configurado mas sem chat_id disponivel")
+
+        return Response({"solution": None, "challenge_id": challenge.pk})
+
+
+class CaptchaChallengePollView(APIView):
+    """
+    GET /api/agent/captcha/challenge/<pk>/
+
+    Consulta o status de um CaptchaChallenge. Expira automaticamente se necessario.
+
+    Response: {"status": "pending"|"solved"|"failed"|"expired", "solution": ""}
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def get(self, request, pk):
+        from apps.captcha.models import CaptchaChallenge
+
+        try:
+            challenge = CaptchaChallenge.objects.get(pk=pk)
+        except CaptchaChallenge.DoesNotExist:
+            return Response({"error": "Desafio nao encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Auto-expire if past deadline
+        if challenge.status == "pending" and challenge.is_expired:
+            challenge.mark_expired()
+
+        return Response({
+            "status": challenge.status,
+            "solution": challenge.solution or "",
+        })

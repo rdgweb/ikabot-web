@@ -344,6 +344,27 @@ class HubClient:
         """POST /api/agent/captcha/solve"""
         return self._post("/api/agent/captcha/solve", {"type": captcha_type, "images": images})
 
+    def create_captcha_challenge(self, captcha_type: str, image_b64: str, game_account_id: str = "") -> dict:
+        """Create a captcha challenge. Returns {"solution": str|None, "challenge_id": int|None}."""
+        return self._post("/api/agent/captcha/challenge", {
+            "type": captcha_type,
+            "image_b64": image_b64,
+            "game_account_id": game_account_id or "",
+        })
+
+    def poll_captcha_solution(self, challenge_id: int, timeout_sec: int = 120, interval: int = 10) -> str:
+        """Poll until challenge solved or timeout. Returns solution string or empty."""
+        import time
+        deadline = time.time() + timeout_sec
+        while time.time() < deadline:
+            result = self._get(f"/api/agent/captcha/challenge/{challenge_id}")
+            if result.get("status") == "solved":
+                return str(result.get("solution") or "")
+            if result.get("status") in ("failed", "expired"):
+                return ""
+            time.sleep(interval)
+        return ""
+
     # ── Internal ──
 
     def _url(self, path: str) -> str:

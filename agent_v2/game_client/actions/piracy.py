@@ -230,20 +230,23 @@ class PiracyMissionAction(BaseAction):
                 import time as _t; _t.sleep(5)
                 continue
 
-            # Solve via hub
+            # Solve via hub (auto or Telegram fallback)
             import base64 as _b64
             img_b64 = _b64.b64encode(img_resp.content).decode("ascii")
             try:
-                solve_result = self.client.hub.solve_captcha("pirate", {"image": img_b64})
-                # hub normalises to {"solution": "..."} or raw string
-                if isinstance(solve_result, str):
-                    solution = solve_result.strip().upper()
-                else:
-                    solution = str(
-                        solve_result.get("solution") or solve_result.get("result") or ""
+                result = self.client.hub.create_captcha_challenge("pirate", img_b64)
+                solution = str(result.get("solution") or "").strip().upper()
+                if not solution and result.get("challenge_id"):
+                    challenge_id = result["challenge_id"]
+                    logger.info(
+                        "Piracy: aguardando resolucao do captcha #%d (Telegram/manual)",
+                        challenge_id,
+                    )
+                    solution = self.client.hub.poll_captcha_solution(
+                        challenge_id, timeout_sec=120, interval=10
                     ).strip().upper()
             except Exception as exc:
-                logger.warning("Piracy: captcha solving failed: %s", exc)
+                logger.warning("Piracy: captcha challenge falhou: %s", exc)
                 import time as _t; _t.sleep(5)
                 continue
 

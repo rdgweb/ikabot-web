@@ -245,6 +245,13 @@ class TelegramWebhookView(APIView):
             self._handle_replyto(match, chat_id)
             return Response({"status": "ok"})
 
+        # Handle /captcha <id> <answer>
+        captcha_re = re.compile(r"^/captcha\s+(\d+)\s+(\S+)$", re.IGNORECASE)
+        match = captcha_re.match(text_stripped)
+        if match:
+            self._handle_captcha(match, chat_id)
+            return Response({"status": "ok"})
+
         return Response({"status": "ok"})
 
     # ── Handlers ──────────────────────────────────────────────────────────
@@ -289,6 +296,25 @@ class TelegramWebhookView(APIView):
                 "Invalid/expired link code attempted: %s from chat %s",
                 code, chat_id,
             )
+
+    def _handle_captcha(self, match: re.Match, chat_id: str) -> None:
+        """Handle /captcha <id> <answer> — resolve a pending CaptchaChallenge."""
+        from apps.captcha.models import CaptchaChallenge
+
+        challenge_id = int(match.group(1))
+        answer = match.group(2).strip().upper()
+
+        try:
+            challenge = CaptchaChallenge.objects.get(pk=challenge_id)
+        except CaptchaChallenge.DoesNotExist:
+            send_message(chat_id, "❌ Captcha não encontrado.")
+            return
+
+        if challenge.is_pending:
+            challenge.mark_solved(answer, "telegram")
+            send_message(chat_id, f"✅ Captcha #{challenge_id} resolvido!")
+        else:
+            send_message(chat_id, "❌ Captcha expirado ou já resolvido.")
 
     def _handle_replyto(self, match: re.Match, chat_id: str) -> None:
         """Handle /replyto <db_uuid> [yes|no] [text]."""
