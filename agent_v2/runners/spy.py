@@ -52,8 +52,11 @@ class SpyRunner(BaseRunner):
         island_id = str(inputs.get("island_id") or "").strip()
         target_city_name = str(inputs.get("target_city_name") or "").strip()
         target_owner = str(inputs.get("target_owner") or "").strip()
+        # Inject game_account_id into inputs for helpers that need it
+        inputs = {**inputs, "__ga_id": ga_id}
         save_reports = bool(inputs.get("save_reports") if inputs.get("save_reports") is not None else True)
         delete_after_save = bool(inputs.get("delete_after_save") or False)
+        recall_after = bool(inputs.get("recall_after") if inputs.get("recall_after") is not None else True)
 
         if not city_id or not target_city_id or not island_id:
             self.log(jid, "error", "city_id, target_city_id e island_id obrigatórios")
@@ -192,8 +195,8 @@ class SpyRunner(BaseRunner):
             # ── Phase: executing ──────────────────────────────────────────────
             if phase == "executing":
                 if not missions_pending:
-                    self.log(jid, "info", "Todas as missões concluídas. Chamando espiões de volta.")
-                    phase = "recalling"
+                    self.log(jid, "info", "Todas as missões concluídas.")
+                    phase = "recalling" if recall_after else "done"
                 else:
                     current_mission = missions_pending[0]
                     opt = find_optimal_agents_decoys(
@@ -284,7 +287,9 @@ class SpyRunner(BaseRunner):
         total = self._get_stationed(primary_state, city_name, city_id)
         # Check other cities with safehouses
         try:
-            ga_id = inputs.get("game_account_id") or ""
+            ga_id = str(inputs.get("__ga_id") or "").strip()
+            if not ga_id:
+                return total  # no GA ID available, skip multi-safehouse scan
             snap = self.hub.get_snapshot(game_account_id=ga_id)
             for candidate in (snap.get("cities") or []):
                 cid = str(candidate.get("id") or "")
@@ -371,7 +376,11 @@ class SpyRunner(BaseRunner):
 
     def _find_best_city(self, jid, city_id, client, inputs):
         """Find city with most available spies if configured city has 0."""
-        snap = self.hub.get_snapshot(game_account_id=inputs.get("game_account_id") or "")
+        ga_id = str(inputs.get("__ga_id") or "").strip()
+        if not ga_id:
+            state = client.get_safehouse_state(city_id)
+            return city_id, state, int(state.get("available_spies") or 0)
+        snap = self.hub.get_snapshot(game_account_id=ga_id)
         best_state = client.get_safehouse_state(city_id)
         best_avail = int(best_state.get("available_spies") or 0)
         best_city = city_id

@@ -557,19 +557,19 @@ def _market_form_context(cities):
     return {"cities": market_cities}
 
 
+# Intelligence missions only (mission 1 = infiltration is always automatic)
 SPY_MISSIONS_UI = [
-    {"id": 1,  "name": "Enviar espião",      "risk_before": 30, "risk_after": 5,  "risk_per_spy": 3, "success": 60, "completion_min": 5},
-    {"id": 3,  "name": "Nível de pesquisa",  "risk_before": 35, "risk_after": 10, "risk_per_spy": 4, "success": 50, "completion_min": 10},
-    {"id": 5,  "name": "Inspecionar armazém","risk_before": 60, "risk_after": 15, "risk_per_spy": 6, "success": 30, "completion_min": 15},
-    {"id": 6,  "name": "Guarnição militar",  "risk_before": 70, "risk_after": 20, "risk_per_spy": 6, "success": 55, "completion_min": 15},
-    {"id": 7,  "name": "Tropas e frotas",    "risk_before": 50, "risk_after": 22, "risk_per_spy": 2, "success": 20, "completion_min": 15},
-    {"id": 21, "name": "Ver estado",         "risk_before": 40, "risk_after": 25, "risk_per_spy": 7, "success": 50, "completion_min": 10},
-    {"id": 23, "name": "Produção militar",   "risk_before": 65, "risk_after": 15, "risk_per_spy": 6, "success": 45, "completion_min": 15},
-    {"id": 25, "name": "Forma de governo",   "risk_before": 30, "risk_after": 5,  "risk_per_spy": 4, "success": 60, "completion_min": 5},
-    {"id": 26, "name": "Invenções",          "risk_before": 55, "risk_after": 10, "risk_per_spy": 4, "success": 40, "completion_min": 10},
-    {"id": 27, "name": "Colônias",           "risk_before": 30, "risk_after": 5,  "risk_per_spy": 3, "success": 45, "completion_min": 5},
-    {"id": 10, "name": "Comunicação",        "risk_before": 90, "risk_after": 26, "risk_per_spy": 5, "success": 40, "completion_min": 20},
-    {"id": 24, "name": "Cargo na aliança",   "risk_before": 60, "risk_after": 15, "risk_per_spy": 6, "success": 50, "completion_min": 15},
+    {"id": 3,  "icon": "bi-book",           "name": "Nível de pesquisa",  "desc": "Nível de pesquisa da academia",         "risk_before": 35, "risk_after": 10, "risk_per_spy": 4, "success": 50},
+    {"id": 5,  "icon": "bi-boxes",          "name": "Armazém",            "desc": "Recursos armazenados na cidade",        "risk_before": 60, "risk_after": 15, "risk_per_spy": 6, "success": 30},
+    {"id": 6,  "icon": "bi-shield-fill",    "name": "Guarnição",          "desc": "Tropas estacionadas na guarniçao",      "risk_before": 70, "risk_after": 20, "risk_per_spy": 6, "success": 55},
+    {"id": 7,  "icon": "bi-arrows-move",    "name": "Movimentos",         "desc": "Movimento de tropas e frotas",          "risk_before": 50, "risk_after": 22, "risk_per_spy": 2, "success": 20},
+    {"id": 21, "icon": "bi-eye",            "name": "Estado geral",       "desc": "Estado completo da cidade",             "risk_before": 40, "risk_after": 25, "risk_per_spy": 7, "success": 50},
+    {"id": 25, "icon": "bi-bank",           "name": "Governo",            "desc": "Forma de governo adotada",              "risk_before": 30, "risk_after": 5,  "risk_per_spy": 4, "success": 60},
+    {"id": 23, "icon": "bi-hammer",         "name": "Produção militar",   "desc": "Produção de unidades militares",        "risk_before": 65, "risk_after": 15, "risk_per_spy": 6, "success": 45},
+    {"id": 26, "icon": "bi-lightbulb",      "name": "Invenções",          "desc": "Melhorias de unidades pesquisadas",     "risk_before": 55, "risk_after": 10, "risk_per_spy": 4, "success": 40},
+    {"id": 27, "icon": "bi-geo-alt",        "name": "Colônias",           "desc": "Cidades colonizadas pelo jogador",      "risk_before": 30, "risk_after": 5,  "risk_per_spy": 3, "success": 45},
+    {"id": 10, "icon": "bi-chat-dots",      "name": "Comunicações",       "desc": "Mensagens trocadas pela aliança",       "risk_before": 90, "risk_after": 26, "risk_per_spy": 5, "success": 40},
+    {"id": 24, "icon": "bi-star",           "name": "Cargo na aliança",   "desc": "Posição do jogador na aliança",         "risk_before": 60, "risk_after": 15, "risk_per_spy": 6, "success": 50},
 ]
 
 
@@ -1187,10 +1187,10 @@ def _custom_field_names(action_code: int) -> list[str]:
         return ["unit_targets_json", "min_crystal_reserve", "min_gold_reserve", "priority_mode"]
     if int(action_code) == 15:
         return [
-            "city_id", "target_city_id", "island_id", "mission_id",
-            "max_detection_risk", "auto_agents", "agents", "decoys",
-            "save_reports", "delete_after_save",
+            "city_id", "target_city_id", "island_id",
             "target_city_name", "target_owner", "target_owner_id",
+            "mission_id", "max_detection_risk",
+            "recall_after", "save_reports", "delete_after_save",
         ]
     if int(action_code) == 31:
         return ["receiver_name", "receiver_id", "msg_type", "content", "city_id"]
