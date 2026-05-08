@@ -43,6 +43,9 @@
           </td>
           <td class="text-sm text-muted">
             {{ report.subject|default:"—" }}
+            {% if report.mission_name %}
+            <div class="font-medium text-ink">{{ report.mission_name }}</div>
+            {% endif %}
             {% if report.data_json %}
             <div class="mt-1 flex flex-wrap gap-1">
               {% for key, val in report.data_json.items %}
@@ -54,6 +57,7 @@
                 {% elif key == "crystal" %}<img src="{% static 'game/resources/icon_glass.png' %}" class="h-3 w-3 object-contain">
                 {% elif key == "sulfur" %}<img src="{% static 'game/resources/icon_sulfur.png' %}" class="h-3 w-3 object-contain">
                 {% elif key == "gold" %}<i class="bi bi-coin" style="color:var(--ik-gold);"></i>
+                {% elif key == "research_field" or key == "research_topic" or key == "research_path" or key == "government" or key == "summary" %}<i class="bi bi-journal-text text-muted"></i>
                 {% else %}<i class="bi bi-info-circle text-muted"></i>
                 {% endif %}
                 {{ val|default:"—" }}

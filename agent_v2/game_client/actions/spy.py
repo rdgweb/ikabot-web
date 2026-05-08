@@ -14,9 +14,9 @@ API reference (captured 2026-05-07 from s78-br):
   Send spy mission (POST):
     action=Espionage&function=sendSpy
     destinationCityId=<target_city_id>
-    cityId=<island_id>          ← island id, NOT source city
     islandId=<island_id>
-    spies[<source_city_id>][agents]=N
+    currentIslandId=<island_id>
+    spies[<source_city_id>][agents]=N    ← literal brackets, NOT %5B/%5D
     spies[<source_city_id>][decoys]=M
     spies[<source_city_id>][missionId]=X
     backgroundView=island&actionRequest=<token>&ajax=1
@@ -68,6 +68,7 @@ import logging
 import math
 import re
 from typing import Any
+from urllib.parse import urlencode
 
 from ..constants import GAME_AJAX_HEADERS
 from ..exceptions import ActionError
@@ -98,6 +99,30 @@ def _strip_html(html: str) -> str:
     text = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
     text = text.replace("&nbsp;", " ").replace("&quot;", '"').replace("&#39;", "'")
     return re.sub(r"\s+", " ", text).strip()
+
+
+def _parse_feedback_entries(data: list) -> tuple[bool, str]:
+    success = False
+    message = ""
+    for entry in data:
+        if not (isinstance(entry, list) and entry and entry[0] == "provideFeedback"):
+            continue
+        for fb in (entry[1] or []):
+            if not isinstance(fb, dict):
+                continue
+            message = _strip_html(str(fb.get("text", "") or ""))
+            if fb.get("type") == 10:
+                success = True
+    return success, message
+
+
+def _normalise_mission_name(mission_id: int | None, subject: str = "") -> str:
+    if mission_id in MISSION_DATA:
+        return str(MISSION_DATA[mission_id]["name"])
+    inferred = _infer_mission_id(subject) if subject else None
+    if inferred in MISSION_DATA:
+        return str(MISSION_DATA[inferred]["name"])
+    return ""
 
 
 def compute_spy_risks(live_params: dict, mission_id: int, agents: int, decoys: int) -> dict[str, float]:
@@ -310,12 +335,15 @@ class SpySafehouseAction(BaseAction):
             "in_use_spies": 0,
             "training_count": 0,
             "active_missions": [],
+            "target_groups": [],
         }
 
         # Parse spy_stats_content section
+        # "Pode treinar N" = remaining training capacity (NOT the trained spy count)
         m = re.search(r"Pode treinar (\d+)", html)
-        if m:
-            state["total_spies"] = int(m.group(1))
+        spy_capacity = int(m.group(1)) if m else 0
+        state["spy_capacity"] = spy_capacity
+
         m2 = re.search(r"(\d+)\s+espera[mn]? por treino", html)
         if m2:
             state["training_count"] = int(m2.group(1))
@@ -326,12 +354,135 @@ class SpySafehouseAction(BaseAction):
         if m4:
             state["in_use_spies"] = int(m4.group(1))
 
-        # "Trabalhando na defesa" = pool disponível para missões (ficam em casa na defesa
-        # quando não estão em missão). available = total - em_uso - em_treinamento
-        state["available_spies"] = max(
-            0,
-            state["total_spies"] - state["in_use_spies"] - state["training_count"]
-        )
+        # Spies "trabalhando na defesa" = trained spies at home, available to send on missions
+        # Spies "em uso" = currently on missions (not available)
+        # "Pode treinar N" = remaining capacity, NOT the trained count
+        state["total_spies"] = state["defending_spies"] + state["in_use_spies"]
+        state["available_spies"] = state["defending_spies"]
+
+        state["stationed_by_city"] = {}
+        state["in_transit_by_city"] = {}
+
+        mission_idx = html.find('class="spyinfo"')
+        if mission_idx < 0:
+            mission_idx = html.find("EspiÃƒÂ£o em MissÃƒÂ£o")
+        seen_spy_ids: set[str] = set()
+        if mission_idx >= 0:
+            mission_section = html[mission_idx:mission_idx + 30000]
+            for block in re.findall(r'<div class="spyinfo">([\s\S]{0,5000}?)</div>\s*</div>', mission_section):
+                owner = ""
+                owner_m = re.search(r'<li[^>]*class="user"[^>]*>[\s\S]*?<a[^>]*>([^<]+)</a>', block)
+                if owner_m:
+                    owner = _strip_html(owner_m.group(1))
+
+                city_name = ""
+                city_m = re.search(r'<li[^>]*class="city"[^>]*>[\s\S]*?<a[^>]*>([^<]+)</a>', block)
+                if city_m:
+                    city_name = _strip_html(city_m.group(1))
+
+                coords_m = re.search(r"\[(\d+)\s*:\s*(\d+)\]", block)
+                x = int(coords_m.group(1)) if coords_m else None
+                y = int(coords_m.group(2)) if coords_m else None
+
+                target_city_id = ""
+                target_city_m = re.search(r"targetCityId=(\d+)", block)
+                if target_city_m:
+                    target_city_id = target_city_m.group(1)
+                else:
+                    target_city_m = re.search(r"selectCity=(\d+)", block)
+                    if target_city_m:
+                        target_city_id = target_city_m.group(1)
+
+                count = 0
+                stationed_m = re.search(r'(\d+)\s+est[aÃƒÂ£]o em uso', block)
+                if stationed_m:
+                    count = int(stationed_m.group(1))
+
+                waiting = "esperam novas ordens" in block.lower()
+                travelling = "a caminho" in block.lower() or "SpyCountDown" in block
+
+                status = ""
+                status_m = re.search(r'<span[^>]*class="missionTxt"[^>]*>([\s\S]*?)</span>', block)
+                if status_m:
+                    status = _strip_html(status_m.group(1))
+                elif waiting:
+                    status = "Os teus espiÃµes esperam novas ordens."
+
+                spy_id = ""
+                spy_id_m = re.search(r"spy=(\d+)", block)
+                if spy_id_m:
+                    spy_id = spy_id_m.group(1)
+                else:
+                    spy_countdown_m = re.search(r"SpyCountDown(\d+)", block)
+                    if spy_countdown_m:
+                        spy_id = spy_countdown_m.group(1)
+
+                return_ts = None
+                ts_m = re.search(rf"SpyCountDown{re.escape(spy_id)}[\s\S]*?enddate:\s*(\d+)", mission_section) if spy_id else None
+                if not ts_m:
+                    ts_m = re.search(r"enddate:\s*(\d+)", block)
+                if ts_m:
+                    return_ts = int(ts_m.group(1))
+
+                mission_view_url = ""
+                mission_view_m = re.search(r'href="([^"]*view=spyMissions[^"]*targetCityId=\d+[^"]*)"', block)
+                if mission_view_m:
+                    mission_view_url = mission_view_m.group(1)
+
+                retreat_url = ""
+                retreat_m = re.search(r'href="([^"]*retreat=1[^"]*)"', block)
+                if retreat_m:
+                    retreat_url = retreat_m.group(1)
+
+                abort_url = ""
+                abort_m = re.search(r'href="([^"]*abortInvasion[^"]*)"', block)
+                if abort_m:
+                    abort_url = abort_m.group(1)
+
+                if not any([owner, city_name, target_city_id, count, spy_id, status]):
+                    continue
+
+                group = {
+                    "spy_id": spy_id,
+                    "owner": owner,
+                    "city_name": city_name,
+                    "target_city_id": target_city_id,
+                    "x": x,
+                    "y": y,
+                    "count_in_use": count,
+                    "status": status,
+                    "is_waiting": waiting,
+                    "is_travelling": travelling and not waiting,
+                    "return_timestamp": return_ts,
+                    "mission_view_url": mission_view_url,
+                    "retreat_url": retreat_url,
+                    "abort_url": abort_url,
+                }
+                state["target_groups"].append(group)
+
+                city_key = city_name or target_city_id or owner or "unknown"
+                if waiting:
+                    state["stationed_by_city"][city_key] = state["stationed_by_city"].get(city_key, 0) + count
+                elif travelling:
+                    state["in_transit_by_city"][city_key] = state["in_transit_by_city"].get(city_key, 0) + count
+
+                if spy_id and spy_id not in seen_spy_ids:
+                    seen_spy_ids.add(spy_id)
+                    mission: dict[str, Any] = {
+                        "spy_id": spy_id,
+                        "target_city_id": target_city_id,
+                        "city_name": city_name,
+                        "owner": owner,
+                        "status": status,
+                        "count_in_use": count,
+                        "is_waiting": waiting,
+                        "is_travelling": travelling and not waiting,
+                    }
+                    if return_ts is not None:
+                        mission["return_timestamp"] = return_ts
+                    state["active_missions"].append(mission)
+
+        return state
 
         # Parse "Espião em Missão" section for stationed and in-transit counts per city
         state["stationed_by_city"] = {}   # {city_name: count} — waiting for orders
@@ -441,6 +592,46 @@ def _normalise_report_data(raw_pairs: list) -> dict:
             if key_clean:
                 result[key_clean] = _parse_number(value) if re.search(r"\d", value) else value
     return result
+
+
+def _extract_hidden_value(html: str, name: str) -> str:
+    match = re.search(rf'name="{re.escape(name)}"[^>]*value="([^"]*)"', html)
+    return match.group(1) if match else ""
+
+
+def _extract_report_text_lines(report_html: str) -> list[str]:
+    lines: list[str] = []
+    for raw in re.split(r"<br\s*/?>|</p>|</li>|</tr>", report_html):
+        text = _strip_html(raw)
+        if text and text not in lines:
+            lines.append(text)
+    return lines
+
+
+def _extract_report_details(mission_id: int | None, report_text: str, pairs: list[tuple[str, str]]) -> dict[str, Any]:
+    details: dict[str, Any] = {}
+    text = " ".join(report_text.split())
+    if mission_id == 3 and text:
+        match = re.search(r"Campo de pesquisa\s+(.+)", text, re.IGNORECASE)
+        if match:
+            payload = match.group(1).strip()
+            details["research_path"] = payload
+            parts = payload.split()
+            if parts:
+                details["research_field"] = parts[0]
+            if len(parts) > 1:
+                details["research_topic"] = " ".join(parts[1:])
+    elif mission_id == 25 and text:
+        if "nÃ£o foi bem sucedida" not in text.lower():
+            details["government"] = text
+
+    if pairs and not details:
+        flat = [f"{name}: {value}" for name, value in pairs[:6]]
+        if flat:
+            details["summary"] = " | ".join(flat)
+    elif text and not details:
+        details["summary"] = text[:240]
+    return details
 
 
 class SpyMissionDataAction(BaseAction):
@@ -569,20 +760,29 @@ class SpySendAction(BaseAction):
         Returns:
             {"success": bool, "message": str}
         """
-        params = {
+        from urllib.parse import urlencode
+
+        # Build base params with normal URL encoding
+        base_params = {
             "action": "Espionage",
             "function": "sendSpy",
             "destinationCityId": str(target_city_id),
-            "cityId": str(island_id),
             "islandId": str(island_id),
-            f"spies[{source_city_id}][agents]": str(agents),
-            f"spies[{source_city_id}][decoys]": str(decoys),
-            f"spies[{source_city_id}][missionId]": str(mission_id),
+            "currentIslandId": str(island_id),
             "backgroundView": "island",
             "actionRequest": self.client._action_request,
             "ajax": "1",
         }
-        resp = self.client._request("POST", self.client._server_url, data=params, headers=dict(GAME_AJAX_HEADERS))
+        # Append spies[] array with literal brackets (NOT %5B/%5D) — game parser expects raw brackets
+        body = (
+            urlencode(base_params)
+            + f"&spies[{source_city_id}][agents]={agents}"
+            + f"&spies[{source_city_id}][decoys]={decoys}"
+            + f"&spies[{source_city_id}][missionId]={mission_id}"
+        )
+        send_headers = dict(GAME_AJAX_HEADERS)
+        send_headers["Content-Type"] = "application/x-www-form-urlencoded"
+        resp = self.client._request("POST", self.client._server_url, data=body, headers=send_headers)
         try:
             data = resp.json()
         except Exception as exc:
@@ -614,6 +814,212 @@ class SpySendAction(BaseAction):
             source_city_id, target_city_id, mission_id, agents, decoys, success,
         )
         return {"success": success, "message": message}
+
+
+class SpyMissionAssignmentAction(BaseAction):
+    """Open the internal spy mission view for an already infiltrated group."""
+
+    def execute(
+        self,
+        source_city_id: int | str,
+        target_city_id: int | str,
+        position: int = 19,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        params = {
+            "view": "spyMissions",
+            "targetCityId": str(target_city_id),
+            "position": str(position),
+            "backgroundView": "city",
+            "currentCityId": str(source_city_id),
+            "actionRequest": self.client._action_request,
+            "ajax": "1",
+        }
+        resp = self.client._request("GET", self.client._server_url, params=params, headers=dict(GAME_AJAX_HEADERS))
+        try:
+            data = resp.json()
+        except Exception as exc:
+            raise ActionError(f"Failed to parse spyMissions response: {exc}", action="spyMissions")
+
+        for entry in data:
+            if isinstance(entry, list) and entry[0] == "updateGlobalData" and isinstance(entry[1], dict):
+                action_request = entry[1].get("actionRequest")
+                if action_request:
+                    self.client._action_request = str(action_request)
+                break
+
+        html = ""
+        load_js_params: dict[str, Any] = {}
+        for entry in data:
+            if isinstance(entry, list) and entry[0] == "changeView" and isinstance(entry[1], list) and len(entry[1]) >= 2:
+                html = entry[1][1]
+            if isinstance(entry, list) and entry[0] == "updateTemplateData" and isinstance(entry[1], dict):
+                load_js = entry[1].get("load_js") or {}
+                params_str = load_js.get("params", "") if isinstance(load_js, dict) else ""
+                if params_str:
+                    try:
+                        load_js_params = json.loads(params_str)
+                    except Exception:
+                        load_js_params = {}
+
+        mission_options: dict[int, dict[str, Any]] = {}
+        raw_missions = load_js_params.get("missionData", {}) if isinstance(load_js_params, dict) else {}
+        for mid_str, mission_data in raw_missions.items():
+            if not isinstance(mission_data, dict):
+                continue
+            try:
+                mid = int(mid_str)
+            except (TypeError, ValueError):
+                continue
+            mission_options[mid] = {
+                "name": mission_data.get("name", ""),
+                "risk_before": mission_data.get("riskBefore", 0),
+                "risk_after": mission_data.get("riskAfter", 0),
+                "risk_per_spy": mission_data.get("riskPerSpy", 0),
+                "success_chance": mission_data.get("successChance", 0),
+                "executable": bool(mission_data.get("executableMission", False)),
+            }
+
+        return {
+            "spy_id": _extract_hidden_value(html, "spy"),
+            "source_city_id": _extract_hidden_value(html, "cityId") or str(source_city_id),
+            "target_city_id": _extract_hidden_value(html, "targetCity") or str(target_city_id),
+            "island_id": _extract_hidden_value(html, "islandId"),
+            "position": position,
+            "html": html,
+            "missions": mission_options,
+        }
+
+
+class SpyExecuteMissionAction(BaseAction):
+    """Execute an internal spy mission from a waiting infiltrated group."""
+
+    def execute(
+        self,
+        source_city_id: int | str,
+        target_city_id: int | str,
+        mission_id: int,
+        agents: int,
+        decoys: int = 0,
+        position: int = 19,
+        spy_id: int | str | None = None,
+        island_id: int | str | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        assignment = SpyMissionAssignmentAction(self.client).execute(
+            source_city_id=source_city_id,
+            target_city_id=target_city_id,
+            position=position,
+        )
+        actual_spy_id = str(spy_id or assignment.get("spy_id") or "").strip()
+        actual_island_id = str(island_id or assignment.get("island_id") or source_city_id).strip()
+        actual_source_city_id = str(assignment.get("source_city_id") or source_city_id).strip()
+        actual_target_city_id = str(assignment.get("target_city_id") or target_city_id).strip()
+        if not actual_spy_id:
+            raise ActionError("No waiting spy group found for internal mission.", action="executeMission")
+
+        base_params = {
+            "action": "Espionage",
+            "function": "executeMission",
+            "tab": "tabSafehouse",
+            "targetCity": actual_target_city_id,
+            "cityId": actual_source_city_id,
+            "islandId": actual_island_id,
+            "spy": actual_spy_id,
+            "mission": str(mission_id),
+            "backgroundView": "city",
+            "currentCityId": actual_source_city_id,
+            "actionRequest": self.client._action_request,
+            "ajax": "1",
+        }
+        body = (
+            urlencode(base_params)
+            + f"&spies[{actual_source_city_id}][agents]={agents}"
+            + f"&spies[{actual_source_city_id}][decoys]={decoys}"
+        )
+        headers = dict(GAME_AJAX_HEADERS)
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+        resp = self.client._request("POST", self.client._server_url, data=body, headers=headers)
+        try:
+            data = resp.json()
+        except Exception as exc:
+            raise ActionError(f"Failed to parse executeMission response: {exc}", action="executeMission")
+
+        for entry in data:
+            if isinstance(entry, list) and entry[0] == "updateGlobalData" and isinstance(entry[1], dict):
+                action_request = entry[1].get("actionRequest")
+                if action_request:
+                    self.client._action_request = str(action_request)
+                break
+
+        success, message = _parse_feedback_entries(data)
+        if not message:
+            success = True
+            message = f"MissÃ£o {mission_id} executada"
+        return {"success": success, "message": message, "spy_id": actual_spy_id}
+
+
+class SpyRetreatAction(BaseAction):
+    """Retreat a waiting infiltrated group."""
+
+    def execute(
+        self,
+        source_city_id: int | str,
+        target_city_id: int | str,
+        position: int = 19,
+        spy_id: int | str | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        params = {
+            "view": "spyMissions",
+            "targetCityId": str(target_city_id),
+            "retreat": "1",
+            "position": str(position),
+            "backgroundView": "city",
+            "currentCityId": str(source_city_id),
+            "actionRequest": self.client._action_request,
+            "ajax": "1",
+        }
+        resp = self.client._request("GET", self.client._server_url, params=params, headers=dict(GAME_AJAX_HEADERS))
+        try:
+            data = resp.json()
+        except Exception:
+            data = []
+
+        for entry in data:
+            if isinstance(entry, list) and entry[0] == "updateGlobalData" and isinstance(entry[1], dict):
+                action_request = entry[1].get("actionRequest")
+                if action_request:
+                    self.client._action_request = str(action_request)
+                break
+
+        success, message = _parse_feedback_entries(data)
+        if success or message:
+            return {"success": success, "message": message or "Retirada solicitada"}
+
+        if spy_id:
+            fallback = {
+                "action": "Espionage",
+                "function": "abortInvasion",
+                "cityId": str(source_city_id),
+                "position": str(position),
+                "spy": str(spy_id),
+                "backgroundView": "city",
+                "currentCityId": str(source_city_id),
+                "actionRequest": self.client._action_request,
+                "ajax": "1",
+            }
+            fallback_resp = self.client._request("GET", self.client._server_url, params=fallback, headers=dict(GAME_AJAX_HEADERS))
+            try:
+                fallback_data = fallback_resp.json()
+            except Exception:
+                fallback_data = []
+            success, message = _parse_feedback_entries(fallback_data)
+            if not message:
+                message = "Retirada solicitada"
+            return {"success": success or not bool(fallback_data), "message": message}
+
+        return {"success": True, "message": "Retirada solicitada"}
 
 
 class SpyTrainAction(BaseAction):
@@ -768,6 +1174,8 @@ class SpyReportsAction(BaseAction):
 
             # Infer mission_id from subject
             report["mission_id"] = _infer_mission_id(report.get("subject", ""))
+            report["mission_name"] = _normalise_mission_name(report["mission_id"], report.get("subject", ""))
+            report["is_read"] = not report.get("unread", False)
 
             # Report body
             body_html = body_map.get(report_id, "")
@@ -787,6 +1195,9 @@ class SpyReportsAction(BaseAction):
                     report_content = m_report.group(1)
                     report["report_html"] = report_content.strip()
                     report["report_text"] = _strip_html(report_content)
+                    lines = _extract_report_text_lines(report_content)
+                    if lines:
+                        report["report_lines"] = lines
 
                 # Extract INNER tables only (resourcesTable, unitTable etc.)
                 inner_tables = re.findall(
@@ -801,8 +1212,8 @@ class SpyReportsAction(BaseAction):
                         # Only include if it has td (data) rows
                         if '<td' in t and 'class="job"' not in t:
                             inner_tables.append(t)
+                all_pairs: list[tuple[str, str]] = []
                 if inner_tables:
-                    all_pairs = []
                     for table_content in inner_tables:
                         # Only <td> rows (skip <th> header rows)
                         rows = re.findall(
@@ -813,9 +1224,22 @@ class SpyReportsAction(BaseAction):
                             k, v = _strip_html(r[0]), _strip_html(r[1])
                             if k and v:
                                 all_pairs.append((k, v))
-                    if all_pairs:
-                        report["data_table"] = all_pairs
-                        report["data_json"] = _normalise_report_data(all_pairs)
+                if all_pairs:
+                    report["data_table"] = all_pairs
+                    report["data_json"] = _normalise_report_data(all_pairs)
+
+                detail_payload = _extract_report_details(
+                    report.get("mission_id"),
+                    report.get("report_text", ""),
+                    all_pairs,
+                )
+                if detail_payload:
+                    merged = dict(report.get("data_json") or {})
+                    merged.update(detail_payload)
+                    report["data_json"] = merged
+
+            if report.get("mission_id") == 1 and not report.get("result_status"):
+                report["result_status"] = report.get("status") or "InfiltraÃ§Ã£o"
 
             reports.append(report)
 

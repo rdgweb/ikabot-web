@@ -119,14 +119,20 @@ class SpyRunner(BaseRunner):
             if available == 0:
                 city_id, state, available = self._find_best_city(jid, city_id, client, inputs)
 
+            capacity = int(state.get("spy_capacity") or 0)
             self.log(jid, "info",
-                f"Safehouse: total={total} disponíveis={available} em_uso={in_use} treinando={training}")
+                f"Safehouse: treinados={total} disponíveis={available} em_uso={in_use} treinando={training} capacidade={capacity}")
 
             # Stationed at target city — aggregate from ALL safehouses
-            stationed = self._get_total_stationed(jid, client, city_id, state,
-                                                   target_city_name, target_city_id, inputs)
-            self.log(jid, "info",
-                f"Estacionados em {target_city_name or target_city_id}: {stationed} (todas as cidades)")
+            target_group = self._get_target_group(state, target_city_name, target_city_id)
+            stationed = int(target_group.get("count_in_use") or 0) if target_group.get("is_waiting") else 0
+            in_transit = int(target_group.get("count_in_use") or 0) if target_group.get("is_travelling") else 0
+            self.log(
+                jid,
+                "info",
+                f"Alvo na safehouse: aguardando={stationed} em_transito={in_transit} "
+                f"status={target_group.get('status') or 'sem grupo'}",
+            )
 
             # ── Get live risk data ─────────────────────────────────────────────
             live_params: dict = {}
@@ -145,7 +151,7 @@ class SpyRunner(BaseRunner):
                 result = self._send_one_mission(jid, client, city_id, target_city_id, island_id,
                                                 1, available, max_risk, manual_agents, auto_agents, live_params)
                 if result:
-                    wait = random.randint(ARRIVAL_WAIT, ARRIVAL_WAIT + 120)
+                    wait = self._next_wait_for_group(target_group, ARRIVAL_WAIT)
                     self.log(jid, "info", f"Missão 1 enviada. Reagendando em {wait}s.")
                     self.save_game_client(ga_id, client)
                     return RunnerResult(success=True, reschedule_seconds=wait,
@@ -159,19 +165,30 @@ class SpyRunner(BaseRunner):
             if phase == "accumulating":
                 # How many do we need for the most demanding pending mission?
                 needed = self._total_needed(missions_pending, live_params, available)
+                current_total = stationed + in_transit
+                self.log(jid, "info", f"Resumo do alvo: aguardando={stationed} em_transito={in_transit} necessarios={needed}")
                 self.log(jid, "info", f"Necessários: {needed} | estacionados: {stationed}")
 
                 if stationed >= needed and stationed > 0:
                     self.log(jid, "info", f"Suficientes! Passando para execução.")
                     phase = "executing"
+                elif current_total >= needed and in_transit > 0:
+                    wait = self._next_wait_for_group(target_group, ARRIVAL_WAIT)
+                    self.log(jid, "info", "JÃ¡ existe reforÃ§o em trÃ¢nsito; aguardando chegada.")
+                    self.save_game_client(ga_id, client)
+                    return RunnerResult(success=True, reschedule_seconds=wait,
+                        reschedule_inputs={**inputs, "__recovery": {
+                            "phase": "accumulating", "missions_pending": missions_pending,
+                            "missions_done": missions_done,
+                        }})
                 else:
                     # Send optimal infiltration batch
-                    to_send = max(1, needed - stationed)
+                    to_send = max(1, needed - current_total)
                     opt = find_optimal_agents_decoys(live_params, 1, max_risk, max_risk + 25, 30.0, available)
                     if opt:
                         batch_agents = min(opt["agents"], to_send, available)
                         self.log(jid, "info",
-                            f"Infiltrando {batch_agents} agentes (precisamos {needed - stationed} mais) "
+                            f"Infiltrando {batch_agents} agentes (precisamos {needed - current_total} mais) "
                             f"→ sucesso={opt['success']}% risco={opt['agent_risk']}%")
                         ok, msg = self._send_spy_raw(client, city_id, target_city_id, island_id,
                                                      1, batch_agents, 0)
@@ -198,6 +215,16 @@ class SpyRunner(BaseRunner):
                     self.log(jid, "info", "Todas as missões concluídas.")
                     phase = "recalling" if recall_after else "done"
                 else:
+                    if not target_group.get("is_waiting"):
+                        wait = self._next_wait_for_group(target_group, ARRIVAL_WAIT)
+                        self.log(jid, "info", "Grupo ainda nÃ£o estÃ¡ em 'esperam novas ordens'; aguardando antes da missÃ£o interna.")
+                        self.save_game_client(ga_id, client)
+                        return RunnerResult(success=True, reschedule_seconds=wait,
+                            reschedule_inputs={**inputs, "__recovery": {
+                                "phase": "executing",
+                                "missions_pending": missions_pending,
+                                "missions_done": missions_done,
+                            }})
                     current_mission = missions_pending[0]
                     opt = find_optimal_agents_decoys(
                         live_params, current_mission, max_risk, max_risk + 25, 40.0, stationed
@@ -214,13 +241,15 @@ class SpyRunner(BaseRunner):
                             self.log(jid, "info",
                                 f"Executando {mname} com {opt['agents']} agentes + {opt.get('decoys',0)} cham "
                                 f"→ sucesso={opt['success']}% risco={opt['agent_risk']}%")
-                            ok, msg = self._send_spy_raw(client, city_id, target_city_id, island_id,
-                                                         current_mission, opt["agents"], opt.get("decoys", 0))
+                            ok, msg = self._execute_internal_mission(
+                                client, city_id, target_city_id, island_id, current_mission,
+                                opt["agents"], opt.get("decoys", 0), target_group.get("spy_id"),
+                            )
                             if ok:
                                 self.log(jid, "info", f"Missão enviada: {msg}")
                                 missions_done.append(current_mission)
                                 missions_pending = missions_pending[1:]
-                                wait = MISSION_WAIT + random.randint(0, 60)
+                                wait = random.randint(45, 120)
                                 self.save_game_client(ga_id, client)
                                 return RunnerResult(success=True, reschedule_seconds=wait,
                                     reschedule_inputs={**inputs, "__recovery": {
@@ -255,9 +284,9 @@ class SpyRunner(BaseRunner):
             if phase == "recalling":
                 if stationed > 0:
                     self.log(jid, "info", f"Chamando {stationed} espião(ões) de volta (missão 8)")
-                    ok, msg = self._send_spy_raw(client, city_id, target_city_id, island_id, 8, 1, 0)
+                    ok, msg = self._retreat_target_group(client, city_id, target_city_id, target_group.get("spy_id"))
                     self.log(jid, "info", f"Recall: {msg}")
-                    wait = ARRIVAL_WAIT
+                    wait = self._next_wait_for_group(target_group, ARRIVAL_WAIT)
                     self.save_game_client(ga_id, client)
                     return RunnerResult(success=True, reschedule_seconds=wait,
                         reschedule_inputs={**inputs, "__recovery": {"phase": "done",
@@ -331,6 +360,19 @@ class SpyRunner(BaseRunner):
                 return count
         return 0
 
+    def _get_target_group(self, state: dict, city_name: str, city_id: str) -> dict[str, Any]:
+        groups = state.get("target_groups") or []
+        city_id_str = str(city_id or "").strip()
+        city_name_str = str(city_name or "").strip().lower()
+        for group in groups:
+            if city_id_str and str(group.get("target_city_id") or "").strip() == city_id_str:
+                return group
+        for group in groups:
+            group_city = str(group.get("city_name") or "").lower()
+            if city_name_str and city_name_str in group_city:
+                return group
+        return {}
+
     def _total_needed(self, mission_ids: list, live_params: dict, available: int) -> int:
         """Max optimal agents across all pending intelligence missions."""
         needed = 1
@@ -348,6 +390,29 @@ class SpyRunner(BaseRunner):
             agents=agents, decoys=decoys,
         )
         return result.get("success", False), result.get("message", "")
+
+    def _execute_internal_mission(self, client, city_id, target_city_id, island_id, mission_id, agents, decoys, spy_id):
+        result = client.execute_spy_mission(
+            source_city_id=city_id,
+            target_city_id=target_city_id,
+            mission_id=mission_id,
+            agents=agents,
+            decoys=decoys,
+            spy_id=spy_id,
+            island_id=island_id,
+        )
+        return result.get("success", False), result.get("message", "")
+
+    def _retreat_target_group(self, client, city_id, target_city_id, spy_id):
+        result = client.retreat_spy_group(
+            source_city_id=city_id,
+            target_city_id=target_city_id,
+            spy_id=spy_id,
+        )
+        return result.get("success", False), result.get("message", "")
+
+    def _next_wait_for_group(self, target_group: dict, fallback_seconds: int) -> int:
+        return fallback_seconds + random.randint(0, 60)
 
     def _send_one_mission(self, jid, client, city_id, target_city_id, island_id,
                           mission_id, available, max_risk, manual_agents, auto_agents, live_params):
@@ -417,22 +482,26 @@ class SpyRunner(BaseRunner):
             for r in reports:
                 report_dicts.append({
                     "report_id": r.get("report_id", ""),
+                    "source_city_id": city_id,
                     "target_owner": r.get("target_owner", ""),
                     "target_city_id": r.get("target_city_id", ""),
                     "target_city_name": r.get("target_city_name", ""),
                     "target_x": r.get("target_x"),
                     "target_y": r.get("target_y"),
                     "subject": r.get("subject", ""),
+                    "mission_name": r.get("mission_name", ""),
                     "status": r.get("status", ""),
                     "result_status": r.get("result_status", ""),
                     "agents_sent": r.get("agents_sent", 0),
                     "agents_lost": r.get("agents_lost", 0),
+                    "decoys_sent": r.get("decoys_sent", 0),
+                    "decoys_lost": r.get("decoys_lost", 0),
                     "report_html": r.get("report_html", ""),
                     "report_text": r.get("report_text", ""),
                     "data_json": r.get("data_json", {}),
                     "date_str": r.get("date_str", ""),
                     "mission_id": r.get("mission_id"),
-                    "unread": r.get("unread", False),
+                    "is_read": r.get("is_read", not r.get("unread", False)),
                 })
             save_result = self.hub.save_spy_reports(ga_id, report_dicts)
             saved = save_result.get("saved", 0)

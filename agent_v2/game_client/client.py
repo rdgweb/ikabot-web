@@ -642,6 +642,60 @@ class GameClient(IslandActions):
             decoys=decoys,
         )
 
+    def get_spy_assignment_state(
+        self,
+        source_city_id: int | str,
+        target_city_id: int | str,
+        position: int = 19,
+    ) -> dict:
+        """Open the internal spy mission screen for an infiltrated group."""
+        from .actions.spy import SpyMissionAssignmentAction
+        return SpyMissionAssignmentAction(self).execute(
+            source_city_id=source_city_id,
+            target_city_id=target_city_id,
+            position=position,
+        )
+
+    def execute_spy_mission(
+        self,
+        source_city_id: int | str,
+        target_city_id: int | str,
+        mission_id: int,
+        agents: int,
+        decoys: int = 0,
+        position: int = 19,
+        spy_id: int | str | None = None,
+        island_id: int | str | None = None,
+    ) -> dict:
+        """Execute an internal espionage mission from an infiltrated group."""
+        from .actions.spy import SpyExecuteMissionAction
+        return SpyExecuteMissionAction(self).execute(
+            source_city_id=source_city_id,
+            target_city_id=target_city_id,
+            mission_id=mission_id,
+            agents=agents,
+            decoys=decoys,
+            position=position,
+            spy_id=spy_id,
+            island_id=island_id,
+        )
+
+    def retreat_spy_group(
+        self,
+        source_city_id: int | str,
+        target_city_id: int | str,
+        position: int = 19,
+        spy_id: int | str | None = None,
+    ) -> dict:
+        """Retreat an infiltrated spy group from the target city."""
+        from .actions.spy import SpyRetreatAction
+        return SpyRetreatAction(self).execute(
+            source_city_id=source_city_id,
+            target_city_id=target_city_id,
+            position=position,
+            spy_id=spy_id,
+        )
+
     def train_spies(self, city_id: int | str, count: int = 1, position: int = 19) -> dict:
         """Train spies at the safehouse."""
         from .actions.spy import SpyTrainAction
