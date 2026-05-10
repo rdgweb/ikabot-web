@@ -590,6 +590,7 @@ class CaptchaChallengeCreateView(APIView):
         from apps.telegram.services.bot_api import send_photo
 
         captcha_type = str(request.data.get("type") or "pirate").strip()
+        challenge_type = "piracy" if captcha_type == "pirate" else captcha_type
         image_b64 = str(request.data.get("image_b64") or "").strip()
         game_account_id = str(request.data.get("game_account_id") or "").strip()
 
@@ -625,6 +626,21 @@ class CaptchaChallengeCreateView(APIView):
 
         if solution:
             logger.info("CaptchaChallenge: resolvido automaticamente type=%s", captcha_type)
+            game_account = None
+            if game_account_id:
+                try:
+                    game_account = GameAccount.objects.get(pk=game_account_id)
+                except GameAccount.DoesNotExist:
+                    logger.warning("CaptchaChallenge: GameAccount %s nao encontrado", game_account_id)
+            CaptchaChallenge.objects.create(
+                captcha_type=challenge_type,
+                image_data=image_b64,
+                status="solved",
+                solution=solution,
+                solve_method="auto",
+                game_account=game_account,
+                solved_at=timezone.now(),
+            )
             return Response({"solution": solution, "challenge_id": None})
 
         # 2. Auto-solve failed — create a pending challenge
@@ -639,7 +655,7 @@ class CaptchaChallengeCreateView(APIView):
 
         expires_at = timezone.now() + timedelta(seconds=captcha_cfg.timeout_sec)
         challenge = CaptchaChallenge.objects.create(
-            captcha_type=captcha_type,
+            captcha_type=challenge_type,
             image_data=image_b64,
             status="pending",
             game_account=game_account,

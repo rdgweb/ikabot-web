@@ -81,6 +81,24 @@ def _extract_js_params(response_data: list) -> dict[str, Any]:
     return {}
 
 
+def _response_has_captcha_signal(response_text: str, response_data: Any) -> bool:
+    """Detect captcha in both raw AJAX text and decoded JSON fragments."""
+    combined = response_text or ""
+    try:
+        combined += json.dumps(response_data)
+    except (TypeError, ValueError):
+        pass
+    return any(
+        token in combined
+        for token in (
+            "function=createCaptcha",
+            "createCaptcha",
+            "captchaNeeded",
+            "showCaptcha",
+        )
+    )
+
+
 class PiracyStateAction(BaseAction):
     """Read the pirate fortress state for a city."""
 
@@ -165,6 +183,7 @@ class PiracyMissionAction(BaseAction):
         self,
         city_id: int | str,
         building_level: int,
+        game_account_id: str = "",
         **kwargs: Any,
     ) -> dict[str, Any]:
         base_params = {
@@ -200,12 +219,15 @@ class PiracyMissionAction(BaseAction):
 
         # Captcha solve loop
         for attempt in range(self._MAX_CAPTCHA_RETRIES):
-            if "function=createCaptcha" not in resp_text:
+            if not _response_has_captcha_signal(resp_text, data):
                 break  # No captcha in this response
 
             js = _extract_js_params(data)
-            ship_in_port = str(js.get("showPirateFortressShip", "0")) == "1"
-            if not ship_in_port:
+            ship_flag = js.get("showPirateFortressShip")
+            mission_started = int(js.get("ongoingMissionTimeRemaining") or 0) > 0 or (
+                ship_flag is not None and str(ship_flag) != "1"
+            )
+            if mission_started:
                 # Ship departed — mission started, captcha in response is for next attempt
                 logger.info("Piracy: ship departed despite captcha in response (no action needed)")
                 break
@@ -234,7 +256,11 @@ class PiracyMissionAction(BaseAction):
             import base64 as _b64
             img_b64 = _b64.b64encode(img_resp.content).decode("ascii")
             try:
-                result = self.client.hub.create_captcha_challenge("pirate", img_b64)
+                result = self.client.hub.create_captcha_challenge(
+                    "pirate",
+                    img_b64,
+                    game_account_id=game_account_id,
+                )
                 solution = str(result.get("solution") or "").strip().upper()
                 if not solution and result.get("challenge_id"):
                     challenge_id = result["challenge_id"]
@@ -284,15 +310,31 @@ class PiracyMissionAction(BaseAction):
         # Parse final result
         js_final = _extract_js_params(data)
         time_remaining = int(js_final.get("ongoingMissionTimeRemaining") or 0)
-        ship_in_port_final = str(js_final.get("showPirateFortressShip", "0")) == "1"
+        ship_flag = js_final.get("showPirateFortressShip")
+        has_ship_flag = ship_flag is not None
+        ship_in_port_final = str(ship_flag) == "1"
 
-        success = not ship_in_port_final  # ship departed = success
+        success = time_remaining > 0 or (has_ship_flag and not ship_in_port_final)
         message = ""
         for entry in data:
             if isinstance(entry, list) and entry[0] == "provideFeedback":
                 for fb in (entry[1] or []):
                     if isinstance(fb, dict) and fb.get("text"):
                         message = fb["text"]
+
+        if not success and _response_has_captcha_signal(resp_text, data):
+            raise CaptchaRequiredError(
+                "Piracy captcha was requested but not solved",
+                captcha_data={"type": "pirate"},
+            )
+
+        if success and time_remaining <= 0:
+            try:
+                state = PiracyStateAction(self.client).execute(city_id)
+                time_remaining = int(state.get("time_remaining") or 0)
+                success = time_remaining > 0
+            except Exception as exc:
+                logger.warning("Piracy: failed to confirm started mission: %s", exc)
 
         return {
             "success": success,

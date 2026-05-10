@@ -204,11 +204,25 @@ class PiracyMissionRunner(BaseRunner):
 
             # d) start the mission
             self.log(jid, "info", f"Iniciando missão pirata nível {effective_level}")
-            result = client.start_piracy_mission(city_id, effective_level)
+            result = client.start_piracy_mission(
+                city_id,
+                effective_level,
+                game_account_id=game_account_id,
+            )
 
             if not result.get("success"):
-                msg = result.get("message") or "Sem resposta de sucesso do jogo"
-                self.log(jid, "warn", f"Missão pirata pode ter falhado: {msg}")
+                self.log(
+                    jid,
+                    "warn",
+                    f"Missão pirata não foi confirmada pelo jogo: "
+                    f"{result.get('message') or 'mission_not_confirmed'}",
+                )
+                self.save_game_client(game_account_id, client)
+                return RunnerResult(
+                    success=False,
+                    reschedule_seconds=ERROR_RESCHEDULE,
+                    data={"error": result.get("message") or "mission_not_confirmed"},
+                )
 
             # d) compute reschedule from actual time_remaining returned or mission duration
             new_time_remaining = int(result.get("time_remaining") or 0)

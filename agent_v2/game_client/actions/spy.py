@@ -67,6 +67,7 @@ import json
 import logging
 import math
 import re
+import unicodedata
 from typing import Any
 from urllib.parse import urlencode
 
@@ -207,12 +208,12 @@ def find_optimal_agents_decoys(
 ) -> dict | None:
     """Find optimal (agents, decoys) that meets user's thresholds.
 
-    Tries all combinations up to available spies and returns the one that
-    maximises success while keeping risks within limits.
+    Tries all combinations up to available spies. Among valid combinations,
+    it treats near-maximum success as a plateau and returns the cheapest
+    combination in that plateau, then lower risk as a final tie-breaker.
     Returns None if no combination meets the thresholds.
     """
-    best: dict | None = None
-    best_score = float("-inf")
+    candidates: list[dict] = []
 
     max_agents = min(available, 28)
     for agents in range(1, max_agents + 1):
@@ -224,13 +225,22 @@ def find_optimal_agents_decoys(
                 continue
             if r["success"] < min_success:
                 continue
-            # Score: maximize success, penalise risk and total spies used
-            score = r["success"] - r["agent_risk"] * 0.5 - r["decoy_risk"] * 0.3 - (agents + decoys) * 0.1
-            if score > best_score:
-                best_score = score
-                best = r
+            candidates.append(r)
 
-    return best
+    if not candidates:
+        return None
+
+    max_success = max(float(c["success"]) for c in candidates)
+    success_floor = max(float(min_success), max_success - 5.0)
+    plateau = [c for c in candidates if float(c["success"]) >= success_floor]
+    return min(
+        plateau,
+        key=lambda c: (
+            int(c["agents"]) + int(c.get("decoys") or 0),
+            float(c["agent_risk"]) + float(c["decoy_risk"]) * 0.2,
+            -float(c["success"]),
+        ),
+    )
 
 
 def compute_agents_for_success(mission_id: int, target_success_pct: int = 80) -> int:
@@ -344,9 +354,9 @@ class SpySafehouseAction(BaseAction):
         spy_capacity = int(m.group(1)) if m else 0
         state["spy_capacity"] = spy_capacity
 
-        m2 = re.search(r"(\d+)\s+espera[mn]? por treino", html)
-        if m2:
-            state["training_count"] = int(m2.group(1))
+        # The list item "N esperam por treino" is an available training slot in this view,
+        # not an active training queue. Keep training_count at 0 unless the game exposes
+        # a real countdown/queue marker in this page.
         m3 = re.search(r"(\d+)\s+est[aã]o trabalhando na defesa", html)
         if m3:
             state["defending_spies"] = int(m3.group(1))
@@ -364,12 +374,15 @@ class SpySafehouseAction(BaseAction):
         state["in_transit_by_city"] = {}
 
         mission_idx = html.find('class="spyinfo"')
+        if mission_idx >= 0:
+            mission_idx = max(0, html.rfind("<div", 0, mission_idx))
         if mission_idx < 0:
             mission_idx = html.find("EspiÃƒÂ£o em MissÃƒÂ£o")
         seen_spy_ids: set[str] = set()
         if mission_idx >= 0:
             mission_section = html[mission_idx:mission_idx + 30000]
             for block in re.findall(r'<div class="spyinfo">([\s\S]{0,5000}?)</div>\s*</div>', mission_section):
+                block_text = re.sub(r"\s+", " ", _strip_html(block)).strip()
                 owner = ""
                 owner_m = re.search(r'<li[^>]*class="user"[^>]*>[\s\S]*?<a[^>]*>([^<]+)</a>', block)
                 if owner_m:
@@ -379,22 +392,37 @@ class SpySafehouseAction(BaseAction):
                 city_m = re.search(r'<li[^>]*class="city"[^>]*>[\s\S]*?<a[^>]*>([^<]+)</a>', block)
                 if city_m:
                     city_name = _strip_html(city_m.group(1))
+                    city_name = re.sub(r"\s*\(\s*\d+\s*:\s*\d+\s*\)\s*$", "", city_name).strip()
 
                 coords_m = re.search(r"\[(\d+)\s*:\s*(\d+)\]", block)
                 x = int(coords_m.group(1)) if coords_m else None
                 y = int(coords_m.group(2)) if coords_m else None
 
+                if owner and (not city_name or city_name.lower() in {"retirar", "retreat"}):
+                    city_text_m = re.search(
+                        rf"^{re.escape(owner)}\s+(.+?)\s+\[(\d+)\s*:\s*(\d+)\]",
+                        block_text,
+                    )
+                    if city_text_m:
+                        city_name = city_text_m.group(1).strip()
+                        x = int(city_text_m.group(2))
+                        y = int(city_text_m.group(3))
+
                 target_city_id = ""
-                target_city_m = re.search(r"targetCityId=(\d+)", block)
-                if target_city_m:
-                    target_city_id = target_city_m.group(1)
-                else:
-                    target_city_m = re.search(r"selectCity=(\d+)", block)
+                for pattern in (
+                    r"targetCityId=(\d+)",
+                    r"destinationCityId=(\d+)",
+                    r"selectCity=(\d+)",
+                ):
+                    target_city_m = re.search(pattern, block)
                     if target_city_m:
                         target_city_id = target_city_m.group(1)
+                        break
 
                 count = 0
                 stationed_m = re.search(r'(\d+)\s+est[aÃƒÂ£]o em uso', block)
+                if not stationed_m:
+                    stationed_m = re.search(r'(\d+)\s+est\S*o em uso', block_text, re.IGNORECASE)
                 if stationed_m:
                     count = int(stationed_m.group(1))
 
@@ -438,6 +466,22 @@ class SpySafehouseAction(BaseAction):
                 abort_m = re.search(r'href="([^"]*abortInvasion[^"]*)"', block)
                 if abort_m:
                     abort_url = abort_m.group(1)
+
+                if not target_city_id:
+                    for candidate_url in (mission_view_url, retreat_url, abort_url):
+                        if not candidate_url:
+                            continue
+                        for pattern in (
+                            r"targetCityId=(\d+)",
+                            r"destinationCityId=(\d+)",
+                            r"selectCity=(\d+)",
+                        ):
+                            target_city_m = re.search(pattern, candidate_url)
+                            if target_city_m:
+                                target_city_id = target_city_m.group(1)
+                                break
+                        if target_city_id:
+                            break
 
                 if not any([owner, city_name, target_city_id, count, spy_id, status]):
                     continue
@@ -540,6 +584,22 @@ _RESOURCE_NAME_MAP = {
     "pontos de pesquisa": "research_points",
 }
 
+_RESOURCE_KEY_MAP = {
+    "material de construcao": "wood",
+    "madeira": "wood",
+    "vinho": "wine",
+    "vinho producao": "wine",
+    "marmore": "marble",
+    "cristal": "crystal",
+    "enxofre": "sulfur",
+    "ouro": "gold",
+    "populacao": "population",
+    "cidadaos livres": "free_citizens",
+    "nivel de pesquisa": "research_level",
+    "nivel de ciencia": "science_level",
+    "pontos de pesquisa": "research_points",
+}
+
 # Map report subject keywords → mission_id
 _SUBJECT_TO_MISSION_ID: list[tuple[str, int]] = [
     ("chegou a", 1), ("enviado", 1),
@@ -573,6 +633,23 @@ def _parse_number(s: str) -> int:
         return 0
 
 
+def _normalise_label(label: str) -> str:
+    text = unicodedata.normalize("NFKD", str(label or ""))
+    text = text.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+
+def _cell_text(cell_html: str) -> str:
+    img_label = re.search(r'<img\b[^>]*(?:alt|title)="([^"]+)"', cell_html, re.IGNORECASE)
+    if img_label:
+        return _strip_html(img_label.group(1))
+    return _strip_html(cell_html)
+
+
+def _is_report_header_pair(name: str, value: str) -> bool:
+    return _normalise_label(name) == "recursos" and _normalise_label(value) == "quantidade"
+
+
 def _normalise_report_data(raw_pairs: list) -> dict:
     """Convert raw (name, value) table rows to structured JSON usable for automation.
 
@@ -583,12 +660,12 @@ def _normalise_report_data(raw_pairs: list) -> dict:
     """
     result: dict = {}
     for name, value in raw_pairs:
-        key = _RESOURCE_NAME_MAP.get(name.lower().strip())
+        key = _RESOURCE_NAME_MAP.get(name.lower().strip()) or _RESOURCE_KEY_MAP.get(_normalise_label(name))
         if key:
             result[key] = _parse_number(value)
         else:
             # Store unknown fields with normalised key
-            key_clean = re.sub(r"[^a-z0-9_]", "_", name.lower().strip())[:40]
+            key_clean = re.sub(r"[^a-z0-9]+", "_", _normalise_label(name)).strip("_")[:40]
             if key_clean:
                 result[key_clean] = _parse_number(value) if re.search(r"\d", value) else value
     return result
@@ -597,6 +674,31 @@ def _normalise_report_data(raw_pairs: list) -> dict:
 def _extract_hidden_value(html: str, name: str) -> str:
     match = re.search(rf'name="{re.escape(name)}"[^>]*value="([^"]*)"', html)
     return match.group(1) if match else ""
+
+
+def _extract_next_td_html(html: str, label_pattern: str) -> str:
+    label_match = re.search(label_pattern, html, re.IGNORECASE)
+    if not label_match:
+        return ""
+    first_td_end = html.find("</td>", label_match.end())
+    if first_td_end < 0:
+        return ""
+    second_td_start = re.search(r"<td\b[^>]*>", html[first_td_end:], re.IGNORECASE)
+    if not second_td_start:
+        return ""
+    start_tag_start = first_td_end + second_td_start.start()
+    content_start = first_td_end + second_td_start.end()
+    depth = 1
+    token_re = re.compile(r"</?td\b[^>]*>", re.IGNORECASE)
+    for token in token_re.finditer(html, content_start):
+        tag = token.group(0)
+        if tag.startswith("</"):
+            depth -= 1
+            if depth == 0:
+                return html[content_start:token.start()]
+        else:
+            depth += 1
+    return html[content_start:]
 
 
 def _extract_report_text_lines(report_html: str) -> list[str]:
@@ -611,6 +713,11 @@ def _extract_report_text_lines(report_html: str) -> list[str]:
 def _extract_report_details(mission_id: int | None, report_text: str, pairs: list[tuple[str, str]]) -> dict[str, Any]:
     details: dict[str, Any] = {}
     text = " ".join(report_text.split())
+    if mission_id == 3 and pairs:
+        details["research"] = {name: value for name, value in pairs}
+        if "Pontos de pesquisa" in details["research"]:
+            details["research_points"] = _parse_number(details["research"]["Pontos de pesquisa"])
+        return details
     if mission_id == 3 and text:
         match = re.search(r"Campo de pesquisa\s+(.+)", text, re.IGNORECASE)
         if match:
@@ -632,6 +739,33 @@ def _extract_report_details(mission_id: int | None, report_text: str, pairs: lis
     elif text and not details:
         details["summary"] = text[:240]
     return details
+
+
+def _extract_research_pairs(report_text: str) -> list[tuple[str, str]]:
+    labels = [
+        "Campo de pesquisa",
+        "Navegação Marítima",
+        "Economia",
+        "Ciência",
+        "Militar",
+        "Mitologia",
+        "Pontos de pesquisa",
+    ]
+    text = " ".join((report_text or "").split())
+    positions: list[tuple[int, str]] = []
+    for label in labels:
+        match = re.search(re.escape(label), text, re.IGNORECASE)
+        if match:
+            positions.append((match.start(), label))
+    positions.sort()
+    pairs: list[tuple[str, str]] = []
+    for idx, (start, label) in enumerate(positions):
+        value_start = start + len(label)
+        value_end = positions[idx + 1][0] if idx + 1 < len(positions) else len(text)
+        value = text[value_start:value_end].strip(" :\t")
+        if value:
+            pairs.append((label, value))
+    return pairs
 
 
 class SpyMissionDataAction(BaseAction):
@@ -816,6 +950,50 @@ class SpySendAction(BaseAction):
         return {"success": success, "message": message}
 
 
+class SpyTrainAction(BaseAction):
+    """Train replacement spies in a safehouse."""
+
+    def execute(
+        self,
+        city_id: int | str,
+        count: int = 1,
+        position: int = 19,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        count = max(1, int(count or 1))
+        params = {
+            "action": "Espionage",
+            "function": "buildSpy",
+            "cityId": str(city_id),
+            "position": str(position),
+            "backgroundView": "city",
+            "currentCityId": str(city_id),
+            "actionRequest": self.client._action_request,
+            "ajax": "1",
+        }
+        body = urlencode(params) + f"&count={count}"
+        headers = dict(GAME_AJAX_HEADERS)
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+        resp = self.client._request("POST", self.client._server_url, data=body, headers=headers)
+        try:
+            data = resp.json()
+        except Exception as exc:
+            raise ActionError(f"Failed to parse buildSpy response: {exc}", action="buildSpy")
+
+        for entry in data:
+            if isinstance(entry, list) and entry[0] == "updateGlobalData" and isinstance(entry[1], dict):
+                action_request = entry[1].get("actionRequest")
+                if action_request:
+                    self.client._action_request = str(action_request)
+                break
+
+        success, message = _parse_feedback_entries(data)
+        if not message:
+            success = True
+            message = f"Treino de {count} espião(ões) solicitado"
+        return {"success": success, "message": message}
+
+
 class SpyMissionAssignmentAction(BaseAction):
     """Open the internal spy mission view for an already infiltrated group."""
 
@@ -912,7 +1090,7 @@ class SpyExecuteMissionAction(BaseAction):
             position=position,
         )
         actual_spy_id = str(spy_id or assignment.get("spy_id") or "").strip()
-        actual_island_id = str(island_id or assignment.get("island_id") or source_city_id).strip()
+        actual_island_id = str(assignment.get("island_id") or island_id or source_city_id).strip()
         actual_source_city_id = str(assignment.get("source_city_id") or source_city_id).strip()
         actual_target_city_id = str(assignment.get("target_city_id") or target_city_id).strip()
         if not actual_spy_id:
@@ -927,19 +1105,18 @@ class SpyExecuteMissionAction(BaseAction):
             "islandId": actual_island_id,
             "spy": actual_spy_id,
             "mission": str(mission_id),
-            "backgroundView": "city",
-            "currentCityId": actual_source_city_id,
+            "payCityId": actual_source_city_id,
             "actionRequest": self.client._action_request,
             "ajax": "1",
         }
-        body = (
-            urlencode(base_params)
-            + f"&spies[{actual_source_city_id}][agents]={agents}"
-            + f"&spies[{actual_source_city_id}][decoys]={decoys}"
-        )
+        # Internal spy missions use the same form as the game page. payCityId is
+        # required for gold-based decoy missions; without it Ikariam can reject
+        # the request as if the target city was being used as the payer.
+        base_params[f"spies[{actual_source_city_id}][agents]"] = str(agents)
+        base_params[f"spies[{actual_source_city_id}][decoys]"] = str(decoys)
         headers = dict(GAME_AJAX_HEADERS)
         headers["Content-Type"] = "application/x-www-form-urlencoded"
-        resp = self.client._request("POST", self.client._server_url, data=body, headers=headers)
+        resp = self.client._request("POST", self.client._server_url, data=base_params, headers=headers)
         try:
             data = resp.json()
         except Exception as exc:
@@ -1020,43 +1197,6 @@ class SpyRetreatAction(BaseAction):
             return {"success": success or not bool(fallback_data), "message": message}
 
         return {"success": True, "message": "Retirada solicitada"}
-
-
-class SpyTrainAction(BaseAction):
-    """Train spies at the safehouse."""
-
-    def execute(
-        self,
-        city_id: int | str,
-        count: int = 1,
-        position: int = 19,
-        **kwargs: Any,
-    ) -> dict[str, Any]:
-        """Train spies. Cost: 150 gold + 53 crystal each, ~3m34s per spy."""
-        params = {
-            "action": "Espionage",
-            "function": "buildSpy",
-            "count": str(count),
-            "cityId": str(city_id),
-            "position": str(position),
-            "backgroundView": "city",
-            "currentCityId": str(city_id),
-            "actionRequest": self.client._action_request,
-            "ajax": "1",
-        }
-        resp = self.client._request("POST", self.client._server_url, data=params, headers=dict(GAME_AJAX_HEADERS))
-        try:
-            data = resp.json()
-            for _e in data:
-                if isinstance(_e, list) and _e[0] == "updateGlobalData" and isinstance(_e[1], dict):
-                    _ar = _e[1].get("actionRequest")
-                    if _ar:
-                        self.client._action_request = str(_ar)
-                    break
-        except Exception:
-            pass
-        logger.info("SpyTrain: city=%s count=%d", city_id, count)
-        return {"success": True, "count": count}
 
 
 class SpyReportsAction(BaseAction):
@@ -1182,7 +1322,8 @@ class SpyReportsAction(BaseAction):
             if body_html:
                 # Parse status (second <td> in the status row — skip label "Estado:")
                 m_status = re.search(r'class="status"[^>]*>[\s\S]*?<td[^>]*>[^<]*</td>\s*<td[^>]*>([^<]+)</td>', body_html, re.DOTALL)
-                report["status"] = _strip_html(m_status.group(1)) if m_status else ""
+                status_html = _extract_next_td_html(body_html, r"Estado\s*:")
+                report["status"] = _strip_html(status_html) if status_html else (_strip_html(m_status.group(1)) if m_status else "")
 
                 # Parse report content — look for the Relatório row's second <td>
                 m_report = re.search(
@@ -1191,8 +1332,14 @@ class SpyReportsAction(BaseAction):
                 )
                 if not m_report:
                     m_report = re.search(r'<td[^>]*class="[^"]*report[^"]*"[^>]*>([\s\S]*?)</td>', body_html)
-                if m_report:
+                balanced_report_content = _extract_next_td_html(body_html, r"Relat[oó]rio\s*:")
+                if balanced_report_content:
+                    report_content = balanced_report_content
+                elif m_report:
                     report_content = m_report.group(1)
+                else:
+                    report_content = ""
+                if report_content:
                     report["report_html"] = report_content.strip()
                     report["report_text"] = _strip_html(report_content)
                     lines = _extract_report_text_lines(report_content)
@@ -1217,13 +1364,25 @@ class SpyReportsAction(BaseAction):
                     for table_content in inner_tables:
                         # Only <td> rows (skip <th> header rows)
                         rows = re.findall(
-                            r'<tr[^>]*>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>\s*</tr>',
+                            r'<tr[^>]*>\s*<t[dh][^>]*>(.*?)</t[dh]>\s*<t[dh][^>]*>(.*?)</t[dh]>\s*</tr>',
                             table_content, re.DOTALL,
                         )
                         for r in rows:
-                            k, v = _strip_html(r[0]), _strip_html(r[1])
-                            if k and v:
+                            k, v = _cell_text(r[0]), _cell_text(r[1])
+                            if k and v and not _is_report_header_pair(k, v):
                                 all_pairs.append((k, v))
+                if not all_pairs and report_content:
+                    rows = re.findall(
+                        r'<tr[^>]*>\s*<t[dh][^>]*>(.*?)</t[dh]>\s*<t[dh][^>]*>(.*?)</t[dh]>\s*</tr>',
+                        report_content,
+                        re.DOTALL,
+                    )
+                    for r in rows:
+                        k, v = _cell_text(r[0]), _cell_text(r[1])
+                        if k and v and not _is_report_header_pair(k, v):
+                            all_pairs.append((k, v))
+                if not all_pairs and report.get("mission_id") == 3:
+                    all_pairs = _extract_research_pairs(report.get("report_text", ""))
                 if all_pairs:
                     report["data_table"] = all_pairs
                     report["data_json"] = _normalise_report_data(all_pairs)

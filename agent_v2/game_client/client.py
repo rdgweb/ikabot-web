@@ -600,10 +600,19 @@ class GameClient(IslandActions):
         from .actions.piracy import PiracyStateAction
         return PiracyStateAction(self).execute(city_id=city_id)
 
-    def start_piracy_mission(self, city_id: int | str, building_level: int) -> dict:
+    def start_piracy_mission(
+        self,
+        city_id: int | str,
+        building_level: int,
+        game_account_id: str = "",
+    ) -> dict:
         """Start a piracy mission from the pirate fortress."""
         from .actions.piracy import PiracyMissionAction
-        return PiracyMissionAction(self).execute(city_id=city_id, building_level=building_level)
+        return PiracyMissionAction(self).execute(
+            city_id=city_id,
+            building_level=building_level,
+            game_account_id=game_account_id,
+        )
 
     def convert_piracy_points(self, city_id: int | str, crew_points: int) -> dict:
         """Convert capture points to crew strength."""
@@ -641,6 +650,11 @@ class GameClient(IslandActions):
             agents=agents,
             decoys=decoys,
         )
+
+    def train_spies(self, city_id: int | str, count: int = 1, position: int = 19) -> dict:
+        """Train replacement spies in the safehouse."""
+        from .actions.spy import SpyTrainAction
+        return SpyTrainAction(self).execute(city_id=city_id, count=count, position=position)
 
     def get_spy_assignment_state(
         self,
@@ -695,11 +709,6 @@ class GameClient(IslandActions):
             position=position,
             spy_id=spy_id,
         )
-
-    def train_spies(self, city_id: int | str, count: int = 1, position: int = 19) -> dict:
-        """Train spies at the safehouse."""
-        from .actions.spy import SpyTrainAction
-        return SpyTrainAction(self).execute(city_id=city_id, count=count, position=position)
 
     def get_spy_reports(
         self, city_id: int | str, position: int = 19, tab: str = "tabReports"
