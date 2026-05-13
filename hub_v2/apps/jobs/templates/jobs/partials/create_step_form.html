@@ -5755,13 +5755,16 @@
     </div>
 
     {% if action_meta.category == "construction" %}
+    {# action 1002 (batch planner) has its own preview inside the planner component — no HTMX needed here #}
     <div id="construction-plan-preview"
          class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 mt-3"
+         {% if action_code != 1002 %}
          hx-post="{% url 'jobs:job-construction-preview' %}"
          hx-trigger="load, change delay:350ms from:closest form, keyup delay:500ms from:closest form"
          hx-include="closest form"
          hx-target="this"
-         hx-swap="innerHTML">
+         hx-swap="innerHTML"
+         {% endif %}>
       {% include "jobs/partials/construction_plan_preview.html" with preview=None ika_tools_url="" resource_labels=None resource_icons=None action_code=action_code %}
     </div>
     {% endif %}

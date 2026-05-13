@@ -14,7 +14,7 @@
 <div x-data="{ filterOpen: false }" class="relative">
   <button @click="filterOpen = !filterOpen" class="btn btn-secondary btn-sm relative" type="button">
     <i class="bi bi-funnel"></i> Filtros
-    {% if request.GET.game_account or request.GET.target_owner or request.GET.status %}
+    {% if request.GET.game_account or request.GET.target_owner or request.GET.mission_id or request.GET.result %}
     <span class="filter-badge"></span>
     {% endif %}
   </button>
@@ -26,7 +26,7 @@
        x-transition:leave-start="opacity-100 scale-100"
        x-transition:leave-end="opacity-0 scale-95"
        @click.away="filterOpen = false"
-       class="filter-panel right-0">
+       class="filter-panel right-0" style="min-width:240px;">
     <h3 class="text-sm font-semibold text-ink mb-3">Filtros</h3>
     <div class="grid grid-cols-1 gap-3">
       <div>
@@ -44,7 +44,7 @@
         </select>
       </div>
       <div>
-        <label class="filter-panel-label">Dono da cidade alvo</label>
+        <label class="filter-panel-label">Alvo (jogador)</label>
         <input type="text" name="target_owner"
                value="{{ request.GET.target_owner|default:'' }}"
                class="filter-input" placeholder="Nome do jogador..."
@@ -53,10 +53,24 @@
                hx-include=".filter-panel [name]" hx-push-url="true">
       </div>
       <div>
-        <label class="filter-panel-label">Status</label>
-        <input type="text" name="status"
-               value="{{ request.GET.status|default:'' }}"
-               class="filter-input" placeholder="Ex: completada, falhou..."
+        <label class="filter-panel-label">Tipo de missão</label>
+        <select name="mission_id" class="filter-select"
+                hx-get="{% url 'espionage:table-partial' %}" hx-target="#table-content"
+                hx-swap="innerHTML" hx-trigger="change"
+                hx-include=".filter-panel [name]" hx-push-url="true">
+          <option value="">Todas as missões</option>
+          {% for val, label in filter.form.mission_id.field.choices %}
+          {% if val %}
+          <option value="{{ val }}" {% if request.GET.mission_id == val|stringformat:"s" %}selected{% endif %}>{{ label }}</option>
+          {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="filter-panel-label">Resultado</label>
+        <input type="text" name="result"
+               value="{{ request.GET.result|default:'' }}"
+               class="filter-input" placeholder="Ex: sucesso, falhou..."
                hx-get="{% url 'espionage:table-partial' %}" hx-target="#table-content"
                hx-swap="innerHTML" hx-trigger="keyup changed delay:300ms"
                hx-include=".filter-panel [name]" hx-push-url="true">

@@ -52,5 +52,63 @@
 
   <script src="{% static 'js/app.js' %}"></script>
   {% block extra_js %}{% endblock %}
+
+  <script>
+  /* Fix scroll-jump for sr-only inputs inside #job-modal-body.
+   *
+   * Two causes identified from console logs:
+   *   1. Pill click (mousedown → focus): browser C++ scrollIntoView during focus.
+   *      Fix: save scrollTop on mousedown, restore in focusin.
+   *   2. HTMX swap of #construction-plan-preview (change delay:350ms):
+   *      after swap, HTMX settle focuses an sr-only input → scroll jumps.
+   *      Fix: save scrollTop on htmx:beforeSwap for any modal-contained target.
+   *
+   * On any focusin of sr-only inside modal: restore the last saved scrollTop. */
+  (function() {
+    var _s = null, _c = null;
+
+    function save(mb) { _c = mb; _s = mb.scrollTop; }
+
+    /* Pill click: save on mousedown */
+    document.addEventListener('mousedown', function(e) {
+      var mb = document.getElementById('job-modal-body');
+      if (!mb) return;
+      var label = e.target.closest ? e.target.closest('label') : null;
+      if (label && label.querySelector('input.sr-only') && mb.contains(label)) {
+        save(mb);
+      }
+    }, true);
+
+    /* HTMX swap inside modal: save before any swap that targets modal content.
+       When the whole modal body is replaced (new step), scroll back to top. */
+    document.body.addEventListener('htmx:beforeSwap', function(e) {
+      var mb = document.getElementById('job-modal-body');
+      if (!mb) return;
+      var target = e.detail && e.detail.target;
+      if (!target) return;
+      if (target === mb) {
+        /* New wizard step loading — reset scroll to top after swap */
+        document.body.addEventListener('htmx:afterSwap', function resetScroll(ev) {
+          if (ev.detail && ev.detail.target === mb) {
+            mb.scrollTop = 0;
+            document.body.removeEventListener('htmx:afterSwap', resetScroll);
+          }
+        });
+      } else if (mb.contains(target)) {
+        save(mb);
+      }
+    });
+
+    /* Restore: any sr-only focusin inside modal */
+    document.addEventListener('focusin', function(e) {
+      if (!_c || _s === null) return;
+      if (!e.target.classList || !e.target.classList.contains('sr-only')) return;
+      if (!_c.contains(e.target)) return;
+      var c = _c, s = _s;
+      _c = null; _s = null;
+      c.scrollTop = s;
+    }, true);
+  })();
+  </script>
 </body>
 </html>

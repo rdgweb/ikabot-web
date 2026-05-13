@@ -243,8 +243,39 @@ class PiracyMissionRunner(BaseRunner):
             return RunnerResult(success=True, reschedule_seconds=wait)
 
         except CaptchaRequiredError as exc:
-            # CaptchaRequiredError from something other than PiracyMissionAction (e.g. state GET)
-            self.log(jid, "warn", f"Captcha inesperado fora do fluxo de missão: {exc}. Reagendando em 5 min.")
+            # CaptchaRequiredError from state GET or other non-mission request.
+            # Try to fetch and solve the captcha before rescheduling.
+            self.log(jid, "warn", f"Captcha detectado fora do flow da missão: {exc}. Tentando resolver via hub.")
+            try:
+                import base64 as _b64
+                from game_client.constants import GAME_AJAX_HEADERS
+                img_resp = client.session.get(
+                    client._server_url,
+                    params={
+                        "action": "Options",
+                        "function": "createCaptcha",
+                        "actionRequest": client._action_request,
+                        "ajax": "1",
+                    },
+                    headers=dict(GAME_AJAX_HEADERS),
+                    timeout=20,
+                )
+                if img_resp.content and len(img_resp.content) > 10:
+                    img_b64 = _b64.b64encode(img_resp.content).decode("ascii")
+                    result = self.hub.create_captcha_challenge("pirate", img_b64, game_account_id=game_account_id)
+                    solution = str(result.get("solution") or "").strip().upper()
+                    if not solution and result.get("challenge_id"):
+                        solution = self.hub.poll_captcha_solution(result["challenge_id"], timeout_sec=120, interval=10).strip().upper()
+                    if solution:
+                        self.log(jid, "info", f"Captcha resolvido via hub: {solution}. Reagendando imediatamente.")
+                        self.save_game_client(game_account_id, client)
+                        return RunnerResult(success=False, reschedule_seconds=30, data={"error": "captcha_solved_retry"})
+                    self.log(jid, "warn", "Captcha não resolvido (sem solução). Reagendando em 5 min.")
+                else:
+                    self.log(jid, "warn", "Imagem do captcha vazia. Reagendando em 5 min.")
+            except Exception as cap_exc:
+                self.log(jid, "warn", f"Erro ao resolver captcha externo: {cap_exc}. Reagendando em 5 min.")
+            self.save_game_client(game_account_id, client)
             return RunnerResult(success=False, reschedule_seconds=CAPTCHA_RESCHEDULE, data={"error": "captcha_unexpected"})
         except Exception as exc:
             self.log(jid, "error", f"Missão pirata falhou: {exc}")

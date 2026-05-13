@@ -1,103 +1,251 @@
 {% load static hub_tags %}
 
 {% if object_list or request.GET %}
-<div class="space-y-3">
+
+<div x-data="{
+  selected: [],
+  open: {},
+  allIds: [{% for r in object_list %}'{{ r.pk }}'{% if not forloop.last %},{% endif %}{% endfor %}],
+  toggleSelect(id) {
+    if (this.selected.includes(id)) {
+      this.selected = this.selected.filter(s => s !== id);
+    } else {
+      this.selected.push(id);
+    }
+  },
+  toggleAll() {
+    if (this.selected.length === this.allIds.length) {
+      this.selected = [];
+    } else {
+      this.selected = [...this.allIds];
+    }
+  },
+  toggleExpand(id) {
+    this.open = { ...this.open, [id]: !this.open[id] };
+  }
+}">
+
+  <!-- Bulk action bar -->
+  <div x-show="selected.length > 0" x-cloak
+       x-transition:enter="transition ease-out duration-150"
+       x-transition:enter-start="opacity-0 -translate-y-2"
+       x-transition:enter-end="opacity-100 translate-y-0"
+       class="mb-3 flex items-center gap-3 rounded-lg px-4 py-2.5"
+       style="background: var(--ik-sand); border: 1px solid var(--ik-line);">
+    <i class="bi bi-check2-square text-sea"></i>
+    <span class="text-sm font-medium text-ink" x-text="selected.length + ' selecionado(s)'"></span>
+    <div class="flex-1"></div>
+    <button @click="selected = []" class="btn btn-secondary btn-sm">
+      Cancelar
+    </button>
+    <form method="post" action="{% url 'espionage:bulk-delete' %}"
+          @submit.prevent="if(confirm('Excluir ' + selected.length + ' relatório(s)?')) $el.submit()">
+      {% csrf_token %}
+      <template x-for="id in selected" :key="id">
+        <input type="hidden" name="ids" :value="id">
+      </template>
+      <button type="submit" class="btn btn-danger btn-sm">
+        <i class="bi bi-trash"></i> Excluir selecionados
+      </button>
+    </form>
+  </div>
+
+  <!-- Table -->
   <div class="card overflow-hidden p-0">
     <table class="data-table">
       <thead>
         <tr>
+          <th class="w-8 px-3">
+            <input type="checkbox"
+                   :checked="allIds.length > 0 && selected.length === allIds.length"
+                   :indeterminate="selected.length > 0 && selected.length < allIds.length"
+                   @change="toggleAll()"
+                   class="h-4 w-4 rounded" style="cursor:pointer; accent-color: var(--ik-sea);">
+          </th>
           <th>Subconta</th>
           <th>Alvo</th>
-          <th>Cidade alvo</th>
-          <th>Coordenadas</th>
           <th>Missão</th>
           <th>Resultado</th>
-          <th>Agentes</th>
-          <th>Perdas</th>
-          <th>Data no jogo</th>
-          <th>Recebido em</th>
+          <th class="text-center">Ag / Perd</th>
+          <th>Data</th>
+          <th class="w-8"></th>
         </tr>
       </thead>
       <tbody>
         {% for report in object_list %}
-        <tr>
-          <td class="text-sm text-ink">
+
+        <!-- Main row -->
+        <tr class="cursor-pointer select-none transition-colors"
+            :class="open['{{ report.pk }}'] ? 'bg-[var(--ik-sand)]' : ''"
+            :style="selected.includes('{{ report.pk }}') ? 'outline:1px solid var(--ik-sea);outline-offset:-1px' : ''"
+            @click="toggleExpand('{{ report.pk }}')">
+
+          <!-- Checkbox -->
+          <td class="px-3" @click.stop>
+            <input type="checkbox"
+                   :checked="selected.includes('{{ report.pk }}')"
+                   @change="toggleSelect('{{ report.pk }}')"
+                   class="h-4 w-4 rounded" style="cursor:pointer; accent-color: var(--ik-sea);">
+          </td>
+
+          <!-- Subconta -->
+          <td class="text-sm text-muted">
             {% if report.game_account %}
               {{ report.game_account.name|default:report.game_account.server_id }}
             {% else %}
               <span class="text-muted">—</span>
             {% endif %}
           </td>
-          <td class="text-sm font-medium text-ink">
-            {{ report.target_owner|default:"—" }}
+
+          <!-- Alvo: owner · city [x:y] -->
+          <td>
+            <div class="font-medium text-sm text-ink">{{ report.target_owner|default:"—" }}</div>
+            <div class="text-xs text-muted">
+              {{ report.target_city_name|default:"" }}
+              {% if report.target_x is not None %}<span class="font-mono">[{{ report.target_x }}:{{ report.target_y }}]</span>{% endif %}
+            </div>
           </td>
-          <td class="text-sm text-ink">
-            {{ report.target_city_name|default:report.target_city_id|default:"—" }}
-          </td>
-          <td class="text-sm text-muted">
-            {% if report.target_x is not None and report.target_y is not None %}
-              [{{ report.target_x }}:{{ report.target_y }}]
-            {% else %}
-              —
-            {% endif %}
-          </td>
-          <td class="text-sm text-muted">
-            {{ report.subject|default:"—" }}
-            {% if report.mission_name %}
-            <div class="font-medium text-ink">{{ report.mission_name }}</div>
-            {% endif %}
-            {% if report.data_json %}
-            <div class="mt-1 flex flex-wrap gap-1">
-              {% for key, val in report.data_json.items %}
-              {% if val %}
-              <span class="inline-flex items-center gap-0.5 text-[10px] font-mono bg-[var(--ik-sand)] rounded px-1.5 py-0.5">
-                {% if key == "wood" %}<img src="{% static 'game/resources/icon_wood.png' %}" class="h-3 w-3 object-contain">
-                {% elif key == "wine" %}<img src="{% static 'game/resources/icon_wine.png' %}" class="h-3 w-3 object-contain">
-                {% elif key == "marble" %}<img src="{% static 'game/resources/icon_marble.png' %}" class="h-3 w-3 object-contain">
-                {% elif key == "crystal" %}<img src="{% static 'game/resources/icon_glass.png' %}" class="h-3 w-3 object-contain">
-                {% elif key == "sulfur" %}<img src="{% static 'game/resources/icon_sulfur.png' %}" class="h-3 w-3 object-contain">
-                {% elif key == "gold" %}<i class="bi bi-coin" style="color:var(--ik-gold);"></i>
-                {% elif key == "research_field" or key == "research_topic" or key == "research_path" or key == "government" or key == "summary" %}<i class="bi bi-journal-text text-muted"></i>
-                {% else %}<i class="bi bi-info-circle text-muted"></i>
-                {% endif %}
-                {{ val|default:"—" }}
+
+          <!-- Missão: icon + name + brief data -->
+          <td>
+            <div class="flex items-center gap-1.5">
+              {% if report.mission_id == 1 %}<i class="bi bi-person-walking text-sea"></i>
+              {% elif report.mission_id == 3 %}<i class="bi bi-book text-sea"></i>
+              {% elif report.mission_id == 5 %}<i class="bi bi-box-seam text-sea"></i>
+              {% elif report.mission_id == 6 %}<i class="bi bi-shield-shaded text-sea"></i>
+              {% elif report.mission_id == 7 %}<i class="bi bi-ship text-sea"></i>
+              {% elif report.mission_id == 8 %}<i class="bi bi-arrow-return-left text-muted"></i>
+              {% elif report.mission_id == 10 %}<i class="bi bi-chat-dots text-sea"></i>
+              {% elif report.mission_id == 21 %}<i class="bi bi-person-check text-sea"></i>
+              {% elif report.mission_id == 23 %}<i class="bi bi-hammer text-sea"></i>
+              {% elif report.mission_id == 24 %}<i class="bi bi-people text-sea"></i>
+              {% elif report.mission_id == 25 %}<i class="bi bi-bank2 text-sea"></i>
+              {% elif report.mission_id == 26 %}<i class="bi bi-lightbulb text-sea"></i>
+              {% elif report.mission_id == 27 %}<i class="bi bi-globe-americas text-sea"></i>
+              {% else %}<i class="bi bi-binoculars text-muted"></i>{% endif %}
+              <span class="text-sm font-medium text-ink">
+                {{ report.mission_name|default:report.subject|default:"—"|truncatechars:32 }}
               </span>
-              {% endif %}
-              {% endfor %}
+            </div>
+
+            <!-- Brief content -->
+            {% if report.mission_id == 5 and report.data_json %}
+            <div class="mt-1 flex flex-wrap gap-1">
+              {% if report.data_json.wood %}<span class="inline-flex items-center gap-0.5 text-[10px] font-mono bg-[var(--ik-sand)] rounded px-1.5 py-0.5"><img src="{% static 'game/resources/icon_wood.png' %}" class="h-3 w-3 object-contain"> {{ report.data_json.wood }}</span>{% endif %}
+              {% if report.data_json.wine %}<span class="inline-flex items-center gap-0.5 text-[10px] font-mono bg-[var(--ik-sand)] rounded px-1.5 py-0.5"><img src="{% static 'game/resources/icon_wine.png' %}" class="h-3 w-3 object-contain"> {{ report.data_json.wine }}</span>{% endif %}
+              {% if report.data_json.marble %}<span class="inline-flex items-center gap-0.5 text-[10px] font-mono bg-[var(--ik-sand)] rounded px-1.5 py-0.5"><img src="{% static 'game/resources/icon_marble.png' %}" class="h-3 w-3 object-contain"> {{ report.data_json.marble }}</span>{% endif %}
+              {% if report.data_json.crystal %}<span class="inline-flex items-center gap-0.5 text-[10px] font-mono bg-[var(--ik-sand)] rounded px-1.5 py-0.5"><img src="{% static 'game/resources/icon_glass.png' %}" class="h-3 w-3 object-contain"> {{ report.data_json.crystal }}</span>{% endif %}
+              {% if report.data_json.sulfur %}<span class="inline-flex items-center gap-0.5 text-[10px] font-mono bg-[var(--ik-sand)] rounded px-1.5 py-0.5"><img src="{% static 'game/resources/icon_sulfur.png' %}" class="h-3 w-3 object-contain"> {{ report.data_json.sulfur }}</span>{% endif %}
             </div>
             {% elif report.report_text and report.mission_id != 1 %}
-            <div class="text-[10px] text-muted italic mt-0.5">{{ report.report_text|truncatechars:80 }}</div>
+            <div class="text-[11px] text-muted italic mt-0.5 leading-tight">
+              {{ report.report_text|truncatechars:72 }}
+            </div>
             {% endif %}
           </td>
-          <td class="text-sm">
+
+          <!-- Resultado -->
+          <td>
             {% if report.result_status %}
-              <span class="badge {% if 'sucesso' in report.result_status|lower or 'success' in report.result_status|lower %}badge-success{% elif 'falhou' in report.result_status|lower or 'fail' in report.result_status|lower %}badge-danger{% else %}badge-secondary{% endif %}">
-                {{ report.result_status }}
-              </span>
+              {% with rs=report.result_status|lower %}
+              {% if "sucesso" in rs or "success" in rs %}
+                <span class="badge badge-success"><i class="bi bi-check-lg"></i> Sucesso</span>
+              {% elif "falhou" in rs or "fail" in rs or "pego" in rs %}
+                <span class="badge badge-danger"><i class="bi bi-x-lg"></i> Falhou</span>
+              {% else %}
+                <span class="badge badge-secondary">{{ report.result_status|truncatechars:16 }}</span>
+              {% endif %}
+              {% endwith %}
             {% else %}
               <span class="text-muted">—</span>
             {% endif %}
           </td>
-          <td class="text-sm text-muted text-center">
-            {{ report.agents_sent }}
-          </td>
-          <td class="text-sm text-center">
+
+          <!-- Agentes / Perdas -->
+          <td class="text-center text-sm">
+            <span class="text-ink font-medium">{{ report.agents_sent }}</span>
             {% if report.agents_lost > 0 %}
-              <span class="text-[var(--ik-bad)] font-medium">{{ report.agents_lost }}</span>
+            <span class="text-[var(--ik-bad)] font-medium"> / {{ report.agents_lost }}</span>
             {% else %}
-              <span class="text-muted">0</span>
+            <span class="text-muted"> / 0</span>
             {% endif %}
           </td>
-          <td class="text-sm text-muted">
+
+          <!-- Data -->
+          <td class="text-xs text-muted" style="white-space:nowrap;">
             {{ report.date_str|default:"—" }}
           </td>
-          <td class="text-sm text-muted">
-            {{ report.created_at|localtime_format }}
+
+          <!-- Delete -->
+          <td @click.stop class="px-2">
+            <button class="text-muted hover:text-[var(--ik-bad)] transition-colors p-1 rounded"
+                    title="Excluir relatório"
+                    hx-post="{% url 'espionage:delete' report.pk %}"
+                    hx-target="body"
+                    hx-swap="none"
+                    hx-confirm="Excluir este relatório?">
+              <i class="bi bi-trash text-sm"></i>
+            </button>
           </td>
         </tr>
+
+        <!-- Expanded row -->
+        <tr x-show="open['{{ report.pk }}']" x-cloak>
+          <td colspan="8" class="px-6 py-4" style="background: var(--ik-paper); border-top: 1px solid var(--ik-line);">
+            <div class="flex flex-wrap gap-6 text-sm">
+
+              <!-- Resources (mission 5) -->
+              {% if report.mission_id == 5 and report.data_json %}
+              <div>
+                <div class="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Recursos no armazém</div>
+                <div class="flex flex-wrap gap-2">
+                  {% if report.data_json.wood is not None %}<span class="inline-flex items-center gap-1 bg-[var(--ik-sand)] rounded-lg px-2.5 py-1 text-sm font-mono"><img src="{% static 'game/resources/icon_wood.png' %}" class="h-4 w-4"> {{ report.data_json.wood }}</span>{% endif %}
+                  {% if report.data_json.wine is not None %}<span class="inline-flex items-center gap-1 bg-[var(--ik-sand)] rounded-lg px-2.5 py-1 text-sm font-mono"><img src="{% static 'game/resources/icon_wine.png' %}" class="h-4 w-4"> {{ report.data_json.wine }}</span>{% endif %}
+                  {% if report.data_json.marble is not None %}<span class="inline-flex items-center gap-1 bg-[var(--ik-sand)] rounded-lg px-2.5 py-1 text-sm font-mono"><img src="{% static 'game/resources/icon_marble.png' %}" class="h-4 w-4"> {{ report.data_json.marble }}</span>{% endif %}
+                  {% if report.data_json.crystal is not None %}<span class="inline-flex items-center gap-1 bg-[var(--ik-sand)] rounded-lg px-2.5 py-1 text-sm font-mono"><img src="{% static 'game/resources/icon_glass.png' %}" class="h-4 w-4"> {{ report.data_json.crystal }}</span>{% endif %}
+                  {% if report.data_json.sulfur is not None %}<span class="inline-flex items-center gap-1 bg-[var(--ik-sand)] rounded-lg px-2.5 py-1 text-sm font-mono"><img src="{% static 'game/resources/icon_sulfur.png' %}" class="h-4 w-4"> {{ report.data_json.sulfur }}</span>{% endif %}
+                </div>
+              </div>
+              {% endif %}
+
+              <!-- Research data (mission 3) -->
+              {% if report.mission_id == 3 and report.data_json %}
+              <div>
+                <div class="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Estado de pesquisa</div>
+                <div class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                  {% for key, val in report.data_json.items %}
+                  <div class="text-muted text-xs">{{ key }}</div>
+                  <div class="text-ink font-medium text-xs">{{ val }}</div>
+                  {% endfor %}
+                </div>
+              </div>
+              {% endif %}
+
+              <!-- Full report text for other missions -->
+              {% if report.report_text %}
+              <div class="flex-1 min-w-0">
+                {% if report.mission_id != 5 and report.mission_id != 3 %}
+                <div class="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Relatório</div>
+                {% endif %}
+                <p class="text-ink leading-relaxed whitespace-pre-wrap text-sm">{{ report.report_text }}</p>
+              </div>
+              {% endif %}
+
+              <!-- Meta -->
+              <div class="text-xs text-muted" style="white-space:nowrap;">
+                <div class="mb-1"><i class="bi bi-calendar3 mr-1"></i>{{ report.date_str }}</div>
+                <div><i class="bi bi-clock mr-1"></i>{{ report.created_at|localtime_format }}</div>
+                {% if report.decoys_sent > 0 %}
+                <div class="mt-1"><i class="bi bi-person-dash mr-1"></i>{{ report.decoys_sent }} iscas</div>
+                {% endif %}
+              </div>
+            </div>
+          </td>
+        </tr>
+
         {% empty %}
         <tr>
-          <td colspan="10" class="py-8 text-center text-muted">
+          <td colspan="8" class="py-10 text-center text-muted">
             <i class="bi bi-binoculars mb-2 block text-2xl"></i>
             Nenhum relatório de espionagem encontrado.
           </td>
@@ -108,6 +256,7 @@
   </div>
 
   {% include "components/table/pagination.html" %}
+
 </div>
 
 {% else %}
