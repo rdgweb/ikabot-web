@@ -1986,6 +1986,34 @@ class JobSubmitView(LoginRequiredMixin, View):
                 enriched_inputs["branchoffice_pos"] = branch_office_pos if branch_office_pos is not None else 0
             enriched_inputs.pop("_city_choices", None)
             enriched_inputs.pop("_city_objects", None)
+        # Deduplication for recurring loop actions: skip if active job exists for same city
+        _LOOP_ACTIONS = {901, 902, 1006, 1003, 17, 1018}
+        if int(action_code) in _LOOP_ACTIONS:
+            city_key = str(enriched_inputs.get("city_id") or enriched_inputs.get("city") or "")
+            donation_type = str(enriched_inputs.get("donation_type") or "")
+            if city_key:
+                from apps.jobs.models import Job as _Job
+                import json as _json
+                active = _Job.objects.filter(
+                    game_account=ga,
+                    action_code=action_code,
+                    status__in=["queued", "scheduled", "running"],
+                )
+                for existing in active:
+                    try:
+                        ex_inputs = _json.loads(existing.inputs_json or "{}")
+                    except Exception:
+                        ex_inputs = {}
+                    ex_city = str(ex_inputs.get("city_id") or ex_inputs.get("city") or "")
+                    ex_dtype = str(ex_inputs.get("donation_type") or "")
+                    if ex_city == city_key and ex_dtype == donation_type:
+                        import logging as _log
+                        _log.getLogger(__name__).warning(
+                            "Skipping duplicate job action=%s ga=%s city=%s dtype=%s — active job %s already exists",
+                            action_code, ga.pk, city_key, donation_type, existing.pk,
+                        )
+                        return 0
+
         create_job_with_workflow(
             account=ga.account,
             game_account=ga,

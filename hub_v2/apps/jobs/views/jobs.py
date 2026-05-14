@@ -256,7 +256,8 @@ class JobListView(FilterSortListView):
         ordered_keys = []
 
         for job in jobs:
-            action_name = self._action_name(job.action_code)
+            _jinputs = self._parse_inputs(job)
+            action_name = self._action_name(job.action_code, _jinputs)
             city_label = self._city_label(job)
             resource_items = self._resource_items(job)
             root_job = self._resolve_root_job(job, parent_map)
@@ -387,9 +388,29 @@ class JobListView(FilterSortListView):
         )
 
     @staticmethod
-    def _action_name(action_code):
+    def _action_name(action_code, inputs=None):
         action_info = ACTION_CATALOG.get(int(action_code))
-        return action_info["name"] if action_info else f"Acao #{action_code}"
+        base = action_info["name"] if action_info else f"Acao #{action_code}"
+        if not inputs:
+            return base
+        # Enrich label for donation loop actions
+        _DONATION_TYPE_LABELS = {
+            "wood": "Madeira",
+            "tradegood": "Bem de Luxo",
+            "wine": "Vinho",
+            "marble": "Mármore",
+            "crystal": "Cristal",
+            "sulfur": "Enxofre",
+        }
+        if int(action_code) in {901, 902, 1006}:
+            city = str(inputs.get("city_name") or inputs.get("city_id") or "").strip()
+            dtype = str(inputs.get("donation_type") or "").strip()
+            dtype_label = _DONATION_TYPE_LABELS.get(dtype, dtype)
+            if city and dtype_label:
+                return f"{base} — {city} — {dtype_label}"
+            if city:
+                return f"{base} — {city}"
+        return base
 
     @staticmethod
     def _subaccount_label(job):
@@ -462,7 +483,8 @@ class JobListView(FilterSortListView):
         return "Execucao pontual"
 
     def _workflow_label(self, entry):
-        action_name = self._action_name(entry["root_job"].action_code)
+        root = entry["root_job"]
+        action_name = self._action_name(root.action_code, self._parse_inputs(root))
         if entry["group_type"] in {"construction", "transport"}:
             return f"{action_name} operacional"
         if entry["is_group"]:
@@ -2163,6 +2185,12 @@ class WorkflowRunsPartialView(LoginRequiredMixin, View):
             if job.action_code == 2 and inputs.get("monitor_mode") == "arrival_check":
                 display_name = "Monitor de Chegada"
             city = inputs.get("city_name") or inputs.get("from_city_name") or inputs.get("to_city_name") or ""
+            if job.action_code in {901, 902, 1006}:
+                _dtype_map = {"wood": "Madeira", "tradegood": "Bem de Luxo", "wine": "Vinho",
+                              "marble": "Mármore", "crystal": "Cristal", "sulfur": "Enxofre"}
+                dtype_label = _dtype_map.get(str(inputs.get("donation_type") or ""), "")
+                if dtype_label:
+                    city = f"{city} — {dtype_label}" if city else dtype_label
             job_rows.append({
                 "job": job,
                 "display_name": display_name,

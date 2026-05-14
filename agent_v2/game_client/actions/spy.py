@@ -334,7 +334,9 @@ class SpySafehouseAction(BaseAction):
                 html = entry[1][1]
                 break
 
-        return self._parse_safehouse_state(html, data)
+        state = self._parse_safehouse_state(html, data)
+        state["_raw_html"] = html  # stored for debug logging by runner
+        return state
 
     def _parse_safehouse_state(self, html: str, data: list) -> dict[str, Any]:
         """Parse spy counts and active missions from safehouse HTML."""
@@ -426,8 +428,19 @@ class SpySafehouseAction(BaseAction):
                 if stationed_m:
                     count = int(stationed_m.group(1))
 
-                waiting = "esperam novas ordens" in block.lower()
-                travelling = "a caminho" in block.lower() or "SpyCountDown" in block
+                # Detect stationed spies — multiple encodings of "esperam novas ordens"
+                _block_lower = block.lower()
+                waiting = (
+                    "esperam novas ordens" in _block_lower
+                    or "esperam novas" in _block_lower
+                    or "novas ordens" in _block_lower
+                    or "waiting for orders" in _block_lower
+                    or "awaiting orders" in _block_lower
+                    # Latin-1 mis-decode of UTF-8
+                    or "esperam novas ordens" in block
+                    or re.search(r"esperam\s+novas\s+ordens", block, re.IGNORECASE) is not None
+                )
+                travelling = ("a caminho" in _block_lower or "SpyCountDown" in block) and not waiting
 
                 status = ""
                 status_m = re.search(r'<span[^>]*class="missionTxt"[^>]*>([\s\S]*?)</span>', block)
