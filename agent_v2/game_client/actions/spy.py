@@ -372,6 +372,10 @@ class SpySafehouseAction(BaseAction):
         state["total_spies"] = state["defending_spies"] + state["in_use_spies"]
         state["available_spies"] = state["defending_spies"]
 
+        # Training time per spy (seconds) extracted from JS: per_spy = N
+        m_per_spy = re.search(r'per_spy\s*=\s*(\d+)', html)
+        state["training_secs_per_spy"] = int(m_per_spy.group(1)) if m_per_spy else 250
+
         state["stationed_by_city"] = {}
         state["in_transit_by_city"] = {}
 
