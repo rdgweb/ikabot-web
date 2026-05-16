@@ -356,9 +356,9 @@ class SpySafehouseAction(BaseAction):
         spy_capacity = int(m.group(1)) if m else 0
         state["spy_capacity"] = spy_capacity
 
-        # The list item "N esperam por treino" is an available training slot in this view,
-        # not an active training queue. Keep training_count at 0 unless the game exposes
-        # a real countdown/queue marker in this page.
+        # "N esperam por treino" = N available training SLOTS (capacity - trained), NOT active training
+        # training_count stays 0 unless the game shows a countdown marker in the training section
+
         m3 = re.search(r"(\d+)\s+est[aã]o trabalhando na defesa", html)
         if m3:
             state["defending_spies"] = int(m3.group(1))
@@ -371,6 +371,8 @@ class SpySafehouseAction(BaseAction):
         # "Pode treinar N" = remaining capacity, NOT the trained count
         state["total_spies"] = state["defending_spies"] + state["in_use_spies"]
         state["available_spies"] = state["defending_spies"]
+
+        # Note: "Em fila de construção!" is just a button label, not a construction status indicator
 
         # Training time per spy (seconds) extracted from JS: per_spy = N
         m_per_spy = re.search(r'per_spy\s*=\s*(\d+)', html)
@@ -978,19 +980,23 @@ class SpyTrainAction(BaseAction):
         **kwargs: Any,
     ) -> dict[str, Any]:
         count = max(1, int(count or 1))
-        params = {
-            "action": "Espionage",
-            "function": "buildSpy",
-            "cityId": str(city_id),
-            "position": str(position),
-            "backgroundView": "city",
-            "currentCityId": str(city_id),
-            "actionRequest": self.client._action_request,
-            "ajax": "1",
-        }
-        body = urlencode(params) + f"&count={count}"
+        # Parameter ORDER matters — game validates based on exact request structure
+        # Field name is "textfield_spy" (not "count") based on live browser capture
+        from urllib.parse import urlencode as _ue
+        body = _ue([
+            ("action", "Espionage"),
+            ("function", "buildSpy"),
+            ("cityId", str(city_id)),
+            ("position", str(position)),
+            ("textfield_spy", str(count)),
+            ("activeTab", "tabSafehouse"),
+            ("backgroundView", "city"),
+            ("currentCityId", str(city_id)),
+            ("templateView", "safehouse"),
+            ("actionRequest", self.client._action_request),
+            ("ajax", "1"),
+        ])
         headers = dict(GAME_AJAX_HEADERS)
-        headers["Content-Type"] = "application/x-www-form-urlencoded"
         resp = self.client._request("POST", self.client._server_url, data=body, headers=headers)
         try:
             data = resp.json()
