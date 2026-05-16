@@ -198,6 +198,49 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                     else:
                         ec["wine_hours"] = None
 
+                # --- Transportes em rota (jobs action=2 scheduled com sent_resources) ---
+                import time as _time_now
+                from apps.jobs.models import Job as _Job
+                import json as _json
+                now_ts = int(_time_now.time())
+                transit_by_city: dict = {}  # {city_id_str: {resource_key: [routes]}}
+                active_transports = _Job.objects.filter(
+                    game_account=ga, action_code=2, status="scheduled"
+                ).values_list("inputs_json", flat=True)
+                for raw in active_transports:
+                    try:
+                        inp = _json.loads(raw or "{}")
+                        sent = inp.get("sent_resources") or {}
+                        sent_at = int(inp.get("sent_at_ts") or 0)
+                        eta_total = int(inp.get("eta_total_seconds") or 0)
+                        to_city = str(inp.get("to_city") or "").strip()
+                        from_name = str(inp.get("from_city_name") or "?")
+                        if not sent or not to_city or not sent_at:
+                            continue
+                        arrival_ts = sent_at + eta_total
+                        eta_remaining = max(0, arrival_ts - now_ts)
+                        for res_key, amount in sent.items():
+                            amount = int(amount or 0)
+                            if amount <= 0:
+                                continue
+                            transit_by_city.setdefault(to_city, {}).setdefault(res_key, []).append({
+                                "from_name": from_name,
+                                "amount": amount,
+                                "eta_seconds": eta_remaining,
+                                "arrival_ts": arrival_ts,
+                            })
+                    except Exception:
+                        continue
+
+                # Inject into resource_projections
+                for ec in enriched_cities:
+                    city_id_str = str(ec.get("id") or "")
+                    city_transit = transit_by_city.get(city_id_str, {})
+                    for res in ec.get("resource_projections", []):
+                        routes = city_transit.get(res.get("key") or "", [])
+                        res["in_transit_total"] = sum(r["amount"] for r in routes)
+                        res["in_transit_routes"] = routes
+
                 near_full_count = sum(1 for city in enriched_cities if _si(city.get("cap_pct")) >= 85)
                 wine_risk_count = sum(
                     1 for city in enriched_cities

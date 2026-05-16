@@ -310,15 +310,17 @@
 
     {# ══ TAB: Cities (resources table — Ikariam style with hover tooltips) ══ #}
     <div x-show="tab==='cities'" x-transition
-         x-data="{ tt: null, ttX: 0, ttY: 0,
+         x-data="{ tt: null, ttX: 0, ttY: 0, nowSec: Math.floor(Date.now()/1000),
            showTT(ev, d) {
              this.tt = d;
              const r = ev.target.closest('td').getBoundingClientRect();
              this.ttX = Math.min(r.left, window.innerWidth - 260);
              this.ttY = r.bottom + 4;
            },
-           hideTT() { this.tt = null; }
-         }">
+           hideTT() { this.tt = null; },
+           etaSecs(arrival_ts) { return Math.max(0, arrival_ts - this.nowSec); }
+         }"
+         x-init="setInterval(() => { nowSec = Math.floor(Date.now()/1000); }, 1000)">
       {% if card.cities %}
       <div class="overflow-x-auto">
         <table class="w-full text-xs">
@@ -406,7 +408,9 @@
                     net_hour: {{ resource.net_hour }},
                     pct: {{ resource.pct }},
                     fill_hours: {% if resource.fill_hours is not None %}{{ resource.fill_hours }}{% else %}null{% endif %},
-                    is_wine: {% if resource.key == 'wine' %}true{% else %}false{% endif %}
+                    is_wine: {% if resource.key == 'wine' %}true{% else %}false{% endif %},
+                    in_transit_total: {{ resource.in_transit_total|default:0 }},
+                    in_transit_routes: {{ resource.in_transit_routes|default:'[]'|safe }}
                   })"
                   @mouseleave="hideTT()">
                   <span class="js-projected-resource"
@@ -414,6 +418,9 @@
                         data-rate="{{ resource.net_hour }}"
                         data-capacity="{{ resource.capacity }}"
                         data-snapshot-epoch="{{ resource.snapshot_epoch|default:card.snapshot_epoch|default:'' }}">{{ resource.current|intcomma }}</span>
+                  {% if resource.in_transit_total %}
+                  <div class="text-[9px] font-bold leading-tight" style="color:#2d8a4a;">↑ {{ resource.in_transit_total|intcomma }}</div>
+                  {% endif %}
               </td>
               {% endlocalize %}
               {% endfor %}
@@ -501,6 +508,25 @@
               </tr>
             </template>
           </table>
+          {# Em rota #}
+          <template x-if="tt.in_transit_routes && tt.in_transit_routes.length > 0">
+            <div>
+              <div style="margin:6px 0 3px;border-top:1px solid #c8b48a;padding-top:4px;">
+                <template x-for="(route, i) in tt.in_transit_routes" :key="'route-'+i">
+                  <div class="flex items-center justify-between" style="margin-bottom:2px;">
+                    <span style="color:#2d6e2d;font-size:10px;">
+                      🚢 <span x-text="route.from_name"></span>
+                    </span>
+                    <span style="font-size:10px;font-family:monospace;color:#2d6e2d;font-weight:bold;"
+                          x-text="'+' + new Intl.NumberFormat('pt-BR').format(route.amount)"></span>
+                    <span style="font-size:9px;color:#5a4a2a;"
+                          x-text="etaSecs(route.arrival_ts) > 0 ? fmtHours(etaSecs(route.arrival_ts)/3600) : '✓ chegando'"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+
           {# Fill bar #}
           <div style="margin-top:6px;height:8px;width:100%;border-radius:9999px;background:#d4c4a0;overflow:hidden;">
             <div :style="{

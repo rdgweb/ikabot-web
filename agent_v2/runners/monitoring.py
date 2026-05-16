@@ -1323,18 +1323,33 @@ class WorldDumpRunner(BaseRunner):
             y_max = _island_to_int(inputs.get("region_y_max"))
             filters.update({"x_min": x_min, "y_min": y_min, "x_max": x_max, "y_max": y_max})
             dump_title = f"Regiao [{x_min}:{y_min}] ate [{x_max}:{y_max}]"
-            try:
-                area = client.fetch_island_area(x_min, y_min, x_max, y_max)
-            except Exception as exc:
-                self.log(jid, "error", f"Falha ao escanear regiao: {exc}")
-                self.save_game_client(ga_id or aid, client)
-                return RunnerResult(success=False, data={"error": str(exc)})
-            for item in area:
-                if not include_empty and int(item.get("city_count") or 0) <= 0:
+            # A API WorldMap aceita no máximo ~50 células por dimensão.
+            # Regiões maiores são divididas em chunks de 50×50.
+            _CHUNK = 50
+            chunks: list[tuple[int,int,int,int]] = []
+            cx = x_min
+            while cx <= x_max:
+                cy = y_min
+                while cy <= y_max:
+                    chunks.append((cx, cy, min(cx + _CHUNK - 1, x_max), min(cy + _CHUNK - 1, y_max)))
+                    cy += _CHUNK
+                cx += _CHUNK
+            if len(chunks) > 1:
+                self.log(jid, "info", f"Região grande dividida em {len(chunks)} chunks de até {_CHUNK}×{_CHUNK}")
+            for cxmin, cymin, cxmax, cymax in chunks:
+                try:
+                    chunk_area = client.fetch_island_area(cxmin, cymin, cxmax, cymax)
+                except Exception as exc:
+                    self.log(jid, "warn", f"Falha ao escanear chunk [{cxmin}:{cymin}]→[{cxmax}:{cymax}]: {exc}")
                     continue
-                sid = str(item.get("island_id") or "").strip()
-                if sid and sid not in all_ids:
-                    all_ids.append(sid)
+                for item in chunk_area:
+                    sid = str(item.get("island_id") or "").strip()
+                    if sid and sid not in all_ids:
+                        all_ids.append(sid)
+            if not all_ids:
+                self.log(jid, "error", f"Falha ao escanear regiao: nenhuma ilha retornada")
+                self.save_game_client(ga_id or aid, client)
+                return RunnerResult(success=False, data={"error": "no_islands_from_api"})
         else:
             own_city_ids = [str(c).strip() for c in (inputs.get("own_city_ids") or []) if str(c).strip()]
             if not own_city_ids and ga_id:
