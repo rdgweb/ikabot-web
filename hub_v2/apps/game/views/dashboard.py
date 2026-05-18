@@ -203,7 +203,9 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                 from apps.jobs.models import Job as _Job
                 import json as _json
                 now_ts = int(_time_now.time())
-                transit_by_city: dict = {}  # {city_id_str: {resource_key: [routes]}}
+                # {to_city: {res_key: {from_city: {amount, arrival_ts}}}}
+                # Aggregate multiple transports from same origin into one entry
+                transit_raw: dict = {}
                 active_transports = _Job.objects.filter(
                     game_account=ga, action_code=2, status="scheduled"
                 ).values_list("inputs_json", flat=True)
@@ -214,23 +216,42 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                         sent_at = int(inp.get("sent_at_ts") or 0)
                         eta_total = int(inp.get("eta_total_seconds") or 0)
                         to_city = str(inp.get("to_city") or "").strip()
-                        from_name = str(inp.get("from_city_name") or "?")
+                        from_city = str(inp.get("from_city") or inp.get("from_city_name") or "?")
+                        from_name = str(inp.get("from_city_name") or from_city or "?")
                         if not sent or not to_city or not sent_at:
                             continue
                         arrival_ts = sent_at + eta_total
-                        eta_remaining = max(0, arrival_ts - now_ts)
                         for res_key, amount in sent.items():
                             amount = int(amount or 0)
                             if amount <= 0:
                                 continue
-                            transit_by_city.setdefault(to_city, {}).setdefault(res_key, []).append({
-                                "from_name": from_name,
-                                "amount": amount,
-                                "eta_seconds": eta_remaining,
-                                "arrival_ts": arrival_ts,
-                            })
+                            city_res = transit_raw.setdefault(to_city, {}).setdefault(res_key, {})
+                            if from_city in city_res:
+                                # Same origin → keep latest arrival (highest arrival_ts)
+                                if arrival_ts > city_res[from_city]["arrival_ts"]:
+                                    city_res[from_city]["amount"] += amount
+                                    city_res[from_city]["arrival_ts"] = arrival_ts
+                                else:
+                                    city_res[from_city]["amount"] += amount
+                            else:
+                                city_res[from_city] = {
+                                    "from_name": from_name,
+                                    "amount": amount,
+                                    "arrival_ts": arrival_ts,
+                                }
                     except Exception:
                         continue
+
+                # Convert to list format expected by template
+                transit_by_city: dict = {}
+                for to_city, res_map in transit_raw.items():
+                    for res_key, from_map in res_map.items():
+                        routes = [
+                            {"from_name": v["from_name"], "amount": v["amount"],
+                             "arrival_ts": v["arrival_ts"]}
+                            for v in from_map.values()
+                        ]
+                        transit_by_city.setdefault(to_city, {})[res_key] = routes
 
                 # Inject into resource_projections
                 for ec in enriched_cities:

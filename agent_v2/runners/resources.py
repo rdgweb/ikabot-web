@@ -132,6 +132,8 @@ class SendResourcesRunner(BaseRunner):
                 return self._confirm_arrival(job, inputs)
             return self._dispatch_transport(job, inputs)
         except Exception as exc:
+            if self.is_network_error(exc):
+                return self.network_error_result(jid, exc)
             self.log(jid, "error", f"Send resources failed: {exc}")
             return RunnerResult(success=False, data={"error": str(exc)})
 

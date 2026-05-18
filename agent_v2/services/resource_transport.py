@@ -586,10 +586,7 @@ def estimate_next_ship_availability_seconds(client) -> int:
 
 
 def confirm_arrival(client, *, to_city_id: int | str, baseline: dict[str, int], sent: dict[str, int]) -> dict[str, Any]:
-    eta_wait = estimate_incoming_transport_wait_seconds(client, to_city_id)
-    if eta_wait:
-        return {"confirmed": False, "pending": True, "next_check_seconds": eta_wait}
-
+    # Check resource delta FIRST — works even when there are multiple transports in flight
     destination = fetch_city_state(client, to_city_id)
     current = _resource_vector(destination.__dict__)
     expected = {name: baseline.get(name, 0) + sent.get(name, 0) for name in RESOURCE_ORDER}
@@ -602,16 +599,37 @@ def confirm_arrival(client, *, to_city_id: int | str, baseline: dict[str, int], 
         sent.get(name, 0) > 0 and delta.get(name, 0) > 0
         for name in RESOURCE_ORDER
     )
-    delivered_amount = sum(max(0, delta.get(name, 0)) for name in RESOURCE_ORDER if sent.get(name, 0) > 0)
+
+    if exact_confirmed or delta_confirmed:
+        delivered_amount = sum(max(0, delta.get(name, 0)) for name in RESOURCE_ORDER if sent.get(name, 0) > 0)
+        sent_total = sum(max(0, int(sent.get(name, 0) or 0)) for name in RESOURCE_ORDER)
+        confirmation_mode = "exact_stock" if exact_confirmed else "delta_stock"
+        return {
+            "confirmed": True,
+            "pending": False,
+            "current": current,
+            "expected": expected,
+            "delta": delta,
+            "delivered_amount": delivered_amount,
+            "sent_total": sent_total,
+            "confirmation_mode": confirmation_mode,
+        }
+
+    # Resources haven't increased yet — only THEN check military movements for ETA
+    eta_wait = estimate_incoming_transport_wait_seconds(client, to_city_id)
+    if eta_wait:
+        return {"confirmed": False, "pending": True, "next_check_seconds": eta_wait}
+
+    # No transport in military list and no delta → inconclusive (transport may have arrived but resources consumed)
+    delivered_amount = 0
     sent_total = sum(max(0, int(sent.get(name, 0) or 0)) for name in RESOURCE_ORDER)
-    confirmation_mode = "exact_stock" if exact_confirmed else ("delta_stock" if delta_confirmed else "movement_cleared")
     return {
-        "confirmed": exact_confirmed or delta_confirmed,
+        "confirmed": False,
         "pending": False,
         "current": current,
         "expected": expected,
         "delta": delta,
         "delivered_amount": delivered_amount,
         "sent_total": sent_total,
-        "confirmation_mode": confirmation_mode,
+        "confirmation_mode": "movement_cleared",
     }

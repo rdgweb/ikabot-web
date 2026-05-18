@@ -97,8 +97,28 @@ def execute_job_payload(job: dict, sessions: SessionManager, proxy_url: str = ""
                     heartbeat.stop()
             except Exception:
                 pass
+
+            exc_str = str(exc)
+            _TRANSIENT = ("timed out", "timeout", "connectionpool", "connection reset",
+                          "connection refused", "remotedisconnected", "broken pipe",
+                          "eof occurred", "max retries exceeded")
+            is_network = any(k in exc_str.lower() for k in _TRANSIENT)
+
+            if is_network:
+                logger.warning("Job %s: erro de rede transitório (%s) — reagendando em 5min",
+                               job_id, type(exc).__name__)
+                hub.report_log(job_id, "warn",
+                    f"Erro de rede transitório ({type(exc).__name__}): {exc_str[:120]}. "
+                    f"Reagendando em 5min.")
+                try:
+                    hub.reschedule_job(job_id, 5 * 60)
+                    hub.report_status(job_id, status="error", exit_code=1, agent=settings.agent_name)
+                except Exception:
+                    pass
+                return  # não re-raise — job vai ser reagendado
+
             logger.error("Job %s failed: %s", job_id, exc)
-            hub.report_log(job_id, "error", str(exc))
+            hub.report_log(job_id, "error", exc_str)
             try:
                 hub.report_status(job_id, status="error", exit_code=1, agent=settings.agent_name)
             except requests.HTTPError as status_exc:

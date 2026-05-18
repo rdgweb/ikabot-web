@@ -44,6 +44,27 @@ class BaseRunner:
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         raise NotImplementedError
 
+    _TRANSIENT_ERRORS = (
+        "timed out", "timeout", "connectionpool", "connection reset",
+        "connection refused", "remotedisconnected", "broken pipe",
+        "eof occurred", "network", "ssl", "max retries exceeded",
+    )
+
+    def network_error_result(self, job_id: str, exc: Exception,
+                             reschedule_seconds: int = 300) -> "RunnerResult":
+        """Return a reschedulable result for transient network errors."""
+        exc_str = str(exc)
+        self.log(job_id, "warn",
+            f"Erro de rede transitório ({type(exc).__name__}): {exc_str[:120]}. "
+            f"Reagendando em {reschedule_seconds//60}min.")
+        return RunnerResult(success=False, reschedule_seconds=reschedule_seconds,
+                            data={"error": exc_str, "retryable": True})
+
+    @staticmethod
+    def is_network_error(exc: Exception) -> bool:
+        exc_str = str(exc).lower()
+        return any(k in exc_str for k in BaseRunner._TRANSIENT_ERRORS)
+
     def log(self, job_id: str, level: str, msg: str) -> None:
         """Send a structured log line to the hub."""
         normalized_level = _LOG_LEVEL_ALIASES.get(str(level or "").strip().lower(), str(level or "info").strip().lower() or "info")
