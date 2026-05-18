@@ -935,7 +935,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
 
         updated_at = _snapshot_time(snapshot.get("updated_at"))
         if updated_at is None or (datetime.now(timezone.utc) - updated_at).total_seconds() > self.get_snapshot_stale_seconds():
-            self.log(jid, "warn", "Snapshot antigo para construcao; solicitando refresh")
+            logger.debug("[%s] Snapshot desatualizado; solicitando refresh", jid)
             self._ensure_status_refresh(jid)
             return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "stale_snapshot"})
 
@@ -945,24 +945,21 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         last_builds_started_at = _to_float(inputs.get("last_builds_started_at"), 0.0)
         if last_builds_started_at > 0 and updated_at is not None:
             if updated_at.timestamp() < last_builds_started_at:
-                age = int(time.time() - last_builds_started_at)
-                self.log(jid, "info", f"Snapshot anterior ao ultimo inicio de obra ({age}s atras); aguardando refresh")
+                logger.debug("[%s] Aguardando snapshot pós-construção", jid)
                 self._ensure_status_refresh(jid)
                 return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "waiting_post_build_snapshot"})
 
         last_transport_dispatched_at = _to_float(inputs.get("last_transport_dispatched_at"), 0.0)
         if last_transport_dispatched_at > 0 and updated_at is not None:
             if updated_at.timestamp() < last_transport_dispatched_at:
-                age = int(time.time() - last_transport_dispatched_at)
-                self.log(jid, "info", f"Snapshot anterior ao ultimo transporte de suporte ({age}s atras); aguardando refresh")
+                logger.debug("[%s] Aguardando snapshot pós-transporte", jid)
                 self._ensure_status_refresh(jid)
                 return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "waiting_post_transport_snapshot"})
 
         last_market_order_requested_at = _to_float(inputs.get("last_market_order_requested_at"), 0.0)
         if last_market_order_requested_at > 0 and updated_at is not None:
             if updated_at.timestamp() < last_market_order_requested_at:
-                age = int(time.time() - last_market_order_requested_at)
-                self.log(jid, "info", f"Snapshot anterior a ordem de mercado interno ({age}s atras); aguardando refresh")
+                logger.debug("[%s] Aguardando snapshot pós-mercado", jid)
                 self._ensure_status_refresh(jid)
                 return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "waiting_post_market_snapshot"})
 
@@ -1135,6 +1132,12 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 upgrading_name = str(upgrading.get("building") or "?")
                 upgrading_level = _to_int(upgrading.get("level"), 0)
                 upgrading_position = _to_int(upgrading.get("position"), -1)
+                # Use plan's display name when the upgrading building matches pending's building
+                upgrading_display = (
+                    pending.get("building_name") or upgrading_name
+                    if upgrading_name == (pending.get("building_id") or "")
+                    else upgrading_name
+                )
 
                 live_still_busy = True
                 # Check advisor first (one request already made for all cities)
@@ -1160,7 +1163,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                     if live_level > upgrading_level:
                                         self.log(
                                             jid, "info",
-                                            f"[{_city_name(city)}] Obra concluida no jogo: {upgrading_name} Lv {upgrading_level} -> {live_level}; snapshot atualizado",
+                                            f"[{_city_name(city)}] Obra concluída: {upgrading_display} Lv {upgrading_level} → {live_level}",
                                         )
                                         continue
                                     self.log(
@@ -1225,7 +1228,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                         _skipped_step_indices.append(completed_idx)
                                 self.log(
                                     jid, "info",
-                                    f"[{_city_name(city)}] Obra concluida no jogo: {upgrading_name} Lv {upgrading_level} -> {live_level}; snapshot atualizado",
+                                    f"[{_city_name(city)}] Obra concluída: {upgrading_display} Lv {upgrading_level} → {live_level}",
                                 )
                                 promoted = self._pick_pending_step_for_city(
                                     cities,
@@ -1274,7 +1277,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                             wait_seconds = max(MIN_RECHECK_SECONDS, base_adj + FINISH_BUFFER_SECONDS)
                     self.log(
                         jid, "info",
-                        f"{_city_name(city)} em obra: {upgrading_name} Lv {upgrading_level} → {upgrading_level + 1}; próxima etapa em {_format_duration(wait_seconds)}",
+                        f"{_city_name(city)} em obra: {upgrading_display} Lv {upgrading_level} → {upgrading_level + 1} | próxima verificação em {_format_duration(wait_seconds)}",
                     )
                     new_waits.append(
                         {
