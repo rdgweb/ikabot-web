@@ -534,7 +534,8 @@ class DistributeResourcesRunner(BaseRunner):
         strategy = str(inputs.get("strategy") or "targets").strip().lower()
         minimum_stock = _to_int(inputs.get("minimum_stock", 20000), 20000, 0)
         target_stock = max(minimum_stock, _to_int(inputs.get("target_stock", 60000), 60000, 0))
-        origin_reserve_stock = _to_int(inputs.get("origin_reserve_stock", 50000), 50000, 0)
+        # strategy=evenly: ignore origin_reserve_stock — all surplus is available to send
+        origin_reserve_stock = 0 if strategy == "evenly" else _to_int(inputs.get("origin_reserve_stock", 50000), 50000, 0)
         useful_transfer_min = _to_int(inputs.get("useful_transfer_min", 5000), 5000, 1)
         shipment_cap = _to_int(inputs.get("shipment_cap", 50000), 50000, 1)
         max_routes_per_cycle = _to_int(inputs.get("max_routes_per_cycle", 5), 5, 1)
