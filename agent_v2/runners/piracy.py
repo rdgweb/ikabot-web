@@ -127,6 +127,17 @@ class PiracyMissionRunner(BaseRunner):
             time_remaining = int(state.get("time_remaining") or 0)
             fortress_level = int(state.get("fortress_level") or 1)
             capture_points = int(state.get("capture_points") or 0)
+            crew_points = int(state.get("crew_points") or 0)
+            complete_crew_points = int(state.get("complete_crew_points") or 0)
+
+            _state_inputs = {
+                "last_capture_points": capture_points,
+                "last_crew_points": crew_points,
+                "last_complete_crew_points": complete_crew_points,
+                "last_fortress_level": fortress_level,
+                "last_time_remaining": time_remaining,
+                "last_state_updated_at": int(time.time()),
+            }
 
             # Step 2: mission already active — wait for it
             if time_remaining > 0:
@@ -138,7 +149,7 @@ class PiracyMissionRunner(BaseRunner):
                     f"Reagendando em {wait}s.",
                 )
                 self.save_game_client(game_account_id, client)
-                return RunnerResult(success=True, reschedule_seconds=wait)
+                return RunnerResult(success=True, reschedule_seconds=wait, reschedule_inputs=_state_inputs)
 
             # Step 3: ship in port — optionally convert, then start new mission
             # a) convert capture points to crew based on mode
@@ -155,6 +166,9 @@ class PiracyMissionRunner(BaseRunner):
                 should_convert = False
                 points_to_convert = 0
 
+            _total_crew_converted = int(inputs.get("total_crew_converted") or 0)
+            _total_missions = int(inputs.get("total_missions_started") or 0)
+
             if should_convert and points_to_convert > 0:
                 conversion_factor = int(state.get("conversion_factor") or 10)
                 crew_to_create = points_to_convert // conversion_factor
@@ -167,7 +181,8 @@ class PiracyMissionRunner(BaseRunner):
                     )
                     try:
                         client.convert_piracy_points(city_id, crew_to_create)
-                        self.log(jid, "info", "Pontos de captura convertidos com sucesso")
+                        _total_crew_converted += crew_to_create
+                        self.log(jid, "info", f"Convertidos {points_to_convert} pontos → {crew_to_create} força de tripulação (total acumulado: {_total_crew_converted})")
                     except CaptchaRequiredError:
                         self.log(jid, "warn", "Captcha necessario na conversao de pontos. Reagendando em 5 min.")
                         self.save_game_client(game_account_id, client)
@@ -231,16 +246,25 @@ class PiracyMissionRunner(BaseRunner):
             else:
                 wait = _MISSION_DURATIONS.get(effective_level, 1800) + MISSION_BUFFER
 
+            _total_missions += 1
             mission_msg = result.get("message") or "ok"
             self.log(
                 jid,
                 "info",
                 f"Missão pirata iniciada (nível {effective_level}). "
-                f"Reagendando em {wait}s. Resposta: {mission_msg}",
+                f"Reagendando em {wait}s. Total missões: {_total_missions}.",
             )
 
             self.save_game_client(game_account_id, client)
-            return RunnerResult(success=True, reschedule_seconds=wait)
+            return RunnerResult(
+                success=True,
+                reschedule_seconds=wait,
+                reschedule_inputs={
+                    **_state_inputs,
+                    "total_missions_started": _total_missions,
+                    "total_crew_converted": _total_crew_converted,
+                },
+            )
 
         except CaptchaRequiredError as exc:
             # CaptchaRequiredError from state GET or other non-mission request.
