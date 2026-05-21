@@ -600,6 +600,33 @@ class DistributeResourcesRunner(BaseRunner):
 
         actions_spawned = 0
         for route in routes_to_spawn:
+            dest_city = city_map.get(str(route["to_city"]))
+            wh_cap = _to_int((dest_city or {}).get("warehouse_capacity"), 0) if dest_city else 0
+
+            # Check destination warehouse space for each resource before spawning
+            blocked_resources: list[str] = []
+            viable_resources: dict[str, int] = {}
+            for res, amount in route["resources"].items():
+                if amount <= 0:
+                    continue
+                if wh_cap > 0:
+                    current = _to_int((dest_city or {}).get(res), 0)
+                    free = max(0, wh_cap - current)
+                    if free < useful_transfer_min:
+                        blocked_resources.append(f"{res} (livre={free:,})")
+                        continue
+                    viable_resources[res] = min(amount, free)
+                else:
+                    viable_resources[res] = amount
+
+            if blocked_resources:
+                self.log(
+                    jid, "info",
+                    f"Armazém cheio em {route['to_city_name']}: {', '.join(blocked_resources)} — rota ignorada",
+                )
+            if not viable_resources:
+                continue
+
             child_inputs = {
                 "from_city": route["from_city"],
                 "from_city_name": route["from_city_name"],
@@ -608,7 +635,7 @@ class DistributeResourcesRunner(BaseRunner):
                 "transport_load_percent": transport_load_percent,
                 "confirm_arrival": confirm_arrival_enabled,
                 "confirmation_margin_minutes": confirmation_margin_minutes,
-                **route["resources"],
+                **viable_resources,
             }
             self.hub.spawn_job(jid, action_code=2, inputs=child_inputs)
             actions_spawned += 1
@@ -617,8 +644,8 @@ class DistributeResourcesRunner(BaseRunner):
                 "info",
                 (
                     f"Remessa criada: {route['from_city_name']} -> {route['to_city_name']} | "
-                    f"total={route['total']:,} | "
-                    + ", ".join(f"{key}={value:,}" for key, value in route["resources"].items() if value > 0)
+                    f"total={sum(viable_resources.values()):,} | "
+                    + ", ".join(f"{key}={value:,}" for key, value in viable_resources.items() if value > 0)
                 ),
             )
 
