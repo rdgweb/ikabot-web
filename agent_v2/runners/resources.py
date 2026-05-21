@@ -590,20 +590,22 @@ class DistributeResourcesRunner(BaseRunner):
         route_entries.sort(key=lambda item: (item["critical"], item["total"]), reverse=True)
 
         total_routes = len(route_entries)
-        routes_to_spawn = route_entries[:max_routes_per_cycle]
         if total_routes > max_routes_per_cycle:
             self.log(
                 jid,
                 "warn",
-                f"Plano gerou {total_routes} rotas; limitando a {max_routes_per_cycle} neste ciclo",
+                f"Plano gerou {total_routes} rotas; selecionando até {max_routes_per_cycle} viáveis neste ciclo",
             )
 
         actions_spawned = 0
-        for route in routes_to_spawn:
+        skipped_full = 0
+        for route in route_entries:
+            if actions_spawned >= max_routes_per_cycle:
+                break
+
             dest_city = city_map.get(str(route["to_city"]))
             wh_cap = _to_int((dest_city or {}).get("warehouse_capacity"), 0) if dest_city else 0
 
-            # Check destination warehouse space for each resource before spawning
             blocked_resources: list[str] = []
             viable_resources: dict[str, int] = {}
             for res, amount in route["resources"].items():
@@ -622,8 +624,10 @@ class DistributeResourcesRunner(BaseRunner):
             if blocked_resources:
                 self.log(
                     jid, "info",
-                    f"Armazém cheio em {route['to_city_name']}: {', '.join(blocked_resources)} — rota ignorada",
+                    f"Armazém cheio em {route['to_city_name']}: {', '.join(blocked_resources)} — tentando próxima rota",
                 )
+                skipped_full += 1
+
             if not viable_resources:
                 continue
 
