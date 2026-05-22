@@ -996,6 +996,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         any_transport_dispatched = False
         reschedule_context: dict[str, Any] = {}
         support_by_city = self._get_open_construction_support(jid)
+        city_skip_reasons: dict[str, str] = {}
+        self._last_missing_skip_reason = None
 
         def _queue_pending_candidate(pending_step: dict[str, Any]) -> None:
             nonlocal any_transport_dispatched
@@ -1027,14 +1029,22 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             stock = _city_stock(city)
             missing = {key: max(0, costs[key] - stock.get(key, 0)) for key in RESOURCE_KEYS}
             if any(amount > 0 for amount in missing.values()):
-                reschedule_seconds, transport_spawned, extra_inputs, should_skip_now = self._handle_missing_resources(
+                (
+                    reschedule_seconds,
+                    transport_spawned,
+                    extra_inputs,
+                    should_skip_now,
+                ) = self._unpack_missing_resources_result(
+                    self._handle_missing_resources(
                     job=job,
                     pending=pending_step,
                     cities=cities,
                     city=city,
                     missing=missing,
                     support_by_city=support_by_city,
+                    )
                 )
+                skip_reason = getattr(self, "_last_missing_skip_reason", None)
                 any_transport_dispatched = any_transport_dispatched or transport_spawned
                 if extra_inputs:
                     reschedule_context.update(extra_inputs)
@@ -1048,6 +1058,19 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     }
                 )
                 if should_skip_now:
+                    city_key = str(pending_step["city_id"] or "")
+                    repeated_reason = city_skip_reasons.get(city_key)
+                    if skip_reason and repeated_reason == skip_reason:
+                        self.log(
+                            jid,
+                            "info",
+                            (
+                                f"[{pending_step['city_name']}] Bloqueio estrutural repetido "
+                                f"({skip_reason or 'sem_eta'}); encerrando novas promocoes neste ciclo"
+                            ),
+                        )
+                        return
+                    city_skip_reasons[city_key] = str(skip_reason or "sem_eta")
                     _promote_next_pending_candidate(
                         pending_step,
                         [*ignored_step_indices, _to_int(pending_step.get("index"), 0)],
@@ -1368,14 +1391,22 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                 "info",
                                 f"Custo real do jogo bloqueia {pending['building_name']} | {live_debug['debug_line']}",
                             )
-                            reschedule_seconds, transport_spawned, extra_inputs, should_skip_now = self._handle_missing_resources(
+                            (
+                                reschedule_seconds,
+                                transport_spawned,
+                                extra_inputs,
+                                should_skip_now,
+                            ) = self._unpack_missing_resources_result(
+                                self._handle_missing_resources(
                                 job=job,
                                 pending=pending,
                                 cities=cities,
                                 city=city,
                                 missing=live_missing,
                                 support_by_city=support_by_city,
+                                )
                             )
+                            skip_reason = getattr(self, "_last_missing_skip_reason", None)
                             any_transport_dispatched = any_transport_dispatched or transport_spawned
                             if extra_inputs:
                                 reschedule_context.update(extra_inputs)
@@ -1392,6 +1423,19 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                 }
                             )
                             if should_skip_now:
+                                city_key = str(pending["city_id"] or "")
+                                repeated_reason = city_skip_reasons.get(city_key)
+                                if skip_reason and repeated_reason == skip_reason:
+                                    self.log(
+                                        jid,
+                                        "info",
+                                        (
+                                            f"[{pending['city_name']}] Bloqueio estrutural repetido "
+                                            f"({skip_reason or 'sem_eta'}); encerrando novas promocoes neste ciclo"
+                                        ),
+                                    )
+                                    continue
+                                city_skip_reasons[city_key] = str(skip_reason or "sem_eta")
                                 _promote_next_pending_candidate(
                                     pending,
                                     [*_skipped_step_indices, *_blocked_step_indices, _to_int(pending.get("index"), 0)],
@@ -1581,14 +1625,22 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                     "info",
                                     f"Upgrade rejeitado por recurso insuficiente | {post_debug['debug_line']}",
                                 )
-                                reschedule_seconds, transport_spawned, extra_inputs, should_skip_now = self._handle_missing_resources(
+                                (
+                                    reschedule_seconds,
+                                    transport_spawned,
+                                    extra_inputs,
+                                    should_skip_now,
+                                ) = self._unpack_missing_resources_result(
+                                    self._handle_missing_resources(
                                     job=job,
                                     pending=pending,
                                     cities=cities,
                                     city=city,
                                     missing=post_missing,
                                     support_by_city=support_by_city,
+                                    )
                                 )
+                                skip_reason = getattr(self, "_last_missing_skip_reason", None)
                                 any_transport_dispatched = any_transport_dispatched or transport_spawned
                                 if extra_inputs:
                                     reschedule_context.update(extra_inputs)
@@ -1606,6 +1658,19 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                     }
                                 )
                                 if should_skip_now:
+                                    city_key = str(pending["city_id"] or "")
+                                    repeated_reason = city_skip_reasons.get(city_key)
+                                    if skip_reason and repeated_reason == skip_reason:
+                                        self.log(
+                                            jid,
+                                            "info",
+                                            (
+                                                f"[{pending['city_name']}] Bloqueio estrutural repetido "
+                                                f"({skip_reason or 'sem_eta'}); encerrando novas promocoes neste ciclo"
+                                            ),
+                                        )
+                                        continue
+                                    city_skip_reasons[city_key] = str(skip_reason or "sem_eta")
                                     _promote_next_pending_candidate(
                                         pending,
                                         [*_skipped_step_indices, *_blocked_step_indices, _to_int(pending.get("index"), 0)],
@@ -2201,6 +2266,14 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
     def _normalize_costs(raw_costs: dict[str, Any]) -> dict[str, int]:
         return {key: _to_int(raw_costs.get(key), 0) for key in RESOURCE_KEYS}
 
+    @staticmethod
+    def _unpack_missing_resources_result(
+        result: tuple[int, bool, dict[str, Any] | None, bool] | tuple[int, bool, dict[str, Any] | None, bool, str | None],
+    ) -> tuple[int, bool, dict[str, Any] | None, bool]:
+        if len(result) >= 4:
+            return result[0], result[1], result[2], result[3]
+        raise ValueError("invalid _handle_missing_resources result")
+
     def _handle_missing_resources(
         self,
         *,
@@ -2216,6 +2289,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         inputs = job.get("inputs") or {}
         auto_transport = bool(inputs.get("auto_transport", True))
         target_city_id = str(city.get("id") or "")
+        snapshot = self._get_snapshot(jid, job.get("game_account_id")) if job.get("game_account_id") else None
+        base_snapshot = dict((snapshot or {}).get("base_snapshot") or {})
 
         existing_support = support_by_city.get(target_city_id) or _empty_resource_map()
         adjusted_missing = {
@@ -2243,6 +2318,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 "info",
                 f"Suporte em transito ja cobre {pending['building_name']} em {pending['city_name']}; aguardando chegada",
             )
+            self._last_missing_skip_reason = None
             return TRANSPORT_RECHECK_SECONDS, False, None, False
 
         wait_seconds = self._estimate_local_wait_seconds(city, missing)
@@ -2272,6 +2348,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         )
                         if ga_id:
                             self.save_game_client(ga_id, client)
+                        self._last_missing_skip_reason = None
                         return max(wait_seconds or 0, incoming_wait + FINISH_BUFFER_SECONDS), False, None, False
                     if ga_id:
                         self.save_game_client(ga_id, client)
@@ -2292,34 +2369,161 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     "info",
                     f"Suporte logistico criado para {pending['city_name']} | aguardando transporte antes da proxima obra",
                 )
+                self._last_missing_skip_reason = None
                 return max(wait_seconds or 0, TRANSPORT_RECHECK_SECONDS), True, None, False
+
+            donor_wait = self._estimate_donor_wait_seconds(
+                cities=cities,
+                target_city_id=target_city_id,
+                needed=missing,
+            )
+            if donor_wait:
+                self.log(
+                    jid,
+                    "info",
+                    f"{pending['city_name']} sem doador imediato; ETA estimado de cidade doadora em {donor_wait}s",
+                )
 
             # No donor city available — try buying from the public market
             if bool(inputs.get("auto_market_buy", True)):
                 try:
                     ga_id = job.get("game_account_id")
                     if ga_id:
-                        market_eta, extra_inputs = self._try_cover_with_internal_market(
+                        market_eta, extra_inputs, market_reason = self._try_cover_with_internal_market(
                             jid=jid,
                             ga_id=str(ga_id),
                             target_city=city,
                             pending=pending,
                             missing=missing,
                             level_rows=pending.get("level_rows") or [],
+                            base_snapshot=base_snapshot,
                         )
                         if market_eta is not None:
+                            self._last_missing_skip_reason = None
                             return max(market_eta, TRANSPORT_RECHECK_SECONDS), False, extra_inputs, False
+                        if market_reason == "buyer_below_min_gold":
+                            gold_wait = self._estimate_market_gold_wait_seconds(base_snapshot=base_snapshot, detail=extra_inputs or {})
+                            if gold_wait:
+                                self.log(
+                                    jid,
+                                    "info",
+                                    f"{pending['city_name']} aguardando ouro para mercado interno; ETA estimado em {gold_wait}s",
+                                )
+                                intervention = self._maybe_request_market_intervention(
+                                    job=job,
+                                    cities=cities,
+                                    city=city,
+                                    pending=pending,
+                                    missing=missing,
+                                    wait_reason="market_gold_eta",
+                                    eta_seconds=gold_wait,
+                                    market_detail=extra_inputs or {},
+                                    base_snapshot=base_snapshot,
+                                )
+                                if intervention:
+                                    pending_recheck = self.get_system_setting_int(
+                                        "construction_market_intervention_pending_recheck_seconds",
+                                        30 * 60,
+                                    )
+                                    self.log(
+                                        jid,
+                                        "info",
+                                        (
+                                            f"{pending['city_name']} com intervenção de mercado "
+                                            f"{intervention.get('status')}; recheck em {pending_recheck}s"
+                                        ),
+                                    )
+                                    self._last_missing_skip_reason = None
+                                    return pending_recheck, False, {
+                                        "market_wait_reason": "buyer_below_min_gold",
+                                        "market_intervention_request_id": intervention.get("request_id"),
+                                        "market_intervention_status": intervention.get("status"),
+                                    }, False
+                                self._last_missing_skip_reason = None
+                                return max(MIN_RECHECK_SECONDS, gold_wait + FINISH_BUFFER_SECONDS), False, {
+                                    "market_wait_reason": "buyer_below_min_gold",
+                                }, False
                 except Exception as exc:
                     self.log(jid, "warn", f"Mercado interno falhou: {exc}")
 
+            if donor_wait:
+                intervention = self._maybe_request_market_intervention(
+                    job=job,
+                    cities=cities,
+                    city=city,
+                    pending=pending,
+                    missing=missing,
+                    wait_reason="donor_eta",
+                    eta_seconds=donor_wait,
+                    market_detail=None,
+                    base_snapshot=base_snapshot,
+                )
+                if intervention:
+                    pending_recheck = self.get_system_setting_int(
+                        "construction_market_intervention_pending_recheck_seconds",
+                        30 * 60,
+                    )
+                    self.log(
+                        jid,
+                        "info",
+                        (
+                            f"{pending['city_name']} com intervenção de mercado "
+                            f"{intervention.get('status')}; recheck em {pending_recheck}s"
+                        ),
+                    )
+                    self._last_missing_skip_reason = None
+                    return pending_recheck, False, {
+                        "resource_wait_reason": "donor_eta",
+                        "market_intervention_request_id": intervention.get("request_id"),
+                        "market_intervention_status": intervention.get("status"),
+                    }, False
+                self._last_missing_skip_reason = None
+                return max(MIN_RECHECK_SECONDS, donor_wait + FINISH_BUFFER_SECONDS), False, {
+                    "resource_wait_reason": "donor_eta",
+                }, False
+
         if wait_seconds:
-            return max(MIN_RECHECK_SECONDS, wait_seconds + FINISH_BUFFER_SECONDS), False, None, False
+            intervention = self._maybe_request_market_intervention(
+                job=job,
+                cities=cities,
+                city=city,
+                pending=pending,
+                missing=missing,
+                wait_reason="local_eta",
+                eta_seconds=wait_seconds,
+                market_detail=None,
+                base_snapshot=base_snapshot,
+            )
+            if intervention:
+                pending_recheck = self.get_system_setting_int(
+                    "construction_market_intervention_pending_recheck_seconds",
+                    30 * 60,
+                )
+                self.log(
+                    jid,
+                    "info",
+                    (
+                        f"{pending['city_name']} com intervenção de mercado "
+                        f"{intervention.get('status')}; recheck em {pending_recheck}s"
+                    ),
+                )
+                self._last_missing_skip_reason = None
+                return pending_recheck, False, {
+                    "resource_wait_reason": "local_eta",
+                    "market_intervention_request_id": intervention.get("request_id"),
+                    "market_intervention_status": intervention.get("status"),
+                }, False
+            self._last_missing_skip_reason = None
+            return max(MIN_RECHECK_SECONDS, wait_seconds + FINISH_BUFFER_SECONDS), False, {
+                "resource_wait_reason": "local_eta",
+            }, False
 
         self.log(
             jid,
             "warn",
             f"{pending['city_name']} sem recurso suficiente para {pending['building_name']} e sem ETA local confiavel",
         )
+        self._last_missing_skip_reason = "resource_stall_no_eta"
         return TRANSPORT_RECHECK_SECONDS, False, None, True
 
     # Resource index mapping matching game_client constants
@@ -2334,7 +2538,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         pending: dict[str, Any],
         missing: dict[str, int],
         level_rows: list[dict[str, Any]],
-    ) -> tuple[int | None, dict[str, Any] | None]:
+        base_snapshot: dict[str, Any] | None = None,
+    ) -> tuple[int | None, dict[str, Any] | None, str | None]:
         """Create internal market orders for the missing resources.
 
         Finds the account's branchOffice city, fetches offers, calculates a buffered
@@ -2344,15 +2549,6 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         Returns the estimated ETA in seconds until resources arrive, or None on failure.
         """
         target_city_id = _to_int(target_city.get("id"))
-        target_bo_pos = _find_branch_office_position(target_city)
-        if target_bo_pos < 0:
-            self.log(
-                jid,
-                "warn",
-                f"{pending['city_name']} sem Branch Office; mercado interno nao entrega direto na cidade da obra",
-            )
-            return None, None
-
         next_level = _to_int(pending.get("next_level"), 1)
         level_rows_sorted = sorted(level_rows, key=lambda r: _to_int(r.get("level"), 0))
         next_rows = [r for r in level_rows_sorted if _to_int(r.get("level"), 0) >= next_level]
@@ -2375,6 +2571,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     amount=buy_amount,
                     unit_price=0,
                     preferred_buyer_city_id=target_city_id,
+                    target_city_id=target_city_id,
                     source_job_id=jid,
                     source_action_code=1002,
                     source_reason="construction_missing_resources",
@@ -2389,12 +2586,24 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 continue
 
             if not order or not order.get("ok"):
+                error_code = str((order or {}).get("error") or "").strip()
+                detail = str((order or {}).get("detail") or "").strip()
+                reason_map = {
+                    "buyer_below_min_gold": "ouro abaixo do market_min_gold",
+                    "buyer_without_branch_office": "sem cidade compradora com Branch Office",
+                    "no_visible_market_city": "sem cidade compradora com alcance de mercado para o vendedor",
+                    "no_seller": "sem vendedor elegivel",
+                }
                 self.log(
                     jid,
                     "warn",
-                    f"Nenhum vendedor elegivel no mercado interno para {resource_key} "
-                    f"(cidade={pending['city_name']}, falta={needed}, pedido={buy_amount})",
+                    f"Mercado interno indisponivel para {resource_key} "
+                    f"(cidade={pending['city_name']}, falta={needed}, pedido={buy_amount}, "
+                    f"motivo={reason_map.get(error_code, error_code or 'falha desconhecida')}"
+                        f"{f', detalhe={detail}' if detail else ''})",
                 )
+                if error_code == "buyer_below_min_gold":
+                    return None, self._parse_market_detail(detail), error_code
                 continue
 
             created_any = True
@@ -2406,124 +2615,14 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             )
 
         if not created_any:
-            return None, None
+            return None, None, None
 
         self.log(
             jid,
             "info",
-            f"Mercado interno solicitado para {pending['city_name']} via Branch Office pos={target_bo_pos}; aguardando processamento",
+            f"Mercado interno solicitado para {pending['city_name']}; aguardando compra e possivel redistribuicao",
         )
-        return TRANSPORT_RECHECK_SECONDS, {"last_market_order_requested_at": int(time.time())}
-
-        # Determine how much to buy per resource
-        next_level = _to_int(pending.get("next_level"), 1)
-        level_rows_sorted = sorted(level_rows, key=lambda r: _to_int(r.get("level"), 0))
-        next_rows = [r for r in level_rows_sorted if _to_int(r.get("level"), 0) >= next_level]
-
-        costs_next = self._normalize_costs((next_rows[0].get("costs") or {}) if next_rows else {})
-        costs_after = self._normalize_costs((next_rows[1].get("costs") or {}) if len(next_rows) > 1 else {})
-
-        bought_any = False
-        for resource_key, needed in missing.items():
-            if needed <= 0:
-                continue
-            resource_idx = self._RESOURCE_KEY_TO_IDX.get(resource_key)
-            if resource_idx is None:
-                continue
-
-            # Buy amount: next level + 1 extra level if possible, else ×1.20
-            extra = costs_after.get(resource_key, 0)
-            buy_amount = needed + extra if extra > 0 else math.ceil(needed * 1.20)
-
-            try:
-                offers = client.get_market_offers(
-                    buyer_city_id=bo_city_id,
-                    buyer_branchoffice_pos=bo_position,
-                    resource_idx=resource_idx,
-                )
-            except Exception as exc:
-                self.log(jid, "warn", f"Nao foi possivel buscar ofertas de {resource_key}: {exc}")
-                continue
-
-            if not offers:
-                self.log(jid, "warn", f"Nenhuma oferta disponivel no mercado para {resource_key}")
-                continue
-
-            # Average price of available offers (weighted by amount)
-            total_available = sum(o["amount"] for o in offers)
-            if total_available == 0:
-                continue
-            avg_price = sum(o["price_per_unit"] * o["amount"] for o in offers) / total_available
-            self.log(
-                jid, "info",
-                f"Mercado: {len(offers)} oferta(s) de {resource_key}, preco medio={avg_price:.1f}, total={total_available}",
-            )
-
-            # Buy from cheapest offers until buy_amount is covered
-            remaining = buy_amount
-            for offer in offers:
-                if remaining <= 0:
-                    break
-                to_buy = min(remaining, offer["amount"])
-                try:
-                    client.buy_market_offer(
-                        buyer_city_id=bo_city_id,
-                        buyer_branchoffice_pos=bo_position,
-                        seller_city_id=offer["seller_city_id"],
-                        seller_branchoffice_pos=offer["seller_bo_pos"],
-                        resource_idx=resource_idx,
-                        amount=to_buy,
-                    )
-                    remaining -= to_buy
-                    bought_any = True
-                    self.log(
-                        jid, "info",
-                        f"Comprado {to_buy} {resource_key} no mercado @ {offer['price_per_unit']}/un"
-                        f" (cidade vendedora={offer['seller_city_id']})",
-                    )
-                except Exception as exc:
-                    self.log(jid, "warn", f"Falha ao comprar {to_buy} {resource_key}: {exc}")
-                    break
-
-            if remaining > 0:
-                self.log(jid, "warn", f"Mercado sem quantidade suficiente de {resource_key}: faltam {remaining}")
-
-        if not bought_any:
-            return None
-
-        # If branchOffice city ≠ target city, we need to transport the resources
-        if bo_city_id != target_city_id:
-            try:
-                from services.resource_transport import prepare_transport, submit_transport
-                SNAPSHOT_TO_TRANSPORT = {"wood": "wood", "wine": "wine", "marble": "marble", "glas": "crystal", "sulfur": "sulfur"}
-                transport_resources = {
-                    SNAPSHOT_TO_TRANSPORT.get(k, k): math.ceil(v * 1.05)
-                    for k, v in missing.items() if v > 0
-                }
-                plan = prepare_transport(
-                    client,
-                    from_city_id=bo_city_id,
-                    to_city_id=target_city_id,
-                    requested=transport_resources,
-                )
-                submit_transport(client, plan)
-                self.log(
-                    jid, "info",
-                    f"Transporte criado de Mercado ({bo_city.get('name')}) → {target_city.get('name')}",
-                )
-            except Exception as exc:
-                self.log(jid, "warn", f"Falha ao criar transporte pós-compra: {exc}")
-
-        # Estimate arrival ETA
-        try:
-            eta = estimate_incoming_transport_wait_seconds(client, target_city_id)
-            if eta:
-                self.log(jid, "info", f"Recurso comprado no mercado; chegada estimada em {_format_duration(eta)}")
-                return eta + FINISH_BUFFER_SECONDS
-        except Exception as exc:
-            logger.debug("Nao foi possivel estimar ETA pós-compra: %s", exc)
-
-        return TRANSPORT_RECHECK_SECONDS
+        return TRANSPORT_RECHECK_SECONDS, {"last_market_order_requested_at": int(time.time())}, None
 
     def _spawn_transport_cover(
         self,
@@ -2669,3 +2768,371 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         if not waits:
             return None
         return max(waits)
+
+    @staticmethod
+    def _estimate_donor_wait_seconds(
+        *,
+        cities: list[dict[str, Any]],
+        target_city_id: str,
+        needed: dict[str, int],
+    ) -> int | None:
+        waits: list[int] = []
+        donors = [city for city in cities if str(city.get("id") or "") != str(target_city_id)]
+        for key, amount in needed.items():
+            if amount <= 0:
+                continue
+            available_now = 0
+            production_per_hour = 0
+            for donor in donors:
+                stock = _city_stock(donor)
+                prod = _city_prod_per_hour(donor)
+                available_now += max(0, stock.get(key, 0) - DONOR_RESERVE_DEFAULT)
+                production_per_hour += max(0, prod.get(key, 0))
+            if available_now >= amount:
+                waits.append(0)
+                continue
+            missing_after_now = amount - available_now
+            if production_per_hour <= 0:
+                continue
+            waits.append(int((missing_after_now / production_per_hour) * 3600))
+        if not waits:
+            return None
+        return max(waits)
+
+    @staticmethod
+    def _parse_market_detail(detail: str) -> dict[str, int]:
+        parsed: dict[str, int] = {}
+        for key in ("available_gold", "min_gold", "current_gold", "committed_gold"):
+            match = re.search(rf"{key}=(-?\d+)", str(detail or ""))
+            if match:
+                parsed[key] = _to_int(match.group(1), 0)
+        return parsed
+
+    @staticmethod
+    def _estimate_market_gold_wait_seconds(*, base_snapshot: dict[str, Any], detail: dict[str, Any]) -> int | None:
+        available_gold = _to_int(detail.get("available_gold"), 0)
+        min_gold = _to_int(detail.get("min_gold"), 0)
+        deficit = max(0, min_gold - available_gold)
+        if deficit <= 0:
+            return 0
+        gross_income = _to_int(base_snapshot.get("income"), 0)
+        upkeep = _to_int(base_snapshot.get("upkeep"), 0)
+        scientists_upkeep = _to_int(base_snapshot.get("scientists_upkeep"), 0)
+        net_income = gross_income + upkeep + scientists_upkeep
+        if net_income <= 0:
+            return None
+        return int((deficit / net_income) * 3600)
+
+    @staticmethod
+    def _resource_idx_to_snapshot_key(resource_idx: int) -> str:
+        return {
+            0: "wood",
+            1: "wine",
+            2: "marble",
+            3: "glas",
+            4: "sulfur",
+        }.get(int(resource_idx), "wood")
+
+    def _should_request_market_intervention(self, wait_reason: str, eta_seconds: int) -> bool:
+        eta_seconds = max(0, int(eta_seconds or 0))
+        getter = getattr(self, "get_system_setting_int", None)
+        if not callable(getter):
+            getter = lambda _key, default: default
+        if wait_reason == "market_gold_eta":
+            threshold_hours = getter(
+                "construction_market_intervention_gold_eta_hours",
+                24,
+            )
+        else:
+            threshold_hours = getter(
+                "construction_market_intervention_resource_eta_hours",
+                12,
+            )
+        return eta_seconds >= max(1, int(threshold_hours)) * 3600
+
+    def _remaining_reserved_by_city(
+        self,
+        *,
+        cities: list[dict[str, Any]],
+        plan_steps: list[dict[str, Any]],
+    ) -> dict[str, dict[str, int]]:
+        reserved: dict[str, dict[str, int]] = {}
+        for step in plan_steps:
+            city_id = str(step.get("city_id") or "").strip()
+            if not city_id:
+                continue
+            city = _find_city(cities, city_id)
+            if city is None:
+                continue
+            target_level = _to_int(step.get("target_level"), 0)
+            current_level, _, _ = self._resolve_step_state(city, step)
+            if target_level > 0 and current_level >= target_level:
+                continue
+            bucket = reserved.setdefault(city_id, {key: 0 for key in RESOURCE_KEYS})
+            raw_reserved = step.get("reserved_local") or {}
+            for key in RESOURCE_KEYS:
+                bucket[key] += _to_int(raw_reserved.get(key), 0)
+        return reserved
+
+    def _best_buy_estimate(
+        self,
+        *,
+        client,
+        cities: list[dict[str, Any]],
+        needed_resource_idx: int,
+        needed_amount: int,
+    ) -> dict[str, Any] | None:
+        best: dict[str, Any] | None = None
+        for city in cities:
+            city_id = _to_int(city.get("id"), 0)
+            bo_pos = _find_branch_office_position(city)
+            if city_id <= 0 or bo_pos < 0:
+                continue
+            try:
+                offers = client.get_market_offers(
+                    buyer_city_id=city_id,
+                    buyer_branchoffice_pos=bo_pos,
+                    resource_idx=needed_resource_idx,
+                )
+            except Exception:
+                continue
+            if not offers:
+                continue
+
+            remaining = max(1, int(needed_amount))
+            total_units = 0
+            total_cost = 0
+            for offer in offers:
+                offer_amount = max(0, _to_int(offer.get("amount"), 0))
+                unit_price = max(0, _to_int(offer.get("price_per_unit"), 0))
+                if offer_amount <= 0 or unit_price <= 0:
+                    continue
+                take = min(remaining, offer_amount)
+                total_units += take
+                total_cost += take * unit_price
+                remaining -= take
+                if remaining <= 0:
+                    break
+            if total_units <= 0:
+                continue
+            unit_min = max(0, _to_int(offers[0].get("price_per_unit"), 0))
+            unit_avg = max(0, math.ceil(total_cost / total_units))
+            estimate = {
+                "buyer_city_id": city_id,
+                "buyer_city_name": _city_name(city),
+                "buyer_branchoffice_pos": bo_pos,
+                "unit_min": unit_min,
+                "unit_avg": unit_avg,
+                "cost_min": unit_min * int(needed_amount),
+                "cost_avg": unit_avg * int(needed_amount),
+                "covered_amount": total_units,
+            }
+            if best is None:
+                best = estimate
+                continue
+            if estimate["cost_avg"] < best["cost_avg"]:
+                best = estimate
+        return best
+
+    def _best_sell_intervention_candidate(
+        self,
+        *,
+        client,
+        cities: list[dict[str, Any]],
+        reserved_by_city: dict[str, dict[str, int]],
+        needed_resource_idx: int,
+        available_gold: int,
+        min_gold: int,
+        buy_estimate: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        from game_client.actions.market import CreateOfferAction
+
+        required_balance_min = max(int(min_gold), int(buy_estimate.get("cost_min") or 0))
+        required_balance_avg = max(int(min_gold), int(buy_estimate.get("cost_avg") or 0))
+        best: dict[str, Any] | None = None
+        limits_cache: dict[tuple[int, int], list[tuple[int, int]]] = {}
+
+        for city in cities:
+            city_id = _to_int(city.get("id"), 0)
+            bo_pos = _find_branch_office_position(city)
+            if city_id <= 0 or bo_pos < 0:
+                continue
+            city_stock = _city_stock(city)
+            city_reserved = reserved_by_city.get(str(city_id), {})
+            cache_key = (city_id, bo_pos)
+            try:
+                limits = limits_cache.get(cache_key)
+                if limits is None:
+                    limits = CreateOfferAction(client).get_price_limits(city_id, bo_pos)
+                    limits_cache[cache_key] = limits
+            except Exception:
+                continue
+
+            for resource_idx in range(5):
+                if resource_idx == int(needed_resource_idx):
+                    continue
+                snapshot_key = self._resource_idx_to_snapshot_key(resource_idx)
+                available_amount = max(
+                    0,
+                    int(city_stock.get(snapshot_key, 0))
+                    - int(city_reserved.get(snapshot_key, 0))
+                    - DONOR_RESERVE_DEFAULT,
+                )
+                if available_amount <= 0:
+                    continue
+                min_price, max_price = limits[resource_idx]
+                target_price = max_price
+                sale_gold_max = available_amount * target_price
+                if sale_gold_max <= 0:
+                    continue
+                min_amount_for_avg = max(1, math.ceil(max(0, required_balance_avg - int(available_gold)) / max(1, target_price)))
+                proposed_amount = min(available_amount, min_amount_for_avg)
+                estimated_sale_gold = proposed_amount * target_price
+                final_balance = int(available_gold) + estimated_sale_gold
+                candidate = {
+                    "sale_city_id": city_id,
+                    "sale_city_name": _city_name(city),
+                    "sale_branchoffice_pos": bo_pos,
+                    "sale_resource_idx": resource_idx,
+                    "sale_amount": proposed_amount,
+                    "sale_price_min": min_price,
+                    "sale_price_max": max_price,
+                    "sale_price_target": target_price,
+                    "estimated_sale_gold": estimated_sale_gold,
+                    "can_fund_min": final_balance >= required_balance_min,
+                    "can_fund_avg": final_balance >= required_balance_avg,
+                }
+                if not (candidate["can_fund_min"] or candidate["can_fund_avg"]):
+                    continue
+                if best is None:
+                    best = candidate
+                    continue
+                sort_key = (
+                    int(candidate["can_fund_avg"]),
+                    int(candidate["can_fund_min"]),
+                    candidate["estimated_sale_gold"],
+                )
+                best_key = (
+                    int(best["can_fund_avg"]),
+                    int(best["can_fund_min"]),
+                    best["estimated_sale_gold"],
+                )
+                if sort_key > best_key:
+                    best = candidate
+        return best
+
+    def _maybe_request_market_intervention(
+        self,
+        *,
+        job: dict[str, Any],
+        cities: list[dict[str, Any]],
+        city: dict[str, Any],
+        pending: dict[str, Any],
+        missing: dict[str, int],
+        wait_reason: str,
+        eta_seconds: int,
+        market_detail: dict[str, Any] | None,
+        base_snapshot: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        if not self._should_request_market_intervention(wait_reason, eta_seconds):
+            return None
+        if not callable(getattr(self, "resolve_credentials", None)):
+            return None
+        if not callable(getattr(self, "get_or_login_game_client", None)):
+            return None
+        if not hasattr(self, "hub") or not callable(getattr(self.hub, "request_market_intervention", None)):
+            return None
+
+        ga_id = str(job.get("game_account_id") or "").strip()
+        aid = str(job.get("account_id") or "").strip()
+        if not ga_id or not aid:
+            return None
+
+        needed_resource_key = ""
+        needed_amount = 0
+        for key, amount in sorted(missing.items(), key=lambda item: int(item[1]), reverse=True):
+            if int(amount) > 0:
+                needed_resource_key = key
+                needed_amount = int(amount)
+                break
+        if not needed_resource_key or needed_amount <= 0:
+            return None
+        needed_resource_idx = self._RESOURCE_KEY_TO_IDX.get(needed_resource_key)
+        if needed_resource_idx is None:
+            return None
+
+        available_gold = _to_int((market_detail or {}).get("available_gold"), _to_int(base_snapshot.get("gold"), 0))
+        min_gold = _to_int((market_detail or {}).get("min_gold"), 0)
+
+        creds = self.resolve_credentials(aid, job.get("inputs") or {}, game_account_id=ga_id)
+        if not creds:
+            return None
+
+        client = None
+        try:
+            client = self.get_or_login_game_client(job["job_id"], aid, ga_id, creds)
+            buy_estimate = self._best_buy_estimate(
+                client=client,
+                cities=cities,
+                needed_resource_idx=needed_resource_idx,
+                needed_amount=needed_amount,
+            )
+            if not buy_estimate:
+                self.log(job["job_id"], "info", f"{pending['city_name']} sem visibilidade de compra suficiente para proposta de intervenção")
+                return None
+            if available_gold >= max(int(min_gold), int(buy_estimate.get("cost_avg") or 0)):
+                return None
+
+            reserved_by_city = self._remaining_reserved_by_city(
+                cities=cities,
+                plan_steps=self._normalized_plan(job.get("inputs") or {}),
+            )
+            sell_candidate = self._best_sell_intervention_candidate(
+                client=client,
+                cities=cities,
+                reserved_by_city=reserved_by_city,
+                needed_resource_idx=needed_resource_idx,
+                available_gold=available_gold,
+                min_gold=min_gold,
+                buy_estimate=buy_estimate,
+            )
+            if not sell_candidate:
+                self.log(job["job_id"], "info", f"{pending['city_name']} sem excedente vendável para intervenção de mercado")
+                return None
+
+            payload = {
+                "wait_reason": wait_reason,
+                "eta_seconds": int(eta_seconds),
+                "city_id": _to_int(city.get("id"), 0),
+                "city_name": str(pending.get("city_name") or _city_name(city)),
+                "building_name": str(pending.get("building_name") or ""),
+                "needed_resource_idx": int(needed_resource_idx),
+                "needed_amount": int(needed_amount),
+                "available_gold": int(available_gold),
+                "min_gold": int(min_gold),
+                "estimated_buy_unit_min": int(buy_estimate["unit_min"]),
+                "estimated_buy_unit_avg": int(buy_estimate["unit_avg"]),
+                "estimated_buy_cost_min": int(buy_estimate["cost_min"]),
+                "estimated_buy_cost_avg": int(buy_estimate["cost_avg"]),
+                **sell_candidate,
+            }
+            response = self.hub.request_market_intervention(
+                game_account_id=ga_id,
+                source_job_id=str(job.get("job_id") or ""),
+                payload=payload,
+            )
+            if response.get("ok"):
+                self.log(
+                    job["job_id"],
+                    "info",
+                    (
+                        f"Intervenção de mercado registrada para {pending['city_name']} "
+                        f"| request={response.get('request_id')} | created={response.get('created')} | sent={response.get('sent')}"
+                    ),
+                )
+                return response
+            return None
+        finally:
+            if client is not None:
+                self.save_game_client(ga_id, client)
+

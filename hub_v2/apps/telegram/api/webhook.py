@@ -23,6 +23,12 @@ from apps.telegram.models import (
 )
 from apps.telegram.services.bot_api import answer_callback_query, edit_message_text, send_message
 from apps.telegram.services.linking import validate_link_code
+from apps.market.models import ConstructionMarketIntervention
+from apps.market.services import (
+    approve_construction_market_intervention,
+    refresh_intervention_message,
+    reject_construction_market_intervention,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +161,35 @@ class TelegramWebhookView(APIView):
                     f"🔑 <b>Digite o texto do captcha #{challenge_id}:</b>",
                     reply_markup={"force_reply": True, "selective": True},
                 )
+                return Response({"status": "ok"})
+
+            if cq_data.startswith("cmi_approve:") or cq_data.startswith("cmi_reject:"):
+                request_id = cq_data.split(":", 1)[1].strip()
+                intervention = (
+                    ConstructionMarketIntervention.objects
+                    .select_related("account", "game_account", "node", "source_job")
+                    .filter(pk=request_id)
+                    .first()
+                )
+                if intervention is None:
+                    answer_callback_query(cq_id, "Solicitação não encontrada.", show_alert=True)
+                    return Response({"status": "ok"})
+
+                decided_by = str(cq.get("from", {}).get("username") or cq.get("from", {}).get("first_name") or cq_user_id)
+                if cq_data.startswith("cmi_approve:"):
+                    ok, msg = approve_construction_market_intervention(intervention, decided_by=decided_by)
+                    label = "✅ Venda aprovada" if ok else "❌ Aprovação falhou"
+                    if ok:
+                        refresh_intervention_message(intervention, decision_label="✅ Venda aprovada")
+                    answer_callback_query(cq_id, msg[:200], show_alert=not ok)
+                    send_message(cq_chat_id, label if ok else f"{label}: {msg}")
+                else:
+                    ok, msg = reject_construction_market_intervention(intervention, decided_by=decided_by)
+                    label = "❌ Venda recusada" if ok else "⚠️ Recusa falhou"
+                    if ok:
+                        refresh_intervention_message(intervention, decision_label="❌ Venda recusada")
+                    answer_callback_query(cq_id, msg[:200], show_alert=not ok)
+                    send_message(cq_chat_id, label if ok else f"{label}: {msg}")
                 return Response({"status": "ok"})
 
             if cq_data.startswith("accept:") or cq_data.startswith("decline:") or cq_data.startswith("reply:"):

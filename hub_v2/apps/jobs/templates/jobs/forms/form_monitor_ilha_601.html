@@ -1,0 +1,303 @@
+{% load static hub_tags %}
+
+    {# ══ Island Monitor (ac=601) custom UI ══ #}
+    {% if action_code == 601 %}
+    {{ cities|json_script:"island-monitor-cities-data" }}
+    <div class="space-y-4"
+         x-data="{
+           islandMode: '{{ form.monitor_mode.value|default:'islands'|escapejs }}',
+           cities: JSON.parse(document.getElementById('island-monitor-cities-data')?.textContent || '[]'),
+           selectedOwnCities: [{% for selected in form.own_city_ids.value %}'{{ selected|escapejs }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
+           setMode(mode) { this.islandMode = mode; },
+           isSelected(cityId) { return this.selectedOwnCities.includes(String(cityId)); },
+           toggleCity(cityId) {
+             cityId = String(cityId);
+             if (this.isSelected(cityId)) {
+               this.selectedOwnCities = this.selectedOwnCities.filter(item => item !== cityId);
+             } else {
+               this.selectedOwnCities = [...this.selectedOwnCities, cityId];
+             }
+           },
+           selectAllOwnCities() { this.selectedOwnCities = this.cities.map(city => String(city.id)); },
+           clearOwnCities() { this.selectedOwnCities = []; }
+         }">
+      <div class="overflow-hidden rounded-[22px] border shadow-[0_10px_30px_rgba(87,66,24,0.08)]"
+           style="border-color: var(--ik-line); background:
+             radial-gradient(760px 220px at 0% 0%, rgba(79,134,185,0.12), transparent 60%),
+             radial-gradient(680px 220px at 100% 100%, rgba(95,140,78,0.10), transparent 60%),
+             linear-gradient(180deg, rgba(255,252,245,0.96), rgba(247,241,229,0.92));">
+        <div class="border-b px-4 py-4"
+             style="border-color: rgba(219,201,167,0.82); background: linear-gradient(180deg, rgba(255,255,255,0.52), rgba(255,255,255,0));">
+          <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div class="max-w-2xl">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Monitor de ilha</div>
+              <div class="mt-1 text-sm font-semibold text-ink">Escolha ilhas das suas cidades ou um recorte do mapa</div>
+              <p class="mt-1 text-xs leading-relaxed text-muted">No modo de ilhas, voce pode monitorar so as ilhas das cidades marcadas ou adicionar ilhas extras por coordenada. Nao precisa catar island ID na mao.</p>
+            </div>
+            <div class="flex flex-col gap-2 md:items-end">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Modo</div>
+              <div class="inline-flex w-full rounded-[16px] border p-1 md:w-auto"
+                   style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);">
+                <input type="hidden" name="{{ form.monitor_mode.html_name }}" :value="islandMode">
+                <button type="button"
+                        @click="setMode('islands')"
+                        class="flex-1 rounded-[12px] px-3 py-2 text-[11px] font-medium transition-all md:min-w-[120px]"
+                        :style="islandMode === 'islands'
+                          ? 'background: rgba(79,134,185,0.12); color: var(--ik-sea); box-shadow: inset 0 0 0 1px rgba(79,134,185,0.22);'
+                          : 'color: var(--ik-muted);'">
+                  <i class="bi bi-geo-alt-fill mr-1"></i> Ilhas
+                </button>
+                <button type="button"
+                        @click="setMode('region')"
+                        class="flex-1 rounded-[12px] px-3 py-2 text-[11px] font-medium transition-all md:min-w-[120px]"
+                        :style="islandMode === 'region'
+                          ? 'background: rgba(79,134,185,0.12); color: var(--ik-sea); box-shadow: inset 0 0 0 1px rgba(79,134,185,0.22);'
+                          : 'color: var(--ik-muted);'">
+                  <i class="bi bi-bounding-box mr-1"></i> Regiao
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="px-4 py-4">
+          <fieldset x-show="islandMode === 'islands'" x-cloak :disabled="islandMode !== 'islands'" class="grid grid-cols-1 gap-3 lg:grid-cols-[1.2fr_0.8fr] min-w-0">
+            <section class="rounded-[18px] border p-3"
+                     style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+              <div class="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Ilhas das minhas cidades</div>
+                  <div class="text-xs text-muted">Opcional. Se marcar cidades aqui, o runner descobre automaticamente a ilha de cada uma.</div>
+                </div>
+                <div class="flex gap-2 text-[11px]">
+                  <button type="button" class="link-sea" @click="selectAllOwnCities()">Selecionar todas</button>
+                  <button type="button" class="text-muted hover:text-ink" @click="clearOwnCities()">Limpar</button>
+                </div>
+              </div>
+              <div class="mb-3 flex items-center justify-between rounded-[14px] border px-3 py-2 text-[11px]"
+                   style="border-color: rgba(219,201,167,0.82); background: rgba(255,255,255,0.78);">
+                <span class="text-muted">Se deixar vazio, nenhuma ilha propria entra automaticamente.</span>
+                <span class="font-semibold text-ink"><span x-text="selectedOwnCities.length"></span> selecionada(s)</span>
+              </div>
+              <div class="grid max-h-[18rem] grid-cols-2 gap-2 overflow-y-auto p-1 xl:grid-cols-4">
+                <template x-for="city in cities" :key="`island-monitor-${city.id}`">
+                  <label class="relative cursor-pointer overflow-hidden rounded-[18px] border text-left transition-all duration-150 hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]"
+                         :style="isSelected(city.id)
+                           ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.90));'
+                           : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'">
+                    <input type="checkbox" name="{{ form.own_city_ids.html_name }}" :value="String(city.id)" x-model="selectedOwnCities" class="sr-only">
+                    <button type="button" class="absolute inset-0 z-10" @click.prevent="toggleCity(city.id)"></button>
+                    <div class="relative p-3">
+                      <div class="flex items-start gap-3">
+                        <div class="relative shrink-0">
+                          <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                               style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                            <img :src="city.city_art" alt="" class="h-8 w-8 object-contain">
+                          </div>
+                          <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                            <img :src="city.tradegood_icon" :alt="city.tradegood_name" class="h-4 w-4 object-contain">
+                          </div>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                          <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0">
+                              <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
+                              <div class="mt-1 text-[11px] text-muted">
+                                <span x-text="city.tradegood_name"></span>
+                                <span x-show="city.x && city.y" x-text="` - [${city.x}:${city.y}]`"></span>
+                              </div>
+                              <div class="mt-1 text-[11px] text-muted" x-show="city.island_id">
+                                Ilha <span x-text="city.island_id"></span>
+                              </div>
+                            </div>
+                            <span class="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full border transition-colors shrink-0"
+                                  :style="isSelected(city.id)
+                                    ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
+                                    : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
+                              <i class="bi" :class="isSelected(city.id) ? 'bi-check-lg' : 'bi-geo-alt'"></i>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </label>
+                </template>
+              </div>
+              {% for error in form.own_city_ids.errors %}
+              <p class="form-error mt-2"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+              {% endfor %}
+            </section>
+            <section class="grid grid-cols-1 gap-3">
+              <div class="rounded-[18px] border p-4"
+                   style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Ilhas extras</div>
+                <div class="mt-1 text-sm font-semibold text-ink">Adicione alvos por coordenada</div>
+                <p class="mt-1 text-xs leading-relaxed text-muted">Use uma coordenada por linha ou separado por virgula. Exemplos: <span class="font-medium text-ink">20:44</span>, <span class="font-medium text-ink">[55:18]</span>. Links com <span class="font-medium text-ink">islandId</span> e IDs puros continuam aceitos.</p>
+                <label class="mt-3 block">
+                  <textarea name="{{ form.extra_island_ids.html_name }}"
+                            rows="6"
+                            class="form-input min-h-[8.5rem] resize-y"
+                            placeholder="20:44&#10;[55:18]&#10;https://...islandId=12345">{{ form.extra_island_ids.value|default:'' }}</textarea>
+                </label>
+                <div class="mt-2 rounded-[14px] border px-3 py-2 text-[11px] text-muted"
+                     style="border-color: rgba(219,201,167,0.82); background: rgba(255,255,255,0.78);">
+                  Deixe vazio para monitorar apenas as ilhas das cidades marcadas ao lado.
+                </div>
+                {% for error in form.extra_island_ids.errors %}
+                <p class="form-error mt-2"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+                {% endfor %}
+              </div>
+              <div class="grid grid-cols-1 gap-3 xl:grid-cols-1">
+                <section class="rounded-[18px] border p-4"
+                         style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+                  <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Alertas</div>
+                  <div class="mt-1 text-sm font-semibold text-ink">Notificacoes</div>
+                  <div class="mt-3 grid grid-cols-1 gap-2">
+                    <label class="flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[var(--ik-sea)]/8 transition-all" style="border-color: rgba(219,201,167,0.88);">
+                      <input type="checkbox" name="{{ form.notify_new.html_name }}" {% if form.notify_new.value %}checked{% endif %} class="sr-only peer">
+                      <span class="flex h-4 w-4 items-center justify-center rounded border-2 border-[var(--ik-line)] peer-checked:border-[var(--ik-sea)] peer-checked:bg-[var(--ik-sea)]">
+                        <i class="bi bi-check text-[10px] text-white hidden peer-checked:block"></i>
+                      </span>
+                      <span class="text-xs text-ink">Nova cidade</span>
+                    </label>
+                    <label class="flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[var(--ik-sea)]/8 transition-all" style="border-color: rgba(219,201,167,0.88);">
+                      <input type="checkbox" name="{{ form.notify_removed.html_name }}" {% if form.notify_removed.value %}checked{% endif %} class="sr-only peer">
+                      <span class="flex h-4 w-4 items-center justify-center rounded border-2 border-[var(--ik-line)] peer-checked:border-[var(--ik-sea)] peer-checked:bg-[var(--ik-sea)]">
+                        <i class="bi bi-check text-[10px] text-white hidden peer-checked:block"></i>
+                      </span>
+                      <span class="text-xs text-ink">Cidade sumida</span>
+                    </label>
+                    <label class="flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[var(--ik-sea)]/8 transition-all" style="border-color: rgba(219,201,167,0.88);">
+                      <input type="checkbox" name="{{ form.notify_change.html_name }}" {% if form.notify_change.value %}checked{% endif %} class="sr-only peer">
+                      <span class="flex h-4 w-4 items-center justify-center rounded border-2 border-[var(--ik-line)] peer-checked:border-[var(--ik-sea)] peer-checked:bg-[var(--ik-sea)]">
+                        <i class="bi bi-check text-[10px] text-white hidden peer-checked:block"></i>
+                      </span>
+                      <span class="text-xs text-ink">Troca de jogador</span>
+                    </label>
+                    <label class="flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[var(--ik-sea)]/8 transition-all" style="border-color: rgba(219,201,167,0.88);">
+                      <input type="checkbox" name="{{ form.notify_fight.html_name }}" {% if form.notify_fight.value %}checked{% endif %} class="sr-only peer">
+                      <span class="flex h-4 w-4 items-center justify-center rounded border-2 border-[var(--ik-line)] peer-checked:border-[var(--ik-sea)] peer-checked:bg-[var(--ik-sea)]">
+                        <i class="bi bi-check text-[10px] text-white hidden peer-checked:block"></i>
+                      </span>
+                      <span class="text-xs text-ink">Batalha na ilha</span>
+                    </label>
+                  </div>
+                </section>
+                <section class="rounded-[18px] border p-4"
+                         style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+                  <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Frequencia</div>
+                  <div class="mt-1 text-sm font-semibold text-ink">Intervalo</div>
+                  <label class="mt-3 block">
+                    <span class="form-label text-xs mb-1 block">{{ form.recheck_minutes.label }} <span class="text-[var(--ik-bad)]">*</span></span>
+                    <input type="number" name="{{ form.recheck_minutes.html_name }}" value="{{ form.recheck_minutes.value|default:60 }}" min="5" class="form-input">
+                  </label>
+                  <p class="mt-2 text-[11px] text-muted">Minimo 5 min. Recomendado 60 min.</p>
+                  {% for error in form.recheck_minutes.errors %}
+                  <p class="form-error mt-2"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+                  {% endfor %}
+                </section>
+              </div>
+            </section>
+          </fieldset>
+          <fieldset x-show="islandMode === 'region'" x-cloak :disabled="islandMode !== 'region'" class="grid grid-cols-1 gap-3 lg:grid-cols-[1.2fr_0.8fr] min-w-0">
+            <section class="rounded-[18px] border p-4"
+                     style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Recorte do mapa</div>
+              <div class="mt-1 text-sm font-semibold text-ink">Defina um retangulo para descoberta automatica</div>
+              <p class="mt-1 text-xs leading-relaxed text-muted">Na primeira execucao o runner lista as ilhas dentro da area e passa a acompanhar o conjunto encontrado.</p>
+              <div class="mt-4 grid grid-cols-2 gap-3">
+                <div>
+                  <label class="form-label text-xs mb-1 block">X minimo</label>
+                  <input type="number" name="{{ form.region_x_min.html_name }}" value="{{ form.region_x_min.value|default:0 }}" min="0" class="form-input">
+                </div>
+                <div>
+                  <label class="form-label text-xs mb-1 block">Y minimo</label>
+                  <input type="number" name="{{ form.region_y_min.html_name }}" value="{{ form.region_y_min.value|default:0 }}" min="0" class="form-input">
+                </div>
+                <div>
+                  <label class="form-label text-xs mb-1 block">X maximo</label>
+                  <input type="number" name="{{ form.region_x_max.html_name }}" value="{{ form.region_x_max.value|default:0 }}" min="0" class="form-input">
+                </div>
+                <div>
+                  <label class="form-label text-xs mb-1 block">Y maximo</label>
+                  <input type="number" name="{{ form.region_y_max.html_name }}" value="{{ form.region_y_max.value|default:0 }}" min="0" class="form-input">
+                </div>
+              </div>
+            </section>
+            <section class="rounded-[18px] border p-4"
+                     style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Exemplo</div>
+              <div class="mt-1 text-sm font-semibold text-ink">Como pensar a area</div>
+              <div class="mt-3 rounded-[16px] border px-4 py-3 text-sm"
+                   style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                <div class="font-semibold text-ink">[20:20] ate [25:25]</div>
+                <div class="mt-1 text-xs text-muted">Esse recorte cobre 36 coordenadas de ilha. Use para vigiar um quadrante inteiro sem listar alvos manualmente.</div>
+              </div>
+              {% for error in form.region_x_min.errors %}
+              <p class="form-error mt-2"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+              {% endfor %}
+              {% for error in form.region_y_min.errors %}
+              <p class="form-error mt-2"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+              {% endfor %}
+              {% for error in form.region_x_max.errors %}
+              <p class="form-error mt-2"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+              {% endfor %}
+              {% for error in form.region_y_max.errors %}
+              <p class="form-error mt-2"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+              {% endfor %}
+            </section>
+          </fieldset>
+          <fieldset x-show="islandMode === 'region'" x-cloak :disabled="islandMode !== 'region'" class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[1.2fr_0.8fr] min-w-0">
+            <section class="rounded-[18px] border p-4"
+                     style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Alertas</div>
+              <div class="mt-1 text-sm font-semibold text-ink">Escolha o que deve disparar notificacao</div>
+              <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label class="flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[var(--ik-sea)]/8 transition-all" style="border-color: rgba(219,201,167,0.88);">
+                  <input type="checkbox" name="{{ form.notify_new.html_name }}" {% if form.notify_new.value %}checked{% endif %} class="sr-only peer">
+                  <span class="flex h-4 w-4 items-center justify-center rounded border-2 border-[var(--ik-line)] peer-checked:border-[var(--ik-sea)] peer-checked:bg-[var(--ik-sea)]">
+                    <i class="bi bi-check text-[10px] text-white hidden peer-checked:block"></i>
+                  </span>
+                  <span class="text-xs text-ink">Nova cidade</span>
+                </label>
+                <label class="flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[var(--ik-sea)]/8 transition-all" style="border-color: rgba(219,201,167,0.88);">
+                  <input type="checkbox" name="{{ form.notify_removed.html_name }}" {% if form.notify_removed.value %}checked{% endif %} class="sr-only peer">
+                  <span class="flex h-4 w-4 items-center justify-center rounded border-2 border-[var(--ik-line)] peer-checked:border-[var(--ik-sea)] peer-checked:bg-[var(--ik-sea)]">
+                    <i class="bi bi-check text-[10px] text-white hidden peer-checked:block"></i>
+                  </span>
+                  <span class="text-xs text-ink">Cidade sumida</span>
+                </label>
+                <label class="flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[var(--ik-sea)]/8 transition-all" style="border-color: rgba(219,201,167,0.88);">
+                  <input type="checkbox" name="{{ form.notify_change.html_name }}" {% if form.notify_change.value %}checked{% endif %} class="sr-only peer">
+                  <span class="flex h-4 w-4 items-center justify-center rounded border-2 border-[var(--ik-line)] peer-checked:border-[var(--ik-sea)] peer-checked:bg-[var(--ik-sea)]">
+                    <i class="bi bi-check text-[10px] text-white hidden peer-checked:block"></i>
+                  </span>
+                  <span class="text-xs text-ink">Troca de jogador</span>
+                </label>
+                <label class="flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[var(--ik-sea)]/8 transition-all" style="border-color: rgba(219,201,167,0.88);">
+                  <input type="checkbox" name="{{ form.notify_fight.html_name }}" {% if form.notify_fight.value %}checked{% endif %} class="sr-only peer">
+                  <span class="flex h-4 w-4 items-center justify-center rounded border-2 border-[var(--ik-line)] peer-checked:border-[var(--ik-sea)] peer-checked:bg-[var(--ik-sea)]">
+                    <i class="bi bi-check text-[10px] text-white hidden peer-checked:block"></i>
+                  </span>
+                  <span class="text-xs text-ink">Batalha na ilha</span>
+                </label>
+              </div>
+            </section>
+            <section class="rounded-[18px] border p-4"
+                     style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Frequencia</div>
+              <div class="mt-1 text-sm font-semibold text-ink">Intervalo de verificacao</div>
+              <label class="mt-3 block">
+                <span class="form-label text-xs mb-1 block">{{ form.recheck_minutes.label }} <span class="text-[var(--ik-bad)]">*</span></span>
+                <input type="number" name="{{ form.recheck_minutes.html_name }}" value="{{ form.recheck_minutes.value|default:60 }}" min="5" class="form-input">
+              </label>
+              <p class="mt-2 text-[11px] text-muted">Minimo 5 min. Recomendado 60 min para nao sobrecarregar o servidor.</p>
+              {% for error in form.recheck_minutes.errors %}
+              <p class="form-error mt-2"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+              {% endfor %}
+            </section>
+          </fieldset>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+

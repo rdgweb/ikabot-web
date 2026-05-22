@@ -87,6 +87,18 @@
                class="btn btn-secondary btn-sm !py-0.5 !px-2 text-[10px]">Players</a>
             <a href="{% url 'worldintel:islands' %}?dump={{ dump.pk }}{% if dump.game_account %}&ga={{ dump.game_account.pk }}{% endif %}"
                class="btn btn-secondary btn-sm !py-0.5 !px-2 text-[10px]">Ilhas</a>
+            <button type="button"
+                    class="btn btn-danger btn-sm !py-0.5 !px-2 text-[10px]"
+                    @click="$dispatch('confirm', {
+                      title: 'Excluir dump',
+                      message: 'Excluir {{ dump.title|default:'Dump'|escapejs }}? Remove todas as ilhas, cidades e players. Não pode ser desfeito.',
+                      action: '{% url 'worldintel:dump-delete' dump.pk %}',
+                      method: 'post',
+                      style: 'danger',
+                      label: 'Excluir'
+                    })">
+              <i class="bi bi-trash"></i>
+            </button>
           </div>
         </div>
       </div>

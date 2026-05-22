@@ -1,0 +1,212 @@
+{% load static hub_tags %}
+
+    {% if action_code == 11 %}
+    {{ miracle_ui.cities|json_script:"miracle-cities-data" }}
+    <div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_36px_rgba(60,45,18,0.10)]"
+         style="border-color: var(--ik-line); background:
+           radial-gradient(780px 280px at 0% 0%, rgba(79,134,185,0.14), transparent 60%),
+           radial-gradient(700px 260px at 100% 100%, rgba(204,107,74,0.14), transparent 60%),
+           linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
+         x-data="{
+           cities: [],
+           cityId: '{{ form.city_id.value|default:''|escapejs }}',
+           query: '',
+           filteredCities() {
+             const query = String(this.query || '').toLowerCase().trim();
+             return this.cities.filter(city => {
+               if (!query) return true;
+               const miracle = city.miracle_state || {};
+               const hay = [
+                 city.name || '',
+                 city.tradegood_name || '',
+                 miracle.wonder_name || '',
+                 city.x ? `${city.x}` : '',
+                 city.y ? `${city.y}` : '',
+               ].join(' ').toLowerCase();
+               return hay.includes(query);
+             });
+           },
+           selectedCity() {
+             return this.cities.find(city => String(city.id) === String(this.cityId || '')) || null;
+           }
+         }"
+         x-init="cities = JSON.parse(document.getElementById('miracle-cities-data')?.textContent || '[]')">
+      <input type="hidden" name="{{ form.city_id.html_name }}" :value="cityId">
+      <div class="border-b px-5 py-5 md:px-6"
+           style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div class="max-w-2xl">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Ativar Milagre</div>
+            <h3 class="mt-2 text-xl font-bold text-ink">Escolha uma cidade com templo e dispare o milagre da ilha</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted">
+              O runner abre a tela real do templo, valida o estado do milagre daquela ilha e ativa apenas se o botão estiver realmente disponível no jogo.
+            </p>
+          </div>
+          <div class="grid grid-cols-2 gap-3 lg:min-w-[21rem]">
+            <div class="rounded-2xl border px-4 py-3"
+                 style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.76);">
+              <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Cidade</div>
+              <template x-if="selectedCity()">
+                <div class="mt-2 flex items-center gap-3">
+                  <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border"
+                        style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                    <img src="{{ miracle_ui.summary.temple_icon }}" alt="Templo" class="h-7 w-7 object-contain">
+                  </span>
+                  <div class="min-w-0">
+                    <div class="truncate text-sm font-semibold text-ink" x-text="selectedCity()?.name || 'Cidade'"></div>
+                    <div class="text-[11px] text-muted" x-text="selectedCity() ? `Templo Lv ${selectedCity().temple_level} • [${selectedCity().x}:${selectedCity().y}]` : ''"></div>
+                  </div>
+                </div>
+              </template>
+              <template x-if="!selectedCity()">
+                <div class="mt-2 text-sm text-muted">Selecione uma cidade com templo.</div>
+              </template>
+            </div>
+            <div class="rounded-2xl border px-4 py-3"
+                 style="border-color: rgba(204,107,74,0.18); background: rgba(255,255,255,0.76);">
+              <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Leitura conhecida</div>
+              <template x-if="selectedCity() && selectedCity().miracle_state && selectedCity().miracle_state.wonder_name">
+                <div class="mt-2">
+                  <div class="text-sm font-semibold text-ink" x-text="selectedCity().miracle_state.wonder_name"></div>
+                  <div class="mt-1 text-[11px] text-muted" x-text="selectedCity().miracle_state.activate_state === 'enabled' ? 'Ultima leitura: ativavel' : 'Ultima leitura: indisponivel'"></div>
+                  <div class="mt-2 rounded-xl border px-2.5 py-2 text-[11px]"
+                       style="border-color: rgba(219,201,167,0.9); background: rgba(247,241,229,0.72);"
+                       x-text="selectedCity().miracle_state.cooldown_text || selectedCity().miracle_state.wonder_effect || 'Sem detalhe extra na ultima leitura'"></div>
+                </div>
+              </template>
+              <template x-if="!(selectedCity() && selectedCity().miracle_state && selectedCity().miracle_state.wonder_name)">
+                <div class="mt-2 text-sm text-muted">A primeira execução vai registrar o milagre dessa ilha no snapshot.</div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="px-5 py-5 md:px-6">
+        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(20rem,0.95fr)]">
+          <section class="rounded-[22px] border p-4"
+                   style="border-color: rgba(79,134,185,0.22); background: linear-gradient(180deg, rgba(79,134,185,0.08), rgba(255,255,255,0.8));">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Cidades com templo</div>
+                <div class="mt-1 text-sm font-semibold text-ink">Uma cidade por job, o milagre vem da ilha dela</div>
+              </div>
+              <div class="text-[11px] text-muted">{{ miracle_ui.summary.count }} cidade(s)</div>
+            </div>
+            <label class="mb-3 block">
+              <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Filtrar cidades</span>
+              <input type="text" x-model="query" class="form-input" placeholder="Buscar por cidade, milagre ou coordenada">
+            </label>
+            <div class="grid max-h-[22rem] grid-cols-2 gap-2 overflow-y-auto p-1 xl:grid-cols-4">
+              <template x-for="city in filteredCities()" :key="`miracle-${city.id}`">
+                <button type="button"
+                        class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                        :class="String(cityId) === String(city.id)
+                          ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]'
+                          : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
+                        :style="String(cityId) === String(city.id)
+                          ? 'border-color: rgba(79,134,185,0.50); background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(79,134,185,0.10));'
+                          : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'"
+                        @click="cityId = String(city.id || '')">
+                  <div class="absolute inset-x-0 top-0 h-14"
+                       style="background: linear-gradient(135deg, rgba(79,134,185,0.16), rgba(79,134,185,0.02));"></div>
+                  <div class="relative p-3">
+                    <div class="flex items-start gap-3">
+                      <div class="relative shrink-0">
+                        <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                             style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                          <img src="{{ miracle_ui.summary.temple_icon }}" alt="Templo" class="h-7 w-7 object-contain">
+                        </div>
+                        <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                          <img :src="city.tradegood_icon" :alt="city.tradegood_name" class="h-4 w-4 object-contain">
+                        </div>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-start justify-between gap-2">
+                          <div class="min-w-0">
+                            <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
+                            <div class="mt-1 text-[11px] text-muted" x-text="`Templo Lv ${city.temple_level} • [${city.x}:${city.y}]`"></div>
+                          </div>
+                          <span class="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border"
+                                :style="String(cityId) === String(city.id)
+                                  ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
+                                  : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
+                            <i class="bi" :class="String(cityId) === String(city.id) ? 'bi-check-lg' : 'bi-lightning-charge'"></i>
+                          </span>
+                        </div>
+                        <div class="mt-2">
+                          <div class="truncate text-xs font-semibold" style="color: var(--ik-sea);"
+                               x-text="city.miracle_state?.wonder_name || 'Milagre sera lido na execucao'"></div>
+                          <div class="mt-1 text-[11px] text-muted"
+                               x-text="city.miracle_state?.wonder_effect || city.miracle_state?.cooldown_text || 'O runner abre o templo para descobrir o milagre real da ilha.'"></div>
+                        </div>
+                        <div class="mt-2 flex flex-wrap gap-1.5" x-show="city.miracle_state && city.miracle_state.activate_state">
+                          <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]"
+                                style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);"
+                                x-text="city.miracle_state.activate_state === 'enabled' ? 'Ativavel' : 'Indisponivel'"></span>
+                          <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]"
+                                style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);"
+                                x-show="city.miracle_state.belief_percent"
+                                x-text="`${city.miracle_state.belief_percent}% fe`"></span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              </template>
+            </div>
+            {% for error in form.city.errors %}
+            <p class="form-error mt-3"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+          </section>
+
+          <section class="space-y-4">
+            <div class="rounded-[22px] border p-4"
+                 style="border-color: rgba(204,107,74,0.24); background: linear-gradient(180deg, rgba(204,107,74,0.10), rgba(255,255,255,0.84));">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: #a45c43;">Painel do milagre</div>
+              <template x-if="selectedCity() && selectedCity().miracle_state && selectedCity().miracle_state.wonder_name">
+                <div class="mt-3 space-y-3">
+                  <div>
+                    <div class="text-sm font-semibold text-ink" x-text="selectedCity().miracle_state.wonder_name"></div>
+                    <div class="mt-1 text-[11px] text-muted" x-text="selectedCity().miracle_state.island_name ? `Ilha ${selectedCity().miracle_state.island_name}` : 'Ilha lida no runner'"></div>
+                  </div>
+                  <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.78);">
+                    <div class="text-[11px] uppercase tracking-[0.12em] text-muted">Efeito</div>
+                    <div class="mt-1 text-sm font-medium text-ink" x-text="selectedCity().miracle_state.wonder_effect || 'Sem descricao de efeito na ultima leitura'"></div>
+                  </div>
+                  <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.78);">
+                    <div class="text-[11px] uppercase tracking-[0.12em] text-muted">Estado conhecido</div>
+                    <div class="mt-1 text-sm font-medium text-ink" x-text="selectedCity().miracle_state.activate_state === 'enabled' ? 'Pronto para ativar' : (selectedCity().miracle_state.cooldown_text || selectedCity().miracle_state.wonder_effect || 'Indisponivel')"></div>
+                  </div>
+                </div>
+              </template>
+              <template x-if="!(selectedCity() && selectedCity().miracle_state && selectedCity().miracle_state.wonder_name)">
+                <div class="mt-3 text-sm text-muted">Sem cache ainda. O primeiro job vai abrir o templo, descobrir o milagre da ilha e registrar o estado para as próximas execuções.</div>
+              </template>
+            </div>
+
+            <div class="rounded-[22px] border p-4"
+                 style="border-color: rgba(95,140,78,0.24); background: linear-gradient(180deg, rgba(95,140,78,0.10), rgba(255,255,255,0.84));">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">Comportamento</div>
+              <div class="mt-2 space-y-2 text-sm text-muted">
+                <div class="flex items-start gap-2">
+                  <i class="bi bi-check2-circle mt-0.5 text-[var(--ik-good)]"></i>
+                  <span>Se o botão estiver disponível, o milagre é ativado imediatamente.</span>
+                </div>
+                <div class="flex items-start gap-2">
+                  <i class="bi bi-check2-circle mt-0.5 text-[var(--ik-good)]"></i>
+                  <span>Se o jogo marcar como indisponível, o job retorna erro com o motivo real lido na tela.</span>
+                </div>
+                <div class="flex items-start gap-2">
+                  <i class="bi bi-check2-circle mt-0.5 text-[var(--ik-good)]"></i>
+                  <span>O estado do milagre fica salvo no snapshot da cidade para melhorar a próxima leitura do modal.</span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ══ Train Units / Station Units (ac=1005, ac=1202) ══ #}

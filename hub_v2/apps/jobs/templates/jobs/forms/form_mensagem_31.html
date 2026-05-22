@@ -1,0 +1,128 @@
+{% load static hub_tags %}
+
+    {# ── Enviar Mensagem (action 31) ── #}
+    {% if action_code == 31 %}
+    {% load static %}
+    {{ cities|json_script:"send-msg-cities-data" }}
+    {# Default city: form value if set, else first city #}
+    {% with first_city=cities|first %}
+    <div class="space-y-4 mb-4"
+         x-data="{
+           cities: JSON.parse(document.getElementById('send-msg-cities-data')?.textContent || '[]'),
+           selectedCityId: String('{{ form.city_id.value|default:''|escapejs }}' || '{{ first_city.id|default:''|escapejs }}'),
+           selectedCity() { return this.cities.find(c => String(c.id) === String(this.selectedCityId)); }
+         }">
+      {# Static value fallback — works even if Alpine hasn't initialized yet #}
+      <input type="hidden" name="{{ form.city_id.html_name }}"
+             value="{{ form.city_id.value|default:first_city.id }}"
+             x-model="selectedCityId">
+      <input type="hidden" name="{{ form.receiver_name.html_name }}" value="{{ form.receiver_name.value|default:'' }}">
+
+      {# Para: card — read-only when pre-filled, input when opened manually #}
+      {% if form.receiver_id.value and form.receiver_id.value != "None" %}
+      <input type="hidden" name="{{ form.receiver_id.html_name }}" value="{{ form.receiver_id.value }}">
+      <div class="flex items-center gap-3 rounded-xl px-4 py-3" style="background: var(--ik-sand-light); border: 1px solid var(--ik-line);">
+        <i class="bi bi-person-fill text-sea text-lg"></i>
+        <div class="min-w-0 flex-1">
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-muted">Para</div>
+          <div class="text-sm font-bold text-ink truncate">
+            {% if form.receiver_name.value and form.receiver_name.value != "None" %}{{ form.receiver_name.value }}{% else %}Jogador {{ form.receiver_id.value }}{% endif %}
+          </div>
+          <div class="text-[10px] text-muted font-mono">ID: {{ form.receiver_id.value }}</div>
+        </div>
+        <i class="bi bi-send-fill text-sea text-base flex-shrink-0"></i>
+      </div>
+      {% else %}
+      <div>
+        <label class="form-label text-xs mb-1 block">ID do jogador destinatário <span class="text-[var(--ik-bad)]">*</span></label>
+        <p class="text-[10px] text-muted mb-1">Use o botão "Enviar Mensagem" na lista de players para pré-preencher automaticamente.</p>
+        <input type="number" name="{{ form.receiver_id.html_name }}" value="{{ form.receiver_id.value|default:'' }}"
+               class="form-input w-full text-sm" placeholder="Ex: 104197" required>
+        {% for error in form.receiver_id.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+      </div>
+      {% endif %}
+
+      {# Cidade de origem — padrão de cards do sistema #}
+      <div x-data="{ query: '' }">
+        <label class="form-label text-xs mb-2 block">Sua cidade <span class="text-[var(--ik-bad)]">*</span></label>
+        <input type="text" x-model="query" class="form-input w-full mb-2 text-xs" placeholder="Buscar por nome, recurso ou coordenada">
+        <div class="max-h-64 overflow-y-auto -mx-1 px-1">
+        <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 py-1 pb-1">
+          <template x-for="city in cities.filter(c => !query || [c.name,c.tradegood_name,String(c.x),String(c.y)].join(' ').toLowerCase().includes(query.toLowerCase()))" :key="`sm-city-${city.id}`">
+            <button type="button"
+                    class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                    :class="String(selectedCityId) === String(city.id)
+                      ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_8px_24px_rgba(79,134,185,0.18)]'
+                      : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_8px_20px_rgba(79,134,185,0.12)]'"
+                    :style="String(selectedCityId) === String(city.id)
+                      ? 'border-color: rgba(79,134,185,0.50); background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(79,134,185,0.10));'
+                      : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'"
+                    @click="selectedCityId = String(city.id)">
+              <div class="absolute inset-x-0 top-0 h-10" style="background: linear-gradient(135deg, rgba(79,134,185,0.14), rgba(79,134,185,0.01));"></div>
+              <div class="relative p-2.5">
+                <div class="flex items-start gap-2">
+                  <div class="relative shrink-0">
+                    <div class="flex h-10 w-10 items-center justify-center rounded-[14px] border"
+                         style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                      <img :src="city.city_art" alt="" class="h-7 w-7 object-contain">
+                    </div>
+                    <div class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm" x-show="city.tradegood_icon">
+                      <img :src="city.tradegood_icon" :alt="city.tradegood_name" class="h-3.5 w-3.5 object-contain">
+                    </div>
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-start justify-between gap-1">
+                      <div class="min-w-0">
+                        <div class="truncate text-xs font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
+                        <div class="text-[10px] text-muted" x-text="city.tradegood_name + (city.x && city.y ? ` · [${city.x}:${city.y}]` : '')"></div>
+                      </div>
+                      <span class="mt-0.5 flex-shrink-0 inline-flex h-5 w-5 items-center justify-center rounded-full border"
+                            :style="String(selectedCityId) === String(city.id)
+                              ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
+                              : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
+                        <i class="bi text-[9px]" :class="String(selectedCityId) === String(city.id) ? 'bi-check-lg' : 'bi-circle'"></i>
+                      </span>
+                    </div>
+                    <div class="mt-1.5 flex items-center gap-1 text-[10px] text-muted" x-show="city.population">
+                      <i class="bi bi-people-fill text-[9px]"></i>
+                      <span x-text="new Intl.NumberFormat('pt-BR').format(Number(city.population || 0))"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </button>
+          </template>
+        </div>
+        </div>
+        {% for error in form.city_id.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+      </div>
+
+      {# Tipo de mensagem #}
+      {% if diplomacy_msg_types %}
+      <div>
+        <label class="form-label text-xs mb-2 block">Tipo <span class="text-[var(--ik-bad)]">*</span></label>
+        <select name="{{ form.msg_type.html_name }}" class="form-input w-full text-sm">
+          {% for val, label in diplomacy_msg_types %}
+          <option value="{{ val }}" {% if form.msg_type.value == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        {% for error in form.msg_type.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+      </div>
+      {% else %}
+      <input type="hidden" name="{{ form.msg_type.html_name }}" value="{{ form.msg_type.value|default:'50' }}">
+      {% endif %}
+
+      {# Mensagem #}
+      <div>
+        <label class="form-label text-xs mb-1 block">Mensagem <span class="text-[var(--ik-bad)]">*</span></label>
+        <textarea name="{{ form.content.html_name }}"
+                  rows="5"
+                  class="form-input w-full text-sm resize-y"
+                  placeholder="Escreva sua mensagem..."
+                  required>{{ form.content.value|default:'' }}</textarea>
+        {% for error in form.content.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+      </div>
+    </div>
+    {% endwith %}
+    {% endif %}
+

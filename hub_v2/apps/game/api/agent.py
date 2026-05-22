@@ -330,6 +330,55 @@ class PatchSnapshotResourcesView(APIView):
         return Response({"ok": True, "patched": True, "resources": patch, "incoming_delta": incoming_patch})
 
 
+class PatchSnapshotBaseView(APIView):
+    """PATCH /api/agent/snapshots/patch-base/
+
+    Updates selected base_snapshot fields without running a full check_status.
+    Body: {game_account_id, patch: {gold, income, ...}}
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def patch(self, request):
+        from django.db import transaction
+        from django.utils import timezone
+
+        game_account_id = str(request.data.get("game_account_id") or "").strip()
+        patch = request.data.get("patch") or {}
+
+        if not game_account_id:
+            return Response({"error": "game_account_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(patch, dict) or not patch:
+            return Response({"error": "patch must be a non-empty object"}, status=status.HTTP_400_BAD_REQUEST)
+
+        normalized_patch: dict[str, object] = {}
+        for key, value in patch.items():
+            if key in {"gold", "income", "upkeep", "scientists_upkeep"}:
+                try:
+                    normalized_patch[key] = int(float(value or 0))
+                except (TypeError, ValueError):
+                    return Response({"error": f"{key} must be numeric"}, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                normalized_patch[key] = value
+
+        with transaction.atomic():
+            try:
+                snapshot = AccountSnapshot.objects.select_for_update().get(game_account__id=game_account_id)
+            except AccountSnapshot.DoesNotExist:
+                return Response({"error": "snapshot not found"}, status=status.HTTP_404_NOT_FOUND)
+
+            base_snapshot = dict(snapshot.base_snapshot or {})
+            base_snapshot.update(normalized_patch)
+            snapshot.base_snapshot = base_snapshot
+            snapshot.updated_at = timezone.now()
+            snapshot.save(update_fields=["base_snapshot", "updated_at"])
+            bump_dashboard_cache_version()
+
+        logger.info("Snapshot base patched: ga=%s keys=%s", game_account_id, sorted(normalized_patch.keys()))
+        return Response({"ok": True, "patched": True, "base_snapshot": normalized_patch})
+
+
 class CurrentSnapshotView(APIView):
     """GET /api/agent/snapshots/current/?game_account_id=<uuid>"""
 

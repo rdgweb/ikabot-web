@@ -9,23 +9,35 @@
      hx-push-url="false"
      {% endif %}>
   {% if log_rows %}
-  <div class="space-y-2">
+  <div class="space-y-1">
     {% for row in log_rows %}
-    <div class="flex items-start gap-2 text-xs">
-      <span class="badge mt-0.5 flex-shrink-0
-        {% if row.log.level == 'info' %}bg-blue-100 text-blue-800
-        {% elif row.log.level == 'debug' %}bg-sand text-ink
-        {% elif row.log.level == 'warn' or row.log.level == 'warning' %}bg-yellow-100 text-yellow-800
-        {% elif row.log.level == 'error' %}bg-red-100 text-red-800
-        {% endif %}">{{ row.log.get_level_display }}</span>
-      <div class="flex-1 min-w-0">
-        <p class="text-ink break-words font-mono text-[11px]">{{ row.log.message }}</p>
-      </div>
-      <div class="flex-shrink-0 text-right leading-tight">
+    <div class="flex items-start gap-2 rounded-lg px-2 py-1.5
+      {% if row.log.level == 'error' %}bg-red-50{% elif row.log.level == 'warn' or row.log.level == 'warning' %}bg-yellow-50{% elif row.log.level == 'debug' %}opacity-60{% endif %}">
+
+      {# Level icon #}
+      <span class="mt-px shrink-0 text-[13px]
+        {% if row.log.level == 'info' %}text-[var(--ik-sea)]
+        {% elif row.log.level == 'debug' %}text-muted
+        {% elif row.log.level == 'warn' or row.log.level == 'warning' %}text-[var(--ik-gold)]
+        {% elif row.log.level == 'error' %}text-[var(--ik-bad)]
+        {% endif %}">
+        {% if row.log.level == 'info' %}<i class="bi bi-info-circle-fill"></i>
+        {% elif row.log.level == 'debug' %}<i class="bi bi-bug"></i>
+        {% elif row.log.level == 'warn' or row.log.level == 'warning' %}<i class="bi bi-exclamation-triangle-fill"></i>
+        {% elif row.log.level == 'error' %}<i class="bi bi-x-circle-fill"></i>
+        {% else %}<i class="bi bi-circle"></i>
+        {% endif %}
+      </span>
+
+      {# Message #}
+      <p class="flex-1 min-w-0 break-words font-mono text-[11px] text-ink leading-relaxed">{{ row.log.message }}</p>
+
+      {# Timestamps #}
+      <div class="shrink-0 text-right leading-tight">
         <div class="text-[10px] text-muted whitespace-nowrap">{{ row.log.created_at|localtime_format:"%H:%M:%S" }}</div>
         <div class="text-[10px] text-muted whitespace-nowrap">
           {% if row.delta_prev %}+{{ row.delta_prev }}{% else %}&mdash;{% endif %}
-          {% if row.elapsed_total %}<span class="ml-1">({{ row.elapsed_total }})</span>{% endif %}
+          {% if row.elapsed_total %}<span class="ml-1 opacity-60">({{ row.elapsed_total }})</span>{% endif %}
         </div>
       </div>
     </div>

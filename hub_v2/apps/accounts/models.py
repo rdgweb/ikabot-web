@@ -162,6 +162,12 @@ class GameAccount(UUIDTimestampModel):
         help_text="Government type build time reduction percentage (e.g. 20 for 20%). Set per character.",
     )
 
+    # Chronos Forge level (reduces construction time)
+    chronos_level = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Chronos Forge building level for this account.",
+    )
+
     # Internal market participation
     open_for_market = models.BooleanField(
         default=False,

@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% load hub_tags humanize %}
+
+{% block title %}{{ preset.name }}{% endblock %}
+
+{% block content %}
+{# ── Header ─────────────────────────────────────────────────────────────────── #}
+<div class="mb-6 flex items-start justify-between gap-4">
+  <div>
+    <nav class="text-xs text-muted flex items-center gap-1 mb-1">
+      <a href="{% url 'profiles:profile-list' %}" class="hover:text-ink">Perfis</a>
+      <span class="mx-1">/</span>
+      <a href="{% url 'profiles:preset-list' %}" class="hover:text-ink">Presets</a>
+      <span class="mx-1">/</span>
+      <span class="text-ink">{{ preset.name }}</span>
+    </nav>
+    <h1 class="text-2xl font-bold text-ink">{{ preset.name }}</h1>
+    {% if preset.description %}
+    <p class="text-sm text-muted mt-1">{{ preset.description }}</p>
+    {% endif %}
+  </div>
+
+  <div class="flex items-center gap-2 shrink-0">
+    <form method="post" action="{% url 'profiles:preset-execute' preset.pk %}">
+      {% csrf_token %}
+      <button type="submit"
+              class="btn btn-primary btn-sm"
+              {% if not preset.account_count or not preset.action_count %}
+              onclick="return confirm('Preset sem contas ou acoes configuradas. Continuar?')"
+              {% endif %}>
+        <i class="bi bi-play-fill"></i> Executar Preset
+      </button>
+    </form>
+    <button type="button"
+            onclick="return openConfirm({
+              title: 'Excluir Preset',
+              message: 'Excluir o preset {{ preset.name|escapejs }}? Esta acao nao pode ser desfeita.',
+              action: '{% url 'profiles:preset-delete' preset.pk %}',
+              method: 'post',
+              style: 'danger',
+              confirmLabel: 'Excluir'
+            })"
+            class="btn btn-danger btn-sm">
+      <i class="bi bi-trash"></i>
+    </button>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+  {# ── LEFT: Contas + Acoes ──────────────────────────────────────────────────── #}
+  <div class="lg:col-span-2 space-y-6">
+
+    {# Contas #}
+    <div id="preset-accounts-section">
+      {% include "profiles/partials/preset_accounts_section.html" with preset=preset all_gas=all_gas selected_ga_pks=selected_ga_pks %}
+    </div>
+
+    {# Acoes #}
+    <div id="preset-actions-section">
+      {% include "profiles/partials/preset_actions_section.html" with preset=preset selected_actions=selected_actions action_groups=action_groups %}
+    </div>
+
+  </div>
+
+  {# ── RIGHT: Resumo ────────────────────────────────────────────────────────── #}
+  <div class="space-y-6">
+
+    {# Resumo #}
+    <div class="card">
+      <h3 class="text-sm font-semibold text-ink mb-4">Resumo</h3>
+      <dl class="space-y-3 text-sm">
+        <div class="flex justify-between items-center">
+          <dt class="text-muted flex items-center gap-1.5">
+            <i class="bi bi-controller text-xs"></i> Contas
+          </dt>
+          <dd class="font-semibold text-ink">{{ preset.account_count }}</dd>
+        </div>
+        <div class="flex justify-between items-center">
+          <dt class="text-muted flex items-center gap-1.5">
+            <i class="bi bi-play-circle text-xs"></i> Acoes
+          </dt>
+          <dd class="font-semibold text-ink">{{ preset.action_count }}</dd>
+        </div>
+        <div class="flex justify-between items-center pt-2" style="border-top: 1px solid var(--ik-line);">
+          <dt class="text-muted flex items-center gap-1.5">
+            <i class="bi bi-lightning text-xs" style="color: var(--ik-sea);"></i> Jobs ao executar
+          </dt>
+          <dd class="text-base font-bold" style="color: var(--ik-sea);">
+            {{ preset.job_count }}
+          </dd>
+        </div>
+      </dl>
+
+      {% if preset.account_count and preset.action_count %}
+      <div class="mt-4 p-3 rounded-lg text-xs" style="background: rgba(95,140,78,0.08); border: 1px solid rgba(95,140,78,0.2);">
+        <p style="color: var(--ik-good);">
+          <i class="bi bi-check-circle-fill mr-1"></i>
+          Pronto para executar: {{ preset.account_count }} conta{{ preset.account_count|pluralize:"s" }} × {{ preset.action_count }} acao{{ preset.action_count|pluralize:"es" }} = <strong>{{ preset.job_count }} jobs</strong>
+        </p>
+      </div>
+      {% else %}
+      <div class="mt-4 p-3 rounded-lg text-xs" style="background: rgba(201,156,78,0.08); border: 1px solid rgba(201,156,78,0.2);">
+        <p style="color: var(--ik-gold);">
+          <i class="bi bi-info-circle-fill mr-1"></i>
+          {% if not preset.account_count %}Selecione pelo menos uma conta.{% endif %}
+          {% if not preset.action_count %}Adicione pelo menos uma acao.{% endif %}
+        </p>
+      </div>
+      {% endif %}
+    </div>
+
+    {# Detalhes #}
+    <div class="card">
+      <h3 class="text-sm font-semibold text-ink mb-3">Detalhes</h3>
+      <dl class="space-y-2 text-sm">
+        <div>
+          <dt class="text-muted text-xs">ID</dt>
+          <dd class="font-mono text-xs mt-0.5 text-muted">{{ preset.pk }}</dd>
+        </div>
+        {% if preset.created_by %}
+        <div>
+          <dt class="text-muted text-xs">Criado por</dt>
+          <dd class="mt-0.5">{{ preset.created_by }}</dd>
+        </div>
+        {% endif %}
+        <div>
+          <dt class="text-muted text-xs">Criado em</dt>
+          <dd class="mt-0.5 text-xs">{{ preset.created_at|date:"d/m/Y H:i" }}</dd>
+        </div>
+        <div>
+          <dt class="text-muted text-xs">Atualizado em</dt>
+          <dd class="mt-0.5 text-xs">{{ preset.updated_at|date:"d/m/Y H:i" }}</dd>
+        </div>
+      </dl>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 
 from apps.jobs.models import Job, JobLog
 from apps.jobs.services.workflows import create_job_with_workflow
+from apps.market.services import reconcile_internal_order_for_job
 from core.auth.backends import AgentTokenAuthentication
 from core.auth.permissions import IsAgent
 from apps.settings_app.utils import get_int_setting
@@ -100,6 +101,12 @@ class JobStatusView(APIView):
             job.status,
             job.exit_code,
         )
+
+        if data["status"] in _TERMINAL_STATUSES:
+            note = ""
+            if data["status"] == "error":
+                note = f"job_id={job.pk} exit_code={job.exit_code}"
+            reconcile_internal_order_for_job(job, terminal_status=data["status"], note=note)
 
         return Response(
             JobStatusResponseSerializer(
@@ -264,6 +271,56 @@ class RescheduleJobView(APIView):
                 }
             ).data,
             status=status.HTTP_201_CREATED,
+        )
+
+
+class RetimeRootFollowupJobView(APIView):
+    """POST /api/agent/jobs/retime-followup/."""
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request):
+        root_job_id = str(request.data.get("root_job_id") or "").strip()
+        exclude_job_id = str(request.data.get("exclude_job_id") or "").strip()
+        try:
+            action_code = int(request.data.get("action_code"))
+            delay_seconds = max(0, int(request.data.get("delay_seconds") or 0))
+        except (TypeError, ValueError):
+            return Response({"error": "action_code and delay_seconds must be numeric"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not root_job_id:
+            return Response({"error": "root_job_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        now = timezone.now()
+        candidate = (
+            Job.objects.filter(
+                root_job_id=root_job_id,
+                action_code=action_code,
+                status__in=("queued", "scheduled"),
+            )
+            .exclude(pk=exclude_job_id or None)
+            .order_by("scheduled_for", "created_at")
+            .first()
+        )
+        if candidate is None:
+            return Response({"ok": False, "updated": False, "reason": "followup_not_found"}, status=status.HTTP_200_OK)
+
+        candidate.status = "scheduled"
+        candidate.scheduled_for = now + timedelta(seconds=delay_seconds)
+        candidate.save(update_fields=["status", "scheduled_for", "updated_at"])
+        JobLog.objects.create(
+            job=candidate,
+            level="info",
+            message=f"Reagendado por job relacionado na mesma cadeia raiz; novo ETA em {delay_seconds}s.",
+        )
+        return Response(
+            {
+                "ok": True,
+                "updated": True,
+                "job_id": str(candidate.pk),
+                "scheduled_for": candidate.scheduled_for.isoformat() if candidate.scheduled_for else "",
+            }
         )
 
 

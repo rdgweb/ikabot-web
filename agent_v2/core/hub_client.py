@@ -186,6 +186,32 @@ class HubClient:
             "incoming_delta": incoming_delta or {},
         })
 
+    def patch_snapshot_base(
+        self,
+        game_account_id: str,
+        patch: dict[str, Any],
+    ) -> dict:
+        """PATCH /api/agent/snapshots/patch-base/ - update base_snapshot fields."""
+        return self._patch("/api/agent/snapshots/patch-base", {
+            "game_account_id": game_account_id,
+            "patch": patch or {},
+        })
+
+    def retime_root_followup_job(
+        self,
+        *,
+        root_job_id: str,
+        action_code: int,
+        delay_seconds: int,
+        exclude_job_id: str | None = None,
+    ) -> dict:
+        return self._post("/api/agent/jobs/retime-followup", {
+            "root_job_id": root_job_id,
+            "action_code": int(action_code),
+            "delay_seconds": max(0, int(delay_seconds)),
+            "exclude_job_id": exclude_job_id or "",
+        })
+
     def get_snapshot(self, *, game_account_id: str | None = None, account_id: str | None = None) -> dict:
         """GET /api/agent/snapshots/current"""
         params: dict[str, Any] = {}
@@ -311,6 +337,7 @@ class HubClient:
         amount: int,
         unit_price: int = 12,
         preferred_buyer_city_id: int | None = None,
+        target_city_id: int | None = None,
         source_job_id: str | None = None,
         source_action_code: int | None = None,
         source_reason: str = "",
@@ -330,6 +357,8 @@ class HubClient:
         }
         if preferred_buyer_city_id is not None:
             payload["preferred_buyer_city_id"] = preferred_buyer_city_id
+        if target_city_id is not None:
+            payload["target_city_id"] = target_city_id
         if source_job_id:
             payload["source_job_id"] = source_job_id
         if source_action_code is not None:
@@ -343,6 +372,19 @@ class HubClient:
         if missing_resource_keys:
             payload["missing_resource_keys"] = missing_resource_keys
         return self._post("/api/agent/market/orders/create", payload)
+
+    def request_market_intervention(
+        self,
+        *,
+        game_account_id: str,
+        source_job_id: str | None,
+        payload: dict[str, Any],
+    ) -> dict:
+        body = dict(payload or {})
+        body["game_account_id"] = game_account_id
+        if source_job_id:
+            body["source_job_id"] = source_job_id
+        return self._post("/api/agent/market/interventions/request", body)
 
     # ── Blackbox & Captcha (proxied via hub → ikabotapi) ──
 

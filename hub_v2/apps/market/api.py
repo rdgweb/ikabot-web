@@ -14,18 +14,54 @@ from __future__ import annotations
 
 import logging
 
+from rest_framework import serializers
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.models import GameAccount
+from apps.jobs.models import Job
 from core.auth.backends import AgentTokenAuthentication
 from core.auth.permissions import IsAgent
 
-from .models import InternalMarketOrder
-from .services import create_buy_job, create_internal_order
+from .models import ConstructionMarketIntervention, InternalMarketOrder
+from .services import (
+    complete_internal_order,
+    create_buy_job,
+    create_construction_market_intervention,
+    create_internal_order_result,
+)
 
 logger = logging.getLogger(__name__)
+
+
+class ConstructionMarketInterventionRequestSerializer(serializers.Serializer):
+    game_account_id = serializers.UUIDField()
+    source_job_id = serializers.UUIDField(required=False, allow_null=True)
+    wait_reason = serializers.CharField()
+    eta_seconds = serializers.IntegerField(min_value=0)
+    city_id = serializers.IntegerField(required=False, allow_null=True)
+    city_name = serializers.CharField(required=False, allow_blank=True, default="")
+    building_name = serializers.CharField(required=False, allow_blank=True, default="")
+    needed_resource_idx = serializers.IntegerField(min_value=0, max_value=4)
+    needed_amount = serializers.IntegerField(min_value=1)
+    available_gold = serializers.IntegerField(required=False, default=0)
+    min_gold = serializers.IntegerField(required=False, default=0)
+    estimated_buy_unit_min = serializers.IntegerField(required=False, default=0)
+    estimated_buy_unit_avg = serializers.IntegerField(required=False, default=0)
+    estimated_buy_cost_min = serializers.IntegerField(required=False, default=0)
+    estimated_buy_cost_avg = serializers.IntegerField(required=False, default=0)
+    sale_city_id = serializers.IntegerField()
+    sale_city_name = serializers.CharField(required=False, allow_blank=True, default="")
+    sale_branchoffice_pos = serializers.IntegerField(min_value=0)
+    sale_resource_idx = serializers.IntegerField(min_value=0, max_value=4)
+    sale_amount = serializers.IntegerField(min_value=1)
+    sale_price_min = serializers.IntegerField(min_value=0)
+    sale_price_max = serializers.IntegerField(min_value=0)
+    sale_price_target = serializers.IntegerField(min_value=0)
+    estimated_sale_gold = serializers.IntegerField(min_value=0)
+    can_fund_min = serializers.BooleanField(required=False, default=False)
+    can_fund_avg = serializers.BooleanField(required=False, default=False)
 
 
 class MarketSellCompleteView(APIView):
@@ -111,14 +147,17 @@ class MarketOrderCompleteView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        if order.status == "completed":
-            return Response({"ok": True, "order_id": str(order.pk), "status": "completed"})
-
-        order.status = "completed"
-        order.save(update_fields=["status", "updated_at"])
-        logger.info("InternalMarketOrder %s marked as completed", order.pk)
-
-        return Response({"ok": True, "order_id": str(order.pk), "status": "completed"})
+        result = complete_internal_order(order)
+        payload = {
+            "ok": bool(result.get("ok")),
+            "order_id": str(order.pk),
+            "status": str(result.get("status") or order.status),
+            "completed": bool(result.get("completed")),
+            "created_redistribution": bool(result.get("created_redistribution")),
+        }
+        if result.get("redistribution_job_id"):
+            payload["redistribution_job_id"] = result["redistribution_job_id"]
+        return Response(payload)
 
 
 class MarketOrderCreateView(APIView):
@@ -140,6 +179,7 @@ class MarketOrderCreateView(APIView):
         amount = request.data.get("amount")
         unit_price = int(request.data.get("unit_price", 0))
         preferred_buyer_city_id = request.data.get("preferred_buyer_city_id")
+        target_city_id = request.data.get("target_city_id")
         source_job_id = request.data.get("source_job_id")
         source_action_code = request.data.get("source_action_code")
         source_reason = str(request.data.get("source_reason") or "").strip()
@@ -163,12 +203,13 @@ class MarketOrderCreateView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        order = create_internal_order(
+        result = create_internal_order_result(
             buyer_ga=buyer_ga,
             resource_idx=int(resource_idx),
             amount=int(amount),
             unit_price=unit_price,
             preferred_buyer_city_id=int(preferred_buyer_city_id) if preferred_buyer_city_id not in (None, "") else None,
+            target_city_id=int(target_city_id) if target_city_id not in (None, "") else None,
             source_job_id=str(source_job_id).strip() if source_job_id not in (None, "") else None,
             source_action_code=int(source_action_code) if source_action_code not in (None, "") else None,
             source_reason=source_reason,
@@ -177,11 +218,12 @@ class MarketOrderCreateView(APIView):
             missing_resource_keys=missing_resource_keys,
         )
 
-        if order is None:
+        if not result.ok or result.order is None:
             return Response(
-                {"ok": False, "error": "No eligible seller found."},
+                {"ok": False, "error": result.error, "detail": result.detail},
                 status=status.HTTP_200_OK,
             )
+        order = result.order
 
         return Response(
             {
@@ -189,6 +231,45 @@ class MarketOrderCreateView(APIView):
                 "order_id": str(order.pk),
                 "sell_job_id": str(order.sell_job_id) if order.sell_job_id else None,
                 "status": order.status,
+                "buyer_city_id": order.buyer_city_id,
+                "target_city_id": order.target_city_id,
             },
             status=status.HTTP_201_CREATED,
+        )
+
+
+class ConstructionMarketInterventionRequestView(APIView):
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+    serializer_class = ConstructionMarketInterventionRequestSerializer
+
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            game_account = GameAccount.objects.select_related("account", "account__node").get(pk=data["game_account_id"])
+        except GameAccount.DoesNotExist:
+            return Response({"error": "GameAccount not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        source_job = None
+        if data.get("source_job_id"):
+            source_job = Job.objects.filter(pk=data["source_job_id"]).first()
+
+        intervention, created, sent = create_construction_market_intervention(
+            game_account=game_account,
+            source_job=source_job,
+            payload=data,
+        )
+        return Response(
+            {
+                "ok": True,
+                "request_id": str(intervention.pk),
+                "status": intervention.status,
+                "created": created,
+                "sent": sent,
+                "sell_job_id": str(intervention.sell_job_id) if intervention.sell_job_id else None,
+            },
+            status=status.HTTP_200_OK,
         )

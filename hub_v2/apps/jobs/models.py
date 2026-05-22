@@ -62,6 +62,7 @@ class Workflow(UUIDTimestampModel):
     last_error_summary = models.TextField(blank=True, default="")
     paused_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     class Meta:
         ordering = ["-updated_at"]
@@ -101,6 +102,7 @@ class WorkflowRun(UUIDTimestampModel):
     summary_json = models.TextField(default="{}")
     stats_json = models.TextField(default="{}")
     error_summary = models.TextField(blank=True, default="")
+    archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     class Meta:
         ordering = ["-sequence", "-created_at"]

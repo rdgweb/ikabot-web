@@ -67,7 +67,7 @@
 {# ── KPI Cards (clickable → modal) ── #}
 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
   <div class="card !p-3 flex items-center gap-2 cursor-pointer hover:ring-2 hover:ring-[var(--ik-sea)]/30 transition-all" @click="kpiModal='gold'">
-    <img src="{% static 'game/resources/icon_actionpoints.png' %}" class="w-6 h-6" alt="Ouro">
+    <img src="{% static 'game/resources/icon_gold.png' %}" class="w-6 h-6" alt="Ouro">
     <div>
       <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Ouro</p>
       <p class="text-base font-bold text-ink" x-text="fmt(kpi.gold)">{{ kpi.gold|intcomma }}</p>
@@ -192,7 +192,7 @@
         {# Quick stats with Ikariam icons #}
         <div class="hidden md:flex items-center gap-3 text-xs">
           <span class="flex items-center gap-1" title="Ouro">
-            <img src="{% static 'game/resources/icon_actionpoints.png' %}" class="w-4 h-4"> {{ card.gold|intcomma }}
+            <img src="{% static 'game/resources/icon_gold.png' %}" class="w-4 h-4"> {{ card.gold|intcomma }}
           </span>
           <span class="relative group flex items-center gap-1 {% if card.income > 0 %}text-green-600{% elif card.income < 0 %}text-red-500{% endif %} cursor-help">
             <i class="bi bi-graph-up-arrow"></i> {{ card.income|intcomma }}/h

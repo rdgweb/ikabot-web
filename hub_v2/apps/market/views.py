@@ -285,20 +285,28 @@ class MarketOrderCreateView(LoginRequiredMixin, View):
         failures = []
         for resource_idx, amount, unit_price in requested_items:
             try:
-                order = services.create_internal_order(
-                    buyer_ga,
-                    resource_idx,
-                    amount,
-                    unit_price,
+                result = services.create_internal_order_result(
+                    buyer_ga=buyer_ga,
+                    resource_idx=resource_idx,
+                    amount=amount,
+                    unit_price=unit_price,
                     preferred_buyer_city_id=buyer_city_id_value,
+                    target_city_id=buyer_city_id_value,
                 )
             except Exception as exc:
                 logger.exception("Error creating market order")
                 failures.append(f"{RESOURCE_LABELS.get(resource_idx, resource_idx)}: {exc}")
                 continue
-            if order is None:
-                failures.append(f"{RESOURCE_LABELS.get(resource_idx, resource_idx)}: sem vendedor elegivel")
+            if not result.ok or result.order is None:
+                failure_reason = {
+                    "buyer_below_min_gold": "ouro abaixo do limite minimo configurado",
+                    "buyer_without_branch_office": "sem Branch Office",
+                    "no_visible_market_city": "sem cidade compradora com alcance de mercado para o vendedor",
+                    "no_seller": "sem vendedor elegivel",
+                }.get(result.error, result.error or "falha ao criar ordem")
+                failures.append(f"{RESOURCE_LABELS.get(resource_idx, resource_idx)}: {failure_reason}")
                 continue
+            order = result.order
             created_orders.append(order)
 
         if not created_orders:

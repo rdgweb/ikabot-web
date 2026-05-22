@@ -1,0 +1,141 @@
+{% load static hub_tags %}
+
+    {% if action_code == 23 %}
+    {{ cities|json_script:"modify-production-cities-data" }}
+    <div class="mb-4 overflow-hidden rounded-[22px] border shadow-[0_10px_30px_rgba(87,66,24,0.08)]"
+         style="border-color: var(--ik-line); background:
+           radial-gradient(760px 220px at 0% 0%, rgba(79,134,185,0.10), transparent 60%),
+           radial-gradient(680px 220px at 100% 100%, rgba(95,140,78,0.12), transparent 60%),
+           linear-gradient(180deg, rgba(255,252,245,0.96), rgba(247,241,229,0.92));"
+         x-data="{
+           cities: JSON.parse(document.getElementById('modify-production-cities-data')?.textContent || '[]'),
+           selectedCities: [{% for selected in form.cities.value %}'{{ selected|escapejs }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
+           isSelected(value) { return this.selectedCities.includes(String(value)); },
+           toggleCity(value) {
+             value = String(value);
+             if (this.isSelected(value)) {
+               this.selectedCities = this.selectedCities.filter(item => item !== value);
+             } else {
+               this.selectedCities = [...this.selectedCities, value];
+             }
+           },
+           selectAll() { this.selectedCities = this.cities.map(city => String(city.id)); },
+           clearAll() { this.selectedCities = []; }
+         }">
+      <div class="border-b px-4 py-4"
+           style="border-color: rgba(219,201,167,0.82); background: linear-gradient(180deg, rgba(255,255,255,0.52), rgba(255,255,255,0));">
+        <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div class="max-w-2xl">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Alterar producao</div>
+            <div class="mt-1 text-sm font-semibold text-ink">Ajuste serraria e luxo com o mesmo layout dos fluxos novos</div>
+            <p class="mt-1 text-xs leading-relaxed text-muted">Selecione as cidades e defina a porcentagem de trabalhadores para cada linha de producao.</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="rounded-full border px-3 py-1.5 text-[11px] font-medium text-ink transition hover:border-[var(--ik-sea)]/45"
+                    style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);"
+                    onclick="document.getElementById('{{ form.sawmill_percent.id_for_label }}').value = 100; document.getElementById('{{ form.luxury_percent.id_for_label }}').value = 100;">
+              100% / 100%
+            </button>
+            <button type="button" class="rounded-full border px-3 py-1.5 text-[11px] font-medium text-ink transition hover:border-[var(--ik-sea)]/45"
+                    style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);"
+                    onclick="document.getElementById('{{ form.sawmill_percent.id_for_label }}').value = 150; document.getElementById('{{ form.luxury_percent.id_for_label }}').value = 150;">
+              150% / 150%
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="px-4 py-4">
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+          <section class="rounded-[18px] border p-3"
+                   style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+            <div class="mb-2 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Cidades</div>
+                <div class="text-xs text-muted">Vazio = todas continua funcionando, mas aqui voce escolhe visualmente.</div>
+              </div>
+              <div class="flex gap-2 text-[11px]">
+                <button type="button" class="link-sea" @click="selectAll()">Selecionar todas</button>
+                <button type="button" class="text-muted hover:text-ink" @click="clearAll()">Limpar</button>
+              </div>
+            </div>
+            <div class="grid max-h-[18rem] grid-cols-2 gap-2 overflow-y-auto p-1 xl:grid-cols-4">
+              <template x-for="city in cities" :key="`modify-${city.id}`">
+                <label class="relative cursor-pointer overflow-hidden rounded-[18px] border text-left transition-all duration-150 hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]"
+                       :style="isSelected(city.id)
+                         ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.90));'
+                         : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'">
+                  <input type="checkbox" name="{{ form.cities.html_name }}" :value="String(city.id)" x-model="selectedCities" class="sr-only">
+                  <button type="button" class="absolute inset-0 z-10" @click.prevent="toggleCity(city.id)"></button>
+                  <div class="relative p-3">
+                    <div class="flex items-start gap-3">
+                      <div class="relative shrink-0">
+                        <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                             style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                          <img :src="city.city_art" alt="" class="h-8 w-8 object-contain">
+                        </div>
+                        <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                          <img :src="city.tradegood_icon" :alt="city.tradegood_name" class="h-4 w-4 object-contain">
+                        </div>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-start justify-between gap-2">
+                          <div class="min-w-0">
+                            <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
+                            <div class="mt-1 text-[11px] text-muted">
+                              <span x-text="city.tradegood_name"></span>
+                              <span x-show="city.x && city.y" x-text="` • [${city.x}:${city.y}]`"></span>
+                            </div>
+                          </div>
+                          <span class="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full border transition-colors shrink-0"
+                                :style="isSelected(city.id)
+                                  ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
+                                  : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
+                            <i class="bi" :class="isSelected(city.id) ? 'bi-check-lg' : 'bi-sliders2'"></i>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </label>
+              </template>
+            </div>
+            {% for error in form.cities.errors %}
+            <p class="form-error mt-2"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+          </section>
+
+          <section class="rounded-[18px] border p-3"
+                   style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+            <div class="mb-3 flex items-center gap-2">
+              <span class="inline-flex h-8 w-8 items-center justify-center rounded-2xl"
+                    style="background: rgba(95,140,78,0.12); color: var(--ik-good);">
+                <i class="bi bi-bar-chart-steps text-sm"></i>
+              </span>
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">Percentuais</div>
+                <div class="text-xs text-muted">Ate 150% em cada linha.</div>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label for="{{ form.sawmill_percent.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">{{ form.sawmill_percent.label }}</label>
+                {{ form.sawmill_percent }}
+                {% for error in form.sawmill_percent.errors %}
+                <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+                {% endfor %}
+              </div>
+              <div>
+                <label for="{{ form.luxury_percent.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">{{ form.luxury_percent.label }}</label>
+                {{ form.luxury_percent }}
+                {% for error in form.luxury_percent.errors %}
+                <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+                {% endfor %}
+              </div>
+            </div>
+            <p class="mt-2 text-[11px] text-muted">Se nenhuma cidade for marcada, o runner continua usando todas as cidades com snapshot valido.</p>
+          </section>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+

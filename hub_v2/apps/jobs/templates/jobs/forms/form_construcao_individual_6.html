@@ -1,0 +1,251 @@
+{% load static hub_tags %}
+
+    {% if action_code == 6 %}
+    {{ daily_login_ui.cities|json_script:"daily-login-cities-data" }}
+    <div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_36px_rgba(60,45,18,0.10)]"
+         style="border-color: var(--ik-line); background:
+           radial-gradient(780px 280px at 0% 0%, rgba(79,134,185,0.14), transparent 60%),
+           radial-gradient(700px 260px at 100% 100%, rgba(95,140,78,0.14), transparent 60%),
+           linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
+         x-data="{
+           cities: [],
+           cityId: '{{ form.city.value|default:''|escapejs }}' || '{{ daily_login_ui.summary.bonus_city_id|default:''|escapejs }}',
+           query: '',
+           collectFavor: {{ form.collect_favor.value|yesno:'true,false,true' }},
+           collectFountain: {{ form.collect_fountain.value|yesno:'true,false,true' }},
+           filteredCities() {
+             const query = String(this.query || '').toLowerCase().trim();
+             return this.cities.filter(city => {
+               if (!query) return true;
+               const hay = [
+                 city.name || '',
+                 city.tradegood_name || '',
+                 city.x ? `${city.x}` : '',
+                 city.y ? `${city.y}` : '',
+               ].join(' ').toLowerCase();
+               return hay.includes(query);
+             });
+           },
+           selectedCity() {
+             return this.cities.find(city => String(city.id) === String(this.cityId || ''));
+           }
+         }"
+         x-init="cities = JSON.parse(document.getElementById('daily-login-cities-data')?.textContent || '[]')">
+      <input type="hidden" name="{{ form.city.html_name }}" :value="cityId">
+      <div class="border-b px-5 py-5 md:px-6"
+           style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div class="max-w-2xl">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Login Diario</div>
+            <h3 class="mt-2 text-xl font-bold text-ink">Escolha a cidade do bonus e o que recolher em cada reset</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted">
+              O runner entra na tela real de tarefas diarias, aplica o bonus de vinho, recolhe favor das tasks concluidas e tenta coletar a fonte de ambrosia se estiver ativa.
+            </p>
+          </div>
+          <div class="grid grid-cols-2 gap-3 lg:min-w-[21rem]">
+            <div class="rounded-2xl border px-4 py-3"
+                 style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.76);">
+              <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Favor atual</div>
+              <div class="mt-2 flex items-center gap-3">
+                <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
+                      style="background: rgba(201,156,78,0.14);">
+                  <img src="{{ daily_login_ui.summary.favor_icon }}" alt="Favor" class="h-6 w-6 object-contain">
+                </span>
+                <div class="min-w-0">
+                  <div class="text-sm font-semibold text-ink">
+                    {% if daily_login_ui.summary.has_state %}
+                    {{ daily_login_ui.summary.current_favor }}/{{ daily_login_ui.summary.favor_limit }}
+                    {% else %}
+                    Sem leitura ainda
+                    {% endif %}
+                  </div>
+                  <div class="text-[11px] text-muted">
+                    {% if daily_login_ui.summary.has_state %}
+                    tasks {{ daily_login_ui.summary.tasks_done }}/{{ daily_login_ui.summary.tasks_count }} • coletaveis {{ daily_login_ui.summary.collectible_tasks_count }}
+                    {% else %}
+                    Rode o job uma vez para preencher a leitura diaria
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="rounded-2xl border px-4 py-3"
+                 style="border-color: rgba(95,140,78,0.18); background: rgba(255,255,255,0.76);">
+              <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Proximo reset</div>
+              <div class="mt-2 flex items-center gap-3">
+                <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
+                      style="background: rgba(95,140,78,0.12);">
+                  <img src="{{ daily_login_ui.summary.time_icon }}" alt="Tempo" class="h-6 w-6 object-contain">
+                </span>
+                <div class="min-w-0">
+                  <div class="text-sm font-semibold text-ink">
+                    {% if daily_login_ui.summary.countdown_seconds %}{{ daily_login_ui.summary.countdown_seconds }}s{% else %}Usa fallback{% endif %}
+                  </div>
+                  <div class="text-[11px] text-muted">
+                    {% if daily_login_ui.summary.updated_at %}snapshot da leitura diaria disponivel{% else %}a primeira execucao vai calibrar o countdown real{% endif %}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="px-5 py-5 md:px-6">
+        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(20rem,0.95fr)]">
+          <section class="rounded-[22px] border p-4"
+                   style="border-color: rgba(79,134,185,0.22); background: linear-gradient(180deg, rgba(79,134,185,0.08), rgba(255,255,255,0.8));">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Cidade do bonus</div>
+                <div class="mt-1 text-sm font-semibold text-ink">Uma cidade recebe o vinho diario por ciclo</div>
+              </div>
+              <div class="text-[11px] text-muted">Cards seguem o padrao novo do hub</div>
+            </div>
+            <label class="mb-3 block">
+              <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Filtrar cidades</span>
+              <input type="text" x-model="query" class="form-input" placeholder="Buscar por nome, luxo ou coordenada">
+            </label>
+            <div class="grid max-h-[23rem] grid-cols-2 gap-2 overflow-y-auto p-1 xl:grid-cols-4">
+              <template x-for="city in filteredCities()" :key="`daily-${city.id}`">
+                <button type="button"
+                        class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                        :class="String(cityId) === String(city.id)
+                          ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]'
+                          : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
+                        :style="String(cityId) === String(city.id)
+                          ? 'border-color: rgba(79,134,185,0.50); background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(79,134,185,0.10));'
+                          : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'"
+                        @click="cityId = String(city.id || '')">
+                  <div class="absolute inset-x-0 top-0 h-14"
+                       style="background: linear-gradient(135deg, rgba(79,134,185,0.16), rgba(79,134,185,0.02));"></div>
+                  <div class="relative p-3">
+                    <div class="flex items-start gap-3">
+                      <div class="relative shrink-0">
+                        <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                             style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                          <img :src="city.city_art" alt="" class="h-8 w-8 object-contain">
+                        </div>
+                        <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                          <img :src="city.tradegood_icon" :alt="city.tradegood_name" class="h-4 w-4 object-contain">
+                        </div>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-start justify-between gap-2">
+                          <div class="min-w-0">
+                            <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
+                            <div class="mt-1 text-[11px] text-muted">
+                              <span x-text="city.tradegood_name"></span>
+                              <span x-show="city.x && city.y" x-text="` • [${city.x}:${city.y}]`"></span>
+                            </div>
+                          </div>
+                          <span class="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border"
+                                :style="String(cityId) === String(city.id)
+                                  ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
+                                  : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
+                            <i class="bi" :class="String(cityId) === String(city.id) ? 'bi-check-lg' : 'bi-cup-hot'"></i>
+                          </span>
+                        </div>
+                        <div class="mt-2 grid grid-cols-2 gap-1.5 text-[10px]">
+                          <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1"
+                                style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">
+                            <img src="{{ daily_login_ui.summary.wine_icon }}" alt="Vinho" class="h-3.5 w-3.5 object-contain">
+                            <span x-text="new Intl.NumberFormat('pt-BR').format(Number(city.wine_amount || 0))"></span>
+                          </span>
+                          <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1"
+                                style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">
+                            <img src="{{ daily_login_ui.summary.population_icon }}" alt="Populacao" class="h-3.5 w-3.5 object-contain">
+                            <span x-text="new Intl.NumberFormat('pt-BR').format(Number(city.population || 0))"></span>
+                          </span>
+                        </div>
+                        <div x-show="city.is_bonus_city" class="mt-2 text-[11px] font-medium" style="color: var(--ik-good);">
+                          Ultima cidade usada no login diario
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              </template>
+            </div>
+            {% for error in form.city.errors %}
+            <p class="form-error mt-3"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+          </section>
+
+          <section class="space-y-4">
+            <div class="rounded-[22px] border p-4"
+                 style="border-color: rgba(201,156,78,0.24); background: linear-gradient(180deg, rgba(201,156,78,0.10), rgba(255,255,255,0.84));">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">Coletas do ciclo</div>
+              <div class="mt-3 space-y-2">
+                <label class="flex items-center gap-2 rounded-lg border px-2.5 py-2 transition-all"
+                       :class="collectFavor ? 'ring-1 ring-[var(--ik-good)] border-[var(--ik-good)] bg-[rgba(95,140,78,0.08)]' : ''"
+                       style="border-color: var(--ik-line);">
+                  <input type="checkbox" name="{{ form.collect_favor.html_name }}" x-model="collectFavor"
+                         class="rounded border-gray-300 text-[var(--ik-good)] focus:ring-[var(--ik-good)]">
+                  <span class="min-w-0 flex-1">
+                    <span class="block text-xs font-semibold text-ink">Coletar favor das tasks prontas</span>
+                    <span class="block text-[11px] text-muted">Usa a tela real de tarefas diarias e recolhe so o que estiver concluido.</span>
+                  </span>
+                </label>
+                <label class="flex items-center gap-2 rounded-lg border px-2.5 py-2 transition-all"
+                       :class="collectFountain ? 'ring-1 ring-[var(--ik-good)] border-[var(--ik-good)] bg-[rgba(95,140,78,0.08)]' : ''"
+                       style="border-color: var(--ik-line);">
+                  <input type="checkbox" name="{{ form.collect_fountain.html_name }}" x-model="collectFountain"
+                         class="rounded border-gray-300 text-[var(--ik-good)] focus:ring-[var(--ik-good)]">
+                  <span class="min-w-0 flex-1">
+                    <span class="block text-xs font-semibold text-ink">Coletar fonte de ambrosia</span>
+                    <span class="block text-[11px] text-muted">Primeiro confirma na cidade se a fonte esta ativa antes de tentar coletar.</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div class="rounded-[22px] border p-4"
+                 style="border-color: rgba(95,140,78,0.24); background: linear-gradient(180deg, rgba(95,140,78,0.10), rgba(255,255,255,0.84));">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">Cadencia</div>
+              <div class="mt-1 text-sm font-semibold text-ink">Reagendamento pelo countdown real com fallback</div>
+              <div class="mt-3 grid grid-cols-2 gap-3">
+                <div>
+                  <label for="{{ form.fallback_interval_hours.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">{{ form.fallback_interval_hours.label }}</label>
+                  {{ form.fallback_interval_hours }}
+                  {% for error in form.fallback_interval_hours.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+                </div>
+                <div>
+                  <label for="{{ form.reschedule_margin_minutes.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">{{ form.reschedule_margin_minutes.label }}</label>
+                  {{ form.reschedule_margin_minutes }}
+                  {% for error in form.reschedule_margin_minutes.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+                </div>
+              </div>
+            </div>
+
+            <div class="rounded-[22px] border p-4"
+                 style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.84);">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Leitura atual</div>
+              {% if daily_login_ui.tasks %}
+              <div class="mt-3 max-h-[14rem] space-y-2 overflow-y-auto pr-1">
+                {% for task in daily_login_ui.tasks|slice:":6" %}
+                <div class="rounded-xl border px-3 py-2"
+                     style="border-color: var(--ik-line); background: {% if task.collectible %}rgba(95,140,78,0.08){% elif task.claimed %}rgba(219,201,167,0.28){% else %}var(--ik-sand-light){% endif %};">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                      <div class="truncate text-sm font-medium text-ink">{{ task.name|default:"Task diaria" }}</div>
+                      <div class="mt-1 text-[11px] text-muted">{{ task.progress_label|default:"Sem progresso lido" }}</div>
+                    </div>
+                    <div class="text-right text-[11px]">
+                      <div class="font-semibold text-ink">+{{ task.reward_favor|default:0 }} favor</div>
+                      <div class="text-muted">{% if task.collectible %}Pronta{% elif task.claimed %}Ja recolhida{% else %}Em progresso{% endif %}</div>
+                    </div>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+              {% else %}
+              <div class="mt-2 text-sm text-muted">Ainda sem leitura de tasks. A primeira execucao real do job vai preencher esse bloco.</div>
+              {% endif %}
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+

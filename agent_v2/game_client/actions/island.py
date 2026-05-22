@@ -137,12 +137,13 @@ def _parse_island_html(html: str) -> dict[str, Any]:
             for pid, score in raw_scores.items():
                 if not isinstance(score, dict):
                     continue
+                # building/research/army scores come multiplied by 100 in the game API
                 avatar_scores[str(pid)] = {
                     "avatar_id": str(score.get("avatar_id") or pid),
                     "place": _safe_int(score.get("place")),
-                    "building_score": _safe_int(score.get("building_score_main")),
-                    "research_score": _safe_int(score.get("research_score_main")),
-                    "army_score": _safe_int(score.get("army_score_main")),
+                    "building_score": _safe_int(score.get("building_score_main")) // 100,
+                    "research_score": _safe_int(score.get("research_score_main")) // 100,
+                    "army_score": _safe_int(score.get("army_score_main")) // 100,
                     "trader_score": _safe_int(score.get("trader_score_secondary")),
                 }
 

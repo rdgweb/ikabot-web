@@ -571,6 +571,7 @@ class ConstructionRunnerExecutionTests(unittest.TestCase):
         self.assertIn("last_market_order_requested_at", reschedule_inputs)
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["preferred_buyer_city_id"], 39274)
+        self.assertEqual(calls[0]["target_city_id"], 39274)
         self.assertEqual(calls[0]["resource_idx"], 3)
         self.assertEqual(calls[0]["source_action_code"], 1002)
 
@@ -804,6 +805,7 @@ class ConstructionRunnerExecutionTests(unittest.TestCase):
         runner._resolve_step_state = ConstructionPlanRunner._resolve_step_state
         fake_client = pytypes.SimpleNamespace()
         runner._get_client = lambda _job: (fake_client, "ga-1")
+        original_live_stock = CITY_MODULE._live_city_stock_from_game
         CITY_MODULE._live_city_stock_from_game = lambda *_args, **_kwargs: {
             "wood": 100,
             "wine": 0,
@@ -849,7 +851,10 @@ class ConstructionRunnerExecutionTests(unittest.TestCase):
             },
         }
 
-        result = runner.execute(job)
+        try:
+            result = runner.execute(job)
+        finally:
+            CITY_MODULE._live_city_stock_from_game = original_live_stock
 
         self.assertTrue(result.success)
         self.assertEqual(result.kwargs["reschedule_seconds"], 321)
@@ -902,6 +907,7 @@ class ConstructionRunnerExecutionTests(unittest.TestCase):
         )
         runner._get_live_step_costs = lambda **_kwargs: next(costs_seq)
         runner._get_live_step_button_state = lambda **_kwargs: {"button_found": True, "button_enabled": True, "href": "?x=1"}
+        original_live_stock = CITY_MODULE._live_city_stock_from_game
         CITY_MODULE._live_city_stock_from_game = lambda *_args, **_kwargs: {
             "wood": 284126,
             "wine": 5836,
@@ -949,12 +955,101 @@ class ConstructionRunnerExecutionTests(unittest.TestCase):
             result = runner.execute(job)
         finally:
             CITY_MODULE._confirm_building_state = original_confirm
+            CITY_MODULE._live_city_stock_from_game = original_live_stock
 
         self.assertTrue(result.success)
         self.assertEqual(result.kwargs["reschedule_seconds"], 654)
         self.assertEqual(result.data["waiting"][0]["status"], "waiting_real_cost_resources")
         self.assertEqual(result.data["waiting"][0]["missing"]["marble"], 481)
         self.assertTrue(any("Upgrade rejeitado por recurso insuficiente" in msg for _jid, _level, msg in runner._runner_logs))
+
+
+class ConstructionMarketInterventionTests(unittest.TestCase):
+    def test_should_request_market_intervention_uses_threshold_by_reason(self):
+        runner = ConstructionPlanRunner.__new__(ConstructionPlanRunner)
+        runner.get_system_setting_int = lambda key, default: {
+            "construction_market_intervention_gold_eta_hours": 24,
+            "construction_market_intervention_resource_eta_hours": 12,
+        }.get(key, default)
+
+        self.assertTrue(runner._should_request_market_intervention("market_gold_eta", 24 * 3600))
+        self.assertFalse(runner._should_request_market_intervention("market_gold_eta", 23 * 3600))
+        self.assertTrue(runner._should_request_market_intervention("donor_eta", 12 * 3600))
+        self.assertFalse(runner._should_request_market_intervention("local_eta", 11 * 3600))
+
+    def test_remaining_reserved_by_city_ignores_completed_steps(self):
+        runner = ConstructionPlanRunner.__new__(ConstructionPlanRunner)
+        runner._resolve_step_state = lambda city, step: (13, None, None) if step["index"] == 1 else (7, None, None)
+
+        cities = [
+            {"id": "1", "name": "A"},
+            {"id": "2", "name": "B"},
+        ]
+        plan_steps = [
+            {
+                "index": 1,
+                "city_id": "1",
+                "target_level": 13,
+                "reserved_local": {"wood": 100, "wine": 0, "marble": 50, "glas": 0, "sulfur": 0},
+            },
+            {
+                "index": 2,
+                "city_id": "2",
+                "target_level": 8,
+                "reserved_local": {"wood": 200, "wine": 0, "marble": 75, "glas": 0, "sulfur": 0},
+            },
+        ]
+
+        reserved = runner._remaining_reserved_by_city(cities=cities, plan_steps=plan_steps)
+
+        self.assertNotIn("1", reserved)
+        self.assertEqual(reserved["2"]["wood"], 200)
+        self.assertEqual(reserved["2"]["marble"], 75)
+
+    def test_handle_missing_resources_uses_pending_recheck_when_intervention_exists(self):
+        runner = ConstructionPlanRunner.__new__(ConstructionPlanRunner)
+        logs = []
+        runner.log = lambda jid, level, msg: logs.append((jid, level, msg))
+        runner.resolve_credentials = lambda *_args, **_kwargs: None
+        runner.get_or_login_game_client = lambda *_args, **_kwargs: None
+        runner.save_game_client = lambda *_args, **_kwargs: None
+        runner._estimate_local_wait_seconds = lambda *_args, **_kwargs: 0
+        runner._spawn_transport_cover = lambda **_kwargs: False
+        runner._estimate_donor_wait_seconds = lambda **_kwargs: 0
+        runner._try_cover_with_internal_market = lambda **_kwargs: (None, {"available_gold": 100000, "min_gold": 200000}, "buyer_below_min_gold")
+        runner._estimate_market_gold_wait_seconds = lambda **_kwargs: 100000
+        runner._maybe_request_market_intervention = lambda **_kwargs: {"request_id": "req-1", "status": "pending"}
+        runner.get_system_setting_int = lambda key, default: 900 if key == "construction_market_intervention_pending_recheck_seconds" else default
+        runner._get_snapshot = lambda *_args, **_kwargs: {"base_snapshot": {"gold": 100000}}
+
+        city = {"id": "39274", "name": "Mercado", "wood": 0, "wine": 0, "marble": 0, "crystal": 0, "sulfur": 0, "buildings": []}
+        pending = {
+            "city_name": "Mercado",
+            "building_name": "Templo",
+            "next_level": 1,
+            "level_rows": [{"level": 1, "costs": {"wood": 0, "wine": 0, "marble": 50, "glas": 0, "sulfur": 0}}],
+        }
+        job = {
+            "job_id": "job-1",
+            "account_id": "acc-1",
+            "game_account_id": "ga-1",
+            "inputs": {"auto_transport": True, "auto_market_buy": True},
+        }
+
+        wait_seconds, transport_spawned, reschedule_inputs, should_skip_now = runner._handle_missing_resources(
+            job=job,
+            pending=pending,
+            cities=[city],
+            city=city,
+            missing={"wood": 0, "wine": 0, "marble": 50, "glas": 0, "sulfur": 0},
+            support_by_city={},
+        )
+
+        self.assertEqual(wait_seconds, 900)
+        self.assertFalse(transport_spawned)
+        self.assertFalse(should_skip_now)
+        self.assertEqual(reschedule_inputs["market_intervention_request_id"], "req-1")
+        self.assertEqual(reschedule_inputs["market_intervention_status"], "pending")
 
 
 class ConstructionLiveStockTests(unittest.TestCase):

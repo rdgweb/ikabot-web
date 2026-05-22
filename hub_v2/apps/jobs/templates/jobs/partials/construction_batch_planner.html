@@ -14,7 +14,30 @@
        mode: 'upgrade',
        targetLevel: '',
        buildingQuery: '',
+       selectedCategory: 'all',
        planJson: '[]',
+       planStrategy: '{{ form.queue_strategy.value|default:"eta_first"|escapejs }}',
+       planResearch: '{{ form.research_reduction.value|default:"14"|escapejs }}',
+       planAutoTransport: {{ form.auto_transport.value|yesno:"true,false,true" }},
+       BUILDING_CATS: {
+         'townHall':'governo','palace':'governo','governorsResidence':'governo','tavern':'governo','museum':'governo','embassy':'governo',
+         'barracks':'militar','shipyard':'militar','wall':'militar','safehouse':'militar','hideout':'militar','dockyard':'militar',
+         'port':'comercio','branchOffice':'comercio','warehouse':'comercio','dump':'comercio','blackMarket':'comercio',
+         'forester':'producao','alchemist':'producao','glassblowing':'producao','stonemason':'producao','winegrower':'producao',
+         'architect':'redutor','optician':'redutor','carpentering':'redutor','fireworker':'redutor','firpieworker':'redutor','chronos_forge':'redutor','chronosForge':'redutor','vineyard':'redutor','winpiegrower':'redutor','winePress':'redutor',
+         'academy':'conhecimento','workshop':'conhecimento',
+         'temple':'especial','shrineOfOlympus':'especial','pirateFortress':'especial','marineChartArchive':'especial',
+       },
+       CAT_META: {
+         'governo':     {label:'Governo',      icon:'bi-bank2',         color:'#7a6a52', bg:'rgba(122,106,82,0.10)'},
+         'militar':     {label:'Militar',      icon:'bi-shield-fill',   color:'#a94442', bg:'rgba(169,68,66,0.10)'},
+         'comercio':    {label:'Comércio',     icon:'bi-shop',          color:'#5f8c3e', bg:'rgba(95,140,62,0.10)'},
+         'producao':    {label:'Produção',     icon:'bi-box-seam',      color:'#c07a20', bg:'rgba(192,122,32,0.10)'},
+         'redutor':     {label:'Redutores',    icon:'bi-speedometer2',  color:'#4f86b9', bg:'rgba(79,134,185,0.10)'},
+         'conhecimento':{label:'Conhecimento', icon:'bi-mortarboard',   color:'#7b5ea7', bg:'rgba(123,94,167,0.10)'},
+         'especial':    {label:'Especiais',    icon:'bi-stars',         color:'#b9784f', bg:'rgba(185,120,79,0.10)'},
+       },
+       CAT_ORDER: ['governo','militar','comercio','producao','redutor','conhecimento','especial'],
        init() {
          this.cities = JSON.parse(document.getElementById('construction-cities-data')?.textContent || '[]');
          this.buildings = JSON.parse(document.getElementById('construction-buildings-data')?.textContent || '{}');
@@ -134,6 +157,40 @@
          this.selectedCardKeys = [];
          this.syncPlan();
        },
+       buildingCategory(buildingId) {
+         return this.BUILDING_CATS[buildingId] || 'outros';
+       },
+       categoryCount(cat) {
+         return this.buildingCards().filter(c => this.buildingCategory(c.building_id) === cat).length;
+       },
+       groupedCards() {
+         const query = String(this.buildingQuery || '').trim().toLowerCase();
+         let cards = this.buildingCards();
+         if (query) cards = cards.filter(c => [c.name, c.city_name, c.meta].join(' ').toLowerCase().includes(query));
+         if (this.selectedCategory !== 'all') cards = cards.filter(c => this.buildingCategory(c.building_id) === this.selectedCategory);
+         const groups = {};
+         for (const c of cards) {
+           const cat = this.buildingCategory(c.building_id);
+           (groups[cat] = groups[cat] || []).push(c);
+         }
+         return this.CAT_ORDER.filter(cat => groups[cat]?.length).map(cat => ({
+           key: cat, ...this.CAT_META[cat], cards: groups[cat],
+         }));
+       },
+       selectCategoryCards(cat) {
+         const keys = this.buildingCards().filter(c => this.buildingCategory(c.building_id) === cat).map(c => String(c.card_key));
+         this.selectedCardKeys = [...new Set([...this.selectedCardKeys, ...keys])];
+         this.syncPlan();
+       },
+       clearCategoryCards(cat) {
+         const keys = new Set(this.buildingCards().filter(c => this.buildingCategory(c.building_id) === cat).map(c => String(c.card_key)));
+         this.selectedCardKeys = this.selectedCardKeys.filter(k => !keys.has(k));
+         this.syncPlan();
+       },
+       selectedInCategory(cat) {
+         const keys = new Set(this.buildingCards().filter(c => this.buildingCategory(c.building_id) === cat).map(c => String(c.card_key)));
+         return this.selectedCardKeys.filter(k => keys.has(k)).length;
+       },
        cardPayload(card) {
          if (!card) return null;
          return {
@@ -187,6 +244,10 @@
      }"
      x-init="init()">
   <input type="hidden" name="construction_plan_json" x-model="planJson" x-ref="planInput">
+  <input type="hidden" name="queue_strategy" x-model="planStrategy">
+  <input type="hidden" name="research_reduction" x-model="planResearch">
+  <input type="checkbox" name="auto_transport" x-model="planAutoTransport" tabindex="-1"
+         style="position:absolute;opacity:0;width:0;height:0;pointer-events:none;">
 
   <div class="border-b px-4 py-4"
        style="border-color: rgba(219,201,167,0.82); background: linear-gradient(180deg, rgba(255,255,255,0.52), rgba(255,255,255,0));">
@@ -280,121 +341,270 @@
         </div>
       </section>
 
-      <section class="rounded-[18px] border p-3"
-               style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
-        <div class="mb-2 flex items-center gap-2">
-          <span class="inline-flex h-8 w-8 items-center justify-center rounded-2xl"
-                style="background: rgba(79,134,185,0.12); color: var(--ik-sea);">
-            <i class="bi bi-sliders text-sm"></i>
-          </span>
-          <div>
-            <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Aplicação</div>
-            <div class="text-xs text-muted">Um alvo único para tudo</div>
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <button type="button"
-                  class="rounded-[16px] border px-3 py-2 text-left transition-all"
-                  :class="mode === 'upgrade' ? 'ring-1 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.08)]' : 'hover:border-[var(--ik-sea)]/50'"
-                  style="border-color: var(--ik-line);"
-                  @click="setMode('upgrade')">
-            <div class="text-xs font-semibold text-ink">Evoluir existentes</div>
-            <div class="mt-1 text-[11px] text-muted">Só os que existem em todas as cidades.</div>
-          </button>
-          <button type="button"
-                  class="rounded-[16px] border px-3 py-2 text-left transition-all"
-                  :class="mode === 'new' ? 'ring-1 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.08)]' : 'hover:border-[var(--ik-sea)]/50'"
-                  style="border-color: var(--ik-line);"
-                  @click="setMode('new')">
-            <div class="text-xs font-semibold text-ink">Construir novos</div>
-            <div class="mt-1 text-[11px] text-muted">Só os disponíveis em todas as cidades.</div>
-          </button>
-        </div>
-        <div class="mt-3">
-          <label class="form-label text-xs mb-1 block">Nível alvo</label>
-          <input type="number" min="1" max="86" class="form-input" x-model="targetLevel" @input="syncPlan()">
-          <p class="mt-1 text-[11px] text-muted">Todos os prédios selecionados irão para esse nível.</p>
-        </div>
-      </section>
-    </div>
+      {# Coluna direita: Aplicação + Configurações #}
+      <div class="flex flex-col gap-3">
 
-    <section class="mt-3 rounded-[18px] border p-3"
-             style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
-        <div class="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">Prédios</div>
-            <div class="mt-1 text-sm font-semibold text-ink">Selecione cada prédio individualmente</div>
-            <div class="mt-1 text-[11px] text-muted">Cada card representa um prédio em uma cidade. Você escolhe exatamente quais entram no lote.</div>
+        <section class="rounded-[18px] border p-3"
+                 style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+          <div class="mb-2 flex items-center gap-2">
+            <span class="inline-flex h-8 w-8 items-center justify-center rounded-2xl"
+                  style="background: rgba(79,134,185,0.12); color: var(--ik-sea);">
+              <i class="bi bi-sliders text-sm"></i>
+            </span>
+            <div>
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Aplicação</div>
+              <div class="text-xs text-muted">Um alvo único para tudo</div>
+            </div>
           </div>
-        <div class="flex items-center gap-3">
-          <button type="button" class="rounded-full border px-3 py-1.5 text-[11px] font-medium"
-                  style="border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.08);"
-                  @click="selectAllBuildings()">Selecionar todos</button>
-          <button type="button" class="rounded-full border px-3 py-1.5 text-[11px] font-medium"
-                  style="border-color: rgba(219,201,167,0.88); color: #7a6a52; background: rgba(255,255,255,0.66);"
-                  @click="clearBuildings()">Limpar</button>
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button"
+                    class="rounded-[16px] border px-3 py-2 text-left transition-all"
+                    :class="mode === 'upgrade' ? 'ring-1 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.08)]' : 'hover:border-[var(--ik-sea)]/50'"
+                    style="border-color: var(--ik-line);"
+                    @click="setMode('upgrade')">
+              <div class="text-xs font-semibold text-ink">Evoluir existentes</div>
+              <div class="mt-1 text-[11px] text-muted">Já existem em alguma cidade.</div>
+            </button>
+            <button type="button"
+                    class="rounded-[16px] border px-3 py-2 text-left transition-all"
+                    :class="mode === 'new' ? 'ring-1 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.08)]' : 'hover:border-[var(--ik-sea)]/50'"
+                    style="border-color: var(--ik-line);"
+                    @click="setMode('new')">
+              <div class="text-xs font-semibold text-ink">Construir novos</div>
+              <div class="mt-1 text-[11px] text-muted">Em slots disponíveis.</div>
+            </button>
           </div>
-        </div>
-      <label class="mb-3 block" x-show="buildingCards().length">
-        <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Filtrar prédios</span>
-        <input type="text" x-model="buildingQuery" class="form-input" placeholder="Buscar por nome ou cidade vinculada">
-      </label>
-      <div class="grid grid-cols-2 gap-2 xl:grid-cols-4" x-show="filteredBuildingCards().length">
-        <template x-for="card in filteredBuildingCards()" :key="`construction-building-${card.card_key}`">
-          <button type="button"
-                  class="text-left rounded-[16px] border px-3 py-3 transition-all hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]"
-                  :class="selectedCardKeys.includes(String(card.card_key)) ? 'translate-y-[-1px] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : ''"
-                  :style="selectedCardKeys.includes(String(card.card_key))
-                    ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.88));'
-                    : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'"
-                  @click="toggleCard(card.card_key)">
-            <div class="flex items-start gap-3">
-              <template x-if="card.icon">
-                <img :src="card.icon" :alt="card.name" class="h-10 w-10 object-contain shrink-0">
-              </template>
-              <template x-if="!card.icon">
-                <span class="inline-flex h-10 w-10 items-center justify-center rounded-xl shrink-0 text-[11px] font-bold uppercase"
-                      style="background: rgba(79,134,185,0.10); color: var(--ik-sea);">
-                  <span x-text="(card.name || '?').slice(0, 2)"></span>
-                </span>
-              </template>
-              <div class="min-w-0 flex-1">
-                <div class="flex items-start justify-between gap-2">
-                  <div class="min-w-0">
-                    <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <div class="truncate text-sm font-semibold text-ink" x-text="card.name"></div>
-                      <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px]"
-                            style="border-color: rgba(79,134,185,0.18); background: rgba(79,134,185,0.06); color: var(--ik-sea);"
-                            x-text="card.city_name"></span>
-                      <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] text-muted"
-                            style="border-color: rgba(219,201,167,0.72); background: rgba(255,255,255,0.72);"
-                            x-text="mode === 'upgrade' ? `lvl ${card.current_level}` : 'novo'"></span>
-                    </div>
-                    <div class="mt-1 text-[11px] text-muted"
-                         x-text="mode === 'upgrade' ? `Posição ${card.position}` : `Slot ${card.position || '-'} · ${(card.slot_types || []).join('/') || 'land'}`"></div>
-                  </div>
-                  <span class="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full border transition-colors"
-                        :style="selectedCardKeys.includes(String(card.card_key))
-                          ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
-                          : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
-                    <i class="bi" :class="selectedCardKeys.includes(String(card.card_key)) ? 'bi-check-lg' : 'bi-hammer'"></i>
-                  </span>
-                </div>
+          <div class="mt-3">
+            <label class="form-label text-xs mb-1 block">Nível alvo</label>
+            <input type="number" min="1" max="86" class="form-input" x-model="targetLevel" @input="syncPlan()">
+            <p class="mt-1 text-[11px] text-muted">Todos os prédios selecionados irão para esse nível.</p>
+          </div>
+        </section>
+
+        {# ── Configurações do plano (compacto) ── #}
+        <section class="overflow-hidden rounded-[18px] border"
+                 style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+          <div class="flex items-center gap-2 border-b px-3 py-2"
+               style="border-color: rgba(219,201,167,0.60); background: rgba(244,236,218,0.40);">
+            <i class="bi bi-gear text-xs" style="color: var(--ik-gold-dark);"></i>
+            <span class="text-[11px] font-semibold uppercase tracking-[0.14em]" style="color: var(--ik-gold-dark);">Configurações</span>
+          </div>
+
+          <div class="space-y-3 p-3">
+
+            {# Prioridade #}
+            <div>
+              <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Prioridade da fila</div>
+              <div class="flex gap-1.5">
+                <template x-for="opt in [
+                  {v:'fifo',      icon:'bi-list-ol',          label:'Sequência'},
+                  {v:'eta_first', icon:'bi-lightning-charge',  label:'Mais rápido'},
+                  {v:'smart',     icon:'bi-intersect',         label:'Balanceado'}
+                ]" :key="opt.v">
+                  <button type="button" @click="planStrategy = opt.v"
+                          class="flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-center text-[11px] transition-all"
+                          :style="planStrategy === opt.v
+                            ? 'border-color: var(--ik-sea); background: rgba(79,134,185,0.10); color: var(--ik-sea); font-weight:600;'
+                            : 'border-color: var(--ik-line); color: #888;'">
+                    <i class="bi shrink-0" :class="opt.icon"></i>
+                    <span x-text="opt.label"></span>
+                  </button>
+                </template>
               </div>
             </div>
+
+            {# Pesquisa #}
+            <div>
+              <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Pesquisa econômica</div>
+              <div class="flex gap-1.5">
+                <template x-for="opt in [
+                  {v:'0',  pct:'0%',  desc:'Nada'},
+                  {v:'2',  pct:'2%',  desc:'Flaschenzug'},
+                  {v:'6',  pct:'6%',  desc:'Geometria'},
+                  {v:'14', pct:'14%', desc:'Wasserwaage'}
+                ]" :key="opt.v">
+                  <button type="button" @click="planResearch = opt.v"
+                          class="flex flex-1 flex-col items-center rounded-lg border px-1 py-1.5 text-center transition-all"
+                          :style="planResearch === opt.v
+                            ? 'border-color: var(--ik-sea); background: rgba(79,134,185,0.10);'
+                            : 'border-color: var(--ik-line);'">
+                    <span class="text-xs font-bold"
+                          :class="planResearch === opt.v ? 'text-[var(--ik-sea)]' : 'text-ink'"
+                          x-text="opt.pct"></span>
+                    <span class="text-[9px] text-muted truncate w-full text-center" x-text="opt.desc"></span>
+                  </button>
+                </template>
+              </div>
+            </div>
+
+            {# Transporte #}
+            <div>
+              <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Transporte</div>
+              <button type="button" @click="planAutoTransport = !planAutoTransport"
+                      class="flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left transition-all"
+                      :style="planAutoTransport
+                        ? 'border-color: var(--ik-good); background: rgba(95,140,78,0.07);'
+                        : 'border-color: var(--ik-line);'">
+                <i class="bi text-2xl shrink-0 transition-all"
+                   :class="planAutoTransport ? 'bi-toggle-on' : 'bi-toggle-off'"
+                   :style="planAutoTransport ? 'color: var(--ik-good);' : 'color: #ccc;'"></i>
+                <div class="min-w-0">
+                  <div class="text-xs font-semibold"
+                       :class="planAutoTransport ? 'text-[var(--ik-good)]' : 'text-muted'"
+                       x-text="planAutoTransport ? 'Automático (ativo)' : 'Manual (desativado)'"></div>
+                  <div class="text-[10px] text-muted truncate">Busca recursos de outras cidades</div>
+                </div>
+              </button>
+            </div>
+
+          </div>
+        </section>
+
+      </div>{# /coluna direita #}
+    </div>
+
+    <section class="mt-3 overflow-hidden rounded-[18px] border"
+             style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+
+      {# ── Header ── #}
+      <div class="flex items-center justify-between gap-3 border-b px-4 py-3"
+           style="border-color: rgba(219,201,167,0.60); background: rgba(244,236,218,0.40);">
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">Prédios</div>
+          <div class="text-xs text-muted mt-0.5">
+            <span x-text="selectedCardKeys.length"></span> selecionados
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <input type="text" x-model="buildingQuery" class="form-input py-1 text-xs w-36"
+                 placeholder="Buscar..." x-show="buildingCards().length">
+          <button type="button" class="rounded-full border px-2.5 py-1 text-[11px] font-medium"
+                  style="border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.08);"
+                  @click="selectAllBuildings()" x-show="buildingCards().length">Sel. todos</button>
+          <button type="button" class="rounded-full border px-2.5 py-1 text-[11px] font-medium"
+                  style="border-color: rgba(219,201,167,0.88); color: #7a6a52; background: rgba(255,255,255,0.66);"
+                  @click="clearBuildings()" x-show="selectedCardKeys.length">Limpar</button>
+        </div>
+      </div>
+
+      {# ── Tabs de categoria ── #}
+      <div class="flex flex-wrap items-end gap-1.5 px-4 py-2.5 border-b" style="border-color: rgba(219,201,167,0.60);"
+           x-show="buildingCards().length">
+        <button type="button"
+                class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all"
+                :style="selectedCategory === 'all'
+                  ? 'border-color: var(--ik-sea); color: var(--ik-sea); background: rgba(79,134,185,0.10); font-weight:700;'
+                  : 'border-color: rgba(219,201,167,0.88); color: #7a6a52; background: transparent;'"
+                @click="selectedCategory = 'all'">
+          Todos
+          <span class="rounded-full px-1.5 text-[10px]"
+                :style="selectedCategory === 'all' ? 'background: rgba(79,134,185,0.15);' : 'background: rgba(219,201,167,0.50);'"
+                x-text="buildingCards().length"></span>
+        </button>
+        <template x-for="cat in CAT_ORDER.filter(c => categoryCount(c) > 0)" :key="cat">
+          <button type="button"
+                  class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] transition-all"
+                  :style="selectedCategory === cat
+                    ? `border-color: ${CAT_META[cat].color}; color: ${CAT_META[cat].color}; background: ${CAT_META[cat].bg}; font-weight:700;`
+                    : `border-color: rgba(219,201,167,0.88); color: #7a6a52; background: transparent;`"
+                  @click="selectedCategory = selectedCategory === cat ? 'all' : cat">
+            <i class="bi" :class="CAT_META[cat].icon" :style="`color: ${CAT_META[cat].color}; font-size:11px;`"></i>
+            <span x-text="CAT_META[cat].label"></span>
+            <span class="rounded-full px-1.5 text-[10px]"
+                  :style="`background: ${CAT_META[cat].bg};`"
+                  x-text="categoryCount(cat)"></span>
+            <template x-if="selectedInCategory(cat) > 0">
+              <span class="rounded-full px-1 text-[10px] font-bold"
+                    style="background: rgba(79,134,185,0.18); color: var(--ik-sea);"
+                    x-text="`✓${selectedInCategory(cat)}`"></span>
+            </template>
           </button>
         </template>
       </div>
-      <div class="rounded-[16px] border px-3 py-4 text-sm text-muted"
-           style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.66);"
-           x-show="!buildingCards().length">
-        Selecione cidades para ver os prédios disponíveis nelas.
+
+      {# ── Grupos por categoria ── #}
+      <div class="px-4 py-3 space-y-5" x-show="buildingCards().length">
+
+        {# Vazio #}
+        <div class="py-3 text-center text-sm text-muted"
+             x-show="groupedCards().length === 0">
+          Nenhum prédio nesta categoria com o filtro atual.
+        </div>
+
+        <template x-for="group in groupedCards()" :key="group.key">
+          <div>
+            {# Separador de categoria #}
+            <div class="mb-2 flex items-center justify-between gap-3">
+              <div class="flex items-center gap-2">
+                <span class="inline-flex h-6 w-6 items-center justify-center rounded-lg text-sm"
+                      :style="`background: ${group.bg}; color: ${group.color};`">
+                  <i class="bi" :class="group.icon"></i>
+                </span>
+                <span class="text-[11px] font-bold uppercase tracking-[0.14em]"
+                      :style="`color: ${group.color};`" x-text="group.label"></span>
+                <span class="text-[10px] text-muted" x-text="`${group.cards.length} prédio${group.cards.length !== 1 ? 's' : ''}`"></span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <button type="button"
+                        class="rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors"
+                        :style="`border-color: ${group.color}33; color: ${group.color}; background: ${group.bg};`"
+                        @click="selectCategoryCards(group.key)">todos</button>
+                <button type="button"
+                        class="rounded-full border px-2 py-0.5 text-[10px] text-muted transition-colors"
+                        style="border-color: rgba(219,201,167,0.88);"
+                        @click="clearCategoryCards(group.key)"
+                        x-show="selectedInCategory(group.key) > 0">limpar</button>
+              </div>
+            </div>
+
+            {# Cards da categoria #}
+            <div class="grid grid-cols-2 gap-2 xl:grid-cols-4">
+              <template x-for="card in group.cards" :key="`building-${card.card_key}`">
+                <button type="button"
+                        class="text-left rounded-[14px] border px-3 py-2.5 transition-all hover:translate-y-[-1px]"
+                        :style="selectedCardKeys.includes(String(card.card_key))
+                          ? `border-color: ${group.color}; background: ${group.bg}; box-shadow: 0 6px 20px ${group.color}22;`
+                          : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'"
+                        @click="toggleCard(card.card_key)">
+                  <div class="flex items-start gap-2">
+                    <template x-if="card.icon">
+                      <img :src="card.icon" :alt="card.name" class="h-8 w-8 object-contain shrink-0">
+                    </template>
+                    <template x-if="!card.icon">
+                      <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg shrink-0 text-[10px] font-bold"
+                            :style="`background: ${group.bg}; color: ${group.color};`">
+                        <i class="bi" :class="group.icon"></i>
+                      </span>
+                    </template>
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-start justify-between gap-1">
+                        <div class="truncate text-xs font-semibold text-ink" x-text="card.name"></div>
+                        <span class="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors"
+                              :style="selectedCardKeys.includes(String(card.card_key))
+                                ? `border-color: ${group.color}; color: white; background: ${group.color};`
+                                : `border-color: rgba(219,201,167,0.9); color: #aaa;`">
+                          <i class="bi text-[9px]"
+                             :class="selectedCardKeys.includes(String(card.card_key)) ? 'bi-check-lg' : 'bi-plus'"></i>
+                        </span>
+                      </div>
+                      <div class="mt-0.5 text-[10px] text-muted truncate" x-text="card.city_name"></div>
+                      <div class="text-[10px] text-muted"
+                           x-text="mode === 'upgrade' ? `Lv ${card.current_level}` : 'novo'"></div>
+                    </div>
+                  </div>
+                </button>
+              </template>
+            </div>
+          </div>
+        </template>
       </div>
-      <div class="rounded-[16px] border px-3 py-4 text-sm text-muted"
-           style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.66);"
-           x-show="buildingCards().length && !filteredBuildingCards().length">
-        Nenhum prédio encontrado com esse filtro.
+
+      {# Sem cidades selecionadas #}
+      <div class="px-4 py-6 text-center text-sm text-muted" x-show="!buildingCards().length">
+        <i class="bi bi-buildings text-2xl block mb-2 opacity-30"></i>
+        Selecione cidades para ver os prédios disponíveis.
       </div>
+
     </section>
 
     <section class="mt-3 rounded-[18px] border p-3"

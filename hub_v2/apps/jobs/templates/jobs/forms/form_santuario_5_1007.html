@@ -1,0 +1,202 @@
+{% load static hub_tags %}
+
+    {% if action_code == 5 or action_code == 1007 %}
+    <div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_36px_rgba(60,45,18,0.10)]"
+         style="border-color: var(--ik-line); background:
+           radial-gradient(780px 280px at 0% 0%, rgba(79,134,185,0.14), transparent 60%),
+           radial-gradient(700px 260px at 100% 100%, rgba(201,156,78,0.16), transparent 60%),
+           linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
+         x-data="{
+           gods: {
+             god_pan: {{ form.god_pan.value|yesno:'true,false,false' }},
+             god_dionysus: {{ form.god_dionysus.value|yesno:'true,false,false' }},
+             god_tyche: {{ form.god_tyche.value|yesno:'true,false,false' }},
+             god_plutus: {{ form.god_plutus.value|yesno:'true,false,false' }},
+             god_theia: {{ form.god_theia.value|yesno:'true,false,false' }},
+             god_hephaestus: {{ form.god_hephaestus.value|yesno:'true,false,false' }}
+           },
+           selectedCount() {
+             return Object.values(this.gods).filter(Boolean).length;
+           }
+         }">
+      <div class="border-b px-5 py-5 md:px-6"
+           style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div class="max-w-2xl">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Santuario dos Deuses</div>
+            <h3 class="mt-2 text-xl font-bold text-ink">{% if action_code == 1007 %}Monte o loop de ativacao com os deuses certos{% else %}Escolha quais deuses devem receber favor agora{% endif %}</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted">
+              Cada ativacao consome <strong>100 favor</strong> por deus. O runner usa a pagina real do jogo para validar pesquisa, favor disponivel e estado atual do santuario.
+            </p>
+          </div>
+          <div class="grid grid-cols-2 gap-3 lg:min-w-[20rem]">
+            <div class="rounded-2xl border px-4 py-3"
+                 style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.76);">
+              <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Santuario</div>
+              {% if shrine_ui.summary.shrine_city %}
+              <div class="mt-2 flex items-center gap-3">
+                <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border"
+                      style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                  <img src="{{ shrine_ui.summary.building_icon }}" alt="Santuario" class="h-7 w-7 object-contain">
+                </span>
+                <div class="min-w-0">
+                  <div class="truncate text-sm font-semibold text-ink">{{ shrine_ui.summary.shrine_city.city_name }}</div>
+                  <div class="text-[11px] text-muted">Lv {{ shrine_ui.summary.shrine_city.level }}{% if shrine_ui.summary.shrine_city.x and shrine_ui.summary.shrine_city.y %} • [{{ shrine_ui.summary.shrine_city.x }}:{{ shrine_ui.summary.shrine_city.y }}]{% endif %}</div>
+                </div>
+              </div>
+              {% else %}
+              <div class="mt-2 text-sm text-[var(--ik-bad)]">Snapshot sem santuario detectado</div>
+              <div class="mt-1 text-[11px] text-muted">O job ainda pode ser criado, mas a execucao vai depender do proximo check status.</div>
+              {% endif %}
+            </div>
+            <div class="rounded-2xl border px-4 py-3"
+                 style="border-color: rgba(201,156,78,0.18); background: rgba(255,255,255,0.76);">
+              <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Favor</div>
+              <div class="mt-2 flex items-center gap-3">
+                <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
+                      style="background: rgba(201,156,78,0.14);">
+                  <img src="{{ shrine_ui.summary.favor_icon }}" alt="Favor" class="h-6 w-6 object-contain">
+                </span>
+                <div class="min-w-0">
+                  {% if shrine_ui.summary.shrine_city.has_current_favor %}
+                  <div class="text-sm font-semibold text-ink">{{ shrine_ui.summary.shrine_city.current_favor }} disponivel</div>
+                  <div class="text-[11px] text-muted">
+                    custo da rodada: <span x-text="selectedCount() * {{ shrine_ui.summary.favor_cost_each }}"></span>
+                    {% if shrine_ui.summary.shrine_city.shrine_updated_at %} • snapshot recente{% endif %}
+                  </div>
+                  {% else %}
+                  <div class="text-sm font-semibold text-ink"><span x-text="selectedCount()"></span> deus(es)</div>
+                  <div class="text-[11px] text-muted"><span x-text="selectedCount() * {{ shrine_ui.summary.favor_cost_each }}"></span> favor por rodada</div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="px-5 py-5 md:px-6">
+        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(18rem,0.9fr)]">
+          <section class="rounded-[22px] border p-4"
+                   style="border-color: rgba(79,134,185,0.22); background: linear-gradient(180deg, rgba(79,134,185,0.08), rgba(255,255,255,0.8));">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Divindades</div>
+                <div class="mt-1 text-sm font-semibold text-ink">Selecione os deuses que vao receber favor</div>
+              </div>
+              <div class="text-[11px] text-muted">Clique nos cards para alternar</div>
+            </div>
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {% for god in shrine_ui.gods %}
+              <label class="group relative block cursor-pointer overflow-hidden rounded-[20px] border transition-all duration-150"
+                     :class="gods.{{ god.field }} ? 'translate-y-[-1px] ring-2 shadow-[0_12px_28px_rgba(79,134,185,0.16)]' : 'hover:translate-y-[-1px] hover:shadow-[0_10px_24px_rgba(79,134,185,0.10)]'"
+                     :style="gods.{{ god.field }}
+                       ? 'border-color: {{ god.accent }}; box-shadow: 0 0 0 1px {{ god.accent }}; background: linear-gradient(180deg, rgba(255,255,255,0.94), {{ god.surface }});'
+                       : 'border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.84);'">
+                <input type="checkbox" name="{{ god.field }}" x-model="gods.{{ god.field }}" class="sr-only">
+                <div class="absolute inset-x-0 top-0 h-16" style="background: linear-gradient(180deg, rgba(255,255,255,0.26), transparent);"></div>
+                <div class="relative p-3">
+                  <div class="flex items-start gap-3">
+                    <div class="relative shrink-0">
+                      <div class="flex h-16 w-16 items-center justify-center overflow-hidden rounded-[18px] border"
+                           style="border-color: rgba(255,255,255,0.75); background: linear-gradient(180deg, #fffdfa, #f6eedf);">
+                        <img src="{{ god.icon_url }}" alt="{{ god.name }}" class="h-14 w-14 object-contain">
+                      </div>
+                      <div class="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                        <img src="{{ god.effect_icon_url }}" alt="{{ god.subtitle }}" class="h-4 w-4 object-contain">
+                      </div>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                          <div class="truncate text-sm font-semibold text-ink">{{ god.name }}</div>
+                          <div class="mt-0.5 text-[11px] text-muted">{{ god.subtitle }}</div>
+                        </div>
+                        <span class="inline-flex h-7 w-7 items-center justify-center rounded-full border"
+                              :style="gods.{{ god.field }}
+                                ? 'border-color: {{ god.accent }}; color: white; background: {{ god.accent }};'
+                                : 'border-color: rgba(79,134,185,0.22); color: {{ god.accent }}; background: rgba(255,255,255,0.82);'">
+                          <i class="bi" :class="gods.{{ god.field }} ? 'bi-check-lg' : 'bi-plus-lg'"></i>
+                        </span>
+                      </div>
+                      <div class="mt-3 flex items-center justify-between gap-2 text-[11px]">
+                        <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1"
+                              style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.78);">
+                          <img src="{{ shrine_ui.summary.favor_icon }}" alt="Favor" class="h-3.5 w-3.5 object-contain">
+                          100 favor
+                        </span>
+                        <span class="text-muted">{{ god.effect }}</span>
+                      </div>
+                      {% if god.progress_visible or god.researched %}
+                      <div class="mt-3">
+                        <div class="mb-1 flex items-center justify-between gap-2 text-[11px]">
+                          <span class="text-muted">{% if god.researched %}Pesquisa liberada{% else %}Ainda nao pesquisado{% endif %}</span>
+                          {% if god.progress_visible %}
+                          <span class="font-medium text-ink">{{ god.progress }}/1000</span>
+                          {% endif %}
+                        </div>
+                        <div class="h-2 overflow-hidden rounded-full bg-white/80">
+                          <div class="h-full rounded-full transition-all"
+                               style="width: {% if god.progress_visible %}{% widthratio god.progress 1000 100 %}{% else %}0{% endif %}%; background: {{ god.accent }};"></div>
+                        </div>
+                      </div>
+                      {% endif %}
+                    </div>
+                  </div>
+                </div>
+              </label>
+              {% endfor %}
+            </div>
+          </section>
+
+          <section class="space-y-4">
+            <div class="rounded-[22px] border p-4"
+                 style="border-color: rgba(201,156,78,0.24); background: linear-gradient(180deg, rgba(201,156,78,0.10), rgba(255,255,255,0.84));">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">Cadencia</div>
+              <div class="mt-1 text-sm font-semibold text-ink">{% if action_code == 1007 %}Controle o recheck e o loop{% else %}Defina quando tentar de novo se faltar favor{% endif %}</div>
+              <div class="mt-3 grid grid-cols-1 gap-3 {% if action_code == 1007 %}md:grid-cols-2{% endif %}">
+                <div>
+                  <label for="{{ form.favor_recheck_minutes.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">{{ form.favor_recheck_minutes.label }}</label>
+                  {{ form.favor_recheck_minutes }}
+                  {% for error in form.favor_recheck_minutes.errors %}
+                  <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+                  {% endfor %}
+                </div>
+                {% if action_code == 1007 %}
+                <div>
+                  <label for="{{ form.cycle_hours.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">{{ form.cycle_hours.label }}</label>
+                  {{ form.cycle_hours }}
+                  {% for error in form.cycle_hours.errors %}
+                  <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+                  {% endfor %}
+                </div>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="rounded-[22px] border p-4"
+                 style="border-color: rgba(95,140,78,0.24); background: linear-gradient(180deg, rgba(95,140,78,0.10), rgba(255,255,255,0.84));">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">Leitura operacional</div>
+              <div class="mt-2 space-y-2 text-sm text-muted">
+                <div class="flex items-start gap-2">
+                  <i class="bi bi-check2-circle mt-0.5 text-[var(--ik-good)]"></i>
+                  <span>O runner valida no jogo quais deuses estao pesquisados antes de doar.</span>
+                </div>
+                <div class="flex items-start gap-2">
+                  <i class="bi bi-check2-circle mt-0.5 text-[var(--ik-good)]"></i>
+                  <span>Se faltar favor, o job fica em espera e se reprograma sozinho.</span>
+                </div>
+                {% if action_code == 1007 %}
+                <div class="flex items-start gap-2">
+                  <i class="bi bi-check2-circle mt-0.5 text-[var(--ik-good)]"></i>
+                  <span>No loop, depois da ativacao o proximo ciclo respeita o intervalo configurado.</span>
+                </div>
+                {% endif %}
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+

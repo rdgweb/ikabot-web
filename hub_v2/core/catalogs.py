@@ -49,7 +49,7 @@ BUILDING_CATALOG: dict[str, dict] = {
     "blackMarket":  {"name": "Mercado Negro",       "name_en": "Black Market",      "icon": "blackmarket.png", "bi": "bi-bag-dash-fill"},
     "branchOffice": {"name": "Mercado",             "name_en": "Branch Office",     "icon": "tradingpost.png", "bi": "bi-shop"},
     "dockyard":     {"name": "Estaleiro Comercial", "name_en": "Dockyard",          "icon": "shipyard.png", "bi": "bi-water"},
-    "shrineOfOlympus": {"name": "Santuario dos Deuses", "name_en": "Shrine of Olympus", "icon": "temple.png", "bi": "bi-stars"},
+    "shrineOfOlympus": {"name": "Santuario dos Deuses", "name_en": "Shrine of Olympus", "icon": None, "bi": "bi-stars"},
     "marpiket":     {"name": "Mercado",             "name_en": "Marketplace",       "icon": "tradingpost.png", "bi": "bi-shop"},
 }
 

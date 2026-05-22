@@ -1,0 +1,507 @@
+{% load static hub_tags %}
+
+    {% if action_code == 1203 %}
+    {{ upgrade_units_ui.cities|json_script:"upgrade-units-cities-data" }}
+    <div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_36px_rgba(60,45,18,0.10)]"
+         style="border-color: var(--ik-line); background:
+           radial-gradient(780px 280px at 0% 0%, rgba(50,145,210,0.12), transparent 60%),
+           radial-gradient(700px 260px at 100% 100%, rgba(220,75,35,0.10), transparent 60%),
+           linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
+         x-data="{
+           activeTab: 'land',
+           priorityMode: 'offensive_first',
+           cityQuery: '',
+           cityId: '{{ form.city_id.value|default:''|escapejs }}',
+           cities: JSON.parse(document.getElementById('upgrade-units-cities-data')?.textContent || '[]'),
+           units: {
+             {% for unit in upgrade_units_ui.all_units %}{{ unit.key }}: { enabled: false, attack: false, attack_max: '', defense: false, defense_max: '' }{% if not forloop.last %}, {% endif %}{% endfor %}
+           },
+           minCrystal: '0',
+           minGold: '0',
+           branchCount() {
+             return Object.values(this.units).reduce((count, unit) => count + (unit.attack ? 1 : 0) + (unit.defense ? 1 : 0), 0);
+           },
+           filteredCities() {
+             const query = (this.cityQuery || '').toLowerCase().trim();
+             if (!query) return this.cities;
+             return this.cities.filter(city => {
+               const haystack = [
+                 city.name || '',
+                 city.tradegood_name || '',
+                 city.x != null && city.y != null ? `[${city.x}:${city.y}]` : '',
+               ].join(' ').toLowerCase();
+               return haystack.includes(query);
+             });
+           },
+           selectedCity() {
+             return this.cities.find(city => String(city.id) === String(this.cityId || '')) || null;
+           },
+           unitSelected(key) {
+             const unit = this.units[key];
+             return !!(unit && unit.enabled);
+           },
+           toggleUnit(key) {
+             const unit = this.units[key];
+             if (!unit) return;
+             unit.enabled = !unit.enabled;
+             if (!unit.enabled) {
+               unit.attack = false;
+               unit.attack_max = '';
+               unit.defense = false;
+               unit.defense_max = '';
+             }
+           },
+           toggleBranch(key, branch) {
+             const unit = this.units[key];
+             if (!unit || !unit.enabled) return;
+             unit[branch] = !unit[branch];
+             if (!unit[branch]) {
+               unit[`${branch}_max`] = '';
+             }
+           },
+           normalizeLevel(value) {
+             if (value === '' || value === null || typeof value === 'undefined') return 0;
+             const parsed = parseInt(value, 10);
+             return Number.isNaN(parsed) ? 0 : Math.max(0, parsed);
+           },
+           buildJson() {
+             const targets = Object.entries(this.units)
+               .map(([key, value]) => ({
+                 key,
+                 attack_max: value.attack ? this.normalizeLevel(value.attack_max) : null,
+                 defense_max: value.defense ? this.normalizeLevel(value.defense_max) : null,
+               }))
+               .filter((target) => target.attack_max !== null || target.defense_max !== null);
+             return JSON.stringify(targets);
+           }
+         }">
+
+      {# Hidden inputs updated by Alpine #}
+      <input type="hidden" name="unit_targets_json" :value="buildJson()">
+      <input type="hidden" name="min_crystal_reserve" :value="parseInt(minCrystal) || 0">
+      <input type="hidden" name="min_gold_reserve" :value="parseInt(minGold) || 0">
+      <input type="hidden" name="priority_mode" :value="priorityMode">
+      <input type="hidden" name="{{ form.city_id.html_name }}" :value="cityId">
+
+      {# ── Header ── #}
+      <div class="border-b px-5 py-5 md:px-6"
+           style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div class="max-w-2xl">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Oficina do Inventor</div>
+            <h3 class="mt-2 text-xl font-bold text-ink">Configure quais unidades evoluir</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted">
+              Defina separadamente os ramos de <strong>ataque</strong> e <strong>defesa</strong> por unidade, alem da prioridade global do job.
+              Se deixar tudo desmarcado, o runner evolui <strong>qualquer melhoria disponivel</strong>.
+            </p>
+          </div>
+          <div class="grid grid-cols-2 gap-3 lg:min-w-[20rem]">
+            {# Workshop city info #}
+            <div class="rounded-2xl border px-4 py-3"
+                 style="border-color: rgba(50,145,210,0.18); background: rgba(255,255,255,0.76);">
+              <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Cidade alvo</div>
+              <template x-if="selectedCity()">
+                <div class="mt-2 flex items-center gap-3">
+                  <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border"
+                        style="border-color: rgba(50,145,210,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                    <img src="{{ upgrade_units_ui.summary.workshop_icon }}" alt="Oficina" class="h-7 w-7 object-contain">
+                  </span>
+                  <div class="min-w-0">
+                    <div class="truncate text-sm font-semibold text-ink" x-text="selectedCity().name || 'Cidade'"></div>
+                    <div class="text-[11px] text-muted" x-text="selectedCity() ? `Oficina Lv ${selectedCity().level} • [${selectedCity().x}:${selectedCity().y}]` : ''"></div>
+                  </div>
+                </div>
+              </template>
+              <template x-if="!selectedCity()">
+                <div class="mt-2">
+                  <div class="text-sm font-semibold text-ink">{{ upgrade_units_ui.summary.city_count }} cidade{% if upgrade_units_ui.summary.city_count != 1 %}s{% endif %}</div>
+                  <div class="mt-1 text-[11px] text-muted">Vazio = todas com Oficina detectada{% if upgrade_units_ui.summary.city_count > 1 %}s{% endif %}</div>
+                </div>
+              </template>
+            </div>
+            {# Selected count #}
+            <div class="rounded-2xl border px-4 py-3"
+                 style="border-color: rgba(220,75,35,0.18); background: rgba(255,255,255,0.76);">
+              <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Ramos</div>
+              <div class="mt-2 flex items-center gap-3">
+                <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
+                      style="background: rgba(220,75,35,0.10);">
+                  <i class="bi bi-crosshair text-xl" style="color: rgba(220,75,35,0.85);"></i>
+                </span>
+                <div class="min-w-0">
+                  <div class="text-sm font-semibold text-ink">
+                    <span x-text="branchCount() === 0 ? 'Todas' : branchCount() + ' selecionado' + (branchCount() === 1 ? '' : 's')"></span>
+                  </div>
+                  <div class="text-[11px] text-muted" x-text="branchCount() === 0 ? 'Evolui qualquer disponivel' : 'Ataque e defesa filtrados'"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# ── Body ── #}
+      <div class="px-5 py-5 md:px-6">
+        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(17rem,0.8fr)]">
+
+          {# ── Unit picker ── #}
+          <section class="rounded-[22px] border p-4"
+                   style="border-color: rgba(50,145,210,0.22); background: linear-gradient(180deg, rgba(50,145,210,0.06), rgba(255,255,255,0.82));">
+            {# Tab selector #}
+            <div class="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Unidades</div>
+                <div class="mt-1 text-sm font-semibold text-ink">Selecione quais tipos evoluir</div>
+              </div>
+              <div class="flex items-center gap-1 rounded-2xl border p-1"
+                   style="border-color: rgba(219,201,167,0.7); background: rgba(255,255,255,0.70);">
+                <button type="button"
+                        @click="activeTab = 'land'"
+                        :class="activeTab === 'land' ? 'bg-white text-ink shadow-sm' : 'text-muted hover:text-ink'"
+                        class="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all">
+                  <i class="bi bi-shield-fill"></i> Terrestres
+                </button>
+                <button type="button"
+                        @click="activeTab = 'sea'"
+                        :class="activeTab === 'sea' ? 'bg-white text-ink shadow-sm' : 'text-muted hover:text-ink'"
+                        class="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all">
+                  <i class="bi bi-water"></i> Navais
+                </button>
+              </div>
+            </div>
+
+            {# Land units #}
+            <div x-show="activeTab === 'land'" class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {% for unit in upgrade_units_ui.land_units %}
+              <div class="group relative flex items-center gap-3 overflow-hidden rounded-[18px] border p-3 transition-all duration-150"
+                     @click="toggleUnit('{{ unit.key }}')"
+                     :class="unitSelected('{{ unit.key }}')
+                       ? 'ring-1 shadow-md translate-y-[-1px]'
+                       : 'hover:translate-y-[-1px] hover:shadow-sm'"
+                     :style="unitSelected('{{ unit.key }}')
+                       ? 'border-color: {{ unit.accent }}; box-shadow: 0 0 0 1px {{ unit.accent }}; background: linear-gradient(180deg, rgba(255,255,255,0.94), {{ unit.surface }});'
+                       : 'border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.84);'">
+                {# Unit icon #}
+                <div class="relative shrink-0">
+                  <div class="flex h-12 w-12 items-center justify-center overflow-hidden rounded-[14px] border"
+                       style="border-color: rgba(255,255,255,0.75); background: linear-gradient(180deg, #fffdfa, #f6eedf);">
+                    {% if unit.icon_url %}<img src="{{ unit.icon_url }}" alt="{{ unit.name }}" class="h-10 w-10 object-contain">{% else %}<i class="bi {{ unit.bi }} text-2xl" style="color: {{ unit.accent }};"></i>{% endif %}
+                  </div>
+                  <span class="absolute -bottom-1 -right-1 inline-flex h-5 w-5 items-center justify-center rounded-full border-2 border-white shadow-sm transition-all"
+                        :style="unitSelected('{{ unit.key }}')
+                          ? 'background: {{ unit.accent }}; color: white;'
+                          : 'background: rgba(255,255,255,0.9); color: rgba(120,100,70,0.6);'">
+                    <i class="bi text-[9px]" :class="unitSelected('{{ unit.key }}') ? 'bi-check-lg' : 'bi-plus-lg'"></i>
+                  </span>
+                </div>
+                {# Name + branch inputs #}
+                <div class="min-w-0 flex-1">
+                  <div class="truncate text-xs font-semibold text-ink">{{ unit.name }}</div>
+                  <div class="mt-1 text-[10px] text-muted" x-show="!unitSelected('{{ unit.key }}')" x-cloak>Clique no card para ativar a unidade</div>
+                  <div class="mt-2 space-y-2" x-show="unitSelected('{{ unit.key }}')" x-cloak>
+                    <div class="flex flex-wrap gap-2">
+                      <button type="button"
+                              @click.stop="toggleBranch('{{ unit.key }}', 'attack')"
+                              class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-all"
+                              :style="units.{{ unit.key }}.attack
+                                ? 'border-color: {{ unit.accent }}; background: {{ unit.surface }}; color: {{ unit.accent }};'
+                                : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82); color: var(--ik-ink);'">
+                        <span class="inline-flex h-5 w-5 items-center justify-center rounded-full border"
+                              :style="units.{{ unit.key }}.attack
+                                ? 'border-color: {{ unit.accent }}; background: {{ unit.accent }}; color: white;'
+                                : 'border-color: rgba(219,201,167,0.9); background: white; color: rgba(120,100,70,0.6);'">
+                          <i class="bi text-[9px]" :class="units.{{ unit.key }}.attack ? 'bi-check-lg' : 'bi-plus-lg'"></i>
+                        </span>
+                        Ataque
+                      </button>
+                      <button type="button"
+                              @click.stop="toggleBranch('{{ unit.key }}', 'defense')"
+                              class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-all"
+                              :style="units.{{ unit.key }}.defense
+                                ? 'border-color: {{ unit.accent }}; background: {{ unit.surface }}; color: {{ unit.accent }};'
+                                : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82); color: var(--ik-ink);'">
+                        <span class="inline-flex h-5 w-5 items-center justify-center rounded-full border"
+                              :style="units.{{ unit.key }}.defense
+                                ? 'border-color: {{ unit.accent }}; background: {{ unit.accent }}; color: white;'
+                                : 'border-color: rgba(219,201,167,0.9); background: white; color: rgba(120,100,70,0.6);'">
+                          <i class="bi text-[9px]" :class="units.{{ unit.key }}.defense ? 'bi-check-lg' : 'bi-plus-lg'"></i>
+                        </span>
+                        Defesa
+                      </button>
+                    </div>
+                    <div class="flex flex-wrap gap-3">
+                      <div class="flex items-center gap-2" x-show="units.{{ unit.key }}.attack" x-cloak>
+                        <span class="min-w-[3.75rem] text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Ataque</span>
+                        <input type="number"
+                               min="0" max="99"
+                               x-model="units.{{ unit.key }}.attack_max"
+                               @click.stop
+                               placeholder="max"
+                               class="w-16 rounded-lg border px-2 py-0.5 text-center text-xs font-semibold text-ink focus:outline-none"
+                               style="border-color: {{ unit.accent }}; background: rgba(255,255,255,0.9);">
+                        <span class="text-[10px] text-muted">nivel ou 0=max</span>
+                      </div>
+                      <div class="flex items-center gap-2" x-show="units.{{ unit.key }}.defense" x-cloak>
+                        <span class="min-w-[3.75rem] text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Defesa</span>
+                        <input type="number"
+                               min="0" max="99"
+                               x-model="units.{{ unit.key }}.defense_max"
+                               @click.stop
+                               placeholder="max"
+                               class="w-16 rounded-lg border px-2 py-0.5 text-center text-xs font-semibold text-ink focus:outline-none"
+                               style="border-color: {{ unit.accent }}; background: rgba(255,255,255,0.9);">
+                        <span class="text-[10px] text-muted">nivel ou 0=max</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+
+            {# Sea units #}
+            <div x-show="activeTab === 'sea'" class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {% for unit in upgrade_units_ui.sea_units %}
+              <div class="group relative flex items-center gap-3 overflow-hidden rounded-[18px] border p-3 transition-all duration-150"
+                     @click="toggleUnit('{{ unit.key }}')"
+                     :class="unitSelected('{{ unit.key }}')
+                       ? 'ring-1 shadow-md translate-y-[-1px]'
+                       : 'hover:translate-y-[-1px] hover:shadow-sm'"
+                     :style="unitSelected('{{ unit.key }}')
+                       ? 'border-color: {{ unit.accent }}; box-shadow: 0 0 0 1px {{ unit.accent }}; background: linear-gradient(180deg, rgba(255,255,255,0.94), {{ unit.surface }});'
+                       : 'border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.84);'">
+                <div class="relative shrink-0">
+                  <div class="flex h-12 w-12 items-center justify-center overflow-hidden rounded-[14px] border"
+                       style="border-color: rgba(255,255,255,0.75); background: linear-gradient(180deg, #fffdfa, #f6eedf);">
+                    {% if unit.icon_url %}<img src="{{ unit.icon_url }}" alt="{{ unit.name }}" class="h-10 w-10 object-contain">{% else %}<i class="bi {{ unit.bi }} text-2xl" style="color: {{ unit.accent }};"></i>{% endif %}
+                  </div>
+                  <span class="absolute -bottom-1 -right-1 inline-flex h-5 w-5 items-center justify-center rounded-full border-2 border-white shadow-sm transition-all"
+                        :style="unitSelected('{{ unit.key }}')
+                          ? 'background: {{ unit.accent }}; color: white;'
+                          : 'background: rgba(255,255,255,0.9); color: rgba(120,100,70,0.6);'">
+                    <i class="bi text-[9px]" :class="unitSelected('{{ unit.key }}') ? 'bi-check-lg' : 'bi-plus-lg'"></i>
+                  </span>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="truncate text-xs font-semibold text-ink">{{ unit.name }}</div>
+                  <div class="mt-1 text-[10px] text-muted" x-show="!unitSelected('{{ unit.key }}')" x-cloak>Clique no card para ativar a unidade</div>
+                  <div class="mt-2 space-y-2" x-show="unitSelected('{{ unit.key }}')" x-cloak>
+                    <div class="flex flex-wrap gap-2">
+                      <button type="button"
+                              @click.stop="toggleBranch('{{ unit.key }}', 'attack')"
+                              class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-all"
+                              :style="units.{{ unit.key }}.attack
+                                ? 'border-color: {{ unit.accent }}; background: {{ unit.surface }}; color: {{ unit.accent }};'
+                                : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82); color: var(--ik-ink);'">
+                        <span class="inline-flex h-5 w-5 items-center justify-center rounded-full border"
+                              :style="units.{{ unit.key }}.attack
+                                ? 'border-color: {{ unit.accent }}; background: {{ unit.accent }}; color: white;'
+                                : 'border-color: rgba(219,201,167,0.9); background: white; color: rgba(120,100,70,0.6);'">
+                          <i class="bi text-[9px]" :class="units.{{ unit.key }}.attack ? 'bi-check-lg' : 'bi-plus-lg'"></i>
+                        </span>
+                        Ataque
+                      </button>
+                      <button type="button"
+                              @click.stop="toggleBranch('{{ unit.key }}', 'defense')"
+                              class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-all"
+                              :style="units.{{ unit.key }}.defense
+                                ? 'border-color: {{ unit.accent }}; background: {{ unit.surface }}; color: {{ unit.accent }};'
+                                : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82); color: var(--ik-ink);'">
+                        <span class="inline-flex h-5 w-5 items-center justify-center rounded-full border"
+                              :style="units.{{ unit.key }}.defense
+                                ? 'border-color: {{ unit.accent }}; background: {{ unit.accent }}; color: white;'
+                                : 'border-color: rgba(219,201,167,0.9); background: white; color: rgba(120,100,70,0.6);'">
+                          <i class="bi text-[9px]" :class="units.{{ unit.key }}.defense ? 'bi-check-lg' : 'bi-plus-lg'"></i>
+                        </span>
+                        Defesa
+                      </button>
+                    </div>
+                    <div class="flex flex-wrap gap-3">
+                      <div class="flex items-center gap-2" x-show="units.{{ unit.key }}.attack" x-cloak>
+                        <span class="min-w-[3.75rem] text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Ataque</span>
+                        <input type="number"
+                               min="0" max="99"
+                               x-model="units.{{ unit.key }}.attack_max"
+                               @click.stop
+                               placeholder="max"
+                               class="w-16 rounded-lg border px-2 py-0.5 text-center text-xs font-semibold text-ink focus:outline-none"
+                               style="border-color: {{ unit.accent }}; background: rgba(255,255,255,0.9);">
+                        <span class="text-[10px] text-muted">nivel ou 0=max</span>
+                      </div>
+                      <div class="flex items-center gap-2" x-show="units.{{ unit.key }}.defense" x-cloak>
+                        <span class="min-w-[3.75rem] text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Defesa</span>
+                        <input type="number"
+                               min="0" max="99"
+                               x-model="units.{{ unit.key }}.defense_max"
+                               @click.stop
+                               placeholder="max"
+                               class="w-16 rounded-lg border px-2 py-0.5 text-center text-xs font-semibold text-ink focus:outline-none"
+                               style="border-color: {{ unit.accent }}; background: rgba(255,255,255,0.9);">
+                        <span class="text-[10px] text-muted">nivel ou 0=max</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </section>
+
+          {# ── Right panel: reserves + info ── #}
+          <section class="space-y-4">
+            <div class="grid grid-cols-1 gap-4 xl:grid-cols-3">
+              <div class="rounded-[22px] border p-4"
+                   style="border-color: rgba(50,145,210,0.24); background: linear-gradient(180deg, rgba(50,145,210,0.08), rgba(255,255,255,0.84));">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Cidade</div>
+                    <div class="mt-1 text-sm font-semibold text-ink">Selecione uma Oficina especifica</div>
+                  </div>
+                  <button type="button"
+                          class="rounded-full border px-3 py-1 text-[11px] font-medium text-ink transition hover:border-[var(--ik-sea)]/45"
+                          style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);"
+                          @click="cityId = ''">
+                    Todas
+                  </button>
+                </div>
+                <label class="mt-3 block">
+                  <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Filtrar cidades</span>
+                  <input type="text" x-model="cityQuery" class="form-input" placeholder="Buscar por cidade, recurso ou coordenada">
+                </label>
+                <div class="mt-3 grid max-h-[22rem] grid-cols-1 gap-2 overflow-y-auto p-1">
+                  <template x-for="city in filteredCities()" :key="`workshop-${city.id}`">
+                    <button type="button"
+                            class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                            :class="String(cityId) === String(city.id)
+                              ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]'
+                              : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
+                            :style="String(cityId) === String(city.id)
+                              ? 'border-color: rgba(79,134,185,0.50); background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(79,134,185,0.10));'
+                              : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'"
+                            @click="cityId = String(city.id || '')">
+                      <div class="absolute inset-x-0 top-0 h-14"
+                           style="background: linear-gradient(135deg, rgba(79,134,185,0.16), rgba(79,134,185,0.02));"></div>
+                      <div class="relative p-3">
+                        <div class="flex items-start gap-3">
+                          <div class="relative shrink-0">
+                            <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                                 style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                              <img src="{{ upgrade_units_ui.summary.workshop_icon }}" alt="Oficina" class="h-7 w-7 object-contain">
+                            </div>
+                            <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                              <img :src="city.tradegood_icon" :alt="city.tradegood_name" class="h-4 w-4 object-contain">
+                            </div>
+                          </div>
+                          <div class="min-w-0 flex-1">
+                            <div class="flex items-start justify-between gap-2">
+                              <div class="min-w-0">
+                                <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
+                                <div class="mt-1 text-[11px] text-muted" x-text="`Oficina Lv ${city.level} • [${city.x}:${city.y}]`"></div>
+                              </div>
+                              <span class="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border"
+                                    :style="String(cityId) === String(city.id)
+                                      ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
+                                      : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
+                                <i class="bi" :class="String(cityId) === String(city.id) ? 'bi-check-lg' : 'bi-hammer'"></i>
+                              </span>
+                            </div>
+                            <div class="mt-2 flex flex-wrap gap-1.5">
+                              <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]"
+                                    style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);"
+                                    x-text="city.tradegood_name || 'Recurso da ilha'"></span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  </template>
+                </div>
+                {% for error in form.city_id.errors %}
+                <p class="form-error mt-3"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+                {% endfor %}
+              </div>
+
+              <div class="rounded-[22px] border p-4"
+                   style="border-color: rgba(50,145,210,0.24); background: linear-gradient(180deg, rgba(50,145,210,0.08), rgba(255,255,255,0.84));">
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Prioridade global</div>
+                <div class="mt-1 text-sm font-semibold text-ink">Escolha qual melhoria vem primeiro</div>
+                <div class="mt-3 space-y-2">
+                  {% for mode in upgrade_units_ui.priority_modes %}
+                  <label class="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border px-3 py-2 transition-all"
+                         :class="priorityMode === '{{ mode.value }}' ? 'shadow-sm' : ''"
+                         :style="priorityMode === '{{ mode.value }}'
+                           ? 'border-color: rgba(50,145,210,0.45); background: rgba(50,145,210,0.10);'
+                           : 'border-color: rgba(219,201,167,0.75); background: rgba(255,255,255,0.82);'">
+                    <span class="text-sm font-medium text-ink">{{ mode.label }}</span>
+                    <input type="radio" class="h-4 w-4 border-[var(--ik-line)] text-[var(--ik-sea)] focus:ring-[var(--ik-sea)]"
+                           name="_priority_mode_ui"
+                           value="{{ mode.value }}"
+                           x-model="priorityMode">
+                  </label>
+                  {% endfor %}
+                </div>
+              </div>
+
+              <div class="rounded-[22px] border p-4"
+                   style="border-color: rgba(201,156,78,0.24); background: linear-gradient(180deg, rgba(201,156,78,0.08), rgba(255,255,255,0.84));">
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">Reservas minimas</div>
+                <div class="mt-1 text-sm font-semibold text-ink">Nao gastar abaixo desses valores</div>
+                <div class="mt-3 space-y-3">
+                  <div>
+                    <label class="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
+                      <img src="{{ upgrade_units_ui.summary.crystal_icon }}" alt="Cristal" class="h-3.5 w-3.5 object-contain">
+                      Reserva de Cristal
+                    </label>
+                    <input type="number" min="0" x-model="minCrystal" placeholder="0"
+                           class="w-full rounded-xl border px-3 py-2 text-sm text-ink focus:outline-none"
+                           style="border-color: rgba(50,145,210,0.25); background: rgba(255,255,255,0.88);">
+                    <p class="mt-1 text-[10px] text-muted">Se o estoque de cristal for menor que este valor, a melhoria nao e iniciada nessa rodada.</p>
+                  </div>
+                  <div>
+                    <label class="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">
+                      <i class="bi bi-coin text-[var(--ik-gold-dark)]"></i>
+                      Reserva de Ouro
+                    </label>
+                    <input type="number" min="0" x-model="minGold" placeholder="0"
+                           class="w-full rounded-xl border px-3 py-2 text-sm text-ink focus:outline-none"
+                           style="border-color: rgba(201,156,78,0.25); background: rgba(255,255,255,0.88);">
+                    <p class="mt-1 text-[10px] text-muted">Se o ouro disponivel for menor que este valor, a melhoria nao e iniciada.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {# Info card #}
+            <div class="rounded-[22px] border p-4"
+                 style="border-color: rgba(95,140,78,0.24); background: linear-gradient(180deg, rgba(95,140,78,0.08), rgba(255,255,255,0.84));">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">Como funciona</div>
+              <div class="mt-2 space-y-2 text-sm text-muted">
+                <div class="flex items-start gap-2">
+                  <i class="bi bi-check2-circle mt-0.5 shrink-0 text-[var(--ik-good)]"></i>
+                  <span>O runner acessa a Oficina do Inventor em cada cidade e inicia a proxima melhoria disponivel.</span>
+                </div>
+                <div class="flex items-start gap-2">
+                  <i class="bi bi-check2-circle mt-0.5 shrink-0 text-[var(--ik-good)]"></i>
+                  <span>Apos iniciar, reprograma automaticamente para quando o timer terminar.</span>
+                </div>
+                <div class="flex items-start gap-2">
+                  <i class="bi bi-check2-circle mt-0.5 shrink-0 text-[var(--ik-good)]"></i>
+                  <span>Com ramos marcados, o job respeita separadamente os limites de ataque e defesa por unidade.</span>
+                </div>
+                <div class="flex items-start gap-2">
+                  <i class="bi bi-info-circle mt-0.5 shrink-0" style="color: var(--ik-sea);"></i>
+                  <span>Ramo desmarcado = ignorar. Campo vazio ou valor 0 = evoluir ate o maximo daquele ramo.</span>
+                </div>
+                <div class="flex items-start gap-2">
+                  <i class="bi bi-info-circle mt-0.5 shrink-0" style="color: var(--ik-sea);"></i>
+                  <span>A prioridade global define a ordem entre ataque, defesa, menor tempo ou menor custo.</span>
+                </div>
+              </div>
+            </div>
+
+          </section>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+

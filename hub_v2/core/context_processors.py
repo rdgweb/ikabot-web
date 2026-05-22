@@ -33,7 +33,8 @@ def nav_context(request):
             "items": [
                 {"name": "Nos & Agents", "url": "/accounts/nodes/", "icon": "bi-hdd-network"},
                 {"name": "Contas do Jogo", "url": "/accounts/", "icon": "bi-person-badge"},
-                {"name": "Presets", "url": "/profiles/", "icon": "bi-collection"},
+                {"name": "Perfis", "url": "/profiles/", "icon": "bi-file-text"},
+                {"name": "Presets", "url": "/profiles/presets/", "icon": "bi-collection"},
                 {"name": "Proxy", "url": "/proxy/", "icon": "bi-shield-lock"},
                 {"name": "Telegram", "url": "/telegram/", "icon": "bi-telegram"},
                 {"name": "Mensagens", "url": "/telegram/audit/", "icon": "bi-chat-dots"},

@@ -1,0 +1,236 @@
+{% load static hub_tags %}
+
+    {% if action_code == 9002 %}
+    {{ cities|json_script:"revolt-cities-data" }}
+    <div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_40px_rgba(120,44,44,0.10)]"
+         style="border-color: rgba(220,120,120,0.28); background:
+           radial-gradient(900px 280px at 0% 0%, rgba(185,79,79,0.12), transparent 60%),
+           radial-gradient(760px 280px at 100% 100%, rgba(201,156,78,0.14), transparent 60%),
+           linear-gradient(180deg, rgba(255,250,248,0.98), rgba(247,241,229,0.94));"
+         x-data="{
+           cities: JSON.parse(document.getElementById('revolt-cities-data')?.textContent || '[]'),
+           selectedCityId: '{{ form.city_id.value|default:''|escapejs }}',
+           selectedType: '{{ form.revolt_type.value|default:''|escapejs }}' || 'troops',
+           selectedCity() {
+             return this.cities.find(city => String(city.id) === String(this.selectedCityId || '')) || null;
+           },
+           supportsTroops() {
+             const city = this.selectedCity();
+             return city ? !!city.city_occupied : true;
+           },
+           supportsShips() {
+             const city = this.selectedCity();
+             return city ? !!city.harbour_occupied : true;
+           },
+           selectCity(cityId) {
+             this.selectedCityId = String(cityId || '');
+             const city = this.selectedCity();
+             if (!city) return;
+             if (city.harbour_occupied && !city.city_occupied) {
+               this.selectedType = 'ships';
+               return;
+             }
+             if (city.city_occupied && !city.harbour_occupied) {
+               this.selectedType = 'troops';
+               return;
+             }
+             if (this.selectedType !== 'troops' && this.selectedType !== 'ships') {
+               this.selectedType = city.city_occupied ? 'troops' : 'ships';
+             }
+           },
+         }"
+         x-init="if (!selectedCityId) { const firstAlertCity = cities.find(city => city.city_occupied || city.harbour_occupied); if (firstAlertCity) selectCity(firstAlertCity.id); } else { selectCity(selectedCityId); }">
+      <input type="hidden" name="{{ form.city_id.html_name }}" x-model="selectedCityId">
+      <input type="hidden" name="{{ form.revolt_type.html_name }}" x-model="selectedType">
+
+      <div class="border-b px-5 py-5 md:px-6"
+           style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
+        <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div class="max-w-2xl">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-700">Acao imediata</div>
+            <h3 class="mt-2 text-xl font-bold text-ink">Libere a cidade certa e confirme o alvo da revolta</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted">
+              Selecione a cidade afetada e diga se a revolta mira tropas em terra ou a frota que bloqueia o porto.
+            </p>
+          </div>
+          <div class="rounded-2xl border px-4 py-3 md:min-w-[17rem]"
+               style="border-color: rgba(185,79,79,0.18); background: rgba(255,255,255,0.82);">
+            <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Resumo</div>
+            <template x-if="selectedCity()">
+              <div class="mt-2 space-y-1.5">
+                <div class="text-sm font-semibold text-ink" x-text="selectedCity().name || 'Cidade selecionada'"></div>
+                <div class="text-[11px] text-muted" x-text="selectedType === 'ships' ? 'Revolta contra bloqueio naval' : 'Revolta contra ocupacao terrestre'"></div>
+              </div>
+            </template>
+            <template x-if="!selectedCity()">
+              <div class="mt-2 text-[11px] text-muted">Escolha uma cidade para ver o alvo da revolta.</div>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <div class="px-5 py-5 md:px-6">
+        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[1.3fr,0.9fr]">
+          <section class="rounded-[22px] border p-4"
+                   style="border-color: rgba(185,79,79,0.24); background: linear-gradient(180deg, rgba(185,79,79,0.06), rgba(255,255,255,0.82));">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-red-700">Cidade alvo</div>
+                <div class="mt-1 text-sm font-semibold text-ink">Selecione onde a revolta deve acontecer</div>
+              </div>
+              <div class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
+                   style="background: rgba(185,79,79,0.12); color: #9f2f2f;">
+                <i class="bi bi-shield-exclamation text-base"></i>
+              </div>
+            </div>
+
+            {% if cities %}
+            <div class="grid grid-cols-1 gap-2 xl:grid-cols-2">
+              {% for city in cities %}
+              <button type="button"
+                      class="group overflow-hidden rounded-[18px] border text-left transition-all duration-150 hover:translate-y-[-1px] hover:shadow-[0_10px_24px_rgba(185,79,79,0.10)]"
+                      :class="selectedCityId === '{{ city.id|stringformat:'s'|escapejs }}' ? 'ring-2 ring-red-500 shadow-[0_10px_26px_rgba(185,79,79,0.18)]' : ''"
+                      :style="selectedCityId === '{{ city.id|stringformat:'s'|escapejs }}'
+                        ? 'border-color: rgba(185,79,79,0.62); background: linear-gradient(180deg, rgba(185,79,79,0.10), rgba(255,255,255,0.92));'
+                        : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'"
+                      @click="selectCity('{{ city.id|stringformat:'s'|escapejs }}')">
+                <div class="relative p-3">
+                  <div class="flex items-start gap-3">
+                    <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                         style="border-color: rgba(185,79,79,0.16); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                      <img src="{{ city.city_art }}" alt="" class="h-8 w-8 object-contain">
+                    </div>
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                          <div class="truncate text-sm font-semibold text-ink">{{ city.name|default:"Cidade" }}</div>
+                          <div class="mt-1 text-[11px] text-muted">
+                            {{ city.tradegood_name }}
+                            {% if city.x and city.y %}<span> • [{{ city.x }}:{{ city.y }}]</span>{% endif %}
+                          </div>
+                        </div>
+                        <span class="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full border transition-colors"
+                              :style="selectedCityId === '{{ city.id|stringformat:'s'|escapejs }}'
+                                ? 'border-color: #b91c1c; color: #fff; background: #b91c1c;'
+                                : 'border-color: rgba(185,79,79,0.24); color: #b91c1c; background: rgba(185,79,79,0.06);'">
+                          <i class="bi" :class="selectedCityId === '{{ city.id|stringformat:'s'|escapejs }}' ? 'bi-check-lg' : 'bi-arrow-right'"></i>
+                        </span>
+                      </div>
+                      <div class="mt-2 flex flex-wrap gap-1.5">
+                        {% if city.city_occupied %}
+                        <span class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium"
+                              style="background: rgba(185,79,79,0.12); color: #9f2f2f;">
+                          <i class="bi bi-flag-fill"></i> Ocupacao terrestre
+                        </span>
+                        {% endif %}
+                        {% if city.harbour_occupied %}
+                        <span class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium"
+                              style="background: rgba(194,101,32,0.12); color: #b45309;">
+                          <i class="bi bi-anchor-fill"></i> Porto bloqueado
+                        </span>
+                        {% endif %}
+                        {% if not city.city_occupied and not city.harbour_occupied %}
+                        <span class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium"
+                              style="background: rgba(122,106,82,0.10); color: #7a6a52;">
+                          <i class="bi bi-info-circle"></i> Sem alerta no snapshot
+                        </span>
+                        {% endif %}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </button>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div class="rounded-2xl border px-4 py-6 text-center"
+                 style="border-color: rgba(219,201,167,0.84); background: rgba(255,255,255,0.76);">
+              <i class="bi bi-map text-xl text-muted"></i>
+              <div class="mt-2 text-sm font-medium text-ink">Nenhuma cidade no snapshot</div>
+              <div class="mt-1 text-[11px] text-muted">Rode Check Status antes de criar a revolta por este modal.</div>
+            </div>
+            {% endif %}
+
+            {% for error in form.city_id.errors %}
+            <p class="form-error mt-3"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+          </section>
+
+          <section class="rounded-[22px] border p-4"
+                   style="border-color: rgba(201,156,78,0.28); background: linear-gradient(180deg, rgba(201,156,78,0.10), rgba(255,255,255,0.82));">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">Alvo da revolta</div>
+                <div class="mt-1 text-sm font-semibold text-ink">Escolha o que deve ser libertado primeiro</div>
+              </div>
+              <div class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
+                   style="background: rgba(201,156,78,0.16); color: var(--ik-gold-dark);">
+                <i class="bi bi-signpost-split text-base"></i>
+              </div>
+            </div>
+
+            <div class="space-y-2">
+              <button type="button"
+                      class="w-full rounded-[18px] border p-3 text-left transition-all duration-150"
+                      :disabled="selectedCity() && !supportsTroops()"
+                      :class="selectedType === 'troops' ? 'ring-2 ring-red-500 shadow-[0_10px_24px_rgba(185,79,79,0.14)]' : ''"
+                      :style="selectedCity() && !supportsTroops()
+                        ? 'opacity:.45; cursor:not-allowed; border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.56);'
+                        : selectedType === 'troops'
+                          ? 'border-color: rgba(185,79,79,0.62); background: linear-gradient(180deg, rgba(185,79,79,0.10), rgba(255,255,255,0.94));'
+                          : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'"
+                      @click="if (supportsTroops()) selectedType = 'troops'">
+                <div class="flex items-start gap-3">
+                  <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
+                        style="background: rgba(185,79,79,0.12); color: #9f2f2f;">
+                    <i class="bi bi-flag-fill text-base"></i>
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="text-sm font-semibold text-ink">Forcas de ocupacao</div>
+                      <span class="text-[10px] font-medium text-red-700">Tropas</span>
+                    </div>
+                    <div class="mt-1 text-[11px] leading-relaxed text-muted">
+                      Use quando a cidade estiver ocupada por exercito inimigo em terra.
+                    </div>
+                  </div>
+                </div>
+              </button>
+
+              <button type="button"
+                      class="w-full rounded-[18px] border p-3 text-left transition-all duration-150"
+                      :disabled="selectedCity() && !supportsShips()"
+                      :class="selectedType === 'ships' ? 'ring-2 ring-amber-600 shadow-[0_10px_24px_rgba(194,101,32,0.14)]' : ''"
+                      :style="selectedCity() && !supportsShips()
+                        ? 'opacity:.45; cursor:not-allowed; border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.56);'
+                        : selectedType === 'ships'
+                          ? 'border-color: rgba(194,101,32,0.58); background: linear-gradient(180deg, rgba(194,101,32,0.10), rgba(255,255,255,0.94));'
+                          : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'"
+                      @click="if (supportsShips()) selectedType = 'ships'">
+                <div class="flex items-start gap-3">
+                  <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
+                        style="background: rgba(194,101,32,0.12); color: #b45309;">
+                    <i class="bi bi-anchor-fill text-base"></i>
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="text-sm font-semibold text-ink">Bloqueio do porto</div>
+                      <span class="text-[10px] font-medium text-orange-700">Frotas</span>
+                    </div>
+                    <div class="mt-1 text-[11px] leading-relaxed text-muted">
+                      Use quando o problema estiver no porto bloqueado por navios inimigos.
+                    </div>
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            {% for error in form.revolt_type.errors %}
+            <p class="form-error mt-3"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+          </section>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+

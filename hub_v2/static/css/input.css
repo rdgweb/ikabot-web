@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+@source "../../templates/**/*.html";
+@source "../../apps/**/*.html";
+
 /* ── Ikabot Hub — Warm Parchment Theme ──
    Inspired by the original ikabot hub (sand, gold, sea) */
 
@@ -89,12 +92,42 @@
 /* ── Sidebar ── */
 @layer components {
   .sidebar {
-    @apply fixed left-0 top-0 h-full w-64 overflow-y-auto overflow-x-hidden z-40;
+    @apply fixed left-0 top-0 h-full w-64 overflow-x-hidden z-40;
+    display: flex;
+    flex-direction: column;
     background: linear-gradient(180deg, #3a3225, #2d2a24);
     border-right: 1px solid rgba(201, 156, 78, 0.2);
     transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
     box-sizing: border-box;
   }
+
+  .sidebar nav {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    min-height: 0;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(201, 156, 78, 0.20) transparent;
+  }
+
+  .sidebar nav::-webkit-scrollbar {
+    width: 4px;
+    background: transparent;
+  }
+
+  .sidebar nav::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .sidebar nav::-webkit-scrollbar-thumb {
+    background: rgba(201, 156, 78, 0.22);
+    border-radius: 4px;
+  }
+
+  .sidebar nav::-webkit-scrollbar-thumb:hover {
+    background: rgba(201, 156, 78, 0.45);
+  }
+
 
   .sidebar-toggle-btn {
     position: absolute;
@@ -161,7 +194,7 @@
   }
 
   .sidebar nav {
-    padding-bottom: 5.75rem;
+    padding-bottom: 1rem;
     min-width: 0;
   }
 
@@ -169,6 +202,7 @@
     border-top: 1px solid rgba(201, 156, 78, 0.15);
     background: rgba(0, 0, 0, 0.2);
     overflow: hidden;
+    flex-shrink: 0;
   }
 
   .sidebar-collapsible {

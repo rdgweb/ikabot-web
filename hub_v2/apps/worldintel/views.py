@@ -3,7 +3,10 @@ from urllib.parse import urlencode
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.paginator import Paginator
 from django.db.models import BigIntegerField, Count, ExpressionWrapper, F, Max, Min, Q
-from django.http import Http404
+from django.http import Http404, HttpResponseRedirect
+from django.shortcuts import get_object_or_404
+from django.urls import reverse
+from django.views import View
 from django.views.generic import TemplateView
 
 from apps.accounts.models import GameAccount
@@ -85,6 +88,13 @@ class WorldDumpListView(WorldIntelBaseView):
             dumps = dumps.filter(game_account=base["selected_game_account"])
         ctx["dumps"] = dumps[:100]
         return ctx
+
+
+class WorldDumpDeleteView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        dump = get_object_or_404(WorldDump, pk=pk)
+        dump.delete()
+        return HttpResponseRedirect(reverse("worldintel:dumps"))
 
 
 class WorldPlayerListView(WorldIntelBaseView):

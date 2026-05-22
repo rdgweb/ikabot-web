@@ -1,0 +1,275 @@
+{% load static hub_tags %}
+
+    {% if action_code == 902 or action_code == 1006 %}
+    <div class="mb-4 overflow-hidden rounded-[22px] border shadow-[0_10px_30px_rgba(87,66,24,0.08)]"
+         style="border-color: var(--ik-line); background:
+           radial-gradient(760px 220px at 0% 0%, rgba(95,140,78,0.10), transparent 60%),
+           radial-gradient(680px 220px at 100% 100%, rgba(201,156,78,0.12), transparent 60%),
+           linear-gradient(180deg, rgba(255,252,245,0.96), rgba(247,241,229,0.92));"
+         x-data="{
+           selectedDonationTypes: [{% for selected in form.donation_type.value %}'{{ selected|escapejs }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
+           postProductionMode: '{{ form.post_production_mode.value|default:'preserve'|escapejs }}',
+           isDonationTypeSelected(value) {
+             return this.selectedDonationTypes.includes(String(value));
+           },
+           toggleDonationType(value) {
+             value = String(value);
+             if (this.isDonationTypeSelected(value)) {
+               this.selectedDonationTypes = this.selectedDonationTypes.filter(item => item !== value);
+               return;
+             }
+             this.selectedDonationTypes = [...this.selectedDonationTypes, value];
+           }
+         }">
+      <div class="border-b px-4 py-4"
+           style="border-color: rgba(219,201,167,0.82); background: linear-gradient(180deg, rgba(255,255,255,0.52), rgba(255,255,255,0));">
+        <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div class="max-w-2xl">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-good);">Loop da doação</div>
+            <div class="mt-1 text-sm font-semibold text-ink">Defina o destino da madeira, a regra do cálculo e o intervalo entre ciclos</div>
+            <p class="mt-1 text-xs leading-relaxed text-muted">
+              As cidades participantes ficam na seleção acima. Aqui você configura o comportamento recorrente do runner.
+            </p>
+          </div>
+          <div class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium"
+               style="border-color: rgba(95,140,78,0.20); color: var(--ik-good); background: rgba(95,140,78,0.08);">
+            <i class="bi bi-arrow-repeat"></i>
+            <span>Ciclo automático</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="px-4 py-4">
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-[1.1fr_1.2fr]">
+          <section class="rounded-[18px] border p-3"
+                   style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+            <div class="mb-2 flex items-center gap-2">
+              <span class="inline-flex h-8 w-8 items-center justify-center rounded-2xl"
+                    style="background: rgba(95,140,78,0.12); color: var(--ik-good);">
+                <i class="bi bi-signpost text-sm"></i>
+              </span>
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">Destino</div>
+                <div class="text-xs text-muted">Para onde a madeira será doada</div>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {% for choice in form.donation_type.field.choices %}
+              <label class="relative flex items-center gap-3 rounded-[16px] border px-3 py-3 cursor-pointer transition-all hover:translate-y-[-1px] hover:border-[var(--ik-good)]/45 hover:shadow-[0_10px_24px_rgba(95,140,78,0.10)]"
+                     :style="isDonationTypeSelected('{{ choice.0|stringformat:'s'|escapejs }}')
+                       ? 'border-color: var(--ik-good); background: linear-gradient(180deg, rgba(95,140,78,0.10), rgba(255,255,255,0.90));'
+                       : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'">
+                <input type="checkbox" name="{{ form.donation_type.html_name }}" value="{{ choice.0 }}" x-model="selectedDonationTypes" class="sr-only">
+                <button type="button"
+                        class="absolute inset-0 z-10"
+                        @click.prevent="toggleDonationType('{{ choice.0|stringformat:'s'|escapejs }}')"
+                        :aria-pressed="isDonationTypeSelected('{{ choice.0|stringformat:'s'|escapejs }}')"></button>
+                {% if choice.0|stringformat:"s" == "wood" %}
+                <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl shrink-0"
+                      style="background: rgba(95,140,78,0.12);">
+                  <img src="{% static 'game/resources/icon_wood.png' %}" alt="Madeira" class="h-5 w-5">
+                </span>
+                {% else %}
+                <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl shrink-0"
+                      style="background: rgba(201,156,78,0.12);">
+                  <span class="grid grid-cols-2 gap-[2px]">
+                    <img src="{% static 'game/resources/icon_wine.png' %}" alt="" class="h-3 w-3 object-contain">
+                    <img src="{% static 'game/resources/icon_marble.png' %}" alt="" class="h-3 w-3 object-contain">
+                    <img src="{% static 'game/resources/icon_glass.png' %}" alt="" class="h-3 w-3 object-contain">
+                    <img src="{% static 'game/resources/icon_sulfur.png' %}" alt="" class="h-3 w-3 object-contain">
+                  </span>
+                </span>
+                {% endif %}
+                <div class="min-w-0 flex-1">
+                  <div class="text-xs font-semibold text-ink"
+                       :style="isDonationTypeSelected('{{ choice.0|stringformat:'s'|escapejs }}') ? 'color: var(--ik-good);' : ''">{{ choice.1 }}</div>
+                  <div class="mt-1 text-[11px] text-muted">
+                    {% if choice.0|stringformat:"s" == "wood" %}
+                    Doa para a floresta da ilha.
+                    {% else %}
+                    Doa para o recurso de luxo produzido na ilha.
+                    {% endif %}
+                  </div>
+                </div>
+                <span class="inline-flex h-7 w-7 items-center justify-center rounded-full border transition-colors shrink-0"
+                      :style="isDonationTypeSelected('{{ choice.0|stringformat:'s'|escapejs }}')
+                        ? 'border-color: var(--ik-good); color: white; background: var(--ik-good);'
+                        : 'border-color: rgba(95,140,78,0.24); color: var(--ik-good); background: rgba(95,140,78,0.06);'">
+                  <i class="bi" :class="isDonationTypeSelected('{{ choice.0|stringformat:'s'|escapejs }}') ? 'bi-check-lg' : 'bi-plus-lg'"></i>
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+            {% if form.donation_type.help_text %}
+            <p class="form-help mt-2">{{ form.donation_type.help_text }}</p>
+            {% endif %}
+            {% for error in form.donation_type.errors %}
+            <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+          </section>
+
+          <section class="rounded-[18px] border p-3"
+                   style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+            <div class="mb-2 flex items-center gap-2">
+              <span class="inline-flex h-8 w-8 items-center justify-center rounded-2xl"
+                    style="background: rgba(79,134,185,0.12); color: var(--ik-sea);">
+                <i class="bi bi-calculator text-sm"></i>
+              </span>
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Regra de cálculo</div>
+                <div class="text-xs text-muted">Como cada ciclo decide o valor</div>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 gap-2 md:grid-cols-3">
+              {% for choice in form.donation_method.field.choices %}
+              <label class="rounded-[16px] border px-3 py-2 cursor-pointer transition-all hover:border-[var(--ik-sea)]/45 has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[rgba(79,134,185,0.06)]"
+                     style="border-color: var(--ik-line);">
+                <input type="radio" name="{{ form.donation_method.html_name }}" value="{{ choice.0 }}"
+                       {% if form.donation_method.value == choice.0|stringformat:"s" %}checked{% endif %}
+                       class="sr-only peer">
+                <div class="text-xs font-semibold text-ink peer-checked:text-[var(--ik-sea)]">{{ choice.1 }}</div>
+                <div class="mt-1 text-[11px] text-muted">
+                  {% if choice.0|stringformat:"s" == "1" %}
+                  Mantém uma folga de estoque e doa apenas o excedente.
+                  {% elif choice.0|stringformat:"s" == "2" %}
+                  Usa um percentual da produção esperada até o próximo ciclo.
+                  {% else %}
+                  Repete a mesma quantidade fixa toda vez.
+                  {% endif %}
+                </div>
+              </label>
+              {% endfor %}
+            </div>
+            {% if form.donation_method.help_text %}
+            <p class="form-help mt-2">{{ form.donation_method.help_text }}</p>
+            {% endif %}
+            {% for error in form.donation_method.errors %}
+            <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+          </section>
+        </div>
+
+        <div class="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-3">
+          <div class="rounded-[16px] border px-3 py-3"
+               style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+            <label for="{{ form.method_value.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">{{ form.method_value.label }}</label>
+            {{ form.method_value }}
+            <p class="mt-1 text-[11px] text-muted">Percentual ou quantidade, dependendo da regra escolhida.</p>
+            {% for error in form.method_value.errors %}
+            <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+          </div>
+
+          <div class="rounded-[16px] border px-3 py-3"
+               style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+            <label for="{{ form.interval_minutes.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">{{ form.interval_minutes.label }}</label>
+            {{ form.interval_minutes }}
+            <p class="mt-1 text-[11px] text-muted">Tempo base entre o fim de um ciclo e o início do próximo.</p>
+            {% for error in form.interval_minutes.errors %}
+            <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+          </div>
+
+          <div class="rounded-[16px] border px-3 py-3"
+               style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+            <label for="{{ form.random_wait_minutes.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">{{ form.random_wait_minutes.label }}</label>
+            {{ form.random_wait_minutes }}
+            <p class="mt-1 text-[11px] text-muted">Atraso aleatório máximo somado ao intervalo base.</p>
+            {% for error in form.random_wait_minutes.errors %}
+            <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[0.9fr_1.1fr]">
+          <section class="rounded-[18px] border p-3"
+                   style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+            <div class="mb-2 flex items-center gap-2">
+              <span class="inline-flex h-8 w-8 items-center justify-center rounded-2xl"
+                    style="background: rgba(201,156,78,0.12); color: var(--ik-gold-dark);">
+                <i class="bi bi-bullseye text-sm"></i>
+              </span>
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">Alvo do loop</div>
+                <div class="text-xs text-muted">Opcional. Vazio = doar para sempre.</div>
+              </div>
+            </div>
+            <label for="{{ form.target_level.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">{{ form.target_level.label }}</label>
+            {{ form.target_level }}
+            <p class="mt-1 text-[11px] text-muted">Se informar um nivel, o loop para quando esse upgrade entrar ou ja estiver concluido.</p>
+            {% for error in form.target_level.errors %}
+            <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+          </section>
+
+          <section class="rounded-[18px] border p-3"
+                   style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+            <div class="mb-2 flex items-center gap-2">
+              <span class="inline-flex h-8 w-8 items-center justify-center rounded-2xl"
+                    style="background: rgba(79,134,185,0.12); color: var(--ik-sea);">
+                <i class="bi bi-sliders2 text-sm"></i>
+              </span>
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Pos-doacao</div>
+                <div class="text-xs text-muted">Qual ajuste de producao entra quando a obra comecar.</div>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+              {% for choice in form.post_production_mode.field.choices %}
+              <label class="rounded-[16px] border px-3 py-2 cursor-pointer transition-all hover:border-[var(--ik-sea)]/45"
+                     :style="postProductionMode === '{{ choice.0|escapejs }}'
+                       ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.90));'
+                       : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'">
+                <input type="radio" name="{{ form.post_production_mode.html_name }}" value="{{ choice.0 }}"
+                       x-model="postProductionMode"
+                       {% if form.post_production_mode.value == choice.0|stringformat:"s" or not form.post_production_mode.value and choice.0|stringformat:"s" == "preserve" %}checked{% endif %}
+                       class="sr-only">
+                <div class="text-xs font-semibold text-ink"
+                     :style="postProductionMode === '{{ choice.0|escapejs }}' ? 'color: var(--ik-sea);' : ''">{{ choice.1 }}</div>
+                <div class="mt-1 text-[11px] text-muted">
+                  {% if choice.0|stringformat:"s" == "preserve" %}
+                  Agenda o job 23 com o mesmo percentual atual da cidade antes da doacao.
+                  {% else %}
+                  Permite forcar um percentual especifico, inclusive 150%.
+                  {% endif %}
+                </div>
+              </label>
+              {% endfor %}
+            </div>
+            <div class="mt-3 grid grid-cols-2 gap-2" x-show="postProductionMode === 'custom'" x-cloak>
+              <div>
+                <label for="{{ form.post_sawmill_percent.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">{{ form.post_sawmill_percent.label }}</label>
+                {{ form.post_sawmill_percent }}
+              </div>
+              <div>
+                <label for="{{ form.post_luxury_percent.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">{{ form.post_luxury_percent.label }}</label>
+                {{ form.post_luxury_percent }}
+              </div>
+            </div>
+            <div class="mt-2 flex flex-wrap gap-2" x-show="postProductionMode === 'custom'" x-cloak>
+              <button type="button" class="rounded-full border px-3 py-1 text-[11px] font-medium text-ink transition hover:border-[var(--ik-sea)]/45"
+                      style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.86);"
+                      onclick="document.getElementById('{{ form.post_sawmill_percent.id_for_label }}').value = 100; document.getElementById('{{ form.post_luxury_percent.id_for_label }}').value = 100;">
+                100% / 100%
+              </button>
+              <button type="button" class="rounded-full border px-3 py-1 text-[11px] font-medium text-ink transition hover:border-[var(--ik-sea)]/45"
+                      style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.86);"
+                      onclick="document.getElementById('{{ form.post_sawmill_percent.id_for_label }}').value = 150; document.getElementById('{{ form.post_luxury_percent.id_for_label }}').value = 150;">
+                150% / 150%
+              </button>
+            </div>
+            {% for error in form.post_production_mode.errors %}
+            <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+            {% for error in form.post_sawmill_percent.errors %}
+            <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+            {% for error in form.post_luxury_percent.errors %}
+            <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+          </section>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+

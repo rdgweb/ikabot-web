@@ -12,6 +12,51 @@
   <p class="text-sm text-muted mt-1">Integrações externas e segurança do sistema</p>
 </div>
 
+{# ── Workflows & Jobs ── #}
+<div class="card mb-6">
+  <div class="card-header !px-5 !py-3">
+    <div class="flex items-center gap-2">
+      <i class="bi bi-archive text-sea"></i>
+      <h3 class="text-sm font-semibold text-ink">Arquivamento automático de Workflows</h3>
+    </div>
+  </div>
+  <div class="p-5">
+    <p class="text-sm text-muted mb-4">
+      Arquiva automaticamente workflows <strong>finalizados ou cancelados</strong> sem atividade há mais de N dias.
+      Também configura o limite de execuções visíveis por workflow (as mais antigas são arquivadas automaticamente).
+      Workflows arquivados ficam ocultos da lista principal mas podem ser consultados/restaurados.
+    </p>
+    <form method="post" action="{% url 'settings_app:auto-archive-workflows' %}" class="flex items-end gap-3">
+      {% csrf_token %}
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Inatividade mínima (dias)</label>
+        <input type="number" name="days" min="1" max="365"
+               value="{{ auto_archive_days }}"
+               class="form-input w-28">
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">
+        <i class="bi bi-archive"></i> Arquivar agora
+      </button>
+      <span class="text-xs text-muted">
+        {% if auto_archive_last_run %}Última execução: {{ auto_archive_last_run }}{% else %}Nunca executado{% endif %}
+      </span>
+    </form>
+    <div class="mt-4 pt-4" style="border-top: 1px solid var(--ik-line);">
+      <form method="post" action="{% url 'settings_app:save-max-runs' %}" class="flex items-end gap-3">
+        {% csrf_token %}
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Máximo de execuções por workflow</label>
+          <input type="number" name="max_runs" min="10" max="10000"
+                 value="{{ workflow_max_runs }}"
+                 class="form-input w-28">
+          <p class="text-[11px] text-muted mt-1">Execuções mais antigas são arquivadas automaticamente ao abrir o detalhe do workflow.</p>
+        </div>
+        <button type="submit" class="btn btn-secondary btn-sm">Salvar</button>
+      </form>
+    </div>
+  </div>
+</div>
+
 {# ── Integrations grid ── #}
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
 

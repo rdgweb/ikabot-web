@@ -20,7 +20,8 @@ ACTIONS = {
         "recurring": True,
         "long_running": True,
         "ready": True,
-        "description": "Distribui recursos periodicamente entre cidades.",
+        "ui_hidden": True,
+        "description": "Distribuir Recursos (ac=3) ja suporta loop — este alias foi descontinuado.",
         "inputs": [],
     },
     1006: {
@@ -95,6 +96,7 @@ ACTIONS = {
         "requires_game_session": True,
         "recurring": True,
         "long_running": True,
+        "ui_hidden": True,
         "description": "Executa uma sequencia de acoes automaticamente.",
         "inputs": [],
     },

@@ -1,0 +1,219 @@
+{% load static hub_tags %}
+
+    {% if action_code == 26 %}
+    {{ experiment_ui.cities|json_script:"experiment-cities-data" }}
+    <div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_36px_rgba(60,45,18,0.10)]"
+         style="border-color: var(--ik-line); background:
+           radial-gradient(780px 280px at 0% 0%, rgba(143,108,194,0.14), transparent 60%),
+           radial-gradient(700px 260px at 100% 100%, rgba(79,134,185,0.14), transparent 60%),
+           linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
+         x-data="{
+           cities: [],
+           cityId: '{{ form.city_id.value|default:''|escapejs }}',
+           query: '',
+           filteredCities() {
+             const query = String(this.query || '').toLowerCase().trim();
+             return this.cities.filter(city => {
+               if (!query) return true;
+               const hay = [city.name || '', city.tradegood_name || '', city.x || '', city.y || ''].join(' ').toLowerCase();
+               return hay.includes(query);
+             });
+           },
+           selectedCity() {
+             return this.cities.find(city => String(city.id) === String(this.cityId || '')) || null;
+           }
+         }"
+         x-init="cities = JSON.parse(document.getElementById('experiment-cities-data')?.textContent || '[]')">
+      <input type="hidden" name="{{ form.city_id.html_name }}" :value="cityId">
+
+      <div class="border-b px-5 py-5 md:px-6"
+           style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div class="max-w-2xl">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Conduzir Ensaio</div>
+            <h3 class="mt-2 text-xl font-bold text-ink">Escolha uma academia e converta cristal em pontos de pesquisa</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted">
+              O runner abre a academia real, confere cristal, custo do experimento, ganho de pesquisa e s&oacute; ent&atilde;o dispara o ensaio.
+            </p>
+          </div>
+          <div class="grid grid-cols-2 gap-3 lg:min-w-[22rem]">
+            <div class="rounded-2xl border px-4 py-3" style="border-color: rgba(143,108,194,0.18); background: rgba(255,255,255,0.76);">
+              <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Academias eleg&iacute;veis</div>
+              <div class="mt-2 flex items-center gap-3">
+                <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border"
+                      style="border-color: rgba(143,108,194,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                  <img src="{{ experiment_ui.summary.academy_icon }}" alt="Academia" class="h-7 w-7 object-contain">
+                </span>
+                <div>
+                  <div class="text-sm font-semibold text-ink">{{ experiment_ui.summary.count }} cidade(s)</div>
+                  <div class="text-[11px] text-muted">{% if experiment_ui.summary.has_state %}com leitura de academia{% else %}a primeira execu&ccedil;&atilde;o vai salvar o painel{% endif %}</div>
+                </div>
+              </div>
+            </div>
+            <div class="rounded-2xl border px-4 py-3" style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.76);">
+              <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Cidade selecionada</div>
+              <template x-if="selectedCity()">
+                <div class="mt-2">
+                  <div class="text-sm font-semibold text-ink" x-text="selectedCity().name"></div>
+                  <div class="text-[11px] text-muted" x-text="selectedCity() ? `Academia Lv ${selectedCity().academy_level} • [${selectedCity().x}:${selectedCity().y}]` : ''"></div>
+                  <div class="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+                    <div class="rounded-xl border px-2.5 py-2" style="border-color: rgba(219,201,167,0.84); background: rgba(255,255,255,0.78);">
+                      <div class="uppercase tracking-[0.12em] text-muted">Gera</div>
+                      <div class="mt-1 font-semibold text-ink" x-text="selectedCity().experiment_points ? `${new Intl.NumberFormat('pt-BR').format(selectedCity().experiment_points)} RP` : 'Sem cache'"></div>
+                    </div>
+                    <div class="rounded-xl border px-2.5 py-2" style="border-color: rgba(219,201,167,0.84); background: rgba(255,255,255,0.78);">
+                      <div class="uppercase tracking-[0.12em] text-muted">Custa</div>
+                      <div class="mt-1 font-semibold text-ink" x-text="selectedCity().experiment_cost ? `${new Intl.NumberFormat('pt-BR').format(selectedCity().experiment_cost)} cristal` : 'Sem cache'"></div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+              <template x-if="!selectedCity()">
+                <div class="mt-2 text-sm text-muted">Selecione uma cidade para o ensaio.</div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="px-5 py-5 md:px-6">
+        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(20rem,0.9fr)]">
+          <section class="rounded-[22px] border p-4"
+                   style="border-color: rgba(143,108,194,0.22); background: linear-gradient(180deg, rgba(143,108,194,0.08), rgba(255,255,255,0.8));">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: #7a61a8;">Academias</div>
+                <div class="mt-1 text-sm font-semibold text-ink">Priorize cidades de cristal com academia</div>
+              </div>
+            </div>
+            <label class="mb-3 block">
+              <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Filtrar cidades</span>
+              <input type="text" x-model="query" class="form-input" placeholder="Buscar por cidade ou coordenada">
+            </label>
+            <div class="grid max-h-[22rem] grid-cols-2 gap-2 overflow-y-auto p-1 xl:grid-cols-4">
+              <template x-for="city in filteredCities()" :key="`experiment-${city.id}`">
+                <button type="button"
+                        class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                        :class="String(cityId) === String(city.id)
+                          ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]'
+                          : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
+                        :style="String(cityId) === String(city.id)
+                          ? 'border-color: rgba(79,134,185,0.50); background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(79,134,185,0.10));'
+                          : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'"
+                        @click="cityId = String(city.id || '')">
+                  <div class="absolute inset-x-0 top-0 h-14" style="background: linear-gradient(135deg, rgba(143,108,194,0.16), rgba(143,108,194,0.02));"></div>
+                  <div class="relative p-3">
+                    <div class="flex items-start gap-3">
+                      <div class="relative shrink-0">
+                        <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                             style="border-color: rgba(143,108,194,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                          <img src="{{ experiment_ui.summary.academy_icon }}" alt="Academia" class="h-7 w-7 object-contain">
+                        </div>
+                        <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                          <img :src="city.tradegood_icon" :alt="city.tradegood_name" class="h-4 w-4 object-contain">
+                        </div>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-start justify-between gap-2">
+                          <div class="min-w-0">
+                            <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
+                            <div class="mt-1 text-[11px] text-muted" x-text="`Academia Lv ${city.academy_level} • [${city.x}:${city.y}]`"></div>
+                          </div>
+                          <span class="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border"
+                                :style="String(cityId) === String(city.id)
+                                  ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
+                                  : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
+                            <i class="bi" :class="String(cityId) === String(city.id) ? 'bi-check-lg' : 'bi-gem'"></i>
+                          </span>
+                        </div>
+                        <div class="mt-2 flex flex-wrap gap-1.5">
+                          <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]" style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">
+                            <img src="{{ experiment_ui.summary.crystal_icon }}" alt="Cristal" class="h-3.5 w-3.5 object-contain">
+                            <span x-text="new Intl.NumberFormat('pt-BR').format(Number(city.crystal || 0))"></span>
+                          </span>
+                          <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]" style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);" x-text="city.experiment_cost ? `Custo ${new Intl.NumberFormat('pt-BR').format(Number(city.experiment_cost || 0))}` : 'Sem custo salvo'"></span>
+                          <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]" style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);" x-text="city.experiment_points ? `Gera ${new Intl.NumberFormat('pt-BR').format(Number(city.experiment_points || 0))} RP` : 'Sem RP salvo'"></span>
+                        </div>
+                        <div class="mt-2 text-[11px] text-muted" x-text="city.experiment_short_status || 'O runner vai reler a academia antes do ensaio.'"></div>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              </template>
+            </div>
+            {% for error in form.city.errors %}
+            <p class="form-error mt-3"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+          </section>
+
+          <section class="space-y-4">
+            <div class="rounded-[22px] border p-4"
+                 style="border-color: rgba(79,134,185,0.24); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.84));">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Painel do ensaio</div>
+              <template x-if="selectedCity()">
+                <div class="mt-3 space-y-3">
+                  <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.78);">
+                      <div class="text-[11px] uppercase tracking-[0.12em] text-muted">Vai gerar</div>
+                      <div class="mt-1 text-base font-semibold text-ink" x-text="selectedCity().experiment_points ? `${new Intl.NumberFormat('pt-BR').format(Number(selectedCity().experiment_points || 0))} RP` : 'Sem cache ainda'"></div>
+                    </div>
+                    <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.78);">
+                      <div class="text-[11px] uppercase tracking-[0.12em] text-muted">Cristal na cidade</div>
+                      <div class="mt-1 text-base font-semibold text-ink" x-text="`${new Intl.NumberFormat('pt-BR').format(Number(selectedCity().crystal || 0))} cristal`"></div>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.78);">
+                      <div class="text-[11px] uppercase tracking-[0.12em] text-muted">Custo sem pergaminho</div>
+                      <div class="mt-1 text-sm font-medium text-ink" x-text="selectedCity().experiment_cost_full ? `${new Intl.NumberFormat('pt-BR').format(Number(selectedCity().experiment_cost_full || 0))} cristal` : 'Sem custo salvo'"></div>
+                    </div>
+                    <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.78);">
+                      <div class="text-[11px] uppercase tracking-[0.12em] text-muted">Eficiência</div>
+                      <div class="mt-1 text-sm font-medium text-ink" x-text="selectedCity().experiment_cost_discounted ? `${new Intl.NumberFormat('pt-BR').format(Number(selectedCity().experiment_cost_discounted || 0))} cristal` : 'Sem desconto salvo'"></div>
+                      <div class="mt-1 text-[11px] text-muted">Usado quando o Pergaminho de Atena estiver dispon&iacute;vel.</div>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.78);">
+                      <div class="text-[11px] uppercase tracking-[0.12em] text-muted">Efici&ecirc;ncia</div>
+                      <div class="mt-1 text-sm font-medium text-ink" x-text="selectedCity().experiment_cost_per_point ? `${Number(selectedCity().experiment_cost_per_point).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} cristal por RP` : 'Sem base suficiente'"></div>
+                      <div class="mt-1 text-[11px] text-muted" x-text="selectedCity().experiment_short_status || 'Disponibilidade sera checada novamente'"></div>
+                    </div>
+                    <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.78);">
+                      <div class="text-[11px] uppercase tracking-[0.12em] text-muted">Saldo para ensaio</div>
+                      <div class="mt-1 text-sm font-medium text-ink" x-text="(selectedCity().experiment_cost_discounted && selectedCity().crystal >= selectedCity().experiment_cost_discounted) ? 'Saldo suficiente com desconto' : ((selectedCity().experiment_cost_full && selectedCity().crystal >= selectedCity().experiment_cost_full) ? 'Saldo sem desconto' : 'Precisa confirmar recursos')"></div>
+                      <div class="mt-1 text-[11px] text-muted">O runner sempre rel&ecirc; a academia antes do clique.</div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+              <template x-if="!selectedCity()">
+                <div class="mt-3 text-sm text-muted">Escolha uma cidade para ver custo, ganho e disponibilidade do ensaio.</div>
+              </template>
+            </div>
+            <div class="rounded-[22px] border p-4"
+                 style="border-color: rgba(95,140,78,0.24); background: linear-gradient(180deg, rgba(95,140,78,0.10), rgba(255,255,255,0.84));">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">Op&ccedil;&otilde;es</div>
+              <label class="mt-3 flex items-start gap-3 rounded-2xl border px-3 py-3"
+                     style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">
+                <input type="checkbox" name="{{ form.use_athena_scroll.html_name }}" value="1" class="mt-1 h-4 w-4 rounded border-sand-300 text-[var(--ik-sea)] focus:ring-[var(--ik-sea)]" {% if form.use_athena_scroll.value %}checked{% endif %}>
+                <div>
+                  <div class="text-sm font-semibold text-ink">{{ form.use_athena_scroll.label }}</div>
+                  <div class="mt-1 text-[11px] text-muted">Usa o custo com desconto se o pergaminho estiver dispon&iacute;vel na academia.</div>
+                </div>
+              </label>
+              <label class="mt-3 flex items-start gap-3 rounded-2xl border px-3 py-3"
+                     style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">
+                <input type="checkbox" name="{{ form.pay_with_ambrosia.html_name }}" value="1" class="mt-1 h-4 w-4 rounded border-sand-300 text-[var(--ik-sea)] focus:ring-[var(--ik-sea)]" {% if form.pay_with_ambrosia.value %}checked{% endif %}>
+                <div>
+                  <div class="text-sm font-semibold text-ink">{{ form.pay_with_ambrosia.label }}</div>
+                  <div class="mt-1 text-[11px] text-muted">Mantido desligado por padr&atilde;o; s&oacute; habilite se voc&ecirc; realmente quiser permitir o fallback premium.</div>
+                </div>
+              </label>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+

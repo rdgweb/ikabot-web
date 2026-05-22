@@ -316,6 +316,9 @@ class SendResourcesRunner(BaseRunner):
                 "eta_total_seconds": plan.eta["total_seconds"],
                 "confirmation_margin_minutes": confirmation_margin_minutes,
             }
+            internal_order_id = str(inputs.get("internal_order_id") or "").strip()
+            if internal_order_id:
+                monitor_payload["internal_order_id"] = internal_order_id
             self.checkpoint(
                 jid,
                 phase="dispatched",

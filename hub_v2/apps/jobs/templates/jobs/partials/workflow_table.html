@@ -10,6 +10,32 @@
     this.selectAllFiltered = false;
     this.selected = Array.from(document.querySelectorAll('.wf-bulk-check')).map(el => el.value);
   },
+  confirmArchive() {
+    const self = this;
+    const count = this.selectAllFiltered ? this.filteredCount : this.selected.length;
+    window.dispatchEvent(new CustomEvent('confirm', {
+      detail: {
+        title: 'Arquivar workflows',
+        message: 'Arquivar ' + count + ' workflow(s)? Poderá restaurar depois.',
+        style: 'primary',
+        confirmLabel: 'Arquivar',
+        onConfirm: () => self._doArchive()
+      }
+    }));
+  },
+  _doArchive() {
+    const csrf = JSON.parse(document.body.getAttribute('hx-headers') || '{}')['X-CSRFToken'] || '';
+    const form = new FormData();
+    form.append('csrfmiddlewaretoken', csrf);
+    if (this.selectAllFiltered) { form.append('delete_all', 'true'); }
+    else { this.selected.forEach(pk => form.append('workflow_ids[]', pk)); }
+    const self = this;
+    fetch('/jobs/workflows/bulk-archive/', { method:'POST', body:form, headers:{'X-CSRFToken':csrf} })
+      .then(resp => {
+        try { const d = JSON.parse(resp.headers.get('HX-Trigger')||'{}'); if(d.toast) window.dispatchEvent(new CustomEvent('toast',{detail:d.toast})); } catch{}
+        self.clearSelection(); location.reload();
+      });
+  },
   confirmDelete() {
     const self = this;
     const count = this.selectAllFiltered ? this.filteredCount : this.selected.length;
@@ -38,35 +64,54 @@
   }
 }" class="space-y-3">
 
+  {# Stats bar — clicáveis como filtro de status #}
   <div class="grid grid-cols-3 gap-2 sm:grid-cols-6">
-    <div class="card !p-3 text-center">
+    {% with cur=request.GET.status %}
+    {% with base="card !p-3 text-center cursor-pointer transition-colors" %}
+    <a href="?" hx-get="?" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+       class="{{ base }}" {% if not cur %}style="background: var(--ik-sand-light);"{% endif %}>
       <div class="text-[11px] uppercase tracking-wide text-muted">Total</div>
       <div class="mt-1 text-xl font-bold text-ink">{{ workflow_summary.total }}</div>
-    </div>
-    <div class="card !p-3 text-center">
+    </a>
+    <a href="?status=active" hx-get="?status=active" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+       class="{{ base }}" {% if cur == 'active' %}style="background: rgba(79,134,185,0.10);"{% endif %}>
       <div class="text-[11px] uppercase tracking-wide text-muted">Ativos</div>
-      <div class="mt-1 text-xl font-bold text-sea">{{ workflow_summary.active }}</div>
-    </div>
-    <div class="card !p-3 text-center">
+      <div class="mt-1 text-xl font-bold" style="color: var(--ik-sea);">{{ workflow_summary.active }}</div>
+    </a>
+    <a href="?status=waiting" hx-get="?status=waiting" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+       class="{{ base }}" {% if cur == 'waiting' %}style="background: rgba(245,158,11,0.10);"{% endif %}>
       <div class="text-[11px] uppercase tracking-wide text-muted">Aguardando</div>
       <div class="mt-1 text-xl font-bold text-amber-500">{{ workflow_summary.waiting }}</div>
-    </div>
-    <div class="card !p-3 text-center">
+    </a>
+    <a href="?status=problem" hx-get="?status=problem" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+       class="{{ base }}" {% if cur == 'problem' %}style="background: rgba(193,91,79,0.10);"{% endif %}>
       <div class="text-[11px] uppercase tracking-wide text-muted">Problema</div>
-      <div class="mt-1 text-xl font-bold text-[var(--ik-bad)]">{{ workflow_summary.problem }}</div>
-    </div>
-    <div class="card !p-3 text-center">
+      <div class="mt-1 text-xl font-bold" style="color: var(--ik-bad);">{{ workflow_summary.problem }}</div>
+    </a>
+    <a href="?status=paused" hx-get="?status=paused" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+       class="{{ base }}" {% if cur == 'paused' %}style="background: var(--ik-sand-light);"{% endif %}>
       <div class="text-[11px] uppercase tracking-wide text-muted">Pausados</div>
       <div class="mt-1 text-xl font-bold text-muted">{{ workflow_summary.paused }}</div>
-    </div>
-    <div class="card !p-3 text-center">
+    </a>
+    <a href="?status=finished" hx-get="?status=finished" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+       class="{{ base }}" {% if cur == 'finished' %}style="background: rgba(95,140,78,0.10);"{% endif %}>
       <div class="text-[11px] uppercase tracking-wide text-muted">Finalizados</div>
-      <div class="mt-1 text-xl font-bold text-[var(--ik-good)]">{{ workflow_summary.finished }}</div>
-    </div>
+      <div class="mt-1 text-xl font-bold" style="color: var(--ik-good);">{{ workflow_summary.finished }}</div>
+    </a>
+    {% endwith %}
+    {% endwith %}
   </div>
 
-  <div class="space-y-2">
-    {% for row in workflow_rows %}
+  {% for group in workflow_groups %}
+  <div class="mb-1">
+    <div class="flex items-center gap-2 mb-2 mt-1">
+      <i class="bi {{ group.icon }} text-sm flex-shrink-0" style="color: {{ group.color }};"></i>
+      <span class="text-[11px] font-semibold uppercase tracking-wide text-muted">{{ group.label }}</span>
+      <span class="text-[10px] text-muted">({{ group.rows|length }})</span>
+      <div class="flex-1 h-px" style="background: var(--ik-line);"></div>
+    </div>
+    <div class="space-y-2">
+    {% for row in group.rows %}
     <article class="card !p-0 overflow-hidden border-l-[3px]"
              style="border-left-color: {{ row.status_border_color }};">
       <div class="flex items-start justify-between gap-4 px-5 py-4">
@@ -82,7 +127,7 @@
               <a href="{% url 'jobs:workflow-detail' row.workflow.pk %}"
                  class="text-sm font-semibold link-sea truncate">{{ row.title }}</a>
               <a href="?category={{ row.workflow.category }}"
-                 hx-get="{% url 'jobs:job-list' %}?category={{ row.workflow.category }}"
+                 hx-get="?category={{ row.workflow.category }}"
                  hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
                  class="badge badge-secondary hover:opacity-80 cursor-pointer">{{ row.category_label }}</a>
               <span class="badge {{ row.status|status_badge_class }}">{{ row.status_label }}</span>
@@ -156,6 +201,22 @@
              class="btn btn-secondary btn-sm" title="Abrir detalhes">
             <i class="bi bi-box-arrow-up-right"></i>
           </a>
+
+          <button type="button"
+                  class="btn btn-secondary btn-sm text-muted" title="Arquivar"
+                  @click="$dispatch('confirm', {
+                    title: 'Arquivar workflow',
+                    message: 'Arquivar {{ row.title|escapejs }}? Ficará oculto da lista principal. Pode restaurar depois.',
+                    style: 'primary',
+                    confirmLabel: 'Arquivar',
+                    onConfirm: () => {
+                      const csrf = JSON.parse(document.body.getAttribute('hx-headers')||'{}')['X-CSRFToken']||'';
+                      fetch('{% url 'jobs:workflow-archive' row.workflow.pk %}', {method:'POST',body:new URLSearchParams({csrfmiddlewaretoken:csrf}),headers:{'X-CSRFToken':csrf}})
+                        .then(r => { try{const d=JSON.parse(r.headers.get('HX-Trigger')||'{}');if(d.toast)window.dispatchEvent(new CustomEvent('toast',{detail:d.toast}));}catch{} location.reload(); });
+                    }
+                  })">
+            <i class="bi bi-archive"></i>
+          </button>
         </div>
 
       </div>
@@ -166,6 +227,39 @@
       Nenhum workflow encontrado.
     </div>
     {% endfor %}
+    </div>{# /space-y-2 grupo #}
+  </div>{# /group #}
+  {% empty %}
+    <div class="card p-8 text-center text-muted">
+      <i class="bi bi-diagram-3 mb-2 block text-2xl"></i>
+      Nenhum workflow encontrado.
+    </div>
+  {% endfor %}
+
+  {# Footer: arquivados + seletor de paginação #}
+  <div class="flex items-center justify-between pt-1 gap-4">
+    <div>
+      {% if request.GET.archived == "1" %}
+      <a href="?" hx-get="?" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+         class="text-xs text-muted hover:text-ink"><i class="bi bi-arrow-left"></i> Voltar para ativos</a>
+      {% else %}
+      <a href="?archived=1" hx-get="?archived=1" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+         class="text-xs text-muted hover:text-ink"><i class="bi bi-archive"></i> Ver arquivados</a>
+      {% endif %}
+    </div>
+    <div class="flex items-center gap-1.5 text-xs text-muted">
+      <span>Por página:</span>
+      {% with cur=request.GET.per_page|default:"20" %}
+      <a href="?per_page=10" hx-get="?per_page=10" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+         class="px-1.5 py-0.5 rounded {% if cur == '10' %}bg-[var(--ik-sea)]/10 text-[var(--ik-sea)] font-semibold{% else %}hover:text-ink{% endif %}">10</a>
+      <a href="?per_page=20" hx-get="?per_page=20" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+         class="px-1.5 py-0.5 rounded {% if cur == '20' %}bg-[var(--ik-sea)]/10 text-[var(--ik-sea)] font-semibold{% else %}hover:text-ink{% endif %}">20</a>
+      <a href="?per_page=50" hx-get="?per_page=50" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+         class="px-1.5 py-0.5 rounded {% if cur == '50' %}bg-[var(--ik-sea)]/10 text-[var(--ik-sea)] font-semibold{% else %}hover:text-ink{% endif %}">50</a>
+      <a href="?per_page=100" hx-get="?per_page=100" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+         class="px-1.5 py-0.5 rounded {% if cur == '100' %}bg-[var(--ik-sea)]/10 text-[var(--ik-sea)] font-semibold{% else %}hover:text-ink{% endif %}">100</a>
+      {% endwith %}
+    </div>
   </div>
 
   <div x-show="selected.length > 0 || selectAllFiltered" x-cloak x-transition
@@ -181,6 +275,9 @@
       </button>
       <button x-show="selected.length > 0 && !selectAllFiltered" @click="selectAllFiltered = true; selected = []" class="btn btn-secondary btn-sm" type="button">
         <i class="bi bi-check2-all"></i> Selecionar todos (<span x-text="filteredCount"></span>)
+      </button>
+      <button @click="confirmArchive()" class="btn btn-secondary btn-sm" type="button">
+        <i class="bi bi-archive"></i> Arquivar selecionados
       </button>
       <button @click="confirmDelete()" class="btn btn-danger btn-sm" type="button">
         <i class="bi bi-trash3"></i> Excluir selecionados

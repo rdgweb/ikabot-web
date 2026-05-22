@@ -59,6 +59,14 @@
   </button>
 </form>
 {% endif %}
+<form hx-post="{% url 'jobs:workflow-archive' workflow.pk %}"
+      hx-swap="none" hx-push-url="false">
+  {% csrf_token %}
+  <button type="submit" class="btn btn-secondary btn-sm" title="{% if workflow.archived_at %}Restaurar{% else %}Arquivar{% endif %}">
+    <i class="bi bi-{% if workflow.archived_at %}arrow-up-circle{% else %}archive{% endif %}"></i>
+    {% if workflow.archived_at %}Restaurar{% else %}Arquivar{% endif %}
+  </button>
+</form>
 {% endblock %}
 
 {% block detail_main %}

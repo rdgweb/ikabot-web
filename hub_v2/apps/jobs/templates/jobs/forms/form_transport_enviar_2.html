@@ -1,0 +1,383 @@
+{% load static hub_tags %}
+
+    {% if action_code == 2 %}
+    {{ cities|json_script:"transport-cities-data" }}
+    <div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_40px_rgba(87,66,24,0.10)]"
+         style="border-color: var(--ik-line); background:
+           radial-gradient(900px 280px at 0% 0%, rgba(79,134,185,0.14), transparent 60%),
+           radial-gradient(760px 280px at 100% 100%, rgba(201,156,78,0.18), transparent 60%),
+           linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.92));"
+         x-data="{
+           cities: [],
+           originId: '{{ form.from_city.value|default:''|escapejs }}',
+           destinationId: '{{ form.to_city.value|default:''|escapejs }}',
+           originQuery: '',
+           destinationQuery: '',
+           loadPercent: '{{ form.transport_load_percent.value|default:'100'|escapejs }}',
+           confirmArrival: {{ form.confirm_arrival.value|yesno:"true,false,true" }},
+           cityById(cityId) {
+             return this.cities.find(city => String(city.id) === String(cityId));
+           },
+           filteredCities(side) {
+             const query = String(side === 'origin' ? this.originQuery : this.destinationQuery).toLowerCase().trim();
+             return this.cities.filter(city => {
+               if (!query) return true;
+               const hay = [
+                 city.name || '',
+                 city.tradegood_name || '',
+                 city.x ? `${city.x}` : '',
+                 city.y ? `${city.y}` : '',
+               ].join(' ').toLowerCase();
+               return hay.includes(query);
+             });
+           },
+           isBlocked(side, cityId) {
+             if (side === 'origin') return String(this.destinationId || '') === String(cityId || '');
+             return String(this.originId || '') === String(cityId || '');
+           },
+           selectCity(side, cityId) {
+             if (this.isBlocked(side, cityId)) return;
+             if (side === 'origin') {
+               this.originId = String(cityId || '');
+               return;
+             }
+             this.destinationId = String(cityId || '');
+           },
+           routeReady() {
+             return this.originId && this.destinationId;
+           },
+           routeLabel() {
+             const origin = this.cityById(this.originId);
+             const destination = this.cityById(this.destinationId);
+             if (!origin || !destination) return 'Selecione origem e destino';
+             return `${origin.name} -> ${destination.name}`;
+           },
+         }"
+         x-init="cities = JSON.parse(document.getElementById('transport-cities-data')?.textContent || '[]')">
+      <input type="hidden" name="{{ form.from_city.html_name }}" x-model="originId">
+      <input type="hidden" name="{{ form.to_city.html_name }}" x-model="destinationId">
+      <input type="hidden" name="{{ form.transport_load_percent.html_name }}" x-model="loadPercent">
+
+      <div class="border-b px-5 py-5 md:px-6"
+           style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
+        <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div class="max-w-2xl">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Remessa Manual</div>
+            <h3 class="mt-2 text-xl font-bold text-ink">Monte a rota e carregue a remessa com leitura rápida</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted">
+              Escolha uma cidade de origem, uma cidade de destino e configure a carga por barco com confirmação de chegada.
+              O runner continua recebendo exatamente um par origem/destino por job.
+            </p>
+          </div>
+          <div class="rounded-2xl border px-4 py-3 md:min-w-[16rem]"
+               style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.76);">
+            <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Preview da rota</div>
+            <div class="mt-2 flex items-center gap-2">
+              <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
+                    style="background: linear-gradient(135deg, var(--ik-sea), var(--ik-sea-dark)); color: #fff;">
+                <i class="bi bi-signpost-split text-base"></i>
+              </span>
+              <div class="min-w-0">
+                <div class="text-sm font-semibold text-ink" x-text="routeLabel()"></div>
+                <div class="text-[11px] text-muted" x-text="routeReady() ? 'Pronto para configurar a carga' : 'Falta selecionar a rota completa'"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="px-5 py-5 md:px-6">
+        <div class="grid grid-cols-1 gap-4">
+          <section class="rounded-[22px] border p-4"
+                   style="border-color: rgba(79,134,185,0.25); background: linear-gradient(180deg, rgba(79,134,185,0.08), rgba(255,255,255,0.78));">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Origem</div>
+                <div class="mt-1 text-sm font-semibold text-ink">De onde a carga vai sair</div>
+              </div>
+              <div class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
+                   style="background: rgba(79,134,185,0.14); color: var(--ik-sea);">
+                <i class="bi bi-box-arrow-up-right text-base"></i>
+              </div>
+            </div>
+            <label class="mb-3 block">
+              <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Filtrar cidades</span>
+              <input type="text" x-model="originQuery" class="form-input" placeholder="Buscar por nome, luxo ou coordenada">
+            </label>
+            <div class="grid max-h-[18rem] grid-cols-2 gap-2 overflow-y-auto p-1 xl:grid-cols-4">
+              <template x-for="city in filteredCities('origin')" :key="`origin-${city.id}`">
+                <button type="button"
+                        class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                        :disabled="isBlocked('origin', city.id)"
+                        :class="String(originId) === String(city.id)
+                          ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]'
+                          : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
+                        :style="isBlocked('origin', city.id)
+                          ? 'opacity:.42; cursor:not-allowed; border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.42);'
+                          : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'"
+                        @click="selectCity('origin', city.id)">
+                  <div class="absolute inset-x-0 top-0 h-14"
+                       style="background: linear-gradient(135deg, rgba(79,134,185,0.16), rgba(79,134,185,0.02));"></div>
+                  <div class="relative p-3">
+                    <div class="flex items-start gap-3">
+                      <div class="relative shrink-0">
+                        <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                             style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                          <img :src="city.city_art" alt="" class="h-8 w-8 object-contain">
+                        </div>
+                        <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                          <img :src="city.tradegood_icon" :alt="city.tradegood_name" class="h-4 w-4 object-contain">
+                        </div>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-start justify-between gap-2">
+                          <div class="min-w-0">
+                            <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
+                            <div class="mt-1 text-[11px] text-muted">
+                              <span x-text="city.tradegood_name"></span>
+                              <span x-show="city.x && city.y" x-text="` • [${city.x}:${city.y}]`"></span>
+                            </div>
+                          </div>
+                          <span class="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border"
+                                :style="String(originId) === String(city.id)
+                                  ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
+                                  : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
+                            <i class="bi" :class="String(originId) === String(city.id) ? 'bi-check-lg' : 'bi-arrow-up-right'"></i>
+                          </span>
+                        </div>
+                        <div class="mt-2 flex flex-wrap gap-1.5">
+                          <template x-for="resource in city.resources" :key="`origin-${city.id}-${resource.key}`">
+                            <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]"
+                                  style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">
+                              <img :src="resource.icon" :alt="resource.label" class="h-3.5 w-3.5 object-contain">
+                              <span x-text="new Intl.NumberFormat('pt-BR').format(Number(resource.amount || 0))"></span>
+                            </span>
+                          </template>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              </template>
+            </div>
+            {% for error in form.from_city.errors %}
+            <p class="form-error mt-3"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+          </section>
+
+          <section class="rounded-[22px] border p-4"
+                   style="border-color: rgba(201,156,78,0.28); background: linear-gradient(180deg, rgba(201,156,78,0.10), rgba(255,255,255,0.82));">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">Destino</div>
+                <div class="mt-1 text-sm font-semibold text-ink">Para onde a remessa vai chegar</div>
+              </div>
+              <div class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
+                   style="background: rgba(201,156,78,0.16); color: var(--ik-gold-dark);">
+                <i class="bi bi-box-arrow-in-down-left text-base"></i>
+              </div>
+            </div>
+            <label class="mb-3 block">
+              <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Filtrar cidades</span>
+              <input type="text" x-model="destinationQuery" class="form-input" placeholder="Buscar por nome, luxo ou coordenada">
+            </label>
+            <div class="grid max-h-[18rem] grid-cols-2 gap-2 overflow-y-auto p-1 xl:grid-cols-4">
+              <template x-for="city in filteredCities('destination')" :key="`destination-${city.id}`">
+                <button type="button"
+                        class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                        :disabled="isBlocked('destination', city.id)"
+                        :class="String(destinationId) === String(city.id)
+                          ? 'translate-y-[-1px] ring-2 ring-[var(--ik-gold-dark)] shadow-[0_10px_28px_rgba(166,124,46,0.18)]'
+                          : 'hover:translate-y-[-1px] hover:border-[var(--ik-gold-dark)]/45 hover:shadow-[0_10px_24px_rgba(166,124,46,0.12)]'"
+                        :style="isBlocked('destination', city.id)
+                          ? 'opacity:.42; cursor:not-allowed; border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.42);'
+                          : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'"
+                        @click="selectCity('destination', city.id)">
+                  <div class="absolute inset-x-0 top-0 h-14"
+                       style="background: linear-gradient(135deg, rgba(201,156,78,0.18), rgba(201,156,78,0.03));"></div>
+                  <div class="relative p-3">
+                    <div class="flex items-start gap-3">
+                      <div class="relative shrink-0">
+                        <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                             style="border-color: rgba(201,156,78,0.18); background: linear-gradient(180deg, #fffdf8, #f7f1e5);">
+                          <img :src="city.city_art" alt="" class="h-8 w-8 object-contain">
+                        </div>
+                        <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                          <img :src="city.tradegood_icon" :alt="city.tradegood_name" class="h-4 w-4 object-contain">
+                        </div>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-start justify-between gap-2">
+                          <div class="min-w-0">
+                            <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
+                            <div class="mt-1 text-[11px] text-muted">
+                              <span x-text="city.tradegood_name"></span>
+                              <span x-show="city.x && city.y" x-text="` • [${city.x}:${city.y}]`"></span>
+                            </div>
+                          </div>
+                          <span class="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border"
+                                :style="String(destinationId) === String(city.id)
+                                  ? 'border-color: var(--ik-gold-dark); color: white; background: var(--ik-gold-dark);'
+                                  : 'border-color: rgba(166,124,46,0.24); color: var(--ik-gold-dark); background: rgba(201,156,78,0.08);'">
+                            <i class="bi" :class="String(destinationId) === String(city.id) ? 'bi-check-lg' : 'bi-arrow-down-left'"></i>
+                          </span>
+                        </div>
+                        <div class="mt-2 flex flex-wrap gap-1.5">
+                          <template x-for="resource in city.resources" :key="`destination-${city.id}-${resource.key}`">
+                            <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]"
+                                  style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">
+                              <img :src="resource.icon" :alt="resource.label" class="h-3.5 w-3.5 object-contain">
+                              <span x-text="new Intl.NumberFormat('pt-BR').format(Number(resource.amount || 0))"></span>
+                            </span>
+                          </template>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              </template>
+            </div>
+            {% for error in form.to_city.errors %}
+            <p class="form-error mt-3"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+          </section>
+        </div>
+
+        <div class="mt-4 grid grid-cols-2 gap-2">
+          <section class="rounded-[16px] border p-2.5"
+                   style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+            <div class="mb-1.5 flex items-center justify-between gap-2">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Carga e ETA</div>
+              <div class="text-[11px] font-medium text-ink">Perfil</div>
+            </div>
+            <div class="grid grid-cols-2 gap-2 md:grid-cols-5">
+              {% for choice in form.transport_load_percent.field.choices %}
+              <button type="button"
+                      class="rounded-lg border px-2 py-1.5 text-left transition-all"
+                      :class="String(loadPercent) === '{{ choice.0|escapejs }}'
+                        ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)]'
+                        : 'hover:border-[var(--ik-sea)]/50 hover:bg-[rgba(79,134,185,0.05)]'"
+                      style="border-color: var(--ik-line); background: rgba(247,241,229,0.68);"
+                      @click="loadPercent='{{ choice.0|escapejs }}'">
+                <div class="text-xs font-bold text-ink">{{ choice.1 }}</div>
+                <div class="text-[9px] text-muted">por barco</div>
+              </button>
+              {% endfor %}
+            </div>
+            {% for error in form.transport_load_percent.errors %}
+            <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+          </section>
+
+          <section class="rounded-[16px] border p-2.5"
+                   style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+            <div class="mb-1.5 flex items-center justify-between gap-2">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Pós-envio</div>
+              <div class="text-[11px] font-medium text-ink">Chegada</div>
+            </div>
+            <label class="flex items-center gap-2 rounded-lg border px-2.5 py-2 transition-all"
+                   :class="confirmArrival ? 'ring-1 ring-[var(--ik-good)] border-[var(--ik-good)] bg-[rgba(95,140,78,0.08)]' : ''"
+                   style="border-color: var(--ik-line);">
+              <input type="checkbox"
+                     name="{{ form.confirm_arrival.html_name }}"
+                     x-model="confirmArrival"
+                     class="rounded border-gray-300 text-[var(--ik-good)] focus:ring-[var(--ik-good)]">
+              <span class="min-w-0 flex-1">
+                <span class="block text-xs font-semibold text-ink">Criar monitor automático</span>
+              </span>
+            </label>
+            {% for error in form.confirm_arrival.errors %}
+            <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+            <div class="mt-2">
+              <div class="flex items-center gap-2 rounded-lg border px-2.5 py-2"
+                   style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+                <div class="inline-flex h-7 w-7 items-center justify-center rounded-lg"
+                     style="background: rgba(95,140,78,0.10); color: var(--ik-good);">
+                  <i class="bi bi-stopwatch text-[11px]"></i>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Margem</div>
+                  <div class="text-[9px] text-muted">Min extras</div>
+                </div>
+                <div class="w-16">
+                  {{ form.confirmation_margin_minutes }}
+                </div>
+              </div>
+              {% for error in form.confirmation_margin_minutes.errors %}
+              <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+              {% endfor %}
+            </div>
+          </section>
+        </div>
+
+        <section class="mt-4 rounded-[22px] border p-4"
+                 style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+          <div class="mb-3 flex items-end justify-between gap-3">
+            <div>
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Carga</div>
+              <div class="mt-1 text-sm font-semibold text-ink">Defina quanto de cada recurso vai na remessa</div>
+            </div>
+            <div class="text-[11px] text-muted">Campos zerados ficam fora do envio</div>
+          </div>
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <div class="rounded-[20px] border px-3 py-3" style="border-color: var(--ik-line); background: linear-gradient(180deg, rgba(247,241,229,0.72), rgba(255,255,255,0.92));">
+              <div class="flex items-center gap-3">
+                <img src="{% static 'game/resources/icon_wood.png' %}" alt="Madeira" class="h-6 w-6">
+                <div>
+                  <div class="text-sm font-semibold text-ink">Madeira</div>
+                  <div class="text-[11px] text-muted">Carga base</div>
+                </div>
+              </div>
+              <div class="mt-3">{{ form.wood }}</div>
+              {% for error in form.wood.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+            </div>
+            <div class="rounded-[20px] border px-3 py-3" style="border-color: var(--ik-line); background: linear-gradient(180deg, rgba(247,241,229,0.72), rgba(255,255,255,0.92));">
+              <div class="flex items-center gap-3">
+                <img src="{% static 'game/resources/icon_wine.png' %}" alt="Vinho" class="h-6 w-6">
+                <div>
+                  <div class="text-sm font-semibold text-ink">Vinho</div>
+                  <div class="text-[11px] text-muted">Taverna, museu, apoio</div>
+                </div>
+              </div>
+              <div class="mt-3">{{ form.wine }}</div>
+              {% for error in form.wine.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+            </div>
+            <div class="rounded-[20px] border px-3 py-3" style="border-color: var(--ik-line); background: linear-gradient(180deg, rgba(247,241,229,0.72), rgba(255,255,255,0.92));">
+              <div class="flex items-center gap-3">
+                <img src="{% static 'game/resources/icon_marble.png' %}" alt="Marmore" class="h-6 w-6">
+                <div>
+                  <div class="text-sm font-semibold text-ink">Marmore</div>
+                  <div class="text-[11px] text-muted">Obras e upgrades</div>
+                </div>
+              </div>
+              <div class="mt-3">{{ form.marble }}</div>
+              {% for error in form.marble.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+            </div>
+            <div class="rounded-[20px] border px-3 py-3" style="border-color: var(--ik-line); background: linear-gradient(180deg, rgba(247,241,229,0.72), rgba(255,255,255,0.92));">
+              <div class="flex items-center gap-3">
+                <img src="{% static 'game/resources/icon_glass.png' %}" alt="Cristal" class="h-6 w-6">
+                <div>
+                  <div class="text-sm font-semibold text-ink">Cristal</div>
+                  <div class="text-[11px] text-muted">Pesquisa e upgrades</div>
+                </div>
+              </div>
+              <div class="mt-3">{{ form.crystal }}</div>
+              {% for error in form.crystal.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+            </div>
+            <div class="rounded-[20px] border px-3 py-3" style="border-color: var(--ik-line); background: linear-gradient(180deg, rgba(247,241,229,0.72), rgba(255,255,255,0.92));">
+              <div class="flex items-center gap-3">
+                <img src="{% static 'game/resources/icon_sulfur.png' %}" alt="Enxofre" class="h-6 w-6">
+                <div>
+                  <div class="text-sm font-semibold text-ink">Enxofre</div>
+                  <div class="text-[11px] text-muted">Militar e frota</div>
+                </div>
+              </div>
+              <div class="mt-3">{{ form.sulfur }}</div>
+              {% for error in form.sulfur.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+    {% endif %}

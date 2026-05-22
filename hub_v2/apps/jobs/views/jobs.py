@@ -5,12 +5,13 @@ Job list, detail, cancel, and bulk-delete views.
 import json
 import re
 from collections import Counter
+from datetime import timedelta
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Count
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 from django.views import View
 from django.views.generic import DetailView
@@ -1446,6 +1447,55 @@ class JobListView(FilterSortListView):
         }
 
     @classmethod
+    def _piracy_display(cls, job):
+        inputs = cls._parse_inputs(job)
+        if int(job.action_code) != 17:
+            return {}
+        _MISSION_LEVEL_LABELS = {
+            1: "Nv 1 — 2min 30s", 3: "Nv 3 — 7min 30s", 5: "Nv 5 — 15min",
+            7: "Nv 7 — 30min", 9: "Nv 9 — 1h", 11: "Nv 11 — 2h",
+            13: "Nv 13 — 4h", 15: "Nv 15 — 8h", 17: "Nv 17 — 16h",
+        }
+        _CONVERT_MODE_LABELS = {
+            "never": "Nunca converter", "all": "Converter tudo automaticamente",
+            "percent": "Converter percentual", "threshold": "Converter por limite",
+        }
+        capture_points = inputs.get("last_capture_points")
+        crew_points = inputs.get("last_crew_points")
+        complete_crew_points = inputs.get("last_complete_crew_points")
+        fortress_level = inputs.get("last_fortress_level")
+        time_remaining = _to_int(inputs.get("last_time_remaining"), 0)
+        schedule_by_time = bool(inputs.get("schedule_by_time"))
+        day_level = _to_int(inputs.get("day_mission_level"), 7)
+        night_level = _to_int(inputs.get("night_mission_level"), 13)
+        day_start = _to_int(inputs.get("day_start_hour"), 8)
+        day_end = _to_int(inputs.get("day_end_hour"), 22)
+        convert_mode = str(inputs.get("convert_mode") or "never")
+        return {
+            "capture_points": capture_points,
+            "crew_points": crew_points,
+            "complete_crew_points": complete_crew_points,
+            "fortress_level": fortress_level,
+            "time_remaining": time_remaining,
+            "time_remaining_human": _duration_human(time_remaining) if time_remaining > 0 else "",
+            "in_mission": time_remaining > 0,
+            "total_missions": _to_int(inputs.get("total_missions_started"), 0),
+            "total_crew_converted": _to_int(inputs.get("total_crew_converted"), 0),
+            "schedule_by_time": schedule_by_time,
+            "day_level_label": _MISSION_LEVEL_LABELS.get(day_level, f"Nv {day_level}"),
+            "night_level_label": _MISSION_LEVEL_LABELS.get(night_level, f"Nv {night_level}"),
+            "day_hours": f"{day_start}h–{day_end}h",
+            "night_hours": f"{day_end}h–{day_start}h",
+            "mission_level_label": _MISSION_LEVEL_LABELS.get(
+                _to_int(inputs.get("mission_level"), 7), f"Nv {inputs.get('mission_level', 7)}"
+            ),
+            "convert_mode_label": _CONVERT_MODE_LABELS.get(convert_mode, convert_mode),
+            "convert_percent": _to_int(inputs.get("convert_percent"), 100),
+            "convert_threshold": _to_int(inputs.get("convert_threshold"), 0),
+            "has_state": capture_points is not None,
+        }
+
+    @classmethod
     def _construction_display(cls, job, *, logs=None):
         inputs = cls._parse_inputs(job)
         if int(job.action_code) != 1002:
@@ -1460,10 +1510,34 @@ class JobListView(FilterSortListView):
         summary = inputs.get("construction_summary") if isinstance(inputs.get("construction_summary"), dict) else {}
         logs = list(logs or [])
 
+        # Step status from inputs
+        skipped_indices = set(int(i) for i in (inputs.get("skipped_step_indices") or []) if str(i).isdigit())
+        blocked_indices = set(int(i) for i in (inputs.get("blocked_step_indices") or []) if str(i).isdigit())
+
+        # Parse ALL recent "Evolução:"/"Construção:" logs → {step_idx: (from_level, to_level)}
+        # Use reversed so first match per idx = most recent for that step
+        active_step_data: dict[int, dict] = {}
+        for message in reversed(logs):
+            if ("Evolução:" in message or "Construção:" in message
+                    or "Evolucao:" in message or "Construcao:" in message):
+                idx_m = re.search(r'#(\d+)\s+de\s+\d+', message)
+                if idx_m:
+                    idx = int(idx_m.group(1))
+                    if idx not in active_step_data:
+                        lv_m = re.search(r'Lv\s+(\d+)\s*[→>]\s*(\d+)', message)
+                        active_step_data[idx] = {
+                            "from_level": int(lv_m.group(1)) if lv_m else None,
+                            "to_level": int(lv_m.group(2)) if lv_m else None,
+                        }
+        # Remove steps already marked as done or blocked
+        for idx in skipped_indices | blocked_indices:
+            active_step_data.pop(idx, None)
+
         city_groups = {}
         totals_by_resource = []
         reserved_by_resource = []
         missing_by_resource = []
+        all_steps_flat: list[dict] = []
 
         for idx, step in enumerate(raw_steps, start=1):
             building_id = str(step.get("building_id") or step.get("building_type") or "").strip()
@@ -1503,26 +1577,82 @@ class JobListView(FilterSortListView):
                 lvl = _to_int(lr.get("level"), 0)
                 if lvl <= 0:
                     continue
+                lr_costs_raw = lr.get("costs") or {}
+                lr_cost_items = []
+                for key, (label, icon) in RESOURCE_ICON_MAP.items():
+                    lk = "glas" if key == "crystal" else key
+                    amt = _to_int(lr_costs_raw.get(lk), 0)
+                    if amt > 0:
+                        lr_cost_items.append({"key": key, "label": label, "icon": icon, "amount": amt})
                 level_queue.append({
                     "from_level": lvl - 1,
                     "to_level": lvl,
-                    "adjusted_duration": str(lr.get("adjusted_duration") or lr.get("adjusted_seconds") or ""),
+                    "adjusted_duration": str(lr.get("adjusted_duration") or ""),
                     "adjusted_seconds": _to_int(lr.get("adjusted_seconds"), 0),
-                    "is_current": False,  # will be set after log parsing
+                    "is_current": False,
+                    "costs": lr_cost_items,
                 })
             has_level_queue = len(level_queue) > 1
             last_to_level = level_queue[-1]["to_level"] if level_queue else target_level
+
+            # Determine step status
+            if idx in skipped_indices:
+                step_status = "done"
+            elif idx in blocked_indices:
+                step_status = "blocked"
+            elif idx in active_step_data:
+                step_status = "active"
+            else:
+                step_status = "waiting"
+
+            # Duration for active transition (specific level row), not total step
+            active_trans = active_step_data.get(idx)
+            active_duration_human = ""
+            active_resources: list[dict] = []
+            if active_trans and active_trans.get("to_level"):
+                to_lv = active_trans["to_level"]
+                for lrow in level_queue:
+                    if lrow["to_level"] == to_lv:
+                        active_duration_human = str(lrow.get("adjusted_duration") or "")
+                        break
+                for lr in raw_level_rows:
+                    if _to_int(lr.get("level"), 0) == to_lv:
+                        lr_costs = lr.get("costs") or {}
+                        for key, (label, icon) in RESOURCE_ICON_MAP.items():
+                            lk = "glas" if key == "crystal" else key
+                            amt = _to_int(lr_costs.get(lk), 0)
+                            if amt > 0:
+                                active_resources.append({"key": key, "label": label, "icon": icon, "amount": amt})
+                        break
+
+            # Next transition = first level row (what will be built next for waiting steps)
+            next_transition: dict | None = None
+            next_duration_human = ""
+            next_resources: list[dict] = []
+            if level_queue:
+                first_row = level_queue[0]
+                next_transition = {"from_level": first_row["from_level"], "to_level": first_row["to_level"]}
+                next_duration_human = str(first_row.get("adjusted_duration") or "")
+            if raw_level_rows:
+                first_lr_costs = (raw_level_rows[0].get("costs") or {})
+                for key, (label, icon) in RESOURCE_ICON_MAP.items():
+                    lk = "glas" if key == "crystal" else key
+                    amt = _to_int(first_lr_costs.get(lk), 0)
+                    if amt > 0:
+                        next_resources.append({"key": key, "label": label, "icon": icon, "amount": amt})
 
             step_display = {
                 "index": idx,
                 "city_name": city_name,
                 "building_name": building_name,
                 "building_icon": building_icon,
+                "building_id": building_id,
                 "mode_label": "Construir novo" if mode == "new" else "Evoluir",
-                "level_label": f"Lv {from_level} -> {target_level}" if from_level > 0 else f"Novo -> Lv {target_level}",
+                "level_label": f"Lv {from_level} → {target_level}" if from_level > 0 else f"Novo → Lv {target_level}",
                 "level_range_label": f"Lv {from_level} → {last_to_level} ({len(level_queue)} níveis)" if has_level_queue else "",
                 "slot_label": f"Slot {preferred_position}" if preferred_position else "",
                 "adjusted_human": _duration_human(adjusted_seconds),
+                "active_duration_human": active_duration_human,
                 "base_human": _duration_human(base_seconds),
                 "resource_costs": resource_costs,
                 "resource_reserved": resource_reserved,
@@ -1530,90 +1660,168 @@ class JobListView(FilterSortListView):
                 "has_shortfall": any(item["amount"] > 0 for item in resource_missing),
                 "level_queue": level_queue,
                 "has_level_queue": has_level_queue,
+                "status": step_status,
+                "active_transition": active_trans,
+                "active_resources": active_resources,
+                "active_duration_human": active_duration_human,
+                "next_transition": next_transition,
+                "next_duration_human": next_duration_human,
+                "next_resources": next_resources,
+                "next_level_label": (
+                    f"Lv {next_transition['from_level']} → {next_transition['to_level']}"
+                    if next_transition else level_label
+                ),
+                "target_level": target_level,
             }
             city_groups.setdefault(city_name, []).append(step_display)
+            all_steps_flat.append(step_display)
 
-        # Compute remaining cost from steps still in the plan
+        # Also detect active from "X em obra: Building Lv Y→Z" logs (cities already building)
+        # These don't have #N index so match by city_name + building_name
+        em_obra_re = re.compile(
+            r'^(.+?)\s+em\s+obra:\s+(.+?)\s+Lv\s+(\d+)\s*[→>]\s*(\d+)',
+            re.IGNORECASE,
+        )
+        # Build lookup: (city_name_lower, building_name_lower) → step
+        step_lookup: dict[tuple[str, str], dict] = {}
+        for s in all_steps_flat:
+            key = (s["city_name"].strip().lower(), s["building_name"].strip().lower())
+            if key not in step_lookup:
+                step_lookup[key] = s
+        for message in reversed(logs):
+            m_eo = em_obra_re.match(message)
+            if not m_eo:
+                continue
+            city_log = m_eo.group(1).strip().lower()
+            bld_log = m_eo.group(2).strip().lower()
+            from_lv = int(m_eo.group(3))
+            to_lv = int(m_eo.group(4))
+            # Try exact match first, then partial
+            matched = step_lookup.get((city_log, bld_log))
+            if matched is None:
+                for (c, b), s in step_lookup.items():
+                    if c == city_log and (bld_log in b or b in bld_log):
+                        matched = s
+                        break
+            if matched and matched["index"] not in active_step_data and matched["status"] == "waiting":
+                active_step_data[matched["index"]] = {"from_level": from_lv, "to_level": to_lv}
+                matched["status"] = "active"
+                matched["active_transition"] = active_step_data[matched["index"]]
+                for lrow in matched.get("level_queue") or []:
+                    if lrow["to_level"] == to_lv:
+                        matched["active_duration_human"] = str(lrow.get("adjusted_duration") or "")
+                        matched["active_resources"] = lrow.get("costs") or []
+                        break
+
+        # Compute totals: plan total and remaining (non-done steps only)
+        plan_totals: dict[str, int] = {}
         remaining_totals: dict[str, int] = {}
-        for step in raw_steps:
+        for i, step in enumerate(raw_steps, start=1):
             step_totals = step.get("totals") or {}
             for key in RESOURCE_ICON_MAP:
                 lookup_key = "glas" if key == "crystal" else key
-                remaining_totals[key] = remaining_totals.get(key, 0) + _to_int(step_totals.get(lookup_key), 0)
+                amt = _to_int(step_totals.get(lookup_key), 0)
+                plan_totals[key] = plan_totals.get(key, 0) + amt
+                if i not in skipped_indices:
+                    remaining_totals[key] = remaining_totals.get(key, 0) + amt
+
+        # Compute spent from completed level_rows per step
+        # done steps: all rows spent; active steps: rows with to_level < current active to_level
+        spent_level_totals: dict[str, int] = {}
+        for s in all_steps_flat:
+            lq = s.get("level_queue") or []
+            if s["status"] == "done":
+                for lrow in lq:
+                    for item in (lrow.get("costs") or []):
+                        spent_level_totals[item["key"]] = spent_level_totals.get(item["key"], 0) + item["amount"]
+            elif s["status"] == "active":
+                at = s.get("active_transition") or {}
+                curr_to = at.get("to_level")
+                if curr_to:
+                    for lrow in lq:
+                        if lrow["to_level"] < curr_to:
+                            for item in (lrow.get("costs") or []):
+                                spent_level_totals[item["key"]] = spent_level_totals.get(item["key"], 0) + item["amount"]
 
         spent_by_resource = []
         for key, (label, icon) in RESOURCE_ICON_MAP.items():
             lookup_key = "glas" if key == "crystal" else key
-            total_amount = _to_int((summary.get("totals") or {}).get(lookup_key), 0)
+            total_amount = plan_totals.get(key, 0)
+            remaining = remaining_totals.get(key, 0)
+            spent_amount = spent_level_totals.get(key, 0)
             reserved_amount = _to_int((summary.get("reserved_local") or {}).get(lookup_key), 0)
             missing_amount = _to_int((summary.get("missing") or {}).get(lookup_key), 0)
-            spent_amount = max(0, total_amount - remaining_totals.get(key, 0))
             if total_amount > 0:
                 totals_by_resource.append({"key": key, "label": label, "icon": icon, "amount": total_amount})
             if reserved_amount > 0:
                 reserved_by_resource.append({"key": key, "label": label, "icon": icon, "amount": reserved_amount})
             if missing_amount > 0:
                 missing_by_resource.append({"key": key, "label": label, "icon": icon, "amount": missing_amount})
-            if spent_amount > 0:
-                spent_by_resource.append({"key": key, "label": label, "icon": icon, "amount": spent_amount, "remaining": remaining_totals.get(key, 0)})
+            if total_amount > 0:
+                spent_by_resource.append({"key": key, "label": label, "icon": icon, "amount": spent_amount, "remaining": remaining})
 
         current_message = ""
         blocker_message = ""
         for message in reversed(logs):
-            if not current_message and ("Evolucao iniciada:" in message or "Construcao iniciada:" in message):
-                current_message = message.split(":", 1)[-1].strip()
+            if not current_message and (
+                "Evolução:" in message or "Construção:" in message
+                or "Evolucao:" in message or "Construcao:" in message
+                or "Evolucao iniciada:" in message or "Construcao iniciada:" in message
+            ):
+                current_message = message
             lowered = message.lower()
             if not blocker_message and (
-                "aguardando" in lowered
+                "falta" in lowered
+                or "aguardando recursos" in lowered
                 or "sem recurso" in lowered
                 or "nao foi possivel" in lowered
                 or "obra em andamento" in lowered
+                or "bloqueada" in lowered
             ):
                 blocker_message = message
             if current_message and blocker_message:
                 break
 
         city_cards = []
-        for city_name, city_steps in city_groups.items():
-            # Mark the current active step based on the last build-started log
-            current_step_name = ""
-            if current_message:
-                for step in city_steps:
-                    if step["building_name"].lower() in current_message.lower():
-                        step["is_current"] = True
-                        current_step_name = step["building_name"]
-                        # Parse the current level target from the log message
-                        # e.g. "Academia 6->7 em Atenas" → current level target = 7
-                        m = re.search(r'(\d+)->(\d+)', current_message)
-                        if m and step.get("level_queue"):
-                            current_level_target = int(m.group(2))
-                            for lr in step["level_queue"]:
-                                if lr["to_level"] == current_level_target:
-                                    lr["is_current"] = True
-                                    break
-                        break
+        for city_name_key, city_steps in city_groups.items():
+            city_active = next((s for s in city_steps if s["status"] == "active"), None)
+            # next = first waiting step after the active one (or any waiting if no active)
+            active_idx = city_active["index"] if city_active else -1
+            city_next = next((s for s in city_steps if s["status"] == "waiting" and s["index"] > active_idx), None)
+            if city_next is None:
+                city_next = next((s for s in city_steps if s["status"] == "waiting"), None)
             city_cards.append({
-                "city_name": city_name,
+                "city_name": city_name_key,
                 "step_count": len(city_steps),
-                "shortfall_count": sum(1 for step in city_steps if step["has_shortfall"]),
-                "current_step": current_step_name,
-                # Open cities with an active build in progress by default
-                "open_by_default": bool(current_step_name),
+                "done_count": sum(1 for s in city_steps if s["status"] == "done"),
+                "shortfall_count": sum(1 for s in city_steps if s["has_shortfall"] and s["status"] not in ("done",)),
+                "active_step": city_active,
+                "next_step": city_next,
+                "open_by_default": bool(city_active),
                 "steps": city_steps,
             })
         city_cards.sort(key=lambda item: item["city_name"].lower())
 
+        active_steps = [s for s in all_steps_flat if s["status"] == "active"]
+        # next_steps: one per city — first waiting step (after active if any)
+        next_steps = [c["next_step"] for c in city_cards if c["next_step"]]
+        done_count = sum(1 for s in all_steps_flat if s["status"] == "done")
+
         return {
-            "step_count": sum(item["step_count"] for item in city_cards),
+            "step_count": len(all_steps_flat),
+            "done_count": done_count,
             "city_count": len(city_cards),
             "queue_strategy_label": CONSTRUCTION_QUEUE_STRATEGY_META.get(str(inputs.get("queue_strategy") or "eta_first"), "Ordem do plano"),
             "auto_transport": cls._bool_label(inputs.get("auto_transport", True)),
             "city_cards": city_cards,
+            "all_steps": all_steps_flat,
+            "active_steps": active_steps,
+            "next_steps": next_steps,
             "totals_by_resource": totals_by_resource,
             "reserved_by_resource": reserved_by_resource,
             "missing_by_resource": missing_by_resource,
             "spent_by_resource": spent_by_resource,
-            "has_progress": bool(spent_by_resource),
+            "has_progress": bool(totals_by_resource),
             "base_human": _duration_human(summary.get("base_seconds")),
             "adjusted_human": _duration_human(summary.get("adjusted_seconds")),
             "current_message": current_message,
@@ -1715,6 +1923,7 @@ class JobDetailView(LoginRequiredMixin, DetailView):
             self.object,
             logs=list(logs_qs.values_list("message", flat=True)),
         )
+        context["piracy_display"] = JobListView._piracy_display(self.object)
         context["train_display"] = JobListView._train_display(self.object)
         context["station_display"] = JobListView._station_display(self.object)
         context["construction_plan"] = inputs.get("construction_plan_json") if isinstance(inputs.get("construction_plan_json"), list) else []
@@ -1815,6 +2024,9 @@ class JobRunNowView(LoginRequiredMixin, View):
 
             transaction.on_commit(lambda: dispatch_job(immediate_job, eta=None))
 
+        next_url = request.POST.get("next", "").strip()
+        if next_url and next_url.startswith("/"):
+            return redirect(next_url)
         return redirect("jobs:job-detail", pk=immediate_job.pk)
 
 
@@ -1851,6 +2063,9 @@ class JobRetryView(LoginRequiredMixin, View):
 
             transaction.on_commit(lambda: dispatch_job(immediate_job, eta=None))
 
+        next_url = request.POST.get("next", "").strip()
+        if next_url and next_url.startswith("/"):
+            return redirect(next_url)
         return redirect("jobs:job-detail", pk=immediate_job.pk)
 
 
@@ -1895,12 +2110,24 @@ class WorkflowListView(FilterSortListView):
     partial_template_name = "jobs/partials/workflow_table.html"
     paginate_by = 20
     ordering_fields = ["status", "updated_at", "last_event_at", "next_scheduled_for", "created_at"]
-    default_ordering = "-updated_at"
+    default_ordering = ["-updated_at"]
+
+    def get_paginate_by(self, queryset):
+        """Allow user to control page size via ?per_page= query param."""
+        try:
+            per_page = int(self.request.GET.get("per_page") or self.paginate_by)
+            return max(5, min(200, per_page))
+        except (ValueError, TypeError):
+            return self.paginate_by
     queryset = Workflow.objects.select_related("account", "game_account", "node", "active_run")
 
     def get_queryset(self):
         self._backfill_recent_workflows()
-        return super().get_queryset()
+        qs = super().get_queryset()
+        # Show archived only when explicitly requested
+        if self.request.GET.get("archived") == "1":
+            return qs.filter(archived_at__isnull=False)
+        return qs.filter(archived_at__isnull=True)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1970,10 +2197,17 @@ class WorkflowListView(FilterSortListView):
             ).values("workflow_id").annotate(max_t=_Max("created_at"))
         }
         error_workflow_ids = set(_error_times.keys())
-        # Errors superseded by newer active jobs → don't show as problem
+        # Errors superseded by any newer job (not just active) — compare vs most recent job overall
+        from django.db.models import Max as _MaxLatest
+        _latest_times = {
+            row["workflow_id"]: row["max_t"]
+            for row in Job.objects.filter(
+                workflow_id__in=workflow_ids,
+            ).values("workflow_id").annotate(max_t=_MaxLatest("created_at"))
+        }
         superseded_error_ids = {
             wf_id for wf_id, err_t in _error_times.items()
-            if _active_times.get(wf_id) and _active_times[wf_id] > err_t
+            if _latest_times.get(wf_id) and _latest_times[wf_id] > err_t
         }
 
         workflow_rows = [
@@ -1988,10 +2222,42 @@ class WorkflowListView(FilterSortListView):
             )
             for workflow in workflows
         ]
+        # Global queryset = all non-archived workflows, no status filter applied
+        # Stats bar always shows full picture regardless of active list filter
+        archived_view = self.request.GET.get("archived") == "1"
+        context["_global_qs"] = Workflow.objects.filter(
+            archived_at__isnull=not archived_view
+        )
         context["workflow_rows"] = workflow_rows
-        context["workflow_summary"] = self._global_workflow_summary(context)
+        context["workflow_summary"] = self._global_workflow_summary(context)  # also syncs all stale statuses
+        context["workflow_groups"] = self._group_by_category(workflow_rows)
         context["job_view_mode"] = "ops"
         return context
+
+    @staticmethod
+    def _group_by_category(workflow_rows: list) -> list:
+        from collections import defaultdict
+        from core.actions.constants import CATEGORY_META
+        _ORDER = ["construction", "economy", "automation", "military", "market", "monitoring", "admin"]
+        buckets: dict = defaultdict(list)
+        for row in workflow_rows:
+            cat = row["workflow"].category or "other"
+            buckets[cat].append(row)
+        groups = []
+        for cat in _ORDER:
+            if cat in buckets:
+                meta = CATEGORY_META.get(cat, {})
+                groups.append({
+                    "category": cat,
+                    "label": meta.get("label", cat.title()),
+                    "icon": meta.get("icon", "bi-grid"),
+                    "color": meta.get("color", "var(--ik-muted)"),
+                    "rows": buckets[cat],
+                })
+        for cat, rows in buckets.items():
+            if cat not in _ORDER:
+                groups.append({"category": cat, "label": cat.title(), "icon": "bi-grid", "color": "var(--ik-muted)", "rows": rows})
+        return groups
 
     @staticmethod
     def _backfill_recent_workflows(limit=200):
@@ -2029,27 +2295,66 @@ class WorkflowListView(FilterSortListView):
         return summary
 
     def _global_workflow_summary(self, context) -> dict:
-        """Count workflows across ALL pages using the full filtered queryset."""
-        paginator = context.get("paginator")
-        if paginator:
-            total = paginator.count
-            pk_qs = paginator.object_list.values_list("pk", flat=True)
-        else:
-            total = Workflow.objects.count()
-            pk_qs = Workflow.objects.values_list("pk", flat=True)
+        """Count effective_status across ALL workflows (ignoring status filter) so stats bar is always global."""
+        # Use the full queryset without status filter — stats are always total picture
+        base_qs = context.get("_global_qs") or Workflow.objects.filter(archived_at__isnull=True)
+        all_ids = list(base_qs.values_list("pk", flat=True))
+        total = len(all_ids)
 
-        status_counts = {
-            row["status"]: row["n"]
-            for row in Workflow.objects.filter(pk__in=pk_qs).values("status").annotate(n=Count("id"))
+        if not all_ids:
+            return {"total": 0, "active": 0, "waiting": 0, "problem": 0, "paused": 0, "finished": 0, "cancelled": 0}
+
+        from django.db.models import Max as _SumMax
+        running_ids = set(Job.objects.filter(workflow_id__in=all_ids, status="running").values_list("workflow_id", flat=True).distinct())
+        active_ids = running_ids | set(Job.objects.filter(workflow_id__in=all_ids, status__in=("queued", "scheduled")).values_list("workflow_id", flat=True).distinct())
+        error_times = {r["workflow_id"]: r["t"] for r in Job.objects.filter(workflow_id__in=all_ids, status="error").values("workflow_id").annotate(t=_SumMax("created_at"))}
+        latest_times = {r["workflow_id"]: r["t"] for r in Job.objects.filter(workflow_id__in=all_ids).values("workflow_id").annotate(t=_SumMax("created_at"))}
+        superseded = {wid for wid, et in error_times.items() if latest_times.get(wid) and latest_times[wid] > et}
+
+        summary = {"total": total, "active": 0, "waiting": 0, "problem": 0, "paused": 0, "finished": 0, "cancelled": 0}
+
+        # Load stored statuses to detect stale ones
+        stored_status = dict(Workflow.objects.filter(pk__in=all_ids).values_list("pk", "status"))
+        paused_ids = {wid for wid, s in stored_status.items() if s == "paused"}
+
+        # Recurring workflows: load config to detect stopped loops
+        recurring_ids = set(
+            wf.pk for wf in Workflow.objects.filter(pk__in=all_ids)
+            if json.loads(wf.config_json or "{}").get("recurring")
+        )
+        # Only explicit user actions block the recurring-stopped check
+        cancelled_paused_finished = {
+            wid for wid, s in stored_status.items() if s in ("paused", "cancelled")
         }
-        return {
-            "total": total,
-            "active": status_counts.get("active", 0),
-            "waiting": status_counts.get("waiting", 0),
-            "problem": status_counts.get("problem", 0),
-            "paused": status_counts.get("paused", 0),
-            "finished": status_counts.get("finished", 0),
-        }
+
+        effective_map: dict = {}
+        for wf_id in all_ids:
+            has_active = wf_id in active_ids
+            has_error = wf_id in error_times and wf_id not in superseded
+            if wf_id in paused_ids:
+                s = "paused"
+            elif has_active:
+                s = "problem" if has_error else ("active" if wf_id in running_ids else "waiting")
+            elif has_error:
+                s = "problem"
+            else:
+                s = "finished"
+                # Recurring workflow with no active jobs = loop stopped = problem
+                if (wf_id in recurring_ids and wf_id not in cancelled_paused_finished):
+                    s = "problem"
+            effective_map[wf_id] = s
+            if s in summary:
+                summary[s] += 1
+
+        # Sync stale workflow.status so DB filters stay accurate
+        stale_pks = [wid for wid, eff in effective_map.items() if stored_status.get(wid) != eff]
+        if stale_pks:
+            wfs_to_update = list(Workflow.objects.filter(pk__in=stale_pks))
+            for wf in wfs_to_update:
+                wf.status = effective_map[wf.pk]
+            Workflow.objects.bulk_update(wfs_to_update, ["status"])
+
+        return summary
 
     @staticmethod
     def _effective_status(workflow, recent_job_statuses: set) -> str:
@@ -2106,7 +2411,15 @@ class WorkflowListView(FilterSortListView):
             effective_status = "problem"
         else:
             recent_statuses = {j.status for j in (recent_jobs or [])}
+            # has_error_job=False means any error is superseded — don't let stale error status leak
+            recent_statuses.discard("error")
             effective_status = cls._effective_status(workflow, recent_statuses)
+            # Recurring workflows with no active jobs = loop stopped = problem
+            # "paused"/"cancelled" are explicit user actions; "finished" got there via stale sync
+            if (effective_status == "finished"
+                    and config.get("recurring")
+                    and workflow.status not in ("paused", "cancelled")):
+                effective_status = "problem"
         status_choices = dict(Workflow.STATUS_CHOICES)
         recent_active_job = next((j for j in (recent_jobs or []) if j.status in ("running", "queued", "scheduled")), None)
 
@@ -2128,9 +2441,9 @@ class WorkflowListView(FilterSortListView):
             "job_count": len(recent_jobs) if recent_jobs is not None else workflow.jobs.count(),
             "run_count": workflow.runs.count(),
             "can_pause": effective_status in ("active", "waiting"),
-            "can_resume": effective_status == "paused",
+            "can_resume": workflow.status == "paused",
             "can_cancel": effective_status in _WORKFLOW_CANCELABLE,
-            "can_delete": True,
+            "can_delete": workflow.status in _WORKFLOW_DELETABLE,
         }
 
 
@@ -2164,12 +2477,48 @@ class WorkflowDetailView(LoginRequiredMixin, DetailView):
 class WorkflowRunsPartialView(LoginRequiredMixin, View):
     def get(self, request, pk):
         workflow = get_object_or_404(Workflow, pk=pk)
+
+        # Auto-archive old runs if workflow exceeds the configured limit
+        from apps.settings_app.utils import get_int_setting as _get_int
+        max_runs = _get_int("workflow_max_runs_per_workflow", 150)
+        total_runs = WorkflowRun.objects.filter(workflow=workflow, archived_at__isnull=True).count()
+        if total_runs > max_runs:
+            excess = total_runs - max_runs
+            old_run_ids = list(
+                WorkflowRun.objects.filter(workflow=workflow, archived_at__isnull=True)
+                .order_by("sequence")
+                .values_list("pk", flat=True)[:excess]
+            )
+            # Cancel any active jobs in these runs before archiving — agent must not execute them
+            Job.objects.filter(
+                workflow_run_id__in=old_run_ids,
+                status__in=("scheduled", "queued"),
+            ).update(status="cancelled", finished_at=timezone.now())
+            WorkflowRun.objects.filter(pk__in=old_run_ids).update(archived_at=timezone.now())
+
         page = max(1, int(request.GET.get("page", 1) or 1))
         per_page = 20
-        jobs_qs = (
-            Job.objects.filter(workflow=workflow)
-            .select_related("account", "game_account")
-            .order_by("-created_at")
+        show_archived = request.GET.get("archived") == "1"
+
+        if show_archived:
+            jobs_qs = (
+                Job.objects.filter(workflow=workflow, workflow_run__archived_at__isnull=False)
+                .select_related("account", "game_account")
+                .order_by("-created_at")
+            )
+        else:
+            jobs_qs = (
+                Job.objects.filter(workflow=workflow)
+                .filter(
+                    models.Q(workflow_run__isnull=True)
+                    | models.Q(workflow_run__archived_at__isnull=True)
+                )
+                .select_related("account", "game_account")
+                .order_by("-created_at")
+            )
+        archived_count = (
+            WorkflowRun.objects.filter(workflow=workflow, archived_at__isnull=False).count()
+            if not show_archived else 0
         )
         total = jobs_qs.count()
         total_pages = max(1, (total + per_page - 1) // per_page)
@@ -2208,6 +2557,8 @@ class WorkflowRunsPartialView(LoginRequiredMixin, View):
             "total_pages": total_pages,
             "has_prev": page > 1,
             "has_next": page < total_pages,
+            "show_archived": show_archived,
+            "archived_count": archived_count,
         })
 
 
@@ -2260,9 +2611,9 @@ class WorkflowActionView(LoginRequiredMixin, View):
     def post(self, request, pk):
         workflow = get_object_or_404(Workflow, pk=pk)
         action = request.POST.get("workflow_action", "").strip()
+        now = timezone.now()
 
         if action == "delete":
-            # Cancel active jobs before deleting
             Job.objects.filter(
                 workflow=workflow,
                 status__in=("queued", "running", "scheduled"),
@@ -2279,7 +2630,6 @@ class WorkflowActionView(LoginRequiredMixin, View):
             resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": f"Ação '{action}' não permitida no estado atual ({workflow.status})."}})
             return resp
 
-        now = timezone.now()
         workflow.status = transition["to"]
         update_fields = ["status", "updated_at"]
         if action == "pause":
@@ -2303,6 +2653,68 @@ class WorkflowActionView(LoginRequiredMixin, View):
         labels = {"pause": "Workflow pausado.", "resume": "Workflow retomado.", "cancel": "Workflow cancelado."}
         resp = HttpResponse(status=200)
         resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": labels[action]}})
+        resp["HX-Refresh"] = "true"
+        return resp
+
+
+class WorkflowArchiveView(LoginRequiredMixin, View):
+    """Archive or unarchive a workflow. Archived workflows hidden from main list."""
+
+    def post(self, request, pk):
+        workflow = get_object_or_404(Workflow, pk=pk)
+        now = timezone.now()
+        if workflow.archived_at:
+            workflow.archived_at = None
+            msg = "Workflow restaurado."
+        else:
+            workflow.archived_at = now
+            msg = "Workflow arquivado."
+        workflow.save(update_fields=["archived_at", "updated_at"])
+        resp = HttpResponse(status=200)
+        resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": msg}})
+        resp["HX-Refresh"] = "true"
+        return resp
+
+
+class WorkflowAutoArchiveView(LoginRequiredMixin, View):
+    """Auto-archive workflows inactive for more than N days."""
+
+    def post(self, request):
+        try:
+            days = max(1, int(request.POST.get("days", 7)))
+        except (ValueError, TypeError):
+            days = 7
+        cutoff = timezone.now() - timedelta(days=days)
+        qs = Workflow.objects.filter(
+            archived_at__isnull=True,
+            status__in=("finished", "cancelled"),
+        ).filter(
+            models.Q(last_event_at__lt=cutoff) | models.Q(last_event_at__isnull=True, updated_at__lt=cutoff)
+        )
+        count = qs.count()
+        qs.update(archived_at=timezone.now())
+        resp = HttpResponse(status=200)
+        resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": f"{count} workflow(s) arquivado(s)."}})
+        resp["HX-Refresh"] = "true"
+        return resp
+
+
+class WorkflowBulkArchiveView(LoginRequiredMixin, View):
+    def post(self, request):
+        pks = request.POST.getlist("workflow_ids[]")
+        delete_all = request.POST.get("delete_all") == "true"
+        if not pks and not delete_all:
+            resp = HttpResponse(status=400)
+            resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": "Nenhum workflow selecionado."}})
+            return resp
+        now = timezone.now()
+        if delete_all:
+            qs = Workflow.objects.filter(archived_at__isnull=True)
+        else:
+            qs = Workflow.objects.filter(pk__in=pks, archived_at__isnull=True)
+        count = qs.update(archived_at=now)
+        resp = HttpResponse(status=200)
+        resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": f"{count} workflow(s) arquivado(s)."}})
         resp["HX-Refresh"] = "true"
         return resp
 

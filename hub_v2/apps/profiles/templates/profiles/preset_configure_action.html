@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% load static hub_tags %}
+
+{% block title %}Configurar: {{ preset_action.action_name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+
+  {# Breadcrumb #}
+  <div class="mb-6">
+    <nav class="text-xs text-muted flex items-center gap-1 flex-wrap mb-2">
+      <a href="{% url 'profiles:preset-list' %}" class="hover:text-ink">Presets</a>
+      <span class="mx-1">/</span>
+      <a href="{% url 'profiles:preset-detail' preset.pk %}" class="hover:text-ink">{{ preset.name }}</a>
+      <span class="mx-1">/</span>
+      <span class="text-ink">Configurar acao {{ preset_action.order }}</span>
+    </nav>
+    <div class="flex items-center gap-3">
+      <span class="flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold text-white shrink-0"
+            style="background: var(--ik-sea);">
+        {{ preset_action.order }}
+      </span>
+      <div>
+        <h1 class="text-2xl font-bold text-ink">{{ preset_action.action_name }}</h1>
+        <p class="text-sm text-muted">Configuracao padrao aplicada a todas as contas do preset</p>
+      </div>
+    </div>
+  </div>
+
+  {% if not game_account %}
+  <div class="mb-4 p-3 rounded-lg" style="background: rgba(201,156,78,0.08); border: 1px solid rgba(201,156,78,0.2);">
+    <p class="text-sm font-medium" style="color: var(--ik-gold);">
+      <i class="bi bi-exclamation-triangle-fill mr-1"></i>
+      Selecione contas no preset antes de configurar ações que precisam de cidades (doação, transporte, construção).
+    </p>
+    <a href="{% url 'profiles:preset-detail' preset.pk %}" class="text-xs underline mt-1 block" style="color: var(--ik-gold);">← Voltar e selecionar contas</a>
+  </div>
+  {% else %}
+  <div class="mb-4 p-2 rounded-lg flex items-center gap-2 text-xs text-muted" style="background: var(--ik-sand-light);">
+    <i class="bi bi-info-circle text-[10px]"></i>
+    Configuração baseada nas cidades de <strong class="text-ink">{{ game_account.name }}</strong>.
+    {% if preset.preset_accounts.count > 1 %}
+    Configuração padrão será aplicada a todas as {{ preset.preset_accounts.count }} contas selecionadas.
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="flex items-center gap-2 mb-4 pb-4" style="border-bottom: 1px solid var(--ik-line);">
+      <i class="bi {{ action_meta.icon|default:'bi-play' }} text-sm" style="color: var(--ik-sea);"></i>
+      <span class="text-sm font-semibold text-ink">{{ action_meta.name }}</span>
+      {% if action_meta.recurring %}
+      <span class="text-[10px] font-medium px-2 py-0.5 rounded-full"
+            style="background: rgba(95,140,78,0.12); color: var(--ik-good);">
+        <i class="bi bi-arrow-repeat"></i> Loop
+      </span>
+      {% endif %}
+      {% if action_meta.long_running %}
+      <span class="text-[10px] font-medium px-2 py-0.5 rounded-full"
+            style="background: rgba(79,134,185,0.12); color: var(--ik-sea);">
+        <i class="bi bi-clock"></i> Longa
+      </span>
+      {% endif %}
+      <span class="ml-auto text-xs text-muted font-mono">ac={{ action_code }}</span>
+    </div>
+
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="game_account" value="{{ game_account.pk|default:'' }}">
+      <input type="hidden" name="action_code" value="{{ action_code }}">
+
+      {% if form.non_field_errors %}
+      <div class="mb-4 p-3 rounded-lg" style="background: #fde8e5; border: 1px solid #e8b4af;">
+        {% for error in form.non_field_errors %}
+        <p class="text-sm flex items-center gap-2" style="color: #8c3028;">
+          <i class="bi bi-exclamation-triangle-fill"></i> {{ error }}
+        </p>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {# Render the action-specific form fields — no_footer=True to suppress job-specific footer #}
+      {% if action_meta.inputs %}
+        {% include "jobs/forms/_generic_fields.html" with no_footer=True %}
+      {% else %}
+      <div class="text-center py-8 rounded-lg" style="background: var(--ik-sand-light);">
+        <i class="bi bi-check-circle text-[var(--ik-good)] text-2xl"></i>
+        <p class="text-sm text-muted mt-2">Nenhuma configuracao necessaria para esta acao.</p>
+        <p class="text-xs text-muted mt-0.5">O job sera executado com as configuracoes padrao do agente.</p>
+      </div>
+      {% endif %}
+
+      {# ── Seção de cidades (separada por tipo) ── #}
+      {% if city_type %}
+      <div class="mt-5 pt-5" style="border-top: 1px solid var(--ik-line);" x-data="{ cityMode: '{{ city_mode }}' }">
+        <div class="flex items-center gap-2 mb-3">
+          <i class="bi bi-buildings text-sm" style="color: var(--ik-sea);"></i>
+          <span class="text-sm font-semibold text-ink">Cidades</span>
+          <input type="hidden" name="city_mode" :value="cityMode">
+        </div>
+
+        {# Mode selector #}
+        <div class="flex flex-wrap gap-2 mb-4">
+          {% if city_type == "multi" %}
+          <button type="button" @click="cityMode='all'"
+                  class="px-3 py-1.5 rounded-lg border text-xs font-medium transition-all"
+                  :class="cityMode==='all' ? 'border-[var(--ik-sea)] bg-[var(--ik-sea)]/10 text-[var(--ik-sea)]' : 'border-[var(--ik-line)] text-muted'">
+            <i class="bi bi-check-all"></i> Todas as cidades de cada conta
+          </button>
+          <button type="button" @click="cityMode='per_account'"
+                  class="px-3 py-1.5 rounded-lg border text-xs font-medium transition-all"
+                  :class="cityMode==='per_account' ? 'border-[var(--ik-sea)] bg-[var(--ik-sea)]/10 text-[var(--ik-sea)]' : 'border-[var(--ik-line)] text-muted'">
+            <i class="bi bi-person-check"></i> Específicas por conta
+          </button>
+          {% elif city_type == "single" %}
+          <button type="button" @click="cityMode='auto'"
+                  class="px-3 py-1.5 rounded-lg border text-xs font-medium transition-all"
+                  :class="cityMode==='auto' ? 'border-[var(--ik-sea)] bg-[var(--ik-sea)]/10 text-[var(--ik-sea)]' : 'border-[var(--ik-line)] text-muted'">
+            <i class="bi bi-magic"></i> Automático (detecta edifício)
+          </button>
+          <button type="button" @click="cityMode='per_account'"
+                  class="px-3 py-1.5 rounded-lg border text-xs font-medium transition-all"
+                  :class="cityMode==='per_account' ? 'border-[var(--ik-sea)] bg-[var(--ik-sea)]/10 text-[var(--ik-sea)]' : 'border-[var(--ik-line)] text-muted'">
+            <i class="bi bi-person-check"></i> Cidade específica por conta
+          </button>
+          {% elif city_type == "route" %}
+          <span class="px-3 py-1.5 rounded-lg border text-xs font-medium"
+                style="border-color: var(--ik-gold); color: var(--ik-gold); background: rgba(201,156,78,0.08);">
+            <i class="bi bi-exclamation-circle"></i> Rota obrigatoriamente por conta
+          </span>
+          <input type="hidden" name="city_mode" value="per_account">
+          {% endif %}
+        </div>
+
+        {# Mode descriptions #}
+        <div x-show="cityMode==='all'" class="mb-3 text-xs text-muted p-2 rounded-lg" style="background: var(--ik-sand-light);">
+          <i class="bi bi-info-circle"></i> Todas as cidades de cada conta serão usadas na execução. Novas cidades são incluídas automaticamente.
+        </div>
+        <div x-show="cityMode==='auto'" class="mb-3 text-xs text-muted p-2 rounded-lg" style="background: var(--ik-sand-light);">
+          <i class="bi bi-info-circle"></i> O sistema detecta automaticamente qual cidade tem o edifício relevante (santuário, fortaleza pirata, etc.) para cada conta.
+        </div>
+
+        {# Per-account city pickers #}
+        <div x-show="cityMode==='per_account'" class="space-y-3">
+          {% for ac_data in account_cities %}
+          <div class="rounded-xl border p-3" style="border-color: var(--ik-line); background: var(--ik-paper);">
+            <div class="flex items-center gap-2 mb-2">
+              <i class="bi bi-controller text-xs" style="color: var(--ik-gold);"></i>
+              <span class="text-xs font-semibold text-ink">{{ ac_data.ga.name }}</span>
+              <span class="text-[10px] text-muted">{{ ac_data.ga.server_id }}</span>
+            </div>
+            {% if city_type == "multi" %}
+            <div class="flex flex-wrap gap-1.5">
+              {% for city in ac_data.cities %}
+              <label class="flex items-center gap-1.5 px-2 py-1 rounded-lg border cursor-pointer text-[11px] transition-all hover:border-[var(--ik-sea)]/50"
+                     style="border-color: var(--ik-line);">
+                <input type="checkbox" name="cities__{{ ac_data.ga.pk }}" value="{{ city.id }}"
+                       {% with ga_cfg=per_account_city|get_item:ac_data.ga.pk|default:"" %}
+                       {% if ga_cfg and city.id|stringformat:"s" in ga_cfg.cities %}checked{% elif not ga_cfg %}checked{% endif %}
+                       {% endwith %}
+                       class="rounded border-[var(--ik-line)]">
+                {{ city.name }}
+              </label>
+              {% empty %}
+              <span class="text-xs text-muted">Sem cidades no snapshot</span>
+              {% endfor %}
+            </div>
+            {% elif city_type == "single" %}
+            <div class="flex flex-wrap gap-1.5">
+              {% for city in ac_data.cities %}
+              <label class="flex items-center gap-1.5 px-2 py-1 rounded-lg border cursor-pointer text-[11px] transition-all hover:border-[var(--ik-sea)]/50"
+                     style="border-color: var(--ik-line);">
+                <input type="radio" name="city__{{ ac_data.ga.pk }}" value="{{ city.id }}"
+                       {% with ga_cfg=per_account_city|get_item:ac_data.ga.pk|default:"" %}
+                       {% if ga_cfg and city.id|stringformat:"s" == ga_cfg.city_id %}checked{% elif not ga_cfg and forloop.first %}checked{% endif %}
+                       {% endwith %}>
+                {{ city.name }}
+              </label>
+              {% empty %}
+              <span class="text-xs text-muted">Sem cidades no snapshot</span>
+              {% endfor %}
+            </div>
+            {% elif city_type == "route" %}
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="form-label text-[10px] mb-1 block">Cidade de origem</label>
+                <select name="from_city__{{ ac_data.ga.pk }}" class="form-input text-xs py-1">
+                  {% for city in ac_data.cities %}
+                  <option value="{{ city.id }}">{{ city.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="form-label text-[10px] mb-1 block">Cidade de destino</label>
+                <select name="to_city__{{ ac_data.ga.pk }}" class="form-input text-xs py-1">
+                  {% for city in ac_data.cities %}
+                  <option value="{{ city.id }}">{{ city.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="flex items-center justify-between gap-3 mt-6 pt-5"
+           style="border-top: 1px solid var(--ik-line);">
+        <a href="{% url 'profiles:preset-detail' preset.pk %}" class="btn btn-secondary">
+          <i class="bi bi-arrow-left"></i> Voltar ao preset
+        </a>
+        <div class="flex items-center gap-2">
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-floppy"></i> Salvar configuracao
+          </button>
+          {% if next_order %}
+          <span class="text-xs text-muted">e ir para acao {{ next_order }}</span>
+          {% endif %}
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

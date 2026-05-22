@@ -1,0 +1,271 @@
+{% load static hub_tags %}
+
+    {% if action_code == 18 %}
+    {{ research_ui.branches|json_script:"research-branches-data" }}
+    <div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_36px_rgba(60,45,18,0.10)]"
+         style="border-color: var(--ik-line); background:
+           radial-gradient(840px 300px at 0% 0%, rgba(95,140,78,0.12), transparent 58%),
+           radial-gradient(780px 280px at 100% 100%, rgba(143,108,194,0.12), transparent 60%),
+           linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
+         x-data="{
+           branches: [],
+           branchStates: {
+             branch_seafaring: {{ form.branch_seafaring.value|yesno:'true,false,false' }},
+             branch_economy: {{ form.branch_economy.value|yesno:'true,false,false' }},
+             branch_knowledge: {{ form.branch_knowledge.value|yesno:'true,false,false' }},
+             branch_military: {{ form.branch_military.value|yesno:'true,false,false' }},
+             branch_mythology: {{ form.branch_mythology.value|yesno:'true,false,false' }}
+           },
+           query: '',
+           init() {
+             this.branches = JSON.parse(document.getElementById('research-branches-data')?.textContent || '[]');
+           },
+           filteredBranches() {
+             const q = (this.query || '').trim().toLowerCase();
+             if (!q) return this.branches;
+             return this.branches.filter(branch => `${branch.name || ''} ${branch.subtitle || ''} ${branch.next_name || ''}`.toLowerCase().includes(q));
+           },
+           enabledCount() {
+             return this.branches.filter(branch => !!this.branchStates[branch.field]).length;
+           },
+           enabledBranches() {
+             return this.branches.filter(branch => !!this.branchStates[branch.field]);
+           },
+           nextPriority() {
+             const available = this.enabledBranches().filter(branch => !branch.max_reached);
+             if (!available.length) return null;
+             return available.slice().sort((a, b) => {
+               const etaA = Number(a.eta_seconds || 0);
+               const etaB = Number(b.eta_seconds || 0);
+               return etaA - etaB || String(a.name || '').localeCompare(String(b.name || ''));
+             })[0];
+           }
+         }">
+      <div class="border-b px-5 py-5 md:px-6"
+           style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div class="max-w-2xl">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-good);">Pesquisa</div>
+            <h3 class="mt-2 text-xl font-bold text-ink">Pesquisa global da conta com prioridade por menor ETA</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted">
+              O runner escolhe automaticamente uma cidade com academia, lê os cinco ramos no conselheiro real do jogo e segue descobrindo tecnologias ate os ramos marcados chegarem no maximo.
+            </p>
+          </div>
+          <div class="grid grid-cols-2 gap-3 lg:min-w-[21rem]">
+            <div class="rounded-2xl border px-4 py-3"
+                 style="border-color: rgba(95,140,78,0.18); background: rgba(255,255,255,0.76);">
+              <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Ultima leitura</div>
+              {% if research_ui.summary.has_state %}
+              <div class="mt-2 flex items-center gap-3">
+                <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border"
+                      style="border-color: rgba(95,140,78,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                  <img src="{{ research_ui.summary.academy_icon }}" alt="Academia" class="h-7 w-7 object-contain">
+                </span>
+                <div class="min-w-0">
+                  <div class="truncate text-sm font-semibold text-ink">{{ research_ui.summary.research_city_name|default:"Pesquisa ainda nao lida" }}</div>
+                  <div class="text-[11px] text-muted">{{ research_ui.summary.current_label|default:"Sem ramo ativo salvo" }}</div>
+                </div>
+              </div>
+              {% else %}
+              <div class="mt-2 text-sm text-muted">Sem cache ainda. O primeiro job vai registrar o painel de pesquisa no snapshot.</div>
+              {% endif %}
+            </div>
+            <div class="rounded-2xl border px-4 py-3"
+                 style="border-color: rgba(143,108,194,0.18); background: rgba(255,255,255,0.76);">
+              <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Academias</div>
+              <div class="mt-2 flex items-center gap-3">
+                <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
+                      style="background: rgba(143,108,194,0.12);">
+                  <img src="{{ research_ui.summary.knowledge_icon }}" alt="Pesquisa" class="h-6 w-6 object-contain">
+                </span>
+                <div class="min-w-0">
+                  <div class="text-sm font-semibold text-ink">{{ research_ui.summary.count }} cidade(s)</div>
+                  <div class="text-[11px] text-muted">Contexto automatico por academia</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="px-5 py-5 md:px-6">
+        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(20rem,0.95fr)]">
+          <section class="rounded-[22px] border p-4"
+                   style="border-color: rgba(95,140,78,0.22); background: linear-gradient(180deg, rgba(95,140,78,0.08), rgba(255,255,255,0.8));">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">Contexto automatico</div>
+                <div class="mt-1 text-sm font-semibold text-ink">O runner escolhe sozinho a melhor cidade com academia</div>
+              </div>
+              <div class="text-[11px] text-muted">{{ research_ui.summary.count }} academia(s)</div>
+            </div>
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.78);">
+                <div class="text-[11px] uppercase tracking-[0.12em] text-muted">Cidade sugerida agora</div>
+                {% if research_ui.summary.auto_context %}
+                <div class="mt-2 flex items-center gap-3">
+                  <div class="flex h-11 w-11 items-center justify-center rounded-2xl border"
+                       style="border-color: rgba(95,140,78,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                    <img src="{{ research_ui.summary.academy_icon }}" alt="Academia" class="h-6 w-6 object-contain">
+                  </div>
+                  <div class="min-w-0">
+                    <div class="text-sm font-semibold text-ink">{{ research_ui.summary.auto_context.name }}</div>
+                    <div class="text-[11px] text-muted">Academia Lv {{ research_ui.summary.auto_context.academy_level }}{% if research_ui.summary.auto_context.x and research_ui.summary.auto_context.y %} • [{{ research_ui.summary.auto_context.x }}:{{ research_ui.summary.auto_context.y }}]{% endif %}</div>
+                  </div>
+                </div>
+                {% else %}
+                <div class="mt-1 text-sm text-muted">Nenhuma academia detectada no snapshot.</div>
+                {% endif %}
+              </div>
+              <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.78);">
+                <div class="text-[11px] uppercase tracking-[0.12em] text-muted">Regra de escolha</div>
+                <div class="mt-1 text-sm font-medium text-ink">Ultima cidade valida do cache, senão maior academia</div>
+                <div class="mt-2 text-[11px] text-muted">A cidade é apenas contexto tecnico para abrir o advisor.</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="space-y-4">
+            <div class="rounded-[22px] border p-4"
+                 style="border-color: rgba(143,108,194,0.24); background: linear-gradient(180deg, rgba(143,108,194,0.10), rgba(255,255,255,0.84));">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: #6f58a2;">Painel da rodada</div>
+              <template x-if="nextPriority()">
+                <div class="mt-3 space-y-3">
+                  <div>
+                    <div class="text-sm font-semibold text-ink" x-text="nextPriority().branch_name || nextPriority().name"></div>
+                    <div class="mt-1 text-[11px] text-muted">Próxima prioridade pelo menor ETA dentre os ramos marcados</div>
+                  </div>
+                  <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.78);">
+                    <div class="text-[11px] uppercase tracking-[0.12em] text-muted">Proxima tecnologia</div>
+                    <div class="mt-1 text-sm font-medium text-ink" x-text="nextPriority().next_name || 'Primeira leitura ainda nao registrada'"></div>
+                    <div class="mt-1 text-[11px] text-muted" x-text="nextPriority().short_desc || nextPriority().description"></div>
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.78);">
+                      <div class="text-[11px] uppercase tracking-[0.12em] text-muted">Custo</div>
+                      <div class="mt-1 text-sm font-semibold text-ink" x-text="nextPriority().cost_text || '—'"></div>
+                    </div>
+                    <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.78);">
+                      <div class="text-[11px] uppercase tracking-[0.12em] text-muted">Estado</div>
+                      <div class="mt-1 text-sm font-semibold text-ink"
+                           x-text="nextPriority().max_reached ? 'Maximo atingido' : (nextPriority().ready ? 'Pronta para descobrir' : (nextPriority().eta_seconds ? 'Monitorando ETA' : 'Sem leitura ainda'))"></div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+              <template x-if="!nextPriority()">
+                <div class="mt-3 text-sm text-muted">Todos os ramos marcados já chegaram ao máximo ou ainda não há leitura suficiente.</div>
+              </template>
+            </div>
+          </section>
+        </div>
+
+        <div class="mt-4 rounded-[22px] border p-4"
+             style="border-color: rgba(79,134,185,0.22); background: linear-gradient(180deg, rgba(79,134,185,0.08), rgba(255,255,255,0.84));">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Ramos de pesquisa</div>
+              <div class="mt-1 text-sm font-semibold text-ink">Marque os ramos que entram na fila global até o máximo</div>
+            </div>
+            <div class="text-[11px] text-muted"><span x-text="enabledCount()"></span> ramo(s) ativos</div>
+          </div>
+          <label class="mb-3 block">
+            <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Filtrar ramos</span>
+            <input type="text" x-model="query" class="form-input" placeholder="Buscar por ramo ou tecnologia">
+          </label>
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+            {% for branch in research_ui.branches %}
+              <label class="group relative block cursor-pointer overflow-hidden rounded-[20px] border p-3 text-left transition-all duration-150"
+                     x-show="!query || (`{{ branch.name|escapejs }} {{ branch.subtitle|escapejs }} {{ branch.next_name|default:''|escapejs }}`).toLowerCase().includes((query || '').trim().toLowerCase())"
+                     :class="branchStates.{{ branch.field }}
+                       ? 'translate-y-[-1px] ring-2 shadow-[0_12px_28px_rgba(79,134,185,0.16)]'
+                       : 'hover:translate-y-[-1px] hover:shadow-[0_10px_24px_rgba(79,134,185,0.10)]'"
+                     :style="branchStates.{{ branch.field }}
+                       ? 'border-color: {{ branch.accent }}; box-shadow: 0 0 0 1px {{ branch.accent }}; background: linear-gradient(180deg, rgba(255,255,255,0.94), {{ branch.surface }});'
+                       : 'border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.84);'">
+                <input type="checkbox" name="{{ branch.field }}" x-model="branchStates.{{ branch.field }}" class="sr-only">
+                <div class="flex items-start gap-3">
+                  <div class="relative shrink-0">
+                    <div class="flex h-14 w-14 items-center justify-center rounded-[18px] border"
+                         style="border-color: rgba(255,255,255,0.75); background: linear-gradient(180deg, #fffdfa, #f6eedf);">
+                      <i class="bi text-2xl {{ branch.icon }}" style="color:{{ branch.accent }};"></i>
+                    </div>
+                    <div class="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                      <img src="{{ branch.resource_icon_url }}" alt="{{ branch.name }}" class="h-4 w-4 object-contain">
+                    </div>
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-start justify-between gap-2">
+                      <div class="min-w-0">
+                        <div class="truncate text-sm font-semibold text-ink">{{ branch.name }}</div>
+                        <div class="mt-0.5 text-[11px] text-muted">{{ branch.subtitle }}</div>
+                      </div>
+                      <span class="inline-flex h-7 w-7 items-center justify-center rounded-full border"
+                            :style="branchStates.{{ branch.field }}
+                              ? 'border-color: {{ branch.accent }}; color:white; background:{{ branch.accent }};'
+                              : 'border-color: rgba(79,134,185,0.22); color:{{ branch.accent }}; background: rgba(255,255,255,0.82);'">
+                        <i class="bi" :class="branchStates.{{ branch.field }} ? 'bi-check-lg' : 'bi-plus-lg'"></i>
+                      </span>
+                    </div>
+                    <div class="mt-3 text-[11px] text-muted">{{ branch.next_name|default:branch.description }}</div>
+                    <div class="mt-3 flex flex-wrap gap-1.5">
+                      <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]"
+                            style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.78);"
+                            >{% if branch.cost_text %}Custo {{ branch.cost_text }}{% else %}Sem cache ainda{% endif %}</span>
+                      <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]"
+                            style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.78);"
+                            >{% if branch.max_reached %}Maximo{% elif branch.ready %}Pronta{% elif branch.eta_seconds %}ETA {{ branch.eta_seconds|duration_human }}{% else %}Sem ETA{% endif %}</span>
+                    </div>
+                  </div>
+                </div>
+              </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+          <section class="rounded-[22px] border p-4"
+                   style="border-color: rgba(201,156,78,0.24); background: linear-gradient(180deg, rgba(201,156,78,0.10), rgba(255,255,255,0.84));">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">Cadencia</div>
+            <div class="mt-1 text-sm font-semibold text-ink">Defina como o job volta para checar o ramo</div>
+            <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <label for="{{ form.fallback_interval_minutes.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">{{ form.fallback_interval_minutes.label }}</label>
+                {{ form.fallback_interval_minutes }}
+                {% for error in form.fallback_interval_minutes.errors %}
+                <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+                {% endfor %}
+              </div>
+              <div>
+                <label for="{{ form.ready_margin_minutes.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">{{ form.ready_margin_minutes.label }}</label>
+                {{ form.ready_margin_minutes }}
+                {% for error in form.ready_margin_minutes.errors %}
+                <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+                {% endfor %}
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-[22px] border p-4"
+                   style="border-color: rgba(95,140,78,0.24); background: linear-gradient(180deg, rgba(95,140,78,0.10), rgba(255,255,255,0.84));">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">Comportamento</div>
+            <div class="mt-2 space-y-2 text-sm text-muted">
+              <div class="flex items-start gap-2">
+                <i class="bi bi-check2-circle mt-0.5 text-[var(--ik-good)]"></i>
+                <span>Se nenhuma das pesquisas marcadas estiver pronta, o job agenda o proximo check pelo menor ETA real.</span>
+              </div>
+              <div class="flex items-start gap-2">
+                <i class="bi bi-check2-circle mt-0.5 text-[var(--ik-good)]"></i>
+                <span>Quando um ramo fica pronto, ele é descoberto e o próprio job continua para a próxima prioridade.</span>
+              </div>
+              <div class="flex items-start gap-2">
+                <i class="bi bi-check2-circle mt-0.5 text-[var(--ik-good)]"></i>
+                <span>O fluxo só termina quando todos os ramos marcados chegarem ao máximo.</span>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% load hub_tags %}
+
+{% block title %}Novo Preset{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+
+  <div class="mb-6">
+    <nav class="text-xs text-muted flex items-center gap-1">
+      <a href="{% url 'profiles:profile-list' %}" class="hover:text-ink">Perfis</a>
+      <span class="mx-1">/</span>
+      <a href="{% url 'profiles:preset-list' %}" class="hover:text-ink">Presets</a>
+      <span class="mx-1">/</span>
+      <span class="text-ink">Novo</span>
+    </nav>
+    <h1 class="text-2xl font-bold text-ink mt-2">Criar Preset</h1>
+    <p class="text-sm text-muted mt-1">Defina um nome e descricao para o seu preset de automacao.</p>
+  </div>
+
+  <div class="card">
+    {% if error %}
+    <div class="mb-5 p-3 rounded-lg" style="background: #fde8e5; border: 1px solid #e8b4af;">
+      <p class="text-sm flex items-center gap-2" style="color: #8c3028;">
+        <i class="bi bi-exclamation-triangle-fill"></i> {{ error }}
+      </p>
+    </div>
+    {% endif %}
+
+    <form method="post">
+      {% csrf_token %}
+      <div class="space-y-5">
+        <div>
+          <label for="id_name" class="form-label">
+            Nome <span style="color: var(--ik-bad);">*</span>
+          </label>
+          <input type="text" name="name" id="id_name"
+                 value="{{ name|default:'' }}"
+                 class="form-input"
+                 placeholder="Ex: Gestao Diaria, Monitoramento Completo..."
+                 required autofocus>
+        </div>
+
+        <div>
+          <label for="id_description" class="form-label">Descricao</label>
+          <textarea name="description" id="id_description"
+                    class="form-input" rows="3"
+                    placeholder="Descricao opcional do que este preset faz...">{{ description|default:'' }}</textarea>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-3 mt-6 pt-5" style="border-top: 1px solid var(--ik-line);">
+        <a href="{% url 'profiles:preset-list' %}" class="btn btn-secondary">
+          <i class="bi bi-x-lg"></i> Cancelar
+        </a>
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check-lg"></i> Criar Preset
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

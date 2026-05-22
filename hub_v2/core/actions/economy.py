@@ -140,6 +140,7 @@ ACTIONS = {
         "requires_game_session": True,
         "recurring": True,
         "long_running": False,
+        "ui_hidden": True,
         "description": "Concentra recursos de varias cidades em uma.",
         "inputs": [
             {"key": "target_city", "type": FIELD_CITY_SELECT, "label": "Cidade destino", "multiple": False, "required": True},

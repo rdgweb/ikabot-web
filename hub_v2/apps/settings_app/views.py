@@ -71,11 +71,19 @@ class SettingsPageView(LoginRequiredMixin, TemplateView):
             "running_job_lease_seconds": _get_setting("running_job_lease_seconds", "180"),
         })
 
+        from .utils import get_int_setting as _get_int_setting
+        ctx["auto_archive_days"] = _get_int_setting("workflow_auto_archive_days", 30)
+        ctx["auto_archive_last_run"] = _get_setting("workflow_auto_archive_last_run", "")
+        ctx["workflow_max_runs"] = _get_int_setting("workflow_max_runs_per_workflow", 150)
+
         ctx["generic_settings"] = AppSetting.objects.exclude(
             key__in=[
                 "webshare_api_key",
                 "ikabotapi_url",
                 "agent_allowed_ips",
+                "workflow_auto_archive_days",
+                "workflow_auto_archive_last_run",
+                "workflow_max_runs_per_workflow",
                 "snapshot_stale_seconds",
                 "building_options_stale_seconds",
                 "running_job_recovery_grace_seconds",
@@ -196,3 +204,37 @@ class SettingEditView(LoginRequiredMixin, UpdateView):
 
     def get_object(self, queryset=None):
         return AppSetting.objects.get(pk=self.kwargs["key"])
+
+
+class AutoArchiveWorkflowsView(LoginRequiredMixin, View):
+    def post(self, request):
+        from datetime import timedelta
+        from django.utils import timezone
+        from django.db.models import Q
+        from apps.jobs.models import Workflow
+        try:
+            days = max(1, int(request.POST.get("days", 30)))
+        except (ValueError, TypeError):
+            days = 30
+        _set_setting("workflow_auto_archive_days", str(days))
+        cutoff = timezone.now() - timedelta(days=days)
+        qs = Workflow.objects.filter(
+            archived_at__isnull=True,
+            status__in=("finished", "cancelled"),
+        ).filter(
+            Q(last_event_at__lt=cutoff) | Q(last_event_at__isnull=True, updated_at__lt=cutoff)
+        )
+        count = qs.update(archived_at=timezone.now())
+        _set_setting("workflow_auto_archive_last_run", timezone.now().strftime("%d/%m/%Y %H:%M"))
+        messages.success(request, f"{count} workflow(s) arquivado(s).")
+        return redirect("settings_app:list")
+
+class SaveMaxRunsView(LoginRequiredMixin, View):
+    def post(self, request):
+        try:
+            max_runs = max(10, min(10000, int(request.POST.get("max_runs", 150))))
+        except (ValueError, TypeError):
+            max_runs = 150
+        _set_setting("workflow_max_runs_per_workflow", str(max_runs))
+        messages.success(request, f"Máximo de execuções por workflow salvo: {max_runs}.")
+        return redirect("settings_app:list")

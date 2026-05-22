@@ -1,0 +1,498 @@
+{% load static hub_tags %}
+
+    <div class="grid grid-cols-1 gap-x-4 gap-y-3 {% if action_code == 3 %}sm:grid-cols-2 md:grid-cols-3{% else %}sm:grid-cols-2{% endif %}"
+         {% if action_code == 3 %}x-data="{ distStrategy: '{{ form.strategy.value|default:'targets'|escapejs }}' }"{% endif %}
+>
+
+      {# ── Distribuir Recursos: recursos como pills compactos + estratégia ── #}
+      {% if action_code == 3 %}
+      <div class="sm:col-span-2 md:col-span-3">
+        <label class="form-label text-xs mb-2 block">Recursos a distribuir <span class="text-[var(--ik-bad)]">*</span></label>
+        <div class="flex flex-wrap gap-2">
+          <label class="flex items-center gap-2 rounded-lg border border-[var(--ik-line)] px-3 py-2 cursor-pointer transition-all hover:border-[var(--ik-sea)]/60 has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[var(--ik-sea)]/10">
+            <input type="checkbox" name="{{ form.wood.html_name }}" {% if form.wood.value %}checked{% endif %} class="sr-only peer">
+            <img src="{% static 'game/resources/icon_wood.png' %}" alt="" class="h-4 w-4 object-contain">
+            <span class="text-xs font-medium text-muted peer-checked:text-[var(--ik-sea)] peer-checked:font-semibold">Madeira</span>
+          </label>
+          <label class="flex items-center gap-2 rounded-lg border border-[var(--ik-line)] px-3 py-2 cursor-pointer transition-all hover:border-[var(--ik-sea)]/60 has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[var(--ik-sea)]/10">
+            <input type="checkbox" name="{{ form.wine.html_name }}" {% if form.wine.value %}checked{% endif %} class="sr-only peer">
+            <img src="{% static 'game/resources/icon_wine.png' %}" alt="" class="h-4 w-4 object-contain">
+            <span class="text-xs font-medium text-muted peer-checked:text-[var(--ik-sea)] peer-checked:font-semibold">Vinho</span>
+          </label>
+          <label class="flex items-center gap-2 rounded-lg border border-[var(--ik-line)] px-3 py-2 cursor-pointer transition-all hover:border-[var(--ik-sea)]/60 has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[var(--ik-sea)]/10">
+            <input type="checkbox" name="{{ form.marble.html_name }}" {% if form.marble.value %}checked{% endif %} class="sr-only peer">
+            <img src="{% static 'game/resources/icon_marble.png' %}" alt="" class="h-4 w-4 object-contain">
+            <span class="text-xs font-medium text-muted peer-checked:text-[var(--ik-sea)] peer-checked:font-semibold">Mármore</span>
+          </label>
+          <label class="flex items-center gap-2 rounded-lg border border-[var(--ik-line)] px-3 py-2 cursor-pointer transition-all hover:border-[var(--ik-sea)]/60 has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[var(--ik-sea)]/10">
+            <input type="checkbox" name="{{ form.crystal.html_name }}" {% if form.crystal.value %}checked{% endif %} class="sr-only peer">
+            <img src="{% static 'game/resources/icon_glass.png' %}" alt="" class="h-4 w-4 object-contain">
+            <span class="text-xs font-medium text-muted peer-checked:text-[var(--ik-sea)] peer-checked:font-semibold">Cristal</span>
+          </label>
+          <label class="flex items-center gap-2 rounded-lg border border-[var(--ik-line)] px-3 py-2 cursor-pointer transition-all hover:border-[var(--ik-sea)]/60 has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[var(--ik-sea)]/10">
+            <input type="checkbox" name="{{ form.sulfur.html_name }}" {% if form.sulfur.value %}checked{% endif %} class="sr-only peer">
+            <img src="{% static 'game/resources/icon_sulfur.png' %}" alt="" class="h-4 w-4 object-contain">
+            <span class="text-xs font-medium text-muted peer-checked:text-[var(--ik-sea)] peer-checked:font-semibold">Enxofre</span>
+          </label>
+        </div>
+        {% for error in form.wood.errors %}
+        <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% for field in form.visible_fields %}
+        {% if field.name != "game_account" and field.name != "action_code" %}
+        {# In preset context, city fields handled separately in the city config section #}
+        {% if no_footer and preset_city_fields and field.name in preset_city_fields %}{% comment %}skip city field{% endcomment %}
+        {# ac=601: fully custom-rendered above #}
+        {% elif action_code == 601 or action_code == 602 %}
+        {# ac=1002: queue_strategy/research_reduction/auto_transport rendered inside batch planner #}
+        {% elif action_code == 1002 and field.name == "queue_strategy" %}
+        {% elif action_code == 1002 and field.name == "research_reduction" %}
+        {% elif action_code == 1002 and field.name == "auto_transport" %}
+        {% elif field.name in custom_field_names or action_code == 3 and field.name == "wood" or action_code == 3 and field.name == "wine" or action_code == 3 and field.name == "marble" or action_code == 3 and field.name == "crystal" or action_code == 3 and field.name == "sulfur" %}
+        {% else %}
+
+        {# Action 1203 uses its own custom city selector card UI above #}
+        {% if field.name == "city_id" and action_code == 1203 %}
+
+        {# City multi-select spans full width #}
+        {% elif field.name == "cities" and cities %}
+        <div class="sm:col-span-2 {% if action_code == 3 %}md:col-span-3{% endif %}">
+          <label for="{{ field.id_for_label }}" class="form-label text-xs mb-1 block">
+            {{ field.label }}
+            {% if field.field.required %}<span class="text-[var(--ik-bad)]">*</span>{% endif %}
+          </label>
+          {% if action_code == 901 or action_code == 902 or action_code == 1006 or action_code == 3 or action_code == 1003 %}
+          <div class="overflow-hidden rounded-[22px] border shadow-[0_10px_30px_rgba(87,66,24,0.08)]"
+               style="border-color: var(--ik-line); background:
+                 radial-gradient(700px 220px at 0% 0%, rgba(79,134,185,0.10), transparent 60%),
+                 radial-gradient(620px 220px at 100% 100%, rgba(201,156,78,0.14), transparent 60%),
+                 linear-gradient(180deg, rgba(255,252,245,0.96), rgba(247,241,229,0.92));"
+               x-data="{
+                 selectedCities: [{% for selected in field.value %}'{{ selected|escapejs }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
+                 isSelected(cityId) {
+                   return this.selectedCities.includes(String(cityId));
+                 },
+                 toggleCity(cityId) {
+                   cityId = String(cityId);
+                   if (this.isSelected(cityId)) {
+                     this.selectedCities = this.selectedCities.filter(id => id !== cityId);
+                     return;
+                   }
+                   this.selectedCities = [...this.selectedCities, cityId];
+                 },
+                 selectAll() {
+                   this.selectedCities = [{% for choice in field.field.choices %}'{{ choice.0|stringformat:"s"|escapejs }}'{% if not forloop.last %}, {% endif %}{% endfor %}];
+                 },
+                 clearAll() {
+                   this.selectedCities = [];
+                 }
+               }">
+            <div class="border-b px-4 py-4"
+                 style="border-color: rgba(219,201,167,0.82); background: linear-gradient(180deg, rgba(255,255,255,0.52), rgba(255,255,255,0));">
+              <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div class="max-w-2xl">
+                  <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">
+                    {% if action_code == 3 or action_code == 1003 %}Cidades participantes{% else %}Cidades da doação{% endif %}
+                  </div>
+                  <div class="mt-1 text-sm font-semibold text-ink">Selecione uma ou mais cidades participantes</div>
+                  <p class="mt-1 text-xs leading-relaxed text-muted">
+                    {% if action_code == 3 or action_code == 1003 %}
+                    Escolha as cidades que entram no planejamento logístico de recursos.
+                    {% else %}
+                    Mesmo visual do transporte, mas com seleção múltipla para montar a lista de cidades que vão doar.
+                    {% endif %}
+                  </p>
+                </div>
+                <div class="flex items-center gap-3">
+                  <button type="button"
+                          class="rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors hover:text-ink"
+                          style="border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.08);"
+                          @click="selectAll()">
+                    Selecionar todas
+                  </button>
+                  <button type="button"
+                          class="rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors hover:text-ink"
+                          style="border-color: rgba(219,201,167,0.88); color: var(--ik-muted, #7a6a52); background: rgba(255,255,255,0.66);"
+                          @click="clearAll()">
+                    Limpar
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="px-4 py-4">
+              <div class="grid grid-cols-2 gap-2 xl:grid-cols-4">
+                {% for choice in field.field.choices %}
+                {% with choice_value=choice.0|stringformat:"s" %}
+                {% for city in cities %}
+                {% if city.id|stringformat:"s" == choice_value %}
+                <label class="group relative cursor-pointer overflow-hidden rounded-[18px] border text-left transition-all duration-150 hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]"
+                       :class="isSelected('{{ choice_value|escapejs }}') ? 'translate-y-[-1px] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : ''"
+                       :style="isSelected('{{ choice_value|escapejs }}')
+                         ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.88));'
+                         : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
+                  <input type="checkbox"
+                         name="{{ field.html_name }}"
+                         value="{{ choice.0 }}"
+                         x-model="selectedCities"
+                         class="sr-only">
+                  <button type="button"
+                          class="absolute inset-0 z-10"
+                          @click.prevent="toggleCity('{{ choice_value|escapejs }}')"
+                          :aria-pressed="isSelected('{{ choice_value|escapejs }}')"></button>
+                  <div class="absolute inset-x-0 top-0 h-14"
+                       style="background: linear-gradient(135deg, rgba(79,134,185,0.16), rgba(79,134,185,0.02));"></div>
+                  <div class="relative p-3">
+                    <div class="flex items-start gap-3">
+                      <div class="relative shrink-0">
+                        <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                             style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                          <img src="{{ city.city_art }}" alt="" class="h-8 w-8 object-contain">
+                        </div>
+                        <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                          <img src="{{ city.tradegood_icon }}" alt="{{ city.tradegood_name }}" class="h-4 w-4 object-contain">
+                        </div>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-start justify-between gap-2">
+                          <div class="min-w-0">
+                            <div class="truncate text-sm font-semibold text-ink">{{ city.name|default:"Cidade" }}</div>
+                            <div class="mt-1 text-[11px] text-muted">
+                              {{ city.tradegood_name }}
+                              {% if city.x and city.y %}<span> • [{{ city.x }}:{{ city.y }}]</span>{% endif %}
+                            </div>
+                          </div>
+                          <span class="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full border transition-colors"
+                                :style="isSelected('{{ choice_value|escapejs }}')
+                                  ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
+                                  : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
+                            <i class="bi" :class="isSelected('{{ choice_value|escapejs }}') ? 'bi-check-lg' : '{% if action_code == 3 or action_code == 1003 %}bi-arrows-expand{% else %}bi-tree{% endif %}'"></i>
+                          </span>
+                        </div>
+                        <div class="mt-2 flex flex-wrap gap-1">
+                          {% for resource in city.resources %}
+                          {% if action_code == 3 or action_code == 1003 or resource.key == "wood" %}
+                          <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium"
+                                :style="isSelected('{{ choice_value|escapejs }}')
+                                  ? 'border-color: rgba(79,134,185,0.22); background: rgba(255,255,255,0.94);'
+                                  : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);'">
+                            <img src="{{ resource.icon }}" alt="{{ resource.label }}" class="h-3.5 w-3.5 object-contain">
+                            <span>{{ resource.amount|default:0 }}</span>
+                          </span>
+                          {% endif %}
+                          {% endfor %}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </label>
+                {% endif %}
+                {% endfor %}
+                {% endwith %}
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+          {% else %}
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+            {% for choice in field.field.choices %}
+            <label class="flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all hover:border-[var(--ik-sea)]/50 has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[var(--ik-sea)]/5"
+                   style="border-color: var(--ik-line);">
+              <input type="checkbox" name="{{ field.html_name }}" value="{{ choice.0 }}"
+                     {% if choice.0|stringformat:"s" in field.value %}checked{% endif %}
+                     class="rounded border-gray-300 text-[var(--ik-sea)] focus:ring-[var(--ik-sea)]">
+              <i class="bi bi-geo-alt text-[10px] text-muted"></i>
+              <span class="text-xs text-ink truncate">{{ choice.1 }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% if field.field.choices|length > 2 and action_code != 901 and action_code != 902 and action_code != 3 and action_code != 1003 %}
+          <div class="flex gap-3 mt-1.5 px-1">
+            <button type="button" class="text-[10px] link-sea"
+                    onclick="this.closest('.sm\\:col-span-2').querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=true)">
+              Selecionar todas
+            </button>
+            <button type="button" class="text-[10px] text-muted hover:text-ink"
+                    onclick="this.closest('.sm\\:col-span-2').querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=false)">
+              Limpar
+            </button>
+          </div>
+          {% endif %}
+          {% for error in field.errors %}
+          <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+          {% endfor %}
+        </div>
+
+        {% elif field.name == "city" and action_meta.category == "construction" %}
+        <div>
+          <label for="{{ field.id_for_label }}" class="form-label text-xs mb-1 block">
+            {{ field.label }}
+            {% if field.field.required %}<span class="text-[var(--ik-bad)]">*</span>{% endif %}
+          </label>
+          <select name="{{ field.html_name }}"
+                  id="{{ field.id_for_label }}"
+                  class="form-input"
+                  hx-get="{% url 'jobs:job-form' %}?ga={{ game_account.pk }}&action={{ action_code }}"
+                  hx-trigger="change"
+                  hx-include="closest form"
+                  hx-target="#job-modal-body"
+                  hx-swap="innerHTML"
+                  hx-push-url="false">
+            {% for choice in field.field.choices %}
+            <option value="{{ choice.0 }}" {% if field.value == choice.0|stringformat:"s" %}selected{% endif %}>{{ choice.1 }}</option>
+            {% endfor %}
+          </select>
+          {% if field.help_text %}
+          <p class="form-help">{{ field.help_text }}</p>
+          {% endif %}
+          {% for error in field.errors %}
+          <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+          {% endfor %}
+        </div>
+
+        {# Resource type — full width pills #}
+        {% elif field.name == "resource_type" %}
+        <div class="sm:col-span-2">
+          <label class="form-label text-xs mb-1 block">
+            {{ field.label }}
+            {% if field.field.required %}<span class="text-[var(--ik-bad)]">*</span>{% endif %}
+          </label>
+          <div class="flex flex-wrap gap-1.5">
+            {% for choice in field.field.choices %}
+            <label class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer transition-all hover:border-[var(--ik-sea)]/50 has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[var(--ik-sea)]/5"
+                   style="border-color: var(--ik-line);">
+              <input type="radio" name="{{ field.html_name }}" value="{{ choice.0 }}"
+                     {% if field.value == choice.0|stringformat:"s" %}checked{% endif %}
+                     class="sr-only peer">
+              {% if choice.0|stringformat:"s" == "wood" %}
+              <img src="{% static 'game/resources/icon_wood.png' %}" alt="Madeira" class="h-4 w-4">
+              {% elif choice.0|stringformat:"s" == "wine" %}
+              <img src="{% static 'game/resources/icon_wine.png' %}" alt="Vinho" class="h-4 w-4">
+              {% elif choice.0|stringformat:"s" == "marble" %}
+              <img src="{% static 'game/resources/icon_marble.png' %}" alt="Marmore" class="h-4 w-4">
+              {% elif choice.0|stringformat:"s" == "crystal" %}
+              <img src="{% static 'game/resources/icon_glass.png' %}" alt="Cristal" class="h-4 w-4">
+              {% elif choice.0|stringformat:"s" == "sulfur" %}
+              <img src="{% static 'game/resources/icon_sulfur.png' %}" alt="Enxofre" class="h-4 w-4">
+              {% endif %}
+              <span class="text-xs font-medium peer-checked:text-[var(--ik-sea)]">{{ choice.1 }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          {% for error in field.errors %}
+          <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+          {% endfor %}
+        </div>
+
+        {# Pill buttons — strategy (ac=3) uses distStrategy direct; others use nested pillVal scope #}
+        {% elif field.name == "donation_method" or field.name == "transport_load_percent" or field.name == "research_reduction" or field.name == "build_time_reduction" or field.name == "strategy" or field.name == "queue_strategy" %}
+        {% if action_code == 3 and field.name == "strategy" %}
+        {# ac=3 strategy: no nested scope — read/write distStrategy from grid x-data directly #}
+        <div class="sm:col-span-2 md:col-span-3">
+          <label class="form-label text-xs mb-1 block">{{ field.label }}</label>
+          <input type="hidden" name="{{ field.html_name }}" :value="distStrategy">
+          <div class="flex flex-wrap gap-1.5">
+            {% for choice in field.field.choices %}{% if choice.0 %}
+            <button type="button"
+                    class="flex items-center gap-1.5 px-3 py-2 rounded-lg border cursor-pointer transition-all"
+                    :class="distStrategy === '{{ choice.0|escapejs }}' ? 'border-[var(--ik-sea)] bg-[var(--ik-sea)]/10' : 'border-[var(--ik-line)] hover:border-[var(--ik-sea)]/60'"
+                    @click="distStrategy = '{{ choice.0|escapejs }}'">
+              <span class="text-xs font-medium"
+                    :class="distStrategy === '{{ choice.0|escapejs }}' ? 'text-[var(--ik-sea)] font-semibold' : 'text-muted'">{{ choice.1 }}</span>
+            </button>
+            {% endif %}{% endfor %}
+          </div>
+          {% for error in field.errors %}
+          <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="sm:col-span-2 {% if action_code == 3 %}md:col-span-3{% endif %}"
+             x-data="{ pillVal: '{{ field.value|escapejs }}' }">
+          <label class="form-label text-xs mb-1 block">
+            {{ field.label }}
+            {% if field.field.required %}<span class="text-[var(--ik-bad)]">*</span>{% endif %}
+          </label>
+          <input type="hidden" name="{{ field.html_name }}" x-model="pillVal">
+          <div class="flex flex-wrap gap-1.5">
+            {% for choice in field.field.choices %}{% if choice.0 %}
+            <button type="button"
+                    class="flex items-center gap-1.5 px-3 py-2 rounded-lg border cursor-pointer transition-all"
+                    :class="pillVal === '{{ choice.0|escapejs }}' ? 'border-[var(--ik-sea)] bg-[var(--ik-sea)]/10' : 'border-[var(--ik-line)] hover:border-[var(--ik-sea)]/60'"
+                    @click="pillVal = '{{ choice.0|escapejs }}'">
+              <span class="text-xs font-medium"
+                    :class="pillVal === '{{ choice.0|escapejs }}' ? 'text-[var(--ik-sea)] font-semibold' : 'text-muted'">{{ choice.1 }}</span>
+            </button>
+            {% endif %}{% endfor %}
+          </div>
+          {% if field.help_text %}
+          <p class="form-help">{{ field.help_text }}</p>
+          {% endif %}
+          {% for error in field.errors %}
+          <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {# Donation type — full width multi-select pills #}
+        {% elif field.name == "donation_type" %}
+        <div class="sm:col-span-2">
+          <label class="form-label text-xs mb-1 block">
+            {{ field.label }}
+            {% if field.field.required %}<span class="text-[var(--ik-bad)]">*</span>{% endif %}
+          </label>
+          <div class="flex flex-wrap gap-1.5">
+            {% for choice in field.field.choices %}
+            <label class="flex items-center gap-1.5 px-3 py-2 rounded-lg border cursor-pointer transition-all hover:border-[var(--ik-sea)]/50 has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[var(--ik-sea)]/5"
+                   style="border-color: var(--ik-line);">
+              <input type="checkbox" name="{{ field.html_name }}" value="{{ choice.0 }}"
+                     {% if choice.0|stringformat:"s" in field.value %}checked{% endif %}
+                     class="sr-only peer">
+              <span class="text-xs font-medium peer-checked:text-[var(--ik-sea)]">{{ choice.1 }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          <p class="form-help">Pode marcar floresta, bem de luxo ou ambos.</p>
+          {% for error in field.errors %}
+          <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+          {% endfor %}
+        </div>
+
+        {# Resource checkbox cards #}
+        {% elif field.field.widget.input_type == "checkbox" and field.name == "wood" or field.field.widget.input_type == "checkbox" and field.name == "wine" or field.field.widget.input_type == "checkbox" and field.name == "marble" or field.field.widget.input_type == "checkbox" and field.name == "crystal" or field.field.widget.input_type == "checkbox" and field.name == "sulfur" %}
+        <div>
+          <label class="flex items-center gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-all hover:border-[var(--ik-sea)]/50 has-[:checked]:border-[var(--ik-sea)] has-[:checked]:bg-[var(--ik-sea)]/5"
+                 style="border-color: var(--ik-line);">
+            {{ field }}
+            {% if field.name == "wood" %}
+            <img src="{% static 'game/resources/icon_wood.png' %}" alt="Madeira" class="h-5 w-5">
+            {% elif field.name == "wine" %}
+            <img src="{% static 'game/resources/icon_wine.png' %}" alt="Vinho" class="h-5 w-5">
+            {% elif field.name == "marble" %}
+            <img src="{% static 'game/resources/icon_marble.png' %}" alt="Marmore" class="h-5 w-5">
+            {% elif field.name == "crystal" %}
+            <img src="{% static 'game/resources/icon_glass.png' %}" alt="Cristal" class="h-5 w-5">
+            {% elif field.name == "sulfur" %}
+            <img src="{% static 'game/resources/icon_sulfur.png' %}" alt="Enxofre" class="h-5 w-5">
+            {% endif %}
+            <span class="text-xs font-medium text-ink">{{ field.label }}</span>
+          </label>
+        </div>
+
+        {# Boolean toggle #}
+        {% elif field.field.widget.input_type == "checkbox" %}
+        <div>
+          <label class="flex items-center gap-2 cursor-pointer">
+            {{ field }}
+            <span class="text-xs text-ink">{{ field.label }}</span>
+          </label>
+        </div>
+
+        {# Resource amount fields #}
+        {% elif field.name == "wood" or field.name == "wine" or field.name == "marble" or field.name == "crystal" or field.name == "sulfur" %}
+        <div>
+          <label for="{{ field.id_for_label }}" class="form-label text-xs mb-1 block">
+            {{ field.label }}
+            {% if field.field.required %}<span class="text-[var(--ik-bad)]">*</span>{% endif %}
+          </label>
+          <div class="flex items-center gap-3 rounded-lg border px-3 py-2"
+               style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+            {% if field.name == "wood" %}
+            <img src="{% static 'game/resources/icon_wood.png' %}" alt="Madeira" class="h-5 w-5">
+            {% elif field.name == "wine" %}
+            <img src="{% static 'game/resources/icon_wine.png' %}" alt="Vinho" class="h-5 w-5">
+            {% elif field.name == "marble" %}
+            <img src="{% static 'game/resources/icon_marble.png' %}" alt="Marmore" class="h-5 w-5">
+            {% elif field.name == "crystal" %}
+            <img src="{% static 'game/resources/icon_glass.png' %}" alt="Cristal" class="h-5 w-5">
+            {% elif field.name == "sulfur" %}
+            <img src="{% static 'game/resources/icon_sulfur.png' %}" alt="Enxofre" class="h-5 w-5">
+            {% endif %}
+            <div class="min-w-0 flex-1">
+              <div class="text-[11px] font-medium text-ink">{{ field.label }}</div>
+              <div class="text-[10px] text-muted">Quantidade para esta remessa</div>
+            </div>
+            <div class="w-28 sm:w-32">
+              {{ field }}
+            </div>
+          </div>
+          {% if field.help_text %}
+          <p class="form-help">{{ field.help_text }}</p>
+          {% endif %}
+          {% for error in field.errors %}
+          <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+          {% endfor %}
+        </div>
+
+        {# Default rendering — single column cell #}
+        {% else %}
+        <div {% if action_code == 3 %}{% if field.name == "minimum_stock" or field.name == "target_stock" or field.name == "origin_reserve_stock" %}
+             x-show="distStrategy !== 'evenly'"
+             x-effect="if (distStrategy === 'evenly') { $el.querySelectorAll('input[type=number],input[type=text]').forEach(i => { if (!i.readOnly) i.value = '0'; }) }"
+             {% endif %}{% endif %}>
+          <label for="{{ field.id_for_label }}" class="form-label text-xs mb-1 block">
+            {{ field.label }}
+            {% if field.field.required %}<span class="text-[var(--ik-bad)]">*</span>{% endif %}
+          </label>
+          {{ field }}
+          {% if field.help_text %}
+          <p class="form-help">{{ field.help_text }}</p>
+          {% endif %}
+          {% for error in field.errors %}
+          <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% endif %}
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    {% if action_meta.category == "construction" and not no_footer %}
+    <div id="construction-plan-preview"
+         class="mt-3 max-h-64 overflow-y-auto rounded-xl"
+         hx-post="{% url 'jobs:job-construction-preview' %}"
+         {% if action_code == 1002 %}
+         hx-trigger="change delay:300ms from:[name=construction_plan_json]"
+         {% else %}
+         hx-trigger="load, change delay:350ms from:closest form, keyup delay:500ms from:closest form"
+         {% endif %}
+         hx-include="closest form"
+         hx-target="this"
+         hx-swap="innerHTML">
+      {% include "jobs/partials/construction_plan_preview.html" with preview=None ika_tools_url="" resource_labels=None resource_icons=None action_code=action_code %}
+    </div>
+    {% endif %}
+
+    {# ── No inputs needed ── #}
+    {% if not action_meta.inputs %}
+    <div class="text-center py-6 rounded-lg" style="background: var(--ik-sand-light);">
+      <i class="bi bi-check-circle text-[var(--ik-good)] text-xl"></i>
+      <p class="text-xs text-muted mt-1.5">Nenhuma configuracao necessaria.</p>
+      <p class="text-[10px] text-muted mt-0.5">O job sera executado com as configuracoes padrao.</p>
+    </div>
+    {% endif %}
+
+    {# ── Footer (suppressed in preset context) ── #}
+    {% if not no_footer %}
+    <div class="flex justify-between items-center pt-3 mt-4" style="border-top: 1px solid var(--ik-line);">
+      <button type="button"
+              class="btn btn-secondary btn-sm"
+              hx-get="{% url 'jobs:job-actions' %}?ga={{ game_account.pk }}"
+              hx-target="#job-modal-body"
+              hx-swap="innerHTML"
+              hx-push-url="false">
+        <i class="bi bi-arrow-left text-[10px]"></i> Voltar
+      </button>
+      <button type="submit" class="btn btn-primary btn-sm">
+        <i class="bi bi-plus-circle"></i> {% if action_code == 31 %}Enviar Mensagem{% elif action_code == 2 %}Criar Transporte{% elif action_code == 3 or action_code == 1003 %}Criar Distribuição{% elif action_code == 601 %}Iniciar Monitor{% elif action_code == 1005 %}Criar Treino Militar{% elif action_code == 1202 %}Criar Movimentação{% else %}Criar Job{% endif %}
+      </button>
+    </div>
+    {% endif %}
+  {% if not no_footer %}</form>{% endif %}
+</div>

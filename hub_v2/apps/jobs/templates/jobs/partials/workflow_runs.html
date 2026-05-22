@@ -31,16 +31,18 @@
 
     <div class="flex shrink-0 items-center gap-1">
       {% if row.can_run_now %}
-      <form method="post" action="{% url 'jobs:job-run-now' row.job.pk %}" class="inline">
+      <form method="post" action="{% url 'jobs:job-run-now' row.job.pk %}" hx-boost="false" class="inline">
         {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'jobs:workflow-detail' workflow.pk %}">
         <button type="submit" class="btn btn-secondary btn-sm !px-2" title="Executar agora">
           <i class="bi bi-lightning-charge text-amber-500"></i>
         </button>
       </form>
       {% endif %}
       {% if row.can_retry %}
-      <form method="post" action="{% url 'jobs:job-retry' row.job.pk %}" class="inline">
+      <form method="post" action="{% url 'jobs:job-retry' row.job.pk %}" hx-boost="false" class="inline">
         {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'jobs:workflow-detail' workflow.pk %}">
         <button type="submit" class="btn btn-secondary btn-sm !px-2" title="Retry">
           <i class="bi bi-arrow-repeat text-sea"></i>
         </button>
@@ -92,3 +94,21 @@
 {% else %}
 <div class="px-5 py-6 text-center text-sm text-muted">Nenhuma execução registrada.</div>
 {% endif %}
+
+{# Footer: link ver arquivadas #}
+<div class="border-t border-[var(--ik-line)] px-5 py-2 flex items-center gap-3">
+  {% if show_archived %}
+  <button class="text-xs text-muted hover:text-ink"
+          hx-get="{% url 'jobs:workflow-runs' workflow.pk %}?archived=0"
+          hx-target="#workflow-runs" hx-swap="innerHTML" hx-push-url="false">
+    <i class="bi bi-arrow-left"></i> Voltar para ativas
+  </button>
+  {% else %}
+  <button class="text-xs text-muted hover:text-ink"
+          hx-get="{% url 'jobs:workflow-runs' workflow.pk %}?archived=1"
+          hx-target="#workflow-runs" hx-swap="innerHTML" hx-push-url="false">
+    <i class="bi bi-archive"></i> Ver arquivadas
+    {% if archived_count %}({{ archived_count }}){% endif %}
+  </button>
+  {% endif %}
+</div>

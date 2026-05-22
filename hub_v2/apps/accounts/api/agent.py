@@ -262,6 +262,9 @@ class AgentConfigView(APIView):
                 "building_options_stale_seconds": get_int_setting("building_options_stale_seconds", 6 * 60 * 60),
                 "running_job_lease_seconds": get_int_setting("running_job_lease_seconds", 180),
                 "running_job_recovery_grace_seconds": get_int_setting("running_job_recovery_grace_seconds", 300),
+                "construction_market_intervention_gold_eta_hours": get_int_setting("construction_market_intervention_gold_eta_hours", 24),
+                "construction_market_intervention_resource_eta_hours": get_int_setting("construction_market_intervention_resource_eta_hours", 12),
+                "construction_market_intervention_pending_recheck_seconds": get_int_setting("construction_market_intervention_pending_recheck_seconds", 1800),
             },
             "accounts": accounts,
         }

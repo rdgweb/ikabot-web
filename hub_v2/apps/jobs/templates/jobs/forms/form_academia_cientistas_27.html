@@ -1,0 +1,188 @@
+{% load static hub_tags %}
+
+    {% if action_code == 27 %}
+    {{ scientists_ui.cities|json_script:"scientists-cities-data" }}
+    <div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_36px_rgba(60,45,18,0.10)]"
+         style="border-color: var(--ik-line); background:
+           radial-gradient(780px 280px at 0% 0%, rgba(95,140,78,0.14), transparent 60%),
+           radial-gradient(700px 260px at 100% 100%, rgba(79,134,185,0.14), transparent 60%),
+           linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
+         x-data="{
+           cities: [],
+           selectedCities: {% if form.cities.value %}{{ form.cities.value|safe }}{% else %}[]{% endif %},
+           query: '',
+           isSelected(cityId) {
+             return this.selectedCities.includes(String(cityId || ''));
+           },
+           toggleCity(cityId) {
+             const normalized = String(cityId || '');
+             if (!normalized) return;
+             if (this.isSelected(normalized)) {
+               this.selectedCities = this.selectedCities.filter(item => item !== normalized);
+               return;
+             }
+             this.selectedCities = [...this.selectedCities, normalized];
+           },
+           selectAllVisible() {
+             const merged = [...this.selectedCities];
+             for (const city of this.filteredCities()) {
+               const normalized = String(city.id || '');
+               if (normalized && !merged.includes(normalized)) merged.push(normalized);
+             }
+             this.selectedCities = merged;
+           },
+           clearSelection() {
+             this.selectedCities = [];
+           },
+           filteredCities() {
+             const query = String(this.query || '').toLowerCase().trim();
+             return this.cities.filter(city => {
+               if (!query) return true;
+               const hay = [city.name || '', city.tradegood_name || '', city.x || '', city.y || ''].join(' ').toLowerCase();
+               return hay.includes(query);
+             });
+           }
+         }"
+         x-init="cities = JSON.parse(document.getElementById('scientists-cities-data')?.textContent || '[]')">
+      <div class="border-b px-5 py-5 md:px-6"
+           style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div class="max-w-2xl">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Ajustar Cientistas</div>
+            <h3 class="mt-2 text-xl font-bold text-ink">Aplique o mesmo alvo de cientistas em v&aacute;rias academias</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted">
+              Selecione as cidades, escolha o modo do alvo e deixe o runner confirmar na academia real o total aplicado em cada uma.
+            </p>
+          </div>
+          <div class="rounded-2xl border px-4 py-3 lg:min-w-[17rem]" style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.76);">
+            <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Cobertura</div>
+            <div class="mt-2 flex items-center gap-3">
+              <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border"
+                    style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                <img src="{{ scientists_ui.summary.academy_icon }}" alt="Academia" class="h-7 w-7 object-contain">
+              </span>
+              <div>
+                <div class="text-sm font-semibold text-ink">{{ scientists_ui.summary.count }} academia(s)</div>
+                <div class="text-[11px] text-muted">vazio no campo de cidades = todas</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="px-5 py-5 md:px-6">
+        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(20rem,0.9fr)]">
+          <section class="rounded-[22px] border p-4"
+                   style="border-color: rgba(95,140,78,0.22); background: linear-gradient(180deg, rgba(95,140,78,0.08), rgba(255,255,255,0.8));">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">Academias</div>
+                <div class="mt-1 text-sm font-semibold text-ink">Marque as cidades que receber&atilde;o o ajuste</div>
+              </div>
+              <div class="flex items-center gap-2">
+                <button type="button" class="rounded-full border px-3 py-1.5 text-[11px] font-semibold text-ink transition hover:border-[var(--ik-good)] hover:text-[var(--ik-good)]" style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);" @click="selectAllVisible()">Selecionar vis&iacute;veis</button>
+                <button type="button" class="rounded-full border px-3 py-1.5 text-[11px] font-semibold text-ink transition hover:border-[var(--ik-bad)] hover:text-[var(--ik-bad)]" style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);" @click="clearSelection()">Limpar</button>
+              </div>
+            </div>
+            <label class="mb-3 block">
+              <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Filtrar cidades</span>
+              <input type="text" x-model="query" class="form-input" placeholder="Buscar por cidade ou coordenada">
+            </label>
+            <template x-for="cityId in selectedCities" :key="`scientists-selected-${cityId}`">
+              <input type="hidden" name="{{ form.cities.html_name }}" :value="cityId">
+            </template>
+            <div class="grid max-h-[22rem] grid-cols-2 gap-2 overflow-y-auto p-1 xl:grid-cols-4">
+              <template x-for="city in filteredCities()" :key="`scientists-${city.id}`">
+                <button type="button"
+                        class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                        :class="isSelected(city.id)
+                          ? 'translate-y-[-1px] ring-2 ring-[var(--ik-good)] shadow-[0_10px_28px_rgba(95,140,78,0.18)]'
+                          : 'hover:translate-y-[-1px] hover:border-[var(--ik-good)]/45 hover:shadow-[0_10px_24px_rgba(95,140,78,0.12)]'"
+                        :style="isSelected(city.id)
+                          ? 'border-color: rgba(95,140,78,0.50); background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(95,140,78,0.10));'
+                          : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'"
+                        @click="toggleCity(city.id)">
+                  <div class="absolute inset-x-0 top-0 h-14" style="background: linear-gradient(135deg, rgba(95,140,78,0.16), rgba(95,140,78,0.02));"></div>
+                  <div class="relative p-3">
+                    <div class="flex items-start gap-3">
+                      <div class="relative shrink-0">
+                        <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                             style="border-color: rgba(95,140,78,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                          <img src="{{ scientists_ui.summary.academy_icon }}" alt="Academia" class="h-7 w-7 object-contain">
+                        </div>
+                        <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                          <img :src="city.tradegood_icon" :alt="city.tradegood_name" class="h-4 w-4 object-contain">
+                        </div>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-start justify-between gap-2">
+                          <div class="min-w-0">
+                            <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
+                            <div class="mt-1 text-[11px] text-muted" x-text="`Academia Lv ${city.academy_level} • [${city.x}:${city.y}]`"></div>
+                          </div>
+                          <span class="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border"
+                                :style="isSelected(city.id)
+                                  ? 'border-color: var(--ik-good); color: white; background: var(--ik-good);'
+                                  : 'border-color: rgba(95,140,78,0.24); color: var(--ik-good); background: rgba(95,140,78,0.06);'">
+                            <i class="bi" :class="isSelected(city.id) ? 'bi-check-lg' : 'bi-plus-lg'"></i>
+                          </span>
+                        </div>
+                        <div class="mt-2 flex flex-wrap gap-1.5">
+                          <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]" style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);" x-text="`${city.scientists_current || 0}/${city.scientists_max || 0} cient.`"></span>
+                          <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]" style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);" x-text="city.scientists_production ? `+${city.scientists_production}/h` : 'Sem producao salva'"></span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              </template>
+            </div>
+            {% for error in form.cities.errors %}
+            <p class="form-error mt-3"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+            {% endfor %}
+          </section>
+
+          <section class="space-y-4">
+            <div class="rounded-[22px] border p-4"
+                 style="border-color: rgba(79,134,185,0.24); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.84));">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Alvo do ajuste</div>
+              <div class="mt-3">
+                <label for="{{ form.target_mode.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">{{ form.target_mode.label }}</label>
+                {{ form.target_mode }}
+                {% for error in form.target_mode.errors %}
+                <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+                {% endfor %}
+              </div>
+              <div class="mt-3">
+                <label for="{{ form.target_value.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">{{ form.target_value.label }}</label>
+                {{ form.target_value }}
+                {% for error in form.target_value.errors %}
+                <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+                {% endfor %}
+                <input type="hidden" name="{{ form.reserve_citizens.html_name }}" value="{{ form.reserve_citizens.value|default:0 }}">
+              </div>
+            </div>
+            <div class="rounded-[22px] border p-4"
+                 style="border-color: rgba(95,140,78,0.24); background: linear-gradient(180deg, rgba(95,140,78,0.10), rgba(255,255,255,0.84));">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">Comportamento</div>
+              <div class="mt-2 space-y-2 text-sm text-muted">
+                <div class="flex items-start gap-2">
+                  <i class="bi bi-check2-circle mt-0.5 text-[var(--ik-good)]"></i>
+                  <span>O runner rel&ecirc; a academia de cada cidade antes de aplicar o alvo.</span>
+                </div>
+                <div class="flex items-start gap-2">
+                  <i class="bi bi-check2-circle mt-0.5 text-[var(--ik-good)]"></i>
+                  <span>Se a cidade j&aacute; estiver no alvo, ela entra como skip e n&atilde;o sofre submit desnecess&aacute;rio.</span>
+                </div>
+                <div class="flex items-start gap-2">
+                  <i class="bi bi-check2-circle mt-0.5 text-[var(--ik-good)]"></i>
+                  <span>O ajuste usa reserva `0` por padr&atilde;o; se precisarmos, essa trava volta depois como op&ccedil;&atilde;o avan&ccedil;ada.</span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
