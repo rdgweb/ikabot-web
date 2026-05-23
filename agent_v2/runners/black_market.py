@@ -283,14 +283,12 @@ class BlackMarketBuyUnitsRunner(BaseRunner):
     """Buy military units from another player's Black Market offer.
 
     Inputs:
-        buyer_city_id     — buyer's city (must have Branch Office)
-        seller_city_id    — seller's city
-        seller_avatar     — seller player name
-        seller_city_name  — seller city name
-        unit_id           — unit type ID to buy
-        quantity          — number of units to buy
-        max_price         — maximum price per unit (won't buy above this)
-        unit_category     — 444 (maritime) or 111 (terrestrial), default 444
+        buyer_city_id  — buyer's city (must have Branch Office)
+        unit_id        — numeric unit type ID to buy (shown in Black Market)
+        quantity       — number of units desired
+        max_price      — maximum price per unit (won't buy above this)
+        unit_category  — 444 (maritime, default) or 111 (terrestrial)
+        seller_city_id — optional: buy from a specific city; if omitted, auto-discover cheapest offer
     """
 
     def execute(self, job: dict[str, Any]) -> RunnerResult:
@@ -299,17 +297,15 @@ class BlackMarketBuyUnitsRunner(BaseRunner):
         ga_id = job.get("game_account_id", "")
         inputs = job.get("inputs") or {}
 
-        buyer_city_id = _to_int(inputs.get("buyer_city_id"))
-        seller_city_id = _to_int(inputs.get("seller_city_id"))
-        seller_avatar = str(inputs.get("seller_avatar") or "")
-        seller_city_name = str(inputs.get("seller_city_name") or "")
-        unit_id = _to_int(inputs.get("unit_id"))
-        quantity = _to_int(inputs.get("quantity"))
-        max_price = _to_int(inputs.get("max_price"), 999999)
-        unit_category = _to_int(inputs.get("unit_category"), UNIT_TYPE_MARITIME)
+        buyer_city_id  = _to_int(inputs.get("buyer_city_id"))
+        unit_id        = _to_int(inputs.get("unit_id"))
+        quantity       = _to_int(inputs.get("quantity"))
+        max_price      = _to_int(inputs.get("max_price"), 999999)
+        unit_category  = _to_int(inputs.get("unit_category"), UNIT_TYPE_MARITIME)
+        seller_city_id = _to_int(inputs.get("seller_city_id"))  # optional
 
-        if not buyer_city_id or not seller_city_id or not unit_id or not quantity:
-            return RunnerResult(success=False, data={"error": "missing_inputs"})
+        if not buyer_city_id or not unit_id or not quantity:
+            return RunnerResult(success=False, data={"error": "missing_inputs: buyer_city_id, unit_id, quantity required"})
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
         if not creds:
@@ -318,46 +314,74 @@ class BlackMarketBuyUnitsRunner(BaseRunner):
         try:
             client = self.get_or_login_game_client(jid, aid, ga_id, creds)
 
-            # Find Branch Office position
             bo_position = self._find_building_position(ga_id, buyer_city_id, "branchOffice")
             if bo_position is None:
                 self.log(jid, "error", f"Branch Office nao encontrado na cidade {buyer_city_id}")
                 return RunnerResult(success=False, data={"error": "branch_office_not_found"})
 
-            # Get offer details to confirm price and transport
-            offer_details = client.get_unit_offer_details(
-                buyer_city_id=buyer_city_id,
-                bo_position=bo_position,
-                seller_city_id=seller_city_id,
-                unit_category=unit_category,
-            )
+            # If seller not specified, auto-discover cheapest matching offer
+            seller_avatar = str(inputs.get("seller_avatar") or "")
+            seller_city_name = str(inputs.get("seller_city_name") or "")
 
-            # Find the matching unit offer
-            unit_offer = next((u for u in offer_details.get("units", []) if u["unit_id"] == unit_id), None)
-            if not unit_offer:
-                self.log(jid, "warn", f"Oferta para unidade {unit_id} nao encontrada em {seller_city_name}")
-                return RunnerResult(success=False, data={"error": "offer_not_found"})
+            if not seller_city_id:
+                self.log(jid, "info", f"Buscando ofertas para unidade {unit_id} (categoria {unit_category})...")
+                offers = client.get_available_unit_offers(
+                    buyer_city_id=buyer_city_id,
+                    bo_position=bo_position,
+                    unit_category=unit_category,
+                )
+                matching = [
+                    o for o in offers
+                    if o.get("unit_id") == unit_id and _to_int(o.get("price_per_unit")) <= max_price
+                ]
+                if not matching:
+                    self.log(jid, "warn", f"Nenhuma oferta para unit={unit_id} com preco <= {max_price}")
+                    return RunnerResult(success=False, data={"error": "no_offers_found", "unit_id": unit_id, "max_price": max_price})
+                # Pick cheapest with enough qty, else cheapest overall
+                matching.sort(key=lambda o: (_to_int(o.get("price_per_unit")), -_to_int(o.get("amount"))))
+                best = next(
+                    (o for o in matching if _to_int(o.get("amount")) >= quantity),
+                    matching[0],
+                )
+                seller_city_id = _to_int(best.get("seller_city_id"))
+                seller_avatar = str(best.get("seller_avatar") or "")
+                seller_city_name = str(best.get("seller_city_name") or "")
+                actual_price = _to_int(best.get("price_per_unit"))
+                available_qty = _to_int(best.get("amount"))
+                self.log(jid, "info", f"Melhor oferta: {available_qty}x por {actual_price} ouro de {seller_avatar} ({seller_city_name}, id={seller_city_id})")
+            else:
+                # Specific seller — verify price via takeOffer details
+                offer_details = client.get_unit_offer_details(
+                    buyer_city_id=buyer_city_id,
+                    bo_position=bo_position,
+                    seller_city_id=seller_city_id,
+                    unit_category=unit_category,
+                )
+                unit_offer = next((u for u in offer_details.get("units", []) if u["unit_id"] == unit_id), None)
+                if not unit_offer:
+                    self.log(jid, "warn", f"Oferta para unidade {unit_id} nao encontrada em cidade {seller_city_id}")
+                    return RunnerResult(success=False, data={"error": "offer_not_found"})
+                actual_price = _to_int(unit_offer.get("price"))
+                available_qty = _to_int(unit_offer.get("amount"))
 
-            actual_price = unit_offer.get("price", 0)
             if actual_price > max_price:
-                self.log(jid, "warn", f"Preco atual {actual_price} acima do limite {max_price}, abortando")
+                self.log(jid, "warn", f"Preco {actual_price} acima do limite {max_price}")
                 return RunnerResult(success=False, data={"error": "price_above_limit", "actual_price": actual_price})
 
-            available_qty = unit_offer.get("amount", 0)
             buy_qty = min(quantity, available_qty)
             if buy_qty <= 0:
                 return RunnerResult(success=False, data={"error": "no_units_available"})
 
-            max_ships = offer_details.get("max_transporters", 1)
-            eta_min = offer_details.get("eta_minutes", 0)
+            # Estimate transporters: 5 units per ship (from captured game data)
+            num_transporters = max(1, -(-buy_qty // 5))
 
             self.log(
                 jid, "info",
-                f"Comprando {buy_qty}x unidade {unit_id} de {seller_city_name} ({seller_avatar}) "
-                f"por {actual_price} ouro/un | ETA {eta_min}min"
+                f"Comprando {buy_qty}x unidade {unit_id} de {seller_city_name or f'id={seller_city_id}'} "
+                f"por {actual_price} ouro/un | {num_transporters} navios"
             )
 
-            result = client.buy_units_black_market(
+            client.buy_units_black_market(
                 buyer_city_id=buyer_city_id,
                 bo_position=bo_position,
                 seller_city_id=seller_city_id,
@@ -367,7 +391,7 @@ class BlackMarketBuyUnitsRunner(BaseRunner):
                 quantity=buy_qty,
                 unit_price=actual_price,
                 unit_category=unit_category,
-                num_transporters=max(1, max_ships),
+                num_transporters=num_transporters,
             )
 
             self.save_game_client(ga_id, client)
@@ -377,8 +401,9 @@ class BlackMarketBuyUnitsRunner(BaseRunner):
                     "unit_id": unit_id,
                     "quantity": buy_qty,
                     "unit_price": actual_price,
-                    "eta_minutes": eta_min,
                     "total_cost": buy_qty * actual_price,
+                    "seller_city_id": seller_city_id,
+                    "seller_avatar": seller_avatar,
                 },
             )
 

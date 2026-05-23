@@ -5,50 +5,22 @@
 
 <div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_40px_rgba(20,12,8,0.14)]"
      style="border-color: rgba(40,20,10,0.22); background:
-       radial-gradient(800px 280px at 0% 0%, rgba(79,134,185,0.12), transparent 60%),
-       radial-gradient(700px 240px at 100% 100%, rgba(40,80,160,0.08), transparent 60%),
-       linear-gradient(180deg, rgba(255,252,245,0.98), rgba(245,248,255,0.94));"
+       radial-gradient(800px 280px at 0% 0%, rgba(79,134,185,0.14), transparent 60%),
+       radial-gradient(700px 240px at 100% 100%, rgba(50,90,200,0.08), transparent 60%),
+       linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
      x-data="{
        cities: JSON.parse(document.getElementById('bm-buy-cities-data')?.textContent || '[]'),
        selectedCityId: '',
-       sellerCityId: '',
-       sellerAvatar: '',
-       sellerCityName: '',
        unitId: 0,
        quantity: 1,
        maxPrice: 0,
        unitCategory: '444',
-       urlInput: '',
-       parseUrl(raw) {
-         const qs = raw.includes('?') ? raw.split('?')[1] : raw.includes('&') ? raw : null;
-         if (!qs) return;
-         const p = {};
-         qs.split('&').forEach(pair => {
-           const [k, v] = pair.split('=');
-           if (k && v !== undefined) p[decodeURIComponent(k)] = decodeURIComponent(v.replace(/\+/g, ' '));
-         });
-         if (p['destinationCityId']) this.sellerCityId = p['destinationCityId'];
-         if (p['avatar2Name']) this.sellerAvatar = p['avatar2Name'];
-         if (p['city2Name']) this.sellerCityName = p['city2Name'];
-         if (p['type']) this.unitCategory = p['type'];
-         // cargo_XXXX=N pattern — extract unit ID and qty
-         for (const [key, val] of Object.entries(p)) {
-           const cargoM = key.match(/^cargo_(\d+)$/);
-           if (cargoM) { this.unitId = parseInt(cargoM[1]); this.quantity = parseInt(val) || 1; }
-           const priceM = key.match(/^(\d+)Price$/);
-           if (priceM && !this.maxPrice) this.maxPrice = parseInt(val) || 0;
-         }
-         this.urlInput = '';
-       },
        selectedCity() { return this.cities.find(c => String(c.id) === String(this.selectedCityId)); },
-       isReady() { return this.selectedCityId && this.sellerCityId && this.unitId && this.quantity; }
+       isReady() { return this.selectedCityId && this.unitId > 0 && this.quantity > 0 && this.maxPrice > 0; }
      }">
 
   {# Hidden form fields #}
   <input type="hidden" name="{{ form.buyer_city_id.html_name }}" x-model="selectedCityId">
-  <input type="hidden" name="{{ form.seller_city_id.html_name }}" x-model="sellerCityId">
-  <input type="hidden" name="{{ form.seller_avatar.html_name }}" x-model="sellerAvatar">
-  <input type="hidden" name="{{ form.seller_city_name.html_name }}" x-model="sellerCityName">
   <input type="hidden" name="{{ form.unit_id.html_name }}" :value="unitId">
   <input type="hidden" name="{{ form.quantity.html_name }}" :value="quantity">
   <input type="hidden" name="{{ form.max_price.html_name }}" :value="maxPrice">
@@ -57,17 +29,27 @@
   {# ── Header ── #}
   <div class="border-b px-5 py-5 md:px-6"
        style="border-color: rgba(40,20,10,0.15); background: linear-gradient(180deg, rgba(255,255,255,0.56), rgba(255,255,255,0));">
-    <div class="flex items-start gap-3">
-      <div class="flex h-8 w-8 items-center justify-center rounded-xl flex-shrink-0"
-           style="background: linear-gradient(135deg, rgba(79,134,185,0.18), rgba(40,20,10,0.10));">
-        <i class="bi bi-bag-plus-fill text-sm" style="color: var(--ik-sea);"></i>
-      </div>
+    <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
       <div>
-        <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Mercado Negro</div>
-        <h3 class="mt-0.5 text-xl font-bold text-ink">Comprar unidades militares</h3>
-        <p class="mt-1 text-sm leading-relaxed text-muted">
-          Compra via Branch Office (Troca de Soldados). Cole a URL da compra do jogo para preencher automaticamente.
+        <div class="flex items-center gap-2">
+          <div class="flex h-8 w-8 items-center justify-center rounded-xl"
+               style="background: linear-gradient(135deg, rgba(79,134,185,0.18), rgba(40,20,10,0.10));">
+            <i class="bi bi-bag-plus-fill text-sm" style="color: var(--ik-sea);"></i>
+          </div>
+          <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Mercado Negro</div>
+        </div>
+        <h3 class="mt-2 text-xl font-bold text-ink">Comprar unidades militares</h3>
+        <p class="mt-1.5 text-sm leading-relaxed text-muted">
+          O agente busca automaticamente a oferta mais barata disponível no Branch Office.
         </p>
+      </div>
+      <div class="shrink-0 rounded-2xl border px-4 py-3 md:min-w-[18rem]"
+           style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.78);">
+        <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Cidade compradora</div>
+        <div class="mt-2 text-sm font-semibold text-ink"
+             x-text="selectedCity() ? selectedCity().name : 'Nenhuma cidade selecionada'"></div>
+        <div class="mt-1 text-[11px] text-muted"
+             x-text="selectedCity() ? `Branch Office pos ${selectedCity().branch_office_pos}` : 'Selecione uma cidade com Branch Office'"></div>
       </div>
     </div>
   </div>
@@ -75,49 +57,22 @@
   {# ── Body ── #}
   <div class="px-5 py-5 md:px-6 space-y-5">
 
-    {# ── URL Paste Helper ── #}
+    {# ── Step 1: Buyer city ── #}
     <section>
-      <div class="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
-        <span class="inline-flex h-5 w-5 items-center justify-center rounded-full text-white text-[9px] font-bold mr-1.5"
-              style="background: var(--ik-sea);">1</span>
-        Cole a URL do jogo (opcional, preenche automático)
-      </div>
-      <div class="rounded-[20px] border p-4"
-           style="border-color: rgba(79,134,185,0.3); background: rgba(79,134,185,0.04);">
-        <div class="mb-2 text-[11px] text-muted leading-relaxed">
-          <i class="bi bi-info-circle text-[9px]" style="color: var(--ik-sea);"></i>
-          No Branch Office do jogo → <strong>Troca de Soldados</strong> → clique em Comprar →
-          copie a URL completa da página (barra de endereços) ou o query string do request.
+      <div class="mb-3">
+        <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
+          <span class="inline-flex h-5 w-5 items-center justify-center rounded-full text-white text-[9px] font-bold mr-1.5"
+                style="background: var(--ik-sea);">1</span>
+          Cidade compradora
         </div>
-        <div class="flex gap-2">
-          <input type="text"
-                 x-model="urlInput"
-                 placeholder="Cole a URL aqui... destinationCityId=... cargo_6473=1..."
-                 class="flex-1 rounded-[12px] border py-2 px-3 text-xs text-ink outline-none focus:ring-2"
-                 style="border-color: rgba(79,134,185,0.3); background: rgba(255,255,255,0.95); --tw-ring-color: rgba(79,134,185,0.4);"
-                 @keydown.enter.prevent="parseUrl(urlInput)">
-          <button type="button"
-                  @click="parseUrl(urlInput)"
-                  class="flex-shrink-0 rounded-[12px] border px-4 py-2 text-xs font-semibold transition-all hover:shadow-sm"
-                  style="border-color: rgba(79,134,185,0.4); color: var(--ik-sea); background: rgba(79,134,185,0.08);">
-            <i class="bi bi-magic me-1"></i> Parsear
-          </button>
-        </div>
-      </div>
-    </section>
-
-    {# ── Step 2: Buyer City ── #}
-    <section>
-      <div class="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
-        <span class="inline-flex h-5 w-5 items-center justify-center rounded-full text-white text-[9px] font-bold mr-1.5"
-              style="background: var(--ik-sea);">2</span>
-        Cidade compradora (com Branch Office)
+        <p class="mt-1 text-[11px] text-muted">Somente cidades com Branch Office aparecem aqui.</p>
       </div>
 
       <template x-if="!cities.length">
         <div class="rounded-[18px] border border-dashed border-[rgba(79,134,185,0.35)] bg-[rgba(79,134,185,0.04)] px-4 py-5 text-center">
           <i class="bi bi-building-x text-xl" style="color: var(--ik-sea); opacity: 0.5;"></i>
           <p class="mt-2 text-sm font-semibold text-ink">Nenhuma cidade com Branch Office</p>
+          <p class="mt-1 text-xs text-muted">Construa o Branch Office e rode o Check Status.</p>
         </div>
       </template>
 
@@ -132,15 +87,38 @@
                   :style="String(selectedCityId) === String(city.id)
                     ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.08), rgba(255,255,255,0.90));'
                     : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
+            <div class="absolute inset-x-0 top-0 h-12"
+                 style="background: linear-gradient(135deg, rgba(79,134,185,0.10), transparent);"></div>
             <div class="relative flex items-start gap-2.5">
-              <div class="flex h-10 w-10 items-center justify-center rounded-[12px] border flex-shrink-0"
-                   style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
-                <img :src="city.city_art || '{% static 'game/buildings/townhall.png' %}'" alt="" class="h-8 w-8 object-contain">
+              <div class="relative shrink-0">
+                <div class="flex h-11 w-11 items-center justify-center rounded-[14px] border"
+                     style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                  <img :src="city.city_art || '{% static 'game/buildings/townhall.png' %}'" alt="" class="h-8 w-8 object-contain">
+                </div>
+                <template x-if="city.tradegood_icon">
+                  <div class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                    <img :src="city.tradegood_icon" :alt="city.tradegood_name" class="h-3.5 w-3.5 object-contain">
+                  </div>
+                </template>
               </div>
               <div class="min-w-0 flex-1">
-                <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
-                <div class="mt-0.5 text-[11px] text-muted" x-text="city.x && city.y ? `[${city.x}:${city.y}]` : ''"></div>
-                <div class="mt-1 text-[10px]" style="color: var(--ik-sea);" x-text="`BO pos ${city.branch_office_pos}`"></div>
+                <div class="flex items-start justify-between gap-1.5">
+                  <div class="min-w-0">
+                    <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
+                    <div class="mt-0.5 text-[11px] text-muted" x-text="city.x && city.y ? `[${city.x}:${city.y}]` : ''"></div>
+                  </div>
+                  <span class="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-all"
+                        :style="String(selectedCityId) === String(city.id)
+                          ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
+                          : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
+                    <i class="bi text-[10px]" :class="String(selectedCityId) === String(city.id) ? 'bi-check-lg' : 'bi-bag-plus-fill'"></i>
+                  </span>
+                </div>
+                <div class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px]"
+                     style="border-color: rgba(79,134,185,0.2); background: rgba(79,134,185,0.05);">
+                  <i class="bi bi-building text-[9px]" style="color: var(--ik-sea);"></i>
+                  <span class="text-muted" x-text="`pos ${city.branch_office_pos}`"></span>
+                </div>
               </div>
             </div>
           </button>
@@ -148,122 +126,137 @@
       </div>
     </section>
 
-    {# ── Step 3: Offer Details ── #}
-    <section>
+    {# ── Step 2: Unit type + ID ── #}
+    <section x-show="selectedCityId">
+
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
+          <span class="inline-flex h-5 w-5 items-center justify-center rounded-full text-white text-[9px] font-bold mr-1.5"
+                style="background: var(--ik-sea);">2</span>
+          Tipo de unidade
+        </div>
+        <div class="flex gap-1 rounded-xl border border-[var(--ik-line)] p-1 bg-white">
+          <button type="button" @click="unitCategory='444'; unitId=0"
+                  :class="unitCategory==='444'
+                    ? 'bg-[rgba(79,134,185,0.12)] text-[var(--ik-sea)] ring-1 ring-[rgba(79,134,185,0.4)]'
+                    : 'text-muted hover:text-ink'"
+                  class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all">
+            <i class="bi bi-water"></i> Frotas
+          </button>
+          <button type="button" @click="unitCategory='111'; unitId=0"
+                  :class="unitCategory==='111'
+                    ? 'bg-[rgba(187,81,67,0.12)] text-[var(--ik-bad)] ring-1 ring-[rgba(187,81,67,0.4)]'
+                    : 'text-muted hover:text-ink'"
+                  class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all">
+            <i class="bi bi-shield-shaded"></i> Tropas
+          </button>
+        </div>
+      </div>
+
+      <div class="rounded-[20px] border p-4"
+           style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);">
+        <div class="mb-3">
+          <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">ID da unidade</div>
+          <div class="mt-1 text-[11px] text-muted leading-relaxed">
+            <i class="bi bi-info-circle text-[9px]"></i>
+            O ID numérico do tipo da unidade. Você o encontra no Mercado Negro do jogo ao ver uma oferta —
+            é o número que aparece na URL após <code class="rounded bg-[var(--ik-line)] px-1">cargo_</code>.
+          </div>
+        </div>
+        <input type="number" min="1" x-model.number="unitId"
+               placeholder="ex: 6473"
+               class="w-full rounded-[12px] border px-3 py-2.5 text-sm font-bold text-ink outline-none focus:ring-2"
+               style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.95);">
+        <template x-if="unitId > 0">
+          <div class="mt-2 flex items-center gap-1.5 text-[11px]"
+               :style="unitCategory==='444' ? 'color: var(--ik-sea);' : 'color: var(--ik-bad);'">
+            <i :class="unitCategory==='444' ? 'bi bi-water' : 'bi bi-shield-shaded'"></i>
+            <span x-text="unitCategory==='444' ? 'Unidade marítima (frota)' : 'Unidade terrestre (tropa)'"></span>
+            <span class="text-muted"
+                  x-text="`ID ${unitId}`"></span>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    {# ── Step 3: Quantidade + Preço ── #}
+    <section x-show="selectedCityId && unitId > 0">
       <div class="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
         <span class="inline-flex h-5 w-5 items-center justify-center rounded-full text-white text-[9px] font-bold mr-1.5"
               style="background: var(--ik-sea);">3</span>
-        Detalhes da oferta (do jogo)
+        Quantidade e preço máximo
       </div>
 
-      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 
-        {# Seller City ID #}
-        <div class="rounded-[16px] border p-3.5"
+        {# Quantidade #}
+        <div class="rounded-[20px] border p-4"
              style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);">
-          <label class="block text-[10px] font-semibold uppercase tracking-[0.14em] text-muted mb-1.5">
-            ID da Cidade Vendedora
-            <span class="text-[9px] ml-1 font-normal">(destinationCityId)</span>
-          </label>
-          <input type="text" x-model="sellerCityId" placeholder="ex: 5623"
-                 class="w-full rounded-[10px] border px-3 py-2 text-sm font-bold text-ink outline-none focus:ring-2"
-                 style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.95);">
-        </div>
-
-        {# Unit type category #}
-        <div class="rounded-[16px] border p-3.5"
-             style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);">
-          <label class="block text-[10px] font-semibold uppercase tracking-[0.14em] text-muted mb-1.5">
-            Tipo de Unidade
-            <span class="text-[9px] ml-1 font-normal">(type=)</span>
-          </label>
-          <div class="flex gap-2">
-            <button type="button" @click="unitCategory='444'"
-                    :class="unitCategory==='444' ? 'ring-2 ring-[var(--ik-sea)]' : ''"
-                    class="flex-1 rounded-[10px] border px-3 py-2 text-xs font-semibold transition-all"
-                    :style="unitCategory==='444'
-                      ? 'border-color: var(--ik-sea); color: var(--ik-sea); background: rgba(79,134,185,0.08);'
-                      : 'border-color: rgba(219,201,167,0.9); color: var(--ik-muted, #9a8a72);'">
-              <i class="bi bi-water me-1"></i> Frotas (444)
-            </button>
-            <button type="button" @click="unitCategory='111'"
-                    :class="unitCategory==='111' ? 'ring-2 ring-[rgba(187,81,67,0.6)]' : ''"
-                    class="flex-1 rounded-[10px] border px-3 py-2 text-xs font-semibold transition-all"
-                    :style="unitCategory==='111'
-                      ? 'border-color: var(--ik-bad); color: var(--ik-bad); background: rgba(187,81,67,0.08);'
-                      : 'border-color: rgba(219,201,167,0.9); color: var(--ik-muted, #9a8a72);'">
-              <i class="bi bi-shield-shaded me-1"></i> Tropas (111)
-            </button>
+          <div class="mb-3">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">Quantidade</div>
+            <div class="mt-0.5 text-sm font-bold text-ink" x-text="`Unidade ID ${unitId}`"></div>
           </div>
-        </div>
-
-        {# Unit ID #}
-        <div class="rounded-[16px] border p-3.5"
-             style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);">
-          <label class="block text-[10px] font-semibold uppercase tracking-[0.14em] text-muted mb-1.5">
-            ID da Unidade
-            <span class="text-[9px] ml-1 font-normal">(cargo_<strong>XXXX</strong>=N)</span>
-          </label>
-          <input type="number" min="1" x-model.number="unitId" placeholder="ex: 6473"
-                 class="w-full rounded-[10px] border px-3 py-2 text-sm font-bold text-ink outline-none focus:ring-2"
-                 style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.95);">
-        </div>
-
-        {# Quantity #}
-        <div class="rounded-[16px] border p-3.5"
-             style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);">
-          <label class="block text-[10px] font-semibold uppercase tracking-[0.14em] text-muted mb-1.5">
-            Quantidade a comprar
-            <span class="text-[9px] ml-1 font-normal">(cargo_ID=<strong>N</strong>)</span>
-          </label>
           <div class="flex items-center gap-2">
             <button type="button"
                     @click="quantity = Math.max(1, quantity - 1)"
-                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border text-sm font-bold transition-colors hover:bg-red-50"
+                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border text-sm font-bold text-ink transition-colors hover:bg-red-50"
                     style="border-color: rgba(219,201,167,0.9);">−</button>
-            <input type="number" min="1" x-model.number="quantity"
-                   class="flex-1 rounded-[10px] border py-2 text-center text-sm font-bold text-ink outline-none focus:ring-2"
+            <input type="number" min="1"
+                   x-model.number="quantity"
+                   class="flex-1 rounded-[12px] border py-2 text-center text-sm font-bold text-ink outline-none focus:ring-2"
                    style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.95);">
             <button type="button"
                     @click="quantity += 1"
-                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border text-sm font-bold transition-colors hover:bg-green-50"
+                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border text-sm font-bold text-ink transition-colors hover:bg-green-50"
                     style="border-color: rgba(219,201,167,0.9);">+</button>
           </div>
         </div>
 
-        {# Max Price #}
-        <div class="rounded-[16px] border p-3.5"
+        {# Preço Máximo #}
+        <div class="rounded-[20px] border p-4"
              style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);">
-          <label class="block text-[10px] font-semibold uppercase tracking-[0.14em] text-muted mb-1.5">
-            Preço máximo por unidade (ouro)
-            <span class="text-[9px] ml-1 font-normal">(IDPrice=)</span>
-          </label>
-          <input type="number" min="1" x-model.number="maxPrice" placeholder="ex: 261"
-                 class="w-full rounded-[10px] border px-3 py-2 text-sm font-bold text-ink outline-none focus:ring-2"
-                 style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.95);">
-          <div class="mt-1.5 text-[10px] text-muted">
-            <i class="bi bi-info-circle text-[9px]"></i>
-            O runner não compra se o preço atual da oferta superar este valor.
+          <div class="mb-3">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">Preço máximo por unidade</div>
+            <div class="mt-0.5 flex items-center gap-1.5">
+              <img src="{% static 'game/resources/icon_gold.png' %}" alt="Ouro" class="h-4 w-4 object-contain">
+              <span class="text-sm font-bold text-ink">Ouro</span>
+            </div>
           </div>
-        </div>
-
-        {# Seller Info (optional, auto-filled) #}
-        <div class="rounded-[16px] border p-3.5"
-             style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);">
-          <label class="block text-[10px] font-semibold uppercase tracking-[0.14em] text-muted mb-1.5">
-            Jogador vendedor
-            <span class="text-[9px] ml-1 font-normal">(avatar2Name)</span>
-          </label>
-          <input type="text" x-model="sellerAvatar" placeholder="ex: Romanos"
-                 class="w-full rounded-[10px] border px-3 py-2 text-sm text-ink outline-none focus:ring-2 mb-2"
-                 style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.95);">
-          <label class="block text-[10px] font-semibold uppercase tracking-[0.14em] text-muted mb-1.5">
-            Nome da cidade vendedora
-            <span class="text-[9px] ml-1 font-normal">(city2Name)</span>
-          </label>
-          <input type="text" x-model="sellerCityName" placeholder="ex: Crisôndio n"
-                 class="w-full rounded-[10px] border px-3 py-2 text-sm text-ink outline-none focus:ring-2"
-                 style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.95);">
+          <div class="flex items-center gap-2">
+            <button type="button"
+                    @click="maxPrice = Math.max(1, maxPrice - 100)"
+                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border text-sm font-bold text-ink transition-colors hover:bg-red-50"
+                    style="border-color: rgba(219,201,167,0.9);">−</button>
+            <input type="number" min="1"
+                   x-model.number="maxPrice"
+                   class="flex-1 rounded-[12px] border py-2 text-center text-sm font-bold text-ink outline-none focus:ring-2"
+                   style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.95);"
+                   placeholder="ex: 500">
+            <button type="button"
+                    @click="maxPrice += 100"
+                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border text-sm font-bold text-ink transition-colors hover:bg-green-50"
+                    style="border-color: rgba(219,201,167,0.9);">+</button>
+          </div>
+          <div class="mt-2 space-y-1.5">
+            <div class="text-[10px] text-muted">
+              <i class="bi bi-info-circle text-[9px]"></i>
+              O agente busca a oferta mais barata e não compra acima deste preço.
+            </div>
+            {# Total estimate #}
+            <template x-if="quantity > 0 && maxPrice > 0">
+              <div class="rounded-[10px] border px-2.5 py-2"
+                   style="border-color: rgba(201,156,78,0.3); background: rgba(201,156,78,0.07);">
+                <div class="text-[10px] uppercase tracking-[0.14em] text-muted">Custo máx. estimado</div>
+                <div class="mt-1 flex items-center gap-1.5">
+                  <img src="{% static 'game/resources/icon_gold.png' %}" alt="" class="h-4 w-4 object-contain">
+                  <span class="text-sm font-bold" style="color: var(--ik-gold);"
+                        x-text="new Intl.NumberFormat('pt-BR').format(quantity * maxPrice) + ' ouro'"></span>
+                </div>
+                <div class="mt-0.5 text-[10px] text-muted"
+                     x-text="`${quantity} × ${new Intl.NumberFormat('pt-BR').format(maxPrice)}`"></div>
+              </div>
+            </template>
+          </div>
         </div>
 
       </div>
@@ -273,46 +266,21 @@
     <template x-if="isReady()">
       <div class="rounded-[18px] border px-4 py-3"
            style="border-color: rgba(95,140,78,0.3); background: rgba(95,140,78,0.05);">
-        <div class="flex flex-wrap items-start gap-3 text-sm">
-          <i class="bi bi-check-circle-fill mt-0.5" style="color: var(--ik-good);"></i>
-          <div class="flex-1 space-y-1 text-[12px] text-muted">
-            <div>
-              <span class="font-semibold text-ink">Comprador:</span>
-              <span x-text="selectedCity()?.name || selectedCityId"></span>
-            </div>
-            <div>
-              <span class="font-semibold text-ink">Vendedor:</span>
-              <span x-text="sellerAvatar || '?'"></span>
-              <span x-text="sellerCityName ? ` (${sellerCityName})` : ''"></span>
-              <span class="text-muted" x-text="` cidade ID ${sellerCityId}`"></span>
-            </div>
-            <div>
-              <span class="font-semibold text-ink">Unidade:</span>
-              <span x-text="`ID ${unitId}`"></span>
-              <span class="text-muted mx-1">·</span>
-              <span x-text="unitCategory === '444' ? 'Marítima' : 'Terrestre'"></span>
-            </div>
-            <div>
-              <span class="font-semibold text-ink">Quantidade:</span>
-              <span x-text="quantity"></span>
-              <template x-if="maxPrice > 0">
-                <span>
-                  <span class="text-muted mx-1">·</span>
-                  <span class="font-semibold text-ink">Máx:</span>
-                  <span style="color: var(--ik-gold);" x-text="new Intl.NumberFormat('pt-BR').format(maxPrice) + ' ouro/un'"></span>
-                </span>
-              </template>
-            </div>
-          </div>
+        <div class="flex flex-wrap items-center gap-3 text-sm">
+          <i class="bi bi-check-circle-fill" style="color: var(--ik-good);"></i>
+          <span class="font-semibold text-ink">Pronto para comprar:</span>
+          <span class="text-muted">
+            <span class="font-semibold text-ink" x-text="quantity"></span>
+            ×
+            <span class="font-semibold text-ink" x-text="`unidade ${unitId}`"></span>
+            <span x-text="unitCategory === '444' ? ' (frota)' : ' (tropa)'"></span>
+            via Branch Office de
+            <span class="font-semibold text-ink" x-text="selectedCity()?.name || ''"></span>
+            · máx
+            <span class="font-semibold" style="color: var(--ik-gold);"
+                  x-text="new Intl.NumberFormat('pt-BR').format(maxPrice) + ' ouro/un'"></span>
+          </span>
         </div>
-      </div>
-    </template>
-
-    <template x-if="!isReady()">
-      <div class="rounded-[14px] border border-dashed px-4 py-3 text-center text-xs text-muted"
-           style="border-color: rgba(79,134,185,0.25);">
-        <i class="bi bi-bag-plus text-xl mb-1 block opacity-40"></i>
-        Selecione a cidade compradora e preencha os dados da oferta.
       </div>
     </template>
 
