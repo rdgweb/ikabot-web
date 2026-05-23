@@ -67,6 +67,14 @@ EVENT_TYPES = [
         "icon": "bi-envelope",
         "field": "notify_diplomacy_message",
     },
+    {
+        "key": "island_monitor",
+        "label": "Monitor de ilha",
+        "description": "Notifica quando cidades aparecem, somem ou trocam de jogador em ilhas monitoradas.",
+        "category": "operational",
+        "icon": "bi-geo-alt-fill",
+        "field": "notify_island_monitor",
+    },
 ]
 
 # Lookup by field name -> event info

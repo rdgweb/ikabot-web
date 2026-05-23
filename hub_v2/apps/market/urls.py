@@ -1,21 +1,25 @@
 from django.urls import path
 
 from .views import (
+    BlackMarketDashboardView,
+    BlackMarketOfferCloseView,
     MarketDashboardView,
-    MarketOrdersPartialView,
-    MarketParticipantsPartialView,
-    MarketOrderDetailView,
-    MarketOrderCreateView,
-    MarketOrderCancelView,
     MarketOrderBulkCancelView,
     MarketOrderBulkDeleteView,
+    MarketOrderCancelView,
+    MarketOrderCreateView,
     MarketOrderDeleteView,
+    MarketOrderDetailView,
+    MarketOrdersPartialView,
+    MarketParticipantsPartialView,
 )
 
 app_name = "market"
 
 urlpatterns = [
     path("", MarketDashboardView.as_view(), name="dashboard"),
+    path("black-market/", BlackMarketDashboardView.as_view(), name="black-market"),
+    path("black-market/offers/<uuid:pk>/close/", BlackMarketOfferCloseView.as_view(), name="bm-offer-close"),
     path("orders/", MarketOrdersPartialView.as_view(), name="orders-partial"),
     path("orders/create/", MarketOrderCreateView.as_view(), name="order-create"),
     path("orders/<uuid:pk>/cancel/", MarketOrderCancelView.as_view(), name="order-cancel"),

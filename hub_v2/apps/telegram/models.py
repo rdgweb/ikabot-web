@@ -49,6 +49,7 @@ class TelegramBotConfig(TimestampModel):
     notify_low_wine = models.BooleanField(default=True)
     notify_daily_summary = models.BooleanField(default=False)
     notify_diplomacy_message = models.BooleanField(default=True)
+    notify_island_monitor = models.BooleanField(default=True)
 
     class Meta:
         verbose_name = "Configuração do Bot Telegram"
@@ -110,6 +111,7 @@ class TelegramAccountConfig(TimestampModel):
     notify_low_wine = models.BooleanField(default=True)
     notify_daily_summary = models.BooleanField(default=False)
     notify_diplomacy_message = models.BooleanField(default=True)
+    notify_island_monitor = models.BooleanField(default=True)
 
     @property
     def has_custom_chat(self):
@@ -260,6 +262,11 @@ class NotificationTemplate(TimestampModel):
             "icon": "📊",
             "title_template": "Resumo diario",
             "body_template": "{account_name}",
+        },
+        "island_monitor": {
+            "icon": "🏝️",
+            "title_template": "{title}",
+            "body_template": "{ga_name} | {server_id}\n{body}",
         },
     }
 

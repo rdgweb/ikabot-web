@@ -1,10 +1,17 @@
 from .constants import (
     CAT_MARKET,
+    FIELD_BOOL,
+    FIELD_CHOICE,
     FIELD_CITY_SELECT,
     FIELD_INT,
     FIELD_RESOURCE_TYPE,
     FIELD_STR,
 )
+
+_UNIT_CATEGORY_CHOICES = [
+    ("444", "Unidades Marítimas (frotas)"),
+    ("111", "Unidades Terrestres (tropas)"),
+]
 
 
 ACTIONS = {
@@ -72,5 +79,47 @@ ACTIONS = {
         "ui_hidden": True,
         "description": "Criado automaticamente pelo hub para completar uma ordem interna de venda.",
         "inputs": [],
+    },
+
+    # Black Market — unit trading
+    803: {
+        "name": "Vender no Mercado Negro",
+        "name_en": "Sell on Black Market",
+        "category": CAT_MARKET,
+        "icon": "bi-bag-dash-fill",
+        "runner": "black_market_sell",
+        "requires_game_session": True,
+        "recurring": False,
+        "long_running": False,
+        "ready": True,
+        "description": "Lista unidades militares para venda no Mercado Negro da cidade.",
+        "inputs": [
+            {"key": "city_id", "type": FIELD_CITY_SELECT, "label": "Cidade (com Mercado Negro)", "multiple": False, "required": True},
+            {"key": "unit_id", "type": FIELD_INT, "label": "ID da unidade", "required": True, "min": 1, "help": "ID do tipo de unidade (ex: 211 para navio). Ver no Mercado Negro."},
+            {"key": "amount", "type": FIELD_INT, "label": "Quantidade", "required": True, "min": 1},
+            {"key": "unit_price", "type": FIELD_INT, "label": "Preco por unidade (ouro)", "required": True, "min": 1},
+        ],
+    },
+    804: {
+        "name": "Comprar no Mercado Negro",
+        "name_en": "Buy from Black Market",
+        "category": CAT_MARKET,
+        "icon": "bi-bag-plus-fill",
+        "runner": "black_market_buy",
+        "requires_game_session": True,
+        "recurring": False,
+        "long_running": True,
+        "ready": True,
+        "description": "Compra unidades militares de outro jogador via Branch Office (Troca de Soldados).",
+        "inputs": [
+            {"key": "buyer_city_id", "type": FIELD_CITY_SELECT, "label": "Cidade compradora (com Branch Office)", "multiple": False, "required": True},
+            {"key": "seller_city_id", "type": FIELD_STR, "label": "ID da cidade vendedora", "required": True, "placeholder": "ID da cidade do vendedor"},
+            {"key": "seller_avatar", "type": FIELD_STR, "label": "Nome do jogador vendedor", "required": True},
+            {"key": "seller_city_name", "type": FIELD_STR, "label": "Nome da cidade vendedora", "required": True},
+            {"key": "unit_id", "type": FIELD_INT, "label": "ID da unidade", "required": True, "min": 1},
+            {"key": "quantity", "type": FIELD_INT, "label": "Quantidade desejada", "required": True, "min": 1},
+            {"key": "max_price", "type": FIELD_INT, "label": "Preco maximo por unidade", "required": True, "min": 1, "help": "Nao compra acima deste valor."},
+            {"key": "unit_category", "type": FIELD_CHOICE, "label": "Tipo de unidade", "required": False, "default": "444", "choices": _UNIT_CATEGORY_CHOICES},
+        ],
     },
 }

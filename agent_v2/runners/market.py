@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import time
 from datetime import datetime
@@ -225,6 +226,7 @@ class InternalMarketBuyRunner(BaseRunner):
     _ARRIVAL_DEADLINE_SECONDS = 2 * 60 * 60
     _TRADE_ADVISOR_CONFIRM_MARGIN_SECONDS = 5 * 60
     _RAISE_GOLD_BUFFER_SECONDS = 180
+    _TRANSPORTER_RETRY_MIN_SECONDS = 5 * 60
 
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
@@ -265,6 +267,7 @@ class InternalMarketBuyRunner(BaseRunner):
 
         max_offer_retries = 5
         offer_retry_count = int(inputs.get("offer_retry_count", 0))
+        login_retry_count = int(inputs.get("login_retry_count", 0))
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
         if not creds:
@@ -368,6 +371,16 @@ class InternalMarketBuyRunner(BaseRunner):
                 f"carregamento={preview['loading_seconds']}s | ida={preview['travel_seconds']}s | "
                 f"total_ate_compra={preview['total_seconds']}s | estoque_base_{resource_key}={baseline_amount}",
             )
+            transporter_wait = self._maybe_reschedule_for_transporters(
+                jid=jid,
+                inputs=inputs,
+                order_id=str(order_id),
+                buyer_city_id=int(buyer_city_id),
+                amount=amount,
+                preview=preview,
+            )
+            if transporter_wait is not None:
+                return transporter_wait
             client.buy_market_offer(
                 buyer_city_id=int(buyer_city_id),
                 buyer_branchoffice_pos=int(buyer_bo),
@@ -401,7 +414,7 @@ class InternalMarketBuyRunner(BaseRunner):
                     expected_outbound_seconds=int(preview["travel_seconds"]),
                     expected_total_seconds=int(preview["total_seconds"]),
                 )
-            if status["state"] == "arrived":
+            if is_raise_gold_mode and status["state"] == "arrived":
                 if is_raise_gold_mode:
                     self._apply_raise_gold_snapshot_updates(
                         jid=jid,
@@ -437,8 +450,16 @@ class InternalMarketBuyRunner(BaseRunner):
             self.log(
                 jid,
                 "info",
-                f"[Order {order_id}] Monitor de compra agendado em {status['delay_seconds']}s | "
-                f"fase={status['mode']} | motivo={status['evidence']}",
+                (
+                    f"[Order {order_id}] Monitor de compra agendado em {status['delay_seconds']}s | "
+                    f"fase={status['mode']} | motivo={status['evidence']}"
+                    if is_raise_gold_mode
+                    else (
+                        f"[Order {order_id}] Compra executada; confirmacao de chegada obrigatoria. "
+                        f"Monitor agendado em {status['delay_seconds']}s | "
+                        f"fase={status['mode']} | motivo={status['evidence']}"
+                    )
+                ),
             )
             if is_raise_gold_mode:
                 self._retime_followup_construction_job(
@@ -449,6 +470,32 @@ class InternalMarketBuyRunner(BaseRunner):
             return RunnerResult(success=True, data={"status": "arrival_check_scheduled", "delay": status["delay_seconds"]})
         except Exception as exc:
             exc_str = str(exc)
+            transporter_wait = self._maybe_reschedule_for_transporters_from_error(
+                jid=jid,
+                client=client if 'client' in locals() else None,
+                inputs=inputs,
+                order_id=str(order_id),
+                buyer_city_id=int(buyer_city_id),
+                amount=amount,
+                exc_str=exc_str,
+            )
+            if transporter_wait is not None:
+                return transporter_wait
+            loginlink_failed = "loginlink falhou" in exc_str.lower()
+            if loginlink_failed:
+                max_login_retries = 3
+                if login_retry_count < max_login_retries:
+                    next_retry = login_retry_count + 1
+                    delay_seconds = min(600, 60 * next_retry)
+                    self.log(
+                        jid,
+                        "warn",
+                        f"[Order {order_id}] loginLink falhou no lobby (tentativa {next_retry}/{max_login_retries}); reagendando em {delay_seconds}s",
+                    )
+                    retry_inputs = dict(inputs)
+                    retry_inputs["login_retry_count"] = next_retry
+                    self.hub.reschedule_job(jid, delay_seconds=delay_seconds, inputs=retry_inputs)
+                    return RunnerResult(success=True, data={"status": "loginlink_retry", "retry": next_retry})
             if "not found" in exc_str.lower() and offer_retry_count < max_offer_retries:
                 next_retry = offer_retry_count + 1
                 self.log(
@@ -480,6 +527,89 @@ class InternalMarketBuyRunner(BaseRunner):
                 self.log(jid, "error", f"[Order {order_id}] Ouro insuficiente após {max_gold_retries} tentativas — cancelando")
             self.log(jid, "error", f"[Order {order_id}] Buy failed: {exc}")
             return RunnerResult(success=False, data={"error": exc_str})
+
+    def _maybe_reschedule_for_transporters(
+        self,
+        *,
+        jid: str,
+        inputs: dict[str, Any],
+        order_id: str,
+        buyer_city_id: int,
+        amount: int,
+        preview: dict[str, int],
+    ) -> RunnerResult | None:
+        free_transporters = int(preview.get("free_transporters") or 0)
+        ship_capacity = max(1, int(preview.get("ship_capacity") or 500))
+        required_ships = max(1, int(math.ceil(amount / ship_capacity)))
+        if free_transporters >= required_ships:
+            return None
+        delay_seconds = self._estimate_transporter_retry_delay(
+            client=None,
+            buyer_city_id=buyer_city_id,
+            fallback_eta=int(preview.get("travel_seconds") or 0),
+        )
+        retry_inputs = dict(inputs)
+        retry_inputs["transporter_retry_count"] = int(inputs.get("transporter_retry_count", 0)) + 1
+        self.hub.reschedule_job(jid, delay_seconds=delay_seconds, inputs=retry_inputs)
+        self.log(
+            jid,
+            "warn",
+            (
+                f"[Order {order_id}] Navios insuficientes para compra interna; "
+                f"necessario={required_ships} disponivel={free_transporters} "
+                f"(amount={amount}, capacidade={ship_capacity}). Retry em {delay_seconds}s"
+            ),
+        )
+        return RunnerResult(success=True, data={"status": "transporters_wait", "delay": delay_seconds})
+
+    def _maybe_reschedule_for_transporters_from_error(
+        self,
+        *,
+        jid: str,
+        client,
+        inputs: dict[str, Any],
+        order_id: str,
+        buyer_city_id: int,
+        amount: int,
+        exc_str: str,
+    ) -> RunnerResult | None:
+        match = re.search(r"need\s+(\d+),\s+have\s+(\d+).*ship_capacity=(\d+)", exc_str, re.I)
+        if not match:
+            return None
+        delay_seconds = self._estimate_transporter_retry_delay(client=client, buyer_city_id=buyer_city_id, fallback_eta=0)
+        retry_inputs = dict(inputs)
+        retry_inputs["transporter_retry_count"] = int(inputs.get("transporter_retry_count", 0)) + 1
+        self.hub.reschedule_job(jid, delay_seconds=delay_seconds, inputs=retry_inputs)
+        self.log(
+            jid,
+            "warn",
+            (
+                f"[Order {order_id}] Compra interna aguardando navios mercantes; "
+                f"necessario={match.group(1)} disponivel={match.group(2)} capacidade={match.group(3)}. "
+                f"Retry em {delay_seconds}s"
+            ),
+        )
+        return RunnerResult(success=True, data={"status": "transporters_wait", "delay": delay_seconds})
+
+    def _estimate_transporter_retry_delay(
+        self,
+        *,
+        client,
+        buyer_city_id: int,
+        fallback_eta: int,
+    ) -> int:
+        incoming_wait = None
+        if client is not None:
+            try:
+                incoming_wait = estimate_incoming_transport_wait_seconds(client, buyer_city_id)
+            except Exception:
+                incoming_wait = None
+        candidate = int(incoming_wait or 0)
+        if candidate <= 0:
+            candidate = int(fallback_eta or 0)
+        if candidate <= 0:
+            candidate = self._TRANSPORTER_RETRY_MIN_SECONDS
+        return max(self._TRANSPORTER_RETRY_MIN_SECONDS, candidate + 120)
 
     def _preview_purchase_eta(
         self,

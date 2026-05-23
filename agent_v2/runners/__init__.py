@@ -11,6 +11,7 @@ from runners import (  # noqa: F401
     resources,
     military,
     market,
+    black_market,
     city,
     economy,
     research,

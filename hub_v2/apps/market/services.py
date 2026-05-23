@@ -506,6 +506,23 @@ def create_internal_order_result(
         preferred_buyer_city_id=preferred_buyer_city_id,
         buyer_city_id=None,
     )
+    existing_active = (
+        InternalMarketOrder.objects.filter(
+            buyer_game_account=buyer_ga,
+            resource_idx=resource_idx,
+            target_city_id=resolved_target_city_id,
+            source_reason=source_reason,
+            status__in=["matched", "jobs_created", "jobs_running"],
+        )
+        .order_by("-created_at")
+        .first()
+    )
+    if existing_active is not None:
+        return InternalOrderCreateResult(
+            ok=False,
+            code="existing_active_order",
+            detail=f"order_id={existing_active.pk} status={existing_active.status}",
+        )
     buyer_city_id = None
     buyer_bo_pos = -1
     seller_ga = None

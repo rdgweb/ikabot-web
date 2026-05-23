@@ -20,7 +20,7 @@ from core.mixins.views import FilterSortListView
 
 from . import services
 from .filters import MarketOrderFilter
-from .models import InternalMarketOrder
+from .models import BlackMarketOffer, BlackMarketUnitQuote, InternalMarketOrder
 
 logger = logging.getLogger(__name__)
 
@@ -437,6 +437,69 @@ class MarketOrderBulkCancelView(LoginRequiredMixin, View):
                 "market-order-canceled": True,
             }
         )
+        resp = HttpResponse(status=200)
+        resp["HX-Trigger"] = trigger
+        return resp
+
+
+class BlackMarketDashboardView(LoginRequiredMixin, TemplateView):
+    template_name = "market/black_market.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+
+        offers_qs = BlackMarketOffer.objects.select_related("game_account", "game_account__account", "job").order_by("-created_at")
+        active_offers = list(offers_qs.filter(status="active"))
+        for o in active_offers:
+            o.total_est = o.amount * o.unit_price
+        history = list(offers_qs.filter(status__in=["sold", "cancelled", "expired"])[:50])
+
+        # Latest quote per (game_account, city_id, unit_id, offer_resource)
+        from django.db.models import Max
+        latest_quote_ids = (
+            BlackMarketUnitQuote.objects.values("game_account_id", "city_id", "unit_id", "offer_resource")
+            .annotate(latest_id=Max("id"))
+            .values_list("latest_id", flat=True)
+        )
+        quotes = list(
+            BlackMarketUnitQuote.objects.filter(pk__in=latest_quote_ids)
+            .select_related("game_account", "game_account__account")
+            .order_by("game_account__account__label", "city_name", "unit_name")
+        )
+        for q in quotes:
+            if q.active_offer_price > 0 and q.price_max > q.price_min:
+                q.price_position_pct = round((q.active_offer_price - q.price_min) / (q.price_max - q.price_min) * 100)
+            else:
+                q.price_position_pct = None
+
+        ctx["active_offers"] = active_offers
+        ctx["history_offers"] = history
+        ctx["quotes"] = quotes
+        ctx["active_count"] = len(active_offers)
+        ctx["sold_count"] = offers_qs.filter(status="sold").count()
+        ctx["quotes_count"] = len(quotes)
+        return ctx
+
+
+class BlackMarketOfferCloseView(LoginRequiredMixin, View):
+    """POST: manually mark an active BM offer as cancelled."""
+
+    def post(self, request, pk):
+        offer = get_object_or_404(BlackMarketOffer, pk=pk)
+        if offer.status != "active":
+            trigger = json.dumps({"toast": {"type": "error", "message": "Oferta ja encerrada."}})
+            resp = HttpResponse(status=400)
+            resp["HX-Trigger"] = trigger
+            return resp
+
+        offer.status = "cancelled"
+        offer.closed_at = timezone.now()
+        offer.save(update_fields=["status", "closed_at"])
+
+        trigger = json.dumps({
+            "toast": {"type": "success", "message": f"Oferta de {offer.amount}x {offer.unit_name} marcada como cancelada."},
+            "bm-offer-closed": True,
+        })
         resp = HttpResponse(status=200)
         resp["HX-Trigger"] = trigger
         return resp

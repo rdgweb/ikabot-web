@@ -105,6 +105,27 @@ class PatchSnapshotResourcesTests(TestCase):
         self.snapshot.refresh_from_db()
         self.assertEqual(self.snapshot.cities[0]["incoming_resources"]["wine"], 300)
 
+    def test_patch_base_updates_gold_without_full_snapshot_refresh(self):
+        self.snapshot.base_snapshot = {"gold": 100, "income": 50}
+        self.snapshot.save(update_fields=["base_snapshot", "updated_at"])
+
+        response = self.client.patch(
+            "/api/agent/snapshots/patch-base/",
+            data=json.dumps(
+                {
+                    "game_account_id": str(self.game_account.pk),
+                    "patch": {"gold": 4321},
+                }
+            ),
+            content_type="application/json",
+            HTTP_X_AGENT_TOKEN="test-agent-token",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.snapshot.refresh_from_db()
+        self.assertEqual(self.snapshot.base_snapshot["gold"], 4321)
+        self.assertEqual(self.snapshot.base_snapshot["income"], 50)
+
 
 @override_settings(AGENT_TOKEN="test-agent-token", AGENT_ALLOWED_IPS="")
 class DashboardCacheInvalidationTests(TestCase):

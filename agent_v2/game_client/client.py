@@ -32,6 +32,16 @@ from .actions.island import IslandActions
 from .actions.city import BuildAction, DemolishAction, UpgradeAction
 from .actions.daily import DailyTasksAction
 from .actions.diplomacy import DiplomacyInboxAction, DiplomacySendAction
+from .actions.black_market import (
+    AddBlackMarketOfferAction,
+    BuyUnitsAction,
+    CancelBlackMarketOfferAction,
+    GetAvailableUnitOffersAction,
+    GetBlackMarketStateAction,
+    GetMyBlackMarketOffersAction,
+    UNIT_TYPE_MARITIME,
+    UNIT_TYPE_TERRESTRIAL,
+)
 from .actions.market import BuyAction, CreateOfferAction, GetOffersAction, SellAction
 from .actions.miracle import MiracleAction
 from .actions.military import AttackAction, FetchBarracksStateAction, FetchStationedUnitsAction, SendTroopsAction, StationAction, TrainAction
@@ -867,6 +877,105 @@ class GameClient(IslandActions):
             price=price,
             player_name=player_name,
             dest_city_name=dest_city_name,
+        )
+
+    # ── Black Market Methods ──
+
+    def get_black_market_state(
+        self,
+        city_id: int,
+        position: int,
+        unit_id: int | None = None,
+        offer_resource: int = 5,
+    ) -> dict[str, Any]:
+        """Get Black Market building state: available units, price limits, offer slots."""
+        return GetBlackMarketStateAction(self).execute(
+            city_id=city_id,
+            position=position,
+            unit_id=unit_id,
+            offer_resource=offer_resource,
+        )
+
+    def add_black_market_offer(
+        self,
+        city_id: int,
+        position: int,
+        unit_id: int,
+        amount: int,
+        unit_price: int,
+        offer_resource: int = 5,  # 5 = gold
+    ) -> dict[str, Any]:
+        """List units for sale on the Black Market."""
+        return AddBlackMarketOfferAction(self).execute(
+            city_id=city_id,
+            position=position,
+            unit_id=unit_id,
+            amount=amount,
+            unit_price=unit_price,
+            offer_resource=offer_resource,
+        )
+
+    def get_my_black_market_offers(self, city_id: int, position: int) -> list[dict]:
+        """Fetch seller's current active Black Market offers."""
+        return GetMyBlackMarketOffersAction(self).execute(city_id=city_id, position=position)
+
+    def cancel_black_market_offer(self, city_id: int, position: int, offer_id: int) -> dict[str, Any]:
+        """Cancel an active Black Market offer."""
+        return CancelBlackMarketOfferAction(self).execute(city_id=city_id, position=position, offer_id=offer_id)
+
+    def get_available_unit_offers(
+        self,
+        buyer_city_id: int,
+        bo_position: int,
+        unit_category: int = 0,
+    ) -> list[dict]:
+        """Fetch available unit offers from other players via Branch Office."""
+        return GetAvailableUnitOffersAction(self).execute(
+            buyer_city_id=buyer_city_id,
+            bo_position=bo_position,
+            unit_category=unit_category,
+        )
+
+    def buy_units_black_market(
+        self,
+        buyer_city_id: int,
+        bo_position: int,
+        seller_city_id: int,
+        seller_avatar: str,
+        seller_city_name: str,
+        unit_id: int,
+        quantity: int,
+        unit_price: int,
+        unit_category: int = UNIT_TYPE_MARITIME,
+        num_transporters: int = 1,
+    ) -> dict[str, Any]:
+        """Buy units from another player's Black Market offer."""
+        return BuyUnitsAction(self).execute(
+            buyer_city_id=buyer_city_id,
+            bo_position=bo_position,
+            seller_city_id=seller_city_id,
+            seller_avatar=seller_avatar,
+            seller_city_name=seller_city_name,
+            unit_id=unit_id,
+            quantity=quantity,
+            unit_price=unit_price,
+            unit_category=unit_category,
+            num_transporters=num_transporters,
+        )
+
+    def get_unit_offer_details(
+        self,
+        buyer_city_id: int,
+        bo_position: int,
+        seller_city_id: int,
+        unit_category: int,
+    ) -> dict[str, Any]:
+        """Fetch takeOffer page details before buying units."""
+        return BuyUnitsAction(self).get_takeOffer_details(
+            buyer_city_id=buyer_city_id,
+            bo_position=bo_position,
+            seller_city_id=seller_city_id,
+            unit_category=unit_category,
         )
 
     # ── Internal HTTP Methods ──

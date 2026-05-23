@@ -1016,6 +1016,28 @@ class IslandMonitorRunner(BaseRunner):
         discovered_ids      list  island IDs found in region scan
     """
 
+    _FETCH_RETRIES = 3
+    _FETCH_RETRY_DELAY_SECONDS = 1.5
+
+    def _fetch_island_with_retry(self, jid: str, client, island_id: str):
+        import time as _time
+
+        last_exc = None
+        for attempt in range(1, self._FETCH_RETRIES + 1):
+            try:
+                island = client.fetch_island_by_id(island_id)
+                if island and island.get("island_id"):
+                    return island
+                self.log(jid, "warn", f"Ilha {island_id}: sem dados (tentativa {attempt}/{self._FETCH_RETRIES})")
+            except Exception as exc:
+                last_exc = exc
+                self.log(jid, "warn", f"Ilha {island_id}: erro ao buscar dados (tentativa {attempt}/{self._FETCH_RETRIES}) — {exc}")
+            if attempt < self._FETCH_RETRIES:
+                _time.sleep(self._FETCH_RETRY_DELAY_SECONDS)
+        if last_exc:
+            raise last_exc
+        return {}
+
     def execute(self, job: dict) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
@@ -1104,13 +1126,15 @@ class IslandMonitorRunner(BaseRunner):
         # ── Check each island ──
         import time as _time
         total_changes = 0
+        failed_islands: list[str] = []
 
         for island_id in island_ids:
             try:
                 _time.sleep(0.6)
-                island = client.fetch_island_by_id(island_id)
+                island = self._fetch_island_with_retry(jid, client, island_id)
                 if not island or not island.get("island_id"):
                     self.log(jid, "warn", f"Ilha {island_id}: sem dados")
+                    failed_islands.append(str(island_id))
                     continue
 
                 x, y = island.get("x", 0), island.get("y", 0)
@@ -1208,20 +1232,43 @@ class IslandMonitorRunner(BaseRunner):
 
             except Exception as exc:
                 self.log(jid, "warn", f"Ilha {island_id}: erro — {exc}")
+                failed_islands.append(str(island_id))
 
         self.save_game_client(ga_id or aid, client)
-        self.log(jid, "info", f"Concluído: {len(island_ids)} ilhas, {total_changes} mudanças")
+        if failed_islands:
+            self.log(
+                jid,
+                "warn",
+                f"Monitor parcial: {len(failed_islands)}/{len(island_ids)} ilhas falharam "
+                f"({', '.join(failed_islands)}); estado dessas ilhas foi preservado.",
+            )
+        self.log(
+            jid,
+            "info",
+            f"Concluído: {len(island_ids) - len(failed_islands)}/{len(island_ids)} ilhas válidas, "
+            f"{total_changes} mudanças",
+        )
 
         reschedule_inputs = dict(inputs)
         reschedule_inputs["island_state"] = island_state
         if discovered_ids:
             reschedule_inputs["discovered_ids"] = discovered_ids
 
+        reschedule_seconds = recheck_minutes * 60
+        if failed_islands:
+            reschedule_seconds = min(reschedule_seconds, 5 * 60)
+
         return RunnerResult(
             success=True,
-            reschedule_seconds=recheck_minutes * 60,
+            reschedule_seconds=reschedule_seconds,
             reschedule_inputs=reschedule_inputs,
-            data={"islands_checked": len(island_ids), "changes": total_changes},
+            data={
+                "islands_checked": len(island_ids),
+                "islands_ok": len(island_ids) - len(failed_islands),
+                "islands_failed": failed_islands,
+                "changes": total_changes,
+                "partial": bool(failed_islands),
+            },
         )
 
 

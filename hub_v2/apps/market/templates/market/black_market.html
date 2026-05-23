@@ -1,0 +1,286 @@
+{% extends base_template|default:"base.html" %}
+{% load static humanize %}
+
+{% block title %}Mercado Negro{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span>
+  <a href="{% url 'market:dashboard' %}" class="hover:text-ink transition-colors">Mercado</a>
+  <span class="mx-1">/</span>
+  <span class="text-ink">Mercado Negro</span>
+{% endblock %}
+
+{% block content %}
+<div x-data="bmDashboard()" class="space-y-6">
+
+  {# Header #}
+  <div class="flex items-center justify-between gap-4">
+    <div>
+      <h1 class="text-xl font-bold text-ink flex items-center gap-2">
+        <i class="bi bi-shield-exclamation text-[var(--ik-sea)]"></i> Mercado Negro
+      </h1>
+      <p class="mt-0.5 text-sm text-muted">Ofertas ativas, histórico de vendas e faixas de preço capturadas.</p>
+    </div>
+  </div>
+
+  {# Stats bar #}
+  <div class="grid grid-cols-3 gap-4">
+    <div class="rounded-2xl border border-[var(--ik-line)] bg-paper px-4 py-4 shadow-sm">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Ofertas ativas</div>
+      <div class="mt-2 flex items-end justify-between">
+        <div class="text-3xl font-bold text-ink">{{ active_count }}</div>
+        <i class="bi bi-tag text-xl text-amber-500"></i>
+      </div>
+    </div>
+    <div class="rounded-2xl border border-[var(--ik-line)] bg-paper px-4 py-4 shadow-sm">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Vendidas (total)</div>
+      <div class="mt-2 flex items-end justify-between">
+        <div class="text-3xl font-bold text-ink">{{ sold_count }}</div>
+        <i class="bi bi-check-circle text-xl text-emerald-600"></i>
+      </div>
+    </div>
+    <div class="rounded-2xl border border-[var(--ik-line)] bg-paper px-4 py-4 shadow-sm">
+      <div class="text-[11px] uppercase tracking-wide text-muted">Unidades catalogadas</div>
+      <div class="mt-2 flex items-end justify-between">
+        <div class="text-3xl font-bold text-ink">{{ quotes_count }}</div>
+        <i class="bi bi-bar-chart text-xl text-[var(--ik-sea)]"></i>
+      </div>
+    </div>
+  </div>
+
+  {# Tabs #}
+  <div x-data="{ tab: 'active' }" class="space-y-4">
+    <div class="flex gap-1 border-b border-[var(--ik-line)]">
+      <button type="button"
+              @click="tab='active'"
+              :class="tab==='active' ? 'border-b-2 border-[var(--ik-sea)] text-[var(--ik-sea)] font-semibold' : 'text-muted hover:text-ink'"
+              class="px-4 py-2 text-sm transition-colors">
+        <i class="bi bi-tag me-1"></i> Ofertas Ativas
+        {% if active_count %}<span class="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">{{ active_count }}</span>{% endif %}
+      </button>
+      <button type="button"
+              @click="tab='history'"
+              :class="tab==='history' ? 'border-b-2 border-[var(--ik-sea)] text-[var(--ik-sea)] font-semibold' : 'text-muted hover:text-ink'"
+              class="px-4 py-2 text-sm transition-colors">
+        <i class="bi bi-clock-history me-1"></i> Histórico
+      </button>
+      <button type="button"
+              @click="tab='prices'"
+              :class="tab==='prices' ? 'border-b-2 border-[var(--ik-sea)] text-[var(--ik-sea)] font-semibold' : 'text-muted hover:text-ink'"
+              class="px-4 py-2 text-sm transition-colors">
+        <i class="bi bi-bar-chart me-1"></i> Faixas de Preço
+        {% if quotes_count %}<span class="ml-1 rounded-full bg-[var(--ik-sea)]/10 px-1.5 py-0.5 text-[10px] font-bold text-[var(--ik-sea)]">{{ quotes_count }}</span>{% endif %}
+      </button>
+    </div>
+
+    {# Tab: Active offers #}
+    <div x-show="tab==='active'" x-cloak>
+      {% if active_offers %}
+      <div class="card overflow-hidden p-0">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Conta</th>
+              <th>Cidade</th>
+              <th>Unidade</th>
+              <th class="text-right">Qtd.</th>
+              <th class="text-right">Preço/un.</th>
+              <th class="text-right">Total est.</th>
+              <th>Listada em</th>
+              <th>Job</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for offer in active_offers %}
+            <tr id="bm-offer-row-{{ offer.pk }}"
+                hx-trigger="bm-offer-closed from:body"
+                hx-get=""
+                hx-swap="outerHTML">
+              <td class="font-medium text-ink">
+                {{ offer.game_account.account.label }}<br>
+                <span class="text-[11px] text-muted">{{ offer.game_account.name }}</span>
+              </td>
+              <td>{{ offer.city_name|default:"—" }}</td>
+              <td class="font-medium text-ink">{{ offer.unit_name|default:offer.unit_id }}</td>
+              <td class="text-right tabular-nums">{{ offer.amount|intcomma }}</td>
+              <td class="text-right tabular-nums">{{ offer.unit_price|intcomma }}</td>
+              <td class="text-right tabular-nums text-muted">{{ offer.total_est|intcomma }}</td>
+              <td class="text-[11px] text-muted">
+                {% if offer.listed_at %}{{ offer.listed_at|date:"d/m H:i" }}{% else %}—{% endif %}
+              </td>
+              <td>
+                {% if offer.job %}
+                <a href="{% url 'jobs:job-detail' offer.job.pk %}" class="text-[11px] text-[var(--ik-sea)] hover:underline font-mono">
+                  {{ offer.job.pk|stringformat:"s"|slice:":8" }}…
+                </a>
+                {% else %}—{% endif %}
+              </td>
+              <td>
+                <form method="post" action="{% url 'market:bm-offer-close' offer.pk %}"
+                      hx-post="{% url 'market:bm-offer-close' offer.pk %}"
+                      hx-swap="none"
+                      hx-push-url="false">
+                  {% csrf_token %}
+                  <button type="submit"
+                          class="btn btn-secondary btn-sm text-[11px]"
+                          onclick="return confirm('Marcar como cancelada?')">
+                    <i class="bi bi-x-circle"></i> Cancelar
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="card flex flex-col items-center justify-center py-12 text-center">
+        <i class="bi bi-tag text-4xl text-muted mb-3"></i>
+        <p class="text-sm font-medium text-ink">Nenhuma oferta ativa</p>
+        <p class="text-xs text-muted mt-1">Execute um job de Mercado Negro (ac=803) para listar unidades.</p>
+      </div>
+      {% endif %}
+    </div>
+
+    {# Tab: History #}
+    <div x-show="tab==='history'" x-cloak>
+      {% if history_offers %}
+      <div class="card overflow-hidden p-0">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Conta</th>
+              <th>Cidade</th>
+              <th>Unidade</th>
+              <th class="text-right">Qtd.</th>
+              <th class="text-right">Preço/un.</th>
+              <th>Status</th>
+              <th>Encerrada em</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for offer in history_offers %}
+            <tr>
+              <td class="font-medium text-ink">
+                {{ offer.game_account.account.label }}<br>
+                <span class="text-[11px] text-muted">{{ offer.game_account.name }}</span>
+              </td>
+              <td>{{ offer.city_name|default:"—" }}</td>
+              <td>{{ offer.unit_name|default:offer.unit_id }}</td>
+              <td class="text-right tabular-nums">{{ offer.amount|intcomma }}</td>
+              <td class="text-right tabular-nums">{{ offer.unit_price|intcomma }}</td>
+              <td>
+                {% if offer.status == "sold" %}
+                  <span class="badge badge-success text-[11px]">Vendida</span>
+                {% elif offer.status == "cancelled" %}
+                  <span class="badge badge-neutral text-[11px]">Cancelada</span>
+                {% else %}
+                  <span class="badge badge-warning text-[11px]">{{ offer.get_status_display }}</span>
+                {% endif %}
+              </td>
+              <td class="text-[11px] text-muted">
+                {% if offer.closed_at %}{{ offer.closed_at|date:"d/m H:i" }}{% else %}—{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="card flex flex-col items-center justify-center py-12 text-center">
+        <i class="bi bi-clock-history text-4xl text-muted mb-3"></i>
+        <p class="text-sm font-medium text-ink">Sem histórico ainda</p>
+      </div>
+      {% endif %}
+    </div>
+
+    {# Tab: Price ranges #}
+    <div x-show="tab==='prices'" x-cloak>
+      {% if quotes %}
+
+      {# Group by account + city #}
+      {% regroup quotes by game_account.account.label as account_groups %}
+      {% for acc_group in account_groups %}
+      <div class="mb-6">
+        <h3 class="mb-3 text-sm font-semibold text-ink flex items-center gap-2">
+          <i class="bi bi-person-badge text-[var(--ik-sea)]"></i>
+          {{ acc_group.grouper }}
+        </h3>
+
+        {% regroup acc_group.list by city_name as city_groups %}
+        {% for city_group in city_groups %}
+        <div class="card overflow-hidden p-0 mb-3">
+          <div class="border-b border-[var(--ik-line)] bg-[var(--ik-sand-light)]/40 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted flex items-center gap-2">
+            <i class="bi bi-geo-alt"></i> {{ city_group.grouper|default:"(cidade desconhecida)" }}
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Unidade</th>
+                <th class="text-right">Mín.</th>
+                <th class="text-right">Máx.</th>
+                <th>Faixa</th>
+                <th class="text-right">Disponível</th>
+                <th class="text-right">Oferta ativa</th>
+                <th class="text-right">Preço oferta</th>
+                <th>Capturado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for q in city_group.list %}
+              <tr>
+                <td class="font-medium text-ink">{{ q.unit_name|default:q.unit_id }}</td>
+                <td class="text-right tabular-nums">{{ q.price_min|intcomma }}</td>
+                <td class="text-right tabular-nums">{{ q.price_max|intcomma }}</td>
+                <td class="w-32">
+                  {% if q.price_max > 0 %}
+                  <div class="relative h-2 rounded-full bg-[var(--ik-line)]" title="{{ q.price_min }} – {{ q.price_max }}">
+                    <div class="absolute left-0 top-0 h-2 rounded-full bg-[var(--ik-sea)]/40" style="width: 100%"></div>
+                    {% if q.price_position_pct is not None %}
+                    <div class="absolute top-0 h-2 w-1.5 -translate-x-1/2 rounded-full bg-amber-500"
+                         style="left: {{ q.price_position_pct }}%"
+                         title="Oferta: {{ q.active_offer_price }}"></div>
+                    {% endif %}
+                  </div>
+                  {% endif %}
+                </td>
+                <td class="text-right tabular-nums text-muted">{{ q.available_amount|intcomma }}</td>
+                <td class="text-right tabular-nums">
+                  {% if q.active_offer_amount %}
+                  <span class="font-medium text-amber-600">{{ q.active_offer_amount|intcomma }}</span>
+                  {% else %}—{% endif %}
+                </td>
+                <td class="text-right tabular-nums">
+                  {% if q.active_offer_price %}{{ q.active_offer_price|intcomma }}{% else %}—{% endif %}
+                </td>
+                <td class="text-[11px] text-muted">
+                  {% if q.captured_at %}{{ q.captured_at|date:"d/m H:i" }}{% else %}—{% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+
+      {% else %}
+      <div class="card flex flex-col items-center justify-center py-12 text-center">
+        <i class="bi bi-bar-chart text-4xl text-muted mb-3"></i>
+        <p class="text-sm font-medium text-ink">Sem dados de preço ainda</p>
+        <p class="text-xs text-muted mt-1">Faixas são capturadas automaticamente ao executar jobs ac=803.</p>
+      </div>
+      {% endif %}
+    </div>
+
+  </div>{# end tabs #}
+
+</div>
+<script>
+function bmDashboard() {
+  return {};
+}
+</script>
+{% endblock %}

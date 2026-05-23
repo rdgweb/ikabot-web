@@ -117,6 +117,92 @@ class InternalMarketOrder(UUIDTimestampModel):
         return f"Order {self.id} [{self.status}] {self.amount}x res{self.resource_idx}"
 
 
+class BlackMarketOffer(UUIDTimestampModel):
+    """Tracks offers listed on the game's Black Market by this hub."""
+
+    STATUS_CHOICES = [
+        ("active", "Ativa"),
+        ("sold", "Vendida"),
+        ("cancelled", "Cancelada"),
+        ("expired", "Expirada"),
+    ]
+
+    game_account = models.ForeignKey(
+        "accounts.GameAccount",
+        on_delete=models.CASCADE,
+        related_name="black_market_offers",
+    )
+    city_id = models.IntegerField()
+    city_name = models.CharField(max_length=128, blank=True, default="")
+    unit_id = models.IntegerField()
+    unit_name = models.CharField(max_length=128, blank=True, default="")
+    amount = models.IntegerField()
+    unit_price = models.IntegerField()
+    offer_resource = models.IntegerField(default=5)
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default="active", db_index=True)
+    job = models.ForeignKey(
+        "jobs.Job", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    listed_at = models.DateTimeField(null=True, blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["game_account", "status"]),
+            models.Index(fields=["unit_id", "status"]),
+            models.Index(fields=["game_account", "city_id", "unit_id"]),
+        ]
+
+    def __str__(self):
+        return f"BM {self.id} [{self.status}] {self.amount}x unit{self.unit_id} @ {self.unit_price}"
+
+    @classmethod
+    def avg_price(cls, unit_id: int) -> float | None:
+        """Return avg sell price for this unit across all historical offers."""
+        from django.db.models import Avg
+        result = cls.objects.filter(unit_id=unit_id).aggregate(avg=Avg("unit_price"))
+        return result["avg"]
+
+
+class BlackMarketUnitQuote(UUIDTimestampModel):
+    """Snapshot of Black Market unit price ranges captured during a runner execution."""
+
+    game_account = models.ForeignKey(
+        "accounts.GameAccount",
+        on_delete=models.CASCADE,
+        related_name="black_market_unit_quotes",
+    )
+    city_id = models.IntegerField()
+    city_name = models.CharField(max_length=128, blank=True, default="")
+    unit_id = models.IntegerField()
+    unit_name = models.CharField(max_length=128, blank=True, default="")
+    offer_resource = models.IntegerField(default=5)
+    price_min = models.IntegerField(default=0)
+    price_max = models.IntegerField(default=0)
+    available_amount = models.IntegerField(default=0)
+    active_offer_amount = models.IntegerField(default=0)
+    active_offer_price = models.IntegerField(default=0)
+    job = models.ForeignKey(
+        "jobs.Job", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    captured_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["game_account", "city_id", "offer_resource"]),
+            models.Index(fields=["unit_id", "offer_resource"]),
+        ]
+
+    def __str__(self):
+        return (
+            f"BMQuote {self.id} ga={self.game_account_id} city={self.city_id} "
+            f"unit={self.unit_id} res={self.offer_resource} "
+            f"{self.price_min}-{self.price_max} avail={self.available_amount}"
+        )
+
+
 class ConstructionMarketIntervention(UUIDTimestampModel):
     STATUS_CHOICES = [
         ("pending", "Pendente"),

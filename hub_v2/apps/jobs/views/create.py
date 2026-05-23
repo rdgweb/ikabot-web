@@ -535,6 +535,95 @@ def _training_form_context(snapshot, cities):
     }
 
 
+def _black_market_form_context(cities, snapshot):
+    from core.catalogs import TRAINING_UNITS, UNIT_ICON_MAP
+    from apps.market.models import BlackMarketOffer
+    from django.db.models import Avg
+
+    bm_cities = []
+    for city in (cities or []):
+        bm_pos = None
+        for b in (city.get("buildings") or []):
+            if isinstance(b, dict) and str(b.get("building") or "").strip() == "blackMarket":
+                try:
+                    bm_pos = int(b.get("position") or 0)
+                except Exception:
+                    pass
+                break
+        if bm_pos is None:
+            continue
+        bm_cities.append({
+            "id": city.get("id"),
+            "name": city.get("name", ""),
+            "x": city.get("x"),
+            "y": city.get("y"),
+            "tradegood_name": city.get("tradegood_name", "") or city.get("resource_name", ""),
+            "tradegood_icon": city.get("tradegood_icon", ""),
+            "city_art": city.get("city_art", ""),
+            "black_market_pos": bm_pos,
+        })
+
+    military_by_city = {}
+    if snapshot:
+        mil = snapshot.military or {}
+        for city_mil in mil.get("by_city", []):
+            if not isinstance(city_mil, dict):
+                continue
+            cid = str(city_mil.get("city_id") or "")
+            if cid:
+                military_by_city[cid] = {
+                    "troops": dict(city_mil.get("troops") or {}),
+                    "fleet": dict(city_mil.get("fleet") or {}),
+                }
+
+    # Active BM offers for this GA — {city_id: {unit_id: amount}}
+    active_offers: dict[str, dict[int, int]] = {}
+    if snapshot:
+        try:
+            qs = BlackMarketOffer.objects.filter(
+                game_account=snapshot.game_account, status="active"
+            ).values("city_id", "unit_id", "amount")
+            for row in qs:
+                ckey = str(row["city_id"])
+                if ckey not in active_offers:
+                    active_offers[ckey] = {}
+                active_offers[ckey][row["unit_id"]] = row["amount"]
+        except Exception:
+            pass
+
+    # Price averages per unit_id (across all history)
+    price_avgs: dict[int, int] = {}
+    try:
+        for row in BlackMarketOffer.objects.values("unit_id").annotate(avg=Avg("unit_price")):
+            if row["avg"] is not None:
+                price_avgs[row["unit_id"]] = int(row["avg"])
+    except Exception:
+        pass
+
+    for city in bm_cities:
+        cid = str(city["id"] or "")
+        city_mil = military_by_city.get(cid, {})
+        city["troops"] = city_mil.get("troops") or {}
+        city["fleet"] = city_mil.get("fleet") or {}
+        city["active_offers"] = active_offers.get(cid, {})
+
+    def enrich(units):
+        result = []
+        for u in units:
+            icon = (UNIT_ICON_MAP.get(u.get("name") or "")
+                    or UNIT_ICON_MAP.get(u.get("css") or "")
+                    or "")
+            avg = price_avgs.get(u["id"])
+            result.append({**u, "icon": icon, "avg_price": avg})
+        return result
+
+    return {
+        "cities": bm_cities,
+        "troops_units": enrich(TRAINING_UNITS["troops"]),
+        "fleet_units": enrich(TRAINING_UNITS["fleet"]),
+    }
+
+
 def _market_form_context(cities):
     market_cities = []
     for city in cities or []:
@@ -1167,6 +1256,8 @@ def _custom_field_names(action_code: int) -> list[str]:
         return ["buyer_city_id", "seller_city_id", "resource_idx", "amount"]
     if int(action_code) == 9:
         return ["city_id", "resource_idx", "amount", "unit_price"]
+    if int(action_code) == 803:
+        return ["city_id", "unit_id", "amount", "unit_price"]
     if int(action_code) in {902, 1006}:
         return [
             "donation_type",
@@ -1236,6 +1327,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities):
         "upgrade_units_ui": _upgrade_units_form_context(cities),
         "market_ui": _market_form_context(cities),
         "training_ui": _training_form_context(snapshot, cities),
+        "black_market_ui": _black_market_form_context(cities, snapshot),
     }
     if int(action_code) == 15:
         ctx.update(_spy_context(ga, cities, getattr(form, "initial", {})))

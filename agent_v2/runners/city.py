@@ -2593,6 +2593,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     "buyer_without_branch_office": "sem cidade compradora com Branch Office",
                     "no_visible_market_city": "sem cidade compradora com alcance de mercado para o vendedor",
                     "no_seller": "sem vendedor elegivel",
+                    "existing_active_order": "ja existe ordem ativa para esta cidade/recurso",
                 }
                 self.log(
                     jid,
@@ -2604,6 +2605,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 )
                 if error_code == "buyer_below_min_gold":
                     return None, self._parse_market_detail(detail), error_code
+                if error_code == "existing_active_order":
+                    return TRANSPORT_RECHECK_SECONDS, {"existing_order": detail}, error_code
                 continue
 
             created_any = True

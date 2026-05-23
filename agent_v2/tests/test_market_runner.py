@@ -176,6 +176,40 @@ class InternalMarketBuyRunnerTests(unittest.TestCase):
             MARKET_MODULE.time.time = original_time
         self.assertEqual(status["state"], "arrived")
 
+    def test_transporter_shortage_from_preview_reschedules(self):
+        runner = InternalMarketBuyRunner()
+        calls = []
+        runner.hub = types.SimpleNamespace(reschedule_job=lambda jid, delay_seconds, inputs=None: calls.append((jid, delay_seconds, inputs)) or {"ok": True})
+        runner.log = lambda *_args, **_kwargs: None
+        result = runner._maybe_reschedule_for_transporters(
+            jid="j1",
+            inputs={"x": 1},
+            order_id="o1",
+            buyer_city_id=123,
+            amount=6320,
+            preview={"free_transporters": 8, "ship_capacity": 500, "travel_seconds": 300},
+        )
+        self.assertIsNotNone(result)
+        self.assertEqual(calls[0][0], "j1")
+        self.assertGreaterEqual(calls[0][1], 300)
+
+    def test_transporter_shortage_from_error_reschedules(self):
+        runner = InternalMarketBuyRunner()
+        calls = []
+        runner.hub = types.SimpleNamespace(reschedule_job=lambda jid, delay_seconds, inputs=None: calls.append((jid, delay_seconds, inputs)) or {"ok": True})
+        runner.log = lambda *_args, **_kwargs: None
+        result = runner._maybe_reschedule_for_transporters_from_error(
+            jid="j1",
+            client=None,
+            inputs={"x": 1},
+            order_id="o1",
+            buyer_city_id=123,
+            amount=6320,
+            exc_str="Not enough free transporters for market purchase: need 13, have 8 (amount=6320, ship_capacity=500)",
+        )
+        self.assertIsNotNone(result)
+        self.assertEqual(calls[0][0], "j1")
+
 
 if __name__ == "__main__":
     unittest.main()

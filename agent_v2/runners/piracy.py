@@ -68,6 +68,22 @@ class PiracyMissionRunner(BaseRunner):
     def _select_mission_by_time(self, inputs: dict) -> int:
         return _mission_level_for_time(inputs, datetime.now().hour)
 
+    @staticmethod
+    def _capture_gain_since_last_mission(inputs: dict[str, Any], capture_points: int) -> int:
+        try:
+            last_capture_points = int(inputs.get("last_capture_points") or 0)
+        except (ValueError, TypeError):
+            return 0
+        try:
+            last_time_remaining = int(inputs.get("last_time_remaining") or 0)
+        except (ValueError, TypeError):
+            last_time_remaining = 0
+
+        if last_time_remaining <= 0:
+            return 0
+        gain = capture_points - last_capture_points
+        return gain if gain > 0 else 0
+
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
@@ -153,12 +169,14 @@ class PiracyMissionRunner(BaseRunner):
 
             # Step 3: ship in port — optionally convert, then start new mission
             # a) convert capture points to crew based on mode
+            mission_capture_gain = self._capture_gain_since_last_mission(inputs, capture_points)
+
             if convert_mode == "all":
                 should_convert = capture_points > 0
                 points_to_convert = capture_points
             elif convert_mode == "percent":
-                should_convert = capture_points > 0
-                points_to_convert = int(capture_points * convert_percent / 100)
+                should_convert = mission_capture_gain > 0
+                points_to_convert = int(mission_capture_gain * convert_percent / 100)
             elif convert_mode == "threshold":
                 should_convert = capture_points >= max(convert_threshold, 1)
                 points_to_convert = capture_points
@@ -173,12 +191,20 @@ class PiracyMissionRunner(BaseRunner):
                 conversion_factor = int(state.get("conversion_factor") or 10)
                 crew_to_create = points_to_convert // conversion_factor
                 if crew_to_create > 0:
-                    self.log(
-                        jid,
-                        "info",
-                        f"Convertendo {capture_points} pontos de captura em "
-                        f"{crew_to_create} de forca da tripulacao",
-                    )
+                    if convert_mode == "percent":
+                        self.log(
+                            jid,
+                            "info",
+                            f"Convertendo {points_to_convert}/{mission_capture_gain} pontos do ganho da missao "
+                            f"({convert_percent}%) em {crew_to_create} de forca da tripulacao",
+                        )
+                    else:
+                        self.log(
+                            jid,
+                            "info",
+                            f"Convertendo {points_to_convert} pontos de captura em "
+                            f"{crew_to_create} de forca da tripulacao",
+                        )
                     try:
                         client.convert_piracy_points(city_id, crew_to_create)
                         _total_crew_converted += crew_to_create
@@ -193,6 +219,12 @@ class PiracyMissionRunner(BaseRunner):
                         )
                     except Exception as exc:
                         self.log(jid, "warn", f"Conversao de pontos falhou (continuando): {exc}")
+            elif convert_mode == "percent" and capture_points > 0:
+                self.log(
+                    jid,
+                    "info",
+                    "Sem ganho de missao confiavel desde a ultima coleta; pulando conversao percentual nesta rodada.",
+                )
 
             # b) cap mission_level to what the fortress supports
             effective_level = mission_level

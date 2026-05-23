@@ -100,11 +100,11 @@ ACTIONS = {
              "choices": [
                  ("never",     "Nunca converter"),
                  ("all",       "Converter tudo após cada missão"),
-                 ("percent",   "Converter X% dos pontos"),
+                 ("percent",   "Converter X% do ganho da missão"),
                  ("threshold", "Converter quando atingir mínimo de pontos"),
              ]},
             {"key": "convert_percent",   "type": FIELD_INT, "label": "Percentual a converter (%)", "required": False, "default": 100,
-             "min": 1, "max": 100, "help": "Só usado no modo porcentagem."},
+             "min": 1, "max": 100, "help": "Só usado no modo porcentagem. Aplica sobre o ganho da missão recém-concluída, não sobre o saldo total."},
             {"key": "convert_threshold", "type": FIELD_INT, "label": "Mínimo de pontos para converter", "required": False, "default": 500,
              "min": 1, "help": "Só usado no modo mínimo."},
         ],

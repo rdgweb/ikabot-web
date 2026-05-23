@@ -24,7 +24,7 @@ from apps.jobs.models import Job
 from core.auth.backends import AgentTokenAuthentication
 from core.auth.permissions import IsAgent
 
-from .models import ConstructionMarketIntervention, InternalMarketOrder
+from .models import BlackMarketOffer, BlackMarketUnitQuote, ConstructionMarketIntervention, InternalMarketOrder
 from .services import (
     complete_internal_order,
     create_buy_job,
@@ -236,6 +236,144 @@ class MarketOrderCreateView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class BlackMarketOfferSaveView(APIView):
+    """POST /api/agent/market/bm-offers/ — runner saves offer after addOffer success."""
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request):
+        data = request.data
+        ga_id = data.get("game_account_id")
+        if not ga_id:
+            return Response({"error": "game_account_id required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            ga = GameAccount.objects.get(pk=ga_id)
+        except GameAccount.DoesNotExist:
+            return Response({"error": "GameAccount not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        job = None
+        job_id = data.get("job_id")
+        if job_id:
+            job = Job.objects.filter(pk=job_id).first()
+
+        from django.utils import timezone
+        offer = BlackMarketOffer.objects.create(
+            game_account=ga,
+            city_id=int(data.get("city_id", 0)),
+            city_name=str(data.get("city_name", "")),
+            unit_id=int(data.get("unit_id", 0)),
+            unit_name=str(data.get("unit_name", "")),
+            amount=int(data.get("amount", 0)),
+            unit_price=int(data.get("unit_price", 0)),
+            offer_resource=int(data.get("offer_resource", 5)),
+            status="active",
+            job=job,
+            listed_at=timezone.now(),
+        )
+        return Response({"ok": True, "offer_id": str(offer.pk)}, status=status.HTTP_201_CREATED)
+
+
+class BlackMarketOfferSyncView(APIView):
+    """POST /api/agent/market/bm-offers/sync/ — runner syncs current BM state."""
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request):
+        data = request.data
+        ga_id = data.get("game_account_id")
+        city_id = data.get("city_id")
+        if not ga_id or not city_id:
+            return Response({"error": "game_account_id and city_id required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            ga = GameAccount.objects.get(pk=ga_id)
+        except GameAccount.DoesNotExist:
+            return Response({"error": "GameAccount not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # active_unit_ids = set of unit_ids currently in the game BM
+        active_unit_ids = set(int(x) for x in (data.get("active_unit_ids") or []))
+        from django.utils import timezone
+
+        # mark hub-tracked offers as sold/cancelled if no longer listed
+        qs = BlackMarketOffer.objects.filter(game_account=ga, city_id=int(city_id), status="active")
+        closed = 0
+        for offer in qs:
+            if offer.unit_id not in active_unit_ids:
+                offer.status = "sold"
+                offer.closed_at = timezone.now()
+                offer.save(update_fields=["status", "closed_at", "updated_at"])
+                closed += 1
+
+        return Response({"ok": True, "closed": closed}, status=status.HTTP_200_OK)
+
+
+class BlackMarketOfferPriceView(APIView):
+    """GET /api/agent/market/bm-offers/prices/ — return avg prices per unit."""
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def get(self, request):
+        from django.db.models import Avg, Count
+        rows = (
+            BlackMarketOffer.objects
+            .values("unit_id", "unit_name")
+            .annotate(avg_price=Avg("unit_price"), count=Count("id"))
+            .order_by("unit_id")
+        )
+        return Response({"ok": True, "prices": list(rows)})
+
+
+class BlackMarketQuoteSaveView(APIView):
+    """POST /api/agent/market/bm-quotes/ - persist BM quote snapshot for one execution."""
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request):
+        data = request.data
+        ga_id = data.get("game_account_id")
+        city_id = data.get("city_id")
+        quotes = data.get("quotes") or []
+        if not ga_id or not city_id:
+            return Response({"error": "game_account_id and city_id required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            ga = GameAccount.objects.get(pk=ga_id)
+        except GameAccount.DoesNotExist:
+            return Response({"error": "GameAccount not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        job = None
+        job_id = data.get("job_id")
+        if job_id:
+            job = Job.objects.filter(pk=job_id).first()
+
+        from django.utils import timezone
+
+        created = 0
+        for item in quotes:
+            if not isinstance(item, dict):
+                continue
+            BlackMarketUnitQuote.objects.create(
+                game_account=ga,
+                city_id=int(city_id),
+                city_name=str(data.get("city_name", "")),
+                unit_id=int(item.get("unit_id", 0)),
+                unit_name=str(item.get("unit_name", "")),
+                offer_resource=int(item.get("offer_resource", 5)),
+                price_min=int(item.get("price_min", 0)),
+                price_max=int(item.get("price_max", 0)),
+                available_amount=int(item.get("available_amount", 0)),
+                active_offer_amount=int(item.get("active_offer_amount", 0)),
+                active_offer_price=int(item.get("active_offer_price", 0)),
+                job=job,
+                captured_at=timezone.now(),
+            )
+            created += 1
+
+        return Response({"ok": True, "created": created}, status=status.HTTP_201_CREATED)
 
 
 class ConstructionMarketInterventionRequestView(APIView):

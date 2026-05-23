@@ -386,6 +386,69 @@ class HubClient:
             body["source_job_id"] = source_job_id
         return self._post("/api/agent/market/interventions/request", body)
 
+    def save_bm_offer(
+        self,
+        *,
+        game_account_id: str,
+        job_id: str,
+        city_id: int,
+        city_name: str,
+        unit_id: int,
+        unit_name: str,
+        amount: int,
+        unit_price: int,
+        offer_resource: int = 5,
+    ) -> dict:
+        """POST /api/agent/market/bm-offers/ — persist a newly listed BM offer."""
+        return self._post("/api/agent/market/bm-offers", {
+            "game_account_id": game_account_id,
+            "job_id": job_id,
+            "city_id": city_id,
+            "city_name": city_name,
+            "unit_id": unit_id,
+            "unit_name": unit_name,
+            "amount": amount,
+            "unit_price": unit_price,
+            "offer_resource": offer_resource,
+        })
+
+    def sync_bm_offers(
+        self,
+        *,
+        game_account_id: str,
+        city_id: int,
+        active_unit_ids: list[int],
+    ) -> dict:
+        """POST /api/agent/market/bm-offers/sync/ — reconcile active offers."""
+        return self._post("/api/agent/market/bm-offers/sync", {
+            "game_account_id": game_account_id,
+            "city_id": city_id,
+            "active_unit_ids": active_unit_ids,
+        })
+
+    def save_bm_quotes(
+        self,
+        *,
+        game_account_id: str,
+        job_id: str,
+        city_id: int,
+        city_name: str,
+        quotes: list[dict[str, Any]],
+    ) -> dict:
+        """POST /api/agent/market/bm-quotes/ â€” persist BM unit ranges for one execution."""
+        return self._post("/api/agent/market/bm-quotes", {
+            "game_account_id": game_account_id,
+            "job_id": job_id,
+            "city_id": city_id,
+            "city_name": city_name,
+            "quotes": quotes,
+        })
+
+    def get_bm_prices(self) -> list[dict]:
+        """GET /api/agent/market/bm-offers/prices/ — return avg price per unit."""
+        resp = self._get("/api/agent/market/bm-offers/prices")
+        return resp.get("prices", [])
+
     # ── Blackbox & Captcha (proxied via hub → ikabotapi) ──
 
     def get_blackbox_token(self, user_agent: str) -> str:

@@ -1458,7 +1458,7 @@ class JobListView(FilterSortListView):
         }
         _CONVERT_MODE_LABELS = {
             "never": "Nunca converter", "all": "Converter tudo automaticamente",
-            "percent": "Converter percentual", "threshold": "Converter por limite",
+            "percent": "Converter percentual do ganho", "threshold": "Converter por limite",
         }
         capture_points = inputs.get("last_capture_points")
         crew_points = inputs.get("last_crew_points")

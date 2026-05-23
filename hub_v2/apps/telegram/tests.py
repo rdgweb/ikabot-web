@@ -39,3 +39,15 @@ class TelegramFormatterTests(TestCase):
         self.assertIn("&gt; 500 ouro", text)
         # Intentional HTML tags in the template itself must still work
         self.assertIn("<code>", text)
+
+    def test_island_monitor_message_uses_template(self):
+        text = format_message(
+            "island_monitor",
+            title="Mudança na ilha [83:90]",
+            ga_name="BlackShadow701",
+            server_id="s78-br",
+            body="➖ *M01* sumiu",
+        )
+        self.assertIn("Mudança na ilha [83:90]", text)
+        self.assertIn("BlackShadow701", text)
+        self.assertIn("M01", text)

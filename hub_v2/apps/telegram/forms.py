@@ -48,6 +48,7 @@ class TelegramGlobalNotificationForm(forms.ModelForm):
             "notify_low_wine",
             "notify_daily_summary",
             "notify_diplomacy_message",
+            "notify_island_monitor",
         ]
         labels = {
             "notify_attack_alert": "Alerta de ataque",
@@ -58,6 +59,7 @@ class TelegramGlobalNotificationForm(forms.ModelForm):
             "notify_low_wine": "Vinho baixo",
             "notify_daily_summary": "Resumo diario",
             "notify_diplomacy_message": "Mensagem de diplomacia",
+            "notify_island_monitor": "Monitor de ilha",
         }
 
 
@@ -77,6 +79,7 @@ class TelegramAccountConfigForm(forms.ModelForm):
             "notify_low_wine",
             "notify_daily_summary",
             "notify_diplomacy_message",
+            "notify_island_monitor",
         ]
         widgets = {
             "chat_id": forms.TextInput(attrs={
@@ -95,6 +98,7 @@ class TelegramAccountConfigForm(forms.ModelForm):
             "notify_low_wine": "Vinho baixo",
             "notify_daily_summary": "Resumo diario",
             "notify_diplomacy_message": "Mensagem de diplomacia",
+            "notify_island_monitor": "Monitor de ilha",
         }
 
 
@@ -118,6 +122,7 @@ class TelegramNotificationForm(forms.ModelForm):
             "notify_low_wine",
             "notify_daily_summary",
             "notify_diplomacy_message",
+            "notify_island_monitor",
         ]
         labels = {
             "enabled": "Notificacoes ativadas",
@@ -129,6 +134,7 @@ class TelegramNotificationForm(forms.ModelForm):
             "notify_low_wine": "Vinho baixo",
             "notify_daily_summary": "Resumo diario",
             "notify_diplomacy_message": "Mensagem de diplomacia",
+            "notify_island_monitor": "Monitor de ilha",
         }
 
 

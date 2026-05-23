@@ -25,6 +25,9 @@ class GameSessionService:
     def save_lobby_token(self, account_id: str, token: str) -> None:
         self.sessions.save_lobby_token(account_id, token)
 
+    def invalidate_lobby_token(self, account_id: str) -> None:
+        self.sessions.invalidate_lobby_token(account_id)
+
     def acquire_lobby_token(
         self,
         account_id: str,
@@ -38,13 +41,15 @@ class GameSessionService:
         with lock:
             cached = self.sessions.get_lobby_token(account_id)
             if cached:
-                cookie_obj = requests.cookies.create_cookie(
-                    domain=".gameforge.com",
-                    name="gf-token-production",
-                    value=cached,
-                )
-                auth.session.cookies.set_cookie(cookie_obj)
-                return cached
+                if auth.validate_token(cached):
+                    cookie_obj = requests.cookies.create_cookie(
+                        domain=".gameforge.com",
+                        name="gf-token-production",
+                        value=cached,
+                    )
+                    auth.session.cookies.set_cookie(cookie_obj)
+                    return cached
+                self.sessions.invalidate_lobby_token(account_id)
 
             token = auth.authenticate(email, password, hint)
             self.sessions.save_lobby_token(account_id, token)
