@@ -1,0 +1,213 @@
+{% load static hub_tags %}
+
+{% if action_code == 25 %}
+<div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_40px_rgba(20,12,8,0.14)]"
+     style="border-color: rgba(40,20,10,0.22); background:
+       radial-gradient(800px 280px at 0% 0%, rgba(95,140,78,0.12), transparent 60%),
+       radial-gradient(700px 240px at 100% 100%, rgba(201,156,78,0.10), transparent 60%),
+       linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
+     x-data="{
+       mode: 'activate',
+       get isActivate() { return this.mode === 'activate'; }
+     }">
+
+  <input type="hidden" name="{{ form.enable.html_name }}" :value="isActivate ? 'True' : 'False'">
+
+  {# ── Header ── #}
+  <div class="border-b px-5 py-5 md:px-6"
+       style="border-color: rgba(40,20,10,0.15); background: linear-gradient(180deg, rgba(255,255,255,0.56), rgba(255,255,255,0));">
+    <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+      <div>
+        <div class="flex items-center gap-2">
+          <div class="flex h-8 w-8 items-center justify-center rounded-xl transition-all"
+               :style="isActivate
+                 ? 'background: linear-gradient(135deg, rgba(95,140,78,0.18), rgba(40,20,10,0.10));'
+                 : 'background: linear-gradient(135deg, rgba(187,81,67,0.18), rgba(40,20,10,0.10));'">
+            <i class="bi bi-umbrella-fill text-sm transition-colors"
+               :style="isActivate ? 'color: var(--ik-good);' : 'color: var(--ik-bad);'"></i>
+          </div>
+          <div class="text-[11px] font-semibold uppercase tracking-[0.18em]"
+               :style="isActivate ? 'color: var(--ik-good);' : 'color: var(--ik-bad);'">Modo Férias</div>
+        </div>
+        <h3 class="mt-2 text-xl font-bold text-ink" x-text="isActivate ? 'Ativar modo férias' : 'Desativar modo férias'"></h3>
+        <p class="mt-1.5 text-sm leading-relaxed text-muted">
+          Em modo férias a conta fica protegida e não paga manutenção de tropas.
+        </p>
+      </div>
+
+      {# Status badge #}
+      <div class="shrink-0 rounded-2xl border px-4 py-3 md:min-w-[16rem] transition-all"
+           :style="isActivate
+             ? 'border-color: rgba(95,140,78,0.25); background: rgba(95,140,78,0.07);'
+             : 'border-color: rgba(187,81,67,0.25); background: rgba(187,81,67,0.07);'">
+        <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Ação selecionada</div>
+        <div class="mt-2 flex items-center gap-2">
+          <i class="bi text-base transition-colors"
+             :class="isActivate ? 'bi-toggle-on' : 'bi-toggle-off'"
+             :style="isActivate ? 'color: var(--ik-good);' : 'color: var(--ik-bad);'"></i>
+          <span class="text-sm font-bold text-ink"
+                x-text="isActivate ? 'Ativar férias' : 'Desativar férias'"></span>
+        </div>
+        <div class="mt-1.5 text-[11px] text-muted"
+             x-text="isActivate
+               ? 'Conta entra em modo protegido'
+               : 'Conta volta à operação normal'"></div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Body ── #}
+  <div class="px-5 py-5 md:px-6 space-y-4">
+
+    {# ── Toggle ── #}
+    <div class="grid grid-cols-2 gap-3">
+
+      {# Ativar #}
+      <button type="button" @click="mode = 'activate'"
+              class="relative overflow-hidden rounded-[20px] border p-4 text-left transition-all duration-150"
+              :class="isActivate
+                ? 'ring-2 ring-[var(--ik-good)] shadow-[0_8px_22px_rgba(95,140,78,0.18)] -translate-y-[1px]'
+                : 'hover:-translate-y-[1px] hover:shadow-[0_8px_16px_rgba(95,140,78,0.08)]'"
+              :style="isActivate
+                ? 'border-color: var(--ik-good); background: linear-gradient(180deg, rgba(95,140,78,0.08), rgba(255,255,255,0.90));'
+                : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
+        <div class="absolute inset-x-0 top-0 h-10"
+             style="background: linear-gradient(135deg, rgba(95,140,78,0.08), transparent);"></div>
+        <div class="relative flex flex-col items-center gap-2 py-2">
+          <div class="flex h-12 w-12 items-center justify-center rounded-[16px]"
+               :style="isActivate
+                 ? 'background: linear-gradient(135deg, rgba(95,140,78,0.18), rgba(95,140,78,0.06)); border: 1.5px solid rgba(95,140,78,0.3);'
+                 : 'background: rgba(255,255,255,0.6); border: 1.5px solid rgba(219,201,167,0.7);'">
+            <i class="bi bi-umbrella-fill text-xl"
+               :style="isActivate ? 'color: var(--ik-good);' : 'color: var(--ik-muted);'"></i>
+          </div>
+          <div class="text-center">
+            <div class="text-sm font-bold" :style="isActivate ? 'color: var(--ik-good);' : 'color: var(--ik-ink);'">
+              Ativar férias
+            </div>
+            <div class="mt-0.5 text-[10px] text-muted">Entra em modo protegido</div>
+          </div>
+          <div class="flex h-5 w-5 items-center justify-center rounded-full border transition-all"
+               :style="isActivate
+                 ? 'border-color: var(--ik-good); color: white; background: var(--ik-good);'
+                 : 'border-color: rgba(95,140,78,0.3); color: var(--ik-good); background: rgba(95,140,78,0.06);'">
+            <i class="bi text-[9px]" :class="isActivate ? 'bi-check-lg' : 'bi-circle'"></i>
+          </div>
+        </div>
+      </button>
+
+      {# Desativar #}
+      <button type="button" @click="mode = 'deactivate'"
+              class="relative overflow-hidden rounded-[20px] border p-4 text-left transition-all duration-150"
+              :class="!isActivate
+                ? 'ring-2 ring-[var(--ik-bad)] shadow-[0_8px_22px_rgba(187,81,67,0.18)] -translate-y-[1px]'
+                : 'hover:-translate-y-[1px] hover:shadow-[0_8px_16px_rgba(187,81,67,0.08)]'"
+              :style="!isActivate
+                ? 'border-color: var(--ik-bad); background: linear-gradient(180deg, rgba(187,81,67,0.08), rgba(255,255,255,0.90));'
+                : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
+        <div class="absolute inset-x-0 top-0 h-10"
+             style="background: linear-gradient(135deg, rgba(187,81,67,0.06), transparent);"></div>
+        <div class="relative flex flex-col items-center gap-2 py-2">
+          <div class="flex h-12 w-12 items-center justify-center rounded-[16px]"
+               :style="!isActivate
+                 ? 'background: linear-gradient(135deg, rgba(187,81,67,0.16), rgba(187,81,67,0.05)); border: 1.5px solid rgba(187,81,67,0.3);'
+                 : 'background: rgba(255,255,255,0.6); border: 1.5px solid rgba(219,201,167,0.7);'">
+            <i class="bi bi-sun-fill text-xl"
+               :style="!isActivate ? 'color: var(--ik-bad);' : 'color: var(--ik-muted);'"></i>
+          </div>
+          <div class="text-center">
+            <div class="text-sm font-bold" :style="!isActivate ? 'color: var(--ik-bad);' : 'color: var(--ik-ink);'">
+              Desativar férias
+            </div>
+            <div class="mt-0.5 text-[10px] text-muted">Volta à operação normal</div>
+          </div>
+          <div class="flex h-5 w-5 items-center justify-center rounded-full border transition-all"
+               :style="!isActivate
+                 ? 'border-color: var(--ik-bad); color: white; background: var(--ik-bad);'
+                 : 'border-color: rgba(187,81,67,0.3); color: var(--ik-bad); background: rgba(187,81,67,0.06);'">
+            <i class="bi text-[9px]" :class="!isActivate ? 'bi-check-lg' : 'bi-circle'"></i>
+          </div>
+        </div>
+      </button>
+
+    </div>
+
+    {# ── Info card ── #}
+    <div class="rounded-[18px] border px-4 py-3.5 transition-all"
+         :style="isActivate
+           ? 'border-color: rgba(95,140,78,0.25); background: rgba(95,140,78,0.06);'
+           : 'border-color: rgba(187,81,67,0.25); background: rgba(187,81,67,0.06);'">
+
+      <template x-if="isActivate">
+        <div class="space-y-2">
+          <div class="flex items-center gap-2 text-sm font-semibold" style="color: var(--ik-good);">
+            <i class="bi bi-shield-check"></i>
+            O que acontece ao ativar férias
+          </div>
+          <ul class="space-y-1.5 text-[11px] text-muted">
+            <li class="flex items-start gap-2">
+              <i class="bi bi-check2 mt-0.5 shrink-0" style="color: var(--ik-good);"></i>
+              <span>Tropas e frotas ficam sem custo de manutenção</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <i class="bi bi-check2 mt-0.5 shrink-0" style="color: var(--ik-good);"></i>
+              <span>Conta protegida contra ataques inimigos</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <i class="bi bi-exclamation-triangle mt-0.5 shrink-0" style="color: var(--ik-warn);"></i>
+              <span>Não é possível executar outras ações enquanto em férias</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <i class="bi bi-exclamation-triangle mt-0.5 shrink-0" style="color: var(--ik-warn);"></i>
+              <span>Pode haver cooldown para reativar após desativar</span>
+            </li>
+          </ul>
+        </div>
+      </template>
+
+      <template x-if="!isActivate">
+        <div class="space-y-2">
+          <div class="flex items-center gap-2 text-sm font-semibold" style="color: var(--ik-bad);">
+            <i class="bi bi-arrow-clockwise"></i>
+            O que acontece ao desativar férias
+          </div>
+          <ul class="space-y-1.5 text-[11px] text-muted">
+            <li class="flex items-start gap-2">
+              <i class="bi bi-check2 mt-0.5 shrink-0" style="color: var(--ik-good);"></i>
+              <span>Conta volta ao modo normal de operação</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <i class="bi bi-check2 mt-0.5 shrink-0" style="color: var(--ik-good);"></i>
+              <span>Ações do agente podem ser executadas normalmente</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <i class="bi bi-exclamation-triangle mt-0.5 shrink-0" style="color: var(--ik-warn);"></i>
+              <span>Custos de manutenção de tropas voltam a ser cobrados</span>
+            </li>
+          </ul>
+        </div>
+      </template>
+
+    </div>
+
+    {# ── Summary bar ── #}
+    <div class="rounded-[18px] border px-4 py-3"
+         :style="isActivate
+           ? 'border-color: rgba(95,140,78,0.3); background: rgba(95,140,78,0.05);'
+           : 'border-color: rgba(187,81,67,0.3); background: rgba(187,81,67,0.05);'">
+      <div class="flex flex-wrap items-center gap-3 text-sm">
+        <i class="bi bi-check-circle-fill"
+           :style="isActivate ? 'color: var(--ik-good);' : 'color: var(--ik-bad);'"></i>
+        <span class="font-semibold text-ink">Pronto para executar:</span>
+        <span class="text-muted">
+          <span class="font-semibold text-ink"
+                x-text="isActivate ? 'Ativar modo férias' : 'Desativar modo férias'"></span>
+          em
+          <span class="font-semibold text-ink">{{ game_account.name|default:game_account.server_id }}</span>
+        </span>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endif %}

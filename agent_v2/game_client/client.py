@@ -404,6 +404,11 @@ class GameClient(IslandActions):
         action = DailyTasksAction(self)
         return action.collect_ambrosia_fountain(city_id=city_id)
 
+    def set_vacation_mode(self, city_id: int, enable: bool) -> dict[str, Any]:
+        """Activate or deactivate vacation mode for the account."""
+        action = DailyTasksAction(self)
+        return action.set_vacation_mode(city_id=city_id, enable=enable)
+
     def get_temple_miracle_state(self, city_id: int, position: int) -> dict[str, Any]:
         """Fetch the miracle state for a city's temple."""
         action = MiracleAction(self)
@@ -928,12 +933,14 @@ class GameClient(IslandActions):
         buyer_city_id: int,
         bo_position: int,
         unit_category: int = 0,
+        market_range: int | None = None,
     ) -> list[dict]:
         """Fetch available unit offers from other players via Branch Office."""
         return GetAvailableUnitOffersAction(self).execute(
             buyer_city_id=buyer_city_id,
             bo_position=bo_position,
             unit_category=unit_category,
+            market_range=market_range,
         )
 
     def buy_units_black_market(

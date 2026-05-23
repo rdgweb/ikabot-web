@@ -165,34 +165,52 @@ class ScanPlayerRunner(BaseRunner):
 
 @register_runner(25)
 class VacationModeRunner(BaseRunner):
-    """Toggle vacation mode on or off.
+    """Activate or deactivate vacation mode for a game account.
 
     Inputs:
-        enable — bool, True to activate, False to deactivate
+        enable — bool, True to activate, False to deactivate (default True)
     """
 
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
-        inputs = job.get("inputs", {})
+        ga_id = job.get("game_account_id", "")
+        inputs = job.get("inputs") or {}
 
-        action = "Enabling" if inputs.get("enable", True) else "Disabling"
-        self.log(jid, "info", f"{action} vacation mode for account {aid}")
+        enable = bool(inputs.get("enable", True))
+        action_label = "Ativar" if enable else "Desativar"
+        self.log(jid, "info", f"{action_label} modo ferias para conta {aid}")
+
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        if not creds:
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
 
         try:
-            client = self.get_game_session(aid)
+            client = self.get_or_login_game_client(jid, aid, ga_id, creds)
 
-            # TODO: call client.set_vacation_mode(enable)
-            # enable = inputs.get("enable", True)
-            # client.set_vacation_mode(enable)
+            # Resolve any city_id for the request context
+            city_id = 0
+            try:
+                snap = self.hub.get_snapshot(game_account_id=ga_id)
+                cities = snap.get("cities") or []
+                if cities:
+                    city_id = int(cities[0].get("id") or 0)
+            except Exception:
+                pass
 
-            self.save_game_session(aid, client)
-            self.log(jid, "info", f"Vacation mode {'enabled' if inputs.get('enable', True) else 'disabled'}")
+            if not city_id:
+                return RunnerResult(success=False, data={"error": "no_city_found_in_snapshot"})
 
-            return RunnerResult(success=True)
+            result = client.set_vacation_mode(city_id=city_id, enable=enable)
+            self.log(jid, "info", f"Modo ferias {'ativado' if enable else 'desativado'}: {result}")
+            self.save_game_client(ga_id, client)
+
+            return RunnerResult(success=True, data={"enabled": enable, "city_id": city_id})
 
         except Exception as exc:
-            self.log(jid, "error", f"Vacation mode failed: {exc}")
+            if self.is_network_error(exc):
+                return self.network_error_result(jid, exc)
+            self.log(jid, "error", f"Modo ferias falhou: {exc}")
             return RunnerResult(success=False, data={"error": str(exc)})
 
 

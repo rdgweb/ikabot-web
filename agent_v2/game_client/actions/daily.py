@@ -82,6 +82,25 @@ class DailyTasksAction(BaseAction):
             "html": html,
         }
 
+    def set_vacation_mode(self, *, city_id: int, enable: bool, **kwargs: Any) -> dict[str, Any]:
+        """Activate or deactivate vacation mode.
+
+        activate: action=Options function=activateVacationMode (from ikabot upstream)
+        deactivate: action=Options function=deactivateVacationMode (needs game testing)
+        """
+        function = "activateVacationMode" if enable else "deactivateVacationMode"
+        params = {
+            "action": "Options",
+            "function": function,
+            "backgroundView": "city",
+            "currentCityId": str(city_id),
+            "templateView": "options_umod_confirm",
+            "actionRequest": self.client._action_request,
+            "ajax": "1",
+        }
+        resp = self.client._request("POST", self.client._server_url, data=params, headers=GAME_AJAX_HEADERS)
+        return self._parse_generic_payload(resp)
+
     @staticmethod
     def _normalize_payload(payload: Any) -> list[Any]:
         if isinstance(payload, list) and len(payload) == 1 and isinstance(payload[0], list):

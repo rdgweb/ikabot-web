@@ -255,4 +255,19 @@ ACTIONS = {
             {"key": "reserve_citizens", "type": FIELD_INT, "label": "Reserva de cidadaos", "required": True, "min": 0, "default": 0, "help": "Evita consumir os ultimos cidadaos livres da cidade."},
         ],
     },
+    25: {
+        "name": "Modo Ferias",
+        "name_en": "Vacation Mode",
+        "category": CAT_ECONOMY,
+        "icon": "bi-umbrella-fill",
+        "runner": "vacation_mode",
+        "requires_game_session": True,
+        "recurring": False,
+        "long_running": False,
+        "ready": True,
+        "description": "Ativa ou desativa o modo ferias da conta. Em ferias, nao ha custos de manutencao de tropas.",
+        "inputs": [
+            {"key": "enable", "type": FIELD_BOOL, "label": "Ativar modo ferias", "required": False, "default": True, "help": "True = ativar, False = desativar."},
+        ],
+    },
 }

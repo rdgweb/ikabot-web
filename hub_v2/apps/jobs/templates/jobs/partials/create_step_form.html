@@ -63,6 +63,7 @@
     {{ form.action_code }}
 
     {% if action_code == 2 %}{% include "jobs/forms/form_transport_enviar_2.html" %}
+    {% elif action_code == 25 %}{% include "jobs/forms/form_modo_ferias_25.html" %}
     {% elif action_code == 803 %}{% include "jobs/forms/form_mercado_negro_803.html" %}
     {% elif action_code == 804 %}{% include "jobs/forms/form_mercado_negro_804.html" %}
     {% elif action_code == 8 or action_code == 9 %}{% include "jobs/forms/form_mercado_comprar_vender_8_9.html" %}
