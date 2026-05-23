@@ -100,6 +100,22 @@ ACTIONS = {
             {"key": "unit_price", "type": FIELD_INT, "label": "Preco por unidade (ouro)", "required": True, "min": 1},
         ],
     },
+    808: {
+        "name": "Verificar Ofertas (Mercado Negro)",
+        "name_en": "Check Black Market Offers",
+        "category": CAT_MARKET,
+        "icon": "bi-search",
+        "runner": "check_bm_offers",
+        "requires_game_session": True,
+        "recurring": False,
+        "long_running": False,
+        "ready": True,
+        "description": "Busca as unidades militares disponíveis no Branch Office e salva no hub para exibir no formulário de compra.",
+        "inputs": [
+            {"key": "buyer_city_id", "type": FIELD_CITY_SELECT, "label": "Cidade (com Branch Office)", "multiple": False, "required": True},
+            {"key": "unit_category", "type": FIELD_CHOICE, "label": "Tipo de unidade", "required": False, "default": "0", "choices": [("0", "Todas (frotas e tropas)"), ("444", "Frotas"), ("111", "Tropas")]},
+        ],
+    },
     8031: {
         "name": "Cancelar Oferta Mercado Negro",
         "name_en": "Cancel Black Market Offer",

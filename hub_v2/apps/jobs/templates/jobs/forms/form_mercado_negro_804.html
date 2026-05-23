@@ -2,6 +2,8 @@
 
 {% if action_code == 804 %}
 {{ market_ui.cities|json_script:"bm-buy-cities-data" }}
+{{ bm_buy_ui.offers_by_city|json_script:"bm-buy-offers-data" }}
+{{ bm_buy_ui.scanned_at_by_city|json_script:"bm-buy-scanned-data" }}
 
 <div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_40px_rgba(20,12,8,0.14)]"
      style="border-color: rgba(40,20,10,0.22); background:
@@ -10,21 +12,35 @@
        linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
      x-data="{
        cities: JSON.parse(document.getElementById('bm-buy-cities-data')?.textContent || '[]'),
+       offersData: JSON.parse(document.getElementById('bm-buy-offers-data')?.textContent || '{}'),
+       scannedData: JSON.parse(document.getElementById('bm-buy-scanned-data')?.textContent || '{}'),
        selectedCityId: '',
-       unitId: 0,
+       selectedUnitId: 0,
+       selectedUnitCategory: 444,
        quantity: 1,
        maxPrice: 0,
-       unitCategory: '444',
        selectedCity() { return this.cities.find(c => String(c.id) === String(this.selectedCityId)); },
-       isReady() { return this.selectedCityId && this.unitId > 0 && this.quantity > 0 && this.maxPrice > 0; }
+       cityOffers() {
+         if (!this.selectedCityId) return [];
+         return this.offersData[String(this.selectedCityId)] || [];
+       },
+       scannedAt() { return this.scannedData[String(this.selectedCityId)] || ''; },
+       hasOffers() { return this.cityOffers().length > 0; },
+       selectedUnit() { return this.cityOffers().find(u => u.unit_id === this.selectedUnitId); },
+       selectUnit(u) {
+         this.selectedUnitId = u.unit_id;
+         this.selectedUnitCategory = u.unit_category;
+         if (u.min_price > 0) this.maxPrice = u.min_price;
+       },
+       isReady() { return this.selectedCityId && this.selectedUnitId > 0 && this.quantity > 0 && this.maxPrice > 0; }
      }">
 
   {# Hidden form fields #}
   <input type="hidden" name="{{ form.buyer_city_id.html_name }}" x-model="selectedCityId">
-  <input type="hidden" name="{{ form.unit_id.html_name }}" :value="unitId">
+  <input type="hidden" name="{{ form.unit_id.html_name }}" :value="selectedUnitId">
   <input type="hidden" name="{{ form.quantity.html_name }}" :value="quantity">
   <input type="hidden" name="{{ form.max_price.html_name }}" :value="maxPrice">
-  <input type="hidden" name="{{ form.unit_category.html_name }}" x-model="unitCategory">
+  <input type="hidden" name="{{ form.unit_category.html_name }}" :value="String(selectedUnitCategory)">
 
   {# ── Header ── #}
   <div class="border-b px-5 py-5 md:px-6"
@@ -40,7 +56,8 @@
         </div>
         <h3 class="mt-2 text-xl font-bold text-ink">Comprar unidades militares</h3>
         <p class="mt-1.5 text-sm leading-relaxed text-muted">
-          O agente busca automaticamente a oferta mais barata disponível no Branch Office.
+          Selecione a cidade, depois escolha uma unidade das ofertas disponíveis.
+          Rode o <strong class="text-ink">Verificar Ofertas</strong> (ac=808) primeiro para atualizar a lista.
         </p>
       </div>
       <div class="shrink-0 rounded-2xl border px-4 py-3 md:min-w-[18rem]"
@@ -50,6 +67,12 @@
              x-text="selectedCity() ? selectedCity().name : 'Nenhuma cidade selecionada'"></div>
         <div class="mt-1 text-[11px] text-muted"
              x-text="selectedCity() ? `Branch Office pos ${selectedCity().branch_office_pos}` : 'Selecione uma cidade com Branch Office'"></div>
+        <template x-if="scannedAt()">
+          <div class="mt-1.5 flex items-center gap-1 text-[10px]" style="color: var(--ik-good);">
+            <i class="bi bi-clock-history"></i>
+            <span x-text="`Escaneado: ${scannedAt()}`"></span>
+          </div>
+        </template>
       </div>
     </div>
   </div>
@@ -79,7 +102,7 @@
       <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4" x-show="cities.length">
         <template x-for="city in cities" :key="`bm-buy-city-${city.id}`">
           <button type="button"
-                  @click="selectedCityId = String(city.id)"
+                  @click="selectedCityId = String(city.id); selectedUnitId = 0; maxPrice = 0;"
                   class="relative overflow-hidden rounded-[18px] border text-left transition-all duration-150 p-3"
                   :class="String(selectedCityId) === String(city.id)
                     ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_8px_22px_rgba(79,134,185,0.18)] translate-y-[-1px]'
@@ -126,61 +149,102 @@
       </div>
     </section>
 
-    {# ── Step 2: Unit type + ID ── #}
+    {# ── Step 2: Available units from DB ── #}
     <section x-show="selectedCityId">
 
       <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
           <span class="inline-flex h-5 w-5 items-center justify-center rounded-full text-white text-[9px] font-bold mr-1.5"
                 style="background: var(--ik-sea);">2</span>
-          Tipo de unidade
+          Unidade disponível
         </div>
-        <div class="flex gap-1 rounded-xl border border-[var(--ik-line)] p-1 bg-white">
-          <button type="button" @click="unitCategory='444'; unitId=0"
-                  :class="unitCategory==='444'
-                    ? 'bg-[rgba(79,134,185,0.12)] text-[var(--ik-sea)] ring-1 ring-[rgba(79,134,185,0.4)]'
-                    : 'text-muted hover:text-ink'"
-                  class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all">
-            <i class="bi bi-water"></i> Frotas
-          </button>
-          <button type="button" @click="unitCategory='111'; unitId=0"
-                  :class="unitCategory==='111'
-                    ? 'bg-[rgba(187,81,67,0.12)] text-[var(--ik-bad)] ring-1 ring-[rgba(187,81,67,0.4)]'
-                    : 'text-muted hover:text-ink'"
-                  class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all">
-            <i class="bi bi-shield-shaded"></i> Tropas
-          </button>
-        </div>
-      </div>
-
-      <div class="rounded-[20px] border p-4"
-           style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);">
-        <div class="mb-3">
-          <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">ID da unidade</div>
-          <div class="mt-1 text-[11px] text-muted leading-relaxed">
-            <i class="bi bi-info-circle text-[9px]"></i>
-            O ID numérico do tipo da unidade. Você o encontra no Mercado Negro do jogo ao ver uma oferta —
-            é o número que aparece na URL após <code class="rounded bg-[var(--ik-line)] px-1">cargo_</code>.
-          </div>
-        </div>
-        <input type="number" min="1" x-model.number="unitId"
-               placeholder="ex: 6473"
-               class="w-full rounded-[12px] border px-3 py-2.5 text-sm font-bold text-ink outline-none focus:ring-2"
-               style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.95);">
-        <template x-if="unitId > 0">
-          <div class="mt-2 flex items-center gap-1.5 text-[11px]"
-               :style="unitCategory==='444' ? 'color: var(--ik-sea);' : 'color: var(--ik-bad);'">
-            <i :class="unitCategory==='444' ? 'bi bi-water' : 'bi bi-shield-shaded'"></i>
-            <span x-text="unitCategory==='444' ? 'Unidade marítima (frota)' : 'Unidade terrestre (tropa)'"></span>
-            <span class="text-muted"
-                  x-text="`ID ${unitId}`"></span>
+        <template x-if="scannedAt()">
+          <div class="flex items-center gap-1.5 text-[10px]" style="color: var(--ik-good);">
+            <i class="bi bi-check-circle"></i>
+            <span x-text="`${cityOffers().length} tipo(s) — escaneado ${scannedAt()}`"></span>
           </div>
         </template>
       </div>
+
+      {# No scan data #}
+      <template x-if="!hasOffers()">
+        <div class="rounded-[18px] border border-dashed px-4 py-5 text-center"
+             style="border-color: rgba(79,134,185,0.3); background: rgba(79,134,185,0.04);">
+          <i class="bi bi-search text-xl" style="color: var(--ik-sea); opacity: 0.45;"></i>
+          <p class="mt-2 text-sm font-semibold text-ink">Nenhuma oferta escaneada para esta cidade</p>
+          <p class="mt-1 text-xs text-muted">
+            Crie um job <strong>Verificar Ofertas (808)</strong> com esta cidade para carregar as ofertas disponíveis.
+          </p>
+        </div>
+      </template>
+
+      {# Unit offer cards #}
+      <template x-if="hasOffers()">
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+          <template x-for="u in cityOffers()" :key="`unit-${u.unit_id}`">
+            <button type="button"
+                    @click="selectUnit(u)"
+                    class="relative overflow-hidden rounded-[18px] border p-3 text-left transition-all duration-150"
+                    :class="selectedUnitId === u.unit_id
+                      ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_8px_22px_rgba(79,134,185,0.18)] translate-y-[-1px]'
+                      : 'hover:translate-y-[-1px] hover:border-[rgba(79,134,185,0.4)]'"
+                    :style="selectedUnitId === u.unit_id
+                      ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.08), rgba(255,255,255,0.90));'
+                      : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
+              <div class="absolute inset-x-0 top-0 h-10"
+                   style="background: linear-gradient(135deg, rgba(79,134,185,0.08), transparent);"></div>
+              <div class="relative flex flex-col gap-1.5">
+
+                {# Unit icon + name #}
+                <div class="flex items-center gap-2">
+                  <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border"
+                       style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                    <i class="bi text-base"
+                       :class="u.unit_category === 444 ? 'bi-water' : 'bi-shield-shaded'"
+                       :style="u.unit_category === 444 ? 'color: var(--ik-sea);' : 'color: var(--ik-bad);'"></i>
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <div class="truncate text-[11px] font-bold text-ink"
+                         x-text="u.unit_name || `ID ${u.unit_id}`"></div>
+                    <div class="text-[10px] text-muted"
+                         x-text="u.unit_category === 444 ? 'Frota' : 'Tropa'"></div>
+                  </div>
+                </div>
+
+                {# Stats #}
+                <div class="flex items-center justify-between gap-1">
+                  <div class="flex items-center gap-1">
+                    <img src="{% static 'game/resources/icon_gold.png' %}" alt="" class="h-3 w-3 object-contain">
+                    <span class="text-[10px] font-bold" style="color: var(--ik-gold);"
+                          x-text="new Intl.NumberFormat('pt-BR').format(u.min_price)"></span>
+                  </div>
+                  <div class="text-[10px] text-muted"
+                       x-text="`${u.total_amount} un`"></div>
+                </div>
+
+                <div class="text-[9px] text-muted"
+                     x-text="`${u.sellers.length} vendedor(es)`"></div>
+
+                {# Check #}
+                <div class="mt-0.5 flex justify-end">
+                  <span class="inline-flex h-5 w-5 items-center justify-center rounded-full border transition-all"
+                        :style="selectedUnitId === u.unit_id
+                          ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
+                          : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
+                    <i class="bi text-[9px]" :class="selectedUnitId === u.unit_id ? 'bi-check-lg' : 'bi-circle'"></i>
+                  </span>
+                </div>
+
+              </div>
+            </button>
+          </template>
+        </div>
+      </template>
+
     </section>
 
-    {# ── Step 3: Quantidade + Preço ── #}
-    <section x-show="selectedCityId && unitId > 0">
+    {# ── Step 3: Quantidade + Preço máximo ── #}
+    <section x-show="selectedCityId && selectedUnitId > 0">
       <div class="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
         <span class="inline-flex h-5 w-5 items-center justify-center rounded-full text-white text-[9px] font-bold mr-1.5"
               style="background: var(--ik-sea);">3</span>
@@ -194,7 +258,12 @@
              style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);">
           <div class="mb-3">
             <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">Quantidade</div>
-            <div class="mt-0.5 text-sm font-bold text-ink" x-text="`Unidade ID ${unitId}`"></div>
+            <div class="mt-0.5 text-sm font-bold text-ink"
+                 x-text="selectedUnit() ? (selectedUnit().unit_name || `ID ${selectedUnitId}`) : `Unidade ID ${selectedUnitId}`"></div>
+            <template x-if="selectedUnit()">
+              <div class="mt-0.5 text-[10px] text-muted"
+                   x-text="`${selectedUnit().total_amount} disponíveis em ${selectedUnit().sellers.length} oferta(s)`"></div>
+            </template>
           </div>
           <div class="flex items-center gap-2">
             <button type="button"
@@ -210,6 +279,12 @@
                     class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border text-sm font-bold text-ink transition-colors hover:bg-green-50"
                     style="border-color: rgba(219,201,167,0.9);">+</button>
           </div>
+          <template x-if="selectedUnit() && quantity > selectedUnit().total_amount">
+            <div class="mt-2 text-[10px]" style="color: var(--ik-warn);">
+              <i class="bi bi-exclamation-triangle"></i>
+              Quantidade acima do disponível — o runner comprará o máximo disponível.
+            </div>
+          </template>
         </div>
 
         {# Preço Máximo #}
@@ -220,6 +295,10 @@
             <div class="mt-0.5 flex items-center gap-1.5">
               <img src="{% static 'game/resources/icon_gold.png' %}" alt="Ouro" class="h-4 w-4 object-contain">
               <span class="text-sm font-bold text-ink">Ouro</span>
+              <template x-if="selectedUnit()">
+                <span class="text-[10px] text-muted"
+                      x-text="`· mín. mercado: ${new Intl.NumberFormat('pt-BR').format(selectedUnit().min_price)}`"></span>
+              </template>
             </div>
           </div>
           <div class="flex items-center gap-2">
@@ -230,33 +309,35 @@
             <input type="number" min="1"
                    x-model.number="maxPrice"
                    class="flex-1 rounded-[12px] border py-2 text-center text-sm font-bold text-ink outline-none focus:ring-2"
-                   style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.95);"
-                   placeholder="ex: 500">
+                   style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.95);">
             <button type="button"
                     @click="maxPrice += 100"
                     class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border text-sm font-bold text-ink transition-colors hover:bg-green-50"
                     style="border-color: rgba(219,201,167,0.9);">+</button>
           </div>
-          <div class="mt-2 space-y-1.5">
-            <div class="text-[10px] text-muted">
-              <i class="bi bi-info-circle text-[9px]"></i>
-              O agente busca a oferta mais barata e não compra acima deste preço.
+          <template x-if="selectedUnit()">
+            <div class="mt-2 flex gap-2">
+              <button type="button"
+                      @click="maxPrice = selectedUnit().min_price"
+                      class="flex-1 rounded-[10px] border px-2 py-1.5 text-[10px] font-semibold transition-colors hover:bg-[rgba(79,134,185,0.08)]"
+                      style="border-color: rgba(79,134,185,0.25); color: var(--ik-sea);">
+                Mín. mercado
+              </button>
             </div>
-            {# Total estimate #}
-            <template x-if="quantity > 0 && maxPrice > 0">
-              <div class="rounded-[10px] border px-2.5 py-2"
-                   style="border-color: rgba(201,156,78,0.3); background: rgba(201,156,78,0.07);">
-                <div class="text-[10px] uppercase tracking-[0.14em] text-muted">Custo máx. estimado</div>
-                <div class="mt-1 flex items-center gap-1.5">
-                  <img src="{% static 'game/resources/icon_gold.png' %}" alt="" class="h-4 w-4 object-contain">
-                  <span class="text-sm font-bold" style="color: var(--ik-gold);"
-                        x-text="new Intl.NumberFormat('pt-BR').format(quantity * maxPrice) + ' ouro'"></span>
-                </div>
-                <div class="mt-0.5 text-[10px] text-muted"
-                     x-text="`${quantity} × ${new Intl.NumberFormat('pt-BR').format(maxPrice)}`"></div>
+          </template>
+          <template x-if="quantity > 0 && maxPrice > 0">
+            <div class="mt-2.5 rounded-[10px] border px-2.5 py-2"
+                 style="border-color: rgba(201,156,78,0.3); background: rgba(201,156,78,0.07);">
+              <div class="text-[10px] uppercase tracking-[0.14em] text-muted">Custo máx. estimado</div>
+              <div class="mt-1 flex items-center gap-1.5">
+                <img src="{% static 'game/resources/icon_gold.png' %}" alt="" class="h-4 w-4 object-contain">
+                <span class="text-sm font-bold" style="color: var(--ik-gold);"
+                      x-text="new Intl.NumberFormat('pt-BR').format(quantity * maxPrice) + ' ouro'"></span>
               </div>
-            </template>
-          </div>
+              <div class="mt-0.5 text-[10px] text-muted"
+                   x-text="`${quantity} × ${new Intl.NumberFormat('pt-BR').format(maxPrice)}`"></div>
+            </div>
+          </template>
         </div>
 
       </div>
@@ -272,8 +353,9 @@
           <span class="text-muted">
             <span class="font-semibold text-ink" x-text="quantity"></span>
             ×
-            <span class="font-semibold text-ink" x-text="`unidade ${unitId}`"></span>
-            <span x-text="unitCategory === '444' ? ' (frota)' : ' (tropa)'"></span>
+            <span class="font-semibold text-ink"
+                  x-text="selectedUnit()?.unit_name || `unidade ${selectedUnitId}`"></span>
+            <span x-text="selectedUnitCategory === 444 ? ' (frota)' : ' (tropa)'"></span>
             via Branch Office de
             <span class="font-semibold text-ink" x-text="selectedCity()?.name || ''"></span>
             · máx

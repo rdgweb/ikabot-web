@@ -8,6 +8,7 @@ Action codes:
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 from game_client.actions.black_market import UNIT_TYPE_MARITIME, UNIT_TYPE_TERRESTRIAL
@@ -205,6 +206,17 @@ class BlackMarketSellUnitsRunner(BaseRunner):
                         game_account_id=ga_id,
                         city_id=city_id,
                         active_unit_ids=active_unit_ids,
+                        active_offers=[
+                            {
+                                "offer_id": _to_int(o.get("offer_id")),
+                                "unit_id": _to_int(o.get("unit_id")),
+                                "amount": _to_int(o.get("amount")),
+                                "price": _to_int(o.get("price")),
+                                "resource_name": str(o.get("resource_name") or ""),
+                            }
+                            for o in active_offers
+                            if _to_int(o.get("unit_id")) > 0
+                        ],
                     )
                 matched_offer = next(
                     (
@@ -314,10 +326,12 @@ class BlackMarketBuyUnitsRunner(BaseRunner):
         try:
             client = self.get_or_login_game_client(jid, aid, ga_id, creds)
 
-            bo_position = self._find_building_position(ga_id, buyer_city_id, "branchOffice")
-            if bo_position is None:
+            bo_info = self._find_building_info(ga_id, buyer_city_id, "branchOffice")
+            if not bo_info:
                 self.log(jid, "error", f"Branch Office nao encontrado na cidade {buyer_city_id}")
                 return RunnerResult(success=False, data={"error": "branch_office_not_found"})
+            bo_position = int(bo_info["position"])
+            market_range = math.ceil(int(bo_info.get("level") or 0) / 2) if int(bo_info.get("level") or 0) > 0 else None
 
             # If seller not specified, auto-discover cheapest matching offer
             seller_avatar = str(inputs.get("seller_avatar") or "")
@@ -329,6 +343,7 @@ class BlackMarketBuyUnitsRunner(BaseRunner):
                     buyer_city_id=buyer_city_id,
                     bo_position=bo_position,
                     unit_category=unit_category,
+                    market_range=market_range,
                 )
                 matching = [
                     o for o in offers
@@ -363,6 +378,8 @@ class BlackMarketBuyUnitsRunner(BaseRunner):
                     return RunnerResult(success=False, data={"error": "offer_not_found"})
                 actual_price = _to_int(unit_offer.get("price"))
                 available_qty = _to_int(unit_offer.get("amount"))
+                seller_avatar = seller_avatar or str(offer_details.get("seller_avatar") or "")
+                seller_city_name = seller_city_name or str(offer_details.get("seller_city_name") or "")
 
             if actual_price > max_price:
                 self.log(jid, "warn", f"Preco {actual_price} acima do limite {max_price}")
@@ -413,6 +430,86 @@ class BlackMarketBuyUnitsRunner(BaseRunner):
             self.log(jid, "error", f"Mercado Negro compra falhou: {exc}")
             return RunnerResult(success=False, data={"error": str(exc)})
 
+    def _find_building_info(self, ga_id: str, city_id: int, building_type: str) -> dict[str, Any] | None:
+        try:
+            snapshot = self.hub.get_snapshot(game_account_id=ga_id)
+            cities = snapshot.get("cities") or []
+            for city in cities:
+                if str(city.get("id")) == str(city_id):
+                    for building in (city.get("buildings") or []):
+                        if str(building.get("building") or "").strip() == building_type:
+                            return {
+                                "position": int(building.get("position", -1)),
+                                "level": int(building.get("level") or 0),
+                            }
+        except Exception as exc:
+            logger.debug("find_building_position failed: %s", exc)
+        return None
+
+
+@register_runner(808)
+class CheckBlackMarketOffersRunner(BaseRunner):
+    """Scan available unit offers at a buyer city's Branch Office and save to hub.
+
+    Inputs:
+        buyer_city_id  — city with Branch Office (required)
+        unit_category  — 444 (maritime), 111 (terrestrial), or 0 (both, default)
+    """
+
+    def execute(self, job: dict[str, Any]) -> RunnerResult:
+        jid = job["job_id"]
+        aid = job["account_id"]
+        ga_id = job.get("game_account_id", "")
+        inputs = job.get("inputs") or {}
+
+        buyer_city_id = _to_int(inputs.get("buyer_city_id"))
+        unit_category = _to_int(inputs.get("unit_category"), 0)
+
+        if not buyer_city_id:
+            return RunnerResult(success=False, data={"error": "missing_inputs: buyer_city_id required"})
+
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        if not creds:
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
+
+        try:
+            client = self.get_or_login_game_client(jid, aid, ga_id, creds)
+
+            bo_position = self._find_building_position(ga_id, buyer_city_id, "branchOffice")
+            if bo_position is None:
+                self.log(jid, "error", f"Branch Office nao encontrado na cidade {buyer_city_id}")
+                return RunnerResult(success=False, data={"error": "branch_office_not_found"})
+
+            self.log(jid, "info", f"Buscando ofertas no Branch Office pos={bo_position} cidade={buyer_city_id}")
+
+            if unit_category == 0:
+                maritime = client.get_available_unit_offers(
+                    buyer_city_id=buyer_city_id, bo_position=bo_position, unit_category=UNIT_TYPE_MARITIME)
+                terrestrial = client.get_available_unit_offers(
+                    buyer_city_id=buyer_city_id, bo_position=bo_position, unit_category=UNIT_TYPE_TERRESTRIAL)
+                offers = maritime + terrestrial
+            else:
+                offers = client.get_available_unit_offers(
+                    buyer_city_id=buyer_city_id, bo_position=bo_position, unit_category=unit_category)
+
+            self.log(jid, "info", f"Encontradas {len(offers)} ofertas")
+
+            self.hub.save_bm_available_offers(
+                game_account_id=ga_id,
+                job_id=jid,
+                buyer_city_id=buyer_city_id,
+                offers=offers,
+            )
+
+            self.save_game_client(ga_id, client)
+            return RunnerResult(success=True, data={"offers_found": len(offers), "buyer_city_id": buyer_city_id})
+
+        except Exception as exc:
+            if self.is_network_error(exc):
+                return self.network_error_result(jid, exc)
+            self.log(jid, "error", f"Verificar ofertas falhou: {exc}")
+            return RunnerResult(success=False, data={"error": str(exc)})
+
     def _find_building_position(self, ga_id: str, city_id: int, building_type: str) -> int | None:
         try:
             snapshot = self.hub.get_snapshot(game_account_id=ga_id)
@@ -435,6 +532,9 @@ class BlackMarketCancelOfferRunner(BaseRunner):
         offer_hub_id   — hub UUID of the BlackMarketOffer record
         game_offer_id  — game's numeric offer ID (from offerId in URL)
         city_id        — city where the Black Market is
+        unit_id        — optional fallback matcher when game_offer_id is missing
+        amount         — optional fallback matcher when game_offer_id is missing
+        unit_price     — optional fallback matcher when game_offer_id is missing
     """
 
     def execute(self, job: dict[str, Any]) -> RunnerResult:
@@ -446,9 +546,12 @@ class BlackMarketCancelOfferRunner(BaseRunner):
         offer_hub_id = str(inputs.get("offer_hub_id") or "").strip()
         game_offer_id = _to_int(inputs.get("game_offer_id"))
         city_id = _to_int(inputs.get("city_id"))
+        unit_id = _to_int(inputs.get("unit_id"))
+        amount = _to_int(inputs.get("amount"))
+        unit_price = _to_int(inputs.get("unit_price"))
 
-        if not offer_hub_id or not game_offer_id or not city_id:
-            return RunnerResult(success=False, data={"error": "missing_inputs: offer_hub_id, game_offer_id, city_id required"})
+        if not offer_hub_id or not city_id:
+            return RunnerResult(success=False, data={"error": "missing_inputs: offer_hub_id, city_id required"})
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
         if not creds:
@@ -461,6 +564,25 @@ class BlackMarketCancelOfferRunner(BaseRunner):
             if position is None:
                 self.log(jid, "error", f"Black Market nao encontrado na cidade {city_id}")
                 return RunnerResult(success=False, data={"error": "black_market_not_found"})
+
+            if not game_offer_id:
+                self.log(jid, "info", "game_offer_id ausente; resolvendo oferta ativa no jogo")
+                active_offers = client.get_my_black_market_offers(city_id=city_id, position=position)
+                matched_offer = next(
+                    (
+                        o for o in active_offers
+                        if (not unit_id or _to_int(o.get("unit_id")) == unit_id)
+                        and (not unit_price or _to_int(o.get("price")) == unit_price)
+                        and (not amount or _to_int(o.get("amount")) == amount)
+                        and _to_int(o.get("offer_id")) > 0
+                    ),
+                    None,
+                )
+                if not matched_offer:
+                    self.log(jid, "error", "Nao foi possivel resolver a oferta ativa no jogo")
+                    return RunnerResult(success=False, data={"error": "game_offer_id_not_found_live"})
+                game_offer_id = _to_int(matched_offer.get("offer_id"))
+                self.log(jid, "info", f"game_offer_id resolvido ao vivo: {game_offer_id}")
 
             self.log(jid, "info", f"Removendo oferta game_offer_id={game_offer_id} da cidade {city_id} pos={position}")
             client.cancel_black_market_offer(city_id=city_id, position=position, offer_id=game_offer_id)

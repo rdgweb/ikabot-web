@@ -646,6 +646,81 @@ def _black_market_form_context(cities, snapshot):
     }
 
 
+def _bm_available_offers_context(cities, snapshot):
+    """Build available offers grouped by buyer_city_id for ac=804 form."""
+    from apps.market.models import BlackMarketAvailableOffer
+    from apps.market.models import BlackMarketUnitQuote
+
+    if not snapshot:
+        return {"offers_by_city": {}, "scanned_at_by_city": {}}
+
+    bo_city_ids = []
+    for city in (cities or []):
+        for b in (city.get("buildings") or []):
+            if isinstance(b, dict) and str(b.get("building") or "").strip() == "branchOffice":
+                bo_city_ids.append(str(city.get("id") or ""))
+                break
+
+    if not bo_city_ids:
+        return {"offers_by_city": {}, "scanned_at_by_city": {}}
+
+    # unit_name lookup from most-recent quotes (sell side has names)
+    unit_names: dict[int, str] = {}
+    try:
+        for q in (BlackMarketUnitQuote.objects
+                  .filter(game_account=snapshot.game_account)
+                  .order_by("unit_id", "-captured_at")
+                  .values("unit_id", "unit_name")):
+            uid = q["unit_id"]
+            if uid not in unit_names and q["unit_name"]:
+                unit_names[uid] = q["unit_name"]
+    except Exception:
+        pass
+
+    offers_by_city: dict[str, dict] = {}
+    scanned_at_by_city: dict[str, str] = {}
+    try:
+        qs = (BlackMarketAvailableOffer.objects
+              .filter(game_account=snapshot.game_account, buyer_city_id__in=bo_city_ids)
+              .order_by("unit_id", "price_per_unit")
+              .values("buyer_city_id", "seller_city_id", "seller_city_name", "seller_avatar",
+                      "unit_id", "unit_category", "amount", "price_per_unit", "scanned_at"))
+        for row in qs:
+            ckey = str(row["buyer_city_id"])
+            uid = row["unit_id"]
+            if ckey not in offers_by_city:
+                offers_by_city[ckey] = {}
+            if uid not in offers_by_city[ckey]:
+                offers_by_city[ckey][uid] = {
+                    "unit_id": uid,
+                    "unit_name": unit_names.get(uid, ""),
+                    "unit_category": row["unit_category"],
+                    "sellers": [],
+                    "min_price": row["price_per_unit"],
+                    "total_amount": 0,
+                }
+            offers_by_city[ckey][uid]["sellers"].append({
+                "seller_city_id": row["seller_city_id"],
+                "seller_city_name": row["seller_city_name"],
+                "seller_avatar": row["seller_avatar"],
+                "amount": row["amount"],
+                "price_per_unit": row["price_per_unit"],
+            })
+            offers_by_city[ckey][uid]["total_amount"] += row["amount"]
+            if row["scanned_at"] and ckey not in scanned_at_by_city:
+                scanned_at_by_city[ckey] = row["scanned_at"].strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        pass
+
+    # Convert inner dict to list sorted by min_price
+    offers_by_city_list = {
+        ckey: sorted(units.values(), key=lambda u: u["min_price"])
+        for ckey, units in offers_by_city.items()
+    }
+
+    return {"offers_by_city": offers_by_city_list, "scanned_at_by_city": scanned_at_by_city}
+
+
 def _market_form_context(cities):
     market_cities = []
     for city in cities or []:
@@ -1354,6 +1429,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities):
         "market_ui": _market_form_context(cities),
         "training_ui": _training_form_context(snapshot, cities),
         "black_market_ui": _black_market_form_context(cities, snapshot),
+        "bm_buy_ui": _bm_available_offers_context(cities, snapshot),
     }
     if int(action_code) == 15:
         ctx.update(_spy_context(ga, cities, getattr(form, "initial", {})))

@@ -204,6 +204,44 @@ class BlackMarketUnitQuote(UUIDTimestampModel):
         )
 
 
+class BlackMarketAvailableOffer(UUIDTimestampModel):
+    """Available unit offers seen at a buyer's Branch Office (scanned by runner 808).
+
+    Cleared and replaced on each scan for the same game_account + buyer_city_id.
+    """
+
+    game_account = models.ForeignKey(
+        "accounts.GameAccount",
+        on_delete=models.CASCADE,
+        related_name="bm_available_offers",
+    )
+    buyer_city_id = models.IntegerField()
+    seller_city_id = models.IntegerField()
+    seller_city_name = models.CharField(max_length=128, blank=True, default="")
+    seller_avatar = models.CharField(max_length=128, blank=True, default="")
+    unit_id = models.IntegerField()
+    unit_category = models.IntegerField(default=444)
+    amount = models.IntegerField(default=0)
+    price_per_unit = models.IntegerField(default=0)
+    scanned_at = models.DateTimeField(null=True, blank=True)
+    job = models.ForeignKey(
+        "jobs.Job", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+
+    class Meta:
+        ordering = ["price_per_unit"]
+        indexes = [
+            models.Index(fields=["game_account", "buyer_city_id"]),
+            models.Index(fields=["unit_id", "unit_category"]),
+        ]
+
+    def __str__(self):
+        return (
+            f"BMAvailOffer unit={self.unit_id} amt={self.amount} "
+            f"price={self.price_per_unit} from={self.seller_avatar}"
+        )
+
+
 class ConstructionMarketIntervention(UUIDTimestampModel):
     STATUS_CHOICES = [
         ("pending", "Pendente"),

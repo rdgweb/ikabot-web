@@ -426,12 +426,14 @@ class HubClient:
         game_account_id: str,
         city_id: int,
         active_unit_ids: list[int],
+        active_offers: list[dict[str, Any]] | None = None,
     ) -> dict:
         """POST /api/agent/market/bm-offers/sync/ — reconcile active offers."""
         return self._post("/api/agent/market/bm-offers/sync", {
             "game_account_id": game_account_id,
             "city_id": city_id,
             "active_unit_ids": active_unit_ids,
+            "active_offers": active_offers or [],
         })
 
     def save_bm_quotes(
@@ -456,6 +458,22 @@ class HubClient:
         """GET /api/agent/market/bm-offers/prices/ — return avg price per unit."""
         resp = self._get("/api/agent/market/bm-offers/prices")
         return resp.get("prices", [])
+
+    def save_bm_available_offers(
+        self,
+        *,
+        game_account_id: str,
+        job_id: str,
+        buyer_city_id: int,
+        offers: list[dict],
+    ) -> dict:
+        """POST /api/agent/market/bm-available-offers/ — replace scanned offers for buyer city."""
+        return self._post("/api/agent/market/bm-available-offers", {
+            "game_account_id": game_account_id,
+            "job_id": job_id,
+            "buyer_city_id": buyer_city_id,
+            "offers": offers,
+        })
 
     # ── Blackbox & Captcha (proxied via hub → ikabotapi) ──
 

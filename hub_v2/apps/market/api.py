@@ -24,7 +24,7 @@ from apps.jobs.models import Job
 from core.auth.backends import AgentTokenAuthentication
 from core.auth.permissions import IsAgent
 
-from .models import BlackMarketOffer, BlackMarketUnitQuote, ConstructionMarketIntervention, InternalMarketOrder
+from .models import BlackMarketAvailableOffer, BlackMarketOffer, BlackMarketUnitQuote, ConstructionMarketIntervention, InternalMarketOrder
 from .services import (
     complete_internal_order,
     create_buy_job,
@@ -299,6 +299,7 @@ class BlackMarketOfferSyncView(APIView):
 
         # active_unit_ids = set of unit_ids currently in the game BM
         active_unit_ids = set(int(x) for x in (data.get("active_unit_ids") or []))
+        active_offers = data.get("active_offers") or []
         from django.utils import timezone
 
         # mark hub-tracked offers as sold/cancelled if no longer listed
@@ -311,7 +312,68 @@ class BlackMarketOfferSyncView(APIView):
                 offer.save(update_fields=["status", "closed_at", "updated_at"])
                 closed += 1
 
-        return Response({"ok": True, "closed": closed}, status=status.HTTP_200_OK)
+        created = 0
+        updated_ids = 0
+        for raw in active_offers:
+            try:
+                unit_id = int(raw.get("unit_id") or 0)
+                amount = int(raw.get("amount") or 0)
+                unit_price = int(raw.get("price") or 0)
+                game_offer_id = int(raw.get("offer_id") or 0) or None
+            except Exception:
+                continue
+            if unit_id <= 0 or amount <= 0 or unit_price <= 0:
+                continue
+
+            offer = None
+            if game_offer_id:
+                offer = BlackMarketOffer.objects.filter(
+                    game_account=ga,
+                    city_id=int(city_id),
+                    game_offer_id=game_offer_id,
+                ).first()
+            if offer is None:
+                offer = BlackMarketOffer.objects.filter(
+                    game_account=ga,
+                    city_id=int(city_id),
+                    status="active",
+                    unit_id=unit_id,
+                    amount=amount,
+                    unit_price=unit_price,
+                ).first()
+
+            if offer is None:
+                BlackMarketOffer.objects.create(
+                    game_account=ga,
+                    city_id=int(city_id),
+                    city_name="",
+                    unit_id=unit_id,
+                    unit_name="",
+                    amount=amount,
+                    unit_price=unit_price,
+                    offer_resource=5,
+                    status="active",
+                    game_offer_id=game_offer_id,
+                    listed_at=timezone.now(),
+                )
+                created += 1
+                continue
+
+            changed_fields: list[str] = []
+            if game_offer_id and offer.game_offer_id != game_offer_id:
+                offer.game_offer_id = game_offer_id
+                changed_fields.append("game_offer_id")
+            if offer.status != "active":
+                offer.status = "active"
+                offer.closed_at = None
+                changed_fields.extend(["status", "closed_at"])
+            if changed_fields:
+                changed_fields.append("updated_at")
+                offer.save(update_fields=changed_fields)
+                if "game_offer_id" in changed_fields:
+                    updated_ids += 1
+
+        return Response({"ok": True, "closed": closed, "created": created, "updated_ids": updated_ids}, status=status.HTTP_200_OK)
 
 
 class BlackMarketOfferPriceView(APIView):
@@ -399,6 +461,56 @@ class BlackMarketOfferCloseByRunnerView(APIView):
             offer.save(update_fields=["status", "closed_at", "updated_at"])
 
         return Response({"ok": True}, status=status.HTTP_200_OK)
+
+
+class BlackMarketAvailableOfferSaveView(APIView):
+    """POST /api/agent/market/bm-available-offers/ — replace scanned offers for a buyer city."""
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request):
+        from django.utils import timezone
+        data = request.data
+        ga_id = data.get("game_account_id")
+        buyer_city_id = data.get("buyer_city_id")
+        offers = data.get("offers") or []
+
+        if not ga_id or not buyer_city_id:
+            return Response({"error": "game_account_id and buyer_city_id required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            ga = GameAccount.objects.get(pk=ga_id)
+        except GameAccount.DoesNotExist:
+            return Response({"error": "GameAccount not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        job = None
+        job_id = data.get("job_id")
+        if job_id:
+            job = Job.objects.filter(pk=job_id).first()
+
+        now = timezone.now()
+        BlackMarketAvailableOffer.objects.filter(game_account=ga, buyer_city_id=int(buyer_city_id)).delete()
+
+        created = 0
+        for item in offers:
+            if not isinstance(item, dict):
+                continue
+            BlackMarketAvailableOffer.objects.create(
+                game_account=ga,
+                buyer_city_id=int(buyer_city_id),
+                seller_city_id=int(item.get("seller_city_id", 0)),
+                seller_city_name=str(item.get("seller_city_name", "")),
+                seller_avatar=str(item.get("seller_avatar", "")),
+                unit_id=int(item.get("unit_id", 0)),
+                unit_category=int(item.get("unit_category", 444)),
+                amount=int(item.get("amount", 0)),
+                price_per_unit=int(item.get("price_per_unit", 0)),
+                scanned_at=now,
+                job=job,
+            )
+            created += 1
+
+        return Response({"ok": True, "created": created}, status=status.HTTP_201_CREATED)
 
 
 class ConstructionMarketInterventionRequestView(APIView):
