@@ -19,6 +19,10 @@
        selectedUnitCategory: 444,
        quantity: 1,
        maxPrice: 0,
+       scanning: false,
+       scanJobId: null,
+       scanError: null,
+       _scanTimer: null,
        selectedCity() { return this.cities.find(c => String(c.id) === String(this.selectedCityId)); },
        cityOffers() {
          if (!this.selectedCityId) return [];
@@ -32,7 +36,45 @@
          this.selectedUnitCategory = u.unit_category;
          if (u.min_price > 0) this.maxPrice = u.min_price;
        },
-       isReady() { return this.selectedCityId && this.selectedUnitId > 0 && this.quantity > 0 && this.maxPrice > 0; }
+       isReady() { return this.selectedCityId && this.selectedUnitId > 0 && this.quantity > 0 && this.maxPrice > 0; },
+       async startScan() {
+         if (this.scanning || !this.selectedCityId) return;
+         this.scanning = true;
+         this.scanError = null;
+         this.scanJobId = null;
+         const csrf = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+         const body = new FormData();
+         body.append('csrfmiddlewaretoken', csrf);
+         body.append('ga', '{{ game_account.pk }}');
+         body.append('city_id', this.selectedCityId);
+         try {
+           const resp = await fetch('{% url 'jobs:bm-scan-create' %}', {method: 'POST', body});
+           const data = await resp.json();
+           if (data.error) { this.scanning = false; this.scanError = data.error; return; }
+           this.scanJobId = data.job_id;
+           this._pollScan();
+         } catch(e) { this.scanning = false; this.scanError = 'Erro ao criar job de scan.'; }
+       },
+       _pollScan() {
+         if (this._scanTimer) clearInterval(this._scanTimer);
+         this._scanTimer = setInterval(async () => {
+           if (!this.scanJobId) { clearInterval(this._scanTimer); return; }
+           try {
+             const resp = await fetch('{% url 'jobs:bm-scan-status' %}?job_id=' + this.scanJobId);
+             const data = await resp.json();
+             if (data.status === 'running') return;
+             clearInterval(this._scanTimer);
+             this.scanning = false;
+             if (data.status === 'done') {
+               this.offersData[String(this.selectedCityId)] = data.offers;
+               if (data.scanned_at) this.scannedData[String(this.selectedCityId)] = data.scanned_at;
+               this.selectedUnitId = 0; this.maxPrice = 0;
+             } else {
+               this.scanError = data.message || 'Erro ao escanear.';
+             }
+           } catch(e) { clearInterval(this._scanTimer); this.scanning = false; this.scanError = 'Erro ao verificar status.'; }
+         }, 3000);
+       }
      }">
 
   {# Hidden form fields #}
@@ -159,22 +201,68 @@
           Unidade disponível
         </div>
         <template x-if="scannedAt()">
-          <div class="flex items-center gap-1.5 text-[10px]" style="color: var(--ik-good);">
-            <i class="bi bi-check-circle"></i>
-            <span x-text="`${cityOffers().length} tipo(s) — escaneado ${scannedAt()}`"></span>
+          <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1.5 text-[10px]" style="color: var(--ik-good);">
+              <i class="bi bi-check-circle"></i>
+              <span x-text="`${cityOffers().length} tipo(s) — escaneado ${scannedAt()}`"></span>
+            </div>
+            {# Stale scan button — appears if scan is older than 5h #}
+            <template x-if="(()=>{ const s=scannedAt(); if(!s) return false; const [d,t]=s.split(' '); const [dd,mm,yy]=d.split('/'); const [hh,mi]=t.split(':'); return (Date.now() - new Date(yy,mm-1,dd,hh,mi).getTime()) > 5*3600000; })()">
+              <button type="button"
+                      @click="startScan()"
+                      :disabled="scanning"
+                      class="flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all hover:shadow-sm disabled:opacity-50"
+                      style="border-color: rgba(201,156,78,0.4); color: var(--ik-gold); background: rgba(201,156,78,0.07);"
+                      title="Escanear novamente">
+                <i class="bi bi-arrow-clockwise text-[9px]"></i>
+                Atualizar
+              </button>
+            </template>
           </div>
         </template>
       </div>
 
-      {# No scan data #}
-      <template x-if="!hasOffers()">
+      {# No scan data — scanning state #}
+      <template x-if="scanning">
+        <div class="rounded-[18px] border px-4 py-6 text-center"
+             style="border-color: rgba(79,134,185,0.35); background: rgba(79,134,185,0.05);">
+          <div class="flex justify-center mb-3">
+            <svg class="animate-spin h-6 w-6" style="color: var(--ik-sea);" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+          </div>
+          <p class="text-sm font-semibold text-ink">Escaneando Branch Office...</p>
+          <p class="mt-1 text-xs text-muted">Aguarde enquanto o agente verifica as ofertas disponíveis.</p>
+        </div>
+      </template>
+
+      {# No scan data — empty state with scan button #}
+      <template x-if="!hasOffers() && !scanning">
         <div class="rounded-[18px] border border-dashed px-4 py-5 text-center"
              style="border-color: rgba(79,134,185,0.3); background: rgba(79,134,185,0.04);">
           <i class="bi bi-search text-xl" style="color: var(--ik-sea); opacity: 0.45;"></i>
           <p class="mt-2 text-sm font-semibold text-ink">Nenhuma oferta escaneada para esta cidade</p>
-          <p class="mt-1 text-xs text-muted">
-            Crie um job <strong>Verificar Ofertas (808)</strong> com esta cidade para carregar as ofertas disponíveis.
-          </p>
+
+          <template x-if="!scanError">
+            <p class="mt-1 text-xs text-muted">
+              Clique em <strong>Escanear agora</strong> para verificar as ofertas disponíveis no Branch Office.
+            </p>
+          </template>
+          <template x-if="scanError">
+            <p class="mt-1 text-xs" style="color: var(--ik-bad);">
+              <i class="bi bi-exclamation-triangle"></i>
+              <span x-text="scanError"></span>
+            </p>
+          </template>
+
+          <button type="button"
+                  @click="startScan()"
+                  class="mt-3 inline-flex items-center gap-1.5 rounded-[12px] border px-4 py-2 text-xs font-semibold transition-all hover:shadow-md"
+                  style="border-color: var(--ik-sea); color: var(--ik-sea); background: rgba(79,134,185,0.07);">
+            <i class="bi bi-search"></i>
+            Escanear agora
+          </button>
         </div>
       </template>
 
@@ -199,9 +287,14 @@
                 <div class="flex items-center gap-2">
                   <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border"
                        style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
-                    <i class="bi text-base"
-                       :class="u.unit_category === 444 ? 'bi-water' : 'bi-shield-shaded'"
-                       :style="u.unit_category === 444 ? 'color: var(--ik-sea);' : 'color: var(--ik-bad);'"></i>
+                    <template x-if="u.unit_icon">
+                      <img :src="u.unit_icon" :alt="u.unit_name" class="h-7 w-7 object-contain">
+                    </template>
+                    <template x-if="!u.unit_icon">
+                      <i class="bi text-base"
+                         :class="u.unit_category === 444 ? 'bi-water' : 'bi-shield-shaded'"
+                         :style="u.unit_category === 444 ? 'color: var(--ik-sea);' : 'color: var(--ik-bad);'"></i>
+                    </template>
                   </div>
                   <div class="min-w-0 flex-1">
                     <div class="truncate text-[11px] font-bold text-ink"
@@ -222,8 +315,16 @@
                        x-text="`${u.total_amount} un`"></div>
                 </div>
 
-                <div class="text-[9px] text-muted"
-                     x-text="`${u.sellers.length} vendedor(es)`"></div>
+                <div class="flex flex-wrap gap-x-1 gap-y-0.5 mt-0.5">
+                  <template x-for="(s, si) in u.sellers.slice(0,3)" :key="si">
+                    <span class="text-[9px] text-muted leading-tight truncate max-w-[4.5rem]"
+                          :title="s.seller_avatar + ' (' + s.seller_city_name + ')'"
+                          x-text="s.seller_avatar || s.seller_city_name"></span>
+                  </template>
+                  <template x-if="u.sellers.length > 3">
+                    <span class="text-[9px] text-muted" x-text="`+${u.sellers.length - 3}`"></span>
+                  </template>
+                </div>
 
                 {# Check #}
                 <div class="mt-0.5 flex justify-end">

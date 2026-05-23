@@ -352,18 +352,68 @@ class BlackMarketBuyUnitsRunner(BaseRunner):
                 if not matching:
                     self.log(jid, "warn", f"Nenhuma oferta para unit={unit_id} com preco <= {max_price}")
                     return RunnerResult(success=False, data={"error": "no_offers_found", "unit_id": unit_id, "max_price": max_price})
-                # Pick cheapest with enough qty, else cheapest overall
+
+                # Sort by price asc, then qty desc — buy from multiple sellers if needed
                 matching.sort(key=lambda o: (_to_int(o.get("price_per_unit")), -_to_int(o.get("amount"))))
-                best = next(
-                    (o for o in matching if _to_int(o.get("amount")) >= quantity),
-                    matching[0],
+
+                remaining = quantity
+                total_bought = 0
+                total_cost = 0
+                purchase_log = []
+
+                for offer in matching:
+                    if remaining <= 0:
+                        break
+                    s_city_id = _to_int(offer.get("seller_city_id"))
+                    s_avatar = str(offer.get("seller_avatar") or "")
+                    s_city_name = str(offer.get("seller_city_name") or "")
+                    o_price = _to_int(offer.get("price_per_unit"))
+                    o_qty = _to_int(offer.get("amount"))
+                    buy_qty = min(remaining, o_qty)
+                    if buy_qty <= 0:
+                        continue
+                    num_transporters = max(1, -(-buy_qty // 5))
+                    self.log(
+                        jid, "info",
+                        f"Comprando {buy_qty}x unidade {unit_id} de {s_city_name or f'id={s_city_id}'} "
+                        f"por {o_price} ouro/un | {num_transporters} navios",
+                    )
+                    try:
+                        client.buy_units_black_market(
+                            buyer_city_id=buyer_city_id,
+                            bo_position=bo_position,
+                            seller_city_id=s_city_id,
+                            seller_avatar=s_avatar,
+                            seller_city_name=s_city_name,
+                            unit_id=unit_id,
+                            quantity=buy_qty,
+                            unit_price=o_price,
+                            unit_category=unit_category,
+                            num_transporters=num_transporters,
+                        )
+                        remaining -= buy_qty
+                        total_bought += buy_qty
+                        total_cost += buy_qty * o_price
+                        purchase_log.append({"seller": s_city_name or str(s_city_id), "qty": buy_qty, "price": o_price})
+                    except Exception as buy_exc:
+                        self.log(jid, "warn", f"Compra de {s_city_name} falhou: {buy_exc}. Tentando proximo vendedor.")
+
+                if total_bought == 0:
+                    return RunnerResult(success=False, data={"error": "all_purchases_failed"})
+                if remaining > 0:
+                    self.log(jid, "warn", f"Comprado {total_bought}/{quantity} — {remaining} unidades nao disponiveis no mercado")
+
+                self.save_game_client(ga_id, client)
+                return RunnerResult(
+                    success=True,
+                    data={
+                        "unit_id": unit_id,
+                        "quantity_requested": quantity,
+                        "quantity_bought": total_bought,
+                        "total_cost": total_cost,
+                        "purchases": purchase_log,
+                    },
                 )
-                seller_city_id = _to_int(best.get("seller_city_id"))
-                seller_avatar = str(best.get("seller_avatar") or "")
-                seller_city_name = str(best.get("seller_city_name") or "")
-                actual_price = _to_int(best.get("price_per_unit"))
-                available_qty = _to_int(best.get("amount"))
-                self.log(jid, "info", f"Melhor oferta: {available_qty}x por {actual_price} ouro de {seller_avatar} ({seller_city_name}, id={seller_city_id})")
             else:
                 # Specific seller — verify price via takeOffer details
                 offer_details = client.get_unit_offer_details(
@@ -381,48 +431,45 @@ class BlackMarketBuyUnitsRunner(BaseRunner):
                 seller_avatar = seller_avatar or str(offer_details.get("seller_avatar") or "")
                 seller_city_name = seller_city_name or str(offer_details.get("seller_city_name") or "")
 
-            if actual_price > max_price:
-                self.log(jid, "warn", f"Preco {actual_price} acima do limite {max_price}")
-                return RunnerResult(success=False, data={"error": "price_above_limit", "actual_price": actual_price})
+                if actual_price > max_price:
+                    self.log(jid, "warn", f"Preco {actual_price} acima do limite {max_price}")
+                    return RunnerResult(success=False, data={"error": "price_above_limit", "actual_price": actual_price})
 
-            buy_qty = min(quantity, available_qty)
-            if buy_qty <= 0:
-                return RunnerResult(success=False, data={"error": "no_units_available"})
+                buy_qty = min(quantity, available_qty)
+                if buy_qty <= 0:
+                    return RunnerResult(success=False, data={"error": "no_units_available"})
 
-            # Estimate transporters: 5 units per ship (from captured game data)
-            num_transporters = max(1, -(-buy_qty // 5))
-
-            self.log(
-                jid, "info",
-                f"Comprando {buy_qty}x unidade {unit_id} de {seller_city_name or f'id={seller_city_id}'} "
-                f"por {actual_price} ouro/un | {num_transporters} navios"
-            )
-
-            client.buy_units_black_market(
-                buyer_city_id=buyer_city_id,
-                bo_position=bo_position,
-                seller_city_id=seller_city_id,
-                seller_avatar=seller_avatar,
-                seller_city_name=seller_city_name,
-                unit_id=unit_id,
-                quantity=buy_qty,
-                unit_price=actual_price,
-                unit_category=unit_category,
-                num_transporters=num_transporters,
-            )
-
-            self.save_game_client(ga_id, client)
-            return RunnerResult(
-                success=True,
-                data={
-                    "unit_id": unit_id,
-                    "quantity": buy_qty,
-                    "unit_price": actual_price,
-                    "total_cost": buy_qty * actual_price,
-                    "seller_city_id": seller_city_id,
-                    "seller_avatar": seller_avatar,
-                },
-            )
+                num_transporters = max(1, -(-buy_qty // 5))
+                self.log(
+                    jid, "info",
+                    f"Comprando {buy_qty}x unidade {unit_id} de {seller_city_name or f'id={seller_city_id}'} "
+                    f"por {actual_price} ouro/un | {num_transporters} navios",
+                )
+                client.buy_units_black_market(
+                    buyer_city_id=buyer_city_id,
+                    bo_position=bo_position,
+                    seller_city_id=seller_city_id,
+                    seller_avatar=seller_avatar,
+                    seller_city_name=seller_city_name,
+                    unit_id=unit_id,
+                    quantity=buy_qty,
+                    unit_price=actual_price,
+                    unit_category=unit_category,
+                    num_transporters=num_transporters,
+                )
+                self.save_game_client(ga_id, client)
+                return RunnerResult(
+                    success=True,
+                    data={
+                        "unit_id": unit_id,
+                        "quantity_requested": quantity,
+                        "quantity_bought": buy_qty,
+                        "unit_price": actual_price,
+                        "total_cost": buy_qty * actual_price,
+                        "seller_city_id": seller_city_id,
+                        "seller_avatar": seller_avatar,
+                    },
+                )
 
         except Exception as exc:
             if self.is_network_error(exc):
@@ -475,22 +522,40 @@ class CheckBlackMarketOffersRunner(BaseRunner):
         try:
             client = self.get_or_login_game_client(jid, aid, ga_id, creds)
 
-            bo_position = self._find_building_position(ga_id, buyer_city_id, "branchOffice")
-            if bo_position is None:
+            bo_info = self._find_building_info(ga_id, buyer_city_id, "branchOffice")
+            if not bo_info:
                 self.log(jid, "error", f"Branch Office nao encontrado na cidade {buyer_city_id}")
                 return RunnerResult(success=False, data={"error": "branch_office_not_found"})
+            bo_position = int(bo_info["position"])
+            market_range = math.ceil(int(bo_info.get("level") or 0) / 2) if int(bo_info.get("level") or 0) > 0 else None
 
-            self.log(jid, "info", f"Buscando ofertas no Branch Office pos={bo_position} cidade={buyer_city_id}")
+            self.log(
+                jid,
+                "info",
+                f"Buscando ofertas no Branch Office pos={bo_position} cidade={buyer_city_id} range={market_range or 'default'}",
+            )
 
             if unit_category == 0:
                 maritime = client.get_available_unit_offers(
-                    buyer_city_id=buyer_city_id, bo_position=bo_position, unit_category=UNIT_TYPE_MARITIME)
+                    buyer_city_id=buyer_city_id,
+                    bo_position=bo_position,
+                    unit_category=UNIT_TYPE_MARITIME,
+                    market_range=market_range,
+                )
                 terrestrial = client.get_available_unit_offers(
-                    buyer_city_id=buyer_city_id, bo_position=bo_position, unit_category=UNIT_TYPE_TERRESTRIAL)
+                    buyer_city_id=buyer_city_id,
+                    bo_position=bo_position,
+                    unit_category=UNIT_TYPE_TERRESTRIAL,
+                    market_range=market_range,
+                )
                 offers = maritime + terrestrial
             else:
                 offers = client.get_available_unit_offers(
-                    buyer_city_id=buyer_city_id, bo_position=bo_position, unit_category=unit_category)
+                    buyer_city_id=buyer_city_id,
+                    bo_position=bo_position,
+                    unit_category=unit_category,
+                    market_range=market_range,
+                )
 
             self.log(jid, "info", f"Encontradas {len(offers)} ofertas")
 
@@ -521,6 +586,22 @@ class CheckBlackMarketOffersRunner(BaseRunner):
                             return int(building.get("position", -1))
         except Exception as exc:
             logger.debug("find_building_position failed: %s", exc)
+        return None
+
+    def _find_building_info(self, ga_id: str, city_id: int, building_type: str) -> dict[str, int] | None:
+        try:
+            snapshot = self.hub.get_snapshot(game_account_id=ga_id)
+            cities = snapshot.get("cities") or []
+            for city in cities:
+                if str(city.get("id")) == str(city_id):
+                    for building in (city.get("buildings") or []):
+                        if str(building.get("building") or "").strip() == building_type:
+                            return {
+                                "position": int(building.get("position", -1)),
+                                "level": int(building.get("level") or 0),
+                            }
+        except Exception as exc:
+            logger.debug("find_building_info failed: %s", exc)
         return None
 
 

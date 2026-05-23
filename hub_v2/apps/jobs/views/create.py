@@ -646,6 +646,14 @@ def _black_market_form_context(cities, snapshot):
     }
 
 
+def _resolve_unit_icon(unit_id: int, unit_name: str) -> str:
+    from core.catalogs import UNIT_ICON_MAP
+    icon_path = (UNIT_ICON_MAP.get(unit_name)
+                 or UNIT_ICON_MAP.get(f"s{unit_id}")
+                 or "")
+    return static(icon_path) if icon_path else ""
+
+
 def _bm_available_offers_context(cities, snapshot):
     """Build available offers grouped by buyer_city_id for ac=804 form."""
     from apps.market.models import BlackMarketAvailableOffer
@@ -688,12 +696,14 @@ def _bm_available_offers_context(cities, snapshot):
         for row in qs:
             ckey = str(row["buyer_city_id"])
             uid = row["unit_id"]
+            uname = unit_names.get(uid, "")
             if ckey not in offers_by_city:
                 offers_by_city[ckey] = {}
             if uid not in offers_by_city[ckey]:
                 offers_by_city[ckey][uid] = {
                     "unit_id": uid,
-                    "unit_name": unit_names.get(uid, ""),
+                    "unit_name": uname,
+                    "unit_icon": _resolve_unit_icon(uid, uname),
                     "unit_category": row["unit_category"],
                     "sellers": [],
                     "min_price": row["price_per_unit"],
@@ -2330,3 +2340,123 @@ class JobSubmitView(LoginRequiredMixin, View):
         )
         resp["HX-Trigger"] = trigger
         return resp
+
+
+class BmScanCreateView(LoginRequiredMixin, View):
+    """POST: create a 808 (Verificar Ofertas) job for inline scan from the 804 form."""
+
+    def post(self, request):
+        from django.http import JsonResponse
+
+        ga_id = request.POST.get("ga") or request.GET.get("ga")
+        city_id = request.POST.get("city_id", "").strip()
+
+        if not ga_id or not city_id:
+            return JsonResponse({"error": "ga e city_id obrigatorios"}, status=400)
+
+        try:
+            ga = GameAccount.objects.select_related("account").get(pk=ga_id, active=True)
+        except GameAccount.DoesNotExist:
+            return JsonResponse({"error": "GA nao encontrado"}, status=404)
+
+        job = create_job_with_workflow(
+            account=ga.account,
+            game_account=ga,
+            node=ga.account.node,
+            action_code=808,
+            inputs={"buyer_city_id": city_id, "unit_category": "0"},
+            status="queued",
+            created_by=request.user,
+        )
+
+        return JsonResponse({"job_id": str(job.pk), "status": "queued"})
+
+
+class BmScanStatusView(LoginRequiredMixin, View):
+    """GET: poll 808 job status; when done return fresh offers for the scanned city."""
+
+    def get(self, request):
+        from django.http import JsonResponse
+        from apps.market.models import BlackMarketAvailableOffer, BlackMarketUnitQuote
+
+        job_id = request.GET.get("job_id", "").strip()
+        if not job_id:
+            return JsonResponse({"error": "job_id obrigatorio"}, status=400)
+
+        try:
+            job = Job.objects.select_related("game_account").get(pk=job_id)
+        except Job.DoesNotExist:
+            return JsonResponse({"error": "Job nao encontrado"}, status=404)
+
+        if job.status in ("queued", "running", "scheduled"):
+            return JsonResponse({"status": "running"})
+
+        if job.status == "error":
+            return JsonResponse({"status": "error", "message": "Job terminou com erro."})
+
+        if job.status in ("cancelled",):
+            return JsonResponse({"status": "error", "message": "Job cancelado."})
+
+        # status == "finished" — load fresh offers from DB
+        try:
+            inputs = json.loads(job.inputs_json or "{}")
+        except Exception:
+            inputs = {}
+        buyer_city_id = str(inputs.get("buyer_city_id") or "").strip()
+
+        ga = job.game_account
+
+        # unit_name lookup
+        unit_names: dict[int, str] = {}
+        try:
+            for q in (BlackMarketUnitQuote.objects
+                      .filter(game_account=ga)
+                      .order_by("unit_id", "-captured_at")
+                      .values("unit_id", "unit_name")):
+                uid = q["unit_id"]
+                if uid not in unit_names and q["unit_name"]:
+                    unit_names[uid] = q["unit_name"]
+        except Exception:
+            pass
+
+        offers_by_unit: dict[int, dict] = {}
+        scanned_at_str = ""
+        try:
+            qs = (BlackMarketAvailableOffer.objects
+                  .filter(game_account=ga, buyer_city_id=buyer_city_id)
+                  .order_by("unit_id", "price_per_unit")
+                  .values("seller_city_id", "seller_city_name", "seller_avatar",
+                          "unit_id", "unit_category", "amount", "price_per_unit", "scanned_at"))
+            for row in qs:
+                uid = row["unit_id"]
+                uname = unit_names.get(uid, "")
+                if uid not in offers_by_unit:
+                    offers_by_unit[uid] = {
+                        "unit_id": uid,
+                        "unit_name": uname,
+                        "unit_icon": _resolve_unit_icon(uid, uname),
+                        "unit_category": row["unit_category"],
+                        "sellers": [],
+                        "min_price": row["price_per_unit"],
+                        "total_amount": 0,
+                    }
+                offers_by_unit[uid]["sellers"].append({
+                    "seller_city_id": row["seller_city_id"],
+                    "seller_city_name": row["seller_city_name"],
+                    "seller_avatar": row["seller_avatar"],
+                    "amount": row["amount"],
+                    "price_per_unit": row["price_per_unit"],
+                })
+                offers_by_unit[uid]["total_amount"] += row["amount"]
+                if not scanned_at_str and row["scanned_at"]:
+                    scanned_at_str = row["scanned_at"].strftime("%d/%m/%Y %H:%M")
+        except Exception:
+            pass
+
+        offers_list = sorted(offers_by_unit.values(), key=lambda u: u["min_price"])
+
+        return JsonResponse({
+            "status": "done",
+            "offers": offers_list,
+            "scanned_at": scanned_at_str,
+        })

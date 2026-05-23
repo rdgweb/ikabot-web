@@ -487,15 +487,6 @@ class BlackMarketOfferCloseView(LoginRequiredMixin, View):
     def post(self, request, pk):
         offer = get_object_or_404(BlackMarketOffer, pk=pk, status="active")
 
-        if not offer.game_offer_id:
-            trigger = json.dumps({"toast": {
-                "type": "error",
-                "message": "ID da oferta no jogo nao disponivel. Execute um novo job ac=803 para capturar o ID.",
-            }})
-            resp = HttpResponse(status=400)
-            resp["HX-Trigger"] = trigger
-            return resp
-
         ga = offer.game_account
         account = ga.account
         node = account.node
@@ -512,6 +503,9 @@ class BlackMarketOfferCloseView(LoginRequiredMixin, View):
                 "offer_hub_id": str(offer.pk),
                 "game_offer_id": offer.game_offer_id,
                 "city_id": offer.city_id,
+                "unit_id": offer.unit_id,
+                "amount": offer.amount,
+                "unit_price": offer.unit_price,
             },
             status="scheduled",
             created_by=request.user,

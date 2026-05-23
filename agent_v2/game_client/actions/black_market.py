@@ -50,7 +50,7 @@ Action parameter reference (verified from live traffic on s78-br, 2026-05-22):
     GET view=takeOffer&destinationCityId={seller_city}
         &oldView=branchOffice&activeTab=tradePartners
         &cityId={buyer_city}&position={bo_pos}
-        &type={444|111}&partnerOfferType=111
+        &type={444|111}&partnerOfferType=222
         &backgroundView=city&currentCityId={buyer_city}
         &templateView=branchOfficeSoldier&currentTab=tradePartners
         &actionRequest=AR&ajax=1
@@ -112,6 +112,8 @@ OFFER_RESOURCE_GOLD = 5
 # Unit category type codes for Branch Office filter
 UNIT_TYPE_MARITIME = 444
 UNIT_TYPE_TERRESTRIAL = 111
+LISTING_TYPE_MARITIME = 111
+LISTING_TYPE_TERRESTRIAL = 222
 
 
 class GetBlackMarketStateAction(BaseAction):
@@ -451,7 +453,7 @@ class GetMyBlackMarketOffersAction(BaseAction):
     def _parse_my_offers(self, html: str) -> list[dict[str, Any]]:
         offers: list[dict] = []
         for row_html in re.split(r'<tr', html)[1:]:
-            unit_m = re.search(r'unit[_-](\d+)', row_html, re.IGNORECASE)
+            unit_m = re.search(r'unit[_-](\d+)|\bs(\d+)\b', row_html, re.IGNORECASE)
             if not unit_m:
                 continue
             offer_id_m = re.search(r'offerId=(\d+)', row_html, re.IGNORECASE)
@@ -464,13 +466,13 @@ class GetMyBlackMarketOffersAction(BaseAction):
             try:
                 offers.append({
                     "offer_id": int(offer_id_m.group(1)) if offer_id_m else None,
-                    "unit_id": int(unit_m.group(1)),
+                    "unit_id": next(int(group) for group in unit_m.groups() if group),
                     "amount": cell_nums[0] if len(cell_nums) > 0 else 0,
                     "price": cell_nums[1] if len(cell_nums) > 1 else 0,
                     "tax": cell_nums[2] if len(cell_nums) > 2 else 0,
                     "net_profit": cell_nums[3] if len(cell_nums) > 3 else 0,
                 })
-            except (ValueError, IndexError):
+            except (StopIteration, ValueError, IndexError):
                 continue
         return offers
 
@@ -479,18 +481,30 @@ class CancelBlackMarketOfferAction(BaseAction):
     """Remove an active Black Market offer (returns units to garrison)."""
 
     def execute(self, city_id: int, position: int, offer_id: int, **kwargs: Any) -> dict[str, Any]:
-        return self._ajax_request(
-            "BlackMarketAction&function=removeOffer",
-            {
-                "cityId": city_id,
-                "position": position,
-                "offerId": offer_id,
-                "activeTab": "tabMyOffers",
-                "backgroundView": "city",
-                "currentCityId": city_id,
-                "templateView": "blackMarket",
-            },
-        )
+        # Warm the correct Black Market tab first. The game rejects direct removeOffer
+        # calls in some cases unless the session has loaded "As Minhas Ofertas".
+        GetMyBlackMarketOffersAction(self.client).execute(city_id=city_id, position=position)
+
+        if not self.client._action_request:
+            raise ActionError(
+                "No actionRequest token available — fetch a page first",
+                action="BlackMarketAction&function=removeOffer",
+            )
+
+        params = {
+            "action": "BlackMarketAction",
+            "function": "removeOffer",
+            "actionRequest": self.client._action_request,
+            "ajax": "1",
+            "cityId": city_id,
+            "position": position,
+            "offerId": offer_id,
+            "activeTab": "tabMyOffers",
+            "backgroundView": "city",
+            "currentCityId": city_id,
+            "templateView": "blackMarket",
+        }
+        return self.client._ajax_get("BlackMarketAction&function=removeOffer", params)
 
 
 class GetAvailableUnitOffersAction(BaseAction):
@@ -501,6 +515,7 @@ class GetAvailableUnitOffersAction(BaseAction):
         buyer_city_id: int,
         bo_position: int,
         unit_category: int = 0,
+        market_range: int | None = None,
         **kwargs: Any,
     ) -> list[dict[str, Any]]:
         """Return all available unit offers.
@@ -515,18 +530,22 @@ class GetAvailableUnitOffersAction(BaseAction):
         """
         params = {
             "view": "branchOfficeSoldier",
-            "activeTab": "tab_branchOfficeSoldier",
+            "activeTab": "tradePartners",
             "cityId": buyer_city_id,
             "position": bo_position,
             "backgroundView": "city",
             "currentCityId": buyer_city_id,
-            "templateView": "branchOffice",
-            "currentTab": "tab_branchOffice",
+            "templateView": "branchOfficeSoldier",
+            "currentTab": "tab_branchOfficeSoldier",
+            "searchResource": "all",
+            "currency": "all",
             "actionRequest": self.client._action_request,
             "ajax": "1",
         }
         if unit_category:
-            params["type"] = unit_category
+            params["type"] = self._listing_type_for_unit_category(unit_category)
+        if market_range:
+            params["range"] = market_range
 
         resp = self.client._request("GET", self.client._server_url, params=params, headers=GAME_AJAX_HEADERS)
         html = _extract_html(resp)
@@ -534,41 +553,59 @@ class GetAvailableUnitOffersAction(BaseAction):
 
     def _parse_offers(self, html: str) -> list[dict[str, Any]]:
         offers: list[dict] = []
-        # Each row: city name, amount, unit image, price, distance, trade button
-        # takeOffer href contains destinationCityId (seller) and other params
-        row_re = re.compile(
-            r'href="\?view=takeOffer[^"]*&destinationCityId=(\d+)[^"]*'
-            r'city2Name=([^&"]+)[^"]*avatar2Name=([^&"]+)[^"]*type=(\d+)',
-            re.IGNORECASE,
+        row_re = re.compile(r"<tr[^>]*>(.*?)</tr>", re.IGNORECASE | re.DOTALL)
+        link_re = re.compile(r'href="\?view=takeOffer&destinationCityId=(\d+)([^"]*)"', re.IGNORECASE | re.DOTALL)
+        type_re = re.compile(r"[?&]type=(\d+)", re.IGNORECASE)
+        seller_re = re.compile(
+            r'<td[^>]*class="short_text80"[^>]*>\s*([^<(]+?)<br>\s*\(([^)<]+)\)',
+            re.IGNORECASE | re.DOTALL,
         )
-        amount_re = re.compile(r'<td[^>]*>\s*([\d.,\s]+)\s*</td>')
-        price_re = re.compile(r'([\d.,\s]+)\s*por\s+pe', re.IGNORECASE)
-        unit_img_re = re.compile(r'unit_(\d+)', re.IGNORECASE)
+        cell_re = re.compile(r"<td\b[^>]*>(.*?)</td>", re.IGNORECASE | re.DOTALL)
+        amount_re = re.compile(r'<td[^>]*class="amount"[^>]*>\s*([\d.,\s]+)', re.IGNORECASE)
+        price_re = re.compile(r'<td[^>]*class="costs"[^>]*>\s*([\d.,\s]+)', re.IGNORECASE)
+        unit_id_re = re.compile(r'name="cargo_(\d+)"|name="(\d+)Price"|unit_(\d+)|\bs(\d+)\b', re.IGNORECASE)
 
-        for section in re.split(r'<tr[^>]*>', html)[1:]:
-            href_m = row_re.search(section)
-            if not href_m:
+        for section in row_re.findall(html):
+            link_m = link_re.search(section)
+            if not link_m:
                 continue
-            unit_m = unit_img_re.search(section)
+            unit_m = unit_id_re.search(section)
             price_m = price_re.search(section)
-            amounts = amount_re.findall(section)
+            amount_m = amount_re.search(section)
+            seller_m = seller_re.search(section)
+            type_m = type_re.search(link_m.group(2) or "")
+            cells = cell_re.findall(section)
             try:
-                amount = _parse_num(amounts[0]) if amounts else 0
+                unit_id = next(int(group) for group in unit_m.groups() if group) if unit_m else 0
+                amount = _parse_num(amount_m.group(1)) if amount_m else 0
                 price = _parse_num(price_m.group(1)) if price_m else 0
+                if (amount <= 0 or price <= 0) and len(cells) >= 5:
+                    if amount <= 0:
+                        amount = _extract_leading_num(cells[2])
+                    if price <= 0:
+                        price = _extract_leading_num(cells[4])
                 offers.append({
-                    "seller_city_id": int(href_m.group(1)),
-                    "seller_city_name": href_m.group(2).strip(),
-                    "seller_avatar": href_m.group(3).strip(),
-                    "unit_category": int(href_m.group(4)),
-                    "unit_id": int(unit_m.group(1)) if unit_m else 0,
+                    "seller_city_id": int(link_m.group(1)),
+                    "seller_city_name": _url_unquote(seller_m.group(1)).strip() if seller_m else "",
+                    "seller_avatar": _url_unquote(seller_m.group(2)).strip() if seller_m else "",
+                    "unit_category": int(type_m.group(1)) if type_m else 0,
+                    "unit_id": unit_id,
                     "amount": amount,
                     "price_per_unit": price,
                 })
-            except (ValueError, AttributeError, IndexError):
+            except (StopIteration, ValueError, AttributeError, IndexError):
                 continue
 
         offers.sort(key=lambda o: o["price_per_unit"])
         return offers
+
+    @staticmethod
+    def _listing_type_for_unit_category(unit_category: int) -> int:
+        if unit_category == UNIT_TYPE_MARITIME:
+            return LISTING_TYPE_MARITIME
+        if unit_category == UNIT_TYPE_TERRESTRIAL:
+            return LISTING_TYPE_TERRESTRIAL
+        return unit_category
 
 
 class BuyUnitsAction(BaseAction):
@@ -669,7 +706,9 @@ class BuyUnitsAction(BaseAction):
             "cityId": buyer_city_id,
             "position": bo_position,
             "type": unit_category,
-            "partnerOfferType": 111,
+            "partnerOfferType": 222,
+            "resource": "all",
+            "currency": "all",
             "backgroundView": "city",
             "currentCityId": buyer_city_id,
             "templateView": "branchOfficeSoldier",
@@ -679,7 +718,7 @@ class BuyUnitsAction(BaseAction):
         }
         resp = self.client._request("GET", self.client._server_url, params=params, headers=GAME_AJAX_HEADERS)
         html = _extract_html(resp)
-        return self._parse_take_offer(html)
+        return self._parse_take_offer_live(html)
 
     def _parse_take_offer(self, html: str) -> dict[str, Any]:
         """Parse takeOffer page for unit IDs, amounts, prices, and transport capacity."""
@@ -718,6 +757,50 @@ class BuyUnitsAction(BaseAction):
             "eta_minutes": eta_minutes,
         }
 
+    def _parse_take_offer_live(self, html: str) -> dict[str, Any]:
+        """Parse the live takeOffer markup used by the current game client."""
+        units: list[dict] = []
+
+        row_re = re.compile(r"<tr[^>]*>(.*?)</tr>", re.IGNORECASE | re.DOTALL)
+        amount_re = re.compile(r'<td[^>]*class="amount"[^>]*>\s*([\d.,\s]+)', re.IGNORECASE)
+        price_re = re.compile(r'<td[^>]*class="costs"[^>]*>\s*([\d.,\s]+)', re.IGNORECASE)
+        unit_id_re = re.compile(r'name="cargo_(\d+)"|name="(\d+)Price"|unit_(\d+)', re.IGNORECASE)
+
+        for row in row_re.findall(html):
+            unit_m = unit_id_re.search(row)
+            if not unit_m:
+                continue
+            try:
+                unit_id = next(int(group) for group in unit_m.groups() if group)
+                amount_match = amount_re.search(row)
+                price_match = price_re.search(row)
+                units.append({
+                    "unit_id": unit_id,
+                    "amount": _parse_num(amount_match.group(1)) if amount_match else 0,
+                    "price": _parse_num(price_match.group(1)) if price_match else 0,
+                })
+            except (StopIteration, ValueError, AttributeError, IndexError):
+                continue
+
+        max_ships = 0
+        ships_m = re.search(r'name="normalTransportersMax"[^>]*value="(\d+)"', html)
+        if ships_m:
+            max_ships = int(ships_m.group(1))
+
+        eta_m = re.search(r'journeyDuration\s*[:=]\s*(\d+)', html, re.IGNORECASE)
+        eta_minutes = int(round(int(eta_m.group(1)) / 60)) if eta_m else 0
+
+        seller_avatar_m = re.search(r'name="avatar2Name"\s+value="([^"]*)"', html)
+        seller_city_m = re.search(r'name="city2Name"\s+value="([^"]*)"', html)
+
+        return {
+            "units": units,
+            "max_transporters": max_ships,
+            "eta_minutes": eta_minutes,
+            "seller_avatar": seller_avatar_m.group(1).strip() if seller_avatar_m else "",
+            "seller_city_name": seller_city_m.group(1).strip() if seller_city_m else "",
+        }
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -749,4 +832,31 @@ def _parse_num(raw: str) -> int:
     try:
         return int(str(raw).replace(".", "").replace(",", "").replace(" ", "").strip())
     except (ValueError, AttributeError):
+        return 0
+
+
+def _url_unquote(raw: str) -> str:
+    try:
+        from urllib.parse import unquote_plus
+
+        return unquote_plus(raw)
+    except Exception:
+        return raw
+
+
+def _strip_html(raw: str) -> str:
+    try:
+        text = re.sub(r"<[^>]+>", " ", raw or "")
+        return re.sub(r"\s+", " ", text).strip()
+    except Exception:
+        return str(raw or "")
+
+
+def _extract_leading_num(raw: str) -> int:
+    try:
+        match = re.search(r"^\s*([\d.,\s]+)", raw or "", re.IGNORECASE | re.DOTALL)
+        if not match:
+            return 0
+        return _parse_num(match.group(1))
+    except Exception:
         return 0

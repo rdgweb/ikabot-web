@@ -23,6 +23,8 @@ from .create import (
     JobFormView,
     JobSubmitView,
     ConstructionPlanPreviewView,
+    BmScanCreateView,
+    BmScanStatusView,
 )
 
 JobListView = WorkflowAwareJobListView

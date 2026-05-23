@@ -175,6 +175,16 @@ class VacationModeRunner(BaseRunner):
     logs in — if the session is healthy, vacation mode is already gone.
     """
 
+    @staticmethod
+    def _looks_like_vacation_block(exc: Exception) -> bool:
+        text = str(exc or "").lower()
+        return (
+            "vacation" in text
+            or "nologin_umod" in text
+            or "modo f" in text
+            or "umod" in text
+        )
+
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
@@ -189,13 +199,19 @@ class VacationModeRunner(BaseRunner):
             return RunnerResult(success=False, data={"error": "missing_credentials"})
 
         try:
-            client = self.get_or_login_game_client(jid, aid, ga_id, creds)
-
             if not enable:
-                # Deactivation = login is sufficient; game lifts vacation on next login
-                self.log(jid, "info", "Login realizado; modo ferias desativado pelo jogo automaticamente apos periodo obrigatorio")
-                self.save_game_client(ga_id, client)
-                return RunnerResult(success=True, data={"enabled": False})
+                fresh_client = self.get_or_login_game_client(
+                    jid,
+                    aid,
+                    ga_id,
+                    creds,
+                    allow_cached=False,
+                )
+                self.log(jid, "info", "Login fresco confirmou conta fora do modo ferias")
+                self.save_game_client(ga_id, fresh_client)
+                return RunnerResult(success=True, data={"enabled": False, "confirmed": True})
+
+            client = self.get_or_login_game_client(jid, aid, ga_id, creds)
 
             # Activate: call Options API
             city_id = 0
@@ -211,12 +227,61 @@ class VacationModeRunner(BaseRunner):
                 return RunnerResult(success=False, data={"error": "no_city_found_in_snapshot"})
 
             result = client.activate_vacation_mode(city_id=city_id)
-            self.log(jid, "info", f"Modo ferias ativado: {result}")
-            self.save_game_client(ga_id, client)
+            self.log(jid, "info", f"Solicitacao de modo ferias enviada: {result}")
 
-            return RunnerResult(success=True, data={"enabled": True, "city_id": city_id})
+            if ga_id:
+                self.sessions.invalidate_game_session(ga_id)
+
+            try:
+                fresh_client = self.get_or_login_game_client(
+                    jid,
+                    aid,
+                    ga_id,
+                    creds,
+                    allow_cached=False,
+                )
+            except Exception as confirm_exc:
+                if self._looks_like_vacation_block(confirm_exc):
+                    self.log(jid, "info", "Modo ferias confirmado: login fresco bloqueado pelo jogo")
+                    return RunnerResult(
+                        success=True,
+                        data={
+                            "enabled": True,
+                            "city_id": city_id,
+                            "confirmed": True,
+                            "confirmation": "fresh_login_blocked",
+                        },
+                    )
+                if self.is_network_error(confirm_exc):
+                    return self.network_error_result(jid, confirm_exc)
+                self.log(jid, "error", f"Ativacao nao confirmada: {confirm_exc}")
+                return RunnerResult(
+                    success=False,
+                    data={
+                        "error": "vacation_mode_not_confirmed",
+                        "city_id": city_id,
+                        "detail": str(confirm_exc),
+                    },
+                )
+
+            self.save_game_client(ga_id, fresh_client)
+            self.log(jid, "warn", "Login fresco continuou funcionando; modo ferias nao foi confirmado")
+            return RunnerResult(
+                success=False,
+                data={
+                    "error": "vacation_mode_not_confirmed",
+                    "city_id": city_id,
+                    "detail": "fresh_login_still_succeeds",
+                },
+            )
 
         except Exception as exc:
+            if not enable and self._looks_like_vacation_block(exc):
+                self.log(jid, "warn", "Conta continua em modo ferias; desativacao ainda nao liberada pelo jogo")
+                return RunnerResult(
+                    success=False,
+                    data={"error": "vacation_mode_still_active", "enabled": True},
+                )
             if self.is_network_error(exc):
                 return self.network_error_result(jid, exc)
             self.log(jid, "error", f"Modo ferias falhou: {exc}")

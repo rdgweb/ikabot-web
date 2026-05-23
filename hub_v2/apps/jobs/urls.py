@@ -23,6 +23,8 @@ from .views import (
     JobFormView,
     JobSubmitView,
     ConstructionPlanPreviewView,
+    BmScanCreateView,
+    BmScanStatusView,
 )
 
 app_name = "jobs"
@@ -45,6 +47,8 @@ urlpatterns = [
     path("new/form/", JobFormView.as_view(), name="job-form"),
     path("new/construction-preview/", ConstructionPlanPreviewView.as_view(), name="job-construction-preview"),
     path("new/submit/", JobSubmitView.as_view(), name="job-submit"),
+    path("new/bm-scan/", BmScanCreateView.as_view(), name="bm-scan-create"),
+    path("new/bm-scan-status/", BmScanStatusView.as_view(), name="bm-scan-status"),
     # Job detail
     path("<uuid:pk>/", JobDetailView.as_view(), name="job-detail"),
     path("<uuid:pk>/chain-history/", JobChainHistoryPartialView.as_view(), name="job-chain-history"),

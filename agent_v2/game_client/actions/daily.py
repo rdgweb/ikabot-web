@@ -94,7 +94,37 @@ class DailyTasksAction(BaseAction):
             "ajax": "1",
         }
         resp = self.client._request("POST", self.client._server_url, data=params, headers=GAME_AJAX_HEADERS)
-        return self._parse_generic_payload(resp)
+        try:
+            payload = resp.json()
+        except Exception as exc:
+            raise ActionError("Invalid vacation mode response", action="activateVacationMode") from exc
+
+        parsed = self.client.ajax_parser.parse_response(payload)
+        token = parsed.get("new_action_request")
+        if token:
+            self.client._action_request = token
+
+        if parsed.get("reload"):
+            raise ActionError(
+                "Server rejected activateVacationMode with reload directive",
+                action="activateVacationMode",
+            )
+        if parsed["errors"]:
+            raise ActionError(
+                f"Server errors for activateVacationMode: {parsed['errors']}",
+                action="activateVacationMode",
+                server_errors=parsed["errors"],
+            )
+
+        return {
+            "ok": bool(
+                parsed.get("success_feedback")
+                or parsed.get("updates")
+                or parsed.get("background")
+                or parsed.get("redirect")
+            ),
+            "parsed": parsed,
+        }
 
     @staticmethod
     def _normalize_payload(payload: Any) -> list[Any]:
