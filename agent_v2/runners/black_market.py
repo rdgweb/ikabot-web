@@ -215,6 +215,9 @@ class BlackMarketSellUnitsRunner(BaseRunner):
                     ),
                     None,
                 )
+                game_offer_id = _to_int(matched_offer.get("offer_id")) if matched_offer and matched_offer.get("offer_id") else None
+                if game_offer_id:
+                    self.log(jid, "info", f"game_offer_id capturado: {game_offer_id}")
                 if matched_offer or not active_offers:
                     self.hub.save_bm_offer(
                         game_account_id=ga_id,
@@ -226,6 +229,7 @@ class BlackMarketSellUnitsRunner(BaseRunner):
                         amount=amount,
                         unit_price=unit_price,
                         offer_resource=offer_resource,
+                        game_offer_id=game_offer_id,
                     )
                 else:
                     self.log(
@@ -382,6 +386,73 @@ class BlackMarketBuyUnitsRunner(BaseRunner):
             if self.is_network_error(exc):
                 return self.network_error_result(jid, exc)
             self.log(jid, "error", f"Mercado Negro compra falhou: {exc}")
+            return RunnerResult(success=False, data={"error": str(exc)})
+
+    def _find_building_position(self, ga_id: str, city_id: int, building_type: str) -> int | None:
+        try:
+            snapshot = self.hub.get_snapshot(game_account_id=ga_id)
+            cities = snapshot.get("cities") or []
+            for city in cities:
+                if str(city.get("id")) == str(city_id):
+                    for building in (city.get("buildings") or []):
+                        if str(building.get("building") or "").strip() == building_type:
+                            return int(building.get("position", -1))
+        except Exception as exc:
+            logger.debug("find_building_position failed: %s", exc)
+        return None
+
+
+@register_runner(8031)
+class BlackMarketCancelOfferRunner(BaseRunner):
+    """Remove an active Black Market offer and return units to garrison.
+
+    Inputs:
+        offer_hub_id   — hub UUID of the BlackMarketOffer record
+        game_offer_id  — game's numeric offer ID (from offerId in URL)
+        city_id        — city where the Black Market is
+    """
+
+    def execute(self, job: dict[str, Any]) -> RunnerResult:
+        jid = job["job_id"]
+        aid = job["account_id"]
+        ga_id = job.get("game_account_id", "")
+        inputs = job.get("inputs") or {}
+
+        offer_hub_id = str(inputs.get("offer_hub_id") or "").strip()
+        game_offer_id = _to_int(inputs.get("game_offer_id"))
+        city_id = _to_int(inputs.get("city_id"))
+
+        if not offer_hub_id or not game_offer_id or not city_id:
+            return RunnerResult(success=False, data={"error": "missing_inputs: offer_hub_id, game_offer_id, city_id required"})
+
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        if not creds:
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
+
+        try:
+            client = self.get_or_login_game_client(jid, aid, ga_id, creds)
+
+            position = self._find_building_position(ga_id, city_id, "blackMarket")
+            if position is None:
+                self.log(jid, "error", f"Black Market nao encontrado na cidade {city_id}")
+                return RunnerResult(success=False, data={"error": "black_market_not_found"})
+
+            self.log(jid, "info", f"Removendo oferta game_offer_id={game_offer_id} da cidade {city_id} pos={position}")
+            client.cancel_black_market_offer(city_id=city_id, position=position, offer_id=game_offer_id)
+            self.log(jid, "info", "Oferta removida com sucesso")
+
+            try:
+                self.hub.close_bm_offer(offer_hub_id)
+            except Exception as e:
+                self.log(jid, "warn", f"Falha ao atualizar status no hub (nao critico): {e}")
+
+            self.save_game_client(ga_id, client)
+            return RunnerResult(success=True, data={"game_offer_id": game_offer_id, "offer_hub_id": offer_hub_id})
+
+        except Exception as exc:
+            if self.is_network_error(exc):
+                return self.network_error_result(jid, exc)
+            self.log(jid, "error", f"Mercado Negro cancelamento falhou: {exc}")
             return RunnerResult(success=False, data={"error": str(exc)})
 
     def _find_building_position(self, ga_id: str, city_id: int, building_type: str) -> int | None:

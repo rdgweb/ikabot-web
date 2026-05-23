@@ -398,9 +398,10 @@ class HubClient:
         amount: int,
         unit_price: int,
         offer_resource: int = 5,
+        game_offer_id: int | None = None,
     ) -> dict:
         """POST /api/agent/market/bm-offers/ — persist a newly listed BM offer."""
-        return self._post("/api/agent/market/bm-offers", {
+        payload = {
             "game_account_id": game_account_id,
             "job_id": job_id,
             "city_id": city_id,
@@ -410,7 +411,14 @@ class HubClient:
             "amount": amount,
             "unit_price": unit_price,
             "offer_resource": offer_resource,
-        })
+        }
+        if game_offer_id is not None:
+            payload["game_offer_id"] = game_offer_id
+        return self._post("/api/agent/market/bm-offers", payload)
+
+    def close_bm_offer(self, offer_hub_id: str) -> dict:
+        """POST /api/agent/market/bm-offers/<id>/close/ — mark offer cancelled after removeOffer."""
+        return self._post(f"/api/agent/market/bm-offers/{offer_hub_id}/close", {})
 
     def sync_bm_offers(
         self,

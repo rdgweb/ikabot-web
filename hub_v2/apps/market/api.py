@@ -259,6 +259,9 @@ class BlackMarketOfferSaveView(APIView):
         if job_id:
             job = Job.objects.filter(pk=job_id).first()
 
+        game_offer_id_raw = data.get("game_offer_id")
+        game_offer_id = int(game_offer_id_raw) if game_offer_id_raw else None
+
         from django.utils import timezone
         offer = BlackMarketOffer.objects.create(
             game_account=ga,
@@ -270,6 +273,7 @@ class BlackMarketOfferSaveView(APIView):
             unit_price=int(data.get("unit_price", 0)),
             offer_resource=int(data.get("offer_resource", 5)),
             status="active",
+            game_offer_id=game_offer_id,
             job=job,
             listed_at=timezone.now(),
         )
@@ -374,6 +378,27 @@ class BlackMarketQuoteSaveView(APIView):
             created += 1
 
         return Response({"ok": True, "created": created}, status=status.HTTP_201_CREATED)
+
+
+class BlackMarketOfferCloseByRunnerView(APIView):
+    """POST /api/agent/market/bm-offers/<offer_id>/close/ — runner marks offer as cancelled after removeOffer."""
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request, offer_id):
+        from django.utils import timezone
+        try:
+            offer = BlackMarketOffer.objects.get(pk=offer_id)
+        except BlackMarketOffer.DoesNotExist:
+            return Response({"error": "not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if offer.status == "active":
+            offer.status = "cancelled"
+            offer.closed_at = timezone.now()
+            offer.save(update_fields=["status", "closed_at", "updated_at"])
+
+        return Response({"ok": True}, status=status.HTTP_200_OK)
 
 
 class ConstructionMarketInterventionRequestView(APIView):

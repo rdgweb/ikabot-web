@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .api import (
+    BlackMarketOfferCloseByRunnerView,
     BlackMarketOfferPriceView,
     BlackMarketOfferSaveView,
     BlackMarketOfferSyncView,
@@ -21,5 +22,6 @@ urlpatterns = [
     path("market/bm-offers/", BlackMarketOfferSaveView.as_view(), name="bm-offer-save"),
     path("market/bm-offers/sync/", BlackMarketOfferSyncView.as_view(), name="bm-offer-sync"),
     path("market/bm-offers/prices/", BlackMarketOfferPriceView.as_view(), name="bm-offer-prices"),
+    path("market/bm-offers/<uuid:offer_id>/close/", BlackMarketOfferCloseByRunnerView.as_view(), name="bm-offer-close-runner"),
     path("market/bm-quotes/", BlackMarketQuoteSaveView.as_view(), name="bm-quote-save"),
 ]

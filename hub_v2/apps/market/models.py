@@ -140,6 +140,7 @@ class BlackMarketOffer(UUIDTimestampModel):
     unit_price = models.IntegerField()
     offer_resource = models.IntegerField(default=5)
     status = models.CharField(max_length=24, choices=STATUS_CHOICES, default="active", db_index=True)
+    game_offer_id = models.BigIntegerField(null=True, blank=True, db_index=True)
     job = models.ForeignKey(
         "jobs.Job", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )

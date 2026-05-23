@@ -11,16 +11,14 @@
 {% endblock %}
 
 {% block content %}
-<div x-data="bmDashboard()" class="space-y-6">
+<div class="space-y-6">
 
   {# Header #}
-  <div class="flex items-center justify-between gap-4">
-    <div>
-      <h1 class="text-xl font-bold text-ink flex items-center gap-2">
-        <i class="bi bi-shield-exclamation text-[var(--ik-sea)]"></i> Mercado Negro
-      </h1>
-      <p class="mt-0.5 text-sm text-muted">Ofertas ativas, histórico de vendas e faixas de preço capturadas.</p>
-    </div>
+  <div>
+    <h1 class="text-xl font-bold text-ink flex items-center gap-2">
+      <i class="bi bi-shield-exclamation text-[var(--ik-sea)]"></i> Mercado Negro
+    </h1>
+    <p class="mt-0.5 text-sm text-muted">Ofertas ativas, histórico e faixas de preço capturadas pelo agente.</p>
   </div>
 
   {# Stats bar #}
@@ -73,40 +71,36 @@
       </button>
     </div>
 
-    {# Tab: Active offers #}
+    {# ── Tab: Active offers ── #}
     <div x-show="tab==='active'" x-cloak>
       {% if active_offers %}
       <div class="card overflow-hidden p-0">
         <table class="data-table">
           <thead>
             <tr>
-              <th>Conta</th>
-              <th>Cidade</th>
+              <th>Conta / Cidade</th>
               <th>Unidade</th>
               <th class="text-right">Qtd.</th>
               <th class="text-right">Preço/un.</th>
               <th class="text-right">Total est.</th>
               <th>Listada em</th>
               <th>Job</th>
-              <th></th>
+              <th class="w-10"></th>
             </tr>
           </thead>
           <tbody>
             {% for offer in active_offers %}
-            <tr id="bm-offer-row-{{ offer.pk }}"
-                hx-trigger="bm-offer-closed from:body"
-                hx-get=""
-                hx-swap="outerHTML">
-              <td class="font-medium text-ink">
-                {{ offer.game_account.account.label }}<br>
-                <span class="text-[11px] text-muted">{{ offer.game_account.name }}</span>
+            <tr>
+              <td>
+                <span class="font-medium text-ink">{{ offer.game_account.account.label }}</span>
+                <span class="text-muted"> / </span>
+                <span class="text-[12px] text-muted">{{ offer.city_name|default:"?" }}</span>
               </td>
-              <td>{{ offer.city_name|default:"—" }}</td>
               <td class="font-medium text-ink">{{ offer.unit_name|default:offer.unit_id }}</td>
               <td class="text-right tabular-nums">{{ offer.amount|intcomma }}</td>
               <td class="text-right tabular-nums">{{ offer.unit_price|intcomma }}</td>
               <td class="text-right tabular-nums text-muted">{{ offer.total_est|intcomma }}</td>
-              <td class="text-[11px] text-muted">
+              <td class="text-[11px] text-muted whitespace-nowrap">
                 {% if offer.listed_at %}{{ offer.listed_at|date:"d/m H:i" }}{% else %}—{% endif %}
               </td>
               <td>
@@ -117,41 +111,52 @@
                 {% else %}—{% endif %}
               </td>
               <td>
+                {% if offer.game_offer_id %}
                 <form method="post" action="{% url 'market:bm-offer-close' offer.pk %}"
                       hx-post="{% url 'market:bm-offer-close' offer.pk %}"
                       hx-swap="none"
                       hx-push-url="false">
                   {% csrf_token %}
                   <button type="submit"
-                          class="btn btn-secondary btn-sm text-[11px]"
-                          onclick="return confirm('Marcar como cancelada?')">
-                    <i class="bi bi-x-circle"></i> Cancelar
+                          title="Retirar oferta do jogo (cria job ac=8031)"
+                          class="btn btn-danger btn-sm text-[11px]"
+                          onclick="return confirm('Retirar {{ offer.unit_name }} do Mercado Negro no jogo?')">
+                    <i class="bi bi-x-circle"></i>
                   </button>
                 </form>
+                {% else %}
+                <span title="ID da oferta não capturado — execute um novo job 803 para habilitar" class="text-muted cursor-help text-sm">
+                  <i class="bi bi-x-circle opacity-30"></i>
+                </span>
+                {% endif %}
               </td>
             </tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
+      <p class="mt-2 text-[11px] text-muted">
+        <i class="bi bi-info-circle"></i>
+        Botão vermelho retira a oferta do jogo via job ac=8031 (executado pelo agente).
+        Ofertas sem ID capturado precisam de um novo job ac=803 para rastrear o offerId.
+      </p>
       {% else %}
       <div class="card flex flex-col items-center justify-center py-12 text-center">
         <i class="bi bi-tag text-4xl text-muted mb-3"></i>
         <p class="text-sm font-medium text-ink">Nenhuma oferta ativa</p>
-        <p class="text-xs text-muted mt-1">Execute um job de Mercado Negro (ac=803) para listar unidades.</p>
+        <p class="text-xs text-muted mt-1">Execute um job ac=803 (Vender no Mercado Negro) para listar unidades.</p>
       </div>
       {% endif %}
     </div>
 
-    {# Tab: History #}
+    {# ── Tab: History ── #}
     <div x-show="tab==='history'" x-cloak>
       {% if history_offers %}
       <div class="card overflow-hidden p-0">
         <table class="data-table">
           <thead>
             <tr>
-              <th>Conta</th>
-              <th>Cidade</th>
+              <th>Conta / Cidade</th>
               <th>Unidade</th>
               <th class="text-right">Qtd.</th>
               <th class="text-right">Preço/un.</th>
@@ -162,11 +167,11 @@
           <tbody>
             {% for offer in history_offers %}
             <tr>
-              <td class="font-medium text-ink">
-                {{ offer.game_account.account.label }}<br>
-                <span class="text-[11px] text-muted">{{ offer.game_account.name }}</span>
+              <td>
+                <span class="font-medium text-ink">{{ offer.game_account.account.label }}</span>
+                <span class="text-muted"> / </span>
+                <span class="text-[12px] text-muted">{{ offer.city_name|default:"?" }}</span>
               </td>
-              <td>{{ offer.city_name|default:"—" }}</td>
               <td>{{ offer.unit_name|default:offer.unit_id }}</td>
               <td class="text-right tabular-nums">{{ offer.amount|intcomma }}</td>
               <td class="text-right tabular-nums">{{ offer.unit_price|intcomma }}</td>
@@ -179,7 +184,7 @@
                   <span class="badge badge-warning text-[11px]">{{ offer.get_status_display }}</span>
                 {% endif %}
               </td>
-              <td class="text-[11px] text-muted">
+              <td class="text-[11px] text-muted whitespace-nowrap">
                 {% if offer.closed_at %}{{ offer.closed_at|date:"d/m H:i" }}{% else %}—{% endif %}
               </td>
             </tr>
@@ -195,77 +200,60 @@
       {% endif %}
     </div>
 
-    {# Tab: Price ranges #}
+    {# ── Tab: Price ranges — flat table sorted by unit ── #}
     <div x-show="tab==='prices'" x-cloak>
       {% if quotes %}
-
-      {# Group by account + city #}
-      {% regroup quotes by game_account.account.label as account_groups %}
-      {% for acc_group in account_groups %}
-      <div class="mb-6">
-        <h3 class="mb-3 text-sm font-semibold text-ink flex items-center gap-2">
-          <i class="bi bi-person-badge text-[var(--ik-sea)]"></i>
-          {{ acc_group.grouper }}
-        </h3>
-
-        {% regroup acc_group.list by city_name as city_groups %}
-        {% for city_group in city_groups %}
-        <div class="card overflow-hidden p-0 mb-3">
-          <div class="border-b border-[var(--ik-line)] bg-[var(--ik-sand-light)]/40 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted flex items-center gap-2">
-            <i class="bi bi-geo-alt"></i> {{ city_group.grouper|default:"(cidade desconhecida)" }}
-          </div>
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Unidade</th>
-                <th class="text-right">Mín.</th>
-                <th class="text-right">Máx.</th>
-                <th>Faixa</th>
-                <th class="text-right">Disponível</th>
-                <th class="text-right">Oferta ativa</th>
-                <th class="text-right">Preço oferta</th>
-                <th>Capturado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for q in city_group.list %}
-              <tr>
-                <td class="font-medium text-ink">{{ q.unit_name|default:q.unit_id }}</td>
-                <td class="text-right tabular-nums">{{ q.price_min|intcomma }}</td>
-                <td class="text-right tabular-nums">{{ q.price_max|intcomma }}</td>
-                <td class="w-32">
-                  {% if q.price_max > 0 %}
-                  <div class="relative h-2 rounded-full bg-[var(--ik-line)]" title="{{ q.price_min }} – {{ q.price_max }}">
-                    <div class="absolute left-0 top-0 h-2 rounded-full bg-[var(--ik-sea)]/40" style="width: 100%"></div>
-                    {% if q.price_position_pct is not None %}
-                    <div class="absolute top-0 h-2 w-1.5 -translate-x-1/2 rounded-full bg-amber-500"
-                         style="left: {{ q.price_position_pct }}%"
-                         title="Oferta: {{ q.active_offer_price }}"></div>
-                    {% endif %}
-                  </div>
+      <div class="card overflow-hidden p-0">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Unidade</th>
+              <th>Conta / Cidade</th>
+              <th class="text-right">Mín.</th>
+              <th class="text-right">Máx.</th>
+              <th class="w-28">Faixa</th>
+              <th class="text-right">Disponível</th>
+              <th class="text-right">Oferta ativa</th>
+              <th>Capturado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for q in quotes %}
+            <tr>
+              <td class="font-medium text-ink">{{ q.unit_name|default:q.unit_id }}</td>
+              <td class="text-[12px]">
+                <span class="font-medium text-ink">{{ q.game_account.account.label }}</span>
+                <span class="text-muted"> / {{ q.city_name|default:"?" }}</span>
+              </td>
+              <td class="text-right tabular-nums text-sm">{{ q.price_min|intcomma }}</td>
+              <td class="text-right tabular-nums text-sm">{{ q.price_max|intcomma }}</td>
+              <td>
+                {% if q.price_max > 0 %}
+                <div class="relative h-1.5 rounded-full bg-[var(--ik-line)]" title="{{ q.price_min }} – {{ q.price_max }}">
+                  <div class="absolute inset-0 rounded-full bg-[var(--ik-sea)]/30"></div>
+                  {% if q.price_position_pct is not None %}
+                  <div class="absolute top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-amber-500 ring-1 ring-white"
+                       style="left: {{ q.price_position_pct }}%"
+                       title="Oferta atual: {{ q.active_offer_price|intcomma }}"></div>
                   {% endif %}
-                </td>
-                <td class="text-right tabular-nums text-muted">{{ q.available_amount|intcomma }}</td>
-                <td class="text-right tabular-nums">
-                  {% if q.active_offer_amount %}
-                  <span class="font-medium text-amber-600">{{ q.active_offer_amount|intcomma }}</span>
-                  {% else %}—{% endif %}
-                </td>
-                <td class="text-right tabular-nums">
-                  {% if q.active_offer_price %}{{ q.active_offer_price|intcomma }}{% else %}—{% endif %}
-                </td>
-                <td class="text-[11px] text-muted">
-                  {% if q.captured_at %}{{ q.captured_at|date:"d/m H:i" }}{% else %}—{% endif %}
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% endfor %}
+                </div>
+                {% endif %}
+              </td>
+              <td class="text-right tabular-nums text-muted text-sm">{{ q.available_amount|intcomma }}</td>
+              <td class="text-right text-sm">
+                {% if q.active_offer_amount %}
+                <span class="font-medium text-amber-600">{{ q.active_offer_amount|intcomma }}</span>
+                <span class="text-muted text-[11px]"> @ {{ q.active_offer_price|intcomma }}</span>
+                {% else %}<span class="text-muted">—</span>{% endif %}
+              </td>
+              <td class="text-[11px] text-muted whitespace-nowrap">
+                {% if q.captured_at %}{{ q.captured_at|date:"d/m H:i" }}{% else %}—{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
-      {% endfor %}
-
       {% else %}
       <div class="card flex flex-col items-center justify-center py-12 text-center">
         <i class="bi bi-bar-chart text-4xl text-muted mb-3"></i>
@@ -278,9 +266,4 @@
   </div>{# end tabs #}
 
 </div>
-<script>
-function bmDashboard() {
-  return {};
-}
-</script>
 {% endblock %}

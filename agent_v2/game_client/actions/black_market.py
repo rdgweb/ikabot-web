@@ -342,7 +342,9 @@ class GetBlackMarketStateAction(BaseAction):
             if not isinstance(item, dict):
                 continue
             try:
+                offer_id_raw = item.get("offerId") or item.get("id") or item.get("offer_id")
                 offers.append({
+                    "offer_id": int(offer_id_raw) if offer_id_raw else None,
                     "unit_id": int(item.get("unitId", 0) or 0),
                     "amount": int(item.get("amount", 0) or 0),
                     "price": int(item.get("price", 0) or 0),
@@ -457,15 +459,16 @@ class GetMyBlackMarketOffersAction(BaseAction):
 
 
 class CancelBlackMarketOfferAction(BaseAction):
-    """Cancel an active Black Market offer."""
+    """Remove an active Black Market offer (returns units to garrison)."""
 
     def execute(self, city_id: int, position: int, offer_id: int, **kwargs: Any) -> dict[str, Any]:
         return self._ajax_request(
-            "BlackMarketAction&function=cancelOffer",
+            "BlackMarketAction&function=removeOffer",
             {
                 "cityId": city_id,
                 "position": position,
                 "offerId": offer_id,
+                "activeTab": "tabMyOffers",
                 "backgroundView": "city",
                 "currentCityId": city_id,
                 "templateView": "blackMarket",

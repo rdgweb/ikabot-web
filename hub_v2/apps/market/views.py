@@ -482,23 +482,49 @@ class BlackMarketDashboardView(LoginRequiredMixin, TemplateView):
 
 
 class BlackMarketOfferCloseView(LoginRequiredMixin, View):
-    """POST: manually mark an active BM offer as cancelled."""
+    """POST: create a job (ac=8031) to remove offer from game and mark as cancelled."""
 
     def post(self, request, pk):
-        offer = get_object_or_404(BlackMarketOffer, pk=pk)
-        if offer.status != "active":
-            trigger = json.dumps({"toast": {"type": "error", "message": "Oferta ja encerrada."}})
+        offer = get_object_or_404(BlackMarketOffer, pk=pk, status="active")
+
+        if not offer.game_offer_id:
+            trigger = json.dumps({"toast": {
+                "type": "error",
+                "message": "ID da oferta no jogo nao disponivel. Execute um novo job ac=803 para capturar o ID.",
+            }})
             resp = HttpResponse(status=400)
             resp["HX-Trigger"] = trigger
             return resp
 
-        offer.status = "cancelled"
-        offer.closed_at = timezone.now()
-        offer.save(update_fields=["status", "closed_at"])
+        ga = offer.game_account
+        account = ga.account
+        node = account.node
+
+        from apps.jobs.services.workflows import create_job_with_workflow
+        from apps.jobs.services.dispatch import dispatch_job
+
+        job = create_job_with_workflow(
+            account=account,
+            node=node,
+            game_account=ga,
+            action_code=8031,
+            inputs={
+                "offer_hub_id": str(offer.pk),
+                "game_offer_id": offer.game_offer_id,
+                "city_id": offer.city_id,
+            },
+            status="scheduled",
+            created_by=request.user,
+            trigger_type="manual",
+        )
+        dispatch_job(job)
 
         trigger = json.dumps({
-            "toast": {"type": "success", "message": f"Oferta de {offer.amount}x {offer.unit_name} marcada como cancelada."},
-            "bm-offer-closed": True,
+            "toast": {
+                "type": "info",
+                "message": f"Job criado para remover oferta {offer.unit_name} do jogo. ID: {str(job.pk)[:8]}…",
+            },
+            "bm-cancel-job-created": {"job_id": str(job.pk)},
         })
         resp = HttpResponse(status=200)
         resp["HX-Trigger"] = trigger
