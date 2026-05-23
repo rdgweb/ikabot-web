@@ -82,16 +82,11 @@ class DailyTasksAction(BaseAction):
             "html": html,
         }
 
-    def set_vacation_mode(self, *, city_id: int, enable: bool, **kwargs: Any) -> dict[str, Any]:
-        """Activate or deactivate vacation mode.
-
-        activate: action=Options function=activateVacationMode (from ikabot upstream)
-        deactivate: action=Options function=deactivateVacationMode (needs game testing)
-        """
-        function = "activateVacationMode" if enable else "deactivateVacationMode"
+    def activate_vacation_mode(self, *, city_id: int, **kwargs: Any) -> dict[str, Any]:
+        """Activate vacation mode via action=Options&function=activateVacationMode."""
         params = {
             "action": "Options",
-            "function": function,
+            "function": "activateVacationMode",
             "backgroundView": "city",
             "currentCityId": str(city_id),
             "templateView": "options_umod_confirm",

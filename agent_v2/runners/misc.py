@@ -168,7 +168,11 @@ class VacationModeRunner(BaseRunner):
     """Activate or deactivate vacation mode for a game account.
 
     Inputs:
-        enable — bool, True to activate, False to deactivate (default True)
+        enable — bool, True to activate (default), False to deactivate
+
+    Deactivation note: the game lifts vacation mode automatically on the next
+    successful login after the mandatory period ends. So enable=False simply
+    logs in — if the session is healthy, vacation mode is already gone.
     """
 
     def execute(self, job: dict[str, Any]) -> RunnerResult:
@@ -178,8 +182,7 @@ class VacationModeRunner(BaseRunner):
         inputs = job.get("inputs") or {}
 
         enable = bool(inputs.get("enable", True))
-        action_label = "Ativar" if enable else "Desativar"
-        self.log(jid, "info", f"{action_label} modo ferias para conta {aid}")
+        self.log(jid, "info", f"{'Ativar' if enable else 'Desativar'} modo ferias para conta {aid}")
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
         if not creds:
@@ -188,7 +191,13 @@ class VacationModeRunner(BaseRunner):
         try:
             client = self.get_or_login_game_client(jid, aid, ga_id, creds)
 
-            # Resolve any city_id for the request context
+            if not enable:
+                # Deactivation = login is sufficient; game lifts vacation on next login
+                self.log(jid, "info", "Login realizado; modo ferias desativado pelo jogo automaticamente apos periodo obrigatorio")
+                self.save_game_client(ga_id, client)
+                return RunnerResult(success=True, data={"enabled": False})
+
+            # Activate: call Options API
             city_id = 0
             try:
                 snap = self.hub.get_snapshot(game_account_id=ga_id)
@@ -201,11 +210,11 @@ class VacationModeRunner(BaseRunner):
             if not city_id:
                 return RunnerResult(success=False, data={"error": "no_city_found_in_snapshot"})
 
-            result = client.set_vacation_mode(city_id=city_id, enable=enable)
-            self.log(jid, "info", f"Modo ferias {'ativado' if enable else 'desativado'}: {result}")
+            result = client.activate_vacation_mode(city_id=city_id)
+            self.log(jid, "info", f"Modo ferias ativado: {result}")
             self.save_game_client(ga_id, client)
 
-            return RunnerResult(success=True, data={"enabled": enable, "city_id": city_id})
+            return RunnerResult(success=True, data={"enabled": True, "city_id": city_id})
 
         except Exception as exc:
             if self.is_network_error(exc):

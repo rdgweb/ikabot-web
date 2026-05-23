@@ -404,10 +404,13 @@ class GameClient(IslandActions):
         action = DailyTasksAction(self)
         return action.collect_ambrosia_fountain(city_id=city_id)
 
-    def set_vacation_mode(self, city_id: int, enable: bool) -> dict[str, Any]:
-        """Activate or deactivate vacation mode for the account."""
+    def activate_vacation_mode(self, city_id: int) -> dict[str, Any]:
+        """Activate vacation mode for the account.
+
+        Deactivation is implicit — login after the mandatory vacation period lifts it.
+        """
         action = DailyTasksAction(self)
-        return action.set_vacation_mode(city_id=city_id, enable=enable)
+        return action.activate_vacation_mode(city_id=city_id)
 
     def get_temple_miracle_state(self, city_id: int, position: int) -> dict[str, Any]:
         """Fetch the miracle state for a city's temple."""
