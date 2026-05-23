@@ -1280,6 +1280,8 @@ def _custom_field_names(action_code: int) -> list[str]:
         return ["city_id", "resource_idx", "amount", "unit_price"]
     if int(action_code) == 803:
         return ["city_id", "unit_id", "amount", "unit_price"]
+    if int(action_code) == 804:
+        return ["buyer_city_id", "seller_city_id", "seller_avatar", "seller_city_name", "unit_id", "quantity", "max_price", "unit_category"]
     if int(action_code) in {902, 1006}:
         return [
             "donation_type",

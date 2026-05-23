@@ -404,7 +404,7 @@ class GetMyBlackMarketOffersAction(BaseAction):
     def execute(self, city_id: int, position: int, **kwargs: Any) -> list[dict[str, Any]]:
         """Return list of active offers.
 
-        Each item: {unit_id, amount, price, tax, net_profit}
+        Each item: {offer_id, unit_id, amount, price, tax, net_profit}
         """
         params = {
             "view": "blackMarket",
@@ -418,40 +418,57 @@ class GetMyBlackMarketOffersAction(BaseAction):
             "ajax": "1",
         }
         resp = self.client._request("GET", self.client._server_url, params=params, headers=GAME_AJAX_HEADERS)
+
+        json_offers: list[dict] = []
         try:
             data = resp.json()
+            for entry in data:
+                if isinstance(entry, (list, tuple)) and entry and entry[0] == "updateTemplateData" and isinstance(entry[1], dict):
+                    json_offers = GetBlackMarketStateAction(self.client)._parse_own_offers_from_template(entry[1])
+                    break
         except Exception:
-            html = _extract_html(resp)
-            return self._parse_my_offers(html)
-
-        for entry in data:
-            if isinstance(entry, (list, tuple)) and entry and entry[0] == "updateTemplateData" and isinstance(entry[1], dict):
-                offers = GetBlackMarketStateAction(self.client)._parse_own_offers_from_template(entry[1])
-                if offers:
-                    return offers
+            pass
 
         html = _extract_html(resp)
-        return self._parse_my_offers(html)
+        html_offers = self._parse_my_offers(html)
+
+        # Prefer JSON data but supplement offer_id from HTML cancel-button links
+        if json_offers and html_offers:
+            html_by_unit: dict[int, dict] = {}
+            for o in html_offers:
+                uid = int(o.get("unit_id") or 0)
+                if uid and uid not in html_by_unit:
+                    html_by_unit[uid] = o
+            for offer in json_offers:
+                if not offer.get("offer_id"):
+                    html_match = html_by_unit.get(int(offer.get("unit_id") or 0))
+                    if html_match and html_match.get("offer_id"):
+                        offer["offer_id"] = html_match["offer_id"]
+            return json_offers
+
+        return json_offers or html_offers
 
     def _parse_my_offers(self, html: str) -> list[dict[str, Any]]:
         offers: list[dict] = []
-        # Offer rows contain: unit image (src has unit id), amount, price, tax, net
-        row_re = re.compile(
-            r'<img[^>]+src="[^"]*unit_(\d+)[^"]*"'
-            r'.*?<td[^>]*>\s*([\d.,\s]+)\s*</td>'   # amount
-            r'.*?<td[^>]*>\s*([\d.,\s]+)\s*</td>'   # price
-            r'.*?<td[^>]*>\s*([\d.,\s]+)\s*</td>'   # tax
-            r'.*?<td[^>]*>\s*([\d.,\s]+)\s*</td>',  # net profit
-            re.DOTALL,
-        )
-        for m in row_re.finditer(html):
+        for row_html in re.split(r'<tr', html)[1:]:
+            unit_m = re.search(r'unit[_-](\d+)', row_html, re.IGNORECASE)
+            if not unit_m:
+                continue
+            offer_id_m = re.search(r'offerId=(\d+)', row_html, re.IGNORECASE)
+            # Extract numeric values from td cells (skip cells with only tags)
+            cell_nums: list[int] = []
+            for cell in re.findall(r'<td[^>]*>(.*?)</td>', row_html, re.DOTALL):
+                text = re.sub(r'<[^>]+>', '', cell).strip()
+                if re.match(r'^[\d.,\s]+$', text) and text:
+                    cell_nums.append(_parse_num(text))
             try:
                 offers.append({
-                    "unit_id": int(m.group(1)),
-                    "amount": _parse_num(m.group(2)),
-                    "price": _parse_num(m.group(3)),
-                    "tax": _parse_num(m.group(4)),
-                    "net_profit": _parse_num(m.group(5)),
+                    "offer_id": int(offer_id_m.group(1)) if offer_id_m else None,
+                    "unit_id": int(unit_m.group(1)),
+                    "amount": cell_nums[0] if len(cell_nums) > 0 else 0,
+                    "price": cell_nums[1] if len(cell_nums) > 1 else 0,
+                    "tax": cell_nums[2] if len(cell_nums) > 2 else 0,
+                    "net_profit": cell_nums[3] if len(cell_nums) > 3 else 0,
                 })
             except (ValueError, IndexError):
                 continue
@@ -599,8 +616,12 @@ class BuyUnitsAction(BaseAction):
             "activeTab": "tradePartners",
             "transportDisplayPrice": 0,
             "premiumTransporter": 0,
+            "normalTransportersMax": num_transporters,
             f"{unit_id}Price": unit_price,
             f"cargo_{unit_id}": quantity,
+            "capacity": 5,
+            "max_capacity": 5,
+            "jetPropulsion": 0,
             "transporters": num_transporters,
             "backgroundView": "city",
             "currentCityId": buyer_city_id,
