@@ -4,6 +4,7 @@
 {{ black_market_ui.cities|json_script:"bm-cities-data" }}
 {{ black_market_ui.troops_units|json_script:"bm-troops-data" }}
 {{ black_market_ui.fleet_units|json_script:"bm-fleet-data" }}
+{{ black_market_ui.price_limits|json_script:"bm-price-limits-data" }}
 
 <div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_40px_rgba(20,12,8,0.14)]"
      style="border-color: rgba(40,20,10,0.22); background:
@@ -14,6 +15,7 @@
        cities: JSON.parse(document.getElementById('bm-cities-data')?.textContent || '[]'),
        troopsUnits: JSON.parse(document.getElementById('bm-troops-data')?.textContent || '[]'),
        fleetUnits: JSON.parse(document.getElementById('bm-fleet-data')?.textContent || '[]'),
+       priceLimits: JSON.parse(document.getElementById('bm-price-limits-data')?.textContent || '{}'),
        selectedCityId: '',
        selectedUnitId: 0,
        selectedUnitName: '',
@@ -39,12 +41,21 @@
          if (!city) return 0;
          return (city.active_offers || {})[unitId] || 0;
        },
+       limitsFor(unitId) {
+         const cityLimits = this.priceLimits[String(this.selectedCityId)] || {};
+         return cityLimits[String(unitId)] || null;
+       },
        selectUnit(unitId, unitName, avgPrice) {
          this.selectedUnitId = unitId;
          this.selectedUnitName = unitName;
          const avail = this.garrisonOf(unitName);
          if (avail > 0 && this.amount > avail) this.amount = avail;
-         if (avgPrice && this.unitPrice <= 1) this.unitPrice = avgPrice;
+         const limits = this.limitsFor(unitId);
+         if (limits && this.unitPrice <= 1) {
+           this.unitPrice = limits.max;
+         } else if (avgPrice && this.unitPrice <= 1) {
+           this.unitPrice = avgPrice;
+         }
        },
        maxAmount() {
          const avail = this.garrisonOf(this.selectedUnitName);
@@ -245,8 +256,14 @@
                 <i class="bi bi-lightning-fill text-[8px]" style="color: var(--ik-gold);"></i>
                 <span x-text="`${unit.upkeep}/h`"></span>
               </div>
-              {# Avg price hint #}
-              <template x-if="unit.avg_price">
+              {# Price hint: limits if available, else avg #}
+              <template x-if="limitsFor(unit.id)">
+                <div class="flex items-center gap-0.5 text-[9px]" style="color: var(--ik-bad);">
+                  <i class="bi bi-arrow-left-right text-[8px]"></i>
+                  <span x-text="`${new Intl.NumberFormat('pt-BR').format(limitsFor(unit.id).min)}–${new Intl.NumberFormat('pt-BR').format(limitsFor(unit.id).max)}`"></span>
+                </div>
+              </template>
+              <template x-if="!limitsFor(unit.id) && unit.avg_price">
                 <div class="flex items-center gap-0.5 text-[9px]" style="color: var(--ik-gold);">
                   <i class="bi bi-graph-up text-[8px]"></i>
                   <span x-text="new Intl.NumberFormat('pt-BR').format(unit.avg_price)"></span>
@@ -348,10 +365,35 @@
                     style="border-color: rgba(219,201,167,0.9);">+</button>
           </div>
           <div class="mt-2 space-y-1.5">
-            <div class="text-[10px] text-muted">
-              <i class="bi bi-info-circle text-[9px]"></i>
-              O runner valida os limites de preço do jogo e ajusta automaticamente se necessário.
-            </div>
+            {# Price limits from last captured quote #}
+            <template x-if="limitsFor(selectedUnitId)">
+              <div class="rounded-[10px] border px-2.5 py-2 text-[10px]"
+                   style="border-color: rgba(187,81,67,0.25); background: rgba(187,81,67,0.04);">
+                <div class="flex items-center justify-between gap-2">
+                  <div>
+                    <i class="bi bi-arrow-left-right text-[9px]" style="color: var(--ik-bad);"></i>
+                    <span class="text-muted ml-0.5">Faixa do jogo:</span>
+                    <span class="font-semibold text-ink ml-0.5"
+                          x-text="new Intl.NumberFormat('pt-BR').format(limitsFor(selectedUnitId).min)"></span>
+                    <span class="text-muted"> – </span>
+                    <span class="font-semibold text-ink"
+                          x-text="new Intl.NumberFormat('pt-BR').format(limitsFor(selectedUnitId).max)"></span>
+                    <span class="text-muted"> ouro</span>
+                  </div>
+                  <div class="flex gap-1 shrink-0">
+                    <button type="button"
+                            @click="unitPrice = limitsFor(selectedUnitId).min"
+                            class="rounded-full border px-1.5 py-0.5 text-[9px] font-semibold transition-all hover:shadow-sm"
+                            style="border-color: rgba(187,81,67,0.3); color: var(--ik-bad); background: rgba(187,81,67,0.06);">mín</button>
+                    <button type="button"
+                            @click="unitPrice = limitsFor(selectedUnitId).max"
+                            class="rounded-full border px-1.5 py-0.5 text-[9px] font-semibold transition-all hover:shadow-sm"
+                            style="border-color: rgba(95,140,78,0.35); color: var(--ik-good); background: rgba(95,140,78,0.06);">máx</button>
+                  </div>
+                </div>
+              </div>
+            </template>
+            {# Avg price hint #}
             <template x-if="visibleUnits().find(u => u.id === selectedUnitId)?.avg_price">
               <div class="rounded-[10px] border px-2.5 py-2 text-[10px]"
                    style="border-color: rgba(79,134,185,0.25); background: rgba(79,134,185,0.05);">
@@ -362,6 +404,12 @@
                 <button type="button"
                         @click="unitPrice = visibleUnits().find(u => u.id === selectedUnitId)?.avg_price || unitPrice"
                         class="ml-1.5 underline text-[9px]" style="color: var(--ik-sea);">usar</button>
+              </div>
+            </template>
+            <template x-if="!limitsFor(selectedUnitId) && !visibleUnits().find(u => u.id === selectedUnitId)?.avg_price">
+              <div class="text-[10px] text-muted">
+                <i class="bi bi-info-circle text-[9px]"></i>
+                O runner valida os limites de preço do jogo e ajusta automaticamente se necessário.
               </div>
             </template>
           </div>

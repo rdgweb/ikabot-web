@@ -1,5 +1,5 @@
 {% extends base_template|default:"base.html" %}
-{% load static humanize %}
+{% load static humanize hub_tags %}
 
 {% block title %}Mercado Negro{% endblock %}
 
@@ -96,7 +96,14 @@
                 <span class="text-muted"> / </span>
                 <span class="text-[12px] text-muted">{{ offer.city_name|default:"?" }}</span>
               </td>
-              <td class="font-medium text-ink">{{ offer.unit_name|default:offer.unit_id }}</td>
+              <td>
+                <div class="flex items-center gap-2">
+                  {% with icon=offer.unit_name|unit_icon %}
+                  {% if icon %}<img src="{% static icon %}" alt="" class="h-7 w-7 object-contain flex-shrink-0">{% endif %}
+                  {% endwith %}
+                  <span class="font-medium text-ink">{{ offer.unit_name|default:offer.unit_id }}</span>
+                </div>
+              </td>
               <td class="text-right tabular-nums">{{ offer.amount|intcomma }}</td>
               <td class="text-right tabular-nums">{{ offer.unit_price|intcomma }}</td>
               <td class="text-right tabular-nums text-muted">{{ offer.total_est|intcomma }}</td>
@@ -172,7 +179,14 @@
                 <span class="text-muted"> / </span>
                 <span class="text-[12px] text-muted">{{ offer.city_name|default:"?" }}</span>
               </td>
-              <td>{{ offer.unit_name|default:offer.unit_id }}</td>
+              <td>
+                <div class="flex items-center gap-2">
+                  {% with icon=offer.unit_name|unit_icon %}
+                  {% if icon %}<img src="{% static icon %}" alt="" class="h-7 w-7 object-contain flex-shrink-0">{% endif %}
+                  {% endwith %}
+                  <span class="font-medium text-ink">{{ offer.unit_name|default:offer.unit_id }}</span>
+                </div>
+              </td>
               <td class="text-right tabular-nums">{{ offer.amount|intcomma }}</td>
               <td class="text-right tabular-nums">{{ offer.unit_price|intcomma }}</td>
               <td>
@@ -208,7 +222,6 @@
           <thead>
             <tr>
               <th>Unidade</th>
-              <th>Conta / Cidade</th>
               <th class="text-right">Mín.</th>
               <th class="text-right">Máx.</th>
               <th class="w-28">Faixa</th>
@@ -220,10 +233,13 @@
           <tbody>
             {% for q in quotes %}
             <tr>
-              <td class="font-medium text-ink">{{ q.unit_name|default:q.unit_id }}</td>
-              <td class="text-[12px]">
-                <span class="font-medium text-ink">{{ q.game_account.account.label }}</span>
-                <span class="text-muted"> / {{ q.city_name|default:"?" }}</span>
+              <td>
+                <div class="flex items-center gap-2">
+                  {% with icon=q.unit_name|unit_icon %}
+                  {% if icon %}<img src="{% static icon %}" alt="" class="h-7 w-7 object-contain flex-shrink-0">{% endif %}
+                  {% endwith %}
+                  <span class="font-medium text-ink">{{ q.unit_name|default:q.unit_id }}</span>
+                </div>
               </td>
               <td class="text-right tabular-nums text-sm">{{ q.price_min|intcomma }}</td>
               <td class="text-right tabular-nums text-sm">{{ q.price_max|intcomma }}</td>

@@ -537,7 +537,7 @@ def _training_form_context(snapshot, cities):
 
 def _black_market_form_context(cities, snapshot):
     from core.catalogs import TRAINING_UNITS, UNIT_ICON_MAP
-    from apps.market.models import BlackMarketOffer
+    from apps.market.models import BlackMarketOffer, BlackMarketUnitQuote
     from django.db.models import Avg
 
     bm_cities = []
@@ -600,6 +600,27 @@ def _black_market_form_context(cities, snapshot):
     except Exception:
         pass
 
+    # Price limits per (city_id, unit_id) from most recent quote — {city_id: {unit_id: {min, max}}}
+    price_limits: dict[str, dict[str, dict]] = {}
+    try:
+        bm_city_ids = [str(c["id"]) for c in bm_cities if c.get("id")]
+        if snapshot and bm_city_ids:
+            for q in (BlackMarketUnitQuote.objects
+                      .filter(game_account=snapshot.game_account, city_id__in=bm_city_ids)
+                      .order_by("city_id", "unit_id", "-captured_at")
+                      .values("city_id", "unit_id", "price_min", "price_max")):
+                ckey = str(q["city_id"])
+                ukey = str(q["unit_id"])
+                if ckey not in price_limits:
+                    price_limits[ckey] = {}
+                if ukey not in price_limits[ckey]:
+                    price_limits[ckey][ukey] = {
+                        "min": q["price_min"],
+                        "max": q["price_max"],
+                    }
+    except Exception:
+        pass
+
     for city in bm_cities:
         cid = str(city["id"] or "")
         city_mil = military_by_city.get(cid, {})
@@ -621,6 +642,7 @@ def _black_market_form_context(cities, snapshot):
         "cities": bm_cities,
         "troops_units": enrich(TRAINING_UNITS["troops"]),
         "fleet_units": enrich(TRAINING_UNITS["fleet"]),
+        "price_limits": price_limits,
     }
 
 
