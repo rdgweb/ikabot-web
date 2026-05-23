@@ -1332,6 +1332,8 @@ def _diplomacy_msg_types(receiver_id: str) -> list[tuple[str, str]]:
 
 
 def _custom_field_names(action_code: int) -> list[str]:
+    if int(action_code) == 808:
+        return ["buyer_city_id", "unit_category"]
     if int(action_code) == 25:
         return ["enable"]
     if int(action_code) == 6:

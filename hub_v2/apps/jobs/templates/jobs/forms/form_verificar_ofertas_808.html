@@ -1,0 +1,176 @@
+{% load static hub_tags %}
+
+{% if action_code == 808 %}
+{{ market_ui.cities|json_script:"bm-check-cities-data" }}
+
+<div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_40px_rgba(20,12,8,0.14)]"
+     style="border-color: rgba(40,20,10,0.22); background:
+       radial-gradient(800px 280px at 0% 0%, rgba(79,134,185,0.14), transparent 60%),
+       radial-gradient(700px 240px at 100% 100%, rgba(50,90,200,0.08), transparent 60%),
+       linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
+     x-data="{
+       cities: JSON.parse(document.getElementById('bm-check-cities-data')?.textContent || '[]'),
+       selectedCityId: '',
+       unitCategory: '0',
+       selectedCity() { return this.cities.find(c => String(c.id) === String(this.selectedCityId)); },
+       isReady() { return !!this.selectedCityId; }
+     }">
+
+  <input type="hidden" name="{{ form.buyer_city_id.html_name }}" x-model="selectedCityId">
+  <input type="hidden" name="{{ form.unit_category.html_name }}" x-model="unitCategory">
+
+  {# ── Header ── #}
+  <div class="border-b px-5 py-5 md:px-6"
+       style="border-color: rgba(40,20,10,0.15); background: linear-gradient(180deg, rgba(255,255,255,0.56), rgba(255,255,255,0));">
+    <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+      <div>
+        <div class="flex items-center gap-2">
+          <div class="flex h-8 w-8 items-center justify-center rounded-xl"
+               style="background: linear-gradient(135deg, rgba(79,134,185,0.18), rgba(40,20,10,0.10));">
+            <i class="bi bi-search text-sm" style="color: var(--ik-sea);"></i>
+          </div>
+          <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Mercado Negro</div>
+        </div>
+        <h3 class="mt-2 text-xl font-bold text-ink">Verificar ofertas disponíveis</h3>
+        <p class="mt-1.5 text-sm leading-relaxed text-muted">
+          Escaneia o Branch Office e salva as unidades disponíveis para compra.
+          Use antes de criar um job de compra (808 → 804).
+        </p>
+      </div>
+      <div class="shrink-0 rounded-2xl border px-4 py-3 md:min-w-[16rem]"
+           style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.78);">
+        <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Cidade selecionada</div>
+        <div class="mt-2 text-sm font-semibold text-ink"
+             x-text="selectedCity() ? selectedCity().name : 'Nenhuma cidade selecionada'"></div>
+        <div class="mt-1 text-[11px] text-muted"
+             x-text="selectedCity() ? `Branch Office pos ${selectedCity().branch_office_pos}` : 'Selecione uma cidade com Branch Office'"></div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Body ── #}
+  <div class="px-5 py-5 md:px-6 space-y-5">
+
+    {# ── Step 1: Cidade ── #}
+    <section>
+      <div class="mb-3">
+        <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
+          <span class="inline-flex h-5 w-5 items-center justify-center rounded-full text-white text-[9px] font-bold mr-1.5"
+                style="background: var(--ik-sea);">1</span>
+          Cidade compradora
+        </div>
+        <p class="mt-1 text-[11px] text-muted">Somente cidades com Branch Office aparecem aqui.</p>
+      </div>
+
+      <template x-if="!cities.length">
+        <div class="rounded-[18px] border border-dashed border-[rgba(79,134,185,0.35)] bg-[rgba(79,134,185,0.04)] px-4 py-5 text-center">
+          <i class="bi bi-building-x text-xl" style="color: var(--ik-sea); opacity: 0.5;"></i>
+          <p class="mt-2 text-sm font-semibold text-ink">Nenhuma cidade com Branch Office</p>
+          <p class="mt-1 text-xs text-muted">Construa o Branch Office e rode o Check Status.</p>
+        </div>
+      </template>
+
+      <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4" x-show="cities.length">
+        <template x-for="city in cities" :key="`bm-check-city-${city.id}`">
+          <button type="button"
+                  @click="selectedCityId = String(city.id)"
+                  class="relative overflow-hidden rounded-[18px] border text-left transition-all duration-150 p-3"
+                  :class="String(selectedCityId) === String(city.id)
+                    ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_8px_22px_rgba(79,134,185,0.18)] translate-y-[-1px]'
+                    : 'hover:translate-y-[-1px] hover:border-[rgba(79,134,185,0.4)] hover:shadow-[0_8px_16px_rgba(79,134,185,0.08)]'"
+                  :style="String(selectedCityId) === String(city.id)
+                    ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.08), rgba(255,255,255,0.90));'
+                    : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
+            <div class="absolute inset-x-0 top-0 h-12"
+                 style="background: linear-gradient(135deg, rgba(79,134,185,0.10), transparent);"></div>
+            <div class="relative flex items-start gap-2.5">
+              <div class="relative shrink-0">
+                <div class="flex h-11 w-11 items-center justify-center rounded-[14px] border"
+                     style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                  <img :src="city.city_art || '{% static 'game/buildings/townhall.png' %}'" alt="" class="h-8 w-8 object-contain">
+                </div>
+                <template x-if="city.tradegood_icon">
+                  <div class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                    <img :src="city.tradegood_icon" :alt="city.tradegood_name" class="h-3.5 w-3.5 object-contain">
+                  </div>
+                </template>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-start justify-between gap-1.5">
+                  <div class="min-w-0">
+                    <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
+                    <div class="mt-0.5 text-[11px] text-muted" x-text="city.x && city.y ? `[${city.x}:${city.y}]` : ''"></div>
+                  </div>
+                  <span class="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-all"
+                        :style="String(selectedCityId) === String(city.id)
+                          ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
+                          : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
+                    <i class="bi text-[10px]" :class="String(selectedCityId) === String(city.id) ? 'bi-check-lg' : 'bi-search'"></i>
+                  </span>
+                </div>
+                <div class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px]"
+                     style="border-color: rgba(79,134,185,0.2); background: rgba(79,134,185,0.05);">
+                  <i class="bi bi-building text-[9px]" style="color: var(--ik-sea);"></i>
+                  <span class="text-muted" x-text="`pos ${city.branch_office_pos}`"></span>
+                </div>
+              </div>
+            </div>
+          </button>
+        </template>
+      </div>
+    </section>
+
+    {# ── Step 2: Tipo de unidade ── #}
+    <section x-show="selectedCityId">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
+          <span class="inline-flex h-5 w-5 items-center justify-center rounded-full text-white text-[9px] font-bold mr-1.5"
+                style="background: var(--ik-sea);">2</span>
+          Tipo de unidade a escanear
+        </div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2">
+        <template x-for="opt in [{val:'0',label:'Todas',icon:'bi-grid-fill',desc:'Frotas e tropas'},{val:'444',label:'Frotas',icon:'bi-water',desc:'Unidades marítimas'},{val:'111',label:'Tropas',icon:'bi-shield-shaded',desc:'Unidades terrestres'}]"
+                  :key="opt.val">
+          <button type="button" @click="unitCategory = opt.val"
+                  class="relative overflow-hidden rounded-[18px] border p-3 text-left transition-all duration-150"
+                  :class="unitCategory === opt.val
+                    ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_6px_16px_rgba(79,134,185,0.18)] translate-y-[-1px]'
+                    : 'hover:translate-y-[-1px] hover:shadow-[0_6px_12px_rgba(79,134,185,0.08)]'"
+                  :style="unitCategory === opt.val
+                    ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.08), rgba(255,255,255,0.90));'
+                    : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
+            <div class="flex flex-col items-center gap-1.5 py-1 text-center">
+              <i class="bi text-lg transition-colors"
+                 :class="opt.icon"
+                 :style="unitCategory === opt.val ? 'color: var(--ik-sea);' : 'color: var(--ik-muted);'"></i>
+              <div class="text-xs font-bold text-ink" x-text="opt.label"></div>
+              <div class="text-[9px] text-muted" x-text="opt.desc"></div>
+            </div>
+          </button>
+        </template>
+      </div>
+    </section>
+
+    {# ── Summary ── #}
+    <template x-if="isReady()">
+      <div class="rounded-[18px] border px-4 py-3"
+           style="border-color: rgba(95,140,78,0.3); background: rgba(95,140,78,0.05);">
+        <div class="flex flex-wrap items-center gap-3 text-sm">
+          <i class="bi bi-check-circle-fill" style="color: var(--ik-good);"></i>
+          <span class="font-semibold text-ink">Pronto para escanear:</span>
+          <span class="text-muted">
+            Branch Office de
+            <span class="font-semibold text-ink" x-text="selectedCity()?.name || ''"></span>
+            ·
+            <span class="font-semibold text-ink"
+                  x-text="unitCategory === '0' ? 'todas as unidades' : unitCategory === '444' ? 'frotas' : 'tropas'"></span>
+          </span>
+        </div>
+      </div>
+    </template>
+
+  </div>
+</div>
+{% endif %}
