@@ -63,6 +63,8 @@ class SpyRunner(BaseRunner):
         delete_after    = bool(inputs.get("delete_after_save", False))
         recall_after    = bool(inputs.get("recall_after", True))
         inputs = {**inputs, "__ga_id": ga_id}
+        safehouse_position = self._resolve_safehouse_position(jid, ga_id, city_id, inputs)
+        inputs["safehouse_position"] = safehouse_position
 
         try:
             max_risk = float(inputs.get("max_detection_risk") or 35)
@@ -123,7 +125,7 @@ class SpyRunner(BaseRunner):
 
         def _train(count: int) -> tuple[bool, str]:
             """Treina count espiões, retorna (success, msg)."""
-            r = client.train_spies(city_id, count=count)
+            r = client.train_spies(city_id, count=count, position=safehouse_position)
             return r.get("success", False), r.get("message", "")
 
         # ── Credentials + client ──────────────────────────────────────────────
@@ -137,11 +139,14 @@ class SpyRunner(BaseRunner):
 
             # ── Relatórios pendentes ──────────────────────────────────────────
             if save_reports:
-                self._save_reports(jid, client, ga_id, city_id, delete_after)
+                self._save_reports(
+                    jid, client, ga_id, city_id, delete_after,
+                    safehouse_position=safehouse_position,
+                )
 
             # ── Estado da safehouse ───────────────────────────────────────────
             self.log(jid, "info", f"[{phase.upper()}] Lendo safehouse {city_id}")
-            state    = client.get_safehouse_state(city_id)
+            state    = client.get_safehouse_state(city_id, position=safehouse_position)
             available = int(state.get("available_spies") or 0)
             total     = int(state.get("total_spies") or 0)
             in_use    = int(state.get("in_use_spies") or 0)
@@ -259,7 +264,8 @@ class SpyRunner(BaseRunner):
                     # Tentar treinar se necessário
                     train_wait = self._maybe_train(
                         jid, client, city_id, available, slots_free, secs_per,
-                        live_params, max_risk, capacity, total)
+                        live_params, max_risk, capacity, total,
+                        safehouse_position=safehouse_position)
                     if train_wait:
                         self.save_game_client(ga_id, client)
                         return RunnerResult(success=True, reschedule_seconds=train_wait,
@@ -303,7 +309,7 @@ class SpyRunner(BaseRunner):
                         time.sleep(3)
                         travel = 0
                         try:
-                            fs = client.get_safehouse_state(city_id)
+                            fs = client.get_safehouse_state(city_id, position=safehouse_position)
                             fg = self._get_target_groups(fs, target_city_id, target_city_name, target_owner)
                             wait = self._arrival_wait(fg, ARRIVAL_WAIT)
                             for g in fg:
@@ -412,7 +418,8 @@ class SpyRunner(BaseRunner):
 
                             ok, msg = self._execute_internal_mission(
                                 client, city_id, target_city_id, island_id,
-                                current_mission, ag, dec, tgroup.get("spy_id"))
+                                current_mission, ag, dec, tgroup.get("spy_id"),
+                                safehouse_position=safehouse_position)
 
                             if not ok:
                                 if "insuficiente" in msg.lower() or "insufficient" in msg.lower():
@@ -447,8 +454,10 @@ class SpyRunner(BaseRunner):
                             time.sleep(15)
                             succeeded = True
                             if save_reports:
-                                fresh = self._save_reports(jid, client, ga_id, city_id, delete_after,
-                                                           return_reports=True)
+                                fresh = self._save_reports(
+                                    jid, client, ga_id, city_id, delete_after,
+                                    return_reports=True, safehouse_position=safehouse_position,
+                                )
                                 succeeded = self._mission_succeeded(fresh, current_mission, target_owner)
 
                             # After any mission (success or fail), riskAfter is added to remaining.
@@ -525,7 +534,8 @@ class SpyRunner(BaseRunner):
                         f"(missão 8, risco={recall_risk:.1f}%)")
                     ok, msg = self._execute_internal_mission(
                         client, city_id, target_city_id, island_id,
-                        8, 1, 0, tgroup.get("spy_id"))
+                        8, 1, 0, tgroup.get("spy_id"),
+                        safehouse_position=safehouse_position)
                     if ok:
                         wait = self._arrival_wait(tgroups, ARRIVAL_WAIT)
                         self.log(jid, "info",
@@ -550,7 +560,10 @@ class SpyRunner(BaseRunner):
                     f"Falharam: {[MISSION_DATA.get(m,{}).get('name',m) for m in missions_failed]}")
                 self._notify_telegram(jid, ga_id, target_owner, target_city_name,
                                       missions_done, missions_failed)
-                self._replenish_spies(jid, client, city_id, capacity, total, secs_per)
+                self._replenish_spies(
+                    jid, client, city_id, capacity, total, secs_per,
+                    safehouse_position=safehouse_position,
+                )
                 self.save_game_client(ga_id, client)
                 return RunnerResult(success=True, data={"missions_done": missions_done})
 
@@ -562,11 +575,42 @@ class SpyRunner(BaseRunner):
             return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE,
                                 data={"error": str(exc)})
 
+    def _resolve_safehouse_position(self, job_id: str, game_account_id: str, city_id: str, inputs: dict[str, Any]) -> int:
+        raw_position = inputs.get("safehouse_position")
+        try:
+            position = int(raw_position)
+            if position > 0:
+                return position
+        except (TypeError, ValueError):
+            pass
+
+        snapshot = self.get_snapshot(job_id, game_account_id)
+        cities = (snapshot or {}).get("cities") or []
+        iterable = cities.values() if isinstance(cities, dict) else cities
+        city = next((c for c in iterable if str(c.get("id") or "") == str(city_id)), None)
+        buildings = (city or {}).get("buildings") or []
+        for building in buildings:
+            name = str(building.get("building") or building.get("type") or "").strip().lower()
+            if name not in {"safehouse", "hideout"}:
+                continue
+            for key in ("position", "building_position", "slot"):
+                try:
+                    position = int(building.get(key))
+                except (TypeError, ValueError):
+                    continue
+                if position > 0:
+                    self.log(job_id, "info", f"Safehouse resolvida pelo snapshot: cidade={city_id} pos={position}")
+                    return position
+
+        self.log(job_id, "warn", f"Safehouse não encontrada no snapshot da cidade {city_id}; usando fallback pos=19")
+        return 19
+
     # ── Helpers ────────────────────────────────────────────────────────────────
 
     def _maybe_train(self, jid, client, city_id: str, available: int, slots_free: int,
                      secs_per: int, live_params: dict, max_risk: float,
-                     capacity: int, total: int) -> int | None:
+                     capacity: int, total: int, *,
+                     safehouse_position: int) -> int | None:
         """Tenta treinar espiões se necessário. Retorna wait_seconds ou None."""
         if available > 0:
             # Tem disponíveis mas não consegue infiltrar — treinar mínimo adicional
@@ -579,7 +623,7 @@ class SpyRunner(BaseRunner):
                             f"e safehouse cheia ({total}/{capacity}). "
                             f"Alvo muito seguro para max_risk={max_risk}%.")
                         return None
-                    ok, msg = client.train_spies(city_id, count=to_train)
+                    ok, msg = client.train_spies(city_id, count=to_train, position=safehouse_position)
                     if ok:
                         wait = secs_per * to_train + 60
                         self.log(jid, "info",
@@ -603,7 +647,7 @@ class SpyRunner(BaseRunner):
             return random.randint(10*60, 20*60)
 
         to_train = min(5, slots_free)  # treina até 5 por vez
-        ok, msg = client.train_spies(city_id, count=to_train)
+        ok, msg = client.train_spies(city_id, count=to_train, position=safehouse_position)
         if ok:
             wait = secs_per * to_train + 60
             custo_ouro    = to_train * 150
@@ -688,17 +732,19 @@ class SpyRunner(BaseRunner):
         return r.get("success", False), r.get("message", "")
 
     def _execute_internal_mission(self, client, city_id, target_city_id, island_id,
-                                  mission_id, agents, decoys, spy_id):
+                                  mission_id, agents, decoys, spy_id, *,
+                                  safehouse_position: int):
         r = client.execute_spy_mission(source_city_id=city_id, target_city_id=target_city_id,
                                        mission_id=mission_id, agents=agents, decoys=decoys,
-                                       spy_id=spy_id, island_id=island_id)
+                                       spy_id=spy_id, island_id=island_id, position=safehouse_position)
         return r.get("success", False), r.get("message", "")
 
     def _save_reports(self, jid, client, ga_id, city_id, delete_after,
-                      return_reports: bool = False) -> list:
+                      return_reports: bool = False,
+                      safehouse_position: int = 19) -> list:
         """Coleta, salva e opcionalmente retorna relatórios da safehouse."""
         try:
-            reports = client.get_spy_reports(city_id)
+            reports = client.get_spy_reports(city_id, position=safehouse_position)
             if not reports:
                 return []
             dicts = [{
@@ -730,7 +776,7 @@ class SpyRunner(BaseRunner):
             if delete_after and new > 0:
                 for r in reports[:new]:
                     try:
-                        client.delete_spy_report(city_id, r.get("report_id"))
+                        client.delete_spy_report(city_id, r.get("report_id"), position=safehouse_position)
                     except Exception:
                         pass
             return reports if return_reports else []
@@ -844,13 +890,14 @@ class SpyRunner(BaseRunner):
             logger.warning("Telegram spy_done falhou: %s", exc)
 
     def _replenish_spies(self, jid, client, city_id: str,
-                         capacity: int, total: int, secs_per: int) -> None:
+                         capacity: int, total: int, secs_per: int, *,
+                         safehouse_position: int) -> None:
         """Treina espiões de reposição ao fim do ciclo."""
         try:
             missing = max(0, capacity - total)
             if missing <= 0:
                 return
-            ok, msg = client.train_spies(city_id, count=missing)
+            ok, msg = client.train_spies(city_id, count=missing, position=safehouse_position)
             if ok:
                 wait = secs_per * missing
                 self.log(jid, "info",
