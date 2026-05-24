@@ -1,5 +1,6 @@
 """Agent API views: status updates, logs, reschedule."""
 
+import ast
 import json
 import logging
 from datetime import timedelta
@@ -235,6 +236,11 @@ class RescheduleJobView(APIView):
                 try:
                     existing = json.loads(job.inputs_json or "{}")
                 except (json.JSONDecodeError, TypeError):
+                    try:
+                        existing = ast.literal_eval(job.inputs_json or "{}")
+                    except Exception:
+                        existing = {}
+                if not isinstance(existing, dict):
                     existing = {}
                 existing.update(patch)
                 new_inputs_json = json.dumps(existing)

@@ -18,7 +18,11 @@ import time
 from typing import Any
 
 from core.runner_registry import register_runner
-from game_client.actions.spy import MISSION_DATA, compute_spy_risks, find_optimal_agents_decoys
+from game_client.actions.spy import (
+    MISSION_DATA,
+    compute_spy_risks,
+    find_minimum_agents_decoys,
+)
 from runners.base import BaseRunner, RunnerResult
 
 logger = logging.getLogger(__name__)
@@ -194,7 +198,7 @@ class SpyRunner(BaseRunner):
 
             # ══ FASE: infiltrating_only ═══════════════════════════════════════
             if phase == "infiltrating_only":
-                opt = find_optimal_agents_decoys(live_params, 1, max_risk, max_risk + 25, 30.0, available)
+                opt = find_minimum_agents_decoys(live_params, 1, max_risk, max_risk + 25, 30.0, available)
                 if opt:
                     agents, decoys = opt["agents"], opt.get("decoys", 0)
                     self.log(jid, "info",
@@ -276,7 +280,7 @@ class SpyRunner(BaseRunner):
 
                     # Tentar infiltração
                     to_send = max(1, needed - current_total)
-                    opt = find_optimal_agents_decoys(live_params, 1, max_risk, max_risk + 25, 30.0, available)
+                    opt = find_minimum_agents_decoys(live_params, 1, max_risk, max_risk + 25, 30.0, available)
                     if not opt:
                         self.log(jid, "warn",
                             f"Infiltração impossível: {available} disponíveis, risco≤{max_risk}%, alvo free_spies={live_params.get('targetFreeSpies',0)}.")
@@ -362,11 +366,11 @@ class SpyRunner(BaseRunner):
                 else:
                     current_mission = missions_pending[0]
                     mname = MISSION_DATA.get(current_mission, {}).get("name", f"Missão {current_mission}")
-                    opt = find_optimal_agents_decoys(
+                    opt = find_minimum_agents_decoys(
                         live_params, current_mission, max_risk, max_risk + 25, 40.0, stationed)
 
                     if not opt:
-                        opt_cap = find_optimal_agents_decoys(
+                        opt_cap = find_minimum_agents_decoys(
                             live_params, current_mission, max_risk, max_risk + 25, 40.0,
                             max(available, capacity, 20))
                         if opt_cap:
@@ -613,9 +617,15 @@ class SpyRunner(BaseRunner):
                      safehouse_position: int) -> int | None:
         """Tenta treinar espiões se necessário. Retorna wait_seconds ou None."""
         if available > 0:
+            current_opt = find_minimum_agents_decoys(
+                live_params, 1, max_risk, max_risk + 25, 30.0, available
+            )
+            if current_opt:
+                return None
+
             # Tem disponíveis mas não consegue infiltrar — treinar mínimo adicional
             for try_total in range(available + 1, min(capacity + 1, available + 15)):
-                if find_optimal_agents_decoys(live_params, 1, max_risk, max_risk + 25, 30.0, try_total):
+                if find_minimum_agents_decoys(live_params, 1, max_risk, max_risk + 25, 30.0, try_total):
                     to_train = min(try_total - available, slots_free)
                     if to_train <= 0:
                         self.log(jid, "warn",
@@ -679,7 +689,7 @@ class SpyRunner(BaseRunner):
         """Total de espiões (agentes+chamarizes) necessários para a missão mais exigente."""
         needed = 1
         for mid in mission_ids:
-            opt = find_optimal_agents_decoys(live_params, mid, max_risk, max_risk + 25, 30.0, available)
+            opt = find_minimum_agents_decoys(live_params, mid, max_risk, max_risk + 25, 30.0, available)
             if opt:
                 needed = max(needed, int(opt.get("agents", 1)) + int(opt.get("decoys", 0)))
         return needed

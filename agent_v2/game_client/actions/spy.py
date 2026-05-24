@@ -243,6 +243,46 @@ def find_optimal_agents_decoys(
     )
 
 
+def find_minimum_agents_decoys(
+    live_params: dict,
+    mission_id: int,
+    max_agent_risk: float,
+    max_decoy_risk: float,
+    min_success: float,
+    available: int,
+) -> dict | None:
+    """Find the smallest viable (agents, decoys) for a mission.
+
+    This is used by the runner when the goal is to infiltrate/execute with the
+    minimum necessary footprint instead of chasing a near-max-success plateau.
+    """
+    candidates: list[dict] = []
+
+    max_agents = min(available, 28)
+    for agents in range(1, max_agents + 1):
+        for decoys in range(0, min(available - agents + 1, 15)):
+            r = compute_spy_risks(live_params, mission_id, agents, decoys)
+            if r["agent_risk"] > max_agent_risk:
+                continue
+            if r["decoy_risk"] > max_decoy_risk:
+                continue
+            if r["success"] < min_success:
+                continue
+            candidates.append(r)
+
+    if not candidates:
+        return None
+
+    return min(
+        candidates,
+        key=lambda c: (
+            int(c["agents"]) + int(c.get("decoys") or 0),
+            float(c["agent_risk"]) + float(c["decoy_risk"]) * 0.2,
+            -float(c["success"]),
+        ),
+    )
+
+
 def compute_agents_for_success(mission_id: int, target_success_pct: int = 80) -> int:
     """Calculate agents needed to reach target_success_pct% success probability.
 

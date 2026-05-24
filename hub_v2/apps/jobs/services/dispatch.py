@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 from datetime import datetime
 
@@ -15,7 +16,11 @@ def _serialize_inputs(job: Job) -> dict:
     try:
         return json.loads(job.inputs_json) if job.inputs_json else {}
     except (json.JSONDecodeError, TypeError):
-        return {}
+        try:
+            parsed = ast.literal_eval(job.inputs_json or "{}")
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
 
 
 def build_payload(job: Job) -> dict:

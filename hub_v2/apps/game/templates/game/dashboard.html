@@ -839,16 +839,16 @@
                  title="{{ bld.building|building_name }} Lv.{{ bld.level }}{% if bld.is_upgrading %} (em construcao{% if bld.construction_remaining_human %} · {{ bld.construction_remaining_human }}{% endif %}){% endif %}">
               {% with bld.building|building_icon as icon_path %}
               {% if icon_path %}
-              <img src="{% static icon_path %}" class="w-3.5 h-3.5">
+              <img src="{% static icon_path %}" class="w-10 h-9">
               {% else %}
-              <i class="bi {{ bld.building|building_bi_icon }} text-[11px]"></i>
+              <i class="bi {{ bld.building|building_bi_icon }} text-[12px]"></i>
               {% endif %}
               {% endwith %}
-              <span class="text-[9px] font-bold leading-none">{{ bld.level }}</span>
+              <span class="text-[10px] font-bold leading-none">{{ bld.level }}</span>
               {% if bld.is_upgrading %}
-              <i class="bi bi-arrow-up-circle-fill text-amber-500 text-[9px]"></i>
+              <i class="bi bi-arrow-up-circle-fill text-amber-500 text-[10px]"></i>
               {% if bld.construction_remaining_human %}
-              <span class="text-[9px] font-semibold leading-none">{{ bld.construction_remaining_human }}</span>
+              <span class="text-[10px] font-semibold leading-none">{{ bld.construction_remaining_human }}</span>
               {% endif %}
               {% endif %}
             </div>

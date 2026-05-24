@@ -2,6 +2,7 @@
 Workflow domain helpers — one Workflow per root_job_id chain.
 """
 
+import ast
 import json
 
 from django.contrib.auth import get_user_model
@@ -19,7 +20,10 @@ def _normalize_inputs(inputs) -> tuple[dict, str]:
         try:
             parsed = json.loads(inputs or "{}")
         except Exception:
-            parsed = {}
+            try:
+                parsed = ast.literal_eval(inputs or "{}")
+            except Exception:
+                parsed = {}
         if not isinstance(parsed, dict):
             parsed = {}
         return parsed, json.dumps(parsed)
