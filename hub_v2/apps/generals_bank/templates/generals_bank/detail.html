@@ -5,32 +5,38 @@
 
 {% block breadcrumb_items %}
   <span class="mx-1">/</span>
-  <a href="{% url 'generals_bank:list' %}" class="hover:text-ink">Banco de Generais</a>
+  <a href="{% url 'generals_bank:list' %}" class="hover:text-ink transition-colors">Banco de Generais</a>
   <span class="mx-1">/</span> <span class="text-ink">{{ bank.bank_game_account.name }}</span>
 {% endblock %}
 
 {% block content %}
 <div class="space-y-6" x-data="bankDetail()" x-init="init()">
 
-  {# Header #}
+  {# ── Header ── #}
   <div class="flex items-center justify-between gap-4 flex-wrap">
-    <div>
-      <h1 class="text-xl font-bold text-ink flex items-center gap-2">
-        <i class="bi bi-shield-fill-check text-amber-500"></i>
-        {{ bank.bank_game_account.name }}
-        <span class="text-sm font-normal text-muted">{{ bank.bank_game_account.account.node.name }}</span>
-      </h1>
-      <div class="mt-1 flex items-center gap-3 text-sm flex-wrap">
-        <span class="{% if gold_low %}text-amber-500 font-semibold{% else %}text-muted{% endif %}">
-          <i class="bi bi-coin"></i> {{ gold|intcomma }} ouro
-          {% if gold_low %}<i class="bi bi-exclamation-triangle-fill text-xs" title="Abaixo do piso mínimo"></i>{% endif %}
-        </span>
-        {% if active_cycle %}
-        <span class="badge badge-sea"><i class="bi bi-arrow-repeat"></i> {{ active_cycle.get_status_display }}</span>
-        {% else %}
-        <span class="text-muted text-xs">Sem ciclo ativo</span>
-        {% endif %}
-        {% if not bank.is_active %}<span class="badge badge-muted">Inativo</span>{% endif %}
+    <div class="flex items-center gap-4">
+      <div class="h-12 w-12 shrink-0 flex items-center justify-center rounded-[16px] border"
+           style="border-color: rgba(201,156,78,0.3); background: linear-gradient(180deg, rgba(201,156,78,0.12), rgba(255,252,245,0.9));">
+        <i class="bi bi-shield-fill-check text-xl" style="color: var(--ik-gold);"></i>
+      </div>
+      <div>
+        <h1 class="text-xl font-bold text-ink flex items-center gap-2 flex-wrap">
+          {{ bank.bank_game_account.name }}
+          <span class="text-sm font-normal text-muted">{{ bank.bank_game_account.account.node.name }}</span>
+          {% if not bank.is_active %}<span class="badge badge-muted text-xs">Inativo</span>{% endif %}
+        </h1>
+        <div class="mt-1 flex items-center gap-3 text-sm flex-wrap">
+          <span class="flex items-center gap-1 {% if gold_low %}text-amber-600 font-semibold{% else %}text-muted{% endif %}">
+            <img src="{% static 'game/resources/icon_gold.png' %}" alt="" class="h-4 w-4 object-contain">
+            {{ gold|intcomma }}
+            {% if gold_low %}<i class="bi bi-exclamation-triangle-fill text-xs"></i>{% endif %}
+          </span>
+          {% if active_cycle %}
+          <span class="badge badge-sea text-xs"><i class="bi bi-arrow-repeat mr-1"></i>{{ active_cycle.get_status_display }}</span>
+          {% else %}
+          <span class="text-xs text-muted">Sem ciclo ativo</span>
+          {% endif %}
+        </div>
       </div>
     </div>
     {% if not active_cycle and bank.is_active %}
@@ -40,28 +46,44 @@
     {% endif %}
   </div>
 
-  {# Tabs #}
+  {# ── Tabs ── #}
   <div class="flex gap-1 border-b border-[var(--ik-line)]">
-    <button @click="tab='config'"
-            :class="tab==='config' ? 'tab-active' : ''"
-            class="tab" id="btn-tab-config">Configuração</button>
-    <button @click="openCycleTab()"
-            :class="tab==='cycle' ? 'tab-active' : ''"
-            class="tab" id="btn-tab-cycle">Ciclo Atual</button>
-    <button @click="openHistoryTab()"
-            :class="tab==='history' ? 'tab-active' : ''"
-            class="tab" id="btn-tab-history">Histórico</button>
+    <button type="button"
+            @click="tab='config'"
+            :class="tab==='config' ? 'border-b-2 border-[var(--ik-sea)] text-[var(--ik-sea)] font-semibold' : 'text-muted hover:text-ink'"
+            class="px-4 py-2 text-sm transition-colors" id="btn-tab-config">
+      <i class="bi bi-gear me-1"></i> Configuração
+    </button>
+    <button type="button"
+            @click="openCycleTab()"
+            :class="tab==='cycle' ? 'border-b-2 border-[var(--ik-sea)] text-[var(--ik-sea)] font-semibold' : 'text-muted hover:text-ink'"
+            class="px-4 py-2 text-sm transition-colors" id="btn-tab-cycle">
+      <i class="bi bi-arrow-repeat me-1"></i> Ciclo Atual
+      {% if active_cycle %}<span class="ml-1 rounded-full bg-[var(--ik-sea)]/10 px-1.5 py-0.5 text-[10px] font-bold text-[var(--ik-sea)]">1</span>{% endif %}
+    </button>
+    <button type="button"
+            @click="openHistoryTab()"
+            :class="tab==='history' ? 'border-b-2 border-[var(--ik-sea)] text-[var(--ik-sea)] font-semibold' : 'text-muted hover:text-ink'"
+            class="px-4 py-2 text-sm transition-colors" id="btn-tab-history">
+      <i class="bi bi-clock-history me-1"></i> Histórico
+    </button>
   </div>
 
-  {# TAB: Configuração #}
+  {# ── TAB: Configuração ── #}
   <div x-show="tab==='config'" x-cloak class="space-y-6">
 
-    <form method="post" action="{% url 'generals_bank:update' bank.pk %}" class="card p-5 space-y-4">
+    {# Settings form #}
+    <form method="post" action="{% url 'generals_bank:update' bank.pk %}"
+          class="overflow-hidden rounded-[20px] border"
+          style="border-color: rgba(40,20,10,0.18); background: linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));">
       {% csrf_token %}
-      <h2 class="font-semibold text-ink">Configurações do Banco</h2>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="border-b px-5 py-4"
+           style="border-color: rgba(40,20,10,0.12); background: linear-gradient(180deg, rgba(255,255,255,0.4), rgba(255,255,255,0));">
+        <h2 class="font-semibold text-ink">Configurações do Banco</h2>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 p-5">
         <div>
-          <label class="form-label">Cidade compradora (Branch Office)</label>
+          <label class="form-label">Cidade compradora <span class="font-normal text-muted text-xs">(Branch Office)</span></label>
           <select name="buyer_city_id" class="form-input">
             <option value="">— Selecionar cidade —</option>
             {% for opt in buyer_city_options %}
@@ -70,126 +92,148 @@
             </option>
             {% endfor %}
           </select>
-          <p class="text-xs text-muted mt-1">Cidade do banco que tem Branch Office para comprar unidades.</p>
         </div>
         <div>
-          <label class="form-label">Ouro mínimo (piso de liquidação)</label>
-          <input type="number" name="min_gold_floor" value="{{ bank.min_gold_floor }}" class="form-input" min="0">
-          <p class="text-xs text-muted mt-1">Quando ouro cair abaixo disso, próximo ciclo será de liquidação.</p>
+          <label class="form-label">Ouro mínimo <span class="font-normal text-muted text-xs">(piso de liquidação)</span></label>
+          <div class="relative">
+            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+              <img src="{% static 'game/resources/icon_gold.png' %}" alt="" class="h-4 w-4 object-contain">
+            </div>
+            <input type="number" name="min_gold_floor" value="{{ bank.min_gold_floor }}" class="form-input pl-9" min="0">
+          </div>
         </div>
-        <div class="flex items-center gap-2">
-          <input type="checkbox" id="auto_vacation" name="auto_vacation" {% if bank.auto_vacation %}checked{% endif %} class="h-4 w-4">
-          <label for="auto_vacation" class="form-label mb-0">Férias automáticas após cada compra</label>
+        <div class="flex items-center gap-3">
+          <input type="checkbox" id="auto_vacation" name="auto_vacation" {% if bank.auto_vacation %}checked{% endif %}
+                 class="h-4 w-4 rounded" style="accent-color: var(--ik-sea);">
+          <label for="auto_vacation" class="text-sm font-medium text-ink cursor-pointer">Férias automáticas após compra</label>
         </div>
-        <div class="flex items-center gap-2">
-          <input type="checkbox" id="is_active" name="is_active" {% if bank.is_active %}checked{% endif %} class="h-4 w-4">
-          <label for="is_active" class="form-label mb-0">Banco ativo</label>
+        <div class="flex items-center gap-3">
+          <input type="checkbox" id="is_active" name="is_active" {% if bank.is_active %}checked{% endif %}
+                 class="h-4 w-4 rounded" style="accent-color: var(--ik-sea);">
+          <label for="is_active" class="text-sm font-medium text-ink cursor-pointer">Banco ativo</label>
         </div>
         <div class="sm:col-span-2">
           <label class="form-label">Observações</label>
           <textarea name="notes" class="form-input" rows="2">{{ bank.notes }}</textarea>
         </div>
       </div>
-      <div class="flex justify-end">
-        <button type="submit" class="btn btn-primary btn-sm">Salvar configurações</button>
+      <div class="flex justify-end border-t px-5 py-3"
+           style="border-color: rgba(40,20,10,0.10); background: rgba(0,0,0,0.02);">
+        <button type="submit" class="btn btn-primary btn-sm">Salvar</button>
       </div>
     </form>
 
     {# Producers #}
-    <div class="card p-5 space-y-4">
-      <h2 class="font-semibold text-ink">Produtoras</h2>
-      <p class="text-xs text-muted -mt-2">
-        Contas que treinam unidades para o banco. Devem estar em nodes diferentes do banco.
-      </p>
+    <div class="overflow-hidden rounded-[20px] border"
+         style="border-color: rgba(40,20,10,0.18); background: linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));">
+      <div class="border-b px-5 py-4"
+           style="border-color: rgba(40,20,10,0.12); background: linear-gradient(180deg, rgba(255,255,255,0.4), rgba(255,255,255,0));">
+        <h2 class="font-semibold text-ink">Produtoras</h2>
+        <p class="text-xs text-muted mt-0.5">Contas que treinam unidades para o banco. Devem estar em nodes diferentes.</p>
+      </div>
 
       {% if producers %}
-      <div class="divide-y divide-[var(--ik-line)]">
+      <div class="divide-y" style="border-color: rgba(40,20,10,0.08);">
         {% for producer in producers %}
-        <div class="py-3 flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <span class="font-medium text-ink text-sm">{{ producer.producer_game_account.name }}</span>
-            <span class="text-xs text-muted ml-1">{{ producer.producer_game_account.account.node.name }}</span>
-            {% if producer.min_resource_reserves %}
-            <div class="text-xs text-muted mt-0.5 flex gap-2 flex-wrap">
-              <span class="font-medium">Reserva mínima:</span>
-              {% for res, qty in producer.min_resource_reserves.items %}
-              <span>{{ res|title }}: {{ qty|intcomma }}</span>
+        <div class="flex items-start gap-3 px-5 py-4">
+          <div class="h-9 w-9 shrink-0 flex items-center justify-center rounded-[12px] border"
+               style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+            <i class="bi bi-controller text-sm" style="color: var(--ik-sea);"></i>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="font-semibold text-ink text-sm">{{ producer.producer_game_account.name }}</div>
+            <div class="text-xs text-muted mt-0.5">{{ producer.producer_game_account.account.node.name }}</div>
+            {% if producer.min_resource_reserves or producer.min_population_reserve %}
+            <div class="mt-2 flex flex-wrap gap-1.5">
+              {% if producer.min_population_reserve %}
+              <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] text-ink"
+                    style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+                <i class="bi bi-people text-[10px] text-muted"></i>
+                {{ producer.min_population_reserve|intcomma }} pop
+              </span>
+              {% endif %}
+              {% for res_key, res_qty in producer.min_resource_reserves.items %}
+              <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] text-ink"
+                    style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+                {% if res_key == "wood" %}<img src="{% static 'game/resources/icon_wood.png' %}" alt="" class="h-3.5 w-3.5 object-contain">
+                {% elif res_key == "marble" %}<img src="{% static 'game/resources/icon_marble.png' %}" alt="" class="h-3.5 w-3.5 object-contain">
+                {% elif res_key == "crystal" %}<img src="{% static 'game/resources/icon_glass.png' %}" alt="" class="h-3.5 w-3.5 object-contain">
+                {% elif res_key == "wine" %}<img src="{% static 'game/resources/icon_wine.png' %}" alt="" class="h-3.5 w-3.5 object-contain">
+                {% elif res_key == "sulfur" %}<img src="{% static 'game/resources/icon_sulfur.png' %}" alt="" class="h-3.5 w-3.5 object-contain">
+                {% endif %}
+                {{ res_qty|intcomma }}
+              </span>
               {% endfor %}
             </div>
             {% endif %}
-            {% if producer.min_population_reserve %}
-            <div class="text-xs text-muted">Pop. reservada: {{ producer.min_population_reserve|intcomma }}</div>
-            {% endif %}
           </div>
-          <form method="post" action="{% url 'generals_bank:producer-remove' bank.pk producer.pk %}">
+          <form method="post" action="{% url 'generals_bank:producer-remove' bank.pk producer.pk %}" class="shrink-0">
             {% csrf_token %}
-            <button type="submit" class="btn btn-sm btn-danger-outline" title="Remover produtora">
-              <i class="bi bi-trash"></i>
+            <button type="submit" class="text-muted hover:text-red-500 transition-colors p-1.5 rounded-lg hover:bg-red-50" title="Remover">
+              <i class="bi bi-trash text-sm"></i>
             </button>
           </form>
         </div>
         {% endfor %}
       </div>
       {% else %}
-      <p class="text-sm text-muted">Nenhuma produtora configurada ainda.</p>
+      <div class="px-5 py-8 text-center text-muted">
+        <i class="bi bi-people text-2xl opacity-30 block mb-2"></i>
+        <p class="text-sm">Nenhuma produtora configurada ainda.</p>
+      </div>
       {% endif %}
 
-      {# Add producer form #}
-      <details class="border-t border-[var(--ik-line)] pt-4">
-        <summary class="cursor-pointer text-sm font-medium text-ink flex items-center gap-2">
+      {# Add producer #}
+      <details class="border-t" style="border-color: rgba(40,20,10,0.10);">
+        <summary class="flex cursor-pointer items-center gap-2 px-5 py-3.5 text-sm font-medium hover:bg-[rgba(0,0,0,0.02)] transition-colors"
+                 style="color: var(--ik-sea);">
           <i class="bi bi-plus-circle"></i> Adicionar produtora
         </summary>
-        <form method="post" action="{% url 'generals_bank:producer-add' bank.pk %}" class="mt-4 space-y-4">
+        <form method="post" action="{% url 'generals_bank:producer-add' bank.pk %}"
+              class="space-y-4 px-5 pb-5 pt-3" style="border-top: 1px solid rgba(40,20,10,0.08);">
           {% csrf_token %}
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div class="sm:col-span-2">
-              <label class="form-label">Conta produtora</label>
-              <select name="producer_game_account" class="form-input" required>
-                <option value="">— Selecionar conta —</option>
-                {% for ga in eligible_producers %}
-                <option value="{{ ga.pk }}" {% if ga.pk in existing_producer_ids %}disabled{% endif %}>
-                  {{ ga.name }} — {{ ga.account.node.name }}{% if ga.pk in existing_producer_ids %} (já adicionada){% endif %}
-                </option>
-                {% endfor %}
-              </select>
-            </div>
-            <div>
-              <label class="form-label">Reserva de população</label>
-              <input type="number" name="min_population_reserve" value="0" min="0" class="form-input">
-              <p class="text-xs text-muted mt-1">Unidades de pop que não podem ser usadas para treino.</p>
+          <div>
+            <label class="form-label">Conta produtora</label>
+            <select name="producer_game_account" class="form-input" required>
+              <option value="">— Selecionar conta —</option>
+              {% for ga in eligible_producers %}
+              <option value="{{ ga.pk }}" {% if ga.pk in existing_producer_ids %}disabled{% endif %}>
+                {{ ga.name }} — {{ ga.account.node.name }}{% if ga.pk in existing_producer_ids %} (já adicionada){% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div>
+            <label class="form-label">Reserva de população <span class="font-normal text-muted text-xs">(unidades que não podem ser usadas para treino)</span></label>
+            <div class="relative">
+              <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                <i class="bi bi-people text-sm text-muted"></i>
+              </div>
+              <input type="number" name="min_population_reserve" value="0" min="0" class="form-input pl-9">
             </div>
           </div>
 
           <div>
             <label class="form-label">Reserva mínima de recursos</label>
-            <p class="text-xs text-muted mb-2">O agente não usará recursos abaixo desses limites para treinar unidades. Deixe 0 para sem limite.</p>
-            <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
-              <div>
-                <label class="text-xs text-muted block mb-1">🪵 Madeira</label>
-                <input type="number" name="res_wood" value="0" min="0" class="form-input text-sm">
+            <p class="text-xs text-muted mb-3">O agente não usará recursos abaixo destes limites. Zero = sem reserva.</p>
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              {% for res in resource_config %}
+              <div class="rounded-[14px] border p-3 text-center"
+                   style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.7);">
+                <img src="{% static res.icon %}" alt="{{ res.label }}" class="h-6 w-6 object-contain mx-auto mb-1.5">
+                <div class="text-[10px] text-muted mb-2">{{ res.label }}</div>
+                <input type="number" name="res_{{ res.key }}" value="0" min="0"
+                       class="w-full rounded-[8px] border px-1.5 py-1 text-center text-xs font-bold text-ink outline-none focus:ring-1"
+                       style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.9);">
               </div>
-              <div>
-                <label class="text-xs text-muted block mb-1">🗿 Mármore</label>
-                <input type="number" name="res_marble" value="0" min="0" class="form-input text-sm">
-              </div>
-              <div>
-                <label class="text-xs text-muted block mb-1">💎 Cristal</label>
-                <input type="number" name="res_crystal" value="0" min="0" class="form-input text-sm">
-              </div>
-              <div>
-                <label class="text-xs text-muted block mb-1">🍷 Vinho</label>
-                <input type="number" name="res_wine" value="0" min="0" class="form-input text-sm">
-              </div>
-              <div>
-                <label class="text-xs text-muted block mb-1">💣 Enxofre</label>
-                <input type="number" name="res_sulfur" value="0" min="0" class="form-input text-sm">
-              </div>
+              {% endfor %}
             </div>
           </div>
 
           <div class="flex justify-end">
-            <button type="submit" class="btn btn-sm btn-primary">
-              <i class="bi bi-plus"></i> Adicionar produtora
+            <button type="submit" class="btn btn-primary btn-sm">
+              <i class="bi bi-plus"></i> Adicionar
             </button>
           </div>
         </form>
@@ -197,7 +241,7 @@
     </div>
   </div>
 
-  {# TAB: Ciclo Atual #}
+  {# ── TAB: Ciclo Atual ── #}
   <div x-show="tab==='cycle'" x-cloak>
     <div id="cycle-content"
          hx-get="{% url 'generals_bank:cycle-status-partial' bank.pk %}"
@@ -205,11 +249,17 @@
          hx-swap="innerHTML"
          hx-push-url="false"
          hx-trigger="open-tab, refresh-cycle">
-      <div class="text-center text-muted py-8 text-sm"><i class="bi bi-arrow-clockwise animate-spin mr-1"></i> Carregando...</div>
+      <div class="flex flex-col items-center gap-3 py-12 text-muted">
+        <svg class="h-6 w-6 animate-spin" style="color: var(--ik-sea);" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+        <span class="text-sm">Carregando...</span>
+      </div>
     </div>
   </div>
 
-  {# TAB: Histórico #}
+  {# ── TAB: Histórico ── #}
   <div x-show="tab==='history'" x-cloak>
     <div id="history-content"
          hx-get="{% url 'generals_bank:history-partial' bank.pk %}"
@@ -217,94 +267,207 @@
          hx-swap="innerHTML"
          hx-push-url="false"
          hx-trigger="open-tab">
-      <div class="text-center text-muted py-8 text-sm"><i class="bi bi-arrow-clockwise animate-spin mr-1"></i> Carregando...</div>
+      <div class="flex flex-col items-center gap-3 py-12 text-muted">
+        <svg class="h-6 w-6 animate-spin" style="color: var(--ik-sea);" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+        <span class="text-sm">Carregando...</span>
+      </div>
     </div>
   </div>
 
 </div>
 
-{# Modal: Iniciar Ciclo #}
-<div x-show="showStartModal" x-cloak x-data
-     class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-     @click.self="showStartModal = false"
+{# ── Modal: Iniciar Ciclo ── #}
+<div x-show="showStartModal" x-cloak
+     class="fixed inset-0 z-50 flex items-center justify-center p-4"
      @keydown.escape.window="showStartModal = false">
-  <div class="bg-paper rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-5">
+  <div x-show="showStartModal"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="fixed inset-0 bg-black/50 backdrop-blur-[2px]"
+       @click="showStartModal = false"></div>
 
-    <div class="flex items-center justify-between">
-      <h2 class="font-bold text-ink flex items-center gap-2">
-        <i class="bi bi-play-circle text-sea"></i> Iniciar Ciclo
-      </h2>
-      <button @click="showStartModal = false" class="text-muted hover:text-ink text-lg leading-none"><i class="bi bi-x-lg"></i></button>
-    </div>
+  <div x-show="showStartModal"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0 scale-95"
+       x-transition:enter-end="opacity-100 scale-100"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="opacity-100 scale-100"
+       x-transition:leave-end="opacity-0 scale-95"
+       class="relative w-full max-w-2xl overflow-hidden rounded-[24px] border shadow-[0_24px_60px_rgba(20,12,8,0.20)] z-10"
+       style="border-color: rgba(40,20,10,0.22); background: linear-gradient(180deg, rgba(255,252,245,0.99), rgba(247,241,229,0.96));">
 
-    <div class="rounded-xl border border-[var(--ik-line)] p-3 text-sm">
-      {% if gold_low %}
-      <div class="flex items-start gap-2 text-amber-600">
-        <i class="bi bi-exclamation-triangle-fill mt-0.5 flex-shrink-0"></i>
+    {# Modal header #}
+    <div class="border-b px-6 py-5 flex items-center justify-between"
+         style="border-color: rgba(40,20,10,0.12); background: linear-gradient(180deg, rgba(255,255,255,0.5), rgba(255,255,255,0));">
+      <div class="flex items-center gap-3">
+        <div class="flex h-9 w-9 items-center justify-center rounded-[12px]"
+             style="background: linear-gradient(135deg, rgba(79,134,185,0.18), rgba(40,20,10,0.08));">
+          <i class="bi bi-play-circle-fill" style="color: var(--ik-sea);"></i>
+        </div>
         <div>
-          <span class="font-semibold">Ouro baixo — ciclo de liquidação</span>
-          <p class="text-muted mt-0.5">O banco tem {{ gold|intcomma }} de ouro (abaixo do piso de {{ bank.min_gold_floor|intcomma }}). O sistema vai listar unidades do banco para venda.</p>
+          <h3 class="font-bold text-ink">Iniciar Ciclo</h3>
+          <p class="text-[11px] text-muted">
+            {% if gold_low %}Ciclo de liquidação — banco vende unidades{% else %}Ciclo de acumulação — produtoras treinam para o banco{% endif %}
+          </p>
         </div>
       </div>
-      {% else %}
-      <div class="flex items-start gap-2 text-sea">
-        <i class="bi bi-arrow-down-circle-fill mt-0.5 flex-shrink-0"></i>
-        <div>
-          <span class="font-semibold">Ciclo de acumulação</span>
-          <p class="text-muted mt-0.5">O banco tem {{ gold|intcomma }} de ouro. As produtoras vão treinar e listar unidades; o banco acorda para comprar.</p>
+      <button @click="showStartModal = false" class="text-muted hover:text-ink transition-colors">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+
+    <div class="px-6 py-5 space-y-5 max-h-[70vh] overflow-y-auto">
+
+      {# Mode info #}
+      <div class="rounded-[16px] border px-4 py-3 flex items-start gap-3"
+           style="{% if gold_low %}border-color: rgba(201,156,78,0.35); background: rgba(201,156,78,0.07);{% else %}border-color: rgba(79,134,185,0.25); background: rgba(79,134,185,0.06);{% endif %}">
+        {% if gold_low %}
+        <i class="bi bi-exclamation-triangle-fill mt-0.5 shrink-0" style="color: var(--ik-warn);"></i>
+        <div class="text-sm">
+          <span class="font-semibold text-ink">Ouro baixo</span> —
+          banco tem <strong class="font-bold" style="color: var(--ik-gold);">{{ gold|intcomma }}</strong> de ouro
+          (piso: {{ bank.min_gold_floor|intcomma }}).
+          O banco vai listar unidades para venda.
+        </div>
+        {% else %}
+        <i class="bi bi-arrow-down-circle-fill mt-0.5 shrink-0" style="color: var(--ik-sea);"></i>
+        <div class="text-sm">
+          <span class="font-semibold text-ink">Acumulação</span> —
+          banco tem <strong class="font-bold" style="color: var(--ik-gold);">{{ gold|intcomma }}</strong> de ouro.
+          As produtoras vão treinar e listar; o banco acorda para comprar.
+        </div>
+        {% endif %}
+      </div>
+
+      {% if not gold_low %}
+      {# Unit picker #}
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
+              <span class="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold text-white"
+                    style="background: var(--ik-sea);">1</span>
+              Unidades alvo
+            </div>
+            <p class="text-[11px] text-muted mt-0.5">
+              Selecione até 8 tipos e defina a quantidade. Deixe vazio para usar composição padrão das produtoras.
+            </p>
+          </div>
+          <template x-if="unitRows.length > 0">
+            <span class="text-[11px] rounded-full px-2 py-0.5 font-bold"
+                  :style="unitRows.length >= 8 ? 'background: rgba(201,156,78,0.12); color: var(--ik-warn);' : 'background: rgba(79,134,185,0.1); color: var(--ik-sea);'"
+                  x-text="`${unitRows.length}/8`"></span>
+          </template>
+        </div>
+
+        {# Fleet #}
+        <div class="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-muted flex items-center gap-1.5">
+          <i class="bi bi-water" style="color: var(--ik-sea);"></i> Frota
+        </div>
+        <div class="grid grid-cols-3 gap-2 sm:grid-cols-4 mb-4">
+          {% for u in fleet_units %}
+          <div @click="toggleUnit('{{ u.id }}')"
+               class="relative overflow-hidden rounded-[16px] border p-2.5 text-center transition-all duration-150 cursor-pointer"
+               :class="isSelected('{{ u.id }}')
+                 ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_6px_18px_rgba(79,134,185,0.2)] -translate-y-px'
+                 : unitRows.length >= 8 && !isSelected('{{ u.id }}')
+                   ? 'opacity-40 cursor-not-allowed'
+                   : 'hover:-translate-y-px hover:border-[rgba(79,134,185,0.4)] hover:shadow-[0_4px_12px_rgba(79,134,185,0.1)]'"
+               :style="isSelected('{{ u.id }}')
+                 ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.09), rgba(255,255,255,0.92));'
+                 : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
+            <div class="absolute inset-x-0 top-0 h-8"
+                 style="background: linear-gradient(135deg, rgba(79,134,185,0.07), transparent);"></div>
+            <div class="relative">
+              <div class="h-9 w-9 mx-auto flex items-center justify-center rounded-[10px] border mb-1.5"
+                   style="border-color: rgba(79,134,185,0.15); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                {% with icon=u.name|unit_icon %}
+                {% if icon %}<img src="{% static icon %}" alt="{{ u.name }}" class="h-7 w-7 object-contain">
+                {% else %}<i class="bi bi-water text-base" style="color: var(--ik-sea);"></i>{% endif %}
+                {% endwith %}
+              </div>
+              <div class="text-[10px] font-bold text-ink leading-tight">{{ u.name }}</div>
+              <div x-show="isSelected('{{ u.id }}')" @click.stop class="mt-2">
+                <input type="number" min="1"
+                       :value="getQty('{{ u.id }}')"
+                       @input="setQty('{{ u.id }}', $event.target.value)"
+                       class="w-full rounded-[8px] border px-1.5 py-1 text-center text-xs font-bold text-ink outline-none"
+                       style="border-color: rgba(79,134,185,0.35); background: rgba(255,255,255,0.95);"
+                       placeholder="Qtd">
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+
+        {# Troops #}
+        <div class="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-muted flex items-center gap-1.5">
+          <i class="bi bi-shield-shaded" style="color: var(--ik-bad);"></i> Tropas
+        </div>
+        <div class="grid grid-cols-3 gap-2 sm:grid-cols-4">
+          {% for u in troop_units %}
+          <div @click="toggleUnit('{{ u.id }}')"
+               class="relative overflow-hidden rounded-[16px] border p-2.5 text-center transition-all duration-150 cursor-pointer"
+               :class="isSelected('{{ u.id }}')
+                 ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_6px_18px_rgba(79,134,185,0.2)] -translate-y-px'
+                 : unitRows.length >= 8 && !isSelected('{{ u.id }}')
+                   ? 'opacity-40 cursor-not-allowed'
+                   : 'hover:-translate-y-px hover:border-[rgba(79,134,185,0.4)] hover:shadow-[0_4px_12px_rgba(79,134,185,0.1)]'"
+               :style="isSelected('{{ u.id }}')
+                 ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.09), rgba(255,255,255,0.92));'
+                 : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
+            <div class="absolute inset-x-0 top-0 h-8"
+                 style="background: linear-gradient(135deg, rgba(79,134,185,0.07), transparent);"></div>
+            <div class="relative">
+              <div class="h-9 w-9 mx-auto flex items-center justify-center rounded-[10px] border mb-1.5"
+                   style="border-color: rgba(79,134,185,0.15); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                {% with icon=u.name|unit_icon %}
+                {% if icon %}<img src="{% static icon %}" alt="{{ u.name }}" class="h-7 w-7 object-contain">
+                {% else %}<i class="bi bi-shield-shaded text-base" style="color: var(--ik-bad);"></i>{% endif %}
+                {% endwith %}
+              </div>
+              <div class="text-[10px] font-bold text-ink leading-tight">{{ u.name }}</div>
+              <div x-show="isSelected('{{ u.id }}')" @click.stop class="mt-2">
+                <input type="number" min="1"
+                       :value="getQty('{{ u.id }}')"
+                       @input="setQty('{{ u.id }}', $event.target.value)"
+                       class="w-full rounded-[8px] border px-1.5 py-1 text-center text-xs font-bold text-ink outline-none"
+                       style="border-color: rgba(79,134,185,0.35); background: rgba(255,255,255,0.95);"
+                       placeholder="Qtd">
+              </div>
+            </div>
+          </div>
+          {% endfor %}
         </div>
       </div>
       {% endif %}
+
     </div>
 
-    {% if not gold_low %}
-    <div class="space-y-3">
-      <div class="flex items-center justify-between">
-        <label class="form-label mb-0">Unidades alvo <span class="text-muted font-normal text-xs">(máx. 8 tipos)</span></label>
-        <button @click="addUnitRow()" type="button" class="btn btn-xs btn-outline">
-          <i class="bi bi-plus"></i> Adicionar
+    {# Modal footer #}
+    <div class="border-t px-6 py-4 flex items-center justify-between gap-3"
+         style="border-color: rgba(40,20,10,0.10); background: rgba(0,0,0,0.02);">
+      <div class="text-[11px] text-muted">
+        <template x-if="unitRows.length > 0">
+          <span x-text="`${unitRows.length} tipo(s) selecionado(s)`"></span>
+        </template>
+        <template x-if="unitRows.length === 0 && !{{ gold_low|yesno:'true,false' }}">
+          <span>Composição padrão das produtoras</span>
+        </template>
+      </div>
+      <div class="flex gap-2">
+        <button @click="showStartModal = false" class="btn btn-sm" style="background: transparent; border: 1px solid var(--ik-line); color: var(--ik-ink);">Cancelar</button>
+        <button @click="startCycle()" class="btn btn-primary btn-sm">
+          <i class="bi bi-play-fill"></i> Iniciar
         </button>
       </div>
-
-      <template x-for="(row, i) in unitRows" :key="i">
-        <div class="flex gap-2 items-center">
-          <select x-model="row.uid" class="form-input flex-1 text-sm">
-            <option value="">— Selecionar unidade —</option>
-            <optgroup label="Frota">
-              {% for u in fleet_units %}
-              <option value="{{ u.id }}">{{ u.name }}</option>
-              {% endfor %}
-            </optgroup>
-            <optgroup label="Tropas">
-              {% for u in troop_units %}
-              <option value="{{ u.id }}">{{ u.name }}</option>
-              {% endfor %}
-            </optgroup>
-          </select>
-          <input type="number" x-model.number="row.qty" min="1" placeholder="Qtd"
-                 class="form-input w-24 text-sm text-center">
-          <button @click="unitRows.splice(i, 1)" type="button"
-                  class="btn btn-sm text-muted hover:text-red-500 flex-shrink-0" title="Remover">
-            <i class="bi bi-x-lg"></i>
-          </button>
-        </div>
-      </template>
-
-      <template x-if="unitRows.length === 0">
-        <p class="text-xs text-muted text-center py-2">Nenhuma unidade adicionada. O banco usará a configuração padrão das produtoras.</p>
-      </template>
-
-      <template x-if="unitRows.length >= 8">
-        <p class="text-xs text-amber-500"><i class="bi bi-exclamation-triangle-fill"></i> Limite de 8 tipos atingido (limite do Mercado Negro).</p>
-      </template>
-    </div>
-    {% endif %}
-
-    <div class="flex justify-end gap-2 pt-1">
-      <button @click="showStartModal = false" class="btn btn-sm btn-outline">Cancelar</button>
-      <button @click="startCycle()" class="btn btn-primary btn-sm">
-        <i class="bi bi-play-fill"></i> Iniciar
-      </button>
     </div>
   </div>
 </div>
@@ -342,16 +505,33 @@ function bankDetail() {
       });
     },
 
-    addUnitRow() {
-      if (this.unitRows.length < 8) this.unitRows.push({ uid: '', qty: 1 });
+    isSelected(uid) {
+      return this.unitRows.some(r => String(r.uid) === String(uid));
+    },
+
+    getQty(uid) {
+      const row = this.unitRows.find(r => String(r.uid) === String(uid));
+      return row ? row.qty : 1;
+    },
+
+    setQty(uid, val) {
+      const row = this.unitRows.find(r => String(r.uid) === String(uid));
+      if (row) row.qty = parseInt(val) || 1;
+    },
+
+    toggleUnit(uid) {
+      const idx = this.unitRows.findIndex(r => String(r.uid) === String(uid));
+      if (idx >= 0) {
+        this.unitRows.splice(idx, 1);
+      } else if (this.unitRows.length < 8) {
+        this.unitRows.push({ uid: String(uid), qty: 1 });
+      }
     },
 
     buildTargetUnits() {
       const result = {};
       for (const r of this.unitRows) {
-        const id = String(r.uid || '').trim();
-        const qty = parseInt(r.qty) || 1;
-        if (id) result[id] = qty;
+        if (r.uid && r.qty > 0) result[r.uid] = r.qty;
       }
       return result;
     },

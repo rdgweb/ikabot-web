@@ -90,6 +90,13 @@ class BankDetailView(LoginRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         from core.catalogs import TRAINING_UNITS
+        _RESOURCE_CONFIG = [
+            {"key": "wood",   "label": "Madeira", "icon": "game/resources/icon_wood.png"},
+            {"key": "marble", "label": "Mármore", "icon": "game/resources/icon_marble.png"},
+            {"key": "crystal","label": "Cristal",  "icon": "game/resources/icon_glass.png"},
+            {"key": "wine",   "label": "Vinho",    "icon": "game/resources/icon_wine.png"},
+            {"key": "sulfur", "label": "Enxofre",  "icon": "game/resources/icon_sulfur.png"},
+        ]
         ctx = super().get_context_data(**kwargs)
         bank = self.object
         gold = services.get_bank_gold(bank)
@@ -125,6 +132,7 @@ class BankDetailView(LoginRequiredMixin, DetailView):
             "producers": bank.producers.select_related("producer_game_account").filter(is_active=True),
             "fleet_units": TRAINING_UNITS.get("fleet", []),
             "troop_units": TRAINING_UNITS.get("troops", []),
+            "resource_config": _RESOURCE_CONFIG,
         })
         return ctx
 

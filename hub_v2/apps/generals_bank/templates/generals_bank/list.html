@@ -9,62 +9,80 @@
 
 {% block content %}
 <div class="space-y-6">
+
   <div class="flex items-center justify-between gap-4">
     <div>
       <h1 class="text-xl font-bold text-ink flex items-center gap-2">
-        <i class="bi bi-shield-fill-check text-amber-500"></i> Banco de Generais
+        <i class="bi bi-shield-fill-check" style="color: var(--ik-gold);"></i> Banco de Generais
       </h1>
       <p class="mt-0.5 text-sm text-muted">Acumulação e liquidação de unidades militares entre contas.</p>
     </div>
     <a href="{% url 'generals_bank:create' %}" class="btn btn-primary btn-sm flex-shrink-0">
-      <i class="bi bi-plus-lg"></i> Novo Banco
+      <i class="bi bi-plus-lg"></i> Novo banco
     </a>
   </div>
 
   {% if not banks_ctx %}
-  <div class="card p-8 text-center text-muted">
-    <i class="bi bi-shield-fill-check text-4xl opacity-30 block mb-3"></i>
-    <p class="text-sm">Nenhum banco configurado. Configure uma conta para ser o banco central de generais.</p>
-    <a href="{% url 'generals_bank:create' %}" class="btn btn-primary btn-sm mt-4">Configurar primeiro banco</a>
+  <div class="flex flex-col items-center gap-4 py-16 text-center">
+    <div class="h-20 w-20 flex items-center justify-center rounded-[24px] border"
+         style="border-color: rgba(201,156,78,0.25); background: linear-gradient(180deg, rgba(201,156,78,0.08), rgba(255,252,245,0.9));">
+      <i class="bi bi-shield-fill-check text-3xl opacity-40" style="color: var(--ik-gold);"></i>
+    </div>
+    <div>
+      <p class="font-semibold text-ink">Nenhum banco configurado</p>
+      <p class="text-sm text-muted mt-1">Configure uma conta para centralizar unidades militares.</p>
+    </div>
+    <a href="{% url 'generals_bank:create' %}" class="btn btn-primary btn-sm">Configurar primeiro banco</a>
   </div>
+
   {% else %}
   <div class="grid gap-4">
     {% for item in banks_ctx %}
     {% with bank=item.bank %}
-    <div class="card p-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-2 flex-wrap">
-          <span class="font-semibold text-ink">{{ bank.bank_game_account.name }}</span>
-          <span class="text-xs text-muted">{{ bank.bank_game_account.account.node.name }}</span>
-          {% if not bank.is_active %}
-          <span class="badge badge-muted">Inativo</span>
-          {% endif %}
+    <div class="overflow-hidden rounded-[20px] border transition-shadow hover:shadow-[0_8px_24px_rgba(20,12,8,0.10)]"
+         style="border-color: rgba(40,20,10,0.18); background: linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));">
+      <div class="flex items-center gap-4 px-5 py-4">
+
+        <div class="h-12 w-12 shrink-0 flex items-center justify-center rounded-[16px] border"
+             style="border-color: rgba(201,156,78,0.3); background: linear-gradient(180deg, rgba(201,156,78,0.12), rgba(255,252,245,0.9));">
+          <i class="bi bi-shield-fill-check text-xl" style="color: var(--ik-gold);"></i>
         </div>
-        <div class="mt-1 flex items-center gap-4 text-sm flex-wrap">
-          <span class="{% if item.gold_low %}text-amber-500 font-semibold{% else %}text-muted{% endif %}">
-            <i class="bi bi-coin"></i>
-            {{ item.gold|intcomma }} ouro
-            {% if item.gold_low %}<i class="bi bi-exclamation-triangle-fill text-xs"></i>{% endif %}
-          </span>
-          <span class="text-muted">
-            <i class="bi bi-people"></i> {{ item.producers_count }} produtora{{ item.producers_count|pluralize:"s" }}
-          </span>
-          {% if item.active_cycle %}
-          <span class="badge badge-sea">
-            <i class="bi bi-arrow-repeat"></i> {{ item.active_cycle.get_status_display }}
-          </span>
-          {% else %}
-          <span class="text-muted text-xs">Sem ciclo ativo</span>
-          {% endif %}
+
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-bold text-ink">{{ bank.bank_game_account.name }}</span>
+            <span class="text-xs text-muted">{{ bank.bank_game_account.account.node.name }}</span>
+            {% if not bank.is_active %}<span class="badge badge-muted badge-sm">Inativo</span>{% endif %}
+          </div>
+          <div class="mt-1.5 flex items-center gap-3 flex-wrap">
+            <span class="flex items-center gap-1 text-sm {% if item.gold_low %}font-semibold{% else %}text-muted{% endif %}"
+                  style="{% if item.gold_low %}color: var(--ik-warn);{% endif %}">
+              <img src="{% static 'game/resources/icon_gold.png' %}" alt="" class="h-4 w-4 object-contain">
+              {{ item.gold|intcomma }}
+              {% if item.gold_low %}<i class="bi bi-exclamation-triangle-fill text-xs ml-0.5"></i>{% endif %}
+            </span>
+            <span class="text-xs text-muted flex items-center gap-1">
+              <i class="bi bi-people"></i>
+              {{ item.producers_count }} produtora{{ item.producers_count|pluralize:"s" }}
+            </span>
+            {% if item.active_cycle %}
+            <span class="badge badge-sea badge-sm">
+              <i class="bi bi-arrow-repeat mr-1"></i>{{ item.active_cycle.get_status_display }}
+            </span>
+            {% endif %}
+          </div>
         </div>
+
+        <a href="{% url 'generals_bank:detail' bank.pk %}" class="btn btn-sm shrink-0"
+           style="background: transparent; border: 1px solid var(--ik-line); color: var(--ik-ink);">
+          Abrir <i class="bi bi-chevron-right text-xs ml-0.5"></i>
+        </a>
       </div>
-      <a href="{% url 'generals_bank:detail' bank.pk %}" class="btn btn-sm btn-outline flex-shrink-0">
-        Detalhe <i class="bi bi-chevron-right"></i>
-      </a>
     </div>
     {% endwith %}
     {% endfor %}
   </div>
   {% endif %}
+
 </div>
 {% endblock %}

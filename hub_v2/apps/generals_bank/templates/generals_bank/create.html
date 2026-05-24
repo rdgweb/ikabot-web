@@ -1,53 +1,101 @@
 {% extends base_template|default:"base.html" %}
-{% load static %}
+{% load static humanize hub_tags %}
 
 {% block title %}Novo Banco de Generais{% endblock %}
 
 {% block breadcrumb_items %}
   <span class="mx-1">/</span>
-  <a href="{% url 'generals_bank:list' %}" class="hover:text-ink">Banco de Generais</a>
+  <a href="{% url 'generals_bank:list' %}" class="hover:text-ink transition-colors">Banco de Generais</a>
   <span class="mx-1">/</span> <span class="text-ink">Novo Banco</span>
 {% endblock %}
 
 {% block content %}
-<div class="max-w-lg mx-auto space-y-6">
-  <h1 class="text-xl font-bold text-ink flex items-center gap-2">
-    <i class="bi bi-shield-plus text-amber-500"></i> Novo Banco de Generais
-  </h1>
+<div class="max-w-2xl mx-auto space-y-6">
 
-  <form method="post" action="{% url 'generals_bank:create' %}" class="card p-6 space-y-4">
+  <div class="flex items-center gap-3">
+    <div class="h-10 w-10 shrink-0 flex items-center justify-center rounded-[14px] border"
+         style="border-color: rgba(201,156,78,0.3); background: linear-gradient(180deg, rgba(201,156,78,0.12), rgba(255,252,245,0.9));">
+      <i class="bi bi-shield-plus" style="color: var(--ik-gold);"></i>
+    </div>
+    <div>
+      <h1 class="text-xl font-bold text-ink">Novo Banco de Generais</h1>
+      <p class="text-sm text-muted mt-0.5">Configure uma conta para centralizar unidades militares.</p>
+    </div>
+  </div>
+
+  <form method="post" action="{% url 'generals_bank:create' %}"
+        class="overflow-hidden rounded-[20px] border"
+        style="border-color: rgba(40,20,10,0.18); background: linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));">
     {% csrf_token %}
 
-    <div>
-      <label class="form-label">Conta Banco <span class="text-bad">*</span></label>
-      <select name="bank_game_account" class="form-input" required>
-        <option value="">— Selecionar conta —</option>
-        {% for ga in eligible_accounts %}
-        <option value="{{ ga.pk }}">{{ ga.name }} ({{ ga.account.node.name }})</option>
-        {% endfor %}
-      </select>
-      <p class="text-xs text-muted mt-1">Precisa ter Branch Office e Mercado Negro. Contas já configuradas como banco não aparecem.</p>
+    <div class="border-b px-5 py-4"
+         style="border-color: rgba(40,20,10,0.10); background: linear-gradient(180deg, rgba(255,255,255,0.4), rgba(255,255,255,0));">
+      <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
+        <span class="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold text-white"
+              style="background: var(--ik-sea);">1</span>
+        Conta banco
+      </div>
+      <p class="text-xs text-muted mt-1">Conta que ficará de férias entre transações. Precisa ter Branch Office e Mercado Negro.</p>
     </div>
 
-    <div class="grid grid-cols-2 gap-4">
+    <div class="px-5 py-4 space-y-4">
       <div>
-        <label class="form-label">Ouro mínimo (piso)</label>
-        <input type="number" name="min_gold_floor" value="10000" class="form-input" min="0">
-      </div>
-      <div class="flex items-center gap-2 mt-5">
-        <input type="checkbox" id="auto_vacation" name="auto_vacation" checked class="h-4 w-4">
-        <label for="auto_vacation" class="form-label mb-0">Férias automáticas</label>
+        <label class="form-label">Conta <span style="color: var(--ik-bad);">*</span></label>
+        <select name="bank_game_account" class="form-input" required>
+          <option value="">— Selecionar conta —</option>
+          {% for ga in eligible_accounts %}
+          <option value="{{ ga.pk }}">{{ ga.name }} — {{ ga.account.node.name }}</option>
+          {% endfor %}
+        </select>
+        {% if not eligible_accounts %}
+        <p class="text-xs mt-1" style="color: var(--ik-warn);">
+          <i class="bi bi-exclamation-triangle"></i> Nenhuma conta disponível. Contas já vinculadas a um banco não aparecem.
+        </p>
+        {% endif %}
       </div>
     </div>
 
-    <div>
-      <label class="form-label">Observações</label>
-      <textarea name="notes" class="form-input" rows="2" placeholder="Opcional"></textarea>
+    <div class="border-t px-5 py-4 space-y-4"
+         style="border-color: rgba(40,20,10,0.08);">
+      <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
+        <span class="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold text-white"
+              style="background: var(--ik-sea);">2</span>
+        Parâmetros
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="form-label">Ouro mínimo <span class="font-normal text-muted text-xs">(piso de liquidação)</span></label>
+          <div class="relative">
+            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+              <img src="{% static 'game/resources/icon_gold.png' %}" alt="" class="h-4 w-4 object-contain">
+            </div>
+            <input type="number" name="min_gold_floor" value="10000" class="form-input pl-9" min="0">
+          </div>
+          <p class="text-xs text-muted mt-1">Quando cair abaixo disso, próximo ciclo será de liquidação.</p>
+        </div>
+        <div class="flex items-start gap-3 pt-1">
+          <input type="checkbox" id="auto_vacation" name="auto_vacation" checked
+                 class="h-4 w-4 mt-1 shrink-0 rounded" style="accent-color: var(--ik-sea);">
+          <label for="auto_vacation" class="cursor-pointer">
+            <span class="text-sm font-medium text-ink">Férias automáticas</span>
+            <p class="text-xs text-muted mt-0.5">O banco entra em férias automaticamente após cada ciclo de compra.</p>
+          </label>
+        </div>
+      </div>
+      <div>
+        <label class="form-label">Observações <span class="font-normal text-muted">(opcional)</span></label>
+        <textarea name="notes" class="form-input" rows="2" placeholder="Ex: banco principal do servidor s78-br"></textarea>
+      </div>
     </div>
 
-    <div class="flex justify-end gap-2 pt-2">
-      <a href="{% url 'generals_bank:list' %}" class="btn btn-sm btn-outline">Cancelar</a>
-      <button type="submit" class="btn btn-primary btn-sm">Criar Banco</button>
+    <div class="border-t flex items-center justify-between px-5 py-3"
+         style="border-color: rgba(40,20,10,0.10); background: rgba(0,0,0,0.02);">
+      <a href="{% url 'generals_bank:list' %}" class="btn btn-sm" style="background: transparent; border: 1px solid var(--ik-line); color: var(--ik-ink);">
+        Cancelar
+      </a>
+      <button type="submit" class="btn btn-primary btn-sm">
+        <i class="bi bi-shield-plus"></i> Criar banco
+      </button>
     </div>
   </form>
 </div>

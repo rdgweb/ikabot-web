@@ -1,55 +1,133 @@
 {% load static humanize hub_tags %}
 
 {% if not active_cycle %}
-<div class="card p-8 text-center text-muted">
-  <i class="bi bi-moon-stars text-3xl opacity-30 block mb-3"></i>
-  <p class="text-sm">Nenhum ciclo ativo. Clique em "Iniciar Ciclo" para começar.</p>
+<div class="flex flex-col items-center gap-3 py-16 text-muted">
+  <div class="h-16 w-16 flex items-center justify-center rounded-[20px] border"
+       style="border-color: rgba(219,201,167,0.6); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+    <i class="bi bi-moon-stars text-2xl opacity-50" style="color: var(--ik-gold);"></i>
+  </div>
+  <div class="text-center">
+    <p class="text-sm font-semibold text-ink">Nenhum ciclo ativo</p>
+    <p class="text-xs text-muted mt-0.5">Clique em "Iniciar Ciclo" para começar.</p>
+  </div>
 </div>
+
 {% else %}
 <div class="space-y-4">
 
-  <div class="card p-4 flex items-center justify-between gap-4 flex-wrap">
-    <div>
-      <div class="flex items-center gap-2 flex-wrap">
-        <span class="font-semibold text-ink">{{ active_cycle.get_mode_display }}</span>
-        <span class="badge {% if active_cycle.status == 'completed' %}badge-good{% elif active_cycle.status == 'failed' %}badge-bad{% elif active_cycle.status == 'cancelled' %}badge-muted{% else %}badge-sea{% endif %}">
-          {{ active_cycle.get_status_display }}
-        </span>
+  {# Cycle header card #}
+  <div class="overflow-hidden rounded-[20px] border"
+       style="border-color: rgba(40,20,10,0.18); background: linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));">
+    <div class="px-5 py-4 border-b flex items-center justify-between gap-4 flex-wrap"
+         style="border-color: rgba(40,20,10,0.10);">
+      <div class="flex items-center gap-3">
+        <div class="h-10 w-10 shrink-0 flex items-center justify-center rounded-[12px] border"
+             style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+          {% if active_cycle.mode == "accumulation" %}
+          <i class="bi bi-arrow-down-circle-fill" style="color: var(--ik-sea);"></i>
+          {% else %}
+          <i class="bi bi-arrow-up-circle-fill" style="color: var(--ik-warn);"></i>
+          {% endif %}
+        </div>
+        <div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-bold text-ink">{{ active_cycle.get_mode_display }}</span>
+            <span class="badge badge-sm
+              {% if active_cycle.status == 'completed' %}badge-good
+              {% elif active_cycle.status == 'failed' %}badge-bad
+              {% elif active_cycle.status == 'cancelled' %}badge-muted
+              {% elif active_cycle.status in 'sleeping bank_buying' %}badge-warn
+              {% else %}badge-sea
+              {% endif %}">
+              {{ active_cycle.get_status_display }}
+            </span>
+          </div>
+          <div class="text-xs text-muted mt-0.5">
+            Iniciado {{ active_cycle.created_at|timesince }} atrás
+            {% if active_cycle.estimated_ready_at %}
+            · <i class="bi bi-clock"></i> ETA {{ active_cycle.estimated_ready_at|timeuntil }}
+            {% endif %}
+          </div>
+        </div>
       </div>
-      <div class="text-xs text-muted mt-0.5">
-        Iniciado {{ active_cycle.created_at|timesince }} atrás
-        {% if active_cycle.estimated_ready_at %}· ETA {{ active_cycle.estimated_ready_at|timeuntil }}{% endif %}
+      {% if not active_cycle.is_terminal %}
+      <div class="flex items-center gap-1.5 text-[11px]" style="color: var(--ik-sea);">
+        <svg class="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+        Ao vivo · 15s
       </div>
+      {% endif %}
     </div>
-    {% if not active_cycle.is_terminal %}
-    <div class="text-xs text-muted flex items-center gap-1">
-      <i class="bi bi-arrow-clockwise animate-spin"></i> Atualizando a cada 15s
+
+    {% if active_cycle.target_units %}
+    <div class="px-5 py-3 flex flex-wrap gap-2">
+      {% for uid, qty in active_cycle.target_units.items %}
+      <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs"
+            style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.7);">
+        <span class="font-bold text-ink">{{ qty|intcomma }}×</span>
+        <span class="text-muted">u{{ uid }}</span>
+      </span>
+      {% endfor %}
     </div>
     {% endif %}
   </div>
 
   {% if tasks %}
-  <div class="card overflow-hidden p-0">
-    <div class="px-4 py-3 border-b border-[var(--ik-line)] text-xs font-semibold text-muted uppercase tracking-wide">
+  {# Task cards #}
+  <div>
+    <div class="text-[11px] font-semibold uppercase tracking-[0.16em] mb-3 px-1" style="color: var(--ik-sea);">
       Tarefas das Produtoras
     </div>
-    <div class="divide-y divide-[var(--ik-line)]">
+    <div class="grid gap-3">
       {% for task in tasks %}
-      <div class="px-4 py-3 flex items-center gap-3">
+      <div class="overflow-hidden rounded-[18px] border flex items-center gap-4 px-4 py-3"
+           style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.82);">
+        <div class="h-11 w-11 shrink-0 flex items-center justify-center rounded-[12px] border"
+             style="border-color: rgba(79,134,185,0.15); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+          {% if task.unit_name %}
+          {% with icon=task.unit_name|unit_icon %}
+          {% if icon %}<img src="{% static icon %}" alt="{{ task.unit_name }}" class="h-8 w-8 object-contain">
+          {% else %}<i class="bi bi-shield text-lg text-muted"></i>{% endif %}
+          {% endwith %}
+          {% else %}
+          <i class="bi bi-shield text-lg text-muted"></i>
+          {% endif %}
+        </div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
-            <span class="font-medium text-sm text-ink">{{ task.producer_game_account.name }}</span>
-            <span class="text-xs text-muted">
-              {% if task.unit_name %}{{ task.unit_name }}{% else %}Unidade {{ task.unit_id }}{% endif %}
-            </span>
+            <span class="font-semibold text-sm text-ink">{{ task.producer_game_account.name }}</span>
+            <span class="text-xs text-muted">{{ task.unit_name|default:task.unit_id }}</span>
           </div>
-          <div class="text-xs text-muted mt-0.5 flex gap-3 flex-wrap">
-            <span>{{ task.quantity_done }}/{{ task.quantity_target }} unidades</span>
-            {% if task.bm_city_name %}<span>BM: {{ task.bm_city_name }}</span>{% endif %}
-            {% if task.unit_price %}<span>Preço: {{ task.unit_price|intcomma }}</span>{% endif %}
+          <div class="mt-1.5">
+            <div class="flex items-center justify-between text-[11px] text-muted mb-1">
+              <span>{{ task.quantity_done|intcomma }} / {{ task.quantity_target|intcomma }}</span>
+              {% if task.unit_price %}
+              <span class="flex items-center gap-1">
+                <img src="{% static 'game/resources/icon_gold.png' %}" alt="" class="h-3 w-3 object-contain">
+                {{ task.unit_price|intcomma }}
+              </span>
+              {% endif %}
+            </div>
+            <div class="h-1.5 rounded-full overflow-hidden" style="background: rgba(219,201,167,0.5);">
+              {% widthratio task.quantity_done task.quantity_target 100 as pct %}
+              <div class="h-full rounded-full transition-all"
+                   style="width: {{ pct }}%; background: {% if task.status == 'sold' %}var(--ik-good){% elif task.status == 'failed' %}var(--ik-bad){% else %}var(--ik-sea){% endif %};">
+              </div>
+            </div>
           </div>
+          {% if task.bm_city_name %}
+          <div class="text-[10px] text-muted mt-1"><i class="bi bi-building"></i> {{ task.bm_city_name }}</div>
+          {% endif %}
         </div>
-        <span class="badge badge-sm {% if task.status == 'sold' %}badge-good{% elif task.status == 'listed' %}badge-sea{% elif task.status == 'failed' %}badge-bad{% elif task.status == 'cancelled' %}badge-muted{% else %}badge-warn{% endif %} flex-shrink-0">
+        <span class="badge badge-sm shrink-0
+          {% if task.status == 'sold' %}badge-good
+          {% elif task.status == 'listed' %}badge-sea
+          {% elif task.status == 'failed' %}badge-bad
+          {% elif task.status == 'cancelled' %}badge-muted
+          {% else %}badge-warn
+          {% endif %}">
           {{ task.get_status_display }}
         </span>
       </div>
@@ -59,7 +137,10 @@
   {% endif %}
 
   {% if active_cycle.result_note %}
-  <div class="text-xs text-muted px-1">{{ active_cycle.result_note }}</div>
+  <div class="rounded-[14px] border px-4 py-3 text-sm text-muted"
+       style="border-color: rgba(219,201,167,0.6); background: rgba(255,255,255,0.6);">
+    {{ active_cycle.result_note }}
+  </div>
   {% endif %}
 
 </div>
