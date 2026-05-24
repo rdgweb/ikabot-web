@@ -414,7 +414,7 @@ class InternalMarketBuyRunner(BaseRunner):
                     expected_outbound_seconds=int(preview["travel_seconds"]),
                     expected_total_seconds=int(preview["total_seconds"]),
                 )
-            if is_raise_gold_mode and status["state"] == "arrived":
+            if status["state"] == "arrived":
                 if is_raise_gold_mode:
                     self._apply_raise_gold_snapshot_updates(
                         jid=jid,
@@ -439,6 +439,9 @@ class InternalMarketBuyRunner(BaseRunner):
                         delay_seconds=self._RAISE_GOLD_BUFFER_SECONDS,
                     )
                 return RunnerResult(success=True)
+
+            if status["state"] != "pending":
+                raise RuntimeError(str(status.get("error") or "Purchase arrival confirmation failed"))
 
             retry_inputs = dict(inputs)
             retry_inputs["purchase_monitor_mode"] = "await_arrival"
