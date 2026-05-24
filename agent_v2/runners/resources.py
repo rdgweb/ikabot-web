@@ -813,7 +813,8 @@ class DistributeResourcesRunner(BaseRunner):
                             "critical": False,
                         },
                     )
-                    route_remaining = shipment_cap - int(route_entry["total"])
+                    resource_used = int(route_entry["resources"].get(resource, 0))
+                    route_remaining = shipment_cap - resource_used
                     if route_remaining <= 0:
                         continue
 
