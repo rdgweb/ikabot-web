@@ -1,0 +1,54 @@
+{% extends base_template|default:"base.html" %}
+{% load static %}
+
+{% block title %}Novo Banco de Generais{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span>
+  <a href="{% url 'generals_bank:list' %}" class="hover:text-ink">Banco de Generais</a>
+  <span class="mx-1">/</span> <span class="text-ink">Novo Banco</span>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto space-y-6">
+  <h1 class="text-xl font-bold text-ink flex items-center gap-2">
+    <i class="bi bi-shield-plus text-amber-500"></i> Novo Banco de Generais
+  </h1>
+
+  <form method="post" action="{% url 'generals_bank:create' %}" class="card p-6 space-y-4">
+    {% csrf_token %}
+
+    <div>
+      <label class="form-label">Conta Banco <span class="text-bad">*</span></label>
+      <select name="bank_game_account" class="form-input" required>
+        <option value="">— Selecionar conta —</option>
+        {% for ga in eligible_accounts %}
+        <option value="{{ ga.pk }}">{{ ga.name }} ({{ ga.account.node.name }})</option>
+        {% endfor %}
+      </select>
+      <p class="text-xs text-muted mt-1">Precisa ter Branch Office e Mercado Negro. Contas já configuradas como banco não aparecem.</p>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="form-label">Ouro mínimo (piso)</label>
+        <input type="number" name="min_gold_floor" value="10000" class="form-input" min="0">
+      </div>
+      <div class="flex items-center gap-2 mt-5">
+        <input type="checkbox" id="auto_vacation" name="auto_vacation" checked class="h-4 w-4">
+        <label for="auto_vacation" class="form-label mb-0">Férias automáticas</label>
+      </div>
+    </div>
+
+    <div>
+      <label class="form-label">Observações</label>
+      <textarea name="notes" class="form-input" rows="2" placeholder="Opcional"></textarea>
+    </div>
+
+    <div class="flex justify-end gap-2 pt-2">
+      <a href="{% url 'generals_bank:list' %}" class="btn btn-sm btn-outline">Cancelar</a>
+      <button type="submit" class="btn btn-primary btn-sm">Criar Banco</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

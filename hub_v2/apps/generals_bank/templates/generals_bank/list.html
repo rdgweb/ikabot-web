@@ -1,0 +1,70 @@
+{% extends base_template|default:"base.html" %}
+{% load static hub_tags %}
+
+{% block title %}Banco de Generais{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <span class="text-ink">Banco de Generais</span>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <div class="flex items-center justify-between gap-4">
+    <div>
+      <h1 class="text-xl font-bold text-ink flex items-center gap-2">
+        <i class="bi bi-shield-fill-check text-amber-500"></i> Banco de Generais
+      </h1>
+      <p class="mt-0.5 text-sm text-muted">Acumulação e liquidação de unidades militares entre contas.</p>
+    </div>
+    <a href="{% url 'generals_bank:create' %}" class="btn btn-primary btn-sm flex-shrink-0">
+      <i class="bi bi-plus-lg"></i> Novo Banco
+    </a>
+  </div>
+
+  {% if not banks_ctx %}
+  <div class="card p-8 text-center text-muted">
+    <i class="bi bi-shield-fill-check text-4xl opacity-30 block mb-3"></i>
+    <p class="text-sm">Nenhum banco configurado. Configure uma conta para ser o banco central de generais.</p>
+    <a href="{% url 'generals_bank:create' %}" class="btn btn-primary btn-sm mt-4">Configurar primeiro banco</a>
+  </div>
+  {% else %}
+  <div class="grid gap-4">
+    {% for item in banks_ctx %}
+    {% with bank=item.bank %}
+    <div class="card p-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-semibold text-ink">{{ bank.bank_game_account.name }}</span>
+          <span class="text-xs text-muted">{{ bank.bank_game_account.account.node.name }}</span>
+          {% if not bank.is_active %}
+          <span class="badge badge-muted">Inativo</span>
+          {% endif %}
+        </div>
+        <div class="mt-1 flex items-center gap-4 text-sm flex-wrap">
+          <span class="{% if item.gold_low %}text-amber-500 font-semibold{% else %}text-muted{% endif %}">
+            <i class="bi bi-coin"></i>
+            {{ item.gold|intcomma }} ouro
+            {% if item.gold_low %}<i class="bi bi-exclamation-triangle-fill text-xs"></i>{% endif %}
+          </span>
+          <span class="text-muted">
+            <i class="bi bi-people"></i> {{ item.producers_count }} produtora{{ item.producers_count|pluralize:"s" }}
+          </span>
+          {% if item.active_cycle %}
+          <span class="badge badge-sea">
+            <i class="bi bi-arrow-repeat"></i> {{ item.active_cycle.get_status_display }}
+          </span>
+          {% else %}
+          <span class="text-muted text-xs">Sem ciclo ativo</span>
+          {% endif %}
+        </div>
+      </div>
+      <a href="{% url 'generals_bank:detail' bank.pk %}" class="btn btn-sm btn-outline flex-shrink-0">
+        Detalhe <i class="bi bi-chevron-right"></i>
+      </a>
+    </div>
+    {% endwith %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

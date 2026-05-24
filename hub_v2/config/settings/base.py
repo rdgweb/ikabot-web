@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     "apps.captcha",
     "apps.settings_app",
     "apps.users",
+    "apps.generals_bank",
 ]
 
 MIDDLEWARE = [

@@ -1,0 +1,223 @@
+{% extends base_template|default:"base.html" %}
+{% load static hub_tags %}
+
+{% block title %}Banco — {{ bank.bank_game_account.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span>
+  <a href="{% url 'generals_bank:list' %}" class="hover:text-ink">Banco de Generais</a>
+  <span class="mx-1">/</span> <span class="text-ink">{{ bank.bank_game_account.name }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="{ tab: 'config', showStartModal: false, targetUnits: {} }">
+
+  {# Header #}
+  <div class="flex items-center justify-between gap-4 flex-wrap">
+    <div>
+      <h1 class="text-xl font-bold text-ink flex items-center gap-2">
+        <i class="bi bi-shield-fill-check text-amber-500"></i>
+        {{ bank.bank_game_account.name }}
+        <span class="text-sm font-normal text-muted">{{ bank.bank_game_account.account.node.name }}</span>
+      </h1>
+      <div class="mt-1 flex items-center gap-3 text-sm flex-wrap">
+        <span class="{% if gold_low %}text-amber-500 font-semibold{% else %}text-muted{% endif %}">
+          <i class="bi bi-coin"></i> {{ gold|intcomma }} ouro
+          {% if gold_low %}<i class="bi bi-exclamation-triangle-fill text-xs" title="Abaixo do piso mínimo"></i>{% endif %}
+        </span>
+        {% if active_cycle %}
+        <span class="badge badge-sea"><i class="bi bi-arrow-repeat"></i> {{ active_cycle.get_status_display }}</span>
+        {% else %}
+        <span class="text-muted text-xs">Sem ciclo ativo</span>
+        {% endif %}
+        {% if not bank.is_active %}
+        <span class="badge badge-muted">Inativo</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex gap-2">
+      {% if not active_cycle and bank.is_active %}
+      <button @click="showStartModal = true" class="btn btn-primary btn-sm">
+        <i class="bi bi-play-fill"></i> Iniciar Ciclo
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  {# Tabs #}
+  <div class="flex gap-1 border-b border-[var(--ik-line)]">
+    <button @click="tab='config'" :class="tab==='config' ? 'tab-active' : ''" class="tab">Configuração</button>
+    <button @click="tab='cycle'" :class="tab==='cycle' ? 'tab-active' : ''" class="tab">Ciclo Atual</button>
+    <button @click="tab='history'" :class="tab==='history' ? 'tab-active' : ''" class="tab">Histórico</button>
+  </div>
+
+  {# TAB: Configuração #}
+  <div x-show="tab==='config'" x-cloak class="space-y-6">
+    <form method="post" action="{% url 'generals_bank:update' bank.pk %}" class="card p-5 space-y-4">
+      {% csrf_token %}
+      <h2 class="font-semibold text-ink">Configurações do Banco</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="form-label">Cidade compradora (Branch Office)</label>
+          <select name="buyer_city_id" class="form-input">
+            <option value="">— Auto —</option>
+            {% for opt in buyer_city_options %}
+            <option value="{{ opt.city_id }}" {% if bank.buyer_city_id == opt.city_id %}selected{% endif %}>
+              {{ opt.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Ouro mínimo (piso)</label>
+          <input type="number" name="min_gold_floor" value="{{ bank.min_gold_floor }}" class="form-input" min="0">
+        </div>
+        <div class="flex items-center gap-2">
+          <input type="checkbox" id="auto_vacation" name="auto_vacation" {% if bank.auto_vacation %}checked{% endif %} class="h-4 w-4">
+          <label for="auto_vacation" class="form-label mb-0">Férias automáticas</label>
+        </div>
+        <div class="flex items-center gap-2">
+          <input type="checkbox" id="is_active" name="is_active" {% if bank.is_active %}checked{% endif %} class="h-4 w-4">
+          <label for="is_active" class="form-label mb-0">Banco ativo</label>
+        </div>
+        <div class="sm:col-span-2">
+          <label class="form-label">Observações</label>
+          <textarea name="notes" class="form-input" rows="2">{{ bank.notes }}</textarea>
+        </div>
+      </div>
+      <div class="flex justify-end">
+        <button type="submit" class="btn btn-primary btn-sm">Salvar</button>
+      </div>
+    </form>
+
+    {# Producers #}
+    <div class="card p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="font-semibold text-ink">Produtoras</h2>
+      </div>
+      {% if producers %}
+      <div class="divide-y divide-[var(--ik-line)]">
+        {% for producer in producers %}
+        <div class="py-3 flex items-center justify-between gap-3">
+          <div>
+            <span class="font-medium text-ink text-sm">{{ producer.producer_game_account.name }}</span>
+            <span class="text-xs text-muted ml-1">{{ producer.producer_game_account.account.node.name }}</span>
+            {% if producer.min_resource_reserves %}
+            <div class="text-xs text-muted mt-0.5">
+              Res. mínima: {{ producer.min_resource_reserves }}
+            </div>
+            {% endif %}
+            {% if producer.min_population_reserve %}
+            <div class="text-xs text-muted">Pop. reserva: {{ producer.min_population_reserve }}</div>
+            {% endif %}
+          </div>
+          <form method="post" action="{% url 'generals_bank:producer-remove' bank.pk producer.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-danger-outline" title="Remover">
+              <i class="bi bi-trash"></i>
+            </button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-sm text-muted">Nenhuma produtora configurada.</p>
+      {% endif %}
+
+      <form method="post" action="{% url 'generals_bank:producer-add' bank.pk %}" class="border-t border-[var(--ik-line)] pt-4 space-y-3">
+        {% csrf_token %}
+        <h3 class="text-sm font-medium text-ink">Adicionar produtora</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="form-label">Conta</label>
+            <select name="producer_game_account" class="form-input">
+              <option value="">— Selecionar —</option>
+              {% for ga in eligible_producers %}
+              <option value="{{ ga.pk }}" {% if ga.pk in existing_producer_ids %}disabled{% endif %}>
+                {{ ga.name }} ({{ ga.account.node.name }}){% if ga.pk in existing_producer_ids %} — já adicionada{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Pop. reserva mínima</label>
+            <input type="number" name="min_population_reserve" value="0" class="form-input" min="0">
+          </div>
+          <div class="sm:col-span-2">
+            <label class="form-label">Recursos mínimos (JSON) <span class="text-muted text-xs">ex: {"wood": 500}</span></label>
+            <input type="text" name="min_resource_reserves" value="{}" class="form-input font-mono text-sm">
+          </div>
+        </div>
+        <div class="flex justify-end">
+          <button type="submit" class="btn btn-sm btn-outline">
+            <i class="bi bi-plus"></i> Adicionar
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# TAB: Ciclo Atual #}
+  <div x-show="tab==='cycle'" x-cloak
+       hx-get="{% url 'generals_bank:cycle-status-partial' bank.pk %}"
+       hx-trigger="revealed, every 15s"
+       hx-swap="innerHTML">
+    <div class="text-center text-muted py-8 text-sm">Carregando...</div>
+  </div>
+
+  {# TAB: Histórico #}
+  <div x-show="tab==='history'" x-cloak
+       hx-get="{% url 'generals_bank:history-partial' bank.pk %}"
+       hx-trigger="revealed"
+       hx-swap="innerHTML">
+    <div class="text-center text-muted py-8 text-sm">Carregando...</div>
+  </div>
+
+</div>
+
+{# Modal: Iniciar Ciclo #}
+<div x-show="showStartModal" x-cloak
+     class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+     @click.self="showStartModal = false">
+  <div class="bg-paper rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+    <div class="flex items-center justify-between">
+      <h2 class="font-bold text-ink">Iniciar Ciclo</h2>
+      <button @click="showStartModal = false" class="text-muted hover:text-ink"><i class="bi bi-x-lg"></i></button>
+    </div>
+
+    <p class="text-sm text-muted">
+      {% if gold_low %}
+      <span class="text-amber-500 font-semibold"><i class="bi bi-exclamation-triangle-fill"></i> Ouro baixo ({{ gold|intcomma }}).</span>
+      O sistema iniciará ciclo de <strong>liquidação</strong> — o banco listará unidades para venda.
+      {% else %}
+      Ouro disponível: <strong>{{ gold|intcomma }}</strong>. O sistema iniciará ciclo de <strong>acumulação</strong>.
+      {% endif %}
+    </p>
+
+    {% if not gold_low %}
+    <div class="space-y-2">
+      <label class="form-label">Unidades alvo (JSON) <span class="text-muted text-xs">ex: {"211": 50, "315": 100}</span></label>
+      <textarea x-model="JSON.stringify(targetUnits)"
+                @input.debounce="try { targetUnits = JSON.parse($event.target.value) } catch(e){}"
+                class="form-input font-mono text-sm" rows="3" placeholder='{"211": 50}'></textarea>
+      <p class="text-xs text-muted">ID da unidade → quantidade desejada. Máximo 8 tipos.</p>
+    </div>
+    {% endif %}
+
+    <div class="flex justify-end gap-2 pt-2">
+      <button @click="showStartModal = false" class="btn btn-sm btn-outline">Cancelar</button>
+      <button @click="
+        fetch('{% url 'generals_bank:start-cycle' bank.pk %}', {
+          method: 'POST',
+          headers: {'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/x-www-form-urlencoded'},
+          body: 'target_units=' + encodeURIComponent(JSON.stringify(targetUnits))
+        }).then(r => r.json()).then(d => {
+          if (d.ok) { showStartModal = false; location.reload(); }
+          else alert(d.error || 'Erro ao iniciar ciclo');
+        })" class="btn btn-primary btn-sm">
+        <i class="bi bi-play-fill"></i> Iniciar
+      </button>
+    </div>
+  </div>
+</div>
+{% endblock %}

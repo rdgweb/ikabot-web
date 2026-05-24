@@ -507,6 +507,57 @@ class HubClient:
             time.sleep(interval)
         return ""
 
+    # ── Generals Bank ──
+
+    def bank_get_config(self, bank_config_id: str) -> dict:
+        """GET /api/agent/generals-bank/configs/<id>/"""
+        return self._get(f"/api/agent/generals-bank/configs/{bank_config_id}")
+
+    def bank_create_cycle(
+        self,
+        bank_config_id: str,
+        mode: str,
+        target_units: dict | None = None,
+        manager_job_id: str | None = None,
+    ) -> dict:
+        """POST /api/agent/generals-bank/cycles/create/"""
+        payload: dict[str, Any] = {
+            "bank_config_id": bank_config_id,
+            "mode": mode,
+            "target_units": target_units or {},
+        }
+        if manager_job_id:
+            payload["manager_job_id"] = manager_job_id
+        return self._post("/api/agent/generals-bank/cycles/create", payload)
+
+    def bank_get_cycle_status(self, cycle_id: str) -> dict:
+        """GET /api/agent/generals-bank/cycles/<id>/status/"""
+        return self._get(f"/api/agent/generals-bank/cycles/{cycle_id}/status")
+
+    def bank_update_task(self, task_id: str, *, status: str = "", quantity_done: int | None = None,
+                         unit_price: int | None = None, unit_name: str = "", sell_job_id: str = "") -> dict:
+        """POST /api/agent/generals-bank/tasks/<id>/update/"""
+        payload: dict[str, Any] = {}
+        if status:
+            payload["status"] = status
+        if quantity_done is not None:
+            payload["quantity_done"] = quantity_done
+        if unit_price is not None:
+            payload["unit_price"] = unit_price
+        if unit_name:
+            payload["unit_name"] = unit_name
+        if sell_job_id:
+            payload["sell_job_id"] = sell_job_id
+        return self._post(f"/api/agent/generals-bank/tasks/{task_id}/update", payload)
+
+    def bank_buy_complete(self, cycle_id: str, purchases: list[dict]) -> dict:
+        """POST /api/agent/generals-bank/cycles/<id>/buy-complete/"""
+        return self._post(f"/api/agent/generals-bank/cycles/{cycle_id}/buy-complete", {"purchases": purchases})
+
+    def bank_cycle_complete(self, cycle_id: str) -> dict:
+        """POST /api/agent/generals-bank/cycles/<id>/complete/"""
+        return self._post(f"/api/agent/generals-bank/cycles/{cycle_id}/complete", {})
+
     # ── Internal ──
 
     def _url(self, path: str) -> str:

@@ -1,0 +1,57 @@
+{% load static hub_tags %}
+
+{% if not cycles %}
+<div class="card p-8 text-center text-muted">
+  <i class="bi bi-clock-history text-3xl opacity-30 block mb-3"></i>
+  <p class="text-sm">Nenhum ciclo registrado ainda.</p>
+</div>
+{% else %}
+<div class="card overflow-hidden p-0">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="text-xs text-muted uppercase tracking-wide border-b border-[var(--ik-line)]">
+        <th class="px-4 py-3 text-left">Data</th>
+        <th class="px-4 py-3 text-left">Tipo</th>
+        <th class="px-4 py-3 text-left">Unidades</th>
+        <th class="px-4 py-3 text-right">Ouro</th>
+        <th class="px-4 py-3 text-center">Status</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-[var(--ik-line)]">
+      {% for cycle in cycles %}
+      {% with txns=cycle.transactions.all %}
+      <tr class="hover:bg-[var(--ik-hover)] transition-colors">
+        <td class="px-4 py-3 text-muted text-xs whitespace-nowrap">
+          {{ cycle.created_at|date:"d/m/y H:i" }}
+        </td>
+        <td class="px-4 py-3">
+          <span class="badge {% if cycle.mode == 'accumulation' %}badge-sea{% else %}badge-warn{% endif %} badge-sm">
+            {{ cycle.get_mode_display }}
+          </span>
+        </td>
+        <td class="px-4 py-3 text-xs text-muted">
+          {% if cycle.target_units %}
+            {% for uid, qty in cycle.target_units.items %}
+            <span>{{ qty }}× u{{ uid }}</span>{% if not forloop.last %}, {% endif %}
+            {% endfor %}
+          {% else %}—{% endif %}
+        </td>
+        <td class="px-4 py-3 text-right text-sm">
+          {% with total=txns|sum_attr:"gold_delta" %}
+          {% if total > 0 %}<span class="text-emerald-500">+{{ total|intcomma }}</span>
+          {% elif total < 0 %}<span class="text-red-400">{{ total|intcomma }}</span>
+          {% else %}—{% endif %}
+          {% endwith %}
+        </td>
+        <td class="px-4 py-3 text-center">
+          <span class="badge badge-sm {% if cycle.status == 'completed' %}badge-good{% elif cycle.status in 'failed cancelled' %}badge-bad{% else %}badge-sea{% endif %}">
+            {{ cycle.get_status_display }}
+          </span>
+        </td>
+      </tr>
+      {% endwith %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}

@@ -1,7 +1,34 @@
-from .constants import CAT_AUTOMATION, CAT_MILITARY, FIELD_BOOL, FIELD_CHOICE, FIELD_CITY_SELECT, FIELD_INT, FIELD_STR
+from .constants import CAT_AUTOMATION, CAT_MILITARY, FIELD_BOOL, FIELD_CHOICE, FIELD_CITY_SELECT, FIELD_INT, FIELD_JSON_ARRAY, FIELD_STR
 
 
 ACTIONS = {
+    806: {
+        "name": "Banco de Generais — Gerenciar",
+        "name_en": "Generals Bank — Manage",
+        "category": CAT_MILITARY,
+        "icon": "bi-shield-fill-check",
+        "runner": "generals_bank_manage",
+        "requires_game_session": True,
+        "recurring": False,
+        "long_running": True,
+        "ui_hidden": True,
+        "description": "Orquestra um ciclo completo do banco de generais: decide modo, dispara produtoras, aguarda conclusão e ativa compra.",
+        "inputs": [],
+    },
+    807: {
+        "name": "Banco de Generais — Comprar",
+        "name_en": "Generals Bank — Buy",
+        "category": CAT_MILITARY,
+        "icon": "bi-shield-plus",
+        "runner": "generals_bank_buy",
+        "requires_game_session": True,
+        "recurring": False,
+        "long_running": True,
+        "ui_hidden": True,
+        "description": "Conta banco sai de férias, compra unidades dos produtores e volta a dormir.",
+        "inputs": [],
+    },
+
     1005: {
         "name": "Gerenciar Treino Militar",
         "name_en": "Manage military training",
