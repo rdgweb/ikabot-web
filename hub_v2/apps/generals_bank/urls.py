@@ -8,6 +8,7 @@ from .views import (
     BankListView,
     BankProducerAddView,
     BankProducerRemoveView,
+    BankProducerUpdateView,
     BankStartCycleView,
     BankUpdateView,
 )
@@ -20,6 +21,7 @@ urlpatterns = [
     path("<uuid:pk>/", BankDetailView.as_view(), name="detail"),
     path("<uuid:pk>/editar/", BankUpdateView.as_view(), name="update"),
     path("<uuid:pk>/produtores/adicionar/", BankProducerAddView.as_view(), name="producer-add"),
+    path("<uuid:pk>/produtores/<uuid:producer_pk>/editar/", BankProducerUpdateView.as_view(), name="producer-update"),
     path("<uuid:pk>/produtores/<uuid:producer_pk>/remover/", BankProducerRemoveView.as_view(), name="producer-remove"),
     path("<uuid:pk>/iniciar-ciclo/", BankStartCycleView.as_view(), name="start-cycle"),
     path("<uuid:pk>/ciclo-status/", BankCycleStatusPartialView.as_view(), name="cycle-status-partial"),

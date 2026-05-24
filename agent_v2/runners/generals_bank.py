@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 _POLL_INTERVAL_SEC = 60   # seconds between cycle status polls
 _MAX_POLL_CYCLES = 180    # ~3h max before giving up
 _BUY_WAIT_SEC = 90        # seconds to wait after producers list before buying (offer propagation)
+_TRAIN_BUFFER_SEC = 90
 
 
 def _to_int(val: Any, default: int = 0) -> int:
@@ -156,6 +157,227 @@ class GeneralsBankManageRunner(BaseRunner):
         )
 
 
+@register_runner(809)
+class GeneralsBankProducerTaskRunner(BaseRunner):
+    """Execute one producer-side bank task end to end.
+
+    Current supported path is the direct same-city flow:
+    city has Barracks/Shipyard + Black Market in the same place.
+    """
+
+    def execute(self, job: dict[str, Any]) -> RunnerResult:
+        jid = job["job_id"]
+        aid = job["account_id"]
+        ga_id = job.get("game_account_id", "")
+        inputs = job.get("inputs") or {}
+
+        cycle_id = str(inputs.get("cycle_id") or "").strip()
+        task_id = str(inputs.get("task_id") or "").strip()
+        if not cycle_id or not task_id:
+            return RunnerResult(success=False, data={"error": "cycle_id and task_id required"})
+
+        status_data = self.hub.bank_get_cycle_status(cycle_id)
+        if not status_data.get("ok"):
+            return RunnerResult(success=False, data={"error": "cycle_status_failed"})
+
+        task = next((t for t in (status_data.get("tasks") or []) if str(t.get("task_id") or "") == task_id), None)
+        if not task:
+            return RunnerResult(success=False, data={"error": "task_not_found"})
+        if str(task.get("status") or "") in {"listed", "sold", "failed", "cancelled"}:
+            return RunnerResult(success=True, data={"task_status": task.get("status")})
+
+        city_id = _to_int((inputs.get("city_id") or task.get("city_id") or task.get("bm_city_id")))
+        bm_city_id = _to_int((inputs.get("bm_city_id") or task.get("bm_city_id")))
+        unit_id = _to_int(task.get("unit_id"))
+        quantity_target = _to_int(task.get("quantity_target"))
+        if not city_id or not bm_city_id or not unit_id or not quantity_target:
+            self.log(jid, "error", "Tarefa do banco incompleta: city/bm_city/unit/qty ausentes")
+            return RunnerResult(success=False, data={"error": "incomplete_task"})
+        if city_id != bm_city_id:
+            self.log(jid, "error", f"Fluxo com transporte ainda nao suportado (city={city_id}, bm_city={bm_city_id})")
+            return RunnerResult(success=False, data={"error": "transport_stage_not_supported"})
+
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        if not creds:
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
+
+        try:
+            client = self.get_or_login_game_client(jid, aid, ga_id, creds)
+            building_type = "fleet" if 200 <= unit_id < 300 else "troops"
+            training_building = "shipyard" if building_type == "fleet" else "barracks"
+            train_info = self._find_building_info(ga_id, city_id, training_building)
+            bm_info = self._find_building_info(ga_id, bm_city_id, "blackMarket")
+            if not train_info or not bm_info:
+                missing = training_building if not train_info else "blackMarket"
+                self.log(jid, "error", f"Edificio ausente para tarefa do banco: {missing}")
+                return RunnerResult(success=False, data={"error": f"missing_{missing}"})
+
+            train_position = int(train_info["position"])
+            bm_position = int(bm_info["position"])
+
+            barracks_state = client.fetch_barracks_state(city_id, train_position, building_type)
+            unit_state = next((u for u in (barracks_state.get("units") or []) if _to_int(u.get("unit_id")) == unit_id), None)
+            if not unit_state:
+                self.log(jid, "error", f"Unidade {unit_id} nao encontrada no {training_building} da cidade {city_id}")
+                return RunnerResult(success=False, data={"error": "unit_not_trainable"})
+
+            unit_name = str(unit_state.get("name") or f"unit={unit_id}")
+            current_count = _to_int(unit_state.get("current_count"))
+            max_build = _to_int(unit_state.get("max_build"))
+            train_time = max(0, _to_int(unit_state.get("train_time_seconds")))
+            queue_entries = [q for q in (barracks_state.get("training_queue") or []) if _to_int(q.get("unit_id")) == unit_id]
+            queued_count = sum(_to_int(q.get("quantity")) for q in queue_entries)
+            queued_eta = max((_to_int(q.get("remaining_seconds")) for q in queue_entries), default=0)
+            waiting_for_training = bool(inputs.get("_waiting_for_training"))
+            expected_ready_at = max(_to_int(inputs.get("_expected_ready_at")), int(time.time()) + queued_eta if queued_eta > 0 else 0)
+
+            self.log(
+                jid,
+                "info",
+                f"Tarefa banco {task_id}: {unit_name} atual={current_count} fila={queued_count} alvo={quantity_target} cidade={city_id}",
+            )
+
+            available_total = current_count + queued_count
+            if available_total < quantity_target:
+                now_ts = int(time.time())
+                if waiting_for_training and expected_ready_at > now_ts:
+                    wait_seconds = max(30, expected_ready_at - now_ts)
+                    self.log(jid, "info", f"Treino em curso para {unit_name}; rechecando em {wait_seconds}s")
+                    self.save_game_client(ga_id, client)
+                    return RunnerResult(
+                        success=True,
+                        reschedule_seconds=wait_seconds,
+                        reschedule_inputs={**inputs, "city_id": city_id, "bm_city_id": bm_city_id},
+                    )
+
+                deficit = quantity_target - available_total
+                train_now = min(deficit, max_build) if max_build > 0 else deficit
+                if train_now <= 0:
+                    self.log(jid, "error", f"{unit_name}: max_build=0 e ainda faltam {deficit}")
+                    return RunnerResult(success=False, data={"error": "cannot_train_required_quantity"})
+
+                client.train_units(city_id, train_position, {unit_id: train_now}, building_type)
+                expected_wait = max(120, train_now * max(train_time, 1) + _TRAIN_BUFFER_SEC)
+                self.log(
+                    jid,
+                    "info",
+                    f"Treino iniciado para {train_now}x {unit_name}; proximo check em {expected_wait}s",
+                )
+                self.hub.bank_update_task(task_id, status="training", unit_name=unit_name, quantity_done=current_count)
+                self.save_game_client(ga_id, client)
+                return RunnerResult(
+                    success=True,
+                    reschedule_seconds=expected_wait,
+                    reschedule_inputs={
+                        **inputs,
+                        "city_id": city_id,
+                        "bm_city_id": bm_city_id,
+                        "_waiting_for_training": True,
+                        "_expected_ready_at": int(time.time()) + expected_wait,
+                    },
+                )
+
+            if queued_eta > 0 and current_count < quantity_target:
+                wait_seconds = max(30, queued_eta + _TRAIN_BUFFER_SEC)
+                self.log(jid, "info", f"{unit_name}: lote ja esta na fila; aguardando {wait_seconds}s antes de listar")
+                self.save_game_client(ga_id, client)
+                return RunnerResult(
+                    success=True,
+                    reschedule_seconds=wait_seconds,
+                    reschedule_inputs={
+                        **inputs,
+                        "city_id": city_id,
+                        "bm_city_id": bm_city_id,
+                        "_waiting_for_training": True,
+                        "_expected_ready_at": int(time.time()) + wait_seconds,
+                    },
+                )
+
+            bm_state = client.get_black_market_state(bm_city_id, bm_position, unit_id=unit_id, offer_resource=5)
+            selected_unit = bm_state.get("selected_unit") or {}
+            available_amount = _to_int(selected_unit.get("available_amount"))
+            unit_price = _to_int(selected_unit.get("price_min"), 0)
+            if available_amount < quantity_target:
+                self.log(
+                    jid,
+                    "error",
+                    f"{unit_name}: BM so permite listar {available_amount}/{quantity_target} agora",
+                )
+                return RunnerResult(success=False, data={"error": "insufficient_sellable_units"})
+            if unit_price <= 0:
+                self.log(jid, "error", f"{unit_name}: nao foi possivel obter price_min no BM")
+                return RunnerResult(success=False, data={"error": "missing_unit_price"})
+
+            client.add_black_market_offer(
+                city_id=bm_city_id,
+                position=bm_position,
+                unit_id=unit_id,
+                amount=quantity_target,
+                unit_price=unit_price,
+                offer_resource=5,
+            )
+            self.log(jid, "info", f"Oferta listada: {quantity_target}x {unit_name} por {unit_price} ouro/un")
+
+            active_offers = client.get_my_black_market_offers(city_id=bm_city_id, position=bm_position)
+            try:
+                active_unit_ids = sorted({_to_int(o.get("unit_id")) for o in active_offers if _to_int(o.get("unit_id")) > 0})
+                if active_unit_ids:
+                    self.hub.sync_bm_offers(
+                        game_account_id=ga_id,
+                        city_id=bm_city_id,
+                        active_unit_ids=active_unit_ids,
+                        active_offers=[
+                            {
+                                "offer_id": _to_int(o.get("offer_id")),
+                                "unit_id": _to_int(o.get("unit_id")),
+                                "amount": _to_int(o.get("amount")),
+                                "price": _to_int(o.get("price")),
+                                "resource_name": str(o.get("resource_name") or ""),
+                            }
+                            for o in active_offers
+                            if _to_int(o.get("unit_id")) > 0
+                        ],
+                    )
+            except Exception as sync_exc:
+                self.log(jid, "warn", f"Falha ao sincronizar BM da tarefa do banco: {sync_exc}")
+
+            self.hub.bank_update_task(
+                task_id,
+                status="listed",
+                quantity_done=quantity_target,
+                unit_price=unit_price,
+                unit_name=unit_name,
+                sell_job_id=jid,
+            )
+            self.save_game_client(ga_id, client)
+            return RunnerResult(
+                success=True,
+                data={"task_status": "listed", "unit_id": unit_id, "quantity": quantity_target, "unit_price": unit_price},
+            )
+
+        except Exception as exc:
+            if self.is_network_error(exc):
+                return self.network_error_result(jid, exc)
+            self.log(jid, "error", f"Tarefa da produtora do banco falhou: {exc}")
+            return RunnerResult(success=False, data={"error": str(exc)})
+
+    def _find_building_info(self, ga_id: str, city_id: int, building_type: str) -> dict[str, Any] | None:
+        try:
+            snapshot = self.hub.get_snapshot(game_account_id=ga_id)
+            cities = snapshot.get("cities") or []
+            for city in cities:
+                if str(city.get("id")) == str(city_id):
+                    for building in (city.get("buildings") or []):
+                        if str(building.get("building") or "").strip() == building_type:
+                            return {
+                                "position": int(building.get("position", -1)),
+                                "level": int(building.get("level") or 0),
+                            }
+        except Exception as exc:
+            logger.debug("find_building_info failed: %s", exc)
+        return None
+
+
 @register_runner(807)
 class GeneralsBankBuyRunner(BaseRunner):
     """Bank account wakes from vacation, buys listed units from producers, re-enters vacation.
@@ -189,7 +411,7 @@ class GeneralsBankBuyRunner(BaseRunner):
 
             # Fetch bank config for buyer_city_id
             config_data = self.hub.bank_get_config(bank_config_id)
-            buyer_city_id = _to_int(config_data.get("buyer_city_id"))
+            buyer_city_id = _to_int(inputs.get("buyer_city_id") or config_data.get("buyer_city_id"))
             auto_vacation = bool(config_data.get("auto_vacation", True))
 
             # Wait for offers to propagate on game servers
@@ -243,6 +465,8 @@ class GeneralsBankBuyRunner(BaseRunner):
                     )
                     seller_avatar = str(offer_details.get("seller_avatar") or "")
                     seller_city_name = str(offer_details.get("seller_city_name") or "")
+                    unit_offer = next((u for u in (offer_details.get("units") or []) if _to_int(u.get("unit_id")) == unit_id), None)
+                    offer_key = _to_int((unit_offer or {}).get("offer_key"))
 
                     client.buy_units_black_market(
                         buyer_city_id=buyer_city_id,
@@ -255,6 +479,7 @@ class GeneralsBankBuyRunner(BaseRunner):
                         unit_price=unit_price,
                         unit_category=unit_category,
                         num_transporters=num_transporters,
+                        offer_key=offer_key,
                     )
 
                     self.log(jid, "info", f"Compra OK: {quantity}x unit={unit_id} de {seller_city_name or seller_city_id}")

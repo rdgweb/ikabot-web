@@ -655,7 +655,7 @@ def _resolve_unit_icon(unit_id: int, unit_name: str) -> str:
 
 
 def _bm_available_offers_context(cities, snapshot):
-    """Build available offers grouped by buyer_city_id for ac=804 form."""
+    """Build seller-specific available offers grouped by buyer_city_id for ac=804 form."""
     from apps.market.models import BlackMarketAvailableOffer
     from apps.market.models import BlackMarketUnitQuote
 
@@ -685,12 +685,12 @@ def _bm_available_offers_context(cities, snapshot):
     except Exception:
         pass
 
-    offers_by_city: dict[str, dict] = {}
+    offers_by_city: dict[str, list[dict]] = {}
     scanned_at_by_city: dict[str, str] = {}
     try:
         qs = (BlackMarketAvailableOffer.objects
               .filter(game_account=snapshot.game_account, buyer_city_id__in=bo_city_ids)
-              .order_by("unit_id", "price_per_unit")
+              .order_by("unit_id", "price_per_unit", "seller_avatar", "seller_city_name")
               .values("buyer_city_id", "seller_city_id", "seller_city_name", "seller_avatar",
                       "unit_id", "unit_category", "amount", "price_per_unit", "scanned_at"))
         for row in qs:
@@ -698,37 +698,23 @@ def _bm_available_offers_context(cities, snapshot):
             uid = row["unit_id"]
             uname = unit_names.get(uid, "")
             if ckey not in offers_by_city:
-                offers_by_city[ckey] = {}
-            if uid not in offers_by_city[ckey]:
-                offers_by_city[ckey][uid] = {
-                    "unit_id": uid,
-                    "unit_name": uname,
-                    "unit_icon": _resolve_unit_icon(uid, uname),
-                    "unit_category": row["unit_category"],
-                    "sellers": [],
-                    "min_price": row["price_per_unit"],
-                    "total_amount": 0,
-                }
-            offers_by_city[ckey][uid]["sellers"].append({
+                offers_by_city[ckey] = []
+            offers_by_city[ckey].append({
+                "unit_id": uid,
+                "unit_name": uname,
+                "unit_icon": _resolve_unit_icon(uid, uname),
+                "unit_category": row["unit_category"],
                 "seller_city_id": row["seller_city_id"],
                 "seller_city_name": row["seller_city_name"],
                 "seller_avatar": row["seller_avatar"],
                 "amount": row["amount"],
                 "price_per_unit": row["price_per_unit"],
             })
-            offers_by_city[ckey][uid]["total_amount"] += row["amount"]
             if row["scanned_at"] and ckey not in scanned_at_by_city:
                 scanned_at_by_city[ckey] = row["scanned_at"].strftime("%d/%m/%Y %H:%M")
     except Exception:
         pass
-
-    # Convert inner dict to list sorted by min_price
-    offers_by_city_list = {
-        ckey: sorted(units.values(), key=lambda u: u["min_price"])
-        for ckey, units in offers_by_city.items()
-    }
-
-    return {"offers_by_city": offers_by_city_list, "scanned_at_by_city": scanned_at_by_city}
+    return {"offers_by_city": offers_by_city, "scanned_at_by_city": scanned_at_by_city}
 
 
 def _market_form_context(cities):
@@ -1370,7 +1356,7 @@ def _custom_field_names(action_code: int) -> list[str]:
     if int(action_code) == 803:
         return ["city_id", "unit_id", "amount", "unit_price"]
     if int(action_code) == 804:
-        return ["buyer_city_id", "unit_id", "quantity", "max_price", "unit_category"]
+        return ["buyer_city_id", "seller_city_id", "unit_id", "quantity", "max_price", "unit_category"]
     if int(action_code) in {902, 1006}:
         return [
             "donation_type",
@@ -2419,41 +2405,32 @@ class BmScanStatusView(LoginRequiredMixin, View):
         except Exception:
             pass
 
-        offers_by_unit: dict[int, dict] = {}
+        offers_list: list[dict] = []
         scanned_at_str = ""
         try:
             qs = (BlackMarketAvailableOffer.objects
                   .filter(game_account=ga, buyer_city_id=buyer_city_id)
-                  .order_by("unit_id", "price_per_unit")
+                  .order_by("unit_id", "price_per_unit", "seller_avatar", "seller_city_name")
                   .values("seller_city_id", "seller_city_name", "seller_avatar",
                           "unit_id", "unit_category", "amount", "price_per_unit", "scanned_at"))
             for row in qs:
                 uid = row["unit_id"]
                 uname = unit_names.get(uid, "")
-                if uid not in offers_by_unit:
-                    offers_by_unit[uid] = {
-                        "unit_id": uid,
-                        "unit_name": uname,
-                        "unit_icon": _resolve_unit_icon(uid, uname),
-                        "unit_category": row["unit_category"],
-                        "sellers": [],
-                        "min_price": row["price_per_unit"],
-                        "total_amount": 0,
-                    }
-                offers_by_unit[uid]["sellers"].append({
+                offers_list.append({
+                    "unit_id": uid,
+                    "unit_name": uname,
+                    "unit_icon": _resolve_unit_icon(uid, uname),
+                    "unit_category": row["unit_category"],
                     "seller_city_id": row["seller_city_id"],
                     "seller_city_name": row["seller_city_name"],
                     "seller_avatar": row["seller_avatar"],
                     "amount": row["amount"],
                     "price_per_unit": row["price_per_unit"],
                 })
-                offers_by_unit[uid]["total_amount"] += row["amount"]
                 if not scanned_at_str and row["scanned_at"]:
                     scanned_at_str = row["scanned_at"].strftime("%d/%m/%Y %H:%M")
         except Exception:
             pass
-
-        offers_list = sorted(offers_by_unit.values(), key=lambda u: u["min_price"])
 
         return JsonResponse({
             "status": "done",

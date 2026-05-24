@@ -22,6 +22,31 @@ from . import services
 logger = logging.getLogger(__name__)
 
 
+def _normalize_units_map(raw: dict | None) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for key, value in (raw or {}).items():
+        try:
+            unit_id = str(int(key))
+            qty = int(value)
+        except Exception:
+            continue
+        if qty > 0:
+            result[unit_id] = qty
+    return result
+
+
+def _parse_template_payload(raw_value: str | None) -> dict[str, int]:
+    if not raw_value:
+        return {}
+    try:
+        parsed = json.loads(raw_value)
+    except json.JSONDecodeError:
+        parsed = {}
+    if not isinstance(parsed, dict):
+        return {}
+    return _normalize_units_map(parsed)
+
+
 def _snapshot_cities(ga: GameAccount) -> list[dict]:
     snap = AccountSnapshot.objects.filter(game_account=ga).first()
     if snap is None:
@@ -132,7 +157,10 @@ class BankDetailView(LoginRequiredMixin, DetailView):
             "producers": bank.producers.select_related("producer_game_account").filter(is_active=True),
             "fleet_units": TRAINING_UNITS.get("fleet", []),
             "troop_units": TRAINING_UNITS.get("troops", []),
+            "all_units": TRAINING_UNITS.get("troops", []) + TRAINING_UNITS.get("fleet", []),
+            "unit_catalog_json": json.dumps(TRAINING_UNITS.get("troops", []) + TRAINING_UNITS.get("fleet", [])),
             "resource_config": _RESOURCE_CONFIG,
+            "producer_plan": services.build_producer_execution_plan(bank),
         })
         return ctx
 
@@ -195,6 +223,7 @@ class BankProducerAddView(LoginRequiredMixin, View):
         bank = get_object_or_404(GeneralsBankConfig, pk=pk)
         producer_ga_id = request.POST.get("producer_game_account")
         min_pop = int(request.POST.get("min_population_reserve") or 0)
+        production_template = _parse_template_payload(request.POST.get("production_template"))
 
         try:
             ga = GameAccount.objects.get(pk=producer_ga_id, active=True)
@@ -216,9 +245,34 @@ class BankProducerAddView(LoginRequiredMixin, View):
             defaults={
                 "min_resource_reserves": min_reserves,
                 "min_population_reserve": min_pop,
+                "production_template": production_template,
                 "is_active": True,
             },
         )
+        return redirect("generals_bank:detail", pk=bank.pk)
+
+
+class BankProducerUpdateView(LoginRequiredMixin, View):
+    def post(self, request, pk, producer_pk):
+        bank = get_object_or_404(GeneralsBankConfig, pk=pk)
+        producer = get_object_or_404(GeneralsBankProducer, pk=producer_pk, bank_config=bank)
+        min_pop = int(request.POST.get("min_population_reserve") or 0)
+        production_template = _parse_template_payload(request.POST.get("production_template"))
+
+        min_reserves = {}
+        for res in ("wood", "marble", "crystal", "wine", "sulfur"):
+            try:
+                v = int(request.POST.get(f"res_{res}") or 0)
+                if v > 0:
+                    min_reserves[res] = v
+            except (ValueError, TypeError):
+                pass
+
+        producer.min_resource_reserves = min_reserves
+        producer.min_population_reserve = min_pop
+        producer.production_template = production_template
+        producer.is_active = request.POST.get("is_active") == "on"
+        producer.save()
         return redirect("generals_bank:detail", pk=bank.pk)
 
 
@@ -239,11 +293,22 @@ class BankStartCycleView(LoginRequiredMixin, View):
         if active:
             return JsonResponse({"error": "Já existe um ciclo ativo.", "cycle_id": str(active.pk)}, status=409)
 
-        target_units_raw = request.POST.get("target_units", "{}")
-        try:
-            target_units = json.loads(target_units_raw)
-        except json.JSONDecodeError:
-            target_units = {}
+        simulate = request.POST.get("simulate") == "1"
+        target_units = _parse_template_payload(request.POST.get("target_units"))
+        plan = services.build_producer_execution_plan(bank)
+        effective_target_units = target_units or plan.get("aggregate_units") or {}
+
+        if simulate:
+            return JsonResponse({
+                "ok": True,
+                "simulate": True,
+                "aggregate_units": effective_target_units,
+                "warnings": plan.get("warnings") or [],
+                "tasks": plan.get("tasks") or [],
+            })
+
+        if not effective_target_units:
+            return JsonResponse({"error": "Nenhuma composicao configurada nas produtoras."}, status=400)
 
         ga = bank.bank_game_account
         job = create_job_with_workflow(
@@ -253,7 +318,7 @@ class BankStartCycleView(LoginRequiredMixin, View):
             action_code=806,
             inputs={
                 "bank_config_id": str(bank.pk),
-                "target_units": target_units,
+                "target_units": effective_target_units,
             },
             status="queued",
             created_by=request.user,

@@ -958,6 +958,7 @@ class GameClient(IslandActions):
         unit_price: int,
         unit_category: int = UNIT_TYPE_MARITIME,
         num_transporters: int = 1,
+        offer_key: int | None = None,
     ) -> dict[str, Any]:
         """Buy units from another player's Black Market offer."""
         return BuyUnitsAction(self).execute(
@@ -971,6 +972,7 @@ class GameClient(IslandActions):
             unit_price=unit_price,
             unit_category=unit_category,
             num_transporters=num_transporters,
+            offer_key=offer_key,
         )
 
     def get_unit_offer_details(

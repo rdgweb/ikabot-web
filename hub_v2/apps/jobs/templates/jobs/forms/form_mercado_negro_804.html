@@ -24,19 +24,129 @@
        scanError: null,
        _scanTimer: null,
        selectedCity() { return this.cities.find(c => String(c.id) === String(this.selectedCityId)); },
-       cityOffers() {
+       cityOffersRaw() {
          if (!this.selectedCityId) return [];
          return this.offersData[String(this.selectedCityId)] || [];
        },
+       groupedUnits() {
+         const groups = new Map();
+         for (const offer of this.cityOffersRaw()) {
+           const key = String(offer.unit_id || '');
+           if (!groups.has(key)) {
+             groups.set(key, {
+               unit_id: offer.unit_id,
+               unit_name: offer.unit_name,
+               unit_icon: offer.unit_icon,
+               unit_category: offer.unit_category,
+               total_amount: 0,
+               min_price: offer.price_per_unit || 0,
+               offers: [],
+             });
+           }
+           const group = groups.get(key);
+           group.total_amount += Number(offer.amount || 0);
+           group.min_price = Math.min(group.min_price || Number.MAX_SAFE_INTEGER, Number(offer.price_per_unit || 0));
+           group.offers.push({
+             seller_city_id: offer.seller_city_id,
+             seller_city_name: offer.seller_city_name,
+             seller_avatar: offer.seller_avatar,
+             amount: Number(offer.amount || 0),
+             price_per_unit: Number(offer.price_per_unit || 0),
+           });
+         }
+         return Array.from(groups.values())
+           .map(group => {
+             group.offers.sort((a, b) => (a.price_per_unit - b.price_per_unit) || (b.amount - a.amount));
+             group.price_tiers = this.buildPriceTiers(group.offers);
+             return group;
+           })
+           .sort((a, b) => (a.min_price - b.min_price) || (a.unit_id - b.unit_id));
+       },
+       buildPriceTiers(offers) {
+         const tiers = [];
+         for (const offer of offers) {
+           const last = tiers.length ? tiers[tiers.length - 1] : null;
+           if (last && last.price_per_unit === offer.price_per_unit) {
+             last.amount += offer.amount;
+             last.sellers.push(offer.seller_avatar || offer.seller_city_name || `Cidade ${offer.seller_city_id}`);
+           } else {
+             tiers.push({
+               price_per_unit: offer.price_per_unit,
+               amount: offer.amount,
+               sellers: [offer.seller_avatar || offer.seller_city_name || `Cidade ${offer.seller_city_id}`],
+             });
+           }
+         }
+         return tiers;
+       },
        scannedAt() { return this.scannedData[String(this.selectedCityId)] || ''; },
-       hasOffers() { return this.cityOffers().length > 0; },
-       selectedUnit() { return this.cityOffers().find(u => u.unit_id === this.selectedUnitId); },
-       selectUnit(u) {
-         this.selectedUnitId = u.unit_id;
-         this.selectedUnitCategory = u.unit_category;
-         if (u.min_price > 0) this.maxPrice = u.min_price;
+       hasOffers() { return this.groupedUnits().length > 0; },
+       selectedUnit() { return this.groupedUnits().find(u => u.unit_id === this.selectedUnitId); },
+       selectUnit(unit) {
+         this.selectedUnitId = unit.unit_id;
+         this.selectedUnitCategory = unit.unit_category;
+         this.maxPrice = this.requiredMaxPriceForUnit(unit, this.quantity) || unit.min_price || 0;
        },
        isReady() { return this.selectedCityId && this.selectedUnitId > 0 && this.quantity > 0 && this.maxPrice > 0; },
+       resetSelection() {
+         this.selectedUnitId = 0;
+         this.maxPrice = 0;
+       },
+       requiredMaxPriceForUnit(unit, qty) {
+         if (!unit || qty <= 0) return 0;
+         let remaining = qty;
+         let required = 0;
+         for (const offer of unit.offers) {
+           if (remaining <= 0) break;
+           const take = Math.min(remaining, Number(offer.amount || 0));
+           if (take <= 0) continue;
+           required = Number(offer.price_per_unit || 0);
+           remaining -= take;
+         }
+         return remaining > 0 ? 0 : required;
+       },
+       purchasePlan() {
+         const unit = this.selectedUnit();
+         if (!unit) {
+           return {
+             lines: [],
+             fulfilled_qty: 0,
+             total_cost: 0,
+             remaining: this.quantity,
+             total_available: 0,
+             required_max_price: 0,
+             price_avg: 0,
+           };
+         }
+         let remaining = Number(this.quantity || 0);
+         let fulfilled = 0;
+         let totalCost = 0;
+         const lines = [];
+         for (const offer of unit.offers) {
+           if (remaining <= 0) break;
+           if (Number(offer.price_per_unit || 0) > Number(this.maxPrice || 0)) continue;
+           const take = Math.min(remaining, Number(offer.amount || 0));
+           if (take <= 0) continue;
+           fulfilled += take;
+           totalCost += take * Number(offer.price_per_unit || 0);
+           remaining -= take;
+           lines.push({
+             seller: offer.seller_avatar || 'Vendedor desconhecido',
+             city: offer.seller_city_name || `Cidade ${offer.seller_city_id}`,
+             qty: take,
+             price: Number(offer.price_per_unit || 0),
+           });
+         }
+         return {
+           lines,
+           fulfilled_qty: fulfilled,
+           total_cost: totalCost,
+           remaining,
+           total_available: Number(unit.total_amount || 0),
+           required_max_price: this.requiredMaxPriceForUnit(unit, this.quantity),
+           price_avg: fulfilled > 0 ? totalCost / fulfilled : 0,
+         };
+       },
        async startScan() {
          if (this.scanning || !this.selectedCityId) return;
          this.scanning = true;
@@ -53,7 +163,10 @@
            if (data.error) { this.scanning = false; this.scanError = data.error; return; }
            this.scanJobId = data.job_id;
            this._pollScan();
-         } catch(e) { this.scanning = false; this.scanError = 'Erro ao criar job de scan.'; }
+         } catch(e) {
+           this.scanning = false;
+           this.scanError = 'Erro ao criar job de scan.';
+         }
        },
        _pollScan() {
          if (this._scanTimer) clearInterval(this._scanTimer);
@@ -68,23 +181,26 @@
              if (data.status === 'done') {
                this.offersData[String(this.selectedCityId)] = data.offers;
                if (data.scanned_at) this.scannedData[String(this.selectedCityId)] = data.scanned_at;
-               this.selectedUnitId = 0; this.maxPrice = 0;
+               this.resetSelection();
              } else {
                this.scanError = data.message || 'Erro ao escanear.';
              }
-           } catch(e) { clearInterval(this._scanTimer); this.scanning = false; this.scanError = 'Erro ao verificar status.'; }
+           } catch(e) {
+             clearInterval(this._scanTimer);
+             this.scanning = false;
+             this.scanError = 'Erro ao verificar status.';
+           }
          }, 3000);
        }
      }">
 
-  {# Hidden form fields #}
   <input type="hidden" name="{{ form.buyer_city_id.html_name }}" x-model="selectedCityId">
+  <input type="hidden" name="{{ form.seller_city_id.html_name }}" value="">
   <input type="hidden" name="{{ form.unit_id.html_name }}" :value="selectedUnitId">
   <input type="hidden" name="{{ form.quantity.html_name }}" :value="quantity">
   <input type="hidden" name="{{ form.max_price.html_name }}" :value="maxPrice">
   <input type="hidden" name="{{ form.unit_category.html_name }}" :value="String(selectedUnitCategory)">
 
-  {# ── Header ── #}
   <div class="border-b px-5 py-5 md:px-6"
        style="border-color: rgba(40,20,10,0.15); background: linear-gradient(180deg, rgba(255,255,255,0.56), rgba(255,255,255,0));">
     <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -98,8 +214,7 @@
         </div>
         <h3 class="mt-2 text-xl font-bold text-ink">Comprar unidades militares</h3>
         <p class="mt-1.5 text-sm leading-relaxed text-muted">
-          Selecione a cidade, depois escolha uma unidade das ofertas disponíveis.
-          Rode o <strong class="text-ink">Verificar Ofertas</strong> (ac=808) primeiro para atualizar a lista.
+          As unidades continuam agregadas por tipo, mas o custo é calculado pela escadinha real de ofertas, em ordem de preço.
         </p>
       </div>
       <div class="shrink-0 rounded-2xl border px-4 py-3 md:min-w-[18rem]"
@@ -119,14 +234,11 @@
     </div>
   </div>
 
-  {# ── Body ── #}
-  <div class="px-5 py-5 md:px-6 space-y-5">
-
-    {# ── Step 1: Buyer city ── #}
+  <div class="space-y-5 px-5 py-5 md:px-6">
     <section>
       <div class="mb-3">
         <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
-          <span class="inline-flex h-5 w-5 items-center justify-center rounded-full text-white text-[9px] font-bold mr-1.5"
+          <span class="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold text-white"
                 style="background: var(--ik-sea);">1</span>
           Cidade compradora
         </div>
@@ -144,8 +256,8 @@
       <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4" x-show="cities.length">
         <template x-for="city in cities" :key="`bm-buy-city-${city.id}`">
           <button type="button"
-                  @click="selectedCityId = String(city.id); selectedUnitId = 0; maxPrice = 0;"
-                  class="relative overflow-hidden rounded-[18px] border text-left transition-all duration-150 p-3"
+                  @click="selectedCityId = String(city.id); resetSelection();"
+                  class="relative overflow-hidden rounded-[18px] border p-3 text-left transition-all duration-150"
                   :class="String(selectedCityId) === String(city.id)
                     ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_8px_22px_rgba(79,134,185,0.18)] translate-y-[-1px]'
                     : 'hover:translate-y-[-1px] hover:border-[rgba(79,134,185,0.4)] hover:shadow-[0_8px_16px_rgba(79,134,185,0.08)]'"
@@ -191,12 +303,10 @@
       </div>
     </section>
 
-    {# ── Step 2: Available units from DB ── #}
     <section x-show="selectedCityId">
-
       <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
-          <span class="inline-flex h-5 w-5 items-center justify-center rounded-full text-white text-[9px] font-bold mr-1.5"
+          <span class="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold text-white"
                 style="background: var(--ik-sea);">2</span>
           Unidade disponível
         </div>
@@ -204,30 +314,17 @@
           <div class="flex items-center gap-2">
             <div class="flex items-center gap-1.5 text-[10px]" style="color: var(--ik-good);">
               <i class="bi bi-check-circle"></i>
-              <span x-text="`${cityOffers().length} tipo(s) — escaneado ${scannedAt()}`"></span>
+              <span x-text="`${groupedUnits().length} tipo(s) — escaneado ${scannedAt()}`"></span>
             </div>
-            {# Stale scan button — appears if scan is older than 5h #}
-            <template x-if="(()=>{ const s=scannedAt(); if(!s) return false; const [d,t]=s.split(' '); const [dd,mm,yy]=d.split('/'); const [hh,mi]=t.split(':'); return (Date.now() - new Date(yy,mm-1,dd,hh,mi).getTime()) > 5*3600000; })()">
-              <button type="button"
-                      @click="startScan()"
-                      :disabled="scanning"
-                      class="flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all hover:shadow-sm disabled:opacity-50"
-                      style="border-color: rgba(201,156,78,0.4); color: var(--ik-gold); background: rgba(201,156,78,0.07);"
-                      title="Escanear novamente">
-                <i class="bi bi-arrow-clockwise text-[9px]"></i>
-                Atualizar
-              </button>
-            </template>
           </div>
         </template>
       </div>
 
-      {# No scan data — scanning state #}
       <template x-if="scanning">
         <div class="rounded-[18px] border px-4 py-6 text-center"
              style="border-color: rgba(79,134,185,0.35); background: rgba(79,134,185,0.05);">
-          <div class="flex justify-center mb-3">
-            <svg class="animate-spin h-6 w-6" style="color: var(--ik-sea);" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <div class="mb-3 flex justify-center">
+            <svg class="h-6 w-6 animate-spin" style="color: var(--ik-sea);" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
             </svg>
@@ -237,13 +334,11 @@
         </div>
       </template>
 
-      {# No scan data — empty state with scan button #}
       <template x-if="!hasOffers() && !scanning">
         <div class="rounded-[18px] border border-dashed px-4 py-5 text-center"
              style="border-color: rgba(79,134,185,0.3); background: rgba(79,134,185,0.04);">
           <i class="bi bi-search text-xl" style="color: var(--ik-sea); opacity: 0.45;"></i>
           <p class="mt-2 text-sm font-semibold text-ink">Nenhuma oferta escaneada para esta cidade</p>
-
           <template x-if="!scanError">
             <p class="mt-1 text-xs text-muted">
               Clique em <strong>Escanear agora</strong> para verificar as ofertas disponíveis no Branch Office.
@@ -255,7 +350,6 @@
               <span x-text="scanError"></span>
             </p>
           </template>
-
           <button type="button"
                   @click="startScan()"
                   class="mt-3 inline-flex items-center gap-1.5 rounded-[12px] border px-4 py-2 text-xs font-semibold transition-all hover:shadow-md"
@@ -266,95 +360,84 @@
         </div>
       </template>
 
-      {# Unit offer cards #}
       <template x-if="hasOffers()">
         <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-          <template x-for="u in cityOffers()" :key="`unit-${u.unit_id}`">
+          <template x-for="unit in groupedUnits()" :key="`unit-${unit.unit_id}`">
             <button type="button"
-                    @click="selectUnit(u)"
+                    @click="selectUnit(unit)"
                     class="relative overflow-hidden rounded-[18px] border p-3 text-left transition-all duration-150"
-                    :class="selectedUnitId === u.unit_id
+                    :class="selectedUnitId === unit.unit_id
                       ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_8px_22px_rgba(79,134,185,0.18)] translate-y-[-1px]'
                       : 'hover:translate-y-[-1px] hover:border-[rgba(79,134,185,0.4)]'"
-                    :style="selectedUnitId === u.unit_id
+                    :style="selectedUnitId === unit.unit_id
                       ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.08), rgba(255,255,255,0.90));'
                       : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
               <div class="absolute inset-x-0 top-0 h-10"
                    style="background: linear-gradient(135deg, rgba(79,134,185,0.08), transparent);"></div>
               <div class="relative flex flex-col gap-1.5">
-
-                {# Unit icon + name #}
                 <div class="flex items-center gap-2">
                   <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border"
                        style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
-                    <template x-if="u.unit_icon">
-                      <img :src="u.unit_icon" :alt="u.unit_name" class="h-7 w-7 object-contain">
+                    <template x-if="unit.unit_icon">
+                      <img :src="unit.unit_icon" :alt="unit.unit_name" class="h-7 w-7 object-contain">
                     </template>
-                    <template x-if="!u.unit_icon">
+                    <template x-if="!unit.unit_icon">
                       <i class="bi text-base"
-                         :class="u.unit_category === 444 ? 'bi-water' : 'bi-shield-shaded'"
-                         :style="u.unit_category === 444 ? 'color: var(--ik-sea);' : 'color: var(--ik-bad);'"></i>
+                         :class="unit.unit_category === 444 ? 'bi-water' : 'bi-shield-shaded'"
+                         :style="unit.unit_category === 444 ? 'color: var(--ik-sea);' : 'color: var(--ik-bad);'"></i>
                     </template>
                   </div>
                   <div class="min-w-0 flex-1">
                     <div class="truncate text-[11px] font-bold text-ink"
-                         x-text="u.unit_name || `ID ${u.unit_id}`"></div>
+                         x-text="unit.unit_name || `ID ${unit.unit_id}`"></div>
                     <div class="text-[10px] text-muted"
-                         x-text="u.unit_category === 444 ? 'Frota' : 'Tropa'"></div>
+                         x-text="unit.unit_category === 444 ? 'Frota' : 'Tropa'"></div>
                   </div>
                 </div>
 
-                {# Stats #}
                 <div class="flex items-center justify-between gap-1">
                   <div class="flex items-center gap-1">
                     <img src="{% static 'game/resources/icon_gold.png' %}" alt="" class="h-3 w-3 object-contain">
                     <span class="text-[10px] font-bold" style="color: var(--ik-gold);"
-                          x-text="new Intl.NumberFormat('pt-BR').format(u.min_price)"></span>
+                          x-text="new Intl.NumberFormat('pt-BR').format(unit.min_price)"></span>
                   </div>
                   <div class="text-[10px] text-muted"
-                       x-text="`${u.total_amount} un`"></div>
+                       x-text="`${unit.total_amount} un`"></div>
                 </div>
 
-                <div class="flex flex-wrap gap-x-1 gap-y-0.5 mt-0.5">
-                  <template x-for="(s, si) in u.sellers.slice(0,3)" :key="si">
-                    <span class="text-[9px] text-muted leading-tight truncate max-w-[4.5rem]"
-                          :title="s.seller_avatar + ' (' + s.seller_city_name + ')'"
-                          x-text="s.seller_avatar || s.seller_city_name"></span>
+                <div class="space-y-0.5">
+                  <template x-for="tier in unit.price_tiers.slice(0, 2)" :key="`tier-${unit.unit_id}-${tier.price_per_unit}`">
+                    <div class="truncate text-[9px] text-muted"
+                         x-text="`${tier.amount} @ ${new Intl.NumberFormat('pt-BR').format(tier.price_per_unit)}`"></div>
                   </template>
-                  <template x-if="u.sellers.length > 3">
-                    <span class="text-[9px] text-muted" x-text="`+${u.sellers.length - 3}`"></span>
+                  <template x-if="unit.price_tiers.length > 2">
+                    <div class="text-[9px] text-muted" x-text="`+${unit.price_tiers.length - 2} faixa(s)`"></div>
                   </template>
                 </div>
 
-                {# Check #}
                 <div class="mt-0.5 flex justify-end">
                   <span class="inline-flex h-5 w-5 items-center justify-center rounded-full border transition-all"
-                        :style="selectedUnitId === u.unit_id
+                        :style="selectedUnitId === unit.unit_id
                           ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
                           : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
-                    <i class="bi text-[9px]" :class="selectedUnitId === u.unit_id ? 'bi-check-lg' : 'bi-circle'"></i>
+                    <i class="bi text-[9px]" :class="selectedUnitId === unit.unit_id ? 'bi-check-lg' : 'bi-circle'"></i>
                   </span>
                 </div>
-
               </div>
             </button>
           </template>
         </div>
       </template>
-
     </section>
 
-    {# ── Step 3: Quantidade + Preço máximo ── #}
     <section x-show="selectedCityId && selectedUnitId > 0">
       <div class="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
-        <span class="inline-flex h-5 w-5 items-center justify-center rounded-full text-white text-[9px] font-bold mr-1.5"
+        <span class="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold text-white"
               style="background: var(--ik-sea);">3</span>
-        Quantidade e preço máximo
+        Quantidade e custo real
       </div>
 
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-
-        {# Quantidade #}
         <div class="rounded-[20px] border p-4"
              style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);">
           <div class="mb-3">
@@ -363,7 +446,7 @@
                  x-text="selectedUnit() ? (selectedUnit().unit_name || `ID ${selectedUnitId}`) : `Unidade ID ${selectedUnitId}`"></div>
             <template x-if="selectedUnit()">
               <div class="mt-0.5 text-[10px] text-muted"
-                   x-text="`${selectedUnit().total_amount} disponíveis em ${selectedUnit().sellers.length} oferta(s)`"></div>
+                   x-text="`${selectedUnit().total_amount} disponíveis no total`"></div>
             </template>
           </div>
           <div class="flex items-center gap-2">
@@ -383,12 +466,12 @@
           <template x-if="selectedUnit() && quantity > selectedUnit().total_amount">
             <div class="mt-2 text-[10px]" style="color: var(--ik-warn);">
               <i class="bi bi-exclamation-triangle"></i>
-              Quantidade acima do disponível — o runner comprará o máximo disponível.
+              Quantidade acima do disponível. O mercado só consegue atender
+              <span x-text="selectedUnit().total_amount"></span>.
             </div>
           </template>
         </div>
 
-        {# Preço Máximo #}
         <div class="rounded-[20px] border p-4"
              style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);">
           <div class="mb-3">
@@ -396,9 +479,9 @@
             <div class="mt-0.5 flex items-center gap-1.5">
               <img src="{% static 'game/resources/icon_gold.png' %}" alt="Ouro" class="h-4 w-4 object-contain">
               <span class="text-sm font-bold text-ink">Ouro</span>
-              <template x-if="selectedUnit()">
+              <template x-if="purchasePlan().required_max_price">
                 <span class="text-[10px] text-muted"
-                      x-text="`· mín. mercado: ${new Intl.NumberFormat('pt-BR').format(selectedUnit().min_price)}`"></span>
+                      x-text="`· necessário para ${quantity}: ${new Intl.NumberFormat('pt-BR').format(purchasePlan().required_max_price)}`"></span>
               </template>
             </div>
           </div>
@@ -416,35 +499,80 @@
                     class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border text-sm font-bold text-ink transition-colors hover:bg-green-50"
                     style="border-color: rgba(219,201,167,0.9);">+</button>
           </div>
-          <template x-if="selectedUnit()">
+          <template x-if="purchasePlan().required_max_price">
             <div class="mt-2 flex gap-2">
               <button type="button"
-                      @click="maxPrice = selectedUnit().min_price"
+                      @click="maxPrice = purchasePlan().required_max_price"
                       class="flex-1 rounded-[10px] border px-2 py-1.5 text-[10px] font-semibold transition-colors hover:bg-[rgba(79,134,185,0.08)]"
                       style="border-color: rgba(79,134,185,0.25); color: var(--ik-sea);">
-                Mín. mercado
+                Usar preço necessário
               </button>
             </div>
           </template>
-          <template x-if="quantity > 0 && maxPrice > 0">
-            <div class="mt-2.5 rounded-[10px] border px-2.5 py-2"
-                 style="border-color: rgba(201,156,78,0.3); background: rgba(201,156,78,0.07);">
-              <div class="text-[10px] uppercase tracking-[0.14em] text-muted">Custo máx. estimado</div>
-              <div class="mt-1 flex items-center gap-1.5">
-                <img src="{% static 'game/resources/icon_gold.png' %}" alt="" class="h-4 w-4 object-contain">
-                <span class="text-sm font-bold" style="color: var(--ik-gold);"
-                      x-text="new Intl.NumberFormat('pt-BR').format(quantity * maxPrice) + ' ouro'"></span>
+          <template x-if="purchasePlan().remaining > 0 && quantity > 0">
+            <div class="mt-2 text-[10px]" style="color: var(--ik-warn);">
+              <i class="bi bi-exclamation-triangle"></i>
+              Com o teto atual, só
+              <span x-text="purchasePlan().fulfilled_qty"></span>
+              de
+              <span x-text="quantity"></span>
+              pode(m) ser comprada(s).
+            </div>
+          </template>
+        </div>
+      </div>
+    </section>
+
+    <section x-show="selectedCityId && selectedUnitId > 0">
+      <div class="rounded-[20px] border p-4"
+           style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);">
+        <div class="mb-3 flex items-center justify-between gap-2">
+          <div>
+            <div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">Composição do custo</div>
+            <div class="mt-0.5 text-sm font-bold text-ink">Escadinha por vendedor</div>
+          </div>
+          <div class="text-right text-[10px] text-muted">
+            <div x-text="`Atende ${purchasePlan().fulfilled_qty}/${quantity}`"></div>
+            <template x-if="purchasePlan().price_avg > 0">
+              <div x-text="`médio ${new Intl.NumberFormat('pt-BR', {maximumFractionDigits: 2}).format(purchasePlan().price_avg)}`"></div>
+            </template>
+          </div>
+        </div>
+
+        <template x-if="!purchasePlan().lines.length">
+          <div class="text-[11px] text-muted">Nenhuma oferta cabe no teto atual.</div>
+        </template>
+
+        <div class="space-y-2" x-show="purchasePlan().lines.length">
+          <template x-for="(line, idx) in purchasePlan().lines" :key="`line-${idx}`">
+            <div class="flex items-center justify-between gap-3 rounded-[12px] border px-3 py-2"
+                 style="border-color: rgba(79,134,185,0.18); background: rgba(79,134,185,0.04);">
+              <div class="min-w-0">
+                <div class="truncate text-[11px] font-semibold text-ink" x-text="line.seller"></div>
+                <div class="truncate text-[10px] text-muted"
+                     x-text="`${line.qty} un · ${line.city}`"></div>
               </div>
-              <div class="mt-0.5 text-[10px] text-muted"
-                   x-text="`${quantity} × ${new Intl.NumberFormat('pt-BR').format(maxPrice)}`"></div>
+              <div class="shrink-0 text-right">
+                <div class="text-[11px] font-semibold" style="color: var(--ik-gold);"
+                     x-text="`${new Intl.NumberFormat('pt-BR').format(line.price)} / un`"></div>
+                <div class="text-[10px] text-muted"
+                     x-text="new Intl.NumberFormat('pt-BR').format(line.qty * line.price)"></div>
+              </div>
             </div>
           </template>
         </div>
 
+        <div class="mt-3 rounded-[12px] border px-3 py-2"
+             style="border-color: rgba(201,156,78,0.3); background: rgba(201,156,78,0.07);">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="text-[10px] uppercase tracking-[0.14em] text-muted">Total estimado</div>
+            <div class="text-sm font-bold" style="color: var(--ik-gold);"
+                 x-text="new Intl.NumberFormat('pt-BR').format(purchasePlan().total_cost) + ' ouro'"></div>
+          </div>
+        </div>
       </div>
     </section>
 
-    {# ── Summary ── #}
     <template x-if="isReady()">
       <div class="rounded-[18px] border px-4 py-3"
            style="border-color: rgba(95,140,78,0.3); background: rgba(95,140,78,0.05);">
@@ -457,16 +585,15 @@
             <span class="font-semibold text-ink"
                   x-text="selectedUnit()?.unit_name || `unidade ${selectedUnitId}`"></span>
             <span x-text="selectedUnitCategory === 444 ? ' (frota)' : ' (tropa)'"></span>
-            via Branch Office de
+            para
             <span class="font-semibold text-ink" x-text="selectedCity()?.name || ''"></span>
-            · máx
+            · teto
             <span class="font-semibold" style="color: var(--ik-gold);"
                   x-text="new Intl.NumberFormat('pt-BR').format(maxPrice) + ' ouro/un'"></span>
           </span>
         </div>
       </div>
     </template>
-
   </div>
 </div>
 {% endif %}

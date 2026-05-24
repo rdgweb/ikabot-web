@@ -64,6 +64,10 @@ class GeneralsBankProducer(UUIDTimestampModel):
         default=0,
         help_text="Population units that must remain free (not used for training).",
     )
+    production_template = models.JSONField(
+        default=dict,
+        help_text='Units this producer should train per cycle. e.g. {"303": 10, "210": 5}',
+    )
     is_active = models.BooleanField(default=True)
 
     class Meta:

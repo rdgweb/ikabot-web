@@ -588,7 +588,7 @@ class GetAvailableUnitOffersAction(BaseAction):
                     "seller_city_id": int(link_m.group(1)),
                     "seller_city_name": _url_unquote(seller_m.group(1)).strip() if seller_m else "",
                     "seller_avatar": _url_unquote(seller_m.group(2)).strip() if seller_m else "",
-                    "unit_category": int(type_m.group(1)) if type_m else 0,
+                    "unit_category": _unit_category_from_id(unit_id),
                     "unit_id": unit_id,
                     "amount": amount,
                     "price_per_unit": price,
@@ -623,6 +623,7 @@ class BuyUnitsAction(BaseAction):
         unit_price: int,
         unit_category: int = UNIT_TYPE_MARITIME,
         num_transporters: int = 1,
+        offer_key: int | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
         """Buy units from a seller's Black Market offer.
@@ -640,6 +641,7 @@ class BuyUnitsAction(BaseAction):
             num_transporters: Number of transport ships needed.
         """
         # Need to navigate to the city first to get fresh actionRequest
+        offer_param_key = int(offer_key or unit_id)
         params = {
             "action": "transportOperations",
             "function": "buyMilitaryAtAnotherBlackMarket",
@@ -654,8 +656,8 @@ class BuyUnitsAction(BaseAction):
             "transportDisplayPrice": 0,
             "premiumTransporter": 0,
             "normalTransportersMax": num_transporters,
-            f"{unit_id}Price": unit_price,
-            f"cargo_{unit_id}": quantity,
+            f"{offer_param_key}Price": unit_price,
+            f"cargo_{offer_param_key}": quantity,
             "capacity": 5,
             "max_capacity": 5,
             "jetPropulsion": 0,
@@ -674,6 +676,8 @@ class BuyUnitsAction(BaseAction):
             raise ActionError("BuyUnits: invalid JSON response", action="buyMilitaryAtAnotherBlackMarket")
 
         parsed = self.client.ajax_parser.parse_response(data)
+        if parsed.get("new_action_request"):
+            self.client._action_request = parsed["new_action_request"]
         if parsed.get("errors"):
             raise ActionError(
                 f"BuyUnits server errors: {parsed['errors']}",
@@ -717,7 +721,15 @@ class BuyUnitsAction(BaseAction):
             "ajax": "1",
         }
         resp = self.client._request("GET", self.client._server_url, params=params, headers=GAME_AJAX_HEADERS)
-        html = _extract_html(resp)
+        try:
+            data = resp.json()
+        except ValueError:
+            html = _extract_html(resp)
+        else:
+            parsed = self.client.ajax_parser.parse_response(data)
+            if parsed.get("new_action_request"):
+                self.client._action_request = parsed["new_action_request"]
+            html = _extract_html_from_data(data)
         return self._parse_take_offer_live(html)
 
     def _parse_take_offer(self, html: str) -> dict[str, Any]:
@@ -764,18 +776,22 @@ class BuyUnitsAction(BaseAction):
         row_re = re.compile(r"<tr[^>]*>(.*?)</tr>", re.IGNORECASE | re.DOTALL)
         amount_re = re.compile(r'<td[^>]*class="amount"[^>]*>\s*([\d.,\s]+)', re.IGNORECASE)
         price_re = re.compile(r'<td[^>]*class="costs"[^>]*>\s*([\d.,\s]+)', re.IGNORECASE)
-        unit_id_re = re.compile(r'name="cargo_(\d+)"|name="(\d+)Price"|unit_(\d+)', re.IGNORECASE)
+        offer_key_re = re.compile(r'name="cargo_(\d+)"|name="(\d+)Price"', re.IGNORECASE)
+        visual_unit_re = re.compile(r'\bs(\d{3,4})\b|unit_(\d{3,4})', re.IGNORECASE)
 
         for row in row_re.findall(html):
-            unit_m = unit_id_re.search(row)
-            if not unit_m:
+            offer_m = offer_key_re.search(row)
+            visual_m = visual_unit_re.search(row)
+            if not offer_m and not visual_m:
                 continue
             try:
-                unit_id = next(int(group) for group in unit_m.groups() if group)
+                offer_key = next((int(group) for group in offer_m.groups() if group), 0) if offer_m else 0
+                visual_unit_id = next((int(group) for group in visual_m.groups() if group), 0) if visual_m else 0
                 amount_match = amount_re.search(row)
                 price_match = price_re.search(row)
                 units.append({
-                    "unit_id": unit_id,
+                    "unit_id": visual_unit_id or offer_key,
+                    "offer_key": offer_key or visual_unit_id,
                     "amount": _parse_num(amount_match.group(1)) if amount_match else 0,
                     "price": _parse_num(price_match.group(1)) if price_match else 0,
                 })
@@ -804,6 +820,15 @@ class BuyUnitsAction(BaseAction):
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+def _unit_category_from_id(unit_id: int) -> int:
+    """Derive unit category from unit_id range: 200-299 = maritime (444), 300-399 = terrestrial (111)."""
+    if 200 <= unit_id < 300:
+        return UNIT_TYPE_MARITIME
+    if 300 <= unit_id < 400:
+        return UNIT_TYPE_TERRESTRIAL
+    return 0
+
+
 def _extract_html(resp: Any) -> str:
     """Extract the first large HTML string from a changeView/changeAjax AJAX response."""
     try:
@@ -825,6 +850,23 @@ def _extract_html(resp: Any) -> str:
         return resp.text
     except Exception:
         return ""
+
+
+def _extract_html_from_data(data: Any) -> str:
+    try:
+        for entry in data:
+            if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                if entry[0] in ("changeView", "changeAjaxResponse"):
+                    payload = entry[1]
+                    if isinstance(payload, (list, tuple)):
+                        for item in payload:
+                            if isinstance(item, str) and len(item) > 50:
+                                return item
+                    elif isinstance(payload, str) and len(payload) > 50:
+                        return payload
+    except Exception:
+        pass
+    return ""
 
 
 def _parse_num(raw: str) -> int:

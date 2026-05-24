@@ -46,6 +46,8 @@ class BankCycleStatusView(APIView):
                 {
                     "task_id": str(t.pk),
                     "producer": t.producer_game_account.name,
+                    "city_id": t.city_id,
+                    "city_name": t.city_name,
                     "unit_id": t.unit_id,
                     "unit_name": t.unit_name,
                     "quantity_target": t.quantity_target,
@@ -113,6 +115,8 @@ class BankCycleCreateView(APIView):
                     "task_id": str(t.pk),
                     "producer_ga_id": str(t.producer_game_account_id),
                     "producer_name": t.producer_game_account.name,
+                    "city_id": t.city_id,
+                    "city_name": t.city_name,
                     "unit_id": t.unit_id,
                     "quantity_target": t.quantity_target,
                     "bm_city_id": t.bm_city_id,

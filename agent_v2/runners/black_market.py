@@ -313,8 +313,15 @@ class BlackMarketBuyUnitsRunner(BaseRunner):
         unit_id        = _to_int(inputs.get("unit_id"))
         quantity       = _to_int(inputs.get("quantity"))
         max_price      = _to_int(inputs.get("max_price"), 999999)
-        unit_category  = _to_int(inputs.get("unit_category"), UNIT_TYPE_MARITIME)
         seller_city_id = _to_int(inputs.get("seller_city_id"))  # optional
+
+        # Derive category from unit_id range (reliable), fall back to input
+        if 200 <= unit_id < 300:
+            unit_category = UNIT_TYPE_MARITIME
+        elif 300 <= unit_id < 400:
+            unit_category = UNIT_TYPE_TERRESTRIAL
+        else:
+            unit_category = _to_int(inputs.get("unit_category"), UNIT_TYPE_MARITIME)
 
         if not buyer_city_id or not unit_id or not quantity:
             return RunnerResult(success=False, data={"error": "missing_inputs: buyer_city_id, unit_id, quantity required"})
@@ -367,12 +374,47 @@ class BlackMarketBuyUnitsRunner(BaseRunner):
                     s_city_id = _to_int(offer.get("seller_city_id"))
                     s_avatar = str(offer.get("seller_avatar") or "")
                     s_city_name = str(offer.get("seller_city_name") or "")
-                    o_price = _to_int(offer.get("price_per_unit"))
-                    o_qty = _to_int(offer.get("amount"))
+                    listed_price = _to_int(offer.get("price_per_unit"))
+                    listed_qty = _to_int(offer.get("amount"))
+                    if listed_qty <= 0:
+                        continue
+
+                    # Refresh the takeOffer page per seller to get a fresh actionRequest
+                    # and live transport/price details before each individual buy.
+                    offer_details = client.get_unit_offer_details(
+                        buyer_city_id=buyer_city_id,
+                        bo_position=bo_position,
+                        seller_city_id=s_city_id,
+                        unit_category=unit_category,
+                    )
+                    unit_offer = next((u for u in offer_details.get("units", []) if _to_int(u.get("unit_id")) == unit_id), None)
+                    if not unit_offer:
+                        self.log(jid, "warn", f"Oferta para unidade {unit_id} nao encontrada em cidade {s_city_id}")
+                        continue
+
+                    o_price = _to_int(unit_offer.get("price"), listed_price)
+                    o_qty = _to_int(unit_offer.get("amount"), listed_qty)
+                    offer_key = _to_int(unit_offer.get("offer_key"))
                     buy_qty = min(remaining, o_qty)
                     if buy_qty <= 0:
                         continue
                     num_transporters = max(1, -(-buy_qty // 5))
+                    max_transporters = _to_int(offer_details.get("max_transporters"))
+                    if max_transporters and num_transporters > max_transporters:
+                        self.log(
+                            jid,
+                            "warn",
+                            f"Barcos insuficientes para comprar {buy_qty}x unidade {unit_id}: precisa {num_transporters}, disponiveis {max_transporters}",
+                        )
+                        return RunnerResult(
+                            success=False,
+                            data={
+                                "error": "not_enough_cargo_ships",
+                                "required_transporters": num_transporters,
+                                "available_transporters": max_transporters,
+                                "quantity_remaining": remaining,
+                            },
+                        )
                     self.log(
                         jid, "info",
                         f"Comprando {buy_qty}x unidade {unit_id} de {s_city_name or f'id={s_city_id}'} "
@@ -390,6 +432,7 @@ class BlackMarketBuyUnitsRunner(BaseRunner):
                             unit_price=o_price,
                             unit_category=unit_category,
                             num_transporters=num_transporters,
+                            offer_key=offer_key,
                         )
                         remaining -= buy_qty
                         total_bought += buy_qty
@@ -428,6 +471,7 @@ class BlackMarketBuyUnitsRunner(BaseRunner):
                     return RunnerResult(success=False, data={"error": "offer_not_found"})
                 actual_price = _to_int(unit_offer.get("price"))
                 available_qty = _to_int(unit_offer.get("amount"))
+                offer_key = _to_int(unit_offer.get("offer_key"))
                 seller_avatar = seller_avatar or str(offer_details.get("seller_avatar") or "")
                 seller_city_name = seller_city_name or str(offer_details.get("seller_city_name") or "")
 
@@ -456,6 +500,7 @@ class BlackMarketBuyUnitsRunner(BaseRunner):
                     unit_price=actual_price,
                     unit_category=unit_category,
                     num_transporters=num_transporters,
+                    offer_key=offer_key,
                 )
                 self.save_game_client(ga_id, client)
                 return RunnerResult(

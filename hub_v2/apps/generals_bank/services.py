@@ -62,12 +62,71 @@ def _find_black_market_city(ga: GameAccount) -> dict | None:
     return None
 
 
+def _has_building(city: dict, building_name: str) -> bool:
+    for building in city.get("buildings") or []:
+        if isinstance(building, dict) and str(building.get("building") or "").strip() == building_name:
+            return True
+    return False
+
+
+def _find_training_city_for_unit(ga: GameAccount, unit_id: int) -> tuple[dict | None, dict | None]:
+    """Pick a producer city for a unit.
+
+    Current flow prefers a city that already has both the required training
+    building and a Black Market, so the bank cycle can stay self-contained
+    without adding a transport stage.
+    """
+    building_name = "shipyard" if 200 <= int(unit_id) < 300 else "barracks"
+    cities = _snapshot_cities(ga)
+    bm_candidates: list[dict] = []
+    training_candidates: list[dict] = []
+    for city in cities:
+        has_training = _has_building(city, building_name)
+        has_bm = _has_building(city, "blackMarket")
+        if has_training:
+            training_candidates.append(city)
+        if has_training and has_bm:
+            bm_candidates.append(city)
+    if bm_candidates:
+        # Prefer the strongest same-city setup first.
+        bm_candidates.sort(
+            key=lambda city: max(
+                (
+                    int((b or {}).get("level") or 0)
+                    for b in (city.get("buildings") or [])
+                    if isinstance(b, dict)
+                    and str(b.get("building") or "").strip() in {building_name, "blackMarket"}
+                ),
+                default=0,
+            ),
+            reverse=True,
+        )
+        chosen = bm_candidates[0]
+        return chosen, chosen
+    if training_candidates:
+        return training_candidates[0], _find_black_market_city(ga)
+    return None, _find_black_market_city(ga)
+
+
 def _city_name(city: dict | None, fallback=None) -> str:
     if isinstance(city, dict):
         name = str(city.get("name") or "").strip()
         if name:
             return name
     return str(fallback or "")
+
+
+def _normalize_units_map(raw: dict | None) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for key, value in (raw or {}).items():
+        try:
+            unit_id = str(int(key))
+            qty = int(value)
+        except Exception:
+            continue
+        if qty > 0:
+            result[unit_id] = qty
+    return result
 
 
 def get_bank_gold(config: GeneralsBankConfig) -> int:
@@ -81,6 +140,52 @@ def determine_cycle_mode(config: GeneralsBankConfig) -> str:
     return "accumulation"
 
 
+def build_producer_execution_plan(config: GeneralsBankConfig) -> dict:
+    producers = list(
+        config.producers.filter(is_active=True).select_related("producer_game_account")
+    )
+    tasks: list[dict] = []
+    aggregate: dict[str, int] = {}
+    warnings: list[str] = []
+
+    for producer in producers:
+        ga = producer.producer_game_account
+        template = _normalize_units_map(producer.production_template)
+        if not template:
+            warnings.append(f"{ga.name}: sem composicao configurada.")
+            continue
+
+        for unit_id_str, qty in template.items():
+            unit_id = int(unit_id_str)
+            training_city, bm_city = _find_training_city_for_unit(ga, unit_id)
+            if not training_city:
+                warnings.append(f"{ga.name}: sem cidade de treino para unidade {unit_id}.")
+                continue
+            if not bm_city:
+                warnings.append(f"{ga.name}: sem cidade com Mercado Negro para unidade {unit_id}.")
+                continue
+
+            tasks.append({
+                "producer_id": str(producer.pk),
+                "producer_ga_id": str(ga.pk),
+                "producer_name": ga.name,
+                "unit_id": unit_id,
+                "quantity_target": qty,
+                "city_id": int(training_city.get("id") or 0),
+                "city_name": _city_name(training_city),
+                "bm_city_id": int(bm_city.get("id") or 0),
+                "bm_city_name": _city_name(bm_city),
+                "same_city_flow": int(training_city.get("id") or 0) == int(bm_city.get("id") or 0),
+            })
+            aggregate[unit_id_str] = aggregate.get(unit_id_str, 0) + qty
+
+    return {
+        "tasks": tasks,
+        "aggregate_units": aggregate,
+        "warnings": warnings,
+    }
+
+
 def get_active_cycle(config: GeneralsBankConfig) -> GeneralsBankCycle | None:
     return (
         config.cycles
@@ -92,18 +197,23 @@ def get_active_cycle(config: GeneralsBankConfig) -> GeneralsBankCycle | None:
 
 def create_accumulation_cycle(
     config: GeneralsBankConfig,
-    target_units: dict[str, int],
+    target_units: dict[str, int] | None = None,
     manager_job: "Job | None" = None,
 ) -> GeneralsBankCycle:
+    plan = build_producer_execution_plan(config)
+    effective_target_units = _normalize_units_map(target_units) or plan.get("aggregate_units") or {}
+    if not effective_target_units:
+        raise ValueError("no_producer_template")
     with transaction.atomic():
         cycle = GeneralsBankCycle.objects.create(
             bank_config=config,
             mode="accumulation",
             status="training",
-            target_units=target_units,
+            target_units=effective_target_units,
             manager_job=manager_job,
         )
-        _create_producer_tasks(cycle, target_units)
+        _create_producer_tasks(cycle, plan)
+        create_producer_task_jobs(cycle)
     return cycle
 
 
@@ -120,41 +230,65 @@ def create_liquidation_cycle(
     return cycle
 
 
-def _create_producer_tasks(cycle: GeneralsBankCycle, target_units: dict[str, int]) -> None:
-    producers = list(
-        cycle.bank_config.producers.filter(is_active=True).select_related("producer_game_account")
-    )
-    if not producers:
+def _create_producer_tasks(cycle: GeneralsBankCycle, plan: dict) -> None:
+    tasks = list(plan.get("tasks") or [])
+    if not tasks:
         return
+    producer_map = {
+        str(p.producer_game_account_id): p.producer_game_account
+        for p in cycle.bank_config.producers.filter(is_active=True).select_related("producer_game_account")
+    }
+    for item in tasks:
+        ga = producer_map.get(str(item.get("producer_ga_id") or ""))
+        if not ga:
+            continue
+        GeneralsBankCycleTask.objects.create(
+            cycle=cycle,
+            producer_game_account=ga,
+            city_id=int(item.get("city_id") or 0),
+            city_name=str(item.get("city_name") or ""),
+            bm_city_id=int(item.get("bm_city_id") or 0) or None,
+            bm_city_name=str(item.get("bm_city_name") or ""),
+            unit_id=int(item.get("unit_id") or 0),
+            unit_name="",
+            quantity_target=int(item.get("quantity_target") or 0),
+            status="training",
+        )
 
-    unit_ids = list(target_units.keys())
-    producers_count = len(producers)
 
-    for idx, (unit_id_str, total_qty) in enumerate(target_units.items()):
-        unit_id = int(unit_id_str)
-        qty_per_producer = max(1, total_qty // producers_count)
-        remainder = total_qty - qty_per_producer * producers_count
+def create_producer_task_jobs(cycle: GeneralsBankCycle) -> list["Job"]:
+    jobs_created: list["Job"] = []
+    tasks = list(cycle.tasks.select_related("producer_game_account", "producer_game_account__account", "producer_game_account__account__node"))
+    for task in tasks:
+        ga = task.producer_game_account
+        job = create_job_with_workflow(
+            account=ga.account,
+            game_account=ga,
+            node=ga.account.node,
+            action_code=809,
+            inputs={
+                "cycle_id": str(cycle.pk),
+                "bank_config_id": str(cycle.bank_config_id),
+                "task_id": str(task.pk),
+                "city_id": int(task.city_id or 0),
+                "bm_city_id": int(task.bm_city_id or 0),
+            },
+            status="queued",
+            trigger_type="generals_bank_producer_task",
+        )
+        task.training_job = job
+        task.save(update_fields=["training_job", "updated_at"])
+        jobs_created.append(job)
+    return jobs_created
 
-        for p_idx, producer in enumerate(producers):
-            qty = qty_per_producer + (1 if p_idx < remainder else 0)
-            if qty <= 0:
-                continue
 
-            ga = producer.producer_game_account
-            bm_city = _find_black_market_city(ga)
-
-            GeneralsBankCycleTask.objects.create(
-                cycle=cycle,
-                producer_game_account=ga,
-                city_id=0,
-                city_name="",
-                bm_city_id=int(bm_city.get("id")) if bm_city else None,
-                bm_city_name=_city_name(bm_city),
-                unit_id=unit_id,
-                unit_name="",
-                quantity_target=qty,
-                status="training",
-            )
+def resolve_buyer_city_id(config: GeneralsBankConfig) -> int:
+    if int(config.buyer_city_id or 0) > 0:
+        return int(config.buyer_city_id)
+    for city in _snapshot_cities(config.bank_game_account):
+        if _has_building(city, "branchOffice"):
+            return int(city.get("id") or 0)
+    return 0
 
 
 def advance_cycle_status(cycle: GeneralsBankCycle, new_status: str, note: str = "") -> None:
@@ -180,9 +314,15 @@ def create_bank_buy_job(cycle: GeneralsBankCycle) -> "Job | None":
     if not listed_tasks.exists():
         return None
 
+    buyer_city_id = resolve_buyer_city_id(config)
+    if buyer_city_id <= 0:
+        advance_cycle_status(cycle, "failed", "Banco sem cidade com Branch Office para comprar.")
+        return None
+
     buy_inputs = {
         "cycle_id": str(cycle.pk),
         "bank_config_id": str(config.pk),
+        "buyer_city_id": buyer_city_id,
         "offers": [
             {
                 "producer_ga_id": str(task.producer_game_account_id),

@@ -141,6 +141,59 @@ def _parse_city_military_counts(html: str, building_type: str) -> dict[int, int]
     return counts
 
 
+def _parse_duration_seconds(text: str) -> int:
+    raw = str(text or "").strip()
+    if not raw:
+        return 0
+    total = 0
+    for value, unit in re.findall(r"(\d+)\s*([dhms])", raw.lower()):
+        ivalue = int(value)
+        if unit == "d":
+            total += ivalue * 86400
+        elif unit == "h":
+            total += ivalue * 3600
+        elif unit == "m":
+            total += ivalue * 60
+        elif unit == "s":
+            total += ivalue
+    return total
+
+
+def _parse_training_queue(html: str, building_type: str) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    class_prefix = "fleet" if building_type == "fleet" else "army"
+
+    active_match = re.search(
+        rf'id="unitBuildCountDown">([^<]+)</div>.*?class="{class_prefix} [^"]* s(\d+)".*?'
+        r'class="unitcounttextlabel">(\d+)</div>',
+        html,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if active_match:
+        entries.append({
+            "status": "active",
+            "remaining_text": active_match.group(1).strip(),
+            "remaining_seconds": _parse_duration_seconds(active_match.group(1)),
+            "unit_id": int(active_match.group(2)),
+            "quantity": int(active_match.group(3)),
+        })
+
+    waiting_pattern = re.compile(
+        rf'Em espera\s*-\s*<span[^>]*>([^<]+)</span>.*?class="{class_prefix} [^"]* s(\d+)".*?'
+        r'class="unitcounttextlabel">(\d+)</div>',
+        re.DOTALL | re.IGNORECASE,
+    )
+    for remaining_text, unit_id, quantity in waiting_pattern.findall(html):
+        entries.append({
+            "status": "waiting",
+            "remaining_text": str(remaining_text or "").strip(),
+            "remaining_seconds": _parse_duration_seconds(remaining_text),
+            "unit_id": int(unit_id),
+            "quantity": int(quantity),
+        })
+    return entries
+
+
 class FetchBarracksStateAction(BaseAction):
     """Fetch unit list and garrison state from barracks or shipyard."""
 
@@ -213,6 +266,7 @@ class FetchBarracksStateAction(BaseAction):
             occupied = True
 
         units = _parse_barracks_units(template_data, building_type)
+        training_queue = _parse_training_queue(html, building_type)
 
         return {
             "units": units,
@@ -221,6 +275,7 @@ class FetchBarracksStateAction(BaseAction):
             "garrison_sea": garrison_sea,
             "garrison_sea_max": garrison_sea_max,
             "occupied": occupied,
+            "training_queue": training_queue,
         }
 
 

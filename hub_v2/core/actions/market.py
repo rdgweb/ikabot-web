@@ -142,6 +142,7 @@ ACTIONS = {
         "description": "Compra unidades militares de outro jogador via Branch Office (Troca de Soldados).",
         "inputs": [
             {"key": "buyer_city_id", "type": FIELD_CITY_SELECT, "label": "Cidade compradora (com Branch Office)", "multiple": False, "required": True},
+            {"key": "seller_city_id", "type": FIELD_STR, "label": "Cidade vendedora (ID)", "required": False, "placeholder": "Opcional: fixa a compra em uma cidade específica"},
             {"key": "unit_id", "type": FIELD_INT, "label": "ID da unidade", "required": True, "min": 1, "help": "ID numerico do tipo de unidade (visivel no Mercado Negro do jogo)."},
             {"key": "quantity", "type": FIELD_INT, "label": "Quantidade desejada", "required": True, "min": 1},
             {"key": "max_price", "type": FIELD_INT, "label": "Preco maximo por unidade", "required": True, "min": 1, "help": "Nao compra acima deste valor. O agente busca a oferta mais barata disponivel."},
