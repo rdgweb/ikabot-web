@@ -209,6 +209,10 @@ class PiracyMissionRunner(BaseRunner):
                         client.convert_piracy_points(city_id, crew_to_create)
                         _total_crew_converted += crew_to_create
                         self.log(jid, "info", f"Convertidos {points_to_convert} pontos → {crew_to_create} força de tripulação (total acumulado: {_total_crew_converted})")
+                        if convert_mode == "percent":
+                            # Save post-conversion value so next run calculates gain relative
+                            # to what actually remained in the game after converting.
+                            _state_inputs["last_capture_points"] = capture_points - points_to_convert
                     except CaptchaRequiredError:
                         self.log(jid, "warn", "Captcha necessario na conversao de pontos. Reagendando em 5 min.")
                         self.save_game_client(game_account_id, client)
