@@ -800,7 +800,7 @@ class DistributeResourcesRunner(BaseRunner):
                     if available <= 0:
                         continue
 
-                    route_key = (str(donor["city"]["id"]), str(recipient["city"]["id"]))
+                    route_key = (str(donor["city"]["id"]), str(recipient["city"]["id"]), resource)
                     route_entry = allocations.setdefault(
                         route_key,
                         {
@@ -813,8 +813,7 @@ class DistributeResourcesRunner(BaseRunner):
                             "critical": False,
                         },
                     )
-                    resource_used = int(route_entry["resources"].get(resource, 0))
-                    route_remaining = shipment_cap - resource_used
+                    route_remaining = shipment_cap - int(route_entry["total"])
                     if route_remaining <= 0:
                         continue
 
