@@ -3,23 +3,22 @@
 {% if not active_cycle %}
 <div class="card p-8 text-center text-muted">
   <i class="bi bi-moon-stars text-3xl opacity-30 block mb-3"></i>
-  <p class="text-sm">Nenhum ciclo ativo. Use o botão "Iniciar Ciclo" para começar.</p>
+  <p class="text-sm">Nenhum ciclo ativo. Clique em "Iniciar Ciclo" para começar.</p>
 </div>
 {% else %}
 <div class="space-y-4">
+
   <div class="card p-4 flex items-center justify-between gap-4 flex-wrap">
     <div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2 flex-wrap">
         <span class="font-semibold text-ink">{{ active_cycle.get_mode_display }}</span>
-        <span class="badge {% if active_cycle.status == 'completed' %}badge-good{% elif active_cycle.status == 'failed' %}badge-bad{% else %}badge-sea{% endif %}">
+        <span class="badge {% if active_cycle.status == 'completed' %}badge-good{% elif active_cycle.status == 'failed' %}badge-bad{% elif active_cycle.status == 'cancelled' %}badge-muted{% else %}badge-sea{% endif %}">
           {{ active_cycle.get_status_display }}
         </span>
       </div>
       <div class="text-xs text-muted mt-0.5">
         Iniciado {{ active_cycle.created_at|timesince }} atrás
-        {% if active_cycle.estimated_ready_at %}
-        · ETA {{ active_cycle.estimated_ready_at|timeuntil }}
-        {% endif %}
+        {% if active_cycle.estimated_ready_at %}· ETA {{ active_cycle.estimated_ready_at|timeuntil }}{% endif %}
       </div>
     </div>
     {% if not active_cycle.is_terminal %}
@@ -40,12 +39,14 @@
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="font-medium text-sm text-ink">{{ task.producer_game_account.name }}</span>
-            <span class="text-xs text-muted">unit={{ task.unit_id }}{% if task.unit_name %} ({{ task.unit_name }}){% endif %}</span>
+            <span class="text-xs text-muted">
+              {% if task.unit_name %}{{ task.unit_name }}{% else %}Unidade {{ task.unit_id }}{% endif %}
+            </span>
           </div>
-          <div class="text-xs text-muted mt-0.5">
-            {{ task.quantity_done }}/{{ task.quantity_target }} unidades
-            {% if task.bm_city_name %}· BM: {{ task.bm_city_name }}{% endif %}
-            {% if task.unit_price %}· Preço: {{ task.unit_price|intcomma }}{% endif %}
+          <div class="text-xs text-muted mt-0.5 flex gap-3 flex-wrap">
+            <span>{{ task.quantity_done }}/{{ task.quantity_target }} unidades</span>
+            {% if task.bm_city_name %}<span>BM: {{ task.bm_city_name }}</span>{% endif %}
+            {% if task.unit_price %}<span>Preço: {{ task.unit_price|intcomma }}</span>{% endif %}
           </div>
         </div>
         <span class="badge badge-sm {% if task.status == 'sold' %}badge-good{% elif task.status == 'listed' %}badge-sea{% elif task.status == 'failed' %}badge-bad{% elif task.status == 'cancelled' %}badge-muted{% else %}badge-warn{% endif %} flex-shrink-0">
@@ -60,5 +61,6 @@
   {% if active_cycle.result_note %}
   <div class="text-xs text-muted px-1">{{ active_cycle.result_note }}</div>
   {% endif %}
+
 </div>
 {% endif %}

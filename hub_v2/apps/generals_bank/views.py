@@ -89,11 +89,11 @@ class BankDetailView(LoginRequiredMixin, DetailView):
         ).prefetch_related("producers__producer_game_account")
 
     def get_context_data(self, **kwargs):
+        from core.catalogs import TRAINING_UNITS
         ctx = super().get_context_data(**kwargs)
         bank = self.object
         gold = services.get_bank_gold(bank)
         active_cycle = services.get_active_cycle(bank)
-        cycles = bank.cycles.order_by("-created_at")[:10]
 
         # Bank account cities for buyer_city selection
         bank_cities = _snapshot_cities(bank.bank_game_account)
@@ -119,11 +119,12 @@ class BankDetailView(LoginRequiredMixin, DetailView):
             "gold": gold,
             "gold_low": gold < bank.min_gold_floor,
             "active_cycle": active_cycle,
-            "cycles": cycles,
             "buyer_city_options": buyer_city_options,
             "eligible_producers": eligible_producers,
             "existing_producer_ids": existing_producer_ids,
             "producers": bank.producers.select_related("producer_game_account").filter(is_active=True),
+            "fleet_units": TRAINING_UNITS.get("fleet", []),
+            "troop_units": TRAINING_UNITS.get("troops", []),
         })
         return ctx
 
@@ -185,7 +186,6 @@ class BankProducerAddView(LoginRequiredMixin, View):
     def post(self, request, pk):
         bank = get_object_or_404(GeneralsBankConfig, pk=pk)
         producer_ga_id = request.POST.get("producer_game_account")
-        min_reserves_raw = request.POST.get("min_resource_reserves", "{}")
         min_pop = int(request.POST.get("min_population_reserve") or 0)
 
         try:
@@ -193,10 +193,14 @@ class BankProducerAddView(LoginRequiredMixin, View):
         except GameAccount.DoesNotExist:
             return HttpResponse("Conta não encontrada.", status=400)
 
-        try:
-            min_reserves = json.loads(min_reserves_raw) if min_reserves_raw.strip() else {}
-        except json.JSONDecodeError:
-            min_reserves = {}
+        min_reserves = {}
+        for res in ("wood", "marble", "crystal", "wine", "sulfur"):
+            try:
+                v = int(request.POST.get(f"res_{res}") or 0)
+                if v > 0:
+                    min_reserves[res] = v
+            except (ValueError, TypeError):
+                pass
 
         GeneralsBankProducer.objects.update_or_create(
             bank_config=bank,
