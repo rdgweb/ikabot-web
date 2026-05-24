@@ -281,6 +281,7 @@ class PiracyMissionRunner(BaseRunner):
                 wait = new_time_remaining + MISSION_BUFFER
             else:
                 wait = _MISSION_DURATIONS.get(effective_level, 1800) + MISSION_BUFFER
+                new_time_remaining = max(wait - MISSION_BUFFER, 1)
 
             _total_missions += 1
             mission_msg = result.get("message") or "ok"
@@ -297,6 +298,7 @@ class PiracyMissionRunner(BaseRunner):
                 reschedule_seconds=wait,
                 reschedule_inputs={
                     **_state_inputs,
+                    "last_time_remaining": new_time_remaining,
                     "total_missions_started": _total_missions,
                     "total_crew_converted": _total_crew_converted,
                 },

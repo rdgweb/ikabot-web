@@ -82,6 +82,22 @@ class PiracyMissionRunnerTests(unittest.TestCase):
         )
         self.assertEqual(gain, 0)
 
+    def test_started_mission_keeps_active_baseline_for_next_run(self):
+        state_inputs = {
+            "last_capture_points": 5800,
+            "last_time_remaining": 0,
+        }
+        new_time_remaining = 1800
+        next_inputs = {
+            **state_inputs,
+            "last_time_remaining": new_time_remaining,
+        }
+        gain = PiracyMissionRunner._capture_gain_since_last_mission(
+            next_inputs,
+            6600,
+        )
+        self.assertEqual(gain, 800)
+
 
 if __name__ == "__main__":
     unittest.main()
