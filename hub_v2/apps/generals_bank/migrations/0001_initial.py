@@ -62,7 +62,7 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name="generalsbankCycle",
-            index=models.Index(fields=["bank_config", "status"], name="gb_cycle_bank_status_idx"),
+            index=models.Index(fields=["bank_config", "status"], name="generals_ba_bank_co_31e950_idx"),
         ),
         migrations.CreateModel(
             name="GeneralsBankCycleTask",
@@ -90,7 +90,7 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name="generalsbankCycleTask",
-            index=models.Index(fields=["cycle", "status"], name="gb_task_cycle_status_idx"),
+            index=models.Index(fields=["cycle", "status"], name="generals_ba_cycle_i_049296_idx"),
         ),
         migrations.CreateModel(
             name="GeneralsBankTransaction",
@@ -114,6 +114,6 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name="generalsbankTransaction",
-            index=models.Index(fields=["cycle", "direction"], name="gb_txn_cycle_dir_idx"),
+            index=models.Index(fields=["cycle", "direction"], name="generals_ba_cycle_i_28fe25_idx"),
         ),
     ]
