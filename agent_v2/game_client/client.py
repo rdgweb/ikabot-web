@@ -28,6 +28,7 @@ import requests
 from core.proxy import StrictProxySession
 
 from .actions.academy import AcademyAction
+from .actions.barbarians import AttackBarbarianVillageAction, ATTACK_SCHEMATICS, LOOT_SCHEMATICS, get_schematic, calculate_transporters
 from .actions.island import IslandActions
 from .actions.city import BuildAction, DemolishAction, UpgradeAction
 from .actions.daily import DailyTasksAction
@@ -830,6 +831,57 @@ class GameClient(IslandActions):
         """
         action = DiplomacySendAction(self)
         return action.execute(receiver_id=receiver_id, msg_type=80)
+
+    # ── Barbarian Village ──
+
+    def get_barbarian_state(self, island_id: int | str) -> dict[str, Any]:
+        """Fetch barbarian village state from the island view.
+
+        Returns the ``barbarians`` sub-dict from the parsed island data:
+            level, gold, resources (list), total_resources, troops,
+            destroyed (bool), cooldown_seconds.
+        Returns {} if the island has no barbarian data.
+        """
+        island = self.fetch_island_by_id(island_id)
+        return island.get("barbarians") or {}
+
+    def attack_barbarian_village(
+        self,
+        from_city_id: int | str,
+        island_id: int | str,
+        troops: dict[int, int],
+        transporters: int | None = None,
+        extra_ships: int = 0,
+    ) -> dict[str, Any]:
+        """Send troops to attack the barbarian village on an island.
+
+        Use the same method for the loot phase — when barbarians.destroyed==True
+        the "attack" just collects remaining resources.
+
+        Args:
+            from_city_id: Departing city.
+            island_id: Target island.
+            troops: {unit_id: quantity} — use get_barbarian_schematic() to build.
+            transporters: Override ship count. Auto-calculated if None.
+            extra_ships: Extra ships beyond the minimum.
+        """
+        action = AttackBarbarianVillageAction(self)
+        return action.execute(
+            from_city_id=from_city_id,
+            island_id=island_id,
+            troops=troops,
+            transporters=transporters,
+            extra_ships=extra_ships,
+        )
+
+    def get_barbarian_schematic(self, barb_level: int, loot: bool = False) -> dict[int, int]:
+        """Return the standard troop schematic for a given barbarian level."""
+        table = LOOT_SCHEMATICS if loot else ATTACK_SCHEMATICS
+        return get_schematic(barb_level, table)
+
+    def calculate_barbarian_ships(self, troops: dict[int, int], extra: int = 0) -> int:
+        """Calculate minimum cargo ships needed for a barbarian attack."""
+        return calculate_transporters(troops, extra)
 
     # ── Market ──
 

@@ -124,10 +124,12 @@ ACTIONS = {
         "recurring": False,
         "long_running": False,
         "ready": True,
-        "ui_hidden": True,
+        "ui_hidden": False,
         "description": "Abre a tela de colonizacao, valida o slot e envia a fundacao da colonia.",
         "inputs": [
             {"key": "source_city_id", "type": FIELD_CITY_SELECT, "label": "Cidade de origem", "multiple": False, "required": True},
+            {"key": "coord_x", "type": FIELD_INT, "label": "Coordenada X", "required": False, "min": 0, "default": 0},
+            {"key": "coord_y", "type": FIELD_INT, "label": "Coordenada Y", "required": False, "min": 0, "default": 0},
             {"key": "island_id", "type": FIELD_INT, "label": "Ilha alvo", "required": True, "min": 1},
             {"key": "position", "type": FIELD_INT, "label": "Posicao na ilha", "required": True, "min": 0, "max": 16},
             {"key": "wood", "type": FIELD_INT, "label": "Madeira extra", "required": False, "min": 0, "default": 0},

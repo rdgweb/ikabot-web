@@ -1382,6 +1382,8 @@ class WorldDumpRunner(BaseRunner):
         all_ids: list[str] = []
         filters: dict[str, Any] = {"dump_mode": dump_mode, "include_empty": include_empty}
 
+        replace_dump_id = str(inputs.get("replace_dump_id") or "").strip()
+
         if dump_mode == "region":
             x_min = _island_to_int(inputs.get("region_x_min"))
             y_min = _island_to_int(inputs.get("region_y_min"))
@@ -1416,6 +1418,21 @@ class WorldDumpRunner(BaseRunner):
                 self.log(jid, "error", f"Falha ao escanear regiao: nenhuma ilha retornada")
                 self.save_game_client(ga_id or aid, client)
                 return RunnerResult(success=False, data={"error": "no_islands_from_api"})
+        elif dump_mode == "single_island":
+            coord_x = _island_to_int(inputs.get("coord_x"))
+            coord_y = _island_to_int(inputs.get("coord_y"))
+            filters.update({"coord_x": coord_x, "coord_y": coord_y})
+            dump_title = f"Ilha [{coord_x}:{coord_y}]"
+            try:
+                single_area = client.fetch_island_area(coord_x, coord_y, coord_x, coord_y)
+            except Exception as exc:
+                self.log(jid, "error", f"Falha ao resolver ilha [{coord_x}:{coord_y}] - {exc}")
+                self.save_game_client(ga_id or aid, client)
+                return RunnerResult(success=False, data={"error": "single_island_lookup_failed"})
+            for item in single_area:
+                sid = str(item.get("island_id") or "").strip()
+                if sid and sid not in all_ids:
+                    all_ids.append(sid)
         else:
             own_city_ids = [str(c).strip() for c in (inputs.get("own_city_ids") or []) if str(c).strip()]
             if not own_city_ids and ga_id:
@@ -1449,21 +1466,26 @@ class WorldDumpRunner(BaseRunner):
 
         dump_islands, city_total, player_count = self._fetch_batch(jid, client, batch, include_empty=include_empty)
 
-        result = self.hub.save_world_dump(
-            account_id=aid,
-            game_account_id=ga_id,
-            source_job_id=jid,
-            scope_mode=dump_mode,
-            title=dump_title,
-            filters=filters,
-            islands=dump_islands,
-            dump_status="complete" if is_final else "in_progress",
-        )
-        dump_id = str(result.get("dump_id") or "")
+        if replace_dump_id:
+            result = self.hub.replace_world_dump_islands(replace_dump_id, dump_islands)
+            dump_id = replace_dump_id
+            self.log(jid, "info", f"Dump {dump_id[:8]} atualizado in-place")
+        else:
+            result = self.hub.save_world_dump(
+                account_id=aid,
+                game_account_id=ga_id,
+                source_job_id=jid,
+                scope_mode=dump_mode,
+                title=dump_title,
+                filters=filters,
+                islands=dump_islands,
+                dump_status="complete" if is_final else "in_progress",
+            )
+            dump_id = str(result.get("dump_id") or "")
         self.save_game_client(ga_id or aid, client)
         self.log(jid, "info", f"Dump {dump_id[:8]} criado: {len(dump_islands)} ilhas, {city_total} cidades")
 
-        if is_final:
+        if is_final or replace_dump_id:
             return RunnerResult(success=True, data={"dump_id": dump_id, "status": "complete"})
 
         return RunnerResult(

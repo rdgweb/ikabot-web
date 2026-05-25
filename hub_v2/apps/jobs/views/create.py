@@ -13,6 +13,7 @@ Flow:
 import json
 import logging
 import re
+from datetime import datetime
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse
@@ -22,6 +23,7 @@ from django.templatetags.static import static
 
 from apps.accounts.models import Account, GameAccount
 from apps.game.models import AccountSnapshot
+from apps.worldintel.models import WorldDump, WorldDumpCity, WorldDumpIsland
 from core.catalogs import BUILDING_CATALOG
 from core.contracts import ACTION_CATALOG, get_actions_for_ui
 from ..forms import JobCreateForm
@@ -115,6 +117,13 @@ def _build_job_form_initial(request, ga, action_code: int) -> dict:
             continue
         initial[clean_key] = values if len(values) > 1 else values[0]
     return initial
+
+
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return int(default)
 
 SHRINE_GOD_FIELDS = (
     "god_pan",
@@ -867,6 +876,159 @@ def _piracy_context(ga, all_cities: list, snapshot=None) -> dict:
     }
 
 
+def _colonize_context(all_cities: list) -> dict:
+    source_cities = []
+    palace_level = 0
+    for city in all_cities or []:
+        city_copy = dict(city)
+        city_copy["resource_cards"] = [
+            resource
+            for resource in (city.get("resources") or [])
+            if str(resource.get("key") or "").strip() in {"wood", "wine", "marble", "crystal", "sulfur"}
+        ]
+        source_cities.append(city_copy)
+        for building in (city.get("buildings") or []):
+            if str(building.get("building") or "").strip() != "palace":
+                continue
+            palace_level = max(palace_level, _safe_int(building.get("level"), 0))
+
+    city_count = len(source_cities)
+    next_required_palace_level = max(1, city_count)
+    remaining_slots = max(0, palace_level - city_count)
+    return {
+        "colonize_ui": {
+            "source_cities": source_cities,
+            "city_count": city_count,
+            "palace_level": palace_level,
+            "remaining_slots": remaining_slots,
+            "can_found_now": palace_level >= city_count,
+            "next_required_palace_level": next_required_palace_level,
+        }
+    }
+
+
+def _latest_world_dump_for_ga(ga: GameAccount):
+    exact = (
+        WorldDump.objects.filter(game_account=ga)
+        .order_by("-captured_at")
+        .first()
+    )
+    if exact:
+        return exact, "account"
+    fallback = (
+        WorldDump.objects.filter(game_account__server_id=ga.server_id)
+        .order_by("-captured_at")
+        .first()
+    )
+    if fallback:
+        return fallback, "server"
+    return None, "none"
+
+
+def _coerce_coord(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _piracy_raid_level(actions) -> int:
+    if isinstance(actions, dict):
+        try:
+            return int(actions.get("piracy_raid") or 0)
+        except (TypeError, ValueError):
+            return 0
+    if isinstance(actions, list):
+        for item in actions:
+            text = str(item or "").strip().lower()
+            if "piracy" in text and "raid" in text:
+                return 1
+    return 0
+
+
+def _format_dump_age(captured_at):
+    if not captured_at:
+        return ""
+    return captured_at.strftime("%d/%m/%Y %H:%M")
+
+
+def _build_colonize_island_lookup(ga: GameAccount, coord_x=None, coord_y=None, selected_position=None, form=None) -> dict:
+    selected_dump, dump_scope = _latest_world_dump_for_ga(ga)
+    x = _coerce_coord(coord_x)
+    y = _coerce_coord(coord_y)
+    lookup = {
+        "coord_x": "" if x is None else x,
+        "coord_y": "" if y is None else y,
+        "selected_position": str(selected_position or "").strip(),
+        "has_coords": x is not None and y is not None,
+        "has_dump": bool(selected_dump),
+        "dump_id": str(selected_dump.pk) if selected_dump else "",
+        "dump_captured_at": _format_dump_age(selected_dump.captured_at) if selected_dump else "",
+        "dump_scope": dump_scope,
+        "dump_game_account_name": (selected_dump.game_account.name or selected_dump.game_account.server_id) if selected_dump and selected_dump.game_account else "",
+        "island_found": False,
+        "island_id": "",
+        "island_name": "",
+        "resource_name": "",
+        "miracle_name": "",
+        "empty_positions": [],
+        "occupied_slots": [],
+        "raid_targets": [],
+    }
+    if x is None or y is None or not selected_dump:
+        return lookup
+
+    island = (
+        WorldDumpIsland.objects.filter(dump=selected_dump, x=x, y=y)
+        .prefetch_related("cities")
+        .first()
+    )
+    if not island:
+        return lookup
+
+    lookup.update({
+        "island_found": True,
+        "island_id": str(island.island_id or ""),
+        "island_name": island.name or "",
+        "resource_name": island.resource_name or "",
+        "miracle_name": island.miracle_name or "",
+    })
+
+    empty_positions = []
+    occupied_slots = []
+    raid_targets = []
+    ordered_cities = sorted(island.cities.all(), key=lambda item: ((item.position or 0), item.pk))
+    for idx, city in enumerate(ordered_cities, start=1):
+        slot_position = int(city.position or 0) or idx
+        slot = {
+            "position": slot_position,
+            "name": city.name or "",
+            "owner_name": city.owner_name or "",
+            "owner_id": city.owner_id or "",
+            "city_id": city.game_city_id or "",
+            "type": city.type or "",
+            "ally_tag": city.ally_tag or "",
+            "level": int(city.level or 0),
+            "state": city.state or "",
+            "piracy_raid_level": _piracy_raid_level(city.actions_json),
+        }
+        if slot["type"] in {"empty", "buildplace"}:
+            empty_positions.append(slot)
+        else:
+            occupied_slots.append(slot)
+            if slot["piracy_raid_level"] > 0:
+                raid_targets.append(slot)
+
+    lookup["empty_positions"] = empty_positions
+    lookup["occupied_slots"] = occupied_slots
+    lookup["raid_targets"] = raid_targets
+    return lookup
+
+
 def _resolve_construction_new_slots(steps, cities):
     city_lookup = {str(city.get("id")): city for city in cities if city.get("id") is not None}
     used_positions_by_city: dict[str, set[int]] = {}
@@ -1403,10 +1565,15 @@ def _custom_field_names(action_code: int) -> list[str]:
             "max_random_wait",
             "convert_mode", "convert_percent", "convert_threshold",
         ]
+    if int(action_code) == 820:
+        return [
+            "source_city_id", "coord_x", "coord_y", "island_id", "position",
+            "wood", "wine", "marble", "crystal", "sulfur",
+        ]
     if int(action_code) == 9002:
         return ["city_id", "revolt_type"]
     if int(action_code) == 602:
-        return ["dump_mode", "own_city_ids", "region_x_min", "region_y_min", "region_x_max", "region_y_max", "include_empty"]
+        return ["dump_mode", "own_city_ids", "coord_x", "coord_y", "region_x_min", "region_y_min", "region_x_max", "region_y_max", "include_empty"]
     if int(action_code) == 1005:
         return ["city_id", "city_ids", "building_type", "mode", "maintain_scope", "consolidate_city_id", "position", "recheck_minutes", "city_targets_json"]
     if int(action_code) == 1202:
@@ -1444,6 +1611,23 @@ def _job_form_context(form, action_meta, action_code, ga, cities):
         ctx.update(_spy_context(ga, cities, getattr(form, "initial", {})))
     if int(action_code) == 17:
         ctx.update(_piracy_context(ga, cities, snapshot))
+    if int(action_code) == 820:
+        ctx.update(_colonize_context(cities))
+        coord_x = None
+        coord_y = None
+        selected_position = None
+        source = getattr(form, "data", None) if form.is_bound else getattr(form, "initial", {})
+        if isinstance(source, dict):
+            coord_x = source.get("coord_x")
+            coord_y = source.get("coord_y")
+            selected_position = source.get("position")
+        ctx["colonize_island"] = _build_colonize_island_lookup(
+            ga,
+            coord_x=coord_x,
+            coord_y=coord_y,
+            selected_position=selected_position,
+            form=form,
+        )
     return ctx
 
 
@@ -1633,6 +1817,156 @@ class JobFormView(LoginRequiredMixin, View):
             request=request,
         )
         return HttpResponse(html)
+
+
+class ColonizeIslandLookupView(LoginRequiredMixin, View):
+    """GET: resolve current dump island by coords and render the slot selector partial."""
+
+    def get(self, request):
+        ga_id = str(request.GET.get("ga") or request.GET.get("game_account") or "").strip()
+        if not ga_id:
+            return HttpResponse("")
+        try:
+            ga = GameAccount.objects.select_related("account").get(pk=ga_id, active=True)
+        except GameAccount.DoesNotExist:
+            return HttpResponse("")
+
+        cities = _construction_city_data(_get_cities(ga))
+        initial = _build_job_form_initial(request, ga, 820)
+        form = JobCreateForm(
+            action_code=820,
+            game_account=ga,
+            cities=cities,
+            initial=initial,
+        )
+        lookup = _build_colonize_island_lookup(
+            ga,
+            coord_x=request.GET.get("coord_x"),
+            coord_y=request.GET.get("coord_y"),
+            selected_position=request.GET.get("position"),
+            form=form,
+        )
+        html = render_to_string(
+            "jobs/partials/colonize_island_lookup.html",
+            {
+                "form": form,
+                "game_account": ga,
+                "colonize_island": lookup,
+            },
+            request=request,
+        )
+        return HttpResponse(html)
+
+
+class ColonizeIslandRefreshView(LoginRequiredMixin, View):
+    """POST: create a small 602 job to refresh one coordinate in-place."""
+
+    def post(self, request):
+        ga_id = str(request.POST.get("ga") or request.POST.get("game_account") or request.GET.get("ga") or "").strip()
+        coord_x = _coerce_coord(request.POST.get("coord_x") or request.GET.get("coord_x"))
+        coord_y = _coerce_coord(request.POST.get("coord_y") or request.GET.get("coord_y"))
+        if not ga_id or coord_x is None or coord_y is None:
+            return self._status_partial(request, "", ga_id, coord_x, coord_y, state="error", message="Coordenadas invalidas.")
+
+        try:
+            ga = GameAccount.objects.select_related("account").get(pk=ga_id, active=True)
+        except GameAccount.DoesNotExist:
+            return self._status_partial(request, "", ga_id, coord_x, coord_y, state="error", message="Conta nao encontrada.")
+
+        current_dump, _dump_scope = _latest_world_dump_for_ga(ga)
+        inputs = {
+            "dump_mode": "single_island",
+            "coord_x": coord_x,
+            "coord_y": coord_y,
+            "include_empty": True,
+        }
+        if current_dump:
+            inputs["replace_dump_id"] = str(current_dump.pk)
+
+        job = create_job_with_workflow(
+            account=ga.account,
+            game_account=ga,
+            node=ga.account.node,
+            action_code=602,
+            inputs=inputs,
+            status="queued",
+            created_by=request.user,
+        )
+        return self._status_partial(request, str(job.pk), ga_id, coord_x, coord_y, state="running")
+
+    @staticmethod
+    def _status_partial(request, job_id: str, ga_id: str, coord_x, coord_y, *, state: str, message: str = ""):
+        html = render_to_string(
+            "jobs/partials/colonize_island_refresh_status.html",
+            {
+                "job_id": job_id,
+                "ga_id": ga_id,
+                "coord_x": "" if coord_x is None else coord_x,
+                "coord_y": "" if coord_y is None else coord_y,
+                "state": state,
+                "message": message,
+            },
+            request=request,
+        )
+        return HttpResponse(html)
+
+
+class ColonizeIslandRefreshStatusView(LoginRequiredMixin, View):
+    """GET: poll the coordinate refresh job and swap back to the island lookup partial."""
+
+    def get(self, request):
+        job_id = str(request.GET.get("job_id") or "").strip()
+        ga_id = str(request.GET.get("ga") or "").strip()
+        coord_x = request.GET.get("coord_x")
+        coord_y = request.GET.get("coord_y")
+        if not job_id or not ga_id:
+            return ColonizeIslandRefreshView._status_partial(request, job_id, ga_id, coord_x, coord_y, state="error", message="Parametros ausentes.")
+
+        try:
+            job = Job.objects.select_related("game_account").get(pk=job_id)
+        except Job.DoesNotExist:
+            return ColonizeIslandRefreshView._status_partial(request, job_id, ga_id, coord_x, coord_y, state="error", message="Job de refresh nao encontrado.")
+
+        if job.status in {"queued", "running", "scheduled"}:
+            return ColonizeIslandRefreshView._status_partial(request, job_id, ga_id, coord_x, coord_y, state="running")
+        if job.status in {"error", "cancelled"}:
+            return ColonizeIslandRefreshView._status_partial(request, job_id, ga_id, coord_x, coord_y, state="error", message="O refresh da ilha nao concluiu.")
+
+        try:
+            ga = GameAccount.objects.select_related("account").get(pk=ga_id, active=True)
+        except GameAccount.DoesNotExist:
+            return ColonizeIslandRefreshView._status_partial(request, job_id, ga_id, coord_x, coord_y, state="error", message="Conta nao encontrada.")
+
+        cities = _construction_city_data(_get_cities(ga))
+        initial = {
+            "game_account": str(ga.pk),
+            "action_code": 820,
+            "coord_x": coord_x,
+            "coord_y": coord_y,
+        }
+        form = JobCreateForm(action_code=820, game_account=ga, cities=cities, initial=initial)
+        lookup = _build_colonize_island_lookup(
+            ga,
+            coord_x=coord_x,
+            coord_y=coord_y,
+            selected_position=request.GET.get("position"),
+            form=form,
+        )
+        html = render_to_string(
+            "jobs/partials/colonize_island_lookup.html",
+            {
+                "form": form,
+                "game_account": ga,
+                "colonize_island": lookup,
+                "refresh_message": "Ilha atualizada agora",
+            },
+            request=request,
+        )
+        response = HttpResponse(html)
+        response["HX-Trigger"] = json.dumps({
+            "toast": {"type": "success", "message": f"Ilha [{coord_x}:{coord_y}] atualizada."}
+        })
+        return response
 
 
 class ConstructionPlanPreviewView(LoginRequiredMixin, View):

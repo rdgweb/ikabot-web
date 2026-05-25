@@ -1,0 +1,181 @@
+{% load static %}
+
+<div
+  class="space-y-4"
+  x-data="{
+    selectedCity: '{{ form.source_city_id.value|default:''|escapejs }}',
+    get selectedCityLabel() {
+      const id = String(this.selectedCity || '');
+      const match = this.$root.querySelector(`[data-city-option='${id}']`);
+      return match ? match.getAttribute('data-city-name') : '';
+    }
+  }"
+>
+  <div class="overflow-hidden rounded-[24px] border shadow-[0_16px_40px_rgba(79,134,185,0.10)]"
+       style="border-color: rgba(219,201,167,0.86); background:
+         radial-gradient(700px 260px at 0% 0%, rgba(79,134,185,0.12), transparent 60%),
+         radial-gradient(620px 240px at 100% 100%, rgba(201,156,78,0.18), transparent 60%),
+         linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));">
+    <div class="border-b px-5 py-4" style="border-color: rgba(219,201,167,0.82);">
+      <div class="flex items-start gap-4">
+        <div class="flex h-12 w-12 items-center justify-center rounded-[18px] border"
+             style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+          <i class="bi bi-signpost-split-fill text-lg" style="color: var(--ik-sea);"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Expansao e reserva</div>
+          <div class="mt-1 text-base font-semibold text-ink">Fundar colonia manualmente</div>
+          <p class="mt-1 text-xs leading-relaxed text-muted">
+            Serve tanto para expansao direta quanto para abrir espaco estrategico em ilhas que voce quer preservar.
+            O runner automatico de verificacao de ilhas pode reutilizar esta mesma acao depois.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid gap-3 px-5 py-4 sm:grid-cols-3">
+      <div class="rounded-[18px] border px-4 py-3" style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.72);">
+        <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Cidades atuais</div>
+        <div class="mt-1 text-xl font-semibold text-ink">{{ colonize_ui.city_count }}</div>
+      </div>
+      <div class="rounded-[18px] border px-4 py-3" style="border-color: rgba(201,156,78,0.22); background: rgba(255,255,255,0.72);">
+        <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Maior palacio</div>
+        <div class="mt-1 text-xl font-semibold text-ink">Lv {{ colonize_ui.palace_level|default:0 }}</div>
+      </div>
+      <div class="rounded-[18px] border px-4 py-3" style="border-color: {% if colonize_ui.can_found_now %}rgba(95,140,78,0.30){% else %}rgba(204,107,74,0.24){% endif %}; background: rgba(255,255,255,0.72);">
+        <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Capacidade</div>
+        <div class="mt-1 text-sm font-semibold" style="color: {% if colonize_ui.can_found_now %}var(--ik-good){% else %}var(--ik-bad){% endif %};">
+          {% if colonize_ui.can_found_now %}
+          Pode fundar agora
+          {% else %}
+          Exige palacio {{ colonize_ui.next_required_palace_level }}
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <input type="hidden" name="{{ form.source_city_id.html_name }}" x-model="selectedCity">
+
+  <div class="overflow-hidden rounded-[24px] border shadow-[0_10px_28px_rgba(87,66,24,0.08)]"
+       style="border-color: rgba(219,201,167,0.86); background: rgba(255,255,255,0.84);">
+    <div class="border-b px-4 py-3" style="border-color: rgba(219,201,167,0.82);">
+      <div class="text-sm font-semibold text-ink">Cidade de origem</div>
+      <p class="mt-1 text-xs text-muted">Escolha a cidade que vai enviar os recursos iniciais e o navio de colonia.</p>
+    </div>
+    <div class="grid gap-3 px-4 py-4 lg:grid-cols-2">
+      {% for city in colonize_ui.source_cities %}
+      <label
+        class="group relative cursor-pointer overflow-hidden rounded-[20px] border transition-all duration-150 hover:translate-y-[-1px] hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]"
+        :style="selectedCity === '{{ city.id|escapejs }}'
+          ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.96));'
+          : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.88);'"
+        data-city-option="{{ city.id }}"
+        data-city-name="{{ city.name|default:'Cidade' }}"
+      >
+        <input type="radio"
+               class="sr-only"
+               name="colonize-source-city-card"
+               value="{{ city.id }}"
+               @change="selectedCity = '{{ city.id|escapejs }}'"
+               {% if form.source_city_id.value|stringformat:"s" == city.id|stringformat:"s" %}checked{% endif %}>
+        <div class="absolute inset-x-0 top-0 h-14"
+             style="background: linear-gradient(135deg, rgba(79,134,185,0.16), rgba(79,134,185,0.02));"></div>
+        <div class="relative p-4">
+          <div class="flex items-start gap-3">
+            <div class="relative shrink-0">
+              <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                   style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                <img src="{{ city.city_art }}" alt="" class="h-8 w-8 object-contain">
+              </div>
+              <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                <img src="{{ city.tradegood_icon }}" alt="{{ city.tradegood_name }}" class="h-4 w-4 object-contain">
+              </div>
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="truncate text-sm font-semibold text-ink">{{ city.name|default:"Cidade" }}</div>
+                  <div class="mt-1 text-[11px] text-muted">
+                    {% if city.x and city.y %}[{{ city.x }}:{{ city.y }}]{% endif %}
+                    {% if city.tradegood_name %}<span> • {{ city.tradegood_name }}</span>{% endif %}
+                  </div>
+                </div>
+                <span class="inline-flex h-7 w-7 items-center justify-center rounded-full border"
+                      :style="selectedCity === '{{ city.id|escapejs }}'
+                        ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
+                        : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
+                  <i class="bi" :class="selectedCity === '{{ city.id|escapejs }}' ? 'bi-check-lg' : 'bi-send'"></i>
+                </span>
+              </div>
+              <div class="mt-3 flex flex-wrap gap-1.5">
+                {% for resource in city.resource_cards %}
+                <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium"
+                      style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.86);">
+                  <img src="{{ resource.icon }}" alt="{{ resource.label }}" class="h-3.5 w-3.5 object-contain">
+                  <span>{{ resource.amount|default:0 }}</span>
+                </span>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </label>
+      {% endfor %}
+    </div>
+    {% for error in form.source_city_id.errors %}
+    <p class="px-4 pb-4 form-error"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+    {% endfor %}
+  </div>
+
+  <div class="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+    {% include "jobs/partials/colonize_island_lookup.html" %}
+
+    <div class="rounded-[24px] border p-4 shadow-[0_10px_28px_rgba(87,66,24,0.08)]"
+         style="border-color: rgba(219,201,167,0.86); background: rgba(255,255,255,0.84);">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <div class="text-sm font-semibold text-ink">Carga extra inicial</div>
+          <p class="mt-1 text-xs text-muted">Preencha se quiser mandar recursos adicionais junto da fundacao.</p>
+        </div>
+        <span class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
+              style="border-color: rgba(201,156,78,0.24); color: var(--ik-gold); background: rgba(201,156,78,0.08);">
+          Cidade: <span x-text="selectedCityLabel || 'nao selecionada'"></span>
+        </span>
+      </div>
+      <div class="mt-4 grid gap-3 sm:grid-cols-2">
+        {% for field in form.visible_fields %}
+        {% if field.name == "wood" or field.name == "wine" or field.name == "marble" or field.name == "crystal" or field.name == "sulfur" %}
+        <div>
+          <label for="{{ field.id_for_label }}" class="form-label text-xs mb-1 block">
+            {{ field.label }}
+          </label>
+          <div class="flex items-center gap-3 rounded-lg border px-3 py-2"
+               style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+            {% if field.name == "wood" %}
+            <img src="{% static 'game/resources/icon_wood.png' %}" alt="Madeira" class="h-5 w-5">
+            {% elif field.name == "wine" %}
+            <img src="{% static 'game/resources/icon_wine.png' %}" alt="Vinho" class="h-5 w-5">
+            {% elif field.name == "marble" %}
+            <img src="{% static 'game/resources/icon_marble.png' %}" alt="Marmore" class="h-5 w-5">
+            {% elif field.name == "crystal" %}
+            <img src="{% static 'game/resources/icon_glass.png' %}" alt="Cristal" class="h-5 w-5">
+            {% elif field.name == "sulfur" %}
+            <img src="{% static 'game/resources/icon_sulfur.png' %}" alt="Enxofre" class="h-5 w-5">
+            {% endif %}
+            <div class="min-w-0 flex-1">
+              <div class="text-[11px] font-medium text-ink">{{ field.label }}</div>
+              <div class="text-[10px] text-muted">Opcional</div>
+            </div>
+            <div class="w-28">{{ field }}</div>
+          </div>
+          {% for error in field.errors %}
+          <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>

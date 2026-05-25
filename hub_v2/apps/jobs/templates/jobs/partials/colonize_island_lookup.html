@@ -1,0 +1,177 @@
+{% load static %}
+
+<div id="colonize-island-panel"
+     class="rounded-[24px] border p-4 shadow-[0_10px_28px_rgba(87,66,24,0.08)]"
+     style="border-color: rgba(219,201,167,0.86); background: rgba(255,255,255,0.84);">
+  <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+    <div>
+      <div class="text-sm font-semibold text-ink">Ilha alvo por coordenada</div>
+      <p class="mt-1 text-xs text-muted">Use o dump atual para resolver a ilha e preencher apenas as posições vazias conhecidas.</p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2 text-[11px] text-muted">
+      {% if colonize_island.dump_captured_at %}
+      <span class="rounded-full border px-3 py-1"
+            style="border-color: rgba(79,134,185,0.18); background: rgba(79,134,185,0.05);">
+        Dump: {{ colonize_island.dump_captured_at }}
+      </span>
+      {% endif %}
+      {% if colonize_island.dump_scope == "server" %}
+      <span class="rounded-full border px-3 py-1"
+            style="border-color: rgba(201,156,78,0.24); background: rgba(201,156,78,0.08); color: var(--ik-gold);">
+        Fallback do servidor{% if colonize_island.dump_game_account_name %}: {{ colonize_island.dump_game_account_name }}{% endif %}
+      </span>
+      {% endif %}
+      {% if refresh_message %}
+      <span class="rounded-full border px-3 py-1"
+            style="border-color: rgba(95,140,78,0.24); background: rgba(95,140,78,0.08); color: var(--ik-good);">
+        {{ refresh_message }}
+      </span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+    <div>
+      <label for="{{ form.coord_x.id_for_label }}" class="form-label text-xs mb-1 block">Coordenada X</label>
+      <input type="number"
+             id="{{ form.coord_x.id_for_label }}"
+             name="{{ form.coord_x.html_name }}"
+             value="{{ colonize_island.coord_x }}"
+             min="0"
+             class="form-input"
+             hx-get="{% url 'jobs:colonize-island-lookup' %}"
+             hx-trigger="change delay:300ms, keyup changed delay:500ms"
+             hx-include="closest form"
+             hx-target="#colonize-island-panel"
+             hx-swap="outerHTML">
+    </div>
+    <div>
+      <label for="{{ form.coord_y.id_for_label }}" class="form-label text-xs mb-1 block">Coordenada Y</label>
+      <input type="number"
+             id="{{ form.coord_y.id_for_label }}"
+             name="{{ form.coord_y.html_name }}"
+             value="{{ colonize_island.coord_y }}"
+             min="0"
+             class="form-input"
+             hx-get="{% url 'jobs:colonize-island-lookup' %}"
+             hx-trigger="change delay:300ms, keyup changed delay:500ms"
+             hx-include="closest form"
+             hx-target="#colonize-island-panel"
+             hx-swap="outerHTML">
+    </div>
+    <div class="sm:pt-6">
+      <button type="button"
+              class="btn btn-secondary btn-sm w-full sm:w-auto"
+              hx-post="{% url 'jobs:colonize-island-refresh' %}"
+              hx-include="closest form"
+              hx-target="#colonize-island-panel"
+              hx-swap="outerHTML">
+        <i class="bi bi-arrow-repeat"></i> Atualizar ilha
+      </button>
+    </div>
+  </div>
+
+  <input type="hidden" name="{{ form.island_id.html_name }}" value="{{ colonize_island.island_id }}">
+
+  {% if not colonize_island.has_dump %}
+  <div class="mt-4 rounded-[18px] border px-4 py-4 text-sm"
+       style="border-color: rgba(201,156,78,0.26); background: rgba(201,156,78,0.08);">
+    Nenhum dump do mundo encontrado para esta conta nem para o servidor atual. Use o botão de atualizar para criar ou refrescar a ilha da coordenada.
+  </div>
+  {% elif not colonize_island.has_coords %}
+  <div class="mt-4 rounded-[18px] border px-4 py-4 text-sm text-muted"
+       style="border-color: rgba(219,201,167,0.86); background: rgba(255,255,255,0.72);">
+    Preencha `X` e `Y` para resolver a ilha e listar as posições livres.
+  </div>
+  {% elif not colonize_island.island_found %}
+  <div class="mt-4 rounded-[18px] border px-4 py-4 text-sm"
+       style="border-color: rgba(204,107,74,0.26); background: rgba(204,107,74,0.08); color: var(--ik-bad);">
+    A coordenada [{{ colonize_island.coord_x }}:{{ colonize_island.coord_y }}] ainda não está no dump atual. Clique em atualizar ilha.
+  </div>
+  {% else %}
+  <div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+    <div class="rounded-[20px] border p-4"
+         style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.78);">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Ilha resolvida</div>
+          <div class="mt-1 text-base font-semibold text-ink">{{ colonize_island.island_name|default:"Ilha sem nome" }}</div>
+          <div class="mt-1 text-xs text-muted">ID {{ colonize_island.island_id }} • [{{ colonize_island.coord_x }}:{{ colonize_island.coord_y }}]</div>
+        </div>
+        <div class="text-right text-[11px] text-muted">
+          {% if colonize_island.resource_name %}<div>{{ colonize_island.resource_name }}</div>{% endif %}
+          {% if colonize_island.miracle_name %}<div>{{ colonize_island.miracle_name }}</div>{% endif %}
+        </div>
+      </div>
+
+      <div class="mt-4">
+        <label for="{{ form.position.id_for_label }}" class="form-label text-xs mb-1 block">
+          Posição vazia <span class="text-[var(--ik-bad)]">*</span>
+        </label>
+        <select id="{{ form.position.id_for_label }}" name="{{ form.position.html_name }}" class="form-input">
+          <option value="">Selecione um slot vazio</option>
+          {% for slot in colonize_island.empty_positions %}
+          <option value="{{ slot.position }}" {% if colonize_island.selected_position == slot.position|stringformat:"s" %}selected{% endif %}>
+            Posição {{ slot.position }}{% if slot.position == 17 %} (Não implementado){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+        {% if not colonize_island.empty_positions %}
+        <p class="mt-2 text-xs" style="color: var(--ik-bad);">Nenhum slot vazio conhecido nessa ilha no dump atual.</p>
+        {% endif %}
+        {% for error in form.position.errors %}
+        <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+        {% endfor %}
+        {% for error in form.island_id.errors %}
+        <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="space-y-3">
+      <div class="rounded-[20px] border p-4"
+           style="border-color: rgba(201,156,78,0.24); background: rgba(255,255,255,0.78);">
+        <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold);">Slots ocupados</div>
+        <div class="mt-2 max-h-48 space-y-2 overflow-y-auto">
+          {% for slot in colonize_island.occupied_slots %}
+          <div class="rounded-[16px] border px-3 py-2 text-xs"
+               style="border-color: rgba(219,201,167,0.86); background: rgba(255,255,255,0.82);">
+            <div class="flex items-center justify-between gap-2">
+              <div class="font-semibold text-ink">Pos {{ slot.position }} · {{ slot.name|default:"Sem nome" }}</div>
+              {% if slot.piracy_raid_level %}
+              <span class="rounded-full border px-2 py-0.5 text-[10px]"
+                    style="border-color: rgba(40,20,10,0.22); background: rgba(40,20,10,0.06); color: #201008;">
+                Raid
+              </span>
+              {% endif %}
+            </div>
+            <div class="mt-1 text-muted">
+              {{ slot.owner_name|default:"Sem dono" }}{% if slot.ally_tag %} [{{ slot.ally_tag }}]{% endif %}
+              {% if slot.level %} • Lv {{ slot.level }}{% endif %}
+            </div>
+          </div>
+          {% empty %}
+          <div class="text-xs text-muted">Nenhuma ocupação registrada.</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="rounded-[20px] border p-4"
+           style="border-color: rgba(79,134,185,0.18); background: rgba(79,134,185,0.05);">
+        <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Cidades raidáveis</div>
+        <div class="mt-2 space-y-2">
+          {% for slot in colonize_island.raid_targets %}
+          <div class="rounded-[14px] border px-3 py-2 text-xs"
+               style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.82);">
+            <div class="font-semibold text-ink">{{ slot.name|default:"Cidade" }} · pos {{ slot.position }}</div>
+            <div class="mt-1 text-muted">{{ slot.owner_name }}{% if slot.city_id %} • city {{ slot.city_id }}{% endif %}</div>
+          </div>
+          {% empty %}
+          <div class="text-xs text-muted">Nenhuma cidade com `piracy_raid` marcada neste dump.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>

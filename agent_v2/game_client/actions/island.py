@@ -115,7 +115,7 @@ def _parse_island_html(html: str) -> dict[str, Any]:
                 return default
 
         cities: list[dict[str, Any]] = []
-        for city in island_data.get("cities", []):
+        for idx, city in enumerate(island_data.get("cities", []), start=1):
             if not isinstance(city, dict):
                 continue
             city_type = str(city.get("type") or "empty")
@@ -124,6 +124,7 @@ def _parse_island_html(html: str) -> dict[str, Any]:
             actions = city.get("actions") or []
             cities.append({
                 "id": str(city.get("id") or ""),
+                "position": int(city.get("position") or idx),
                 "name": str(city.get("name") or ""),
                 "owner_id": str(city.get("ownerId") or ""),
                 "owner_name": str(city.get("ownerName") or ""),
@@ -160,6 +161,21 @@ def _parse_island_html(html: str) -> dict[str, Any]:
                     "trader_score": _safe_int(score.get("trader_score_secondary")),
                 }
 
+        # Parse barbarian village data
+        barb_raw = island_data.get("barbarians") or {}
+        barbarians: dict = {}
+        if barb_raw and isinstance(barb_raw, dict):
+            resources_raw = barb_raw.get("resources") or []
+            barbarians = {
+                "level": int(barb_raw.get("level") or 0),
+                "gold": _safe_int(barb_raw.get("gold")),
+                "resources": [_safe_int(r) for r in (resources_raw if isinstance(resources_raw, list) else [])],
+                "total_resources": sum(_safe_int(r) for r in (resources_raw if isinstance(resources_raw, list) else [])),
+                "troops": barb_raw.get("troops") or [],
+                "destroyed": int(barb_raw.get("destroyed") or 0) == 1,
+                "cooldown_seconds": int(barb_raw.get("cooldown") or 0),
+            }
+
         return {
             "island_id": str(island_data.get("id") or ""),
             "name": str(island_data.get("name") or ""),
@@ -175,6 +191,7 @@ def _parse_island_html(html: str) -> dict[str, Any]:
             "helios_built": bool(island_data.get("isHeliosTowerBuilt")),
             "cities": cities,
             "avatar_scores": avatar_scores,
+            "barbarians": barbarians,
         }
     except Exception:
         return {}

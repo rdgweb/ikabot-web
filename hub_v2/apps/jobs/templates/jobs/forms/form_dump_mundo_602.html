@@ -30,8 +30,8 @@
           <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div class="max-w-2xl">
               <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Dump do mundo</div>
-              <div class="mt-1 text-sm font-semibold text-ink">Escolha ilhas proprias ou uma regiao do mapa para coletar</div>
-              <p class="mt-1 text-xs leading-relaxed text-muted">Esse job salva um corte consultavel por player, ilha e alianca. Em ilhas proprias ele gera um dump focado. Em regiao ele varre o quadrante e abre cada ilha encontrada.</p>
+              <div class="mt-1 text-sm font-semibold text-ink">Escolha ilhas proprias, uma regiao ou uma coordenada para coletar</div>
+              <p class="mt-1 text-xs leading-relaxed text-muted">Esse job salva um corte consultavel por player, ilha e alianca. Em coordenada unica ele atualiza so a ilha escolhida.</p>
             </div>
             <div class="flex flex-col gap-2 md:items-end">
               <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Escopo</div>
@@ -53,6 +53,14 @@
                           ? 'background: rgba(79,134,185,0.12); color: var(--ik-sea); box-shadow: inset 0 0 0 1px rgba(79,134,185,0.22);'
                           : 'color: var(--ik-muted);'">
                   <i class="bi bi-bounding-box mr-1"></i> Regiao
+                </button>
+                <button type="button"
+                        @click="setMode('single_island')"
+                        class="flex-1 rounded-[12px] px-3 py-2 text-[11px] font-medium transition-all md:min-w-[132px]"
+                        :style="dumpMode === 'single_island'
+                          ? 'background: rgba(79,134,185,0.12); color: var(--ik-sea); box-shadow: inset 0 0 0 1px rgba(79,134,185,0.22);'
+                          : 'color: var(--ik-muted);'">
+                  <i class="bi bi-crosshair mr-1"></i> Uma ilha
                 </button>
               </div>
             </div>
@@ -188,6 +196,35 @@
                   <div class="mt-1 text-xs text-muted">Esse recorte cobre 36 coordenadas de ilha. Bom para cercos regionais, expansao de alianca e dump tatico focado.</div>
                 </div>
               </section>
+            </section>
+          </fieldset>
+
+          <fieldset x-show="dumpMode === 'single_island'" x-cloak :disabled="dumpMode !== 'single_island'" class="grid grid-cols-1 gap-3 lg:grid-cols-[1.1fr_0.9fr] min-w-0">
+            <section class="rounded-[18px] border p-4"
+                     style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Coordenada unica</div>
+              <div class="mt-1 text-sm font-semibold text-ink">Atualize so uma ilha</div>
+              <p class="mt-1 text-xs leading-relaxed text-muted">Ideal para alimentar o seletor de colonizacao, verificar vagas ou refrescar uma ilha especifica sem refazer um dump maior.</p>
+              <div class="mt-4 grid grid-cols-2 gap-3">
+                <div>
+                  <label class="form-label text-xs mb-1 block">Coordenada X</label>
+                  <input type="number" name="{{ form.coord_x.html_name }}" value="{{ form.coord_x.value|default:0 }}" min="0" class="form-input">
+                </div>
+                <div>
+                  <label class="form-label text-xs mb-1 block">Coordenada Y</label>
+                  <input type="number" name="{{ form.coord_y.html_name }}" value="{{ form.coord_y.value|default:0 }}" min="0" class="form-input">
+                </div>
+              </div>
+            </section>
+            <section class="rounded-[18px] border p-4"
+                     style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Uso tipico</div>
+              <div class="mt-1 text-sm font-semibold text-ink">Refresh pontual</div>
+              <div class="mt-3 rounded-[16px] border px-4 py-3 text-sm"
+                   style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                <div class="font-semibold text-ink">Colonia, raid e reserva de espaco</div>
+                <div class="mt-1 text-xs text-muted">Serve para atualizar vagas, bandeira preta de `piracy_raid` e ocupacao da ilha antes de decidir colonizacao ou assalto.</div>
+              </div>
             </section>
           </fieldset>
         </div>

@@ -1447,6 +1447,25 @@ class JobListView(FilterSortListView):
         }
 
     @classmethod
+    def _barbarians_display(cls, job):
+        inputs = cls._parse_inputs(job)
+        if int(job.action_code) != 18:
+            return None
+        island_ids_raw = str(inputs.get("island_ids") or inputs.get("island_id") or "")
+        island_list = [s.strip() for s in island_ids_raw.split(",") if s.strip()]
+        return {
+            "phase": inputs.get("phase") or "check",
+            "island_list": island_list,
+            "island_index": _to_int(inputs.get("island_index"), 0),
+            "total_attacks": _to_int(inputs.get("total_attacks"), 0),
+            "total_loots": _to_int(inputs.get("total_loots"), 0),
+            "last_barb_level": inputs.get("last_barb_level"),
+            "last_attack_at": inputs.get("last_attack_at"),
+            "last_loot_at": inputs.get("last_loot_at"),
+            "resources_looted": inputs.get("last_resources_looted"),
+        }
+
+    @classmethod
     def _piracy_display(cls, job):
         inputs = cls._parse_inputs(job)
         if int(job.action_code) != 17:
@@ -1933,6 +1952,7 @@ class JobDetailView(LoginRequiredMixin, DetailView):
             logs=list(logs_qs.values_list("message", flat=True)),
         )
         context["piracy_display"] = JobListView._piracy_display(self.object)
+        context["barbarians_display"] = JobListView._barbarians_display(self.object)
         context["train_display"] = JobListView._train_display(self.object)
         context["station_display"] = JobListView._station_display(self.object)
         context["construction_plan"] = inputs.get("construction_plan_json") if isinstance(inputs.get("construction_plan_json"), list) else []

@@ -85,6 +85,7 @@ class WorldDumpCity(models.Model):
         on_delete=models.CASCADE,
         related_name="cities",
     )
+    position = models.PositiveSmallIntegerField(default=0)
     game_city_id = models.CharField(max_length=32, blank=True, default="")
     name = models.CharField(max_length=128, blank=True, default="")
     owner_id = models.CharField(max_length=32, blank=True, default="")

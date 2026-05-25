@@ -1034,6 +1034,22 @@
 </div>
 {% endif %}
 
+{% if barbarians_display %}
+<div class="card">
+  {% include "jobs/partials/barbarians_status.html" with
+    barb_phase=barbarians_display.phase
+    barb_island_list=barbarians_display.island_list
+    barb_island_index=barbarians_display.island_index
+    barb_total_attacks=barbarians_display.total_attacks
+    barb_total_loots=barbarians_display.total_loots
+    barb_last_level=barbarians_display.last_barb_level
+    barb_last_attack_at=barbarians_display.last_attack_at
+    barb_last_loot_at=barbarians_display.last_loot_at
+    barb_resources_looted=barbarians_display.resources_looted
+  %}
+</div>
+{% endif %}
+
 {% if construction_display %}
 <div class="card space-y-4">
 

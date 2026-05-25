@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 class WorldDumpCitySerializer(serializers.Serializer):
     id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    position = serializers.IntegerField(required=False, allow_null=True, default=0)
     name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     owner_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     owner_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)

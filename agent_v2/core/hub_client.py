@@ -258,6 +258,16 @@ class HubClient:
             {"islands": islands, "is_final": is_final},
         )
 
+    def replace_world_dump_islands(
+        self,
+        dump_id: str,
+        islands: list[dict[str, Any]],
+    ) -> dict:
+        return self._post(
+            f"/api/agent/world-dumps/{dump_id}/replace-islands",
+            {"islands": islands},
+        )
+
     # ── Session Persistence ──
 
     def report_session(self, game_account_id: str, cookies: dict, lobby_token: str = "") -> dict:

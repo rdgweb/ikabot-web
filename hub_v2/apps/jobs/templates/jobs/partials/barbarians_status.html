@@ -1,0 +1,105 @@
+{% comment %}
+  Partial: barbarians_status.html
+  Context variables (from job.inputs / job.progress):
+    job        — Job model instance
+    barb_phase         — current phase string
+    barb_last_level    — last seen barbarian level
+    barb_total_attacks — lifetime attack count
+    barb_total_loots   — lifetime loot count
+    barb_last_attack_at — unix timestamp
+    barb_last_loot_at   — unix timestamp
+    barb_island_ids    — comma-separated island IDs
+    barb_island_index  — current rotation index
+    barb_resources_looted — last recorded total_resources at loot time
+{% endcomment %}
+
+{% load static hub_tags %}
+
+<div class="rounded-[20px] border p-4"
+     style="border-color: rgba(204,107,74,0.22); background: rgba(255,251,245,0.94);">
+
+  {# Header #}
+  <div class="flex items-center gap-2 mb-4">
+    <i class="bi bi-lightning-charge-fill text-sm" style="color: var(--ik-gold);"></i>
+    <span class="text-sm font-semibold text-ink">Roubar Bárbaros</span>
+    {% if barb_phase %}
+    <span class="ml-auto text-[10px] font-medium px-2 py-0.5 rounded-full
+      {% if barb_phase == 'check' %}
+        bg-[rgba(79,134,185,0.1)] text-[var(--ik-sea)]
+      {% elif barb_phase == 'attacking' %}
+        bg-[rgba(204,107,74,0.12)] text-[var(--ik-bad)]
+      {% elif barb_phase == 'looting' or barb_phase == 'loot_waiting' %}
+        bg-[rgba(95,140,78,0.12)] text-[var(--ik-good)]
+      {% else %}
+        bg-[rgba(100,100,100,0.08)] text-muted
+      {% endif %}">
+      <i class="bi
+        {% if barb_phase == 'check' %}bi-search
+        {% elif barb_phase == 'attacking' %}bi-shield-fill
+        {% elif barb_phase == 'looting' %}bi-bag-fill
+        {% elif barb_phase == 'loot_waiting' %}bi-hourglass-split
+        {% else %}bi-question-circle{% endif %}"></i>
+      {{ barb_phase|default:"—" }}
+    </span>
+    {% endif %}
+  </div>
+
+  {# Stats grid #}
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+    <div class="rounded-[14px] p-3 text-center"
+         style="background: rgba(255,255,255,0.7); border: 1px solid rgba(219,201,167,0.5);">
+      <div class="text-lg font-bold text-ink">{{ barb_total_attacks|default:"0" }}</div>
+      <div class="text-[10px] text-muted mt-0.5">Ataques</div>
+    </div>
+    <div class="rounded-[14px] p-3 text-center"
+         style="background: rgba(255,255,255,0.7); border: 1px solid rgba(219,201,167,0.5);">
+      <div class="text-lg font-bold text-ink">{{ barb_total_loots|default:"0" }}</div>
+      <div class="text-[10px] text-muted mt-0.5">Saques</div>
+    </div>
+    <div class="rounded-[14px] p-3 text-center"
+         style="background: rgba(255,255,255,0.7); border: 1px solid rgba(219,201,167,0.5);">
+      <div class="text-lg font-bold text-ink">
+        {% if barb_last_level %}Lv {{ barb_last_level }}{% else %}—{% endif %}
+      </div>
+      <div class="text-[10px] text-muted mt-0.5">Nível barb.</div>
+    </div>
+    <div class="rounded-[14px] p-3 text-center"
+         style="background: rgba(255,255,255,0.7); border: 1px solid rgba(219,201,167,0.5);">
+      <div class="text-lg font-bold text-ink">
+        {% if barb_resources_looted %}{{ barb_resources_looted }}{% else %}—{% endif %}
+      </div>
+      <div class="text-[10px] text-muted mt-0.5">Recursos (últ.)</div>
+    </div>
+  </div>
+
+  {# Island rotation #}
+  {% if barb_island_list %}
+  <div class="mb-3">
+    <div class="text-[11px] font-semibold text-muted uppercase tracking-wide mb-2">Ilhas em rotação</div>
+    <div class="flex flex-wrap gap-1.5">
+      {% for iid in barb_island_list %}
+      <span class="text-[11px] px-2.5 py-1 rounded-full border font-mono
+        {% if forloop.counter0 == barb_island_index %}
+          border-[var(--ik-gold)] bg-[rgba(201,156,78,0.12)]
+        {% else %}
+          border-[var(--ik-line)] text-muted
+        {% endif %}">
+        {% if forloop.counter0 == barb_island_index %}<i class="bi bi-arrow-right-short"></i>{% endif %}
+        {{ iid }}
+      </span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# Timestamps #}
+  <div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted">
+    {% if barb_last_attack_at %}
+    <span><i class="bi bi-shield-fill me-1"></i>Último ataque: {{ barb_last_attack_at|timestamp_since }}</span>
+    {% endif %}
+    {% if barb_last_loot_at %}
+    <span><i class="bi bi-bag-fill me-1"></i>Último saque: {{ barb_last_loot_at|timestamp_since }}</span>
+    {% endif %}
+  </div>
+
+</div>

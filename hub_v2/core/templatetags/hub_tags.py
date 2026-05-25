@@ -242,6 +242,45 @@ def fill_color(pct):
 
 
 @register.filter
+def from_timestamp(ts):
+    """Convert unix timestamp to aware datetime (local tz)."""
+    if not ts:
+        return None
+    import datetime as _dt
+    try:
+        naive = _dt.datetime.utcfromtimestamp(int(ts))
+        return timezone.make_aware(naive, timezone.utc)
+    except (TypeError, ValueError, OSError):
+        return None
+
+
+@register.filter
+def timestamp_since(ts):
+    """Return 'X tempo atrás' string for a unix timestamp."""
+    if not ts:
+        return ""
+    import datetime as _dt
+    try:
+        naive = _dt.datetime.utcfromtimestamp(int(ts))
+        dt = timezone.make_aware(naive, timezone.utc)
+        now = timezone.now()
+        delta = now - dt
+        secs = int(delta.total_seconds())
+        if secs < 60:
+            return f"{secs}s atrás"
+        if secs < 3600:
+            return f"{secs // 60}min atrás"
+        if secs < 86400:
+            h = secs // 3600
+            m = (secs % 3600) // 60
+            return f"{h}h {m}min atrás"
+        d = secs // 86400
+        return f"{d}d atrás"
+    except (TypeError, ValueError, OSError):
+        return ""
+
+
+@register.filter
 def fill_bar_color(pct):
     """Return Tailwind bg class for a progress bar based on fill %."""
     try:

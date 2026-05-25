@@ -12,6 +12,13 @@ from ..models import WorldDump, WorldDumpCity, WorldDumpIsland, WorldDumpPlayer
 from .serializers import WorldDumpCreateSerializer, WorldDumpAppendSerializer
 
 
+def _recount_dump(dump: WorldDump) -> None:
+    dump.island_count = WorldDumpIsland.objects.filter(dump=dump).count()
+    dump.city_count = WorldDumpCity.objects.filter(dump=dump, type="city").count()
+    dump.player_count = WorldDumpPlayer.objects.filter(dump=dump).count()
+    dump.save(update_fields=["island_count", "city_count", "player_count", "updated_at"])
+
+
 def _save_islands_to_dump(dump: WorldDump, islands_payload: list) -> tuple[int, int]:
     """Save a batch of islands to an existing dump. Returns (city_count_added, player_count_added)."""
     city_total = 0
@@ -60,6 +67,7 @@ def _save_islands_to_dump(dump: WorldDump, islands_payload: list) -> tuple[int, 
                     WorldDumpCity(
                         dump=dump,
                         island=island,
+                        position=int(city.get("position") or 0),
                         game_city_id=str(city.get("id") or "").strip(),
                         name=str(city.get("name") or "").strip(),
                         owner_id=str(city.get("owner_id") or "").strip(),
@@ -107,13 +115,20 @@ def _save_islands_to_dump(dump: WorldDump, islands_payload: list) -> tuple[int, 
         if player_models:
             WorldDumpPlayer.objects.bulk_create(player_models, ignore_conflicts=True, batch_size=500)
 
-        # Update dump counters
-        dump.island_count = WorldDumpIsland.objects.filter(dump=dump).count()
-        dump.city_count = (dump.city_count or 0) + city_total
-        dump.player_count = WorldDumpPlayer.objects.filter(dump=dump).count()
-        dump.save(update_fields=["island_count", "city_count", "player_count", "updated_at"])
+        _recount_dump(dump)
 
     return city_total, len(merged_scores)
+
+
+def _replace_islands_in_dump(dump: WorldDump, islands_payload: list) -> tuple[int, int]:
+    island_ids = {
+        str(item.get("island_id") or "").strip()
+        for item in (islands_payload or [])
+        if isinstance(item, dict) and str(item.get("island_id") or "").strip()
+    }
+    if island_ids:
+        WorldDumpIsland.objects.filter(dump=dump, island_id__in=island_ids).delete()
+    return _save_islands_to_dump(dump, islands_payload)
 
 
 class WorldDumpCreateView(APIView):
@@ -193,6 +208,37 @@ class WorldDumpAppendView(APIView):
         if is_final:
             dump.status = "complete"
             dump.save(update_fields=["status", "updated_at"])
+
+        return Response(
+            {
+                "ok": True,
+                "dump_id": str(dump.pk),
+                "island_count": dump.island_count,
+                "city_count": dump.city_count,
+                "player_count": dump.player_count,
+                "status": dump.status,
+            }
+        )
+
+
+class WorldDumpReplaceIslandsView(APIView):
+    """POST /api/agent/world-dumps/{dump_id}/replace-islands/ — refresh islands in-place."""
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request, dump_id):
+        try:
+            dump = WorldDump.objects.get(pk=dump_id)
+        except WorldDump.DoesNotExist:
+            return Response({"error": "Dump not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = WorldDumpAppendSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        islands_payload = data.get("islands") or []
+
+        if islands_payload:
+            _replace_islands_in_dump(dump, islands_payload)
 
         return Response(
             {

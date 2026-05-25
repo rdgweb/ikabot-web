@@ -1,0 +1,27 @@
+<div id="colonize-island-panel"
+     class="rounded-[24px] border p-4 shadow-[0_10px_28px_rgba(87,66,24,0.08)]"
+     style="border-color: rgba(219,201,167,0.86); background: rgba(255,255,255,0.84);"
+     {% if state == "running" and job_id %}
+     hx-get="{% url 'jobs:colonize-island-refresh-status' %}?job_id={{ job_id }}&ga={{ ga_id }}&coord_x={{ coord_x }}&coord_y={{ coord_y }}"
+     hx-trigger="load delay:1200ms"
+     hx-target="this"
+     hx-swap="outerHTML"
+     {% endif %}>
+  {% if state == "running" %}
+  <div class="flex items-center gap-3">
+    <div class="flex h-10 w-10 items-center justify-center rounded-full border"
+         style="border-color: rgba(79,134,185,0.18); background: rgba(79,134,185,0.08);">
+      <i class="bi bi-arrow-repeat animate-spin" style="color: var(--ik-sea);"></i>
+    </div>
+    <div>
+      <div class="text-sm font-semibold text-ink">Atualizando ilha [{{ coord_x }}:{{ coord_y }}]</div>
+      <div class="mt-1 text-xs text-muted">Rodando um dump pontual dessa coordenada e reaproveitando o dump atual.</div>
+    </div>
+  </div>
+  {% else %}
+  <div class="rounded-[18px] border px-4 py-4 text-sm"
+       style="border-color: rgba(204,107,74,0.26); background: rgba(204,107,74,0.08); color: var(--ik-bad);">
+    {{ message|default:"Falha ao atualizar a ilha." }}
+  </div>
+  {% endif %}
+</div>

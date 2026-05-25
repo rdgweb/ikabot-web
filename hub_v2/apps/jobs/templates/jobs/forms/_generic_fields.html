@@ -453,7 +453,7 @@
       {% endfor %}
     </div>
 
-    {% if action_meta.category == "construction" and not no_footer %}
+    {% if action_meta.category == "construction" and not no_footer and action_code != 820 %}
     <div id="construction-plan-preview"
          class="mt-3 max-h-64 overflow-y-auto rounded-xl"
          hx-post="{% url 'jobs:job-construction-preview' %}"
@@ -490,7 +490,7 @@
         <i class="bi bi-arrow-left text-[10px]"></i> Voltar
       </button>
       <button type="submit" class="btn btn-primary btn-sm">
-        <i class="bi bi-plus-circle"></i> {% if action_code == 31 %}Enviar Mensagem{% elif action_code == 2 %}Criar Transporte{% elif action_code == 3 or action_code == 1003 %}Criar Distribuição{% elif action_code == 601 %}Iniciar Monitor{% elif action_code == 1005 %}Criar Treino Militar{% elif action_code == 1202 %}Criar Movimentação{% else %}Criar Job{% endif %}
+        <i class="bi bi-plus-circle"></i> {% if action_code == 31 %}Enviar Mensagem{% elif action_code == 2 %}Criar Transporte{% elif action_code == 3 or action_code == 1003 %}Criar Distribuição{% elif action_code == 601 %}Iniciar Monitor{% elif action_code == 820 %}Fundar Colonia{% elif action_code == 1005 %}Criar Treino Militar{% elif action_code == 1202 %}Criar Movimentação{% else %}Criar Job{% endif %}
       </button>
     </div>
     {% endif %}
