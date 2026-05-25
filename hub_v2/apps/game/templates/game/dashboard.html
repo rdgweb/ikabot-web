@@ -427,7 +427,7 @@
               <td class="py-1 px-1 text-right font-mono font-semibold text-ink">
                 <span class="js-projected-total">{{ city.resource_total|intcomma }}</span>
               </td>
-              <td class="py-1 px-1 text-center text-[10px] text-muted font-mono" title="Pop {{ city.population|intcomma }} · {{ city.free_citizens|default:0 }} livres">
+              <td class="py-1 px-1 text-center text-[10px] text-muted font-mono" title="Pop {{ city.population|intcomma }} / {{ city.max_pop|default:city.population|intcomma }} · {{ city.free_citizens|default:0 }} livres · PA {{ city.action_points_current|default:0 }}/{{ city.action_points_max|default:0 }}">
                 {{ city.population|intcomma }}
               </td>
             </tr>

@@ -15,6 +15,7 @@ from django.utils import timezone
 from apps.accounts.models import GameAccount
 from apps.game.models import AccountSnapshot
 from apps.jobs.services.workflows import create_job_with_workflow
+from core.catalogs import TRAINING_UNITS
 
 from .models import (
     GeneralsBankConfig,
@@ -29,6 +30,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 RESOURCE_KEYS = ["wood", "wine", "marble", "crystal", "sulfur"]
+
+_UNIT_META_BY_ID: dict[int, dict] = {
+    int(unit["id"]): unit
+    for group in (TRAINING_UNITS.get("troops", []), TRAINING_UNITS.get("fleet", []))
+    for unit in group
+}
 
 
 def _snapshot_cities(ga: GameAccount) -> list[dict]:
@@ -60,6 +67,25 @@ def _find_black_market_city(ga: GameAccount) -> dict | None:
             if isinstance(b, dict) and b.get("building") == "blackMarket":
                 return city
     return None
+
+
+def _find_training_cities_for_unit(ga: GameAccount, unit_id: int) -> list[tuple[dict, dict]]:
+    building_name = "shipyard" if 200 <= int(unit_id) < 300 else "barracks"
+    candidates: list[tuple[dict, dict]] = []
+    fallback_training: list[dict] = []
+    fallback_bm = _find_black_market_city(ga)
+    for city in _snapshot_cities(ga):
+        has_training = _has_building(city, building_name)
+        has_bm = _has_building(city, "blackMarket")
+        if has_training and has_bm:
+            candidates.append((city, city))
+        elif has_training:
+            fallback_training.append(city)
+    if candidates:
+        return candidates
+    if fallback_bm:
+        return [(city, fallback_bm) for city in fallback_training]
+    return []
 
 
 def _has_building(city: dict, building_name: str) -> bool:
@@ -108,6 +134,35 @@ def _find_training_city_for_unit(ga: GameAccount, unit_id: int) -> tuple[dict | 
     return None, _find_black_market_city(ga)
 
 
+def _estimate_city_capacity(
+    city: dict,
+    *,
+    unit_meta: dict,
+    min_resource_reserves: dict[str, int] | None,
+) -> int:
+    reserves = {key: int((min_resource_reserves or {}).get(key) or 0) for key in RESOURCE_KEYS}
+    capacities: list[int] = []
+    for key in RESOURCE_KEYS:
+        cost = int(unit_meta.get(key) or 0)
+        if cost <= 0:
+            continue
+        available = max(0, int(city.get(key) or 0) - reserves.get(key, 0))
+        capacities.append(available // cost)
+    free_citizens = max(0, int(city.get("free_citizens") or city.get("citizens") or city.get("population") or 0))
+    capacities.append(free_citizens)
+    return min(capacities) if capacities else free_citizens
+
+
+def _project_net_gold_after_upkeep(ga: GameAccount, extra_upkeep: int) -> int:
+    snap = AccountSnapshot.objects.filter(game_account=ga).first()
+    base = (snap.base_snapshot or {}) if snap else {}
+    income = int(base.get("income") or 0)
+    upkeep = int(base.get("upkeep") or 0)
+    scientists_upkeep = int(base.get("scientists_upkeep") or 0)
+    current_net = income + upkeep + scientists_upkeep
+    return current_net - extra_upkeep
+
+
 def _city_name(city: dict | None, fallback=None) -> str:
     if isinstance(city, dict):
         name = str(city.get("name") or "").strip()
@@ -154,30 +209,84 @@ def build_producer_execution_plan(config: GeneralsBankConfig) -> dict:
         if not template:
             warnings.append(f"{ga.name}: sem composicao configurada.")
             continue
+        remaining_upkeep_budget = None
+        if producer.keep_net_gold_positive:
+            remaining_upkeep_budget = max(0, _project_net_gold_after_upkeep(ga, 0))
 
         for unit_id_str, qty in template.items():
             unit_id = int(unit_id_str)
-            training_city, bm_city = _find_training_city_for_unit(ga, unit_id)
-            if not training_city:
+            unit_meta = _UNIT_META_BY_ID.get(unit_id)
+            if not unit_meta:
+                warnings.append(f"{ga.name}: unidade {unit_id} sem metadata de treino.")
+                continue
+            city_pairs = _find_training_cities_for_unit(ga, unit_id)
+            if not city_pairs:
                 warnings.append(f"{ga.name}: sem cidade de treino para unidade {unit_id}.")
                 continue
-            if not bm_city:
-                warnings.append(f"{ga.name}: sem cidade com Mercado Negro para unidade {unit_id}.")
+            remaining_qty = qty
+            candidates: list[dict] = []
+            for training_city, bm_city in city_pairs:
+                if not bm_city:
+                    continue
+                capacity = _estimate_city_capacity(
+                    training_city,
+                    unit_meta=unit_meta,
+                    min_resource_reserves=producer.min_resource_reserves,
+                )
+                if capacity <= 0:
+                    continue
+                candidates.append({
+                    "training_city": training_city,
+                    "bm_city": bm_city,
+                    "capacity": capacity,
+                    "same_city_flow": int(training_city.get("id") or 0) == int(bm_city.get("id") or 0),
+                })
+
+            if not candidates:
+                warnings.append(f"{ga.name}: sem capacidade atual para produzir unidade {unit_id}.")
                 continue
 
-            tasks.append({
-                "producer_id": str(producer.pk),
-                "producer_ga_id": str(ga.pk),
-                "producer_name": ga.name,
-                "unit_id": unit_id,
-                "quantity_target": qty,
-                "city_id": int(training_city.get("id") or 0),
-                "city_name": _city_name(training_city),
-                "bm_city_id": int(bm_city.get("id") or 0),
-                "bm_city_name": _city_name(bm_city),
-                "same_city_flow": int(training_city.get("id") or 0) == int(bm_city.get("id") or 0),
-            })
-            aggregate[unit_id_str] = aggregate.get(unit_id_str, 0) + qty
+            candidates.sort(key=lambda item: (item["same_city_flow"], item["capacity"]), reverse=True)
+            total_planned = 0
+            unit_upkeep = int(unit_meta.get("upkeep") or 0)
+
+            for candidate in candidates:
+                if remaining_qty <= 0:
+                    break
+                candidate_qty = min(remaining_qty, int(candidate["capacity"]))
+                if remaining_upkeep_budget is not None and unit_upkeep > 0:
+                    upkeep_limited_qty = remaining_upkeep_budget // unit_upkeep
+                    candidate_qty = min(candidate_qty, upkeep_limited_qty)
+                if candidate_qty <= 0:
+                    continue
+
+                training_city = candidate["training_city"]
+                bm_city = candidate["bm_city"]
+                tasks.append({
+                    "producer_id": str(producer.pk),
+                    "producer_ga_id": str(ga.pk),
+                    "producer_name": ga.name,
+                    "unit_id": unit_id,
+                    "quantity_target": candidate_qty,
+                    "city_id": int(training_city.get("id") or 0),
+                    "city_name": _city_name(training_city),
+                    "bm_city_id": int(bm_city.get("id") or 0),
+                    "bm_city_name": _city_name(bm_city),
+                    "same_city_flow": candidate["same_city_flow"],
+                    "sell_only_cycle_production": producer.sell_only_cycle_production,
+                    "keep_net_gold_positive": producer.keep_net_gold_positive,
+                })
+                total_planned += candidate_qty
+                remaining_qty -= candidate_qty
+                aggregate[unit_id_str] = aggregate.get(unit_id_str, 0) + candidate_qty
+                if remaining_upkeep_budget is not None and unit_upkeep > 0:
+                    remaining_upkeep_budget = max(0, remaining_upkeep_budget - (candidate_qty * unit_upkeep))
+
+            if total_planned < qty:
+                warnings.append(
+                    f"{ga.name}: unidade {unit_id} pedida={qty} planejada={total_planned} "
+                    f"(limite atual de recurso/população/ouro)."
+                )
 
     return {
         "tasks": tasks,
@@ -258,9 +367,20 @@ def _create_producer_tasks(cycle: GeneralsBankCycle, plan: dict) -> None:
 
 def create_producer_task_jobs(cycle: GeneralsBankCycle) -> list["Job"]:
     jobs_created: list["Job"] = []
-    tasks = list(cycle.tasks.select_related("producer_game_account", "producer_game_account__account", "producer_game_account__account__node"))
+    tasks = list(
+        cycle.tasks.select_related(
+            "producer_game_account",
+            "producer_game_account__account",
+            "producer_game_account__account__node",
+        )
+    )
+    producer_map = {
+        str(p.producer_game_account_id): p
+        for p in cycle.bank_config.producers.filter(is_active=True)
+    }
     for task in tasks:
         ga = task.producer_game_account
+        producer = producer_map.get(str(task.producer_game_account_id))
         job = create_job_with_workflow(
             account=ga.account,
             game_account=ga,
@@ -272,6 +392,8 @@ def create_producer_task_jobs(cycle: GeneralsBankCycle) -> list["Job"]:
                 "task_id": str(task.pk),
                 "city_id": int(task.city_id or 0),
                 "bm_city_id": int(task.bm_city_id or 0),
+                "sell_only_cycle_production": bool(getattr(producer, "sell_only_cycle_production", True)),
+                "keep_net_gold_positive": bool(getattr(producer, "keep_net_gold_positive", True)),
             },
             status="queued",
             trigger_type="generals_bank_producer_task",

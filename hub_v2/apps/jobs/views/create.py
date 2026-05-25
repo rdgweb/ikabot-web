@@ -827,7 +827,7 @@ PIRACY_MISSIONS = [
 ]
 
 
-def _piracy_context(ga, all_cities: list) -> dict:
+def _piracy_context(ga, all_cities: list, snapshot=None) -> dict:
     """Build piracy form context — filters cities with pirate fortress and annotates fortress level."""
     from django.templatetags.static import static
 
@@ -850,9 +850,20 @@ def _piracy_context(ga, all_cities: list) -> dict:
                 "fortress_level": fortress_level,
             })
 
+    base_snapshot = {}
+    if isinstance(snapshot, AccountSnapshot):
+        base_snapshot = snapshot.base_snapshot or {}
+    elif isinstance(snapshot, dict):
+        base_snapshot = snapshot.get("base_snapshot") or {}
+
+    piracy_highscore = base_snapshot.get("piracy_highscore") or {}
+    if not isinstance(piracy_highscore, dict):
+        piracy_highscore = {}
+
     return {
         "piracy_missions": missions,
         "piracy_cities": piracy_cities,
+        "piracy_highscore_preview": piracy_highscore,
     }
 
 
@@ -1432,7 +1443,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities):
     if int(action_code) == 15:
         ctx.update(_spy_context(ga, cities, getattr(form, "initial", {})))
     if int(action_code) == 17:
-        ctx.update(_piracy_context(ga, cities))
+        ctx.update(_piracy_context(ga, cities, snapshot))
     return ctx
 
 
@@ -1752,6 +1763,8 @@ class JobSubmitView(LoginRequiredMixin, View):
             return HttpResponse(html)
 
         inputs = form.get_inputs_json()
+        if int(action_code) == 17:
+            inputs = self._normalize_piracy_inputs(inputs, request)
         if int(action_code) == 601:
             inputs = self._normalize_island_monitor_inputs(inputs)
         if int(action_code) == 1005:
@@ -2261,6 +2274,30 @@ class JobSubmitView(LoginRequiredMixin, View):
             if str(city.get("id")) == str(city_id):
                 return city.get("name", "")
         return ""
+
+    @staticmethod
+    def _normalize_piracy_inputs(inputs, request):
+        normalized = dict(inputs)
+        bool_fields = (
+            "enable_targeted_cycle",
+            "target_require_lower_total_score",
+            "target_require_lower_general_score",
+        )
+        int_fields = (
+            "targeted_interval_days",
+            "targeted_after_hour",
+            "target_max_score_gap",
+        )
+        for key in bool_fields:
+            raw = str(request.POST.get(key) or normalized.get(key) or "").strip().lower()
+            normalized[key] = raw in {"1", "true", "on", "yes"}
+        for key in int_fields:
+            raw = request.POST.get(key, normalized.get(key))
+            try:
+                normalized[key] = int(raw)
+            except (TypeError, ValueError):
+                pass
+        return normalized
 
     @staticmethod
     def _normalize_train_units_inputs(inputs, request):

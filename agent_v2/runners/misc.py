@@ -2,7 +2,6 @@
 Miscellaneous runners — colonisation, miracles, scanning, premium, and more.
 
 Action codes:
-    14  colonize
     16  activate_miracle
     20  scan_island
     21  scan_player
@@ -11,6 +10,7 @@ Action codes:
     30  activate_ambro
     31  setup_trade_route
     32  build_museum
+    820 targeted_colonize
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from runners.base import BaseRunner, RunnerResult
 logger = logging.getLogger(__name__)
 
 
-@register_runner(14)
+@register_runner(820)
 class ColonizeRunner(BaseRunner):
     """Colonize a free spot on an island.
 
@@ -39,23 +39,70 @@ class ColonizeRunner(BaseRunner):
         aid = job["account_id"]
         inputs = job.get("inputs", {})
 
-        self.log(jid, "info", f"Colonizing for account {aid}")
+        ga_id = job.get("game_account_id", "")
+        self.log(jid, "info", f"Colonizando para conta {aid}")
+
+        source_city_id = inputs.get("source_city_id") or inputs.get("city_id")
+        island_id = inputs.get("island_id")
+        position = inputs.get("position")
+        if not source_city_id or island_id in (None, "") or position in (None, ""):
+            return RunnerResult(
+                success=False,
+                data={"error": "missing_required_inputs", "required": ["source_city_id", "island_id", "position"]},
+            )
+
+        resource_keys = ("wood", "wine", "marble", "crystal", "sulfur")
+        resources = {
+            key: int(inputs.get(key, 0) or 0)
+            for key in resource_keys
+            if int(inputs.get(key, 0) or 0) > 0
+        }
+
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        if not creds:
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
 
         try:
-            client = self.get_game_session(aid)
+            client = self.get_or_login_game_client(jid, aid, ga_id, creds)
+            preview = client.get_colonization_preview(
+                source_city_id=source_city_id,
+                island_id=island_id,
+                position=int(position),
+            )
+            self.log(
+                jid,
+                "info",
+                f"Preview colonizacao ok: ilha {island_id} pos {position}, capacidade {preview.get('max_capacity', 0)}",
+            )
 
-            # TODO: call client.colonize(source_city_id, island_id, position)
-            # source_city_id = inputs["source_city_id"]
-            # island_id      = inputs["island_id"]
-            # position       = inputs["position"]
-            # client.colonize(source_city_id, island_id, position)
+            result = client.start_colonization(
+                source_city_id=source_city_id,
+                island_id=island_id,
+                position=int(position),
+                resources=resources,
+            )
 
-            self.save_game_session(aid, client)
-            self.log(jid, "info", "Colonization started")
-
-            return RunnerResult(success=True)
-
+            self.save_game_client(ga_id or aid, client)
+            feedback = "; ".join(result.get("feedback") or []) or "Colonizacao enviada"
+            self.log(jid, "info", feedback)
+            return RunnerResult(
+                success=True,
+                data={
+                    "source_city_id": str(source_city_id),
+                    "island_id": str(island_id),
+                    "position": int(position),
+                    "resources": resources,
+                    "preview": {
+                        "capacity": preview.get("capacity", 0),
+                        "max_capacity": preview.get("max_capacity", 0),
+                        "transporters": preview.get("transporters", 0),
+                    },
+                    "feedback": result.get("feedback") or [],
+                },
+            )
         except Exception as exc:
+            if self.is_network_error(exc):
+                return self.network_error_result(jid, exc)
             self.log(jid, "error", f"Colonize failed: {exc}")
             return RunnerResult(success=False, data={"error": str(exc)})
 

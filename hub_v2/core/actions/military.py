@@ -120,7 +120,7 @@ ACTIONS = {
         "ready": True,
         "description": "Envia a tripulacao em missoes piratas automaticamente e converte pontos de captura em forca da tripulacao.",
         "inputs": [
-            {"key": "city_id", "type": FIELD_CITY_SELECT, "label": "Cidade (com Fortaleza Pirata)", "multiple": False, "required": True},
+            {"key": "city_id", "type": FIELD_CITY_SELECT, "label": "Cidade (com Fortaleza Pirata)", "multiple": False, "required": True, "city_building": "pirateFortress"},
             # Missão simples (sem agendamento por horário)
             {"key": "mission_level", "type": FIELD_INT, "label": "Nível da missão", "required": True, "default": 7,
              "help": "Nível de fortaleza para a missão (1,3,5,7,9,11,13,15,17). Ignorado se agendamento por horário estiver ativo."},

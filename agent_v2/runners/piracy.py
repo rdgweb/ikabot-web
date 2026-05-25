@@ -84,6 +84,49 @@ class PiracyMissionRunner(BaseRunner):
         gain = capture_points - last_capture_points
         return gain if gain > 0 else 0
 
+    def _collect_highscore_state(
+        self,
+        jid: str,
+        client,
+        city_id: str,
+        game_account_id: str,
+    ) -> dict[str, Any]:
+        try:
+            ranking = client.get_piracy_highscore(city_id)
+        except Exception as exc:
+            self.log(jid, "warn", f"Falha ao ler ranking da pirataria: {exc}")
+            return {}
+
+        entries = list(ranking.get("entries") or [])
+        trimmed_entries = entries[:10]
+        own_entry = next((entry for entry in entries if str(entry.get("target_city_id") or "") == str(city_id)), None)
+        state = {
+            "piracy_highscore_entries": trimmed_entries,
+            "piracy_highscore_time_left": int(ranking.get("highscore_time_left") or 0),
+            "piracy_highscore_updated_at": int(time.time()),
+        }
+        if own_entry:
+            state["piracy_highscore_self"] = own_entry
+
+        if game_account_id:
+            try:
+                self.hub.patch_snapshot_base(
+                    game_account_id,
+                    {
+                        "piracy_highscore": {
+                            "city_id": str(city_id),
+                            "entries": trimmed_entries,
+                            "time_left": int(ranking.get("highscore_time_left") or 0),
+                            "updated_at": int(time.time()),
+                            "self_entry": own_entry or {},
+                        }
+                    },
+                )
+            except Exception as exc:
+                self.log(jid, "warn", f"Falha ao salvar ranking pirata no snapshot: {exc}")
+
+        return state
+
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
@@ -139,6 +182,7 @@ class PiracyMissionRunner(BaseRunner):
             # Step 1: get current piracy state
             self.log(jid, "info", f"Lendo estado da fortaleza pirata na cidade {city_id}")
             state = client.get_piracy_state(city_id)
+            highscore_state = self._collect_highscore_state(jid, client, city_id, game_account_id)
 
             time_remaining = int(state.get("time_remaining") or 0)
             fortress_level = int(state.get("fortress_level") or 1)
@@ -153,6 +197,7 @@ class PiracyMissionRunner(BaseRunner):
                 "last_fortress_level": fortress_level,
                 "last_time_remaining": time_remaining,
                 "last_state_updated_at": int(time.time()),
+                **highscore_state,
             }
 
             # Step 2: mission already active — wait for it

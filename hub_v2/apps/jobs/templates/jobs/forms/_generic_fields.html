@@ -51,7 +51,7 @@
         {% elif action_code == 1002 and field.name == "queue_strategy" %}
         {% elif action_code == 1002 and field.name == "research_reduction" %}
         {% elif action_code == 1002 and field.name == "auto_transport" %}
-        {% elif field.name in custom_field_names or action_code == 3 and field.name == "wood" or action_code == 3 and field.name == "wine" or action_code == 3 and field.name == "marble" or action_code == 3 and field.name == "crystal" or action_code == 3 and field.name == "sulfur" %}
+        {% elif not no_footer and field.name in custom_field_names or not no_footer and action_code == 3 and field.name == "wood" or not no_footer and action_code == 3 and field.name == "wine" or not no_footer and action_code == 3 and field.name == "marble" or not no_footer and action_code == 3 and field.name == "crystal" or not no_footer and action_code == 3 and field.name == "sulfur" %}
         {% else %}
 
         {# Action 1203 uses its own custom city selector card UI above #}

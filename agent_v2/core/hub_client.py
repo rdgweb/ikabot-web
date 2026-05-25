@@ -558,6 +558,10 @@ class HubClient:
         """POST /api/agent/generals-bank/cycles/<id>/complete/"""
         return self._post(f"/api/agent/generals-bank/cycles/{cycle_id}/complete", {})
 
+    def bank_cycle_fail(self, cycle_id: str, note: str) -> dict:
+        """POST /api/agent/generals-bank/cycles/<id>/fail/"""
+        return self._post(f"/api/agent/generals-bank/cycles/{cycle_id}/fail", {"note": note})
+
     # ── Internal ──
 
     def _url(self, path: str) -> str:

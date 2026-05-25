@@ -1,0 +1,92 @@
+{% load static hub_tags %}
+
+<div class="space-y-4">
+  <div>
+    <div class="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-muted">Tropas</div>
+    <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+      {% for unit in troop_units %}
+      <div class="rounded-[14px] border p-3"
+           style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.82);">
+        <div class="mb-2 flex items-center gap-2">
+          {% with icon=unit.name|unit_icon %}
+          {% if icon %}
+          <img src="{% static icon %}" alt="{{ unit.name }}" class="h-8 w-8 object-contain">
+          {% else %}
+          <div class="flex h-8 w-8 items-center justify-center rounded-[10px] border text-muted"
+               style="border-color: rgba(219,201,167,0.8);">
+            <i class="bi bi-shield"></i>
+          </div>
+          {% endif %}
+          {% endwith %}
+          <div class="min-w-0">
+            <div class="truncate text-xs font-semibold text-ink">{{ unit.name }}</div>
+            <div class="text-[10px] text-muted">u{{ unit.id }}</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button"
+                  class="flex h-8 w-8 items-center justify-center rounded-[10px] border text-sm font-bold"
+                  style="border-color: rgba(219,201,167,0.9); background: rgba(255,252,245,0.95); color: var(--ik-sea);"
+                  @click="stepUnit('{{ unit.id }}', -1)">-</button>
+          <input type="number"
+                 min="0"
+                 class="form-input h-8 text-center text-xs font-bold"
+                 :value="qty('{{ unit.id }}')"
+                 @input="setQty('{{ unit.id }}', $event.target.value)">
+          <button type="button"
+                  class="flex h-8 w-8 items-center justify-center rounded-[10px] border text-sm font-bold"
+                  style="border-color: rgba(219,201,167,0.9); background: rgba(255,252,245,0.95); color: var(--ik-sea);"
+                  @click="stepUnit('{{ unit.id }}', 1)">+</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div>
+    <div class="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-muted">Frotas</div>
+    <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+      {% for unit in fleet_units %}
+      <div class="rounded-[14px] border p-3"
+           style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.82);">
+        <div class="mb-2 flex items-center gap-2">
+          {% with icon=unit.name|unit_icon %}
+          {% if icon %}
+          <img src="{% static icon %}" alt="{{ unit.name }}" class="h-8 w-8 object-contain">
+          {% else %}
+          <div class="flex h-8 w-8 items-center justify-center rounded-[10px] border text-muted"
+               style="border-color: rgba(219,201,167,0.8);">
+            <i class="bi bi-water"></i>
+          </div>
+          {% endif %}
+          {% endwith %}
+          <div class="min-w-0">
+            <div class="truncate text-xs font-semibold text-ink">{{ unit.name }}</div>
+            <div class="text-[10px] text-muted">u{{ unit.id }}</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button"
+                  class="flex h-8 w-8 items-center justify-center rounded-[10px] border text-sm font-bold"
+                  style="border-color: rgba(219,201,167,0.9); background: rgba(255,252,245,0.95); color: var(--ik-sea);"
+                  @click="stepUnit('{{ unit.id }}', -1)">-</button>
+          <input type="number"
+                 min="0"
+                 class="form-input h-8 text-center text-xs font-bold"
+                 :value="qty('{{ unit.id }}')"
+                 @input="setQty('{{ unit.id }}', $event.target.value)">
+          <button type="button"
+                  class="flex h-8 w-8 items-center justify-center rounded-[10px] border text-sm font-bold"
+                  style="border-color: rgba(219,201,167,0.9); background: rgba(255,252,245,0.95); color: var(--ik-sea);"
+                  @click="stepUnit('{{ unit.id }}', 1)">+</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="rounded-[14px] border px-3 py-2 text-[11px] text-muted"
+       style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.72);">
+    O lote salvo aqui e o que a produtora tenta treinar e listar em cada ciclo do banco.
+  </div>
+</div>

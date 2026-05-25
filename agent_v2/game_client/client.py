@@ -637,6 +637,69 @@ class GameClient(IslandActions):
         from .actions.piracy import PiracyConvertAction
         return PiracyConvertAction(self).execute(city_id=city_id, crew_points=crew_points)
 
+    def get_piracy_highscore(self, city_id: int | str) -> dict:
+        """Read pirate fortress highscore entries around the current player."""
+        from .actions.piracy_targeted import PiracyHighscoreAction
+        return PiracyHighscoreAction(self).execute(city_id=city_id)
+
+    def get_piracy_raid_preview(
+        self,
+        source_city_id: int | str,
+        destination_city_id: int | str,
+        destination_island_id: int | str,
+    ) -> dict:
+        """Open the targeted pirate raid modal for one enemy city."""
+        from .actions.piracy_targeted import PiracyRaidPreviewAction
+        return PiracyRaidPreviewAction(self).execute(
+            source_city_id=source_city_id,
+            destination_city_id=destination_city_id,
+            destination_island_id=destination_island_id,
+        )
+
+    def start_piracy_raid(
+        self,
+        source_city_id: int | str,
+        destination_city_id: int | str,
+        destination_island_id: int | str,
+    ) -> dict:
+        """Send a targeted pirate raid against one city."""
+        from .actions.piracy_targeted import PiracyRaidAction
+        return PiracyRaidAction(self).execute(
+            source_city_id=source_city_id,
+            destination_city_id=destination_city_id,
+            destination_island_id=destination_island_id,
+        )
+
+    def get_colonization_preview(
+        self,
+        source_city_id: int | str,
+        island_id: int | str,
+        position: int,
+    ) -> dict:
+        """Fetch colonization requirements and form metadata for one island slot."""
+        from .actions.colonization import ColonizationPreviewAction
+        return ColonizationPreviewAction(self).execute(
+            source_city_id=source_city_id,
+            island_id=island_id,
+            position=position,
+        )
+
+    def start_colonization(
+        self,
+        source_city_id: int | str,
+        island_id: int | str,
+        position: int,
+        resources: dict[str, int] | None = None,
+    ) -> dict:
+        """Start founding a colony on one empty island slot."""
+        from .actions.colonization import StartColonizationAction
+        return StartColonizationAction(self).execute(
+            source_city_id=source_city_id,
+            island_id=island_id,
+            position=position,
+            resources=resources,
+        )
+
     def get_safehouse_state(self, city_id: int | str, position: int = 19) -> dict:
         """Get safehouse state: spy counts, active missions, training queue."""
         from .actions.spy import SpySafehouseAction

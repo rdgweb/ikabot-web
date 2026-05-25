@@ -57,15 +57,38 @@ def _load_misc_module():
 
 
 MISC_MODULE = _load_misc_module()
+ColonizeRunner = MISC_MODULE.ColonizeRunner
 VacationModeRunner = MISC_MODULE.VacationModeRunner
 
 
 class _ClientStub:
     def __init__(self, result=None):
         self.result = result or {"ok": True}
+        self.preview = {
+            "capacity": 0,
+            "max_capacity": 5,
+            "transporters": 0,
+        }
 
     def activate_vacation_mode(self, *, city_id):
         return self.result
+
+    def get_colonization_preview(self, *, source_city_id, island_id, position):
+        return {
+            **self.preview,
+            "source_city_id": str(source_city_id),
+            "island_id": str(island_id),
+            "position": int(position),
+        }
+
+    def start_colonization(self, *, source_city_id, island_id, position, resources=None):
+        return {
+            "feedback": ["Sua ordem foi executada."],
+            "source_city_id": str(source_city_id),
+            "island_id": str(island_id),
+            "position": int(position),
+            "resources": resources or {},
+        }
 
 
 class VacationModeRunnerTests(unittest.TestCase):
@@ -151,6 +174,52 @@ class VacationModeRunnerTests(unittest.TestCase):
 
         self.assertFalse(result.success)
         self.assertEqual(result.data["error"], "vacation_mode_still_active")
+
+
+class ColonizeRunnerTests(unittest.TestCase):
+    def test_colonize_requires_inputs(self):
+        runner = ColonizeRunner()
+        runner.log = lambda *_args, **_kwargs: None
+        result = runner.execute(
+            {
+                "job_id": "j1",
+                "account_id": "a1",
+                "game_account_id": "g1",
+                "inputs": {},
+            }
+        )
+        self.assertFalse(result.success)
+        self.assertEqual(result.data["error"], "missing_required_inputs")
+
+    def test_colonize_calls_preview_and_start(self):
+        runner = ColonizeRunner()
+        runner.resolve_credentials = lambda *_args, **_kwargs: {"server": "s78-br"}
+        runner.log = lambda *_args, **_kwargs: None
+        runner.save_game_client = lambda *_args, **_kwargs: None
+        client = _ClientStub()
+        runner.get_or_login_game_client = lambda *_args, **_kwargs: client
+
+        result = runner.execute(
+            {
+                "job_id": "j1",
+                "account_id": "a1",
+                "game_account_id": "g1",
+                "inputs": {
+                    "source_city_id": 39269,
+                    "island_id": 4478,
+                    "position": 5,
+                    "wood": 2250,
+                    "wine": 2500,
+                },
+            }
+        )
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.data["source_city_id"], "39269")
+        self.assertEqual(result.data["island_id"], "4478")
+        self.assertEqual(result.data["position"], 5)
+        self.assertEqual(result.data["resources"], {"wood": 2250, "wine": 2500})
+        self.assertEqual(result.data["feedback"], ["Sua ordem foi executada."])
 
 
 if __name__ == "__main__":

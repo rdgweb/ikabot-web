@@ -333,29 +333,35 @@ class PresetConfigureActionView(LoginRequiredMixin, View):
     ]
 
     def _city_meta(self, action_code, action_meta):
-        """Return (city_field_name, city_type) for actions with city input.
+        """Return (city_field_name, city_type, city_building) for actions with city input.
         city_type: 'multi' | 'single' | 'route' | None
+        city_building: building key required (e.g. 'pirateFortress') or None
         """
         from core.actions.constants import FIELD_CITY_SELECT
         inputs = action_meta.get("inputs") or []
-        city_keys = {inp["key"] for inp in inputs if inp.get("type") == FIELD_CITY_SELECT}
+        city_inputs = {inp["key"]: inp for inp in inputs if inp.get("type") == FIELD_CITY_SELECT}
+        city_keys = set(city_inputs.keys())
         if not city_keys:
-            return None, None
+            return None, None, None
         # Route actions have both from and to city
         if any(k in city_keys for k in ("from_city", "from_city_id")):
-            return "route", "route"
+            return "route", "route", None
         # Multi-city
         for k in ("cities", "own_city_ids"):
             if k in city_keys:
-                return k, "multi"
+                return k, "multi", city_inputs[k].get("city_building")
         # Single city
         for k in self.CITY_FIELD_NAMES:
             if k in city_keys:
-                return k, "single"
-        return None, None
+                return k, "single", city_inputs[k].get("city_building")
+        return None, None, None
 
-    def _account_cities(self, preset):
-        """Return list of {ga, cities} for all accounts in the preset."""
+    def _account_cities(self, preset, city_building=None):
+        """Return list of {ga, cities, auto_city_id} for all accounts in the preset.
+
+        When city_building is set, cities are filtered to those containing
+        that building. auto_city_id is set when exactly one city matches.
+        """
         result = []
         for pga in preset.preset_accounts.select_related("game_account__account").order_by("id"):
             ga = pga.game_account
@@ -363,13 +369,26 @@ class PresetConfigureActionView(LoginRequiredMixin, View):
                 cities = _get_cities(ga)
             except Exception:
                 cities = []
-            result.append({"ga": ga, "cities": cities})
+            auto_city_id = None
+            if city_building and cities:
+                matched = [
+                    c for c in cities
+                    if any(
+                        str(b.get("building", "")).strip() == city_building
+                        for b in (c.get("buildings") or [])
+                    )
+                ]
+                if matched:
+                    cities = matched
+                    if len(matched) == 1:
+                        auto_city_id = str(matched[0]["id"])
+            result.append({"ga": ga, "cities": cities, "auto_city_id": auto_city_id})
         return result
 
     def _build_ctx(self, preset, pa, action_meta, form, ga, construction_cities, action_order):
         """Build template context shared between GET and POST."""
-        city_field_name, city_type = self._city_meta(pa.action_code, action_meta)
-        account_cities = self._account_cities(preset) if city_type else []
+        city_field_name, city_type, city_building = self._city_meta(pa.action_code, action_meta)
+        account_cities = self._account_cities(preset, city_building=city_building) if city_type else []
 
         try:
             per_account = json.loads(pa.per_account_json or "{}")
@@ -393,6 +412,7 @@ class PresetConfigureActionView(LoginRequiredMixin, View):
             # City config
             "city_field_name": city_field_name,
             "city_type": city_type,
+            "city_building": city_building,
             "city_mode": city_mode,
             "account_cities": account_cities,
             "per_account_city": per_account,
@@ -443,9 +463,14 @@ class PresetConfigureActionView(LoginRequiredMixin, View):
             construction_cities = _construction_city_data(cities)
 
         form = JobCreateForm(request.POST, action_code=pa.action_code, game_account=ga, cities=construction_cities)
+        # In preset context: game_account and city fields not required (handled per-account at execution)
+        form.fields["game_account"].required = False
+        for _cf in self.CITY_FIELD_NAMES:
+            if _cf in form.fields:
+                form.fields[_cf].required = False
 
         # --- Save city config from POST ---
-        city_field_name, city_type = self._city_meta(pa.action_code, action_meta)
+        city_field_name, city_type, _city_building = self._city_meta(pa.action_code, action_meta)
         city_mode = request.POST.get("city_mode", "all")
         per_account: dict = {"__mode__": city_mode}
 
@@ -500,6 +525,34 @@ class PresetExecuteView(LoginRequiredMixin, View):
             messages.warning(request, "Nenhum job criado. Verifique se o preset tem contas e acoes configuradas.")
 
         return redirect("profiles:preset-detail", pk=preset.pk)
+
+
+class PresetUpdateView(LoginRequiredMixin, View):
+    """POST — HTMX: update preset name and description inline."""
+
+    def post(self, request, pk):
+        from django.shortcuts import render
+        preset = get_object_or_404(Preset, pk=pk)
+        name = request.POST.get("name", "").strip()
+        description = request.POST.get("description", "").strip()
+
+        if not name:
+            resp = HttpResponse("Nome obrigatorio.", status=400)
+            resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": "Nome obrigatorio."}})
+            return resp
+
+        if Preset.objects.filter(name=name).exclude(pk=pk).exists():
+            resp = HttpResponse(f"Ja existe um preset com o nome '{name}'.", status=400)
+            resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": f"Nome '{name}' ja existe."}})
+            return resp
+
+        preset.name = name
+        preset.description = description
+        preset.save(update_fields=["name", "description", "updated_at"])
+
+        resp = HttpResponse()
+        resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": "Preset atualizado."}, "preset-name-updated": {"name": name}})
+        return resp
 
 
 class PresetDeleteView(LoginRequiredMixin, View):

@@ -31,6 +31,7 @@ import requests
 
 from core.runner_registry import register_runner
 from game_client.exceptions import LoginError
+from services.wine_tavern import parse_townhall_state
 from runners.base import BaseRunner, RunnerResult
 
 logger = logging.getLogger(__name__)
@@ -541,6 +542,9 @@ class CheckStatusRunner(BaseRunner):
             max_resources = parse_js_json("maxResources")
             branch_office_resources = parse_js_json("branchOfficeResources")
 
+            action_request_match = re.search(r'"actionRequest"\s*:\s*"([a-f0-9]+)"', html)
+            action_request = action_request_match.group(1) if action_request_match else ""
+
             # Extract population data from currentResources JSON
             population = int(float(current_resources.get("population", 0) or 0)) if current_resources else 0
             citizens = int(float(current_resources.get("citizens", 0) or 0)) if current_resources else 0
@@ -614,6 +618,15 @@ class CheckStatusRunner(BaseRunner):
             if free_citizens_match:
                 free_citizens_str = re.sub(r'\D', '', free_citizens_match.group(1))
                 free_citizens = int(free_citizens_str) if free_citizens_str else 0
+
+            action_points_current = 0
+            action_points_match = re.search(
+                r'id="js_GlobalMenu_maxActionPoints"[^>]*>\s*([+\-\d.,]+)\s*<',
+                html,
+                re.I,
+            )
+            if action_points_match:
+                action_points_current = _safe_num_like(action_points_match.group(1), default=0)
 
             produced_tradegood_match = re.search(r'producedTradegood:\s*"?(\d+)"?', html)
             produced_tradegood = int(produced_tradegood_match.group(1)) if produced_tradegood_match else 0
@@ -716,6 +729,27 @@ class CheckStatusRunner(BaseRunner):
                     entry["construction_end_at"] = construction_end_at
                 buildings.append(entry)
 
+            townhall_position = next(
+                (
+                    int(entry.get("position", 0))
+                    for entry in buildings
+                    if str(entry.get("building") or "").strip().lower() == "townhall"
+                ),
+                0,
+            )
+            townhall_metrics = self._fetch_townhall_metrics(
+                session=session,
+                url_base=url_base,
+                city_id=city_id,
+                position=townhall_position,
+                action_request=action_request,
+            )
+            occupied_space = int(townhall_metrics.get("occupied_space") or population or 0)
+            max_pop = int(townhall_metrics.get("max_inhabitants") or population or 0)
+            action_points_max = int(townhall_metrics.get("action_points_max") or action_points_current or 0)
+            if townhall_metrics.get("action_points_available") is not None:
+                action_points_current = int(townhall_metrics.get("action_points_available") or 0)
+
             def safe_int(val, default=0):
                 if val is None:
                     return default
@@ -747,9 +781,12 @@ class CheckStatusRunner(BaseRunner):
                 "wine_consumption_gross": wine_consumption_gross,
                 "wine_savings": wine_savings,
                 "population": population,
-                "max_pop": population,
+                "occupied_space": occupied_space,
+                "max_pop": max_pop,
                 "citizens": citizens,
                 "free_citizens": free_citizens,
+                "action_points_current": action_points_current,
+                "action_points_max": action_points_max,
                 "buildings": buildings,
                 # Occupation fields (present when city/port is occupied by an enemy)
                 "city_occupied": city.get("cityOccupied") or None,
@@ -766,6 +803,37 @@ class CheckStatusRunner(BaseRunner):
         except Exception as e:
             logger.warning("Failed to fetch city %d: %s", city_id, e)
             return None
+
+    def _fetch_townhall_metrics(
+        self,
+        *,
+        session: requests.Session,
+        url_base: str,
+        city_id: int,
+        position: int,
+        action_request: str,
+    ) -> dict[str, int]:
+        try:
+            params = {
+                "view": "townHall",
+                "cityId": city_id,
+                "position": int(position),
+                "currentCityId": city_id,
+                "backgroundView": "city",
+            }
+            if action_request:
+                params["actionRequest"] = action_request
+            html = session.get(url_base, params=params, timeout=30).text
+            state = parse_townhall_state(html)
+            return {
+                "occupied_space": int(state.occupied_space or 0),
+                "max_inhabitants": int(state.max_inhabitants or 0),
+                "action_points_available": int(state.action_points_available or 0),
+                "action_points_max": int(state.action_points_max or 0),
+            }
+        except Exception as exc:
+            logger.debug("Could not fetch town hall metrics for city %d: %s", city_id, exc)
+            return {}
 
     # ══════════════════════════════════════════════════════════════════
     # MILITARY DATA

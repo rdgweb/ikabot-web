@@ -28,6 +28,14 @@ class GeneralsBankConfig(UUIDTimestampModel):
         default=True,
         help_text="Automatically enter/exit vacation mode during cycles.",
     )
+    auto_cycle_enabled = models.BooleanField(
+        default=False,
+        help_text="Keep a background manager loop active for this bank.",
+    )
+    auto_cycle_interval_minutes = models.IntegerField(
+        default=30,
+        help_text="When auto-cycle is enabled, wait this many minutes between cycle checks.",
+    )
     min_gold_floor = models.IntegerField(
         default=10000,
         help_text="When gold drops below this, trigger liquidation cycle.",
@@ -67,6 +75,14 @@ class GeneralsBankProducer(UUIDTimestampModel):
     production_template = models.JSONField(
         default=dict,
         help_text='Units this producer should train per cycle. e.g. {"303": 10, "210": 5}',
+    )
+    sell_only_cycle_production = models.BooleanField(
+        default=True,
+        help_text="If enabled, the bank cycle only sells units produced above the producer's starting stock in that cycle.",
+    )
+    keep_net_gold_positive = models.BooleanField(
+        default=True,
+        help_text="Reduce or block training if projected military upkeep would make the producer's net gold/hour negative.",
     )
     is_active = models.BooleanField(default=True)
 

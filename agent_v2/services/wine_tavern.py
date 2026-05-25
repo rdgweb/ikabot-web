@@ -91,6 +91,10 @@ class TownHallState:
     total_happiness: int
     happiness_text: str
     growth_per_hour: float
+    occupied_space: int
+    max_inhabitants: int
+    action_points_available: int
+    action_points_max: int
     breakdown: dict[str, int]
     raw_html: str
 
@@ -266,6 +270,10 @@ def parse_townhall_state(html: str) -> TownHallState:
     total_happiness = 0
     happiness_text = ""
     growth_per_hour = 0.0
+    occupied_space = 0
+    max_inhabitants = 0
+    action_points_available = 0
+    action_points_max = 0
 
     total_match = re.search(
         r'id=\\"js_TownHallHappinessLargeValue\\"[^>]*>\s*([+\-\d.,]+)\s*<',
@@ -313,6 +321,62 @@ def parse_townhall_state(html: str) -> TownHallState:
         except Exception:
             growth_per_hour = 0.0
 
+    occupied_match = re.search(
+        r'id=\\"js_TownHallOccupiedSpace\\"[^>]*>\s*([+\-\d.,]+)\s*<',
+        html,
+        re.I,
+    )
+    if not occupied_match:
+        occupied_match = re.search(
+            r'id="js_TownHallOccupiedSpace"[^>]*>\s*([+\-\d.,]+)\s*<',
+            html,
+            re.I,
+        )
+    if occupied_match:
+        occupied_space = _decode_number(occupied_match.group(1))
+
+    max_inhabitants_match = re.search(
+        r'id=\\"js_TownHallMaxInhabitants\\"[^>]*>\s*([+\-\d.,]+)\s*<',
+        html,
+        re.I,
+    )
+    if not max_inhabitants_match:
+        max_inhabitants_match = re.search(
+            r'id="js_TownHallMaxInhabitants"[^>]*>\s*([+\-\d.,]+)\s*<',
+            html,
+            re.I,
+        )
+    if max_inhabitants_match:
+        max_inhabitants = _decode_number(max_inhabitants_match.group(1))
+
+    ap_available_match = re.search(
+        r'id=\\"js_TownHallActionPointsAvailable\\"[^>]*>\s*([+\-\d.,]+)\s*<',
+        html,
+        re.I,
+    )
+    if not ap_available_match:
+        ap_available_match = re.search(
+            r'id="js_TownHallActionPointsAvailable"[^>]*>\s*([+\-\d.,]+)\s*<',
+            html,
+            re.I,
+        )
+    if ap_available_match:
+        action_points_available = _decode_number(ap_available_match.group(1))
+
+    ap_max_match = re.search(
+        r'id=\\"js_TownHallMaxActionPointsAvailable\\"[^>]*>\s*([+\-\d.,]+)\s*<',
+        html,
+        re.I,
+    )
+    if not ap_max_match:
+        ap_max_match = re.search(
+            r'id="js_TownHallMaxActionPointsAvailable"[^>]*>\s*([+\-\d.,]+)\s*<',
+            html,
+            re.I,
+        )
+    if ap_max_match:
+        action_points_max = _decode_number(ap_max_match.group(1))
+
     breakdown: dict[str, int] = {}
     for key, raw in re.findall(
         r'id=\\"(js_TownHallSatisfactionOverview[^\\"]+Value)\\"[^>]*>\s*([+\-\d.,]+)\s*<',
@@ -332,6 +396,10 @@ def parse_townhall_state(html: str) -> TownHallState:
         total_happiness=total_happiness,
         happiness_text=happiness_text,
         growth_per_hour=growth_per_hour,
+        occupied_space=occupied_space,
+        max_inhabitants=max_inhabitants,
+        action_points_available=action_points_available,
+        action_points_max=action_points_max,
         breakdown=breakdown,
         raw_html=html,
     )

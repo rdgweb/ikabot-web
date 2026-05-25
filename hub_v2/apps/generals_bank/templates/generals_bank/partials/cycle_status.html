@@ -72,6 +72,26 @@
       {% endfor %}
     </div>
     {% endif %}
+
+    <div class="px-5 pb-4">
+      <div class="text-[10px] font-bold uppercase tracking-[0.14em] text-muted mb-2">Jobs do ciclo</div>
+      <div class="flex flex-wrap gap-2 text-[11px]">
+        {% if active_cycle.manager_job_id %}
+        <a href="{% url 'jobs:job-detail' active_cycle.manager_job_id %}" class="inline-flex items-center gap-1 rounded-full border px-2 py-1 hover:bg-[rgba(79,134,185,0.06)]"
+           style="border-color: rgba(219,201,167,0.8);">
+          <i class="bi bi-diagram-3 text-[var(--ik-sea)]"></i>
+          <span class="font-mono">806 {{ active_cycle.manager_job_id|truncatechars:12 }}</span>
+        </a>
+        {% endif %}
+        {% if active_cycle.buy_job_id %}
+        <a href="{% url 'jobs:job-detail' active_cycle.buy_job_id %}" class="inline-flex items-center gap-1 rounded-full border px-2 py-1 hover:bg-[rgba(79,134,185,0.06)]"
+           style="border-color: rgba(219,201,167,0.8);">
+          <i class="bi bi-cart-check text-[var(--ik-good)]"></i>
+          <span class="font-mono">807 {{ active_cycle.buy_job_id|truncatechars:12 }}</span>
+        </a>
+        {% endif %}
+      </div>
+    </div>
   </div>
 
   {% if tasks %}
@@ -120,6 +140,22 @@
           {% if task.bm_city_name %}
           <div class="text-[10px] text-muted mt-1"><i class="bi bi-building"></i> {{ task.bm_city_name }}</div>
           {% endif %}
+          <div class="mt-2 flex flex-wrap gap-2 text-[10px]">
+            {% if task.training_job_id %}
+            <a href="{% url 'jobs:job-detail' task.training_job_id %}" class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 hover:bg-[rgba(79,134,185,0.06)]"
+               style="border-color: rgba(219,201,167,0.8);">
+              <i class="bi bi-hammer text-[var(--ik-sea)]"></i>
+              <span class="font-mono">809 {{ task.training_job_id|truncatechars:10 }}</span>
+            </a>
+            {% endif %}
+            {% if task.sell_job_id %}
+            <a href="{% url 'jobs:job-detail' task.sell_job_id %}" class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 hover:bg-[rgba(79,134,185,0.06)]"
+               style="border-color: rgba(219,201,167,0.8);">
+              <i class="bi bi-shop text-[var(--ik-gold)]"></i>
+              <span class="font-mono">803 {{ task.sell_job_id|truncatechars:10 }}</span>
+            </a>
+            {% endif %}
+          </div>
         </div>
         <span class="badge badge-sm shrink-0
           {% if task.status == 'sold' %}badge-good

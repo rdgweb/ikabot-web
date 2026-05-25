@@ -14,12 +14,53 @@ from django.views.generic import DetailView, ListView
 
 from apps.accounts.models import GameAccount
 from apps.game.models import AccountSnapshot
+from apps.jobs.models import Job
 from apps.jobs.services.workflows import create_job_with_workflow
 
 from .models import GeneralsBankConfig, GeneralsBankCycle, GeneralsBankCycleTask, GeneralsBankProducer
 from . import services
 
 logger = logging.getLogger(__name__)
+
+
+def _active_auto_scheduler_jobs(bank: GeneralsBankConfig):
+    return (
+        Job.objects.filter(
+            game_account=bank.bank_game_account,
+            action_code=806,
+            status__in=["queued", "running", "scheduled"],
+        )
+        .filter(inputs_json__contains=f'"bank_config_id": "{bank.pk}"')
+        .filter(inputs_json__contains='"_auto_loop": true')
+        .order_by("-created_at")
+    )
+
+
+def _ensure_auto_scheduler(bank: GeneralsBankConfig, *, created_by=None) -> Job | None:
+    existing = _active_auto_scheduler_jobs(bank).first()
+    if existing:
+        return existing
+    ga = bank.bank_game_account
+    return create_job_with_workflow(
+        account=ga.account,
+        game_account=ga,
+        node=ga.account.node,
+        action_code=806,
+        inputs={
+            "bank_config_id": str(bank.pk),
+            "_auto_loop": True,
+            "_poll_count": 0,
+        },
+        status="queued",
+        created_by=created_by,
+        trigger_type="generals_bank_auto",
+    )
+
+
+def _cancel_auto_scheduler(bank: GeneralsBankConfig) -> int:
+    now = timezone.now()
+    qs = _active_auto_scheduler_jobs(bank).filter(status__in=["queued", "scheduled"])
+    return qs.update(status="cancelled", finished_at=now, updated_at=now, lease_expires_at=None)
 
 
 def _normalize_units_map(raw: dict | None) -> dict[str, int]:
@@ -151,6 +192,7 @@ class BankDetailView(LoginRequiredMixin, DetailView):
             "gold": gold,
             "gold_low": gold < bank.min_gold_floor,
             "active_cycle": active_cycle,
+            "auto_scheduler_job": _active_auto_scheduler_jobs(bank).first(),
             "buyer_city_options": buyer_city_options,
             "eligible_producers": eligible_producers,
             "existing_producer_ids": existing_producer_ids,
@@ -161,6 +203,7 @@ class BankDetailView(LoginRequiredMixin, DetailView):
             "unit_catalog_json": json.dumps(TRAINING_UNITS.get("troops", []) + TRAINING_UNITS.get("fleet", [])),
             "resource_config": _RESOURCE_CONFIG,
             "producer_plan": services.build_producer_execution_plan(bank),
+            "producer_plan_json": json.dumps(services.build_producer_execution_plan(bank)),
         })
         return ctx
 
@@ -210,11 +253,17 @@ class BankUpdateView(LoginRequiredMixin, View):
         bank = get_object_or_404(GeneralsBankConfig, pk=pk)
         buyer_city_id = request.POST.get("buyer_city_id") or None
         bank.auto_vacation = request.POST.get("auto_vacation") == "on"
+        bank.auto_cycle_enabled = request.POST.get("auto_cycle_enabled") == "on"
+        bank.auto_cycle_interval_minutes = max(5, int(request.POST.get("auto_cycle_interval_minutes") or 30))
         bank.min_gold_floor = int(request.POST.get("min_gold_floor") or 10000)
         bank.notes = request.POST.get("notes", "")
         bank.buyer_city_id = int(buyer_city_id) if buyer_city_id else None
         bank.is_active = request.POST.get("is_active") == "on"
         bank.save()
+        if bank.auto_cycle_enabled and bank.is_active:
+            _ensure_auto_scheduler(bank, created_by=request.user)
+        else:
+            _cancel_auto_scheduler(bank)
         return redirect("generals_bank:detail", pk=bank.pk)
 
 
@@ -246,6 +295,8 @@ class BankProducerAddView(LoginRequiredMixin, View):
                 "min_resource_reserves": min_reserves,
                 "min_population_reserve": min_pop,
                 "production_template": production_template,
+                "sell_only_cycle_production": request.POST.get("sell_only_cycle_production", "on") == "on",
+                "keep_net_gold_positive": request.POST.get("keep_net_gold_positive", "on") == "on",
                 "is_active": True,
             },
         )
@@ -271,6 +322,8 @@ class BankProducerUpdateView(LoginRequiredMixin, View):
         producer.min_resource_reserves = min_reserves
         producer.min_population_reserve = min_pop
         producer.production_template = production_template
+        producer.sell_only_cycle_production = request.POST.get("sell_only_cycle_production") == "on"
+        producer.keep_net_gold_positive = request.POST.get("keep_net_gold_positive") == "on"
         producer.is_active = request.POST.get("is_active") == "on"
         producer.save()
         return redirect("generals_bank:detail", pk=bank.pk)

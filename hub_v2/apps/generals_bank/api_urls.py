@@ -4,6 +4,7 @@ from .api import (
     BankConfigView,
     BankCycleCompleteView,
     BankCycleCreateView,
+    BankCycleFailView,
     BankCycleStatusView,
     BankTaskUpdateView,
     BankBuyCompleteView,
@@ -17,5 +18,6 @@ urlpatterns = [
     path("generals-bank/cycles/<uuid:cycle_id>/status/", BankCycleStatusView.as_view(), name="cycle-status"),
     path("generals-bank/cycles/<uuid:cycle_id>/buy-complete/", BankBuyCompleteView.as_view(), name="cycle-buy-complete"),
     path("generals-bank/cycles/<uuid:cycle_id>/complete/", BankCycleCompleteView.as_view(), name="cycle-complete"),
+    path("generals-bank/cycles/<uuid:cycle_id>/fail/", BankCycleFailView.as_view(), name="cycle-fail"),
     path("generals-bank/tasks/<uuid:task_id>/update/", BankTaskUpdateView.as_view(), name="task-update"),
 ]

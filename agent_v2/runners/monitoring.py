@@ -112,9 +112,12 @@ def _safe_int(raw: Any, default: int = 0) -> int:
 
 
 def _city_is_full(city: dict[str, Any]) -> bool:
-    citizens = _to_int(city.get("citizens", 0), 0)
+    occupied = _to_int(
+        city.get("occupied_space", city.get("population", city.get("current_population", 0))),
+        0,
+    )
     max_pop = _to_int(city.get("max_pop", city.get("population", 0)), 0)
-    return bool(max_pop > 0 and citizens >= max_pop)
+    return bool(max_pop > 0 and occupied >= max_pop)
 
 
 def _wine_happiness_from_breakdown(breakdown: dict[str, int]) -> int:
@@ -616,9 +619,14 @@ class AlertWineRunner(BaseRunner):
         growth_happiness_floor: int,
     ) -> dict[str, Any]:
         city_id = str(city.get("id") or "").strip()
-        is_full = _city_is_full(city)
         self.log(job_id, "debug", f"{_city_name(city)}: lendo estado da cidade")
-        townhall = None if is_full else open_townhall_page(client, city_id=city_id, position=find_townhall_position(city))
+        townhall = open_townhall_page(client, city_id=city_id, position=find_townhall_position(city))
+        is_full = bool(
+            int(getattr(townhall, "max_inhabitants", 0) or 0) > 0
+            and int(getattr(townhall, "occupied_space", 0) or 0) >= int(getattr(townhall, "max_inhabitants", 0) or 0)
+        )
+        if not is_full:
+            is_full = _city_is_full(city)
         tavern_data = self._manage_tavern(
             job_id,
             client,
@@ -688,6 +696,8 @@ class AlertWineRunner(BaseRunner):
             "desired_net": desired_net,
             "desired_hours": desired_hours,
             "is_full": is_full,
+            "occupied_space": int(getattr(townhall, "occupied_space", 0) or 0),
+            "max_pop": int(getattr(townhall, "max_inhabitants", city_effective.get("max_pop", 0)) or 0),
             "total_happiness": int(townhall.total_happiness),
             "happiness_text": townhall.happiness_text,
             "growth_per_hour": float(townhall.growth_per_hour),
@@ -718,15 +728,12 @@ class AlertWineRunner(BaseRunner):
             self.log(job_id, "warn", f"{_city_name(city)}: taverna sem estado utilizavel")
             return None
 
-        if is_full:
-            desired_amount = 0
-        else:
-            desired_amount = self._desired_tavern_amount(
-                preview=preview,
-                townhall=townhall,
-                is_full=is_full,
-                growth_happiness_floor=growth_happiness_floor,
-            )
+        desired_amount = self._desired_tavern_amount(
+            preview=preview,
+            townhall=townhall,
+            is_full=is_full,
+            growth_happiness_floor=growth_happiness_floor,
+        )
         target_amount_hint = desired_amount
         happiness_floor = self._happiness_floor(is_full=is_full, growth_happiness_floor=growth_happiness_floor)
 
@@ -752,7 +759,7 @@ class AlertWineRunner(BaseRunner):
             townhall = open_townhall_page(client, city_id=city_id, position=find_townhall_position(city))
             changed = bool(result.get("changed"))
 
-        if townhall is not None and townhall.total_happiness < happiness_floor:
+        if is_full and townhall is not None and townhall.total_happiness < happiness_floor:
             state, townhall, changed, target_amount_hint = self._enforce_happiness_floor(
                 client,
                 city=city,
@@ -770,6 +777,15 @@ class AlertWineRunner(BaseRunner):
                         f"({townhall.total_happiness} < {happiness_floor}) mesmo apos subir a taverna"
                     ),
                 )
+        if (not is_full) and townhall is not None and int(state.current_amount) >= int(state.max_amount) and float(townhall.growth_per_hour) <= 0:
+            self.log(
+                job_id,
+                "warn",
+                (
+                    f"{_city_name(city)}: cidade ainda tem espaco na CM, mas o crescimento permaneceu "
+                    f"{townhall.growth_per_hour:.2f}/h mesmo com a taverna no maximo ({state.current_amount}/{state.max_amount})"
+                ),
+            )
         if changed:
             if townhall is None:
                 townhall = open_townhall_page(client, city_id=city_id, position=find_townhall_position(city))
@@ -806,6 +822,9 @@ class AlertWineRunner(BaseRunner):
         if preview.max_amount <= 0:
             return 0
 
+        if not is_full:
+            return int(preview.max_amount)
+
         if happiness_floor <= non_wine_happiness:
             return 0
 
@@ -814,13 +833,13 @@ class AlertWineRunner(BaseRunner):
             required_wine_happiness = max(0, happiness_floor - non_wine_happiness)
             target_amount = int(ceil(required_wine_happiness / max(0.1, happiness_per_step)))
         else:
-            target_amount = 0 if is_full else 1
+            target_amount = 1
 
         target_amount = max(0, min(preview.max_amount, target_amount))
         return target_amount
 
     def _happiness_floor(self, *, is_full: bool, growth_happiness_floor: int) -> int:
-        return 0 if is_full else max(0, int(growth_happiness_floor))
+        return max(0, int(growth_happiness_floor))
 
     def _enforce_happiness_floor(
         self,

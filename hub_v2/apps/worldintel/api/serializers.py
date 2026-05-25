@@ -15,7 +15,7 @@ class WorldDumpCitySerializer(serializers.Serializer):
     has_treaties = serializers.BooleanField(required=False, default=False)
     view_able = serializers.IntegerField(required=False, allow_null=True, default=0)
     infested_by_plague = serializers.BooleanField(required=False, default=False)
-    actions = serializers.ListField(required=False, default=list)
+    actions = serializers.JSONField(required=False, default=list)
 
 
 class WorldDumpIslandSerializer(serializers.Serializer):

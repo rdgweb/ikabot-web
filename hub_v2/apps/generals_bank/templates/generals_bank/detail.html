@@ -108,6 +108,21 @@
           <label for="auto_vacation" class="text-sm font-medium text-ink cursor-pointer">Férias automáticas após compra</label>
         </div>
         <div class="flex items-center gap-3">
+          <input type="checkbox" id="auto_cycle_enabled" name="auto_cycle_enabled" {% if bank.auto_cycle_enabled %}checked{% endif %}
+                 class="h-4 w-4 rounded" style="accent-color: var(--ik-sea);">
+          <label for="auto_cycle_enabled" class="text-sm font-medium text-ink cursor-pointer">Auto-ciclo do banco</label>
+        </div>
+        <div>
+          <label class="form-label">Intervalo do auto-ciclo <span class="font-normal text-muted text-xs">(min)</span></label>
+          <input type="number" name="auto_cycle_interval_minutes" value="{{ bank.auto_cycle_interval_minutes }}" class="form-input" min="5">
+          {% if auto_scheduler_job %}
+          <div class="mt-1 text-[11px] text-muted">
+            Scheduler:
+            <a href="{% url 'jobs:job-detail' auto_scheduler_job.pk %}" class="font-mono text-[var(--ik-sea)] hover:underline">{{ auto_scheduler_job.pk|truncatechars:12 }}</a>
+          </div>
+          {% endif %}
+        </div>
+        <div class="flex items-center gap-3">
           <input type="checkbox" id="is_active" name="is_active" {% if bank.is_active %}checked{% endif %}
                  class="h-4 w-4 rounded" style="accent-color: var(--ik-sea);">
           <label for="is_active" class="text-sm font-medium text-ink cursor-pointer">Banco ativo</label>
@@ -168,6 +183,18 @@
             {% endif %}
             <div class="mt-2.5">
               <div class="text-[10px] font-bold uppercase tracking-[0.14em] text-muted mb-1">Composição da produtora</div>
+              <div class="mb-2 flex flex-wrap gap-1.5">
+                <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] text-ink"
+                      style="border-color: var(--ik-line); background: rgba(79,134,185,0.06);">
+                  <i class="bi bi-box-seam text-[10px] text-muted"></i>
+                  {% if producer.sell_only_cycle_production %}Vende sÃ³ o lote do ciclo{% else %}Pode usar estoque antigo{% endif %}
+                </span>
+                <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] text-ink"
+                      style="border-color: var(--ik-line); background: rgba(79,134,185,0.06);">
+                  <i class="bi bi-coin text-[10px] text-muted"></i>
+                  {% if producer.keep_net_gold_positive %}MantÃ©m ouro/h positivo{% else %}Ignora saldo/h{% endif %}
+                </span>
+              </div>
               {% if producer.production_template %}
               <div class="flex flex-wrap gap-1.5">
                 {% for uid, qty in producer.production_template.items %}
@@ -194,7 +221,19 @@
                       <label class="form-label">Reserva de população</label>
                       <input type="number" name="min_population_reserve" value="{{ producer.min_population_reserve }}" min="0" class="form-input">
                     </div>
-                    <div class="flex items-center gap-3 pt-6">
+                    <div class="space-y-3 pt-1">
+                      <label class="flex items-center gap-3">
+                        <input type="checkbox" name="sell_only_cycle_production" {% if producer.sell_only_cycle_production %}checked{% endif %}
+                               class="h-4 w-4 rounded" style="accent-color: var(--ik-sea);">
+                        <span class="text-sm text-ink">Vender sÃ³ o lote da composiÃ§Ã£o do ciclo</span>
+                      </label>
+                      <label class="flex items-center gap-3">
+                        <input type="checkbox" name="keep_net_gold_positive" {% if producer.keep_net_gold_positive %}checked{% endif %}
+                               class="h-4 w-4 rounded" style="accent-color: var(--ik-sea);">
+                        <span class="text-sm text-ink">Manter ouro/h da produtora positivo</span>
+                      </label>
+                    </div>
+                    <div class="flex items-center gap-3 sm:col-span-2">
                       <input type="checkbox" id="producer_active_{{ producer.pk }}" name="is_active" {% if producer.is_active %}checked{% endif %}
                              class="h-4 w-4 rounded" style="accent-color: var(--ik-sea);">
                       <label for="producer_active_{{ producer.pk }}" class="text-sm text-ink">Produtora ativa</label>
@@ -202,7 +241,7 @@
                   </div>
                   <div>
                     <label class="form-label">Composição por ciclo</label>
-                    <div class="space-y-2">
+                    <div class="hidden space-y-2">
                       <template x-for="(row, idx) in rows" :key="idx">
                         <div class="grid grid-cols-[1fr_90px_auto] gap-2 items-center">
                           <select class="form-input" x-model="row.uid">
@@ -217,7 +256,7 @@
                         </div>
                       </template>
                     </div>
-                    <button type="button" class="btn btn-sm mt-2"
+                    <button type="button" class="hidden btn btn-sm mt-2"
                             @click="addRow()"
                             style="background: transparent; border: 1px solid var(--ik-line); color: var(--ik-sea);">
                       <i class="bi bi-plus"></i> Adicionar unidade
@@ -231,6 +270,15 @@
                              class="form-input text-center" placeholder="{{ res.label }}">
                       {% endfor %}
                     </div>
+                  </div>
+                  <div>
+                    <div class="text-[11px] font-semibold uppercase tracking-[0.16em] mb-2" style="color: var(--ik-sea);">Grade visual da composição</div>
+                    <div class="rounded-[14px] border p-3 text-[11px] text-muted" style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.72);">
+                      Use os cards abaixo para definir a composição. O editor antigo fica oculto, mas continua alimentando o mesmo JSON enviado ao banco.
+                    </div>
+                  </div>
+                  <div>
+                    {% include "generals_bank/partials/producer_template_picker.html" %}
                   </div>
                   <div class="flex justify-end">
                     <button type="submit" class="btn btn-primary btn-sm">Salvar produtora</button>
@@ -288,10 +336,25 @@
             </div>
           </div>
 
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label class="flex items-center gap-3 rounded-[14px] border px-3 py-2 text-sm"
+                   style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.72);">
+              <input type="checkbox" name="sell_only_cycle_production" checked
+                     class="h-4 w-4 rounded" style="accent-color: var(--ik-sea);">
+              <span class="text-ink">Vender sÃ³ o lote produzido no ciclo</span>
+            </label>
+            <label class="flex items-center gap-3 rounded-[14px] border px-3 py-2 text-sm"
+                   style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.72);">
+              <input type="checkbox" name="keep_net_gold_positive" checked
+                     class="h-4 w-4 rounded" style="accent-color: var(--ik-sea);">
+              <span class="text-ink">Manter ouro/h da produtora positivo</span>
+            </label>
+          </div>
+
           <div>
             <label class="form-label">Composição por ciclo</label>
             <p class="text-xs text-muted mb-3">Defina o lote que esta produtora deve treinar e listar sempre que o banco iniciar um ciclo.</p>
-            <div class="space-y-2">
+            <div class="hidden space-y-2">
               <template x-for="(row, idx) in rows" :key="idx">
                 <div class="grid grid-cols-[1fr_90px_auto] gap-2 items-center">
                   <select class="form-input" x-model="row.uid">
@@ -306,7 +369,7 @@
                 </div>
               </template>
             </div>
-            <button type="button" class="btn btn-sm mt-2"
+            <button type="button" class="hidden btn btn-sm mt-2"
                     @click="addRow()"
                     style="background: transparent; border: 1px solid var(--ik-line); color: var(--ik-sea);">
               <i class="bi bi-plus"></i> Adicionar unidade
@@ -328,6 +391,17 @@
               </div>
               {% endfor %}
             </div>
+          </div>
+
+          <div>
+            <div class="text-[11px] font-semibold uppercase tracking-[0.16em] mb-2" style="color: var(--ik-sea);">Grade visual da composição</div>
+            <div class="rounded-[14px] border p-3 text-[11px] text-muted" style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.72);">
+              Use os cards abaixo para definir a composição. O editor antigo fica oculto, mas continua alimentando o mesmo JSON enviado ao banco.
+            </div>
+          </div>
+
+          <div>
+            {% include "generals_bank/partials/producer_template_picker.html" %}
           </div>
 
           <div class="flex justify-end">
@@ -444,104 +518,96 @@
       </div>
 
       {% if not gold_low %}
-      {# Unit picker #}
-      <div>
-        <div class="flex items-center justify-between mb-3">
-          <div>
-            <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
-              <span class="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold text-white"
-                    style="background: var(--ik-sea);">1</span>
-              Unidades alvo
-            </div>
-            <p class="text-[11px] text-muted mt-0.5">
-              Selecione até 8 tipos e defina a quantidade. Deixe vazio para usar composição padrão das produtoras.
-            </p>
+      <div class="space-y-4">
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-[0.16em] mb-2" style="color: var(--ik-sea);">
+            <span class="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold text-white"
+                  style="background: var(--ik-sea);">1</span>
+            Plano das produtoras
           </div>
-          <template x-if="unitRows.length > 0">
-            <span class="text-[11px] rounded-full px-2 py-0.5 font-bold"
-                  :style="unitRows.length >= 8 ? 'background: rgba(201,156,78,0.12); color: var(--ik-warn);' : 'background: rgba(79,134,185,0.1); color: var(--ik-sea);'"
-                  x-text="`${unitRows.length}/8`"></span>
+          <p class="text-[11px] text-muted">
+            O ciclo usa a composição já definida em cada produtora. Nada é escolhido manualmente aqui.
+          </p>
+        </div>
+
+        <div class="rounded-[16px] border p-4"
+             style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.75);">
+          <div class="text-[10px] font-bold uppercase tracking-[0.14em] text-muted mb-2">Total agregado do ciclo</div>
+          {% if producer_plan.aggregate_units %}
+          <div class="flex flex-wrap gap-2">
+            {% for uid, qty in producer_plan.aggregate_units.items %}
+            <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs"
+                  style="border-color: rgba(219,201,167,0.8); background: rgba(255,252,245,0.95);">
+              <span class="font-bold text-ink">{{ qty|intcomma }}×</span>
+              <span class="text-muted">u{{ uid }}</span>
+            </span>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="text-sm text-[var(--ik-warn)]">Nenhuma composição válida configurada nas produtoras.</div>
+          {% endif %}
+        </div>
+
+        <div class="rounded-[16px] border p-4"
+             style="border-color: rgba(79,134,185,0.18); background: rgba(79,134,185,0.05);">
+          <div class="text-[10px] font-bold uppercase tracking-[0.14em] text-muted mb-2">Tarefas previstas</div>
+          {% if producer_plan.tasks %}
+          <div class="space-y-2">
+            {% for task in producer_plan.tasks %}
+            <div class="flex items-center justify-between gap-3 rounded-[12px] border px-3 py-2 text-xs"
+                 style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.8);">
+              <div>
+                <div class="font-semibold text-ink">{{ task.producer_name }}</div>
+                <div class="text-muted">{{ task.city_name }} → {{ task.bm_city_name }}</div>
+              </div>
+              <div class="text-right">
+                <div class="font-bold text-ink">{{ task.quantity_target|intcomma }}× u{{ task.unit_id }}</div>
+                <div class="text-muted">{% if task.same_city_flow %}mesma cidade{% else %}com transporte{% endif %}</div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="text-sm text-[var(--ik-warn)]">Nenhuma tarefa pôde ser montada.</div>
+          {% endif %}
+        </div>
+
+        {% if producer_plan.warnings %}
+        <div class="rounded-[16px] border p-4"
+             style="border-color: rgba(201,156,78,0.35); background: rgba(201,156,78,0.08);">
+          <div class="text-[10px] font-bold uppercase tracking-[0.14em] mb-2" style="color: var(--ik-warn);">Alertas do plano</div>
+          <ul class="space-y-1 text-xs text-ink">
+            {% for warning in producer_plan.warnings %}
+            <li><i class="bi bi-exclamation-triangle-fill mr-1" style="color: var(--ik-warn);"></i>{{ warning }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        <div x-show="simulation" x-cloak class="rounded-[16px] border p-4"
+             style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.82);">
+          <div class="flex items-center justify-between gap-3 mb-2">
+            <div class="text-[10px] font-bold uppercase tracking-[0.14em] text-muted">Prévia do servidor</div>
+            <span class="text-[11px] text-muted" x-text="simulation && simulation.tasks ? `${simulation.tasks.length} tarefa(s)` : ''"></span>
+          </div>
+          <template x-if="simulation && simulation.aggregate_units">
+            <div class="flex flex-wrap gap-2 mb-3">
+              <template x-for="entry in Object.entries(simulation.aggregate_units)" :key="entry[0]">
+                <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs"
+                      style="border-color: rgba(219,201,167,0.8); background: rgba(255,252,245,0.95);">
+                  <span class="font-bold text-ink" x-text="`${entry[1]}×`"></span>
+                  <span class="text-muted" x-text="`u${entry[0]}`"></span>
+                </span>
+              </template>
+            </div>
           </template>
-        </div>
-
-        {# Fleet #}
-        <div class="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-muted flex items-center gap-1.5">
-          <i class="bi bi-water" style="color: var(--ik-sea);"></i> Frota
-        </div>
-        <div class="grid grid-cols-3 gap-2 sm:grid-cols-4 mb-4">
-          {% for u in fleet_units %}
-          <div @click="toggleUnit('{{ u.id }}')"
-               class="relative overflow-hidden rounded-[16px] border p-2.5 text-center transition-all duration-150 cursor-pointer"
-               :class="isSelected('{{ u.id }}')
-                 ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_6px_18px_rgba(79,134,185,0.2)] -translate-y-px'
-                 : unitRows.length >= 8 && !isSelected('{{ u.id }}')
-                   ? 'opacity-40 cursor-not-allowed'
-                   : 'hover:-translate-y-px hover:border-[rgba(79,134,185,0.4)] hover:shadow-[0_4px_12px_rgba(79,134,185,0.1)]'"
-               :style="isSelected('{{ u.id }}')
-                 ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.09), rgba(255,255,255,0.92));'
-                 : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
-            <div class="absolute inset-x-0 top-0 h-8"
-                 style="background: linear-gradient(135deg, rgba(79,134,185,0.07), transparent);"></div>
-            <div class="relative">
-              <div class="h-9 w-9 mx-auto flex items-center justify-center rounded-[10px] border mb-1.5"
-                   style="border-color: rgba(79,134,185,0.15); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
-                {% with icon=u.name|unit_icon %}
-                {% if icon %}<img src="{% static icon %}" alt="{{ u.name }}" class="h-7 w-7 object-contain">
-                {% else %}<i class="bi bi-water text-base" style="color: var(--ik-sea);"></i>{% endif %}
-                {% endwith %}
-              </div>
-              <div class="text-[10px] font-bold text-ink leading-tight">{{ u.name }}</div>
-              <div x-show="isSelected('{{ u.id }}')" @click.stop class="mt-2">
-                <input type="number" min="1"
-                       :value="getQty('{{ u.id }}')"
-                       @input="setQty('{{ u.id }}', $event.target.value)"
-                       class="w-full rounded-[8px] border px-1.5 py-1 text-center text-xs font-bold text-ink outline-none"
-                       style="border-color: rgba(79,134,185,0.35); background: rgba(255,255,255,0.95);"
-                       placeholder="Qtd">
-              </div>
-            </div>
-          </div>
-          {% endfor %}
-        </div>
-
-        {# Troops #}
-        <div class="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-muted flex items-center gap-1.5">
-          <i class="bi bi-shield-shaded" style="color: var(--ik-bad);"></i> Tropas
-        </div>
-        <div class="grid grid-cols-3 gap-2 sm:grid-cols-4">
-          {% for u in troop_units %}
-          <div @click="toggleUnit('{{ u.id }}')"
-               class="relative overflow-hidden rounded-[16px] border p-2.5 text-center transition-all duration-150 cursor-pointer"
-               :class="isSelected('{{ u.id }}')
-                 ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_6px_18px_rgba(79,134,185,0.2)] -translate-y-px'
-                 : unitRows.length >= 8 && !isSelected('{{ u.id }}')
-                   ? 'opacity-40 cursor-not-allowed'
-                   : 'hover:-translate-y-px hover:border-[rgba(79,134,185,0.4)] hover:shadow-[0_4px_12px_rgba(79,134,185,0.1)]'"
-               :style="isSelected('{{ u.id }}')
-                 ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.09), rgba(255,255,255,0.92));'
-                 : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
-            <div class="absolute inset-x-0 top-0 h-8"
-                 style="background: linear-gradient(135deg, rgba(79,134,185,0.07), transparent);"></div>
-            <div class="relative">
-              <div class="h-9 w-9 mx-auto flex items-center justify-center rounded-[10px] border mb-1.5"
-                   style="border-color: rgba(79,134,185,0.15); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
-                {% with icon=u.name|unit_icon %}
-                {% if icon %}<img src="{% static icon %}" alt="{{ u.name }}" class="h-7 w-7 object-contain">
-                {% else %}<i class="bi bi-shield-shaded text-base" style="color: var(--ik-bad);"></i>{% endif %}
-                {% endwith %}
-              </div>
-              <div class="text-[10px] font-bold text-ink leading-tight">{{ u.name }}</div>
-              <div x-show="isSelected('{{ u.id }}')" @click.stop class="mt-2">
-                <input type="number" min="1"
-                       :value="getQty('{{ u.id }}')"
-                       @input="setQty('{{ u.id }}', $event.target.value)"
-                       class="w-full rounded-[8px] border px-1.5 py-1 text-center text-xs font-bold text-ink outline-none"
-                       style="border-color: rgba(79,134,185,0.35); background: rgba(255,255,255,0.95);"
-                       placeholder="Qtd">
-              </div>
-            </div>
-          </div>
-          {% endfor %}
+          <template x-if="simulation && simulation.warnings && simulation.warnings.length">
+            <ul class="space-y-1 text-xs text-ink">
+              <template x-for="warning in simulation.warnings" :key="warning">
+                <li><i class="bi bi-exclamation-triangle-fill mr-1" style="color: var(--ik-warn);"></i><span x-text="warning"></span></li>
+              </template>
+            </ul>
+          </template>
         </div>
       </div>
       {% endif %}
@@ -552,15 +618,17 @@
     <div class="border-t px-6 py-4 flex items-center justify-between gap-3"
          style="border-color: rgba(40,20,10,0.10); background: rgba(0,0,0,0.02);">
       <div class="text-[11px] text-muted">
-        <template x-if="unitRows.length > 0">
-          <span x-text="`${unitRows.length} tipo(s) selecionado(s)`"></span>
-        </template>
-        <template x-if="unitRows.length === 0 && !{{ gold_low|yesno:'true,false' }}">
-          <span>Composição padrão das produtoras</span>
-        </template>
+        {% if gold_low %}
+        <span>Ciclo de liquidação</span>
+        {% else %}
+        <span>Fluxo gerenciado pelas produtoras configuradas</span>
+        {% endif %}
       </div>
       <div class="flex gap-2">
         <button @click="showStartModal = false" class="btn btn-sm" style="background: transparent; border: 1px solid var(--ik-line); color: var(--ik-ink);">Cancelar</button>
+        <button @click="simulateCycle()" class="btn btn-sm" style="background: transparent; border: 1px solid var(--ik-line); color: var(--ik-sea);">
+          <i class="bi bi-search"></i> Simular
+        </button>
         <button @click="startCycle()" class="btn btn-primary btn-sm">
           <i class="bi bi-play-fill"></i> Iniciar
         </button>
@@ -572,11 +640,12 @@
 
 </div>{# /bankDetail #}
 <script>
-function bankDetail() {
+window.bankDetail = function() {
   return {
     tab: 'config',
     showStartModal: false,
-    unitRows: [],
+    simulation: null,
+    producerPlan: {{ producer_plan_json|safe }},
     _cycleTimer: null,
 
     init() {
@@ -604,81 +673,97 @@ function bankDetail() {
       });
     },
 
-    isSelected(uid) {
-      return this.unitRows.some(r => String(r.uid) === String(uid));
-    },
-
-    getQty(uid) {
-      const row = this.unitRows.find(r => String(r.uid) === String(uid));
-      return row ? row.qty : 1;
-    },
-
-    setQty(uid, val) {
-      const row = this.unitRows.find(r => String(r.uid) === String(uid));
-      if (row) row.qty = parseInt(val) || 1;
-    },
-
-    toggleUnit(uid) {
-      const idx = this.unitRows.findIndex(r => String(r.uid) === String(uid));
-      if (idx >= 0) {
-        this.unitRows.splice(idx, 1);
-      } else if (this.unitRows.length < 8) {
-        this.unitRows.push({ uid: String(uid), qty: 1 });
-      }
-    },
-
-    buildTargetUnits() {
-      const result = {};
-      for (const r of this.unitRows) {
-        if (r.uid && r.qty > 0) result[r.uid] = r.qty;
-      }
-      return result;
-    },
-
-    startCycle() {
-      const tu = this.buildTargetUnits();
-      fetch('{% url "generals_bank:start-cycle" bank.pk %}', {
+    async postCycle(body) {
+      const response = await fetch('{% url "generals_bank:start-cycle" bank.pk %}', {
         method: 'POST',
         headers: {
           'X-CSRFToken': '{{ csrf_token }}',
           'Content-Type': 'application/x-www-form-urlencoded'
         },
-        body: 'target_units=' + encodeURIComponent(JSON.stringify(tu))
-      })
-      .then(r => r.json())
-      .then(d => {
-        if (d.ok) {
+        body: new URLSearchParams(body).toString()
+      });
+      return response.json();
+    },
+
+    async simulateCycle() {
+      try {
+        const data = await this.postCycle({ simulate: '1' });
+        if (data.ok) {
+          this.simulation = data;
+        } else {
+          alert(data.error || 'Erro ao simular ciclo');
+        }
+      } catch (error) {
+        alert('Erro de comunicação com o servidor');
+      }
+    },
+
+    async startCycle() {
+      try {
+        const data = await this.postCycle({});
+        if (data.ok) {
           this.showStartModal = false;
-          this.unitRows = [];
+          this.simulation = null;
           this.openCycleTab();
         } else {
-          alert(d.error || 'Erro ao iniciar ciclo');
+          alert(data.error || 'Erro ao iniciar ciclo');
         }
-      })
-      .catch(() => alert('Erro de comunicação com o servidor'));
+      } catch (error) {
+        alert('Erro de comunicação com o servidor');
+      }
     }
   };
-}
+};
 
-function producerEditor(initialTemplate) {
+window.producerEditor = function(initialTemplate) {
   const tpl = initialTemplate || {};
+  const qtyMap = {};
+  for (const [uid, qty] of Object.entries(tpl)) {
+    const parsedQty = parseInt(qty, 10) || 0;
+    if (parsedQty > 0) qtyMap[String(uid)] = parsedQty;
+  }
   return {
-    rows: Object.entries(tpl).map(([uid, qty]) => ({ uid: String(uid), qty: parseInt(qty) || 1 })),
+    rows: Object.entries(qtyMap).map(([uid, qty]) => ({ uid: String(uid), qty })),
+    qtyMap,
 
     addRow() {
       this.rows.push({ uid: '', qty: 1 });
     },
 
+    syncRows() {
+      this.rows = Object.entries(this.qtyMap)
+        .filter(([, qty]) => (parseInt(qty, 10) || 0) > 0)
+        .map(([uid, qty]) => ({ uid: String(uid), qty: parseInt(qty, 10) || 0 }));
+    },
+
+    qty(unitId) {
+      return this.qtyMap[String(unitId)] || 0;
+    },
+
+    setQty(unitId, value) {
+      const uid = String(unitId);
+      const qty = Math.max(0, parseInt(value, 10) || 0);
+      if (qty > 0) {
+        this.qtyMap[uid] = qty;
+      } else {
+        delete this.qtyMap[uid];
+      }
+      this.syncRows();
+    },
+
+    stepUnit(unitId, delta) {
+      this.setQty(unitId, this.qty(unitId) + delta);
+    },
+
     serializedTemplate() {
       const result = {};
-      for (const r of this.rows) {
-        const uid = String(r.uid).trim();
-        const qty = parseInt(r.qty) || 0;
-        if (uid && qty > 0) result[uid] = qty;
+      for (const [uid, qty] of Object.entries(this.qtyMap)) {
+        const parsedQty = parseInt(qty, 10) || 0;
+        if (parsedQty > 0) result[String(uid)] = parsedQty;
       }
       return JSON.stringify(result);
     }
   };
-}
+};
 </script>
 {% endblock %}

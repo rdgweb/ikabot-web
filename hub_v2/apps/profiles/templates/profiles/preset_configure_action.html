@@ -27,21 +27,13 @@
     </div>
   </div>
 
-  {% if not game_account %}
+  {% if not preset.preset_accounts.count %}
   <div class="mb-4 p-3 rounded-lg" style="background: rgba(201,156,78,0.08); border: 1px solid rgba(201,156,78,0.2);">
     <p class="text-sm font-medium" style="color: var(--ik-gold);">
       <i class="bi bi-exclamation-triangle-fill mr-1"></i>
-      Selecione contas no preset antes de configurar ações que precisam de cidades (doação, transporte, construção).
+      Selecione contas no preset antes de configurar ações que precisam de cidades.
     </p>
     <a href="{% url 'profiles:preset-detail' preset.pk %}" class="text-xs underline mt-1 block" style="color: var(--ik-gold);">← Voltar e selecionar contas</a>
-  </div>
-  {% else %}
-  <div class="mb-4 p-2 rounded-lg flex items-center gap-2 text-xs text-muted" style="background: var(--ik-sand-light);">
-    <i class="bi bi-info-circle text-[10px]"></i>
-    Configuração baseada nas cidades de <strong class="text-ink">{{ game_account.name }}</strong>.
-    {% if preset.preset_accounts.count > 1 %}
-    Configuração padrão será aplicada a todas as {{ preset.preset_accounts.count }} contas selecionadas.
-    {% endif %}
   </div>
   {% endif %}
 
@@ -116,7 +108,7 @@
           <button type="button" @click="cityMode='auto'"
                   class="px-3 py-1.5 rounded-lg border text-xs font-medium transition-all"
                   :class="cityMode==='auto' ? 'border-[var(--ik-sea)] bg-[var(--ik-sea)]/10 text-[var(--ik-sea)]' : 'border-[var(--ik-line)] text-muted'">
-            <i class="bi bi-magic"></i> Automático (detecta edifício)
+            <i class="bi bi-magic"></i> {% if city_building %}Detectar {{ city_building }} automaticamente{% else %}Automático (detecta edifício){% endif %}
           </button>
           <button type="button" @click="cityMode='per_account'"
                   class="px-3 py-1.5 rounded-lg border text-xs font-medium transition-all"
@@ -137,7 +129,12 @@
           <i class="bi bi-info-circle"></i> Todas as cidades de cada conta serão usadas na execução. Novas cidades são incluídas automaticamente.
         </div>
         <div x-show="cityMode==='auto'" class="mb-3 text-xs text-muted p-2 rounded-lg" style="background: var(--ik-sand-light);">
-          <i class="bi bi-info-circle"></i> O sistema detecta automaticamente qual cidade tem o edifício relevante (santuário, fortaleza pirata, etc.) para cada conta.
+          <i class="bi bi-info-circle"></i>
+          {% if city_building %}
+          O sistema detecta automaticamente qual cidade tem <strong>{{ city_building }}</strong> em cada conta.
+          {% else %}
+          O sistema detecta automaticamente qual cidade tem o edifício relevante para cada conta.
+          {% endif %}
         </div>
 
         {# Per-account city pickers #}
@@ -148,19 +145,24 @@
               <i class="bi bi-controller text-xs" style="color: var(--ik-gold);"></i>
               <span class="text-xs font-semibold text-ink">{{ ac_data.ga.name }}</span>
               <span class="text-[10px] text-muted">{{ ac_data.ga.server_id }}</span>
+              {% if ac_data.auto_city_id %}
+              <span class="text-[10px] px-1.5 py-0.5 rounded" style="background: rgba(95,140,78,0.1); color: var(--ik-good);">
+                <i class="bi bi-check-circle-fill"></i> edifício detectado
+              </span>
+              {% endif %}
             </div>
             {% if city_type == "multi" %}
             <div class="flex flex-wrap gap-1.5">
               {% for city in ac_data.cities %}
+              {% with ga_cfg=per_account_city|get_item:ac_data.ga.pk %}
               <label class="flex items-center gap-1.5 px-2 py-1 rounded-lg border cursor-pointer text-[11px] transition-all hover:border-[var(--ik-sea)]/50"
                      style="border-color: var(--ik-line);">
                 <input type="checkbox" name="cities__{{ ac_data.ga.pk }}" value="{{ city.id }}"
-                       {% with ga_cfg=per_account_city|get_item:ac_data.ga.pk|default:"" %}
-                       {% if ga_cfg and city.id|stringformat:"s" in ga_cfg.cities %}checked{% elif not ga_cfg %}checked{% endif %}
-                       {% endwith %}
+                       {% if ga_cfg %}{% if city.id|stringformat:"s" in ga_cfg.cities %}checked{% endif %}{% else %}checked{% endif %}
                        class="rounded border-[var(--ik-line)]">
                 {{ city.name }}
               </label>
+              {% endwith %}
               {% empty %}
               <span class="text-xs text-muted">Sem cidades no snapshot</span>
               {% endfor %}
@@ -168,14 +170,21 @@
             {% elif city_type == "single" %}
             <div class="flex flex-wrap gap-1.5">
               {% for city in ac_data.cities %}
+              {% with ga_cfg=per_account_city|get_item:ac_data.ga.pk city_str=city.id|stringformat:"s" %}
+              {% with saved_val=ga_cfg|get_item:city_field_name|default:"" %}
               <label class="flex items-center gap-1.5 px-2 py-1 rounded-lg border cursor-pointer text-[11px] transition-all hover:border-[var(--ik-sea)]/50"
                      style="border-color: var(--ik-line);">
                 <input type="radio" name="city__{{ ac_data.ga.pk }}" value="{{ city.id }}"
-                       {% with ga_cfg=per_account_city|get_item:ac_data.ga.pk|default:"" %}
-                       {% if ga_cfg and city.id|stringformat:"s" == ga_cfg.city_id %}checked{% elif not ga_cfg and forloop.first %}checked{% endif %}
-                       {% endwith %}>
+                       {% if saved_val %}{% if city_str == saved_val|stringformat:"s" %}checked{% endif %}
+                       {% elif ac_data.auto_city_id %}{% if city_str == ac_data.auto_city_id %}checked{% endif %}
+                       {% elif forloop.first %}checked{% endif %}>
                 {{ city.name }}
+                {% if ac_data.auto_city_id and city_str == ac_data.auto_city_id %}
+                <i class="bi bi-check-circle-fill text-[10px]" style="color: var(--ik-good);"></i>
+                {% endif %}
               </label>
+              {% endwith %}
+              {% endwith %}
               {% empty %}
               <span class="text-xs text-muted">Sem cidades no snapshot</span>
               {% endfor %}

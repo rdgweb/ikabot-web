@@ -16,6 +16,7 @@ from core.auth.permissions import IsAgent
 
 from .models import GeneralsBankConfig, GeneralsBankCycle, GeneralsBankCycleTask, GeneralsBankTransaction
 from . import services
+from apps.market.models import BlackMarketOffer
 
 logger = logging.getLogger(__name__)
 
@@ -100,9 +101,10 @@ class BankCycleCreateView(APIView):
         if mode == "liquidation":
             cycle = services.create_liquidation_cycle(config, manager_job=manager_job)
         else:
-            if not target_units:
-                return Response({"error": "target_units required for accumulation"}, status=status.HTTP_400_BAD_REQUEST)
-            cycle = services.create_accumulation_cycle(config, target_units, manager_job=manager_job)
+            try:
+                cycle = services.create_accumulation_cycle(config, target_units, manager_job=manager_job)
+            except ValueError as exc:
+                return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         tasks = list(cycle.tasks.select_related("producer_game_account").all())
         return Response({
@@ -220,6 +222,21 @@ class BankBuyCompleteView(APIView):
                     producer_game_account=counterpart_ga,
                     unit_id=int(p.get("unit_id", 0)),
                 ).update(status="sold", updated_at=timezone.now())
+                offer_filters = {
+                    "game_account": counterpart_ga,
+                    "unit_id": int(p.get("unit_id", 0)),
+                    "amount": int(p.get("quantity", 0)),
+                    "unit_price": int(p.get("unit_price", 0)),
+                    "status": "active",
+                }
+                seller_city_id = int(p.get("seller_city_id", 0) or 0)
+                if seller_city_id > 0:
+                    offer_filters["city_id"] = seller_city_id
+                matching_offer = BlackMarketOffer.objects.filter(**offer_filters).order_by("-created_at").first()
+                if matching_offer:
+                    matching_offer.status = "sold"
+                    matching_offer.closed_at = timezone.now()
+                    matching_offer.save(update_fields=["status", "closed_at", "updated_at"])
             except Exception as exc:
                 logger.warning("Failed to record purchase: %s", exc)
 
@@ -243,6 +260,22 @@ class BankCycleCompleteView(APIView):
 
         services.advance_cycle_status(cycle, "completed", "Ciclo concluído com sucesso.")
         return Response({"ok": True})
+
+
+class BankCycleFailView(APIView):
+    """POST /api/agent/generals-bank/cycles/<cycle_id>/fail/"""
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request, cycle_id):
+        try:
+            cycle = GeneralsBankCycle.objects.get(pk=cycle_id)
+        except GeneralsBankCycle.DoesNotExist:
+            return Response({"error": "Cycle not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        note = str(request.data.get("note") or "Ciclo falhou.")
+        services.advance_cycle_status(cycle, "failed", note)
+        return Response({"ok": True, "cycle_status": cycle.status})
 
 
 class BankConfigView(APIView):
@@ -271,6 +304,8 @@ class BankConfigView(APIView):
             "bank_ga_id": str(config.bank_game_account_id),
             "buyer_city_id": config.buyer_city_id,
             "auto_vacation": config.auto_vacation,
+            "auto_cycle_enabled": config.auto_cycle_enabled,
+            "auto_cycle_interval_minutes": config.auto_cycle_interval_minutes,
             "min_gold_floor": config.min_gold_floor,
             "current_gold": gold,
             "recommended_mode": mode,
@@ -281,6 +316,9 @@ class BankConfigView(APIView):
                     "producer_name": p.producer_game_account.name,
                     "min_resource_reserves": p.min_resource_reserves,
                     "min_population_reserve": p.min_population_reserve,
+                    "production_template": p.production_template,
+                    "sell_only_cycle_production": p.sell_only_cycle_production,
+                    "keep_net_gold_positive": p.keep_net_gold_positive,
                 }
                 for p in config.producers.filter(is_active=True)
             ],

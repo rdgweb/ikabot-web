@@ -50,6 +50,7 @@ class GeneralsBankManageRunner(BaseRunner):
         target_units = inputs.get("target_units") or {}
         cycle_id = str(inputs.get("_cycle_id") or "").strip()
         poll_count = _to_int(inputs.get("_poll_count"), 0)
+        auto_loop = bool(inputs.get("_auto_loop"))
 
         if not bank_config_id:
             return RunnerResult(success=False, data={"error": "bank_config_id required"})
@@ -62,6 +63,9 @@ class GeneralsBankManageRunner(BaseRunner):
 
         recommended_mode = config_data.get("recommended_mode", "accumulation")
         active_cycle_id = str(config_data.get("active_cycle_id") or "").strip()
+        auto_cycle_enabled = bool(config_data.get("auto_cycle_enabled", False))
+        auto_cycle_interval_minutes = max(5, _to_int(config_data.get("auto_cycle_interval_minutes"), 30))
+        loop_enabled = auto_loop and auto_cycle_enabled
 
         # Use existing cycle or create new one
         if cycle_id:
@@ -83,6 +87,14 @@ class GeneralsBankManageRunner(BaseRunner):
                 if error == "active_cycle_exists":
                     effective_cycle_id = str(create_result.get("cycle_id") or "")
                     self.log(jid, "warn", f"Ciclo ativo encontrado: {effective_cycle_id}")
+                elif loop_enabled and error in {"no_producer_template"}:
+                    delay = auto_cycle_interval_minutes * 60
+                    self.log(jid, "warn", f"Sem plano viavel no banco; novo check automatico em {auto_cycle_interval_minutes} min")
+                    return RunnerResult(
+                        success=True,
+                        reschedule_seconds=delay,
+                        reschedule_inputs={**inputs, "_poll_count": 0, "_cycle_id": ""},
+                    )
                 else:
                     self.log(jid, "error", f"Falha ao criar ciclo: {error}")
                     return RunnerResult(success=False, data={"error": error})
@@ -108,6 +120,14 @@ class GeneralsBankManageRunner(BaseRunner):
         if is_terminal:
             success = cycle_status == "completed"
             self.log(jid, "info" if success else "error", f"Ciclo finalizado: {cycle_status}")
+            if loop_enabled:
+                delay = auto_cycle_interval_minutes * 60
+                self.log(jid, "info", f"Auto-ciclo armado; novo check em {auto_cycle_interval_minutes} min")
+                return RunnerResult(
+                    success=True,
+                    reschedule_seconds=delay,
+                    reschedule_inputs={**inputs, "_cycle_id": "", "_poll_count": 0},
+                )
             return RunnerResult(success=success, data={"cycle_id": effective_cycle_id, "final_status": cycle_status})
 
         if cycle_status in ("sleeping", "bank_buying"):
@@ -190,6 +210,7 @@ class GeneralsBankProducerTaskRunner(BaseRunner):
         bm_city_id = _to_int((inputs.get("bm_city_id") or task.get("bm_city_id")))
         unit_id = _to_int(task.get("unit_id"))
         quantity_target = _to_int(task.get("quantity_target"))
+        sell_only_cycle_production = bool(inputs.get("sell_only_cycle_production", True))
         if not city_id or not bm_city_id or not unit_id or not quantity_target:
             self.log(jid, "error", "Tarefa do banco incompleta: city/bm_city/unit/qty ausentes")
             return RunnerResult(success=False, data={"error": "incomplete_task"})
@@ -228,17 +249,28 @@ class GeneralsBankProducerTaskRunner(BaseRunner):
             queue_entries = [q for q in (barracks_state.get("training_queue") or []) if _to_int(q.get("unit_id")) == unit_id]
             queued_count = sum(_to_int(q.get("quantity")) for q in queue_entries)
             queued_eta = max((_to_int(q.get("remaining_seconds")) for q in queue_entries), default=0)
+            baseline_count = _to_int(inputs.get("_baseline_count"))
+            baseline_initialized = bool(inputs.get("_baseline_initialized"))
+            if sell_only_cycle_production and not baseline_initialized:
+                # Preserve every pre-existing unit already in stock or queue before this cycle starts.
+                baseline_count = current_count + queued_count
+                baseline_initialized = True
             waiting_for_training = bool(inputs.get("_waiting_for_training"))
             expected_ready_at = max(_to_int(inputs.get("_expected_ready_at")), int(time.time()) + queued_eta if queued_eta > 0 else 0)
+            required_total = quantity_target + baseline_count if sell_only_cycle_production else quantity_target
+            current_cycle_ready = max(0, current_count - baseline_count) if sell_only_cycle_production else current_count
 
             self.log(
                 jid,
                 "info",
-                f"Tarefa banco {task_id}: {unit_name} atual={current_count} fila={queued_count} alvo={quantity_target} cidade={city_id}",
+                (
+                    f"Tarefa banco {task_id}: {unit_name} atual={current_count} fila={queued_count} "
+                    f"baseline={baseline_count} pronto_ciclo={current_cycle_ready} alvo={quantity_target} cidade={city_id}"
+                ),
             )
 
             available_total = current_count + queued_count
-            if available_total < quantity_target:
+            if available_total < required_total:
                 now_ts = int(time.time())
                 if waiting_for_training and expected_ready_at > now_ts:
                     wait_seconds = max(30, expected_ready_at - now_ts)
@@ -247,10 +279,16 @@ class GeneralsBankProducerTaskRunner(BaseRunner):
                     return RunnerResult(
                         success=True,
                         reschedule_seconds=wait_seconds,
-                        reschedule_inputs={**inputs, "city_id": city_id, "bm_city_id": bm_city_id},
+                        reschedule_inputs={
+                            **inputs,
+                            "city_id": city_id,
+                            "bm_city_id": bm_city_id,
+                            "_baseline_initialized": baseline_initialized,
+                            "_baseline_count": baseline_count,
+                        },
                     )
 
-                deficit = quantity_target - available_total
+                deficit = required_total - available_total
                 train_now = min(deficit, max_build) if max_build > 0 else deficit
                 if train_now <= 0:
                     self.log(jid, "error", f"{unit_name}: max_build=0 e ainda faltam {deficit}")
@@ -263,7 +301,12 @@ class GeneralsBankProducerTaskRunner(BaseRunner):
                     "info",
                     f"Treino iniciado para {train_now}x {unit_name}; proximo check em {expected_wait}s",
                 )
-                self.hub.bank_update_task(task_id, status="training", unit_name=unit_name, quantity_done=current_count)
+                self.hub.bank_update_task(
+                    task_id,
+                    status="training",
+                    unit_name=unit_name,
+                    quantity_done=current_cycle_ready,
+                )
                 self.save_game_client(ga_id, client)
                 return RunnerResult(
                     success=True,
@@ -272,12 +315,14 @@ class GeneralsBankProducerTaskRunner(BaseRunner):
                         **inputs,
                         "city_id": city_id,
                         "bm_city_id": bm_city_id,
+                        "_baseline_initialized": baseline_initialized,
+                        "_baseline_count": baseline_count,
                         "_waiting_for_training": True,
                         "_expected_ready_at": int(time.time()) + expected_wait,
                     },
                 )
 
-            if queued_eta > 0 and current_count < quantity_target:
+            if queued_eta > 0 and current_count < required_total:
                 wait_seconds = max(30, queued_eta + _TRAIN_BUFFER_SEC)
                 self.log(jid, "info", f"{unit_name}: lote ja esta na fila; aguardando {wait_seconds}s antes de listar")
                 self.save_game_client(ga_id, client)
@@ -288,6 +333,33 @@ class GeneralsBankProducerTaskRunner(BaseRunner):
                         **inputs,
                         "city_id": city_id,
                         "bm_city_id": bm_city_id,
+                        "_baseline_initialized": baseline_initialized,
+                        "_baseline_count": baseline_count,
+                        "_waiting_for_training": True,
+                        "_expected_ready_at": int(time.time()) + wait_seconds,
+                    },
+                )
+
+            if sell_only_cycle_production and current_cycle_ready < quantity_target:
+                wait_seconds = max(30, queued_eta + _TRAIN_BUFFER_SEC if queued_eta > 0 else _TRAIN_BUFFER_SEC)
+                self.log(
+                    jid,
+                    "info",
+                    (
+                        f"{unit_name}: estoque local ainda preserva o baseline; "
+                        f"pronto_ciclo={current_cycle_ready}/{quantity_target}. Rechecando em {wait_seconds}s"
+                    ),
+                )
+                self.save_game_client(ga_id, client)
+                return RunnerResult(
+                    success=True,
+                    reschedule_seconds=wait_seconds,
+                    reschedule_inputs={
+                        **inputs,
+                        "city_id": city_id,
+                        "bm_city_id": bm_city_id,
+                        "_baseline_initialized": baseline_initialized,
+                        "_baseline_count": baseline_count,
                         "_waiting_for_training": True,
                         "_expected_ready_at": int(time.time()) + wait_seconds,
                     },
@@ -297,11 +369,14 @@ class GeneralsBankProducerTaskRunner(BaseRunner):
             selected_unit = bm_state.get("selected_unit") or {}
             available_amount = _to_int(selected_unit.get("available_amount"))
             unit_price = _to_int(selected_unit.get("price_min"), 0)
-            if available_amount < quantity_target:
+            sellable_target = quantity_target
+            if sell_only_cycle_production:
+                sellable_target = min(quantity_target, current_cycle_ready)
+            if available_amount < sellable_target:
                 self.log(
                     jid,
                     "error",
-                    f"{unit_name}: BM so permite listar {available_amount}/{quantity_target} agora",
+                    f"{unit_name}: BM so permite listar {available_amount}/{sellable_target} agora",
                 )
                 return RunnerResult(success=False, data={"error": "insufficient_sellable_units"})
             if unit_price <= 0:
@@ -312,11 +387,18 @@ class GeneralsBankProducerTaskRunner(BaseRunner):
                 city_id=bm_city_id,
                 position=bm_position,
                 unit_id=unit_id,
-                amount=quantity_target,
+                amount=sellable_target,
                 unit_price=unit_price,
                 offer_resource=5,
             )
-            self.log(jid, "info", f"Oferta listada: {quantity_target}x {unit_name} por {unit_price} ouro/un")
+            self.log(
+                jid,
+                "info",
+                (
+                    f"Oferta listada: {sellable_target}x {unit_name} por {unit_price} ouro/un "
+                    f"(baseline preservado={baseline_count})"
+                ),
+            )
 
             active_offers = client.get_my_black_market_offers(city_id=bm_city_id, position=bm_position)
             try:
@@ -344,7 +426,7 @@ class GeneralsBankProducerTaskRunner(BaseRunner):
             self.hub.bank_update_task(
                 task_id,
                 status="listed",
-                quantity_done=quantity_target,
+                quantity_done=sellable_target,
                 unit_price=unit_price,
                 unit_name=unit_name,
                 sell_job_id=jid,
@@ -352,7 +434,7 @@ class GeneralsBankProducerTaskRunner(BaseRunner):
             self.save_game_client(ga_id, client)
             return RunnerResult(
                 success=True,
-                data={"task_status": "listed", "unit_id": unit_id, "quantity": quantity_target, "unit_price": unit_price},
+                data={"task_status": "listed", "unit_id": unit_id, "quantity": sellable_target, "unit_price": unit_price},
             )
 
         except Exception as exc:
@@ -489,6 +571,7 @@ class GeneralsBankBuyRunner(BaseRunner):
                         "unit_name": "",
                         "quantity": quantity,
                         "unit_price": unit_price,
+                        "seller_city_id": seller_city_id,
                         "job_id": jid,
                     })
 
@@ -505,7 +588,7 @@ class GeneralsBankBuyRunner(BaseRunner):
                 self.log(jid, "info", f"Banco comprou de {len(purchases)} oferta(s)")
             else:
                 self.log(jid, "warn", "Nenhuma compra realizada")
-                self.hub.bank_cycle_complete(cycle_id)
+                self.hub.bank_cycle_fail(cycle_id, "Banco não conseguiu comprar nenhuma oferta do ciclo.")
                 return RunnerResult(success=False, data={"error": "no_purchases_made"})
 
             self.save_game_client(ga_id, client)

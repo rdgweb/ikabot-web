@@ -29,6 +29,19 @@ class IslandActions:
         )
         return _parse_island_html(resp.text)
 
+    def fetch_island_by_city_id(self, city_id: str | int) -> dict[str, Any]:
+        """Fetch island data using a visible city on that island as context.
+
+        This works for foreign cities as well, unlike ``get_city_island_id`` which
+        relies on the city page and is mainly suited for own cities.
+        """
+        resp = self._request(
+            "GET", self._server_url,
+            params={"view": "island", "cityId": str(city_id)},
+            timeout=30,
+        )
+        return _parse_island_html(resp.text)
+
     def fetch_island_area(
         self, x_min: int, y_min: int, x_max: int, y_max: int
     ) -> list[dict[str, Any]]:
@@ -123,7 +136,7 @@ def _parse_island_html(html: str) -> dict[str, Any]:
                 "has_treaties": bool(city.get("hasTreaties")),
                 "view_able": int(city.get("viewAble") or 0),
                 "infested_by_plague": bool(city.get("infestedByPlague")),
-                "actions": actions if isinstance(actions, list) else [],
+                "actions": actions if isinstance(actions, (list, dict)) else [],
             })
 
         resource_type = island_data.get("tradegood", 0)
