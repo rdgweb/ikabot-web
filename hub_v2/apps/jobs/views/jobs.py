@@ -1449,7 +1449,7 @@ class JobListView(FilterSortListView):
     @classmethod
     def _barbarians_display(cls, job):
         inputs = cls._parse_inputs(job)
-        if int(job.action_code) != 18:
+        if int(job.action_code) != 19:
             return None
         island_ids_raw = str(inputs.get("island_ids") or inputs.get("island_id") or "")
         island_list = [s.strip() for s in island_ids_raw.split(",") if s.strip()]

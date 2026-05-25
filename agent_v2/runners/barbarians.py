@@ -86,7 +86,7 @@ def _resolve_troops(
     return troops
 
 
-@register_runner(18)
+@register_runner(19)
 class BarbariansRunner(BaseRunner):
     """Raid barbarian villages automatically.
 

@@ -2,7 +2,7 @@ from .constants import CAT_AUTOMATION, CAT_MILITARY, FIELD_BOOL, FIELD_CHOICE, F
 
 
 ACTIONS = {
-    18: {
+    19: {
         "name": "Roubar Bárbaros",
         "name_en": "Raid Barbarians",
         "category": CAT_MILITARY,
