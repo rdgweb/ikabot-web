@@ -19,6 +19,20 @@ _RESOURCE_KEY_MAP = {
 }
 
 
+def _normalize_colonize_position(position: int | str) -> tuple[int, int]:
+    """Convert visual island slot numbering to the request index used by the game.
+
+    Dump/UI positions are 1-based. The colonize endpoint for normal slots is 0-based.
+    Slot 17 is premium and currently unsupported.
+    """
+    visual_position = int(position)
+    if visual_position <= 0:
+        raise ActionError("Invalid island position", action="colonize_preview")
+    if visual_position == 17:
+        raise ActionError("Premium colony slot is not supported", action="colonize_preview")
+    return visual_position, visual_position - 1
+
+
 def _extract_hidden_inputs(html: str) -> dict[str, str]:
     hidden: dict[str, str] = {}
     for match in re.finditer(
@@ -48,6 +62,23 @@ def _extract_colonization_html(data: Any) -> str:
         if "startColonization" in text or "cargo_people" in text:
             return text
     return ""
+
+
+def _extract_feedback_messages(data: Any) -> list[str]:
+    messages: list[str] = []
+    if not isinstance(data, list):
+        return messages
+    for entry in data:
+        if not isinstance(entry, list) or len(entry) < 2 or entry[0] != "provideFeedback":
+            continue
+        payload = entry[1]
+        if isinstance(payload, list):
+            for item in payload:
+                if isinstance(item, dict):
+                    text = str(item.get("text") or "").strip()
+                    if text:
+                        messages.append(text)
+    return messages
 
 
 def _extract_numeric_input_value(html: str, field_name: str, default: int = 0) -> int:
@@ -151,12 +182,13 @@ class ColonizationPreviewAction(BaseAction):
         position: int,
         **kwargs: Any,
     ) -> dict[str, Any]:
+        visual_position, request_position = _normalize_colonize_position(position)
         params = {
             "view": "colonize",
             "cityId": str(source_city_id),
             "currentCityId": str(source_city_id),
             "islandId": str(island_id),
-            "position": str(position),
+            "position": str(request_position),
             "backgroundView": "island",
             "oldBackgroundView": "city",
             "actionRequest": self.client._action_request,
@@ -176,18 +208,22 @@ class ColonizationPreviewAction(BaseAction):
         html = _extract_colonization_html(data)
         hidden = _extract_hidden_inputs(html)
         if hidden.get("function") != "startColonization":
+            feedback = _extract_feedback_messages(data)
+            if feedback:
+                raise ActionError(f"Colonization form not found: {feedback[0]}", action="colonize_preview")
             raise ActionError("Colonization form not found", action="colonize_preview")
 
         eta = _extract_colonization_eta_v2(html)
         return {
             "source_city_id": str(source_city_id),
             "island_id": str(island_id),
-            "position": int(position),
+            "position": int(visual_position),
+            "request_position": int(request_position),
             "action": hidden.get("action", "transportOperations"),
             "function": hidden.get("function", "startColonization"),
             "cargo_people": int(hidden.get("cargo_people") or 0),
             "cargo_gold": int(hidden.get("cargo_gold") or 0),
-            "desired_position": int(hidden.get("desiredPosition") or position),
+            "desired_position": int(hidden.get("desiredPosition") or request_position),
             "capacity": _extract_numeric_input_value(html, "capacity"),
             "max_capacity": _extract_numeric_input_value(html, "max_capacity"),
             "transporters": _extract_numeric_input_value(html, "transporters"),
@@ -222,7 +258,7 @@ class StartColonizationAction(BaseAction):
             "action": hidden.get("action", "transportOperations"),
             "function": hidden.get("function", "startColonization"),
             "islandId": hidden.get("islandId", str(island_id)),
-            "desiredPosition": hidden.get("desiredPosition", str(position)),
+            "desiredPosition": hidden.get("desiredPosition", str(preview.get("request_position", 0))),
             "cargo_people": hidden.get("cargo_people", "40"),
             "cargo_gold": hidden.get("cargo_gold", "9000"),
             "cityId": str(source_city_id),
@@ -249,7 +285,8 @@ class StartColonizationAction(BaseAction):
             "ok": True,
             "source_city_id": str(source_city_id),
             "island_id": str(island_id),
-            "position": int(position),
+            "position": int(preview.get("position") or position),
+            "request_position": int(preview.get("request_position") or 0),
             "feedback": feedback,
             "preview": {
                 "capacity": preview.get("capacity", 0),
@@ -261,5 +298,6 @@ class StartColonizationAction(BaseAction):
                 "travel_time_seconds": int(preview.get("travel_time_seconds") or 0),
                 "arrival_at_text": preview.get("arrival_at_text", ""),
                 "destination_name": preview.get("destination_name", ""),
+                "request_position": int(preview.get("request_position") or 0),
             },
         }

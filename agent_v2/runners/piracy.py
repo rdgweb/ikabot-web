@@ -34,6 +34,17 @@ _MISSION_DURATIONS: dict[int, int] = {
     15: 28800,
     17: 57600,
 }
+_MISSION_CAPTURE_POINTS: dict[int, int] = {
+    1: 115,
+    3: 276,
+    5: 442,
+    7: 707,
+    9: 1131,
+    11: 1810,
+    13: 2896,
+    15: 4634,
+    17: 7414,
+}
 
 CAPTCHA_RESCHEDULE = 5 * 60       # 5 min — best-effort captcha handling
 ERROR_RESCHEDULE = 10 * 60        # 10 min — generic error back-off
@@ -206,6 +217,59 @@ class PiracyMissionRunner(BaseRunner):
                     protected.add(name)
         return {name for name in protected if name}
 
+    def _protected_targets(self, game_account_id: str, current_player_name: str) -> tuple[set[str], set[str]]:
+        protected_names = self._protected_owner_names(game_account_id, current_player_name)
+        protected_city_ids: set[str] = set()
+        try:
+            config = self.get_agent_config()
+        except Exception:
+            return protected_names, protected_city_ids
+
+        target_server = ""
+        same_server_ids: list[str] = []
+        for account in config.get("accounts") or []:
+            for ga in account.get("game_accounts") or []:
+                if str(ga.get("id") or "") == str(game_account_id or ""):
+                    target_server = _server_key(str(ga.get("server_id") or ""))
+                    break
+            if target_server:
+                break
+
+        for account in config.get("accounts") or []:
+            for ga in account.get("game_accounts") or []:
+                ga_id = str(ga.get("id") or "").strip()
+                if not ga_id:
+                    continue
+                if target_server and _server_key(str(ga.get("server_id") or "")) != target_server:
+                    continue
+                same_server_ids.append(ga_id)
+                for raw_name in (ga.get("name"), ga.get("player_name")):
+                    name = str(raw_name or "").strip().lower()
+                    if name:
+                        protected_names.add(name)
+
+        for ga_id in same_server_ids:
+            try:
+                snapshot = self.hub.get_snapshot(game_account_id=ga_id)
+            except Exception:
+                continue
+            if not isinstance(snapshot, dict):
+                continue
+            base_snapshot = snapshot.get("base_snapshot") or {}
+            for raw_name in (
+                base_snapshot.get("player_name"),
+                base_snapshot.get("name"),
+                base_snapshot.get("account_name"),
+            ):
+                name = str(raw_name or "").strip().lower()
+                if name:
+                    protected_names.add(name)
+            for city in snapshot.get("cities") or []:
+                city_id = str(city.get("id") or city.get("city_id") or "").strip()
+                if city_id:
+                    protected_city_ids.add(city_id)
+        return {name for name in protected_names if name}, protected_city_ids
+
     def _within_active_foundation_limit(self, client, *, limit: int) -> bool:
         if limit <= 0:
             return True
@@ -271,7 +335,10 @@ class PiracyMissionRunner(BaseRunner):
         max_gap = max(1, _to_int(inputs.get("target_max_score_gap"), 5))
         require_lower_total = _to_bool(inputs.get("target_require_lower_total_score"))
         require_lower_general = _to_bool(inputs.get("target_require_lower_general_score"))
-        protected_names = self._protected_owner_names(game_account_id, str(client.account_info.get("player_name") or ""))
+        protected_names, protected_city_ids = self._protected_targets(
+            game_account_id,
+            str(client.account_info.get("player_name") or ""),
+        )
 
         own_owner_id, own_scores = self._read_player_scores(client, city_id)
         candidates: list[tuple[int, int, dict[str, Any]]] = []
@@ -279,6 +346,8 @@ class PiracyMissionRunner(BaseRunner):
             avatar_id = str(entry.get("avatar_id") or "")
             target_city_id = str(entry.get("target_city_id") or "")
             if not target_city_id or target_city_id == city_id or (self_avatar_id and avatar_id == self_avatar_id):
+                continue
+            if target_city_id in protected_city_ids:
                 continue
             place_gap = abs(_to_int(entry.get("place")) - self_place) if self_place > 0 else 0
             if self_place > 0 and place_gap > max_gap:
@@ -319,6 +388,63 @@ class PiracyMissionRunner(BaseRunner):
             return None
         candidates.sort(key=lambda item: (item[0], item[1], str(item[2].get("player_name") or "")))
         return candidates[0][2]
+
+    def _targeted_convert_capture_points(
+        self,
+        jid: str,
+        client,
+        *,
+        city_id: int,
+        inputs: dict[str, Any],
+    ) -> None:
+        state = client.get_piracy_state(str(city_id))
+        capture_points = _to_int(state.get("capture_points"), 0)
+        if capture_points <= 0:
+            return
+        convert_mode = str(inputs.get("targeted_convert_mode") or "all").strip().lower()
+        if convert_mode == "never":
+            self.log(jid, "info", f"Ciclo especial: mantendo {capture_points} pontos sem converter antes do abandono")
+            return
+        if convert_mode == "percent":
+            percent = max(1, min(100, _to_int(inputs.get("targeted_convert_percent"), 100)))
+            points_to_convert = int(capture_points * percent / 100)
+        else:
+            points_to_convert = capture_points
+        conversion_factor = max(1, _to_int(state.get("conversion_factor"), 10))
+        crew_to_create = points_to_convert // conversion_factor
+        if crew_to_create <= 0:
+            return
+        client.convert_piracy_points(str(city_id), crew_to_create)
+        self.log(
+            jid,
+            "info",
+            f"Ciclo especial: convertidos {points_to_convert} pontos em {crew_to_create} de tripulação antes do abandono",
+        )
+
+    def _targeted_eta_viable(
+        self,
+        *,
+        preview: dict[str, Any],
+        target_entry: dict[str, Any],
+        inputs: dict[str, Any],
+    ) -> tuple[bool, str]:
+        if not _to_bool(inputs.get("target_require_eta_efficiency", True)):
+            return True, ""
+        compare_level = _to_int(inputs.get("targeted_compare_mission_level"), 17)
+        if compare_level not in _MISSION_DURATIONS:
+            compare_level = 17
+        colony_eta = _to_int(preview.get("loading_time_seconds")) + _to_int(preview.get("travel_time_seconds"))
+        mission_duration = _MISSION_DURATIONS.get(compare_level, _MISSION_DURATIONS[17])
+        mission_capture = _MISSION_CAPTURE_POINTS.get(compare_level, _MISSION_CAPTURE_POINTS[17])
+        target_score = _to_int(target_entry.get("score"))
+        if colony_eta <= mission_duration:
+            return True, ""
+        if target_score > mission_capture:
+            return True, ""
+        return False, (
+            f"ETA da colonia ({colony_eta}s) pior que missao nv {compare_level} "
+            f"({mission_duration}s / {mission_capture} pts) para alvo {target_score}"
+        )
 
     def _find_colony_spot(self, client, target_city_id: str) -> dict[str, Any] | None:
         target_island = client.fetch_island_by_city_id(target_city_id)
@@ -561,6 +687,10 @@ class PiracyMissionRunner(BaseRunner):
                             reschedule_inputs={**inputs, **_state_inputs, "_targeted_phase": "wait_abandon"},
                             data={"status": "waiting_assault_end", "temp_city_id": temp_city_id},
                         )
+                    try:
+                        self._targeted_convert_capture_points(jid, client, city_id=temp_city_id, inputs=inputs)
+                    except Exception as exc:
+                        self.log(jid, "warn", f"Falha ao converter pontos do ciclo especial antes do abandono: {exc}")
                     abandon_pending = self._abandon_temp_colony(jid, client, game_account_id, temp_city_id)
                     if abandon_pending is not None:
                         self.save_game_client(game_account_id, client)
@@ -621,6 +751,20 @@ class PiracyMissionRunner(BaseRunner):
                         island_id=colony_spot["island_id"],
                         position=int(colony_spot["position"]),
                     )
+                    eta_ok, eta_reason = self._targeted_eta_viable(
+                        preview=preview,
+                        target_entry=target_entry,
+                        inputs=inputs,
+                    )
+                    if not eta_ok:
+                        self.log(jid, "info", f"Ciclo especial ignorado: {eta_reason}")
+                        self.save_game_client(game_account_id, client)
+                        return RunnerResult(
+                            success=True,
+                            reschedule_seconds=30 * 60,
+                            reschedule_inputs={**inputs, **_state_inputs},
+                            data={"status": "targeted_eta_not_worth_it", "reason": eta_reason, "target": target_entry},
+                        )
                     known_city_ids = [item["id"] for item in fetch_owned_cities(client)]
                     result = client.start_colonization(
                         source_city_id=city_id,
@@ -628,10 +772,7 @@ class PiracyMissionRunner(BaseRunner):
                         position=int(colony_spot["position"]),
                         resources={
                             "wood": 2250,
-                            "wine": 2500,
                             "marble": 2500,
-                            "crystal": 2500,
-                            "sulfur": 2500,
                         },
                     )
                     wait_seconds = (

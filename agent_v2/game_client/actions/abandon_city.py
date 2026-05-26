@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import re
+import time
 from html import unescape
 from typing import Any
 from urllib.parse import parse_qsl, urlparse
@@ -105,7 +106,13 @@ class AbandonColonyAction(BaseAction):
             raise ActionError("Empty abandon colony captcha image", action="abandon_colony")
 
         image_b64 = base64.b64encode(captcha_resp.content).decode("ascii")
-        challenge = self.client.hub.create_captcha_challenge("pirate", image_b64, game_account_id=game_account_id or "")
+        challenge = self.client.hub.create_captcha_challenge(
+            "pirate",
+            image_b64,
+            game_account_id=game_account_id or "",
+            display_type="abandon",
+            extra_data={"context": "abandon_colony", "city_id": str(city_id)},
+        )
         solution = str(challenge.get("solution") or "").strip().upper()
         if not solution and challenge.get("challenge_id"):
             solution = self.client.hub.poll_captcha_solution(
@@ -119,12 +126,20 @@ class AbandonColonyAction(BaseAction):
         payload = dict(preview.get("hidden_fields") or {})
         payload["action"] = payload.get("action", "DeleteColony")
         payload["cityId"] = payload.get("cityId", str(city_id))
+        payload["captchaNeeded"] = "1"
         payload["captcha"] = solution
         action_request = str(preview.get("action_request") or "").strip()
         if action_request and "actionRequest" not in payload:
             payload["actionRequest"] = action_request
 
-        resp = self.client._request("POST", self.client._server_url, data=payload, timeout=30)
+        # Submit directly to avoid the generic captcha detector short-circuiting this flow.
+        self.client._enforce_delay()
+        resp = self.client.session.post(
+            self.client._server_url,
+            data=payload,
+            timeout=30,
+        )
+        self.client._last_request_time = time.time()
         html = resp.text
         if "captchaImage" in html and "DeleteColony" in html:
             raise ActionError("Abandon colony still requires captcha confirmation", action="abandon_colony")

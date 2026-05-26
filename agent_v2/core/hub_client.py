@@ -496,12 +496,22 @@ class HubClient:
         """POST /api/agent/captcha/solve"""
         return self._post("/api/agent/captcha/solve", {"type": captcha_type, "images": images})
 
-    def create_captcha_challenge(self, captcha_type: str, image_b64: str, game_account_id: str = "") -> dict:
+    def create_captcha_challenge(
+        self,
+        captcha_type: str,
+        image_b64: str,
+        game_account_id: str = "",
+        *,
+        display_type: str = "",
+        extra_data: dict | None = None,
+    ) -> dict:
         """Create a captcha challenge. Returns {"solution": str|None, "challenge_id": int|None}."""
         return self._post("/api/agent/captcha/challenge", {
             "type": captcha_type,
             "image_b64": image_b64,
             "game_account_id": game_account_id or "",
+            "display_type": display_type or "",
+            "extra_data": extra_data or {},
         })
 
     def poll_captcha_solution(self, challenge_id: int, timeout_sec: int = 120, interval: int = 10) -> str:

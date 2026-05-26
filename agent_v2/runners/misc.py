@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 FOUNDING_BUFFER_SECONDS = 45
 FOUNDING_POLL_SECONDS = 60
 ABANDON_POLL_SECONDS = 30
+ABANDON_PREVIEW_RETRY_SECONDS = 60
 
 
 def _to_int(value: Any, default: int = 0) -> int:
@@ -127,6 +128,10 @@ def find_owned_city(client, city_id: int | str) -> dict[str, Any] | None:
     return None
 
 
+def _visual_colony_position(position: int | str) -> int:
+    return _to_int(position, 0)
+
+
 @register_runner(820)
 class ColonizeRunner(BaseRunner):
     """Colonize a free spot on an island.
@@ -154,6 +159,13 @@ class ColonizeRunner(BaseRunner):
                 data={"error": "missing_required_inputs", "required": ["source_city_id", "island_id", "position"]},
             )
 
+        visual_position = _visual_colony_position(position)
+        if visual_position == 17:
+            return RunnerResult(
+                success=False,
+                data={"error": "premium_colony_slot_not_supported", "position": 17},
+            )
+
         resource_keys = ("wood", "wine", "marble", "crystal", "sulfur")
         resources = {
             key: int(inputs.get(key, 0) or 0)
@@ -172,7 +184,7 @@ class ColonizeRunner(BaseRunner):
                     client,
                     known_city_ids=list(inputs.get("_known_city_ids") or []),
                     island_id=island_id,
-                    position=int(position),
+                    position=visual_position,
                     owner_name=str(client.account_info.get("player_name") or ""),
                 )
                 if not founded_city:
@@ -195,7 +207,7 @@ class ColonizeRunner(BaseRunner):
                         "status": "founded",
                         "source_city_id": str(source_city_id),
                         "island_id": str(island_id),
-                        "position": int(position),
+                        "position": visual_position,
                         "resources": resources,
                         "new_city_id": founded_city_id,
                         "new_city_name": founded_name,
@@ -206,7 +218,7 @@ class ColonizeRunner(BaseRunner):
             preview = client.get_colonization_preview(
                 source_city_id=source_city_id,
                 island_id=island_id,
-                position=int(position),
+                position=visual_position,
             )
             try:
                 known_city_ids = [item["id"] for item in fetch_owned_cities(client)]
@@ -215,13 +227,13 @@ class ColonizeRunner(BaseRunner):
             self.log(
                 jid,
                 "info",
-                f"Preview colonizacao ok: ilha {island_id} pos {position}, chegada {preview.get('arrival_at_text') or '-'}",
+                f"Preview colonizacao ok: ilha {island_id} pos visual {visual_position} req {preview.get('request_position')}, chegada {preview.get('arrival_at_text') or '-'}",
             )
 
             result = client.start_colonization(
                 source_city_id=source_city_id,
                 island_id=island_id,
-                position=int(position),
+                position=visual_position,
                 resources=resources,
             )
 
@@ -248,7 +260,7 @@ class ColonizeRunner(BaseRunner):
                     "status": "founding_started",
                     "source_city_id": str(source_city_id),
                     "island_id": str(island_id),
-                    "position": int(position),
+                    "position": visual_position,
                     "resources": resources,
                     "preview": {
                         "capacity": preview.get("capacity", 0),
@@ -260,6 +272,7 @@ class ColonizeRunner(BaseRunner):
                         "travel_time_seconds": _to_int(preview.get("travel_time_seconds")),
                         "arrival_at_text": preview.get("arrival_at_text", ""),
                         "destination_name": preview.get("destination_name", ""),
+                        "request_position": _to_int(preview.get("request_position")),
                     },
                     "feedback": result.get("feedback") or [],
                 },
@@ -293,9 +306,9 @@ class AbandonColonyRunner(BaseRunner):
 
         try:
             client = self.get_or_login_game_client(jid, aid, ga_id, creds)
+            owned_city = find_owned_city(client, city_id)
             if phase == "wait_removed":
-                still_exists = find_owned_city(client, city_id)
-                if still_exists:
+                if owned_city:
                     self.save_game_client(ga_id or aid, client)
                     self.log(jid, "info", f"Cidade {city_id} ainda existe; mantendo polling de abandono")
                     return RunnerResult(
@@ -312,10 +325,21 @@ class AbandonColonyRunner(BaseRunner):
                     data={"status": "abandoned", "city_id": str(city_id), "city_name": inputs.get("city_name") or ""},
                 )
 
-            preview = client.get_abandon_colony_preview(city_id)
-            owned_city = find_owned_city(client, city_id)
             if not owned_city:
                 return RunnerResult(success=False, data={"error": "city_not_owned_or_not_found", "city_id": str(city_id)})
+            try:
+                preview = client.get_abandon_colony_preview(city_id)
+            except Exception as exc:
+                if "Abandon colony form not found" in str(exc):
+                    self.save_game_client(ga_id or aid, client)
+                    self.log(jid, "info", f"Tela de abandono ainda nao esta pronta para {city_id}; reagendando")
+                    return RunnerResult(
+                        success=True,
+                        reschedule_seconds=ABANDON_PREVIEW_RETRY_SECONDS,
+                        reschedule_inputs={**inputs, "_phase": "start"},
+                        data={"status": "waiting_abandon_preview", "city_id": str(city_id), "city_name": inputs.get("city_name") or owned_city.get("name") or ""},
+                    )
+                raise
 
             result = client.abandon_colony(
                 city_id,
