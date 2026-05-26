@@ -14,6 +14,7 @@ import json
 import logging
 import re
 from datetime import datetime
+from pathlib import Path
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse
@@ -71,32 +72,39 @@ CITY_RESOURCE_FIELDS = (
 )
 WORKSHOP_UNITS_UI = (
     # Tropas (12)
-    {"key": "hoplita",      "name": "Hoplita",           "tab": "land", "icon": "game/units/hoplita.png",           "bi": "bi-shield-fill",        "accent": "rgba(79,134,185,0.85)",  "surface": "rgba(79,134,185,0.08)"},
-    {"key": "gigante",      "name": "Gigante a Vapor",   "tab": "land", "icon": "game/units/gigante.png",           "bi": "bi-robot",              "accent": "rgba(50,145,210,0.85)",  "surface": "rgba(50,145,210,0.08)"},
-    {"key": "lanceiro",     "name": "Lanceiro",          "tab": "land", "icon": "game/units/lanceiro.png",          "bi": "bi-person-fill",        "accent": "rgba(80,100,160,0.85)",  "surface": "rgba(80,100,160,0.08)"},
-    {"key": "espadachim",   "name": "Espadachim",        "tab": "land", "icon": "game/units/espadachim.png",        "bi": "bi-person-fill",        "accent": "rgba(130,80,50,0.85)",   "surface": "rgba(130,80,50,0.08)"},
-    {"key": "fundeiro",     "name": "Fundeiro",          "tab": "land", "icon": "game/units/fundeiro.png",          "bi": "bi-person-fill",        "accent": "rgba(95,130,60,0.85)",   "surface": "rgba(95,130,60,0.08)"},
-    {"key": "arqueiro",     "name": "Arqueiro",          "tab": "land", "icon": "game/units/arqueiro.png",          "bi": "bi-person-fill",        "accent": "rgba(85,135,90,0.85)",   "surface": "rgba(85,135,90,0.08)"},
-    {"key": "atirador",     "name": "Carabineiro",       "tab": "land", "icon": "game/units/atirador.png",          "bi": "bi-person-fill",        "accent": "rgba(90,140,80,0.85)",   "surface": "rgba(90,140,80,0.08)"},
-    {"key": "ariete",       "name": "Ariete",            "tab": "land", "icon": "game/units/ariete.png",            "bi": "bi-arrow-right-square", "accent": "rgba(100,65,40,0.85)",   "surface": "rgba(100,65,40,0.08)"},
-    {"key": "catapulta",    "name": "Catapulta",         "tab": "land", "icon": "game/units/catapulta.png",         "bi": "bi-bullseye",           "accent": "rgba(140,105,60,0.85)",  "surface": "rgba(140,105,60,0.08)"},
-    {"key": "morteiro",     "name": "Morteiro",          "tab": "land", "icon": "game/units/morteiro.png",          "bi": "bi-bullseye",           "accent": "rgba(90,80,80,0.85)",    "surface": "rgba(90,80,80,0.08)"},
-    {"key": "girocoptero",  "name": "Girocóptero",       "tab": "land", "icon": "game/units/girocoptero.png",       "bi": "bi-wind",               "accent": "rgba(150,120,70,0.85)",  "surface": "rgba(150,120,70,0.08)"},
-    {"key": "balao",        "name": "Balão-Bombardeiro", "tab": "land", "icon": "game/units/balao.png",             "bi": "bi-balloon-fill",       "accent": "rgba(215,175,50,0.85)",  "surface": "rgba(215,175,50,0.08)"},
+    {"key": "hoplita",      "game_id": 303, "name": "Hoplita",           "tab": "land", "icon": "game/units/hoplita.png",           "bi": "bi-shield-fill",        "accent": "rgba(79,134,185,0.85)",  "surface": "rgba(79,134,185,0.08)"},
+    {"key": "gigante",      "game_id": 308, "name": "Gigante a Vapor",   "tab": "land", "icon": "game/units/gigante.png",           "bi": "bi-robot",              "accent": "rgba(50,145,210,0.85)",  "surface": "rgba(50,145,210,0.08)"},
+    {"key": "lanceiro",     "game_id": 315, "name": "Lanceiro",          "tab": "land", "icon": "game/units/lanceiro.png",          "bi": "bi-person-fill",        "accent": "rgba(80,100,160,0.85)",  "surface": "rgba(80,100,160,0.08)"},
+    {"key": "espadachim",   "game_id": 302, "name": "Espadachim",        "tab": "land", "icon": "game/units/espadachim.png",        "bi": "bi-person-fill",        "accent": "rgba(130,80,50,0.85)",   "surface": "rgba(130,80,50,0.08)"},
+    {"key": "fundeiro",     "game_id": 301, "name": "Fundeiro",          "tab": "land", "icon": "game/units/fundeiro.png",          "bi": "bi-person-fill",        "accent": "rgba(95,130,60,0.85)",   "surface": "rgba(95,130,60,0.08)"},
+    {"key": "arqueiro",     "game_id": 313, "name": "Arqueiro",          "tab": "land", "icon": "game/units/arqueiro.png",          "bi": "bi-person-fill",        "accent": "rgba(85,135,90,0.85)",   "surface": "rgba(85,135,90,0.08)"},
+    {"key": "atirador",     "game_id": 304, "name": "Carabineiro",       "tab": "land", "icon": "game/units/atirador.png",          "bi": "bi-person-fill",        "accent": "rgba(90,140,80,0.85)",   "surface": "rgba(90,140,80,0.08)"},
+    {"key": "ariete",       "game_id": 307, "name": "Ariete",            "tab": "land", "icon": "game/units/ariete.png",            "bi": "bi-arrow-right-square", "accent": "rgba(100,65,40,0.85)",   "surface": "rgba(100,65,40,0.08)"},
+    {"key": "catapulta",    "game_id": 306, "name": "Catapulta",         "tab": "land", "icon": "game/units/catapulta.png",         "bi": "bi-bullseye",           "accent": "rgba(140,105,60,0.85)",  "surface": "rgba(140,105,60,0.08)"},
+    {"key": "morteiro",     "game_id": 305, "name": "Morteiro",          "tab": "land", "icon": "game/units/morteiro.png",          "bi": "bi-bullseye",           "accent": "rgba(90,80,80,0.85)",    "surface": "rgba(90,80,80,0.08)"},
+    {"key": "girocoptero",  "game_id": 312, "name": "Girocóptero",       "tab": "land", "icon": "game/units/girocoptero.png",       "bi": "bi-wind",               "accent": "rgba(150,120,70,0.85)",  "surface": "rgba(150,120,70,0.08)"},
+    {"key": "balao",        "game_id": 309, "name": "Balão-Bombardeiro", "tab": "land", "icon": "game/units/balao.png",             "bi": "bi-balloon-fill",       "accent": "rgba(215,175,50,0.85)",  "surface": "rgba(215,175,50,0.08)"},
     # Barcos (12)
-    {"key": "lancachamas",    "name": "Lança-Chamas",    "tab": "sea", "icon": "game/units/lancachamas.png",      "bi": "bi-fire",          "accent": "rgba(220,75,35,0.85)",   "surface": "rgba(220,75,35,0.08)"},
-    {"key": "ariete_vapor",   "name": "Aríete a Vapor",  "tab": "sea", "icon": "game/units/Aríete a Vapor.png",   "bi": "bi-tsunami",       "accent": "rgba(60,100,185,0.85)",  "surface": "rgba(60,100,185,0.08)"},
-    {"key": "trieme",         "name": "Trireme",         "tab": "sea", "icon": "game/units/trieme.png",           "bi": "bi-tsunami",       "accent": "rgba(50,130,205,0.85)",  "surface": "rgba(50,130,205,0.08)"},
-    {"key": "barco_balista",  "name": "Barco Balista",   "tab": "sea", "icon": "game/units/Barco Balista.png",   "bi": "bi-tsunami",       "accent": "rgba(75,130,175,0.85)",  "surface": "rgba(75,130,175,0.08)"},
-    {"key": "barcocatapulta", "name": "Barco Catapulta", "tab": "sea", "icon": "game/units/barcocatapulta.png",  "bi": "bi-tsunami",       "accent": "rgba(95,140,80,0.85)",   "surface": "rgba(95,140,80,0.08)"},
-    {"key": "barcomorteiro",  "name": "Barco Morteiro",  "tab": "sea", "icon": "game/units/barcomorteiro.png",   "bi": "bi-tsunami",       "accent": "rgba(90,65,55,0.85)",    "surface": "rgba(90,65,55,0.08)"},
-    {"key": "lanca_foguetes", "name": "Lança-Foguetes",  "tab": "sea", "icon": "game/units/Lança-Foguetes.png",  "bi": "bi-fire",          "accent": "rgba(205,75,35,0.85)",   "surface": "rgba(205,75,35,0.08)"},
-    {"key": "submergivel",    "name": "Submergível",     "tab": "sea", "icon": "game/units/Submergível.png",     "bi": "bi-water",         "accent": "rgba(25,80,145,0.85)",   "surface": "rgba(25,80,145,0.08)"},
-    {"key": "lancha_rapida",  "name": "Lancha Rápida",   "tab": "sea", "icon": "game/units/Lancha Rápida.png",   "bi": "bi-tsunami",       "accent": "rgba(45,165,120,0.85)",  "surface": "rgba(45,165,120,0.08)"},
-    {"key": "porta_balaos",   "name": "Porta-balões",    "tab": "sea", "icon": "game/units/Porta-balões.png",    "bi": "bi-box-seam",      "accent": "rgba(155,200,70,0.85)",  "surface": "rgba(155,200,70,0.08)"},
-    {"key": "barco_mercante", "name": "Barco Mercante",  "tab": "sea", "icon": "game/units/barco_mercante.png", "bi": "bi-shop",          "accent": "rgba(180,140,60,0.85)",  "surface": "rgba(180,140,60,0.08)"},
-    {"key": "cargueiro",      "name": "Cargueiro",       "tab": "sea", "icon": "game/units/cargueiro.png",      "bi": "bi-box-seam-fill", "accent": "rgba(110,90,70,0.85)",   "surface": "rgba(110,90,70,0.08)"},
+    {"key": "lancachamas",    "game_id": 211, "name": "Lança-Chamas",    "tab": "sea", "icon": "game/units/lancachamas.png",      "bi": "bi-fire",          "accent": "rgba(220,75,35,0.85)",   "surface": "rgba(220,75,35,0.08)"},
+    {"key": "ariete_vapor",   "game_id": 216, "name": "Aríete a Vapor",  "tab": "sea", "icon": "game/units/Aríete a Vapor.png",   "bi": "bi-tsunami",       "accent": "rgba(60,100,185,0.85)",  "surface": "rgba(60,100,185,0.08)"},
+    {"key": "trieme",         "game_id": 210, "name": "Trireme",         "tab": "sea", "icon": "game/units/trieme.png",           "bi": "bi-tsunami",       "accent": "rgba(50,130,205,0.85)",  "surface": "rgba(50,130,205,0.08)"},
+    {"key": "barco_balista",  "game_id": 213, "name": "Barco Balista",   "tab": "sea", "icon": "game/units/Barco Balista.png",   "bi": "bi-tsunami",       "accent": "rgba(75,130,175,0.85)",  "surface": "rgba(75,130,175,0.08)"},
+    {"key": "barcocatapulta", "game_id": 214, "name": "Barco Catapulta", "tab": "sea", "icon": "game/units/barcocatapulta.png",  "bi": "bi-tsunami",       "accent": "rgba(95,140,80,0.85)",   "surface": "rgba(95,140,80,0.08)"},
+    {"key": "barcomorteiro",  "game_id": 215, "name": "Barco Morteiro",  "tab": "sea", "icon": "game/units/barcomorteiro.png",   "bi": "bi-tsunami",       "accent": "rgba(90,65,55,0.85)",    "surface": "rgba(90,65,55,0.08)"},
+    {"key": "lanca_foguetes", "game_id": 217, "name": "Lança-Foguetes",  "tab": "sea", "icon": "game/units/Lança-Foguetes.png",  "bi": "bi-fire",          "accent": "rgba(205,75,35,0.85)",   "surface": "rgba(205,75,35,0.08)"},
+    {"key": "submergivel",    "game_id": 212, "name": "Submergível",     "tab": "sea", "icon": "game/units/Submergível.png",     "bi": "bi-water",         "accent": "rgba(25,80,145,0.85)",   "surface": "rgba(25,80,145,0.08)"},
+    {"key": "lancha_rapida",  "game_id": 218, "name": "Lancha Rápida",   "tab": "sea", "icon": "game/units/Lancha Rápida.png",   "bi": "bi-tsunami",       "accent": "rgba(45,165,120,0.85)",  "surface": "rgba(45,165,120,0.08)"},
+    {"key": "porta_balaos",   "game_id": 219, "name": "Porta-balões",    "tab": "sea", "icon": "game/units/Porta-balões.png",    "bi": "bi-box-seam",      "accent": "rgba(155,200,70,0.85)",  "surface": "rgba(155,200,70,0.08)"},
+    {"key": "barco_mercante", "game_id": 201, "name": "Barco Mercante",  "tab": "sea", "icon": "game/units/barco_mercante.png", "bi": "bi-shop",          "accent": "rgba(180,140,60,0.85)",  "surface": "rgba(180,140,60,0.08)"},
+    {"key": "cargueiro",      "game_id": 204, "name": "Cargueiro",       "tab": "sea", "icon": "game/units/cargueiro.png",      "bi": "bi-box-seam-fill", "accent": "rgba(110,90,70,0.85)",   "surface": "rgba(110,90,70,0.08)"},
 )
+
+_UNIT_STATS_DB: dict[int, dict] = {}
+try:
+    _unit_stats_path = Path(__file__).resolve().parents[3] / "core" / "data" / "unit_stats.json"
+    _UNIT_STATS_DB = {int(k): v for k, v in json.loads(_unit_stats_path.read_text(encoding="utf-8")).items()}
+except Exception:
+    pass
 
 
 def _build_job_form_initial(request, ga, action_code: int) -> dict:
@@ -469,17 +477,9 @@ def _find_branch_office_pos(city: dict | None) -> int | None:
 
 def _training_form_context(snapshot, cities):
     """Build context for the train units (ac=1005) and station (ac=1202) form sections."""
-    import json
-    from pathlib import Path
     from core.catalogs import TRAINING_UNITS, UNIT_ICON_MAP, get_unit_info
 
-    # Load static unit stats (HP, damage, armor, speed, improvements)
-    _stats_path = Path(__file__).resolve().parents[3] / "core" / "data" / "unit_stats.json"
-    try:
-        _raw = json.loads(_stats_path.read_text(encoding="utf-8"))
-        unit_stats_db: dict[int, dict] = {int(k): v for k, v in _raw.items()}
-    except Exception:
-        unit_stats_db = {}
+    unit_stats_db = _UNIT_STATS_DB
 
     # Improvement levels from snapshot (set by runner 1203)
     unit_improvements: dict[str, dict] = {}
@@ -1483,7 +1483,7 @@ def _scientists_form_context(snapshot, cities):
     }
 
 
-def _upgrade_units_form_context(cities):
+def _upgrade_units_form_context(cities, snapshot=None):
     """Build context for the Melhorar Unidades (action 1203) creation form."""
     workshop_cities = []
     for city in cities or []:
@@ -1503,12 +1503,40 @@ def _upgrade_units_form_context(cities):
             break
     workshop_cities.sort(key=lambda item: str(item.get("name") or "").lower())
 
+    unit_improvements: dict[str, dict] = {}
+    if snapshot:
+        base = snapshot.base_snapshot or {}
+        unit_improvements = base.get("unit_improvements") or {}
+
+    def _unit_stats(game_id: int) -> dict:
+        us = _UNIT_STATS_DB.get(game_id, {})
+        if not us.get("hp"):
+            return {}
+        imp = unit_improvements.get(str(game_id), {})
+        off_lv = int(imp.get("offensive") or 0)
+        def_lv = int(imp.get("defensive") or 0)
+        imp_data = us.get("improvements", {})
+        off_bonus = int((imp_data.get("offensive") or {}).get("bonus_per_level") or 0)
+        def_bonus = int((imp_data.get("defensive") or {}).get("bonus_per_level") or 0)
+        weapons = us.get("weapons") or []
+        base_dmg = max((w.get("damage", 0) for w in weapons), default=0)
+        return {
+            "hp": us.get("hp", 0),
+            "damage": base_dmg + off_lv * off_bonus,
+            "armor": int(us.get("armor") or 0) + def_lv * def_bonus,
+            "speed": us.get("speed", 0),
+            "off_lv": off_lv,
+            "def_lv": def_lv,
+            "off_bonus": off_bonus,
+            "def_bonus": def_bonus,
+        }
+
     land_units = [
-        {**u, "icon_url": static(u["icon"]) if u.get("icon") else ""}
+        {**u, "icon_url": static(u["icon"]) if u.get("icon") else "", "stats": _unit_stats(u["game_id"])}
         for u in WORKSHOP_UNITS_UI if u["tab"] == "land"
     ]
     sea_units = [
-        {**u, "icon_url": static(u["icon"]) if u.get("icon") else ""}
+        {**u, "icon_url": static(u["icon"]) if u.get("icon") else "", "stats": _unit_stats(u["game_id"])}
         for u in WORKSHOP_UNITS_UI if u["tab"] == "sea"
     ]
 
@@ -1671,7 +1699,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities):
         "miracle_ui": _miracle_form_context(cities),
         "experiment_ui": _experiment_form_context(snapshot, cities),
         "scientists_ui": _scientists_form_context(snapshot, cities),
-        "upgrade_units_ui": _upgrade_units_form_context(cities),
+        "upgrade_units_ui": _upgrade_units_form_context(cities, snapshot),
         "market_ui": _market_form_context(cities),
         "training_ui": _training_form_context(snapshot, cities),
         "black_market_ui": _black_market_form_context(cities, snapshot),

@@ -102,31 +102,56 @@ class WorkshopAction(BaseAction):
     # ── Public API ──
 
     def get_state(self, *, city_id: int, position: int, **kwargs: Any) -> dict[str, Any]:
-        """Fetch the current workshop state for a city.
+        """Fetch the current workshop state for a city (both land and naval tabs).
 
         Returns a dict with:
           - ``in_progress``: bool — whether a research is currently running
           - ``remaining_seconds``: int — seconds left on the current research (0 if idle)
           - ``remaining_text``: str  — human-readable remaining time
-          - ``improvements``: list[dict] — available improvements (not yet researched)
+          - ``improvements``: list[dict] — available improvements (land + naval merged)
               Each entry: {id, name, gold_cost, crystal_cost, duration_seconds, duration_text}
           - ``gold``: int — current gold in the account header
           - ``updated_at``: str — ISO timestamp
         """
-        params = {
+        base_params = {
             "view": self._VIEW,
             "cityId": str(city_id),
             "position": str(position),
             "backgroundView": "city",
             "currentCityId": str(city_id),
-            "activeTab": "tabUnits",
             "actionRequest": self.client._action_request,
             "ajax": "1",
         }
         try:
-            resp = self.client._request("GET", self.client._server_url, params=params, headers=GAME_AJAX_HEADERS)
-            payload = resp.json()
-            return self._parse_state_payload(payload)
+            # Fetch land unit improvements
+            land_resp = self.client._request(
+                "GET", self.client._server_url,
+                params={**base_params, "activeTab": "tabUnits"},
+                headers=GAME_AJAX_HEADERS,
+            )
+            land_state = self._parse_state_payload(land_resp.json())
+
+            # Fetch naval unit improvements
+            try:
+                fleet_resp = self.client._request(
+                    "GET", self.client._server_url,
+                    params={**base_params, "activeTab": "tabFleet"},
+                    headers=GAME_AJAX_HEADERS,
+                )
+                fleet_state = self._parse_state_payload(fleet_resp.json())
+                # Merge: use whichever tab shows in_progress; combine improvement lists
+                if fleet_state.get("in_progress"):
+                    land_state["in_progress"] = True
+                    land_state["remaining_seconds"] = fleet_state["remaining_seconds"]
+                    land_state["remaining_text"] = fleet_state["remaining_text"]
+                seen_ids = {imp["id"] for imp in land_state.get("improvements") or []}
+                for imp in fleet_state.get("improvements") or []:
+                    if imp.get("id") not in seen_ids:
+                        land_state.setdefault("improvements", []).append(imp)
+            except Exception:
+                pass  # fleet tab unavailable or parse error — use land-only result
+
+            return land_state
         except Exception:
             pass
 

@@ -416,48 +416,35 @@
           {# Troops grid — 4 cols #}
           <div x-show="buildingType==='troops'" class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {% for unit in training_ui.troops_units %}
-            <div class="relative overflow-hidden rounded-[16px] border transition-all duration-150"
-                 :class="total('{{ unit.id }}') > 0 ? 'ring-2 ring-[rgba(187,81,67,0.55)] translate-y-[-1px] shadow-[0_8px_20px_rgba(187,81,67,0.14)]' : 'hover:translate-y-[-1px] hover:shadow-[0_8px_18px_rgba(187,81,67,0.10)]'"
-                 style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);">
+            <div class="relative overflow-hidden rounded-[18px] border transition-all duration-200 flex flex-col"
+                 :class="total('{{ unit.id }}') > 0 ? 'ring-2 ring-[rgba(187,81,67,0.55)] shadow-[0_10px_28px_rgba(187,81,67,0.18)]' : 'hover:shadow-[0_6px_20px_rgba(187,81,67,0.10)] hover:translate-y-[-1px]'"
+                 style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.92);">
               <input type="hidden" name="units_{{ unit.id }}" :value="total('{{ unit.id }}')">
-              <div class="absolute inset-x-0 top-0 h-10" style="background: linear-gradient(135deg, rgba(187,81,67,0.09), transparent);"></div>
-              <div class="relative p-2.5">
-                <div class="flex items-center gap-2 mb-1.5">
-                  <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-[12px] border"
-                       style="border-color: rgba(187,81,67,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
-                    {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="h-9 w-9 object-contain">
-                    {% else %}<i class="bi bi-shield-fill" style="color: var(--ik-bad);"></i>{% endif %}
-                  </div>
-                  <div class="min-w-0">
-                    <div class="text-[11px] font-bold text-ink leading-tight truncate">{{ unit.name }}</div>
-                    <div class="text-[9px] text-muted">
-                      {% if unit.wood %}<img src="{% static 'game/resources/icon_wood.png' %}" class="h-3 w-3 inline">{{ unit.wood }} {% endif %}{% if unit.sulfur %}<img src="{% static 'game/resources/icon_sulfur.png' %}" class="h-3 w-3 inline">{{ unit.sulfur }} {% endif %}{% if unit.wine %}<img src="{% static 'game/resources/icon_wine.png' %}" class="h-3 w-3 inline">{{ unit.wine }} {% endif %}{% if unit.crystal %}<img src="{% static 'game/resources/icon_glass.png' %}" class="h-3 w-3 inline">{{ unit.crystal }}{% endif %}
-                    </div>
-                  </div>
-                </div>
+              {# Image banner #}
+              <div class="relative flex items-center justify-center h-[4.5rem] shrink-0 overflow-hidden"
+                   style="background: linear-gradient(160deg, rgba(187,81,67,0.10) 0%, rgba(247,241,229,0.55) 70%, transparent 100%);">
+                {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="h-14 w-14 object-contain drop-shadow-sm">
+                {% else %}<i class="bi bi-shield-fill text-4xl" style="color:rgba(187,81,67,0.30);"></i>{% endif %}
+                <span class="absolute top-1.5 right-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border-2 border-white px-1 text-[9px] font-bold shadow-sm transition-all"
+                      :class="total('{{ unit.id }}') > 0 ? 'bg-[var(--ik-bad)] text-white' : 'bg-white/80 text-muted'"
+                      x-text="total('{{ unit.id }}') > 0 ? total('{{ unit.id }}') : '+'"></span>
+              </div>
+              <div class="flex flex-col flex-1 px-2.5 pb-2 pt-1.5 gap-1">
+                <div class="text-[11px] font-bold text-ink leading-tight truncate">{{ unit.name }}</div>
                 {% if unit.stats.hp %}
-                <div class="flex flex-wrap gap-1 mb-1.5">
-                  <span class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[9px] font-semibold" style="background:rgba(187,81,67,0.10);color:var(--ik-bad);" title="Pontos de vida">
-                    <i class="bi bi-heart-fill"></i> {{ unit.stats.hp }}
-                  </span>
-                  {% if unit.stats.damage %}
-                  <span class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[9px] font-semibold" style="background:rgba(201,156,78,0.12);color:var(--ik-gold);" title="Dano{% if unit.stats.off_lv %} (nível {{ unit.stats.off_lv }}){% endif %}">
-                    <i class="bi bi-lightning-fill"></i> {{ unit.stats.damage }}{% if unit.stats.off_lv %}<span class="opacity-50 text-[8px]"> lv{{ unit.stats.off_lv }}</span>{% endif %}
-                  </span>
-                  {% endif %}
-                  {% if unit.stats.armor %}
-                  <span class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[9px] font-semibold" style="background:rgba(95,140,78,0.10);color:var(--ik-good);" title="Armadura{% if unit.stats.def_lv %} (nível {{ unit.stats.def_lv }}){% endif %}">
-                    <i class="bi bi-shield-fill"></i> {{ unit.stats.armor }}{% if unit.stats.def_lv %}<span class="opacity-50 text-[8px]"> lv{{ unit.stats.def_lv }}</span>{% endif %}
-                  </span>
-                  {% endif %}
-                  <span class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[9px] font-semibold" style="background:rgba(79,134,185,0.10);color:var(--ik-sea);" title="Velocidade">
-                    <i class="bi bi-wind"></i> {{ unit.stats.speed }}
-                  </span>
+                <div class="grid grid-cols-2 gap-x-1 gap-y-0.5">
+                  <div class="flex items-center gap-0.5" title="Pontos de vida"><i class="bi bi-heart-fill text-[8px]" style="color:var(--ik-bad);"></i><span class="text-[10px] font-bold" style="color:var(--ik-bad);">{{ unit.stats.hp }}</span></div>
+                  {% if unit.stats.damage %}<div class="flex items-center gap-0.5" title="Dano{% if unit.stats.off_lv %} lv{{ unit.stats.off_lv }}{% endif %}"><i class="bi bi-lightning-fill text-[8px]" style="color:var(--ik-gold);"></i><span class="text-[10px] font-bold" style="color:var(--ik-gold);">{{ unit.stats.damage }}{% if unit.stats.off_lv %}<span class="text-[7px] font-normal opacity-60">↑{{ unit.stats.off_lv }}</span>{% endif %}</span></div>{% else %}<div></div>{% endif %}
+                  {% if unit.stats.armor %}<div class="flex items-center gap-0.5" title="Armadura{% if unit.stats.def_lv %} lv{{ unit.stats.def_lv }}{% endif %}"><i class="bi bi-shield-fill text-[8px]" style="color:var(--ik-good);"></i><span class="text-[10px] font-bold" style="color:var(--ik-good);">{{ unit.stats.armor }}{% if unit.stats.def_lv %}<span class="text-[7px] font-normal opacity-60">↑{{ unit.stats.def_lv }}</span>{% endif %}</span></div>{% else %}<div></div>{% endif %}
+                  <div class="flex items-center gap-0.5" title="Velocidade"><i class="bi bi-wind text-[8px]" style="color:var(--ik-sea);"></i><span class="text-[10px] font-bold" style="color:var(--ik-sea);">{{ unit.stats.speed }}</span></div>
                 </div>
                 {% endif %}
-                <div class="flex items-center gap-1">
+                <div class="flex flex-wrap gap-x-2 text-[9px] text-muted leading-tight">
+                  {% if unit.wood %}<span><img src="{% static 'game/resources/icon_wood.png' %}" class="h-2.5 w-2.5 inline -mt-0.5">{{ unit.wood }}</span>{% endif %}{% if unit.sulfur %}<span><img src="{% static 'game/resources/icon_sulfur.png' %}" class="h-2.5 w-2.5 inline -mt-0.5">{{ unit.sulfur }}</span>{% endif %}{% if unit.wine %}<span><img src="{% static 'game/resources/icon_wine.png' %}" class="h-2.5 w-2.5 inline -mt-0.5">{{ unit.wine }}</span>{% endif %}{% if unit.crystal %}<span><img src="{% static 'game/resources/icon_glass.png' %}" class="h-2.5 w-2.5 inline -mt-0.5">{{ unit.crystal }}</span>{% endif %}
+                </div>
+                <div class="flex items-center gap-1 mt-auto pt-0.5">
                   <button type="button"
-                          @click="units['{{ unit.id }}'] = Math.max(0, (parseInt(units['{{ unit.id }}'])||0) - (parseInt(units['{{ unit.id }}'])||0) >= 100 ? 100 : 1)"
+                          @click="units['{{ unit.id }}'] = Math.max(0, (parseInt(units['{{ unit.id }}'])||0) - 1)"
                           @click.shift="units['{{ unit.id }}'] = Math.max(0, (parseInt(units['{{ unit.id }}'])||0) - 100)"
                           class="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-lg border text-ink text-xs font-bold hover:bg-red-50 transition-colors"
                           style="border-color: rgba(219,201,167,0.9);">−</button>
@@ -472,7 +459,7 @@
                           class="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-lg border text-ink text-xs font-bold hover:bg-green-50 transition-colors"
                           style="border-color: rgba(219,201,167,0.9);">+</button>
                 </div>
-                <div class="text-[9px] text-muted text-center mt-0.5">↻ {{ unit.upkeep }}/h</div>
+                <div class="text-[9px] text-muted text-center">↻ {{ unit.upkeep }}/h</div>
               </div>
             </div>
             {% endfor %}
@@ -481,66 +468,51 @@
           {# Fleet grid — 4 cols #}
           <div x-show="buildingType==='fleet'" class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {% for unit in training_ui.fleet_units %}
-            <div class="relative overflow-hidden rounded-[16px] border transition-all duration-150"
-                 :class="total('{{ unit.id }}') > 0 ? 'ring-2 ring-[rgba(79,134,185,0.55)] translate-y-[-1px] shadow-[0_8px_20px_rgba(79,134,185,0.14)]' : 'hover:translate-y-[-1px]'"
-                 style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);">
+            <div class="relative overflow-hidden rounded-[18px] border transition-all duration-200 flex flex-col"
+                 :class="total('{{ unit.id }}') > 0 ? 'ring-2 ring-[rgba(79,134,185,0.55)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : 'hover:shadow-[0_6px_20px_rgba(79,134,185,0.10)] hover:translate-y-[-1px]'"
+                 style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.92);">
               <input type="hidden" name="units_{{ unit.id }}" :value="total('{{ unit.id }}')">
-              <div class="absolute inset-x-0 top-0 h-10" style="background: linear-gradient(135deg, rgba(79,134,185,0.09), transparent);"></div>
-              <div class="relative p-2.5">
-                <div class="flex items-center gap-2 mb-1.5">
-                  <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-[12px] border"
-                       style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
-                    {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="h-9 w-9 object-contain">
-                    {% else %}<i class="bi bi-water" style="color: var(--ik-sea);"></i>{% endif %}
-                  </div>
-                  <div class="min-w-0">
-                    <div class="text-[11px] font-bold text-ink leading-tight truncate">{{ unit.name }}</div>
-                    <div class="text-[9px] text-muted">
-                      {% if unit.wood %}<img src="{% static 'game/resources/icon_wood.png' %}" class="h-3 w-3 inline">{{ unit.wood }} {% endif %}{% if unit.sulfur %}<img src="{% static 'game/resources/icon_sulfur.png' %}" class="h-3 w-3 inline">{{ unit.sulfur }} {% endif %}{% if unit.wine %}<img src="{% static 'game/resources/icon_wine.png' %}" class="h-3 w-3 inline">{{ unit.wine }} {% endif %}{% if unit.crystal %}<img src="{% static 'game/resources/icon_glass.png' %}" class="h-3 w-3 inline">{{ unit.crystal }}{% endif %}
-                    </div>
-                  </div>
-                </div>
+              {# Image banner #}
+              <div class="relative flex items-center justify-center h-[4.5rem] shrink-0 overflow-hidden"
+                   style="background: linear-gradient(160deg, rgba(79,134,185,0.10) 0%, rgba(247,241,229,0.55) 70%, transparent 100%);">
+                {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="h-14 w-14 object-contain drop-shadow-sm">
+                {% else %}<i class="bi bi-water text-4xl" style="color:rgba(79,134,185,0.30);"></i>{% endif %}
+                <span class="absolute top-1.5 right-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border-2 border-white px-1 text-[9px] font-bold shadow-sm transition-all"
+                      :class="total('{{ unit.id }}') > 0 ? 'bg-[var(--ik-sea)] text-white' : 'bg-white/80 text-muted'"
+                      x-text="total('{{ unit.id }}') > 0 ? total('{{ unit.id }}') : '+'"></span>
+              </div>
+              <div class="flex flex-col flex-1 px-2.5 pb-2 pt-1.5 gap-1">
+                <div class="text-[11px] font-bold text-ink leading-tight truncate">{{ unit.name }}</div>
                 {% if unit.stats.hp %}
-                <div class="flex flex-wrap gap-1 mb-1.5">
-                  <span class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[9px] font-semibold" style="background:rgba(187,81,67,0.10);color:var(--ik-bad);" title="Pontos de vida">
-                    <i class="bi bi-heart-fill"></i> {{ unit.stats.hp }}
-                  </span>
-                  {% if unit.stats.damage %}
-                  <span class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[9px] font-semibold" style="background:rgba(201,156,78,0.12);color:var(--ik-gold);" title="Dano{% if unit.stats.off_lv %} (nível {{ unit.stats.off_lv }}){% endif %}">
-                    <i class="bi bi-lightning-fill"></i> {{ unit.stats.damage }}{% if unit.stats.off_lv %}<span class="opacity-50 text-[8px]"> lv{{ unit.stats.off_lv }}</span>{% endif %}
-                  </span>
-                  {% endif %}
-                  {% if unit.stats.armor %}
-                  <span class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[9px] font-semibold" style="background:rgba(95,140,78,0.10);color:var(--ik-good);" title="Armadura{% if unit.stats.def_lv %} (nível {{ unit.stats.def_lv }}){% endif %}">
-                    <i class="bi bi-shield-fill"></i> {{ unit.stats.armor }}{% if unit.stats.def_lv %}<span class="opacity-50 text-[8px]"> lv{{ unit.stats.def_lv }}</span>{% endif %}
-                  </span>
-                  {% endif %}
-                  <span class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[9px] font-semibold" style="background:rgba(79,134,185,0.10);color:var(--ik-sea);" title="Velocidade">
-                    <i class="bi bi-wind"></i> {{ unit.stats.speed }}
-                  </span>
-                  {% if unit.stats.capacity %}
-                  <span class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[9px] font-semibold" style="background:rgba(95,140,78,0.08);color:var(--ik-good);" title="Capacidade de carga">
-                    <i class="bi bi-box-seam"></i> {{ unit.stats.capacity }}
-                  </span>
-                  {% endif %}
+                <div class="grid grid-cols-2 gap-x-1 gap-y-0.5">
+                  <div class="flex items-center gap-0.5" title="Pontos de vida"><i class="bi bi-heart-fill text-[8px]" style="color:var(--ik-bad);"></i><span class="text-[10px] font-bold" style="color:var(--ik-bad);">{{ unit.stats.hp }}</span></div>
+                  {% if unit.stats.damage %}<div class="flex items-center gap-0.5" title="Dano{% if unit.stats.off_lv %} lv{{ unit.stats.off_lv }}{% endif %}"><i class="bi bi-lightning-fill text-[8px]" style="color:var(--ik-gold);"></i><span class="text-[10px] font-bold" style="color:var(--ik-gold);">{{ unit.stats.damage }}{% if unit.stats.off_lv %}<span class="text-[7px] font-normal opacity-60">↑{{ unit.stats.off_lv }}</span>{% endif %}</span></div>{% else %}<div></div>{% endif %}
+                  {% if unit.stats.armor %}<div class="flex items-center gap-0.5" title="Armadura{% if unit.stats.def_lv %} lv{{ unit.stats.def_lv }}{% endif %}"><i class="bi bi-shield-fill text-[8px]" style="color:var(--ik-good);"></i><span class="text-[10px] font-bold" style="color:var(--ik-good);">{{ unit.stats.armor }}{% if unit.stats.def_lv %}<span class="text-[7px] font-normal opacity-60">↑{{ unit.stats.def_lv }}</span>{% endif %}</span></div>{% else %}<div></div>{% endif %}
+                  <div class="flex items-center gap-0.5" title="Velocidade"><i class="bi bi-wind text-[8px]" style="color:var(--ik-sea);"></i><span class="text-[10px] font-bold" style="color:var(--ik-sea);">{{ unit.stats.speed }}</span></div>
+                  {% if unit.stats.capacity %}<div class="flex items-center gap-0.5 col-span-2" title="Capacidade"><i class="bi bi-box-seam text-[8px]" style="color:var(--ik-good);"></i><span class="text-[10px] font-bold" style="color:var(--ik-good);">{{ unit.stats.capacity }}</span></div>{% endif %}
                 </div>
                 {% endif %}
-                <div class="flex items-center gap-1">
+                <div class="flex flex-wrap gap-x-2 text-[9px] text-muted leading-tight">
+                  {% if unit.wood %}<span><img src="{% static 'game/resources/icon_wood.png' %}" class="h-2.5 w-2.5 inline -mt-0.5">{{ unit.wood }}</span>{% endif %}{% if unit.sulfur %}<span><img src="{% static 'game/resources/icon_sulfur.png' %}" class="h-2.5 w-2.5 inline -mt-0.5">{{ unit.sulfur }}</span>{% endif %}{% if unit.wine %}<span><img src="{% static 'game/resources/icon_wine.png' %}" class="h-2.5 w-2.5 inline -mt-0.5">{{ unit.wine }}</span>{% endif %}{% if unit.crystal %}<span><img src="{% static 'game/resources/icon_glass.png' %}" class="h-2.5 w-2.5 inline -mt-0.5">{{ unit.crystal }}</span>{% endif %}
+                </div>
+                <div class="flex items-center gap-1 mt-auto pt-0.5">
                   <button type="button"
                           @click="units['{{ unit.id }}'] = Math.max(0, (parseInt(units['{{ unit.id }}'])||0) - 1)"
+                          @click.shift="units['{{ unit.id }}'] = Math.max(0, (parseInt(units['{{ unit.id }}'])||0) - 100)"
                           class="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-lg border text-xs font-bold hover:bg-red-50"
                           style="border-color: rgba(219,201,167,0.9);">−</button>
                   <input type="number" min="0"
                          x-model.number="units['{{ unit.id }}']"
-                         class="flex-1 min-w-0 text-center text-xs font-bold text-ink rounded-lg border py-1 outline-none focus:ring-1"
+                         class="flex-1 min-w-0 text-center text-xs font-bold text-ink rounded-lg border py-1 outline-none focus:ring-1 focus:ring-[rgba(79,134,185,0.5)]"
                          style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.9);"
                          placeholder="0">
                   <button type="button"
                           @click="units['{{ unit.id }}'] = (parseInt(units['{{ unit.id }}'])||0) + 1"
+                          @click.shift="units['{{ unit.id }}'] = (parseInt(units['{{ unit.id }}'])||0) + 100"
                           class="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-lg border text-xs font-bold hover:bg-green-50"
                           style="border-color: rgba(219,201,167,0.9);">+</button>
                 </div>
-                <div class="text-[9px] text-muted text-center mt-0.5">↻ {{ unit.upkeep }}/h</div>
+                <div class="text-[9px] text-muted text-center">↻ {{ unit.upkeep }}/h</div>
               </div>
             </div>
             {% endfor %}
