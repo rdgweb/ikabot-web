@@ -423,8 +423,8 @@
               {# Banner: badge top-left, image top-right (overflows below gradient), name + stats left #}
               <div class="relative px-3 pt-2.5 pb-2"
                    style="background: linear-gradient(160deg, rgba(187,81,67,0.10) 0%, rgba(247,241,229,0.55) 70%, transparent 100%);">
-                {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="absolute right-1 top-0 h-[3.75rem] w-[3.75rem] object-contain drop-shadow-sm" style="z-index:1;">
-                {% else %}<i class="bi bi-shield-fill absolute right-2 top-2 text-4xl" style="color:rgba(187,81,67,0.20);z-index:1;"></i>{% endif %}
+                {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="absolute right-1 top-0 h-[3.75rem] w-[3.75rem] object-contain drop-shadow-sm">
+                {% else %}<i class="bi bi-shield-fill absolute right-2 top-2 text-4xl" style="color:rgba(187,81,67,0.20);"></i>{% endif %}
                 <div class="pr-[4rem] min-w-0">
                   <div class="flex items-center gap-1 min-w-0 mb-0.5">
                     <span x-show="total('{{ unit.id }}') > 0" x-text="total('{{ unit.id }}')" x-cloak
@@ -442,15 +442,14 @@
                   {% endif %}
                 </div>
               </div>
-              {# Bottom: costs + counter + upkeep #}
-              <div class="flex flex-col flex-1 px-2.5 pb-2 pt-1 gap-1">
+              {# Bottom: costs + counter + upkeep — relative/z-10 para ficar acima da imagem que vaza #}
+              <div class="relative z-10 flex flex-col flex-1 px-2.5 pb-2 pt-1 gap-1" style="background: rgba(255,255,255,0.92);">
                 <div class="flex flex-wrap gap-x-2 text-[9px] text-muted leading-tight">
                   {% if unit.wood %}<span><img src="{% static 'game/resources/icon_wood.png' %}" class="h-2.5 w-2.5 inline -mt-0.5">{{ unit.wood }}</span>{% endif %}{% if unit.sulfur %}<span><img src="{% static 'game/resources/icon_sulfur.png' %}" class="h-2.5 w-2.5 inline -mt-0.5">{{ unit.sulfur }}</span>{% endif %}{% if unit.wine %}<span><img src="{% static 'game/resources/icon_wine.png' %}" class="h-2.5 w-2.5 inline -mt-0.5">{{ unit.wine }}</span>{% endif %}{% if unit.crystal %}<span><img src="{% static 'game/resources/icon_glass.png' %}" class="h-2.5 w-2.5 inline -mt-0.5">{{ unit.crystal }}</span>{% endif %}
                 </div>
                 <div class="flex items-center gap-1 mt-auto">
                   <button type="button"
-                          @click="units['{{ unit.id }}'] = Math.max(0, (parseInt(units['{{ unit.id }}'])||0) - 1)"
-                          @click.shift="units['{{ unit.id }}'] = Math.max(0, (parseInt(units['{{ unit.id }}'])||0) - 100)"
+                          @click="units['{{ unit.id }}'] = Math.max(0, (parseInt(units['{{ unit.id }}'])||0) - ($event.shiftKey ? 100 : 1))"
                           class="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-lg border text-ink text-xs font-bold hover:bg-red-50 transition-colors"
                           style="border-color: rgba(219,201,167,0.9);">−</button>
                   <input type="number" min="0"
@@ -459,8 +458,7 @@
                          style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.9);"
                          placeholder="0">
                   <button type="button"
-                          @click="units['{{ unit.id }}'] = (parseInt(units['{{ unit.id }}'])||0) + 1"
-                          @click.shift="units['{{ unit.id }}'] = (parseInt(units['{{ unit.id }}'])||0) + 100"
+                          @click="units['{{ unit.id }}'] = (parseInt(units['{{ unit.id }}'])||0) + ($event.shiftKey ? 100 : 1)"
                           class="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-lg border text-ink text-xs font-bold hover:bg-green-50 transition-colors"
                           style="border-color: rgba(219,201,167,0.9);">+</button>
                 </div>
@@ -480,8 +478,8 @@
               {# Banner: badge top-left, image top-right (overflows below gradient), name + stats left #}
               <div class="relative px-3 pt-2.5 pb-2"
                    style="background: linear-gradient(160deg, rgba(79,134,185,0.10) 0%, rgba(247,241,229,0.55) 70%, transparent 100%);">
-                {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="absolute right-1 top-0 h-[3.75rem] w-[3.75rem] object-contain drop-shadow-sm" style="z-index:1;">
-                {% else %}<i class="bi bi-water absolute right-2 top-2 text-4xl" style="color:rgba(79,134,185,0.20);z-index:1;"></i>{% endif %}
+                {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="absolute right-1 top-0 h-[3.75rem] w-[3.75rem] object-contain drop-shadow-sm">
+                {% else %}<i class="bi bi-water absolute right-2 top-2 text-4xl" style="color:rgba(79,134,185,0.20);"></i>{% endif %}
                 <div class="pr-[4rem] min-w-0">
                   <div class="flex items-center gap-1 min-w-0 mb-0.5">
                     <span x-show="total('{{ unit.id }}') > 0" x-text="total('{{ unit.id }}')" x-cloak
@@ -500,15 +498,14 @@
                   {% endif %}
                 </div>
               </div>
-              {# Bottom: costs + counter + upkeep #}
-              <div class="flex flex-col flex-1 px-2.5 pb-2 pt-1 gap-1">
+              {# Bottom: costs + counter + upkeep — relative/z-10 para ficar acima da imagem que vaza #}
+              <div class="relative z-10 flex flex-col flex-1 px-2.5 pb-2 pt-1 gap-1" style="background: rgba(255,255,255,0.92);">
                 <div class="flex flex-wrap gap-x-2 text-[9px] text-muted leading-tight">
                   {% if unit.wood %}<span><img src="{% static 'game/resources/icon_wood.png' %}" class="h-2.5 w-2.5 inline -mt-0.5">{{ unit.wood }}</span>{% endif %}{% if unit.sulfur %}<span><img src="{% static 'game/resources/icon_sulfur.png' %}" class="h-2.5 w-2.5 inline -mt-0.5">{{ unit.sulfur }}</span>{% endif %}{% if unit.wine %}<span><img src="{% static 'game/resources/icon_wine.png' %}" class="h-2.5 w-2.5 inline -mt-0.5">{{ unit.wine }}</span>{% endif %}{% if unit.crystal %}<span><img src="{% static 'game/resources/icon_glass.png' %}" class="h-2.5 w-2.5 inline -mt-0.5">{{ unit.crystal }}</span>{% endif %}
                 </div>
                 <div class="flex items-center gap-1 mt-auto">
                   <button type="button"
-                          @click="units['{{ unit.id }}'] = Math.max(0, (parseInt(units['{{ unit.id }}'])||0) - 1)"
-                          @click.shift="units['{{ unit.id }}'] = Math.max(0, (parseInt(units['{{ unit.id }}'])||0) - 100)"
+                          @click="units['{{ unit.id }}'] = Math.max(0, (parseInt(units['{{ unit.id }}'])||0) - ($event.shiftKey ? 100 : 1))"
                           class="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-lg border text-xs font-bold hover:bg-red-50"
                           style="border-color: rgba(219,201,167,0.9);">−</button>
                   <input type="number" min="0"
@@ -517,8 +514,7 @@
                          style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.9);"
                          placeholder="0">
                   <button type="button"
-                          @click="units['{{ unit.id }}'] = (parseInt(units['{{ unit.id }}'])||0) + 1"
-                          @click.shift="units['{{ unit.id }}'] = (parseInt(units['{{ unit.id }}'])||0) + 100"
+                          @click="units['{{ unit.id }}'] = (parseInt(units['{{ unit.id }}'])||0) + ($event.shiftKey ? 100 : 1)"
                           class="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-lg border text-xs font-bold hover:bg-green-50"
                           style="border-color: rgba(219,201,167,0.9);">+</button>
                 </div>
