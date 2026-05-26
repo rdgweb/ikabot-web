@@ -620,11 +620,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   },
@@ -648,11 +648,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   },
@@ -676,11 +676,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   },
@@ -706,11 +706,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   },
@@ -737,11 +737,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   },
@@ -774,11 +774,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   },
@@ -811,11 +811,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   },
@@ -848,11 +848,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   },
@@ -885,11 +885,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   },
@@ -916,11 +916,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   },
@@ -953,11 +953,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   },
@@ -985,11 +985,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   },
@@ -1017,11 +1017,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   },
@@ -1048,11 +1048,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   },
@@ -1075,11 +1075,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   },
@@ -1108,11 +1108,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   },
@@ -1135,11 +1135,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   },
@@ -1168,11 +1168,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   },
@@ -1195,11 +1195,11 @@
     "improvements": {
       "offensive": {
         "stat": "Dano",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       },
       "defensive": {
         "stat": "Armadura",
-        "bonus_per_level": 5
+        "bonus_per_level": 10
       }
     }
   }
