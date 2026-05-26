@@ -21,6 +21,7 @@
         targetRequireLowerTotalScore: false,
         targetRequireLowerGeneralScore: false,
         targetMaxScoreGap: 5,
+        targetedMaxActiveFoundations: 1,
         convertOptions: [
           {val: 'never',     icon: 'bi-slash-circle',   label: 'Nunca converter',                  desc: 'Acumula os pontos sem converter.'},
           {val: 'all',       icon: 'bi-arrow-repeat',   label: 'Converter tudo após cada missão',  desc: 'Converte todos os pontos acumulados a cada retorno.'},
@@ -31,7 +32,8 @@
              nightMissionLevel, nightStartHour, nightEndHour, maxRandomWait,
              convertMode, convertPercent, convertThreshold,
              enableTargetedCycle, targetedIntervalDays, targetedAfterHour,
-             targetRequireLowerTotalScore, targetRequireLowerGeneralScore, targetMaxScoreGap) {
+             targetRequireLowerTotalScore, targetRequireLowerGeneralScore, targetMaxScoreGap,
+             targetedMaxActiveFoundations) {
           this.cities = JSON.parse(document.getElementById('piracy-cities-data')?.textContent || '[]');
           this.missions = JSON.parse(document.getElementById('piracy-missions-data')?.textContent || '[]');
           this.selectedMissionLevel = parseInt(missionLevel) || 7;
@@ -52,6 +54,7 @@
           this.targetRequireLowerTotalScore = !!targetRequireLowerTotalScore;
           this.targetRequireLowerGeneralScore = !!targetRequireLowerGeneralScore;
           this.targetMaxScoreGap = parseInt(targetMaxScoreGap) || 5;
+          this.targetedMaxActiveFoundations = parseInt(targetedMaxActiveFoundations) || 1;
           if (cityId) { this.selectedCityId = String(cityId); }
           else if (this.cities.length) { this.selectedCityId = String(this.cities[0].id); }
         },
@@ -88,7 +91,8 @@
            {{ request.POST.targeted_after_hour|default:16 }},
            {{ request.POST.target_require_lower_total_score|yesno:'true,false,false' }},
            {{ request.POST.target_require_lower_general_score|yesno:'true,false,false' }},
-           {{ request.POST.target_max_score_gap|default:5 }})">
+           {{ request.POST.target_max_score_gap|default:5 }},
+           {{ request.POST.targeted_max_active_foundations|default:1 }})">
 
       <input type="hidden" name="{{ form.city_id.html_name }}" x-model="selectedCityId">
       <input type="hidden" name="{{ form.mission_level.html_name }}" :value="selectedMissionLevel">
@@ -109,6 +113,7 @@
       <input type="hidden" name="target_require_lower_total_score" :value="targetRequireLowerTotalScore ? 'true' : 'false'">
       <input type="hidden" name="target_require_lower_general_score" :value="targetRequireLowerGeneralScore ? 'true' : 'false'">
       <input type="hidden" name="target_max_score_gap" :value="targetMaxScoreGap">
+      <input type="hidden" name="targeted_max_active_foundations" :value="targetedMaxActiveFoundations">
 
       {# Cidade — padrão de cards do sistema #}
       <div class="card !p-4">
@@ -340,6 +345,10 @@
           <div>
             <label class="form-label text-[11px] mb-1 block">Distancia no ranking</label>
             <input type="number" min="1" max="25" x-model.number="targetMaxScoreGap" class="form-input !py-1.5 !text-xs w-full">
+          </div>
+          <div>
+            <label class="form-label text-[11px] mb-1 block">Fundacoes simultaneas</label>
+            <input type="number" min="1" max="5" x-model.number="targetedMaxActiveFoundations" class="form-input !py-1.5 !text-xs w-full">
           </div>
         </div>
 

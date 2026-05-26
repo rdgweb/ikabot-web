@@ -1518,6 +1518,7 @@ class JobListView(FilterSortListView):
             "target_require_lower_total_score": bool(inputs.get("target_require_lower_total_score")),
             "target_require_lower_general_score": bool(inputs.get("target_require_lower_general_score")),
             "target_max_score_gap": _to_int(inputs.get("target_max_score_gap"), 5),
+            "targeted_max_active_foundations": _to_int(inputs.get("targeted_max_active_foundations"), 1),
             "highscore_entries": highscore_entries[:5],
             "highscore_updated_at": _to_int(inputs.get("piracy_highscore_updated_at"), 0),
             "has_state": capture_points is not None,

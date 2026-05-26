@@ -215,11 +215,14 @@ class ColonizeRunnerTests(unittest.TestCase):
         )
 
         self.assertTrue(result.success)
+        self.assertGreater(result.reschedule_seconds, 0)
+        self.assertEqual(result.data["status"], "founding_started")
         self.assertEqual(result.data["source_city_id"], "39269")
         self.assertEqual(result.data["island_id"], "4478")
         self.assertEqual(result.data["position"], 5)
         self.assertEqual(result.data["resources"], {"wood": 2250, "wine": 2500})
         self.assertEqual(result.data["feedback"], ["Sua ordem foi executada."])
+        self.assertEqual(result.reschedule_inputs["_phase"], "wait_founding")
 
 
 if __name__ == "__main__":

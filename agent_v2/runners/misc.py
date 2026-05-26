@@ -15,13 +15,104 @@ Action codes:
 
 from __future__ import annotations
 
+import json
 import logging
+import re
+import time
 from typing import Any
 
 from core.runner_registry import register_runner
 from runners.base import BaseRunner, RunnerResult
+from services.island_donation import extract_city_data
 
 logger = logging.getLogger(__name__)
+
+FOUNDING_BUFFER_SECONDS = 45
+FOUNDING_POLL_SECONDS = 60
+
+
+def _to_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(str(value).strip())
+    except Exception:
+        return default
+
+
+def _parse_related_cities(html: str) -> list[dict[str, Any]]:
+    match = re.search(r"relatedCityData:\s*JSON\.parse\('(.*?)'\)", html)
+    if not match:
+        current_match = re.search(r'currentCityId["\s:=]+(\d+)', html)
+        if not current_match:
+            return []
+        return [{"id": int(current_match.group(1)), "name": "", "coords": ""}]
+
+    raw = match.group(1)
+    clean = raw.replace('\\"', '"').replace("\\\\'", "'").replace("\\\\", "\\")
+    try:
+        payload = json.loads(clean)
+    except Exception:
+        return []
+
+    out: list[dict[str, Any]] = []
+    for key, city_info in payload.items():
+        if not isinstance(city_info, dict) or city_info.get("relationship") != "ownCity":
+            continue
+        city_id = _to_int(city_info.get("id"))
+        if city_id <= 0 and "_" in str(key):
+            city_id = _to_int(str(key).split("_", 1)[-1], 0)
+        if city_id <= 0:
+            continue
+        out.append(
+            {
+                "id": city_id,
+                "name": str(city_info.get("name") or "").strip(),
+                "coords": str(city_info.get("coords") or "").strip(),
+                "tradegood": _to_int(city_info.get("tradegood")),
+            }
+        )
+    return out
+
+
+def fetch_owned_cities(client) -> list[dict[str, Any]]:
+    html = client._request("GET", client._server_url, params={"view": "city"}, timeout=30).text
+    return _parse_related_cities(html)
+
+
+def detect_founded_city(
+    client,
+    *,
+    known_city_ids: list[int] | list[str],
+    island_id: int | str,
+    position: int,
+    owner_name: str = "",
+) -> dict[str, Any] | None:
+    known_ids = {str(_to_int(value)) for value in known_city_ids if _to_int(value) > 0}
+    current_cities = fetch_owned_cities(client)
+    current_by_id = {str(item["id"]): item for item in current_cities if _to_int(item.get("id")) > 0}
+
+    new_ids = [cid for cid in current_by_id if cid not in known_ids]
+    if len(new_ids) == 1:
+        return current_by_id[new_ids[0]]
+
+    island = client.fetch_island_by_id(island_id)
+    for slot in island.get("cities") or []:
+        if _to_int(slot.get("position")) != int(position):
+            continue
+        slot_id = str(_to_int(slot.get("id")))
+        if slot_id in current_by_id:
+            return current_by_id[slot_id]
+        if owner_name and str(slot.get("owner_name") or "").strip() == owner_name and _to_int(slot.get("id")) > 0:
+            return {
+                "id": _to_int(slot.get("id")),
+                "name": str(slot.get("name") or "").strip(),
+                "coords": f"[{island.get('x')}:{island.get('y')}]",
+            }
+    return None
+
+
+def fetch_city_payload(client, city_id: int | str) -> dict[str, Any]:
+    html = client._request("GET", client._server_url, params={"view": "city", "cityId": str(city_id)}, timeout=30).text
+    return extract_city_data(html)
 
 
 @register_runner(820)
@@ -38,9 +129,9 @@ class ColonizeRunner(BaseRunner):
         jid = job["job_id"]
         aid = job["account_id"]
         inputs = job.get("inputs", {})
-
         ga_id = job.get("game_account_id", "")
-        self.log(jid, "info", f"Colonizando para conta {aid}")
+        phase = str(inputs.get("_phase") or "start").strip().lower()
+        self.log(jid, "info", f"Colonizando para conta {aid} | fase={phase}")
 
         source_city_id = inputs.get("source_city_id") or inputs.get("city_id")
         island_id = inputs.get("island_id")
@@ -64,15 +155,55 @@ class ColonizeRunner(BaseRunner):
 
         try:
             client = self.get_or_login_game_client(jid, aid, ga_id, creds)
+            if phase == "wait_founding":
+                founded_city = detect_founded_city(
+                    client,
+                    known_city_ids=list(inputs.get("_known_city_ids") or []),
+                    island_id=island_id,
+                    position=int(position),
+                    owner_name=str(client.account_info.get("player_name") or ""),
+                )
+                if not founded_city:
+                    self.save_game_client(ga_id or aid, client)
+                    self.log(jid, "info", "Colonia ainda nao apareceu; mantendo polling")
+                    return RunnerResult(
+                        success=True,
+                        reschedule_seconds=FOUNDING_POLL_SECONDS,
+                        reschedule_inputs={**inputs, "_phase": "wait_founding"},
+                        data={"status": "waiting_city"},
+                    )
+
+                founded_city_id = _to_int(founded_city.get("id"))
+                founded_name = str(founded_city.get("name") or founded_city_id)
+                self.save_game_client(ga_id or aid, client)
+                self.log(jid, "info", f"Colonia fundada detectada: {founded_name} ({founded_city_id})")
+                return RunnerResult(
+                    success=True,
+                    data={
+                        "status": "founded",
+                        "source_city_id": str(source_city_id),
+                        "island_id": str(island_id),
+                        "position": int(position),
+                        "resources": resources,
+                        "new_city_id": founded_city_id,
+                        "new_city_name": founded_name,
+                        "coords": founded_city.get("coords") or "",
+                    },
+                )
+
             preview = client.get_colonization_preview(
                 source_city_id=source_city_id,
                 island_id=island_id,
                 position=int(position),
             )
+            try:
+                known_city_ids = [item["id"] for item in fetch_owned_cities(client)]
+            except Exception:
+                known_city_ids = []
             self.log(
                 jid,
                 "info",
-                f"Preview colonizacao ok: ilha {island_id} pos {position}, capacidade {preview.get('max_capacity', 0)}",
+                f"Preview colonizacao ok: ilha {island_id} pos {position}, chegada {preview.get('arrival_at_text') or '-'}",
             )
 
             result = client.start_colonization(
@@ -82,12 +213,27 @@ class ColonizeRunner(BaseRunner):
                 resources=resources,
             )
 
+            wait_seconds = (
+                _to_int(preview.get("loading_time_seconds"))
+                + _to_int(preview.get("travel_time_seconds"))
+                + FOUNDING_BUFFER_SECONDS
+            )
+
             self.save_game_client(ga_id or aid, client)
             feedback = "; ".join(result.get("feedback") or []) or "Colonizacao enviada"
-            self.log(jid, "info", feedback)
+            self.log(jid, "info", f"{feedback} | aguardando {wait_seconds}s pela fundacao")
             return RunnerResult(
                 success=True,
+                reschedule_seconds=max(wait_seconds, FOUNDING_POLL_SECONDS),
+                reschedule_inputs={
+                    **inputs,
+                    "_phase": "wait_founding",
+                    "_known_city_ids": known_city_ids,
+                    "_colonization_started_at": int(time.time()),
+                    "_colonization_arrival_at_text": preview.get("arrival_at_text") or "",
+                },
                 data={
+                    "status": "founding_started",
                     "source_city_id": str(source_city_id),
                     "island_id": str(island_id),
                     "position": int(position),
@@ -96,6 +242,12 @@ class ColonizeRunner(BaseRunner):
                         "capacity": preview.get("capacity", 0),
                         "max_capacity": preview.get("max_capacity", 0),
                         "transporters": preview.get("transporters", 0),
+                        "loading_time_text": preview.get("loading_time_text", ""),
+                        "loading_time_seconds": _to_int(preview.get("loading_time_seconds")),
+                        "travel_time_text": preview.get("travel_time_text", ""),
+                        "travel_time_seconds": _to_int(preview.get("travel_time_seconds")),
+                        "arrival_at_text": preview.get("arrival_at_text", ""),
+                        "destination_name": preview.get("destination_name", ""),
                     },
                     "feedback": result.get("feedback") or [],
                 },

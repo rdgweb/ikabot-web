@@ -115,9 +115,13 @@ def _extract_colonization_eta_v2(html: str) -> dict[str, Any]:
         or re.search(r"Dura..o da viagem:\s*([^<]+?)(?:\s+\d{2}\.\d{2}\.\d{4}|\s+Destino|$)", compact, flags=re.IGNORECASE)
         or re.search(r"Duração da viagem:\s*([^<]+?)(?:\s+\d{2}\.\d{2}\.\d{4}|\s+Destino|$)", compact, flags=re.IGNORECASE)
     )
-    arrival_match = re.search(r"(\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2})", compact)
+    arrival_match = (
+        re.search(r'id=["\']arrival["\'][^>]*>\s*([^<]+?)\s*<', html, flags=re.IGNORECASE)
+        or re.search(r"(\d{2}\.\d{2}\.\d{4}\s+\d{1,2}:\d{2}:\d{2})", compact)
+    )
     destination_match = (
-        re.search(r'id=["\']destination["\'][^>]*>\s*([^<]+?)\s*<', html, flags=re.IGNORECASE)
+        re.search(r'<li[^>]+class=["\'][^"\']*journeyTarget[^"\']*["\'][^>]*>[\s\S]*?<span[^>]*>\s*Destino\s*</span>\s*([^<]+?)\s*<', html, flags=re.IGNORECASE)
+        or re.search(r'id=["\']destination["\'][^>]*>\s*([^<]+?)\s*<', html, flags=re.IGNORECASE)
         or re.search(r'class=["\'][^"\']*destination[^"\']*["\'][^>]*>\s*([^<]+?)\s*<', html, flags=re.IGNORECASE)
         or re.search(r"Destino\s+([^<]+?)(?:\s{2,}|$)", compact, flags=re.IGNORECASE)
     )
@@ -125,6 +129,8 @@ def _extract_colonization_eta_v2(html: str) -> dict[str, Any]:
     travel_text = (travel_match.group(1).strip() if travel_match else "")
     arrival_text = (arrival_match.group(1).strip() if arrival_match else "")
     destination_name = (destination_match.group(1).strip() if destination_match else "")
+    if loading_text == "-":
+        loading_text = "0s"
     return {
         "loading_time_text": loading_text,
         "loading_time_seconds": _extract_duration_seconds(loading_text),
@@ -249,5 +255,11 @@ class StartColonizationAction(BaseAction):
                 "capacity": preview.get("capacity", 0),
                 "max_capacity": preview.get("max_capacity", 0),
                 "transporters": preview.get("transporters", 0),
+                "loading_time_text": preview.get("loading_time_text", ""),
+                "loading_time_seconds": int(preview.get("loading_time_seconds") or 0),
+                "travel_time_text": preview.get("travel_time_text", ""),
+                "travel_time_seconds": int(preview.get("travel_time_seconds") or 0),
+                "arrival_at_text": preview.get("arrival_at_text", ""),
+                "destination_name": preview.get("destination_name", ""),
             },
         }

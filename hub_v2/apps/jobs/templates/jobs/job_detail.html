@@ -76,6 +76,7 @@
       <span><i class="bi bi-calendar-event text-[10px]"></i> a cada {{ piracy_display.targeted_interval_days }} dia{% if piracy_display.targeted_interval_days != 1 %}s{% endif %}</span>
       <span><i class="bi bi-clock text-[10px]"></i> apos {{ piracy_display.targeted_after_hour }}h</span>
       <span><i class="bi bi-arrows-angle-expand text-[10px]"></i> gap max. {{ piracy_display.target_max_score_gap }}</span>
+      <span><i class="bi bi-diagram-3 text-[10px]"></i> fundacoes ativas: {{ piracy_display.targeted_max_active_foundations }}</span>
       {% if piracy_display.target_require_lower_total_score %}
       <span><i class="bi bi-graph-down text-[10px]"></i> filtra pontos gerais</span>
       {% endif %}

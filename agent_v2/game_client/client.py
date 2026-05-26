@@ -701,6 +701,26 @@ class GameClient(IslandActions):
             resources=resources,
         )
 
+    def get_abandon_colony_preview(self, city_id: int | str) -> dict:
+        """Fetch the abandon-colony form for one owned colony."""
+        from .actions.abandon_city import AbandonColonyPreviewAction
+        return AbandonColonyPreviewAction(self).execute(city_id=city_id)
+
+    def abandon_colony(
+        self,
+        city_id: int | str,
+        *,
+        game_account_id: str = "",
+        captcha_timeout_sec: int = 120,
+    ) -> dict:
+        """Abandon one colony after solving the in-game captcha."""
+        from .actions.abandon_city import AbandonColonyAction
+        return AbandonColonyAction(self).execute(
+            city_id=city_id,
+            game_account_id=game_account_id,
+            captcha_timeout_sec=captcha_timeout_sec,
+        )
+
     def get_safehouse_state(self, city_id: int | str, position: int = 19) -> dict:
         """Get safehouse state: spy counts, active missions, training queue."""
         from .actions.spy import SpySafehouseAction
