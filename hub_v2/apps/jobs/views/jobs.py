@@ -1491,6 +1491,7 @@ class JobListView(FilterSortListView):
         day_end = _to_int(inputs.get("day_end_hour"), 22)
         convert_mode = str(inputs.get("convert_mode") or "never")
         highscore_entries = inputs.get("piracy_highscore_entries") if isinstance(inputs.get("piracy_highscore_entries"), list) else []
+        highscore_self = inputs.get("piracy_highscore_self") if isinstance(inputs.get("piracy_highscore_self"), dict) else {}
         return {
             "capture_points": capture_points,
             "crew_points": crew_points,
@@ -1519,7 +1520,9 @@ class JobListView(FilterSortListView):
             "target_require_lower_general_score": bool(inputs.get("target_require_lower_general_score")),
             "target_max_score_gap": _to_int(inputs.get("target_max_score_gap"), 5),
             "targeted_max_active_foundations": _to_int(inputs.get("targeted_max_active_foundations"), 1),
-            "highscore_entries": highscore_entries[:5],
+            "highscore_entries": highscore_entries[:10],
+            "highscore_self": highscore_self,
+            "highscore_time_left": _to_int(inputs.get("piracy_highscore_time_left"), 0),
             "highscore_updated_at": _to_int(inputs.get("piracy_highscore_updated_at"), 0),
             "has_state": capture_points is not None,
         }

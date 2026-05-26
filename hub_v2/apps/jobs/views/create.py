@@ -1660,6 +1660,11 @@ def _custom_field_names(action_code: int) -> list[str]:
             "night_mission_level", "night_start_hour", "night_end_hour",
             "max_random_wait",
             "convert_mode", "convert_percent", "convert_threshold",
+            "enable_targeted_cycle", "targeted_interval_days", "targeted_after_hour",
+            "target_require_lower_total_score", "target_require_lower_general_score",
+            "target_max_score_gap", "targeted_max_active_foundations",
+            "target_require_eta_efficiency", "targeted_compare_mission_level",
+            "targeted_convert_mode", "targeted_convert_percent",
         ]
     if int(action_code) == 820:
         return [
@@ -2766,12 +2771,15 @@ class JobSubmitView(LoginRequiredMixin, View):
             "enable_targeted_cycle",
             "target_require_lower_total_score",
             "target_require_lower_general_score",
+            "target_require_eta_efficiency",
         )
         int_fields = (
             "targeted_interval_days",
             "targeted_after_hour",
             "target_max_score_gap",
             "targeted_max_active_foundations",
+            "targeted_compare_mission_level",
+            "targeted_convert_percent",
         )
         for key in bool_fields:
             raw = str(request.POST.get(key) or normalized.get(key) or "").strip().lower()
@@ -2782,6 +2790,10 @@ class JobSubmitView(LoginRequiredMixin, View):
                 normalized[key] = int(raw)
             except (TypeError, ValueError):
                 pass
+        targeted_convert_mode = str(request.POST.get("targeted_convert_mode", normalized.get("targeted_convert_mode") or "all")).strip().lower()
+        if targeted_convert_mode not in {"all", "percent", "never"}:
+            targeted_convert_mode = "all"
+        normalized["targeted_convert_mode"] = targeted_convert_mode
         return normalized
 
     @staticmethod

@@ -74,6 +74,7 @@ class CaptchaChallenge(models.Model):
 
     TYPE_CHOICES = [
         ("piracy", "Pirataria"),
+        ("abandon", "Abandono"),
         ("drag", "Arrastar"),
         ("image", "Imagem"),
         ("lobby", "Lobby"),

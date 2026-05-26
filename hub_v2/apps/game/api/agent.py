@@ -639,9 +639,11 @@ class CaptchaChallengeCreateView(APIView):
         from apps.telegram.services.bot_api import send_photo
 
         captcha_type = str(request.data.get("type") or "pirate").strip()
-        challenge_type = "piracy" if captcha_type == "pirate" else captcha_type
+        display_type = str(request.data.get("display_type") or "").strip()
+        challenge_type = display_type or ("piracy" if captcha_type == "pirate" else captcha_type)
         image_b64 = str(request.data.get("image_b64") or "").strip()
         game_account_id = str(request.data.get("game_account_id") or "").strip()
+        extra_data = request.data.get("extra_data") or {}
 
         if not image_b64:
             return Response({"error": "image_b64 obrigatorio."}, status=status.HTTP_400_BAD_REQUEST)
@@ -689,6 +691,7 @@ class CaptchaChallengeCreateView(APIView):
                 solve_method="auto",
                 game_account=game_account,
                 solved_at=timezone.now(),
+                extra_data=extra_data if isinstance(extra_data, dict) else {},
             )
             return Response({"solution": solution, "challenge_id": None})
 
@@ -709,6 +712,7 @@ class CaptchaChallengeCreateView(APIView):
             status="pending",
             game_account=game_account,
             expires_at=expires_at,
+            extra_data=extra_data if isinstance(extra_data, dict) else {},
         )
 
         logger.info(

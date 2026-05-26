@@ -249,7 +249,7 @@ def from_timestamp(ts):
     import datetime as _dt
     try:
         naive = _dt.datetime.utcfromtimestamp(int(ts))
-        return timezone.make_aware(naive, timezone.utc)
+        return timezone.make_aware(naive, _dt.timezone.utc)
     except (TypeError, ValueError, OSError):
         return None
 
@@ -262,7 +262,7 @@ def timestamp_since(ts):
     import datetime as _dt
     try:
         naive = _dt.datetime.utcfromtimestamp(int(ts))
-        dt = timezone.make_aware(naive, timezone.utc)
+        dt = timezone.make_aware(naive, _dt.timezone.utc)
         now = timezone.now()
         delta = now - dt
         secs = int(delta.total_seconds())
