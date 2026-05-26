@@ -69,43 +69,6 @@
     </div>
   </template>
   {% endif %}
-  {% if piracy_display.enable_targeted_cycle %}
-  <div class="mt-3 rounded-xl border border-[var(--ik-line)] px-3 py-2">
-    <div class="text-[10px] uppercase tracking-wide text-muted mb-2">Ciclo especial por ranking</div>
-    <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-      <span><i class="bi bi-calendar-event text-[10px]"></i> a cada {{ piracy_display.targeted_interval_days }} dia{% if piracy_display.targeted_interval_days != 1 %}s{% endif %}</span>
-      <span><i class="bi bi-clock text-[10px]"></i> apos {{ piracy_display.targeted_after_hour }}h</span>
-      <span><i class="bi bi-arrows-angle-expand text-[10px]"></i> gap max. {{ piracy_display.target_max_score_gap }}</span>
-      <span><i class="bi bi-diagram-3 text-[10px]"></i> fundacoes ativas: {{ piracy_display.targeted_max_active_foundations }}</span>
-      {% if piracy_display.target_require_lower_total_score %}
-      <span><i class="bi bi-graph-down text-[10px]"></i> filtra pontos gerais</span>
-      {% endif %}
-      {% if piracy_display.target_require_lower_general_score %}
-      <span><i class="bi bi-shield text-[10px]"></i> filtra generais</span>
-      {% endif %}
-    </div>
-  </div>
-  {% endif %}
-
-  {% if piracy_display.highscore_entries %}
-  <div class="mt-3 rounded-xl border border-[var(--ik-line)] px-3 py-2.5">
-    <div class="text-[10px] uppercase tracking-wide text-muted mb-2">Ranking salvo da fortaleza</div>
-    <div class="grid gap-2">
-      {% for entry in piracy_display.highscore_entries %}
-      <div class="flex items-center justify-between rounded-lg border border-[var(--ik-line)] px-2.5 py-2">
-        <div>
-          <div class="text-xs font-semibold text-ink">#{{ entry.place }} · {{ entry.player_name }}</div>
-          <div class="text-[10px] text-muted">cidade {{ entry.target_city_id }} · ilha {{ entry.target_island_id }}</div>
-        </div>
-        <div class="text-right">
-          <div class="text-xs font-bold text-[var(--ik-sea)]">{{ entry.score|intcomma }}</div>
-          <div class="text-[10px] text-muted">{{ entry.distance|floatformat:1 }}</div>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
 </div>
 {% endif %}
 {% endblock %}
@@ -976,6 +939,7 @@
     </div>
   </div>
 
+  {# ── Stats row ── #}
   <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 mb-4">
     <div class="rounded-xl border border-[var(--ik-line)] px-3 py-2.5">
       <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Pontos de captura</div>
@@ -1014,111 +978,100 @@
       {% else %}
       <div class="text-xs font-semibold text-ink">{{ piracy_display.mission_level_label }}</div>
       {% endif %}
+      <div class="mt-1.5 flex items-center gap-1 text-[10px] text-muted">
+        <i class="bi bi-arrow-repeat"></i>
+        <span>{{ piracy_display.convert_mode_label }}{% if piracy_display.convert_mode_label == "Converter percentual" %} · {{ piracy_display.convert_percent }}%{% elif piracy_display.convert_mode_label == "Converter por limite" %} · {{ piracy_display.convert_threshold|intcomma }} pts{% endif %}</span>
+      </div>
     </div>
   </div>
 
-  <div class="rounded-xl border border-[var(--ik-line)] px-3 py-2">
-    <div class="text-[10px] uppercase tracking-wide text-muted mb-2">Conversão de pontos</div>
-    <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-      <span><i class="bi bi-arrow-repeat text-[10px]"></i> {{ piracy_display.convert_mode_label }}</span>
-      {% if piracy_display.convert_mode_label == "Converter percentual" %}
-      <span>{{ piracy_display.convert_percent }}%</span>
-      {% elif piracy_display.convert_mode_label == "Converter por limite" %}
-      <span>Limite: {{ piracy_display.convert_threshold|intcomma }} pontos</span>
-      {% endif %}
-    </div>
-  </div>
-
+  {# ── Ranking ── #}
   {% if piracy_display.highscore_entries %}
-  <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[1.25fr_0.75fr]">
-    <div class="rounded-xl border border-[var(--ik-line)] px-3 py-3">
-      <div class="flex items-start justify-between gap-3 mb-3">
-        <div>
-          <div class="text-[10px] uppercase tracking-wide text-muted">Ranking da fortaleza</div>
-          <div class="mt-1 text-sm font-semibold text-ink">Faixa salva no último ciclo</div>
-        </div>
-        <div class="text-right">
-          {% if piracy_display.highscore_updated_at %}
-          <div class="text-[10px] text-muted">atualizado {{ piracy_display.highscore_updated_at|timestamp_since }}</div>
-          {% endif %}
-          {% if piracy_display.highscore_time_left %}
-          <div class="text-[10px] text-muted">vira em {{ piracy_display.highscore_time_left|duration_human }}</div>
-          {% endif %}
-        </div>
-      </div>
-      <div class="flex gap-2 overflow-x-auto pb-1">
-        {% for entry in piracy_display.highscore_entries %}
-        <div class="min-w-[148px] rounded-xl border border-[var(--ik-line)] px-2.5 py-2.5 {% if piracy_display.highscore_self.place and entry.place == piracy_display.highscore_self.place %}ring-2 ring-[var(--ik-sea)]{% endif %}">
-          <div class="flex items-center justify-between gap-2">
-            <div class="text-[11px] font-bold text-ink">#{{ entry.place }}</div>
-            <div class="text-[11px] font-bold text-[var(--ik-sea)]">{{ entry.score|intcomma }}</div>
-          </div>
-          <div class="mt-1 truncate text-[11px] font-semibold text-ink">{{ entry.player_name }}</div>
-          <div class="mt-1 text-[10px] text-muted">cidade {{ entry.target_city_id }}</div>
-          <div class="text-[10px] text-muted">ilha {{ entry.target_island_id }}</div>
-          {% if entry.distance is not None %}
-          <div class="mt-1 text-[10px] text-muted">dist. {{ entry.distance|floatformat:1 }}</div>
-          {% endif %}
-        </div>
-        {% endfor %}
+  <div class="rounded-xl border border-[var(--ik-line)] px-3 py-3 mb-3">
+    <div class="flex items-center justify-between gap-3 mb-2.5">
+      <div class="text-[10px] uppercase tracking-wide text-muted font-medium">Ranking da fortaleza · faixa salva</div>
+      <div class="flex gap-3 text-[10px] text-muted">
+        {% if piracy_display.highscore_updated_at %}<span>{{ piracy_display.highscore_updated_at|timestamp_since }}</span>{% endif %}
+        {% if piracy_display.highscore_time_left %}<span>vira em {{ piracy_display.highscore_time_left|duration_human }}</span>{% endif %}
       </div>
     </div>
-    <div class="rounded-xl border border-[var(--ik-line)] px-3 py-3">
-      <div class="text-[10px] uppercase tracking-wide text-muted mb-3">Ciclo especial por ranking</div>
-      {% if piracy_display.highscore_self.place or piracy_display.highscore_self.score %}
-      <div class="rounded-xl border border-[var(--ik-line)] bg-[var(--ik-sand)]/40 px-3 py-2.5 mb-3">
-        <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Sua posição</div>
-        <div class="flex items-center justify-between gap-3">
-          <div>
-            <div class="text-sm font-semibold text-ink">
-              {% if piracy_display.highscore_self.place %}#{{ piracy_display.highscore_self.place }}{% else %}—{% endif %}
-              {% if piracy_display.highscore_self.player_name %}· {{ piracy_display.highscore_self.player_name }}{% endif %}
-            </div>
-            {% if piracy_display.highscore_self.target_city_id %}
-            <div class="text-[10px] text-muted">cidade {{ piracy_display.highscore_self.target_city_id }}</div>
-            {% endif %}
-          </div>
-          <div class="text-right">
-            <div class="text-base font-bold text-ink">{{ piracy_display.highscore_self.score|default:0|intcomma }}</div>
-            <div class="text-[10px] text-muted">pontos</div>
-          </div>
+    <div class="flex gap-2 overflow-x-auto p-1 -m-1">
+      {% for entry in piracy_display.highscore_entries %}
+      {% if piracy_display.highscore_self.place and entry.place == piracy_display.highscore_self.place %}
+      <div class="min-w-[140px] rounded-xl px-2.5 py-2 ring-2 ring-[var(--ik-sea)]" style="background: rgba(79,134,185,0.07);">
+        <div class="flex items-center justify-between gap-1 mb-1">
+          <span class="text-[10px] font-bold" style="color:var(--ik-sea);">#{{ entry.place }}</span>
+          <span class="text-[10px] font-bold" style="color:var(--ik-sea);">{{ entry.score|intcomma }}</span>
         </div>
+        <div class="truncate text-[11px] font-semibold text-ink">{{ entry.player_name }}</div>
+        <div class="text-[10px] text-muted mt-0.5">dist. {% if entry.distance is not None %}{{ entry.distance|floatformat:1 }}{% else %}—{% endif %}</div>
+      </div>
+      {% else %}
+      <div class="min-w-[130px] rounded-xl border border-[var(--ik-line)] px-2.5 py-2">
+        <div class="flex items-center justify-between gap-1 mb-1">
+          <span class="text-[10px] font-bold text-ink">#{{ entry.place }}</span>
+          <span class="text-[10px] font-semibold text-[var(--ik-sea)]">{{ entry.score|intcomma }}</span>
+        </div>
+        <div class="truncate text-[11px] font-medium text-ink">{{ entry.player_name }}</div>
+        <div class="text-[10px] text-muted mt-0.5">dist. {% if entry.distance is not None %}{{ entry.distance|floatformat:1 }}{% else %}—{% endif %}</div>
       </div>
       {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+
+  {# ── Ciclo especial ── #}
+  {% if piracy_display.enable_targeted_cycle or piracy_display.highscore_self.place %}
+  <div class="rounded-xl border border-[var(--ik-line)] px-3 py-3" style="border-color: rgba(79,134,185,0.22); background: linear-gradient(180deg, rgba(79,134,185,0.04), transparent);">
+    <div class="flex items-start justify-between gap-4">
+      {# Sua posição #}
+      {% if piracy_display.highscore_self.place or piracy_display.highscore_self.score %}
+      <div class="flex-shrink-0">
+        <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Sua posição</div>
+        <div class="flex items-baseline gap-2">
+          <span class="text-xl font-bold text-ink">#{{ piracy_display.highscore_self.place|default:"—" }}</span>
+          <span class="text-sm font-bold" style="color:var(--ik-sea);">{{ piracy_display.highscore_self.score|default:0|intcomma }}</span>
+          <span class="text-[10px] text-muted">pts</span>
+        </div>
+        {% if piracy_display.highscore_self.player_name %}
+        <div class="text-[11px] text-muted mt-0.5">{{ piracy_display.highscore_self.player_name }}</div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {# Config do ciclo especial #}
       {% if piracy_display.enable_targeted_cycle %}
-      <div class="grid grid-cols-2 gap-2 text-xs">
-        <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
-          <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Janela</div>
-          <div class="font-semibold text-ink">{{ piracy_display.targeted_interval_days }}d após {{ piracy_display.targeted_after_hour }}h</div>
-        </div>
-        <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
-          <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Gap máximo</div>
-          <div class="font-semibold text-ink">{{ piracy_display.target_max_score_gap }}</div>
-        </div>
-        <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
-          <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Fundações ativas</div>
-          <div class="font-semibold text-ink">{{ piracy_display.targeted_max_active_foundations }}</div>
-        </div>
-        <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
-          <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Filtros</div>
-          <div class="font-semibold text-ink">
-            {% if piracy_display.target_require_lower_total_score or piracy_display.target_require_lower_general_score %}
-              {% if piracy_display.target_require_lower_total_score %}Gerais{% endif %}
-              {% if piracy_display.target_require_lower_total_score and piracy_display.target_require_lower_general_score %} + {% endif %}
-              {% if piracy_display.target_require_lower_general_score %}Generais{% endif %}
-            {% else %}
-              Nenhum
-            {% endif %}
-          </div>
+      <div class="flex-1 min-w-0">
+        <div class="text-[10px] uppercase tracking-wide text-muted mb-2">Ciclo especial ativo</div>
+        <div class="flex flex-wrap gap-2">
+          <span class="inline-flex items-center gap-1 rounded-full border border-[var(--ik-line)] bg-white px-2.5 py-1 text-[10px] text-ink">
+            <i class="bi bi-calendar-event text-[9px] text-muted"></i>
+            {{ piracy_display.targeted_interval_days }}d após {{ piracy_display.targeted_after_hour }}h
+          </span>
+          <span class="inline-flex items-center gap-1 rounded-full border border-[var(--ik-line)] bg-white px-2.5 py-1 text-[10px] text-ink">
+            <i class="bi bi-arrows-angle-expand text-[9px] text-muted"></i>
+            gap máx. {{ piracy_display.target_max_score_gap }}
+          </span>
+          <span class="inline-flex items-center gap-1 rounded-full border border-[var(--ik-line)] bg-white px-2.5 py-1 text-[10px] text-ink">
+            <i class="bi bi-diagram-3 text-[9px] text-muted"></i>
+            {{ piracy_display.targeted_max_active_foundations }} fundação{% if piracy_display.targeted_max_active_foundations != 1 %}ões{% endif %}
+          </span>
+          {% if piracy_display.target_require_lower_total_score or piracy_display.target_require_lower_general_score %}
+          <span class="inline-flex items-center gap-1 rounded-full border border-[var(--ik-line)] bg-white px-2.5 py-1 text-[10px] text-ink">
+            <i class="bi bi-funnel text-[9px] text-muted"></i>
+            {% if piracy_display.target_require_lower_total_score %}gerais{% endif %}{% if piracy_display.target_require_lower_total_score and piracy_display.target_require_lower_general_score %} + {% endif %}{% if piracy_display.target_require_lower_general_score %}generais{% endif %}
+          </span>
+          {% endif %}
         </div>
       </div>
       {% else %}
-      <div class="rounded-xl border border-dashed border-[var(--ik-line)] px-3 py-4 text-xs text-muted">
-        Ciclo especial por ranking desativado.
+      <div class="flex-1 flex items-center">
+        <span class="text-[11px] text-muted">Ciclo especial desativado.</span>
       </div>
       {% endif %}
     </div>
   </div>
+  {% endif %}
   {% endif %}
 </div>
 {% endif %}
