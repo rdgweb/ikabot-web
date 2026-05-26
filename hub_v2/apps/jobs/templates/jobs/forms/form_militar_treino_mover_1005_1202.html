@@ -422,7 +422,7 @@
               <input type="hidden" name="units_{{ unit.id }}" :value="total('{{ unit.id }}')">
               <div class="absolute inset-x-0 top-0 h-10" style="background: linear-gradient(135deg, rgba(187,81,67,0.09), transparent);"></div>
               <div class="relative p-2.5">
-                <div class="flex items-center gap-2 mb-2">
+                <div class="flex items-center gap-2 mb-1.5">
                   <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-[12px] border"
                        style="border-color: rgba(187,81,67,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
                     {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="h-9 w-9 object-contain">
@@ -435,6 +435,26 @@
                     </div>
                   </div>
                 </div>
+                {% if unit.stats.hp %}
+                <div class="flex flex-wrap gap-1 mb-1.5">
+                  <span class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[9px] font-semibold" style="background:rgba(187,81,67,0.10);color:var(--ik-bad);" title="Pontos de vida">
+                    <i class="bi bi-heart-fill"></i> {{ unit.stats.hp }}
+                  </span>
+                  {% if unit.stats.damage %}
+                  <span class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[9px] font-semibold" style="background:rgba(201,156,78,0.12);color:var(--ik-gold);" title="Dano{% if unit.stats.off_lv %} (nível {{ unit.stats.off_lv }}){% endif %}">
+                    <i class="bi bi-lightning-fill"></i> {{ unit.stats.damage }}{% if unit.stats.off_lv %}<span class="opacity-50 text-[8px]"> lv{{ unit.stats.off_lv }}</span>{% endif %}
+                  </span>
+                  {% endif %}
+                  {% if unit.stats.armor %}
+                  <span class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[9px] font-semibold" style="background:rgba(95,140,78,0.10);color:var(--ik-good);" title="Armadura{% if unit.stats.def_lv %} (nível {{ unit.stats.def_lv }}){% endif %}">
+                    <i class="bi bi-shield-fill"></i> {{ unit.stats.armor }}{% if unit.stats.def_lv %}<span class="opacity-50 text-[8px]"> lv{{ unit.stats.def_lv }}</span>{% endif %}
+                  </span>
+                  {% endif %}
+                  <span class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[9px] font-semibold" style="background:rgba(79,134,185,0.10);color:var(--ik-sea);" title="Velocidade">
+                    <i class="bi bi-wind"></i> {{ unit.stats.speed }}
+                  </span>
+                </div>
+                {% endif %}
                 <div class="flex items-center gap-1">
                   <button type="button"
                           @click="units['{{ unit.id }}'] = Math.max(0, (parseInt(units['{{ unit.id }}'])||0) - (parseInt(units['{{ unit.id }}'])||0) >= 100 ? 100 : 1)"
@@ -467,7 +487,7 @@
               <input type="hidden" name="units_{{ unit.id }}" :value="total('{{ unit.id }}')">
               <div class="absolute inset-x-0 top-0 h-10" style="background: linear-gradient(135deg, rgba(79,134,185,0.09), transparent);"></div>
               <div class="relative p-2.5">
-                <div class="flex items-center gap-2 mb-2">
+                <div class="flex items-center gap-2 mb-1.5">
                   <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-[12px] border"
                        style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
                     {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="h-9 w-9 object-contain">
@@ -480,6 +500,31 @@
                     </div>
                   </div>
                 </div>
+                {% if unit.stats.hp %}
+                <div class="flex flex-wrap gap-1 mb-1.5">
+                  <span class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[9px] font-semibold" style="background:rgba(187,81,67,0.10);color:var(--ik-bad);" title="Pontos de vida">
+                    <i class="bi bi-heart-fill"></i> {{ unit.stats.hp }}
+                  </span>
+                  {% if unit.stats.damage %}
+                  <span class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[9px] font-semibold" style="background:rgba(201,156,78,0.12);color:var(--ik-gold);" title="Dano{% if unit.stats.off_lv %} (nível {{ unit.stats.off_lv }}){% endif %}">
+                    <i class="bi bi-lightning-fill"></i> {{ unit.stats.damage }}{% if unit.stats.off_lv %}<span class="opacity-50 text-[8px]"> lv{{ unit.stats.off_lv }}</span>{% endif %}
+                  </span>
+                  {% endif %}
+                  {% if unit.stats.armor %}
+                  <span class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[9px] font-semibold" style="background:rgba(95,140,78,0.10);color:var(--ik-good);" title="Armadura{% if unit.stats.def_lv %} (nível {{ unit.stats.def_lv }}){% endif %}">
+                    <i class="bi bi-shield-fill"></i> {{ unit.stats.armor }}{% if unit.stats.def_lv %}<span class="opacity-50 text-[8px]"> lv{{ unit.stats.def_lv }}</span>{% endif %}
+                  </span>
+                  {% endif %}
+                  <span class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[9px] font-semibold" style="background:rgba(79,134,185,0.10);color:var(--ik-sea);" title="Velocidade">
+                    <i class="bi bi-wind"></i> {{ unit.stats.speed }}
+                  </span>
+                  {% if unit.stats.capacity %}
+                  <span class="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[9px] font-semibold" style="background:rgba(95,140,78,0.08);color:var(--ik-good);" title="Capacidade de carga">
+                    <i class="bi bi-box-seam"></i> {{ unit.stats.capacity }}
+                  </span>
+                  {% endif %}
+                </div>
+                {% endif %}
                 <div class="flex items-center gap-1">
                   <button type="button"
                           @click="units['{{ unit.id }}'] = Math.max(0, (parseInt(units['{{ unit.id }}'])||0) - 1)"

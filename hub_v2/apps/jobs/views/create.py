@@ -469,7 +469,23 @@ def _find_branch_office_pos(city: dict | None) -> int | None:
 
 def _training_form_context(snapshot, cities):
     """Build context for the train units (ac=1005) and station (ac=1202) form sections."""
+    import json
+    from pathlib import Path
     from core.catalogs import TRAINING_UNITS, UNIT_ICON_MAP, get_unit_info
+
+    # Load static unit stats (HP, damage, armor, speed, improvements)
+    _stats_path = Path(__file__).resolve().parents[3] / "core" / "data" / "unit_stats.json"
+    try:
+        _raw = json.loads(_stats_path.read_text(encoding="utf-8"))
+        unit_stats_db: dict[int, dict] = {int(k): v for k, v in _raw.items()}
+    except Exception:
+        unit_stats_db = {}
+
+    # Improvement levels from snapshot (set by runner 1203)
+    unit_improvements: dict[str, dict] = {}
+    if snapshot:
+        base = snapshot.base_snapshot or {}
+        unit_improvements = base.get("unit_improvements") or {}
 
     # Current troop/fleet counts from snapshot military data
     military = {}
@@ -504,14 +520,39 @@ def _training_form_context(snapshot, cities):
             "shipyard_pos": shipyard_pos,
         }
 
-    # Add icon_path to each unit — keep name from TRAINING_UNITS (live game data), only add icon
     def enrich(units):
         result = []
         for u in units:
             icon = (UNIT_ICON_MAP.get(u.get("name") or "")
                     or UNIT_ICON_MAP.get(u.get("css") or "")
                     or "")
-            result.append({**u, "icon": icon})
+            uid = u.get("id")
+            us = unit_stats_db.get(uid, {})
+            imp = unit_improvements.get(str(uid), {})
+            off_lv = int(imp.get("offensive") or 0)
+            def_lv = int(imp.get("defensive") or 0)
+            imp_data = us.get("improvements", {})
+            off_bonus = int((imp_data.get("offensive") or {}).get("bonus_per_level") or 0)
+            def_bonus = int((imp_data.get("defensive") or {}).get("bonus_per_level") or 0)
+            weapons = us.get("weapons") or []
+            base_dmg = weapons[0].get("damage", 0) if weapons else 0
+            precision = weapons[0].get("precision", 0) if weapons else 0
+            damage = base_dmg + off_lv * off_bonus
+            armor = int(us.get("armor") or 0) + def_lv * def_bonus
+            stats: dict = {}
+            if us.get("hp"):
+                stats = {
+                    "hp": us.get("hp", 0),
+                    "damage": damage,
+                    "precision": round(precision),
+                    "armor": armor,
+                    "speed": us.get("speed", 0),
+                    "off_lv": off_lv,
+                    "def_lv": def_lv,
+                }
+                if us.get("capacity"):
+                    stats["capacity"] = us["capacity"]
+            result.append({**u, "icon": icon, "stats": stats})
         return result
 
     # Enrich cities for JSON data in template (used by Alpine.js)
@@ -2621,6 +2662,7 @@ class JobSubmitView(LoginRequiredMixin, View):
             "targeted_interval_days",
             "targeted_after_hour",
             "target_max_score_gap",
+            "targeted_max_active_foundations",
         )
         for key in bool_fields:
             raw = str(request.POST.get(key) or normalized.get(key) or "").strip().lower()
