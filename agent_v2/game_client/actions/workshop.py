@@ -135,7 +135,7 @@ class WorkshopAction(BaseAction):
             try:
                 fleet_resp = self.client._request(
                     "GET", self.client._server_url,
-                    params={**base_params, "activeTab": "tabFleet"},
+                    params={**base_params, "activeTab": "tabShips"},
                     headers=GAME_AJAX_HEADERS,
                 )
                 fleet_state = self._parse_state_payload(fleet_resp.json())
@@ -200,6 +200,8 @@ class WorkshopAction(BaseAction):
         Returns a dict with ``ok`` and updated ``gold`` (if parseable from response).
         Raises ActionError if the server rejects the request.
         """
+        # Naval unit IDs are in the 200-range; land units are 300+
+        active_tab = "tabShips" if int(improvement_id) < 300 else "tabUnits"
         params = {
             "action": self._ACTION,
             "cityId": str(city_id),
@@ -208,7 +210,7 @@ class WorkshopAction(BaseAction):
             "upgradeType": str(upgrade_type or "offensive"),
             "backgroundView": "city",
             "currentCityId": str(city_id),
-            "activeTab": "tabUnits",
+            "activeTab": active_tab,
             "actionRequest": self.client._action_request,
             "ajax": "1",
         }
