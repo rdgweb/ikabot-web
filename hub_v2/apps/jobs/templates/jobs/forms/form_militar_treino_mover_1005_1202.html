@@ -425,9 +425,9 @@
                    style="background: linear-gradient(160deg, rgba(187,81,67,0.10) 0%, rgba(247,241,229,0.55) 70%, transparent 100%);">
                 {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="h-14 w-14 object-contain drop-shadow-sm">
                 {% else %}<i class="bi bi-shield-fill text-4xl" style="color:rgba(187,81,67,0.30);"></i>{% endif %}
-                <span class="absolute top-1.5 right-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border-2 border-white px-1 text-[9px] font-bold shadow-sm transition-all"
-                      :class="total('{{ unit.id }}') > 0 ? 'bg-[var(--ik-bad)] text-white' : 'bg-white/80 text-muted'"
-                      x-text="total('{{ unit.id }}') > 0 ? total('{{ unit.id }}') : '+'"></span>
+                <span class="absolute top-1.5 right-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border-2 border-white bg-[var(--ik-bad)] px-1 text-[9px] font-bold text-white shadow-sm"
+                      x-show="total('{{ unit.id }}') > 0"
+                      x-text="total('{{ unit.id }}')"></span>
               </div>
               <div class="flex flex-col flex-1 px-2.5 pb-2 pt-1.5 gap-1">
                 <div class="text-[11px] font-bold text-ink leading-tight truncate">{{ unit.name }}</div>
@@ -477,9 +477,9 @@
                    style="background: linear-gradient(160deg, rgba(79,134,185,0.10) 0%, rgba(247,241,229,0.55) 70%, transparent 100%);">
                 {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="h-14 w-14 object-contain drop-shadow-sm">
                 {% else %}<i class="bi bi-water text-4xl" style="color:rgba(79,134,185,0.30);"></i>{% endif %}
-                <span class="absolute top-1.5 right-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border-2 border-white px-1 text-[9px] font-bold shadow-sm transition-all"
-                      :class="total('{{ unit.id }}') > 0 ? 'bg-[var(--ik-sea)] text-white' : 'bg-white/80 text-muted'"
-                      x-text="total('{{ unit.id }}') > 0 ? total('{{ unit.id }}') : '+'"></span>
+                <span class="absolute top-1.5 right-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border-2 border-white bg-[var(--ik-sea)] px-1 text-[9px] font-bold text-white shadow-sm"
+                      x-show="total('{{ unit.id }}') > 0"
+                      x-text="total('{{ unit.id }}')"></span>
               </div>
               <div class="flex flex-col flex-1 px-2.5 pb-2 pt-1.5 gap-1">
                 <div class="text-[11px] font-bold text-ink leading-tight truncate">{{ unit.name }}</div>
