@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 # Seconds to add as buffer after an improvement timer fires before rechecking
 _FINISH_BUFFER = 90
+
+
 # Fallback recheck interval when gold is insufficient or state is unclear (30 min)
 _GOLD_RECHECK = 30 * 60
 # Minimum reschedule interval
@@ -35,6 +37,30 @@ def _to_int(raw: Any, default: int = 0) -> int:
         return int(float(raw))
     except Exception:
         return default
+
+
+def _collect_improvement_levels(
+    improvements: list[dict[str, Any]],
+    target: dict[str, dict[str, int]],
+) -> None:
+    """Merge current_level per unit+branch into `target`.
+
+    target shape: {str(unit_id): {"offensive": N, "defensive": N}}
+    Only updates a key if the new value is >= existing (never downgrades).
+    """
+    for imp in improvements:
+        uid = str(imp.get("unit_id") or imp.get("id") or "")
+        if not uid:
+            continue
+        upgrade_type = str(imp.get("upgrade_type") or "offensive").lower()
+        current_lv = _to_int(imp.get("current_level"), -1)
+        if current_lv < 0:
+            continue
+        if uid not in target:
+            target[uid] = {}
+        existing = target[uid].get(upgrade_type, -1)
+        if current_lv > existing:
+            target[uid][upgrade_type] = current_lv
 
 
 def _duration_human(seconds: int) -> str:
@@ -154,11 +180,17 @@ class UpgradeUnitsRunner(BaseRunner):
         completed_cities: list[str] = []
         failed: list[dict[str, Any]] = []
 
+        # Accumulated improvement levels across all workshop cities → saved to snapshot once
+        accumulated_levels: dict[str, dict[str, int]] = {}
+
         for city_id, city_name, position in workshop_cities:
             try:
                 self.log(jid, "info", f"[{city_name}] Verificando Oficina do Inventor (pos={position})")
                 change_current_city(client, city_id)
                 state = client.get_workshop_state(city_id, position)
+
+                # ── Collect current improvement levels from this workshop ──
+                _collect_improvement_levels(state.get("improvements") or [], accumulated_levels)
 
                 current_gold = _to_int(state.get("gold"), 0)
 
@@ -204,6 +236,7 @@ class UpgradeUnitsRunner(BaseRunner):
                 imp_crystal = _to_int(chosen.get("crystal_cost"), 0)
                 imp_duration = _to_int(chosen.get("duration_seconds"), 0)
                 imp_duration_text = str(chosen.get("duration_text") or _duration_human(imp_duration))
+                imp_upgrade_type = str(chosen.get("upgrade_type") or "offensive")
 
                 self.log(
                     jid, "info",
@@ -214,8 +247,16 @@ class UpgradeUnitsRunner(BaseRunner):
                     city_id,
                     position,
                     imp_id,
-                    upgrade_type=str(chosen.get("upgrade_type") or "offensive"),
+                    upgrade_type=imp_upgrade_type,
                 )
+
+                # Optimistically advance level in accumulated_levels for this unit+type
+                uid_key = str(imp_id)
+                next_lv = _to_int(chosen.get("next_level"), 0)
+                if uid_key not in accumulated_levels:
+                    accumulated_levels[uid_key] = {}
+                if next_lv > 0:
+                    accumulated_levels[uid_key][imp_upgrade_type] = next_lv
 
                 started.append({
                     "city_id": city_id,
@@ -237,6 +278,20 @@ class UpgradeUnitsRunner(BaseRunner):
                 wait_seconds_per_city.append(_GOLD_RECHECK)
 
         self.save_game_client(ga_id, client)
+
+        # ── Persist improvement levels to snapshot ──
+        if accumulated_levels:
+            try:
+                existing = self._get_snapshot(jid, ga_id) or {}
+                merged = dict(existing.get("base_snapshot", {}).get("unit_improvements", {}))
+                # Deep-merge: keep existing levels for units not seen in this run
+                for uid, branch_data in accumulated_levels.items():
+                    if uid not in merged:
+                        merged[uid] = {}
+                    merged[uid].update(branch_data)
+                self.hub.patch_snapshot_base(ga_id, {"unit_improvements": merged})
+            except Exception as exc:
+                logger.warning("UpgradeUnitsRunner: falha ao salvar unit_improvements: %s", exc)
 
         # ── Decide what to do next ──
         if not wait_seconds_per_city and completed_cities:
