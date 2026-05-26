@@ -420,11 +420,11 @@
                  :class="total('{{ unit.id }}') > 0 ? 'ring-2 ring-[rgba(187,81,67,0.55)] shadow-[0_10px_28px_rgba(187,81,67,0.18)]' : 'hover:shadow-[0_6px_20px_rgba(187,81,67,0.10)] hover:translate-y-[-1px]'"
                  style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.92);">
               <input type="hidden" name="units_{{ unit.id }}" :value="total('{{ unit.id }}')">
-              {# Banner: badge top-left, image top-right, name + stats left #}
-              <div class="relative px-3 pt-2.5 pb-2 overflow-hidden"
+              {# Banner: badge top-left, image top-right (overflows below gradient), name + stats left #}
+              <div class="relative px-3 pt-2.5 pb-2"
                    style="background: linear-gradient(160deg, rgba(187,81,67,0.10) 0%, rgba(247,241,229,0.55) 70%, transparent 100%);">
-                {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="absolute right-1 top-1 h-[4.5rem] w-[4.5rem] object-contain drop-shadow-sm">
-                {% else %}<i class="bi bi-shield-fill absolute right-2 top-2 text-4xl" style="color:rgba(187,81,67,0.20);"></i>{% endif %}
+                {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="absolute right-1 top-0 h-[3.75rem] w-[3.75rem] object-contain drop-shadow-sm" style="z-index:1;">
+                {% else %}<i class="bi bi-shield-fill absolute right-2 top-2 text-4xl" style="color:rgba(187,81,67,0.20);z-index:1;"></i>{% endif %}
                 <div class="pr-[4rem] min-w-0">
                   <div class="flex items-center gap-1 min-w-0 mb-0.5">
                     <span x-show="total('{{ unit.id }}') > 0" x-text="total('{{ unit.id }}')" x-cloak
@@ -477,11 +477,11 @@
                  :class="total('{{ unit.id }}') > 0 ? 'ring-2 ring-[rgba(79,134,185,0.55)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : 'hover:shadow-[0_6px_20px_rgba(79,134,185,0.10)] hover:translate-y-[-1px]'"
                  style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.92);">
               <input type="hidden" name="units_{{ unit.id }}" :value="total('{{ unit.id }}')">
-              {# Banner: badge top-left, image top-right, name + stats left #}
-              <div class="relative px-3 pt-2.5 pb-2 overflow-hidden"
+              {# Banner: badge top-left, image top-right (overflows below gradient), name + stats left #}
+              <div class="relative px-3 pt-2.5 pb-2"
                    style="background: linear-gradient(160deg, rgba(79,134,185,0.10) 0%, rgba(247,241,229,0.55) 70%, transparent 100%);">
-                {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="absolute right-1 top-1 h-[4.5rem] w-[4.5rem] object-contain drop-shadow-sm">
-                {% else %}<i class="bi bi-water absolute right-2 top-2 text-4xl" style="color:rgba(79,134,185,0.20);"></i>{% endif %}
+                {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="absolute right-1 top-0 h-[3.75rem] w-[3.75rem] object-contain drop-shadow-sm" style="z-index:1;">
+                {% else %}<i class="bi bi-water absolute right-2 top-2 text-4xl" style="color:rgba(79,134,185,0.20);z-index:1;"></i>{% endif %}
                 <div class="pr-[4rem] min-w-0">
                   <div class="flex items-center gap-1 min-w-0 mb-0.5">
                     <span x-show="total('{{ unit.id }}') > 0" x-text="total('{{ unit.id }}')" x-cloak
