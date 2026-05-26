@@ -270,14 +270,17 @@ class PiracyMissionRunner(BaseRunner):
                     protected_city_ids.add(city_id)
         return {name for name in protected_names if name}, protected_city_ids
 
-    def _within_active_foundation_limit(self, client, *, limit: int) -> bool:
+    def _within_active_foundation_limit(self, client, *, limit: int, piracy_city_id: int | str = 0) -> bool:
         if limit <= 0:
             return True
         own_cities = fetch_owned_cities(client)
+        skip_city = str(_to_int(piracy_city_id)) if piracy_city_id else ""
         active_colonies = 0
         for city in own_cities:
             city_id = _to_int(city.get("id"), 0)
             if city_id <= 0:
+                continue
+            if skip_city and str(city_id) == skip_city:
                 continue
             try:
                 payload = fetch_city_payload(client, city_id)
@@ -493,6 +496,9 @@ class PiracyMissionRunner(BaseRunner):
         return False, 0
 
     def _abandon_temp_colony(self, jid: str, client, game_account_id: str, city_id: int) -> RunnerResult | None:
+        if city_id <= 0:
+            self.log(jid, "error", f"SEGURANCA: tentativa de abandonar city_id invalido ({city_id}) bloqueada")
+            return RunnerResult(success=False, data={"error": "abandon_invalid_city_id", "city_id": city_id})
         try:
             client.abandon_colony(city_id, game_account_id=game_account_id)
         except Exception as exc:
@@ -687,6 +693,13 @@ class PiracyMissionRunner(BaseRunner):
                             reschedule_inputs={**inputs, **_state_inputs, "_targeted_phase": "wait_abandon"},
                             data={"status": "waiting_assault_end", "temp_city_id": temp_city_id},
                         )
+                    known_ids_set = {_to_int(x) for x in (inputs.get("_targeted_known_city_ids") or [])}
+                    if known_ids_set and temp_city_id in known_ids_set:
+                        self.log(jid, "error", f"SEGURANCA: temp_city_id {temp_city_id} esta nos IDs originais — abandono bloqueado para proteger cidades permanentes")
+                        return RunnerResult(
+                            success=False,
+                            data={"error": "abandon_safety_blocked", "temp_city_id": temp_city_id, "known_ids": list(known_ids_set)},
+                        )
                     try:
                         self._targeted_convert_capture_points(jid, client, city_id=temp_city_id, inputs=inputs)
                     except Exception as exc:
@@ -737,7 +750,7 @@ class PiracyMissionRunner(BaseRunner):
                     colony_spot = None
                 if target_entry and colony_spot:
                     max_foundations = max(1, _to_int(inputs.get("targeted_max_active_foundations"), 1))
-                    if not self._within_active_foundation_limit(client, limit=max_foundations):
+                    if not self._within_active_foundation_limit(client, limit=max_foundations, piracy_city_id=city_id):
                         self.log(jid, "info", f"Limite ativo de colonias temporarias atingido ({max_foundations}); adiando ciclo especial")
                         self.save_game_client(game_account_id, client)
                         return RunnerResult(
