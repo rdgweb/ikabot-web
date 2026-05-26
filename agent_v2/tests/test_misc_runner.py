@@ -58,6 +58,7 @@ def _load_misc_module():
 
 MISC_MODULE = _load_misc_module()
 ColonizeRunner = MISC_MODULE.ColonizeRunner
+AbandonColonyRunner = MISC_MODULE.AbandonColonyRunner
 VacationModeRunner = MISC_MODULE.VacationModeRunner
 
 
@@ -69,6 +70,12 @@ class _ClientStub:
             "max_capacity": 5,
             "transporters": 0,
         }
+        self.abandon_preview = {
+            "city_id": "0",
+            "captcha_src": "/captcha",
+            "hidden_fields": {"action": "DeleteColony", "cityId": "0"},
+        }
+        self.account_info = {"player_name": "BlackShadow701"}
 
     def activate_vacation_mode(self, *, city_id):
         return self.result
@@ -88,6 +95,18 @@ class _ClientStub:
             "island_id": str(island_id),
             "position": int(position),
             "resources": resources or {},
+        }
+
+    def get_abandon_colony_preview(self, city_id):
+        return {**self.abandon_preview, "city_id": str(city_id)}
+
+    def abandon_colony(self, city_id, *, game_account_id="", captcha_timeout_sec=120):
+        return {
+            "ok": True,
+            "city_id": str(city_id),
+            "captcha_solution": "AB12",
+            "game_account_id": game_account_id,
+            "captcha_timeout_sec": captcha_timeout_sec,
         }
 
 
@@ -223,6 +242,59 @@ class ColonizeRunnerTests(unittest.TestCase):
         self.assertEqual(result.data["resources"], {"wood": 2250, "wine": 2500})
         self.assertEqual(result.data["feedback"], ["Sua ordem foi executada."])
         self.assertEqual(result.reschedule_inputs["_phase"], "wait_founding")
+
+
+class AbandonColonyRunnerTests(unittest.TestCase):
+    def test_abandon_requests_and_waits_for_removal(self):
+        runner = AbandonColonyRunner()
+        runner.resolve_credentials = lambda *_args, **_kwargs: {"server": "s78-br"}
+        runner.log = lambda *_args, **_kwargs: None
+        runner.save_game_client = lambda *_args, **_kwargs: None
+        client = _ClientStub()
+        runner.get_or_login_game_client = lambda *_args, **_kwargs: client
+
+        original_fetch_owned_cities = MISC_MODULE.fetch_owned_cities
+        try:
+            MISC_MODULE.fetch_owned_cities = lambda _client: [{"id": 68648, "name": "Polis"}]
+            result = runner.execute(
+                {
+                    "job_id": "j1",
+                    "account_id": "a1",
+                    "game_account_id": "g1",
+                    "inputs": {"city_id": 68648},
+                }
+            )
+        finally:
+            MISC_MODULE.fetch_owned_cities = original_fetch_owned_cities
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.data["status"], "abandon_requested")
+        self.assertEqual(result.reschedule_inputs["_phase"], "wait_removed")
+
+    def test_abandon_completes_when_city_disappears(self):
+        runner = AbandonColonyRunner()
+        runner.resolve_credentials = lambda *_args, **_kwargs: {"server": "s78-br"}
+        runner.log = lambda *_args, **_kwargs: None
+        runner.save_game_client = lambda *_args, **_kwargs: None
+        client = _ClientStub()
+        runner.get_or_login_game_client = lambda *_args, **_kwargs: client
+
+        original_fetch_owned_cities = MISC_MODULE.fetch_owned_cities
+        try:
+            MISC_MODULE.fetch_owned_cities = lambda _client: []
+            result = runner.execute(
+                {
+                    "job_id": "j1",
+                    "account_id": "a1",
+                    "game_account_id": "g1",
+                    "inputs": {"city_id": 68648, "_phase": "wait_removed", "city_name": "Polis"},
+                }
+            )
+        finally:
+            MISC_MODULE.fetch_owned_cities = original_fetch_owned_cities
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.data["status"], "abandoned")
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ Action codes:
     31  setup_trade_route
     32  build_museum
     820 targeted_colonize
+    821 abandon_colony
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 FOUNDING_BUFFER_SECONDS = 45
 FOUNDING_POLL_SECONDS = 60
+ABANDON_POLL_SECONDS = 30
 
 
 def _to_int(value: Any, default: int = 0) -> int:
@@ -113,6 +115,16 @@ def detect_founded_city(
 def fetch_city_payload(client, city_id: int | str) -> dict[str, Any]:
     html = client._request("GET", client._server_url, params={"view": "city", "cityId": str(city_id)}, timeout=30).text
     return extract_city_data(html)
+
+
+def find_owned_city(client, city_id: int | str) -> dict[str, Any] | None:
+    wanted = str(_to_int(city_id))
+    if not wanted:
+        return None
+    for item in fetch_owned_cities(client):
+        if str(_to_int(item.get("id"))) == wanted:
+            return item
+    return None
 
 
 @register_runner(820)
@@ -256,6 +268,79 @@ class ColonizeRunner(BaseRunner):
             if self.is_network_error(exc):
                 return self.network_error_result(jid, exc)
             self.log(jid, "error", f"Colonize failed: {exc}")
+            return RunnerResult(success=False, data={"error": str(exc)})
+
+
+@register_runner(821)
+class AbandonColonyRunner(BaseRunner):
+    """Abandon one owned colony after captcha confirmation."""
+
+    def execute(self, job: dict[str, Any]) -> RunnerResult:
+        jid = job["job_id"]
+        aid = job["account_id"]
+        inputs = job.get("inputs", {})
+        ga_id = job.get("game_account_id", "")
+        phase = str(inputs.get("_phase") or "start").strip().lower()
+        self.log(jid, "info", f"Abandonando colonia para conta {aid} | fase={phase}")
+
+        city_id = inputs.get("city_id") or inputs.get("city")
+        if not city_id:
+            return RunnerResult(success=False, data={"error": "missing_required_inputs", "required": ["city_id"]})
+
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        if not creds:
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
+
+        try:
+            client = self.get_or_login_game_client(jid, aid, ga_id, creds)
+            if phase == "wait_removed":
+                still_exists = find_owned_city(client, city_id)
+                if still_exists:
+                    self.save_game_client(ga_id or aid, client)
+                    self.log(jid, "info", f"Cidade {city_id} ainda existe; mantendo polling de abandono")
+                    return RunnerResult(
+                        success=True,
+                        reschedule_seconds=ABANDON_POLL_SECONDS,
+                        reschedule_inputs={**inputs, "_phase": "wait_removed"},
+                        data={"status": "waiting_removal", "city_id": str(city_id), "city_name": inputs.get("city_name") or ""},
+                    )
+
+                self.save_game_client(ga_id or aid, client)
+                self.log(jid, "info", f"Colonia {city_id} removida com sucesso")
+                return RunnerResult(
+                    success=True,
+                    data={"status": "abandoned", "city_id": str(city_id), "city_name": inputs.get("city_name") or ""},
+                )
+
+            preview = client.get_abandon_colony_preview(city_id)
+            owned_city = find_owned_city(client, city_id)
+            if not owned_city:
+                return RunnerResult(success=False, data={"error": "city_not_owned_or_not_found", "city_id": str(city_id)})
+
+            result = client.abandon_colony(
+                city_id,
+                game_account_id=ga_id,
+                captcha_timeout_sec=_to_int(inputs.get("captcha_timeout_sec"), 120),
+            )
+            self.save_game_client(ga_id or aid, client)
+            city_name = str(inputs.get("city_name") or owned_city.get("name") or city_id)
+            self.log(jid, "info", f"Pedido de abandono enviado para {city_name} ({city_id})")
+            return RunnerResult(
+                success=True,
+                reschedule_seconds=ABANDON_POLL_SECONDS,
+                reschedule_inputs={**inputs, "_phase": "wait_removed", "city_name": city_name},
+                data={
+                    "status": "abandon_requested",
+                    "city_id": str(city_id),
+                    "city_name": city_name,
+                    "captcha_solution": result.get("captcha_solution") or "",
+                    "has_captcha": bool(preview.get("captcha_src")),
+                },
+            )
+        except Exception as exc:
+            if self.is_network_error(exc):
+                return self.network_error_result(jid, exc)
+            self.log(jid, "error", f"Abandon colony failed: {exc}")
             return RunnerResult(success=False, data={"error": str(exc)})
 
 

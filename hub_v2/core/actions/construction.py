@@ -139,4 +139,20 @@ ACTIONS = {
             {"key": "sulfur", "type": FIELD_INT, "label": "Enxofre extra", "required": False, "min": 0, "default": 0},
         ],
     },
+    821: {
+        "name": "Abandonar Colonia",
+        "name_en": "Abandon colony",
+        "category": CAT_CONSTRUCTION,
+        "icon": "bi-exclamation-octagon-fill",
+        "runner": "abandon_colony",
+        "requires_game_session": True,
+        "recurring": False,
+        "long_running": False,
+        "ready": True,
+        "ui_hidden": False,
+        "description": "Abre a tela de abandono da colonia, resolve o captcha pelo hub e confirma a remocao.",
+        "inputs": [
+            {"key": "city_id", "type": FIELD_CITY_SELECT, "label": "Colonia alvo", "multiple": False, "required": True},
+        ],
+    },
 }

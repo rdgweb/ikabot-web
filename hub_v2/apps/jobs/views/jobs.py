@@ -1525,6 +1525,18 @@ class JobListView(FilterSortListView):
         }
 
     @classmethod
+    def _abandon_colony_display(cls, job):
+        inputs = cls._parse_inputs(job)
+        if int(job.action_code) != 821:
+            return {}
+        return {
+            "city_id": str(inputs.get("city_id") or "").strip(),
+            "city_name": str(inputs.get("city_name") or "").strip(),
+            "phase": str(inputs.get("_phase") or "start").strip() or "start",
+            "captcha_timeout_sec": _to_int(inputs.get("captcha_timeout_sec"), 120),
+        }
+
+    @classmethod
     def _construction_display(cls, job, *, logs=None):
         inputs = cls._parse_inputs(job)
         if int(job.action_code) != 1002:
@@ -1953,6 +1965,7 @@ class JobDetailView(LoginRequiredMixin, DetailView):
             logs=list(logs_qs.values_list("message", flat=True)),
         )
         context["piracy_display"] = JobListView._piracy_display(self.object)
+        context["abandon_colony_display"] = JobListView._abandon_colony_display(self.object)
         context["barbarians_display"] = JobListView._barbarians_display(self.object)
         context["train_display"] = JobListView._train_display(self.object)
         context["station_display"] = JobListView._station_display(self.object)

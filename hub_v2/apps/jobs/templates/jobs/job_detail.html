@@ -1035,6 +1035,40 @@
 </div>
 {% endif %}
 
+{% if abandon_colony_display %}
+<div class="card">
+  <div class="flex items-start justify-between gap-4 mb-4">
+    <div>
+      <h3 class="text-sm font-semibold text-ink">Abandono de Colonia</h3>
+      <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+        <span><i class="bi bi-house-dash text-[10px]"></i> {{ abandon_colony_display.city_name|default:"Cidade" }}</span>
+        {% if abandon_colony_display.city_id %}
+        <span><i class="bi bi-hash text-[10px]"></i> {{ abandon_colony_display.city_id }}</span>
+        {% endif %}
+        <span><i class="bi bi-hourglass-split text-[10px]"></i> fase {{ abandon_colony_display.phase }}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+    <div class="rounded-xl border border-[var(--ik-line)] px-3 py-2.5">
+      <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Cidade alvo</div>
+      <div class="text-base font-bold text-ink">{{ abandon_colony_display.city_name|default:"—" }}</div>
+    </div>
+    <div class="rounded-xl border border-[var(--ik-line)] px-3 py-2.5">
+      <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Captcha via hub</div>
+      <div class="text-base font-bold text-ink">Sim</div>
+      <div class="text-[10px] text-muted">timeout {{ abandon_colony_display.captcha_timeout_sec }}s</div>
+    </div>
+    <div class="rounded-xl border border-[var(--ik-line)] px-3 py-2.5">
+      <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Status</div>
+      <div class="text-base font-bold text-ink">{{ object.status|default:"—" }}</div>
+      <div class="text-[10px] text-muted">{{ abandon_colony_display.phase }}</div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% if barbarians_display %}
 <div class="card">
   {% include "jobs/partials/barbarians_status.html" with

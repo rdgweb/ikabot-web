@@ -948,6 +948,33 @@ def _colonize_context(all_cities: list) -> dict:
     }
 
 
+def _abandon_colony_context(all_cities: list, selected_city_id: str = "") -> dict:
+    colony_cities = []
+    for city in all_cities or []:
+        buildings = city.get("buildings") or []
+        has_palace = any(str(item.get("building") or "").strip() == "palace" for item in buildings if isinstance(item, dict))
+        if has_palace:
+            continue
+        city_copy = dict(city)
+        city_copy["resource_cards"] = [
+            resource
+            for resource in (city.get("resources") or [])
+            if str(resource.get("key") or "").strip() in {"wood", "wine", "marble", "crystal", "sulfur"}
+        ][:3]
+        city_copy["selected"] = str(city.get("id") or "") == str(selected_city_id or "")
+        colony_cities.append(city_copy)
+
+    selected_city = next((city for city in colony_cities if city["selected"]), None)
+    return {
+        "abandon_ui": {
+            "colony_cities": colony_cities,
+            "colony_count": len(colony_cities),
+            "selected_city": selected_city,
+            "confirm_phrase": "ABANDONAR",
+        }
+    }
+
+
 def _latest_world_dump_for_ga(ga: GameAccount):
     exact = (
         WorldDump.objects.filter(game_account=ga)
@@ -1611,6 +1638,8 @@ def _custom_field_names(action_code: int) -> list[str]:
             "source_city_id", "coord_x", "coord_y", "island_id", "position",
             "wood", "wine", "marble", "crystal", "sulfur",
         ]
+    if int(action_code) == 821:
+        return ["city_id"]
     if int(action_code) == 9002:
         return ["city_id", "revolt_type"]
     if int(action_code) == 602:
@@ -1669,6 +1698,12 @@ def _job_form_context(form, action_meta, action_code, ga, cities):
             selected_position=selected_position,
             form=form,
         )
+    if int(action_code) == 821:
+        source = getattr(form, "data", None) if form.is_bound else getattr(form, "initial", {})
+        selected_city_id = ""
+        if isinstance(source, dict):
+            selected_city_id = str(source.get("city_id") or source.get("city") or "").strip()
+        ctx.update(_abandon_colony_context(cities, selected_city_id=selected_city_id))
     return ctx
 
 
@@ -2140,6 +2175,17 @@ class JobSubmitView(LoginRequiredMixin, View):
         inputs = form.get_inputs_json()
         if int(action_code) == 17:
             inputs = self._normalize_piracy_inputs(inputs, request)
+        if int(action_code) == 821:
+            error_message = self._validate_abandon_colony_inputs(form, request, construction_cities)
+            if error_message:
+                form.add_error(None, error_message)
+                ctx = _job_form_context(form, action_meta, action_code, ga, construction_cities)
+                html = render_to_string(
+                    "jobs/partials/create_step_form.html",
+                    ctx,
+                    request=request,
+                )
+                return HttpResponse(html)
         if int(action_code) == 601:
             inputs = self._normalize_island_monitor_inputs(inputs)
         if int(action_code) == 1005:
@@ -2495,7 +2541,7 @@ class JobSubmitView(LoginRequiredMixin, View):
             return count
         else:
             single_inputs = dict(inputs)
-            if int(action_code) in {2, 6, 8, 9, 11, 9002} and city_choices:
+            if int(action_code) in {2, 6, 8, 9, 11, 821, 9002} and city_choices:
                 single_inputs["_city_choices"] = city_choices
             if int(action_code) in {8, 9} and cities:
                 single_inputs["_city_objects"] = {
@@ -2541,7 +2587,7 @@ class JobSubmitView(LoginRequiredMixin, View):
             if city_id and city_map.get(city_id):
                 enriched_inputs["city_name"] = city_map[city_id]
             enriched_inputs.pop("_city_choices", None)
-        elif int(action_code) == 9002:
+        elif int(action_code) in {821, 9002}:
             city_map = inputs.get("_city_choices") if isinstance(inputs.get("_city_choices"), dict) else {}
             city_id = str(enriched_inputs.get("city_id") or "").strip()
             if city_id and city_map.get(city_id):
@@ -2642,6 +2688,41 @@ class JobSubmitView(LoginRequiredMixin, View):
 
         normalized["extra_island_ids"] = resolved
         return normalized
+
+    @staticmethod
+    def _validate_abandon_colony_inputs(form, request, cities):
+        city_id = str(form.cleaned_data.get("city_id") or "").strip()
+        if not city_id:
+            return "Selecione a colonia que sera abandonada."
+
+        city_lookup = {
+            str(city.get("id") or ""): city
+            for city in (cities or [])
+            if city.get("id") is not None
+        }
+        city = city_lookup.get(city_id)
+        if not city:
+            return "A cidade selecionada nao foi encontrada na conta."
+
+        buildings = city.get("buildings") or []
+        if any(str(item.get("building") or "").strip() == "palace" for item in buildings if isinstance(item, dict)):
+            return "A cidade escolhida parece ser a capital. O abandono manual permite apenas colonias."
+
+        acknowledge = str(request.POST.get("acknowledge_irreversible") or "").strip().lower()
+        confirm_colony = str(request.POST.get("confirm_colony_only") or "").strip().lower()
+        typed_phrase = str(request.POST.get("confirm_phrase_input") or "").strip().upper()
+        typed_city_name = str(request.POST.get("confirm_city_name_input") or "").strip()
+        expected_city_name = str(city.get("name") or "").strip()
+
+        if acknowledge not in {"on", "true", "1", "yes"}:
+            return "Marque que entendeu que o abandono e irreversivel."
+        if confirm_colony not in {"on", "true", "1", "yes"}:
+            return "Confirme explicitamente que a cidade alvo e uma colonia descartavel."
+        if typed_phrase != "ABANDONAR":
+            return 'Digite exatamente "ABANDONAR" para liberar esta acao.'
+        if expected_city_name and typed_city_name != expected_city_name:
+            return f'Digite o nome exato da cidade: "{expected_city_name}".'
+        return None
 
     @staticmethod
     def _get_city_name(city_id, cities):

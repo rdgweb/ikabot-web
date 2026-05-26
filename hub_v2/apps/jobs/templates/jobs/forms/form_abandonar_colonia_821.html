@@ -1,0 +1,218 @@
+{% load static %}
+
+<div
+  class="space-y-4"
+  x-data="{
+    selectedCity: '{{ form.city_id.value|default:''|escapejs }}',
+    selectedCityName: '{{ abandon_ui.selected_city.name|default:''|escapejs }}',
+    phrase: '',
+    typedCityName: '',
+    acknowledged: false,
+    confirmColony: false,
+    syncSelection(id, name) {
+      this.selectedCity = id;
+      this.selectedCityName = name || '';
+      this.typedCityName = '';
+    },
+    get ready() {
+      return this.acknowledged
+        && this.confirmColony
+        && this.phrase === '{{ abandon_ui.confirm_phrase|escapejs }}'
+        && this.typedCityName === this.selectedCityName
+        && !!this.selectedCity;
+    }
+  }"
+>
+  <div class="overflow-hidden rounded-[24px] border shadow-[0_16px_42px_rgba(147,52,52,0.12)]"
+       style="border-color: rgba(199,120,102,0.44); background:
+         radial-gradient(680px 280px at 0% 0%, rgba(198,87,63,0.14), transparent 60%),
+         radial-gradient(560px 240px at 100% 100%, rgba(120,43,43,0.14), transparent 60%),
+         linear-gradient(180deg, rgba(255,251,247,0.98), rgba(249,239,232,0.95));">
+    <div class="border-b px-5 py-4" style="border-color: rgba(199,120,102,0.34);">
+      <div class="flex items-start gap-4">
+        <div class="flex h-12 w-12 items-center justify-center rounded-[18px] border"
+             style="border-color: rgba(199,120,102,0.34); background: linear-gradient(180deg, #fff8f4, #f6e4dc);">
+          <i class="bi bi-exclamation-octagon-fill text-lg" style="color: #b4553f;"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: #b4553f;">Acao irreversivel</div>
+          <div class="mt-1 text-base font-semibold text-ink">Abandonar colonia manualmente</div>
+          <p class="mt-1 text-xs leading-relaxed text-muted">
+            Use esta acao apenas para colonias descartaveis. O hub ainda resolve o captcha via sistema central,
+            mas o job so sera criado depois de passar por confirmacoes fortes.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid gap-3 px-5 py-4 sm:grid-cols-3">
+      <div class="rounded-[18px] border px-4 py-3" style="border-color: rgba(199,120,102,0.24); background: rgba(255,255,255,0.76);">
+        <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Colonias elegiveis</div>
+        <div class="mt-1 text-xl font-semibold text-ink">{{ abandon_ui.colony_count }}</div>
+      </div>
+      <div class="rounded-[18px] border px-4 py-3" style="border-color: rgba(199,120,102,0.24); background: rgba(255,255,255,0.76);">
+        <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Captcha no jogo</div>
+        <div class="mt-1 text-sm font-semibold" style="color: #b4553f;">Obrigatorio</div>
+      </div>
+      <div class="rounded-[18px] border px-4 py-3" :style="ready ? 'border-color: rgba(95,140,78,0.32); background: rgba(255,255,255,0.76);' : 'border-color: rgba(199,120,102,0.24); background: rgba(255,255,255,0.76);'">
+        <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Liberacao</div>
+        <div class="mt-1 text-sm font-semibold" :style="ready ? 'color: var(--ik-good);' : 'color: #b4553f;'">
+          <span x-text="ready ? 'Pronto para criar job' : 'Aguardando confirmacoes'"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="overflow-hidden rounded-[24px] border shadow-[0_10px_28px_rgba(87,66,24,0.08)]"
+       style="border-color: rgba(219,201,167,0.86); background: rgba(255,255,255,0.88);">
+    <div class="border-b px-4 py-3" style="border-color: rgba(219,201,167,0.82);">
+      <div class="text-sm font-semibold text-ink">Escolha a colonia alvo</div>
+      <p class="mt-1 text-xs text-muted">A capital e filtrada desta lista. O runner ainda valida isso de novo no backend.</p>
+    </div>
+    <input type="hidden" name="{{ form.city_id.html_name }}" x-model="selectedCity">
+    <div class="grid gap-3 px-4 py-4 lg:grid-cols-2">
+      {% for city in abandon_ui.colony_cities %}
+      <label
+        class="group relative cursor-pointer overflow-hidden rounded-[20px] border transition-all duration-150 hover:translate-y-[-1px] hover:shadow-[0_10px_24px_rgba(180,85,63,0.12)]"
+        :style="selectedCity === '{{ city.id|escapejs }}'
+          ? 'border-color: #b4553f; background: linear-gradient(180deg, rgba(180,85,63,0.10), rgba(255,255,255,0.96));'
+          : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.88);'"
+      >
+        <input type="radio"
+               class="sr-only"
+               name="abandon-colony-card"
+               value="{{ city.id }}"
+               @change="syncSelection('{{ city.id|escapejs }}', '{{ city.name|escapejs }}')"
+               {% if city.selected %}checked{% endif %}>
+        <div class="absolute inset-x-0 top-0 h-14"
+             style="background: linear-gradient(135deg, rgba(180,85,63,0.12), rgba(180,85,63,0.02));"></div>
+        <div class="relative p-4">
+          <div class="flex items-start gap-3">
+            <div class="relative shrink-0">
+              <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                   style="border-color: rgba(180,85,63,0.16); background: linear-gradient(180deg, #fffaf7, #f4e5dd);">
+                <img src="{{ city.city_art }}" alt="" class="h-8 w-8 object-contain">
+              </div>
+              <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                <img src="{{ city.tradegood_icon }}" alt="{{ city.tradegood_name }}" class="h-4 w-4 object-contain">
+              </div>
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="truncate text-sm font-semibold text-ink">{{ city.name|default:"Colonia" }}</div>
+                  <div class="mt-1 text-[11px] text-muted">
+                    {% if city.x and city.y %}[{{ city.x }}:{{ city.y }}]{% endif %}
+                    {% if city.tradegood_name %}<span> • {{ city.tradegood_name }}</span>{% endif %}
+                  </div>
+                </div>
+                <span class="inline-flex h-7 w-7 items-center justify-center rounded-full border"
+                      :style="selectedCity === '{{ city.id|escapejs }}'
+                        ? 'border-color: #b4553f; color: white; background: #b4553f;'
+                        : 'border-color: rgba(180,85,63,0.20); color: #b4553f; background: rgba(180,85,63,0.06);'">
+                  <i class="bi" :class="selectedCity === '{{ city.id|escapejs }}' ? 'bi-check-lg' : 'bi-x-lg'"></i>
+                </span>
+              </div>
+              <div class="mt-3 flex flex-wrap gap-1.5">
+                {% for resource in city.resource_cards %}
+                <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium"
+                      style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.86);">
+                  <img src="{{ resource.icon }}" alt="{{ resource.label }}" class="h-3.5 w-3.5 object-contain">
+                  <span>{{ resource.amount|default:0 }}</span>
+                </span>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </label>
+      {% empty %}
+      <div class="rounded-[18px] border px-4 py-4 text-sm text-muted lg:col-span-2"
+           style="border-color: rgba(199,120,102,0.24); background: rgba(255,250,247,0.72);">
+        Nenhuma colonia elegivel foi detectada nesta conta.
+      </div>
+      {% endfor %}
+    </div>
+    {% for error in form.city_id.errors %}
+    <p class="px-4 pb-4 form-error"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
+    {% endfor %}
+  </div>
+
+  <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
+    <div class="rounded-[24px] border p-4 shadow-[0_10px_28px_rgba(87,66,24,0.08)]"
+         style="border-color: rgba(199,120,102,0.32); background: rgba(255,250,247,0.86);">
+      <div class="flex items-start gap-3">
+        <div class="mt-0.5 flex h-9 w-9 items-center justify-center rounded-full" style="background: rgba(180,85,63,0.12); color: #b4553f;">
+          <i class="bi bi-shield-exclamation"></i>
+        </div>
+        <div>
+          <div class="text-sm font-semibold text-ink">Checklist de seguranca</div>
+          <p class="mt-1 text-xs text-muted">
+            O job continua pedindo captcha em execucao. Estas etapas servem para reduzir risco de abandono acidental.
+          </p>
+        </div>
+      </div>
+
+      <div class="mt-4 space-y-3">
+        <label class="flex items-start gap-3 rounded-[18px] border px-4 py-3"
+               :style="acknowledged ? 'border-color: rgba(95,140,78,0.30); background: rgba(95,140,78,0.07);' : 'border-color: rgba(199,120,102,0.24); background: rgba(255,255,255,0.86);'">
+          <input type="checkbox" name="acknowledge_irreversible" class="mt-0.5 h-4 w-4 rounded border-[#b4553f]" x-model="acknowledged">
+          <span class="text-sm text-ink">Entendo que a cidade selecionada sera perdida e nao sera recuperada depois.</span>
+        </label>
+
+        <label class="flex items-start gap-3 rounded-[18px] border px-4 py-3"
+               :style="confirmColony ? 'border-color: rgba(95,140,78,0.30); background: rgba(95,140,78,0.07);' : 'border-color: rgba(199,120,102,0.24); background: rgba(255,255,255,0.86);'">
+          <input type="checkbox" name="confirm_colony_only" class="mt-0.5 h-4 w-4 rounded border-[#b4553f]" x-model="confirmColony">
+          <span class="text-sm text-ink">Confirmei que esta cidade e uma colonia descartavel e nao uma cidade principal da conta.</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="rounded-[24px] border p-4 shadow-[0_10px_28px_rgba(87,66,24,0.08)]"
+         style="border-color: rgba(219,201,167,0.86); background: rgba(255,255,255,0.88);">
+      <div class="text-sm font-semibold text-ink">Confirmacao textual</div>
+      <p class="mt-1 text-xs text-muted">Digite a frase de seguranca e repita o nome exato da cidade selecionada.</p>
+
+      <div class="mt-4 space-y-3">
+        <div>
+          <label class="form-label text-xs mb-1 block">Frase obrigatoria</label>
+          <input type="text"
+                 name="confirm_phrase_input"
+                 class="form-input uppercase tracking-[0.16em]"
+                 autocomplete="off"
+                 spellcheck="false"
+                 placeholder="{{ abandon_ui.confirm_phrase }}"
+                 x-model="phrase">
+        </div>
+        <div>
+          <label class="form-label text-xs mb-1 block">Nome da cidade</label>
+          <input type="text"
+                 name="confirm_city_name_input"
+                 class="form-input"
+                 autocomplete="off"
+                 spellcheck="false"
+                 :placeholder="selectedCityName || 'Selecione a cidade acima'"
+                 x-model="typedCityName">
+        </div>
+      </div>
+
+      <div class="mt-4 rounded-[18px] border px-4 py-3"
+           :style="ready ? 'border-color: rgba(95,140,78,0.30); background: rgba(95,140,78,0.08);' : 'border-color: rgba(199,120,102,0.24); background: rgba(180,85,63,0.05);'">
+        <div class="text-[11px] uppercase tracking-[0.16em] text-muted">Alvo armado</div>
+        <div class="mt-1 text-sm font-semibold text-ink" x-text="selectedCityName || 'Nenhuma cidade selecionada'"></div>
+        <div class="mt-1 text-xs" :style="ready ? 'color: var(--ik-good);' : 'color: #b4553f;'">
+          <span x-text="ready ? 'Confirmacoes concluidas.' : 'Faltam confirmacoes para liberar o job.'"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if form.non_field_errors %}
+  <div class="rounded-[18px] border px-4 py-3 text-sm"
+       style="border-color: rgba(199,120,102,0.30); background: rgba(180,85,63,0.06); color: #8b3a2c;">
+    {% for error in form.non_field_errors %}
+    <div><i class="bi bi-exclamation-circle me-1"></i> {{ error }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
