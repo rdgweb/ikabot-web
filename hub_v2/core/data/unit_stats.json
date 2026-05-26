@@ -1,0 +1,1206 @@
+{
+  "301": {
+    "id": 301,
+    "kind": "land",
+    "name": "Fundeiro",
+    "type": "Lutador de longo alcance, Humano",
+    "hp": 160,
+    "armor": 0,
+    "speed": 90,
+    "size": 1,
+    "requirements": [
+      "Quartel ( 2 )"
+    ],
+    "weapons": [
+      {
+        "name": "Punhal",
+        "damage": 40,
+        "precision": 60.0
+      },
+      {
+        "name": "Estilingue",
+        "damage": 60,
+        "precision": 20.0,
+        "ammo": 5
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5,
+        "upgrade_name": "Balas Superiores"
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5,
+        "upgrade_name": "Vestes de Couro Superiores"
+      }
+    }
+  },
+  "302": {
+    "id": 302,
+    "kind": "land",
+    "name": "Espadachim",
+    "type": "Infantaria leve, Humano",
+    "hp": 360,
+    "armor": 0,
+    "speed": 90,
+    "size": 1,
+    "requirements": [
+      "Quartel ( 6 )",
+      "Exército Profissional"
+    ],
+    "weapons": [
+      {
+        "name": "Espada",
+        "damage": 200,
+        "precision": 90.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5,
+        "upgrade_name": "Espada Superior"
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5,
+        "upgrade_name": "Capacete Superior"
+      }
+    }
+  },
+  "303": {
+    "id": 303,
+    "kind": "land",
+    "name": "Hoplita",
+    "type": "Infantaria Pesada, Humano",
+    "hp": 1120,
+    "armor": 20,
+    "speed": 90,
+    "size": 1,
+    "requirements": [
+      "Quartel ( 4 )",
+      "Exército Profissional"
+    ],
+    "weapons": [
+      {
+        "name": "Lança",
+        "damage": 360,
+        "precision": 90.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5,
+        "upgrade_name": "Lança Superior"
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5,
+        "upgrade_name": "Escudo Superior"
+      }
+    }
+  },
+  "304": {
+    "id": 304,
+    "kind": "land",
+    "name": "Carabineiro",
+    "type": "Lutador de longo alcance, Humano",
+    "hp": 240,
+    "armor": 0,
+    "speed": 90,
+    "size": 4,
+    "requirements": [
+      "Quartel ( 13 )",
+      "Pólvora"
+    ],
+    "weapons": [
+      {
+        "name": "Baioneta",
+        "damage": 60,
+        "precision": 60.0
+      },
+      {
+        "name": "Arcabuz",
+        "damage": 580,
+        "precision": 70.0,
+        "ammo": 3
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5,
+        "upgrade_name": "Mosquete Superior"
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5,
+        "upgrade_name": "Armadura de Couro Superior"
+      }
+    }
+  },
+  "305": {
+    "id": 305,
+    "kind": "land",
+    "name": "Morteiro",
+    "type": "Artilharia, Máquina",
+    "hp": 640,
+    "armor": 0,
+    "speed": 60,
+    "size": 5,
+    "requirements": [
+      "Quartel ( 14 )",
+      "Construção de Canhões"
+    ],
+    "weapons": [
+      {
+        "name": "Punhal",
+        "damage": 200,
+        "precision": 20.0
+      },
+      {
+        "name": "Morteiro",
+        "damage": 5400,
+        "precision": 10.0,
+        "ammo": 3
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5,
+        "upgrade_name": "Granada Superior"
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5,
+        "upgrade_name": "Muralha Superior"
+      }
+    }
+  },
+  "306": {
+    "id": 306,
+    "kind": "land",
+    "name": "Catapulta",
+    "type": "Artilharia, Máquina",
+    "hp": 1080,
+    "armor": 0,
+    "speed": 60,
+    "size": 5,
+    "requirements": [
+      "Quartel ( 8 )",
+      "Lei da Alavanca"
+    ],
+    "weapons": [
+      {
+        "name": "Punhal",
+        "damage": 80,
+        "precision": 20.0
+      },
+      {
+        "name": "Rocha",
+        "damage": 2660,
+        "precision": 10.0,
+        "ammo": 5
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5,
+        "upgrade_name": "Míssil Superior"
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5,
+        "upgrade_name": "Revestimento Superior"
+      }
+    }
+  },
+  "307": {
+    "id": 307,
+    "kind": "land",
+    "name": "Aríete",
+    "type": "Artilharia, Máquina",
+    "hp": 1760,
+    "armor": 20,
+    "speed": 60,
+    "size": 5,
+    "requirements": [
+      "Quartel ( 3 )",
+      "Cerco"
+    ],
+    "weapons": [
+      {
+        "name": "Espada curta",
+        "damage": 240,
+        "precision": 70.0
+      },
+      {
+        "name": "Aríete",
+        "damage": 1600,
+        "precision": 10.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5,
+        "upgrade_name": "Cabeça em Bronze"
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5,
+        "upgrade_name": "Cobertura de Bronze"
+      }
+    }
+  },
+  "308": {
+    "id": 308,
+    "kind": "land",
+    "name": "Gigante a Vapor",
+    "type": "Infantaria Pesada, Máquina",
+    "hp": 3680,
+    "armor": 60,
+    "speed": 60,
+    "size": 3,
+    "requirements": [
+      "Quartel ( 12 )",
+      "Robótica"
+    ],
+    "weapons": [
+      {
+        "name": "Lança Vapor",
+        "damage": 840,
+        "precision": 80.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5,
+        "upgrade_name": "Punho Superior"
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5,
+        "upgrade_name": "Revestimento Superior"
+      }
+    }
+  },
+  "309": {
+    "id": 309,
+    "kind": "land",
+    "name": "Balão-Bombardeiro",
+    "type": "Bombardeiro, Máquina",
+    "hp": 800,
+    "armor": 0,
+    "speed": 30,
+    "size": 2,
+    "requirements": [
+      "Quartel ( 11 )",
+      "O Princípio de Arquimedes"
+    ],
+    "weapons": [
+      {
+        "name": "Bomba",
+        "damage": 960,
+        "precision": 20.0,
+        "ammo": 2
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5,
+        "upgrade_name": "Bomba Superior"
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5,
+        "upgrade_name": "Cesto de Couro Superior"
+      }
+    }
+  },
+  "310": {
+    "id": 310,
+    "kind": "land",
+    "name": "Cozinheiro",
+    "type": "Reforço, Humano",
+    "hp": 440,
+    "armor": 0,
+    "speed": 60,
+    "size": 2,
+    "requirements": [
+      "Quartel ( 5 )",
+      "Especialidades de Culinária"
+    ],
+    "weapons": [
+      {
+        "name": "Cutelo",
+        "damage": 400,
+        "precision": 50.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "311": {
+    "id": 311,
+    "kind": "land",
+    "name": "Médico",
+    "type": "Reforço, Humano",
+    "hp": 240,
+    "armor": 0,
+    "speed": 90,
+    "size": 1,
+    "requirements": [
+      "Quartel ( 9 )",
+      "Anatomia"
+    ],
+    "weapons": [
+      {
+        "name": "Escalpelo",
+        "damage": 160,
+        "precision": 30.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "312": {
+    "id": 312,
+    "kind": "land",
+    "name": "Girocóptero",
+    "type": "Piloto de Combate, Máquina",
+    "hp": 580,
+    "armor": 0,
+    "speed": 120,
+    "size": 1,
+    "requirements": [
+      "Quartel ( 10 )",
+      "Pássaros Voadores"
+    ],
+    "weapons": [
+      {
+        "name": "Besta",
+        "damage": 340,
+        "precision": 80.0,
+        "ammo": 4
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5,
+        "upgrade_name": "Besta Superior"
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5,
+        "upgrade_name": "Revestimento Superior"
+      }
+    }
+  },
+  "313": {
+    "id": 313,
+    "kind": "land",
+    "name": "Arqueiro",
+    "type": "Lutador de longo alcance, Humano",
+    "hp": 320,
+    "armor": 0,
+    "speed": 90,
+    "size": 1,
+    "requirements": [
+      "Quartel ( 7 )",
+      "Balística"
+    ],
+    "weapons": [
+      {
+        "name": "Espada curta",
+        "damage": 100,
+        "precision": 60.0
+      },
+      {
+        "name": "Arco",
+        "damage": 100,
+        "precision": 40.0,
+        "ammo": 3
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5,
+        "upgrade_name": "Ponta de Flecha Superior"
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5,
+        "upgrade_name": "Armadura de Couro Superior"
+      }
+    }
+  },
+  "315": {
+    "id": 315,
+    "kind": "land",
+    "name": "Lanceiro",
+    "type": "Infantaria leve, Humano",
+    "hp": 260,
+    "armor": 0,
+    "speed": 90,
+    "size": 1,
+    "requirements": [
+      "Quartel ( 1 )"
+    ],
+    "weapons": [
+      {
+        "name": "Lança",
+        "damage": 80,
+        "precision": 70.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5,
+        "upgrade_name": "Lança Superior"
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5,
+        "upgrade_name": "Armadura de Couro Superior"
+      }
+    }
+  },
+  "316": {
+    "id": 316,
+    "kind": "land",
+    "name": "Viking",
+    "type": "Infantaria Pesada, Humano",
+    "hp": 1120,
+    "armor": 20,
+    "speed": 90,
+    "size": 1,
+    "weapons": [
+      {
+        "name": "Machado",
+        "damage": 360,
+        "precision": 90.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "319": {
+    "id": 319,
+    "kind": "land",
+    "name": "Espartano",
+    "type": "Infantaria Pesada, Humano",
+    "hp": 1200,
+    "armor": 120,
+    "speed": 90,
+    "size": 1,
+    "weapons": [
+      {
+        "name": "Lança",
+        "damage": 560,
+        "precision": 100.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "320": {
+    "id": 320,
+    "kind": "land",
+    "name": "Membro do Clube de Bárbaros",
+    "type": "Infantaria Pesada, Humano",
+    "hp": 240,
+    "armor": 20,
+    "speed": 90,
+    "size": 1,
+    "weapons": [
+      {
+        "name": "Porrete",
+        "damage": 100,
+        "precision": 85.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "321": {
+    "id": 321,
+    "kind": "land",
+    "name": "Homem Faca dos Bárbaros",
+    "type": "Infantaria leve, Humano",
+    "hp": 360,
+    "armor": 0,
+    "speed": 90,
+    "size": 1,
+    "weapons": [
+      {
+        "name": "Punhal",
+        "damage": 200,
+        "precision": 90.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "201": {
+    "id": 201,
+    "kind": "naval",
+    "name": "Barco Mercante",
+    "type": "Navio Civil, Máquina",
+    "hp": 600,
+    "armor": 0,
+    "speed": 60,
+    "size": 1,
+    "capacity": 500,
+    "weapons": [
+      {
+        "name": "Casco não blindado",
+        "damage": 300,
+        "precision": 80.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "202": {
+    "id": 202,
+    "kind": "naval",
+    "name": "Barco Mercante",
+    "type": "Navio Civil, Máquina",
+    "hp": 1200,
+    "armor": 60,
+    "speed": 60,
+    "size": 1,
+    "capacity": 500,
+    "weapons": [
+      {
+        "name": "Casco Blindado",
+        "damage": 600,
+        "precision": 100.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "204": {
+    "id": 204,
+    "kind": "naval",
+    "name": "Cargueiro",
+    "type": "Navio Civil, Máquina",
+    "hp": 2400,
+    "armor": 0,
+    "speed": 3,
+    "size": 1,
+    "capacity": 50000,
+    "weapons": [
+      {
+        "name": "Casco não blindado",
+        "damage": 300,
+        "precision": 80.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "210": {
+    "id": 210,
+    "kind": "naval",
+    "name": "Trireme",
+    "type": "Couraçado Leve, Máquina",
+    "hp": 3080,
+    "armor": 180,
+    "speed": 40,
+    "size": 3,
+    "requirements": [
+      "Estaleiro ( 1 )"
+    ],
+    "weapons": [
+      {
+        "name": "Esporão",
+        "damage": 1500,
+        "precision": 80.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "211": {
+    "id": 211,
+    "kind": "naval",
+    "name": "Lança-Chamas",
+    "type": "Couraçado Pesado, Máquina",
+    "hp": 4380,
+    "armor": 160,
+    "speed": 40,
+    "size": 2,
+    "requirements": [
+      "Estaleiro ( 4 )",
+      "Fogo Grego"
+    ],
+    "weapons": [
+      {
+        "name": "Lança-Chamas",
+        "damage": 1640,
+        "precision": 50.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "212": {
+    "id": 212,
+    "kind": "naval",
+    "name": "Submergível",
+    "type": "Primeira Linha, Máquina",
+    "hp": 2200,
+    "armor": 120,
+    "speed": 40,
+    "size": 3,
+    "requirements": [
+      "Estaleiro ( 19 )",
+      "Câmara de Pressão"
+    ],
+    "weapons": [
+      {
+        "name": "Casco Reforçado",
+        "damage": 1800,
+        "precision": 80.0
+      },
+      {
+        "name": "Bomba Flutuante",
+        "damage": 2460,
+        "precision": 80.0,
+        "ammo": 4
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "213": {
+    "id": 213,
+    "kind": "naval",
+    "name": "Barco Balista",
+    "type": "Lutador de longo alcance, Máquina",
+    "hp": 3080,
+    "armor": 280,
+    "speed": 40,
+    "size": 2,
+    "requirements": [
+      "Estaleiro ( 3 )",
+      "Convés de Armas"
+    ],
+    "weapons": [
+      {
+        "name": "Casco Reforçado",
+        "damage": 1020,
+        "precision": 70.0
+      },
+      {
+        "name": "Balista",
+        "damage": 560,
+        "precision": 50.0,
+        "ammo": 7
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "214": {
+    "id": 214,
+    "kind": "naval",
+    "name": "Barco Catapulta",
+    "type": "Lutador de longo alcance, Máquina",
+    "hp": 2960,
+    "armor": 200,
+    "speed": 40,
+    "size": 3,
+    "requirements": [
+      "Estaleiro ( 3 )",
+      "Contrapeso"
+    ],
+    "weapons": [
+      {
+        "name": "Casco",
+        "damage": 620,
+        "precision": 70.0
+      },
+      {
+        "name": "Azeiteira",
+        "damage": 900,
+        "precision": 30.0,
+        "ammo": 6
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "215": {
+    "id": 215,
+    "kind": "naval",
+    "name": "Barco Morteiro",
+    "type": "Lutador de longo alcance, Máquina",
+    "hp": 3080,
+    "armor": 120,
+    "speed": 30,
+    "size": 4,
+    "requirements": [
+      "Estaleiro ( 17 )",
+      "Anexo de Morteiro"
+    ],
+    "weapons": [
+      {
+        "name": "Casco",
+        "damage": 740,
+        "precision": 50.0
+      },
+      {
+        "name": "Projétil",
+        "damage": 1380,
+        "precision": 10.0,
+        "ammo": 5
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "216": {
+    "id": 216,
+    "kind": "naval",
+    "name": "Aríete a Vapor",
+    "type": "Couraçado Pesado, Máquina",
+    "hp": 11520,
+    "armor": 320,
+    "speed": 40,
+    "size": 5,
+    "requirements": [
+      "Estaleiro ( 15 )",
+      "Ariete Maciço"
+    ],
+    "weapons": [
+      {
+        "name": "Aríete Maciço",
+        "damage": 3320,
+        "precision": 90.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "217": {
+    "id": 217,
+    "kind": "naval",
+    "name": "Lança-Foguetes",
+    "type": "Primeira Linha, Máquina",
+    "hp": 1300,
+    "armor": 120,
+    "speed": 30,
+    "size": 4,
+    "requirements": [
+      "Estaleiro ( 11 )",
+      "Pólvora"
+    ],
+    "weapons": [
+      {
+        "name": "Casco",
+        "damage": 400,
+        "precision": 70.0
+      },
+      {
+        "name": "Míssil",
+        "damage": 7600,
+        "precision": 20.0,
+        "ammo": 2
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "218": {
+    "id": 218,
+    "kind": "naval",
+    "name": "Lancha Rápida",
+    "type": "Navio Transportador de Fuga, Máquina",
+    "hp": 400,
+    "armor": 0,
+    "speed": 60,
+    "size": 1,
+    "requirements": [
+      "Estaleiro ( 13 )",
+      "Roda d`Água"
+    ],
+    "weapons": [
+      {
+        "name": "Balista",
+        "damage": 240,
+        "precision": 90.0,
+        "ammo": 5
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "219": {
+    "id": 219,
+    "kind": "naval",
+    "name": "Porta-balões",
+    "type": "Navio Transportador, Máquina",
+    "hp": 2800,
+    "armor": 0,
+    "speed": 20,
+    "size": 5,
+    "requirements": [
+      "Estaleiro ( 7 )",
+      "Base no Mar"
+    ],
+    "weapons": [
+      {
+        "name": "Ataque de Balões",
+        "damage": 2000,
+        "precision": 50.0,
+        "ammo": 5
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "220": {
+    "id": 220,
+    "kind": "naval",
+    "name": "Reparador",
+    "type": "Reforço, Máquina",
+    "hp": 2800,
+    "armor": 0,
+    "speed": 30,
+    "size": 6,
+    "requirements": [
+      "Estaleiro ( 9 )",
+      "Calafetagem"
+    ],
+    "weapons": [
+      {
+        "name": "Martelo de Calafetar",
+        "damage": 300,
+        "precision": 50.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "221": {
+    "id": 221,
+    "kind": "naval",
+    "name": "Destruidor de Conveses",
+    "type": "Couraçado Leve, Máquina",
+    "hp": 3080,
+    "armor": 240,
+    "speed": 40,
+    "size": 3,
+    "weapons": [
+      {
+        "name": "Casco",
+        "damage": 1500,
+        "precision": 80.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "222": {
+    "id": 222,
+    "kind": "naval",
+    "name": "Triturador de Velas",
+    "type": "Lutador de longo alcance, Máquina",
+    "hp": 3080,
+    "armor": 280,
+    "speed": 40,
+    "size": 2,
+    "weapons": [
+      {
+        "name": "Aríete",
+        "damage": 1020,
+        "precision": 70.0
+      },
+      {
+        "name": "Pedra Enorme",
+        "damage": 800,
+        "precision": 50.0,
+        "ammo": 7
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "223": {
+    "id": 223,
+    "kind": "naval",
+    "name": "Pironavio",
+    "type": "Couraçado Pesado, Máquina",
+    "hp": 4380,
+    "armor": 220,
+    "speed": 40,
+    "size": 2,
+    "weapons": [
+      {
+        "name": "Lança-Chamas",
+        "damage": 1640,
+        "precision": 50.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "224": {
+    "id": 224,
+    "kind": "naval",
+    "name": "Catapulta de Pedregulhos",
+    "type": "Lutador de longo alcance, Máquina",
+    "hp": 2960,
+    "armor": 200,
+    "speed": 40,
+    "size": 3,
+    "weapons": [
+      {
+        "name": "Aríete",
+        "damage": 620,
+        "precision": 70.0
+      },
+      {
+        "name": "Serra Circular",
+        "damage": 900,
+        "precision": 25.0,
+        "ammo": 8
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  },
+  "225": {
+    "id": 225,
+    "kind": "naval",
+    "name": "Rachador a Remos",
+    "type": "Couraçado Pesado, Máquina",
+    "hp": 11520,
+    "armor": 400,
+    "speed": 40,
+    "size": 4,
+    "weapons": [
+      {
+        "name": "Casco Reforçado",
+        "damage": 3320,
+        "precision": 95.0
+      }
+    ],
+    "improvements": {
+      "offensive": {
+        "stat": "Dano",
+        "bonus_per_level": 5
+      },
+      "defensive": {
+        "stat": "Armadura",
+        "bonus_per_level": 5
+      }
+    }
+  }
+}

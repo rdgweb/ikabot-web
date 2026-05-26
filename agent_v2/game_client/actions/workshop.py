@@ -418,15 +418,23 @@ class WorkshopAction(BaseAction):
 
                     current_lv = _to_int(current_level.get("upgradeLevel"), 0)
                     next_lv = _to_int(next_level.get("upgradeLevel"), current_lv + 1)
+                    current_bonus = _to_int(current_level.get("upgradeEffect"), 0)
+                    next_bonus = _to_int(next_level.get("upgradeEffect"), 0)
+                    bonus_per_level = (next_bonus - current_bonus) if next_bonus > current_bonus else 0
                     duration_text = _clean_text(next_level.get("duration") or "")
                     improvements.append({
                         "id": unit_id,
                         "unit_id": unit_id,
                         "unit_name": unit_name,
                         "upgrade_type": upgrade_type,
+                        "upgrade_type_desc": _clean_text(branch.get("upgradeTypeDesc") or ""),
+                        "upgrade_name": _clean_text(next_level.get("upgradeName") or ""),
                         "name": f"{unit_name} - {branch.get('upgradeTypeName') or upgrade_type} Nivel {next_lv}",
                         "current_level": current_lv,
                         "next_level": next_lv,
+                        "current_bonus": current_bonus,
+                        "next_bonus": next_bonus,
+                        "bonus_per_level": bonus_per_level,
                         "gold_cost": _to_int(next_level.get("goldCosts") or next_level.get("goldCostsShortened") or 0),
                         "crystal_cost": _to_int(next_level.get("crystalCosts") or next_level.get("crystalCostsShortened") or 0),
                         "duration_seconds": _parse_duration_seconds(duration_text),
@@ -668,6 +676,8 @@ def _extract_modern_improvements(html: str) -> list[dict[str, Any]]:
         if unit_id <= 0:
             continue
         inferred_current = max(0, int(current_effect / 5)) if current_effect > 0 else max(0, next_level - 1)
+        # bonus_per_level: derive increment from two consecutive cumulative values
+        bonus_per_level = (next_effect - current_effect) if (next_effect > 0 and current_effect >= 0 and next_effect > current_effect) else 0
         improvements.append({
             "id": unit_id,
             "unit_id": unit_id,
@@ -677,6 +687,9 @@ def _extract_modern_improvements(html: str) -> list[dict[str, Any]]:
             "upgrade_name": upgrade_name,
             "current_level": inferred_current,
             "next_level": next_level,
+            "current_bonus": current_effect,
+            "next_bonus": next_effect,
+            "bonus_per_level": bonus_per_level,
             "gold_cost": gold_cost,
             "crystal_cost": crystal_cost,
             "duration_seconds": _parse_duration_seconds(duration_text),
