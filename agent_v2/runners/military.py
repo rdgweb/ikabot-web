@@ -418,9 +418,16 @@ class UpgradeUnitsRunner(BaseRunner):
     def _match_unit_key(imp_name: str, unit_filter: dict[str, int]) -> str | None:
         """Return the matching unit_filter key for an improvement name, or None."""
         lower = imp_name.lower()
-        # Direct substring match against unit keys
+        # Extract unit name (before " - ") to avoid "catapulta" matching "barco catapulta"
+        unit_part = lower.split(" - ")[0].strip() if " - " in lower else lower
+        # Exact match first
         for key in unit_filter:
-            if key.lower() in lower:
+            if key.lower() == unit_part:
+                return key
+        # Starts-with match (handles "Hoplita: Ataque Nivel 3" style names)
+        for key in unit_filter:
+            k = key.lower()
+            if unit_part.startswith(k + " ") or unit_part.startswith(k + ":"):
                 return key
         # Alias map for common name variations
         aliases = {
