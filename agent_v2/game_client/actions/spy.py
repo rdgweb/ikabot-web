@@ -822,6 +822,7 @@ _UNIT_ID_TO_INFO: dict[int, tuple[str, str]] = {
     319: ("Espartano",         "game/units/hoplita.png"),  # no dedicated icon
     # Naval
     210: ("Trireme",           "game/units/trieme.png"),
+    212: ("Barco-Aríete",      "game/units/ariete.png"),    # placeholder icon
     211: ("Lança-Chamas",      "game/units/lancachamas.png"),
     213: ("Barco Balista",     "game/units/Barco Balista.png"),
     214: ("Barco Catapulta",   "game/units/barcocatapulta.png"),
@@ -843,30 +844,19 @@ _UNIT_NAME_TO_ICON: dict[str, str] = {
 def _parse_workshop_from_html(report_html: str) -> list[dict[str, Any]]:
     """Parse workshop improvements from spy report HTML (mission 26).
 
-    Reads ``<div class="... sNNN">`` CSS classes (sNNN = unit_id) and the
-    two adjacent ``<td>`` values (offensive / defensive level).
-    Much more reliable than text parsing since it uses the actual game unit IDs.
+    Scans ALL rows containing ``unit_list`` CSS class across both tables
+    (land: army_small, naval: fleet_small).  Each row has a div with class
+    ``sNNN`` (unit_id) and two ``<td>+N</td>`` values (offensive / defensive).
 
     Returns list of {unit_id, name, icon, offensive, defensive}.
-    Only includes units with at least one non-zero level.
     """
-    # Find the tech table (has "techList" in header row)
-    table_m = re.search(
-        r'<table[^>]*>(\s*<tr[^>]*>.*?techList.*?</tr>[\s\S]*?)</table>',
-        report_html, re.DOTALL,
-    )
-    if not table_m:
-        return []
-
     result: list[dict[str, Any]] = []
-    rows = re.findall(r'<tr>([\s\S]*?)</tr>', table_m.group(1), re.DOTALL)
-    for row in rows:
-        # Extract unit CSS class  (s303, s308, …)
+    # Search every <tr> that contains a unit_list div (covers both land and naval tables)
+    for row in re.findall(r'<tr[^>]*>([\s\S]*?unit_list[\s\S]*?)</tr>', report_html, re.DOTALL):
         cls_m = re.search(r'\bunit_list\b[^"]*\bs(\d+)\b', row)
         if not cls_m:
             continue
         unit_id = int(cls_m.group(1))
-        # Extract the two td values (+N)
         tds = re.findall(r'<td[^>]*>\s*([+-]?\d+)\s*</td>', row)
         if len(tds) < 2:
             continue
@@ -913,11 +903,12 @@ def _parse_troops_from_html(report_html: str) -> list[dict[str, Any]]:
         header_row = rows[0]
         header_type = "naval" if 'class="shipyard"' in header_row else "land"
         unit_names: list[str] = []
-        for th in re.findall(r'<th[^>]*>([\s\S]*?)</th>', header_row, re.DOTALL):
-            if 'class="barracks"' in th or 'class="shipyard"' in th:
-                continue  # skip the first column header
-            # get unit name from alt or title attribute
-            name_m = re.search(r'(?:alt|title)="([^"]+)"', th, re.IGNORECASE)
+        # Capture the FULL <th>...</th> element so class= in opening tag is visible
+        for th_full in re.findall(r'<th[^>]*>[\s\S]*?</th>', header_row, re.DOTALL):
+            if 'class="barracks"' in th_full or 'class="shipyard"' in th_full:
+                continue  # skip the first column header (Quartel / Estaleiro)
+            # get unit name from title attr of <th> or alt/title of inner <img>
+            name_m = re.search(r'(?:alt|title)="([^"]+)"', th_full, re.IGNORECASE)
             if name_m:
                 unit_names.append(name_m.group(1))
 
@@ -1475,7 +1466,7 @@ class SpyReportsAction(BaseAction):
         )
         # Lookahead stops at next row OR end-of-table; covers last report too
         body_pattern = re.compile(
-            r'id="tbl_mail(\d+)"[^>]*>([\s\S]{0,15000}?)(?=id="tbl_mail\d+"|id="message\d+"|</tbody>|</table>)',
+            r'id="tbl_mail(\d+)"[^>]*>([\s\S]{0,40000}?)(?=id="tbl_mail\d+"|id="message\d+"|$)',
             re.DOTALL,
         )
 
