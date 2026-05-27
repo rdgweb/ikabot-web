@@ -149,17 +149,15 @@
               {% endfor %}
             </div>
             {% elif report.mission_id == 6 or report.mission_id == 7 %}
-            {% if report.data_table %}
+            {% if report.data_json.troops_data %}
             <div class="mt-1 flex flex-wrap gap-1">
-              {% for unit_name, unit_count in report.data_table %}
-                {% with icon=unit_name|unit_icon %}
-                {% if icon and unit_count != "0" and unit_count %}
-                <span class="inline-flex items-center gap-0.5 text-[10px] bg-[var(--ik-sand)] rounded px-1 py-0.5" title="{{ unit_name }}">
-                  <img src="{% static icon %}" class="h-3 w-3 object-contain">
-                  <span class="font-mono text-ink">{{ unit_count }}</span>
+              {% for section in report.data_json.troops_data %}
+                {% for unit in section.units %}
+                <span class="inline-flex items-center gap-0.5 text-[10px] bg-[var(--ik-sand)] rounded px-1 py-0.5" title="{{ unit.name }} ({{ section.category }})">
+                  <img src="{% static unit.icon %}" class="h-3 w-3 object-contain">
+                  <span class="font-mono text-ink">{{ unit.count }}</span>
                 </span>
-                {% endif %}
-                {% endwith %}
+                {% endfor %}
               {% endfor %}
             </div>
             {% elif report.report_text %}
@@ -276,29 +274,32 @@
 
               <!-- Garrison / Troops & Fleet (missions 6, 7) -->
               {% if report.mission_id == 6 or report.mission_id == 7 %}
-              {% if report.data_table %}
+              {% if report.data_json.troops_data %}
               <div class="flex-1">
-                <div class="text-xs font-semibold text-muted uppercase tracking-wide mb-2">
+                <div class="text-xs font-semibold text-muted uppercase tracking-wide mb-3">
                   {% if report.mission_id == 6 %}Guarnição Militar{% else %}Tropas e Frotas{% endif %}
                 </div>
-                <div class="flex flex-wrap gap-2">
-                  {% for unit_name, unit_count in report.data_table %}
-                  {% with icon=unit_name|unit_icon %}
-                  {% if icon %}
-                  <div class="flex flex-col items-center gap-0.5 bg-[var(--ik-sand)] rounded-lg px-2 py-1.5 min-w-[56px]">
-                    <img src="{% static icon %}" class="h-8 w-8 object-contain" title="{{ unit_name }}">
-                    <div class="text-[9px] text-muted text-center leading-tight" style="max-width:64px;">{{ unit_name }}</div>
-                    <div class="text-[11px] font-mono font-semibold text-ink">{{ unit_count }}</div>
+                {% for section in report.data_json.troops_data %}
+                <div class="mb-3">
+                  <div class="flex items-center gap-1 text-[10px] text-muted uppercase tracking-wide mb-1.5">
+                    {% if section.category_type == "naval" %}
+                    <i class="bi bi-anchor text-sea"></i>
+                    {% else %}
+                    <i class="bi bi-shield-shaded text-sea"></i>
+                    {% endif %}
+                    {{ section.category }}
                   </div>
-                  {% else %}
-                  <div class="flex items-center gap-1 bg-[var(--ik-sand)] rounded px-2 py-1 text-xs">
-                    <span class="text-muted">{{ unit_name }}:</span>
-                    <span class="font-mono font-semibold text-ink">{{ unit_count }}</span>
+                  <div class="flex flex-wrap gap-2">
+                    {% for unit in section.units %}
+                    <div class="flex flex-col items-center gap-0.5 bg-[var(--ik-sand)] rounded-lg px-2 py-1.5 min-w-[56px]">
+                      <img src="{% static unit.icon %}" class="h-8 w-8 object-contain" title="{{ unit.name }}">
+                      <div class="text-[9px] text-muted text-center leading-tight" style="max-width:64px;">{{ unit.name }}</div>
+                      <div class="text-[11px] font-mono font-semibold text-ink">{{ unit.count }}</div>
+                    </div>
+                    {% endfor %}
                   </div>
-                  {% endif %}
-                  {% endwith %}
-                  {% endfor %}
                 </div>
+                {% endfor %}
               </div>
               {% elif report.report_text %}
               <div class="flex-1 min-w-0">

@@ -772,9 +772,7 @@ def _extract_report_text_lines(report_html: str) -> list[str]:
 def _extract_report_details(mission_id: int | None, report_text: str, pairs: list[tuple[str, str]]) -> dict[str, Any]:
     details: dict[str, Any] = {}
     text = " ".join(report_text.split())
-    if mission_id == 26 and text:
-        details["workshop_improvements"] = _parse_workshop_improvements(text)
-        return details
+    # mission 26 (workshop) is parsed from HTML in _parse_reports; skip here
     if mission_id == 3 and pairs:
         details["research"] = {name: value for name, value in pairs}
         if "Pontos de pesquisa" in details["research"]:
@@ -803,40 +801,78 @@ def _extract_report_details(mission_id: int | None, report_text: str, pairs: lis
     return details
 
 
-# Canonical unit order in Workshop spy reports (mission 26).
-# Interleaved pairs: [off_0, def_0, off_1, def_1, ...] for up to 15 units.
-# Order confirmed from live capture (workshop_template.json, listOfVisibleUnits).
-_WORKSHOP_UNIT_ORDER: list[tuple[int, str, str]] = [
-    (303, "Hoplita",           "game/units/hoplita.png"),
-    (308, "Gigante a Vapor",   "game/units/gigante.png"),
-    (315, "Lanceiro",          "game/units/lanceiro.png"),
-    (302, "Espadachim",        "game/units/espadachim.png"),
-    (301, "Fundeiro",          "game/units/fundeiro.png"),
-    (313, "Arqueiro",          "game/units/arqueiro.png"),
-    (304, "Carabineiro",       "game/units/atirador.png"),
-    (307, "Aríete",            "game/units/ariete.png"),
-    (306, "Catapulta",         "game/units/catapulta.png"),
-    (305, "Morteiro",          "game/units/morteiro.png"),
-    (312, "Girocóptero",       "game/units/girocoptero.png"),
-    (309, "Balão-Bombardeiro", "game/units/balao.png"),
-    (210, "Trireme",           "game/units/trieme.png"),
-    (214, "Barco Catapulta",   "game/units/barcocatapulta.png"),
-    (215, "Barco Morteiro",    "game/units/barcomorteiro.png"),
-]
+# Unit ID → (name, icon_path) — used by workshop HTML parser.
+# CSS class in game HTML = "s" + str(unit_id).
+# Confirmed via live capture (report_body_118668.html, 2026-05-27).
+_UNIT_ID_TO_INFO: dict[int, tuple[str, str]] = {
+    301: ("Fundeiro",          "game/units/fundeiro.png"),
+    302: ("Espadachim",        "game/units/espadachim.png"),
+    303: ("Hoplita",           "game/units/hoplita.png"),
+    304: ("Carabineiro",       "game/units/atirador.png"),
+    305: ("Morteiro",          "game/units/morteiro.png"),
+    306: ("Catapulta",         "game/units/catapulta.png"),
+    307: ("Aríete",            "game/units/ariete.png"),
+    308: ("Gigante a Vapor",   "game/units/gigante.png"),
+    309: ("Balão-Bombardeiro", "game/units/balao.png"),
+    310: ("Cozinheiro",        "game/units/cozinheiro.png"),
+    311: ("Médico",            "game/units/medico.png"),
+    312: ("Girocóptero",       "game/units/girocoptero.png"),
+    313: ("Arqueiro",          "game/units/arqueiro.png"),
+    315: ("Lanceiro",          "game/units/lanceiro.png"),
+    319: ("Espartano",         "game/units/hoplita.png"),  # no dedicated icon
+    # Naval
+    210: ("Trireme",           "game/units/trieme.png"),
+    211: ("Lança-Chamas",      "game/units/lancachamas.png"),
+    213: ("Barco Balista",     "game/units/Barco Balista.png"),
+    214: ("Barco Catapulta",   "game/units/barcocatapulta.png"),
+    215: ("Barco Morteiro",    "game/units/barcomorteiro.png"),
+    216: ("Aríete a Vapor",    "game/units/Aríete a Vapor.png"),
+    217: ("Lança-Foguetes",    "game/units/Lança-Foguetes.png"),
+    218: ("Lancha Rápida",     "game/units/Lancha Rápida.png"),
+    219: ("Porta-balões",      "game/units/Porta-balões.png"),
+    220: ("Reparador",         "game/units/barcoreparador.png"),
+    221: ("Submergível",       "game/units/Submergível.png"),
+}
+
+# Unit name → icon — for troops/fleet report rendering (mission 6, 7).
+_UNIT_NAME_TO_ICON: dict[str, str] = {
+    info[0]: info[1] for info in _UNIT_ID_TO_INFO.values()
+}
 
 
-def _parse_workshop_improvements(report_text: str) -> list[dict[str, Any]]:
-    """Parse '+N' values from Workshop espionage report (mission 26).
+def _parse_workshop_from_html(report_html: str) -> list[dict[str, Any]]:
+    """Parse workshop improvements from spy report HTML (mission 26).
 
-    Format: interleaved [off_0, def_0, off_1, def_1, ...] for up to 15 units
-    (12 land + 3 naval).  Returns full list including zero-level entries so the
-    template can show the complete picture; callers can filter on offensive/defensive > 0.
+    Reads ``<div class="... sNNN">`` CSS classes (sNNN = unit_id) and the
+    two adjacent ``<td>`` values (offensive / defensive level).
+    Much more reliable than text parsing since it uses the actual game unit IDs.
+
+    Returns list of {unit_id, name, icon, offensive, defensive}.
+    Only includes units with at least one non-zero level.
     """
-    values = [int(m) for m in re.findall(r"[+-]?\d+", report_text)]
+    # Find the tech table (has "techList" in header row)
+    table_m = re.search(
+        r'<table[^>]*>(\s*<tr[^>]*>.*?techList.*?</tr>[\s\S]*?)</table>',
+        report_html, re.DOTALL,
+    )
+    if not table_m:
+        return []
+
     result: list[dict[str, Any]] = []
-    for i, (unit_id, name, icon) in enumerate(_WORKSHOP_UNIT_ORDER):
-        off = values[i * 2]     if i * 2     < len(values) else 0
-        dfn = values[i * 2 + 1] if i * 2 + 1 < len(values) else 0
+    rows = re.findall(r'<tr>([\s\S]*?)</tr>', table_m.group(1), re.DOTALL)
+    for row in rows:
+        # Extract unit CSS class  (s303, s308, …)
+        cls_m = re.search(r'\bunit_list\b[^"]*\bs(\d+)\b', row)
+        if not cls_m:
+            continue
+        unit_id = int(cls_m.group(1))
+        # Extract the two td values (+N)
+        tds = re.findall(r'<td[^>]*>\s*([+-]?\d+)\s*</td>', row)
+        if len(tds) < 2:
+            continue
+        off = int(tds[0])
+        dfn = int(tds[1])
+        name, icon = _UNIT_ID_TO_INFO.get(unit_id, (f"Unidade {unit_id}", "game/units/hoplita.png"))
         result.append({
             "unit_id":   unit_id,
             "name":      name,
@@ -845,6 +881,75 @@ def _parse_workshop_improvements(report_text: str) -> list[dict[str, Any]]:
             "defensive": dfn,
         })
     return result
+
+
+def _parse_troops_from_html(report_html: str) -> list[dict[str, Any]]:
+    """Parse troops and fleet data from mission 6/7 spy report HTML.
+
+    Each ``<table class="reportTable">`` has:
+      - Header row: barracks/shipyard icon, then unit icons (alt = unit name)
+      - Data row: category label ("Tropas em X"), then count per unit
+
+    Returns list of section dicts::
+
+        [{"category": "Tropas em VC1",
+          "category_type": "land",   # "land" or "naval"
+          "units": [{"name": "Hoplita", "count": 350, "icon": "..."}, ...]
+         }, ...]
+
+    Only units with count > 0 are included.
+    """
+    sections: list[dict[str, Any]] = []
+    tables = re.findall(
+        r'<table[^>]*class="reportTable"[^>]*>([\s\S]*?)</table>',
+        report_html, re.DOTALL,
+    )
+    for table in tables:
+        rows = re.findall(r'<tr[^>]*>([\s\S]*?)</tr>', table, re.DOTALL)
+        if len(rows) < 2:
+            continue
+
+        # Header row: extract unit names from alt/title attributes (skip first col = barracks/shipyard)
+        header_row = rows[0]
+        header_type = "naval" if 'class="shipyard"' in header_row else "land"
+        unit_names: list[str] = []
+        for th in re.findall(r'<th[^>]*>([\s\S]*?)</th>', header_row, re.DOTALL):
+            if 'class="barracks"' in th or 'class="shipyard"' in th:
+                continue  # skip the first column header
+            # get unit name from alt or title attribute
+            name_m = re.search(r'(?:alt|title)="([^"]+)"', th, re.IGNORECASE)
+            if name_m:
+                unit_names.append(name_m.group(1))
+
+        if not unit_names:
+            continue
+
+        # Data rows: collect (category, [count, ...])
+        for row in rows[1:]:
+            cat_m = re.search(r'<td[^>]*class="category"[^>]*>([\s\S]*?)</td>', row, re.DOTALL)
+            if not cat_m:
+                continue
+            category = _strip_html(cat_m.group(1)).strip()
+            counts = re.findall(r'<td[^>]*class="count"[^>]*>([\s\S]*?)</td>', row, re.DOTALL)
+            units: list[dict[str, Any]] = []
+            for idx, count_html in enumerate(counts):
+                if idx >= len(unit_names):
+                    break
+                bold_m = re.search(r'<b>(\d+)</b>', count_html)
+                count = int(bold_m.group(1)) if bold_m else 0
+                if count <= 0:
+                    continue
+                uname = unit_names[idx]
+                icon = _UNIT_NAME_TO_ICON.get(uname, "game/units/hoplita.png")
+                units.append({"name": uname, "count": count, "icon": icon})
+            if units:
+                sections.append({
+                    "category":      category,
+                    "category_type": header_type,
+                    "units":         units,
+                })
+
+    return sections
 
 
 def _extract_research_pairs(report_text: str) -> list[tuple[str, str]]:
@@ -1506,6 +1611,21 @@ class SpyReportsAction(BaseAction):
                     merged = dict(report.get("data_json") or {})
                     merged.update(detail_payload)
                     report["data_json"] = merged
+
+            # HTML-based structured parsers — run after all_pairs / detail_payload
+            _mid = report.get("mission_id")
+            if body_html and _mid == 26:
+                improvements = _parse_workshop_from_html(body_html)
+                if improvements:
+                    dj = dict(report.get("data_json") or {})
+                    dj["workshop_improvements"] = improvements
+                    report["data_json"] = dj
+            elif body_html and _mid in (6, 7):
+                troops = _parse_troops_from_html(body_html)
+                if troops:
+                    dj = dict(report.get("data_json") or {})
+                    dj["troops_data"] = troops
+                    report["data_json"] = dj
 
             if report.get("mission_id") == 1 and not report.get("result_status"):
                 report["result_status"] = report.get("status") or "InfiltraÃ§Ã£o"
