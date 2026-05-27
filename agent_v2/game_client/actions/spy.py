@@ -772,6 +772,9 @@ def _extract_report_text_lines(report_html: str) -> list[str]:
 def _extract_report_details(mission_id: int | None, report_text: str, pairs: list[tuple[str, str]]) -> dict[str, Any]:
     details: dict[str, Any] = {}
     text = " ".join(report_text.split())
+    if mission_id == 26 and text:
+        details["workshop_improvements"] = _parse_workshop_improvements(text)
+        return details
     if mission_id == 3 and pairs:
         details["research"] = {name: value for name, value in pairs}
         if "Pontos de pesquisa" in details["research"]:
@@ -798,6 +801,50 @@ def _extract_report_details(mission_id: int | None, report_text: str, pairs: lis
     elif text and not details:
         details["summary"] = text[:240]
     return details
+
+
+# Canonical unit order in Workshop spy reports (mission 26).
+# Interleaved pairs: [off_0, def_0, off_1, def_1, ...] for up to 15 units.
+# Order confirmed from live capture (workshop_template.json, listOfVisibleUnits).
+_WORKSHOP_UNIT_ORDER: list[tuple[int, str, str]] = [
+    (303, "Hoplita",           "game/units/hoplita.png"),
+    (308, "Gigante a Vapor",   "game/units/gigante.png"),
+    (315, "Lanceiro",          "game/units/lanceiro.png"),
+    (302, "Espadachim",        "game/units/espadachim.png"),
+    (301, "Fundeiro",          "game/units/fundeiro.png"),
+    (313, "Arqueiro",          "game/units/arqueiro.png"),
+    (304, "Carabineiro",       "game/units/atirador.png"),
+    (307, "Aríete",            "game/units/ariete.png"),
+    (306, "Catapulta",         "game/units/catapulta.png"),
+    (305, "Morteiro",          "game/units/morteiro.png"),
+    (312, "Girocóptero",       "game/units/girocoptero.png"),
+    (309, "Balão-Bombardeiro", "game/units/balao.png"),
+    (210, "Trireme",           "game/units/trieme.png"),
+    (214, "Barco Catapulta",   "game/units/barcocatapulta.png"),
+    (215, "Barco Morteiro",    "game/units/barcomorteiro.png"),
+]
+
+
+def _parse_workshop_improvements(report_text: str) -> list[dict[str, Any]]:
+    """Parse '+N' values from Workshop espionage report (mission 26).
+
+    Format: interleaved [off_0, def_0, off_1, def_1, ...] for up to 15 units
+    (12 land + 3 naval).  Returns full list including zero-level entries so the
+    template can show the complete picture; callers can filter on offensive/defensive > 0.
+    """
+    values = [int(m) for m in re.findall(r"[+-]?\d+", report_text)]
+    result: list[dict[str, Any]] = []
+    for i, (unit_id, name, icon) in enumerate(_WORKSHOP_UNIT_ORDER):
+        off = values[i * 2]     if i * 2     < len(values) else 0
+        dfn = values[i * 2 + 1] if i * 2 + 1 < len(values) else 0
+        result.append({
+            "unit_id":   unit_id,
+            "name":      name,
+            "icon":      icon,
+            "offensive": off,
+            "defensive": dfn,
+        })
+    return result
 
 
 def _extract_research_pairs(report_text: str) -> list[tuple[str, str]]:

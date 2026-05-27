@@ -2154,7 +2154,7 @@ class WorkflowListView(FilterSortListView):
     filterset_class = WorkflowFilter
     template_name = "jobs/workflow_list.html"
     partial_template_name = "jobs/partials/workflow_table.html"
-    paginate_by = 20
+    paginate_by = 50
     ordering_fields = ["status", "updated_at", "last_event_at", "next_scheduled_for", "created_at"]
     default_ordering = ["-updated_at"]
 
