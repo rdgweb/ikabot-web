@@ -429,7 +429,7 @@ class UpgradeUnitsRunner(BaseRunner):
             k = key.lower()
             if unit_part.startswith(k + " ") or unit_part.startswith(k + ":"):
                 return key
-        # Alias map for common name variations
+        # Alias map for common name variations (matched against unit_part, not full string)
         aliases = {
             "hoplita": ["hoplite", "hoplita"],
             "espadachim": ["swordsman", "espadachim"],
@@ -459,7 +459,8 @@ class UpgradeUnitsRunner(BaseRunner):
             if key not in unit_filter:
                 continue
             for alias in alias_list:
-                if alias in lower:
+                a = alias.lower()
+                if a == unit_part or unit_part.startswith(a + " ") or unit_part.startswith(a + ":"):
                     return key
         return None
 
