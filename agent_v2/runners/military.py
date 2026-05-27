@@ -115,7 +115,7 @@ class UpgradeUnitsRunner(BaseRunner):
 
         # ── Parse user preferences ──
         unit_targets: list[dict[str, Any]] = list(inputs.get("unit_targets") or [])
-        target_all: bool = bool(inputs.get("target_all", True)) or len(unit_targets) == 0
+        target_all: bool = bool(inputs.get("target_all")) or len(unit_targets) == 0
         min_crystal: int = max(0, _to_int(inputs.get("min_crystal_reserve"), 0))
         min_gold: int = max(0, _to_int(inputs.get("min_gold_reserve"), 0))
         priority_mode = str(inputs.get("priority_mode") or "offensive_first").strip() or "offensive_first"
@@ -358,8 +358,7 @@ class UpgradeUnitsRunner(BaseRunner):
                     continue
                 branch_limits = unit_filter[matched_key]
                 max_lv = branch_limits.get(imp_upgrade_type)
-                if max_lv is None:
-                    continue
+                # None = no limit for this branch → allow upgrade
                 current_lv = _to_int(imp.get("current_level"), -1)
                 if max_lv > 0 and current_lv >= max_lv:
                     self.log(
