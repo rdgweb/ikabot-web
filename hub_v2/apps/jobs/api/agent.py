@@ -392,6 +392,25 @@ class SpawnJobView(APIView):
         )
 
 
+class JobStatusReadView(APIView):
+    """GET /api/agent/jobs/<uuid:job_id>/info/ — read job status without mutating it."""
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def get(self, request, job_id):
+        try:
+            job = Job.objects.get(pk=job_id)
+        except Job.DoesNotExist:
+            return Response({"error": "not_found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            "job_id": str(job.pk),
+            "status": job.status,
+            "action_code": job.action_code,
+            "finished": job.status in _TERMINAL_STATUSES,
+        })
+
+
 class ConstructionSupportView(APIView):
     """GET /api/agent/jobs/<uuid:job_id>/construction-support/."""
 

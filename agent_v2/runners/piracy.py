@@ -270,17 +270,29 @@ class PiracyMissionRunner(BaseRunner):
                     protected_city_ids.add(city_id)
         return {name for name in protected_names if name}, protected_city_ids
 
-    def _within_active_foundation_limit(self, client, *, limit: int, piracy_city_id: int | str = 0) -> bool:
+    def _within_active_foundation_limit(self, client, *, limit: int, game_account_id: str = "", piracy_city_id: int | str = 0) -> bool:
         if limit <= 0:
             return True
+        snapshot_city_ids: set[int] = set()
+        if game_account_id:
+            try:
+                snap = self.hub.get_snapshot(game_account_id=game_account_id)
+                for c in (snap.get("cities") or []):
+                    cid = _to_int(c.get("id") or c.get("city_id"), 0)
+                    if cid > 0:
+                        snapshot_city_ids.add(cid)
+            except Exception:
+                pass
         own_cities = fetch_owned_cities(client)
+        if snapshot_city_ids:
+            extra = [c for c in own_cities if _to_int(c.get("id"), 0) > 0 and _to_int(c.get("id"), 0) not in snapshot_city_ids]
+            return len(extra) < limit
+        # fallback: sem snapshot, conta cidades com pirateFortress excluindo a cidade pirata permanente
         skip_city = str(_to_int(piracy_city_id)) if piracy_city_id else ""
         active_colonies = 0
         for city in own_cities:
             city_id = _to_int(city.get("id"), 0)
-            if city_id <= 0:
-                continue
-            if skip_city and str(city_id) == skip_city:
+            if city_id <= 0 or (skip_city and str(city_id) == skip_city):
                 continue
             try:
                 payload = fetch_city_payload(client, city_id)
@@ -322,15 +334,17 @@ class PiracyMissionRunner(BaseRunner):
             "general_score": _to_int(score.get("army_score")),
         }
 
-    def _choose_targeted_entry(
+    def _choose_targeted_entry_with_spot(
         self,
+        jid: str,
         client,
         *,
         city_id: str,
         game_account_id: str,
         highscore_state: dict[str, Any],
         inputs: dict[str, Any],
-    ) -> dict[str, Any] | None:
+    ) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        """Return (target_entry, colony_spot) for the first valid candidate that has a free slot."""
         entries = list(highscore_state.get("piracy_highscore_entries") or [])
         self_entry = highscore_state.get("piracy_highscore_self") or {}
         self_avatar_id = str(highscore_state.get("piracy_highscore_avatar_id") or "")
@@ -362,6 +376,9 @@ class PiracyMissionRunner(BaseRunner):
             owner_name = str(target_city.get("owner_name") or "").strip().lower()
             if owner_name and owner_name in protected_names:
                 continue
+            if str(target_city.get("state") or "").strip().lower() == "umod":
+                self.log(jid, "info", f"Alvo {entry.get('player_name')} em ferias; pulando")
+                continue
             actions = target_city.get("actions") or {}
             if isinstance(actions, dict):
                 raid_available = _to_int(actions.get("piracy_raid"), 0) > 0
@@ -370,8 +387,10 @@ class PiracyMissionRunner(BaseRunner):
             if not raid_available:
                 continue
             if require_lower_total and target_scores["total_score"] >= own_scores["total_score"]:
+                self.log(jid, "info", f"Alvo {entry.get('player_name')} tem pontos gerais maiores (total); pulando")
                 continue
             if require_lower_general and target_scores["general_score"] >= own_scores["general_score"]:
+                self.log(jid, "info", f"Alvo {entry.get('player_name')} tem mais pontos de generais; pulando")
                 continue
             weight = abs(_to_int(entry.get("score")) - _to_int(self_entry.get("score")))
             enriched = {
@@ -390,7 +409,12 @@ class PiracyMissionRunner(BaseRunner):
         if not candidates:
             return None
         candidates.sort(key=lambda item: (item[0], item[1], str(item[2].get("player_name") or "")))
-        return candidates[0][2]
+        for _, _, enriched in candidates:
+            spot = self._find_colony_spot(client, str(enriched.get("target_city_id") or ""))
+            if spot:
+                return enriched, spot
+            self.log(jid, "info", f"Sem slot livre para alvo {enriched.get('player_name')}; tentando proximo candidato")
+        return None
 
     def _targeted_convert_capture_points(
         self,
@@ -737,20 +761,90 @@ class PiracyMissionRunner(BaseRunner):
                 return RunnerResult(success=True, reschedule_seconds=wait, reschedule_inputs=_state_inputs)
 
             if self._targeted_cycle_due(inputs):
-                target_entry = self._choose_targeted_entry(
+                result_pair = self._choose_targeted_entry_with_spot(
+                    jid,
                     client,
                     city_id=city_id,
                     game_account_id=game_account_id,
                     highscore_state=highscore_state,
                     inputs=inputs,
                 )
-                if target_entry:
-                    colony_spot = self._find_colony_spot(client, str(target_entry.get("target_city_id") or ""))
+                if result_pair:
+                    target_entry, colony_spot = result_pair
                 else:
-                    colony_spot = None
+                    target_entry, colony_spot = None, None
                 if target_entry and colony_spot:
+                    # ── Fase: aguardar check_status antes de colonizar ──
+                    pending_cs_id = str(inputs.get("_targeted_pending_check_status_id") or "").strip()
+                    if pending_cs_id:
+                        try:
+                            cs_info = self.hub.get_job_info(pending_cs_id)
+                        except Exception:
+                            cs_info = {}
+                        if not cs_info.get("finished"):
+                            self.log(jid, "info", f"Aguardando check_status {pending_cs_id} concluir antes de colonizar")
+                            self.save_game_client(game_account_id, client)
+                            return RunnerResult(
+                                success=True,
+                                reschedule_seconds=60,
+                                reschedule_inputs={**inputs, **_state_inputs},
+                                data={"status": "waiting_check_status", "check_status_job_id": pending_cs_id},
+                            )
+                        inputs = {**inputs, "_targeted_pending_check_status_id": ""}
+                    else:
+                        spawned = self.hub.spawn_job(jid, action_code=100, inputs={})
+                        cs_id = str(spawned.get("new_job_id") or "").strip()
+                        self.log(jid, "info", f"Disparando check_status {cs_id} para atualizar snapshot antes de colonizar")
+                        self.save_game_client(game_account_id, client)
+                        return RunnerResult(
+                            success=True,
+                            reschedule_seconds=60,
+                            reschedule_inputs={**inputs, **_state_inputs, "_targeted_pending_check_status_id": cs_id},
+                            data={"status": "waiting_check_status", "check_status_job_id": cs_id},
+                        )
+                    # ── Check_status concluído — snapshot fresco ──
+                    # Revalida alvo: dump fresco da ilha do alvo confirma que não entrou em férias
+                    try:
+                        fresh_target_island = client.fetch_island_by_city_id(str(target_entry.get("target_city_id") or ""))
+                        fresh_target_city = next(
+                            (c for c in (fresh_target_island.get("cities") or [])
+                             if str(c.get("id") or "") == str(target_entry.get("target_city_id") or "")),
+                            None,
+                        )
+                        if fresh_target_city and str(fresh_target_city.get("state") or "").strip().lower() == "umod":
+                            self.log(jid, "info", f"Alvo {target_entry.get('player_name')} entrou em ferias; abortando ciclo especial")
+                            self.save_game_client(game_account_id, client)
+                            return RunnerResult(
+                                success=True,
+                                reschedule_seconds=30 * 60,
+                                reschedule_inputs={**inputs, **_state_inputs},
+                                data={"status": "targeted_aborted_vacation", "target": target_entry},
+                            )
+                        # Revalida slot na ilha de destino (colônia)
+                        fresh_colony_island = client.fetch_island_by_id(colony_spot["island_id"])
+                        slot_still_free = any(
+                            c.get("type") == "empty" and _to_int(c.get("position")) == int(colony_spot["position"])
+                            for c in (fresh_colony_island.get("cities") or [])
+                        )
+                        if not slot_still_free:
+                            self.log(jid, "warn", f"Slot pos {colony_spot['position']} na ilha {colony_spot['island_id']} foi ocupado; buscando novo slot")
+                            new_spot = self._find_colony_spot(client, str(target_entry.get("target_city_id") or ""))
+                            if new_spot:
+                                colony_spot = new_spot
+                                self.log(jid, "info", f"Novo slot encontrado: ilha {new_spot['island_id']} pos {new_spot['position']}")
+                            else:
+                                self.log(jid, "warn", "Nenhum slot disponivel nas ilhas proximas; adiando ciclo especial")
+                                self.save_game_client(game_account_id, client)
+                                return RunnerResult(
+                                    success=True,
+                                    reschedule_seconds=30 * 60,
+                                    reschedule_inputs={**inputs, **_state_inputs},
+                                    data={"status": "targeted_aborted_slot_taken", "colony_spot": colony_spot},
+                                )
+                    except Exception as exc:
+                        self.log(jid, "warn", f"Falha ao revalidar ilha antes de colonizar: {exc}; prosseguindo mesmo assim")
                     max_foundations = max(1, _to_int(inputs.get("targeted_max_active_foundations"), 1))
-                    if not self._within_active_foundation_limit(client, limit=max_foundations, piracy_city_id=city_id):
+                    if not self._within_active_foundation_limit(client, limit=max_foundations, game_account_id=game_account_id, piracy_city_id=city_id):
                         self.log(jid, "info", f"Limite ativo de colonias temporarias atingido ({max_foundations}); adiando ciclo especial")
                         self.save_game_client(game_account_id, client)
                         return RunnerResult(
@@ -824,10 +918,8 @@ class PiracyMissionRunner(BaseRunner):
                             "colonization": result,
                         },
                     )
-                if target_entry:
-                    self.log(jid, "warn", f"Nenhum slot livre encontrado para atacar {target_entry.get('player_name')}; seguindo fluxo normal")
                 else:
-                    self.log(jid, "info", "Nenhum alvo elegivel no ranking pirata nesta rodada especial")
+                    self.log(jid, "info", "Nenhum alvo elegivel com slot livre no ranking pirata nesta rodada especial")
 
             # Step 3: ship in port — optionally convert, then start new mission
             # a) convert capture points to crew based on mode

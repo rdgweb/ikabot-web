@@ -119,6 +119,10 @@ class HubClient:
             payload["timeout_sec"] = timeout_sec
         return self._post(f"/api/agent/jobs/{parent_job_id}/spawn", payload)
 
+    def get_job_info(self, job_id: str) -> dict:
+        """GET /api/agent/jobs/{job_id}/info/ — returns {job_id, status, action_code, finished}."""
+        return self._get(f"/api/agent/jobs/{job_id}/info")
+
     def get_construction_support(self, job_id: str) -> dict:
         """GET /api/agent/jobs/{job_id}/construction-support/."""
         return self._get(f"/api/agent/jobs/{job_id}/construction-support")
