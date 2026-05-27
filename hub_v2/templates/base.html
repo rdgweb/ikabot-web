@@ -22,8 +22,8 @@
       hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
       hx-boost="true" hx-target="#page-content" hx-swap="innerHTML transition:true" hx-push-url="true">
 
-  <!-- HTMX loading indicator -->
-  <div id="htmx-progress" class="htmx-progress"></div>
+  <!-- Loading indicators (4 estilos — toggle via botão ⋆ no canto) -->
+  {% include "components/loading_indicator.html" %}
 
   {% if user.is_authenticated %}
   {% include "components/sidebar.html" %}

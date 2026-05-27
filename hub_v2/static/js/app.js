@@ -17,31 +17,6 @@ document.addEventListener("htmx:configRequest", (e) => {
   }
 });
 
-// Progress bar during HTMX requests
-(function () {
-  const bar = document.getElementById("htmx-progress");
-  if (!bar) return;
-
-  document.body.addEventListener("htmx:beforeRequest", () => {
-    bar.classList.remove("done");
-    bar.style.width = "0";
-    // Force reflow so the transition starts from 0
-    void bar.offsetWidth;
-    bar.classList.add("active");
-    document.body.classList.add("htmx-request");
-  });
-
-  document.body.addEventListener("htmx:afterRequest", () => {
-    bar.classList.remove("active");
-    bar.classList.add("done");
-    document.body.classList.remove("htmx-request");
-    setTimeout(() => {
-      bar.classList.remove("done");
-      bar.style.width = "0";
-    }, 600);
-  });
-})();
-
 // Show toast on HTMX errors
 document.addEventListener("htmx:responseError", (e) => {
   window.dispatchEvent(new CustomEvent("toast", {

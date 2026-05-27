@@ -1,0 +1,116 @@
+{% load static %}
+{#
+  Loading indicator — shown during HTMX navigation.
+  Style is stored in localStorage key "ikLoadingStyle" (values: "1"|"2"|"3"|"4").
+  A floating toggle button (bottom-right) cycles through styles.
+#}
+
+{# ── Style 1: Ship riding the progress bar ── #}
+<div id="htmx-progress" class="htmx-progress">
+  <img id="htmx-ship" src="{% static 'game/units/trieme.png' %}" class="htmx-ship" alt="">
+</div>
+
+{# ── Style 2: Hoplita marching across center ── #}
+<div id="loading-hoplita" class="loading-hoplita" aria-hidden="true">
+  <img src="{% static 'game/units/hoplita.png' %}" class="loading-hoplita-img" alt="Carregando…">
+  <div class="loading-hoplita-dust"></div>
+</div>
+
+{# ── Style 3: Shield spinner (center overlay) ── #}
+<div id="loading-spinner" class="loading-spinner" aria-hidden="true">
+  <div class="loading-spinner-ring">
+    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="24" cy="24" r="20" stroke="var(--ik-line)" stroke-width="3"/>
+      <circle cx="24" cy="24" r="20" stroke="var(--ik-sea)" stroke-width="3"
+              stroke-dasharray="60 66" stroke-linecap="round"
+              class="loading-spinner-arc"/>
+    </svg>
+    <img src="{% static 'game/units/hoplita.png' %}" class="loading-spinner-icon" alt="">
+  </div>
+</div>
+
+{# ── Style 4: Waves at bottom ── #}
+<div id="loading-waves" class="loading-waves" aria-hidden="true">
+  <svg class="loading-waves-svg" viewBox="0 0 1440 60" preserveAspectRatio="none"
+       xmlns="http://www.w3.org/2000/svg">
+    <path class="wave wave-1"
+      d="M0,30 C240,60 480,0 720,30 C960,60 1200,0 1440,30 L1440,60 L0,60 Z"/>
+    <path class="wave wave-2"
+      d="M0,35 C200,5 440,55 720,35 C1000,15 1240,55 1440,35 L1440,60 L0,60 Z"/>
+    <path class="wave wave-3"
+      d="M0,40 C300,15 540,55 720,40 C900,25 1140,60 1440,40 L1440,60 L0,60 Z"/>
+  </svg>
+</div>
+
+{# ── Style switcher (visible only when not loading) ── #}
+{% if user.is_authenticated %}
+<button id="ik-loading-toggle"
+        class="ik-loading-toggle"
+        title="Estilo de carregamento"
+        onclick="ikCycleLoadingStyle()">
+  <i class="bi bi-stars"></i>
+</button>
+{% endif %}
+
+<script>
+(function () {
+  // ── State ──
+  var STYLES = ['1','2','3','4'];
+  var LABELS = ['Navio','Hoplita','Spinner','Ondas'];
+  function getStyle() { return localStorage.getItem('ikLoadingStyle') || '1'; }
+  function setStyle(s) { localStorage.setItem('ikLoadingStyle', s); applyStyle(s); }
+
+  function applyStyle(s) {
+    var bar      = document.getElementById('htmx-progress');
+    var hoplita  = document.getElementById('loading-hoplita');
+    var spinner  = document.getElementById('loading-spinner');
+    var waves    = document.getElementById('loading-waves');
+    var toggle   = document.getElementById('ik-loading-toggle');
+    if (bar)     bar.setAttribute('data-style', s);
+    if (hoplita) hoplita.setAttribute('data-style', s);
+    if (spinner) spinner.setAttribute('data-style', s);
+    if (waves)   waves.setAttribute('data-style', s);
+    if (toggle)  toggle.title = 'Loading: ' + LABELS[parseInt(s)-1] + ' (clique para trocar)';
+  }
+
+  // ── Public: cycle to next style ──
+  window.ikCycleLoadingStyle = function () {
+    var cur = getStyle();
+    var idx = STYLES.indexOf(cur);
+    var next = STYLES[(idx + 1) % STYLES.length];
+    setStyle(next);
+  };
+
+  // ── HTMX hooks ──
+  var bar = document.getElementById('htmx-progress');
+
+  document.body.addEventListener('htmx:beforeRequest', function () {
+    var s = getStyle();
+    document.body.setAttribute('data-loading-style', s);
+    document.body.classList.add('htmx-loading');
+    // Style 1: progress bar animation
+    if (bar && s === '1') {
+      bar.classList.remove('done');
+      bar.style.width = '0';
+      void bar.offsetWidth;
+      bar.classList.add('active');
+    }
+  });
+
+  document.body.addEventListener('htmx:afterRequest', function () {
+    document.body.classList.remove('htmx-loading');
+    document.body.removeAttribute('data-loading-style');
+    if (bar) {
+      bar.classList.remove('active');
+      bar.classList.add('done');
+      setTimeout(function () {
+        bar.classList.remove('done');
+        bar.style.width = '0';
+      }, 600);
+    }
+  });
+
+  // Init on load
+  applyStyle(getStyle());
+})();
+</script>

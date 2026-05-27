@@ -63,30 +63,188 @@
   }
 }
 
-/* ── HTMX Loading Progress Bar ── */
+/* ══════════════════════════════════════════
+   HTMX Loading Indicators — 4 estilos
+   Ativado via body.htmx-loading + body[data-loading-style="N"]
+   ══════════════════════════════════════════ */
+
+/* ── Style 1: Navio na barra do topo ── */
 @layer components {
   .htmx-progress {
     position: fixed;
-    top: 0;
-    left: 0;
+    top: 0; left: 0;
     width: 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--ik-gold), var(--ik-sea), var(--ik-gold));
+    height: 4px;
+    background: linear-gradient(90deg, var(--ik-sea) 0%, #5bb8d4 50%, var(--ik-sea) 100%);
     z-index: 9999;
     transition: width 0.3s ease;
-    box-shadow: 0 0 10px rgba(201, 156, 78, 0.5);
+    box-shadow: 0 0 8px rgba(78, 160, 201, 0.7);
+    overflow: visible;
   }
-
   .htmx-progress.active {
     width: 85%;
     transition: width 6s cubic-bezier(0.1, 0.05, 0, 1);
   }
-
   .htmx-progress.done {
     width: 100%;
     opacity: 0;
     transition: width 0.15s ease, opacity 0.4s ease 0.2s;
   }
+  /* Ship rides the right edge */
+  .htmx-ship {
+    position: absolute;
+    right: -18px;
+    top: -14px;
+    height: 32px;
+    width: auto;
+    opacity: 0;
+    transition: opacity 0.2s;
+    animation: ship-bob 1.2s ease-in-out infinite;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+    pointer-events: none;
+  }
+  .htmx-progress.active .htmx-ship,
+  .htmx-progress.done .htmx-ship  { opacity: 1; }
+
+  /* Hidden when style != 1 */
+  .htmx-progress[data-style]:not([data-style="1"]) { display: none !important; }
+
+  @keyframes ship-bob {
+    0%, 100% { transform: translateY(0px) rotate(-2deg); }
+    50%       { transform: translateY(-4px) rotate(2deg); }
+  }
+}
+
+/* ── Style 2: Hoplita marchando ── */
+@layer components {
+  .loading-hoplita {
+    display: none;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 80px;
+    z-index: 9998;
+    pointer-events: none;
+    overflow: hidden;
+    background: linear-gradient(to top, rgba(0,0,0,0.18) 0%, transparent 100%);
+  }
+  body.htmx-loading[data-loading-style="2"] .loading-hoplita { display: block; }
+  .loading-hoplita-img {
+    position: absolute;
+    bottom: 8px;
+    height: 52px;
+    width: auto;
+    animation: hoplita-march 2.2s linear infinite;
+    filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.5));
+    image-rendering: pixelated;
+  }
+  .loading-hoplita-dust {
+    position: absolute;
+    bottom: 6px; left: 0; right: 0;
+    height: 12px;
+    background: radial-gradient(ellipse 80px 6px at var(--dust-x, 10%) center,
+                rgba(180,140,80,0.35) 0%, transparent 100%);
+    animation: hoplita-dust 2.2s linear infinite;
+    pointer-events: none;
+  }
+  @keyframes hoplita-march {
+    0%   { left: -70px; }
+    100% { left: calc(100% + 70px); }
+  }
+  @keyframes hoplita-dust {
+    0%   { --dust-x: 0%; }
+    100% { --dust-x: 100%; }
+  }
+  /* Hide when not this style */
+  .loading-hoplita[data-style]:not([data-style="2"]) { display: none !important; }
+}
+
+/* ── Style 3: Shield spinner center ── */
+@layer components {
+  .loading-spinner {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 9997;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.25);
+    backdrop-filter: blur(2px);
+  }
+  body.htmx-loading[data-loading-style="3"] .loading-spinner { display: flex; }
+  .loading-spinner-ring {
+    position: relative;
+    width: 72px; height: 72px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .loading-spinner-ring svg {
+    position: absolute;
+    inset: 0;
+    width: 100%; height: 100%;
+    animation: spin 1s linear infinite;
+  }
+  .loading-spinner-arc {
+    transform-origin: center;
+  }
+  .loading-spinner-icon {
+    width: 36px; height: 36px;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-spinner[data-style]:not([data-style="3"]) { display: none !important; }
+}
+
+/* ── Style 4: Ondas no rodapé ── */
+@layer components {
+  .loading-waves {
+    display: none;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 54px;
+    z-index: 9998;
+    pointer-events: none;
+  }
+  body.htmx-loading[data-loading-style="4"] .loading-waves { display: block; }
+  .loading-waves-svg {
+    position: absolute;
+    bottom: 0; left: 0;
+    width: 200%; height: 100%;
+    animation: waves-scroll 3s linear infinite;
+  }
+  .wave { fill-opacity: 0.7; }
+  .wave-1 { fill: var(--ik-sea); fill-opacity: 0.5; animation: wave-pulse 2.8s ease-in-out infinite; }
+  .wave-2 { fill: var(--ik-sea); fill-opacity: 0.35; animation: wave-pulse 2.2s ease-in-out infinite 0.4s; }
+  .wave-3 { fill: var(--ik-sea); fill-opacity: 0.25; animation: wave-pulse 1.8s ease-in-out infinite 0.8s; }
+  @keyframes waves-scroll {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  @keyframes wave-pulse {
+    0%, 100% { opacity: 0.7; }
+    50%       { opacity: 1; }
+  }
+  .loading-waves[data-style]:not([data-style="4"]) { display: none !important; }
+}
+
+/* ── Style switcher button ── */
+@layer components {
+  .ik-loading-toggle {
+    position: fixed;
+    bottom: 1rem; right: 1rem;
+    z-index: 10000;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--ik-surface);
+    border: 1px solid var(--ik-line);
+    color: var(--ik-muted);
+    font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity 0.2s, box-shadow 0.2s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .ik-loading-toggle:hover { opacity: 1; box-shadow: 0 2px 12px rgba(0,0,0,0.25); }
 }
 
 /* ── Sidebar ── */
