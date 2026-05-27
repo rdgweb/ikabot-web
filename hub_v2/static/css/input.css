@@ -63,27 +63,27 @@
   }
   body.htmx-loading[data-loading-style="2"] .loading-sea { display: block; }
 
-  /* Fundo oceano — transparente no topo (5%), sólido no restante */
+  /* Fundo oceano — transparente no topo (funde com página), sólido abaixo da linha d'água */
   .loading-sea-bg {
     position: absolute;
     inset: 0;
     background: linear-gradient(to bottom,
       transparent 0%,
-      rgba(18,52,88,0.88) 5%,
-      rgba(15,45,78,0.97) 25%,
-      rgba(12,38,68,1.00) 100%);
+      rgba(10,38,72,0.82) 8%,
+      rgba(8,32,62,0.97) 30%,
+      rgba(6,28,55,1.00) 100%);
   }
 
-  /* 3 camadas de ondas no fundo do bloco, altura fixa */
+  /* 3 camadas de ondas — topo do bloco (linha d'água), altura fixa */
   .loading-sea-wave {
     position: absolute;
-    bottom: 0; left: 0;
-    width: 300%; height: 130px;
+    top: 0; left: 0;
+    width: 300%; height: 90px;
     pointer-events: none;
   }
-  .loading-sea-wave-1 { animation: sea-scroll 3.5s linear infinite; opacity: 0.75; }
-  .loading-sea-wave-2 { animation: sea-scroll 5s linear infinite reverse; opacity: 0.5; }
-  .loading-sea-wave-3 { animation: sea-scroll 2.5s linear infinite; opacity: 0.35; }
+  .loading-sea-wave-1 { animation: sea-scroll 3.5s linear infinite; opacity: 0.8; }
+  .loading-sea-wave-2 { animation: sea-scroll 5s linear infinite reverse; opacity: 0.55; }
+  .loading-sea-wave-3 { animation: sea-scroll 2.5s linear infinite; opacity: 0.38; }
 
   @keyframes sea-scroll {
     0%   { transform: translateX(0); }

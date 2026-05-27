@@ -26,6 +26,22 @@ function gameDashboard() {
       this.syncModalScrollLock(Boolean(this.kpiModal));
       this.applyFilter();
       this.initProjectionValues();
+      this.fetchHistory();
+    },
+
+    fetchHistory() {
+      // History is expensive to compute — loaded async so the page renders fast.
+      // If historyMap already has data (served inline), skip the fetch.
+      if (Object.keys(this.historyMap).length > 0) return;
+      fetch('/game/history/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then((r) => r.ok ? r.json() : null)
+        .catch(() => null)
+        .then((data) => {
+          if (!data || !data.history) return;
+          this.historyMap = data.history;
+          // Re-render chart if a KPI modal is already open
+          this.$nextTick(() => this.renderKpiCharts());
+        });
     },
 
     syncModalScrollLock(locked) {
