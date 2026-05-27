@@ -67,6 +67,21 @@ document.addEventListener("htmx:configRequest", (e) => {
     // Safety cleanup for partial fade in error cases where afterSwap didn't fire
     if (t) t.classList.remove("htmx-partial-loading");
   });
+
+  // Browser back/forward: HTMX history restore bypasses the normal request lifecycle.
+  // Clean up any stale loading classes so nothing stays faded/spinning forever.
+  function _cleanAllLoadingState() {
+    document.body.classList.remove("htmx-loading");
+    document.body.removeAttribute("data-loading-style");
+    document.querySelectorAll(".htmx-partial-loading").forEach((el) => {
+      el.classList.remove("htmx-partial-loading");
+    });
+  }
+  document.body.addEventListener("htmx:historyRestore", _cleanAllLoadingState);
+  // Also covers cache-hit restores that skip htmx:historyRestore in some HTMX versions
+  window.addEventListener("popstate", function () {
+    setTimeout(_cleanAllLoadingState, 400);
+  });
 })();
 
 // Show toast on HTMX errors

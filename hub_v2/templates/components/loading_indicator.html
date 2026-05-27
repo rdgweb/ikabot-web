@@ -1,124 +1,70 @@
 {% load static %}
-{#
-  Loading indicators — 3 estilos temáticos do Ikariam.
-  Preferência salva em localStorage "ikLoadingStyle": "1" | "2" | "3"
-  Botão ✦ no canto inferior direito alterna os estilos.
-#}
+<!-- Loading indicators: 3 styles, toggled via button bottom-right. Pref in localStorage ikLoadingStyle -->
 
-{# ══ Style 1: Barra larga no topo com navio ══ #}
+<!-- Style 1: Progress bar + ship -->
 <div id="htmx-progress" class="htmx-progress">
   <div class="htmx-progress-fill"></div>
   <div class="htmx-progress-waves"></div>
-  <img id="htmx-ship" class="htmx-ship"
-       src="{% static 'game/units/trieme.png' %}" alt="">
+  <img id="htmx-ship" class="htmx-ship" src="{% static 'game/units/trieme.png' %}" alt="">
 </div>
 
-{# ══ Style 2: Navio navegando nas ondas (fundo) ══ #}
+<!-- Style 2: Ship on ocean waves (bottom strip) -->
 <div id="loading-sea" class="loading-sea">
   <div class="loading-sea-bg"></div>
-
-  {# Onda 1 — mais profunda #}
-  <svg class="loading-sea-wave loading-sea-wave-1" viewBox="0 0 1440 110"
-       preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgba(40,90,140,0.8)"
-      d="M0,70 C180,40 360,100 540,70 C720,40 900,100 1080,70
-         C1260,40 1440,100 1620,70 C1800,40 1980,100 2160,70 C2340,40 2520,100 2700,70
-         C2880,40 3060,100 3240,70 C3420,40 3600,100 3780,70
-         C3960,40 4140,100 4320,70 L4320,110 L0,110 Z"/>
+  <svg class="loading-sea-wave loading-sea-wave-1" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <path fill="rgba(40,90,140,0.8)" d="M0,70 C180,40 360,100 540,70 C720,40 900,100 1080,70 C1260,40 1440,100 1620,70 C1800,40 1980,100 2160,70 C2340,40 2520,100 2700,70 C2880,40 3060,100 3240,70 C3420,40 3600,100 3780,70 C3960,40 4140,100 4320,70 L4320,110 L0,110 Z"/>
   </svg>
-
-  {# Onda 2 — camada média #}
-  <svg class="loading-sea-wave loading-sea-wave-2" viewBox="0 0 1440 110"
-       preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgba(60,120,170,0.65)"
-      d="M0,75 C200,50 400,95 600,75 C800,55 1000,95 1200,75
-         C1400,55 1600,95 1800,75 C2000,55 2200,95 2400,75
-         C2600,55 2800,95 3000,75 C3200,55 3400,95 3600,75
-         C3800,55 4000,95 4200,75 L4200,110 L0,110 Z"/>
+  <svg class="loading-sea-wave loading-sea-wave-2" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <path fill="rgba(60,120,170,0.65)" d="M0,75 C200,50 400,95 600,75 C800,55 1000,95 1200,75 C1400,55 1600,95 1800,75 C2000,55 2200,95 2400,75 C2600,55 2800,95 3000,75 C3200,55 3400,95 3600,75 C3800,55 4000,95 4200,75 L4200,110 L0,110 Z"/>
   </svg>
-
-  {# Onda 3 — cristas brancas na superfície #}
-  <svg class="loading-sea-wave loading-sea-wave-3" viewBox="0 0 1440 110"
-       preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgba(120,190,230,0.4)"
-      d="M0,82 C150,72 300,90 450,82 C600,74 750,90 900,82
-         C1050,74 1200,90 1350,82 C1500,74 1650,90 1800,82
-         C1950,74 2100,90 2250,82 C2400,74 2550,90 2700,82
-         C2850,74 3000,90 3150,82 C3300,74 3450,90 3600,82
-         C3750,74 3900,90 4050,82 C4200,74 4350,90 4320,82 L4320,110 L0,110 Z"/>
+  <svg class="loading-sea-wave loading-sea-wave-3" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <path fill="rgba(120,190,230,0.4)" d="M0,82 C150,72 300,90 450,82 C600,74 750,90 900,82 C1050,74 1200,90 1350,82 C1500,74 1650,90 1800,82 C1950,74 2100,90 2250,82 C2400,74 2550,90 2700,82 C2850,74 3000,90 3150,82 C3300,74 3450,90 3600,82 C3750,74 3900,90 4050,82 C4200,74 4350,90 4320,82 L4320,110 L0,110 Z"/>
   </svg>
-
-  {# Espuma/wake do navio #}
   <div class="loading-sea-wake"></div>
-
-  {# Navio — navega da esquerda para direita cavalcando as ondas #}
-  <img class="loading-sea-ship"
-       src="{% static 'game/units/trieme.png' %}" alt="">
+  <img class="loading-sea-ship" src="{% static 'game/units/trieme.png' %}" alt="">
 </div>
 
-{# ══ Style 3: Spinner grande centralizado ══ #}
+<!-- Style 3: Large centered spinner -->
 <div id="loading-spinner" class="loading-spinner">
   <div class="loading-spinner-wrap">
-
-    {# Anel externo girando no sentido horário #}
     <div class="loading-spinner-outer">
       <svg viewBox="0 0 220 220" fill="none" xmlns="http://www.w3.org/2000/svg">
         <circle cx="110" cy="110" r="104" stroke="rgba(79,134,185,0.15)" stroke-width="5"/>
-        <circle cx="110" cy="110" r="104"
-                stroke="url(#arc-grad-outer)"
-                stroke-width="5"
-                stroke-dasharray="160 495"
-                stroke-linecap="round"
-                transform="rotate(-90 110 110)"/>
+        <circle cx="110" cy="110" r="104" stroke="url(#arc-grad-outer)" stroke-width="5" stroke-dasharray="160 495" stroke-linecap="round" transform="rotate(-90 110 110)"/>
         <defs>
           <linearGradient id="arc-grad-outer" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%"   stop-color="#7ec8e3" stop-opacity="0.1"/>
-            <stop offset="50%"  stop-color="#4f86b9" stop-opacity="1"/>
+            <stop offset="0%" stop-color="#7ec8e3" stop-opacity="0.1"/>
+            <stop offset="50%" stop-color="#4f86b9" stop-opacity="1"/>
             <stop offset="100%" stop-color="#7ec8e3" stop-opacity="0.1"/>
           </linearGradient>
         </defs>
       </svg>
     </div>
-
-    {# Anel interno contra-girando #}
     <div class="loading-spinner-inner">
       <svg viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
         <circle cx="90" cy="90" r="82" stroke="rgba(201,156,78,0.12)" stroke-width="3"/>
-        <circle cx="90" cy="90" r="82"
-                stroke="url(#arc-grad-inner)"
-                stroke-width="3"
-                stroke-dasharray="90 425"
-                stroke-linecap="round"
-                transform="rotate(90 90 90)"/>
+        <circle cx="90" cy="90" r="82" stroke="url(#arc-grad-inner)" stroke-width="3" stroke-dasharray="90 425" stroke-linecap="round" transform="rotate(90 90 90)"/>
         <defs>
           <linearGradient id="arc-grad-inner" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%"   stop-color="#c99c4e" stop-opacity="0.05"/>
+            <stop offset="0%" stop-color="#c99c4e" stop-opacity="0.05"/>
             <stop offset="100%" stop-color="#c99c4e" stop-opacity="0.95"/>
           </linearGradient>
         </defs>
       </svg>
     </div>
-
-    {# Ícone central — navio #}
-    <img class="loading-spinner-icon"
-         src="{% static 'game/units/trieme.png' %}" alt="">
-
-    {# Label #}
-    <span class="loading-spinner-label">Navegando…</span>
+    <img class="loading-spinner-icon" src="{% static 'game/units/trieme.png' %}" alt="">
+    <span class="loading-spinner-label">Navegando...</span>
   </div>
 </div>
 
-{# ══ Toggle de estilo (canto inferior direito) ══ #}
+<!-- Style toggle button (bottom-right corner) -->
 {% if user.is_authenticated %}
-<button id="ik-loading-toggle" class="ik-loading-toggle"
-        onclick="ikCycleLoadingStyle()" title="Estilo de loading">
+<button id="ik-loading-toggle" class="ik-loading-toggle" onclick="ikCycleLoadingStyle()" title="Estilo de loading">
   <i class="bi bi-stars"></i>
 </button>
 {% endif %}
 
 <script>
-// Style switcher — applyStyle sets data-style on each indicator element.
-// HTMX events are handled centrally in app.js.
 (function () {
   var STYLES = ['1','2','3'];
   var LABELS = ['Barra+Navio','Ondas+Navio','Spinner'];
@@ -141,7 +87,7 @@
     setStyle(next);
   };
 
-  // Style 1 (progress bar) needs special start/stop logic
+  // Style 1 bar animation
   var bar = document.getElementById('htmx-progress');
   document.body.addEventListener('htmx:beforeRequest', function () {
     if (getStyle() === '1' && bar) {

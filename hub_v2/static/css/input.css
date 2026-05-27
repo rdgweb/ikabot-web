@@ -25,29 +25,11 @@
     --ik-warn: #aa7a1c;
     --ik-bad: #bb5143;
 
-    /* Game Modal palette */
-    --ik-gm-bg: #f5e6c8;
-    --ik-gm-header: #e8d0a0;
-    --ik-gm-border: #b8976a;
-    --ik-gm-section: #fbf6ea;
-    --ik-gm-card: #f8f3e7;
-    --ik-gm-card-alt: #fff7de;
-    --ik-gm-card-border: #d7c29a;
-    --ik-gm-card-inner: #ead9b5;
-    --ik-gm-chart: #fff8e7;
-    --ik-gm-chart-blue: #f2f7fb;
-    --ik-gm-chart-green: #f3fbf1;
-    --ik-gm-chart-border: #ead9b5;
-    --ik-gm-chart-border-blue: #d7e2eb;
-    --ik-gm-chart-border-green: #d7e7d1;
-    --ik-gm-title: #5c3d0e;
-    --ik-gm-label: #8b6914;
-    --ik-gm-player: #3d2a07;
-    --ik-gm-gold: #a67c00;
+    /* Game Modal — reuses system vars, adds semantic aliases only */
+    --ik-gm-gold:     #a67c00;
     --ik-gm-positive: #2d7a2d;
     --ik-gm-negative: #c0392b;
-    --ik-gm-warning: #c07030;
-    --ik-gm-sea: #4a7c9e;
+    --ik-gm-warning:  #c07030;
   }
 
   body {
@@ -884,205 +866,217 @@
 }
 
 /* ── Game Modal Components ── */
+/* Uses system variables: --ik-paper, --ik-surface, --ik-line, --ik-ink, --ik-muted, --ik-gold, --ik-sea */
 @layer components {
-  /* Overlay (fullscreen backdrop container) */
+  /* Fullscreen overlay + scroll container */
   .gm-overlay {
-    @apply fixed inset-0 z-50 overflow-y-auto p-4;
+    @apply fixed inset-0 z-50 overflow-y-auto;
     overscroll-behavior: contain;
+    padding: 1.5rem 1rem;
   }
 
-  /* Modal panel */
   .gm-container {
     @apply relative z-10 min-h-full flex items-start justify-center;
   }
 
+  /* Modal panel — matches .card aesthetic */
   .gm-panel {
-    @apply my-4 w-full flex flex-col rounded-xl shadow-2xl overflow-hidden;
-    max-width: 1180px;
-    height: calc(100vh - 2rem);
-    background: var(--ik-gm-bg);
-    border: 2px solid var(--ik-gm-border);
+    @apply w-full flex flex-col rounded-xl overflow-hidden my-4;
+    max-width: 1100px;
+    max-height: calc(100vh - 3rem);
+    background: var(--ik-paper);
+    border: 1px solid var(--ik-line);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25), 0 4px 16px rgba(0,0,0,0.1);
   }
 
-  /* Header bar */
+  /* Header — gold accent strip, same pattern as card headers in system */
   .gm-header {
-    @apply flex items-center justify-between px-4 py-3 shrink-0;
-    background: var(--ik-gm-header);
-    border-bottom: 2px solid var(--ik-gm-border);
+    @apply flex items-center justify-between px-5 py-3.5 shrink-0;
+    background: var(--ik-surface);
+    border-bottom: 1px solid var(--ik-line);
   }
 
   .gm-title {
     @apply font-bold text-sm tracking-wide block;
-    color: var(--ik-gm-title);
+    color: var(--ik-ink);
+    font-family: "Rajdhani", sans-serif;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
 
   .gm-subtitle {
-    @apply text-[11px];
-    color: var(--ik-gm-label);
+    @apply text-xs mt-0.5;
+    color: var(--ik-muted);
   }
 
   .gm-header-value {
     @apply text-lg font-bold font-mono;
+    color: var(--ik-ink);
   }
 
   .gm-close {
-    color: var(--ik-gm-label);
+    @apply text-lg transition-colors;
+    color: var(--ik-muted);
   }
+  .gm-close:hover { color: var(--ik-ink); }
 
   /* Scrollable body */
   .gm-body {
-    @apply flex-1 min-h-0 p-4 space-y-4;
+    @apply flex-1 p-5;
     overflow-y: auto;
     overscroll-behavior: contain;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
   }
 
-  /* Section panel (groups of content) */
+  /* Section group — matches .card but lighter */
   .gm-section {
-    @apply rounded-lg p-3;
-    background: var(--ik-gm-section);
-    border: 1px solid var(--ik-gm-card-border);
+    @apply rounded-lg p-4;
+    background: var(--ik-surface);
+    border: 1px solid var(--ik-line);
   }
 
   .gm-section-title {
-    @apply text-[11px] font-bold uppercase tracking-wider;
-    color: var(--ik-gm-label);
+    @apply text-xs font-bold uppercase tracking-widest mb-3;
+    color: var(--ik-muted);
   }
 
   .gm-section-hint {
-    @apply text-[10px];
-    color: var(--ik-gm-label);
+    @apply text-xs;
+    color: var(--ik-muted);
   }
 
-  /* Info card (KPI mini-cards inside modals) */
+  /* KPI mini-cards (4-column row at top of each modal) */
   .gm-card {
-    @apply rounded-lg p-3;
-    background: var(--ik-gm-card);
-    border: 1px solid var(--ik-gm-card-border);
+    @apply rounded-lg p-3.5;
+    background: var(--ik-paper);
+    border: 1px solid var(--ik-line);
   }
 
   .gm-card-alt {
-    @apply rounded-lg p-3;
-    background: var(--ik-gm-card-alt);
-    border: 1px solid var(--ik-gm-card-border);
+    @apply rounded-lg p-3.5;
+    background: var(--ik-paper);
+    border: 1px solid var(--ik-line);
+    box-shadow: inset 0 0 0 2px rgba(201,156,78,0.15);
   }
 
   .gm-card-label {
-    @apply text-[10px] uppercase tracking-wider font-semibold;
-    color: var(--ik-gm-label);
+    @apply text-[11px] uppercase tracking-wider font-semibold;
+    color: var(--ik-muted);
   }
 
   .gm-card-value {
-    @apply text-xl font-bold font-mono mt-1;
+    @apply text-2xl font-bold font-mono mt-1;
+    color: var(--ik-ink);
   }
 
   /* Chart container */
-  .gm-chart-box {
-    @apply rounded-lg p-2;
-    background: var(--ik-gm-chart);
-    border: 1px solid var(--ik-gm-chart-border);
-  }
-
-  .gm-chart-box-blue {
-    @apply rounded-lg p-2;
-    background: var(--ik-gm-chart-blue);
-    border: 1px solid var(--ik-gm-chart-border-blue);
-  }
-
+  .gm-chart-box,
+  .gm-chart-box-blue,
   .gm-chart-box-green {
     @apply rounded-lg p-2;
-    background: var(--ik-gm-chart-green);
-    border: 1px solid var(--ik-gm-chart-border-green);
+    background: var(--ik-paper);
+    border: 1px solid var(--ik-line);
   }
 
-  /* Item card (ranking entries, city entries) */
+  /* Row entries in rankings/lists */
   .gm-item {
-    @apply rounded-lg p-2.5;
-    background: #fff;
-    border: 1px solid var(--ik-gm-card-inner);
+    @apply rounded-lg p-3;
+    background: var(--ik-paper);
+    border: 1px solid var(--ik-line);
+    transition: background 0.15s;
   }
+  .gm-item:hover { background: var(--ik-surface); }
 
-  /* Empty/fallback message */
+  /* Empty state */
   .gm-empty {
-    @apply rounded-lg p-3 text-sm text-center;
-    background: #fff;
-    border: 1px solid var(--ik-gm-card-inner);
-    color: var(--ik-gm-label);
+    @apply rounded-lg p-4 text-sm text-center;
+    background: var(--ik-surface);
+    border: 1px solid var(--ik-line);
+    color: var(--ik-muted);
   }
 
   .gm-empty-ok {
-    @apply rounded-lg p-3 text-sm text-center;
-    background: #fff;
-    border: 1px solid var(--ik-gm-card-inner);
+    @apply rounded-lg p-4 text-sm text-center font-medium;
+    background: rgba(95,140,78,0.06);
+    border: 1px solid rgba(95,140,78,0.2);
     color: var(--ik-gm-positive);
   }
 
-  /* Table inside modals */
+  /* Table */
   .gm-table {
     @apply w-full text-xs border-collapse;
-    min-width: 640px;
+    min-width: 580px;
   }
 
   .gm-table thead tr {
-    border-bottom: 1px solid var(--ik-gm-card-inner);
-    background: #fffaf0;
+    background: var(--ik-surface);
+    border-bottom: 1px solid var(--ik-line);
   }
 
   .gm-table th {
-    @apply py-2 px-2 font-bold uppercase tracking-wider text-[10px];
-    color: var(--ik-gm-label);
+    @apply py-2 px-3 font-bold uppercase tracking-wider text-[10px] text-left;
+    color: var(--ik-muted);
   }
 
   .gm-table tbody tr {
-    border-bottom: 1px solid #f1e4c6;
+    border-bottom: 1px solid var(--ik-line);
+    transition: background 0.1s;
   }
+  .gm-table tbody tr:hover { background: var(--ik-surface); }
 
   .gm-table td {
-    @apply py-2.5 px-2;
+    @apply py-2.5 px-3;
+    color: var(--ik-ink);
   }
 
-  /* Progress bar (gold share, income bar, etc.) */
+  /* Progress bar */
   .gm-bar-track {
-    @apply mt-1 h-2 rounded-full overflow-hidden;
-    background: #e2d0aa;
+    @apply mt-1.5 h-1.5 rounded-full overflow-hidden;
+    background: var(--ik-line);
   }
 
   .gm-bar-track-sm {
-    @apply mt-1 h-1.5 rounded-full overflow-hidden;
+    @apply mt-1 h-1 rounded-full overflow-hidden;
+    background: var(--ik-line);
   }
 
-  /* Badge/pill for inline values */
+  /* Badge pills */
   .gm-pill {
-    @apply inline-flex items-center rounded-full px-2 py-1 text-[11px] font-mono font-bold;
+    @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-mono font-semibold;
   }
 
   .gm-pill-positive {
-    background: #e9f6e8;
+    background: rgba(95,140,78,0.12);
     color: var(--ik-gm-positive);
-    border: 1px solid #b9dbb6;
+    border: 1px solid rgba(95,140,78,0.25);
   }
 
   .gm-pill-negative {
-    background: #fdeceb;
+    background: rgba(192,57,43,0.08);
     color: var(--ik-gm-negative);
-    border: 1px solid #efc2bf;
+    border: 1px solid rgba(192,57,43,0.2);
   }
 
-  /* History footer (start/delta/current row below chart) */
+  /* Chart footer (start / delta / current) */
   .gm-chart-footer {
-    @apply mt-2 flex items-center justify-between text-[11px];
+    @apply mt-2 flex items-center justify-between text-xs;
+    color: var(--ik-muted);
   }
 }
 
 /* ── Game Modal Utilities ── */
 @layer utilities {
-  .gm-text-title { color: var(--ik-gm-title); }
-  .gm-text-label { color: var(--ik-gm-label); }
-  .gm-text-player { color: var(--ik-gm-player); }
-  .gm-text-gold { color: var(--ik-gm-gold); }
+  .gm-text-title    { color: var(--ik-ink); }
+  .gm-text-label    { color: var(--ik-muted); }
+  .gm-text-player   { color: var(--ik-ink); }
+  .gm-text-gold     { color: var(--ik-gm-gold); }
   .gm-text-positive { color: var(--ik-gm-positive); }
   .gm-text-negative { color: var(--ik-gm-negative); }
-  .gm-text-warning { color: var(--ik-gm-warning); }
-  .gm-text-sea { color: var(--ik-gm-sea); }
+  .gm-text-warning  { color: var(--ik-gm-warning); }
+  .gm-text-sea      { color: var(--ik-sea); }
 }
 
 /* ── Animations ── */
