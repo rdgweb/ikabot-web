@@ -114,6 +114,7 @@ class SpyRunner(BaseRunner):
         prev_risk        = float(recovery.get("prev_remaining_risk") or 0)
         prev_risk_ts     = int(recovery.get("prev_remaining_risk_ts") or 0)
         committed_res: dict = dict(recovery.get("committed_resources") or {})
+        mission_risks: dict = dict(recovery.get("mission_risks") or {})
         current_risk: float = 0.0
         now_ts:       int   = 0
 
@@ -127,6 +128,7 @@ class SpyRunner(BaseRunner):
                 "committed_resources":     committed_res,
                 "no_progress_cycles":      no_progress,
                 "last_stationed":          last_stationed,
+                "mission_risks":           mission_risks,
             }
             base.update(kw)
             return base
@@ -245,6 +247,25 @@ class SpyRunner(BaseRunner):
                     missions_pending, live_params, stationed, available,
                     max(capacity, 20), eff_risk)
 
+                # Calcular e persistir riscos por missão (para exibição no hub)
+                if live_params and missions_pending:
+                    new_mission_risks = {}
+                    for mid in missions_pending:
+                        opt = find_minimum_agents_decoys(
+                            live_params, mid, eff_risk, eff_risk + 25, 30.0,
+                            max(capacity, 20))
+                        if opt:
+                            new_mission_risks[str(mid)] = {
+                                "agents":     opt["agents"],
+                                "decoys":     opt.get("decoys", 0),
+                                "agent_risk": round(opt.get("agent_risk", 0), 1),
+                                "decoy_risk": round(opt.get("decoy_risk", 0), 1),
+                                "success":    round(opt.get("success", 0), 1),
+                            }
+                        else:
+                            new_mission_risks[str(mid)] = None
+                    mission_risks = new_mission_risks  # atualiza var local → _rec() pega
+
                 # Recovery tracking: espiões em-trânsito para cidades distantes
                 known_transit = 0
                 if r_sent_total > 0 and r_arrival_at > 0:
@@ -351,13 +372,11 @@ class SpyRunner(BaseRunner):
                     ag  = batch["agents"]
                     dec = batch.get("decoys", 0)
 
-                    # Tabela de decisão + log da escolha
-                    self._log_decision_table(jid, live_params, 1, eff_risk, available, ag, dec)
                     risk = compute_spy_risks(live_params, 1, ag, dec)
                     self.log(jid, "info",
-                        f"Infiltrando LOTE: {ag}ag+{dec}dec "
-                        f"(precisamos {agents_still_needed} mais agentes) "
-                        f"→ sucesso={risk['success']}% risco={risk['agent_risk']}%")
+                        f"Infiltração: {ag}ag+{dec}dec "
+                        f"→ sucesso={risk['success']}% risco={risk['agent_risk']}% "
+                        f"(precisamos {needed} estacionados no total, temos {stationed})")
 
                     ok, msg = self._send_spy_raw(client, city_id, target_city_id, island_id, 1, ag, dec)
                     if ok:

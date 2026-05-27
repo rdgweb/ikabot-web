@@ -1155,23 +1155,49 @@
     <div class="text-[11px] text-muted uppercase tracking-wide mb-2">Missões de inteligência</div>
     <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
       {% for m in spy_display.mission_rows %}
-      <div class="flex items-center gap-2.5 rounded-xl border px-3 py-2
+      <div class="rounded-xl border px-3 py-2
         {% if m.status == 'done' %}border-[var(--ik-good)] bg-[rgba(95,140,78,0.06)]
         {% elif m.status == 'skipped' %}border-[rgba(187,81,67,0.3)] bg-[rgba(187,81,67,0.04)]
         {% else %}border-[var(--ik-line)] bg-transparent{% endif %}">
-        <i class="bi {{ m.icon }} text-sm
-          {% if m.status == 'done' %}text-[var(--ik-good)]
-          {% elif m.status == 'skipped' %}text-[var(--ik-bad)]
-          {% else %}text-muted{% endif %}"></i>
-        <div class="flex-1 min-w-0">
-          <div class="text-xs font-medium text-ink truncate">{{ m.name }}</div>
-          <div class="text-[10px] text-muted">M{{ m.id }}</div>
+        {# Header row #}
+        <div class="flex items-center gap-2.5">
+          <i class="bi {{ m.icon }} text-sm
+            {% if m.status == 'done' %}text-[var(--ik-good)]
+            {% elif m.status == 'skipped' %}text-[var(--ik-bad)]
+            {% else %}text-muted{% endif %}"></i>
+          <div class="flex-1 min-w-0">
+            <div class="text-xs font-medium text-ink truncate">{{ m.name }}</div>
+            <div class="text-[10px] text-muted">M{{ m.id }}</div>
+          </div>
+          <span class="badge {{ m.badge }} text-[10px]">
+            {% if m.status == 'done' %}Feita
+            {% elif m.status == 'skipped' %}Pulada
+            {% else %}Pendente{% endif %}
+          </span>
         </div>
-        <span class="badge {{ m.badge }} text-[10px]">
-          {% if m.status == 'done' %}Feita
-          {% elif m.status == 'skipped' %}Pulada
-          {% else %}Pendente{% endif %}
-        </span>
+        {# Risk mini-table (only for pending missions with known risk data) #}
+        {% if m.status == 'pending' and m.risk %}
+        <div class="mt-2 pt-2 border-t border-[var(--ik-line)] grid grid-cols-5 gap-0 text-[10px] font-mono">
+          <div class="text-muted text-center">ag</div>
+          <div class="text-muted text-center">dec</div>
+          <div class="text-muted text-center">sucesso</div>
+          <div class="text-muted text-center">risco ag</div>
+          <div class="text-muted text-center">risco dec</div>
+          <div class="font-semibold text-ink text-center">{{ m.risk.agents }}</div>
+          <div class="font-semibold text-ink text-center">{{ m.risk.decoys }}</div>
+          <div class="font-semibold text-[var(--ik-good)] text-center">{{ m.risk.success }}%</div>
+          <div class="font-semibold text-center
+            {% if m.risk.agent_risk > 30 %}text-[var(--ik-bad)]
+            {% elif m.risk.agent_risk > 15 %}text-[var(--ik-gold)]
+            {% else %}text-[var(--ik-good)]{% endif %}">{{ m.risk.agent_risk }}%</div>
+          <div class="font-semibold text-center
+            {% if m.risk.decoy_risk > 50 %}text-[var(--ik-bad)]
+            {% elif m.risk.decoy_risk > 30 %}text-[var(--ik-gold)]
+            {% else %}text-[var(--ik-good)]{% endif %}">{{ m.risk.decoy_risk }}%</div>
+        </div>
+        {% elif m.status == 'pending' and not m.risk %}
+        <div class="mt-1.5 text-[10px] text-muted italic">riscos calculados na próxima execução</div>
+        {% endif %}
       </div>
       {% endfor %}
     </div>

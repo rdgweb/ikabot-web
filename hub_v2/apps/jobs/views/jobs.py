@@ -1573,6 +1573,7 @@ class JobListView(FilterSortListView):
 
         missions_done    = list(recovery.get("missions_done") or [])
         missions_pending = list(recovery.get("missions_pending") or intel_missions)
+        mission_risks    = dict(recovery.get("mission_risks") or {})
 
         mission_rows = []
         for mid in intel_missions:
@@ -1588,12 +1589,14 @@ class JobListView(FilterSortListView):
                 status = "skipped"
                 badge  = "badge-danger"
                 icon   = "bi-x-circle"
+            risk_data = mission_risks.get(str(mid))
             mission_rows.append({
-                "id":     mid,
-                "name":   _SPY_MISSIONS.get(mid, f"Missão {mid}"),
-                "status": status,
-                "badge":  badge,
-                "icon":   icon,
+                "id":         mid,
+                "name":       _SPY_MISSIONS.get(mid, f"Missão {mid}"),
+                "status":     status,
+                "badge":      badge,
+                "icon":       icon,
+                "risk":       risk_data,  # {agents, decoys, agent_risk, decoy_risk, success} or None
             })
 
         # Recovery state
