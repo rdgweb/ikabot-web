@@ -1,62 +1,58 @@
 {% load static %}
 <!-- Loading indicators: 2 estilos, toggle via botão no canto. Pref em localStorage ikLoadingStyle -->
 
-<!-- Style 2: Mar cobre 45% da tela — caustics no corpo + 5 ondas na linha d'água -->
+<!-- Style 2: Oceano 45vh — waterline animada com top negativo, corpo gradiente -->
 <div id="loading-sea" class="loading-sea">
   <div class="loading-sea-bg"></div>
 
-  <!-- Onda 1: lenta e larga, 110px, azul escuro principal -->
-  <svg class="loading-sea-wave loading-sea-wave-1" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgba(10,40,95,0.97)"
-      d="M0,70 C180,40 360,100 540,70 C720,40 900,100 1080,70
-         C1260,40 1440,100 1620,70 C1800,40 1980,100 2160,70
-         C2340,40 2520,100 2700,70 C2880,40 3060,100 3240,70
-         C3420,40 3600,100 3780,70 C3960,40 4140,100 4320,70
-         L4320,110 L0,110 Z"/>
+  <!--
+    Técnica: cada SVG tem top negativo → container overflow:hidden clipa o topo.
+    A crista da onda aparece na borda do container, fill = cor do fundo → sem seam.
+    viewBox height = CSS height para proporção 1:1 (sem distorção).
+  -->
+
+  <!-- Onda 1 — base, lenta (7s), top=-45px, height=160px.
+       Crista visível em ~-45+60=15px do topo do container. -->
+  <svg class="loading-sea-wave loading-sea-wave-1" viewBox="0 0 1440 160" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <path fill="#0e2f68"
+      d="M0,60 C240,28 480,92 720,60 C960,28 1200,92 1440,60
+         C1680,28 1920,92 2160,60 C2400,28 2640,92 2880,60
+         C3120,28 3360,92 3600,60 C3840,28 4080,92 4320,60
+         L4320,160 L0,160 Z"/>
   </svg>
 
-  <!-- Onda 2: reversa, 95px, ligeiramente mais clara -->
-  <svg class="loading-sea-wave loading-sea-wave-2" viewBox="0 0 1440 95" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgba(12,52,118,0.88)"
-      d="M0,60 C200,35 400,80 600,60 C800,35 1000,80 1200,60
-         C1400,35 1600,80 1800,60 C2000,35 2200,80 2400,60
-         C2600,35 2800,80 3000,60 C3200,35 3400,80 3600,60
-         C3800,35 4000,80 4200,60 L4200,95 L0,95 Z"/>
+  <!-- Onda 2 — média reversa (4.5s), top=-30px, height=120px.
+       Crista visível em ~-30+50=20px. Cor um pouco mais escura. -->
+  <svg class="loading-sea-wave loading-sea-wave-2" viewBox="0 0 1440 120" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <path fill="rgba(10,28,62,0.92)"
+      d="M0,50 C200,22 400,78 600,50 C800,22 1000,78 1200,50
+         C1400,22 1600,78 1800,50 C2000,22 2200,78 2400,50
+         C2600,22 2800,78 3000,50 C3200,22 3400,78 3600,50
+         C3800,22 4000,78 4200,50 L4200,120 L0,120 Z"/>
   </svg>
 
-  <!-- Onda 3: 80px, período mais curto -->
-  <svg class="loading-sea-wave loading-sea-wave-3" viewBox="0 0 1440 80" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgba(15,65,140,0.72)"
-      d="M0,50 C160,28 320,65 480,50 C640,28 800,65 960,50
-         C1120,28 1280,65 1440,50 C1600,28 1760,65 1920,50
-         C2080,28 2240,65 2400,50 C2560,28 2720,65 2880,50
-         C3040,28 3200,65 3360,50 C3520,28 3680,65 3840,50
-         C4000,28 4160,65 4320,50 L4320,80 L0,80 Z"/>
+  <!-- Onda 3 — superfície (3s), top=-20px, height=85px.
+       Azul ligeiramente mais vivo, semi-transparente. -->
+  <svg class="loading-sea-wave loading-sea-wave-3" viewBox="0 0 1440 85" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <path fill="rgba(16,52,118,0.78)"
+      d="M0,36 C160,14 320,58 480,36 C640,14 800,58 960,36
+         C1120,14 1280,58 1440,36 C1600,14 1760,58 1920,36
+         C2080,14 2240,58 2400,36 C2560,14 2720,58 2880,36
+         C3040,14 3200,58 3360,36 C3520,14 3680,58 3840,36
+         C4000,14 4160,58 4320,36 L4320,85 L0,85 Z"/>
   </svg>
 
-  <!-- Onda 4: 68px, superfície azul mais viva -->
-  <svg class="loading-sea-wave loading-sea-wave-4" viewBox="0 0 1440 68" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgba(22,88,175,0.55)"
-      d="M0,42 C120,24 240,55 360,42 C480,24 600,55 720,42
-         C840,24 960,55 1080,42 C1200,24 1320,55 1440,42
-         C1560,24 1680,55 1800,42 C1920,24 2040,55 2160,42
-         C2280,24 2400,55 2520,42 C2640,24 2760,55 2880,42
-         C3000,24 3120,55 3240,42 C3360,24 3480,55 3600,42
-         C3720,24 3840,55 3960,42 C4080,24 4200,55 4320,42
-         L4320,68 L0,68 Z"/>
-  </svg>
-
-  <!-- Onda 5: 55px, espuma rápida e translúcida -->
-  <svg class="loading-sea-wave loading-sea-wave-5" viewBox="0 0 1440 55" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgba(55,135,215,0.30)"
-      d="M0,34 C100,20 200,44 300,34 C400,20 500,44 600,34
-         C700,20 800,44 900,34 C1000,20 1100,44 1200,34
-         C1300,20 1400,44 1440,34 C1540,20 1640,44 1740,34
-         C1840,20 1940,44 2040,34 C2140,20 2240,44 2340,34
-         C2440,20 2540,44 2640,34 C2740,20 2840,44 2940,34
-         C3040,20 3140,44 3240,34 C3340,20 3440,44 3540,34
-         C3640,20 3740,44 3840,34 C3940,20 4040,44 4140,34
-         C4240,20 4320,44 4320,34 L4320,55 L0,55 Z"/>
+  <!-- Onda 4 — espuma rápida (2s), top=-12px, height=55px.
+       Translúcida, crista quase na borda do container. -->
+  <svg class="loading-sea-wave loading-sea-wave-4" viewBox="0 0 1440 55" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <path fill="rgba(30,85,175,0.38)"
+      d="M0,24 C120,10 240,38 360,24 C480,10 600,38 720,24
+         C840,10 960,38 1080,24 C1200,10 1320,38 1440,24
+         C1560,10 1680,38 1800,24 C1920,10 2040,38 2160,24
+         C2280,10 2400,38 2520,24 C2640,10 2760,38 2880,24
+         C3000,10 3120,38 3240,24 C3360,10 3480,38 3600,24
+         C3720,10 3840,38 3960,24 C4080,10 4200,38 4320,24
+         L4320,55 L0,55 Z"/>
   </svg>
 </div>
 

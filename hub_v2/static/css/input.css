@@ -50,7 +50,7 @@
    Ativado via body.htmx-loading + body[data-loading-style="N"]
    ══════════════════════════════════════════ */
 
-/* ── Style B ("2"): Mar cobre 45% da tela, ondas no fundo ── */
+/* ── Style B ("2"): Oceano sobe da base — waterline animada, corpo com gradiente ── */
 @layer components {
   .loading-sea {
     display: none;
@@ -59,65 +59,61 @@
     height: 45vh;
     z-index: 9998;
     pointer-events: none;
-    overflow: hidden;
+    overflow: hidden;  /* clipa o top negativo das ondas */
   }
   body.htmx-loading[data-loading-style="2"] .loading-sea { display: block; }
 
-  /* Fundo oceano com caustics — luz se movendo na água, animado */
+  /* Corpo do oceano: gradiente vertical simples, sem efeitos extras */
   .loading-sea-bg {
-    display: block;
     position: absolute;
     inset: 0;
-    background: linear-gradient(to bottom, #0b2550 0%, #071a3e 60%, #040f25 100%);
-  }
-  /* Camada de luz caustica — simula reflexo de luz na superfície */
-  .loading-sea-bg::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background:
-      radial-gradient(ellipse 120px 30px at 15% 25%, rgba(30,100,200,0.22) 0%, transparent 70%),
-      radial-gradient(ellipse 80px  20px at 55% 55%, rgba(40,120,220,0.18) 0%, transparent 70%),
-      radial-gradient(ellipse 150px 35px at 80% 35%, rgba(20, 80,180,0.16) 0%, transparent 70%),
-      radial-gradient(ellipse 90px  22px at 35% 70%, rgba(50,130,230,0.14) 0%, transparent 70%);
-    animation: sea-caustics 4s ease-in-out infinite;
-  }
-  .loading-sea-bg::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background:
-      radial-gradient(ellipse 100px 25px at 65% 20%, rgba(35,110,210,0.2)  0%, transparent 70%),
-      radial-gradient(ellipse 70px  18px at 20% 65%, rgba(45,125,225,0.15) 0%, transparent 70%),
-      radial-gradient(ellipse 130px 32px at 90% 50%, rgba(25, 90,190,0.17) 0%, transparent 70%);
-    animation: sea-caustics 4s ease-in-out infinite reverse;
-    animation-delay: -2s;
-  }
-  @keyframes sea-caustics {
-    0%,100% { transform: translate(0,   0)   scale(1);    opacity: 0.9; }
-    33%     { transform: translate(4%,  3%)  scale(1.08); opacity: 1;   }
-    66%     { transform: translate(-3%, -2%) scale(0.94); opacity: 0.75; }
+    background: linear-gradient(to bottom,
+      #0e2f68 0%,
+      #091e48 55%,
+      #060f2a 100%);
   }
 
-  /* 5 ondas no topo (linha d'água) — altura fixa, curvas não distorcem */
+  /* Ondas com top negativo: crista aparece na borda do container,
+     fill desce e se mistura com o corpo — sem seam visível.
+     Cada onda tem position diferente p/ profundidade visual. */
   .loading-sea-wave {
     position: absolute;
-    top: 0; left: 0;
+    left: 0;
     width: 300%;
     pointer-events: none;
   }
-  .loading-sea-wave-1 { height: 110px; animation: sea-scroll 7s  linear infinite;        z-index: 5; }
-  .loading-sea-wave-2 { height: 95px;  animation: sea-scroll 5s  linear infinite reverse; z-index: 4; }
-  .loading-sea-wave-3 { height: 80px;  animation: sea-scroll 4s  linear infinite;         z-index: 3; }
-  .loading-sea-wave-4 { height: 68px;  animation: sea-scroll 3s  linear infinite reverse; z-index: 2; }
-  .loading-sea-wave-5 { height: 55px;  animation: sea-scroll 2s  linear infinite;         z-index: 1; }
 
-  /* Fade no topo — funde borda do oceano com a página */
+  /* Onda base: lenta, mais escura, crista aparece em ~15px do topo */
+  .loading-sea-wave-1 {
+    top: -45px; height: 160px;
+    animation: sea-scroll 7s linear infinite;
+    z-index: 4;
+  }
+  /* Onda média: velocidade média, reversa, crista ~20px */
+  .loading-sea-wave-2 {
+    top: -30px; height: 120px;
+    animation: sea-scroll 4.5s linear infinite reverse;
+    z-index: 3;
+  }
+  /* Onda superfície: mais clara, crista ~10px */
+  .loading-sea-wave-3 {
+    top: -20px; height: 85px;
+    animation: sea-scroll 3s linear infinite;
+    z-index: 2;
+  }
+  /* Onda espuma: rápida e translúcida, crista quase na borda */
+  .loading-sea-wave-4 {
+    top: -12px; height: 55px;
+    animation: sea-scroll 2s linear infinite reverse;
+    z-index: 1;
+  }
+
+  /* Fade apenas no topo — funde com o conteúdo da página */
   .loading-sea::after {
     content: '';
     position: absolute;
     top: 0; left: 0; right: 0;
-    height: 4%;
+    height: 28px;
     background: linear-gradient(to bottom, var(--ik-bg, #111827) 0%, transparent 100%);
     pointer-events: none;
     z-index: 10;
