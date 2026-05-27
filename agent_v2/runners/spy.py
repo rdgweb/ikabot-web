@@ -351,7 +351,8 @@ class SpyRunner(BaseRunner):
                     ag  = batch["agents"]
                     dec = batch.get("decoys", 0)
 
-                    # Verificar risco da combinação escolhida
+                    # Tabela de decisão + log da escolha
+                    self._log_decision_table(jid, live_params, 1, eff_risk, available, ag, dec)
                     risk = compute_spy_risks(live_params, 1, ag, dec)
                     self.log(jid, "info",
                         f"Infiltrando LOTE: {ag}ag+{dec}dec "
@@ -480,6 +481,9 @@ class SpyRunner(BaseRunner):
                     else:
                         ag  = opt["agents"]
                         dec = opt.get("decoys", 0)
+
+                        # Tabela de decisão — mostra por que escolheu ag/dec
+                        self._log_decision_table(jid, live_params, current_mission, eff_risk, stationed, ag, dec)
 
                         if stationed < ag:
                             self.log(jid, "info",
@@ -692,6 +696,54 @@ class SpyRunner(BaseRunner):
     # ═══════════════════════════════════════════════════════════════════════
     # Helpers — Infiltração inteligente
     # ═══════════════════════════════════════════════════════════════════════
+
+    def _log_decision_table(
+        self,
+        jid: str,
+        live_params: dict,
+        mission_id: int,
+        max_risk: float,
+        available: int,
+        chosen_ag: int | None = None,
+        chosen_dec: int | None = None,
+    ) -> None:
+        """Loga tabela de ag/dec/sucesso/risco para explicar a escolha."""
+        mname = MISSION_DATA.get(mission_id, {}).get("name", f"M{mission_id}")
+        header = (
+            f"[TABELA {mname}] "
+            f"max_risco={max_risk:.0f}%  disponíveis={available}\n"
+            f"  {'ag':>3} {'dec':>4} {'sucesso%':>9} {'risco_ag%':>10} {'risco_dec%':>11}  notas"
+        )
+        lines = [header]
+
+        max_show_ag  = min(available, 6)
+        max_show_dec = min(available, 8)
+
+        for ag in range(1, max_show_ag + 1):
+            for dec in range(0, max_show_dec + 1 - ag):
+                r = compute_spy_risks(live_params, mission_id, ag, dec)
+                ag_ok  = r["agent_risk"]  <= max_risk
+                dec_ok = r.get("decoy_risk", 0) <= max_risk + 25
+                suc_ok = r["success"] >= 30.0
+                viable = ag_ok and dec_ok and suc_ok
+
+                notes = []
+                if not ag_ok:
+                    notes.append(f"risco_ag={r['agent_risk']:.1f}%>lim")
+                if not dec_ok:
+                    notes.append(f"risco_dec={r.get('decoy_risk',0):.1f}%>lim")
+                if not suc_ok:
+                    notes.append(f"sucesso={r['success']:.1f}%<30%")
+
+                is_chosen = (ag == chosen_ag and dec == chosen_dec)
+                marker = " ← ESCOLHA" if is_chosen else ("  ✓" if viable else "  ✗")
+                note_str = " | ".join(notes) if notes else ("viável" if viable else "")
+                lines.append(
+                    f"  {ag:>3} {dec:>4} {r['success']:>8.1f}% {r['agent_risk']:>9.1f}% "
+                    f"{r.get('decoy_risk',0):>10.1f}% {marker}  {note_str}"
+                )
+
+        self.log(jid, "info", "\n".join(lines))
 
     def _find_best_infiltration_batch(
         self,
