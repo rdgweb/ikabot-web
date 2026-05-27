@@ -46,6 +46,13 @@ class AccountSnapshot(UUIDTimestampModel):
     )
     # Tracking
     source_job_id = models.UUIDField(blank=True, null=True)
+    full_snapshot_updated_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text=(
+            "Set only by full check_status runs (not partial patches). "
+            "Runners use this field to determine if a full refresh is needed."
+        ),
+    )
 
     class Meta:
         verbose_name = "Account Snapshot"

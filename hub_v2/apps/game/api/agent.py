@@ -120,6 +120,7 @@ class UpdateSnapshotView(APIView):
         source_job_id = data.get("source_job_id")
 
         # Upsert current snapshot
+        from django.utils import timezone as _tz
         lookup = {"game_account": game_account} if game_account else {"account": account, "game_account__isnull": True}
         snapshot, created = AccountSnapshot.objects.update_or_create(
             **lookup,
@@ -130,6 +131,8 @@ class UpdateSnapshotView(APIView):
                 "cities": cities,
                 "military": military,
                 "source_job_id": source_job_id,
+                # Full check_status snapshot — mark this as a complete refresh
+                "full_snapshot_updated_at": _tz.now(),
             },
         )
 
@@ -436,6 +439,7 @@ class CurrentSnapshotView(APIView):
                     "account_id": str(snapshot.account_id),
                     "game_account_id": str(snapshot.game_account_id) if snapshot.game_account_id else None,
                     "updated_at": snapshot.updated_at,
+                    "full_snapshot_updated_at": snapshot.full_snapshot_updated_at,
                     "base_snapshot": snapshot.base_snapshot,
                     "cities": snapshot.cities,
                     "military": snapshot.military,

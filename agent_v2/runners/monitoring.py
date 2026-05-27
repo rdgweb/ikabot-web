@@ -434,8 +434,7 @@ class AlertWineRunner(BaseRunner):
             self._ensure_status_refresh(jid)
             return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "empty_snapshot"})
 
-        snapshot_updated_at = self._parse_snapshot_time(snapshot.get("updated_at"))
-        if snapshot_updated_at is None or (datetime.now(timezone.utc) - snapshot_updated_at).total_seconds() > self.get_snapshot_stale_seconds():
+        if self.is_snapshot_stale(snapshot):
             self.log(jid, "warn", "Snapshot antigo demais para decidir transporte com seguranca; atualizando status")
             self._ensure_status_refresh(jid)
             return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "stale_snapshot"})

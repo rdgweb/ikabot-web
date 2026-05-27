@@ -758,8 +758,7 @@ class BuildingsSyncRunner(_CityActionMixin, BaseRunner):
             self.log(jid, "warn", "Snapshot ausente para sincronizar edificios; aguardando novo check_status")
             return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "waiting_snapshot"})
 
-        updated_at = _snapshot_time(snapshot.get("updated_at"))
-        if updated_at is None or (datetime.now(timezone.utc) - updated_at).total_seconds() > self.get_snapshot_stale_seconds():
+        if self.is_snapshot_stale(snapshot):
             self.log(jid, "warn", "Snapshot antigo para sincronizar edificios; aguardando refresh de status")
             return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "stale_snapshot"})
 
@@ -933,8 +932,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             self._ensure_status_refresh(jid)
             return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "waiting_snapshot"})
 
-        updated_at = _snapshot_time(snapshot.get("updated_at"))
-        if updated_at is None or (datetime.now(timezone.utc) - updated_at).total_seconds() > self.get_snapshot_stale_seconds():
+        if self.is_snapshot_stale(snapshot):
             logger.debug("[%s] Snapshot desatualizado; solicitando refresh", jid)
             self._ensure_status_refresh(jid)
             return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "stale_snapshot"})

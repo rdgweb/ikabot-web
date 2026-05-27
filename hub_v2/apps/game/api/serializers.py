@@ -37,6 +37,7 @@ class CurrentSnapshotResponseSerializer(serializers.Serializer):
     account_id = serializers.UUIDField()
     game_account_id = serializers.UUIDField(allow_null=True)
     updated_at = serializers.DateTimeField()
+    full_snapshot_updated_at = serializers.DateTimeField(allow_null=True)
     base_snapshot = serializers.JSONField(default=dict)
     cities = serializers.JSONField(default=list)
     military = serializers.JSONField(default=dict)

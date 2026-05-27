@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from sessions import GameSessionService
@@ -197,6 +198,29 @@ class BaseRunner:
 
     def get_snapshot_stale_seconds(self) -> int:
         return self.get_system_setting_int("snapshot_stale_seconds", 2 * 60 * 60)
+
+    def is_snapshot_stale(self, snapshot: dict) -> bool:
+        """True se o snapshot COMPLETO (check_status) for mais antigo que snapshot_stale_seconds.
+
+        Usa full_snapshot_updated_at quando disponível — esse campo só é escrito por
+        check_status completos, não por patches parciais (recursos, buildings, etc.).
+        Fallback para updated_at se o campo não existir (snapshots antigos).
+        """
+        raw = snapshot.get("full_snapshot_updated_at") or snapshot.get("updated_at")
+        if raw is None:
+            return True
+        try:
+            if isinstance(raw, str):
+                ts = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            elif isinstance(raw, datetime):
+                ts = raw
+            else:
+                return True
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - ts).total_seconds() > self.get_snapshot_stale_seconds()
+        except Exception:
+            return True
 
     def get_building_options_stale_seconds(self) -> int:
         return self.get_system_setting_int("building_options_stale_seconds", 6 * 60 * 60)

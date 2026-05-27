@@ -214,19 +214,47 @@ function toggleSidebar() {
 
 // ── Clock Update (Topbar) ──
 
+const GAME_TIMEZONE = "Europe/Berlin"; // Ikariam server timezone (CET/CEST)
+
 function initClock() {
-  const clockEl = document.querySelector("[data-clock]");
-  if (!clockEl) return;
+  const clockEl     = document.querySelector("[data-clock]");
+  const gameClockEl = document.querySelector("[data-game-clock]");
+  const gameTzEl    = document.querySelector("[data-game-tz]");
 
   function updateClock() {
     const now = new Date();
-    const hours = String(now.getHours()).padStart(2, "0");
-    const minutes = String(now.getMinutes()).padStart(2, "0");
-    clockEl.textContent = hours + ":" + minutes;
+
+    // Local time (HH:MM)
+    if (clockEl) {
+      clockEl.textContent =
+        String(now.getHours()).padStart(2, "0") + ":" +
+        String(now.getMinutes()).padStart(2, "0");
+    }
+
+    // Game server time (HH:MM:SS) in Europe/Berlin
+    if (gameClockEl) {
+      const timeParts = new Intl.DateTimeFormat("pt-BR", {
+        timeZone: GAME_TIMEZONE,
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+        hour12: false,
+      }).formatToParts(now);
+      const h = timeParts.find(p => p.type === "hour")?.value   ?? "--";
+      const m = timeParts.find(p => p.type === "minute")?.value ?? "--";
+      const s = timeParts.find(p => p.type === "second")?.value ?? "--";
+      gameClockEl.textContent = h + ":" + m + ":" + s;
+    }
+
+    // TZ abbreviation (CEST / CET)
+    if (gameTzEl) {
+      const tzAbbr = new Intl.DateTimeFormat("en", {
+        timeZone: GAME_TIMEZONE, timeZoneName: "short",
+      }).formatToParts(now).find(p => p.type === "timeZoneName")?.value ?? "";
+      gameTzEl.textContent = tzAbbr;
+    }
   }
 
   updateClock();
-  setInterval(updateClock, 30000); // update every 30s
+  setInterval(updateClock, 1000); // game clock updates every second
 }
 
 // ── Django Messages → Toasts ──
