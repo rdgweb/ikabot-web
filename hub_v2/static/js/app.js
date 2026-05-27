@@ -19,52 +19,50 @@ document.addEventListener("htmx:configRequest", (e) => {
 
 // ── HTMX loading feedback ──
 //
-// Two distinct contexts:
-//   1. Full page navigation (target = #page-content) → loading_indicator.html handles spinner
-//   2. In-page partial swap (any other target)       → subtle opacity fade on the target element
+// Full-page nav  (target = #page-content, via hx-boost): show big spinner
+// In-page partial (any other target):                    subtle fade on that element only
 //
-// Alpine re-init: by htmx:afterSwap all <script> tags in swapped content have run,
-// so gameDashboard() and other page-specific functions are already in window.
+// No shared state — every event reads its own e.detail.target so concurrent
+// requests (e.g. hx-trigger="load" firing runs + logs simultaneously) each
+// manage their own element independently without overwriting each other.
+//
+// Alpine re-init: by htmx:afterSwap all <script> in swapped content have run,
+// so page-specific functions like gameDashboard() are already in window.
 (function () {
-  const PAGE_CONTENT_ID = "page-content";
-  let _partialTarget = null;
+  const PAGE = "page-content";
 
   document.body.addEventListener("htmx:beforeRequest", (e) => {
-    const target = e.detail && e.detail.target;
-    const isPageSwap = target && target.id === PAGE_CONTENT_ID;
-
-    if (isPageSwap) {
-      // Full-page nav — loading_indicator.html handles the spinner via body.htmx-loading
+    const t = e.detail && e.detail.target;
+    if (!t) return;
+    if (t.id === PAGE) {
+      // Full-page navigation → spinner
       document.body.classList.add("htmx-loading");
       document.body.setAttribute("data-loading-style",
         localStorage.getItem("ikLoadingStyle") || "3");
-    } else if (target && target !== document.body) {
-      // In-page partial — subtle fade on the target
-      _partialTarget = target;
-      target.classList.add("htmx-partial-loading");
+    } else {
+      // Partial swap → subtle fade on this specific target element
+      t.classList.add("htmx-partial-loading");
     }
   });
 
   document.body.addEventListener("htmx:afterSwap", (e) => {
-    // Clean up partial loading state
-    if (_partialTarget) {
-      _partialTarget.classList.remove("htmx-partial-loading");
-      _partialTarget = null;
-    }
-    // Re-init Alpine for newly swapped content
-    if (window.Alpine) {
-      const target = e.detail && e.detail.target;
-      if (target) Alpine.initTree(target);
+    const t = e.detail && e.detail.target;
+    if (t) {
+      t.classList.remove("htmx-partial-loading");
+      // Re-init Alpine components in the newly swapped content
+      if (window.Alpine) Alpine.initTree(t);
     }
   });
 
   document.body.addEventListener("htmx:afterRequest", (e) => {
-    // Clean up full-page loading state (spinner)
-    document.body.classList.remove("htmx-loading");
-    document.body.removeAttribute("data-loading-style");
-    if (_partialTarget) {
-      _partialTarget.classList.remove("htmx-partial-loading");
-      _partialTarget = null;
+    const t = e.detail && e.detail.target;
+    if (t && t.id === PAGE) {
+      // Full-page nav completed → hide spinner
+      document.body.classList.remove("htmx-loading");
+      document.body.removeAttribute("data-loading-style");
+    } else if (t) {
+      // Safety cleanup for error cases where afterSwap may not fire
+      t.classList.remove("htmx-partial-loading");
     }
   });
 })();
