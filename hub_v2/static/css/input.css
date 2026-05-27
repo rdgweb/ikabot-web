@@ -64,22 +64,72 @@
 }
 
 /* ══════════════════════════════════════════
-   HTMX Loading Indicators — 4 estilos
+   HTMX Loading Indicators — 3 estilos
    Ativado via body.htmx-loading + body[data-loading-style="N"]
    ══════════════════════════════════════════ */
 
-/* ── Style 1: Navio na barra do topo ── */
+/* ── Style A ("1"): Barra larga no topo com navio ── */
 @layer components {
+  /* Barra principal — 22px, muito mais visível */
   .htmx-progress {
     position: fixed;
     top: 0; left: 0;
     width: 0;
-    height: 4px;
-    background: linear-gradient(90deg, var(--ik-sea) 0%, #5bb8d4 50%, var(--ik-sea) 100%);
+    height: 22px;
     z-index: 9999;
-    transition: width 0.3s ease;
-    box-shadow: 0 0 8px rgba(78, 160, 201, 0.7);
     overflow: visible;
+    transition: width 0.3s ease;
+    pointer-events: none;
+  }
+  .htmx-progress-fill {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg,
+      var(--ik-sea-dark) 0%,
+      var(--ik-sea) 40%,
+      #7ec8e3 60%,
+      var(--ik-sea) 100%);
+    background-size: 200% 100%;
+    animation: bar-shimmer 1.8s linear infinite;
+    box-shadow: 0 2px 12px rgba(79,134,185,0.6), inset 0 -1px 0 rgba(0,0,0,0.15);
+  }
+  /* Ondas decorativas dentro da barra */
+  .htmx-progress-waves {
+    position: absolute;
+    bottom: 0; left: 0;
+    width: 200%; height: 100%;
+    background: repeating-linear-gradient(
+      90deg,
+      transparent 0px,
+      transparent 18px,
+      rgba(255,255,255,0.08) 18px,
+      rgba(255,255,255,0.08) 20px
+    );
+    animation: bar-wave-scroll 1.2s linear infinite;
+  }
+  /* Navio no extremo direito */
+  .htmx-ship {
+    position: absolute;
+    right: -2px;
+    bottom: 0px;
+    height: 52px;
+    width: auto;
+    opacity: 0;
+    transform-origin: center bottom;
+    animation: ship-bob 1.4s ease-in-out infinite;
+    filter: drop-shadow(0 3px 6px rgba(0,0,0,0.5));
+    transition: opacity 0.25s;
+    pointer-events: none;
+  }
+  .htmx-progress.active .htmx-ship { opacity: 1; }
+  /* Sombra/reflexo da barra na água */
+  .htmx-progress::after {
+    content: '';
+    position: absolute;
+    top: 100%; left: 0; right: 0;
+    height: 6px;
+    background: linear-gradient(to bottom, rgba(79,134,185,0.25), transparent);
+    pointer-events: none;
   }
   .htmx-progress.active {
     width: 85%;
@@ -88,77 +138,106 @@
   .htmx-progress.done {
     width: 100%;
     opacity: 0;
-    transition: width 0.15s ease, opacity 0.4s ease 0.2s;
+    transition: width 0.15s ease, opacity 0.35s ease 0.15s;
   }
-  /* Ship rides the right edge */
-  .htmx-ship {
-    position: absolute;
-    right: -18px;
-    top: -14px;
-    height: 32px;
-    width: auto;
-    opacity: 0;
-    transition: opacity 0.2s;
-    animation: ship-bob 1.2s ease-in-out infinite;
-    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
-    pointer-events: none;
-  }
-  .htmx-progress.active .htmx-ship,
-  .htmx-progress.done .htmx-ship  { opacity: 1; }
-
   /* Hidden when style != 1 */
   .htmx-progress[data-style]:not([data-style="1"]) { display: none !important; }
 
   @keyframes ship-bob {
-    0%, 100% { transform: translateY(0px) rotate(-2deg); }
-    50%       { transform: translateY(-4px) rotate(2deg); }
+    0%   { transform: translateY(0)   rotate(-1.5deg) scaleX(1); }
+    25%  { transform: translateY(-5px) rotate(1deg)   scaleX(1); }
+    50%  { transform: translateY(-3px) rotate(-2deg)  scaleX(1); }
+    75%  { transform: translateY(-6px) rotate(1.5deg) scaleX(1); }
+    100% { transform: translateY(0)   rotate(-1.5deg) scaleX(1); }
+  }
+  @keyframes bar-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+  @keyframes bar-wave-scroll {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
   }
 }
 
-/* ── Style 2: Hoplita marchando ── */
+/* ── Style B ("2"): Navio nas ondas (faixa no fundo) ── */
 @layer components {
-  .loading-hoplita {
+  .loading-sea {
     display: none;
     position: fixed;
     bottom: 0; left: 0; right: 0;
-    height: 80px;
+    height: 110px;
     z-index: 9998;
     pointer-events: none;
     overflow: hidden;
-    background: linear-gradient(to top, rgba(0,0,0,0.18) 0%, transparent 100%);
   }
-  body.htmx-loading[data-loading-style="2"] .loading-hoplita { display: block; }
-  .loading-hoplita-img {
+  body.htmx-loading[data-loading-style="2"] .loading-sea { display: block; }
+
+  /* Fundo degradê oceano */
+  .loading-sea-bg {
     position: absolute;
-    bottom: 8px;
-    height: 52px;
-    width: auto;
-    animation: hoplita-march 2.2s linear infinite;
-    filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.5));
-    image-rendering: pixelated;
+    inset: 0;
+    background: linear-gradient(to top,
+      rgba(30,70,110,0.85) 0%,
+      rgba(50,100,150,0.55) 60%,
+      transparent 100%);
   }
-  .loading-hoplita-dust {
+
+  /* 3 camadas de ondas rolando em velocidades diferentes */
+  .loading-sea-wave {
     position: absolute;
-    bottom: 6px; left: 0; right: 0;
-    height: 12px;
-    background: radial-gradient(ellipse 80px 6px at var(--dust-x, 10%) center,
-                rgba(180,140,80,0.35) 0%, transparent 100%);
-    animation: hoplita-dust 2.2s linear infinite;
+    bottom: 0; left: 0;
+    width: 300%; height: 100%;
     pointer-events: none;
   }
-  @keyframes hoplita-march {
-    0%   { left: -70px; }
-    100% { left: calc(100% + 70px); }
+  .loading-sea-wave-1 { animation: sea-scroll 3.5s linear infinite; opacity: 0.7; }
+  .loading-sea-wave-2 { animation: sea-scroll 5s linear infinite reverse; opacity: 0.5; }
+  .loading-sea-wave-3 { animation: sea-scroll 2.5s linear infinite; opacity: 0.35; }
+
+  /* Navio navega sobre as ondas */
+  .loading-sea-ship {
+    position: absolute;
+    bottom: 52px;  /* cavalga sobre as ondas */
+    left: 0;
+    height: 72px;
+    width: auto;
+    animation:
+      sea-ship-travel 4s ease-in-out infinite,
+      sea-ship-bob 1.8s ease-in-out infinite;
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6));
+    transform-origin: center bottom;
   }
-  @keyframes hoplita-dust {
-    0%   { --dust-x: 0%; }
-    100% { --dust-x: 100%; }
+  /* Espuma/wake atrás do navio */
+  .loading-sea-wake {
+    position: absolute;
+    bottom: 56px;
+    left: 0;
+    width: 120px; height: 20px;
+    background: radial-gradient(ellipse 60px 8px at 80% 50%,
+      rgba(255,255,255,0.45) 0%, transparent 100%);
+    animation: sea-ship-travel 4s ease-in-out infinite;
+    transform: translateX(-80px);
   }
-  /* Hide when not this style */
-  .loading-hoplita[data-style]:not([data-style="2"]) { display: none !important; }
+
+  @keyframes sea-scroll {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-33.33%); }
+  }
+  @keyframes sea-ship-travel {
+    0%   { left: -90px; }
+    100% { left: calc(100% + 90px); }
+  }
+  @keyframes sea-ship-bob {
+    0%, 100% { transform: translateY(0)   rotate(-1.5deg); }
+    30%       { transform: translateY(-8px) rotate(2deg); }
+    60%       { transform: translateY(-4px) rotate(-2.5deg); }
+    80%       { transform: translateY(-9px) rotate(1.5deg); }
+  }
+
+  .loading-sea[data-style]:not([data-style="2"]) { display: none !important; }
 }
 
-/* ── Style 3: Shield spinner center ── */
+/* ── Style C ("3"): Spinner grande centralizado ── */
 @layer components {
   .loading-spinner {
     display: none;
@@ -167,63 +246,68 @@
     z-index: 9997;
     align-items: center;
     justify-content: center;
-    background: rgba(0,0,0,0.25);
-    backdrop-filter: blur(2px);
+    background: rgba(15,30,50,0.45);
+    backdrop-filter: blur(3px);
   }
   body.htmx-loading[data-loading-style="3"] .loading-spinner { display: flex; }
-  .loading-spinner-ring {
+
+  .loading-spinner-wrap {
     position: relative;
-    width: 72px; height: 72px;
+    width: 160px; height: 160px;
     display: flex; align-items: center; justify-content: center;
   }
-  .loading-spinner-ring svg {
-    position: absolute;
-    inset: 0;
+  /* Anel externo — girando */
+  .loading-spinner-outer {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    animation: spin-cw 1.4s linear infinite;
+  }
+  .loading-spinner-outer svg {
     width: 100%; height: 100%;
-    animation: spin 1s linear infinite;
+    overflow: visible;
   }
-  .loading-spinner-arc {
-    transform-origin: center;
-  }
-  .loading-spinner-icon {
-    width: 36px; height: 36px;
-    object-fit: contain;
-    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .loading-spinner[data-style]:not([data-style="3"]) { display: none !important; }
-}
-
-/* ── Style 4: Ondas no rodapé ── */
-@layer components {
-  .loading-waves {
-    display: none;
-    position: fixed;
-    bottom: 0; left: 0; right: 0;
-    height: 54px;
-    z-index: 9998;
-    pointer-events: none;
-  }
-  body.htmx-loading[data-loading-style="4"] .loading-waves { display: block; }
-  .loading-waves-svg {
+  /* Anel interno — contra-girando, mais lento */
+  .loading-spinner-inner {
     position: absolute;
-    bottom: 0; left: 0;
-    width: 200%; height: 100%;
-    animation: waves-scroll 3s linear infinite;
+    inset: 20px;
+    border-radius: 50%;
+    animation: spin-ccw 2.2s linear infinite;
   }
-  .wave { fill-opacity: 0.7; }
-  .wave-1 { fill: var(--ik-sea); fill-opacity: 0.5; animation: wave-pulse 2.8s ease-in-out infinite; }
-  .wave-2 { fill: var(--ik-sea); fill-opacity: 0.35; animation: wave-pulse 2.2s ease-in-out infinite 0.4s; }
-  .wave-3 { fill: var(--ik-sea); fill-opacity: 0.25; animation: wave-pulse 1.8s ease-in-out infinite 0.8s; }
-  @keyframes waves-scroll {
-    0%   { transform: translateX(0); }
-    100% { transform: translateX(-50%); }
+  .loading-spinner-inner svg {
+    width: 100%; height: 100%;
+    overflow: visible;
   }
-  @keyframes wave-pulse {
-    0%, 100% { opacity: 0.7; }
-    50%       { opacity: 1; }
+  /* Ícone no centro — pulso suave */
+  .loading-spinner-icon {
+    position: relative;
+    width: 72px; height: 72px;
+    object-fit: contain;
+    filter: drop-shadow(0 0 10px rgba(79,134,185,0.8))
+            drop-shadow(0 3px 6px rgba(0,0,0,0.5));
+    animation: icon-pulse 2s ease-in-out infinite;
   }
-  .loading-waves[data-style]:not([data-style="4"]) { display: none !important; }
+  /* Texto embaixo */
+  .loading-spinner-label {
+    position: absolute;
+    bottom: -28px; left: 0; right: 0;
+    text-align: center;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.7);
+    font-family: "Rajdhani", sans-serif;
+    font-weight: 600;
+    animation: icon-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes spin-cw  { to { transform: rotate(360deg); } }
+  @keyframes spin-ccw { to { transform: rotate(-360deg); } }
+  @keyframes icon-pulse {
+    0%, 100% { opacity: 0.8;  transform: scale(1); }
+    50%       { opacity: 1;    transform: scale(1.05); }
+  }
+
+  .loading-spinner[data-style]:not([data-style="3"]) { display: none !important; }
 }
 
 /* ── Style switcher button ── */
@@ -232,17 +316,17 @@
     position: fixed;
     bottom: 1rem; right: 1rem;
     z-index: 10000;
-    width: 36px; height: 36px;
+    width: 34px; height: 34px;
     border-radius: 50%;
     background: var(--ik-surface);
     border: 1px solid var(--ik-line);
     color: var(--ik-muted);
-    font-size: 14px;
+    font-size: 13px;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer;
-    opacity: 0.55;
+    opacity: 0.45;
     transition: opacity 0.2s, box-shadow 0.2s;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
   }
   .ik-loading-toggle:hover { opacity: 1; box-shadow: 0 2px 12px rgba(0,0,0,0.25); }
 }
