@@ -32,15 +32,20 @@ document.addEventListener("htmx:configRequest", (e) => {
   const PAGE = "page-content";
 
   document.body.addEventListener("htmx:beforeRequest", (e) => {
-    const t = e.detail && e.detail.target;
+    const t   = e.detail && e.detail.target;
+    const elt = e.detail && e.detail.elt;          // element that triggered the request
     if (!t) return;
-    if (t.id === PAGE) {
-      // Full-page navigation → spinner
+
+    const sidebar = document.getElementById("main-sidebar");
+    const fromSidebar = sidebar && elt && sidebar.contains(elt);
+
+    if (fromSidebar) {
+      // Sidebar link clicked → big spinner
       document.body.classList.add("htmx-loading");
       document.body.setAttribute("data-loading-style",
         localStorage.getItem("ikLoadingStyle") || "3");
     } else {
-      // Partial swap → subtle fade on this specific target element
+      // Everything else (workflow links, filters, partials) → subtle fade
       t.classList.add("htmx-partial-loading");
     }
   });
@@ -56,14 +61,11 @@ document.addEventListener("htmx:configRequest", (e) => {
 
   document.body.addEventListener("htmx:afterRequest", (e) => {
     const t = e.detail && e.detail.target;
-    if (t && t.id === PAGE) {
-      // Full-page nav completed → hide spinner
-      document.body.classList.remove("htmx-loading");
-      document.body.removeAttribute("data-loading-style");
-    } else if (t) {
-      // Safety cleanup for error cases where afterSwap may not fire
-      t.classList.remove("htmx-partial-loading");
-    }
+    // Always clean up spinner (safe even if it wasn't shown)
+    document.body.classList.remove("htmx-loading");
+    document.body.removeAttribute("data-loading-style");
+    // Safety cleanup for partial fade in error cases where afterSwap didn't fire
+    if (t) t.classList.remove("htmx-partial-loading");
   });
 })();
 
