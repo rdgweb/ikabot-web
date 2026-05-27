@@ -1528,6 +1528,125 @@ class JobListView(FilterSortListView):
         }
 
     @classmethod
+    def _spy_display(cls, job):
+        inputs = cls._parse_inputs(job)
+        if int(job.action_code) != 15:
+            return {}
+
+        _SPY_MISSIONS = {
+            1:  "Enviar espião",
+            3:  "Nível de pesquisa",
+            5:  "Inspecionar armazém",
+            6:  "Guarnição militar",
+            7:  "Tropas e frotas",
+            8:  "Chamar espião",
+            10: "Observar comunicação",
+            21: "Ver estado",
+            23: "Produção militar",
+            24: "Cargo na aliança",
+            25: "Forma de governo",
+            26: "Invenções",
+            27: "Colônias",
+        }
+        _PHASE_LABELS = {
+            "accumulating":      ("Acumulando",  "badge-warning"),
+            "executing":         ("Executando",  "badge-info"),
+            "recalling":         ("Chamando de volta", "badge-secondary"),
+            "done":              ("Concluído",   "badge-success"),
+            "infiltrating_only": ("Infiltrando", "badge-warning"),
+        }
+
+        recovery = inputs.get("__recovery") if isinstance(inputs.get("__recovery"), dict) else {}
+        phase        = str(recovery.get("phase") or inputs.get("phase") or "accumulating")
+        phase_label, phase_badge = _PHASE_LABELS.get(phase, (phase.capitalize(), "badge-secondary"))
+
+        # Mission list
+        raw_mid = inputs.get("mission_id") or "1"
+        try:
+            if isinstance(raw_mid, list):
+                all_missions = [int(x) for x in raw_mid]
+            else:
+                all_missions = [int(x.strip()) for x in str(raw_mid).split(",") if x.strip()]
+        except Exception:
+            all_missions = [1]
+        intel_missions = [m for m in all_missions if m not in (1, 8)]
+
+        missions_done    = list(recovery.get("missions_done") or [])
+        missions_pending = list(recovery.get("missions_pending") or intel_missions)
+
+        mission_rows = []
+        for mid in intel_missions:
+            if mid in missions_done:
+                status = "done"
+                badge  = "badge-success"
+                icon   = "bi-check-circle-fill"
+            elif mid in missions_pending:
+                status = "pending"
+                badge  = "badge-secondary"
+                icon   = "bi-circle"
+            else:
+                status = "skipped"
+                badge  = "badge-danger"
+                icon   = "bi-x-circle"
+            mission_rows.append({
+                "id":     mid,
+                "name":   _SPY_MISSIONS.get(mid, f"Missão {mid}"),
+                "status": status,
+                "badge":  badge,
+                "icon":   icon,
+            })
+
+        # Recovery state
+        no_progress     = int(recovery.get("no_progress_cycles") or 0)
+        last_stationed  = int(recovery.get("last_stationed") or 0)
+        remaining_risk  = float(recovery.get("prev_remaining_risk") or 0)
+        sent_total      = int(recovery.get("sent_total") or 0)
+        arrival_at      = int(recovery.get("arrival_at") or 0)
+        import time as _time
+        arrival_in_s    = max(0, arrival_at - int(_time.time())) if arrival_at else 0
+
+        # Next scheduled
+        next_run_human  = ""
+        if job.scheduled_for:
+            import datetime as _dt
+            from django.utils import timezone as _tz
+            delta = job.scheduled_for - _tz.now()
+            secs  = max(0, int(delta.total_seconds()))
+            if secs < 60:
+                next_run_human = f"em {secs}s"
+            elif secs < 3600:
+                next_run_human = f"em {secs//60}min"
+            else:
+                next_run_human = f"em {secs//3600}h{(secs%3600)//60}min"
+
+        return {
+            "phase":            phase,
+            "phase_label":      phase_label,
+            "phase_badge":      phase_badge,
+            "target_owner":     str(inputs.get("target_owner") or "—"),
+            "target_city_name": str(inputs.get("target_city_name") or "—"),
+            "target_city_id":   str(inputs.get("target_city_id") or "—"),
+            "island_id":        str(inputs.get("island_id") or "—"),
+            "source_city_id":   str(inputs.get("city_id") or "—"),
+            "max_risk":         _to_int(inputs.get("max_detection_risk"), 35),
+            "recall_after":     bool(inputs.get("recall_after", True)),
+            "save_reports":     bool(inputs.get("save_reports", True)),
+            "all_missions":     intel_missions,
+            "mission_rows":     mission_rows,
+            "missions_done":    missions_done,
+            "missions_pending": missions_pending,
+            "done_count":       len(missions_done),
+            "total_count":      len(intel_missions),
+            "no_progress":      no_progress,
+            "last_stationed":   last_stationed,
+            "remaining_risk":   remaining_risk,
+            "sent_total":       sent_total,
+            "arrival_in_s":     arrival_in_s,
+            "arrival_in_human": _duration_human(arrival_in_s) if arrival_in_s > 0 else "",
+            "next_run_human":   next_run_human,
+        }
+
+    @classmethod
     def _abandon_colony_display(cls, job):
         inputs = cls._parse_inputs(job)
         if int(job.action_code) != 821:
@@ -1970,6 +2089,7 @@ class JobDetailView(LoginRequiredMixin, DetailView):
         context["piracy_display"] = JobListView._piracy_display(self.object)
         context["abandon_colony_display"] = JobListView._abandon_colony_display(self.object)
         context["barbarians_display"] = JobListView._barbarians_display(self.object)
+        context["spy_display"] = JobListView._spy_display(self.object)
         context["train_display"] = JobListView._train_display(self.object)
         context["station_display"] = JobListView._station_display(self.object)
         context["construction_plan"] = inputs.get("construction_plan_json") if isinstance(inputs.get("construction_plan_json"), list) else []

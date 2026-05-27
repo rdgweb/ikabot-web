@@ -1076,6 +1076,134 @@
 </div>
 {% endif %}
 
+{% if spy_display %}
+<div class="card space-y-4">
+
+  {# ── Header ── #}
+  <div class="flex items-start justify-between gap-3 flex-wrap">
+    <div>
+      <h3 class="text-sm font-semibold text-ink">
+        <i class="bi bi-binoculars text-sea mr-1"></i> Espionagem
+      </h3>
+      <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+        <span><i class="bi bi-person text-[10px]"></i> {{ spy_display.target_owner }}</span>
+        <span><i class="bi bi-buildings text-[10px]"></i> {{ spy_display.target_city_name }}</span>
+        <span class="font-mono">#{{ spy_display.target_city_id }}</span>
+        <span><i class="bi bi-geo-alt text-[10px]"></i> ilha {{ spy_display.island_id }}</span>
+        {% if spy_display.max_risk %}
+        <span><i class="bi bi-shield text-[10px]"></i> max risco {{ spy_display.max_risk }}%</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="badge {{ spy_display.phase_badge }}">{{ spy_display.phase_label }}</span>
+      {% if spy_display.next_run_human %}
+      <span class="badge badge-secondary">
+        <i class="bi bi-clock text-[10px] mr-1"></i>{{ spy_display.next_run_human }}
+      </span>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Stats row ── #}
+  <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div class="rounded-xl border border-[var(--ik-line)] px-3 py-2.5">
+      <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Estacionados</div>
+      <div class="text-lg font-bold text-ink">{{ spy_display.last_stationed }}</div>
+      <div class="text-[10px] text-muted">último ciclo</div>
+    </div>
+    <div class="rounded-xl border border-[var(--ik-line)] px-3 py-2.5">
+      <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Risco remanescente</div>
+      <div class="text-lg font-bold {% if spy_display.remaining_risk > 20 %}text-[var(--ik-gold)]{% elif spy_display.remaining_risk > 40 %}text-[var(--ik-bad)]{% else %}text-ink{% endif %}">
+        {{ spy_display.remaining_risk|floatformat:1 }}%
+      </div>
+      <div class="text-[10px] text-muted">accumulated risk</div>
+    </div>
+    <div class="rounded-xl border border-[var(--ik-line)] px-3 py-2.5">
+      <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Missões</div>
+      <div class="text-lg font-bold text-ink">{{ spy_display.done_count }}/{{ spy_display.total_count }}</div>
+      <div class="text-[10px] text-muted">concluídas</div>
+    </div>
+    <div class="rounded-xl border border-[var(--ik-line)] px-3 py-2.5">
+      <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Sem progresso</div>
+      <div class="text-lg font-bold {% if spy_display.no_progress >= 5 %}text-[var(--ik-bad)]{% elif spy_display.no_progress >= 3 %}text-[var(--ik-gold)]{% else %}text-ink{% endif %}">
+        {{ spy_display.no_progress }}/8
+      </div>
+      <div class="text-[10px] text-muted">ciclos seguidos</div>
+    </div>
+  </div>
+
+  {# ── Progress bar ── #}
+  {% if spy_display.total_count > 0 %}
+  <div>
+    <div class="flex items-center justify-between mb-1">
+      <span class="text-[11px] text-muted">Progresso das missões</span>
+      <span class="text-[11px] font-semibold text-ink">{{ spy_display.done_count }}/{{ spy_display.total_count }}</span>
+    </div>
+    <div class="h-2 w-full rounded-full bg-[var(--ik-line)] overflow-hidden">
+      {% if spy_display.total_count > 0 %}
+      <div class="h-full rounded-full bg-[var(--ik-good)] transition-all"
+           style="width: {% widthratio spy_display.done_count spy_display.total_count 100 %}%;"></div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Mission rows ── #}
+  {% if spy_display.mission_rows %}
+  <div>
+    <div class="text-[11px] text-muted uppercase tracking-wide mb-2">Missões de inteligência</div>
+    <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {% for m in spy_display.mission_rows %}
+      <div class="flex items-center gap-2.5 rounded-xl border px-3 py-2
+        {% if m.status == 'done' %}border-[var(--ik-good)] bg-[rgba(95,140,78,0.06)]
+        {% elif m.status == 'skipped' %}border-[rgba(187,81,67,0.3)] bg-[rgba(187,81,67,0.04)]
+        {% else %}border-[var(--ik-line)] bg-transparent{% endif %}">
+        <i class="bi {{ m.icon }} text-sm
+          {% if m.status == 'done' %}text-[var(--ik-good)]
+          {% elif m.status == 'skipped' %}text-[var(--ik-bad)]
+          {% else %}text-muted{% endif %}"></i>
+        <div class="flex-1 min-w-0">
+          <div class="text-xs font-medium text-ink truncate">{{ m.name }}</div>
+          <div class="text-[10px] text-muted">M{{ m.id }}</div>
+        </div>
+        <span class="badge {{ m.badge }} text-[10px]">
+          {% if m.status == 'done' %}Feita
+          {% elif m.status == 'skipped' %}Pulada
+          {% else %}Pendente{% endif %}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Config chips ── #}
+  <div class="flex flex-wrap gap-2 text-[11px]">
+    <span class="inline-flex items-center gap-1 rounded-full border border-[var(--ik-line)] bg-[var(--ik-sand-light)] px-2.5 py-1 text-ink">
+      <i class="bi bi-house text-[9px]"></i> Safehouse: cidade {{ spy_display.source_city_id }}
+    </span>
+    <span class="inline-flex items-center gap-1 rounded-full border border-[var(--ik-line)] bg-[var(--ik-sand-light)] px-2.5 py-1 text-ink">
+      <i class="bi bi-arrow-return-left text-[9px]"></i> Recall: {% if spy_display.recall_after %}Sim{% else %}Não{% endif %}
+    </span>
+    <span class="inline-flex items-center gap-1 rounded-full border border-[var(--ik-line)] bg-[var(--ik-sand-light)] px-2.5 py-1 text-ink">
+      <i class="bi bi-file-text text-[9px]"></i> Relatórios: {% if spy_display.save_reports %}Salvar{% else %}Não{% endif %}
+    </span>
+    {% if spy_display.sent_total > 0 %}
+    <span class="inline-flex items-center gap-1 rounded-full border border-[var(--ik-line)] bg-[var(--ik-sand-light)] px-2.5 py-1 text-ink">
+      <i class="bi bi-send text-[9px]"></i> {{ spy_display.sent_total }} enviados neste ciclo
+    </span>
+    {% endif %}
+    {% if spy_display.arrival_in_human %}
+    <span class="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-700">
+      <i class="bi bi-hourglass-split text-[9px]"></i> chega em {{ spy_display.arrival_in_human }}
+    </span>
+    {% endif %}
+  </div>
+
+</div>
+{% endif %}
+
 {% if abandon_colony_display %}
 <div class="card">
   <div class="flex items-start justify-between gap-4 mb-4">
