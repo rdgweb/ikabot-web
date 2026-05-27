@@ -17,19 +17,57 @@ document.addEventListener("htmx:configRequest", (e) => {
   }
 });
 
-// Re-initialize Alpine.js components after HTMX swap.
+// ── HTMX loading feedback ──
 //
-// Problem: when hx-boost swaps #page-content, Alpine's MutationObserver fires
-// and tries to init x-data="gameDashboard()" before the page-specific scripts
-// have run (HTMX inserts HTML first, then processes <script> tags). Alpine
-// silently fails because gameDashboard is not yet defined.
-// By htmx:afterSwap the scripts have already been processed, so calling
-// Alpine.initTree() here finds the function defined and inits correctly.
-document.body.addEventListener("htmx:afterSwap", (e) => {
-  if (!window.Alpine) return;
-  const target = e.detail && e.detail.target;
-  if (target) Alpine.initTree(target);
-});
+// Two distinct contexts:
+//   1. Full page navigation (target = #page-content) → loading_indicator.html handles spinner
+//   2. In-page partial swap (any other target)       → subtle opacity fade on the target element
+//
+// Alpine re-init: by htmx:afterSwap all <script> tags in swapped content have run,
+// so gameDashboard() and other page-specific functions are already in window.
+(function () {
+  const PAGE_CONTENT_ID = "page-content";
+  let _partialTarget = null;
+
+  document.body.addEventListener("htmx:beforeRequest", (e) => {
+    const target = e.detail && e.detail.target;
+    const isPageSwap = target && target.id === PAGE_CONTENT_ID;
+
+    if (isPageSwap) {
+      // Full-page nav — loading_indicator.html handles the spinner via body.htmx-loading
+      document.body.classList.add("htmx-loading");
+      document.body.setAttribute("data-loading-style",
+        localStorage.getItem("ikLoadingStyle") || "3");
+    } else if (target && target !== document.body) {
+      // In-page partial — subtle fade on the target
+      _partialTarget = target;
+      target.classList.add("htmx-partial-loading");
+    }
+  });
+
+  document.body.addEventListener("htmx:afterSwap", (e) => {
+    // Clean up partial loading state
+    if (_partialTarget) {
+      _partialTarget.classList.remove("htmx-partial-loading");
+      _partialTarget = null;
+    }
+    // Re-init Alpine for newly swapped content
+    if (window.Alpine) {
+      const target = e.detail && e.detail.target;
+      if (target) Alpine.initTree(target);
+    }
+  });
+
+  document.body.addEventListener("htmx:afterRequest", (e) => {
+    // Clean up full-page loading state (spinner)
+    document.body.classList.remove("htmx-loading");
+    document.body.removeAttribute("data-loading-style");
+    if (_partialTarget) {
+      _partialTarget.classList.remove("htmx-partial-loading");
+      _partialTarget = null;
+    }
+  });
+})();
 
 // Show toast on HTMX errors
 document.addEventListener("htmx:responseError", (e) => {

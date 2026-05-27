@@ -117,11 +117,13 @@
 {% endif %}
 
 <script>
+// Style switcher — applyStyle sets data-style on each indicator element.
+// HTMX events are handled centrally in app.js.
 (function () {
   var STYLES = ['1','2','3'];
   var LABELS = ['Barra+Navio','Ondas+Navio','Spinner'];
 
-  function getStyle()  { return localStorage.getItem('ikLoadingStyle') || '1'; }
+  function getStyle()  { return localStorage.getItem('ikLoadingStyle') || '3'; }
   function setStyle(s) { localStorage.setItem('ikLoadingStyle', s); applyStyle(s); }
 
   function applyStyle(s) {
@@ -139,31 +141,21 @@
     setStyle(next);
   };
 
-  /* ── HTMX events ── */
+  // Style 1 (progress bar) needs special start/stop logic
   var bar = document.getElementById('htmx-progress');
-
   document.body.addEventListener('htmx:beforeRequest', function () {
-    var s = getStyle();
-    document.body.setAttribute('data-loading-style', s);
-    document.body.classList.add('htmx-loading');
-    if (s === '1' && bar) {
+    if (getStyle() === '1' && bar) {
       bar.classList.remove('done');
       bar.style.width = '0';
       void bar.offsetWidth;
       bar.classList.add('active');
     }
   });
-
   document.body.addEventListener('htmx:afterRequest', function () {
-    document.body.classList.remove('htmx-loading');
-    document.body.removeAttribute('data-loading-style');
     if (bar) {
       bar.classList.remove('active');
       bar.classList.add('done');
-      setTimeout(function () {
-        bar.classList.remove('done');
-        bar.style.width = '0';
-      }, 600);
+      setTimeout(function () { bar.classList.remove('done'); bar.style.width = '0'; }, 600);
     }
   });
 

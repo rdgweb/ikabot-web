@@ -310,6 +310,36 @@
   .loading-spinner[data-style]:not([data-style="3"]) { display: none !important; }
 }
 
+/* ── Partial swap loading — subtle fade on target element ── */
+@layer components {
+  .htmx-partial-loading {
+    opacity: 0.55;
+    transition: opacity 0.15s ease;
+    pointer-events: none;
+    position: relative;
+  }
+  /* Thin shimmer line at the top of the element */
+  .htmx-partial-loading::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg,
+      transparent 0%,
+      var(--ik-sea) 40%,
+      #7ec8e3 60%,
+      transparent 100%);
+    background-size: 200% 100%;
+    animation: partial-shimmer 1.2s linear infinite;
+    border-radius: 1px;
+    z-index: 1;
+  }
+  @keyframes partial-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+}
+
 /* ── Style switcher button ── */
 @layer components {
   .ik-loading-toggle {
