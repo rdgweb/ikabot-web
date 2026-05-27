@@ -455,12 +455,15 @@ class PiracyMissionRunner(BaseRunner):
         target_entry: dict[str, Any],
         inputs: dict[str, Any],
     ) -> tuple[bool, str]:
+        colony_eta = _to_int(preview.get("loading_time_seconds")) + _to_int(preview.get("travel_time_seconds"))
+        max_travel_hours = _to_int(inputs.get("targeted_max_travel_hours"), 12)
+        if max_travel_hours > 0 and colony_eta > max_travel_hours * 3600:
+            return False, f"Viagem muito longa ({colony_eta / 3600:.1f}h > {max_travel_hours}h max)"
         if not _to_bool(inputs.get("target_require_eta_efficiency", True)):
             return True, ""
         compare_level = _to_int(inputs.get("targeted_compare_mission_level"), 17)
         if compare_level not in _MISSION_DURATIONS:
             compare_level = 17
-        colony_eta = _to_int(preview.get("loading_time_seconds")) + _to_int(preview.get("travel_time_seconds"))
         mission_duration = _MISSION_DURATIONS.get(compare_level, _MISSION_DURATIONS[17])
         mission_capture = _MISSION_CAPTURE_POINTS.get(compare_level, _MISSION_CAPTURE_POINTS[17])
         target_score = _to_int(target_entry.get("score"))
@@ -472,6 +475,28 @@ class PiracyMissionRunner(BaseRunner):
             f"ETA da colonia ({colony_eta}s) pior que missao nv {compare_level} "
             f"({mission_duration}s / {mission_capture} pts) para alvo {target_score}"
         )
+
+    def _start_mission_if_idle(self, jid: str, client, city_id: str, state: dict, inputs: dict) -> int:
+        """Start piracy mission on main city if ship is idle during a targeted cycle phase.
+
+        Returns seconds until mission completes, or 0 if ship is already traveling or failed.
+        """
+        time_remaining = _to_int(state.get("time_remaining"), 0)
+        if time_remaining > 0:
+            return time_remaining
+        schedule_by_time = _to_bool(inputs.get("schedule_by_time"))
+        level = _mission_level_for_time(inputs, datetime.now().hour) if schedule_by_time else _to_int(inputs.get("mission_level"), 7)
+        fortress_level = _to_int(state.get("fortress_level"), 1)
+        available = sorted((lvl for lvl in _MISSION_DURATIONS if lvl <= fortress_level), reverse=True)
+        effective_level = min(level, available[0] if available else 1)
+        try:
+            result = client.start_piracy_mission(city_id, effective_level)
+            new_remaining = _to_int(result.get("time_remaining"), _MISSION_DURATIONS.get(effective_level, 1800))
+            self.log(jid, "info", f"Missao pirata iniciada (nivel {effective_level}) durante ciclo especial; retorna em {new_remaining}s")
+            return new_remaining
+        except Exception as exc:
+            self.log(jid, "warn", f"Falha ao iniciar missao pirata durante ciclo especial: {exc}")
+            return 0
 
     def _find_colony_spot(self, client, target_city_id: str) -> dict[str, Any] | None:
         target_island = client.fetch_island_by_city_id(target_city_id)
@@ -634,10 +659,12 @@ class PiracyMissionRunner(BaseRunner):
                     )
                     if not founded_city:
                         self.log(jid, "info", "Aguardando a fundacao da colonia temporaria")
+                        mission_remaining = self._start_mission_if_idle(jid, client, city_id, state, inputs)
+                        recheck = min(mission_remaining + MISSION_BUFFER, 15 * 60) if mission_remaining > 0 else 15 * 60
                         self.save_game_client(game_account_id, client)
                         return RunnerResult(
                             success=True,
-                            reschedule_seconds=TARGETED_RECHECK,
+                            reschedule_seconds=recheck,
                             reschedule_inputs={**inputs, **_state_inputs},
                             data={"status": "waiting_temp_colony"},
                         )
@@ -667,10 +694,13 @@ class PiracyMissionRunner(BaseRunner):
                             wait_left = TARGETED_RECHECK
                         else:
                             self.log(jid, "info", f"Fortaleza pirata em construcao na colonia {temp_city_id}; faltam {wait_left}s")
+                        mission_remaining = self._start_mission_if_idle(jid, client, city_id, state, inputs)
+                        fortress_wait = min(wait_left + MISSION_BUFFER, 3600)
+                        recheck = min(mission_remaining + MISSION_BUFFER, fortress_wait) if mission_remaining > 0 else fortress_wait
                         self.save_game_client(game_account_id, client)
                         return RunnerResult(
                             success=True,
-                            reschedule_seconds=max(TARGETED_RECHECK, min(wait_left + MISSION_BUFFER if wait_left else TARGETED_RECHECK, 3600)),
+                            reschedule_seconds=max(recheck, TARGETED_RECHECK),
                             reschedule_inputs={**inputs, **_state_inputs, "_targeted_phase": "wait_fortress"},
                             data={"status": "waiting_pirate_fortress", "temp_city_id": temp_city_id},
                         )
@@ -710,10 +740,12 @@ class PiracyMissionRunner(BaseRunner):
                         temp_remaining = 0
                     if temp_remaining > 0:
                         self.log(jid, "info", f"Assalto em andamento na colonia {temp_city_id}; abandono depois de {temp_remaining}s")
+                        mission_remaining = self._start_mission_if_idle(jid, client, city_id, state, inputs)
+                        recheck = min(mission_remaining + MISSION_BUFFER, temp_remaining + MISSION_BUFFER) if mission_remaining > 0 else temp_remaining + MISSION_BUFFER
                         self.save_game_client(game_account_id, client)
                         return RunnerResult(
                             success=True,
-                            reschedule_seconds=temp_remaining + MISSION_BUFFER,
+                            reschedule_seconds=recheck,
                             reschedule_inputs={**inputs, **_state_inputs, "_targeted_phase": "wait_abandon"},
                             data={"status": "waiting_assault_end", "temp_city_id": temp_city_id},
                         )
