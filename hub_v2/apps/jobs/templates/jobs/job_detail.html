@@ -1175,25 +1175,25 @@
             {% else %}Pendente{% endif %}
           </span>
         </div>
-        {# Risk mini-table (only for pending missions with known risk data) #}
+        {# Risk inline (only for pending missions with known risk data) #}
         {% if m.status == 'pending' and m.risk %}
-        <div class="mt-2 pt-2 border-t border-[var(--ik-line)] grid grid-cols-5 gap-0 text-[10px] font-mono">
-          <div class="text-muted text-center">ag</div>
-          <div class="text-muted text-center">dec</div>
-          <div class="text-muted text-center">sucesso</div>
-          <div class="text-muted text-center">risco ag</div>
-          <div class="text-muted text-center">risco dec</div>
-          <div class="font-semibold text-ink text-center">{{ m.risk.agents }}</div>
-          <div class="font-semibold text-ink text-center">{{ m.risk.decoys }}</div>
-          <div class="font-semibold text-[var(--ik-good)] text-center">{{ m.risk.success }}%</div>
-          <div class="font-semibold text-center
+        <div class="mt-2 pt-2 border-t border-[var(--ik-line)] flex items-center flex-wrap gap-x-2.5 gap-y-0.5 text-[10px] font-mono">
+          <span class="font-semibold text-ink">{{ m.risk.agents }}ag{% if m.risk.decoys %} + {{ m.risk.decoys }}dec{% endif %}</span>
+          <span class="text-muted">→</span>
+          <span class="font-semibold text-[var(--ik-good)]">✓ {{ m.risk.success }}%</span>
+          <span class="text-muted">·</span>
+          <span class="text-muted">ag:</span>
+          <span class="font-semibold
             {% if m.risk.agent_risk > 30 %}text-[var(--ik-bad)]
             {% elif m.risk.agent_risk > 15 %}text-[var(--ik-gold)]
-            {% else %}text-[var(--ik-good)]{% endif %}">{{ m.risk.agent_risk }}%</div>
-          <div class="font-semibold text-center
+            {% else %}text-[var(--ik-good)]{% endif %}">{{ m.risk.agent_risk }}%</span>
+          {% if m.risk.decoys %}
+          <span class="text-muted">· dec:</span>
+          <span class="font-semibold
             {% if m.risk.decoy_risk > 50 %}text-[var(--ik-bad)]
             {% elif m.risk.decoy_risk > 30 %}text-[var(--ik-gold)]
-            {% else %}text-[var(--ik-good)]{% endif %}">{{ m.risk.decoy_risk }}%</div>
+            {% else %}text-[var(--ik-good)]{% endif %}">{{ m.risk.decoy_risk }}%</span>
+          {% endif %}
         </div>
         {% elif m.status == 'pending' and not m.risk %}
         <div class="mt-1.5 text-[10px] text-muted italic">riscos calculados na próxima execução</div>

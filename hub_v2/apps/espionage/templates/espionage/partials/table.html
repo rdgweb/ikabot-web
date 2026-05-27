@@ -238,14 +238,29 @@
               {% if report.mission_id == 3 and report.data_json %}
               <div>
                 <div class="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Estado de pesquisa</div>
-                <div class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                {% if report.data_json.research %}
+                {# Use the pretty-labeled research dict when available #}
+                <div class="grid gap-x-6 gap-y-1" style="grid-template-columns: auto 1fr;">
+                  {% for key, val in report.data_json.research.items %}
+                  <div class="text-muted text-xs whitespace-nowrap">{{ key }}</div>
+                  <div class="text-ink font-medium text-xs">{{ val }}</div>
+                  {% endfor %}
+                  {% if report.data_json.research_points %}
+                  <div class="text-muted text-xs whitespace-nowrap">Pontos de pesquisa</div>
+                  <div class="text-ink font-semibold text-xs font-mono">{{ report.data_json.research_points }}</div>
+                  {% endif %}
+                </div>
+                {% else %}
+                {# Fallback: raw normalized keys, skip 'research' dict field #}
+                <div class="grid gap-x-6 gap-y-1" style="grid-template-columns: auto 1fr;">
                   {% for key, val in report.data_json.items %}
-                  {% if key != "workshop_improvements" %}
-                  <div class="text-muted text-xs">{{ key }}</div>
+                  {% if key != "research" %}
+                  <div class="text-muted text-xs whitespace-nowrap">{{ key }}</div>
                   <div class="text-ink font-medium text-xs">{{ val }}</div>
                   {% endif %}
                   {% endfor %}
                 </div>
+                {% endif %}
               </div>
               {% endif %}
 
