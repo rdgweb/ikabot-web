@@ -932,6 +932,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             self._ensure_status_refresh(jid)
             return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "waiting_snapshot"})
 
+        updated_at = _snapshot_time(snapshot.get("full_snapshot_updated_at") or snapshot.get("updated_at"))
         if self.is_snapshot_stale(snapshot):
             logger.debug("[%s] Snapshot desatualizado; solicitando refresh", jid)
             self._ensure_status_refresh(jid)
