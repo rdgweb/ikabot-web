@@ -429,6 +429,26 @@ class SpyRunner(BaseRunner):
 
             # ══ FASE: executing ═══════════════════════════════════════════════
             if phase == "executing":
+                # Calcular riscos por missão se ainda não temos (ex: transição sem passar pelo accumulating)
+                if live_params and missions_pending and not mission_risks:
+                    eff_risk_calc = _effective_max_risk()
+                    new_mission_risks = {}
+                    for mid in missions_pending:
+                        opt = find_minimum_agents_decoys(
+                            live_params, mid, eff_risk_calc, eff_risk_calc + 25, 30.0,
+                            max(stationed, capacity, 20))
+                        if opt:
+                            new_mission_risks[str(mid)] = {
+                                "agents":     opt["agents"],
+                                "decoys":     opt.get("decoys", 0),
+                                "agent_risk": round(opt.get("agent_risk", 0), 1),
+                                "decoy_risk": round(opt.get("decoy_risk", 0), 1),
+                                "success":    round(opt.get("success", 0), 1),
+                            }
+                        else:
+                            new_mission_risks[str(mid)] = None
+                    mission_risks = new_mission_risks
+
                 if not missions_pending:
                     self.log(jid, "info",
                         f"Todas as missões concluídas: {missions_done}. "
