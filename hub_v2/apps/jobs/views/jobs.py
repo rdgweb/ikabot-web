@@ -2349,9 +2349,7 @@ class WorkflowListView(FilterSortListView):
                 recent_job_map[wf_id] = list(
                     Job.objects.filter(
                         workflow_id=wf_id,
-                    ).filter(
-                        models.Q(workflow_run__isnull=True)
-                        | models.Q(workflow_run__archived_at__isnull=True)
+                        archived_at__isnull=True,
                     )
                     .order_by("-created_at")[:5]
                 )
@@ -2489,6 +2487,11 @@ class WorkflowListView(FilterSortListView):
                 workflow_run_id__in=old_run_ids,
                 status__in=("scheduled", "queued"),
             ).update(status="cancelled", finished_at=now)
+            # Archive all jobs in these runs (makes them invisible without deleting history)
+            Job.objects.filter(
+                workflow_run_id__in=old_run_ids,
+                archived_at__isnull=True,
+            ).update(archived_at=now)
             WorkflowRun.objects.filter(pk__in=old_run_ids).update(archived_at=now)
 
     @staticmethod
@@ -2774,25 +2777,37 @@ class WorkflowRunsPartialView(LoginRequiredMixin, View):
                 .values_list("pk", flat=True)[:excess]
             )
             # Cancel any active jobs in these runs before archiving — agent must not execute them
+            now_ts = timezone.now()
             Job.objects.filter(
                 workflow_run_id__in=old_run_ids,
                 status__in=("scheduled", "queued"),
-            ).update(status="cancelled", finished_at=timezone.now())
-            WorkflowRun.objects.filter(pk__in=old_run_ids).update(archived_at=timezone.now())
+            ).update(status="cancelled", finished_at=now_ts)
+            # Archive all jobs in these runs (invisible without deleting history)
+            Job.objects.filter(
+                workflow_run_id__in=old_run_ids,
+                archived_at__isnull=True,
+            ).update(archived_at=now_ts)
+            WorkflowRun.objects.filter(pk__in=old_run_ids).update(archived_at=now_ts)
 
         page = max(1, int(request.GET.get("page", 1) or 1))
         per_page = 20
         show_archived = request.GET.get("archived") == "1"
 
         if show_archived:
+            # Show jobs that are archived (either via job.archived_at or their run is archived)
             jobs_qs = (
-                Job.objects.filter(workflow=workflow, workflow_run__archived_at__isnull=False)
+                Job.objects.filter(workflow=workflow)
+                .filter(
+                    models.Q(archived_at__isnull=False)
+                    | models.Q(workflow_run__archived_at__isnull=False)
+                )
                 .select_related("account", "game_account")
                 .order_by("-created_at")
             )
         else:
+            # Show only non-archived jobs
             jobs_qs = (
-                Job.objects.filter(workflow=workflow)
+                Job.objects.filter(workflow=workflow, archived_at__isnull=True)
                 .filter(
                     models.Q(workflow_run__isnull=True)
                     | models.Q(workflow_run__archived_at__isnull=True)
@@ -2801,7 +2816,12 @@ class WorkflowRunsPartialView(LoginRequiredMixin, View):
                 .order_by("-created_at")
             )
         archived_count = (
-            WorkflowRun.objects.filter(workflow=workflow, archived_at__isnull=False).count()
+            Job.objects.filter(workflow=workflow)
+            .filter(
+                models.Q(archived_at__isnull=False)
+                | models.Q(workflow_run__archived_at__isnull=False)
+            )
+            .count()
             if not show_archived else 0
         )
         total = jobs_qs.count()
