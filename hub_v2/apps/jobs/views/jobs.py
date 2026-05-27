@@ -2308,7 +2308,7 @@ class WorkflowListView(FilterSortListView):
         if workflow_ids:
             self._prune_runs_for_workflows(workflow_ids)
 
-        # Purge legacy jobs (no workflow) older than retention period — throttled to once/hour.
+        # Purge ALL legacy jobs (workflow_id IS NULL) — delete finished/error/cancelled immediately.
         self._purge_legacy_jobs()
 
         run_map = {}
@@ -2493,41 +2493,17 @@ class WorkflowListView(FilterSortListView):
 
     @staticmethod
     def _purge_legacy_jobs() -> int:
-        """Delete finished/error/cancelled jobs that have no workflow (legacy, pre-workflow system).
+        """Delete ALL finished/error/cancelled jobs that have no workflow (legacy, pre-workflow system).
 
-        Only runs once per hour (tracked via AppSetting) and skips jobs that are
-        still referenced by market orders or generals-bank records so those FKs
-        are not broken.
+        Runs in batches of 5000 until none remain. Skips jobs still referenced by
+        market orders or generals-bank records. JobLog records are deleted explicitly
+        before jobs to avoid slow implicit CASCADE.
 
-        Returns number of deleted jobs.
+        Returns total number of deleted jobs.
         """
-        from apps.settings_app.utils import get_int_setting as _get_int
-        from apps.settings_app.models import AppSetting
-        from django.db.models import Q as _Q
-        from django.utils.timezone import now as _now
-        from datetime import timedelta as _td
-
-        _THROTTLE_KEY = "legacy_job_purge_last_run"
-        _RETENTION_DAYS = _get_int("legacy_job_retention_days", 14)
-
-        # Throttle: skip if already ran within the last hour
-        last_run_str = AppSetting.objects.filter(key=_THROTTLE_KEY).values_list("value", flat=True).first()
-        if last_run_str:
-            try:
-                from datetime import datetime as _dt
-                last_run = _dt.fromisoformat(last_run_str)
-                if last_run.tzinfo is None:
-                    from django.utils.timezone import make_aware as _make_aware
-                    last_run = _make_aware(last_run)
-                if (_now() - last_run).total_seconds() < 3600:
-                    return 0
-            except Exception:
-                pass
-
-        cutoff = _now() - _td(days=_RETENTION_DAYS)
+        from django.db import connection as _conn
 
         # IDs referenced by business tables — never delete these
-        from django.db import connection as _conn
         with _conn.cursor() as cur:
             cur.execute("""
                 SELECT sell_job_id FROM market_internalmarketorder WHERE sell_job_id IS NOT NULL
@@ -2548,30 +2524,23 @@ class WorkflowListView(FilterSortListView):
             """)
             protected_ids = {row[0] for row in cur.fetchall() if row[0]}
 
-        qs = Job.objects.filter(
+        base_qs = Job.objects.filter(
             workflow_id__isnull=True,
             status__in=("finished", "error", "cancelled"),
-            created_at__lt=cutoff,
         )
         if protected_ids:
-            qs = qs.exclude(pk__in=protected_ids)
-
-        # Delete in a single bounded batch per run (max 2000) to keep page-load impact minimal.
-        # JobLog has on_delete=CASCADE which can be very slow — delete logs explicitly first
-        # so the job DELETE itself is cheap (no implicit cascade scan).
-        _BATCH = 2000
-        batch_ids = list(qs.values_list("pk", flat=True)[:_BATCH])
-        if not batch_ids:
-            AppSetting.objects.update_or_create(key=_THROTTLE_KEY, defaults={"value": _now().isoformat()})
-            return 0
+            base_qs = base_qs.exclude(pk__in=protected_ids)
 
         from apps.jobs.models import JobLog as _JobLog
-        _JobLog.objects.filter(job_id__in=batch_ids).delete()
-        Job.objects.filter(pk__in=batch_ids).delete()
-        total_deleted = len(batch_ids)
+        total_deleted = 0
+        while True:
+            batch_ids = list(base_qs.values_list("pk", flat=True)[:5000])
+            if not batch_ids:
+                break
+            _JobLog.objects.filter(job_id__in=batch_ids).delete()
+            Job.objects.filter(pk__in=batch_ids).delete()
+            total_deleted += len(batch_ids)
 
-        # Update throttle timestamp
-        AppSetting.objects.update_or_create(key=_THROTTLE_KEY, defaults={"value": _now().isoformat()})
         return total_deleted
 
     @staticmethod
