@@ -63,33 +63,31 @@
   }
   body.htmx-loading[data-loading-style="2"] .loading-sea { display: block; }
 
-  /* Fundo sólido — cor base do oceano profundo */
-  .loading-sea-bg {
-    position: absolute;
-    inset: 0;
-    background: rgba(5,22,48,1);
-  }
+  /* Sem fundo sólido — as 5 camadas de ondas opacas cobrem tudo */
+  .loading-sea-bg { display: none; }
 
-  /* 3 camadas de ondas cobrindo 100% do container.
-     Cada SVG tem o fill descendo do cimo da onda até y=110 (fundo do viewBox),
-     então toda a área abaixo da crista é preenchida.
-     As 3 camadas sobrepostas em velocidades diferentes criam o mar animado. */
+  /* 5 camadas de ondas, todas com height:100% do container.
+     Fill de cada SVG desce do cimo da onda até y=110.
+     Camadas mais lentas = mais profundas = cor mais escura.
+     Sem transparência significativa — as cores se sobrepõem criando profundidade. */
   .loading-sea-wave {
     position: absolute;
     top: 0; left: 0;
     width: 300%; height: 100%;
     pointer-events: none;
   }
-  .loading-sea-wave-1 { animation: sea-scroll 4s linear infinite; opacity: 0.9; }
-  .loading-sea-wave-2 { animation: sea-scroll 6s linear infinite reverse; opacity: 0.65; }
-  .loading-sea-wave-3 { animation: sea-scroll 3s linear infinite; opacity: 0.45; }
+  .loading-sea-wave-1 { animation: sea-scroll 7s  linear infinite;         } /* profunda, lenta   */
+  .loading-sea-wave-2 { animation: sea-scroll 5s  linear infinite reverse;  } /* média, reversa    */
+  .loading-sea-wave-3 { animation: sea-scroll 4s  linear infinite;          } /* média             */
+  .loading-sea-wave-4 { animation: sea-scroll 3s  linear infinite reverse;  } /* superfície        */
+  .loading-sea-wave-5 { animation: sea-scroll 2s  linear infinite;          } /* espuma, rápida    */
 
-  /* Fade superior — funde com o conteúdo da página */
+  /* Fade superior — funde com o background da página */
   .loading-sea::after {
     content: '';
     position: absolute;
     top: 0; left: 0; right: 0;
-    height: 6%;
+    height: 5%;
     background: linear-gradient(to bottom, var(--ik-bg, #0f172a) 0%, transparent 100%);
     pointer-events: none;
     z-index: 2;

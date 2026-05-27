@@ -1,37 +1,60 @@
 {% load static %}
 <!-- Loading indicators: 2 estilos, toggle via botão no canto. Pref em localStorage ikLoadingStyle -->
 
-<!-- Style 2: Mar cobre 45% da tela, 3 camadas de ondas cobrindo toda a área -->
+<!-- Style 2: Mar cobre 45% da tela, 5 camadas de ondas -->
 <div id="loading-sea" class="loading-sea">
   <div class="loading-sea-bg"></div>
 
-  <!-- Camada 1: ondas lentas, cor principal do mar, crista alta — preenche quase tudo -->
+  <!-- Camada 1: oceano profundo, mais escuro, mais lento — cobre tudo -->
   <svg class="loading-sea-wave loading-sea-wave-1" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgba(15,55,105,0.95)"
-      d="M0,6 C180,-14 360,26 540,6 C720,-14 900,26 1080,6
-         C1260,-14 1440,26 1620,6 C1800,-14 1980,26 2160,6
-         C2340,-14 2520,26 2700,6 C2880,-14 3060,26 3240,6
-         C3420,-14 3600,26 3780,6 C3960,-14 4140,26 4320,6
+    <path fill="rgb(5,28,68)"
+      d="M0,4 C180,-16 360,24 540,4 C720,-16 900,24 1080,4
+         C1260,-16 1440,24 1620,4 C1800,-16 1980,24 2160,4
+         C2340,-16 2520,24 2700,4 C2880,-16 3060,24 3240,4
+         C3420,-16 3600,24 3780,4 C3960,-16 4140,24 4320,4
          L4320,110 L0,110 Z"/>
   </svg>
 
-  <!-- Camada 2: ondas médias, tom ligeiramente mais claro -->
+  <!-- Camada 2: azul marinho médio, reversa -->
   <svg class="loading-sea-wave loading-sea-wave-2" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgba(25,80,145,0.7)"
-      d="M0,14 C200,-6 400,34 600,14 C800,-6 1000,34 1200,14
-         C1400,-6 1600,34 1800,14 C2000,-6 2200,34 2400,14
-         C2600,-6 2800,34 3000,14 C3200,-6 3400,34 3600,14
-         C3800,-6 4000,34 4200,14 L4200,110 L0,110 Z"/>
+    <path fill="rgb(8,42,95)"
+      d="M0,10 C200,-10 400,30 600,10 C800,-10 1000,30 1200,10
+         C1400,-10 1600,30 1800,10 C2000,-10 2200,30 2400,10
+         C2600,-10 2800,30 3000,10 C3200,-10 3400,30 3600,10
+         C3800,-10 4000,30 4200,10 L4200,110 L0,110 Z"/>
   </svg>
 
-  <!-- Camada 3: ondas rápidas e curtas, espuma/brilho na superfície -->
+  <!-- Camada 3: azul médio -->
   <svg class="loading-sea-wave loading-sea-wave-3" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgba(80,155,210,0.28)"
-      d="M0,20 C150,8 300,32 450,20 C600,8 750,32 900,20
-         C1050,8 1200,32 1350,20 C1500,8 1650,32 1800,20
-         C1950,8 2100,32 2250,20 C2400,8 2550,32 2700,20
-         C2850,8 3000,32 3150,20 C3300,8 3450,32 3600,20
-         C3750,8 3900,32 4050,20 L4050,110 L0,110 Z"/>
+    <path fill="rgb(12,60,128)"
+      d="M0,17 C160,-3 320,37 480,17 C640,-3 800,37 960,17
+         C1120,-3 1280,37 1440,17 C1600,-3 1760,37 1920,17
+         C2080,-3 2240,37 2400,17 C2560,-3 2720,37 2880,17
+         C3040,-3 3200,37 3360,17 C3520,-3 3680,37 3840,17
+         C4000,-3 4160,37 4320,17 L4320,110 L0,110 Z"/>
+  </svg>
+
+  <!-- Camada 4: azul mais claro, superfície -->
+  <svg class="loading-sea-wave loading-sea-wave-4" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <path fill="rgba(22,88,165,0.85)"
+      d="M0,24 C140,8 280,40 420,24 C560,8 700,40 840,24
+         C980,8 1120,40 1260,24 C1400,8 1540,40 1680,24
+         C1820,8 1960,40 2100,24 C2240,8 2380,40 2520,24
+         C2660,8 2800,40 2940,24 C3080,8 3220,40 3360,24
+         C3500,8 3640,40 3780,24 C3920,8 4060,40 4200,24
+         L4200,110 L0,110 Z"/>
+  </svg>
+
+  <!-- Camada 5: espuma/brilho, mais clara e rápida -->
+  <svg class="loading-sea-wave loading-sea-wave-5" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <path fill="rgba(55,130,210,0.35)"
+      d="M0,31 C120,18 240,44 360,31 C480,18 600,44 720,31
+         C840,18 960,44 1080,31 C1200,18 1320,44 1440,31
+         C1560,18 1680,44 1800,31 C1920,18 2040,44 2160,31
+         C2280,18 2400,44 2520,31 C2640,18 2760,44 2880,31
+         C3000,18 3120,44 3240,31 C3360,18 3480,44 3600,31
+         C3720,18 3840,44 3960,31 C4080,18 4200,44 4320,31
+         L4320,110 L0,110 Z"/>
   </svg>
 </div>
 

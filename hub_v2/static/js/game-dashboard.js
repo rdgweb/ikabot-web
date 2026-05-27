@@ -8,6 +8,7 @@ function gameDashboard() {
     filterCity: '',
     kpiModal: null,
     historyMap: {},
+    historyLoading: false,
     resourceModalData: [],
     accountDetailData: [],
     kpi: { gold: 0, income: 0, cities: 0, resources: 0, troops: 0, ships: 0, wood: 0, wine: 0, marble: 0, crystal: 0, sulfur: 0 },
@@ -33,10 +34,12 @@ function gameDashboard() {
       // History is expensive to compute — loaded async so the page renders fast.
       // If historyMap already has data (served inline), skip the fetch.
       if (Object.keys(this.historyMap).length > 0) return;
+      this.historyLoading = true;
       fetch('/game/history/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then((r) => r.ok ? r.json() : null)
         .catch(() => null)
         .then((data) => {
+          this.historyLoading = false;
           if (!data || !data.history) return;
           this.historyMap = data.history;
           // Re-render chart if a KPI modal is already open
