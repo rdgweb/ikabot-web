@@ -40,10 +40,8 @@ document.addEventListener("htmx:configRequest", (e) => {
     const fromSidebar = sidebar && elt && sidebar.contains(elt);
 
     if (fromSidebar) {
-      // Sidebar link clicked → big spinner
+      // Sidebar link clicked → spinner
       document.body.classList.add("htmx-loading");
-      document.body.setAttribute("data-loading-style",
-        localStorage.getItem("ikLoadingStyle") || "3");
     } else {
       // Everything else (workflow links, filters, partials) → subtle fade
       t.classList.add("htmx-partial-loading");
@@ -63,7 +61,6 @@ document.addEventListener("htmx:configRequest", (e) => {
     const t = e.detail && e.detail.target;
     // Always clean up spinner (safe even if it wasn't shown)
     document.body.classList.remove("htmx-loading");
-    document.body.removeAttribute("data-loading-style");
     // Safety cleanup for partial fade in error cases where afterSwap didn't fire
     if (t) t.classList.remove("htmx-partial-loading");
   });
@@ -72,7 +69,6 @@ document.addEventListener("htmx:configRequest", (e) => {
   // Clean up any stale loading classes so nothing stays faded/spinning forever.
   function _cleanAllLoadingState() {
     document.body.classList.remove("htmx-loading");
-    document.body.removeAttribute("data-loading-style");
     document.querySelectorAll(".htmx-partial-loading").forEach((el) => {
       el.classList.remove("htmx-partial-loading");
     });

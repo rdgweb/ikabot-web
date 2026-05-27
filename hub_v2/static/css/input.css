@@ -46,88 +46,11 @@
 }
 
 /* ══════════════════════════════════════════
-   HTMX Loading Indicators — 2 estilos
-   Ativado via body.htmx-loading + body[data-loading-style="N"]
+   HTMX Loading Indicator — Spinner
+   Ativado via body.htmx-loading
    ══════════════════════════════════════════ */
 
-/* ── Style B ("2"): Oceano sobe da base — waterline animada, corpo com gradiente ── */
-@layer components {
-  .loading-sea {
-    display: none;
-    position: fixed;
-    bottom: 0; left: 0; right: 0;
-    height: 45vh;
-    z-index: 9998;
-    pointer-events: none;
-    overflow: hidden;  /* clipa o top negativo das ondas */
-  }
-  body.htmx-loading[data-loading-style="2"] .loading-sea { display: block; }
-
-  /* Corpo do oceano: gradiente vertical simples, sem efeitos extras */
-  .loading-sea-bg {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(to bottom,
-      #0e2f68 0%,
-      #091e48 55%,
-      #060f2a 100%);
-  }
-
-  /* Ondas com top negativo: crista aparece na borda do container,
-     fill desce e se mistura com o corpo — sem seam visível.
-     Cada onda tem position diferente p/ profundidade visual. */
-  .loading-sea-wave {
-    position: absolute;
-    left: 0;
-    width: 300%;
-    pointer-events: none;
-  }
-
-  /* Onda base: lenta, mais escura, crista aparece em ~15px do topo */
-  .loading-sea-wave-1 {
-    top: -45px; height: 160px;
-    animation: sea-scroll 7s linear infinite;
-    z-index: 4;
-  }
-  /* Onda média: velocidade média, reversa, crista ~20px */
-  .loading-sea-wave-2 {
-    top: -30px; height: 120px;
-    animation: sea-scroll 4.5s linear infinite reverse;
-    z-index: 3;
-  }
-  /* Onda superfície: mais clara, crista ~10px */
-  .loading-sea-wave-3 {
-    top: -20px; height: 85px;
-    animation: sea-scroll 3s linear infinite;
-    z-index: 2;
-  }
-  /* Onda espuma: rápida e translúcida, crista quase na borda */
-  .loading-sea-wave-4 {
-    top: -12px; height: 55px;
-    animation: sea-scroll 2s linear infinite reverse;
-    z-index: 1;
-  }
-
-  /* Fade apenas no topo — funde com o conteúdo da página */
-  .loading-sea::after {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 28px;
-    background: linear-gradient(to bottom, var(--ik-bg, #111827) 0%, transparent 100%);
-    pointer-events: none;
-    z-index: 10;
-  }
-
-  @keyframes sea-scroll {
-    0%   { transform: translateX(0); }
-    100% { transform: translateX(-33.33%); }
-  }
-
-  .loading-sea[data-style]:not([data-style="2"]) { display: none !important; }
-}
-
-/* ── Style C ("3"): Spinner grande centralizado ── */
+/* ── Spinner de carregamento ── */
 @layer components {
   .loading-spinner {
     display: none;
@@ -139,7 +62,7 @@
     background: rgba(15,30,50,0.45);
     backdrop-filter: blur(3px);
   }
-  body.htmx-loading[data-loading-style="3"] .loading-spinner { display: flex; }
+  body.htmx-loading .loading-spinner { display: flex; }
 
   .loading-spinner-wrap {
     position: relative;
@@ -197,7 +120,6 @@
     50%       { opacity: 1;    transform: scale(1.05); }
   }
 
-  .loading-spinner[data-style]:not([data-style="3"]) { display: none !important; }
 }
 
 /* ── Partial swap loading — subtle fade on target element ── */
