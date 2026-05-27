@@ -2308,9 +2308,6 @@ class WorkflowListView(FilterSortListView):
         if workflow_ids:
             self._prune_runs_for_workflows(workflow_ids)
 
-        # Purge ALL legacy jobs (workflow_id IS NULL) — delete finished/error/cancelled immediately.
-        self._purge_legacy_jobs()
-
         run_map = {}
         job_map = {}
         if workflow_ids:
