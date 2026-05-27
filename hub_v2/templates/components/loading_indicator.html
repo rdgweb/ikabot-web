@@ -1,17 +1,37 @@
 {% load static %}
 <!-- Loading indicators: 2 estilos, toggle via botão no canto. Pref em localStorage ikLoadingStyle -->
 
-<!-- Style 2: Mar cobre 45% da tela, ondas animadas -->
+<!-- Style 2: Mar cobre 45% da tela, 3 camadas de ondas cobrindo toda a área -->
 <div id="loading-sea" class="loading-sea">
   <div class="loading-sea-bg"></div>
+
+  <!-- Camada 1: ondas lentas, cor principal do mar, crista alta — preenche quase tudo -->
   <svg class="loading-sea-wave loading-sea-wave-1" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgba(40,90,140,0.8)" d="M0,70 C180,40 360,100 540,70 C720,40 900,100 1080,70 C1260,40 1440,100 1620,70 C1800,40 1980,100 2160,70 C2340,40 2520,100 2700,70 C2880,40 3060,100 3240,70 C3420,40 3600,100 3780,70 C3960,40 4140,100 4320,70 L4320,110 L0,110 Z"/>
+    <path fill="rgba(15,55,105,0.95)"
+      d="M0,6 C180,-14 360,26 540,6 C720,-14 900,26 1080,6
+         C1260,-14 1440,26 1620,6 C1800,-14 1980,26 2160,6
+         C2340,-14 2520,26 2700,6 C2880,-14 3060,26 3240,6
+         C3420,-14 3600,26 3780,6 C3960,-14 4140,26 4320,6
+         L4320,110 L0,110 Z"/>
   </svg>
+
+  <!-- Camada 2: ondas médias, tom ligeiramente mais claro -->
   <svg class="loading-sea-wave loading-sea-wave-2" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgba(60,120,170,0.65)" d="M0,75 C200,50 400,95 600,75 C800,55 1000,95 1200,75 C1400,55 1600,95 1800,75 C2000,55 2200,95 2400,75 C2600,55 2800,95 3000,75 C3200,55 3400,95 3600,75 C3800,55 4000,95 4200,75 L4200,110 L0,110 Z"/>
+    <path fill="rgba(25,80,145,0.7)"
+      d="M0,14 C200,-6 400,34 600,14 C800,-6 1000,34 1200,14
+         C1400,-6 1600,34 1800,14 C2000,-6 2200,34 2400,14
+         C2600,-6 2800,34 3000,14 C3200,-6 3400,34 3600,14
+         C3800,-6 4000,34 4200,14 L4200,110 L0,110 Z"/>
   </svg>
+
+  <!-- Camada 3: ondas rápidas e curtas, espuma/brilho na superfície -->
   <svg class="loading-sea-wave loading-sea-wave-3" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgba(120,190,230,0.4)" d="M0,82 C150,72 300,90 450,82 C600,74 750,90 900,82 C1050,74 1200,90 1350,82 C1500,74 1650,90 1800,82 C1950,74 2100,90 2250,82 C2400,74 2550,90 2700,82 C2850,74 3000,90 3150,82 C3300,74 3450,90 3600,82 C3750,74 3900,90 4050,82 C4200,74 4350,90 4320,82 L4320,110 L0,110 Z"/>
+    <path fill="rgba(80,155,210,0.28)"
+      d="M0,20 C150,8 300,32 450,20 C600,8 750,32 900,20
+         C1050,8 1200,32 1350,20 C1500,8 1650,32 1800,20
+         C1950,8 2100,32 2250,20 C2400,8 2550,32 2700,20
+         C2850,8 3000,32 3150,20 C3300,8 3450,32 3600,20
+         C3750,8 3900,32 4050,20 L4050,110 L0,110 Z"/>
   </svg>
 </div>
 

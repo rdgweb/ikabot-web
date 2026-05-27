@@ -63,27 +63,37 @@
   }
   body.htmx-loading[data-loading-style="2"] .loading-sea { display: block; }
 
-  /* Fundo oceano — transparente no topo (funde com página), sólido abaixo da linha d'água */
+  /* Fundo sólido — cor base do oceano profundo */
   .loading-sea-bg {
     position: absolute;
     inset: 0;
-    background: linear-gradient(to bottom,
-      transparent 0%,
-      rgba(10,38,72,0.82) 8%,
-      rgba(8,32,62,0.97) 30%,
-      rgba(6,28,55,1.00) 100%);
+    background: rgba(5,22,48,1);
   }
 
-  /* 3 camadas de ondas — topo do bloco (linha d'água), altura fixa */
+  /* 3 camadas de ondas cobrindo 100% do container.
+     Cada SVG tem o fill descendo do cimo da onda até y=110 (fundo do viewBox),
+     então toda a área abaixo da crista é preenchida.
+     As 3 camadas sobrepostas em velocidades diferentes criam o mar animado. */
   .loading-sea-wave {
     position: absolute;
     top: 0; left: 0;
-    width: 300%; height: 90px;
+    width: 300%; height: 100%;
     pointer-events: none;
   }
-  .loading-sea-wave-1 { animation: sea-scroll 3.5s linear infinite; opacity: 0.8; }
-  .loading-sea-wave-2 { animation: sea-scroll 5s linear infinite reverse; opacity: 0.55; }
-  .loading-sea-wave-3 { animation: sea-scroll 2.5s linear infinite; opacity: 0.38; }
+  .loading-sea-wave-1 { animation: sea-scroll 4s linear infinite; opacity: 0.9; }
+  .loading-sea-wave-2 { animation: sea-scroll 6s linear infinite reverse; opacity: 0.65; }
+  .loading-sea-wave-3 { animation: sea-scroll 3s linear infinite; opacity: 0.45; }
+
+  /* Fade superior — funde com o conteúdo da página */
+  .loading-sea::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 6%;
+    background: linear-gradient(to bottom, var(--ik-bg, #0f172a) 0%, transparent 100%);
+    pointer-events: none;
+    z-index: 2;
+  }
 
   @keyframes sea-scroll {
     0%   { transform: translateX(0); }
