@@ -1,14 +1,7 @@
 {% load static %}
-<!-- Loading indicators: 3 styles, toggled via button bottom-right. Pref in localStorage ikLoadingStyle -->
+<!-- Loading indicators: 2 estilos, toggle via botão no canto. Pref em localStorage ikLoadingStyle -->
 
-<!-- Style 1: Progress bar + ship -->
-<div id="htmx-progress" class="htmx-progress">
-  <div class="htmx-progress-fill"></div>
-  <div class="htmx-progress-waves"></div>
-  <img id="htmx-ship" class="htmx-ship" src="{% static 'game/units/trieme.png' %}" alt="">
-</div>
-
-<!-- Style 2: Ship on ocean waves (bottom strip) -->
+<!-- Style 2: Mar cobre 45% da tela, ondas animadas -->
 <div id="loading-sea" class="loading-sea">
   <div class="loading-sea-bg"></div>
   <svg class="loading-sea-wave loading-sea-wave-1" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
@@ -20,11 +13,9 @@
   <svg class="loading-sea-wave loading-sea-wave-3" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
     <path fill="rgba(120,190,230,0.4)" d="M0,82 C150,72 300,90 450,82 C600,74 750,90 900,82 C1050,74 1200,90 1350,82 C1500,74 1650,90 1800,82 C1950,74 2100,90 2250,82 C2400,74 2550,90 2700,82 C2850,74 3000,90 3150,82 C3300,74 3450,90 3600,82 C3750,74 3900,90 4050,82 C4200,74 4350,90 4320,82 L4320,110 L0,110 Z"/>
   </svg>
-  <div class="loading-sea-wake"></div>
-  <img class="loading-sea-ship" src="{% static 'game/units/trieme.png' %}" alt="">
 </div>
 
-<!-- Style 3: Large centered spinner -->
+<!-- Style 3: Spinner grande centralizado -->
 <div id="loading-spinner" class="loading-spinner">
   <div class="loading-spinner-wrap">
     <div class="loading-spinner-outer">
@@ -66,19 +57,22 @@
 
 <script>
 (function () {
-  var STYLES = ['1','2','3'];
-  var LABELS = ['Barra+Navio','Ondas+Navio','Spinner'];
+  var STYLES = ['2', '3'];
+  var LABELS  = { '2': 'Mar', '3': 'Spinner' };
 
-  function getStyle()  { return localStorage.getItem('ikLoadingStyle') || '3'; }
+  function getStyle() {
+    var s = localStorage.getItem('ikLoadingStyle') || '3';
+    return STYLES.indexOf(s) >= 0 ? s : '3';
+  }
   function setStyle(s) { localStorage.setItem('ikLoadingStyle', s); applyStyle(s); }
 
   function applyStyle(s) {
-    ['htmx-progress','loading-sea','loading-spinner'].forEach(function(id) {
+    ['loading-sea', 'loading-spinner'].forEach(function (id) {
       var el = document.getElementById(id);
       if (el) el.setAttribute('data-style', s);
     });
     var btn = document.getElementById('ik-loading-toggle');
-    if (btn) btn.title = 'Loading: ' + LABELS[parseInt(s)-1] + ' (clique para trocar)';
+    if (btn) btn.title = 'Loading: ' + (LABELS[s] || s) + ' (clique para trocar)';
   }
 
   window.ikCycleLoadingStyle = function () {
@@ -86,24 +80,6 @@
     var next = STYLES[(idx + 1) % STYLES.length];
     setStyle(next);
   };
-
-  // Style 1 bar animation
-  var bar = document.getElementById('htmx-progress');
-  document.body.addEventListener('htmx:beforeRequest', function () {
-    if (getStyle() === '1' && bar) {
-      bar.classList.remove('done');
-      bar.style.width = '0';
-      void bar.offsetWidth;
-      bar.classList.add('active');
-    }
-  });
-  document.body.addEventListener('htmx:afterRequest', function () {
-    if (bar) {
-      bar.classList.remove('active');
-      bar.classList.add('done');
-      setTimeout(function () { bar.classList.remove('done'); bar.style.width = '0'; }, 600);
-    }
-  });
 
   applyStyle(getStyle());
 })();
