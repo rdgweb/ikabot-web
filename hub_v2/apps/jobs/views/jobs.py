@@ -2821,10 +2821,14 @@ class WorkflowRunsPartialView(LoginRequiredMixin, View):
             .count()
             if not show_archived else 0
         )
-        total = jobs_qs.count()
+        # Cap visible jobs to avoid showing hundreds of historical entries.
+        # Archived jobs are accessible via ?archived=1.
+        _JOB_DISPLAY_LIMIT = 100
+        all_jobs = list(jobs_qs[:_JOB_DISPLAY_LIMIT])
+        total = len(all_jobs)
         total_pages = max(1, (total + per_page - 1) // per_page)
         page = min(page, total_pages)
-        raw_jobs = list(jobs_qs[(page - 1) * per_page: page * per_page])
+        raw_jobs = all_jobs[(page - 1) * per_page: page * per_page]
         job_rows = []
         for job in raw_jobs:
             try:
