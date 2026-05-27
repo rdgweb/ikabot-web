@@ -1,60 +1,61 @@
 {% load static %}
 <!-- Loading indicators: 2 estilos, toggle via botão no canto. Pref em localStorage ikLoadingStyle -->
 
-<!-- Style 2: Mar cobre 45% da tela, 5 camadas de ondas -->
+<!-- Style 2: Mar cobre 45% da tela — fundo com shimmer + 5 ondas na linha d'água -->
 <div id="loading-sea" class="loading-sea">
   <div class="loading-sea-bg"></div>
 
-  <!-- Camada 1: oceano profundo, mais escuro, mais lento — cobre tudo -->
-  <svg class="loading-sea-wave loading-sea-wave-1" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgb(5,28,68)"
-      d="M0,4 C180,-16 360,24 540,4 C720,-16 900,24 1080,4
-         C1260,-16 1440,24 1620,4 C1800,-16 1980,24 2160,4
-         C2340,-16 2520,24 2700,4 C2880,-16 3060,24 3240,4
-         C3420,-16 3600,24 3780,4 C3960,-16 4140,24 4320,4
-         L4320,110 L0,110 Z"/>
+  <!-- Camada 1: onda larga e lenta — cor base do oceano, 100px altura fixa -->
+  <svg class="loading-sea-wave loading-sea-wave-1" viewBox="0 0 1440 100" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <path fill="rgba(9,37,85,0.98)"
+      d="M0,30 C240,5 480,55 720,30 C960,5 1200,55 1440,30
+         C1680,5 1920,55 2160,30 C2400,5 2640,55 2880,30
+         C3120,5 3360,55 3600,30 C3840,5 4080,55 4320,30
+         L4320,100 L0,100 Z"/>
   </svg>
 
-  <!-- Camada 2: azul marinho médio, reversa -->
-  <svg class="loading-sea-wave loading-sea-wave-2" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgb(8,42,95)"
-      d="M0,10 C200,-10 400,30 600,10 C800,-10 1000,30 1200,10
-         C1400,-10 1600,30 1800,10 C2000,-10 2200,30 2400,10
-         C2600,-10 2800,30 3000,10 C3200,-10 3400,30 3600,10
-         C3800,-10 4000,30 4200,10 L4200,110 L0,110 Z"/>
+  <!-- Camada 2: reversa, levemente mais clara -->
+  <svg class="loading-sea-wave loading-sea-wave-2" viewBox="0 0 1440 90" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <path fill="rgba(11,48,108,0.9)"
+      d="M0,28 C200,8 400,48 600,28 C800,8 1000,48 1200,28
+         C1400,8 1600,48 1800,28 C2000,8 2200,48 2400,28
+         C2600,8 2800,48 3000,28 C3200,8 3400,48 3600,28
+         C3800,8 4000,48 4200,28 L4200,90 L0,90 Z"/>
   </svg>
 
-  <!-- Camada 3: azul médio -->
-  <svg class="loading-sea-wave loading-sea-wave-3" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgb(12,60,128)"
-      d="M0,17 C160,-3 320,37 480,17 C640,-3 800,37 960,17
-         C1120,-3 1280,37 1440,17 C1600,-3 1760,37 1920,17
-         C2080,-3 2240,37 2400,17 C2560,-3 2720,37 2880,17
-         C3040,-3 3200,37 3360,17 C3520,-3 3680,37 3840,17
-         C4000,-3 4160,37 4320,17 L4320,110 L0,110 Z"/>
+  <!-- Camada 3: período mais curto, tons intermediários -->
+  <svg class="loading-sea-wave loading-sea-wave-3" viewBox="0 0 1440 80" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <path fill="rgba(14,62,135,0.75)"
+      d="M0,25 C160,8 320,42 480,25 C640,8 800,42 960,25
+         C1120,8 1280,42 1440,25 C1600,8 1760,42 1920,25
+         C2080,8 2240,42 2400,25 C2560,8 2720,42 2880,25
+         C3040,8 3200,42 3360,25 C3520,8 3680,42 3840,25
+         C4000,8 4160,42 4320,25 L4320,80 L0,80 Z"/>
   </svg>
 
-  <!-- Camada 4: azul mais claro, superfície -->
-  <svg class="loading-sea-wave loading-sea-wave-4" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgba(22,88,165,0.85)"
-      d="M0,24 C140,8 280,40 420,24 C560,8 700,40 840,24
-         C980,8 1120,40 1260,24 C1400,8 1540,40 1680,24
-         C1820,8 1960,40 2100,24 C2240,8 2380,40 2520,24
-         C2660,8 2800,40 2940,24 C3080,8 3220,40 3360,24
-         C3500,8 3640,40 3780,24 C3920,8 4060,40 4200,24
-         L4200,110 L0,110 Z"/>
+  <!-- Camada 4: superfície, azul mais vivo -->
+  <svg class="loading-sea-wave loading-sea-wave-4" viewBox="0 0 1440 70" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <path fill="rgba(20,85,168,0.6)"
+      d="M0,22 C120,8 240,36 360,22 C480,8 600,36 720,22
+         C840,8 960,36 1080,22 C1200,8 1320,36 1440,22
+         C1560,8 1680,36 1800,22 C1920,8 2040,36 2160,22
+         C2280,8 2400,36 2520,22 C2640,8 2760,36 2880,22
+         C3000,8 3120,36 3240,22 C3360,8 3480,36 3600,22
+         C3720,8 3840,36 3960,22 C4080,8 4200,36 4320,22
+         L4320,70 L0,70 Z"/>
   </svg>
 
-  <!-- Camada 5: espuma/brilho, mais clara e rápida -->
-  <svg class="loading-sea-wave loading-sea-wave-5" viewBox="0 0 1440 110" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    <path fill="rgba(55,130,210,0.35)"
-      d="M0,31 C120,18 240,44 360,31 C480,18 600,44 720,31
-         C840,18 960,44 1080,31 C1200,18 1320,44 1440,31
-         C1560,18 1680,44 1800,31 C1920,18 2040,44 2160,31
-         C2280,18 2400,44 2520,31 C2640,18 2760,44 2880,31
-         C3000,18 3120,44 3240,31 C3360,18 3480,44 3600,31
-         C3720,18 3840,44 3960,31 C4080,18 4200,44 4320,31
-         L4320,110 L0,110 Z"/>
+  <!-- Camada 5: espuma rápida, cristas brilhantes -->
+  <svg class="loading-sea-wave loading-sea-wave-5" viewBox="0 0 1440 60" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <path fill="rgba(60,140,220,0.28)"
+      d="M0,20 C100,10 200,30 300,20 C400,10 500,30 600,20
+         C700,10 800,30 900,20 C1000,10 1100,30 1200,20
+         C1300,10 1400,30 1440,20 C1540,10 1640,30 1740,20
+         C1840,10 1940,30 2040,20 C2140,10 2240,30 2340,20
+         C2440,10 2540,30 2640,20 C2740,10 2840,30 2940,20
+         C3040,10 3140,30 3240,20 C3340,10 3440,30 3540,20
+         C3640,10 3740,30 3840,20 C3940,10 4040,30 4140,20
+         C4240,10 4320,30 4320,20 L4320,60 L0,60 Z"/>
   </svg>
 </div>
 
