@@ -17,6 +17,20 @@ document.addEventListener("htmx:configRequest", (e) => {
   }
 });
 
+// Re-initialize Alpine.js components after HTMX swap.
+//
+// Problem: when hx-boost swaps #page-content, Alpine's MutationObserver fires
+// and tries to init x-data="gameDashboard()" before the page-specific scripts
+// have run (HTMX inserts HTML first, then processes <script> tags). Alpine
+// silently fails because gameDashboard is not yet defined.
+// By htmx:afterSwap the scripts have already been processed, so calling
+// Alpine.initTree() here finds the function defined and inits correctly.
+document.body.addEventListener("htmx:afterSwap", (e) => {
+  if (!window.Alpine) return;
+  const target = e.detail && e.detail.target;
+  if (target) Alpine.initTree(target);
+});
+
 // Show toast on HTMX errors
 document.addEventListener("htmx:responseError", (e) => {
   window.dispatchEvent(new CustomEvent("toast", {

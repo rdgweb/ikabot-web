@@ -62,21 +62,19 @@
 
     {# Anel externo girando no sentido horário #}
     <div class="loading-spinner-outer">
-      <svg viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
-        {# trilha #}
-        <circle cx="80" cy="80" r="74" stroke="rgba(79,134,185,0.18)" stroke-width="4"/>
-        {# arco animado — dois segmentos para efeito de "perseguindo" #}
-        <circle cx="80" cy="80" r="74"
+      <svg viewBox="0 0 220 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="110" cy="110" r="104" stroke="rgba(79,134,185,0.15)" stroke-width="5"/>
+        <circle cx="110" cy="110" r="104"
                 stroke="url(#arc-grad-outer)"
-                stroke-width="4"
-                stroke-dasharray="120 345"
+                stroke-width="5"
+                stroke-dasharray="160 495"
                 stroke-linecap="round"
-                transform="rotate(-90 80 80)"/>
+                transform="rotate(-90 110 110)"/>
         <defs>
           <linearGradient id="arc-grad-outer" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%"   stop-color="#7ec8e3" stop-opacity="0.2"/>
+            <stop offset="0%"   stop-color="#7ec8e3" stop-opacity="0.1"/>
             <stop offset="50%"  stop-color="#4f86b9" stop-opacity="1"/>
-            <stop offset="100%" stop-color="#7ec8e3" stop-opacity="0.2"/>
+            <stop offset="100%" stop-color="#7ec8e3" stop-opacity="0.1"/>
           </linearGradient>
         </defs>
       </svg>
@@ -84,24 +82,24 @@
 
     {# Anel interno contra-girando #}
     <div class="loading-spinner-inner">
-      <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="60" cy="60" r="54" stroke="rgba(201,156,78,0.15)" stroke-width="3"/>
-        <circle cx="60" cy="60" r="54"
+      <svg viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="90" cy="90" r="82" stroke="rgba(201,156,78,0.12)" stroke-width="3"/>
+        <circle cx="90" cy="90" r="82"
                 stroke="url(#arc-grad-inner)"
                 stroke-width="3"
-                stroke-dasharray="60 280"
+                stroke-dasharray="90 425"
                 stroke-linecap="round"
-                transform="rotate(90 60 60)"/>
+                transform="rotate(90 90 90)"/>
         <defs>
           <linearGradient id="arc-grad-inner" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%"   stop-color="#c99c4e" stop-opacity="0.1"/>
-            <stop offset="100%" stop-color="#c99c4e" stop-opacity="0.9"/>
+            <stop offset="0%"   stop-color="#c99c4e" stop-opacity="0.05"/>
+            <stop offset="100%" stop-color="#c99c4e" stop-opacity="0.95"/>
           </linearGradient>
         </defs>
       </svg>
     </div>
 
-    {# Ícone central #}
+    {# Ícone central — navio #}
     <img class="loading-spinner-icon"
          src="{% static 'game/units/trieme.png' %}" alt="">
 

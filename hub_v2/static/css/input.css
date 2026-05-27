@@ -253,7 +253,7 @@
 
   .loading-spinner-wrap {
     position: relative;
-    width: 160px; height: 160px;
+    width: 220px; height: 220px;
     display: flex; align-items: center; justify-content: center;
   }
   /* Anel externo — girando */
@@ -280,7 +280,7 @@
   /* Ícone no centro — pulso suave */
   .loading-spinner-icon {
     position: relative;
-    width: 72px; height: 72px;
+    width: 96px; height: 96px;
     object-fit: contain;
     filter: drop-shadow(0 0 10px rgba(79,134,185,0.8))
             drop-shadow(0 3px 6px rgba(0,0,0,0.5));
