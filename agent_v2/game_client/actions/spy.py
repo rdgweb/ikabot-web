@@ -880,16 +880,24 @@ def _parse_troops_from_html(report_html: str) -> list[dict[str, Any]]:
       - Header row: barracks/shipyard icon, then unit icons (alt = unit name)
       - Data row: category label ("Tropas em X"), then count per unit
 
-    Returns list of section dicts::
+    Returns at most 2 sections (land + naval), with units aggregated across all
+    barracks/shipyard groups so the display is a flat grid per type::
 
-        [{"category": "Tropas em VC1",
-          "category_type": "land",   # "land" or "naval"
-          "units": [{"name": "Hoplita", "count": 350, "icon": "..."}, ...]
-         }, ...]
+        [{"category": "Terrestres",
+          "category_type": "land",
+          "units": [{"name": "Hoplita", "count": 700, "icon": "..."}, ...]
+         },
+         {"category": "Navais",
+          "category_type": "naval",
+          "units": [{"name": "Trireme", "count": 10, "icon": "..."}, ...]
+         }]
 
     Only units with count > 0 are included.
     """
-    sections: list[dict[str, Any]] = []
+    # Accumulate counts per (category_type, unit_name)
+    land_counts: dict[str, dict[str, Any]] = {}   # unit_name -> {name, count, icon}
+    naval_counts: dict[str, dict[str, Any]] = {}
+
     tables = re.findall(
         r'<table[^>]*class="reportTable"[^>]*>([\s\S]*?)</table>',
         report_html, re.DOTALL,
@@ -902,6 +910,7 @@ def _parse_troops_from_html(report_html: str) -> list[dict[str, Any]]:
         # Header row: extract unit names from alt/title attributes (skip first col = barracks/shipyard)
         header_row = rows[0]
         header_type = "naval" if 'class="shipyard"' in header_row else "land"
+        target = naval_counts if header_type == "naval" else land_counts
         unit_names: list[str] = []
         # Capture the FULL <th>...</th> element so class= in opening tag is visible
         for th_full in re.findall(r'<th[^>]*>[\s\S]*?</th>', header_row, re.DOTALL):
@@ -915,14 +924,9 @@ def _parse_troops_from_html(report_html: str) -> list[dict[str, Any]]:
         if not unit_names:
             continue
 
-        # Data rows: collect (category, [count, ...])
+        # Data rows: accumulate counts
         for row in rows[1:]:
-            cat_m = re.search(r'<td[^>]*class="category"[^>]*>([\s\S]*?)</td>', row, re.DOTALL)
-            if not cat_m:
-                continue
-            category = _strip_html(cat_m.group(1)).strip()
             counts = re.findall(r'<td[^>]*class="count"[^>]*>([\s\S]*?)</td>', row, re.DOTALL)
-            units: list[dict[str, Any]] = []
             for idx, count_html in enumerate(counts):
                 if idx >= len(unit_names):
                     break
@@ -931,15 +935,25 @@ def _parse_troops_from_html(report_html: str) -> list[dict[str, Any]]:
                 if count <= 0:
                     continue
                 uname = unit_names[idx]
-                icon = _UNIT_NAME_TO_ICON.get(uname, "game/units/hoplita.png")
-                units.append({"name": uname, "count": count, "icon": icon})
-            if units:
-                sections.append({
-                    "category":      category,
-                    "category_type": header_type,
-                    "units":         units,
-                })
+                if uname in target:
+                    target[uname]["count"] += count
+                else:
+                    icon = _UNIT_NAME_TO_ICON.get(uname, "game/units/hoplita.png")
+                    target[uname] = {"name": uname, "count": count, "icon": icon}
 
+    sections: list[dict[str, Any]] = []
+    if land_counts:
+        sections.append({
+            "category":      "Terrestres",
+            "category_type": "land",
+            "units":         list(land_counts.values()),
+        })
+    if naval_counts:
+        sections.append({
+            "category":      "Navais",
+            "category_type": "naval",
+            "units":         list(naval_counts.values()),
+        })
     return sections
 
 

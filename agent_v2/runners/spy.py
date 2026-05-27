@@ -4,10 +4,22 @@ Runner de espionagem — ação 15 (SpyRunner).
 State machine:
   accumulating → executing → recalling → done
 
-  accumulating: treina/infiltra espiões até ter o suficiente estacionado
-  executing:    executa missões de inteligência uma a uma
-  recalling:    envia missão 8 para retirar todos os espiões
-  done:         notifica Telegram, treina reposição, encerra
+  accumulating: infiltra espiões em lote máximo até ter suficiente estacionado.
+                Espera risco decair entre lotes. Conta ciclos sem progresso.
+  executing:    executa missões internas uma a uma, detecta perdas, adapta risco.
+  recalling:    envia missão 8 para retirar todos os espiões.
+  done:         notifica Telegram, treina reposição, encerra.
+
+Princípios de design:
+  - Lote máximo: a cada infiltração, manda o MÁXIMO de agentes possível num único envio.
+    Quanto mais agentes por lote, menos viagens, menos remaining_risk acumulado.
+  - Risco projetado: calcula o total necessário considerando o risco que as infiltrações
+    futuras vão adicionar (não assume remaining=0 ao executar).
+  - Decay obrigatório: após qualquer infiltração ou missão interna, espera o riskAfter
+    decair antes de agir de novo.
+  - Recuperação de perdas: se espiões são capturados numa missão interna, volta a acumular.
+  - Escape de deadlock: após MAX_NO_PROGRESS ciclos sem progresso, relaxa o risco
+    progressivamente e eventualmente executa o que tem ou encerra.
 """
 
 from __future__ import annotations
@@ -27,19 +39,18 @@ from runners.base import BaseRunner, RunnerResult
 
 logger = logging.getLogger(__name__)
 
-ARRIVAL_WAIT    = 20 * 60   # fallback quando return_timestamp indisponível
+ARRIVAL_WAIT     = 20 * 60   # fallback quando return_timestamp indisponível
 ERROR_RESCHEDULE = 10 * 60
-MAX_RETRIES     = 3         # tentativas por missão antes de pular
+MAX_RETRIES      = 3         # tentativas por missão interna antes de pular
+MAX_NO_PROGRESS  = 8         # ciclos sem progresso antes de tentar escape
+RISK_AFTER_M1    = 5.0       # riskAfter de missão 1 (infiltração)
+RISK_DECAY_RATE  = 1.2       # pontos de risco que decaem por minuto (observado)
 
 
 @register_runner(15)
 class SpyRunner(BaseRunner):
-    """State machine de espionagem.
+    """State machine de espionagem inteligente."""
 
-    Fases: accumulating → executing → recalling → done
-    """
-
-    # Mapa decoyMissionClass → chave de recurso do snapshot
     _DECOY_RESOURCE_MAP = {
         "decoy_mission_wine":    "wine",
         "decoy_mission_gold":    "gold",
@@ -58,14 +69,14 @@ class SpyRunner(BaseRunner):
             inputs = {}
 
         # ── Inputs ────────────────────────────────────────────────────────────
-        city_id         = str(inputs.get("city_id") or "").strip()
-        target_city_id  = str(inputs.get("target_city_id") or "").strip()
-        island_id       = str(inputs.get("island_id") or "").strip()
+        city_id          = str(inputs.get("city_id") or "").strip()
+        target_city_id   = str(inputs.get("target_city_id") or "").strip()
+        island_id        = str(inputs.get("island_id") or "").strip()
         target_city_name = str(inputs.get("target_city_name") or "").strip()
-        target_owner    = str(inputs.get("target_owner") or "").strip()
-        save_reports    = bool(inputs.get("save_reports", True))
-        delete_after    = bool(inputs.get("delete_after_save", False))
-        recall_after    = bool(inputs.get("recall_after", True))
+        target_owner     = str(inputs.get("target_owner") or "").strip()
+        save_reports     = bool(inputs.get("save_reports", True))
+        delete_after     = bool(inputs.get("delete_after_save", False))
+        recall_after     = bool(inputs.get("recall_after", True))
         inputs = {**inputs, "__ga_id": ga_id}
         safehouse_position = self._resolve_safehouse_position(jid, ga_id, city_id, inputs)
         inputs["safehouse_position"] = safehouse_position
@@ -79,7 +90,7 @@ class SpyRunner(BaseRunner):
             self.log(jid, "error", "Inputs obrigatórios ausentes: city_id, target_city_id, island_id")
             return RunnerResult(success=False, data={"error": "missing_inputs"})
 
-        # ── Mission list ──────────────────────────────────────────────────────
+        # ── Lista de missões ──────────────────────────────────────────────────
         raw_mission = inputs.get("mission_id") or "1"
         try:
             if isinstance(raw_mission, list):
@@ -96,20 +107,17 @@ class SpyRunner(BaseRunner):
         missions_pending = recovery.get("missions_pending", list(intel_missions))
         missions_done    = recovery.get("missions_done", [])
         mission_retries  = recovery.get("mission_retries", {})
-        # Tracking de espiões em-trânsito para cidades distantes (parser não detecta)
-        r_sent_total  = int(recovery.get("sent_total") or 0)
-        r_arrival_at  = int(recovery.get("arrival_at") or 0)
-        # Risk decay tracking
-        prev_risk     = float(recovery.get("prev_remaining_risk") or 0)
-        prev_risk_ts  = int(recovery.get("prev_remaining_risk_ts") or 0)
-        # Recursos comprometidos em missões anteriores (ainda não refletidos no snapshot)
+        no_progress      = int(recovery.get("no_progress_cycles") or 0)
+        last_stationed   = int(recovery.get("last_stationed") or 0)
+        r_sent_total     = int(recovery.get("sent_total") or 0)
+        r_arrival_at     = int(recovery.get("arrival_at") or 0)
+        prev_risk        = float(recovery.get("prev_remaining_risk") or 0)
+        prev_risk_ts     = int(recovery.get("prev_remaining_risk_ts") or 0)
         committed_res: dict = dict(recovery.get("committed_resources") or {})
-        # Atualizado após live_params; closure captura por referência de nome
         current_risk: float = 0.0
         now_ts:       int   = 0
 
         def _rec(**kw) -> dict:
-            """Recovery dict com campos persistentes sempre propagados."""
             base = {
                 "sent_total":              r_sent_total,
                 "arrival_at":              r_arrival_at,
@@ -117,20 +125,22 @@ class SpyRunner(BaseRunner):
                 "prev_remaining_risk":     current_risk,
                 "prev_remaining_risk_ts":  now_ts or prev_risk_ts,
                 "committed_resources":     committed_res,
+                "no_progress_cycles":      no_progress,
+                "last_stationed":          last_stationed,
             }
             base.update(kw)
             return base
 
         def _risk_wait(risk: float) -> int:
-            """Segundos para remainingRisk decair a ~0 (1.2/min observado)."""
+            """Segundos para risk decair a ~0 (RISK_DECAY_RATE/min)."""
             if risk <= 0:
-                return 5 * 60
-            return max(10 * 60, int(risk / 1.2 * 60) + 60)
+                return 3 * 60
+            return max(5 * 60, int(risk / RISK_DECAY_RATE * 60) + 60)
 
-        def _train(count: int) -> tuple[bool, str]:
-            """Treina count espiões, retorna (success, msg)."""
-            r = client.train_spies(city_id, count=count, position=safehouse_position)
-            return r.get("success", False), r.get("message", "")
+        def _effective_max_risk() -> float:
+            """max_risk com relaxamento progressivo após no_progress ciclos."""
+            relaxation = max(0, no_progress - 3) * 5.0  # +5% a cada ciclo após 3
+            return min(max_risk + 20.0, max_risk + relaxation)
 
         # ── Credentials + client ──────────────────────────────────────────────
         creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
@@ -150,7 +160,7 @@ class SpyRunner(BaseRunner):
 
             # ── Estado da safehouse ───────────────────────────────────────────
             self.log(jid, "info", f"[{phase.upper()}] Lendo safehouse {city_id}")
-            state    = client.get_safehouse_state(city_id, position=safehouse_position)
+            state     = client.get_safehouse_state(city_id, position=safehouse_position)
             available = int(state.get("available_spies") or 0)
             total     = int(state.get("total_spies") or 0)
             in_use    = int(state.get("in_use_spies") or 0)
@@ -159,17 +169,26 @@ class SpyRunner(BaseRunner):
             slots_free = max(0, capacity - total)
             self.log(jid, "info",
                 f"Safehouse: total={total} disponíveis={available} em_uso={in_use} "
-                f"capacidade={capacity} vagas={slots_free} tempo_treino={secs_per}s/espião")
+                f"capacidade={capacity} vagas={slots_free}")
 
-            # Grupos do alvo (stationed + em-trânsito para cidade distante)
             tgroups   = self._get_target_groups(state, target_city_id, target_city_name, target_owner)
             tgroup    = self._select_target_group(tgroups)
             stationed = sum(int(g.get("count_in_use") or 0) for g in tgroups if g.get("is_waiting"))
             in_transit = sum(int(g.get("count_in_use") or 0) for g in tgroups if g.get("is_travelling"))
             self.log(jid, "info",
-                f"Alvo {target_owner}/{target_city_name} (id={target_city_id}): "
+                f"Alvo {target_owner}/{target_city_name}: "
                 f"estacionados={stationed} em_transito={in_transit} "
-                f"grupos={len(tgroups)} status='{tgroup.get('status') or 'sem grupo'}'")
+                f"(ant={last_stationed} no_progress={no_progress})")
+
+            # Detectar perda de espiões entre ciclos
+            if stationed < last_stationed and last_stationed > 0:
+                lost = last_stationed - stationed
+                self.log(jid, "warn",
+                    f"⚠ Detectada perda de {lost} espião(ões) desde o último ciclo "
+                    f"(era {last_stationed}, agora {stationed}). Voltando para acumulação.")
+                if phase == "executing":
+                    phase = "accumulating"
+                    no_progress = 0
 
             # ── Live risk data ────────────────────────────────────────────────
             live_params: dict = {}
@@ -184,11 +203,11 @@ class SpyRunner(BaseRunner):
                 decay_info = ""
                 if prev_risk > 0 and prev_risk_ts > 0:
                     elapsed_min = max(0.1, (now_ts - prev_risk_ts) / 60)
-                    if current_risk < prev_risk:
-                        rate = (prev_risk - current_risk) / elapsed_min
-                        decay_info = f" | decaimento={rate:.2f}/min ({prev_risk:.1f}→{current_risk:.1f} em {elapsed_min:.0f}min)"
-                    else:
-                        decay_info = f" | risco={current_risk:.1f} (sem decaimento em {elapsed_min:.0f}min)"
+                    rate = (prev_risk - current_risk) / elapsed_min if current_risk < prev_risk else 0
+                    decay_info = (f" | decaiu {prev_risk:.1f}→{current_risk:.1f} em {elapsed_min:.0f}min"
+                                  f" ({rate:.2f}/min)")
+                else:
+                    decay_info = f" | risco={current_risk:.1f}"
 
                 self.log(jid, "info",
                     f"Alvo: lv={ti.get('city_level')} inativo={ti.get('is_inactive')} "
@@ -198,7 +217,8 @@ class SpyRunner(BaseRunner):
 
             # ══ FASE: infiltrating_only ═══════════════════════════════════════
             if phase == "infiltrating_only":
-                opt = find_minimum_agents_decoys(live_params, 1, max_risk, max_risk + 25, 30.0, available)
+                eff_risk = _effective_max_risk()
+                opt = find_minimum_agents_decoys(live_params, 1, eff_risk, eff_risk + 25, 30.0, available)
                 if opt:
                     agents, decoys = opt["agents"], opt.get("decoys", 0)
                     self.log(jid, "info",
@@ -211,16 +231,21 @@ class SpyRunner(BaseRunner):
                         self.save_game_client(ga_id, client)
                         return RunnerResult(success=True, reschedule_seconds=wait,
                             reschedule_inputs={**inputs, "__recovery": _rec(phase="done")})
-                self.log(jid, "warn", f"Infiltração impossível com {available} disponíveis e risco≤{max_risk}%.")
+                self.log(jid, "warn",
+                    f"Infiltração impossível com {available} disponíveis e risco≤{eff_risk}%.")
                 self.save_game_client(ga_id, client)
                 return RunnerResult(success=True, reschedule_seconds=random.randint(5*60, 15*60))
 
             # ══ FASE: accumulating ════════════════════════════════════════════
             if phase == "accumulating":
-                needed = self._total_needed(missions_pending, live_params,
-                                            max(available, capacity, 20), max_risk)
+                eff_risk = _effective_max_risk()
 
-                # Recovery tracking: espiões enviados mas não detectáveis (cidades distantes)
+                # Calcula agentes necessários usando risco projetado
+                needed = self._total_needed_projected(
+                    missions_pending, live_params, stationed, available,
+                    max(capacity, 20), eff_risk)
+
+                # Recovery tracking: espiões em-trânsito para cidades distantes
                 known_transit = 0
                 if r_sent_total > 0 and r_arrival_at > 0:
                     if time.time() < r_arrival_at:
@@ -228,8 +253,7 @@ class SpyRunner(BaseRunner):
                         eta = int(r_arrival_at - time.time())
                         if known_transit > 0:
                             self.log(jid, "info",
-                                f"Recovery: {known_transit} espiões em trânsito não detectados pelo parser "
-                                f"(chegam em {eta}s)")
+                                f"Recovery: {known_transit} em trânsito não detectados (chegam em {eta}s)")
                     else:
                         r_sent_total = 0
                         r_arrival_at = 0
@@ -239,13 +263,26 @@ class SpyRunner(BaseRunner):
 
                 self.log(jid, "info",
                     f"Acumulação: necessários={needed} estacionados={stationed} "
-                    f"em_transito={effective_transit} (parser={in_transit} recovery={known_transit}) "
-                    f"total={current_total}/{needed}")
+                    f"em_transito={effective_transit} total={current_total}/{needed} "
+                    f"eff_risk={eff_risk:.0f}%")
 
                 # Suficientes estacionados → executar
                 if stationed >= needed and stationed > 0:
                     self.log(jid, "info",
-                        f"Espiões suficientes estacionados ({stationed}/{needed}). Passando para execução.")
+                        f"Espiões suficientes ({stationed}/{needed}). Passando para execução.")
+                    # Esperar remaining_risk decair antes de executar se necessário
+                    if current_risk > 5:
+                        wait = _risk_wait(current_risk)
+                        self.log(jid, "info",
+                            f"remaining_risk={current_risk:.1f} antes de executar. "
+                            f"Aguardando {wait}s ({wait//60}min) para decair.")
+                        self.save_game_client(ga_id, client)
+                        return RunnerResult(success=True, reschedule_seconds=wait,
+                            reschedule_inputs={**inputs, "__recovery": _rec(
+                                phase="executing",
+                                missions_pending=missions_pending,
+                                missions_done=missions_done,
+                                last_stationed=stationed)})
                     phase = "executing"
 
                 # Em-trânsito chegará ao necessário → aguardar
@@ -261,14 +298,15 @@ class SpyRunner(BaseRunner):
                         reschedule_inputs={**inputs, "__recovery": _rec(
                             phase="accumulating",
                             missions_pending=missions_pending,
-                            missions_done=missions_done)})
+                            missions_done=missions_done,
+                            last_stationed=stationed)})
 
                 # Precisa enviar mais espiões
                 else:
-                    # Tentar treinar se necessário
+                    # Verificar se treino é necessário
                     train_wait = self._maybe_train(
                         jid, client, city_id, available, slots_free, secs_per,
-                        live_params, max_risk, capacity, total,
+                        live_params, eff_risk, capacity, total,
                         safehouse_position=safehouse_position)
                     if train_wait:
                         self.save_game_client(ga_id, client)
@@ -276,38 +314,50 @@ class SpyRunner(BaseRunner):
                             reschedule_inputs={**inputs, "__recovery": _rec(
                                 phase="accumulating",
                                 missions_pending=missions_pending,
-                                missions_done=missions_done)})
+                                missions_done=missions_done,
+                                last_stationed=stationed)})
 
-                    # Tentar infiltração
-                    to_send = max(1, needed - current_total)
-                    opt = find_minimum_agents_decoys(live_params, 1, max_risk, max_risk + 25, 30.0, available)
-                    if not opt:
+                    # ── LOTE MÁXIMO: manda o máximo de agentes de uma vez ─────
+                    agents_still_needed = max(1, needed - current_total)
+                    batch = self._find_best_infiltration_batch(
+                        live_params, available, agents_still_needed, eff_risk)
+
+                    if not batch:
+                        # Impossível infiltrar com espiões disponíveis
+                        new_no_progress = no_progress + 1
                         self.log(jid, "warn",
-                            f"Infiltração impossível: {available} disponíveis, risco≤{max_risk}%, alvo free_spies={live_params.get('targetFreeSpies',0)}.")
+                            f"Infiltração impossível: {available} disponíveis, risco≤{eff_risk:.0f}%, "
+                            f"free_spies={live_params.get('targetFreeSpies',0)} "
+                            f"[ciclo_sem_progresso={new_no_progress}/{MAX_NO_PROGRESS}]")
+
+                        if new_no_progress >= MAX_NO_PROGRESS:
+                            return self._handle_deadlock(
+                                jid, ga_id, client, inputs, live_params,
+                                stationed, available, eff_risk,
+                                missions_pending, missions_done,
+                                capacity, city_id, tgroups, recall_after,
+                                _rec, _risk_wait)
+
+                        wait = self._backoff_wait(new_no_progress)
                         self.save_game_client(ga_id, client)
-                        return RunnerResult(success=True, reschedule_seconds=random.randint(5*60, 15*60),
+                        return RunnerResult(success=True, reschedule_seconds=wait,
                             reschedule_inputs={**inputs, "__recovery": _rec(
                                 phase="accumulating",
                                 missions_pending=missions_pending,
-                                missions_done=missions_done)})
+                                missions_done=missions_done,
+                                no_progress_cycles=new_no_progress,
+                                last_stationed=stationed)})
 
-                    ag = min(int(opt["agents"]), to_send, available)
-                    dec = min(int(opt.get("decoys") or 0), max(0, available - ag))
+                    ag  = batch["agents"]
+                    dec = batch.get("decoys", 0)
+
+                    # Verificar risco da combinação escolhida
                     risk = compute_spy_risks(live_params, 1, ag, dec)
-                    if (risk["agent_risk"] > max_risk or risk["decoy_risk"] > max_risk + 25
-                            or risk["success"] < 30.0):
-                        self.log(jid, "warn",
-                            f"Lote inseguro ({ag}ag+{dec}dec): sucesso={risk['success']}% risco={risk['agent_risk']}%.")
-                        self.save_game_client(ga_id, client)
-                        return RunnerResult(success=True, reschedule_seconds=random.randint(5*60, 15*60),
-                            reschedule_inputs={**inputs, "__recovery": _rec(
-                                phase="accumulating",
-                                missions_pending=missions_pending,
-                                missions_done=missions_done)})
-
                     self.log(jid, "info",
-                        f"Infiltrando {ag}ag+{dec}dec (precisamos {needed-current_total} mais) "
+                        f"Infiltrando LOTE: {ag}ag+{dec}dec "
+                        f"(precisamos {agents_still_needed} mais agentes) "
                         f"→ sucesso={risk['success']}% risco={risk['agent_risk']}%")
+
                     ok, msg = self._send_spy_raw(client, city_id, target_city_id, island_id, 1, ag, dec)
                     if ok:
                         time.sleep(3)
@@ -315,75 +365,116 @@ class SpyRunner(BaseRunner):
                         try:
                             fs = client.get_safehouse_state(city_id, position=safehouse_position)
                             fg = self._get_target_groups(fs, target_city_id, target_city_name, target_owner)
-                            wait = self._arrival_wait(fg, ARRIVAL_WAIT)
                             for g in fg:
                                 ts = g.get("return_timestamp")
                                 if ts and int(ts) - int(time.time()) > 30:
                                     travel = int(ts) - int(time.time())
                                     break
                         except Exception:
-                            wait = ARRIVAL_WAIT + random.randint(0, 60)
+                            pass
+
+                        # Depois da infiltração: esperar viagem + riskAfter decair
+                        # riskAfter(M1) = 5. Se já tem remaining alto, espera mais.
+                        risk_after_total = current_risk + RISK_AFTER_M1
+                        risk_wait_s = _risk_wait(risk_after_total)
+                        # Usa o maior entre: tempo de viagem e tempo de risco
+                        wait_total = max(
+                            travel + 30 if travel > 0 else ARRIVAL_WAIT,
+                            risk_wait_s if risk_after_total > 10 else 0
+                        )
+                        wait_total = max(60, wait_total)
+
                         new_sent  = r_sent_total + ag + dec
                         new_arriv = int(time.time()) + travel if travel > 0 else 0
                         self.log(jid, "info",
-                            f"Infiltração enviada ({msg}). "
-                            f"Viagem estimada: {travel}s. Reagendando em {wait}s.")
+                            f"Infiltração enviada ({msg}). Viagem={travel}s "
+                            f"risk_after={risk_after_total:.1f} → aguardando {wait_total}s "
+                            f"({wait_total//60}min) para viagem+risco decaírem.")
                     else:
                         self.log(jid, "warn", f"Infiltração falhou: {msg}")
                         new_sent  = r_sent_total
                         new_arriv = r_arrival_at
-                        wait = ERROR_RESCHEDULE
+                        wait_total = ERROR_RESCHEDULE
 
                     self.save_game_client(ga_id, client)
-                    return RunnerResult(success=True, reschedule_seconds=wait,
+                    return RunnerResult(success=True, reschedule_seconds=wait_total,
                         reschedule_inputs={**inputs, "__recovery": _rec(
                             phase="accumulating",
                             missions_pending=missions_pending,
                             missions_done=missions_done,
                             sent_total=new_sent,
-                            arrival_at=new_arriv)})
+                            arrival_at=new_arriv,
+                            no_progress_cycles=0,   # progresso feito, resetar
+                            last_stationed=stationed)})
 
             # ══ FASE: executing ═══════════════════════════════════════════════
             if phase == "executing":
                 if not missions_pending:
                     self.log(jid, "info",
                         f"Todas as missões concluídas: {missions_done}. "
-                        f"{'Passando para recall.' if recall_after else 'Encerrando sem recall.'}")
+                        f"{'Recall.' if recall_after else 'Sem recall.'}")
                     phase = "recalling" if recall_after else "done"
 
                 elif not tgroup.get("is_waiting"):
                     wait = self._arrival_wait(tgroups, ARRIVAL_WAIT)
                     self.log(jid, "info",
-                        f"Espiões ainda não estacionados no alvo (status='{tgroup.get('status','?')}'). "
+                        f"Espiões não estacionados ainda (status='{tgroup.get('status','?')}'). "
                         f"Aguardando {wait}s.")
                     self.save_game_client(ga_id, client)
                     return RunnerResult(success=True, reschedule_seconds=wait,
                         reschedule_inputs={**inputs, "__recovery": _rec(
                             phase="executing",
                             missions_pending=missions_pending,
-                            missions_done=missions_done)})
+                            missions_done=missions_done,
+                            last_stationed=stationed)})
 
                 else:
                     current_mission = missions_pending[0]
                     mname = MISSION_DATA.get(current_mission, {}).get("name", f"Missão {current_mission}")
+                    eff_risk = _effective_max_risk()
+
+                    # Aguardar remaining_risk se estiver alto demais
+                    if current_risk > 3:
+                        needed_r = self._mission_risk_threshold(live_params, current_mission, stationed, eff_risk)
+                        if current_risk > needed_r:
+                            wait = _risk_wait(current_risk - needed_r)
+                            self.log(jid, "info",
+                                f"{mname}: remaining_risk={current_risk:.1f} > threshold={needed_r:.1f}. "
+                                f"Aguardando {wait}s ({wait//60}min) para risco decair antes de executar.")
+                            self.save_game_client(ga_id, client)
+                            return RunnerResult(success=True, reschedule_seconds=wait,
+                                reschedule_inputs={**inputs, "__recovery": _rec(
+                                    phase="executing",
+                                    missions_pending=missions_pending,
+                                    missions_done=missions_done,
+                                    last_stationed=stationed)})
+
                     opt = find_minimum_agents_decoys(
-                        live_params, current_mission, max_risk, max_risk + 25, 40.0, stationed)
+                        live_params, current_mission, eff_risk, eff_risk + 25, 40.0, stationed)
 
                     if not opt:
+                        # Impossível com stationed — verificar se precisa acumular mais
                         opt_cap = find_minimum_agents_decoys(
-                            live_params, current_mission, max_risk, max_risk + 25, 40.0,
+                            live_params, current_mission, eff_risk, eff_risk + 25, 40.0,
                             max(available, capacity, 20))
                         if opt_cap:
                             need_ag = opt_cap["agents"]
                             need_dec = opt_cap.get("decoys", 0)
                             self.log(jid, "warn",
-                                f"{mname}: impossível com {stationed} estacionados. "
-                                f"Precisa {need_ag}ag+{need_dec}dec ({need_ag+need_dec} total). "
-                                f"Voltando para acumulação.")
+                                f"{mname}: impossível com {stationed} estacionados "
+                                f"(precisa {need_ag}ag+{need_dec}dec). Voltando para acumulação.")
                         else:
                             self.log(jid, "warn",
-                                f"{mname}: impossível mesmo na capacidade máxima com risco≤{max_risk}%. "
-                                f"Aumente max_detection_risk ou verifique o alvo.")
+                                f"{mname}: impossível mesmo na capacidade máxima com risco≤{eff_risk:.0f}%. "
+                                f"Pulando missão.")
+                            missions_pending = missions_pending[1:]
+                            self.save_game_client(ga_id, client)
+                            return RunnerResult(success=True, reschedule_seconds=60,
+                                reschedule_inputs={**inputs, "__recovery": _rec(
+                                    phase="executing" if missions_pending else "recalling",
+                                    missions_pending=missions_pending,
+                                    missions_done=missions_done,
+                                    last_stationed=stationed)})
                         phase = "accumulating"
 
                     else:
@@ -399,20 +490,21 @@ class SpyRunner(BaseRunner):
                             # Verificar recursos do chamariz
                             dec, deferred = self._check_decoy_resources(
                                 jid, ga_id, city_id, current_mission,
-                                live_params, ag, dec, max_risk, client=client,
+                                live_params, ag, dec, eff_risk, client=client,
                                 committed_res=committed_res)
 
                             if deferred:
                                 missions_pending = missions_pending[1:] + [current_mission]
                                 self.log(jid, "info",
                                     f"{mname} adiada (recurso solicitado). "
-                                    f"Nova fila: {[MISSION_DATA.get(m,{}).get('name',m) for m in missions_pending]}")
+                                    f"Fila: {[MISSION_DATA.get(m,{}).get('name',m) for m in missions_pending]}")
                                 self.save_game_client(ga_id, client)
                                 return RunnerResult(success=True, reschedule_seconds=60,
                                     reschedule_inputs={**inputs, "__recovery": _rec(
                                         phase="executing",
                                         missions_pending=missions_pending,
-                                        missions_done=missions_done)})
+                                        missions_done=missions_done,
+                                        last_stationed=stationed)})
 
                             actual = compute_spy_risks(live_params, current_mission, ag, dec)
                             self.log(jid, "info",
@@ -428,14 +520,14 @@ class SpyRunner(BaseRunner):
                             if not ok:
                                 if "insuficiente" in msg.lower() or "insufficient" in msg.lower():
                                     self.log(jid, "warn",
-                                        f"{mname}: recursos insuficientes ({msg}). "
-                                        f"Aguardando 20min para reposição.")
+                                        f"{mname}: recursos insuficientes ({msg}). Aguardando 20min.")
                                     self.save_game_client(ga_id, client)
                                     return RunnerResult(success=True, reschedule_seconds=20 * 60,
                                         reschedule_inputs={**inputs, "__recovery": _rec(
                                             phase="executing",
                                             missions_pending=missions_pending,
-                                            missions_done=missions_done)})
+                                            missions_done=missions_done,
+                                            last_stationed=stationed)})
                                 self.log(jid, "warn",
                                     f"{mname}: falhou ao enviar ({msg}). Reagendando em {ERROR_RESCHEDULE}s.")
                                 self.save_game_client(ga_id, client)
@@ -443,9 +535,9 @@ class SpyRunner(BaseRunner):
                                     reschedule_inputs={**inputs, "__recovery": _rec(
                                         phase="executing",
                                         missions_pending=missions_pending,
-                                        missions_done=missions_done)})
+                                        missions_done=missions_done,
+                                        last_stationed=stationed)})
 
-                            self.log(jid, "info", f"{mname}: enviada ({msg}). Aguardando 15s para resultado.")
                             # Registrar recurso de chamariz consumido
                             if dec > 0:
                                 mdata_cr = (live_params.get("missionData") or {}).get(str(current_mission)) or {}
@@ -453,10 +545,12 @@ class SpyRunner(BaseRunner):
                                 rk_cr = self._DECOY_RESOURCE_MAP.get(decoy_class_cr, "")
                                 cost_cr = int(list((mdata_cr.get("301") or {}).values())[0]) if mdata_cr.get("301") else 0
                                 if rk_cr and cost_cr:
-                                    spent = dec * cost_cr
-                                    committed_res[rk_cr] = committed_res.get(rk_cr, 0) + spent
+                                    committed_res[rk_cr] = committed_res.get(rk_cr, 0) + dec * cost_cr
+
+                            # Aguarda resultado
                             time.sleep(15)
                             succeeded = True
+                            stationed_after = stationed
                             if save_reports:
                                 fresh = self._save_reports(
                                     jid, client, ga_id, city_id, delete_after,
@@ -464,52 +558,69 @@ class SpyRunner(BaseRunner):
                                 )
                                 succeeded = self._mission_succeeded(fresh, current_mission, target_owner)
 
-                            # After any mission (success or fail), riskAfter is added to remaining.
-                            # Wait for that to decay before next mission.
+                            # Verificar se perdeu espiões nesta missão
+                            try:
+                                state_after = client.get_safehouse_state(city_id, position=safehouse_position)
+                                tgroups_after = self._get_target_groups(
+                                    state_after, target_city_id, target_city_name, target_owner)
+                                stationed_after = sum(
+                                    int(g.get("count_in_use") or 0) for g in tgroups_after if g.get("is_waiting"))
+                                if stationed_after < stationed:
+                                    self.log(jid, "warn",
+                                        f"{mname}: perdidos {stationed-stationed_after} espiões na execução "
+                                        f"({stationed}→{stationed_after}). "
+                                        f"Voltando para acumulação se necessário.")
+                            except Exception:
+                                stationed_after = stationed
+
+                            # riskAfter da missão
                             mdata_live  = (live_params.get("missionData") or {}).get(str(current_mission)) or {}
-                            risk_after  = float(mdata_live.get("riskAfter") or 0)
-                            # Fallback: MISSION_DATA tem riskAfter conhecido se live_params não trouxe
-                            if risk_after <= 0:
-                                risk_after = float(MISSION_DATA.get(current_mission, {}).get("risk_after") or 0)
-                            post_risk = current_risk + risk_after
-                            post_risk_wait = _risk_wait(post_risk) if post_risk > 2 else random.randint(45, 120)
+                            risk_after  = float(mdata_live.get("riskAfter") or
+                                               MISSION_DATA.get(current_mission, {}).get("risk_after", 0) or 0)
+                            post_risk   = current_risk + risk_after
+                            post_risk_wait = _risk_wait(post_risk) if post_risk > 3 else 30
 
                             if succeeded:
                                 self.log(jid, "info",
-                                    f"{mname}: confirmada com sucesso. "
+                                    f"{mname}: ✓ sucesso. "
                                     f"Concluídas: {missions_done + [current_mission]} | "
                                     f"Pendentes: {missions_pending[1:]}. "
-                                    f"Aguardando {post_risk_wait}s para risco decair (riskAfter={risk_after:.0f}).")
+                                    f"riskAfter={risk_after:.0f} → aguardando {post_risk_wait}s ({post_risk_wait//60}min).")
                                 missions_done.append(current_mission)
                                 missions_pending = missions_pending[1:]
                                 mission_retries.pop(str(current_mission), None)
-                                wait = post_risk_wait
                                 next_phase = "executing" if missions_pending else "recalling"
                             else:
                                 retries = int(mission_retries.get(str(current_mission), 0))
                                 if retries < MAX_RETRIES:
                                     mission_retries[str(current_mission)] = retries + 1
-                                    wait = post_risk_wait
                                     self.log(jid, "warn",
-                                        f"{mname}: falhou (tentativa {retries+1}/{MAX_RETRIES}). "
-                                        f"riskAfter={risk_after:.0f} + remaining={current_risk:.1f} → "
-                                        f"aguardando {wait}s ({wait//60}min) para risco decair.")
+                                        f"{mname}: ✗ falhou (tentativa {retries+1}/{MAX_RETRIES}). "
+                                        f"riskAfter={risk_after:.0f} → aguardando {post_risk_wait}s.")
                                     next_phase = "executing"
                                 else:
                                     self.log(jid, "warn",
-                                        f"{mname}: falhou {MAX_RETRIES}x seguidas. Pulando. "
-                                        f"Pendentes restantes: {missions_pending[1:]}")
+                                        f"{mname}: ✗ falhou {MAX_RETRIES}x. Pulando.")
                                     missions_pending = missions_pending[1:]
                                     mission_retries.pop(str(current_mission), None)
-                                    wait = 5 * 60
+                                    post_risk_wait = 5 * 60
                                     next_phase = "executing" if missions_pending else "recalling"
 
+                            # Se perdeu espiões e precisa reacumular
+                            if stationed_after < stationed:
+                                needed_recheck = self._total_needed_projected(
+                                    missions_pending if missions_pending else [],
+                                    live_params, stationed_after, 0, max(capacity, 20), eff_risk)
+                                if missions_pending and stationed_after < needed_recheck:
+                                    next_phase = "accumulating"
+
                             self.save_game_client(ga_id, client)
-                            return RunnerResult(success=True, reschedule_seconds=wait,
+                            return RunnerResult(success=True, reschedule_seconds=post_risk_wait,
                                 reschedule_inputs={**inputs, "__recovery": _rec(
                                     phase=next_phase,
                                     missions_pending=missions_pending,
-                                    missions_done=missions_done)})
+                                    missions_done=missions_done,
+                                    last_stationed=stationed_after)})
 
                 if phase == "accumulating":
                     self.save_game_client(ga_id, client)
@@ -517,38 +628,37 @@ class SpyRunner(BaseRunner):
                         reschedule_inputs={**inputs, "__recovery": _rec(
                             phase="accumulating",
                             missions_pending=missions_pending,
-                            missions_done=missions_done)})
+                            missions_done=missions_done,
+                            last_stationed=stationed)})
 
             # ══ FASE: recalling ════════════════════════════════════════════════
             if phase == "recalling":
                 if stationed > 0:
                     recall_risk = compute_spy_risks(live_params, 8, 1, 0).get("agent_risk", 0) if live_params else 0
                     if recall_risk > 60.0:
-                        wait = _risk_wait(recall_risk)
+                        wait = _risk_wait(recall_risk - 30)
                         self.log(jid, "warn",
-                            f"Recall: risco muito alto ({recall_risk:.1f}% > 60%). "
-                            f"Aguardando {wait}s ({wait//60}min) para risco baixar.")
+                            f"Recall: risco alto ({recall_risk:.1f}% > 60%). "
+                            f"Aguardando {wait}s.")
                         self.save_game_client(ga_id, client)
                         return RunnerResult(success=True, reschedule_seconds=wait,
                             reschedule_inputs={**inputs, "__recovery": _rec(
                                 phase="recalling", missions_done=missions_done)})
 
                     self.log(jid, "info",
-                        f"Recall: chamando {stationed} espião(ões) de volta "
-                        f"(missão 8, risco={recall_risk:.1f}%)")
+                        f"Recall: chamando {stationed} espião(ões) de volta (risco={recall_risk:.1f}%)")
                     ok, msg = self._execute_internal_mission(
                         client, city_id, target_city_id, island_id,
                         8, 1, 0, tgroup.get("spy_id"),
                         safehouse_position=safehouse_position)
                     if ok:
                         wait = self._arrival_wait(tgroups, ARRIVAL_WAIT)
-                        self.log(jid, "info",
-                            f"Recall enviado ({msg}). Espiões retornam em ~{wait}s.")
+                        self.log(jid, "info", f"Recall enviado. Espiões retornam em ~{wait}s.")
                         self.save_game_client(ga_id, client)
                         return RunnerResult(success=True, reschedule_seconds=wait,
                             reschedule_inputs={**inputs, "__recovery": _rec(
                                 phase="done", missions_done=missions_done)})
-                    self.log(jid, "warn", f"Recall falhou: {msg}. Tentando novamente em 10min.")
+                    self.log(jid, "warn", f"Recall falhou: {msg}. Tentando em 10min.")
                     self.save_game_client(ga_id, client)
                     return RunnerResult(success=True, reschedule_seconds=ERROR_RESCHEDULE,
                         reschedule_inputs={**inputs, "__recovery": _rec(
@@ -560,8 +670,8 @@ class SpyRunner(BaseRunner):
                 missions_failed = [m for m in intel_missions if m not in missions_done]
                 self.log(jid, "info",
                     f"Espionagem concluída! "
-                    f"Missões realizadas: {[MISSION_DATA.get(m,{}).get('name',m) for m in missions_done]} | "
-                    f"Falharam: {[MISSION_DATA.get(m,{}).get('name',m) for m in missions_failed]}")
+                    f"✓ {[MISSION_DATA.get(m,{}).get('name',m) for m in missions_done]} | "
+                    f"✗ {[MISSION_DATA.get(m,{}).get('name',m) for m in missions_failed]}")
                 self._notify_telegram(jid, ga_id, target_owner, target_city_name,
                                       missions_done, missions_failed)
                 self._replenish_spies(
@@ -575,9 +685,176 @@ class SpyRunner(BaseRunner):
             return RunnerResult(success=True, reschedule_seconds=ERROR_RESCHEDULE)
 
         except Exception as exc:
-            self.log(jid, "error", f"Erro inesperado na espionagem: {type(exc).__name__}: {exc}")
+            self.log(jid, "error", f"Erro inesperado: {type(exc).__name__}: {exc}")
             return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE,
                                 data={"error": str(exc)})
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # Helpers — Infiltração inteligente
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def _find_best_infiltration_batch(
+        self,
+        live_params: dict,
+        available: int,
+        target_agents: int,
+        max_risk: float,
+    ) -> dict | None:
+        """Acha o lote que manda o MÁXIMO de agentes numa única infiltração (M1).
+
+        Para cada contagem de agentes (do maior possível ao menor), acha o
+        mínimo de chamarizes necessário. Retorna o resultado com mais agentes
+        dentro dos limites de risco.
+
+        Argumento target_agents: quantos agentes ainda precisamos estacionar.
+        """
+        best: dict | None = None
+        max_to_try = min(available, target_agents)
+        for try_ag in range(max_to_try, 0, -1):
+            for try_dec in range(0, min(available - try_ag + 1, 15)):
+                r = compute_spy_risks(live_params, 1, try_ag, try_dec)
+                if (r["agent_risk"] <= max_risk
+                        and r.get("decoy_risk", 0) <= max_risk + 25
+                        and r["success"] >= 30.0):
+                    # Este é o mínimo de chamarizes para try_ag agentes — é o melhor lote possível
+                    best = r
+                    return best  # não precisa iterar mais: try_ag é o máximo possível
+        return best
+
+    def _total_needed_projected(
+        self,
+        mission_ids: list,
+        live_params: dict,
+        stationed: int,
+        available: int,
+        capacity: int,
+        max_risk: float,
+    ) -> int:
+        """Total de espiões necessários para as missões, considerando risco projetado.
+
+        Projeta quantas infiltrações ainda precisamos e o remaining_risk que
+        vão acumular (N × RISK_AFTER_M1), depois recalcula o needed com esse
+        risco projetado no live_params.
+        """
+        if not mission_ids:
+            return 1
+
+        sim_avail = max(available, capacity)
+
+        # Primeiro: needed sem projeção (limite inferior)
+        needed_base = 1
+        for mid in mission_ids:
+            opt = find_minimum_agents_decoys(live_params, mid, max_risk, max_risk + 25, 30.0, sim_avail)
+            if opt:
+                needed_base = max(needed_base, opt["agents"] + opt.get("decoys", 0))
+
+        # Estimar quantas infiltrações em lote ainda precisamos
+        still_short = max(0, needed_base - stationed)
+        if still_short == 0:
+            return needed_base
+
+        # Cada lote manda ~max_agents_per_batch agentes. Estimar tamanho do lote.
+        sample_batch = self._find_best_infiltration_batch(live_params, sim_avail, still_short, max_risk)
+        batch_size = sample_batch["agents"] if sample_batch else 1
+        batches_needed = max(1, (still_short + batch_size - 1) // batch_size)
+        projected_extra_risk = batches_needed * RISK_AFTER_M1
+
+        if projected_extra_risk <= 0:
+            return needed_base
+
+        # Recalcula needed com risco projetado
+        import copy as _copy
+        projected_params = _copy.deepcopy(live_params)
+        current_remaining = float(live_params.get("remainingRisk", 0))
+        projected_params["remainingRisk"] = current_remaining + projected_extra_risk
+
+        needed_proj = 1
+        for mid in mission_ids:
+            opt = find_minimum_agents_decoys(projected_params, mid, max_risk, max_risk + 25, 30.0, sim_avail)
+            if opt:
+                needed_proj = max(needed_proj, opt["agents"] + opt.get("decoys", 0))
+
+        return max(needed_base, needed_proj)
+
+    def _mission_risk_threshold(
+        self,
+        live_params: dict,
+        mission_id: int,
+        stationed: int,
+        max_risk: float,
+    ) -> float:
+        """Risco remanescente máximo tolerado para executar esta missão com os espiões disponíveis.
+
+        Testa com qual nível de remaining_risk a missão ainda é viável com os
+        espiões estacionados. Útil para decidir se vale a pena esperar o risco decair.
+        """
+        import copy as _copy
+        for test_remaining in range(0, 101, 2):
+            test_params = _copy.deepcopy(live_params)
+            test_params["remainingRisk"] = float(test_remaining)
+            opt = find_minimum_agents_decoys(test_params, mission_id, max_risk, max_risk + 25, 30.0, stationed)
+            if not opt:
+                return max(0, test_remaining - 2)
+        return 100.0  # sempre viável
+
+    def _backoff_wait(self, no_progress: int) -> int:
+        """Espera com backoff exponencial limitado (não lopar em 5min infinitamente)."""
+        # ciclo 1-2: 5min, ciclo 3-4: 15min, ciclo 5+: 30min
+        if no_progress <= 2:
+            return 5 * 60
+        elif no_progress <= 4:
+            return 15 * 60
+        else:
+            return 30 * 60
+
+    def _handle_deadlock(
+        self,
+        jid, ga_id, client, inputs, live_params,
+        stationed, available, eff_risk,
+        missions_pending, missions_done,
+        capacity, city_id, tgroups, recall_after,
+        _rec, _risk_wait,
+    ) -> RunnerResult:
+        """Lógica de escape quando MAX_NO_PROGRESS é atingido."""
+        self.log(jid, "warn",
+            f"🔒 DEADLOCK: {MAX_NO_PROGRESS} ciclos sem progresso. "
+            f"stationed={stationed} available={available} eff_risk={eff_risk:.0f}%")
+
+        # Opção 1: se tem espiões estacionados, tenta executar com risco relaxado
+        if stationed > 0 and missions_pending:
+            relaxed_risk = min(eff_risk + 15, 75.0)
+            self.log(jid, "warn",
+                f"Tentando executar com risco relaxado ({relaxed_risk:.0f}%) usando {stationed} estacionados.")
+            self.save_game_client(ga_id, client)
+            return RunnerResult(success=True, reschedule_seconds=60,
+                reschedule_inputs={**inputs, "__recovery": _rec(
+                    phase="executing",
+                    missions_pending=missions_pending,
+                    missions_done=missions_done,
+                    no_progress_cycles=0)})
+
+        # Opção 2: sem espiões estacionados e impossível infiltrar → recall + abort
+        self.log(jid, "error",
+            f"Espionagem abortada: impossível acumular espiões suficientes após {MAX_NO_PROGRESS} ciclos. "
+            f"Missões puladas: {[MISSION_DATA.get(m,{}).get('name',m) for m in missions_pending]}")
+
+        if recall_after and stationed > 0:
+            self.save_game_client(ga_id, client)
+            return RunnerResult(success=False, reschedule_seconds=60,
+                reschedule_inputs={**inputs, "__recovery": _rec(
+                    phase="recalling",
+                    missions_pending=[],
+                    missions_done=missions_done)})
+
+        self._notify_telegram(jid, ga_id,
+            inputs.get("target_owner",""), inputs.get("target_city_name",""),
+            missions_done, missions_pending)
+        self.save_game_client(ga_id, client)
+        return RunnerResult(success=False, data={"error": "deadlock", "missions_done": missions_done})
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # Helpers — Safehouse e navegação
+    # ═══════════════════════════════════════════════════════════════════════
 
     def _resolve_safehouse_position(self, job_id: str, game_account_id: str, city_id: str, inputs: dict[str, Any]) -> int:
         raw_position = inputs.get("safehouse_position")
@@ -606,10 +883,8 @@ class SpyRunner(BaseRunner):
                     self.log(job_id, "info", f"Safehouse resolvida pelo snapshot: cidade={city_id} pos={position}")
                     return position
 
-        self.log(job_id, "warn", f"Safehouse não encontrada no snapshot da cidade {city_id}; usando fallback pos=19")
+        self.log(job_id, "warn", f"Safehouse não encontrada; usando fallback pos=19")
         return 19
-
-    # ── Helpers ────────────────────────────────────────────────────────────────
 
     def _maybe_train(self, jid, client, city_id: str, available: int, slots_free: int,
                      secs_per: int, live_params: dict, max_risk: float,
@@ -617,63 +892,47 @@ class SpyRunner(BaseRunner):
                      safehouse_position: int) -> int | None:
         """Tenta treinar espiões se necessário. Retorna wait_seconds ou None."""
         if available > 0:
-            current_opt = find_minimum_agents_decoys(
-                live_params, 1, max_risk, max_risk + 25, 30.0, available
-            )
-            if current_opt:
-                return None
+            # Verifica se já dá pra infiltrar
+            if self._find_best_infiltration_batch(live_params, available, 1, max_risk):
+                return None  # pode infiltrar agora, não precisa treinar
 
-            # Tem disponíveis mas não consegue infiltrar — treinar mínimo adicional
+            # Precisa de mais — treinar
             for try_total in range(available + 1, min(capacity + 1, available + 15)):
-                if find_minimum_agents_decoys(live_params, 1, max_risk, max_risk + 25, 30.0, try_total):
+                if self._find_best_infiltration_batch(live_params, try_total, 1, max_risk):
                     to_train = min(try_total - available, slots_free)
                     if to_train <= 0:
                         self.log(jid, "warn",
-                            f"Infiltração impossível com {available} espiões (mín={try_total}) "
-                            f"e safehouse cheia ({total}/{capacity}). "
-                            f"Alvo muito seguro para max_risk={max_risk}%.")
-                        return None
+                            f"Infiltração impossível com {available} (mín={try_total}) e safehouse cheia.")
+                        return None  # deadlock real — deixar _handle_deadlock resolver
                     ok, msg = client.train_spies(city_id, count=to_train, position=safehouse_position)
                     if ok:
                         wait = secs_per * to_train + 60
                         self.log(jid, "info",
-                            f"Infiltração impossível com {available} disponíveis (mín={try_total}). "
-                            f"Treinando {to_train} espião(ões) → pronto em {wait}s.")
+                            f"Treinando {to_train} espião(ões) para infiltrar (mín={try_total}) → pronto em {wait}s.")
                     else:
                         wait = random.randint(5*60, 15*60)
-                        self.log(jid, "warn",
-                            f"Treino falhou: {msg}. Aguardando {wait}s.")
+                        self.log(jid, "warn", f"Treino falhou: {msg}. Aguardando {wait}s.")
                     return wait
-            self.log(jid, "warn",
-                f"Infiltração impossível mesmo na capacidade máxima ({capacity}). "
-                f"Alvo muito seguro para max_risk={max_risk}%.")
             return None
 
         # available=0 — treinar para ter espiões em casa
         if slots_free <= 0:
-            self.log(jid, "warn",
-                f"Sem espiões disponíveis e safehouse cheia ({total}/{capacity}). "
-                f"Aguardando retorno de espiões em missão.")
+            self.log(jid, "warn", f"Sem espiões disponíveis e safehouse cheia. Aguardando retorno.")
             return random.randint(10*60, 20*60)
 
-        to_train = min(5, slots_free)  # treina até 5 por vez
+        to_train = min(5, slots_free)
         ok, msg = client.train_spies(city_id, count=to_train, position=safehouse_position)
         if ok:
             wait = secs_per * to_train + 60
-            custo_ouro    = to_train * 150
-            custo_cristal = to_train * 54
             self.log(jid, "info",
-                f"Sem espiões disponíveis. Treinando {to_train} espião(ões) "
-                f"(custo: {custo_ouro} ouro + {custo_cristal} cristal) → pronto em {wait}s.")
+                f"Treinando {to_train} espião(ões) (custo: {to_train*150} ouro, {to_train*54} cristal) "
+                f"→ pronto em {wait}s.")
         else:
             wait = random.randint(10*60, 20*60)
-            self.log(jid, "warn",
-                f"Treino falhou ({msg}). Sem recursos ou acesso restrito. "
-                f"Aguardando {wait}s.")
+            self.log(jid, "warn", f"Treino falhou ({msg}). Aguardando {wait}s.")
         return wait
 
     def _arrival_wait(self, groups: list, fallback: int) -> int:
-        """Segundos até o primeiro grupo em-trânsito chegar. Usa return_timestamp se disponível."""
         now = int(time.time())
         best = None
         for g in groups:
@@ -686,7 +945,7 @@ class SpyRunner(BaseRunner):
 
     def _total_needed(self, mission_ids: list, live_params: dict,
                       available: int, max_risk: float) -> int:
-        """Total de espiões (agentes+chamarizes) necessários para a missão mais exigente."""
+        """Compatibilidade: versão simples sem projeção."""
         needed = 1
         for mid in mission_ids:
             opt = find_minimum_agents_decoys(live_params, mid, max_risk, max_risk + 25, 30.0, available)
@@ -696,41 +955,35 @@ class SpyRunner(BaseRunner):
 
     def _get_target_groups(self, state: dict, city_id: str,
                            city_name: str = "", owner: str = "") -> list[dict]:
-        """Retorna todos os grupos do alvo — estacionados E em-trânsito."""
-        groups       = state.get("target_groups") or []
-        city_id_str  = str(city_id or "").strip()
-        city_norm    = str(city_name or "").strip().lower()
-        owner_norm   = str(owner or "").strip().lower()
+        groups      = state.get("target_groups") or []
+        city_id_str = str(city_id or "").strip()
+        city_norm   = str(city_name or "").strip().lower()
+        owner_norm  = str(owner or "").strip().lower()
         result, seen = [], set()
 
         for g in groups:
             gid = str(g.get("spy_id") or "")
             if gid and gid in seen:
                 continue
-            # Prioridade: match por city_id
             if city_id_str and str(g.get("target_city_id") or "").strip() == city_id_str:
                 result.append(g)
                 if gid: seen.add(gid)
                 continue
-            # Fallback: match por city_name (em-trânsito não tem city_id)
             g_city  = str(g.get("city_name") or "").strip().lower()
             g_owner = str(g.get("owner") or "").strip().lower()
             if city_norm and g_city == city_norm and (not owner_norm or g_owner == owner_norm):
                 result.append(g)
                 if gid: seen.add(gid)
                 continue
-            # Fallback: match por owner quando city_name ausente
             if owner_norm and g_owner == owner_norm and city_norm and not g_city:
                 result.append(g)
                 if gid: seen.add(gid)
-
         return result
 
     def _select_target_group(self, groups: list) -> dict:
-        """Seleciona grupo principal: prefere estacionado, depois em-trânsito."""
         if not groups:
             return {}
-        waiting   = [g for g in groups if g.get("is_waiting")]
+        waiting    = [g for g in groups if g.get("is_waiting")]
         travelling = [g for g in groups if g.get("is_travelling")]
         pool = waiting or travelling or groups
         return max(pool, key=lambda g: int(g.get("count_in_use") or 0))
@@ -752,33 +1005,32 @@ class SpyRunner(BaseRunner):
     def _save_reports(self, jid, client, ga_id, city_id, delete_after,
                       return_reports: bool = False,
                       safehouse_position: int = 19) -> list:
-        """Coleta, salva e opcionalmente retorna relatórios da safehouse."""
         try:
             reports = client.get_spy_reports(city_id, position=safehouse_position)
             if not reports:
                 return []
             dicts = [{
-                "report_id": r.get("report_id", ""),
-                "source_city_id": city_id,
-                "target_owner": r.get("target_owner", ""),
-                "target_city_id": r.get("target_city_id", ""),
+                "report_id":        r.get("report_id", ""),
+                "source_city_id":   city_id,
+                "target_owner":     r.get("target_owner", ""),
+                "target_city_id":   r.get("target_city_id", ""),
                 "target_city_name": r.get("target_city_name", ""),
-                "target_x": r.get("target_x"),
-                "target_y": r.get("target_y"),
-                "subject": r.get("subject", ""),
-                "mission_name": r.get("mission_name", ""),
-                "status": r.get("status", ""),
-                "result_status": r.get("result_status", ""),
-                "agents_sent": r.get("agents_sent", 0),
-                "agents_lost": r.get("agents_lost", 0),
-                "decoys_sent": r.get("decoys_sent", 0),
-                "decoys_lost": r.get("decoys_lost", 0),
-                "report_html": r.get("report_html", ""),
-                "report_text": r.get("report_text", ""),
-                "data_json": r.get("data_json", {}),
-                "date_str": r.get("date_str", ""),
-                "mission_id": r.get("mission_id"),
-                "is_read": r.get("is_read", not r.get("unread", False)),
+                "target_x":         r.get("target_x"),
+                "target_y":         r.get("target_y"),
+                "subject":          r.get("subject", ""),
+                "mission_name":     r.get("mission_name", ""),
+                "status":           r.get("status", ""),
+                "result_status":    r.get("result_status", ""),
+                "agents_sent":      r.get("agents_sent", 0),
+                "agents_lost":      r.get("agents_lost", 0),
+                "decoys_sent":      r.get("decoys_sent", 0),
+                "decoys_lost":      r.get("decoys_lost", 0),
+                "report_html":      r.get("report_html", ""),
+                "report_text":      r.get("report_text", ""),
+                "data_json":        r.get("data_json", {}),
+                "date_str":         r.get("date_str", ""),
+                "mission_id":       r.get("mission_id"),
+                "is_read":          r.get("is_read", not r.get("unread", False)),
             } for r in reports]
             res = self.hub.save_spy_reports(ga_id, dicts)
             saved, new = res.get("saved", 0), res.get("new_count", 0)
@@ -795,9 +1047,8 @@ class SpyRunner(BaseRunner):
             return []
 
     def _mission_succeeded(self, reports: list, mission_id: int, target_owner: str) -> bool:
-        """True se o relatório mais recente para esta missão mostra sucesso."""
         if not reports:
-            return True  # sem relatório ainda = assume sucesso (pode ter atrasado)
+            return True
         owner_l = (target_owner or "").lower()
         for r in reports[:5]:
             if owner_l and (r.get("target_owner") or "").lower() != owner_l:
@@ -814,11 +1065,10 @@ class SpyRunner(BaseRunner):
     def _check_decoy_resources(self, jid, ga_id, city_id, mission_id,
                                 live_params, agents, decoys, max_risk,
                                 client=None, committed_res: dict | None = None) -> tuple[int, bool]:
-        """Verifica recursos para chamarizes. Retorna (decoys_acessíveis, recurso_solicitado)."""
         if decoys <= 0:
             return 0, False
         try:
-            mdata = (live_params.get("missionData") or {}).get(str(mission_id)) or {}
+            mdata        = (live_params.get("missionData") or {}).get(str(mission_id)) or {}
             decoy_class  = str(mdata.get("decoyMissionClass") or "")
             resource_key = self._DECOY_RESOURCE_MAP.get(decoy_class, "")
             cost_map     = mdata.get("301") or {}
@@ -827,16 +1077,12 @@ class SpyRunner(BaseRunner):
             if not resource_key or cost_each <= 0:
                 return decoys, False
 
-            snap   = self.hub.get_snapshot(game_account_id=ga_id)
-            cities = snap.get("cities") or []
+            snap     = self.hub.get_snapshot(game_account_id=ga_id)
+            cities   = snap.get("cities") or []
             spy_city = next((c for c in cities if str(c.get("id") or "") == str(city_id)), {})
-            # Recursos estão direto no dict da cidade (city["sulfur"]), não em city["resources"]
             have_raw = spy_city.get(resource_key)
-            # Subtrair o que já foi comprometido em missões anteriores desta execução
             committed = int((committed_res or {}).get(resource_key) or 0)
-
             have   = max(0, int(have_raw or 0) - committed)
-            need   = decoys * cost_each
             afford = min(decoys, have // cost_each) if cost_each > 0 else decoys
 
             if afford >= decoys:
@@ -845,39 +1091,36 @@ class SpyRunner(BaseRunner):
             mname = MISSION_DATA.get(mission_id, {}).get("name", f"M{mission_id}")
             self.log(jid, "warn",
                 f"{mname}: chamarizes precisam de {resource_key} "
-                f"({decoy_class}, {cost_each}/cham × {decoys} = {need} total). "
-                f"Disponível: {have} → reduzindo de {decoys} para {afford} chamarizes.")
+                f"({decoy_class}, {cost_each}/cham × {decoys} = {decoys*cost_each}). "
+                f"Disponível: {have} → reduzindo para {afford} chamarizes.")
 
-            # Tentar transporte de outra cidade
             if client and resource_key != "gold" and afford < decoys:
                 source = None
                 best   = 0
                 for c in cities:
                     if str(c.get("id") or "") == str(city_id):
                         continue
-                    amt = int(c.get(resource_key) or 0)  # recursos em city["sulfur"] etc.
+                    amt = int(c.get(resource_key) or 0)
                     transferable = int(amt * 0.8)
-                    if transferable >= need and transferable > best:
+                    if transferable >= decoys * cost_each and transferable > best:
                         best, source = transferable, c
 
                 if source:
-                    send = min(best, need * 3)
+                    send = min(best, decoys * cost_each * 3)
                     try:
                         client.send_resources(int(source["id"]), int(city_id), {resource_key: send})
                         self.log(jid, "info",
                             f"Transporte solicitado: {send} {resource_key} "
-                            f"de {source.get('name', source['id'])} → {spy_city.get('name', city_id)}. "
-                            f"Missão {mname} adiada para depois das outras.")
-                        # Registrar comprometido para que próxima missão saiba
+                            f"de {source.get('name', source['id'])} → {spy_city.get('name', city_id)}.")
                         if committed_res is not None:
                             committed_res[resource_key] = committed_res.get(resource_key, 0) + send
                         return afford, True
                     except Exception as te:
-                        self.log(jid, "warn", f"Falha ao solicitar transporte de {resource_key}: {te}")
+                        self.log(jid, "warn", f"Falha no transporte de {resource_key}: {te}")
 
             return afford, False
         except Exception as exc:
-            self.log(jid, "warn", f"Erro ao verificar recursos de chamarizes: {exc}")
+            self.log(jid, "warn", f"Erro ao verificar recursos: {exc}")
             return decoys, False
 
     def _notify_telegram(self, jid, ga_id, target_owner, target_city_name,
@@ -902,7 +1145,6 @@ class SpyRunner(BaseRunner):
     def _replenish_spies(self, jid, client, city_id: str,
                          capacity: int, total: int, secs_per: int, *,
                          safehouse_position: int) -> None:
-        """Treina espiões de reposição ao fim do ciclo."""
         try:
             missing = max(0, capacity - total)
             if missing <= 0:
@@ -915,4 +1157,4 @@ class SpyRunner(BaseRunner):
             else:
                 self.log(jid, "warn", f"Reposição: treino falhou ({msg}).")
         except Exception as exc:
-            self.log(jid, "warn", f"Reposição: erro ao treinar: {exc}")
+            self.log(jid, "warn", f"Reposição: erro: {exc}")
