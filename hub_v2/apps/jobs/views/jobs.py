@@ -2302,16 +2302,28 @@ class WorkflowListView(FilterSortListView):
         context = super().get_context_data(**kwargs)
         workflows = list(context.get("page_obj").object_list if context.get("page_obj") else context.get("object_list", []))
         workflow_ids = [workflow.pk for workflow in workflows]
+
+        # Auto-prune old runs for workflows on this page before building the display maps.
+        # This ensures the limit is enforced without requiring the user to open each workflow.
+        if workflow_ids:
+            self._prune_runs_for_workflows(workflow_ids)
+
         run_map = {}
         job_map = {}
         if workflow_ids:
-            for run in (
-                WorkflowRun.objects.filter(workflow_id__in=workflow_ids)
-                .order_by("workflow_id", "-sequence", "-created_at")
-            ):
-                run_map.setdefault(run.workflow_id, [])
-                if len(run_map[run.workflow_id]) < 3:
-                    run_map[run.workflow_id].append(run)
+            # Fetch the 3 most recent non-archived runs per workflow.
+            # One small query per workflow with LIMIT 3 is faster than a single
+            # unbounded query that scans all runs for the page.
+            for wf_id in workflow_ids:
+                runs = list(
+                    WorkflowRun.objects.filter(
+                        workflow_id=wf_id,
+                        archived_at__isnull=True,
+                    )
+                    .order_by("-sequence", "-created_at")[:3]
+                )
+                if runs:
+                    run_map[wf_id] = runs
 
             active_run_ids = [workflow.active_run_id for workflow in workflows if workflow.active_run_id]
             if active_run_ids:
@@ -2324,16 +2336,22 @@ class WorkflowListView(FilterSortListView):
                     if len(job_map[job.workflow_run_id]) < 3:
                         job_map[job.workflow_run_id].append(job)
 
-        # Load recent jobs per workflow (for preview display)
+        # Load recent jobs per workflow (for preview display).
+        # One small query per workflow with LIMIT 5 is much faster than a single
+        # unbounded query across all workflows — avoids scanning thousands of rows
+        # for long-running workflows that accumulate many history entries.
         recent_job_map: dict = {}
         if workflow_ids:
-            for job in (
-                Job.objects.filter(workflow_id__in=workflow_ids)
-                .order_by("workflow_id", "-created_at")
-            ):
-                bucket = recent_job_map.setdefault(job.workflow_id, [])
-                if len(bucket) < 5:
-                    bucket.append(job)
+            for wf_id in workflow_ids:
+                recent_job_map[wf_id] = list(
+                    Job.objects.filter(
+                        workflow_id=wf_id,
+                    ).filter(
+                        models.Q(workflow_run__isnull=True)
+                        | models.Q(workflow_run__archived_at__isnull=True)
+                    )
+                    .order_by("-created_at")[:5]
+                )
 
         # Workflows with running jobs (truly active right now)
         running_workflow_ids = set(
@@ -2427,6 +2445,48 @@ class WorkflowListView(FilterSortListView):
             if cat not in _ORDER:
                 groups.append({"category": cat, "label": cat.title(), "icon": "bi-grid", "color": "var(--ik-muted)", "rows": rows})
         return groups
+
+    @staticmethod
+    def _prune_runs_for_workflows(workflow_ids: list) -> None:
+        """Archive excess WorkflowRuns for each workflow on the current page.
+
+        Reads the ``workflow_max_runs_per_workflow`` setting and, for each
+        workflow that exceeds the limit, archives the oldest runs in bulk.
+        This keeps the active run count bounded without requiring the user
+        to open each workflow individually.
+        """
+        from apps.settings_app.utils import get_int_setting as _get_int
+        max_runs = _get_int("workflow_max_runs_per_workflow", 150)
+
+        # Count active runs per workflow in a single query
+        from django.db.models import Count as _Count
+        counts = {
+            row["workflow_id"]: row["cnt"]
+            for row in WorkflowRun.objects
+            .filter(workflow_id__in=workflow_ids, archived_at__isnull=True)
+            .values("workflow_id")
+            .annotate(cnt=_Count("id"))
+        }
+
+        now = timezone.now()
+        for wf_id, total in counts.items():
+            if total <= max_runs:
+                continue
+            excess = total - max_runs
+            old_run_ids = list(
+                WorkflowRun.objects
+                .filter(workflow_id=wf_id, archived_at__isnull=True)
+                .order_by("sequence")
+                .values_list("pk", flat=True)[:excess]
+            )
+            if not old_run_ids:
+                continue
+            # Cancel any still-queued/scheduled jobs in these runs
+            Job.objects.filter(
+                workflow_run_id__in=old_run_ids,
+                status__in=("scheduled", "queued"),
+            ).update(status="cancelled", finished_at=now)
+            WorkflowRun.objects.filter(pk__in=old_run_ids).update(archived_at=now)
 
     @staticmethod
     def _backfill_recent_workflows(limit=200):
