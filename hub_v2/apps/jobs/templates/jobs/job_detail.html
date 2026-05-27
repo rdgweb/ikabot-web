@@ -1177,18 +1177,21 @@
         </div>
         {# Risk inline (only for pending missions with known risk data) #}
         {% if m.status == 'pending' and m.risk %}
-        <div class="mt-2 pt-2 border-t border-[var(--ik-line)] flex items-center flex-wrap gap-x-2.5 gap-y-0.5 text-[10px] font-mono">
-          <span class="font-semibold text-ink">{{ m.risk.agents }}ag{% if m.risk.decoys %} + {{ m.risk.decoys }}dec{% endif %}</span>
+        <div class="mt-2 pt-2 border-t border-[var(--ik-line)] flex items-baseline flex-wrap gap-x-1.5 gap-y-0.5 text-[10px]">
+          <span class="font-semibold text-ink">{{ m.risk.agents }} Agente{% if m.risk.agents != 1 %}s{% endif %}</span>
+          {% if m.risk.decoys %}<span class="text-muted">+</span>
+          <span class="font-semibold text-ink">{{ m.risk.decoys }} Chamariz{% if m.risk.decoys != 1 %}es{% endif %}</span>{% endif %}
           <span class="text-muted">→</span>
-          <span class="font-semibold text-[var(--ik-good)]">✓ {{ m.risk.success }}%</span>
+          <span class="text-muted">Sucesso</span>
+          <span class="font-semibold text-[var(--ik-good)]">{{ m.risk.success }}%</span>
           <span class="text-muted">·</span>
-          <span class="text-muted">ag:</span>
+          <span class="text-muted">Risco agente</span>
           <span class="font-semibold
             {% if m.risk.agent_risk > 30 %}text-[var(--ik-bad)]
             {% elif m.risk.agent_risk > 15 %}text-[var(--ik-gold)]
             {% else %}text-[var(--ik-good)]{% endif %}">{{ m.risk.agent_risk }}%</span>
           {% if m.risk.decoys %}
-          <span class="text-muted">· dec:</span>
+          <span class="text-muted">· Risco chamariz</span>
           <span class="font-semibold
             {% if m.risk.decoy_risk > 50 %}text-[var(--ik-bad)]
             {% elif m.risk.decoy_risk > 30 %}text-[var(--ik-gold)]
