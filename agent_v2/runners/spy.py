@@ -706,7 +706,7 @@ class SpyRunner(BaseRunner):
                         f"Recall: chamando {stationed} espião(ões) de volta (risco={recall_risk:.1f}%)")
                     ok, msg = self._execute_internal_mission(
                         client, city_id, target_city_id, island_id,
-                        8, 1, 0, tgroup.get("spy_id"),
+                        8, stationed, 0, tgroup.get("spy_id"),
                         safehouse_position=safehouse_position)
                     if ok:
                         wait = self._arrival_wait(tgroups, ARRIVAL_WAIT)

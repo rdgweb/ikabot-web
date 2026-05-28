@@ -186,9 +186,12 @@ def compute_spy_risks(live_params: dict, mission_id: int, agents: int, decoys: i
     # Display value: clamp to [minChance, maxChance]
     agent_risk = max(min_chance, min(max_chance, round(agent_risk_raw * 10) / 10))
 
-    # Decoy detection risk
-    decoy_risk_raw = gov_factor + max(decoys * min_decoy_risk, mission_risk / 4 - 50 + decoys * basic_decoy_risk_k)
-    decoy_risk = max(min_chance, min(max_chance, round(decoy_risk_raw)))
+    # Decoy detection risk (0 when no decoys sent)
+    if decoys > 0:
+        decoy_risk_raw = gov_factor + max(decoys * min_decoy_risk, mission_risk / 4 - 50 + decoys * basic_decoy_risk_k)
+        decoy_risk = max(min_chance, min(max_chance, round(decoy_risk_raw)))
+    else:
+        decoy_risk = 0.0
 
     # Success probability — uses agent_risk_for_success (raw, not display-clamped)
     # JS: newChance = min(maxChance, max(minChance, (100 - agentRisk) * chance / 100))
