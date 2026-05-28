@@ -317,6 +317,70 @@ class WorldPlayerDetailView(WorldIntelBaseView):
         return ctx
 
 
+class WorldCityDetailView(WorldIntelBaseView):
+    """Detalhe de uma cidade específica do WorldDump + relatórios de espionagem vinculados."""
+
+    template_name = "worldintel/city_detail.html"
+    active_tab = "players"
+
+    def get_context_data(self, **kwargs):
+        from apps.espionage.models import SpyReport
+
+        ctx = super().get_context_data(**kwargs)
+        base = self._base_context()
+        ctx.update(base)
+        current_dump = base["selected_dump"]
+
+        city_id = str(self.request.GET.get("city_id") or "").strip()
+        if not city_id:
+            raise Http404("city_id não informado.")
+
+        city = WorldDumpCity.objects.select_related("island", "dump").filter(
+            game_city_id=city_id
+        ).order_by("-dump__captured_at").first()
+
+        if not city:
+            raise Http404("Cidade não encontrada no dump.")
+
+        # Relatórios de espionagem para esta cidade (todos, ordenados por mais recente)
+        spy_reports = SpyReport.objects.filter(
+            target_city_id=city_id
+        ).select_related("game_account", "game_account__account").order_by("-created_at")[:50]
+
+        # Último relatório válido por missão
+        from django.utils import timezone
+        now = timezone.now()
+        latest_by_mission: dict = {}
+        for report in spy_reports:
+            mid = report.mission_id
+            if mid not in latest_by_mission:
+                latest_by_mission[mid] = report
+
+        ctx["city"] = city
+        ctx["spy_reports"] = spy_reports
+        ctx["latest_by_mission"] = latest_by_mission
+        ctx["now"] = now
+
+        # URL para criar job de espionagem nesta cidade
+        owner_id = city.owner_id or ""
+        owner_name = city.owner_name or ""
+        ctx["spy_job_url"] = (
+            f"/jobs/new/form/?action=15"
+            f"&input_target_city_id={city.game_city_id}"
+            f"&input_target_city_name={city.name}"
+            f"&input_target_owner={owner_name}"
+            f"&input_target_owner_id={owner_id}"
+            f"&input_island_id={city.island.island_id}"
+        )
+        # Back to player detail
+        ctx["player_url"] = (
+            f"/intel/players/detail/?owner_id={owner_id}"
+            + (f"&dump={current_dump.pk}" if current_dump else "")
+            + (f"&ga={base['selected_game_account'].pk}" if base.get("selected_game_account") else "")
+        )
+        return ctx
+
+
 class WorldIslandListView(WorldIntelBaseView):
     template_name = "worldintel/islands.html"
     active_tab = "islands"

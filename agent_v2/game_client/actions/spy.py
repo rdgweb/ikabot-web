@@ -283,6 +283,64 @@ def find_minimum_agents_decoys(
     )
 
 
+def find_best_score_combo(
+    live_params: dict,
+    mission_id: int,
+    available: int,
+    *,
+    min_success: float = 5.0,
+    success_plateau: float = 5.0,
+) -> dict | None:
+    """Find the cheapest (agents, decoys) within the success plateau.
+
+    Strategy:
+      1. Collect all combos with success >= min_success (no hard risk threshold).
+      2. Find max achievable success across all combos.
+      3. Plateau = combos with success >= max_success - success_plateau (default 5pp).
+         This avoids the "always add more agents" trap: once success is near-maximum,
+         extra agents cost resources without meaningful gain.
+      4. Among plateau combos, pick:
+         - minimum total (agents + decoys)   ← cost-efficiency
+         - then minimum agent_risk            ← prefer safer agent
+         - then maximum success               ← break remaining ties
+
+    Returns None if no combo reaches min_success.
+    """
+    candidates: list[dict] = []
+
+    max_agents = min(available, 28)
+    for agents in range(1, max_agents + 1):
+        for decoys in range(0, min(available - agents + 1, 15)):
+            r = compute_spy_risks(live_params, mission_id, agents, decoys)
+            if float(r["success"]) < min_success:
+                continue
+            candidates.append(r)
+
+    if not candidates:
+        return None
+
+    max_success = max(float(c["success"]) for c in candidates)
+    floor = max(float(min_success), max_success - success_plateau)
+    plateau = [c for c in candidates if float(c["success"]) >= floor]
+
+    best = min(
+        plateau,
+        key=lambda c: (
+            int(c["agents"]) + int(c.get("decoys") or 0),
+            float(c["agent_risk"]),
+            -float(c["success"]),
+        ),
+    )
+    # Attach score for logging
+    score = (
+        float(best["success"])
+        - float(best["agent_risk"]) * 1.3
+        - float(best.get("decoy_risk", 0)) * 1.0
+        - (int(best["agents"]) + int(best.get("decoys") or 0)) * 0.3
+    )
+    return {**best, "score": round(score, 2)}
+
+
 def compute_agents_for_success(mission_id: int, target_success_pct: int = 80) -> int:
     """Calculate agents needed to reach target_success_pct% success probability.
 

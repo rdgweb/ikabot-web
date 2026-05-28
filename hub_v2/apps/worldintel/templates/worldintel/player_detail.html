@@ -132,7 +132,14 @@
         <tbody>
           {% for city in cities %}
           <tr class="hover:bg-[var(--ik-sand-light)] transition-colors" style="border-bottom:1px solid var(--ik-line);">
-            <td class="py-2 px-3 font-medium text-ink">{{ city.name }}</td>
+            <td class="py-2 px-3 font-medium">
+              {% if city.game_city_id %}
+              <a href="{% url 'worldintel:city-detail' %}?city_id={{ city.game_city_id }}&dump={{ selected_dump.pk }}{% if selected_game_account %}&ga={{ selected_game_account.pk }}{% endif %}"
+                 class="text-sea hover:underline">{{ city.name }}</a>
+              {% else %}
+              <span class="text-ink">{{ city.name }}</span>
+              {% endif %}
+            </td>
             <td class="py-2 px-3 font-mono text-muted">[{{ city.island.x }}:{{ city.island.y }}]</td>
             <td class="py-2 px-3 text-muted">{{ city.island.name|default:"—" }}</td>
             <td class="py-2 px-3 text-muted">

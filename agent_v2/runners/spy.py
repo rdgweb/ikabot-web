@@ -33,6 +33,7 @@ from core.runner_registry import register_runner
 from game_client.actions.spy import (
     MISSION_DATA,
     compute_spy_risks,
+    find_best_score_combo,
     find_minimum_agents_decoys,
 )
 from runners.base import BaseRunner, RunnerResult
@@ -74,6 +75,7 @@ class SpyRunner(BaseRunner):
         island_id        = str(inputs.get("island_id") or "").strip()
         target_city_name = str(inputs.get("target_city_name") or "").strip()
         target_owner     = str(inputs.get("target_owner") or "").strip()
+        target_owner_id  = str(inputs.get("target_owner_id") or "").strip()
         save_reports     = bool(inputs.get("save_reports", True))
         delete_after     = bool(inputs.get("delete_after_save", False))
         recall_after     = bool(inputs.get("recall_after", True))
@@ -157,6 +159,7 @@ class SpyRunner(BaseRunner):
             if save_reports:
                 self._save_reports(
                     jid, client, ga_id, city_id, delete_after,
+                    target_owner_id=target_owner_id,
                     safehouse_position=safehouse_position,
                 )
 
@@ -261,9 +264,7 @@ class SpyRunner(BaseRunner):
                 if live_params and missions_pending:
                     new_mission_risks = {}
                     for mid in missions_pending:
-                        opt = find_minimum_agents_decoys(
-                            live_params, mid, eff_risk, eff_risk + 25, 30.0,
-                            max(capacity, 20))
+                        opt = find_best_score_combo(live_params, mid, max(capacity, 20))
                         if opt:
                             new_mission_risks[str(mid)] = {
                                 "agents":     opt["agents"],
@@ -271,6 +272,7 @@ class SpyRunner(BaseRunner):
                                 "agent_risk": round(opt.get("agent_risk", 0), 1),
                                 "decoy_risk": round(opt.get("decoy_risk", 0), 1),
                                 "success":    round(opt.get("success", 0), 1),
+                                "score":      round(opt.get("score", 0), 2),
                             }
                         else:
                             new_mission_risks[str(mid)] = None
@@ -441,12 +443,9 @@ class SpyRunner(BaseRunner):
             if phase == "executing":
                 # Calcular riscos por missão se ainda não temos (ex: transição sem passar pelo accumulating)
                 if live_params and missions_pending and not mission_risks:
-                    eff_risk_calc = _effective_max_risk()
                     new_mission_risks = {}
                     for mid in missions_pending:
-                        opt = find_minimum_agents_decoys(
-                            live_params, mid, eff_risk_calc, eff_risk_calc + 25, 30.0,
-                            max(stationed, capacity, 20))
+                        opt = find_best_score_combo(live_params, mid, max(stationed, capacity, 20))
                         if opt:
                             new_mission_risks[str(mid)] = {
                                 "agents":     opt["agents"],
@@ -454,6 +453,7 @@ class SpyRunner(BaseRunner):
                                 "agent_risk": round(opt.get("agent_risk", 0), 1),
                                 "decoy_risk": round(opt.get("decoy_risk", 0), 1),
                                 "success":    round(opt.get("success", 0), 1),
+                                "score":      round(opt.get("score", 0), 2),
                             }
                         else:
                             new_mission_risks[str(mid)] = None
@@ -499,17 +499,14 @@ class SpyRunner(BaseRunner):
                                     missions_done=missions_done,
                                     last_stationed=stationed)})
 
-                    # min_success=30% alinhado com o threshold da fase de acumulação.
-                    # Usar 40% causava loop infinito: acumulação aprovava (34%>30%),
-                    # execução rejeitava (34%<40%), voltava para acumular indefinidamente.
-                    opt = find_minimum_agents_decoys(
-                        live_params, current_mission, eff_risk, eff_risk + 25, 30.0, stationed)
+                    # Scoring: escolhe o combo com melhor custo-benefício entre os estacionados.
+                    # Sem thresholds rígidos — pura otimização de score.
+                    opt = find_best_score_combo(live_params, current_mission, stationed)
 
                     if not opt:
-                        # Impossível com stationed — verificar se precisa acumular mais
-                        opt_cap = find_minimum_agents_decoys(
-                            live_params, current_mission, eff_risk, eff_risk + 25, 30.0,
-                            max(available, capacity, 20))
+                        # Impossível com stationed — verificar se acumulando mais resolve
+                        opt_cap = find_best_score_combo(
+                            live_params, current_mission, max(available, capacity, 20))
                         if opt_cap:
                             need_ag = opt_cap["agents"]
                             need_dec = opt_cap.get("decoys", 0)
@@ -610,7 +607,9 @@ class SpyRunner(BaseRunner):
                             if save_reports:
                                 fresh = self._save_reports(
                                     jid, client, ga_id, city_id, delete_after,
-                                    return_reports=True, safehouse_position=safehouse_position,
+                                    return_reports=True,
+                                    target_owner_id=target_owner_id,
+                                    safehouse_position=safehouse_position,
                                 )
                                 succeeded = self._mission_succeeded(fresh, current_mission, target_owner)
 
@@ -759,40 +758,32 @@ class SpyRunner(BaseRunner):
         chosen_ag: int | None = None,
         chosen_dec: int | None = None,
     ) -> None:
-        """Loga tabela de ag/dec/sucesso/risco para explicar a escolha."""
+        """Loga tabela de ag/dec/sucesso/risco/score para explicar a escolha."""
         mname = MISSION_DATA.get(mission_id, {}).get("name", f"M{mission_id}")
         header = (
             f"[TABELA {mname}] "
-            f"max_risco={max_risk:.0f}%  disponíveis={available}\n"
-            f"  {'ag':>3} {'dec':>4} {'sucesso%':>9} {'risco_ag%':>10} {'risco_dec%':>11}  notas"
+            f"disponíveis={available}\n"
+            f"  {'ag':>3} {'dec':>4} {'sucesso%':>9} {'risco_ag%':>10} {'risco_dec%':>11} {'score':>7}  notas"
         )
         lines = [header]
 
-        max_show_ag  = min(available, 6)
-        max_show_dec = min(available, 8)
+        max_show_ag  = min(available, 8)
+        max_show_dec = min(available, 10)
 
         for ag in range(1, max_show_ag + 1):
             for dec in range(0, max_show_dec + 1 - ag):
                 r = compute_spy_risks(live_params, mission_id, ag, dec)
-                ag_ok  = r["agent_risk"]  <= max_risk
-                dec_ok = r.get("decoy_risk", 0) <= max_risk + 25
-                suc_ok = r["success"] >= 30.0
-                viable = ag_ok and dec_ok and suc_ok
-
-                notes = []
-                if not ag_ok:
-                    notes.append(f"risco_ag={r['agent_risk']:.1f}%>lim")
-                if not dec_ok:
-                    notes.append(f"risco_dec={r.get('decoy_risk',0):.1f}%>lim")
-                if not suc_ok:
-                    notes.append(f"sucesso={r['success']:.1f}%<30%")
-
+                score = (
+                    float(r["success"])
+                    - float(r["agent_risk"]) * 1.3
+                    - float(r.get("decoy_risk", 0)) * 1.0
+                    - (ag + dec) * 0.3
+                )
                 is_chosen = (ag == chosen_ag and dec == chosen_dec)
-                marker = " ← ESCOLHA" if is_chosen else ("  ✓" if viable else "  ✗")
-                note_str = " | ".join(notes) if notes else ("viável" if viable else "")
+                marker = " ← ESCOLHA" if is_chosen else ""
                 lines.append(
                     f"  {ag:>3} {dec:>4} {r['success']:>8.1f}% {r['agent_risk']:>9.1f}% "
-                    f"{r.get('decoy_risk',0):>10.1f}% {marker}  {note_str}"
+                    f"{r.get('decoy_risk',0):>10.1f}% {score:>7.2f}{marker}"
                 )
 
         self.log(jid, "info", "\n".join(lines))
@@ -846,9 +837,10 @@ class SpyRunner(BaseRunner):
         sim_avail = max(available, capacity)
 
         # Primeiro: needed sem projeção (limite inferior)
+        # Usa scoring para achar o combo ótimo por custo-benefício (não só o mínimo que passa threshold)
         needed_base = 1
         for mid in mission_ids:
-            opt = find_minimum_agents_decoys(live_params, mid, max_risk, max_risk + 25, 30.0, sim_avail)
+            opt = find_best_score_combo(live_params, mid, sim_avail)
             if opt:
                 needed_base = max(needed_base, opt["agents"] + opt.get("decoys", 0))
 
@@ -874,7 +866,7 @@ class SpyRunner(BaseRunner):
 
         needed_proj = 1
         for mid in mission_ids:
-            opt = find_minimum_agents_decoys(projected_params, mid, max_risk, max_risk + 25, 30.0, sim_avail)
+            opt = find_best_score_combo(projected_params, mid, sim_avail)
             if opt:
                 needed_proj = max(needed_proj, opt["agents"] + opt.get("decoys", 0))
 
@@ -1108,6 +1100,7 @@ class SpyRunner(BaseRunner):
 
     def _save_reports(self, jid, client, ga_id, city_id, delete_after,
                       return_reports: bool = False,
+                      target_owner_id: str = "",
                       safehouse_position: int = 19) -> list:
         try:
             reports = client.get_spy_reports(city_id, position=safehouse_position)
@@ -1117,6 +1110,7 @@ class SpyRunner(BaseRunner):
                 "report_id":        r.get("report_id", ""),
                 "source_city_id":   city_id,
                 "target_owner":     r.get("target_owner", ""),
+                "target_owner_id":  target_owner_id or "",
                 "target_city_id":   r.get("target_city_id", ""),
                 "target_city_name": r.get("target_city_name", ""),
                 "target_x":         r.get("target_x"),

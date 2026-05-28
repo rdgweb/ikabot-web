@@ -8,12 +8,15 @@ Auth: AgentTokenAuthentication + IsAgent
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.models import GameAccount
+from apps.settings_app.models import AppSetting
 from core.auth.backends import AgentTokenAuthentication
 from core.auth.permissions import IsAgent
 
@@ -44,6 +47,13 @@ class SpyReportsSaveView(APIView):
         except GameAccount.DoesNotExist:
             return Response({"error": "GameAccount not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        # Calcula expires_at com base na configuração global (default 48h)
+        try:
+            expiry_hours = int(AppSetting.objects.get(key="spy_report_expiry_hours").value)
+        except (AppSetting.DoesNotExist, ValueError):
+            expiry_hours = 48
+        expires_at = timezone.now() + timedelta(hours=expiry_hours)
+
         saved = 0
         new_count = 0
 
@@ -56,6 +66,8 @@ class SpyReportsSaveView(APIView):
                 "target_x": report_data.get("target_x"),
                 "target_y": report_data.get("target_y"),
                 "target_owner": report_data.get("target_owner") or "",
+                "target_owner_id": report_data.get("target_owner_id") or "",
+                "expires_at": expires_at,
                 "mission_id": report_data.get("mission_id"),
                 "mission_name": report_data.get("mission_name") or "",
                 "subject": report_data.get("subject") or "",

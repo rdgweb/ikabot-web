@@ -1,0 +1,190 @@
+{% extends base_template|default:"base.html" %}
+{% load humanize hub_tags %}
+
+{% block title %}{{ city.name }} — Inteligência{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span>
+  <a href="{% url 'worldintel:players' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}" class="text-ink">Inteligência</a>
+  <span class="mx-1">/</span>
+  <a href="{{ player_url }}" class="text-muted">{{ city.owner_name }}</a>
+  <span class="mx-1">/</span>
+  <span class="text-muted">{{ city.name }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+
+  {# ── Header ── #}
+  <div class="card">
+    <div class="flex items-start justify-between gap-4 flex-wrap">
+      <div>
+        <div class="flex items-center gap-2 mb-1 flex-wrap">
+          <i class="bi bi-building text-sea text-lg"></i>
+          <h1 class="text-xl font-bold text-ink">{{ city.name }}</h1>
+          <span class="font-mono text-muted text-sm">[{{ city.island.x }}:{{ city.island.y }}]</span>
+          {% if city.in_fight %}
+            <span class="badge badge-danger">⚔️ Em batalha</span>
+          {% elif city.state == "vacation" %}
+            <span class="badge badge-warning">🌴 Férias</span>
+          {% elif city.state == "inactive_banned" %}
+            <span class="badge badge-danger">🚫 Banido</span>
+          {% elif city.state == "inactive" %}
+            <span class="badge badge-secondary">💤 Inativo</span>
+          {% endif %}
+        </div>
+        <p class="text-xs text-muted">
+          Dono: <a href="{{ player_url }}" class="text-sea hover:underline">{{ city.owner_name }}</a>
+          {% if city.ally_tag %} [{{ city.ally_tag }}]{% endif %}
+          · Nível {{ city.level }}
+          · Ilha: {{ city.island.name|default:"—" }}
+          · Recurso: {{ city.island.resource_name|default:"—" }}{% if city.island.resource_level %} Lv{{ city.island.resource_level }}{% endif %}
+          · ID: {{ city.game_city_id }}
+        </p>
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0 flex-wrap">
+        <a href="{{ player_url }}" class="btn btn-secondary btn-sm">
+          <i class="bi bi-arrow-left text-[10px]"></i> Voltar
+        </a>
+        {% if city.game_city_id %}
+        <a href="{{ spy_job_url }}"
+           hx-get="{{ spy_job_url }}"
+           hx-target="#job-modal-body"
+           hx-swap="innerHTML"
+           hx-push-url="false"
+           hx-boost="false"
+           onclick="openModal('jobcreate')"
+           class="btn btn-primary btn-sm">
+          <i class="bi bi-binoculars text-[10px]"></i> Espionar
+        </a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ── Intel por missão — cards de status ── #}
+  {% if latest_by_mission %}
+  <div class="card">
+    <h2 class="text-sm font-semibold text-ink mb-3">Intel por missão</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {% for mid, report in latest_by_mission.items %}
+      <div class="rounded-lg p-3 text-xs" style="background:var(--ik-sand-light); border:1px solid var(--ik-line);">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="font-semibold text-ink">{{ report.mission_name|default:report.subject|default:"Missão " }}</span>
+          {% if report.is_valid %}
+            <span class="badge badge-success text-[10px]">✓ Válido</span>
+          {% elif report.expires_at %}
+            <span class="badge badge-warning text-[10px]">⚠ Expirado</span>
+          {% else %}
+            <span class="badge badge-secondary text-[10px]">— Sem prazo</span>
+          {% endif %}
+        </div>
+        <div class="text-muted space-y-0.5">
+          <div>{{ report.created_at|naturaltime }}</div>
+          {% if report.expires_at %}
+          <div>
+            {% if report.is_valid %}
+              Expira {{ report.expires_at|naturaltime }}
+            {% else %}
+              Expirou {{ report.expires_at|naturaltime }}
+            {% endif %}
+          </div>
+          {% endif %}
+          <div class="mt-1">
+            <span class="{% if report.result_status == 'success' %}text-green-600{% else %}text-red-500{% endif %}">
+              {{ report.result_status|default:"—" }}
+            </span>
+            · {{ report.agents_sent }}ag {% if report.agents_lost %}<span class="text-red-500">-{{ report.agents_lost }}⚠</span>{% endif %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Tabela completa de relatórios ── #}
+  <div class="card !p-0 overflow-hidden">
+    <div class="px-4 py-3 flex items-center justify-between" style="border-bottom:1px solid var(--ik-line);">
+      <h2 class="text-sm font-semibold text-ink">Relatórios de espionagem</h2>
+      <span class="text-xs text-muted">{{ spy_reports|length }} registros</span>
+    </div>
+
+    {% if spy_reports %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead>
+          <tr style="border-bottom:2px solid var(--ik-line);">
+            <th class="py-2 px-3 text-left text-muted font-semibold">Data</th>
+            <th class="py-2 px-3 text-left text-muted font-semibold">Missão</th>
+            <th class="py-2 px-3 text-left text-muted font-semibold">Conta</th>
+            <th class="py-2 px-3 text-center text-muted font-semibold">Resultado</th>
+            <th class="py-2 px-3 text-center text-muted font-semibold">Agentes</th>
+            <th class="py-2 px-3 text-center text-muted font-semibold">Validade</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for report in spy_reports %}
+          <tr class="hover:bg-[var(--ik-sand-light)] transition-colors" style="border-bottom:1px solid var(--ik-line);">
+            <td class="py-2 px-3 text-muted whitespace-nowrap">
+              {{ report.created_at|date:"d/m/y H:i" }}
+            </td>
+            <td class="py-2 px-3 font-medium text-ink">
+              {{ report.mission_name|default:report.subject|default:"—" }}
+            </td>
+            <td class="py-2 px-3 text-muted">
+              {{ report.game_account.name|default:"—" }}
+            </td>
+            <td class="py-2 px-3 text-center">
+              {% if report.result_status == "success" %}
+                <span class="badge badge-success text-[10px]">✓ Sucesso</span>
+              {% elif report.result_status %}
+                <span class="badge badge-danger text-[10px]">✗ {{ report.result_status }}</span>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td class="py-2 px-3 text-center font-mono">
+              {{ report.agents_sent }}
+              {% if report.agents_lost %}
+                <span class="text-red-500 ml-1">-{{ report.agents_lost }}</span>
+              {% endif %}
+            </td>
+            <td class="py-2 px-3 text-center">
+              {% if report.is_valid %}
+                <span class="badge badge-success text-[10px]">✓ Válido</span>
+              {% elif report.expires_at %}
+                <span class="badge badge-secondary text-[10px]">Expirado</span>
+              {% else %}
+                <span class="text-muted text-[10px]">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="py-10 text-center text-sm text-muted">
+      <i class="bi bi-binoculars text-2xl mb-2 block opacity-30"></i>
+      Nenhum relatório de espionagem para esta cidade.
+      {% if city.game_city_id %}
+      <div class="mt-2">
+        <a href="{{ spy_job_url }}"
+           hx-get="{{ spy_job_url }}"
+           hx-target="#job-modal-body"
+           hx-swap="innerHTML"
+           hx-push-url="false"
+           hx-boost="false"
+           onclick="openModal('jobcreate')"
+           class="btn btn-primary btn-sm">
+          <i class="bi bi-binoculars text-[10px]"></i> Espionar agora
+        </a>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

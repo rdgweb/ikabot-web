@@ -13,6 +13,7 @@ class _SpyReportSerializer(serializers.Serializer):
     target_x = serializers.IntegerField(required=False, allow_null=True, default=None)
     target_y = serializers.IntegerField(required=False, allow_null=True, default=None)
     target_owner = serializers.CharField(required=False, default="", allow_blank=True)
+    target_owner_id = serializers.CharField(required=False, default="", allow_blank=True)
     mission_id = serializers.IntegerField(required=False, allow_null=True, default=None)
     mission_name = serializers.CharField(required=False, default="", allow_blank=True)
     subject = serializers.CharField(required=False, default="", allow_blank=True)
