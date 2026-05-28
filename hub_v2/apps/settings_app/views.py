@@ -14,7 +14,7 @@ from django.views import View
 from django.views.generic import TemplateView, UpdateView
 
 from core.encryption import decrypt, encrypt
-from .forms import AppSettingForm, WebshareSettingsForm, IkabotApiSettingsForm, AgentSecurityForm, SnapshotPolicyForm
+from .forms import AppSettingForm, WebshareSettingsForm, IkabotApiSettingsForm, AgentSecurityForm, SnapshotPolicyForm, SpyIntelSettingsForm
 from .models import AppSetting
 
 
@@ -76,6 +76,10 @@ class SettingsPageView(LoginRequiredMixin, TemplateView):
         ctx["auto_archive_last_run"] = _get_setting("workflow_auto_archive_last_run", "")
         ctx["workflow_max_runs"] = _get_int_setting("workflow_max_runs_per_workflow", 150)
 
+        ctx["spy_intel_form"] = SpyIntelSettingsForm(initial={
+            "spy_report_expiry_hours": _get_setting("spy_report_expiry_hours", "48"),
+        })
+
         ctx["generic_settings"] = AppSetting.objects.exclude(
             key__in=[
                 "webshare_api_key",
@@ -88,6 +92,7 @@ class SettingsPageView(LoginRequiredMixin, TemplateView):
                 "building_options_stale_seconds",
                 "running_job_recovery_grace_seconds",
                 "running_job_lease_seconds",
+                "spy_report_expiry_hours",
             ]
         ).order_by("key")
 
@@ -228,6 +233,15 @@ class AutoArchiveWorkflowsView(LoginRequiredMixin, View):
         _set_setting("workflow_auto_archive_last_run", timezone.now().strftime("%d/%m/%Y %H:%M"))
         messages.success(request, f"{count} workflow(s) arquivado(s).")
         return redirect("settings_app:list")
+
+class SaveSpyIntelSettingsView(LoginRequiredMixin, View):
+    def post(self, request):
+        form = SpyIntelSettingsForm(request.POST)
+        if form.is_valid():
+            _set_setting("spy_report_expiry_hours", str(form.cleaned_data["spy_report_expiry_hours"]))
+            messages.success(request, "Configurações de espionagem salvas.")
+        return redirect("settings_app:list")
+
 
 class SaveMaxRunsView(LoginRequiredMixin, View):
     def post(self, request):

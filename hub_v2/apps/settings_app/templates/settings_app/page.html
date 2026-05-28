@@ -269,6 +269,35 @@
   </div>
 </div>
 
+{# ── Espionagem / Inteligência ── #}
+<div class="card mb-6">
+  <div class="card-header !px-5 !py-3">
+    <div class="flex items-center gap-2">
+      <i class="bi bi-binoculars text-sea"></i>
+      <h3 class="text-sm font-semibold text-ink">Espionagem &amp; Inteligência</h3>
+    </div>
+  </div>
+  <div class="p-5">
+    <form method="post" action="{% url 'settings_app:spy-intel-save' %}">
+      {% csrf_token %}
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div>
+          <label class="form-label text-xs">{{ spy_intel_form.spy_report_expiry_hours.label }}</label>
+          {{ spy_intel_form.spy_report_expiry_hours }}
+          {% if spy_intel_form.spy_report_expiry_hours.help_text %}
+          <p class="form-help">{{ spy_intel_form.spy_report_expiry_hours.help_text }}</p>
+          {% endif %}
+        </div>
+      </div>
+      <div class="mt-4">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-check-lg"></i> Salvar
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
 {# ── Generic Settings (advanced) ── #}
 {% if generic_settings %}
 <div class="card">

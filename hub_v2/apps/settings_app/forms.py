@@ -64,6 +64,20 @@ class AgentSecurityForm(forms.Form):
     )
 
 
+class SpyIntelSettingsForm(forms.Form):
+    spy_report_expiry_hours = forms.IntegerField(
+        label="Validade do relatório de espionagem (horas)",
+        min_value=1,
+        max_value=8760,
+        required=True,
+        widget=forms.NumberInput(attrs={
+            "class": "form-input",
+            "placeholder": "48",
+        }),
+        help_text="Após este período, relatórios são marcados como expirados e deixam de ser considerados para inteligência ativa. Padrão: 48h.",
+    )
+
+
 class SnapshotPolicyForm(forms.Form):
     snapshot_stale_seconds = forms.IntegerField(
         label="Snapshot geral vencido apos (segundos)",

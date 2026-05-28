@@ -290,6 +290,38 @@ class HubClient:
 
     # ── Diplomacy ──
 
+    def get_spy_targets(
+        self,
+        *,
+        target_mode: str = "all",
+        ally_tag: str = "",
+        owner_id: str = "",
+        skip_if_valid: bool = False,
+        missions: list[int] | None = None,
+        limit: int = 50,
+        game_account_id: str = "",
+    ) -> dict:
+        """GET /api/agent/worldintel/spy-targets/
+
+        Returns list of WorldDumpCity targets suitable for espionage.
+        Automatically excludes own accounts.
+        Response: {"targets": [...], "dump_id": "...", "total": N}
+        """
+        params: dict[str, Any] = {
+            "target_mode": target_mode,
+            "limit": limit,
+            "skip_if_valid": "1" if skip_if_valid else "0",
+        }
+        if ally_tag:
+            params["ally_tag"] = ally_tag
+        if owner_id:
+            params["owner_id"] = owner_id
+        if missions:
+            params["missions"] = ",".join(str(m) for m in missions)
+        if game_account_id:
+            params["game_account_id"] = game_account_id
+        return self._get("/api/agent/worldintel/spy-targets", params=params)
+
     def save_spy_reports(self, game_account_id: str, reports: list[dict]) -> dict:
         """POST /api/agent/espionage/reports/
 

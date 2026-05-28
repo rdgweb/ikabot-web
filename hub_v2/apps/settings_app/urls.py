@@ -11,6 +11,7 @@ from .views import (
     SnapshotPolicySaveView,
     AutoArchiveWorkflowsView,
     SaveMaxRunsView,
+    SaveSpyIntelSettingsView,
 )
 
 app_name = "settings_app"
@@ -26,4 +27,5 @@ urlpatterns = [
     path("snapshot-policy/save/", SnapshotPolicySaveView.as_view(), name="snapshot-policy-save"),
     path("workflows/auto-archive/", AutoArchiveWorkflowsView.as_view(), name="auto-archive-workflows"),
     path("workflows/max-runs/save/", SaveMaxRunsView.as_view(), name="save-max-runs"),
+    path("spy-intel/save/", SaveSpyIntelSettingsView.as_view(), name="spy-intel-save"),
 ]

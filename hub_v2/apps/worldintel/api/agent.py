@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.models import Account, GameAccount
+from apps.espionage.models import SpyReport
 from core.auth.backends import AgentTokenAuthentication
 from core.auth.permissions import IsAgent
 
@@ -219,6 +220,168 @@ class WorldDumpAppendView(APIView):
                 "status": dump.status,
             }
         )
+
+
+class WorldSpyTargetsView(APIView):
+    """
+    GET /api/agent/worldintel/spy-targets/
+
+    Retorna cidades do WorldDump mais recente que são alvos válidos para espionagem.
+    Exclui automaticamente todas as cidades pertencentes a contas próprias (GameAccount).
+
+    Query params:
+        target_mode: all | inactive | vacation | ally_tag | owner_id (default: all)
+        ally_tag:    filtro por tag de aliança (usado com target_mode=ally_tag)
+        owner_id:    filtro por owner_id específico (usado com target_mode=owner_id)
+        skip_if_valid: 1 | 0 — pula cidades com relatório válido para todas as missões
+        missions:    IDs separados por vírgula (1,3,5,6,26) — só relevante com skip_if_valid
+        limit:       máximo de cidades a retornar (default: 50, max: 200)
+        game_account_id: UUID da conta que vai espionar (usado para pegar dump do mesmo server)
+    """
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def get(self, request):
+        target_mode = str(request.query_params.get("target_mode") or "all").strip()
+        ally_tag = str(request.query_params.get("ally_tag") or "").strip()
+        owner_id_filter = str(request.query_params.get("owner_id") or "").strip()
+        skip_if_valid = str(request.query_params.get("skip_if_valid") or "0") in ("1", "true", "yes")
+        missions_raw = str(request.query_params.get("missions") or "").strip()
+        game_account_id = str(request.query_params.get("game_account_id") or "").strip()
+
+        try:
+            limit = min(200, max(1, int(request.query_params.get("limit") or 50)))
+        except (ValueError, TypeError):
+            limit = 50
+
+        # Parse mission list
+        mission_ids = []
+        if missions_raw:
+            for m in missions_raw.split(","):
+                try:
+                    mission_ids.append(int(m.strip()))
+                except (ValueError, TypeError):
+                    pass
+
+        # Own city IDs: all game_city_id in all active GameAccounts — exclude these
+        own_city_ids = set(
+            WorldDumpCity.objects.filter(
+                game_city_id__gt="",
+                owner_id__in=list(
+                    GameAccount.objects.filter(active=True).values_list("lobby_account_id", flat=True)
+                ),
+            ).values_list("game_city_id", flat=True).distinct()
+        )
+        # Also exclude by matching snapshot cities from AccountSnapshot
+        try:
+            from apps.game.models import AccountSnapshot
+            for snap in AccountSnapshot.objects.all():
+                data = snap.data or {}
+                for city in (data.get("cities") or []):
+                    cid = str(city.get("id") or city.get("city_id") or "").strip()
+                    if cid:
+                        own_city_ids.add(cid)
+        except Exception:
+            pass
+
+        # Get latest dump (optionally for same server as game_account)
+        dump_qs = WorldDump.objects.order_by("-captured_at")
+        if game_account_id:
+            try:
+                ga = GameAccount.objects.get(pk=game_account_id)
+                # Try to find dump from same server
+                server_dump = dump_qs.filter(game_account__server_id=ga.server_id).first()
+                if server_dump:
+                    dump = server_dump
+                else:
+                    dump = dump_qs.first()
+            except GameAccount.DoesNotExist:
+                dump = dump_qs.first()
+        else:
+            dump = dump_qs.first()
+
+        if not dump:
+            return Response({"targets": [], "dump_id": None, "total": 0})
+
+        # Base queryset: only city-type slots with a game_city_id
+        cities_qs = WorldDumpCity.objects.filter(
+            dump=dump,
+            type="city",
+            game_city_id__gt="",
+        ).select_related("island").exclude(
+            game_city_id__in=own_city_ids,
+        )
+
+        # Apply target_mode filter
+        if target_mode == "inactive":
+            cities_qs = cities_qs.filter(state="inactive")
+        elif target_mode == "vacation":
+            cities_qs = cities_qs.filter(state="vacation")
+        elif target_mode == "inactive_or_vacation":
+            from django.db.models import Q
+            cities_qs = cities_qs.filter(Q(state="inactive") | Q(state="vacation"))
+        elif target_mode == "ally_tag" and ally_tag:
+            cities_qs = cities_qs.filter(ally_tag=ally_tag)
+        elif target_mode == "owner_id" and owner_id_filter:
+            cities_qs = cities_qs.filter(owner_id=owner_id_filter)
+        # else: "all" — no extra filter (active players too)
+
+        cities = list(cities_qs[:limit * 3])  # fetch 3x to allow filtering below
+
+        # skip_if_valid: exclude cities that already have valid reports for all configured missions
+        if skip_if_valid and cities:
+            city_ids_to_check = [c.game_city_id for c in cities]
+            now = timezone.now()
+            if mission_ids:
+                # city has valid intel if: for each mission_id, at least one valid report exists
+                from collections import defaultdict
+                valid_map: dict[str, set] = defaultdict(set)
+                valid_reports = SpyReport.objects.filter(
+                    target_city_id__in=city_ids_to_check,
+                    mission_id__in=mission_ids,
+                    expires_at__gt=now,
+                ).values("target_city_id", "mission_id").distinct()
+                for row in valid_reports:
+                    valid_map[row["target_city_id"]].add(row["mission_id"])
+
+                mission_set = set(mission_ids)
+                cities = [
+                    c for c in cities
+                    if not (mission_set <= valid_map.get(c.game_city_id, set()))
+                ]
+            else:
+                # skip if any valid report exists
+                has_valid = set(
+                    SpyReport.objects.filter(
+                        target_city_id__in=city_ids_to_check,
+                        expires_at__gt=now,
+                    ).values_list("target_city_id", flat=True).distinct()
+                )
+                cities = [c for c in cities if c.game_city_id not in has_valid]
+
+        cities = cities[:limit]
+
+        targets = [
+            {
+                "game_city_id": c.game_city_id,
+                "owner_id": c.owner_id,
+                "owner_name": c.owner_name,
+                "city_name": c.name,
+                "island_id": c.island.island_id if c.island else "",
+                "x": c.island.x if c.island else 0,
+                "y": c.island.y if c.island else 0,
+                "state": c.state or "",
+                "ally_tag": c.ally_tag or "",
+            }
+            for c in cities
+        ]
+
+        return Response({
+            "targets": targets,
+            "dump_id": str(dump.pk),
+            "dump_captured_at": dump.captured_at.isoformat() if dump.captured_at else None,
+            "total": len(targets),
+        })
 
 
 class WorldDumpReplaceIslandsView(APIView):

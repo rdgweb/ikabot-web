@@ -26,5 +26,6 @@ from runners import (  # noqa: F401
     donate_loop,
     revolt,
     spy,
+    world_spy,
     generals_bank,
 )
