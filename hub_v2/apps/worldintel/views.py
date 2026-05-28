@@ -356,9 +356,79 @@ class WorldCityDetailView(WorldIntelBaseView):
             if mid not in latest_by_mission:
                 latest_by_mission[mid] = report
 
+        # ── Intel display: dados parseados por missão para renderização ──────
+        RESOURCE_DISPLAY = [
+            ("wood",    "Madeira",  "game/resources/icon_wood.png"),
+            ("wine",    "Vinho",    "game/resources/icon_wine.png"),
+            ("marble",  "Mármore",  "game/resources/icon_marble.png"),
+            ("crystal", "Cristal",  "game/resources/icon_glass.png"),
+            ("sulfur",  "Enxofre",  "game/resources/icon_sulfur.png"),
+            ("gold",    "Ouro",     "game/resources/icon_gold.png"),
+        ]
+        intel_display: dict = {}
+
+        # M5 — recursos do armazém
+        m5 = latest_by_mission.get(5)
+        if m5 and m5.data_json:
+            dj = m5.data_json
+            resources = [
+                {"key": key, "label": label, "icon": icon, "value": dj[key]}
+                for key, label, icon in RESOURCE_DISPLAY
+                if dj.get(key) is not None
+            ]
+            if resources:
+                intel_display[5] = {"type": "resources", "resources": resources}
+
+        # M26 — workshop: build unit_name → improvements map para cruzar com tropas
+        m26 = latest_by_mission.get(26)
+        workshop_map: dict = {}
+        if m26 and m26.data_json:
+            for imp in (m26.data_json.get("workshop_improvements") or []):
+                workshop_map[imp["name"]] = imp
+            if workshop_map:
+                intel_display[26] = {
+                    "type":         "workshop",
+                    "improvements": list(workshop_map.values()),
+                }
+
+        # M6/M7 — tropas e frotas (com bônus M26 se disponíveis)
+        for mid in (6, 7):
+            mx = latest_by_mission.get(mid)
+            if mx and mx.data_json and mx.data_json.get("troops_data"):
+                sections = []
+                for section in mx.data_json["troops_data"]:
+                    units = []
+                    for unit in section["units"]:
+                        u = dict(unit)
+                        imp = workshop_map.get(unit["name"])
+                        if imp:
+                            u["offensive"] = imp.get("offensive", 0)
+                            u["defensive"] = imp.get("defensive", 0)
+                        units.append(u)
+                    sections.append({
+                        "category":      section["category"],
+                        "category_type": section.get("category_type", ""),
+                        "units":         units,
+                    })
+                intel_display[mid] = {"type": "troops", "sections": sections}
+
+        # M3 — pesquisa
+        m3 = latest_by_mission.get(3)
+        if m3 and m3.data_json:
+            research = m3.data_json.get("research") or {}
+            if research:
+                intel_display[3] = {"type": "research", "research": research}
+
+        # Outros: summary text para missões sem parser dedicado
+        for mid, report in latest_by_mission.items():
+            if mid not in intel_display and (report.report_text or report.data_json):
+                text = report.report_text or ""
+                intel_display[mid] = {"type": "summary", "text": text[:300]}
+
         ctx["city"] = city
         ctx["spy_reports"] = spy_reports
         ctx["latest_by_mission"] = latest_by_mission
+        ctx["intel_display"] = intel_display
         ctx["now"] = now
 
         # URL para criar job de espionagem nesta cidade

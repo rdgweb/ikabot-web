@@ -313,12 +313,15 @@ class HubClient:
         missions: list[int] | None = None,
         limit: int = 50,
         game_account_id: str = "",
+        intel_ttl_hours: int = 0,
     ) -> dict:
         """GET /api/agent/worldintel/spy-targets/
 
         Returns list of WorldDumpCity targets suitable for espionage.
         Automatically excludes own accounts' cities.
-        Response: {"targets": [...], "dump_id": "...", "total": N}
+
+        intel_ttl_hours: override TTL for skip_if_valid check (0 = use AppSetting).
+        Response: {"targets": [...], "dump_id": "...", "total": N, "busy_source_cities": [...]}
         """
         params: dict[str, Any] = {
             "only_inactive": "1" if only_inactive else "0",
@@ -341,6 +344,8 @@ class HubClient:
             params["missions"] = ",".join(str(m) for m in missions)
         if game_account_id:
             params["game_account_id"] = game_account_id
+        if intel_ttl_hours and intel_ttl_hours > 0:
+            params["intel_ttl_hours"] = intel_ttl_hours
         return self._get("/api/agent/worldintel/spy-targets", params=params)
 
     def save_spy_reports(self, game_account_id: str, reports: list[dict]) -> dict:

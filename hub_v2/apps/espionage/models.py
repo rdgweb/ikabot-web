@@ -84,3 +84,9 @@ class SpyReport(UUIDTimestampModel):
         if self.expires_at is None:
             return False
         return self.expires_at > timezone.now()
+
+    @property
+    def is_mission_success(self) -> bool:
+        """Missão executada com sucesso (normaliza PT/EN)."""
+        s = (self.result_status or "").lower()
+        return "success" in s or "sucesso" in s

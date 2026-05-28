@@ -1,5 +1,5 @@
 {% extends base_template|default:"base.html" %}
-{% load humanize hub_tags %}
+{% load static humanize hub_tags %}
 
 {% block title %}{{ city.name }} — Inteligência{% endblock %}
 
@@ -13,7 +13,30 @@
 {% endblock %}
 
 {% block content %}
-<div class="space-y-4">
+<div class="space-y-4" x-data="{ reportModal: null }">
+
+  {# ── Report HTML em <template> — dentro do block para ser renderizado ── #}
+  {% for report in spy_reports %}{% if report.report_html %}<template id="rhtml-{{ report.pk }}">{{ report.report_html|safe }}</template>{% endif %}{% endfor %}
+
+  {# ── Modal relatório HTML ── #}
+  <div x-show="reportModal !== null" x-cloak
+       x-transition:enter="transition ease-out duration-150"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       class="fixed inset-0 z-50 flex items-center justify-center p-4"
+       style="background:rgba(0,0,0,0.5);"
+       @click.self="reportModal = null"
+       @keydown.escape.window="reportModal = null">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" @click.stop>
+      <div class="flex items-center justify-between px-4 py-3" style="border-bottom:1px solid var(--ik-line)">
+        <span class="font-semibold text-ink text-sm">Relatório de espionagem</span>
+        <button @click="reportModal = null" class="text-muted hover:text-ink transition-colors">
+          <i class="bi bi-x-lg text-lg"></i>
+        </button>
+      </div>
+      <div class="overflow-y-auto p-4 text-xs text-ink" x-html="reportModal"></div>
+    </div>
+  </div>
 
   {# ── Header ── #}
   <div class="card">
@@ -62,51 +85,189 @@
     </div>
   </div>
 
-  {# ── Intel por missão — cards de status ── #}
+  {# ── Intel por missão ── #}
   {% if latest_by_mission %}
   <div class="card">
     <h2 class="text-sm font-semibold text-ink mb-3">Intel por missão</h2>
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+
       {% for mid, report in latest_by_mission.items %}
-      <div class="rounded-lg p-3 text-xs" style="background:var(--ik-sand-light); border:1px solid var(--ik-line);">
-        <div class="flex items-center justify-between mb-1.5">
-          <span class="font-semibold text-ink">{{ report.mission_name|default:report.subject|default:"Missão " }}</span>
-          {% if report.is_valid %}
-            <span class="badge badge-success text-[10px]">✓ Válido</span>
-          {% elif report.expires_at %}
-            <span class="badge badge-warning text-[10px]">⚠ Expirado</span>
-          {% else %}
-            <span class="badge badge-secondary text-[10px]">— Sem prazo</span>
-          {% endif %}
-        </div>
-        <div class="text-muted space-y-0.5">
-          <div>{{ report.created_at|naturaltime }}</div>
-          {% if report.expires_at %}
-          <div>
-            {% if report.is_valid %}
-              Expira {{ report.expires_at|naturaltime }}
+      {% if mid == 5 or mid == 6 or mid == 7 or mid == 26 %}
+      {% with display=intel_display|get_item:mid %}
+      <div class="rounded-xl overflow-hidden" style="border:1px solid var(--ik-line);">
+
+        {# ── Card header ── #}
+        <div class="flex items-center justify-between px-3 py-2"
+             style="background:var(--ik-sand); border-bottom:1px solid var(--ik-line);">
+          <div class="flex items-center gap-2 min-w-0">
+            {% if mid == 3 %}
+              <img src="{% static 'game/buildings/academy.png' %}" class="w-5 h-5 object-contain flex-shrink-0">
+            {% elif mid == 5 %}
+              <img src="{% static 'game/buildings/warehouse.png' %}" class="w-5 h-5 object-contain flex-shrink-0">
+            {% elif mid == 6 %}
+              <img src="{% static 'game/buildings/barracks.png' %}" class="w-5 h-5 object-contain flex-shrink-0">
+            {% elif mid == 7 %}
+              <img src="{% static 'game/buildings/shipyard.png' %}" class="w-5 h-5 object-contain flex-shrink-0">
+            {% elif mid == 21 %}
+              <img src="{% static 'game/buildings/governorsresidence.png' %}" class="w-5 h-5 object-contain flex-shrink-0">
+            {% elif mid == 25 %}
+              <img src="{% static 'game/buildings/townhall.png' %}" class="w-5 h-5 object-contain flex-shrink-0">
+            {% elif mid == 26 %}
+              <img src="{% static 'game/buildings/workshop.png' %}" class="w-5 h-5 object-contain flex-shrink-0">
+            {% elif mid == 27 %}
+              <img src="{% static 'game/buildings/seachartarchive.png' %}" class="w-5 h-5 object-contain flex-shrink-0">
             {% else %}
-              Expirou {{ report.expires_at|naturaltime }}
+              <i class="bi bi-binoculars text-sea text-sm flex-shrink-0"></i>
+            {% endif %}
+            <span class="text-xs font-semibold text-ink truncate">{{ report.mission_name|default:report.subject|default:"Missão" }}</span>
+            <span class="text-[10px] text-muted font-mono flex-shrink-0">M{{ mid }}</span>
+          </div>
+          <div class="flex items-center gap-1.5 flex-shrink-0 ml-2">
+            {% if report.is_valid %}
+              <span class="badge badge-success text-[10px]">✓ Válido</span>
+            {% elif report.expires_at %}
+              <span class="badge badge-warning text-[10px]">⚠ Expirado</span>
+            {% else %}
+              <span class="badge badge-secondary text-[10px]">—</span>
+            {% endif %}
+            {% if report.report_html %}
+            <button type="button"
+                    @click="reportModal = document.getElementById('rhtml-{{ report.pk }}').innerHTML"
+                    class="btn btn-secondary text-[10px] px-1.5 py-0.5 h-auto leading-none"
+                    title="Ver relatório completo">
+              <i class="bi bi-file-text"></i>
+            </button>
             {% endif %}
           </div>
+        </div>
+
+        {# ── Card body — dados de intel ── #}
+        <div class="p-3" style="background:var(--ik-sand-light);">
+
+          {% if display %}
+
+            {# ─ RECURSOS (M5) ─ #}
+            {% if display.type == "resources" %}
+            <div class="grid grid-cols-3 gap-1.5">
+              {% for res in display.resources %}
+              <div class="flex items-center gap-1.5 rounded-lg px-2 py-1.5 bg-white shadow-sm">
+                <img src="{% static res.icon %}" class="w-5 h-5 flex-shrink-0" title="{{ res.label }}">
+                <div class="min-w-0">
+                  <div class="text-[10px] text-muted leading-none truncate">{{ res.label }}</div>
+                  <div class="text-xs font-bold text-ink font-mono">{{ res.value|intcomma }}</div>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+
+            {# ─ TROPAS / FROTAS (M6, M7) ─ #}
+            {% elif display.type == "troops" %}
+            <div class="space-y-3">
+              {% for section in display.sections %}
+              <div>
+                <div class="flex items-center gap-1 mb-2">
+                  {% if section.category_type == "naval" %}
+                    <img src="{% static 'game/buildings/shipyard.png' %}" class="w-3.5 h-3.5 opacity-50">
+                  {% else %}
+                    <img src="{% static 'game/buildings/barracks.png' %}" class="w-3.5 h-3.5 opacity-50">
+                  {% endif %}
+                  <span class="text-[10px] font-semibold text-muted uppercase tracking-wider">{{ section.category }}</span>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  {% for unit in section.units %}
+                  <div class="text-center bg-white rounded-xl px-2 pt-2 pb-1.5 shadow-sm" style="min-width:56px; border:1px solid var(--ik-line);">
+                    <img src="{% static unit.icon %}" class="w-9 h-9 mx-auto object-contain" title="{{ unit.name }}">
+                    <div class="text-xs font-bold text-ink mt-1">{{ unit.count|intcomma }}</div>
+                    <div class="text-[9px] text-muted truncate" style="max-width:60px" title="{{ unit.name }}">{{ unit.name }}</div>
+                    {% if unit.offensive or unit.defensive %}
+                    <div class="flex justify-center gap-1 mt-0.5">
+                      <span class="text-[9px] font-mono text-amber-600" title="Ofensivo">⚔+{{ unit.offensive }}</span>
+                      <span class="text-[9px] font-mono text-sky-600" title="Defensivo">🛡+{{ unit.defensive }}</span>
+                    </div>
+                    {% endif %}
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+              {% if not forloop.last %}
+              <div style="height:1px; background:var(--ik-line);"></div>
+              {% endif %}
+              {% endfor %}
+            </div>
+
+            {# ─ PESQUISA (M3) ─ #}
+            {% elif display.type == "research" %}
+            <div class="grid grid-cols-2 gap-1.5">
+              {% for field, level in display.research.items %}
+              <div class="flex items-center justify-between bg-white rounded-lg px-2.5 py-1.5 shadow-sm gap-2"
+                   style="border:1px solid var(--ik-line);">
+                <span class="text-[11px] text-muted truncate" title="{{ field }}">{{ field }}</span>
+                <span class="text-xs font-bold text-sea flex-shrink-0">{{ level }}</span>
+              </div>
+              {% endfor %}
+            </div>
+
+            {# ─ WORKSHOP (M26) ─ #}
+            {% elif display.type == "workshop" %}
+            <div class="space-y-1.5">
+              {% for imp in display.improvements %}
+              <div class="flex items-center gap-2 bg-white rounded-lg px-2 py-1.5 shadow-sm"
+                   style="border:1px solid var(--ik-line);">
+                <img src="{% static imp.icon %}" class="w-8 h-8 flex-shrink-0 object-contain" title="{{ imp.name }}">
+                <span class="text-xs text-ink flex-1 truncate" title="{{ imp.name }}">{{ imp.name }}</span>
+                <div class="flex items-center gap-2 flex-shrink-0">
+                  <span class="text-[11px] font-mono font-semibold text-amber-600" title="Ofensivo">⚔ +{{ imp.offensive }}</span>
+                  <span class="text-[11px] font-mono font-semibold text-sky-600" title="Defensivo">🛡 +{{ imp.defensive }}</span>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+
+            {# ─ SUMÁRIO (outros) ─ #}
+            {% elif display.type == "summary" and display.text %}
+            <p class="text-xs text-muted leading-relaxed">{{ display.text }}</p>
+
+            {% endif %}
+
+          {% else %}
+            {# Sem dados estruturados — texto bruto #}
+            {% if report.report_text %}
+              <p class="text-xs text-muted leading-relaxed">{{ report.report_text|truncatechars:200 }}</p>
+            {% else %}
+              <p class="text-xs text-muted italic">Sem dados detalhados disponíveis.</p>
+            {% endif %}
           {% endif %}
-          <div class="mt-1">
-            <span class="{% if report.result_status == 'success' %}text-green-600{% else %}text-red-500{% endif %}">
-              {{ report.result_status|default:"—" }}
+
+        </div>
+
+        {# ── Card footer ── #}
+        <div class="flex items-center justify-between px-3 py-1.5"
+             style="background:var(--ik-sand); border-top:1px solid var(--ik-line);">
+          <span class="text-[10px] text-muted">{{ report.created_at|naturaltime }}</span>
+          <div class="flex items-center gap-1.5">
+            <span class="text-[10px] {% if report.is_mission_success %}text-green-600{% else %}text-red-500{% endif %} font-medium">
+              {% if report.is_mission_success %}✓{% else %}✗{% endif %}
+              {{ report.result_status|default:"—"|truncatechars:35 }}
             </span>
-            · {{ report.agents_sent }}ag {% if report.agents_lost %}<span class="text-red-500">-{{ report.agents_lost }}⚠</span>{% endif %}
+            {% if report.agents_lost %}
+              <span class="text-[10px] text-red-500" title="Espiões perdidos">⚠ -{{ report.agents_lost }}</span>
+            {% endif %}
           </div>
         </div>
+
       </div>
+      {% endwith %}
+      {% endif %}
       {% endfor %}
+
     </div>
   </div>
   {% endif %}
 
-  {# ── Tabela completa de relatórios ── #}
+  {# ── Histórico completo de relatórios ── #}
   <div class="card !p-0 overflow-hidden">
     <div class="px-4 py-3 flex items-center justify-between" style="border-bottom:1px solid var(--ik-line);">
-      <h2 class="text-sm font-semibold text-ink">Relatórios de espionagem</h2>
+      <h2 class="text-sm font-semibold text-ink">Histórico de relatórios</h2>
       <span class="text-xs text-muted">{{ spy_reports|length }} registros</span>
     </div>
 
@@ -114,41 +275,34 @@
     <div class="overflow-x-auto">
       <table class="w-full text-xs">
         <thead>
-          <tr style="border-bottom:2px solid var(--ik-line);">
+          <tr style="border-bottom:2px solid var(--ik-line); background:var(--ik-sand);">
             <th class="py-2 px-3 text-left text-muted font-semibold">Data</th>
             <th class="py-2 px-3 text-left text-muted font-semibold">Missão</th>
             <th class="py-2 px-3 text-left text-muted font-semibold">Conta</th>
             <th class="py-2 px-3 text-center text-muted font-semibold">Resultado</th>
             <th class="py-2 px-3 text-center text-muted font-semibold">Agentes</th>
             <th class="py-2 px-3 text-center text-muted font-semibold">Validade</th>
+            <th class="py-2 px-3 text-center text-muted font-semibold">Ver</th>
           </tr>
         </thead>
         <tbody>
           {% for report in spy_reports %}
           <tr class="hover:bg-[var(--ik-sand-light)] transition-colors" style="border-bottom:1px solid var(--ik-line);">
-            <td class="py-2 px-3 text-muted whitespace-nowrap">
-              {{ report.created_at|date:"d/m/y H:i" }}
-            </td>
-            <td class="py-2 px-3 font-medium text-ink">
-              {{ report.mission_name|default:report.subject|default:"—" }}
-            </td>
-            <td class="py-2 px-3 text-muted">
-              {{ report.game_account.name|default:"—" }}
-            </td>
+            <td class="py-2 px-3 text-muted whitespace-nowrap">{{ report.created_at|date:"d/m/y H:i" }}</td>
+            <td class="py-2 px-3 font-medium text-ink">{{ report.mission_name|default:report.subject|default:"—" }}</td>
+            <td class="py-2 px-3 text-muted">{{ report.game_account.name|default:"—" }}</td>
             <td class="py-2 px-3 text-center">
-              {% if report.result_status == "success" %}
+              {% if report.is_mission_success %}
                 <span class="badge badge-success text-[10px]">✓ Sucesso</span>
               {% elif report.result_status %}
-                <span class="badge badge-danger text-[10px]">✗ {{ report.result_status }}</span>
+                <span class="badge badge-danger text-[10px]">✗ {{ report.result_status|truncatechars:25 }}</span>
               {% else %}
                 <span class="text-muted">—</span>
               {% endif %}
             </td>
             <td class="py-2 px-3 text-center font-mono">
               {{ report.agents_sent }}
-              {% if report.agents_lost %}
-                <span class="text-red-500 ml-1">-{{ report.agents_lost }}</span>
-              {% endif %}
+              {% if report.agents_lost %}<span class="text-red-500 ml-1">-{{ report.agents_lost }}</span>{% endif %}
             </td>
             <td class="py-2 px-3 text-center">
               {% if report.is_valid %}
@@ -157,6 +311,18 @@
                 <span class="badge badge-secondary text-[10px]">Expirado</span>
               {% else %}
                 <span class="text-muted text-[10px]">—</span>
+              {% endif %}
+            </td>
+            <td class="py-2 px-3 text-center">
+              {% if report.report_html %}
+              <button type="button"
+                      @click="reportModal = document.getElementById('rhtml-{{ report.pk }}').innerHTML"
+                      class="btn btn-secondary text-[10px] px-1.5 py-0.5 h-auto leading-none"
+                      title="Ver relatório">
+                <i class="bi bi-file-text"></i>
+              </button>
+              {% else %}
+                <span class="text-muted">—</span>
               {% endif %}
             </td>
           </tr>

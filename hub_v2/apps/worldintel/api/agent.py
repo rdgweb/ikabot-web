@@ -251,6 +251,10 @@ class WorldSpyTargetsView(APIView):
         missions_raw    = str(request.query_params.get("missions") or "").strip()
         game_account_id = str(request.query_params.get("game_account_id") or "").strip()
         only_inactive   = str(request.query_params.get("only_inactive") or "1") in ("1", "true", "yes")
+        try:
+            intel_ttl_hours = int(request.query_params.get("intel_ttl_hours") or 0)
+        except (TypeError, ValueError):
+            intel_ttl_hours = 0
 
         def _int(key, default=None):
             try:
@@ -360,16 +364,54 @@ class WorldSpyTargetsView(APIView):
 
         cities = list(cities_qs[:limit * 3])
 
+        # ── Lock global: excluir targets com job ac=15 ativo ─────────────────
+        # Garante que nenhum alvo seja espionado por duas contas simultaneamente.
+        # Também coleta source cities ocupadas para informar o runner 16.
+        occupied_targets: set[str] = set()
+        busy_source_cities: list[str] = []
+        try:
+            import json as _json
+            from apps.jobs.models import Job
+            active_spy_inputs = Job.objects.filter(
+                action_code=15,
+                status__in=["queued", "running", "scheduled"],
+            ).values_list("inputs_json", flat=True)
+            for inputs_str in active_spy_inputs:
+                try:
+                    inp = _json.loads(inputs_str) if isinstance(inputs_str, str) else {}
+                    tcid = str(inp.get("target_city_id") or "").strip()
+                    scid = str(inp.get("city_id") or "").strip()
+                    if tcid:
+                        occupied_targets.add(tcid)
+                    if scid and scid not in busy_source_cities:
+                        busy_source_cities.append(scid)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        if occupied_targets:
+            cities = [c for c in cities if c.game_city_id not in occupied_targets]
+
         # ── skip_if_valid ─────────────────────────────────────────────────────
         if skip_if_valid and cities:
+            from datetime import timedelta
             city_ids_check = [c.game_city_id for c in cities]
             now = timezone.now()
+
+            # intel_ttl_hours=0 → usa expires_at (TTL baked in no momento do save)
+            # intel_ttl_hours>0 → override: filtra por created_at >= now - TTL
+            if intel_ttl_hours and intel_ttl_hours > 0:
+                valid_since = now - timedelta(hours=intel_ttl_hours)
+                ttl_filter  = {"created_at__gte": valid_since}
+            else:
+                ttl_filter  = {"expires_at__gt": now}
+
             if mission_ids:
                 valid_map: dict[str, set] = defaultdict(set)
                 for row in SpyReport.objects.filter(
                     target_city_id__in=city_ids_check,
                     mission_id__in=mission_ids,
-                    expires_at__gt=now,
+                    **ttl_filter,
                 ).values("target_city_id", "mission_id").distinct():
                     valid_map[row["target_city_id"]].add(row["mission_id"])
                 mission_set = set(mission_ids)
@@ -378,7 +420,7 @@ class WorldSpyTargetsView(APIView):
                 has_valid = set(
                     SpyReport.objects.filter(
                         target_city_id__in=city_ids_check,
-                        expires_at__gt=now,
+                        **ttl_filter,
                     ).values_list("target_city_id", flat=True).distinct()
                 )
                 cities = [c for c in cities if c.game_city_id not in has_valid]
@@ -398,10 +440,11 @@ class WorldSpyTargetsView(APIView):
         } for c in cities]
 
         return Response({
-            "targets": targets,
-            "dump_id": str(dump.pk),
-            "dump_captured_at": dump.captured_at.isoformat() if dump.captured_at else None,
-            "total": len(targets),
+            "targets":            targets,
+            "dump_id":            str(dump.pk),
+            "dump_captured_at":   dump.captured_at.isoformat() if dump.captured_at else None,
+            "total":              len(targets),
+            "busy_source_cities": busy_source_cities,
         })
 
 

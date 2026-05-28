@@ -736,13 +736,23 @@ class SpyRunner(BaseRunner):
                     safehouse_position=safehouse_position,
                 )
                 self.save_game_client(ga_id, client)
-                return RunnerResult(success=True, data={"missions_done": missions_done})
+                result_data = {
+                    "missions_done":   missions_done,
+                    "missions_failed": missions_failed,
+                    "target_city_id":  target_city_id,
+                    "source_city_id":  city_id,
+                }
+                self._notify_parent(jid, inputs, success=True, data=result_data)
+                return RunnerResult(success=True, data=result_data)
 
             self.save_game_client(ga_id, client)
             return RunnerResult(success=True, reschedule_seconds=ERROR_RESCHEDULE)
 
         except Exception as exc:
             self.log(jid, "error", f"Erro inesperado: {type(exc).__name__}: {exc}")
+            self._notify_parent(jid, inputs, success=False,
+                                data={"error": str(exc), "target_city_id": target_city_id,
+                                      "source_city_id": city_id})
             return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE,
                                 data={"error": str(exc)})
 
@@ -1249,6 +1259,25 @@ class SpyRunner(BaseRunner):
                                        event_key="spy_done")
         except Exception as exc:
             logger.warning("Telegram spy_done falhou: %s", exc)
+
+    def _notify_parent(self, jid: str, inputs: dict, *, success: bool, data: dict) -> None:
+        """Notifica runner pai (ex: WorldSpyRunner 16) que este job terminou."""
+        parent_jid = str(inputs.get("__parent_job_id") or "").strip()
+        if not parent_jid:
+            return
+        try:
+            self.hub.reschedule_job(
+                parent_jid,
+                delay_seconds=5,
+                inputs={"__child_done": {
+                    "child_job_id":  jid,
+                    "success":       success,
+                    **data,
+                }},
+            )
+            logger.info("Notificou runner pai %s (child=%s success=%s)", parent_jid, jid, success)
+        except Exception as exc:
+            logger.warning("Falha ao notificar runner pai %s: %s", parent_jid, exc)
 
     def _replenish_spies(self, jid, client, city_id: str,
                          capacity: int, total: int, secs_per: int, *,
