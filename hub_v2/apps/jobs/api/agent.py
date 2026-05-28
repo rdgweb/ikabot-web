@@ -261,6 +261,12 @@ class RescheduleJobView(APIView):
                 trigger_type="agent_reschedule",
             )
 
+            # Se o job fonte era "scheduled" (ainda não executado), cancelá-lo para
+            # evitar execução dupla. Ocorre quando um filho acorda o pai adiantado:
+            # o pai já tinha uma continuação futura (fallback) que agora é supersedida.
+            if job.status == "scheduled":
+                Job.objects.filter(pk=job.pk).update(status="cancelled")
+
         logger.info(
             "Job %s rescheduled as %s (delay=%ds, at=%s)",
             job_id,

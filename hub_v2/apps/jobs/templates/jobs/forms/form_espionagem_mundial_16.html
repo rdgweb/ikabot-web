@@ -23,9 +23,6 @@ function worldSpyForm() {
     // Operação
     skipIfValid: true,
     intelTtlHours: 0,
-    maxTargets: 50,
-    intervalMinutes: 120,
-    checkIntervalMin: 5,
     maxRisk: 35,
     recallAfter: true,
     saveReports: true,
@@ -53,9 +50,6 @@ function worldSpyForm() {
         this.maxArmyScore = parseInt(opts.maxArmyScore) || 0;
         this.skipIfValid = opts.skipIfValid !== false && opts.skipIfValid !== 'false';
         this.intelTtlHours = parseInt(opts.intelTtlHours) || 0;
-        this.maxTargets = parseInt(opts.maxTargets) || 50;
-        this.intervalMinutes = parseInt(opts.intervalMinutes) || 120;
-        this.checkIntervalMin = parseInt(opts.checkIntervalMin) || 5;
         this.maxRisk = parseInt(opts.maxRisk) || 35;
         this.recallAfter = opts.recallAfter !== false && opts.recallAfter !== 'false';
         this.saveReports = opts.saveReports !== false && opts.saveReports !== 'false';
@@ -105,9 +99,6 @@ function worldSpyForm() {
          maxArmyScore: '{{ form.max_army_score.value|default:0 }}',
          skipIfValid: {{ form.skip_if_valid.value|yesno:'true,false,true' }},
          intelTtlHours: '{{ form.intel_ttl_hours.value|default:0 }}',
-         maxTargets: '{{ form.max_targets.value|default:50 }}',
-         intervalMinutes: '{{ form.interval_minutes.value|default:120 }}',
-         checkIntervalMin: '{{ form.check_interval_min.value|default:5 }}',
          maxRisk: '{{ form.max_detection_risk.value|default:35 }}',
          recallAfter: {{ form.recall_after.value|yesno:'true,false,true' }},
          saveReports: {{ form.save_reports.value|yesno:'true,false,true' }},
@@ -125,9 +116,7 @@ function worldSpyForm() {
   <input type="hidden" name="{{ form.max_army_score.html_name }}" :value="maxArmyScore">
   <input type="hidden" name="{{ form.skip_if_valid.html_name }}" :value="skipIfValid ? 'true' : 'false'">
   <input type="hidden" name="{{ form.intel_ttl_hours.html_name }}" :value="intelTtlHours">
-  <input type="hidden" name="{{ form.max_targets.html_name }}" :value="maxTargets">
-  <input type="hidden" name="{{ form.interval_minutes.html_name }}" :value="intervalMinutes">
-  <input type="hidden" name="{{ form.check_interval_min.html_name }}" :value="checkIntervalMin">
+  <input type="hidden" name="{{ form.max_targets.html_name }}" value="200">
   <input type="hidden" name="{{ form.max_detection_risk.html_name }}" :value="maxRisk">
   <input type="hidden" name="{{ form.recall_after.html_name }}" :value="recallAfter ? 'true' : 'false'">
   <input type="hidden" name="{{ form.save_reports.html_name }}" :value="saveReports ? 'true' : 'false'">
@@ -362,34 +351,11 @@ function worldSpyForm() {
       <i class="bi bi-gear text-sea mr-1"></i>Configurações do ciclo
     </label>
 
-    <div class="grid grid-cols-2 gap-4">
-      <div>
-        <label class="text-[10px] text-muted font-semibold uppercase tracking-wider mb-1.5 block">Máx. alvos por consulta</label>
-        <input type="number" min="1" max="200" x-model.number="maxTargets"
-               class="form-input !text-sm w-full">
-        <p class="text-[10px] text-muted mt-1">Alvos buscados no hub por verificação.</p>
-      </div>
-      <div>
-        <label class="text-[10px] text-muted font-semibold uppercase tracking-wider mb-1.5 block">Verificação de progresso (min)</label>
-        <input type="number" min="2" x-model.number="checkIntervalMin"
-               class="form-input !text-sm w-full">
-        <p class="text-[10px] text-muted mt-1">Frequência de verificação de safehouses livres.</p>
-      </div>
-    </div>
-
-    <div class="grid grid-cols-2 gap-4">
-      <div>
-        <label class="text-[10px] text-muted font-semibold uppercase tracking-wider mb-1.5 block">Intervalo entre ciclos (min)</label>
-        <input type="number" min="5" x-model.number="intervalMinutes"
-               class="form-input !text-sm w-full">
-        <p class="text-[10px] text-muted mt-1">Pausa após ciclo completo antes de re-espionar.</p>
-      </div>
-      <div>
-        <label class="text-[10px] text-muted font-semibold uppercase tracking-wider mb-1.5 block">Validade da intel (horas)</label>
-        <input type="number" min="0" x-model.number="intelTtlHours"
-               class="form-input !text-sm w-full" placeholder="0 = padrão global">
-        <p class="text-[10px] text-muted mt-1">0 = usa configuração global. Ex: 48 = re-espia a cada 2 dias.</p>
-      </div>
+    <div>
+      <label class="text-[10px] text-muted font-semibold uppercase tracking-wider mb-1.5 block">Validade da intel (horas)</label>
+      <input type="number" min="0" x-model.number="intelTtlHours"
+             class="form-input !text-sm w-full" placeholder="0 = padrão global">
+      <p class="text-[10px] text-muted mt-1">0 = usa configuração global. Ex: 48 = re-espia a cada 2 dias.</p>
     </div>
 
     {# Risco #}
