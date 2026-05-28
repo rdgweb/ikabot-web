@@ -1184,7 +1184,11 @@ class SpyRunner(BaseRunner):
             snap     = self.hub.get_snapshot(game_account_id=ga_id)
             cities   = snap.get("cities") or []
             spy_city = next((c for c in cities if str(c.get("id") or "") == str(city_id)), {})
-            have_raw = spy_city.get(resource_key)
+            # Ouro é recurso global da conta (snap["gold"]), não da cidade
+            if resource_key == "gold":
+                have_raw = snap.get("gold", 0)
+            else:
+                have_raw = spy_city.get(resource_key)
             committed = int((committed_res or {}).get(resource_key) or 0)
             have   = max(0, int(have_raw or 0) - committed)
             afford = min(decoys, have // cost_each) if cost_each > 0 else decoys
