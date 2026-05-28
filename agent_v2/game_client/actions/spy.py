@@ -129,10 +129,19 @@ def _normalise_mission_name(mission_id: int | None, subject: str = "") -> str:
 def compute_spy_risks(live_params: dict, mission_id: int, agents: int, decoys: int) -> dict[str, float]:
     """Exact replication of the game's JS risk/success formula.
 
-    Verified against live game: 3 agents + 1 decoy → agentRisk=29%, decoyRisk=22%, success=67% ✓
+    Verified against live game (Dallas Maverick lv22 inactive, freeSpies=21):
+      5ag+1dec → agentRisk_display=5% (raw=1.5%), success=95% ✓
+      5ag+0dec → agentRisk=9.1%, success=90% ✓
 
     Key insight: basicRisk = freeSpies*5 - cityLevel*2
     (higher city level = LOWER risk, more enemy free spies = HIGHER risk)
+
+    IMPORTANT — success uses the RAW agentRisk (not clamped to minChance):
+      JS: agentRisk = min(maxChance, govFactor + max(minRisk, missionRisk - decoys×decoyRed))
+          displayed  = max(minChance, agentRisk)   ← minChance clamp only for display
+          success    = (100 - agentRisk) × chance / 100  ← uses raw, not displayed
+      When decoys cancel missionRisk, agentRisk can be < minChance (e.g. 1.5%).
+      Clamping to 5% before success calc underestimates success by ~1-5pp.
     """
     md = live_params.get("missionData", {}).get(str(mission_id), {})
     if not md:
@@ -172,19 +181,22 @@ def compute_spy_risks(live_params: dict, mission_id: int, agents: int, decoys: i
 
     # Agent detection risk (decoys reduce the missionRisk component)
     agent_risk_raw = gov_factor + max(min_risk, mission_risk - decoys * decoy_risk_red)
+    # JS: clamps to maxChance but NOT to minChance — minChance clamp is display-only
+    agent_risk_for_success = min(max_chance, agent_risk_raw)
+    # Display value: clamp to [minChance, maxChance]
     agent_risk = max(min_chance, min(max_chance, round(agent_risk_raw * 10) / 10))
 
     # Decoy detection risk
     decoy_risk_raw = gov_factor + max(decoys * min_decoy_risk, mission_risk / 4 - 50 + decoys * basic_decoy_risk_k)
     decoy_risk = max(min_chance, min(max_chance, round(decoy_risk_raw)))
 
-    # Success probability
-    import math as _math
+    # Success probability — uses agent_risk_for_success (raw, not display-clamped)
+    # JS: newChance = min(maxChance, max(minChance, (100 - agentRisk) * chance / 100))
     try:
         base_chance = min(round((1 - (1 - base_success / 100) ** agents) * 100), max_success_cap)
     except Exception:
         base_chance = 0
-    final_success = max(min_chance, min(max_chance, round((100 - agent_risk) * base_chance / 100)))
+    final_success = max(min_chance, min(max_chance, round((100 - agent_risk_for_success) * base_chance / 100)))
     if agents == 0:
         final_success = 0.0
 
