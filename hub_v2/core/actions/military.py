@@ -292,7 +292,7 @@ ACTIONS = {
         "icon": "bi-binoculars",
         "runner": "spy",
         "requires_game_session": True,
-        "recurring": True,
+        "recurring": False,  # Missão finita (espia um alvo até concluir); usa reschedule como retry, não loop eterno
         "long_running": False,
         "ready": True,
         "description": "Envia espiões para cidades inimigas para coletar informações. Salva relatórios no hub.",
