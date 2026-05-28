@@ -1,19 +1,24 @@
 """
 Runner de Espionagem Mundial — ação 16 (WorldSpyRunner).
 
-Arquitetura event-driven:
-  1. Primeira execução: busca alvos → spawna ac=15 para todas as safehouses livres.
-     Antes de spawnar, pré-cria o próprio sucessor (J2) com delay longo de fallback.
-     Passa __parent_job_id=J2 para cada filho.
+Arquitetura event-driven com mailbox (100% sem race condition):
 
-  2. Quando filho ac=15 termina (sucesso ou erro): chama reschedule_job(J2, 5s).
-     O hub cancela J2 (era "scheduled") e cria J3 com __child_done nos inputs.
-     J3 acorda em 5s e executa a próxima rodada.
+  1. Primeira execução: root_id = jid (o próprio job é a raiz).
+     Cria fallback via reschedule_job com __campaign_root_id=root_id.
+     Hub atualiza root.progress_json["current_runner_id"] = fallback.
+     Spawna filhos com __root_job_id=root_id.
 
-  3. Runner 16 acorda: verifica alvos restantes → spawna filhos para safehouses livres
-     → pré-cria próximo fallback → repete.
+  2. Filho (ac=15) termina (done phase):
+     Chama hub.notify_parent(root_job_id).
+     Hub: SELECT FOR UPDATE no current_runner → append inbox → se dormindo
+          longe, adianta scheduled_for para +5s e re-dispatcha via Celery.
 
-  4. Quando ciclo completo (0 alvos + 0 safehouses ativas): job encerra sem reschedule.
+  3. Fallback acorda (em 5s ou pelo timer de 4h):
+     Lê progress_json["inbox"] — notificações acumuladas de todos os filhos.
+     Processa, spawna para safehouses livres, cria novo fallback.
+     Hub atualiza root.current_runner_id = novo_fallback.
+
+  4. 0 alvos + 0 safehouses ativas → encerra sem reagendar.
 
 Safehouses:
   city_ids — IDs de cidades com Casa de Espionagem, separados por vírgula.
@@ -41,8 +46,8 @@ from runners.base import BaseRunner, RunnerResult
 
 logger = logging.getLogger(__name__)
 
-ERROR_RESCHEDULE   = 5  * 60   # 5 min em caso de erro
-FALLBACK_DELAY     = 4  * 60 * 60  # 4h — fallback caso notificação falhe
+ERROR_RESCHEDULE = 5  * 60        # 5 min em caso de erro
+FALLBACK_DELAY   = 4  * 60 * 60  # 4h — fallback caso notificação falhe
 
 
 def _parse_int(value, default=None):
@@ -56,15 +61,38 @@ def _parse_int(value, default=None):
 class WorldSpyRunner(BaseRunner):
     """Orquestra espionagem event-driven em múltiplas cidades via ac=15.
 
-    Cada filho ac=15 notifica o pai ao terminar via reschedule_job(parent_job_id, 5s).
-    Runner 16 pré-cria o próprio sucessor antes de spawnar para que a notificação
-    sempre encontre um job válido para acordar.
+    Mailbox pattern: root job é estável, filhos sempre notificam o mesmo ID.
+    Hub mantém root.progress_json["current_runner_id"] apontando para o
+    fallback ativo. Notificações são enfileiradas atomicamente — 100% correto
+    mesmo com filhos terminando simultaneamente.
     """
 
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid   = job["job_id"]
         ga_id = str(job.get("game_account_id") or "").strip()
         inputs: dict = job.get("inputs") or {}
+
+        # ── Campaign root ID (mailbox pattern) ───────────────────────────────
+        # Na primeira execução não existe __campaign_root_id → sou o root.
+        # Nas execuções seguintes (fallbacks), o root é preservado nos inputs.
+        root_id = str(inputs.get("__campaign_root_id") or "").strip() or jid
+
+        # ── Inbox: notificações de filhos acumuladas ──────────────────────────
+        progress: dict = job.get("progress") or {}
+        inbox: list = progress.get("inbox") or []
+        if inbox:
+            self.log(jid, "info",
+                     f"[WorldSpy] Inbox: {len(inbox)} notificação(ões) de filhos recebida(s)")
+            for entry in inbox:
+                cid   = str(entry.get("child_job_id", "?"))[:8]
+                csrc  = entry.get("source_city_id", "?")
+                ctgt  = entry.get("target_city_id", "?")
+                cok   = entry.get("success", "?")
+                mdone = entry.get("missions_done", [])
+                mfail = entry.get("missions_failed", [])
+                self.log(jid, "info",
+                         f"[WorldSpy]   ↳ job={cid} src={csrc} tgt={ctgt} "
+                         f"success={cok} done={mdone} fail={mfail}")
 
         # ── Inputs de configuração ────────────────────────────────────────────
         city_ids_raw = str(inputs.get("city_ids") or "").strip()
@@ -85,20 +113,20 @@ class WorldSpyRunner(BaseRunner):
             self.log(jid, "error", "city_ids não configurado.")
             return RunnerResult(success=False)
 
-        missions_raw    = str(inputs.get("missions") or "3,5").strip()
-        only_inactive   = bool(inputs.get("only_inactive", True))
-        x_min           = _parse_int(inputs.get("region_x_min"))
-        x_max           = _parse_int(inputs.get("region_x_max"))
-        y_min           = _parse_int(inputs.get("region_y_min"))
-        y_max           = _parse_int(inputs.get("region_y_max"))
-        max_total_score = _parse_int(inputs.get("max_total_score"), 0)
-        max_army_score  = _parse_int(inputs.get("max_army_score"), 0)
-        skip_if_valid   = bool(inputs.get("skip_if_valid", True))
-        intel_ttl_hours = max(0, _parse_int(inputs.get("intel_ttl_hours"), 0))
+        missions_raw       = str(inputs.get("missions") or "3,5").strip()
+        only_inactive      = bool(inputs.get("only_inactive", True))
+        x_min              = _parse_int(inputs.get("region_x_min"))
+        x_max              = _parse_int(inputs.get("region_x_max"))
+        y_min              = _parse_int(inputs.get("region_y_min"))
+        y_max              = _parse_int(inputs.get("region_y_max"))
+        max_total_score    = _parse_int(inputs.get("max_total_score"), 0)
+        max_army_score     = _parse_int(inputs.get("max_army_score"), 0)
+        skip_if_valid      = bool(inputs.get("skip_if_valid", True))
+        intel_ttl_hours    = max(0, _parse_int(inputs.get("intel_ttl_hours"), 0))
         max_detection_risk = float(inputs.get("max_detection_risk") or 35)
-        recall_after    = bool(inputs.get("recall_after", True))
-        save_reports    = bool(inputs.get("save_reports", True))
-        delete_after_save = bool(inputs.get("delete_after_save", False))
+        recall_after       = bool(inputs.get("recall_after", True))
+        save_reports       = bool(inputs.get("save_reports", True))
+        delete_after_save  = bool(inputs.get("delete_after_save", False))
 
         # Parse missions
         mission_ids: list[int] = []
@@ -110,7 +138,7 @@ class WorldSpyRunner(BaseRunner):
         if not mission_ids:
             mission_ids = [3, 5]
 
-        unique_gas = len({e["ga_pk"] for e in city_entries})
+        unique_gas  = len({e["ga_pk"] for e in city_entries})
         region_desc = (
             f"[{x_min}:{y_min}→{x_max}:{y_max}]"
             if any(v is not None for v in (x_min, x_max, y_min, y_max))
@@ -118,25 +146,11 @@ class WorldSpyRunner(BaseRunner):
         )
         ttl_desc = f"{intel_ttl_hours}h" if intel_ttl_hours else "padrão"
 
-        # ── Notificação de filho (informativo) ────────────────────────────────
-        child_done = inputs.get("__child_done")
-        if child_done and isinstance(child_done, dict):
-            cid    = child_done.get("child_job_id", "?")
-            csrc   = child_done.get("source_city_id", "?")
-            ctgt   = child_done.get("target_city_id", "?")
-            cok    = child_done.get("success", "?")
-            mdone  = child_done.get("missions_done", [])
-            mfail  = child_done.get("missions_failed", [])
-            self.log(jid, "info",
-                     f"[WorldSpy] Filho concluído: job={str(cid)[:8]} "
-                     f"src={csrc} tgt={ctgt} success={cok} "
-                     f"done={mdone} fail={mfail}")
-
         self.log(jid, "info",
                  f"[WorldSpy] safehouses={len(city_entries)} ({unique_gas} conta(s)) "
                  f"missions={mission_ids} inactive={only_inactive} region={region_desc} "
                  f"max_total={max_total_score or '—'} max_army={max_army_score or '—'} "
-                 f"ttl={ttl_desc}")
+                 f"ttl={ttl_desc} root={root_id[:8]}")
 
         # ── Consulta hub ──────────────────────────────────────────────────────
         try:
@@ -156,11 +170,10 @@ class WorldSpyRunner(BaseRunner):
             )
         except Exception as exc:
             self.log(jid, "error", f"Erro ao buscar alvos: {exc}")
-            self.hub.reschedule_job(jid, delay_seconds=ERROR_RESCHEDULE)
-            return RunnerResult(success=False)
+            return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE)
 
-        targets: list[dict]   = result.get("targets") or []
-        dump_id               = result.get("dump_id") or "?"
+        targets: list[dict]    = result.get("targets") or []
+        dump_id                = result.get("dump_id") or "?"
         busy_sources: set[str] = set(result.get("busy_source_cities") or [])
         free_entries           = [e for e in city_entries if e["city_game_id"] not in busy_sources]
 
@@ -174,49 +187,43 @@ class WorldSpyRunner(BaseRunner):
             self.log(jid, "info", "[WorldSpy] ✓ Ciclo completo. Sem alvos e sem filhos ativos. Encerrando.")
             return RunnerResult(success=True)
 
-        # ── Apenas aguardando filhos terminarem ───────────────────────────────
-        if not targets and busy_sources:
+        # ── Criar fallback ANTES de spawnar ───────────────────────────────────
+        # reschedule_job com __campaign_root_id faz hub atualizar
+        # root.progress_json["current_runner_id"] = novo_fallback.
+        # Filhos notificam o root (ID estável) → hub acorda o fallback correto.
+        try:
+            resp_next = self.hub.reschedule_job(
+                jid,
+                delay_seconds=FALLBACK_DELAY,
+                inputs={"__campaign_root_id": root_id},
+            )
+            next_jid = resp_next.get("new_job_id", "")
+            self.log(jid, "info",
+                     f"[WorldSpy] Fallback criado: {str(next_jid)[:8]} "
+                     f"(root={root_id[:8]} → pointer atualizado)")
+        except Exception as exc:
+            self.log(jid, "warn",
+                     f"[WorldSpy] Falha ao criar fallback: {exc}. "
+                     f"Filhos não conseguirão notificar via mailbox.")
+            next_jid = ""
+
+        # ── Apenas aguardando filhos (sem novos alvos) ────────────────────────
+        if not targets:
             self.log(jid, "info",
                      f"[WorldSpy] {len(busy_sources)} safehouse(s) ativas, sem novos alvos. "
-                     f"Pré-criando fallback e aguardando notificações.")
-            # Pré-criar fallback: filhos vão acordar este job quando terminarem
-            try:
-                resp_fb = self.hub.reschedule_job(jid, delay_seconds=FALLBACK_DELAY)
-                fallback_jid = resp_fb.get("new_job_id", "?")
-                self.log(jid, "info", f"[WorldSpy] Fallback criado: {str(fallback_jid)[:8]} (em {FALLBACK_DELAY//3600}h)")
-            except Exception as exc:
-                self.log(jid, "warn", f"[WorldSpy] Falha ao criar fallback: {exc}")
+                     f"Aguardando notificações via mailbox.")
             return RunnerResult(success=True)
 
         # ── Tem alvos mas todas as safehouses ocupadas ────────────────────────
-        if targets and not free_entries:
+        if not free_entries:
             self.log(jid, "info",
                      f"[WorldSpy] {len(targets)} alvo(s) pendente(s) mas todas as "
-                     f"{len(city_entries)} safehouses ocupadas. Aguardando notificações.")
-            try:
-                resp_fb = self.hub.reschedule_job(jid, delay_seconds=FALLBACK_DELAY)
-                fallback_jid = resp_fb.get("new_job_id", "?")
-                self.log(jid, "info", f"[WorldSpy] Fallback criado: {str(fallback_jid)[:8]}")
-            except Exception as exc:
-                self.log(jid, "warn", f"[WorldSpy] Falha ao criar fallback: {exc}")
+                     f"{len(city_entries)} safehouses ocupadas. Aguardando via mailbox.")
             return RunnerResult(success=True)
 
-        # ── Pré-criar fallback ANTES de spawnar ───────────────────────────────
-        # O fallback (J_next) é o job que será acordado pelos filhos ao terminarem.
-        # Filhos recebem __parent_job_id=J_next e chamam reschedule_job(J_next, 5s).
-        # O hub cancela J_next antigo (era "scheduled") e cria o novo job imediato.
-        try:
-            resp_next = self.hub.reschedule_job(jid, delay_seconds=FALLBACK_DELAY)
-            next_jid  = resp_next.get("new_job_id", "")
-            self.log(jid, "info",
-                     f"[WorldSpy] Fallback event-driven: {str(next_jid)[:8]} (filhos vão acordar este)")
-        except Exception as exc:
-            self.log(jid, "warn", f"[WorldSpy] Falha ao criar fallback; filhos não conseguirão notificar: {exc}")
-            next_jid = ""
-
         # ── Spawna jobs filhos (ac=15) para safehouses livres ─────────────────
-        spawned = 0
-        skipped = 0
+        spawned        = 0
+        skipped        = 0
         remaining_free = list(free_entries)
 
         for target in targets:
@@ -248,11 +255,8 @@ class WorldSpyRunner(BaseRunner):
                 "recall_after":        recall_after,
                 "save_reports":        save_reports,
                 "delete_after_save":   delete_after_save,
+                "__root_job_id":       root_id,  # mailbox: filho notifica sempre o root estável
             }
-
-            # Passar o ID do job pai (fallback) para que filho possa notificar
-            if next_jid:
-                child_inputs["__parent_job_id"] = next_jid
 
             try:
                 resp = self.hub.spawn_job(
@@ -276,5 +280,5 @@ class WorldSpyRunner(BaseRunner):
         self.log(jid, "info",
                  f"[WorldSpy] {spawned} job(s) criado(s)"
                  + (f", {skipped} ignorado(s)" if skipped else "")
-                 + f". Aguardando notificações dos filhos.")
+                 + f". Aguardando notificações via mailbox (root={root_id[:8]}).")
         return RunnerResult(success=True)

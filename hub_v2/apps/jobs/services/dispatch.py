@@ -23,6 +23,16 @@ def _serialize_inputs(job: Job) -> dict:
         return parsed if isinstance(parsed, dict) else {}
 
 
+def _serialize_progress(job: Job) -> dict:
+    raw = job.progress_json
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw) if isinstance(raw, str) else (raw if isinstance(raw, dict) else {})
+    except Exception:
+        return {}
+
+
 def build_payload(job: Job) -> dict:
     return {
         "job_id": str(job.pk),
@@ -30,6 +40,7 @@ def build_payload(job: Job) -> dict:
         "game_account_id": str(job.game_account_id) if job.game_account_id else None,
         "action_code": job.action_code,
         "inputs": _serialize_inputs(job),
+        "progress": _serialize_progress(job),
         "timeout_sec": job.timeout_sec,
     }
 

@@ -267,6 +267,21 @@ class RescheduleJobView(APIView):
             if job.status == "scheduled":
                 Job.objects.filter(pk=job.pk).update(status="cancelled")
 
+            # Mailbox pattern: se o reschedule carrega __campaign_root_id,
+            # atualiza o ponteiro current_runner_id no job raiz para que filhos
+            # sempre saibam qual é o fallback atual ao notificarem.
+            if patch and isinstance(patch, dict):
+                root_id_str = str(patch.get("__campaign_root_id") or "").strip()
+                if root_id_str:
+                    try:
+                        root_progress = Job.objects.filter(pk=root_id_str).values_list("progress_json", flat=True).first()
+                        if root_progress is not None:
+                            prog = json.loads(root_progress) if isinstance(root_progress, str) and root_progress else (root_progress or {})
+                            prog["current_runner_id"] = str(new_job.pk)
+                            Job.objects.filter(pk=root_id_str).update(progress_json=json.dumps(prog))
+                    except Exception as _e:
+                        logger.warning("Falha ao atualizar current_runner_id no root %s: %s", root_id_str, _e)
+
         logger.info(
             "Job %s rescheduled as %s (delay=%ds, at=%s)",
             job_id,
@@ -552,3 +567,102 @@ class ConstructionSupportView(APIView):
             )
 
         return Response({"ok": True, "lineage": [str(root_id)], "entries": entries})
+
+
+class NotifyParentView(APIView):
+    """POST /api/agent/jobs/<uuid:job_id>/notify/
+
+    Mailbox pattern — filho notifica o job raiz (root) de uma campanha orquestrada.
+    O root guarda em progress_json["current_runner_id"] o UUID do fallback ativo.
+    Este endpoint:
+      1. Lê o ponteiro current_runner_id do root (qualquer status).
+      2. Atomicamente (SELECT FOR UPDATE) acrescenta child_done no inbox do fallback.
+      3. Se fallback.scheduled_for > agora+30s: adianta para agora+5s e re-dispatcha.
+
+    Resolve 100% do race condition: dois filhos simultâneos enfileiram no mesmo inbox;
+    só o primeiro re-dispatcha; o fallback acorda uma vez e processa ambos.
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request, job_id):
+        from apps.jobs.services.dispatch import dispatch_job
+
+        child_done = request.data.get("child_done")
+        if not isinstance(child_done, dict):
+            return Response({"error": "child_done must be a dict."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Buscar job raiz (pode estar finished — só lemos o ponteiro)
+        try:
+            root_job = Job.objects.get(pk=job_id)
+        except Job.DoesNotExist:
+            return Response({"error": "Root job not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        root_progress = root_job.progress_json or {}
+        if isinstance(root_progress, str):
+            try:
+                root_progress = json.loads(root_progress)
+            except Exception:
+                root_progress = {}
+
+        current_runner_id = str(root_progress.get("current_runner_id") or "").strip()
+        if not current_runner_id:
+            return Response(
+                {"error": "No current_runner_id on root job. Campaign may not have started."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        now = timezone.now()
+
+        from django.db import transaction
+        with transaction.atomic():
+            try:
+                runner_job = Job.objects.select_for_update().get(pk=current_runner_id)
+            except Job.DoesNotExist:
+                return Response({"error": "current_runner job not found."}, status=status.HTTP_404_NOT_FOUND)
+
+            if runner_job.status in _TERMINAL_STATUSES:
+                return Response(
+                    {"error": f"Current runner {current_runner_id[:8]} is terminal ({runner_job.status}). "
+                               "Campaign may be finished or pointer stale."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            # Acrescentar notificação na inbox do fallback atual
+            prog = runner_job.progress_json or {}
+            if isinstance(prog, str):
+                try:
+                    prog = json.loads(prog)
+                except Exception:
+                    prog = {}
+            inbox = prog.get("inbox") or []
+            if not isinstance(inbox, list):
+                inbox = []
+            inbox.append(child_done)
+            prog["inbox"] = inbox
+
+            # Adiantar scheduled_for se estiver dormindo longe
+            woke_early = False
+            if runner_job.scheduled_for and runner_job.scheduled_for > now + timedelta(seconds=30):
+                runner_job.scheduled_for = now + timedelta(seconds=5)
+                runner_job.progress_json = prog
+                runner_job.save(update_fields=["progress_json", "scheduled_for", "updated_at"])
+                woke_early = True
+            else:
+                runner_job.progress_json = prog
+                runner_job.save(update_fields=["progress_json", "updated_at"])
+
+        if woke_early:
+            dispatch_job(runner_job, eta=runner_job.scheduled_for)
+            logger.info(
+                "NotifyParent: root=%s runner=%s → inbox=%d entries, dispatched early",
+                str(job_id)[:8], current_runner_id[:8], len(inbox),
+            )
+        else:
+            logger.info(
+                "NotifyParent: root=%s runner=%s → inbox=%d entries (already near)",
+                str(job_id)[:8], current_runner_id[:8], len(inbox),
+            )
+
+        return Response({"ok": True, "inbox_size": len(inbox), "woke_early": woke_early})

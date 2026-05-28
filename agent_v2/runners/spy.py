@@ -1261,7 +1261,25 @@ class SpyRunner(BaseRunner):
             logger.warning("Telegram spy_done falhou: %s", exc)
 
     def _notify_parent(self, jid: str, inputs: dict, *, success: bool, data: dict) -> None:
-        """Notifica runner pai (ex: WorldSpyRunner 16) que este job terminou."""
+        """Notifica runner pai (WorldSpyRunner ac=16) via mailbox pattern.
+
+        Usa __root_job_id (novo) se disponível.
+        Fallback para __parent_job_id (legado) via reschedule direto.
+        """
+        root_jid = str(inputs.get("__root_job_id") or "").strip()
+        if root_jid:
+            try:
+                self.hub.notify_parent(root_jid, {
+                    "child_job_id":  jid,
+                    "success":       success,
+                    **data,
+                })
+                logger.info("Notificou root %s via mailbox (child=%s success=%s)", root_jid, jid, success)
+            except Exception as exc:
+                logger.warning("Falha ao notificar root %s: %s", root_jid, exc)
+            return
+
+        # Legado: __parent_job_id (reschedule direto — só funciona para o primeiro filho)
         parent_jid = str(inputs.get("__parent_job_id") or "").strip()
         if not parent_jid:
             return
@@ -1275,9 +1293,9 @@ class SpyRunner(BaseRunner):
                     **data,
                 }},
             )
-            logger.info("Notificou runner pai %s (child=%s success=%s)", parent_jid, jid, success)
+            logger.info("Notificou pai legado %s (child=%s success=%s)", parent_jid, jid, success)
         except Exception as exc:
-            logger.warning("Falha ao notificar runner pai %s: %s", parent_jid, exc)
+            logger.warning("Falha ao notificar pai legado %s: %s", parent_jid, exc)
 
     def _replenish_spies(self, jid, client, city_id: str,
                          capacity: int, total: int, secs_per: int, *,

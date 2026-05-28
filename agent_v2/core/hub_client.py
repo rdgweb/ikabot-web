@@ -132,6 +132,14 @@ class HubClient:
         """GET /api/agent/jobs/{job_id}/info/ — returns {job_id, status, action_code, finished}."""
         return self._get(f"/api/agent/jobs/{job_id}/info")
 
+    def notify_parent(self, root_job_id: str, child_done: dict) -> dict:
+        """POST /api/agent/jobs/{root_job_id}/notify/
+
+        Mailbox pattern: filho notifica o job raiz da campanha.
+        Hub resolve o current_runner_id do root e acorda o fallback atual.
+        """
+        return self._post(f"/api/agent/jobs/{root_job_id}/notify", {"child_done": child_done})
+
     def get_construction_support(self, job_id: str) -> dict:
         """GET /api/agent/jobs/{job_id}/construction-support/."""
         return self._get(f"/api/agent/jobs/{job_id}/construction-support")
