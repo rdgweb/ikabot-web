@@ -829,15 +829,19 @@ def _extract_safehouse_cities(cities: list, *, ga_pk: str = "", ga_name: str = "
     return result
 
 
-def _world_spy_context(ga, user=None) -> dict:
-    """Build world spy form context — safehouses from ALL game accounts on the same server.
+def _world_spy_context(ga, gas: list[str] | None = None) -> dict:
+    """Build world spy form context — safehouses from selected game accounts on the same server.
 
+    gas: list of GameAccount PKs to include. If None/empty, falls back to all GAs on same server.
     Adds ga_pk, ga_name, city_value='{ga_pk}:{city_id}' to each city so that:
     - The form can display which account each safehouse belongs to.
     - The runner can spawn ac=15 child jobs using the correct game account.
     """
-    # Single-tenant: Account has no user FK, filter only by server_id
-    qs = GameAccount.objects.filter(server_id=ga.server_id, active=True).order_by("name")
+    if gas:
+        qs = GameAccount.objects.filter(pk__in=gas, server_id=ga.server_id, active=True).order_by("name")
+    else:
+        # Fallback: all GAs on same server (single-tenant)
+        qs = GameAccount.objects.filter(server_id=ga.server_id, active=True).order_by("name")
 
     all_spy_cities = []
     for other_ga in qs:
@@ -1732,7 +1736,7 @@ def _custom_field_names(action_code: int) -> list[str]:
     return []
 
 
-def _job_form_context(form, action_meta, action_code, ga, cities, request=None):
+def _job_form_context(form, action_meta, action_code, ga, cities, request=None, gas: list[str] | None = None):
     snapshot = None
     try:
         snapshot = AccountSnapshot.objects.get(game_account=ga)
@@ -1761,8 +1765,8 @@ def _job_form_context(form, action_meta, action_code, ga, cities, request=None):
     if int(action_code) == 15:
         ctx.update(_spy_context(ga, cities, getattr(form, "initial", {})))
     if int(action_code) == 16:
-        # World spy: safehouses from ALL game accounts on same server (multi-GA)
-        ctx.update(_world_spy_context(ga))
+        # World spy: safehouses from selected GAs (passed via ?gas=) or all on same server
+        ctx.update(_world_spy_context(ga, gas=gas))
     if int(action_code) == 17:
         ctx.update(_piracy_context(ga, cities, snapshot))
     if int(action_code) == 820:
@@ -1898,6 +1902,9 @@ class JobCreateModalView(LoginRequiredMixin, View):
         return HttpResponse(html)
 
     def _render_form(self, request, ga, action_code, action_meta):
+        gas_raw = request.GET.get("gas") or ""
+        gas = [g.strip() for g in gas_raw.split(",") if g.strip()] if gas_raw else None
+
         cities = _get_cities(ga)
         construction_cities = _construction_city_data(cities)
         initial = _build_job_form_initial(request, ga, action_code)
@@ -1907,7 +1914,7 @@ class JobCreateModalView(LoginRequiredMixin, View):
             cities=construction_cities,
             initial=initial,
         )
-        ctx = _job_form_context(form, action_meta, action_code, ga, construction_cities, request=request)
+        ctx = _job_form_context(form, action_meta, action_code, ga, construction_cities, request=request, gas=gas)
         if int(action_code) == 31:
             ctx["diplomacy_msg_types"] = _diplomacy_msg_types(initial.get("receiver_id") or "")
         html = render_to_string(
@@ -1945,6 +1952,9 @@ class JobFormView(LoginRequiredMixin, View):
     def get(self, request):
         ga_id = request.GET.get("ga")
         action_code_str = request.GET.get("action")
+        # ?gas=ga1pk,ga2pk,... — for ac=16 multi-GA world spy
+        gas_raw = request.GET.get("gas") or ""
+        gas = [g.strip() for g in gas_raw.split(",") if g.strip()] if gas_raw else None
 
         if not ga_id or not action_code_str:
             return HttpResponse("")
@@ -1968,7 +1978,7 @@ class JobFormView(LoginRequiredMixin, View):
             cities=construction_cities,
             initial=initial,
         )
-        ctx = _job_form_context(form, action_meta, action_code, ga, construction_cities, request=request)
+        ctx = _job_form_context(form, action_meta, action_code, ga, construction_cities, request=request, gas=gas)
         if action_code == 31:
             ctx["diplomacy_msg_types"] = _diplomacy_msg_types(initial.get("receiver_id") or "")
         html = render_to_string(

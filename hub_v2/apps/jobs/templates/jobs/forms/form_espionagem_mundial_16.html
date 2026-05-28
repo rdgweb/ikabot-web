@@ -8,9 +8,7 @@
 function worldSpyForm() {
   return {
     cities: [],
-    gaList: [],           // [{ga_pk, ga_name, total}]
-    selectedGaIds: [],    // GAs ativas
-    selectedCityIds: [],  // city_values selecionados
+    selectedCityIds: [],  // city_values selecionados ({ga_pk}:{city_game_id})
     missions: [],
     intelMissionIds: [],
 
@@ -34,36 +32,9 @@ function worldSpyForm() {
       this.cities = JSON.parse(document.getElementById('ws-cities-data')?.textContent || '[]');
       this.missions = JSON.parse(document.getElementById('ws-missions-data')?.textContent || '[]');
 
-      // Build unique GA list from cities
-      const seenGa = new Set();
-      this.gaList = [];
-      for (const c of this.cities) {
-        if (c.ga_pk && !seenGa.has(c.ga_pk)) {
-          seenGa.add(c.ga_pk);
-          this.gaList.push({
-            ga_pk: c.ga_pk,
-            ga_name: c.ga_name || c.ga_pk.slice(0, 8),
-            total: this.cities.filter(x => x.ga_pk === c.ga_pk).length,
-          });
-        }
-      }
-
-      // Pre-selected city_values (from saved job or defaults)
+      // All safehouses selected by default — contas já filtradas pelo Step 1
       const pre = initialCityIds ? String(initialCityIds).split(',').map(s => s.trim()).filter(Boolean) : [];
-      if (pre.length) {
-        this.selectedCityIds = pre;
-        // Derive selected GAs from pre-selected cities
-        const preGas = new Set();
-        for (const cv of pre) {
-          const gaPk = cv.includes(':') ? cv.split(':')[0] : null;
-          if (gaPk) preGas.add(gaPk);
-        }
-        this.selectedGaIds = [...preGas];
-      } else {
-        // All selected by default
-        this.selectedCityIds = this.cities.map(c => String(c.city_value || c.id));
-        this.selectedGaIds = this.gaList.map(g => g.ga_pk);
-      }
+      this.selectedCityIds = pre.length ? pre : this.cities.map(c => String(c.city_value || c.id));
 
       // Missions
       const mids = String(initialMissions || '3,5').split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x) && x !== 1 && x !== 8);
@@ -85,31 +56,6 @@ function worldSpyForm() {
         this.recallAfter = opts.recallAfter !== false && opts.recallAfter !== 'false';
         this.saveReports = opts.saveReports !== false && opts.saveReports !== 'false';
       }
-    },
-
-    // ── GA helpers ────────────────────────────────────────────────────────────
-    isGaSelected(gaPk) { return this.selectedGaIds.includes(String(gaPk)); },
-
-    toggleGa(gaPk) {
-      const gaVals = this.cities
-        .filter(c => String(c.ga_pk) === String(gaPk))
-        .map(c => String(c.city_value || c.id));
-      if (this.isGaSelected(gaPk)) {
-        // Desativar GA: remove suas cidades
-        this.selectedCityIds = this.selectedCityIds.filter(v => !gaVals.includes(v));
-        this.selectedGaIds = this.selectedGaIds.filter(g => g !== String(gaPk));
-      } else {
-        // Ativar GA: adiciona todas as cidades
-        this.selectedCityIds = [...new Set([...this.selectedCityIds, ...gaVals])];
-        this.selectedGaIds = [...this.selectedGaIds, String(gaPk)];
-      }
-    },
-
-    gaSelectedCount(gaPk) {
-      const gaVals = new Set(
-        this.cities.filter(c => String(c.ga_pk) === String(gaPk)).map(c => String(c.city_value || c.id))
-      );
-      return this.selectedCityIds.filter(v => gaVals.has(v)).length;
     },
 
     // ── City helpers ──────────────────────────────────────────────────────────
@@ -179,152 +125,85 @@ function worldSpyForm() {
   <input type="hidden" name="{{ form.save_reports.html_name }}" :value="saveReports ? 'true' : 'false'">
   <input type="hidden" name="{{ form.delete_after_save.html_name }}" value="false">
 
-  {% if not spy_cities %}
-  {# Nenhuma safehouse encontrada #}
-  <div class="card !p-4">
-    <p class="text-sm text-muted">
-      <i class="bi bi-exclamation-triangle text-[var(--ik-warn)] mr-1"></i>
-      Nenhuma cidade com Guilda dos Ladrões encontrada nos snapshots. Execute snapshots de todas as contas primeiro.
-    </p>
-  </div>
-  {% else %}
-
-  {# ── 1. Contas participantes ── #}
-  <div class="card !p-4">
-    <div class="flex items-center justify-between mb-3">
-      <label class="form-label text-xs">
-        <i class="bi bi-people-fill text-sea mr-1"></i>Contas participantes
-        <span class="text-[var(--ik-bad)]">*</span>
-      </label>
-      <div class="flex items-center gap-2">
-        <span class="text-[10px] text-muted" x-text="selectedGaIds.length + '/' + gaList.length + ' conta(s)'"></span>
-        <button type="button" class="text-[10px] text-sea hover:underline"
-                @click="gaList.forEach(g => { if (!isGaSelected(g.ga_pk)) toggleGa(g.ga_pk); })">Todas</button>
-        <span class="text-muted text-[10px]">·</span>
-        <button type="button" class="text-[10px] text-muted hover:underline"
-                @click="selectedGaIds = []; selectedCityIds = []">Nenhuma</button>
-      </div>
-    </div>
-
-    {# Renderizado server-side, controlado por Alpine via x-show/x-bind #}
-    {% regroup spy_cities by ga_pk as ga_groups %}
-    <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
-      {% for group in ga_groups %}
-      {% with ga_pk=group.grouper ga_name=group.list.0.ga_name ga_total=group.list|length %}
-      <button type="button"
-              class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150 p-3"
-              :class="isGaSelected('{{ ga_pk }}')
-                ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_6px_18px_rgba(79,134,185,0.18)] translate-y-[-1px]'
-                : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45'"
-              :style="isGaSelected('{{ ga_pk }}')
-                ? 'border-color:rgba(79,134,185,0.50);background:linear-gradient(160deg,rgba(255,255,255,0.96),rgba(79,134,185,0.10));'
-                : 'border-color:rgba(219,201,167,0.9);background:rgba(255,255,255,0.82);'"
-              @click="toggleGa('{{ ga_pk }}')">
-        <div class="flex items-center gap-2">
-          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border"
-               :style="isGaSelected('{{ ga_pk }}')
-                 ? 'border-color:rgba(79,134,185,0.30);background:linear-gradient(180deg,rgba(79,134,185,0.18),rgba(79,134,185,0.06));color:var(--ik-sea);'
-                 : 'border-color:rgba(219,201,167,0.7);background:linear-gradient(180deg,#fffdf8,#f4ecda);color:var(--ik-muted);'">
-            <i class="bi bi-controller text-sm"></i>
-          </div>
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-xs font-semibold text-ink">{{ ga_name }}</div>
-            <div class="text-[10px] text-muted">
-              <span x-text="gaSelectedCount('{{ ga_pk }}')"></span>/{{ ga_total }} safehouse(s)
-            </div>
-          </div>
-          <span class="flex-shrink-0 inline-flex h-5 w-5 items-center justify-center rounded-full border transition-colors"
-                :style="isGaSelected('{{ ga_pk }}')
-                  ? 'border-color:var(--ik-sea);color:white;background:var(--ik-sea);'
-                  : 'border-color:rgba(79,134,185,0.24);color:var(--ik-sea);background:rgba(79,134,185,0.06);'">
-            <i class="bi text-[9px]" :class="isGaSelected('{{ ga_pk }}') ? 'bi-check-lg' : 'bi-circle'"></i>
-          </span>
-        </div>
-      </button>
-      {% endwith %}
-      {% endfor %}
-    </div>
-
-    <div x-show="selectedGaIds.length === 0" class="mt-3 text-[11px] text-muted italic text-center py-2">
-      <i class="bi bi-exclamation-triangle text-[var(--ik-warn)] mr-1"></i>
-      Selecione ao menos uma conta para habilitar safehouses.
-    </div>
-  </div>
-
-  {# ── 2. Safehouses de origem ── #}
+  {# ── 1. Safehouses de origem ── #}
+  {# Contas já foram selecionadas no Step 1 — só mostra as safehouses delas #}
   <div class="card !p-4">
     <div class="flex items-center justify-between mb-3">
       <label class="form-label text-xs">
         <i class="bi bi-house-fill text-sea mr-1"></i>Safehouses de origem
+        <span class="text-[var(--ik-bad)]">*</span>
       </label>
       <div class="flex items-center gap-2">
         <span class="text-[10px] text-muted" x-text="selectedCityIds.length + ' selecionada(s)'"></span>
         <button type="button" class="text-[10px] text-sea hover:underline"
-                @click="selectedCityIds = cities.filter(c => selectedGaIds.includes(c.ga_pk)).map(c => String(c.city_value || c.id))">Todas</button>
+                @click="selectedCityIds = cities.map(c => String(c.city_value || c.id))">Todas</button>
         <span class="text-muted text-[10px]">·</span>
         <button type="button" class="text-[10px] text-muted hover:underline"
                 @click="selectedCityIds = []">Nenhuma</button>
       </div>
     </div>
 
+    {% if spy_cities %}
     <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
       {% for city in spy_cities %}
       {% with cv=city.city_value|default:city.id %}
-      <div x-show="isGaSelected('{{ city.ga_pk }}')" x-cloak>
-        <button type="button"
-                class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150 w-full"
-                :class="isCitySelected('{{ cv }}') ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
-                :style="isCitySelected('{{ cv }}') ? 'border-color:rgba(79,134,185,0.50);background:linear-gradient(180deg,rgba(255,255,255,0.94),rgba(79,134,185,0.10));' : 'border-color:rgba(219,201,167,0.9);background:rgba(255,255,255,0.82);'"
-                @click="toggleCity('{{ cv }}')">
-          <div class="absolute inset-x-0 top-0 h-14" style="background:linear-gradient(135deg,rgba(79,134,185,0.16),rgba(79,134,185,0.02));"></div>
-          <div class="relative p-3">
-            <div class="flex items-start gap-2">
-              <div class="relative shrink-0">
-                <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
-                     style="border-color:rgba(79,134,185,0.18);background:linear-gradient(180deg,#fffdf8,#f4ecda);">
-                  <img src="{{ city.city_art }}" alt="" class="h-8 w-8 object-contain">
-                </div>
-                {% if city.tradegood_icon %}
-                <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
-                  <img src="{{ city.tradegood_icon }}" alt="" class="h-4 w-4 object-contain">
-                </div>
-                {% endif %}
+      <button type="button"
+              class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150 w-full"
+              :class="isCitySelected('{{ cv }}') ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
+              :style="isCitySelected('{{ cv }}') ? 'border-color:rgba(79,134,185,0.50);background:linear-gradient(180deg,rgba(255,255,255,0.94),rgba(79,134,185,0.10));' : 'border-color:rgba(219,201,167,0.9);background:rgba(255,255,255,0.82);'"
+              @click="toggleCity('{{ cv }}')">
+        <div class="absolute inset-x-0 top-0 h-14" style="background:linear-gradient(135deg,rgba(79,134,185,0.16),rgba(79,134,185,0.02));"></div>
+        <div class="relative p-3">
+          <div class="flex items-start gap-2">
+            <div class="relative shrink-0">
+              <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                   style="border-color:rgba(79,134,185,0.18);background:linear-gradient(180deg,#fffdf8,#f4ecda);">
+                <img src="{{ city.city_art }}" alt="" class="h-8 w-8 object-contain">
               </div>
-              <div class="min-w-0 flex-1">
-                <div class="flex items-start justify-between gap-1">
-                  <div class="min-w-0">
-                    <div class="truncate text-xs font-semibold text-ink">{{ city.name }}</div>
-                    <div class="text-[10px] text-muted">{{ city.tradegood_name }} · [{{ city.x }}:{{ city.y }}]</div>
-                  </div>
-                  <span class="mt-0.5 flex-shrink-0 inline-flex h-5 w-5 items-center justify-center rounded-full border transition-colors"
-                        :style="isCitySelected('{{ cv }}') ? 'border-color:var(--ik-sea);color:white;background:var(--ik-sea);' : 'border-color:rgba(79,134,185,0.24);color:var(--ik-sea);background:rgba(79,134,185,0.06);'">
-                    <i class="bi text-[9px]" :class="isCitySelected('{{ cv }}') ? 'bi-check-lg' : 'bi-circle'"></i>
-                  </span>
-                </div>
-                <div class="mt-1 text-[10px] font-semibold" style="color:var(--ik-sea);">
-                  <i class="bi bi-binoculars text-[8px]"></i> Safehouse nív. {{ city.safehouse_level }}
-                </div>
-                {% if city.ga_name %}
-                <div class="mt-0.5 text-[9px] font-medium px-1.5 py-0.5 rounded-full inline-flex items-center gap-1"
-                     style="background:rgba(95,140,78,0.10);color:var(--ik-good);">
-                  <i class="bi bi-person-fill text-[8px]"></i>{{ city.ga_name }}
-                </div>
-                {% endif %}
+              {% if city.tradegood_icon %}
+              <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                <img src="{{ city.tradegood_icon }}" alt="" class="h-4 w-4 object-contain">
               </div>
+              {% endif %}
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-start justify-between gap-1">
+                <div class="min-w-0">
+                  <div class="truncate text-xs font-semibold text-ink">{{ city.name }}</div>
+                  <div class="text-[10px] text-muted">{{ city.tradegood_name }} · [{{ city.x }}:{{ city.y }}]</div>
+                </div>
+                <span class="mt-0.5 flex-shrink-0 inline-flex h-5 w-5 items-center justify-center rounded-full border transition-colors"
+                      :style="isCitySelected('{{ cv }}') ? 'border-color:var(--ik-sea);color:white;background:var(--ik-sea);' : 'border-color:rgba(79,134,185,0.24);color:var(--ik-sea);background:rgba(79,134,185,0.06);'">
+                  <i class="bi text-[9px]" :class="isCitySelected('{{ cv }}') ? 'bi-check-lg' : 'bi-circle'"></i>
+                </span>
+              </div>
+              <div class="mt-1 text-[10px] font-semibold" style="color:var(--ik-sea);">
+                <i class="bi bi-binoculars text-[8px]"></i> Safehouse nív. {{ city.safehouse_level }}
+              </div>
+              {% if city.ga_name %}
+              <div class="mt-0.5 text-[9px] font-medium px-1.5 py-0.5 rounded-full inline-flex items-center gap-1"
+                   style="background:rgba(95,140,78,0.10);color:var(--ik-good);">
+                <i class="bi bi-person-fill text-[8px]"></i>{{ city.ga_name }}
+              </div>
+              {% endif %}
             </div>
           </div>
-        </button>
-      </div>
+        </div>
+      </button>
       {% endwith %}
       {% endfor %}
     </div>
+    {% else %}
+    <p class="text-sm text-muted">
+      <i class="bi bi-exclamation-triangle text-[var(--ik-warn)] mr-1"></i>
+      Nenhuma cidade com Guilda dos Ladrões encontrada nas contas selecionadas. Execute snapshots primeiro.
+    </p>
+    {% endif %}
 
-    <div x-show="selectedGaIds.length === 0" class="text-[11px] text-muted italic py-2">
-      <i class="bi bi-arrow-up mr-1"></i>Selecione as contas participantes acima para ver as safehouses.
+    <div x-show="selectedCityIds.length === 0 && cities.length > 0" class="mt-2 text-[11px] text-muted italic">
+      <i class="bi bi-exclamation-triangle text-[var(--ik-warn)] mr-1"></i>Selecione ao menos uma safehouse.
     </div>
   </div>
-
-  {% endif %}{# /spy_cities #}
 
   {# ── 3. Região de destino ── #}
   <div class="card !p-4">
