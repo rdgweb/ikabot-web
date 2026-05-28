@@ -293,9 +293,13 @@ class HubClient:
     def get_spy_targets(
         self,
         *,
-        target_mode: str = "all",
-        ally_tag: str = "",
-        owner_id: str = "",
+        only_inactive: bool = True,
+        x_min: int | None = None,
+        x_max: int | None = None,
+        y_min: int | None = None,
+        y_max: int | None = None,
+        max_total_score: int = 0,
+        max_army_score: int = 0,
         skip_if_valid: bool = False,
         missions: list[int] | None = None,
         limit: int = 50,
@@ -304,18 +308,26 @@ class HubClient:
         """GET /api/agent/worldintel/spy-targets/
 
         Returns list of WorldDumpCity targets suitable for espionage.
-        Automatically excludes own accounts.
+        Automatically excludes own accounts' cities.
         Response: {"targets": [...], "dump_id": "...", "total": N}
         """
         params: dict[str, Any] = {
-            "target_mode": target_mode,
+            "only_inactive": "1" if only_inactive else "0",
             "limit": limit,
             "skip_if_valid": "1" if skip_if_valid else "0",
         }
-        if ally_tag:
-            params["ally_tag"] = ally_tag
-        if owner_id:
-            params["owner_id"] = owner_id
+        if x_min is not None:
+            params["x_min"] = x_min
+        if x_max is not None:
+            params["x_max"] = x_max
+        if y_min is not None:
+            params["y_min"] = y_min
+        if y_max is not None:
+            params["y_max"] = y_max
+        if max_total_score:
+            params["max_total_score"] = max_total_score
+        if max_army_score:
+            params["max_army_score"] = max_army_score
         if missions:
             params["missions"] = ",".join(str(m) for m in missions)
         if game_account_id:

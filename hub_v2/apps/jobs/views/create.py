@@ -1651,6 +1651,14 @@ def _custom_field_names(action_code: int) -> list[str]:
             "mission_id", "max_detection_risk",
             "recall_after", "save_reports", "delete_after_save",
         ]
+    if int(action_code) == 16:
+        return [
+            "city_ids", "missions",
+            "region_x_min", "region_x_max", "region_y_min", "region_y_max",
+            "only_inactive", "max_total_score", "max_army_score",
+            "skip_if_valid", "max_targets", "interval_minutes",
+            "max_detection_risk", "recall_after", "save_reports", "delete_after_save",
+        ]
     if int(action_code) == 31:
         return ["receiver_name", "receiver_id", "msg_type", "content", "city_id"]
     if int(action_code) == 17:
@@ -1712,6 +1720,9 @@ def _job_form_context(form, action_meta, action_code, ga, cities):
     }
     if int(action_code) == 15:
         ctx.update(_spy_context(ga, cities, getattr(form, "initial", {})))
+    if int(action_code) == 16:
+        # World spy: reuse spy_cities (safehouses) + missions from spy context
+        ctx.update(_spy_context(ga, cities, {}))
     if int(action_code) == 17:
         ctx.update(_piracy_context(ga, cities, snapshot))
     if int(action_code) == 820:

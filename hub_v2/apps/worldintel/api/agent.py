@@ -242,118 +242,142 @@ class WorldSpyTargetsView(APIView):
     permission_classes = [IsAgent]
 
     def get(self, request):
-        target_mode = str(request.query_params.get("target_mode") or "all").strip()
-        ally_tag = str(request.query_params.get("ally_tag") or "").strip()
-        owner_id_filter = str(request.query_params.get("owner_id") or "").strip()
-        skip_if_valid = str(request.query_params.get("skip_if_valid") or "0") in ("1", "true", "yes")
-        missions_raw = str(request.query_params.get("missions") or "").strip()
-        game_account_id = str(request.query_params.get("game_account_id") or "").strip()
+        from collections import defaultdict
+        from django.db.models import OuterRef, Subquery, BigIntegerField, Q, Value
+        from django.db.models.functions import Coalesce
 
-        try:
-            limit = min(200, max(1, int(request.query_params.get("limit") or 50)))
-        except (ValueError, TypeError):
-            limit = 50
+        # ── Params ────────────────────────────────────────────────────────────
+        skip_if_valid   = str(request.query_params.get("skip_if_valid") or "0") in ("1", "true", "yes")
+        missions_raw    = str(request.query_params.get("missions") or "").strip()
+        game_account_id = str(request.query_params.get("game_account_id") or "").strip()
+        only_inactive   = str(request.query_params.get("only_inactive") or "1") in ("1", "true", "yes")
+
+        def _int(key, default=None):
+            try:
+                v = request.query_params.get(key)
+                return int(v) if v is not None else default
+            except (TypeError, ValueError):
+                return default
+
+        x_min = _int("x_min"); x_max = _int("x_max")
+        y_min = _int("y_min"); y_max = _int("y_max")
+        max_total_score = _int("max_total_score", 0)
+        max_army_score  = _int("max_army_score", 0)
+        limit = min(200, max(1, _int("limit", 50)))
 
         # Parse mission list
         mission_ids = []
-        if missions_raw:
-            for m in missions_raw.split(","):
-                try:
-                    mission_ids.append(int(m.strip()))
-                except (ValueError, TypeError):
-                    pass
+        for m in missions_raw.split(","):
+            try:
+                mission_ids.append(int(m.strip()))
+            except (ValueError, TypeError):
+                pass
 
-        # Own city IDs: all game_city_id in all active GameAccounts — exclude these
-        own_city_ids = set(
-            WorldDumpCity.objects.filter(
-                game_city_id__gt="",
-                owner_id__in=list(
-                    GameAccount.objects.filter(active=True).values_list("lobby_account_id", flat=True)
-                ),
-            ).values_list("game_city_id", flat=True).distinct()
+        # ── Own city IDs (exclude always) ────────────────────────────────────
+        own_lobby_ids = set(
+            GameAccount.objects.filter(active=True).values_list("lobby_account_id", flat=True)
         )
-        # Also exclude by matching snapshot cities from AccountSnapshot
+        own_city_ids: set[str] = set()
+        if own_lobby_ids:
+            own_city_ids = set(
+                WorldDumpCity.objects.filter(
+                    game_city_id__gt="",
+                    owner_id__in=own_lobby_ids,
+                ).values_list("game_city_id", flat=True).distinct()
+            )
+        # Also pull from snapshots
         try:
             from apps.game.models import AccountSnapshot
             for snap in AccountSnapshot.objects.all():
-                data = snap.data or {}
-                for city in (data.get("cities") or []):
+                for city in ((snap.data or {}).get("cities") or []):
                     cid = str(city.get("id") or city.get("city_id") or "").strip()
                     if cid:
                         own_city_ids.add(cid)
         except Exception:
             pass
 
-        # Get latest dump (optionally for same server as game_account)
+        # ── Latest dump (preferably from same server) ─────────────────────────
         dump_qs = WorldDump.objects.order_by("-captured_at")
+        dump = None
         if game_account_id:
             try:
                 ga = GameAccount.objects.get(pk=game_account_id)
-                # Try to find dump from same server
-                server_dump = dump_qs.filter(game_account__server_id=ga.server_id).first()
-                if server_dump:
-                    dump = server_dump
-                else:
-                    dump = dump_qs.first()
+                dump = dump_qs.filter(game_account__server_id=ga.server_id).first()
             except GameAccount.DoesNotExist:
-                dump = dump_qs.first()
-        else:
+                pass
+        if not dump:
             dump = dump_qs.first()
-
         if not dump:
             return Response({"targets": [], "dump_id": None, "total": 0})
 
-        # Base queryset: only city-type slots with a game_city_id
-        cities_qs = WorldDumpCity.objects.filter(
-            dump=dump,
-            type="city",
-            game_city_id__gt="",
-        ).select_related("island").exclude(
-            game_city_id__in=own_city_ids,
+        # ── Base queryset ─────────────────────────────────────────────────────
+        cities_qs = (
+            WorldDumpCity.objects
+            .filter(dump=dump, type="city", game_city_id__gt="")
+            .select_related("island")
+            .exclude(game_city_id__in=own_city_ids)
         )
 
-        # Apply target_mode filter
-        if target_mode == "inactive":
+        # State filter
+        if only_inactive:
             cities_qs = cities_qs.filter(state="inactive")
-        elif target_mode == "vacation":
-            cities_qs = cities_qs.filter(state="vacation")
-        elif target_mode == "inactive_or_vacation":
-            from django.db.models import Q
-            cities_qs = cities_qs.filter(Q(state="inactive") | Q(state="vacation"))
-        elif target_mode == "ally_tag" and ally_tag:
-            cities_qs = cities_qs.filter(ally_tag=ally_tag)
-        elif target_mode == "owner_id" and owner_id_filter:
-            cities_qs = cities_qs.filter(owner_id=owner_id_filter)
-        # else: "all" — no extra filter (active players too)
 
-        cities = list(cities_qs[:limit * 3])  # fetch 3x to allow filtering below
+        # Region filter
+        if x_min is not None:
+            cities_qs = cities_qs.filter(island__x__gte=x_min)
+        if x_max is not None:
+            cities_qs = cities_qs.filter(island__x__lte=x_max)
+        if y_min is not None:
+            cities_qs = cities_qs.filter(island__y__gte=y_min)
+        if y_max is not None:
+            cities_qs = cities_qs.filter(island__y__lte=y_max)
 
-        # skip_if_valid: exclude cities that already have valid reports for all configured missions
+        # Score filters — join WorldDumpPlayer via subquery
+        if max_total_score and max_total_score > 0:
+            from apps.worldintel.models import WorldDumpPlayer as WDP
+            player_total_sq = (
+                WDP.objects
+                .filter(dump=dump, owner_id=OuterRef("owner_id"))
+                .annotate(ts=Coalesce("building_score", Value(0)) +
+                              Coalesce("research_score", Value(0)) +
+                              Coalesce("army_score", Value(0)))
+                .values("ts")[:1]
+            )
+            cities_qs = cities_qs.annotate(
+                player_total=Subquery(player_total_sq, output_field=BigIntegerField())
+            ).filter(Q(player_total__isnull=True) | Q(player_total__lte=max_total_score))
+
+        if max_army_score and max_army_score > 0:
+            from apps.worldintel.models import WorldDumpPlayer as WDP2
+            army_sq = (
+                WDP2.objects
+                .filter(dump=dump, owner_id=OuterRef("owner_id"))
+                .values("army_score")[:1]
+            )
+            cities_qs = cities_qs.annotate(
+                player_army=Subquery(army_sq, output_field=BigIntegerField())
+            ).filter(Q(player_army__isnull=True) | Q(player_army__lte=max_army_score))
+
+        cities = list(cities_qs[:limit * 3])
+
+        # ── skip_if_valid ─────────────────────────────────────────────────────
         if skip_if_valid and cities:
-            city_ids_to_check = [c.game_city_id for c in cities]
+            city_ids_check = [c.game_city_id for c in cities]
             now = timezone.now()
             if mission_ids:
-                # city has valid intel if: for each mission_id, at least one valid report exists
-                from collections import defaultdict
                 valid_map: dict[str, set] = defaultdict(set)
-                valid_reports = SpyReport.objects.filter(
-                    target_city_id__in=city_ids_to_check,
+                for row in SpyReport.objects.filter(
+                    target_city_id__in=city_ids_check,
                     mission_id__in=mission_ids,
                     expires_at__gt=now,
-                ).values("target_city_id", "mission_id").distinct()
-                for row in valid_reports:
+                ).values("target_city_id", "mission_id").distinct():
                     valid_map[row["target_city_id"]].add(row["mission_id"])
-
                 mission_set = set(mission_ids)
-                cities = [
-                    c for c in cities
-                    if not (mission_set <= valid_map.get(c.game_city_id, set()))
-                ]
+                cities = [c for c in cities if not (mission_set <= valid_map.get(c.game_city_id, set()))]
             else:
-                # skip if any valid report exists
                 has_valid = set(
                     SpyReport.objects.filter(
-                        target_city_id__in=city_ids_to_check,
+                        target_city_id__in=city_ids_check,
                         expires_at__gt=now,
                     ).values_list("target_city_id", flat=True).distinct()
                 )
@@ -361,20 +385,17 @@ class WorldSpyTargetsView(APIView):
 
         cities = cities[:limit]
 
-        targets = [
-            {
-                "game_city_id": c.game_city_id,
-                "owner_id": c.owner_id,
-                "owner_name": c.owner_name,
-                "city_name": c.name,
-                "island_id": c.island.island_id if c.island else "",
-                "x": c.island.x if c.island else 0,
-                "y": c.island.y if c.island else 0,
-                "state": c.state or "",
-                "ally_tag": c.ally_tag or "",
-            }
-            for c in cities
-        ]
+        targets = [{
+            "game_city_id": c.game_city_id,
+            "owner_id":     c.owner_id,
+            "owner_name":   c.owner_name,
+            "city_name":    c.name,
+            "island_id":    c.island.island_id if c.island else "",
+            "x":            c.island.x if c.island else 0,
+            "y":            c.island.y if c.island else 0,
+            "state":        c.state or "",
+            "ally_tag":     c.ally_tag or "",
+        } for c in cities]
 
         return Response({
             "targets": targets,

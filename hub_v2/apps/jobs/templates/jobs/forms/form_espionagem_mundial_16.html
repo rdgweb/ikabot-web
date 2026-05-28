@@ -1,0 +1,416 @@
+{% load static hub_tags %}
+
+{# ── Espionagem Mundial (action 16) ── #}
+{% if action_code == 16 %}
+{{ spy_missions|json_script:"ws-missions-data" }}
+{{ spy_cities|json_script:"ws-cities-data" }}
+<script>
+function worldSpyForm() {
+  return {
+    cities: [],
+    selectedCityIds: [],   // IDs das safehouses selecionadas
+    missions: [],
+    intelMissionIds: [],
+
+    // Região
+    xMin: 0, xMax: 99, yMin: 0, yMax: 99,
+
+    // Filtros
+    onlyInactive: true,
+    maxTotalScore: 0,
+    maxArmyScore: 0,
+
+    // Operação
+    skipIfValid: true,
+    maxTargets: 20,
+    intervalMinutes: 120,
+    maxRisk: 35,
+    recallAfter: true,
+    saveReports: true,
+
+    init(initialCityIds, initialMissions, opts) {
+      this.cities = JSON.parse(document.getElementById('ws-cities-data')?.textContent || '[]');
+      this.missions = JSON.parse(document.getElementById('ws-missions-data')?.textContent || '[]');
+
+      // All safehouses selected by default
+      const pre = initialCityIds ? String(initialCityIds).split(',').map(s => s.trim()).filter(Boolean) : [];
+      this.selectedCityIds = pre.length ? pre : this.cities.map(c => String(c.id));
+
+      // Missions
+      const mids = String(initialMissions || '3,5').split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x) && x !== 1 && x !== 8);
+      this.intelMissionIds = mids;
+
+      // Options
+      if (opts) {
+        this.xMin = parseInt(opts.xMin) || 0;
+        this.xMax = parseInt(opts.xMax) || 99;
+        this.yMin = parseInt(opts.yMin) || 0;
+        this.yMax = parseInt(opts.yMax) || 99;
+        this.onlyInactive = opts.onlyInactive !== false && opts.onlyInactive !== 'false';
+        this.maxTotalScore = parseInt(opts.maxTotalScore) || 0;
+        this.maxArmyScore = parseInt(opts.maxArmyScore) || 0;
+        this.skipIfValid = opts.skipIfValid !== false && opts.skipIfValid !== 'false';
+        this.maxTargets = parseInt(opts.maxTargets) || 20;
+        this.intervalMinutes = parseInt(opts.intervalMinutes) || 120;
+        this.maxRisk = parseInt(opts.maxRisk) || 35;
+        this.recallAfter = opts.recallAfter !== false && opts.recallAfter !== 'false';
+        this.saveReports = opts.saveReports !== false && opts.saveReports !== 'false';
+      }
+    },
+
+    toggleCity(id) {
+      const s = String(id);
+      if (this.selectedCityIds.includes(s)) {
+        this.selectedCityIds = this.selectedCityIds.filter(x => x !== s);
+      } else {
+        this.selectedCityIds = [...this.selectedCityIds, s];
+      }
+    },
+    isCitySelected(id) { return this.selectedCityIds.includes(String(id)); },
+    cityIdsValue() { return this.selectedCityIds.join(','); },
+
+    toggleMission(id) {
+      if (this.intelMissionIds.includes(id)) {
+        this.intelMissionIds = this.intelMissionIds.filter(x => x !== id);
+      } else {
+        this.intelMissionIds = [...this.intelMissionIds, id];
+      }
+    },
+    isMissionSelected(id) { return this.intelMissionIds.includes(id); },
+    missionsValue() { return this.intelMissionIds.length ? this.intelMissionIds.join(',') : ''; },
+
+    riskColor(r) { return r <= 30 ? 'var(--ik-good)' : r <= 55 ? 'var(--ik-warn)' : 'var(--ik-bad)'; },
+  };
+}
+</script>
+
+<div class="space-y-4"
+     x-data="worldSpyForm()"
+     x-init="init(
+       '{{ form.city_ids.value|default:''|escapejs }}',
+       '{{ form.missions.value|default:'3,5'|escapejs }}',
+       {
+         xMin: '{{ form.region_x_min.value|default:0 }}',
+         xMax: '{{ form.region_x_max.value|default:99 }}',
+         yMin: '{{ form.region_y_min.value|default:0 }}',
+         yMax: '{{ form.region_y_max.value|default:99 }}',
+         onlyInactive: {{ form.only_inactive.value|yesno:'true,false,true' }},
+         maxTotalScore: '{{ form.max_total_score.value|default:0 }}',
+         maxArmyScore: '{{ form.max_army_score.value|default:0 }}',
+         skipIfValid: {{ form.skip_if_valid.value|yesno:'true,false,true' }},
+         maxTargets: '{{ form.max_targets.value|default:20 }}',
+         intervalMinutes: '{{ form.interval_minutes.value|default:120 }}',
+         maxRisk: '{{ form.max_detection_risk.value|default:35 }}',
+         recallAfter: {{ form.recall_after.value|yesno:'true,false,true' }},
+         saveReports: {{ form.save_reports.value|yesno:'true,false,true' }},
+       })">
+
+  {# Hidden fields enviados ao submit #}
+  <input type="hidden" name="{{ form.city_ids.html_name }}" :value="cityIdsValue()">
+  <input type="hidden" name="{{ form.missions.html_name }}" :value="missionsValue()">
+  <input type="hidden" name="{{ form.region_x_min.html_name }}" :value="xMin">
+  <input type="hidden" name="{{ form.region_x_max.html_name }}" :value="xMax">
+  <input type="hidden" name="{{ form.region_y_min.html_name }}" :value="yMin">
+  <input type="hidden" name="{{ form.region_y_max.html_name }}" :value="yMax">
+  <input type="hidden" name="{{ form.only_inactive.html_name }}" :value="onlyInactive ? 'true' : 'false'">
+  <input type="hidden" name="{{ form.max_total_score.html_name }}" :value="maxTotalScore">
+  <input type="hidden" name="{{ form.max_army_score.html_name }}" :value="maxArmyScore">
+  <input type="hidden" name="{{ form.skip_if_valid.html_name }}" :value="skipIfValid ? 'true' : 'false'">
+  <input type="hidden" name="{{ form.max_targets.html_name }}" :value="maxTargets">
+  <input type="hidden" name="{{ form.interval_minutes.html_name }}" :value="intervalMinutes">
+  <input type="hidden" name="{{ form.max_detection_risk.html_name }}" :value="maxRisk">
+  <input type="hidden" name="{{ form.recall_after.html_name }}" :value="recallAfter ? 'true' : 'false'">
+  <input type="hidden" name="{{ form.save_reports.html_name }}" :value="saveReports ? 'true' : 'false'">
+  <input type="hidden" name="{{ form.delete_after_save.html_name }}" value="false">
+
+  {# ── 1. Safehouses de origem ── #}
+  <div class="card !p-4">
+    <div class="flex items-center justify-between mb-3">
+      <label class="form-label text-xs">
+        <i class="bi bi-house-fill text-sea mr-1"></i>Safehouses de origem
+        <span class="text-[var(--ik-bad)]">*</span>
+      </label>
+      <div class="flex items-center gap-2">
+        <span class="text-[10px] text-muted" x-text="selectedCityIds.length + ' selecionada(s)'"></span>
+        <button type="button" class="text-[10px] text-sea hover:underline"
+                @click="selectedCityIds = cities.map(c => String(c.id))">Todas</button>
+        <span class="text-muted text-[10px]">·</span>
+        <button type="button" class="text-[10px] text-muted hover:underline"
+                @click="selectedCityIds = []">Nenhuma</button>
+      </div>
+    </div>
+    {% if spy_cities %}
+    <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
+      {% for city in spy_cities %}
+      <button type="button"
+              class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+              :class="isCitySelected('{{ city.id }}') ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
+              :style="isCitySelected('{{ city.id }}') ? 'border-color:rgba(79,134,185,0.50);background:linear-gradient(180deg,rgba(255,255,255,0.94),rgba(79,134,185,0.10));' : 'border-color:rgba(219,201,167,0.9);background:rgba(255,255,255,0.82);'"
+              @click="toggleCity('{{ city.id }}')">
+        <div class="absolute inset-x-0 top-0 h-14" style="background:linear-gradient(135deg,rgba(79,134,185,0.16),rgba(79,134,185,0.02));"></div>
+        <div class="relative p-3">
+          <div class="flex items-start gap-2">
+            <div class="relative shrink-0">
+              <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                   style="border-color:rgba(79,134,185,0.18);background:linear-gradient(180deg,#fffdf8,#f4ecda);">
+                <img src="{{ city.city_art }}" alt="" class="h-8 w-8 object-contain">
+              </div>
+              {% if city.tradegood_icon %}
+              <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                <img src="{{ city.tradegood_icon }}" alt="" class="h-4 w-4 object-contain">
+              </div>
+              {% endif %}
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-start justify-between gap-1">
+                <div class="min-w-0">
+                  <div class="truncate text-xs font-semibold text-ink">{{ city.name }}</div>
+                  <div class="text-[10px] text-muted">{{ city.tradegood_name }} · [{{ city.x }}:{{ city.y }}]</div>
+                </div>
+                <span class="mt-0.5 flex-shrink-0 inline-flex h-5 w-5 items-center justify-center rounded-full border transition-colors"
+                      :style="isCitySelected('{{ city.id }}') ? 'border-color:var(--ik-sea);color:white;background:var(--ik-sea);' : 'border-color:rgba(79,134,185,0.24);color:var(--ik-sea);background:rgba(79,134,185,0.06);'">
+                  <i class="bi text-[9px]" :class="isCitySelected('{{ city.id }}') ? 'bi-check-lg' : 'bi-circle'"></i>
+                </span>
+              </div>
+              <div class="mt-1 text-[10px] font-semibold" style="color:var(--ik-sea);">
+                <i class="bi bi-binoculars text-[8px]"></i> Safehouse nív. {{ city.safehouse_level }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </button>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-sm text-muted">
+      <i class="bi bi-exclamation-triangle text-[var(--ik-warn)] mr-1"></i>
+      Nenhuma cidade com Guilda dos Ladrões no snapshot. Execute um snapshot primeiro.
+    </p>
+    {% endif %}
+  </div>
+
+  {# ── 2. Região de destino ── #}
+  <div class="card !p-4">
+    <label class="form-label text-xs mb-3 block">
+      <i class="bi bi-geo-alt text-sea mr-1"></i>Região de destino no mapa
+    </label>
+    <div class="grid grid-cols-2 gap-4">
+      <div class="space-y-3">
+        <p class="text-[10px] text-muted font-semibold uppercase tracking-wider">Coordenadas X</p>
+        <div class="flex items-center gap-2">
+          <div class="flex-1">
+            <label class="text-[10px] text-muted mb-1 block">X mínimo</label>
+            <input type="number" min="0" max="99" x-model.number="xMin"
+                   class="form-input !text-sm w-full text-center" placeholder="0">
+          </div>
+          <i class="bi bi-arrow-right text-muted text-sm mt-4 shrink-0"></i>
+          <div class="flex-1">
+            <label class="text-[10px] text-muted mb-1 block">X máximo</label>
+            <input type="number" min="0" max="99" x-model.number="xMax"
+                   class="form-input !text-sm w-full text-center" placeholder="99">
+          </div>
+        </div>
+      </div>
+      <div class="space-y-3">
+        <p class="text-[10px] text-muted font-semibold uppercase tracking-wider">Coordenadas Y</p>
+        <div class="flex items-center gap-2">
+          <div class="flex-1">
+            <label class="text-[10px] text-muted mb-1 block">Y mínimo</label>
+            <input type="number" min="0" max="99" x-model.number="yMin"
+                   class="form-input !text-sm w-full text-center" placeholder="0">
+          </div>
+          <i class="bi bi-arrow-right text-muted text-sm mt-4 shrink-0"></i>
+          <div class="flex-1">
+            <label class="text-[10px] text-muted mb-1 block">Y máximo</label>
+            <input type="number" min="0" max="99" x-model.number="yMax"
+                   class="form-input !text-sm w-full text-center" placeholder="99">
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="text-[10px] text-muted mt-3">
+      <i class="bi bi-info-circle mr-1"></i>
+      Região selecionada: <span class="font-mono font-semibold text-ink">[<span x-text="xMin"></span>:<span x-text="yMin"></span>] → [<span x-text="xMax"></span>:<span x-text="yMax"></span>]</span>
+    </p>
+  </div>
+
+  {# ── 3. Filtros de alvo ── #}
+  <div class="card !p-4 space-y-4">
+    <label class="form-label text-xs block">
+      <i class="bi bi-funnel text-sea mr-1"></i>Filtros de alvo
+    </label>
+
+    {# Apenas inativos #}
+    <label class="flex items-center justify-between cursor-pointer select-none gap-3"
+           @click.prevent="onlyInactive = !onlyInactive">
+      <div>
+        <div class="text-xs font-semibold text-ink">Apenas jogadores inativos</div>
+        <div class="text-[10px] text-muted">Modo férias não pode ser espionado. Recomendado manter ativo.</div>
+      </div>
+      <span class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200"
+            :class="onlyInactive ? 'bg-[var(--ik-sea)]' : 'bg-gray-300'">
+        <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200"
+              :style="onlyInactive ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
+      </span>
+    </label>
+
+    <div style="border-top:1px solid var(--ik-line);"></div>
+
+    {# Score filters #}
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="text-[10px] text-muted font-semibold uppercase tracking-wider mb-1.5 block">
+          <i class="bi bi-trophy mr-1"></i>Pontuação total máxima
+        </label>
+        <input type="number" min="0" x-model.number="maxTotalScore"
+               class="form-input !text-sm w-full" placeholder="0 = sem limite">
+        <p class="text-[10px] text-muted mt-1">Construção + pesquisa + exército. 0 = sem limite.</p>
+      </div>
+      <div>
+        <label class="text-[10px] text-muted font-semibold uppercase tracking-wider mb-1.5 block">
+          <i class="bi bi-shield-fill mr-1"></i>Pontuação de generais máxima
+        </label>
+        <input type="number" min="0" x-model.number="maxArmyScore"
+               class="form-input !text-sm w-full" placeholder="0 = sem limite">
+        <p class="text-[10px] text-muted mt-1">Pontuação de exército do WorldDump. 0 = sem limite.</p>
+      </div>
+    </div>
+  </div>
+
+  {# ── 4. O que espionar ── #}
+  <div class="card !p-4">
+    <div class="mb-3">
+      <label class="form-label text-xs">
+        <i class="bi bi-binoculars text-sea mr-1"></i>O que espionar?
+      </label>
+      <p class="text-[10px] text-muted mt-1">
+        Infiltração é <strong>automática</strong>. Selecione as missões de inteligência desejadas.
+      </p>
+    </div>
+    <div class="space-y-1">
+      {% for mission in spy_missions %}
+      <label class="flex items-center gap-3 rounded-xl border px-3 py-2.5 cursor-pointer transition-all select-none"
+             :class="isMissionSelected({{ mission.id }})
+               ? 'border-[var(--ik-sea)] bg-[rgba(79,134,185,0.05)]'
+               : 'border-[var(--ik-line)] hover:border-[var(--ik-sea)]/40'"
+             @click.prevent="toggleMission({{ mission.id }})">
+        <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors"
+             :class="isMissionSelected({{ mission.id }}) ? 'bg-[var(--ik-sea)] text-white' : 'bg-[var(--ik-sand)] text-muted'">
+          <i class="bi {{ mission.icon }} text-[11px]"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-xs font-semibold text-ink">{{ mission.name }}</div>
+          <div class="text-[10px] text-muted">{{ mission.desc }}</div>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0 text-[10px]">
+          <span class="font-semibold" :style="{ color: riskColor({{ mission.risk_before }}) }">{{ mission.risk_before }}% risco</span>
+          <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center"
+               :class="isMissionSelected({{ mission.id }}) ? 'border-[var(--ik-sea)] bg-[var(--ik-sea)]' : 'border-[var(--ik-line)]'">
+            <i class="bi bi-check text-[8px] text-white" x-show="isMissionSelected({{ mission.id }})"></i>
+          </div>
+        </div>
+      </label>
+      {% endfor %}
+    </div>
+    <div x-show="intelMissionIds.length === 0" class="mt-2 text-[11px] text-muted italic">
+      <i class="bi bi-info-circle mr-1"></i>Sem missões — só infiltração (agentes ficam estacionados aguardando).
+    </div>
+  </div>
+
+  {# ── 5. Configurações do ciclo ── #}
+  <div class="card !p-4 space-y-4">
+    <label class="form-label text-xs block">
+      <i class="bi bi-gear text-sea mr-1"></i>Configurações do ciclo
+    </label>
+
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="text-[10px] text-muted font-semibold uppercase tracking-wider mb-1.5 block">Máx. alvos por ciclo</label>
+        <input type="number" min="1" max="100" x-model.number="maxTargets"
+               class="form-input !text-sm w-full">
+        <p class="text-[10px] text-muted mt-1">Jobs ac=15 criados por execução.</p>
+      </div>
+      <div>
+        <label class="text-[10px] text-muted font-semibold uppercase tracking-wider mb-1.5 block">Intervalo entre ciclos (min)</label>
+        <input type="number" min="5" x-model.number="intervalMinutes"
+               class="form-input !text-sm w-full">
+        <p class="text-[10px] text-muted mt-1">Tempo até próxima rodada de espionagem.</p>
+      </div>
+    </div>
+
+    {# Risco #}
+    <div>
+      <label class="text-[10px] text-muted font-semibold uppercase tracking-wider mb-1.5 block">
+        <i class="bi bi-shield-half mr-1"></i>Risco máximo aceito
+      </label>
+      <div class="flex items-center gap-3">
+        <input type="range" min="5" max="90" step="5" x-model.number="maxRisk" class="flex-1 accent-[var(--ik-sea)]">
+        <div class="text-base font-bold w-20 text-right" :style="{ color: riskColor(maxRisk) }"
+             x-text="maxRisk + '%'"></div>
+      </div>
+      <div class="flex justify-between text-[10px] text-muted mt-1">
+        <span style="color:var(--ik-good)">5%</span>
+        <span style="color:var(--ik-warn)">45%</span>
+        <span style="color:var(--ik-bad)">90%</span>
+      </div>
+    </div>
+
+    <div style="border-top:1px solid var(--ik-line);"></div>
+
+    {# Toggles #}
+    <label class="flex items-center justify-between cursor-pointer select-none gap-3"
+           @click.prevent="skipIfValid = !skipIfValid">
+      <div>
+        <div class="text-xs font-semibold text-ink">Pular se já tem intel válida</div>
+        <div class="text-[10px] text-muted">Ignora cidades com relatórios recentes (não expirados) para todas as missões</div>
+      </div>
+      <span class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200"
+            :class="skipIfValid ? 'bg-[var(--ik-sea)]' : 'bg-gray-300'">
+        <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200"
+              :style="skipIfValid ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
+      </span>
+    </label>
+
+    <div style="border-top:1px solid var(--ik-line);"></div>
+
+    <label class="flex items-center justify-between cursor-pointer select-none gap-3"
+           @click.prevent="recallAfter = !recallAfter">
+      <div>
+        <div class="text-xs font-semibold text-ink">Chamar espiões de volta ao terminar</div>
+        <div class="text-[10px] text-muted">Envia missão de retirada após completar cada alvo</div>
+      </div>
+      <span class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200"
+            :class="recallAfter ? 'bg-[var(--ik-sea)]' : 'bg-gray-300'">
+        <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200"
+              :style="recallAfter ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
+      </span>
+    </label>
+
+    <div style="border-top:1px solid var(--ik-line);"></div>
+
+    <label class="flex items-center justify-between cursor-pointer select-none gap-3"
+           @click.prevent="saveReports = !saveReports">
+      <div>
+        <div class="text-xs font-semibold text-ink">Guardar relatórios no hub</div>
+        <div class="text-[10px] text-muted">Salva dados obtidos para consulta em /intel/</div>
+      </div>
+      <span class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200"
+            :class="saveReports ? 'bg-[var(--ik-sea)]' : 'bg-gray-300'">
+        <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200"
+              :style="saveReports ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
+      </span>
+    </label>
+  </div>
+
+  {# Validação mínima #}
+  <div x-show="selectedCityIds.length === 0"
+       class="flex items-center gap-2 text-xs rounded-xl px-4 py-3"
+       style="background:rgba(185,79,79,0.08);border:1px solid rgba(185,79,79,0.20);color:var(--ik-bad);">
+    <i class="bi bi-exclamation-triangle-fill"></i>
+    Selecione ao menos uma safehouse de origem.
+  </div>
+
+</div>
+{% endif %}
+
+{# Dynamic fields #}
