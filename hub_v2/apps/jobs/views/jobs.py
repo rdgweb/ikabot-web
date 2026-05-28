@@ -1575,30 +1575,6 @@ class JobListView(FilterSortListView):
         missions_pending = list(recovery.get("missions_pending") or intel_missions)
         mission_risks    = dict(recovery.get("mission_risks") or {})
 
-        mission_rows = []
-        for mid in intel_missions:
-            if mid in missions_done:
-                status = "done"
-                badge  = "badge-success"
-                icon   = "bi-check-circle-fill"
-            elif mid in missions_pending:
-                status = "pending"
-                badge  = "badge-secondary"
-                icon   = "bi-circle"
-            else:
-                status = "skipped"
-                badge  = "badge-danger"
-                icon   = "bi-x-circle"
-            risk_data = mission_risks.get(str(mid))
-            mission_rows.append({
-                "id":         mid,
-                "name":       _SPY_MISSIONS.get(mid, f"Missão {mid}"),
-                "status":     status,
-                "badge":      badge,
-                "icon":       icon,
-                "risk":       risk_data,  # {agents, decoys, agent_risk, decoy_risk, success} or None
-            })
-
         # Recovery state
         no_progress     = int(recovery.get("no_progress_cycles") or 0)
         last_stationed  = int(recovery.get("last_stationed") or 0)
@@ -1606,13 +1582,129 @@ class JobListView(FilterSortListView):
         sent_total      = int(recovery.get("sent_total") or 0)
         arrival_at      = int(recovery.get("arrival_at") or 0)
         import time as _time
-        arrival_in_s    = max(0, arrival_at - int(_time.time())) if arrival_at else 0
+        import datetime as _dt
+        from django.utils import timezone as _tz
+        _now_ts = int(_time.time())
+        arrival_in_s    = max(0, arrival_at - _now_ts) if arrival_at else 0
+        recall_after    = bool(inputs.get("recall_after", True))
+
+        # Absolute arrival datetime (local-aware) — used for tooltip / prediction label
+        arrival_dt_str = ""
+        if arrival_at:
+            _arr_dt = _dt.datetime.fromtimestamp(arrival_at, tz=_dt.timezone.utc)
+            try:
+                _arr_local = _arr_dt.astimezone(_tz.get_current_timezone())
+            except Exception:
+                _arr_local = _arr_dt
+            arrival_dt_str = _arr_local.strftime("%d/%m %H:%M")
+
+        # ── Missão 1: Infiltração (sempre automática) ──────────────────────────
+        if phase == "accumulating":
+            # Spies still traveling OR being sent
+            infil_status = "pending"
+            infil_badge  = "badge-warning"
+            infil_icon   = "bi-hourglass-split"
+            infil_note   = (
+                f"{sent_total} espião(ões) enviado(s) — chega em {_duration_human(arrival_in_s)}"
+                f" ({arrival_dt_str})" if arrival_in_s > 0 and sent_total > 0
+                else (f"{sent_total} espião(ões) enviado(s)" if sent_total > 0 else "aguardando envio")
+            )
+        else:
+            infil_status = "done"
+            infil_badge  = "badge-success"
+            infil_icon   = "bi-check-circle-fill"
+            infil_note   = f"{last_stationed} estacionado(s)" if last_stationed > 0 else ""
+
+        infil_row = {
+            "id":               1,
+            "name":             "Infiltração",
+            "status":           infil_status,
+            "badge":            infil_badge,
+            "icon":             infil_icon,
+            "risk":             None,
+            "is_infiltration":  True,
+            "detail_note":      infil_note,
+            "sent":             sent_total,
+            "arrival_in_human": _duration_human(arrival_in_s) if arrival_in_s > 0 else "",
+            "arrival_dt_str":   arrival_dt_str,
+        }
+
+        # ── Missões de inteligência ────────────────────────────────────────────
+        mission_rows = [infil_row]
+        for mid in intel_missions:
+            if mid in missions_done:
+                mstatus = "done"
+                mbadge  = "badge-success"
+                micon   = "bi-check-circle-fill"
+            elif mid in missions_pending:
+                mstatus = "pending"
+                mbadge  = "badge-secondary"
+                micon   = "bi-circle"
+            else:
+                mstatus = "skipped"
+                mbadge  = "badge-danger"
+                micon   = "bi-x-circle"
+            risk_data = mission_risks.get(str(mid))
+            mission_rows.append({
+                "id":              mid,
+                "name":            _SPY_MISSIONS.get(mid, f"Missão {mid}"),
+                "status":          mstatus,
+                "badge":           mbadge,
+                "icon":            micon,
+                "risk":            risk_data,
+                "is_infiltration": False,
+                "is_recall":       False,
+                "detail_note":     "",
+            })
+
+        # ── Missão 8: Retirada (se recall_after=True) ─────────────────────────
+        if recall_after:
+            if phase == "done":
+                rec_status = "done"
+                rec_badge  = "badge-success"
+                rec_icon   = "bi-check-circle-fill"
+                rec_note   = "Espiões chamados de volta"
+            elif phase == "recalling":
+                rec_status = "pending"
+                rec_badge  = "badge-warning"
+                rec_icon   = "bi-hourglass-split"
+                rec_note   = (
+                    f"Em retorno — chega em {_duration_human(arrival_in_s)} ({arrival_dt_str})"
+                    if arrival_in_s > 0
+                    else "Em retorno"
+                )
+            else:
+                rec_status = "pending"
+                rec_badge  = "badge-secondary"
+                rec_icon   = "bi-circle"
+                rec_note   = "Aguardando conclusão das missões de inteligência"
+            mission_rows.append({
+                "id":              8,
+                "name":            "Retirada",
+                "status":          rec_status,
+                "badge":           rec_badge,
+                "icon":            rec_icon,
+                "risk":            None,
+                "is_infiltration": False,
+                "is_recall":       True,
+                "detail_note":     rec_note,
+            })
+
+        # ── ETA para execução das missões de inteligência ─────────────────────
+        # Quando phase=="accumulating", as missões ainda não rodaram — arrival_at é quando vão rodar
+        missions_eta_human = ""
+        missions_eta_dt    = ""
+        if phase == "accumulating" and arrival_in_s > 0:
+            missions_eta_human = _duration_human(arrival_in_s)
+            missions_eta_dt    = arrival_dt_str
+        elif phase in ("executing", "recalling", "done") and job.scheduled_for:
+            delta = job.scheduled_for - _tz.now()
+            secs  = max(0, int(delta.total_seconds()))
+            missions_eta_human = _duration_human(secs) if secs > 0 else ""
 
         # Next scheduled
         next_run_human  = ""
         if job.scheduled_for:
-            import datetime as _dt
-            from django.utils import timezone as _tz
             delta = job.scheduled_for - _tz.now()
             secs  = max(0, int(delta.total_seconds()))
             if secs < 60:
@@ -1623,30 +1715,33 @@ class JobListView(FilterSortListView):
                 next_run_human = f"em {secs//3600}h{(secs%3600)//60}min"
 
         return {
-            "phase":            phase,
-            "phase_label":      phase_label,
-            "phase_badge":      phase_badge,
-            "target_owner":     str(inputs.get("target_owner") or "—"),
-            "target_city_name": str(inputs.get("target_city_name") or "—"),
-            "target_city_id":   str(inputs.get("target_city_id") or "—"),
-            "island_id":        str(inputs.get("island_id") or "—"),
-            "source_city_id":   str(inputs.get("city_id") or "—"),
-            "max_risk":         _to_int(inputs.get("max_detection_risk"), 35),
-            "recall_after":     bool(inputs.get("recall_after", True)),
-            "save_reports":     bool(inputs.get("save_reports", True)),
-            "all_missions":     intel_missions,
-            "mission_rows":     mission_rows,
-            "missions_done":    missions_done,
-            "missions_pending": missions_pending,
-            "done_count":       len(missions_done),
-            "total_count":      len(intel_missions),
-            "no_progress":      no_progress,
-            "last_stationed":   last_stationed,
-            "remaining_risk":   remaining_risk,
-            "sent_total":       sent_total,
-            "arrival_in_s":     arrival_in_s,
-            "arrival_in_human": _duration_human(arrival_in_s) if arrival_in_s > 0 else "",
-            "next_run_human":   next_run_human,
+            "phase":              phase,
+            "phase_label":        phase_label,
+            "phase_badge":        phase_badge,
+            "target_owner":       str(inputs.get("target_owner") or "—"),
+            "target_city_name":   str(inputs.get("target_city_name") or "—"),
+            "target_city_id":     str(inputs.get("target_city_id") or "—"),
+            "island_id":          str(inputs.get("island_id") or "—"),
+            "source_city_id":     str(inputs.get("city_id") or "—"),
+            "max_risk":           _to_int(inputs.get("max_detection_risk"), 35),
+            "recall_after":       recall_after,
+            "save_reports":       bool(inputs.get("save_reports", True)),
+            "all_missions":       intel_missions,
+            "mission_rows":       mission_rows,
+            "missions_done":      missions_done,
+            "missions_pending":   missions_pending,
+            "done_count":         len(missions_done),
+            "total_count":        len(intel_missions),
+            "no_progress":        no_progress,
+            "last_stationed":     last_stationed,
+            "remaining_risk":     remaining_risk,
+            "sent_total":         sent_total,
+            "arrival_in_s":       arrival_in_s,
+            "arrival_in_human":   _duration_human(arrival_in_s) if arrival_in_s > 0 else "",
+            "arrival_dt_str":     arrival_dt_str,
+            "missions_eta_human": missions_eta_human,
+            "missions_eta_dt":    missions_eta_dt,
+            "next_run_human":     next_run_human,
         }
 
     @classmethod

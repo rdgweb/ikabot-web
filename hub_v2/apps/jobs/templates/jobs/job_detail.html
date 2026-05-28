@@ -1149,21 +1149,37 @@
   </div>
   {% endif %}
 
+  {# ── ETA das missões de inteligência (quando ainda acumulando) ── #}
+  {% if spy_display.missions_eta_human %}
+  <div class="rounded-xl border px-3 py-2.5 flex items-center gap-2.5"
+       style="border-color:rgba(201,156,78,0.4);background:rgba(201,156,78,0.07);">
+    <i class="bi bi-clock-history text-base" style="color:var(--ik-gold);"></i>
+    <div class="flex-1 min-w-0">
+      <div class="text-xs font-semibold text-ink">Missões executam em {{ spy_display.missions_eta_human }}</div>
+      {% if spy_display.missions_eta_dt %}
+      <div class="text-[10px] text-muted">{{ spy_display.missions_eta_dt }}</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   {# ── Mission rows ── #}
   {% if spy_display.mission_rows %}
   <div>
-    <div class="text-[11px] text-muted uppercase tracking-wide mb-2">Missões de inteligência</div>
+    <div class="text-[11px] text-muted uppercase tracking-wide mb-2">Sequência de missões</div>
     <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
       {% for m in spy_display.mission_rows %}
       <div class="rounded-xl border px-3 py-2
         {% if m.status == 'done' %}border-[var(--ik-good)] bg-[rgba(95,140,78,0.06)]
         {% elif m.status == 'skipped' %}border-[rgba(187,81,67,0.3)] bg-[rgba(187,81,67,0.04)]
+        {% elif m.badge == 'badge-warning' %}border-[rgba(201,156,78,0.35)] bg-[rgba(201,156,78,0.06)]
         {% else %}border-[var(--ik-line)] bg-transparent{% endif %}">
         {# Header row #}
         <div class="flex items-center gap-2.5">
           <i class="bi {{ m.icon }} text-sm
             {% if m.status == 'done' %}text-[var(--ik-good)]
             {% elif m.status == 'skipped' %}text-[var(--ik-bad)]
+            {% elif m.badge == 'badge-warning' %}text-[var(--ik-gold)]
             {% else %}text-muted{% endif %}"></i>
           <div class="flex-1 min-w-0">
             <div class="text-xs font-medium text-ink truncate">{{ m.name }}</div>
@@ -1172,11 +1188,16 @@
           <span class="badge {{ m.badge }} text-[10px]">
             {% if m.status == 'done' %}Feita
             {% elif m.status == 'skipped' %}Pulada
+            {% elif m.badge == 'badge-warning' %}Em andamento
             {% else %}Pendente{% endif %}
           </span>
         </div>
-        {# Risk inline (only for pending missions with known risk data) #}
-        {% if m.status == 'pending' and m.risk %}
+        {# detail_note — infiltração e retirada usam isso #}
+        {% if m.detail_note %}
+        <div class="mt-1.5 text-[10px] text-muted">{{ m.detail_note }}</div>
+        {% endif %}
+        {# Risk inline (only for pending intel missions with known risk data) #}
+        {% if not m.is_infiltration and not m.is_recall and m.status == 'pending' and m.risk %}
         <div class="mt-2 pt-2 border-t border-[var(--ik-line)] flex items-baseline flex-wrap gap-x-1.5 gap-y-0.5 text-[10px]">
           <span class="font-semibold text-ink">{{ m.risk.agents }} Agente{% if m.risk.agents != 1 %}s{% endif %}</span>
           {% if m.risk.decoys %}<span class="text-muted">+</span>
@@ -1198,7 +1219,7 @@
             {% else %}text-[var(--ik-good)]{% endif %}">{{ m.risk.decoy_risk }}%</span>
           {% endif %}
         </div>
-        {% elif m.status == 'pending' and not m.risk %}
+        {% elif not m.is_infiltration and not m.is_recall and m.status == 'pending' and not m.risk %}
         <div class="mt-1.5 text-[10px] text-muted italic">riscos calculados na próxima execução</div>
         {% endif %}
       </div>
@@ -1213,21 +1234,8 @@
       <i class="bi bi-house text-[9px]"></i> Safehouse: cidade {{ spy_display.source_city_id }}
     </span>
     <span class="inline-flex items-center gap-1 rounded-full border border-[var(--ik-line)] bg-[var(--ik-sand-light)] px-2.5 py-1 text-ink">
-      <i class="bi bi-arrow-return-left text-[9px]"></i> Recall: {% if spy_display.recall_after %}Sim{% else %}Não{% endif %}
-    </span>
-    <span class="inline-flex items-center gap-1 rounded-full border border-[var(--ik-line)] bg-[var(--ik-sand-light)] px-2.5 py-1 text-ink">
       <i class="bi bi-file-text text-[9px]"></i> Relatórios: {% if spy_display.save_reports %}Salvar{% else %}Não{% endif %}
     </span>
-    {% if spy_display.sent_total > 0 %}
-    <span class="inline-flex items-center gap-1 rounded-full border border-[var(--ik-line)] bg-[var(--ik-sand-light)] px-2.5 py-1 text-ink">
-      <i class="bi bi-send text-[9px]"></i> {{ spy_display.sent_total }} enviados neste ciclo
-    </span>
-    {% endif %}
-    {% if spy_display.arrival_in_human %}
-    <span class="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-700">
-      <i class="bi bi-hourglass-split text-[9px]"></i> chega em {{ spy_display.arrival_in_human }}
-    </span>
-    {% endif %}
   </div>
 
 </div>
