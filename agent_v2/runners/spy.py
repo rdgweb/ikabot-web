@@ -405,9 +405,11 @@ class SpyRunner(BaseRunner):
                         except Exception:
                             pass
 
-                        # Depois da infiltração: esperar viagem + riskAfter decair
-                        # riskAfter(M1) = 5. Se já tem remaining alto, espera mais.
-                        risk_after_total = current_risk + RISK_AFTER_M1
+                        # Depois da infiltração: esperar viagem + riskAfter decair.
+                        # Usa riskAfter real de M1 do live_params (default RISK_AFTER_M1=5).
+                        _md_m1 = (live_params.get("missionData") or {}).get("1") or {}
+                        _m1_ra = float(_md_m1.get("riskAfter") or RISK_AFTER_M1)
+                        risk_after_total = current_risk + _m1_ra
                         risk_wait_s = _risk_wait(risk_after_total)
                         # Usa o maior entre: tempo de viagem e tempo de risco
                         wait_total = max(
@@ -850,8 +852,8 @@ class SpyRunner(BaseRunner):
             return needed_base
 
         # Projetar remainingRisk real que será acumulado ao estacionar still_short agentes.
-        # Fórmula real do jogo: cada agente estacionado contribui ~riskPerSpy (da missão mais cara).
-        # RISK_AFTER_M1=5 é só o residual de UMA operação de M1, subestima o acumulado total em ~8x.
+        # Fórmula: cada agente estacionado (via M1) contribui ~riskPerSpy da missão mais cara.
+        # RISK_AFTER_M1=5 é só o residual de UMA execução de M1 — subestima o acumulado real.
         md_map = live_params.get("missionData") or {}
         max_risk_per_spy = max(
             (float(md_map.get(str(mid), {}).get("riskPerSpy") or 0) for mid in mission_ids),
