@@ -53,7 +53,23 @@ class WorldSpyRunner(BaseRunner):
 
         # ── Inputs ────────────────────────────────────────────────────────────
         city_ids_raw = str(inputs.get("city_ids") or "").strip()
-        city_ids = [cid.strip() for cid in city_ids_raw.split(",") if cid.strip()]
+
+        # Parse city entries — support both legacy "city_id" and multi-GA "{ga_pk}:{city_id}"
+        # The multi-GA format is produced by the world-spy form when safehouses span multiple accounts.
+        city_entries: list[dict] = []
+        for entry in city_ids_raw.split(","):
+            entry = entry.strip()
+            if not entry:
+                continue
+            if ":" in entry:
+                ga_pk, city_game_id = entry.split(":", 1)
+                city_entries.append({"ga_pk": ga_pk.strip(), "city_game_id": city_game_id.strip()})
+            else:
+                # Legacy: no GA prefix → use parent job's game account
+                city_entries.append({"ga_pk": ga_id, "city_game_id": entry})
+
+        # Keep a flat list of city_game_ids for logging (backward compat with log messages)
+        city_ids = [e["city_game_id"] for e in city_entries]
 
         missions_raw = str(inputs.get("missions") or "3,5").strip()
         only_inactive = bool(inputs.get("only_inactive", True))
@@ -81,8 +97,11 @@ class WorldSpyRunner(BaseRunner):
         if not mission_ids:
             mission_ids = [3, 5]
 
-        if not city_ids:
+        if not city_entries:
             return RunnerResult(success=False, message="city_ids não configurado.")
+
+        # Count unique GAs represented
+        unique_gas = len({e["ga_pk"] for e in city_entries})
 
         region_desc = (
             f"[{x_min}:{y_min}→{x_max}:{y_max}]"
@@ -90,7 +109,7 @@ class WorldSpyRunner(BaseRunner):
             else "mapa inteiro"
         )
         self.log(jid, "info",
-                 f"[WorldSpy] safehouses={len(city_ids)} missions={mission_ids} "
+                 f"[WorldSpy] safehouses={len(city_entries)} ({unique_gas} conta(s)) missions={mission_ids} "
                  f"inactive={only_inactive} region={region_desc} "
                  f"max_total={max_total_score or '—'} max_army={max_army_score or '—'} "
                  f"max_targets={max_targets} interval={interval_minutes}min")
@@ -128,17 +147,19 @@ class WorldSpyRunner(BaseRunner):
         spawned = 0
         skipped = 0
         for i, target in enumerate(targets):
-            city_game_id = str(target.get("game_city_id") or "").strip()
-            if not city_game_id:
+            target_city_id = str(target.get("game_city_id") or "").strip()
+            if not target_city_id:
                 skipped += 1
                 continue
 
-            # Distribui safehouses ciclicamente
-            source_city = city_ids[i % len(city_ids)]
+            # Distribui safehouses ciclicamente entre as entradas configuradas
+            source_entry = city_entries[i % len(city_entries)]
+            source_city = source_entry["city_game_id"]
+            source_ga_pk = source_entry["ga_pk"]
 
             child_inputs = {
                 "city_id":          source_city,
-                "target_city_id":   city_game_id,
+                "target_city_id":   target_city_id,
                 "target_city_name": str(target.get("city_name") or ""),
                 "target_owner":     str(target.get("owner_name") or ""),
                 "target_owner_id":  str(target.get("owner_id") or ""),
@@ -155,12 +176,13 @@ class WorldSpyRunner(BaseRunner):
                     jid,
                     action_code=15,
                     inputs=child_inputs,
-                    delay_seconds=spawned * 30,  # escalonar 30s
+                    delay_seconds=spawned * 30,   # escalonar 30s
+                    game_account_id=source_ga_pk, # usar a GA correta da safehouse
                 )
                 spawned += 1
                 self.log(jid, "info",
                          f"[WorldSpy] → {target.get('city_name')} ({target.get('owner_name')}) "
-                         f"safehouse={source_city} job={resp.get('job_id', '?')}")
+                         f"safehouse={source_city} ga={source_ga_pk[:8]}… job={resp.get('new_job_id', '?')}")
             except Exception as exc:
                 skipped += 1
                 self.log(jid, "warn",

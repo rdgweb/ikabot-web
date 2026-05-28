@@ -109,7 +109,14 @@ class HubClient:
         inputs: dict,
         delay_seconds: int = 0,
         timeout_sec: int | None = None,
+        game_account_id: str | None = None,
     ) -> dict:
+        """POST /api/agent/jobs/{parent_job_id}/spawn/
+
+        Optional game_account_id overrides the parent's GA for the child job.
+        Must share the same server_id. Used by WorldSpyRunner to spawn ac=15 jobs
+        from different safehouse accounts.
+        """
         payload: dict[str, Any] = {
             "action_code": action_code,
             "inputs": inputs,
@@ -117,6 +124,8 @@ class HubClient:
         }
         if timeout_sec is not None:
             payload["timeout_sec"] = timeout_sec
+        if game_account_id:
+            payload["game_account_id"] = str(game_account_id)
         return self._post(f"/api/agent/jobs/{parent_job_id}/spawn", payload)
 
     def get_job_info(self, job_id: str) -> dict:

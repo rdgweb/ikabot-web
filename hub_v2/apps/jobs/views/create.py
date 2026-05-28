@@ -805,12 +805,14 @@ SPY_MISSIONS_UI = [
 ]
 
 
-def _spy_context(ga, all_cities: list, initial: dict | None = None) -> dict:
-    """Build spy form context — source cities with safehouse + target cities from worldintel."""
-    from django.templatetags.static import static as _static
+def _extract_safehouse_cities(cities: list, *, ga_pk: str = "", ga_name: str = "", multi_ga: bool = False) -> list:
+    """Extract cities that have a safehouse (Guilda dos Ladrões).
 
-    spy_cities = []
-    for city in all_cities:
+    When multi_ga=True, adds ga_pk, ga_name, and city_value='{ga_pk}:{city.id}'
+    so the world-spy form can spawn child jobs from the correct game account.
+    """
+    result = []
+    for city in cities:
         safehouse_level = 0
         for b in (city.get("buildings") or []):
             bid = str(b.get("building") or "").lower()
@@ -818,7 +820,47 @@ def _spy_context(ga, all_cities: list, initial: dict | None = None) -> dict:
                 safehouse_level = int(b.get("level") or 0)
                 break
         if safehouse_level > 0:
-            spy_cities.append({**city, "safehouse_level": safehouse_level})
+            entry = {**city, "safehouse_level": safehouse_level}
+            if multi_ga:
+                entry["ga_pk"] = ga_pk
+                entry["ga_name"] = ga_name
+                entry["city_value"] = f"{ga_pk}:{city.get('id') or ''}"
+            result.append(entry)
+    return result
+
+
+def _world_spy_context(ga, user=None) -> dict:
+    """Build world spy form context — safehouses from ALL game accounts on the same server.
+
+    Adds ga_pk, ga_name, city_value='{ga_pk}:{city_id}' to each city so that:
+    - The form can display which account each safehouse belongs to.
+    - The runner can spawn ac=15 child jobs using the correct game account.
+    """
+    qs = GameAccount.objects.filter(server_id=ga.server_id, active=True)
+    if user and user.is_authenticated:
+        qs = qs.filter(account__user=user)
+    qs = qs.order_by("name")
+
+    all_spy_cities = []
+    for other_ga in qs:
+        cities = _get_cities(other_ga)
+        ga_pk = str(other_ga.pk)
+        ga_name = other_ga.name or ga_pk[:8]
+        all_spy_cities.extend(
+            _extract_safehouse_cities(cities, ga_pk=ga_pk, ga_name=ga_name, multi_ga=True)
+        )
+
+    return {
+        "spy_missions": SPY_MISSIONS_UI,
+        "spy_cities": all_spy_cities,
+    }
+
+
+def _spy_context(ga, all_cities: list, initial: dict | None = None) -> dict:
+    """Build spy form context — source cities with safehouse + target cities from worldintel."""
+    from django.templatetags.static import static as _static
+
+    spy_cities = _extract_safehouse_cities(all_cities)
 
     # Target cities: load from worldintel when target_owner_id is pre-filled
     target_cities = []
@@ -1692,7 +1734,7 @@ def _custom_field_names(action_code: int) -> list[str]:
     return []
 
 
-def _job_form_context(form, action_meta, action_code, ga, cities):
+def _job_form_context(form, action_meta, action_code, ga, cities, request=None):
     snapshot = None
     try:
         snapshot = AccountSnapshot.objects.get(game_account=ga)
@@ -1721,8 +1763,9 @@ def _job_form_context(form, action_meta, action_code, ga, cities):
     if int(action_code) == 15:
         ctx.update(_spy_context(ga, cities, getattr(form, "initial", {})))
     if int(action_code) == 16:
-        # World spy: reuse spy_cities (safehouses) + missions from spy context
-        ctx.update(_spy_context(ga, cities, {}))
+        # World spy: safehouses from ALL game accounts on same server (multi-GA)
+        user = request.user if request else None
+        ctx.update(_world_spy_context(ga, user=user))
     if int(action_code) == 17:
         ctx.update(_piracy_context(ga, cities, snapshot))
     if int(action_code) == 820:
@@ -1867,7 +1910,7 @@ class JobCreateModalView(LoginRequiredMixin, View):
             cities=construction_cities,
             initial=initial,
         )
-        ctx = _job_form_context(form, action_meta, action_code, ga, construction_cities)
+        ctx = _job_form_context(form, action_meta, action_code, ga, construction_cities, request=request)
         if int(action_code) == 31:
             ctx["diplomacy_msg_types"] = _diplomacy_msg_types(initial.get("receiver_id") or "")
         html = render_to_string(
@@ -1928,7 +1971,7 @@ class JobFormView(LoginRequiredMixin, View):
             cities=construction_cities,
             initial=initial,
         )
-        ctx = _job_form_context(form, action_meta, action_code, ga, construction_cities)
+        ctx = _job_form_context(form, action_meta, action_code, ga, construction_cities, request=request)
         if action_code == 31:
             ctx["diplomacy_msg_types"] = _diplomacy_msg_types(initial.get("receiver_id") or "")
         html = render_to_string(
@@ -2204,7 +2247,7 @@ class JobSubmitView(LoginRequiredMixin, View):
         )
 
         if not form.is_valid():
-            ctx = _job_form_context(form, action_meta, action_code, ga, construction_cities)
+            ctx = _job_form_context(form, action_meta, action_code, ga, construction_cities, request=request)
             if action_code == 31:
                 ctx["diplomacy_msg_types"] = _diplomacy_msg_types(
                     request.POST.get("receiver_id") or ""
@@ -2223,7 +2266,7 @@ class JobSubmitView(LoginRequiredMixin, View):
             error_message = self._validate_abandon_colony_inputs(form, request, construction_cities)
             if error_message:
                 form.add_error(None, error_message)
-                ctx = _job_form_context(form, action_meta, action_code, ga, construction_cities)
+                ctx = _job_form_context(form, action_meta, action_code, ga, construction_cities, request=request)
                 html = render_to_string(
                     "jobs/partials/create_step_form.html",
                     ctx,
@@ -2366,7 +2409,7 @@ class JobSubmitView(LoginRequiredMixin, View):
         if not form.is_valid():
             html = render_to_string(
                 "jobs/partials/create_step_form.html",
-                _job_form_context(form, action_meta, action_code, ga, cities),
+                _job_form_context(form, action_meta, action_code, ga, cities, request=request),
                 request=request,
             )
             return HttpResponse(html)

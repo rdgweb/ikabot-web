@@ -33,8 +33,9 @@ function worldSpyForm() {
       this.missions = JSON.parse(document.getElementById('ws-missions-data')?.textContent || '[]');
 
       // All safehouses selected by default
+      // city_value format: "{ga_pk}:{city_game_id}" (multi-GA support)
       const pre = initialCityIds ? String(initialCityIds).split(',').map(s => s.trim()).filter(Boolean) : [];
-      this.selectedCityIds = pre.length ? pre : this.cities.map(c => String(c.id));
+      this.selectedCityIds = pre.length ? pre : this.cities.map(c => String(c.city_value || c.id));
 
       // Missions
       const mids = String(initialMissions || '3,5').split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x) && x !== 1 && x !== 8);
@@ -133,7 +134,7 @@ function worldSpyForm() {
       <div class="flex items-center gap-2">
         <span class="text-[10px] text-muted" x-text="selectedCityIds.length + ' selecionada(s)'"></span>
         <button type="button" class="text-[10px] text-sea hover:underline"
-                @click="selectedCityIds = cities.map(c => String(c.id))">Todas</button>
+                @click="selectedCityIds = cities.map(c => String(c.city_value || c.id))">Todas</button>
         <span class="text-muted text-[10px]">·</span>
         <button type="button" class="text-[10px] text-muted hover:underline"
                 @click="selectedCityIds = []">Nenhuma</button>
@@ -142,11 +143,12 @@ function worldSpyForm() {
     {% if spy_cities %}
     <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
       {% for city in spy_cities %}
+      {% with cv=city.city_value|default:city.id %}
       <button type="button"
               class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
-              :class="isCitySelected('{{ city.id }}') ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
-              :style="isCitySelected('{{ city.id }}') ? 'border-color:rgba(79,134,185,0.50);background:linear-gradient(180deg,rgba(255,255,255,0.94),rgba(79,134,185,0.10));' : 'border-color:rgba(219,201,167,0.9);background:rgba(255,255,255,0.82);'"
-              @click="toggleCity('{{ city.id }}')">
+              :class="isCitySelected('{{ cv }}') ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
+              :style="isCitySelected('{{ cv }}') ? 'border-color:rgba(79,134,185,0.50);background:linear-gradient(180deg,rgba(255,255,255,0.94),rgba(79,134,185,0.10));' : 'border-color:rgba(219,201,167,0.9);background:rgba(255,255,255,0.82);'"
+              @click="toggleCity('{{ cv }}')">
         <div class="absolute inset-x-0 top-0 h-14" style="background:linear-gradient(135deg,rgba(79,134,185,0.16),rgba(79,134,185,0.02));"></div>
         <div class="relative p-3">
           <div class="flex items-start gap-2">
@@ -168,17 +170,24 @@ function worldSpyForm() {
                   <div class="text-[10px] text-muted">{{ city.tradegood_name }} · [{{ city.x }}:{{ city.y }}]</div>
                 </div>
                 <span class="mt-0.5 flex-shrink-0 inline-flex h-5 w-5 items-center justify-center rounded-full border transition-colors"
-                      :style="isCitySelected('{{ city.id }}') ? 'border-color:var(--ik-sea);color:white;background:var(--ik-sea);' : 'border-color:rgba(79,134,185,0.24);color:var(--ik-sea);background:rgba(79,134,185,0.06);'">
-                  <i class="bi text-[9px]" :class="isCitySelected('{{ city.id }}') ? 'bi-check-lg' : 'bi-circle'"></i>
+                      :style="isCitySelected('{{ cv }}') ? 'border-color:var(--ik-sea);color:white;background:var(--ik-sea);' : 'border-color:rgba(79,134,185,0.24);color:var(--ik-sea);background:rgba(79,134,185,0.06);'">
+                  <i class="bi text-[9px]" :class="isCitySelected('{{ cv }}') ? 'bi-check-lg' : 'bi-circle'"></i>
                 </span>
               </div>
               <div class="mt-1 text-[10px] font-semibold" style="color:var(--ik-sea);">
                 <i class="bi bi-binoculars text-[8px]"></i> Safehouse nív. {{ city.safehouse_level }}
               </div>
+              {% if city.ga_name %}
+              <div class="mt-0.5 text-[9px] font-medium px-1.5 py-0.5 rounded-full inline-flex items-center gap-1"
+                   style="background:rgba(95,140,78,0.10);color:var(--ik-good);">
+                <i class="bi bi-person-fill text-[8px]"></i>{{ city.ga_name }}
+              </div>
+              {% endif %}
             </div>
           </div>
         </div>
       </button>
+      {% endwith %}
       {% endfor %}
     </div>
     {% else %}

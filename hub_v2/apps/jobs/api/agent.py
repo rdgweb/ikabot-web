@@ -13,6 +13,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.models import GameAccount
 from apps.jobs.models import Job, JobLog
 from apps.jobs.services.workflows import create_job_with_workflow
 from apps.market.services import reconcile_internal_order_for_job
@@ -358,9 +359,28 @@ class SpawnJobView(APIView):
 
         delay = serializer.validated_data["delay_seconds"]
         scheduled_for = timezone.now() + timedelta(seconds=delay) if delay > 0 else None
+
+        # Optional game_account override — must share the same server_id as parent (security).
+        ga_override_id = serializer.validated_data.get("game_account_id")
+        if ga_override_id:
+            try:
+                child_ga = GameAccount.objects.get(pk=ga_override_id)
+            except GameAccount.DoesNotExist:
+                return Response(
+                    {"error": f"game_account_id {ga_override_id} not found."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if child_ga.server_id != parent_job.game_account.server_id:
+                return Response(
+                    {"error": "game_account_id must share the same server_id as the parent job."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            child_ga = parent_job.game_account
+
         new_job = create_job_with_workflow(
-            account=parent_job.account,
-            game_account=parent_job.game_account,
+            account=child_ga.account,
+            game_account=child_ga,
             node=parent_job.node,
             profile=parent_job.profile,
             action_code=serializer.validated_data["action_code"],

@@ -59,12 +59,17 @@ class JobRescheduleResponseSerializer(serializers.Serializer):
 
 
 class JobSpawnSerializer(serializers.Serializer):
-    """Create a child job inheriting account/game-account/node from a parent job."""
+    """Create a child job inheriting account/game-account/node from a parent job.
+
+    Optional: game_account_id overrides the parent's game account (must share the same server_id).
+    Used by WorldSpyRunner (ac=16) to spawn ac=15 jobs from different safehouse accounts.
+    """
 
     action_code = serializers.IntegerField(min_value=1)
     inputs = serializers.JSONField(default=dict)
     delay_seconds = serializers.IntegerField(min_value=0, default=0)
     timeout_sec = serializers.IntegerField(min_value=1, required=False)
+    game_account_id = serializers.UUIDField(required=False, allow_null=True)
 
 
 class JobSpawnResponseSerializer(serializers.Serializer):
