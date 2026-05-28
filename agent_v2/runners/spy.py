@@ -214,6 +214,16 @@ class SpyRunner(BaseRunner):
                 self.log(jid, "info",
                     f"Alvo: lv={ti.get('city_level')} inativo={ti.get('is_inactive')} "
                     f"free_spies={ti.get('free_spies')} remaining_risk={current_risk}{decay_info}")
+
+                # Log raw missionData for debugging formula discrepancies
+                raw_md = live_params.get("missionData", {})
+                if raw_md:
+                    for mid_str, mval in raw_md.items():
+                        if isinstance(mval, dict):
+                            self.log(jid, "debug",
+                                f"missionData[{mid_str}]: successChance={mval.get('successChance')} "
+                                f"riskBefore={mval.get('riskBefore')} riskPerSpy={mval.get('riskPerSpy')} "
+                                f"riskAfter={mval.get('riskAfter')}")
             except Exception as exc:
                 self.log(jid, "warn", f"Não foi possível buscar riscos ao vivo: {exc}")
 
@@ -489,13 +499,16 @@ class SpyRunner(BaseRunner):
                                     missions_done=missions_done,
                                     last_stationed=stationed)})
 
+                    # min_success=30% alinhado com o threshold da fase de acumulação.
+                    # Usar 40% causava loop infinito: acumulação aprovava (34%>30%),
+                    # execução rejeitava (34%<40%), voltava para acumular indefinidamente.
                     opt = find_minimum_agents_decoys(
-                        live_params, current_mission, eff_risk, eff_risk + 25, 40.0, stationed)
+                        live_params, current_mission, eff_risk, eff_risk + 25, 30.0, stationed)
 
                     if not opt:
                         # Impossível com stationed — verificar se precisa acumular mais
                         opt_cap = find_minimum_agents_decoys(
-                            live_params, current_mission, eff_risk, eff_risk + 25, 40.0,
+                            live_params, current_mission, eff_risk, eff_risk + 25, 30.0,
                             max(available, capacity, 20))
                         if opt_cap:
                             need_ag = opt_cap["agents"]
