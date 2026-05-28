@@ -849,11 +849,15 @@ class SpyRunner(BaseRunner):
         if still_short == 0:
             return needed_base
 
-        # Cada lote manda ~max_agents_per_batch agentes. Estimar tamanho do lote.
-        sample_batch = self._find_best_infiltration_batch(live_params, sim_avail, still_short, max_risk)
-        batch_size = sample_batch["agents"] if sample_batch else 1
-        batches_needed = max(1, (still_short + batch_size - 1) // batch_size)
-        projected_extra_risk = batches_needed * RISK_AFTER_M1
+        # Projetar remainingRisk real que será acumulado ao estacionar still_short agentes.
+        # Fórmula real do jogo: cada agente estacionado contribui ~riskPerSpy (da missão mais cara).
+        # RISK_AFTER_M1=5 é só o residual de UMA operação de M1, subestima o acumulado total em ~8x.
+        md_map = live_params.get("missionData") or {}
+        max_risk_per_spy = max(
+            (float(md_map.get(str(mid), {}).get("riskPerSpy") or 0) for mid in mission_ids),
+            default=float(RISK_AFTER_M1),
+        )
+        projected_extra_risk = still_short * max(max_risk_per_spy, float(RISK_AFTER_M1))
 
         if projected_extra_risk <= 0:
             return needed_base
