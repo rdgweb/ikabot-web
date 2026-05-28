@@ -836,10 +836,8 @@ def _world_spy_context(ga, user=None) -> dict:
     - The form can display which account each safehouse belongs to.
     - The runner can spawn ac=15 child jobs using the correct game account.
     """
-    qs = GameAccount.objects.filter(server_id=ga.server_id, active=True)
-    if user and user.is_authenticated:
-        qs = qs.filter(account__user=user)
-    qs = qs.order_by("name")
+    # Single-tenant: Account has no user FK, filter only by server_id
+    qs = GameAccount.objects.filter(server_id=ga.server_id, active=True).order_by("name")
 
     all_spy_cities = []
     for other_ga in qs:
@@ -1764,8 +1762,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities, request=None):
         ctx.update(_spy_context(ga, cities, getattr(form, "initial", {})))
     if int(action_code) == 16:
         # World spy: safehouses from ALL game accounts on same server (multi-GA)
-        user = request.user if request else None
-        ctx.update(_world_spy_context(ga, user=user))
+        ctx.update(_world_spy_context(ga))
     if int(action_code) == 17:
         ctx.update(_piracy_context(ga, cities, snapshot))
     if int(action_code) == 820:
