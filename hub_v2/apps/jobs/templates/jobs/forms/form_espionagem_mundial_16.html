@@ -144,53 +144,68 @@ function worldSpyForm() {
     </div>
 
     {% if spy_cities %}
-    <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
-      {% for city in spy_cities %}
-      {% with cv=city.city_value|default:city.id %}
-      <button type="button"
-              class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150 w-full"
-              :class="isCitySelected('{{ cv }}') ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
-              :style="isCitySelected('{{ cv }}') ? 'border-color:rgba(79,134,185,0.50);background:linear-gradient(180deg,rgba(255,255,255,0.94),rgba(79,134,185,0.10));' : 'border-color:rgba(219,201,167,0.9);background:rgba(255,255,255,0.82);'"
-              @click="toggleCity('{{ cv }}')">
-        <div class="absolute inset-x-0 top-0 h-14" style="background:linear-gradient(135deg,rgba(79,134,185,0.16),rgba(79,134,185,0.02));"></div>
-        <div class="relative p-3">
-          <div class="flex items-start gap-2">
-            <div class="relative shrink-0">
-              <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
-                   style="border-color:rgba(79,134,185,0.18);background:linear-gradient(180deg,#fffdf8,#f4ecda);">
-                <img src="{{ city.city_art }}" alt="" class="h-8 w-8 object-contain">
-              </div>
-              {% if city.tradegood_icon %}
-              <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
-                <img src="{{ city.tradegood_icon }}" alt="" class="h-4 w-4 object-contain">
-              </div>
-              {% endif %}
-            </div>
-            <div class="min-w-0 flex-1">
-              <div class="flex items-start justify-between gap-1">
-                <div class="min-w-0">
-                  <div class="truncate text-xs font-semibold text-ink">{{ city.name }}</div>
-                  <div class="text-[10px] text-muted">{{ city.tradegood_name }} · [{{ city.x }}:{{ city.y }}]</div>
-                </div>
-                <span class="mt-0.5 flex-shrink-0 inline-flex h-5 w-5 items-center justify-center rounded-full border transition-colors"
-                      :style="isCitySelected('{{ cv }}') ? 'border-color:var(--ik-sea);color:white;background:var(--ik-sea);' : 'border-color:rgba(79,134,185,0.24);color:var(--ik-sea);background:rgba(79,134,185,0.06);'">
-                  <i class="bi text-[9px]" :class="isCitySelected('{{ cv }}') ? 'bi-check-lg' : 'bi-circle'"></i>
-                </span>
-              </div>
-              <div class="mt-1 text-[10px] font-semibold" style="color:var(--ik-sea);">
-                <i class="bi bi-binoculars text-[8px]"></i> Safehouse nív. {{ city.safehouse_level }}
-              </div>
-              {% if city.ga_name %}
-              <div class="mt-0.5 text-[9px] font-medium px-1.5 py-0.5 rounded-full inline-flex items-center gap-1"
-                   style="background:rgba(95,140,78,0.10);color:var(--ik-good);">
-                <i class="bi bi-person-fill text-[8px]"></i>{{ city.ga_name }}
-              </div>
-              {% endif %}
-            </div>
+    {% regroup spy_cities by ga_name as ga_city_groups %}
+    <div class="space-y-4">
+      {% for group in ga_city_groups %}
+      <div>
+        {# Cabeçalho da conta #}
+        <div class="flex items-center gap-2 mb-2">
+          <div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
+               style="background:rgba(79,134,185,0.12);color:var(--ik-sea);">
+            <i class="bi bi-controller text-[9px]"></i>
           </div>
+          <span class="text-[10px] font-bold uppercase tracking-wider" style="color:var(--ik-sea);">{{ group.grouper }}</span>
+          <span class="flex-1 h-px" style="background:rgba(79,134,185,0.15);"></span>
+          <span class="text-[10px] text-muted">{{ group.list|length }} safehouse(s)</span>
         </div>
-      </button>
-      {% endwith %}
+        <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
+          {% for city in group.list %}
+          {% with cv=city.city_value|default:city.id %}
+          <button type="button"
+                  class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150 w-full"
+                  :class="isCitySelected('{{ cv }}') ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
+                  :style="isCitySelected('{{ cv }}') ? 'border-color:rgba(79,134,185,0.50);background:linear-gradient(180deg,rgba(255,255,255,0.94),rgba(79,134,185,0.10));' : 'border-color:rgba(219,201,167,0.9);background:rgba(255,255,255,0.82);'"
+                  @click="toggleCity('{{ cv }}')">
+            <div class="absolute inset-x-0 top-0 h-14" style="background:linear-gradient(135deg,rgba(79,134,185,0.16),rgba(79,134,185,0.02));"></div>
+            <div class="relative p-3">
+              <div class="flex items-start gap-2">
+                <div class="relative shrink-0">
+                  <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                       style="border-color:rgba(79,134,185,0.18);background:linear-gradient(180deg,#fffdf8,#f4ecda);">
+                    {% if city.city_art %}
+                    <img src="{{ city.city_art }}" alt="" class="h-8 w-8 object-contain">
+                    {% else %}
+                    <i class="bi bi-buildings text-xl" style="color:var(--ik-muted);"></i>
+                    {% endif %}
+                  </div>
+                  {% if city.tradegood_icon %}
+                  <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                    <img src="{{ city.tradegood_icon }}" alt="" class="h-4 w-4 object-contain">
+                  </div>
+                  {% endif %}
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-start justify-between gap-1">
+                    <div class="min-w-0">
+                      <div class="truncate text-xs font-semibold text-ink">{{ city.name }}</div>
+                      <div class="text-[10px] text-muted">{{ city.tradegood_name }} · [{{ city.x }}:{{ city.y }}]</div>
+                    </div>
+                    <span class="mt-0.5 flex-shrink-0 inline-flex h-5 w-5 items-center justify-center rounded-full border transition-colors"
+                          :style="isCitySelected('{{ cv }}') ? 'border-color:var(--ik-sea);color:white;background:var(--ik-sea);' : 'border-color:rgba(79,134,185,0.24);color:var(--ik-sea);background:rgba(79,134,185,0.06);'">
+                      <i class="bi text-[9px]" :class="isCitySelected('{{ cv }}') ? 'bi-check-lg' : 'bi-circle'"></i>
+                    </span>
+                  </div>
+                  <div class="mt-1 text-[10px] font-semibold" style="color:var(--ik-sea);">
+                    <i class="bi bi-binoculars text-[8px]"></i> Safehouse nív. {{ city.safehouse_level }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </button>
+          {% endwith %}
+          {% endfor %}
+        </div>
+      </div>
       {% endfor %}
     </div>
     {% else %}

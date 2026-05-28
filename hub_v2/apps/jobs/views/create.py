@@ -845,11 +845,13 @@ def _world_spy_context(ga, gas: list[str] | None = None) -> dict:
 
     all_spy_cities = []
     for other_ga in qs:
-        cities = _get_cities(other_ga)
+        # Enrich with city_art / tradegood_icon / tradegood_name (same as _construction_city_data)
+        raw_cities = _get_cities(other_ga)
+        enriched = _construction_city_data(raw_cities)
         ga_pk = str(other_ga.pk)
         ga_name = other_ga.name or ga_pk[:8]
         all_spy_cities.extend(
-            _extract_safehouse_cities(cities, ga_pk=ga_pk, ga_name=ga_name, multi_ga=True)
+            _extract_safehouse_cities(enriched, ga_pk=ga_pk, ga_name=ga_name, multi_ga=True)
         )
 
     return {
