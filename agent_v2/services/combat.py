@@ -29,7 +29,7 @@ from game_client.unit_stats import UNIT_STATS
 # ── Constants ────────────────────────────────────────────────────────────────
 
 MERCHANT_SHIP_ID   = 201
-MERCHANT_CAPACITY  = 500   # resources per merchant ship
+MERCHANT_CAPACITY  = 500   # resources per merchant ship (base; actual may be higher with upgrades)
 
 # Minimum siege to always include in every land attack
 MIN_SIEGE_OPTIONS: list[tuple[int, int]] = [

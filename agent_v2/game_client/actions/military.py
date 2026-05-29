@@ -559,15 +559,31 @@ class PlunderLandAction(BaseAction):
                         html = item
                         break
 
-        # Parse travel time — e.g. "2h 15m 30s" or "45m 12s"
-        travel_seconds = _parse_duration_seconds(html)
-        if not travel_seconds:
-            # Fallback: look for explicit journey time patterns
-            m = re.search(r'(\d+)\s*h\s*(\d+)\s*m|(\d+)\s*m\s*(\d+)\s*s|(\d+)\s*h', html)
-            if m:
-                travel_seconds = _parse_duration_seconds(m.group(0))
+        # Parse travel time from missionController instantiation:
+        # new missionController(freeTrans, transporterCapacity, transportJourneyTime, ...)
+        # transportJourneyTime is the 3rd argument (index 2), in seconds.
+        travel_seconds = 0
+        transporter_capacity = 500  # default
+        mc_m = re.search(
+            r"new missionController\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)",
+            html
+        )
+        if mc_m:
+            try:
+                transporter_capacity = int(float(mc_m.group(2)))
+                travel_seconds = int(float(mc_m.group(3)))
+            except (ValueError, TypeError):
+                pass
 
-        return {"travel_seconds": travel_seconds, "html": html}
+        # Fallback: look for explicit duration strings
+        if not travel_seconds:
+            travel_seconds = _parse_duration_seconds(html)
+
+        return {
+            "travel_seconds":       travel_seconds,
+            "transporter_capacity": transporter_capacity,
+            "html":                 html,
+        }
 
     def execute(
         self,
