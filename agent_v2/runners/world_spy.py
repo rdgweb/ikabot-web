@@ -412,12 +412,29 @@ class WorldSpyRunner(BaseRunner):
         n_transporters = raid_transporters or transporters_needed(total_res)
         n_trips        = trips_needed(total_res, n_transporters) if n_transporters else "?"
 
+        # Buscar tempo de viagem real via fetch_plunder_view
+        travel_seconds = 0
+        if raid_source_city and island_id:
+            try:
+                from sessions.game_session_service import GameSessionService
+                client = GameSessionService(hub=self.hub).get_or_create_client(ga_id, jid=jid)
+                view = client.fetch_plunder_view(
+                    int(raid_source_city), int(target_city_id), int(island_id)
+                )
+                travel_seconds = view.get("travel_seconds", 0)
+                if travel_seconds:
+                    self.log(jid, "info",
+                             f"[WorldSpy] ETA para raid em {target_name}: "
+                             f"{travel_seconds//3600}h {(travel_seconds%3600)//60}min")
+            except Exception as exc:
+                logger.warning("[WorldSpy] Falha ao buscar ETA de viagem: %s", exc)
+
         summary = format_battle_summary(
             enemy_units=troops,
             recommendation=rec,
             resources=resources,
             n_transporters=n_transporters,
-            travel_seconds=0,  # tempo de viagem não disponível aqui
+            travel_seconds=travel_seconds,
             wall_level=wall_level,
         )
 
