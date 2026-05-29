@@ -80,6 +80,16 @@
            class="btn btn-primary btn-sm">
           <i class="bi bi-binoculars text-[10px]"></i> Espionar
         </a>
+        <a href="{{ raid_job_url }}"
+           hx-get="{{ raid_job_url }}"
+           hx-target="#job-modal-body"
+           hx-swap="innerHTML"
+           hx-push-url="false"
+           hx-boost="false"
+           onclick="openModal('jobcreate')"
+           class="btn btn-danger btn-sm">
+          <i class="bi bi-lightning-charge-fill text-[10px]"></i> Roubar
+        </a>
         {% endif %}
       </div>
     </div>

@@ -442,6 +442,11 @@ class WorldCityDetailView(WorldIntelBaseView):
             f"&input_target_owner_id={owner_id}"
             f"&input_island_id={city.island.island_id}"
         )
+        ctx["raid_job_url"] = (
+            f"/jobs/new/form/?action=1008"
+            f"&input_target_city_id={city.game_city_id}"
+            f"&input_island_id={city.island.island_id}"
+        )
         # Back to player detail
         ctx["player_url"] = (
             f"/intel/players/detail/?owner_id={owner_id}"
