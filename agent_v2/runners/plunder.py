@@ -430,7 +430,7 @@ class RaidCityRunner(BaseRunner):
 
     def _get_snapshot(self, jid: str, ga_id: str) -> dict:
         try:
-            return self.hub.get_snapshot(ga_id) or {}
+            return self.hub.get_snapshot(game_account_id=ga_id) or {}
         except Exception as exc:
             self.log(jid, "warn", f"[Raid] Falha ao obter snapshot: {exc}")
             return {}
@@ -696,7 +696,5 @@ class RaidCityRunner(BaseRunner):
         return {}
 
     def _get_client(self, jid: str, ga_id: str):
-        """Get authenticated game client."""
-        from sessions.game_session_service import GameSessionService
-        svc = GameSessionService(hub=self.hub)
-        return svc.get_or_create_client(ga_id, jid=jid)
+        """Get authenticated game client via BaseRunner's session service."""
+        return self.game_sessions.get_game_client(ga_id)
