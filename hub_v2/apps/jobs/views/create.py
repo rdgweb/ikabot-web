@@ -2049,6 +2049,81 @@ class JobActionPickerView(LoginRequiredMixin, View):
         return HttpResponse(html)
 
 
+class RaidCityLookupView(LoginRequiredMixin, View):
+    """GET /jobs/new/raid-city-lookup/ — busca cidades no dump por coordenada X/Y.
+
+    Params: ga=<ga_id>, coord_x=<int>, coord_y=<int>
+    Returns: HTML partial com lista de cidades encontradas.
+    """
+
+    def get(self, request):
+        from apps.worldintel.models import WorldDump, WorldDumpCity
+        from apps.espionage.models import SpyReport
+        from django.utils import timezone
+
+        ga_id    = request.GET.get("ga", "").strip()
+        coord_x  = request.GET.get("coord_x", "").strip()
+        coord_y  = request.GET.get("coord_y", "").strip()
+
+        cities = []
+        error  = ""
+
+        if coord_x and coord_y:
+            try:
+                x = int(coord_x)
+                y = int(coord_y)
+            except ValueError:
+                error = "Coordenadas inválidas."
+            else:
+                # Get latest dump
+                qs = WorldDump.objects.filter(status="complete").order_by("-captured_at")
+                if ga_id:
+                    try:
+                        ga = GameAccount.objects.get(pk=ga_id)
+                        qs = qs.filter(game_account__server_id=ga.server_id)
+                    except GameAccount.DoesNotExist:
+                        pass
+                dump = qs.first()
+
+                if dump:
+                    city_qs = WorldDumpCity.objects.filter(
+                        dump=dump,
+                        island__x=x,
+                        island__y=y,
+                        type="city",
+                    ).exclude(owner_name="").select_related("island").order_by("owner_name", "name")
+
+                    # Annotate with latest spy report info
+                    now = timezone.now()
+                    for city in city_qs:
+                        latest = (
+                            SpyReport.objects
+                            .filter(target_city_id=city.game_city_id, expires_at__gt=now)
+                            .order_by("-created_at")
+                            .first()
+                        )
+                        cities.append({
+                            "game_city_id": city.game_city_id,
+                            "name":         city.name,
+                            "owner_name":   city.owner_name,
+                            "level":        city.level,
+                            "state":        city.state,
+                            "island_id":    city.island.island_id if city.island else "",
+                            "has_intel":    bool(latest),
+                        })
+                    if not cities:
+                        error = f"Nenhuma cidade encontrada em [{x}:{y}]."
+                else:
+                    error = "Nenhum dump disponível. Execute o WorldDump primeiro."
+
+        html = render_to_string(
+            "jobs/partials/raid_city_lookup.html",
+            {"cities": cities, "error": error, "coord_x": coord_x, "coord_y": coord_y, "ga_id": ga_id},
+            request=request,
+        )
+        return HttpResponse(html)
+
+
 class JobFormView(LoginRequiredMixin, View):
     """GET: returns the dynamic form for a specific action + game account."""
 

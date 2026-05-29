@@ -1,0 +1,45 @@
+{% load static %}
+<div id="raid-city-lookup-panel"
+     class="space-y-3">
+
+  {% if error %}
+  <div class="rounded-[14px] border border-[rgba(187,81,67,0.25)] bg-[rgba(187,81,67,0.05)] px-4 py-3 text-[11px] text-muted">
+    <i class="bi bi-exclamation-circle text-[var(--ik-bad)] mr-1"></i> {{ error }}
+  </div>
+  {% endif %}
+
+  {% for city in cities %}
+  <button type="button"
+          class="w-full text-left rounded-[16px] border px-4 py-3 transition-all hover:border-[var(--ik-bad)] hover:shadow-[0_6px_18px_rgba(187,81,67,0.12)]"
+          style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.88);"
+          @click="
+            targetCityId = '{{ city.game_city_id }}';
+            islandId = '{{ city.island_id }}';
+            selectedTarget = '{{ city.name|escapejs }} ({{ city.owner_name|escapejs }})';
+          ">
+    <div class="flex items-center justify-between gap-3">
+      <div class="min-w-0">
+        <div class="font-semibold text-ink text-sm">{{ city.name }}</div>
+        <div class="text-[11px] text-muted">{{ city.owner_name }} · Lv {{ city.level }}</div>
+      </div>
+      <div class="flex items-center gap-1.5 shrink-0">
+        {% if city.state == "inactive" %}
+        <span class="badge badge-secondary text-[9px]">💤 Inativo</span>
+        {% elif city.state == "vacation" %}
+        <span class="badge badge-warning text-[9px]">🌴 Férias</span>
+        {% endif %}
+        {% if city.has_intel %}
+        <span class="badge badge-success text-[9px]">✓ Intel</span>
+        {% endif %}
+        <i class="bi bi-chevron-right text-muted text-[10px]"></i>
+      </div>
+    </div>
+  </button>
+  {% endfor %}
+
+  {% if not cities and not error %}
+  <div class="text-[11px] text-muted italic text-center py-4">
+    Digite coordenadas para buscar cidades no mapa.
+  </div>
+  {% endif %}
+</div>

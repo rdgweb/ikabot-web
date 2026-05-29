@@ -13,6 +13,9 @@
        sourceCityId: '',
        targetCityId: '{{ form.target_city_id.value|default:''|escapejs }}',
        islandId: '{{ form.island_id.value|default:''|escapejs }}',
+       selectedTarget: '{% if raid_target %}{{ raid_target.city_name|escapejs }} ({{ raid_target.owner|escapejs }}){% endif %}',
+       coordX: '',
+       coordY: '',
        sourceQuery: '',
        units: {},
        transporters: {{ form.transporters.value|default:0 }},
@@ -74,23 +77,53 @@
         </div>
         <h3 class="mt-1 text-lg font-bold text-ink">Configure o ataque e selecione as tropas</h3>
       </div>
-      {# Input manual quando não vem pré-preenchido da inteligência #}
-      <template x-if="!targetCityId">
-        <div class="rounded-xl border border-[rgba(219,201,167,0.8)] bg-white/60 px-4 py-3 space-y-2">
+      {# Cidade alvo: busca por coordenada (como colonizar) ou pré-preenchida da inteligência #}
+      <div class="rounded-xl border border-[rgba(187,81,67,0.3)] bg-[rgba(187,81,67,0.04)] px-4 py-3 space-y-3">
+        <div class="flex items-center justify-between">
           <div class="text-[10px] uppercase tracking-wider text-muted font-semibold">Cidade alvo</div>
-          <p class="text-[11px] text-muted">Abra pela página de <b>Inteligência → cidade → Roubar</b> para pré-preencher, ou informe manualmente:</p>
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="text-[10px] text-muted mb-1 block">ID da cidade alvo</label>
-              <input type="number" x-model="targetCityId" class="form-input !text-sm w-full" placeholder="ex: 37429">
+          <template x-if="targetCityId">
+            <span class="text-[11px] font-semibold text-ink" x-text="selectedTarget || ('ID ' + targetCityId)"></span>
+          </template>
+        </div>
+
+        <template x-if="!targetCityId">
+          <div class="space-y-3">
+            <p class="text-[11px] text-muted">Busque por coordenada do mapa ou abra pela <b>Inteligência → cidade → Roubar</b>.</p>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-[10px] text-muted mb-1 block">Coordenada X</label>
+                <input type="number" x-model="coordX" class="form-input !text-sm w-full" placeholder="ex: 84"
+                       hx-get="{% url 'jobs:raid-city-lookup' %}"
+                       hx-include="[name='ga']"
+                       hx-vals='{"coord_x": document.querySelector("[x-model=coordX]")?.value, "coord_y": document.querySelector("[x-model=coordY]")?.value}'
+                       hx-trigger="keyup changed delay:500ms"
+                       hx-target="#raid-city-lookup-panel"
+                       hx-swap="outerHTML"
+                       :hx-vals='JSON.stringify({coord_x: coordX, coord_y: coordY, ga: "{{ form.game_account_id.value|default:''|escapejs }}"})'>
+              </div>
+              <div>
+                <label class="text-[10px] text-muted mb-1 block">Coordenada Y</label>
+                <input type="number" x-model="coordY" class="form-input !text-sm w-full" placeholder="ex: 89"
+                       hx-get="{% url 'jobs:raid-city-lookup' %}"
+                       hx-trigger="keyup changed delay:500ms"
+                       hx-target="#raid-city-lookup-panel"
+                       hx-swap="outerHTML"
+                       :hx-vals='JSON.stringify({coord_x: coordX, coord_y: coordY, ga: "{{ form.game_account_id.value|default:''|escapejs }}"})'>
+              </div>
             </div>
-            <div>
-              <label class="text-[10px] text-muted mb-1 block">ID da ilha</label>
-              <input type="number" x-model="islandId" class="form-input !text-sm w-full" placeholder="ex: 4478">
+            <div id="raid-city-lookup-panel">
+              {% include "jobs/partials/raid_city_lookup.html" with cities=[] error="" %}
             </div>
           </div>
-        </div>
-      </template>
+        </template>
+
+        <template x-if="targetCityId">
+          <button type="button" @click="targetCityId=''; islandId=''; selectedTarget=''"
+                  class="text-[10px] text-muted hover:text-ink transition-colors">
+            <i class="bi bi-x-circle mr-1"></i>Trocar cidade
+          </button>
+        </template>
+      </div>
 
       {% if raid_target %}
       <div class="rounded-xl border border-[rgba(187,81,67,0.3)] bg-[rgba(187,81,67,0.06)] px-4 py-3 space-y-2">
