@@ -166,11 +166,10 @@ class RaidCityRunner(BaseRunner):
         if transporters <= 0:
             transporters = self._get_transporters(snap, source_city_id, client=client, jid=jid)
 
-        # Se cidade tem frota inimiga E needs_blockade: enviar blockade PRIMEIRO,
-        # aguardar porto ocupado, DEPOIS enviar plunder terrestre.
+        # Blockade PRIMEIRO (se configurado) — sempre na primeira viagem.
+        # Não depende de enemy_fleet — se needs_blockade=True, vai bloquear.
         needs_blockade = bool(inputs.get("needs_blockade", False))
-        has_enemy_fleet = bool(inputs.get("enemy_fleet"))  # do spy report
-        if needs_blockade and has_enemy_fleet and _parse_int(inputs.get("_trips_done"), 0) == 0:
+        if needs_blockade and _parse_int(inputs.get("_trips_done"), 0) == 0:
             blockade_fleet = _parse_units(inputs.get("blockade_fleet_units") or {})
             if not blockade_fleet:
                 blockade_fleet = self._auto_select_fleet(jid, snap, source_city_id)
@@ -528,24 +527,27 @@ class RaidCityRunner(BaseRunner):
         wall_level  = _parse_int(inputs.get("wall_level"), 1)
 
         if not enemy_units:
-            # No intel → use available siege/front-line (clamped to what's at city)
-            siege_result: dict[int, int] = {}
-            # Try siege in priority order, use ALL available of first found type
+            # Sem intel — usar o que tem disponível.
+            # SEMPRE incluir: 1) artilharia para muralha + 2) linha de frente (Hoplita/Gigante)
+            result: dict[int, int] = {}
+
+            # Artilharia (siege) — pega o que tiver, na ordem de prioridade
             for uid in (305, 306, 307):  # Morteiro, Catapulta, Ariete
                 have = available.get(uid, 0)
                 if have > 0:
-                    siege_result[uid] = have
+                    result[uid] = have
                     break
-            # Add front-line if no siege
-            if not siege_result:
-                for uid in (303, 308, 302, 315):  # Hoplita, Gigante, Espadachim, Lanceiro
-                    have = available.get(uid, 0)
-                    if have > 0:
-                        siege_result[uid] = have
-                        break
+
+            # Linha de frente — OBRIGATÓRIA (Hoplita preferido, Gigante, Espadachim)
+            for uid in (303, 308, 302, 315):
+                have = available.get(uid, 0)
+                if have > 0:
+                    result[uid] = result.get(uid, 0) + have
+                    break
+
             self.log(jid, "warn",
-                     f"[Raid] Sem intel. Usando disponíveis: {siege_result}")
-            return siege_result
+                     f"[Raid] Sem intel. Usando disponíveis (siege+frente): {result}")
+            return result
 
         rec = recommend_army(
             enemy_units,
