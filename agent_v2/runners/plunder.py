@@ -81,8 +81,8 @@ class RaidCityRunner(BaseRunner):
         island_id      = str(inputs.get("island_id")      or "").strip()
         mode           = str(inputs.get("mode")           or "land").strip().lower()
 
-        if not source_city_id or not target_city_id or not island_id:
-            self.log(jid, "error", "source_city_id, target_city_id e island_id são obrigatórios.")
+        if not target_city_id or not island_id:
+            self.log(jid, "error", "target_city_id e island_id são obrigatórios.")
             return RunnerResult(success=False)
 
         # ── Config de viagens ─────────────────────────────────────────────────
@@ -92,33 +92,58 @@ class RaidCityRunner(BaseRunner):
         trips_done    = _parse_int(inputs.get("_trips_done"), 0)
         travel_cached = _parse_int(inputs.get("_travel_seconds"), 0)
 
-        # ── Tropas ───────────────────────────────────────────────────────────
-        raw_units  = inputs.get("units") or {}
-        units      = _parse_units(raw_units)
-        transporters = _parse_int(inputs.get("transporters"), 0)
-
         # ── Checar limite de viagens ──────────────────────────────────────────
         if trips_done >= max_trips:
             self.log(jid, "info",
                      f"[Raid] Limite de {max_trips} viagem(ns) atingido. Encerrando.")
             return RunnerResult(success=True)
 
-        # ── Obter snapshot para cálculo automático ────────────────────────────
+        # ── Obter snapshot ────────────────────────────────────────────────────
         snap = self._get_snapshot(jid, ga_id)
-        available_units = self._get_available_units(jid, snap, source_city_id)
-        available_transporters = self._get_transporters(snap, source_city_id)
 
-        # ── Auto-calcular tropas se não especificado ──────────────────────────
+        # ── Auto-selecionar cidade de origem se não especificada ──────────────
+        # O runner decide quem vai roubar com base nas tropas disponíveis.
+        # Prioridade: 1) source_city_id explícito  2) cidade com mais tropas + mercantes
+        raw_units    = inputs.get("units") or {}
+        units        = _parse_units(raw_units)
+        transporters = _parse_int(inputs.get("transporters"), 0)
+
+        if not source_city_id:
+            selection = self._auto_select_source_city(jid, snap, units, inputs)
+            if not selection:
+                self.log(jid, "error",
+                         "[Raid] Nenhuma cidade com tropas suficientes encontrada. "
+                         "Verifique snapshot ou especifique source_city_id.")
+                return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE)
+            source_city_id = selection["city_id"]
+            if not units:
+                units = selection["units"]
+            self.log(jid, "info",
+                     f"[Raid] Cidade selecionada automaticamente: {selection.get('city_name',source_city_id)} "
+                     f"(tropas={sum(units.values())} mercantes={selection.get('merchants',0)})")
+
+        available_units        = self._get_available_units(jid, snap, source_city_id)
+
+        # ── Auto-calcular tropas se ainda não definido ────────────────────────
         if not units:
             units = self._auto_calculate_units(jid, inputs, available_units)
             if not units:
                 self.log(jid, "error", "[Raid] Sem tropas disponíveis e sem especificação manual.")
                 return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE)
 
-        # ── Auto-calcular transportadores ─────────────────────────────────────
+        # ── Transportadores: snapshot → se 0, buscar live ────────────────────
         if transporters <= 0:
-            transporters = min(available_transporters, max(10, available_transporters))
-        transporters = min(transporters, available_transporters)
+            available_transporters = self._get_transporters(snap, source_city_id)
+            if available_transporters <= 0:
+                # Buscar live — mercantes podem ter voltado desde último snapshot
+                try:
+                    live_client = self._get_client(jid, ga_id)
+                    available_transporters = self._get_transporters(
+                        snap, source_city_id, client=live_client, jid=jid
+                    )
+                except Exception:
+                    pass
+            transporters = available_transporters
 
         if transporters <= 0:
             self.log(jid, "warn", "[Raid] Sem navios mercantes disponíveis para carregar saque.")
@@ -260,15 +285,36 @@ class RaidCityRunner(BaseRunner):
                 return {int(k): int(v) for k, v in army.items() if int(v) > 0}
         return {}
 
-    def _get_transporters(self, snap: dict, city_id: str) -> int:
-        """Count available merchant ships at source city."""
+    def _get_transporters(self, snap: dict, city_id: str, client=None, jid: str = "") -> int:
+        """Count available merchant ships at source city.
+
+        Tries snapshot first. If 0, queries live from game (FetchStationedUnitsAction)
+        since merchants may have returned since last snapshot update.
+        """
+        # Try snapshot
         cities = snap.get("cities") or []
         for city in cities:
             if str(city.get("id") or city.get("game_city_id") or "") == str(city_id):
                 fleet = city.get("fleet") or city.get("military", {}).get("fleet") or {}
-                # 201 = barco mercante (standard), 202 = blindado
-                return int(fleet.get("201", 0)) + int(fleet.get(201, 0))
-        return 0
+                snap_count = int(fleet.get("201", 0)) + int(fleet.get("201 ", 0)) + int(fleet.get(201, 0))
+                if snap_count > 0:
+                    return snap_count
+
+        # Fallback: query live from game
+        if client is None:
+            return 0
+        try:
+            result = client.fetch_stationed_units(int(city_id), building_type="fleet")
+            counts = result.get("counts") or {}
+            live_count = int(counts.get(201, 0)) + int(counts.get(202, 0))
+            if jid and live_count > 0:
+                self.log(jid, "info",
+                         f"[Raid] Mercantes (live): {live_count} na cidade {city_id}")
+            return live_count
+        except Exception as exc:
+            if jid:
+                self.log(jid, "warn", f"[Raid] Falha ao buscar mercantes live: {exc}")
+            return 0
 
     def _auto_calculate_units(
         self, jid: str, inputs: dict, available: dict[int, int]
@@ -305,6 +351,65 @@ class RaidCityRunner(BaseRunner):
             have = available.get(uid, 0)
             result[uid] = min(qty, have)
         return {k: v for k, v in result.items() if v > 0}
+
+    def _auto_select_source_city(
+        self, jid: str, snap: dict, explicit_units: dict, inputs: dict
+    ) -> dict | None:
+        """Pick best city with troops + merchants for the raid.
+
+        Returns dict with city_id, city_name, units, merchants — or None if nothing viable.
+        """
+        enemy_units = _parse_units(inputs.get("enemy_units") or {})
+        wall_level  = _parse_int(inputs.get("wall_level"), 15)
+
+        from services.combat import recommend_army, pick_minimum_siege
+
+        cities = snap.get("cities") or []
+        best = None
+        best_score = -1
+
+        for city in cities:
+            cid = str(city.get("id") or city.get("game_city_id") or "")
+            if not cid:
+                continue
+
+            army = self._get_available_units(jid, snap, cid)
+            if not army:
+                continue
+
+            total_troops = sum(army.values())
+            if total_troops <= 0:
+                continue
+
+            # Check has minimum siege
+            siege = pick_minimum_siege(army)
+            has_siege = any(army.get(uid, 0) >= min_q for uid, min_q in [(305,6),(306,12),(307,18)])
+
+            # Merchant ships from snapshot
+            fleet = city.get("fleet") or city.get("military", {}).get("fleet") or {}
+            merchants = int(fleet.get("201", 0)) + int(fleet.get(201, 0))
+
+            # Score: prefer siege available, then most troops, then merchants
+            score = (10000 if has_siege else 0) + total_troops + merchants * 5
+
+            if score > best_score:
+                if enemy_units:
+                    rec = recommend_army(enemy_units, wall_level=wall_level, available_units=army)
+                    if not rec["can_win_with_recommended"] and score < 5000:
+                        continue
+
+                best_score = score
+                rec_units = explicit_units or (recommend_army(enemy_units, wall_level=wall_level, available_units=army)["recommended"] if enemy_units else army)
+                # Clamp to available
+                clamped = {k: min(v, army.get(k, 0)) for k, v in rec_units.items() if army.get(k, 0) > 0}
+                best = {
+                    "city_id":   cid,
+                    "city_name": city.get("name", cid),
+                    "units":     clamped or army,
+                    "merchants": merchants,
+                }
+
+        return best
 
     def _check_remaining_resources(self, jid: str, ga_id: str, target_city_id: str) -> dict | None:
         """Query hub for latest spy intel and return total resources. None if unavailable."""
