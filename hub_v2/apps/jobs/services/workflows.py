@@ -181,7 +181,11 @@ def create_workflow_run(
     )
 
 
-_GROUPED_BY_GA_TYPE = frozenset({"donate", "donate_loop", "diplomacy", "modify_production"})
+_GROUPED_BY_GA_TYPE = frozenset({"donate", "donate_loop", "diplomacy"})
+
+# Types grouped by GA only when created without a parent job (manual creation via UI).
+# When spawned by another job, these inherit the parent's workflow instead.
+_GROUPED_WHEN_NO_PARENT = frozenset({"modify_production"})
 
 # Maps workflow_type → set of action codes that belong to it (for bulk linking)
 _GROUPED_ACTION_CODES: dict[str, set] = {
@@ -261,9 +265,19 @@ def create_job_with_workflow(
 
         wtype = _workflow_type(action_code, inputs_dict)
         use_group = wtype in _GROUPED_BY_GA_TYPE and game_account is not None
+        use_group_no_parent = (
+            wtype in _GROUPED_WHEN_NO_PARENT
+            and game_account is not None
+            and source_job is None
+        )
 
         workflow = explicit_workflow
         if workflow is None and use_group:
+            workflow = Workflow.objects.filter(
+                game_account=game_account,
+                workflow_type=wtype,
+            ).first()
+        if workflow is None and use_group_no_parent:
             workflow = Workflow.objects.filter(
                 game_account=game_account,
                 workflow_type=wtype,

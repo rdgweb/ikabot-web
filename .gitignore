@@ -55,3 +55,9 @@ tmp/
 # Local test artifacts
 tmp_modal_scroll_test.png
 /.codex
+
+# Dump / capture artifacts na raiz
+/*.sql
+/unit_*.html
+/workshop_template.json
+/tmp_capture/
