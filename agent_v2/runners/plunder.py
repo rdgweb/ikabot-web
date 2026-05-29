@@ -190,12 +190,24 @@ class RaidCityRunner(BaseRunner):
                         fleet_units=blockade_fleet,
                     )
                     self.log(jid, "info",
-                             f"[Raid] ⚓ Blockade enviado: {blockade_fleet}. "
-                             f"Verificando porto ocupado em 5min.")
-                    # Não prever ETA — ir direto para wait_blockade que faz polling a cada 5min
+                             f"[Raid] ⚓ Blockade enviado: {blockade_fleet}.")
+                    # Ler ETA da frota do military advisor imediatamente
+                    fleet_eta_secs = 5 * 60  # fallback 5min
+                    try:
+                        adv = client.fetch_military_advisor(int(source_city_id))
+                        eta_ts = adv.get("eta_timestamp")
+                        if eta_ts:
+                            secs = self._parse_eta_to_seconds(eta_ts)
+                            if secs > 30:
+                                fleet_eta_secs = secs + 120  # +2min buffer
+                                self.log(jid, "info",
+                                         f"[Raid] Frota chega em {secs//60}min ({eta_ts}). "
+                                         f"Verificando porto após {fleet_eta_secs//60}min.")
+                    except Exception as exc:
+                        self.log(jid, "warn", f"[Raid] Falha ao ler ETA do blockade: {exc}. Usando 5min.")
                     return RunnerResult(
                         success=True,
-                        reschedule_seconds=5 * 60,
+                        reschedule_seconds=fleet_eta_secs,
                         reschedule_inputs={
                             **inputs,
                             "_phase": "wait_blockade",
