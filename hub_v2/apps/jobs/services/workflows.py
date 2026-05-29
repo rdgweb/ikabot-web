@@ -181,13 +181,14 @@ def create_workflow_run(
     )
 
 
-_GROUPED_BY_GA_TYPE = frozenset({"donate", "donate_loop", "diplomacy"})
+_GROUPED_BY_GA_TYPE = frozenset({"donate", "donate_loop", "diplomacy", "modify_production"})
 
 # Maps workflow_type → set of action codes that belong to it (for bulk linking)
 _GROUPED_ACTION_CODES: dict[str, set] = {
     "donate": {901},
     "donate_loop": {902, 1006},
     "diplomacy": {30, 31},
+    "modify_production": {23},
 }
 
 
