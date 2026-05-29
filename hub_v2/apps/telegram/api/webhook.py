@@ -33,6 +33,52 @@ from apps.market.services import (
 logger = logging.getLogger(__name__)
 
 
+def _create_raid_job(
+    target_city_id: str,
+    island_id: str,
+    ga_id: str,
+) -> tuple[bool, str]:
+    """Create ac=1008 (RaidCityRunner) job from Telegram callback.
+
+    Returns (success, message).
+    """
+    from apps.accounts.models import GameAccount
+    from apps.jobs.services.workflows import create_job_with_workflow
+    from core.contracts import ACTION_CATALOG
+
+    try:
+        ga = GameAccount.objects.select_related("account", "node_set").get(pk=ga_id)
+    except GameAccount.DoesNotExist:
+        return False, f"Conta {ga_id[:8]} não encontrada."
+
+    node = ga.account.node_set.first()
+    if not node:
+        return False, "Nenhum nó disponível para esta conta."
+
+    action_meta = ACTION_CATALOG.get(1008, {})
+    try:
+        job = create_job_with_workflow(
+            account=ga.account,
+            game_account=ga,
+            node=node,
+            action_code=1008,
+            inputs={
+                "target_city_id": target_city_id,
+                "island_id": island_id,
+                "mode": "land",
+                "multi_trip": True,
+                "max_trips": 5,
+            },
+            status="queued",
+            trigger_type="telegram_callback",
+        )
+        logger.info("RaidJob created %s ga=%s target=%s", job.pk, ga_id, target_city_id)
+        return True, str(job.pk)
+    except Exception as exc:
+        logger.exception("Failed to create raid job: %s", exc)
+        return False, str(exc)[:200]
+
+
 def _create_diplomacy_send_job_from_uuid(
     db_uuid: str,
     yes_no: str,
@@ -229,6 +275,34 @@ class TelegramWebhookView(APIView):
                     else:
                         answer_callback_query(cq_id, err[:200])
                         send_message(cq_chat_id, f"❌ {err}")
+            elif cq_data.startswith("raid_skip:"):
+                # User dismissed the raid alert
+                answer_callback_query(cq_id, "✅ Alerta ignorado.")
+                if cq_message_id and cq_chat_id:
+                    edit_message_text(cq_chat_id, cq_message_id,
+                                      f"{cq_message_text}\n\n<i>❌ Ignorado</i>")
+                return Response({"status": "ok"})
+
+            elif cq_data.startswith("raid_now:"):
+                # raid_now:{target_city_id}:{island_id}:{ga_id}
+                parts = cq_data[9:].split(":")
+                if len(parts) >= 3:
+                    target_city_id = parts[0]
+                    island_id      = parts[1]
+                    ga_id_str      = ":".join(parts[2:])  # ga_id may contain -
+
+                    ok, msg = _create_raid_job(target_city_id, island_id, ga_id_str)
+                    if ok:
+                        answer_callback_query(cq_id, "🏴‍☠️ Raid criado!")
+                        if cq_message_id and cq_chat_id:
+                            edit_message_text(cq_chat_id, cq_message_id,
+                                              f"{cq_message_text}\n\n<i>✅ Raid enviado</i>")
+                    else:
+                        answer_callback_query(cq_id, f"❌ {msg[:180]}", show_alert=True)
+                else:
+                    answer_callback_query(cq_id, "❌ Dados inválidos.", show_alert=True)
+                return Response({"status": "ok"})
+
             else:
                 answer_callback_query(cq_id)
 

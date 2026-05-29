@@ -98,6 +98,8 @@ class RaidCityRunner(BaseRunner):
 
         if phase == "check_battle":
             return self._phase_check_battle(jid, ga_id, inputs)
+        elif phase == "wait_blockade":
+            return self._phase_wait_blockade(jid, ga_id, inputs)
         else:
             return self._phase_send(jid, ga_id, inputs)
 
@@ -161,16 +163,17 @@ class RaidCityRunner(BaseRunner):
         if transporters <= 0:
             transporters = self._get_transporters(snap, source_city_id, client=client, jid=jid)
 
-        # Blockade antes do plunder (navegar para cidade de frota)
+        # Se cidade tem frota inimiga E needs_blockade: enviar blockade PRIMEIRO,
+        # aguardar porto ocupado, DEPOIS enviar plunder terrestre.
         needs_blockade = bool(inputs.get("needs_blockade", False))
-        if needs_blockade:
+        has_enemy_fleet = bool(inputs.get("enemy_fleet"))  # do spy report
+        if needs_blockade and has_enemy_fleet and _parse_int(inputs.get("_trips_done"), 0) == 0:
             blockade_fleet = _parse_units(inputs.get("blockade_fleet_units") or {})
             if not blockade_fleet:
                 blockade_fleet = self._auto_select_fleet(jid, snap, source_city_id)
             if blockade_fleet:
                 try:
-                    # Navegar para cidade de origem da frota antes de enviar blockade
-                    import requests as _req
+                    # Navegar para cidade de frota antes de enviar blockade
                     client._request("GET", client._server_url, params={
                         "view": "city",
                         "cityId": int(source_city_id),
@@ -184,9 +187,24 @@ class RaidCityRunner(BaseRunner):
                         island_id=int(island_id),
                         fleet_units=blockade_fleet,
                     )
-                    self.log(jid, "info", f"[Raid] Blockade enviado: {blockade_fleet}")
+                    self.log(jid, "info",
+                             f"[Raid] ⚓ Blockade enviado: {blockade_fleet}. "
+                             f"Aguardando porto ser ocupado antes do plunder.")
+                    # Aguardar chegada da frota (ETA × 1.2 buffer) antes de enviar tropas
+                    blockade_eta = _parse_int(inputs.get("_travel_seconds"), 3600)
+                    return RunnerResult(
+                        success=True,
+                        reschedule_seconds=int(blockade_eta * 1.2) + 300,
+                        reschedule_inputs={
+                            **inputs,
+                            "_phase": "wait_blockade",
+                            "_source_city_id": source_city_id,
+                            "units": {str(k): v for k, v in units.items()},
+                        },
+                    )
                 except Exception as exc:
-                    self.log(jid, "warn", f"[Raid] Blockade falhou: {exc}. Prosseguindo sem bloqueio.")
+                    self.log(jid, "warn",
+                             f"[Raid] Blockade falhou: {exc}. Prosseguindo sem bloqueio.")
 
         # Enviar plunder
         cap = loot_capacity(transporters)
@@ -237,6 +255,44 @@ class RaidCityRunner(BaseRunner):
                 "_source_city_id":  source_city_id,
                 "units":            {str(k): v for k, v in units.items()},
             },
+        )
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # PHASE: wait_blockade — aguardar porto ser ocupado antes de enviar plunder
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _phase_wait_blockade(self, jid: str, ga_id: str, inputs: dict) -> RunnerResult:
+        source_city_id = str(inputs.get("_source_city_id") or inputs.get("source_city_id") or "").strip()
+
+        try:
+            client = self._get_client(jid, ga_id)
+            advisor = client.fetch_military_advisor(int(source_city_id))
+        except Exception as exc:
+            self.log(jid, "warn", f"[Raid] Falha ao verificar advisor (wait_blockade): {exc}")
+            # Prosseguir mesmo sem confirmar — melhor tentar do que travar
+            return RunnerResult(
+                success=True,
+                reschedule_seconds=60,
+                reschedule_inputs={**inputs, "_phase": "send"},
+            )
+
+        port_occupied = advisor.get("port_occupied", False)
+        self.log(jid, "info", f"[Raid] wait_blockade: porto_ocupado={port_occupied}")
+
+        if port_occupied:
+            self.log(jid, "info", "[Raid] Porto ocupado ✓ Enviando plunder terrestre.")
+            return RunnerResult(
+                success=True,
+                reschedule_seconds=30,
+                reschedule_inputs={**inputs, "_phase": "send"},
+            )
+
+        # Frota ainda viajando — verificar de novo em 5min
+        self.log(jid, "info", "[Raid] Porto ainda não ocupado. Aguardando 5min.")
+        return RunnerResult(
+            success=True,
+            reschedule_seconds=5 * 60,
+            reschedule_inputs=inputs,
         )
 
     # ══════════════════════════════════════════════════════════════════════════

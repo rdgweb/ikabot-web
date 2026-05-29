@@ -89,6 +89,24 @@ def _save_islands_to_dump(dump: WorldDump, islands_payload: list) -> tuple[int, 
         if city_models:
             WorldDumpCity.objects.bulk_create(city_models, batch_size=500)
 
+            # Propagar estados frescos para dumps anteriores do mesmo servidor.
+            # Quando uma cidade muda de "inactive" → "vacation" entre dumps,
+            # o WorldSpy (que usa o dump mais recente) precisa ver o estado
+            # atualizado imediatamente — sem esperar um novo dump completo.
+            state_by_city = {
+                c.game_city_id: c.state
+                for c in city_models
+                if c.game_city_id and c.state
+            }
+            for game_city_id, new_state in state_by_city.items():
+                WorldDumpCity.objects.filter(
+                    game_city_id=game_city_id,
+                ).exclude(
+                    dump=dump,  # não toca no dump que acabou de criar
+                ).exclude(
+                    state=new_state,  # só atualiza se mudou
+                ).update(state=new_state)
+
         # Upsert player records (ignore_conflicts handles duplicates on append)
         player_models = []
         for owner_id, score in merged_scores.items():

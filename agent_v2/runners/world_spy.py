@@ -438,6 +438,18 @@ class WorldSpyRunner(BaseRunner):
                  f"[WorldSpy] 🏴‍ Alerta de raid: {city_label} ({owner_label}) "
                  f"recursos={total_res:,} > threshold={threshold:,}")
 
+        # Botões inline: Roubar agora / Ignorar
+        # callback_data limitado a 64 bytes — usar IDs curtos
+        can_win_icon = "✅" if rec["can_win_with_recommended"] else "⚠️"
+        raid_cb = f"raid_now:{target_city_id}:{island_id}:{ga_id}"
+        skip_cb = f"raid_skip:{target_city_id}"
+        reply_markup = {
+            "inline_keyboard": [[
+                {"text": f"{can_win_icon} Roubar agora", "callback_data": raid_cb},
+                {"text": "❌ Ignorar",                   "callback_data": skip_cb},
+            ]]
+        }
+
         try:
             self.hub.send_notification(
                 event="raid_alert",
@@ -445,19 +457,20 @@ class WorldSpyRunner(BaseRunner):
                 title=title,
                 body=body,
                 metadata={
-                    "target_city_id":  target_city_id,
-                    "island_id":       island_id,
-                    "target_name":     target_name,
-                    "target_owner":    target_owner,
-                    "total_resources": total_res,
-                    "resources":       resources,
-                    "troops":          {str(k): v for k, v in troops.items()},
-                    "wall_level":      wall_level,
+                    "target_city_id":   target_city_id,
+                    "island_id":        island_id,
+                    "target_name":      target_name,
+                    "target_owner":     target_owner,
+                    "total_resources":  total_res,
+                    "resources":        resources,
+                    "troops":           {str(k): v for k, v in troops.items()},
+                    "wall_level":       wall_level,
                     "recommended_army": {str(k): v for k, v in rec["recommended"].items()},
                     "raid_source_city": raid_source_city,
                     "raid_transporters": n_transporters,
                     "raid_max_trips":   raid_max_trips,
                     "can_win":          rec["can_win_with_recommended"],
+                    "reply_markup":     reply_markup,
                 },
             )
         except Exception as exc:
