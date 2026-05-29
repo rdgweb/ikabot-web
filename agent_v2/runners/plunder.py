@@ -232,26 +232,27 @@ class RaidCityRunner(BaseRunner):
             self.log(jid, "error", f"[Raid] Plunder falhou: {exc}")
             return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE)
 
-        # Buscar ETA real do Military Advisor
-        eta_ts = None
-        travel_seconds = _parse_int(inputs.get("_travel_seconds"), 3600)
-        try:
-            advisor = client.fetch_military_advisor(int(source_city_id))
-            eta_ts  = advisor.get("eta_timestamp")  # "DD.MM.YYYY H:MM:SS"
-            if eta_ts:
-                self.log(jid, "info", f"[Raid] ETA confirmado pelo advisor: {eta_ts}")
-        except Exception as exc:
-            self.log(jid, "warn", f"[Raid] Falha ao buscar ETA do advisor: {exc}")
+        # ETA das tropas vem do fetch_plunder_view (missionController.transportJourneyTime)
+        # NÃO usar o military advisor aqui — ele mistura frotas e tropas no mesmo timestamp.
+        # O advisor é usado apenas para checar ESTADO (batalha ativa, porto ocupado).
+        travel_seconds = _parse_int(inputs.get("_travel_seconds"), 0)
+        if not travel_seconds:
+            # Buscar do form de plunder (mais preciso que advisor)
+            try:
+                pv = client.fetch_plunder_view(
+                    int(source_city_id), int(target_city_id), int(island_id)
+                )
+                travel_seconds = pv.get("travel_seconds", 0)
+                if travel_seconds:
+                    self.log(jid, "info",
+                             f"[Raid] Tempo de viagem das tropas: {travel_seconds//60}min {travel_seconds%60}s")
+            except Exception as exc:
+                self.log(jid, "warn", f"[Raid] Falha ao ler ETA das tropas: {exc}")
 
-        # Calcular delay para check_battle (chegada ida + margem)
-        if eta_ts:
-            eta_secs = self._parse_eta_to_seconds(eta_ts)
-            check_delay = max(eta_secs + 120, 300)   # ETA + 2min buffer
-        else:
-            check_delay = travel_seconds + 300  # fallback
-
+        # Agendar check_battle: tempo de ida + 2min buffer (chegada → início da batalha)
+        check_delay = max((travel_seconds + 120) if travel_seconds > 30 else 300, 300)
         self.log(jid, "info",
-                 f"[Raid] Exército enviado. Checando advisor em {check_delay//60}min.")
+                 f"[Raid] Exército enviado. Verificando batalha em {check_delay//60}min {check_delay%60}s.")
         return RunnerResult(
             success=True,
             reschedule_seconds=int(check_delay),
