@@ -191,12 +191,11 @@ class RaidCityRunner(BaseRunner):
                     )
                     self.log(jid, "info",
                              f"[Raid] ⚓ Blockade enviado: {blockade_fleet}. "
-                             f"Aguardando porto ser ocupado antes do plunder.")
-                    # Aguardar chegada da frota (ETA × 1.2 buffer) antes de enviar tropas
-                    blockade_eta = _parse_int(inputs.get("_travel_seconds"), 3600)
+                             f"Verificando porto ocupado em 5min.")
+                    # Não prever ETA — ir direto para wait_blockade que faz polling a cada 5min
                     return RunnerResult(
                         success=True,
-                        reschedule_seconds=int(blockade_eta * 1.2) + 300,
+                        reschedule_seconds=5 * 60,
                         reschedule_inputs={
                             **inputs,
                             "_phase": "wait_blockade",
