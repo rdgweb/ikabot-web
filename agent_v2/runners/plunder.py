@@ -85,6 +85,7 @@ class RaidCityRunner(BaseRunner):
 
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid    = job["job_id"]
+        aid    = str(job.get("account_id") or "").strip()
         ga_id  = str(job.get("game_account_id") or "").strip()
         inputs = job.get("inputs") or {}
 
@@ -97,19 +98,19 @@ class RaidCityRunner(BaseRunner):
         phase = str(inputs.get("_phase") or "send").strip()
 
         if phase == "check_battle":
-            return self._phase_check_battle(jid, ga_id, inputs)
+            return self._phase_check_battle(jid, ga_id, aid, inputs)
         elif phase == "wait_blockade":
-            return self._phase_wait_blockade(jid, ga_id, inputs)
+            return self._phase_wait_blockade(jid, ga_id, aid, inputs)
         elif phase == "recall_fleet":
-            return self._phase_recall_fleet(jid, ga_id, inputs)
+            return self._phase_recall_fleet(jid, ga_id, aid, inputs)
         else:
-            return self._phase_send(jid, ga_id, inputs)
+            return self._phase_send(jid, ga_id, aid, inputs)
 
     # ══════════════════════════════════════════════════════════════════════════
     # PHASE: send — selecionar tropas, enviar plunder + blockade, agendar check
     # ══════════════════════════════════════════════════════════════════════════
 
-    def _phase_send(self, jid: str, ga_id: str, inputs: dict) -> RunnerResult:
+    def _phase_send(self, jid: str, ga_id: str, aid: str, inputs: dict) -> RunnerResult:
         target_city_id = str(inputs.get("target_city_id") or "").strip()
         island_id      = str(inputs.get("island_id")      or "").strip()
         multi_trip     = str(inputs.get("multi_trip", "true")).lower() not in {"false", "0", "no"}
@@ -155,7 +156,7 @@ class RaidCityRunner(BaseRunner):
                 return RunnerResult(success=True)
 
         try:
-            client = self._get_client(jid, ga_id)
+            client = self._get_client(jid, ga_id, aid, inputs)
         except Exception as exc:
             self.log(jid, "error", f"[Raid] Falha de sessão: {exc}")
             return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE)
@@ -263,14 +264,14 @@ class RaidCityRunner(BaseRunner):
     # PHASE: recall_fleet — chamar frota de volta após raids concluídos
     # ══════════════════════════════════════════════════════════════════════════
 
-    def _phase_recall_fleet(self, jid: str, ga_id: str, inputs: dict) -> RunnerResult:
+    def _phase_recall_fleet(self, jid: str, ga_id: str, aid: str, inputs: dict) -> RunnerResult:
         source_city_id = str(inputs.get("_source_city_id") or inputs.get("source_city_id") or "").strip()
         target_city_id = str(inputs.get("target_city_id") or "").strip()
 
         self.log(jid, "info",
                  f"[Raid] Chamando frota de volta do porto bloqueado ({target_city_id}).")
         try:
-            client = self._get_client(jid, ga_id)
+            client = self._get_client(jid, ga_id, aid, inputs)
             result = client.recall_blockade_fleet(
                 source_city_id=int(source_city_id),
                 enemy_city_id=int(target_city_id),
@@ -291,11 +292,11 @@ class RaidCityRunner(BaseRunner):
     # PHASE: wait_blockade — aguardar porto ser ocupado antes de enviar plunder
     # ══════════════════════════════════════════════════════════════════════════
 
-    def _phase_wait_blockade(self, jid: str, ga_id: str, inputs: dict) -> RunnerResult:
+    def _phase_wait_blockade(self, jid: str, ga_id: str, aid: str, inputs: dict) -> RunnerResult:
         source_city_id = str(inputs.get("_source_city_id") or inputs.get("source_city_id") or "").strip()
 
         try:
-            client = self._get_client(jid, ga_id)
+            client = self._get_client(jid, ga_id, aid, inputs)
             advisor = client.fetch_military_advisor(int(source_city_id))
         except Exception as exc:
             self.log(jid, "warn", f"[Raid] Falha ao verificar advisor (wait_blockade): {exc}")
@@ -329,7 +330,7 @@ class RaidCityRunner(BaseRunner):
     # PHASE: check_battle — polling do Military Advisor após chegada
     # ══════════════════════════════════════════════════════════════════════════
 
-    def _phase_check_battle(self, jid: str, ga_id: str, inputs: dict) -> RunnerResult:
+    def _phase_check_battle(self, jid: str, ga_id: str, aid: str, inputs: dict) -> RunnerResult:
         source_city_id = str(inputs.get("_source_city_id") or inputs.get("source_city_id") or "").strip()
         target_city_id = str(inputs.get("target_city_id") or "").strip()
         trips_done     = _parse_int(inputs.get("_trips_done"), 0)
@@ -337,7 +338,7 @@ class RaidCityRunner(BaseRunner):
         multi_trip     = str(inputs.get("multi_trip", "true")).lower() not in {"false", "0", "no"}
 
         try:
-            client = self._get_client(jid, ga_id)
+            client = self._get_client(jid, ga_id, aid, inputs)
         except Exception as exc:
             self.log(jid, "error", f"[Raid] Falha de sessão em check_battle: {exc}")
             return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE)
@@ -695,15 +696,9 @@ class RaidCityRunner(BaseRunner):
                 return combat
         return {}
 
-    def _get_client(self, jid: str, ga_id: str):
+    def _get_client(self, jid: str, ga_id: str, aid: str = "", inputs: dict | None = None):
         """Get authenticated game client via BaseRunner's login flow."""
-        from apps.jobs.models import Job
-        job = Job.objects.filter(pk=jid).select_related("account", "game_account").first()
-        if not job:
-            raise ValueError(f"Job {jid} not found")
-        aid = str(job.account_id)
-        inputs = job.inputs_json if isinstance(job.inputs_json, dict) else {}
-        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        creds = self.resolve_credentials(aid, inputs or {}, game_account_id=ga_id)
         if not creds:
-            raise ValueError("Credenciais não encontradas")
+            raise ValueError("Credenciais não encontradas para a conta")
         return self.get_or_login_game_client(jid, aid, ga_id, creds)
