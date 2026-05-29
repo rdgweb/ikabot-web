@@ -50,6 +50,7 @@ class TelegramBotConfig(TimestampModel):
     notify_daily_summary = models.BooleanField(default=False)
     notify_diplomacy_message = models.BooleanField(default=True)
     notify_island_monitor = models.BooleanField(default=True)
+    notify_raid_alert = models.BooleanField(default=True)
 
     class Meta:
         verbose_name = "Configuração do Bot Telegram"
@@ -112,6 +113,7 @@ class TelegramAccountConfig(TimestampModel):
     notify_daily_summary = models.BooleanField(default=False)
     notify_diplomacy_message = models.BooleanField(default=True)
     notify_island_monitor = models.BooleanField(default=True)
+    notify_raid_alert = models.BooleanField(default=True)
 
     @property
     def has_custom_chat(self):

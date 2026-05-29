@@ -70,6 +70,24 @@ class AgentNotifyView(APIView):
                 pass
 
         metadata = dict(data.get("metadata", {}))
+
+        if data["event"] == "raid_alert":
+            # Build inline keyboard with Roubar/Ignorar buttons
+            tc  = str(metadata.get("target_city_id") or "").strip()
+            iid = str(metadata.get("island_id") or "").strip()
+            ga_str = str(game_account.pk) if game_account else ""
+            can_win = metadata.get("can_win", True)
+            win_icon = "✅" if can_win else "⚠️"
+            if tc and iid and ga_str:
+                cb_raid = f"raid_now:{tc}:{iid}:{ga_str}"
+                cb_skip = f"raid_skip:{tc}"
+                metadata["reply_markup"] = {
+                    "inline_keyboard": [[
+                        {"text": f"{win_icon} Roubar agora", "callback_data": cb_raid},
+                        {"text": "❌ Ignorar",               "callback_data": cb_skip},
+                    ]]
+                }
+
         if data["event"] == "diplomacy_message":
             reply_command = TelegramIncomingCommand.command_for(
                 TelegramIncomingCommand.COMMAND_DIPLOMACY_REPLY
