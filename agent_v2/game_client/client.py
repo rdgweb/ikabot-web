@@ -45,7 +45,7 @@ from .actions.black_market import (
 )
 from .actions.market import BuyAction, CreateOfferAction, GetOffersAction, SellAction
 from .actions.miracle import MiracleAction
-from .actions.military import AttackAction, FetchBarracksStateAction, FetchStationedUnitsAction, SendTroopsAction, StationAction, TrainAction
+from .actions.military import AttackAction, BlockadeFleetAction, FetchBarracksStateAction, FetchStationedUnitsAction, PlunderLandAction, SendTroopsAction, StationAction, TrainAction
 from .actions.research import ResearchAction
 from .actions.resources import CollectAction, DonateAction, SendResourcesAction
 from .actions.shrine import ShrineAction
@@ -554,6 +554,44 @@ class GameClient(IslandActions):
         """Legacy stub — use train_units instead."""
         action = TrainAction(self)
         return action.execute(city_id=city_id, units=units)
+
+    def fetch_plunder_view(
+        self, from_city_id: int, to_city_id: int, island_id: int
+    ) -> dict[str, Any]:
+        """Fetch plunder view — returns travel time and confirms raid is possible."""
+        return PlunderLandAction(self).fetch_plunder_view(from_city_id, to_city_id, island_id)
+
+    def plunder_land(
+        self,
+        from_city_id: int,
+        to_city_id: int,
+        island_id: int,
+        units: dict[int, int],
+        transporters: int = 0,
+    ) -> dict[str, Any]:
+        """Send army to plunder a player city. Returns {ok, travel_seconds}."""
+        return PlunderLandAction(self).execute(
+            from_city_id=from_city_id,
+            to_city_id=to_city_id,
+            island_id=island_id,
+            units=units,
+            transporters=transporters,
+        )
+
+    def blockade_fleet(
+        self,
+        from_city_id: int,
+        to_city_id: int,
+        island_id: int,
+        fleet_units: dict[int, int],
+    ) -> dict[str, Any]:
+        """Send fleet to blockade a player's port."""
+        return BlockadeFleetAction(self).execute(
+            from_city_id=from_city_id,
+            to_city_id=to_city_id,
+            island_id=island_id,
+            fleet_units=fleet_units,
+        )
 
     def attack(
         self, from_city: int, target_city: int, units: dict[str, int]

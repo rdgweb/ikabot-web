@@ -356,6 +356,28 @@ class HubClient:
             params["intel_ttl_hours"] = intel_ttl_hours
         return self._get("/api/agent/worldintel/spy-targets", params=params)
 
+    def get_latest_spy_intel(
+        self,
+        target_city_id: str,
+        game_account_id: str | None = None,
+    ) -> dict:
+        """GET /api/agent/espionage/intel/?target_city_id=X
+
+        Returns consolidated intel for the target city from the latest spy reports:
+        {
+            "resources": {"wood": N, "wine": N, ...},
+            "troops":    {"315": 4, "301": 1},
+            "fleet":     {"210": 2},
+            "wall_level": N,
+            "last_updated": "ISO datetime",
+        }
+        Returns {} if no intel available.
+        """
+        params: dict[str, Any] = {"target_city_id": target_city_id}
+        if game_account_id:
+            params["game_account_id"] = game_account_id
+        return self._get("/api/agent/espionage/intel", params=params)
+
     def save_spy_reports(self, game_account_id: str, reports: list[dict]) -> dict:
         """POST /api/agent/espionage/reports/
 

@@ -25,6 +25,134 @@ from .serializers import SpyReportsSaveSerializer
 
 logger = logging.getLogger(__name__)
 
+_RESOURCE_NAMES = {
+    "Madeira": "wood", "Wood": "wood",
+    "Vinho": "wine", "Wine": "wine",
+    "Mármore": "marble", "Marble": "marble",
+    "Cristal": "glass", "Crystal": "glass", "Glass": "glass",
+    "Enxofre": "sulfur", "Sulfur": "sulfur",
+}
+
+
+def _parse_resources_from_data(data_json: dict) -> dict[str, int]:
+    """Extract resource amounts from spy report data_json (mission 3/stocks)."""
+    resources: dict[str, int] = {}
+    # Mission 3 (Estoques): data_json may contain {"stocks": {"Madeira": "12.345", ...}}
+    stocks = data_json.get("stocks") or data_json.get("resources") or {}
+    if isinstance(stocks, dict):
+        for name, val in stocks.items():
+            key = _RESOURCE_NAMES.get(str(name).strip())
+            if key:
+                raw = str(val).replace(".", "").replace(",", "").strip()
+                try:
+                    resources[key] = int(raw)
+                except ValueError:
+                    pass
+    # Fallback: look for direct resource keys
+    for name, key in _RESOURCE_NAMES.items():
+        if name in data_json and key not in resources:
+            raw = str(data_json[name]).replace(".", "").replace(",", "").strip()
+            try:
+                resources[key] = int(raw)
+            except ValueError:
+                pass
+    return resources
+
+
+def _parse_troops_from_data(data_json: dict) -> dict[str, int]:
+    """Extract troop counts {unit_id: qty} from spy report data_json (mission 5/6)."""
+    troops: dict[str, int] = {}
+    raw = data_json.get("troops") or data_json.get("army") or {}
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            try:
+                troops[str(int(k))] = int(v)
+            except (ValueError, TypeError):
+                pass
+    return troops
+
+
+class SpyIntelView(APIView):
+    """GET /api/agent/espionage/intel/?target_city_id=X&game_account_id=Y
+
+    Returns consolidated intel for target city from the latest valid spy reports.
+    {
+        "resources": {"wood": N, ...},
+        "troops":    {"315": 4},
+        "fleet":     {},
+        "wall_level": 1,
+        "last_updated": "ISO datetime",
+    }
+    Returns {} if no intel found.
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def get(self, request):
+        target_city_id = request.query_params.get("target_city_id", "").strip()
+        ga_id          = request.query_params.get("game_account_id", "").strip()
+
+        if not target_city_id:
+            return Response({"error": "target_city_id required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        qs = SpyReport.objects.filter(
+            target_city_id=target_city_id,
+            result_status__icontains="sucess",  # only successful reports
+        ).order_by("-created_at")
+        if ga_id:
+            qs = qs.filter(game_account_id=ga_id)
+
+        # Also include reports without explicit result_status filter as fallback
+        if not qs.exists():
+            qs = SpyReport.objects.filter(target_city_id=target_city_id).order_by("-created_at")
+            if ga_id:
+                qs = qs.filter(game_account_id=ga_id)
+
+        if not qs.exists():
+            return Response({})
+
+        resources: dict[str, int] = {}
+        troops:    dict[str, int] = {}
+        fleet:     dict[str, int] = {}
+        wall_level = 1
+        last_updated = None
+
+        # Consolidate from most recent reports per mission
+        seen_missions: set[int | None] = set()
+        for report in qs[:20]:
+            mid = report.mission_id
+            if mid in seen_missions:
+                continue
+            seen_missions.add(mid)
+
+            data = report.data_json or {}
+            if not last_updated or report.created_at > last_updated:
+                last_updated = report.created_at
+
+            parsed_res = _parse_resources_from_data(data)
+            if parsed_res and not resources:
+                resources = parsed_res
+
+            parsed_troops = _parse_troops_from_data(data)
+            if parsed_troops and not troops:
+                troops = parsed_troops
+
+            # Wall level from data_json if present
+            if "wall_level" in data:
+                try:
+                    wall_level = int(data["wall_level"])
+                except (TypeError, ValueError):
+                    pass
+
+        return Response({
+            "resources":    resources,
+            "troops":       troops,
+            "fleet":        fleet,
+            "wall_level":   wall_level,
+            "last_updated": last_updated.isoformat() if last_updated else None,
+        })
+
 
 class SpyReportsSaveView(APIView):
     """

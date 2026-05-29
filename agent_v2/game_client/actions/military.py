@@ -8,6 +8,7 @@ from typing import Any
 
 from ..constants import ActionID
 from ..exceptions import ActionError
+from ..unit_stats import UNIT_STATS
 from .base_action import BaseAction
 
 logger = logging.getLogger(__name__)
@@ -508,6 +509,204 @@ class StationAction(BaseAction):
             pass
 
         return {"ok": True, "from": from_city_id, "to": to_city_id, "scope": scope, "eta_seconds": eta_seconds}
+
+
+class PlunderLandAction(BaseAction):
+    """Send an army to plunder a player city (land raid).
+
+    API confirmed from live traffic:
+      GET  view=plunder&isMission=1&destinationCityId=X&currentIslandId=Y  → form with travel time
+      POST action=transportOperations&function=sendArmyPlunderLand          → dispatches army
+    """
+
+    def fetch_plunder_view(
+        self,
+        from_city_id: int,
+        to_city_id: int,
+        island_id: int,
+    ) -> dict[str, Any]:
+        """Phase 1: fetch plunder view to get travel time and available transport capacity."""
+        resp = self.client._request(
+            "GET",
+            self.client._server_url,
+            params={
+                "view": "plunder",
+                "isMission": "1",
+                "destinationCityId": int(to_city_id),
+                "backgroundView": "island",
+                "currentIslandId": int(island_id),
+                "templateView": "cityDetails",
+                "actionRequest": self.client._action_request,
+                "ajax": "1",
+            },
+            timeout=30,
+        )
+        try:
+            data = resp.json()
+        except Exception:
+            return {"travel_seconds": 0, "html": ""}
+
+        if data and isinstance(data[0], list) and len(data[0]) > 1:
+            gd = data[0][1]
+            if isinstance(gd, dict) and "actionRequest" in gd:
+                self.client._action_request = gd["actionRequest"]
+
+        html = ""
+        for entry in data:
+            if isinstance(entry, list) and len(entry) > 1 and entry[0] in ("changeHTML", "changeView"):
+                for item in (entry[1] if isinstance(entry[1], list) else [entry[1]]):
+                    if isinstance(item, str) and len(item) > 50:
+                        html = item
+                        break
+
+        # Parse travel time — e.g. "2h 15m 30s" or "45m 12s"
+        travel_seconds = _parse_duration_seconds(html)
+        if not travel_seconds:
+            # Fallback: look for explicit journey time patterns
+            m = re.search(r'(\d+)\s*h\s*(\d+)\s*m|(\d+)\s*m\s*(\d+)\s*s|(\d+)\s*h', html)
+            if m:
+                travel_seconds = _parse_duration_seconds(m.group(0))
+
+        return {"travel_seconds": travel_seconds, "html": html}
+
+    def execute(
+        self,
+        from_city_id: int,
+        to_city_id: int,
+        island_id: int,
+        units: dict[int, int],
+        transporters: int = 0,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Send army to plunder. Returns eta_seconds (one-way travel time).
+
+        Args:
+            from_city_id: Source city (where troops are stationed).
+            to_city_id: Target city to plunder.
+            island_id: Island ID of the target city.
+            units: {unit_id: qty} — troops to send.
+            transporters: Number of merchant ships (201) to carry loot back.
+        """
+        if not units or not any(int(q) > 0 for q in units.values()):
+            raise ActionError("No units specified for plunder", action="plunder")
+
+        # Phase 1: get travel time
+        view_data = self.fetch_plunder_view(from_city_id, to_city_id, island_id)
+        travel_seconds = view_data.get("travel_seconds", 0)
+
+        # Phase 2: dispatch army
+        payload: dict[str, Any] = {
+            "action": "transportOperations",
+            "function": "sendArmyPlunderLand",
+            "islandId": int(island_id),
+            "destinationCityId": int(to_city_id),
+            "transporter": int(transporters),
+            "barbarianVillage": "0",
+            "backgroundView": "island",
+            "currentIslandId": int(island_id),
+            "templateView": "plunder",
+            "actionRequest": self.client._action_request,
+            "ajax": "1",
+        }
+        for uid, qty in units.items():
+            if int(qty) > 0:
+                u = UNIT_STATS.get(int(uid), {})
+                upkeep = u.get("upkeep", 0) if u else 0
+                payload[f"cargo_army_{uid}_upkeep"] = upkeep
+                payload[f"cargo_army_{uid}"] = int(qty)
+
+        logger.info(
+            "PlunderLand from=%s to=%s island=%s units=%s transporters=%s",
+            from_city_id, to_city_id, island_id, units, transporters,
+        )
+        resp = self.client._request("POST", self.client._server_url, data=payload, timeout=30)
+
+        try:
+            resp_data = resp.json()
+            if resp_data and isinstance(resp_data[0], list) and len(resp_data[0]) > 1:
+                gd = resp_data[0][1]
+                if isinstance(gd, dict) and "actionRequest" in gd:
+                    self.client._action_request = gd["actionRequest"]
+            for entry in resp_data:
+                if isinstance(entry, list) and entry[0] == "provideFeedback":
+                    for fb in (entry[1] or []):
+                        if isinstance(fb, dict) and int(fb.get("type", 0)) == 11:
+                            raise ActionError(f"Game error: {fb.get('text', '')}", action="plunder")
+        except ActionError:
+            raise
+        except Exception:
+            pass
+
+        return {"ok": True, "travel_seconds": travel_seconds}
+
+
+class BlockadeFleetAction(BaseAction):
+    """Send a fleet to blockade a player's port.
+
+    API confirmed from live traffic:
+      POST action=transportOperations&function=sendFleetOnBlockade
+
+    FUTURE HOOK: after land raid completes, call fleet back via revolt/recall.
+    """
+
+    def execute(
+        self,
+        from_city_id: int,
+        to_city_id: int,
+        island_id: int,
+        fleet_units: dict[int, int],
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Send fleet to blockade target city's port.
+
+        Args:
+            fleet_units: {ship_unit_id: qty} — naval units to send.
+        """
+        if not fleet_units or not any(int(q) > 0 for q in fleet_units.values()):
+            raise ActionError("No fleet units specified for blockade", action="blockade")
+
+        payload: dict[str, Any] = {
+            "action": "transportOperations",
+            "function": "sendFleetOnBlockade",
+            "islandId": int(island_id),
+            "destinationCityId": int(to_city_id),
+            "backgroundView": "island",
+            "currentIslandId": int(island_id),
+            "templateView": "blockade",
+            "actionRequest": self.client._action_request,
+            "ajax": "1",
+        }
+        for uid, qty in fleet_units.items():
+            if int(qty) > 0:
+                u = UNIT_STATS.get(int(uid), {})
+                upkeep = u.get("upkeep", 0) if u else 0
+                payload[f"cargo_fleet_{uid}_upkeep"] = upkeep
+                payload[f"cargo_fleet_{uid}"] = int(qty)
+
+        logger.info(
+            "BlockadeFleet from=%s to=%s island=%s fleet=%s",
+            from_city_id, to_city_id, island_id, fleet_units,
+        )
+        resp = self.client._request("POST", self.client._server_url, data=payload, timeout=30)
+
+        try:
+            resp_data = resp.json()
+            if resp_data and isinstance(resp_data[0], list) and len(resp_data[0]) > 1:
+                gd = resp_data[0][1]
+                if isinstance(gd, dict) and "actionRequest" in gd:
+                    self.client._action_request = gd["actionRequest"]
+            for entry in resp_data:
+                if isinstance(entry, list) and entry[0] == "provideFeedback":
+                    for fb in (entry[1] or []):
+                        if isinstance(fb, dict) and int(fb.get("type", 0)) == 11:
+                            raise ActionError(f"Game error: {fb.get('text', '')}", action="blockade")
+        except ActionError:
+            raise
+        except Exception:
+            pass
+
+        # HOOK: future — track blockade job_id so raid runner can recall fleet after plunder
+        return {"ok": True, "blockade_active": True}
 
 
 class AttackAction(BaseAction):

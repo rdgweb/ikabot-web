@@ -77,6 +77,13 @@ class WorldSpyRunner(BaseRunner):
         # Nas execuções seguintes (fallbacks), o root é preservado nos inputs.
         root_id = str(inputs.get("__campaign_root_id") or "").strip() or jid
 
+        # ── Inputs de alerta de raid ──────────────────────────────────────────
+        raid_alert_enabled   = bool(inputs.get("raid_alert_enabled", False))
+        raid_threshold       = _parse_int(inputs.get("raid_alert_threshold"), 50000)
+        raid_source_city     = str(inputs.get("raid_source_city_id") or "").strip()
+        raid_transporters    = _parse_int(inputs.get("raid_transporters"), 0)
+        raid_max_trips       = _parse_int(inputs.get("raid_max_trips"), 5)
+
         # ── Inbox: notificações de filhos acumuladas ──────────────────────────
         progress: dict = job.get("progress") or {}
         inbox: list = progress.get("inbox") or []
@@ -93,6 +100,25 @@ class WorldSpyRunner(BaseRunner):
                 self.log(jid, "info",
                          f"[WorldSpy]   ↳ job={cid} src={csrc} tgt={ctgt} "
                          f"success={cok} done={mdone} fail={mfail}")
+
+                # ── Raid alert: verificar intel da cidade espionada ───────────
+                if raid_alert_enabled and cok and ctgt:
+                    try:
+                        self._check_raid_alert(
+                            jid=jid,
+                            ga_id=ga_id,
+                            target_city_id=str(ctgt),
+                            island_id=str(entry.get("island_id") or ""),
+                            target_name=str(entry.get("target_city_name") or ""),
+                            target_owner=str(entry.get("target_owner") or ""),
+                            threshold=raid_threshold,
+                            raid_source_city=raid_source_city,
+                            raid_transporters=raid_transporters,
+                            raid_max_trips=raid_max_trips,
+                        )
+                    except Exception as exc:
+                        self.log(jid, "warn",
+                                 f"[WorldSpy] Falha no raid alert para {ctgt}: {exc}")
 
         # ── Inputs de configuração ────────────────────────────────────────────
         city_ids_raw = str(inputs.get("city_ids") or "").strip()
@@ -282,3 +308,110 @@ class WorldSpyRunner(BaseRunner):
                  + (f", {skipped} ignorado(s)" if skipped else "")
                  + f". Aguardando notificações via mailbox (root={root_id[:8]}).")
         return RunnerResult(success=True)
+
+    # ── Raid Alert ────────────────────────────────────────────────────────────
+
+    def _check_raid_alert(
+        self,
+        *,
+        jid: str,
+        ga_id: str,
+        target_city_id: str,
+        island_id: str,
+        target_name: str,
+        target_owner: str,
+        threshold: int,
+        raid_source_city: str,
+        raid_transporters: int,
+        raid_max_trips: int,
+    ) -> None:
+        """Verifica intel do alvo e envia alerta Telegram se recursos > threshold."""
+        from services.combat import (
+            format_battle_summary,
+            recommend_army,
+            transporters_needed,
+            trips_needed,
+            loot_capacity,
+        )
+
+        # Buscar relatório mais recente do alvo no hub
+        try:
+            intel = self.hub.get_latest_spy_intel(
+                target_city_id=target_city_id,
+                game_account_id=ga_id,
+            )
+        except Exception as exc:
+            logger.warning("[WorldSpy] Falha ao buscar intel de %s: %s", target_city_id, exc)
+            return
+
+        if not intel:
+            return
+
+        # Extrair recursos e tropas
+        resources: dict[str, int] = intel.get("resources") or {}
+        troops:    dict[int, int]  = {int(k): int(v)
+                                       for k, v in (intel.get("troops") or {}).items()
+                                       if int(v) > 0}
+        wall_level = int(intel.get("wall_level") or 1)
+        total_res  = sum(resources.values())
+
+        if total_res < threshold:
+            logger.debug("[WorldSpy] %s: recursos=%d < threshold=%d — sem alerta.",
+                         target_city_id, total_res, threshold)
+            return
+
+        # Calcular força recomendada
+        rec = recommend_army(troops, wall_level=wall_level)
+        n_transporters = raid_transporters or transporters_needed(total_res)
+        n_trips        = trips_needed(total_res, n_transporters) if n_transporters else "?"
+
+        summary = format_battle_summary(
+            enemy_units=troops,
+            recommendation=rec,
+            resources=resources,
+            n_transporters=n_transporters,
+            travel_seconds=0,  # tempo de viagem não disponível aqui
+            wall_level=wall_level,
+        )
+
+        city_label = target_name or target_city_id
+        owner_label = target_owner or "?"
+        title  = f"🏴‍☠️ Alvo rico: {city_label} ({owner_label})"
+        body   = (
+            f"{summary}\n\n"
+            f"Para roubar: dispare ac=1007 com\n"
+            f"  source_city_id={raid_source_city or '(configurar)'}\n"
+            f"  target_city_id={target_city_id}\n"
+            f"  island_id={island_id}\n"
+            f"  transporters={n_transporters}\n"
+            f"  max_trips={raid_max_trips}"
+        )
+
+        self.log(jid, "info",
+                 f"[WorldSpy] 🏴‍ Alerta de raid: {city_label} ({owner_label}) "
+                 f"recursos={total_res:,} > threshold={threshold:,}")
+
+        try:
+            self.hub.send_notification(
+                event="raid_alert",
+                game_account_id=ga_id,
+                title=title,
+                body=body,
+                metadata={
+                    "target_city_id":  target_city_id,
+                    "island_id":       island_id,
+                    "target_name":     target_name,
+                    "target_owner":    target_owner,
+                    "total_resources": total_res,
+                    "resources":       resources,
+                    "troops":          {str(k): v for k, v in troops.items()},
+                    "wall_level":      wall_level,
+                    "recommended_army": {str(k): v for k, v in rec["recommended"].items()},
+                    "raid_source_city": raid_source_city,
+                    "raid_transporters": n_transporters,
+                    "raid_max_trips":   raid_max_trips,
+                    "can_win":          rec["can_win_with_recommended"],
+                },
+            )
+        except Exception as exc:
+            logger.warning("[WorldSpy] Falha ao enviar notificação de raid: %s", exc)
