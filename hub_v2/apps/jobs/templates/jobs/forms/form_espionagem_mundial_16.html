@@ -283,7 +283,7 @@ function worldSpyForm() {
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-1.5 flex-wrap">
               <span class="text-xs font-semibold text-ink">{{ mission.name }}</span>
-              {% if mission.id in "3 7 10 21 24 25 26 27"|split:" " %}
+              {% if mission.player_scope %}
               <span class="text-[9px] font-bold rounded-full px-1.5 py-0.5"
                     style="background:rgba(79,134,185,0.12);color:var(--ik-sea);">
                 <i class="bi bi-person-fill text-[8px]"></i> por jogador
@@ -433,21 +433,19 @@ function worldSpyForm() {
       <div style="border-top:1px solid var(--ik-line);"></div>
 
       {# Toggles #}
-      {% for toggle_data in "skipIfValid:Pular se já tem intel válida:Ignora cidades com relatórios válidos para todas as missões,recallAfter:Chamar espiões de volta:Envia missão de retirada após completar cada alvo,saveReports:Salvar relatórios no hub:Persiste os relatórios de espionagem para consulta posterior"|split:"," %}
-      {% with parts=toggle_data|split:":" %}
+      {% for toggle in spy_cycle_toggles %}
       <label class="flex items-center justify-between cursor-pointer select-none gap-3"
-             @click.prevent="{{ parts.0 }} = !{{ parts.0 }}">
+             @click.prevent="{{ toggle.key }} = !{{ toggle.key }}">
         <div>
-          <div class="text-xs font-semibold text-ink">{{ parts.1 }}</div>
-          <div class="text-[10px] text-muted">{{ parts.2 }}</div>
+          <div class="text-xs font-semibold text-ink">{{ toggle.label }}</div>
+          <div class="text-[10px] text-muted">{{ toggle.desc }}</div>
         </div>
         <span class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200"
-              :class="{{ parts.0 }} ? 'bg-[var(--ik-sea)]' : 'bg-gray-200'">
+              :class="{{ toggle.key }} ? 'bg-[var(--ik-sea)]' : 'bg-gray-200'">
           <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200"
-                :style="{{ parts.0 }} ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
+                :style="{{ toggle.key }} ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
         </span>
       </label>
-      {% endwith %}
       {% endfor %}
     </div>
   </div>

@@ -790,6 +790,8 @@ def _market_form_context(cities):
 
 
 # Intelligence missions only (mission 1 = infiltration is always automatic)
+_PLAYER_SCOPE_MISSION_IDS = frozenset({3, 7, 10, 21, 24, 25, 26, 27})
+
 SPY_MISSIONS_UI = [
     {"id": 3,  "icon": "bi-book",           "name": "Nível de pesquisa",  "desc": "Nível de pesquisa da academia",         "risk_before": 35, "risk_after": 10, "risk_per_spy": 4, "success": 50},
     {"id": 5,  "icon": "bi-boxes",          "name": "Armazém",            "desc": "Recursos armazenados na cidade",        "risk_before": 60, "risk_after": 15, "risk_per_spy": 6, "success": 30},
@@ -854,9 +856,21 @@ def _world_spy_context(ga, gas: list[str] | None = None) -> dict:
             _extract_safehouse_cities(enriched, ga_pk=ga_pk, ga_name=ga_name, multi_ga=True)
         )
 
+    missions_with_scope = [
+        {**m, "player_scope": m["id"] in _PLAYER_SCOPE_MISSION_IDS}
+        for m in SPY_MISSIONS_UI
+    ]
+
+    spy_cycle_toggles = [
+        {"key": "skipIfValid",  "label": "Pular se já tem intel válida",    "desc": "Ignora cidades com relatórios válidos para todas as missões"},
+        {"key": "recallAfter",  "label": "Chamar espiões de volta",          "desc": "Envia missão de retirada após completar cada alvo"},
+        {"key": "saveReports",  "label": "Salvar relatórios no hub",         "desc": "Persiste os relatórios de espionagem para consulta posterior"},
+    ]
+
     return {
-        "spy_missions": SPY_MISSIONS_UI,
-        "spy_cities": all_spy_cities,
+        "spy_missions":      missions_with_scope,
+        "spy_cities":        all_spy_cities,
+        "spy_cycle_toggles": spy_cycle_toggles,
     }
 
 
