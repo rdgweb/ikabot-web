@@ -218,33 +218,9 @@ class SpyRunner(BaseRunner):
                     f"Alvo: lv={ti.get('city_level')} inativo={ti.get('is_inactive')} "
                     f"free_spies={ti.get('free_spies')} remaining_risk={current_risk}{decay_info}")
 
-                # ── Detectar férias / cidade inacessível ──────────────────────
-                # Sinal: missionData com todos os riskBefore=None → jogador em
-                # modo férias ou cidade não existe mais. Abortar imediatamente
-                # e atualizar o dump para não re-espionar.
-                if raw_md := live_params.get("missionData", {}):
-                    real_missions = {k: v for k, v in raw_md.items()
-                                     if isinstance(v, dict) and v.get("successChance") is not None}
-                    all_none = not real_missions
-                else:
-                    all_none = True  # sem missionData = inacessível
-
-                if all_none:
-                    new_state = "vacation" if ti.get("is_inactive") else "gone"
-                    self.log(jid, "warn",
-                        f"[Spy] Alvo inacessível (missionData vazio). "
-                        f"Provável estado: {new_state}. Atualizando dump e abortando.")
-                    try:
-                        self.hub.update_city_state(
-                            game_city_id=str(target_city_id),
-                            state=new_state,
-                            game_account_id=ga_id,
-                            reason=f"Spy runner detectou missionData vazio para cidade {target_city_id}",
-                        )
-                    except Exception as _ue:
-                        self.log(jid, "warn", f"[Spy] Falha ao atualizar estado no dump: {_ue}")
-                    self.save_game_client(ga_id, client)
-                    return RunnerResult(success=True, data={"aborted": "inaccessible", "state": new_state})
+                # TODO: detectar férias/cidade sumida via missionData real do game
+                # Precisamos capturar o HTML de uma cidade em férias para saber
+                # exatamente o que o game retorna antes de implementar essa lógica.
 
                 # Log raw missionData for debugging formula discrepancies
                 raw_md = live_params.get("missionData", {})
