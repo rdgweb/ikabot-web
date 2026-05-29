@@ -59,6 +59,7 @@
   {# ── Target city ── #}
   <input type="hidden" name="target_city_id" :value="targetCityId">
   <input type="hidden" name="island_id" :value="islandId">
+  <input type="hidden" name="raid_ga" value="{{ form.game_account_id.value|default:'' }}">
   <input type="hidden" name="mode" value="land">
   <input type="hidden" name="source_city_id" x-model="sourceCityId">
   <input type="hidden" name="wall_level" x-model="wallLevel">
@@ -93,22 +94,22 @@
               <div>
                 <label class="text-[10px] text-muted mb-1 block">Coordenada X</label>
                 <input type="number" x-model="coordX" class="form-input !text-sm w-full" placeholder="ex: 84"
+                       name="coord_x"
                        hx-get="{% url 'jobs:raid-city-lookup' %}"
-                       hx-include="[name='ga']"
-                       hx-vals='{"coord_x": document.querySelector("[x-model=coordX]")?.value, "coord_y": document.querySelector("[x-model=coordY]")?.value}'
-                       hx-trigger="keyup changed delay:500ms"
+                       hx-trigger="keyup changed delay:500ms, change"
                        hx-target="#raid-city-lookup-panel"
                        hx-swap="outerHTML"
-                       :hx-vals='JSON.stringify({coord_x: coordX, coord_y: coordY, ga: "{{ form.game_account_id.value|default:''|escapejs }}"})'>
+                       hx-include="[name='coord_x'],[name='coord_y'],[name='raid_ga']">
               </div>
               <div>
                 <label class="text-[10px] text-muted mb-1 block">Coordenada Y</label>
                 <input type="number" x-model="coordY" class="form-input !text-sm w-full" placeholder="ex: 89"
+                       name="coord_y"
                        hx-get="{% url 'jobs:raid-city-lookup' %}"
-                       hx-trigger="keyup changed delay:500ms"
+                       hx-trigger="keyup changed delay:500ms, change"
                        hx-target="#raid-city-lookup-panel"
                        hx-swap="outerHTML"
-                       :hx-vals='JSON.stringify({coord_x: coordX, coord_y: coordY, ga: "{{ form.game_account_id.value|default:''|escapejs }}"})'>
+                       hx-include="[name='coord_x'],[name='coord_y'],[name='raid_ga']">
               </div>
             </div>
             <div id="raid-city-lookup-panel">
@@ -118,7 +119,13 @@
         </template>
 
         <template x-if="targetCityId">
-          <button type="button" @click="targetCityId=''; islandId=''; selectedTarget=''"
+          <button type="button"
+                  @click="targetCityId=''; islandId=''; selectedTarget='';
+                          $nextTick(() => {
+                            if (coordX && coordY) {
+                              htmx.trigger(document.querySelector('#raid-city-lookup-panel'), 'search-coords');
+                            }
+                          })"
                   class="text-[10px] text-muted hover:text-ink transition-colors">
             <i class="bi bi-x-circle mr-1"></i>Trocar cidade
           </button>

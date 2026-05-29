@@ -2061,7 +2061,7 @@ class RaidCityLookupView(LoginRequiredMixin, View):
         from apps.espionage.models import SpyReport
         from django.utils import timezone
 
-        ga_id    = request.GET.get("ga", "").strip()
+        ga_id    = (request.GET.get("raid_ga") or request.GET.get("ga") or "").strip()
         coord_x  = request.GET.get("coord_x", "").strip()
         coord_y  = request.GET.get("coord_y", "").strip()
 
@@ -2086,33 +2086,59 @@ class RaidCityLookupView(LoginRequiredMixin, View):
                 dump = qs.first()
 
                 if dump:
+                    # Collect own city IDs to exclude
+                    own_city_ids: set[str] = set()
+                    if ga_id:
+                        try:
+                            ga_obj = GameAccount.objects.get(pk=ga_id)
+                            # Get all GAs on same server to exclude own cities
+                            same_server_gas = GameAccount.objects.filter(
+                                server_id=ga_obj.server_id
+                            ).values_list("pk", flat=True)
+                            # Get own city IDs from snapshot
+                            from apps.game.models import AccountSnapshot
+                            for snap in AccountSnapshot.objects.filter(game_account__in=same_server_gas):
+                                for city in (snap.cities or []):
+                                    cid = str(city.get("id") or "").strip()
+                                    if cid:
+                                        own_city_ids.add(cid)
+                        except Exception:
+                            pass
+
                     city_qs = WorldDumpCity.objects.filter(
                         dump=dump,
                         island__x=x,
                         island__y=y,
                         type="city",
-                    ).exclude(owner_name="").select_related("island").order_by("owner_name", "name")
+                    ).exclude(owner_name="").exclude(
+                        game_city_id__in=own_city_ids
+                    ).select_related("island").order_by("owner_name", "name")
 
-                    # Annotate with latest spy report info
+                    # Annotate with spy report info and player army score
+                    from apps.worldintel.models import WorldDumpPlayer
                     now = timezone.now()
+                    player_scores: dict[str, int] = {}
+                    for p in WorldDumpPlayer.objects.filter(dump=dump, owner_id__in=[c.owner_id for c in city_qs]):
+                        player_scores[p.owner_id] = p.army_score
+
                     for city in city_qs:
-                        latest = (
-                            SpyReport.objects
-                            .filter(target_city_id=city.game_city_id, expires_at__gt=now)
-                            .order_by("-created_at")
-                            .first()
-                        )
+                        has_intel = SpyReport.objects.filter(
+                            target_city_id=city.game_city_id, expires_at__gt=now
+                        ).exists()
                         cities.append({
                             "game_city_id": city.game_city_id,
                             "name":         city.name,
                             "owner_name":   city.owner_name,
+                            "owner_id":     city.owner_id,
                             "level":        city.level,
                             "state":        city.state,
                             "island_id":    city.island.island_id if city.island else "",
-                            "has_intel":    bool(latest),
+                            "has_intel":    has_intel,
+                            "army_score":   player_scores.get(city.owner_id, 0),
+                            "ally_tag":     city.ally_tag or "",
                         })
                     if not cities:
-                        error = f"Nenhuma cidade encontrada em [{x}:{y}]."
+                        error = f"Nenhuma cidade inimiga encontrada em [{x}:{y}]."
                 else:
                     error = "Nenhum dump disponível. Execute o WorldDump primeiro."
 

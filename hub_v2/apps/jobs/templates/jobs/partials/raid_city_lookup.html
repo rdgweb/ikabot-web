@@ -1,45 +1,65 @@
-{% load static %}
-<div id="raid-city-lookup-panel"
-     class="space-y-3">
+{% load static humanize %}
+<div id="raid-city-lookup-panel" class="space-y-2">
 
   {% if error %}
-  <div class="rounded-[14px] border border-[rgba(187,81,67,0.25)] bg-[rgba(187,81,67,0.05)] px-4 py-3 text-[11px] text-muted">
+  <div class="rounded-[14px] border border-[rgba(187,81,67,0.25)] bg-[rgba(187,81,67,0.05)] px-4 py-2.5 text-[11px] text-muted">
     <i class="bi bi-exclamation-circle text-[var(--ik-bad)] mr-1"></i> {{ error }}
   </div>
   {% endif %}
 
   {% for city in cities %}
   <button type="button"
-          class="w-full text-left rounded-[16px] border px-4 py-3 transition-all hover:border-[var(--ik-bad)] hover:shadow-[0_6px_18px_rgba(187,81,67,0.12)]"
+          class="w-full text-left rounded-[16px] border transition-all duration-150 hover:translate-y-[-1px] hover:border-[rgba(187,81,67,0.45)] hover:shadow-[0_8px_20px_rgba(187,81,67,0.12)]"
           style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.88);"
           @click="
             targetCityId = '{{ city.game_city_id }}';
             islandId = '{{ city.island_id }}';
             selectedTarget = '{{ city.name|escapejs }} ({{ city.owner_name|escapejs }})';
           ">
-    <div class="flex items-center justify-between gap-3">
-      <div class="min-w-0">
-        <div class="font-semibold text-ink text-sm">{{ city.name }}</div>
-        <div class="text-[11px] text-muted">{{ city.owner_name }} · Lv {{ city.level }}</div>
-      </div>
-      <div class="flex items-center gap-1.5 shrink-0">
-        {% if city.state == "inactive" %}
-        <span class="badge badge-secondary text-[9px]">💤 Inativo</span>
-        {% elif city.state == "vacation" %}
-        <span class="badge badge-warning text-[9px]">🌴 Férias</span>
-        {% endif %}
-        {% if city.has_intel %}
-        <span class="badge badge-success text-[9px]">✓ Intel</span>
-        {% endif %}
-        <i class="bi bi-chevron-right text-muted text-[10px]"></i>
+    <div class="relative overflow-hidden rounded-[16px] p-3">
+      <div class="absolute inset-x-0 top-0 h-10" style="background: linear-gradient(135deg, rgba(187,81,67,0.08), transparent);"></div>
+      <div class="relative flex items-center gap-3">
+        {# Ícone de cidade #}
+        <div class="h-10 w-10 shrink-0 rounded-[12px] border flex items-center justify-center"
+             style="border-color: rgba(187,81,67,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+          <i class="bi bi-building text-base" style="color: var(--ik-bad);"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="text-xs font-bold text-ink">{{ city.name }}</span>
+            <span class="text-[10px] text-muted">Lv {{ city.level }}</span>
+            {% if city.ally_tag %}
+            <span class="text-[9px] font-semibold rounded-full px-1.5 py-0.5"
+                  style="background:rgba(79,134,185,0.10);color:var(--ik-sea);">[{{ city.ally_tag }}]</span>
+            {% endif %}
+          </div>
+          <div class="text-[11px] text-muted mt-0.5">{{ city.owner_name }}</div>
+          {% if city.army_score %}
+          <div class="text-[10px] mt-0.5" style="color:var(--ik-gold);">
+            <i class="bi bi-shield-fill text-[9px]"></i> {{ city.army_score|intcomma }} pts generais
+          </div>
+          {% endif %}
+        </div>
+        <div class="flex items-center gap-1 shrink-0">
+          {% if city.state == "inactive" %}
+          <span class="badge badge-secondary text-[9px]">💤</span>
+          {% elif city.state == "vacation" %}
+          <span class="badge badge-warning text-[9px]">🌴</span>
+          {% endif %}
+          {% if city.has_intel %}
+          <span class="badge badge-success text-[9px]">✓</span>
+          {% endif %}
+          <i class="bi bi-chevron-right text-muted text-[10px]"></i>
+        </div>
       </div>
     </div>
   </button>
   {% endfor %}
 
-  {% if not cities %}
-  <div class="text-[11px] text-muted italic text-center py-4">
-    {% if error %}{% else %}Digite coordenadas para buscar cidades no mapa.{% endif %}
+  {% if not cities and not error %}
+  <div class="text-[11px] text-muted italic text-center py-6">
+    <i class="bi bi-map text-2xl mb-2 block opacity-20"></i>
+    Digite coordenadas para buscar cidades inimigas.
   </div>
   {% endif %}
 </div>
