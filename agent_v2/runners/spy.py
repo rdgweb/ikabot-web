@@ -185,8 +185,8 @@ class SpyRunner(BaseRunner):
                 f"estacionados={stationed} em_transito={in_transit} "
                 f"(ant={last_stationed} no_progress={no_progress})")
 
-            # Detectar perda de espiões entre ciclos
-            if stationed < last_stationed and last_stationed > 0:
+            # Detectar perda de espiões entre ciclos (ignorar na fase done — espiões voltaram para casa)
+            if stationed < last_stationed and last_stationed > 0 and phase != "done":
                 lost = last_stationed - stationed
                 self.log(jid, "warn",
                     f"⚠ Detectada perda de {lost} espião(ões) desde o último ciclo "
