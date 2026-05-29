@@ -229,13 +229,6 @@ class WorldSpyRunner(BaseRunner):
                  f"safehouses ocupadas={len(busy_sources)}/{len(city_entries)} "
                  f"livres={len(free_entries)}")
 
-        # ── Validar estado atual das ilhas dos alvos ──────────────────────────
-        # O dump pode estar desatualizado: jogadores podem ter entrado em férias
-        # ou abandonado. Verificar ilhas únicas antes de spawnar filhos.
-        # Alvos cujo estado mudou são removidos da lista e o dump é atualizado.
-        if targets and free_entries:
-            targets = self._validate_targets_via_island(jid, ga_id, targets)
-
         # ── Ciclo completo? ───────────────────────────────────────────────────
         if not targets and not busy_sources:
             self.log(jid, "info", "[WorldSpy] ✓ Ciclo completo. Sem alvos e sem filhos ativos. Encerrando.")
@@ -362,106 +355,6 @@ class WorldSpyRunner(BaseRunner):
                  + (f", {skipped} ignorado(s)" if skipped else "")
                  + f". Aguardando notificações via mailbox (root={root_id[:8]}).")
         return RunnerResult(success=True)
-
-    # ── Validação de estado via ilha ──────────────────────────────────────────
-
-    # Estados que indicam que a cidade não pode ser espionada no momento
-    _SKIP_STATES = frozenset({"vacation", "inactive_banned", "banned", "noob"})
-
-    # Máx. ilhas verificadas por ciclo (cada ilha = 1 request)
-    _MAX_ISLANDS_PER_CYCLE = 20
-
-    def _validate_targets_via_island(
-        self, jid: str, ga_id: str, targets: list[dict]
-    ) -> list[dict]:
-        """Fetch each unique island and remove targets whose city changed state.
-
-        One HTTP request per unique island_id (not per city).
-        Updates WorldDumpCity state in hub for any city that changed.
-        Returns filtered target list (changed-state cities removed).
-        """
-        try:
-            from sessions.game_session_service import GameSessionService
-            client = GameSessionService(hub=self.hub).get_or_create_client(ga_id, jid=jid)
-        except Exception as exc:
-            self.log(jid, "warn", f"[WorldSpy] Sem sessão para validar ilhas: {exc}")
-            return targets
-
-        # Group by island_id to minimize requests (cap: _MAX_ISLANDS_PER_CYCLE)
-        by_island: dict[str, list[dict]] = {}
-        unchecked_targets: list[dict] = []
-        for t in targets:
-            iid = str(t.get("island_id") or "").strip()
-            if iid and len(by_island) < self._MAX_ISLANDS_PER_CYCLE:
-                by_island.setdefault(iid, []).append(t)
-            elif iid and iid in by_island:
-                by_island[iid].append(t)
-            else:
-                unchecked_targets.append(t)
-
-        if unchecked_targets:
-            self.log(jid, "info",
-                     f"[WorldSpy] {len(unchecked_targets)} alvo(s) além do cap de "
-                     f"{self._MAX_ISLANDS_PER_CYCLE} ilhas — não validados neste ciclo.")
-
-        valid_targets: list[dict] = []
-        stale_count = 0
-
-        for island_id, island_targets in by_island.items():
-            try:
-                island_data = client.fetch_island_by_id(island_id)
-                cities_on_island = {
-                    str(c.get("game_city_id") or ""): c
-                    for c in (island_data.get("cities") or [])
-                    if c.get("game_city_id")
-                }
-            except Exception as exc:
-                self.log(jid, "warn", f"[WorldSpy] Falha ao verificar ilha {island_id}: {exc}")
-                valid_targets.extend(island_targets)
-                continue
-
-            for target in island_targets:
-                tcid = str(target.get("game_city_id") or "").strip()
-                live_city = cities_on_island.get(tcid)
-
-                if live_city is None:
-                    # Cidade não existe mais na ilha
-                    self.log(jid, "warn",
-                             f"[WorldSpy] {target.get('city_name')} ({target.get('owner_name')}) "
-                             f"não existe mais na ilha {island_id}. Marcando como 'gone'.")
-                    self._update_city_state_in_dump(jid, ga_id, tcid, "gone")
-                    stale_count += 1
-                    continue
-
-                live_state = str(live_city.get("state") or "").strip()
-                if live_state in self._SKIP_STATES:
-                    self.log(jid, "info",
-                             f"[WorldSpy] {target.get('city_name')} ({target.get('owner_name')}) "
-                             f"estado={live_state} → pulando e atualizando dump.")
-                    self._update_city_state_in_dump(jid, ga_id, tcid, live_state)
-                    stale_count += 1
-                    continue
-
-                valid_targets.append(target)
-
-        if stale_count:
-            self.log(jid, "info",
-                     f"[WorldSpy] {stale_count} alvo(s) removido(s) por estado desatualizado no dump. "
-                     f"{len(valid_targets)} válidos restantes.")
-
-        # Append unchecked targets at the end (they'll be validated in future cycles)
-        return valid_targets + unchecked_targets
-
-    def _update_city_state_in_dump(self, jid: str, ga_id: str, game_city_id: str, state: str) -> None:
-        try:
-            self.hub.update_city_state(
-                game_city_id=game_city_id,
-                state=state,
-                game_account_id=ga_id,
-                reason=f"WorldSpy verificou ilha e detectou estado={state}",
-            )
-        except Exception as exc:
-            self.log(jid, "warn", f"[WorldSpy] Falha ao atualizar estado de {game_city_id}: {exc}")
 
     # ── Raid Alert ────────────────────────────────────────────────────────────
 
