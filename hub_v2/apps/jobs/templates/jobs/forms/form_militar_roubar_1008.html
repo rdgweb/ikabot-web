@@ -11,6 +11,8 @@
      x-data="{
        cities: [],
        sourceCityId: '',
+       targetCityId: '{{ form.target_city_id.value|default:''|escapejs }}',
+       islandId: '{{ form.island_id.value|default:''|escapejs }}',
        sourceQuery: '',
        units: {},
        transporters: {{ form.transporters.value|default:0 }},
@@ -51,9 +53,9 @@
        });
      ">
 
-  {# ── Hidden inputs pre-filled from URL ── #}
-  <input type="hidden" name="target_city_id" value="{{ form.target_city_id.value|default:'' }}">
-  <input type="hidden" name="island_id" value="{{ form.island_id.value|default:'' }}">
+  {# ── Target city ── #}
+  <input type="hidden" name="target_city_id" :value="targetCityId">
+  <input type="hidden" name="island_id" :value="islandId">
   <input type="hidden" name="mode" value="land">
   <input type="hidden" name="source_city_id" x-model="sourceCityId">
   <input type="hidden" name="wall_level" x-model="wallLevel">
@@ -72,6 +74,24 @@
         </div>
         <h3 class="mt-1 text-lg font-bold text-ink">Configure o ataque e selecione as tropas</h3>
       </div>
+      {# Input manual quando não vem pré-preenchido da inteligência #}
+      <template x-if="!targetCityId">
+        <div class="rounded-xl border border-[rgba(219,201,167,0.8)] bg-white/60 px-4 py-3 space-y-2">
+          <div class="text-[10px] uppercase tracking-wider text-muted font-semibold">Cidade alvo</div>
+          <p class="text-[11px] text-muted">Abra pela página de <b>Inteligência → cidade → Roubar</b> para pré-preencher, ou informe manualmente:</p>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-[10px] text-muted mb-1 block">ID da cidade alvo</label>
+              <input type="number" x-model="targetCityId" class="form-input !text-sm w-full" placeholder="ex: 37429">
+            </div>
+            <div>
+              <label class="text-[10px] text-muted mb-1 block">ID da ilha</label>
+              <input type="number" x-model="islandId" class="form-input !text-sm w-full" placeholder="ex: 4478">
+            </div>
+          </div>
+        </div>
+      </template>
+
       {% if raid_target %}
       <div class="rounded-xl border border-[rgba(187,81,67,0.3)] bg-[rgba(187,81,67,0.06)] px-4 py-3 space-y-2">
         <div class="text-[10px] uppercase tracking-wider text-muted font-semibold">Cidade alvo</div>

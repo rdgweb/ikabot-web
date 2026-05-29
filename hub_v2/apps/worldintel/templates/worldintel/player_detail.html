@@ -127,6 +127,7 @@
             <th class="py-2 px-3 text-left text-muted font-semibold">Milagre</th>
             <th class="py-2 px-3 text-right text-muted font-semibold">Nível</th>
             <th class="py-2 px-3 text-center text-muted font-semibold">Estado</th>
+            <th class="py-2 px-3 text-center text-muted font-semibold">Ações</th>
           </tr>
         </thead>
         <tbody>
@@ -164,6 +165,27 @@
               <span class="badge badge-secondary text-[10px]">{{ city.state }}</span>
               {% else %}
               <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td class="py-2 px-3 text-center">
+              {% if city.game_city_id and city.island %}
+              {% url 'jobs:job-form' as jf_url %}
+              {% with ga_q=selected_game_account.pk|default:'' %}
+              <a href="#"
+                 hx-get="{{ jf_url }}?{% if ga_q %}ga={{ ga_q }}&{% endif %}action=15&input_target_city_id={{ city.game_city_id }}&input_target_city_name={{ city.name|urlencode }}&input_target_owner={{ player.owner_name|urlencode }}&input_target_owner_id={{ player.owner_id }}&input_island_id={{ city.island.island_id }}"
+                 hx-target="#job-modal-body" hx-swap="innerHTML" hx-push-url="false" hx-boost="false"
+                 onclick="openModal('jobcreate')"
+                 class="btn btn-secondary text-[10px] px-1.5 py-0.5 h-auto" title="Espionar">
+                <i class="bi bi-binoculars"></i>
+              </a>
+              <a href="#"
+                 hx-get="{{ jf_url }}?{% if ga_q %}ga={{ ga_q }}&{% endif %}action=1008&input_target_city_id={{ city.game_city_id }}&input_island_id={{ city.island.island_id }}"
+                 hx-target="#job-modal-body" hx-swap="innerHTML" hx-push-url="false" hx-boost="false"
+                 onclick="openModal('jobcreate')"
+                 class="btn btn-danger text-[10px] px-1.5 py-0.5 h-auto" title="Roubar">
+                <i class="bi bi-lightning-charge-fill"></i>
+              </a>
+              {% endwith %}
               {% endif %}
             </td>
           </tr>

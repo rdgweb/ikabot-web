@@ -434,8 +434,12 @@ class WorldCityDetailView(WorldIntelBaseView):
         # URL para criar job de espionagem nesta cidade
         owner_id = city.owner_id or ""
         owner_name = city.owner_name or ""
+        # ga_param: usa a GA selecionada ou a do dump para pré-selecionar no form
+        ga_obj = base.get("selected_game_account") or (current_dump.game_account if current_dump else None)
+        ga_param = f"&ga={ga_obj.pk}" if ga_obj else ""
         ctx["spy_job_url"] = (
             f"/jobs/new/form/?action=15"
+            f"{ga_param}"
             f"&input_target_city_id={city.game_city_id}"
             f"&input_target_city_name={city.name}"
             f"&input_target_owner={owner_name}"
@@ -444,6 +448,7 @@ class WorldCityDetailView(WorldIntelBaseView):
         )
         ctx["raid_job_url"] = (
             f"/jobs/new/form/?action=1008"
+            f"{ga_param}"
             f"&input_target_city_id={city.game_city_id}"
             f"&input_island_id={city.island.island_id}"
         )
