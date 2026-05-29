@@ -662,6 +662,24 @@ class SpyRunner(BaseRunner):
                                     mission_retries.pop(str(current_mission), None)
                                     post_risk_wait = 5 * 60
                                     next_phase = "executing" if missions_pending else "recalling"
+                                    # Salvar report de "pulado" para que skip_if_valid não re-queie
+                                    # a cidade por esta missão durante o TTL padrão.
+                                    try:
+                                        import uuid as _uuid
+                                        self.hub.save_spy_reports(ga_id, [{
+                                            "report_id":        f"skipped_{current_mission}_{target_city_id}_{int(time.time())}",
+                                            "source_city_id":   city_id,
+                                            "target_city_id":   str(target_city_id),
+                                            "target_owner":     str(inputs.get("target_owner") or ""),
+                                            "target_owner_id":  str(target_owner_id or ""),
+                                            "mission_id":       current_mission,
+                                            "mission_name":     mname,
+                                            "result_status":    "Pulado (risco excessivo)",
+                                            "status":           "skipped",
+                                            "report_text":      f"Missão {mname} pulada após {MAX_RETRIES} tentativas por risco > {max_risk}%.",
+                                        }])
+                                    except Exception as _e:
+                                        self.log(jid, "warn", f"Falha ao salvar report de missão pulada: {_e}")
 
                             # Se perdeu espiões e precisa reacumular
                             if stationed_after < stationed:
