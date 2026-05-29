@@ -45,7 +45,7 @@ from .actions.black_market import (
 )
 from .actions.market import BuyAction, CreateOfferAction, GetOffersAction, SellAction
 from .actions.miracle import MiracleAction
-from .actions.military import AttackAction, BlockadeFleetAction, FetchBarracksStateAction, FetchCombatDetailedReportAction, FetchCombatReportDetailAction, FetchCombatReportsAction, FetchMilitaryAdvisorAction, FetchStationedUnitsAction, PlunderLandAction, SendTroopsAction, StationAction, TrainAction
+from .actions.military import AttackAction, BlockadeFleetAction, FetchBarracksStateAction, FetchCombatDetailedReportAction, FetchCombatReportDetailAction, FetchCombatReportsAction, FetchMilitaryAdvisorAction, FetchStationedUnitsAction, PlunderLandAction, RecallBlockadeFleetAction, SendTroopsAction, StationAction, TrainAction
 from .actions.research import ResearchAction
 from .actions.resources import CollectAction, DonateAction, SendResourcesAction
 from .actions.shrine import ShrineAction
@@ -592,6 +592,13 @@ class GameClient(IslandActions):
             island_id=island_id,
             units=units,
             transporters=transporters,
+        )
+
+    def recall_blockade_fleet(self, source_city_id: int, enemy_city_id: int) -> dict:
+        """Abort blockade and recall fleet from enemy port (3-step process)."""
+        return RecallBlockadeFleetAction(self).execute(
+            source_city_id=source_city_id,
+            enemy_city_id=enemy_city_id,
         )
 
     def blockade_fleet(

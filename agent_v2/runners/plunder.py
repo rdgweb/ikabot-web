@@ -100,6 +100,8 @@ class RaidCityRunner(BaseRunner):
             return self._phase_check_battle(jid, ga_id, inputs)
         elif phase == "wait_blockade":
             return self._phase_wait_blockade(jid, ga_id, inputs)
+        elif phase == "recall_fleet":
+            return self._phase_recall_fleet(jid, ga_id, inputs)
         else:
             return self._phase_send(jid, ga_id, inputs)
 
@@ -258,6 +260,34 @@ class RaidCityRunner(BaseRunner):
         )
 
     # ══════════════════════════════════════════════════════════════════════════
+    # PHASE: recall_fleet — chamar frota de volta após raids concluídos
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _phase_recall_fleet(self, jid: str, ga_id: str, inputs: dict) -> RunnerResult:
+        source_city_id = str(inputs.get("_source_city_id") or inputs.get("source_city_id") or "").strip()
+        target_city_id = str(inputs.get("target_city_id") or "").strip()
+
+        self.log(jid, "info",
+                 f"[Raid] Chamando frota de volta do porto bloqueado ({target_city_id}).")
+        try:
+            client = self._get_client(jid, ga_id)
+            result = client.recall_blockade_fleet(
+                source_city_id=int(source_city_id),
+                enemy_city_id=int(target_city_id),
+            )
+            if result.get("ok"):
+                self.log(jid, "info",
+                         f"[Raid] ✓ Frota chamada de volta. Passos: {result.get('steps')}")
+            else:
+                self.log(jid, "warn",
+                         f"[Raid] Falha ao chamar frota: {result.get('error')}. "
+                         f"Passos: {result.get('steps')}. Precisará ser chamada manualmente.")
+        except Exception as exc:
+            self.log(jid, "warn", f"[Raid] Erro ao chamar frota: {exc}")
+
+        return RunnerResult(success=True)
+
+    # ══════════════════════════════════════════════════════════════════════════
     # PHASE: wait_blockade — aguardar porto ser ocupado antes de enviar plunder
     # ══════════════════════════════════════════════════════════════════════════
 
@@ -383,6 +413,17 @@ class RaidCityRunner(BaseRunner):
         self.log(jid, "info",
                  f"[Raid] Concluído. {trips_done} viagem(ns). "
                  f"{'Sem navios cheios para continuar.' if not ships_full else 'Limite de viagens atingido.'}")
+
+        # Se enviou blockade → chamar frota de volta
+        needs_blockade = bool(inputs.get("needs_blockade", False))
+        if needs_blockade and advisor.get("port_occupied"):
+            self.log(jid, "info", "[Raid] Porto ainda bloqueado → agendando recall da frota.")
+            return RunnerResult(
+                success=True,
+                reschedule_seconds=60,
+                reschedule_inputs={**inputs, "_phase": "recall_fleet"},
+            )
+
         return RunnerResult(success=True)
 
     # ── Helpers ───────────────────────────────────────────────────────────────

@@ -725,6 +725,133 @@ class BlockadeFleetAction(BaseAction):
         return {"ok": True, "blockade_active": True}
 
 
+class RecallBlockadeFleetAction(BaseAction):
+    """Recall fleet from an occupied port — two-step process.
+
+    Confirmed API from live traffic:
+
+    Step 1 — Abort port occupation:
+      POST action=transportOperations&function=abortPortOccupation
+           &targetCityId={enemy_city_id}&eventId=0
+
+    Step 2 — Get eventId of stranded fleet:
+      GET view=relatedCities&cityId={enemy_city_id}
+      Parse: eventId from abortFleetOperation links
+
+    Step 3 — Recall fleet:
+      POST action=transportOperations&function=abortFleetOperation
+           &eventId={event_id}&cityId={enemy_city_id}
+    """
+
+    def execute(
+        self,
+        source_city_id: int,
+        enemy_city_id: int,
+        **kwargs,
+    ) -> dict:
+        """Abort blockade and recall fleet from enemy city.
+
+        Returns: {"ok": bool, "steps": list[str]}
+        """
+        steps = []
+
+        # Step 1: abort port occupation
+        payload1 = {
+            "action": "transportOperations",
+            "function": "abortPortOccupation",
+            "targetCityId": int(enemy_city_id),
+            "eventId": 0,
+            "oldView": "militaryAdvisor",
+            "activeTab": "militaryMovements",
+            "backgroundView": "city",
+            "currentCityId": int(source_city_id),
+            "templateView": "militaryAdvisor",
+            "actionRequest": self.client._action_request,
+            "ajax": "1",
+        }
+        resp1 = self.client._request("POST", self.client._server_url, data=payload1, timeout=30)
+        try:
+            d1 = resp1.json()
+            if d1 and isinstance(d1[0], list) and len(d1[0]) > 1:
+                ar = d1[0][1].get("actionRequest")
+                if ar:
+                    self.client._action_request = ar
+            steps.append("abort_occupation")
+        except Exception as e:
+            return {"ok": False, "steps": steps, "error": str(e)}
+
+        import time as _time
+        _time.sleep(2)
+
+        # Step 2: get eventId of fleet at enemy city
+        resp2 = self.client._request(
+            "GET", self.client._server_url,
+            params={
+                "view": "relatedCities",
+                "cityId": int(enemy_city_id),
+                "backgroundView": "city",
+                "currentCityId": int(enemy_city_id),
+                "actionRequest": self.client._action_request,
+                "ajax": "1",
+            },
+            timeout=30,
+        )
+        event_id = 0
+        try:
+            d2 = resp2.json()
+            if d2 and isinstance(d2[0], list) and len(d2[0]) > 1:
+                ar = d2[0][1].get("actionRequest")
+                if ar:
+                    self.client._action_request = ar
+            html = ""
+            for entry in d2:
+                if isinstance(entry, list) and entry[0] in ("changeHTML", "changeView"):
+                    items = entry[1] if isinstance(entry[1], list) else [entry[1]]
+                    for item in items:
+                        if isinstance(item, str) and len(item) > 50:
+                            html = item
+                            break
+            # Parse eventId from abortFleetOperation link
+            m = re.search(r"abortFleetOperation[^&]*&?eventId=(\d+)", html)
+            if m:
+                event_id = int(m.group(1))
+                steps.append(f"found_event_id={event_id}")
+        except Exception as e:
+            return {"ok": False, "steps": steps, "error": f"get_event_id: {e}"}
+
+        if not event_id:
+            return {"ok": False, "steps": steps, "error": "eventId not found — fleet may already be returning"}
+
+        # Step 3: recall fleet
+        payload3 = {
+            "action": "transportOperations",
+            "function": "abortFleetOperation",
+            "eventId": event_id,
+            "cityId": int(enemy_city_id),
+            "backgroundView": "city",
+            "currentCityId": int(enemy_city_id),
+            "actionRequest": self.client._action_request,
+            "ajax": "1",
+        }
+        resp3 = self.client._request("POST", self.client._server_url, data=payload3, timeout=30)
+        try:
+            d3 = resp3.json()
+            if d3 and isinstance(d3[0], list) and len(d3[0]) > 1:
+                ar = d3[0][1].get("actionRequest")
+                if ar:
+                    self.client._action_request = ar
+            for entry in d3:
+                if isinstance(entry, list) and entry[0] == "provideFeedback":
+                    for fb in (entry[1] or []):
+                        if isinstance(fb, dict) and fb.get("type") == 11:
+                            return {"ok": False, "steps": steps, "error": fb.get("text", "")}
+            steps.append("fleet_recalled")
+        except Exception as e:
+            return {"ok": False, "steps": steps, "error": f"abort_fleet: {e}"}
+
+        return {"ok": True, "steps": steps}
+
+
 class FetchMilitaryAdvisorAction(BaseAction):
     """Fetch military advisor state — movements, battles, occupied ports.
 
