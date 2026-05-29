@@ -22,6 +22,7 @@ from .create import (
     JobActionPickerView,
     JobFormView,
     ColonizeIslandLookupView,
+    RaidCityLookupView,
     ColonizeIslandRefreshView,
     ColonizeIslandRefreshStatusView,
     JobSubmitView,
