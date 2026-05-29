@@ -1735,6 +1735,8 @@ def _custom_field_names(action_code: int) -> list[str]:
         return ["city_id", "city_ids", "building_type", "mode", "maintain_scope", "consolidate_city_id", "position", "recheck_minutes", "city_targets_json"]
     if int(action_code) == 1202:
         return ["scope", "from_city_id", "to_city_id"]
+    if int(action_code) == 1008:
+        return ["source_city_id", "target_city_id", "island_id", "units", "transporters", "wall_level", "multi_trip", "max_trips", "min_resources_to_continue", "enemy_units", "needs_blockade", "mode"]
     return []
 
 
@@ -2288,6 +2290,8 @@ class JobSubmitView(LoginRequiredMixin, View):
             inputs = self._normalize_train_units_inputs(inputs, request)
         if int(action_code) == 1202:
             inputs = self._normalize_station_units_inputs(inputs, request)
+        if int(action_code) == 1008:
+            inputs = self._normalize_raid_inputs(inputs, request)
         if int(action_code) == 18 and not any(bool(inputs.get(key)) for key in ("branch_seafaring", "branch_economy", "branch_knowledge", "branch_military", "branch_mythology")):
             return self._error("Selecione pelo menos um ramo de pesquisa.")
         jobs_created = self._create_jobs(ga, action_code, action_meta, inputs, construction_cities)
@@ -2895,6 +2899,34 @@ class JobSubmitView(LoginRequiredMixin, View):
                     normalized["city_targets"] = city_targets
         else:
             normalized["units"] = units
+        return normalized
+
+    @staticmethod
+    def _normalize_raid_inputs(inputs, request):
+        """Collect units_XXX POST fields into inputs['units'] dict for ac=1008."""
+        normalized = dict(inputs)
+        units = {}
+        for key, val in request.POST.items():
+            if key.startswith("units_"):
+                try:
+                    uid = key[6:]
+                    qty = int(val or 0)
+                    if qty > 0:
+                        units[uid] = qty
+                except (ValueError, TypeError):
+                    pass
+        if units:
+            normalized["units"] = units
+        # Booleans
+        normalized["multi_trip"] = str(request.POST.get("multi_trip") or normalized.get("multi_trip") or "true").lower() in {"1", "true", "on", "yes"}
+        normalized["needs_blockade"] = str(request.POST.get("needs_blockade") or "false").lower() in {"1", "true", "on", "yes"}
+        # Ints
+        for key in ("transporters", "wall_level", "max_trips", "min_resources_to_continue"):
+            raw = request.POST.get(key, normalized.get(key))
+            try:
+                normalized[key] = int(raw)
+            except (TypeError, ValueError):
+                pass
         return normalized
 
     @staticmethod

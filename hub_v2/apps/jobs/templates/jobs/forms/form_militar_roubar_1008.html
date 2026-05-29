@@ -1,0 +1,325 @@
+{% load static hub_tags %}
+
+{% if action_code == 1008 %}
+{{ training_ui.training_cities|json_script:"raid-cities-data" }}
+
+<div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_36px_rgba(60,45,18,0.10)]"
+     style="border-color: var(--ik-line); background:
+       radial-gradient(780px 280px at 0% 0%, rgba(187,81,67,0.14), transparent 60%),
+       radial-gradient(700px 260px at 100% 100%, rgba(201,156,78,0.12), transparent 60%),
+       linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
+     x-data="{
+       cities: [],
+       sourceCityId: '',
+       sourceQuery: '',
+       units: {},
+       transporters: {{ form.transporters.value|default:0 }},
+       wallLevel: {{ form.wall_level.value|default:15 }},
+       multiTrip: true,
+       maxTrips: {{ form.max_trips.value|default:5 }},
+       minRes: {{ form.min_resources_to_continue.value|default:0 }},
+       total(uid) { return parseInt(this.units[uid] || 0); },
+       grandTotal() { return Object.values(this.units).reduce((s,v)=>s+(parseInt(v)||0),0); },
+       cityById(id) { return this.cities.find(c => String(c.id) === String(id)); },
+       availableTroops(cityId) {
+         const c = this.cityById(cityId);
+         return c ? (c.troops || {}) : {};
+       },
+       availableFleet(cityId) {
+         const c = this.cityById(cityId);
+         return c ? (c.fleet || {}) : {};
+       },
+       merchantCount(cityId) {
+         const fleet = this.availableFleet(cityId);
+         return (parseInt(fleet['201'] || fleet['Barco Mercante'] || 0));
+       },
+       lootCapacity() { return this.transporters * 500; },
+       filteredCities(q) {
+         return this.cities.filter(c => {
+           if (!q) return true;
+           return (c.name + ' ' + c.x + ':' + c.y).toLowerCase().includes(q.toLowerCase());
+         });
+       }
+     }"
+     x-init="
+       cities = JSON.parse(document.getElementById('raid-cities-data')?.textContent || '[]');
+       {% if form.source_city_id.value %}sourceCityId = '{{ form.source_city_id.value }}';{% endif %}
+       $watch('sourceCityId', id => {
+         const m = merchantCount(id);
+         if (transporters === 0 || transporters > m) transporters = m;
+         units = {};
+       });
+     ">
+
+  {# ── Hidden inputs pre-filled from URL ── #}
+  <input type="hidden" name="target_city_id" value="{{ form.target_city_id.value|default:'' }}">
+  <input type="hidden" name="island_id" value="{{ form.island_id.value|default:'' }}">
+  <input type="hidden" name="mode" value="land">
+  <input type="hidden" name="source_city_id" x-model="sourceCityId">
+  <input type="hidden" name="wall_level" x-model="wallLevel">
+  <input type="hidden" name="transporters" x-model="transporters">
+  <input type="hidden" name="multi_trip" :value="multiTrip ? 'true' : 'false'">
+  <input type="hidden" name="max_trips" x-model="maxTrips">
+  <input type="hidden" name="min_resources_to_continue" x-model="minRes">
+
+  {# ── Header ── #}
+  <div class="border-b px-5 py-4 md:px-6"
+       style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-bad);">
+          <i class="bi bi-lightning-charge-fill"></i> Roubar Cidade
+        </div>
+        <h3 class="mt-1 text-lg font-bold text-ink">Configure o ataque e selecione as tropas</h3>
+      </div>
+      {% if form.target_city_id.value %}
+      <div class="rounded-xl border border-[rgba(187,81,67,0.3)] bg-[rgba(187,81,67,0.06)] px-3 py-2 text-sm">
+        <div class="text-[10px] uppercase tracking-wider text-muted mb-0.5">Cidade alvo</div>
+        <div class="font-semibold text-ink font-mono">ID {{ form.target_city_id.value }}</div>
+        {% if form.island_id.value %}<div class="text-[10px] text-muted">Ilha {{ form.island_id.value }}</div>{% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="px-5 py-5 md:px-6 space-y-6">
+
+    {# ═══ 1. CIDADE DE ORIGEM ═══ #}
+    <div>
+      <div class="text-[11px] font-semibold uppercase tracking-[0.16em] mb-2" style="color: var(--ik-bad);">
+        <i class="bi bi-shield-shaded"></i> Cidade de origem
+      </div>
+      <label class="mb-2 block max-w-xs">
+        <input type="text" x-model="sourceQuery" class="form-input" placeholder="Filtrar por nome ou coordenada">
+      </label>
+      <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[16rem] overflow-y-auto pr-1">
+        <template x-for="city in filteredCities(sourceQuery)" :key="city.id">
+          <button type="button"
+            @click="sourceCityId = String(city.id)"
+            class="relative overflow-hidden rounded-[18px] border text-left transition-all duration-150 p-3 hover:translate-y-[-1px]"
+            :class="String(sourceCityId) === String(city.id) ? 'ring-2 ring-[var(--ik-bad)] translate-y-[-1px] shadow-[0_8px_20px_rgba(187,81,67,0.18)]' : 'hover:border-[rgba(187,81,67,0.4)]'"
+            :style="String(sourceCityId) === String(city.id)
+              ? 'border-color: var(--ik-bad); background: linear-gradient(180deg, rgba(187,81,67,0.10), rgba(255,255,255,0.88));'
+              : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
+            <div class="absolute inset-x-0 top-0 h-12"
+                 style="background: linear-gradient(135deg, rgba(187,81,67,0.14), rgba(187,81,67,0.02));"></div>
+            <div class="relative flex items-start gap-2">
+              <div class="relative shrink-0">
+                <div class="flex h-10 w-10 items-center justify-center rounded-[14px] border"
+                     style="border-color: rgba(187,81,67,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                  <img :src="city.city_art" alt="" class="h-7 w-7 object-contain">
+                </div>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-start justify-between gap-1">
+                  <div class="min-w-0">
+                    <div class="truncate text-xs font-bold text-ink" x-text="city.name"></div>
+                    <div class="text-[10px] text-muted" x-text="`[${city.x}:${city.y}]`"></div>
+                  </div>
+                  <span class="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border shrink-0"
+                        :style="String(sourceCityId) === String(city.id)
+                          ? 'border-color: var(--ik-bad); color: white; background: var(--ik-bad);'
+                          : 'border-color: rgba(187,81,67,0.24); color: var(--ik-bad);'">
+                    <i class="bi text-[9px]" :class="String(sourceCityId) === String(city.id) ? 'bi-check-lg' : 'bi-shield-shaded'"></i>
+                  </span>
+                </div>
+                <div class="mt-1.5 flex flex-wrap gap-1">
+                  <span class="inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[9px]"
+                        style="border-color: rgba(187,81,67,0.25); background: rgba(255,255,255,0.8);">
+                    <i class="bi bi-people-fill" style="color:var(--ik-bad);"></i>
+                    <span x-text="new Intl.NumberFormat('pt-BR').format(Object.values(city.troops||{}).reduce((s,v)=>s+(parseInt(v)||0),0))"></span>
+                  </span>
+                  <span class="inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[9px]"
+                        style="border-color: rgba(79,134,185,0.25); background: rgba(255,255,255,0.8);">
+                    <i class="bi bi-box-seam" style="color:var(--ik-sea);"></i>
+                    <span x-text="`${merchantCount(String(city.id))} barcos`"></span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </button>
+        </template>
+      </div>
+    </div>
+
+    {# ═══ 2. TROPAS ═══ #}
+    <template x-if="sourceCityId">
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-bad);">
+            <i class="bi bi-shield-shaded"></i> Tropas — <span x-text="grandTotal()">0</span> selecionadas
+          </div>
+          <button type="button" @click="units={}"
+                  class="text-[10px] text-muted hover:text-ink transition-colors">
+            Limpar
+          </button>
+        </div>
+
+        <template x-if="Object.values(availableTroops(sourceCityId)).some(v=>parseInt(v)>0)">
+          <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+            {% for unit in training_ui.troops_units %}
+            <template x-if="parseInt(availableTroops(sourceCityId)['{{ unit.name }}'] || 0) > 0">
+              <div class="relative overflow-hidden rounded-[18px] border transition-all duration-200 flex flex-col"
+                   :class="total('{{ unit.id }}') > 0 ? 'ring-2 ring-[rgba(187,81,67,0.55)] shadow-[0_10px_28px_rgba(187,81,67,0.18)]' : 'hover:shadow-[0_6px_20px_rgba(187,81,67,0.10)]'"
+                   style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.92);">
+                <input type="hidden" name="units_{{ unit.id }}" :value="total('{{ unit.id }}')">
+                <div class="relative px-3 pt-2.5 pb-2"
+                     style="background: linear-gradient(160deg, rgba(187,81,67,0.10) 0%, rgba(247,241,229,0.55) 70%, transparent 100%);">
+                  {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="absolute right-1 bottom-[-0.4rem] h-14 w-[5.25rem] object-contain drop-shadow-sm" style="z-index:20;">{% endif %}
+                  <div class="pr-[4rem] min-w-0">
+                    <div class="flex items-center gap-1 min-w-0 mb-0.5">
+                      <span x-show="total('{{ unit.id }}') > 0" x-text="total('{{ unit.id }}')" x-cloak
+                            class="shrink-0 inline-flex items-center justify-center rounded-full px-1.5 text-[9px] font-bold text-white h-4 min-w-[1rem]"
+                            style="background: var(--ik-bad);"></span>
+                      <span class="text-[11px] font-bold text-ink leading-tight truncate">{{ unit.name }}</span>
+                    </div>
+                    {% if unit.stats.hp %}
+                    <div class="grid grid-cols-2 gap-x-1 gap-y-0">
+                      <div class="flex items-center gap-0.5"><i class="bi bi-heart-fill text-[8px]" style="color:var(--ik-bad);"></i><span class="text-[10px] font-bold" style="color:var(--ik-bad);">{{ unit.stats.hp }}</span></div>
+                      {% if unit.stats.damage %}<div class="flex items-center gap-0.5"><i class="bi bi-lightning-fill text-[8px]" style="color:var(--ik-gold);"></i><span class="text-[10px] font-bold" style="color:var(--ik-gold);">{{ unit.stats.damage }}{% if unit.stats.off_lv %}<span class="text-[7px] opacity-60">↑{{ unit.stats.off_lv }}</span>{% endif %}</span></div>{% endif %}
+                      {% if unit.stats.armor %}<div class="flex items-center gap-0.5"><i class="bi bi-shield-fill text-[8px]" style="color:var(--ik-good);"></i><span class="text-[10px] font-bold" style="color:var(--ik-good);">{{ unit.stats.armor }}{% if unit.stats.def_lv %}<span class="text-[7px] opacity-60">↑{{ unit.stats.def_lv }}</span>{% endif %}</span></div>{% endif %}
+                      <div class="flex items-center gap-0.5"><i class="bi bi-wind text-[8px]" style="color:var(--ik-sea);"></i><span class="text-[10px] font-bold" style="color:var(--ik-sea);">{{ unit.stats.speed }}</span></div>
+                    </div>
+                    {% endif %}
+                  </div>
+                </div>
+                <div class="flex flex-col flex-1 px-2.5 pb-2 pt-1 gap-1">
+                  <div class="text-[9px] text-muted text-center">
+                    disponível: <span class="font-bold text-ink" x-text="availableTroops(sourceCityId)['{{ unit.name }}'] || 0"></span>
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <button type="button"
+                            @click="units['{{ unit.id }}'] = Math.max(0, (parseInt(units['{{ unit.id }}'])||0) - ($event.shiftKey ? 10 : 1))"
+                            class="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-lg border text-ink text-xs font-bold hover:bg-red-50 transition-colors"
+                            style="border-color: rgba(219,201,167,0.9);">−</button>
+                    <input type="number" min="0"
+                           x-model.number="units['{{ unit.id }}']"
+                           :max="parseInt(availableTroops(sourceCityId)['{{ unit.name }}'] || 0)"
+                           class="flex-1 min-w-0 text-center text-xs font-bold text-ink rounded-lg border py-1 outline-none focus:ring-1 focus:ring-[rgba(187,81,67,0.5)]"
+                           style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.9);"
+                           placeholder="0">
+                    <button type="button"
+                            @click="units['{{ unit.id }}'] = Math.min(parseInt(availableTroops(sourceCityId)['{{ unit.name }}']||0), (parseInt(units['{{ unit.id }}'])||0) + ($event.shiftKey ? 10 : 1))"
+                            class="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-lg border text-ink text-xs font-bold hover:bg-green-50 transition-colors"
+                            style="border-color: rgba(219,201,167,0.9);">+</button>
+                  </div>
+                  <button type="button"
+                          @click="units['{{ unit.id }}'] = parseInt(availableTroops(sourceCityId)['{{ unit.name }}'] || 0)"
+                          class="w-full text-[9px] text-muted hover:text-ink transition-colors">tudo</button>
+                </div>
+              </div>
+            </template>
+            {% endfor %}
+          </div>
+        </template>
+
+        <template x-if="!Object.values(availableTroops(sourceCityId)).some(v=>parseInt(v)>0)">
+          <div class="rounded-[14px] border border-dashed border-[rgba(187,81,67,0.3)] bg-white/60 px-4 py-3 text-xs text-muted">
+            <i class="bi bi-exclamation-circle"></i> Sem tropas registradas nesta cidade. Execute "Check Status" primeiro.
+          </div>
+        </template>
+
+        <div class="text-[10px] text-muted mt-1"><i class="bi bi-shift"></i> Shift + clique = ±10</div>
+      </div>
+    </template>
+
+    {# ═══ 3. NAVIOS MERCANTES ═══ #}
+    <template x-if="sourceCityId">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="rounded-[16px] border border-[rgba(79,134,185,0.3)] bg-[rgba(79,134,185,0.05)] p-4">
+          <div class="text-[11px] font-semibold uppercase tracking-[0.14em] mb-3" style="color: var(--ik-sea);">
+            <i class="bi bi-box-seam"></i> Navios mercantes
+          </div>
+          <div class="flex items-center gap-2 mb-2">
+            <button type="button"
+                    @click="transporters = Math.max(0, transporters - 1)"
+                    class="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-xl border text-ink font-bold hover:bg-red-50 transition-colors"
+                    style="border-color: rgba(219,201,167,0.9);">−</button>
+            <input type="number" min="0" x-model.number="transporters"
+                   :max="merchantCount(sourceCityId)"
+                   class="flex-1 text-center text-sm font-bold text-ink rounded-xl border py-2 outline-none focus:ring-1"
+                   style="border-color: rgba(79,134,185,0.4); background: rgba(255,255,255,0.9);">
+            <button type="button"
+                    @click="transporters = Math.min(merchantCount(sourceCityId), transporters + 1)"
+                    class="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-xl border text-ink font-bold hover:bg-green-50 transition-colors"
+                    style="border-color: rgba(219,201,167,0.9);">+</button>
+            <button type="button"
+                    @click="transporters = merchantCount(sourceCityId)"
+                    class="text-xs text-muted hover:text-ink px-2">tudo (<span x-text="merchantCount(sourceCityId)"></span>)</button>
+          </div>
+          <div class="text-[10px] text-muted">
+            Capacidade: <span class="font-bold text-ink" x-text="new Intl.NumberFormat('pt-BR').format(lootCapacity())"></span> recursos/viagem
+          </div>
+        </div>
+
+        {# ── Muralha ── #}
+        <div class="rounded-[16px] border border-[rgba(201,156,78,0.3)] bg-[rgba(201,156,78,0.05)] p-4">
+          <div class="text-[11px] font-semibold uppercase tracking-[0.14em] mb-3" style="color: var(--ik-gold);">
+            <i class="bi bi-bricks"></i> Nível da muralha (estimativa)
+          </div>
+          <div class="flex items-center gap-3">
+            <input type="range" min="0" max="20" x-model.number="wallLevel"
+                   class="flex-1 accent-[var(--ik-gold)]">
+            <span class="text-lg font-bold text-ink w-6 text-center" x-text="wallLevel"></span>
+          </div>
+          <div class="text-[10px] text-muted mt-1">
+            0 = sem muralha · 15 = padrão conservador · 20 = máximo
+          </div>
+        </div>
+      </div>
+    </template>
+
+    {# ═══ 4. CONFIGURAÇÃO DE VIAGENS ═══ #}
+    <template x-if="sourceCityId">
+      <div class="rounded-[16px] border border-[rgba(219,201,167,0.8)] bg-white/60 p-4">
+        <div class="text-[11px] font-semibold uppercase tracking-[0.14em] mb-3 text-muted">
+          <i class="bi bi-arrow-repeat"></i> Múltiplas viagens
+        </div>
+        <div class="flex flex-wrap items-center gap-4">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <button type="button"
+                    @click="multiTrip = !multiTrip"
+                    class="relative w-10 h-6 rounded-full transition-colors duration-200 focus:outline-none"
+                    :style="multiTrip ? 'background:var(--ik-good)' : 'background:rgba(219,201,167,0.9)'">
+              <span class="absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200"
+                    :class="multiTrip ? 'translate-x-4' : 'translate-x-0'"></span>
+            </button>
+            <span class="text-xs text-ink font-medium" x-text="multiTrip ? 'Ativado' : 'Desativado'"></span>
+          </label>
+
+          <template x-if="multiTrip">
+            <div class="flex items-center gap-2">
+              <label class="text-xs text-muted whitespace-nowrap">Máx. viagens:</label>
+              <input type="number" min="1" max="50" x-model.number="maxTrips"
+                     class="w-16 text-center text-xs font-bold text-ink rounded-lg border py-1 outline-none"
+                     style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.9);">
+            </div>
+          </template>
+
+          <template x-if="multiTrip">
+            <div class="flex items-center gap-2">
+              <label class="text-xs text-muted whitespace-nowrap">Parar se recursos &lt;:</label>
+              <input type="number" min="0" x-model.number="minRes"
+                     class="w-24 text-center text-xs font-bold text-ink rounded-lg border py-1 outline-none"
+                     style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.9);"
+                     placeholder="0">
+            </div>
+          </template>
+        </div>
+        <template x-if="multiTrip">
+          <p class="mt-2 text-[10px] text-muted">
+            Após cada viagem, o runner verifica se ainda vale continuar e reagenda automaticamente até atingir o limite.
+          </p>
+        </template>
+      </div>
+    </template>
+
+    {# ═══ Aviso frota (futuro) ═══ #}
+    <div class="rounded-[14px] border border-[rgba(79,134,185,0.25)] bg-[rgba(79,134,185,0.04)] px-4 py-2.5 text-[11px] text-muted">
+      <i class="bi bi-info-circle text-[var(--ik-sea)]"></i>
+      Bloqueio naval será implementado futuramente. Por enquanto, ataques terrestres apenas.
+    </div>
+
+  </div>
+</div>
+{% endif %}
