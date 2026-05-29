@@ -1,67 +1,74 @@
 {% load static humanize %}
 <div id="raid-city-lookup-panel">
-<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-  {% for city in cities %}
-  <button type="button"
-          class="w-full text-left rounded-[16px] border transition-all duration-150 hover:translate-y-[-1px] hover:border-[rgba(187,81,67,0.45)] hover:shadow-[0_8px_20px_rgba(187,81,67,0.12)]"
-          style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.88);"
-          @click="
-            targetCityId = '{{ city.game_city_id }}';
-            islandId = '{{ city.island_id }}';
-            selectedTarget = '{{ city.name|escapejs }} ({{ city.owner_name|escapejs }})';
-          ">
-    <div class="relative overflow-hidden rounded-[16px] p-3">
-      <div class="absolute inset-x-0 top-0 h-10" style="background: linear-gradient(135deg, rgba(187,81,67,0.08), transparent);"></div>
-      <div class="relative flex items-center gap-3">
-        {# Ícone de cidade #}
-        <div class="h-10 w-10 shrink-0 rounded-[12px] border flex items-center justify-center"
-             style="border-color: rgba(187,81,67,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
-          <i class="bi bi-building text-base" style="color: var(--ik-bad);"></i>
+
+  {% if error %}
+  <div class="rounded-[14px] border border-[rgba(187,81,67,0.25)] bg-[rgba(187,81,67,0.05)] px-4 py-2.5 text-[11px] text-muted mb-2">
+    <i class="bi bi-exclamation-circle text-[var(--ik-bad)] mr-1"></i> {{ error }}
+  </div>
+  {% endif %}
+
+  {% if cities %}
+  <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 max-h-[22rem] overflow-y-auto pr-1">
+    {% for city in cities %}
+    <button type="button"
+            class="relative overflow-hidden rounded-[18px] border text-left transition-all duration-150 hover:translate-y-[-1px]"
+            :class="targetCityId === '{{ city.game_city_id }}'
+              ? 'ring-2 ring-[var(--ik-bad)] translate-y-[-1px] shadow-[0_8px_20px_rgba(187,81,67,0.18)]'
+              : 'hover:border-[rgba(187,81,67,0.4)] hover:shadow-[0_6px_16px_rgba(187,81,67,0.08)]'"
+            :style="targetCityId === '{{ city.game_city_id }}'
+              ? 'border-color:rgba(187,81,67,0.5);background:linear-gradient(180deg,rgba(187,81,67,0.10),rgba(255,255,255,0.92));'
+              : 'border-color:rgba(219,201,167,0.9);background:rgba(255,255,255,0.88);'"
+            @click="
+              targetCityId = '{{ city.game_city_id }}';
+              islandId = '{{ city.island_id }}';
+              selectedTarget = '{{ city.name|escapejs }} ({{ city.owner_name|escapejs }})';
+            ">
+      <div class="absolute inset-x-0 top-0 h-10" style="background:linear-gradient(135deg,rgba(187,81,67,0.10),rgba(187,81,67,0.02));"></div>
+      <div class="relative p-3 flex items-start gap-2">
+        <div class="h-9 w-9 shrink-0 rounded-[12px] border flex items-center justify-center mt-0.5"
+             :style="targetCityId === '{{ city.game_city_id }}'
+               ? 'border-color:rgba(187,81,67,0.4);background:rgba(187,81,67,0.08);'
+               : 'border-color:rgba(219,201,167,0.8);background:linear-gradient(180deg,#fffdf8,#f4ecda);'">
+          <i class="bi bi-building text-sm" style="color:var(--ik-bad);"></i>
         </div>
         <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-1.5 flex-wrap">
-            <span class="text-xs font-bold text-ink">{{ city.name }}</span>
-            <span class="text-[10px] text-muted">Lv {{ city.level }}</span>
+          <div class="flex items-start justify-between gap-1">
+            <div class="min-w-0">
+              <div class="truncate text-xs font-bold text-ink">{{ city.name }}</div>
+              <div class="text-[10px] text-muted truncate">{{ city.owner_name }}</div>
+            </div>
+            <span class="shrink-0 h-4 w-4 rounded-full border transition-colors flex items-center justify-center mt-0.5"
+                  :style="targetCityId === '{{ city.game_city_id }}'
+                    ? 'border-color:var(--ik-bad);background:var(--ik-bad);'
+                    : 'border-color:rgba(187,81,67,0.3);'">
+              <i class="bi bi-check text-[9px] text-white" x-show="targetCityId === '{{ city.game_city_id }}'"></i>
+            </span>
+          </div>
+          <div class="flex items-center gap-1 mt-1 flex-wrap">
+            <span class="text-[9px] text-muted">Lv {{ city.level }}</span>
             {% if city.ally_tag %}
-            <span class="text-[9px] font-semibold rounded-full px-1.5 py-0.5"
+            <span class="text-[9px] font-semibold rounded-full px-1 py-0"
                   style="background:rgba(79,134,185,0.10);color:var(--ik-sea);">[{{ city.ally_tag }}]</span>
             {% endif %}
+            {% if city.has_intel %}
+            <span class="text-[9px] font-bold" style="color:var(--ik-good);">✓</span>
+            {% endif %}
           </div>
-          <div class="text-[11px] text-muted mt-0.5">{{ city.owner_name }}</div>
           {% if city.army_score %}
-          <div class="text-[10px] mt-0.5" style="color:var(--ik-gold);">
-            <i class="bi bi-shield-fill text-[9px]"></i> {{ city.army_score|intcomma }} pts generais
+          <div class="text-[9px] mt-0.5" style="color:var(--ik-gold);">
+            🛡 {{ city.army_score|intcomma }}
           </div>
           {% endif %}
-        </div>
-        <div class="flex items-center gap-1 shrink-0">
-          {% if city.state == "inactive" %}
-          <span class="badge badge-secondary text-[9px]">💤</span>
-          {% elif city.state == "vacation" %}
-          <span class="badge badge-warning text-[9px]">🌴</span>
-          {% endif %}
-          {% if city.has_intel %}
-          <span class="badge badge-success text-[9px]">✓</span>
-          {% endif %}
-          <i class="bi bi-chevron-right text-muted text-[10px]"></i>
         </div>
       </div>
-    </div>
-  </button>
-  {% endfor %}
+    </button>
+    {% endfor %}
+  </div>
+  {% elif not error %}
+  <div class="text-[11px] text-muted italic text-center py-6">
+    <i class="bi bi-map text-2xl mb-2 block opacity-20"></i>
+    Digite coordenadas para buscar cidades inimigas.
+  </div>
+  {% endif %}
 
-{% if not cities and not error %}
-</div>
-<div class="text-[11px] text-muted italic text-center py-6">
-  <i class="bi bi-map text-2xl mb-2 block opacity-20"></i>
-  Digite coordenadas para buscar cidades inimigas.
-</div>
-{% else %}
-</div>
-{% endif %}
-{% if error %}
-<div class="rounded-[14px] border border-[rgba(187,81,67,0.25)] bg-[rgba(187,81,67,0.05)] px-4 py-2.5 text-[11px] text-muted mt-2">
-  <i class="bi bi-exclamation-circle text-[var(--ik-bad)] mr-1"></i> {{ error }}
-</div>
-{% endif %}
 </div>

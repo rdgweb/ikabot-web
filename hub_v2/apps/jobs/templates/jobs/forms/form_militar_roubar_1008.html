@@ -117,49 +117,32 @@
       </div>
       {% endif %}
 
-      {# Lookup manual por coordenada (quando não vem da inteligência) #}
-      <div class="rounded-xl border border-[rgba(187,81,67,0.3)] bg-[rgba(187,81,67,0.04)] px-4 py-3 space-y-3">
-        <div class="flex items-center justify-between">
-          <span class="text-[10px] uppercase tracking-wider text-muted font-semibold" x-show="!targetCityId">Buscar por coordenada</span>
-          <span class="text-[11px] font-semibold text-ink" x-show="targetCityId" x-text="selectedTarget || ('ID ' + targetCityId)"></span>
-          <template x-if="targetCityId">
-            <button type="button" @click="targetCityId=''; islandId=''; selectedTarget='';"
-                    class="text-[10px] text-muted hover:text-ink transition-colors">
-              <i class="bi bi-x-circle mr-1"></i>Trocar
-            </button>
-          </template>
+      {# Busca por coordenada — sempre visível, clique seleciona/troca #}
+      <p class="text-[11px] text-muted mb-3">Busque por coordenada. Clique numa cidade para selecionar ou trocar.</p>
+      <div class="grid grid-cols-2 gap-2 mb-3">
+        <div>
+          <label class="text-[10px] text-muted mb-1 block">Coordenada X</label>
+          <input type="number" x-model="coordX" class="form-input !text-sm w-full" placeholder="ex: 84"
+                 name="coord_x"
+                 hx-get="{% url 'jobs:raid-city-lookup' %}"
+                 hx-trigger="keyup changed delay:500ms, change"
+                 hx-target="#raid-city-lookup-panel"
+                 hx-swap="outerHTML"
+                 hx-include="[name='coord_x'],[name='coord_y'],[name='raid_ga']">
         </div>
-
-        <template x-if="!targetCityId">
-          <div class="space-y-3">
-            <p class="text-[11px] text-muted">Busque por coordenada do mapa ou abra pela <b>Inteligência → cidade → Roubar</b>.</p>
-            <div class="grid grid-cols-2 gap-2">
-              <div>
-                <label class="text-[10px] text-muted mb-1 block">Coordenada X</label>
-                <input type="number" x-model="coordX" class="form-input !text-sm w-full" placeholder="ex: 84"
-                       name="coord_x"
-                       hx-get="{% url 'jobs:raid-city-lookup' %}"
-                       hx-trigger="keyup changed delay:500ms, change"
-                       hx-target="#raid-city-lookup-panel"
-                       hx-swap="outerHTML"
-                       hx-include="[name='coord_x'],[name='coord_y'],[name='raid_ga']">
-              </div>
-              <div>
-                <label class="text-[10px] text-muted mb-1 block">Coordenada Y</label>
-                <input type="number" x-model="coordY" class="form-input !text-sm w-full" placeholder="ex: 89"
-                       name="coord_y"
-                       hx-get="{% url 'jobs:raid-city-lookup' %}"
-                       hx-trigger="keyup changed delay:500ms, change"
-                       hx-target="#raid-city-lookup-panel"
-                       hx-swap="outerHTML"
-                       hx-include="[name='coord_x'],[name='coord_y'],[name='raid_ga']">
-              </div>
-            </div>
-            <div id="raid-city-lookup-panel">
-              {% include "jobs/partials/raid_city_lookup.html" %}
-            </div>
-          </div>
-        </template>
+        <div>
+          <label class="text-[10px] text-muted mb-1 block">Coordenada Y</label>
+          <input type="number" x-model="coordY" class="form-input !text-sm w-full" placeholder="ex: 89"
+                 name="coord_y"
+                 hx-get="{% url 'jobs:raid-city-lookup' %}"
+                 hx-trigger="keyup changed delay:500ms, change"
+                 hx-target="#raid-city-lookup-panel"
+                 hx-swap="outerHTML"
+                 hx-include="[name='coord_x'],[name='coord_y'],[name='raid_ga']">
+        </div>
+      </div>
+      <div id="raid-city-lookup-panel">
+        {% include "jobs/partials/raid_city_lookup.html" %}
       </div>
     </div>
 
