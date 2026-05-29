@@ -696,5 +696,14 @@ class RaidCityRunner(BaseRunner):
         return {}
 
     def _get_client(self, jid: str, ga_id: str):
-        """Get authenticated game client via BaseRunner's session service."""
-        return self.game_sessions.get_game_client(ga_id)
+        """Get authenticated game client via BaseRunner's login flow."""
+        from apps.jobs.models import Job
+        job = Job.objects.filter(pk=jid).select_related("account", "game_account").first()
+        if not job:
+            raise ValueError(f"Job {jid} not found")
+        aid = str(job.account_id)
+        inputs = job.inputs_json if isinstance(job.inputs_json, dict) else {}
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        if not creds:
+            raise ValueError("Credenciais não encontradas")
+        return self.get_or_login_game_client(jid, aid, ga_id, creds)
