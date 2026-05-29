@@ -1,12 +1,6 @@
 {% load static humanize %}
-<div id="raid-city-lookup-panel" class="space-y-2">
-
-  {% if error %}
-  <div class="rounded-[14px] border border-[rgba(187,81,67,0.25)] bg-[rgba(187,81,67,0.05)] px-4 py-2.5 text-[11px] text-muted">
-    <i class="bi bi-exclamation-circle text-[var(--ik-bad)] mr-1"></i> {{ error }}
-  </div>
-  {% endif %}
-
+<div id="raid-city-lookup-panel">
+<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
   {% for city in cities %}
   <button type="button"
           class="w-full text-left rounded-[16px] border transition-all duration-150 hover:translate-y-[-1px] hover:border-[rgba(187,81,67,0.45)] hover:shadow-[0_8px_20px_rgba(187,81,67,0.12)]"
@@ -56,10 +50,18 @@
   </button>
   {% endfor %}
 
-  {% if not cities and not error %}
-  <div class="text-[11px] text-muted italic text-center py-6">
-    <i class="bi bi-map text-2xl mb-2 block opacity-20"></i>
-    Digite coordenadas para buscar cidades inimigas.
-  </div>
-  {% endif %}
+{% if not cities and not error %}
+</div>
+<div class="text-[11px] text-muted italic text-center py-6">
+  <i class="bi bi-map text-2xl mb-2 block opacity-20"></i>
+  Digite coordenadas para buscar cidades inimigas.
+</div>
+{% else %}
+</div>
+{% endif %}
+{% if error %}
+<div class="rounded-[14px] border border-[rgba(187,81,67,0.25)] bg-[rgba(187,81,67,0.05)] px-4 py-2.5 text-[11px] text-muted mt-2">
+  <i class="bi bi-exclamation-circle text-[var(--ik-bad)] mr-1"></i> {{ error }}
+</div>
+{% endif %}
 </div>
