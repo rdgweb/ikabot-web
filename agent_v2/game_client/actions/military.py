@@ -511,6 +511,73 @@ class StationAction(BaseAction):
         return {"ok": True, "from": from_city_id, "to": to_city_id, "scope": scope, "eta_seconds": eta_seconds}
 
 
+class FetchBlockadeViewAction(BaseAction):
+    """Fetch blockade form to get fleet travel time BEFORE sending.
+
+    Same pattern as fetch_plunder_view — reads transportJourneyTime from missionController JS.
+
+    URL: GET view=blockade&isMission=1&destinationCityId=X&currentIslandId=Y
+    """
+
+    def execute(self, from_city_id: int, to_city_id: int, island_id: int) -> dict[str, Any]:
+        # Navigate to source city first so the game knows which fleet to use
+        self.client._request("GET", self.client._server_url, params={
+            "view": "city",
+            "cityId": int(from_city_id),
+            "backgroundView": "city",
+            "actionRequest": self.client._action_request,
+            "ajax": "0",
+        }, timeout=15)
+
+        resp = self.client._request(
+            "GET",
+            self.client._server_url,
+            params={
+                "view": "blockade",
+                "isMission": "1",
+                "destinationCityId": int(to_city_id),
+                "backgroundView": "island",
+                "currentIslandId": int(island_id),
+                "templateView": "cityDetails",
+                "actionRequest": self.client._action_request,
+                "ajax": "1",
+            },
+            timeout=30,
+        )
+        try:
+            data = resp.json()
+        except Exception:
+            return {"travel_seconds": 0}
+
+        if data and isinstance(data[0], list) and len(data[0]) > 1:
+            gd = data[0][1]
+            if isinstance(gd, dict) and "actionRequest" in gd:
+                self.client._action_request = gd["actionRequest"]
+
+        html = ""
+        for entry in data:
+            if isinstance(entry, list) and len(entry) > 1 and entry[0] in ("changeHTML", "changeView"):
+                items = entry[1] if isinstance(entry[1], list) else [entry[1]]
+                for item in items:
+                    if isinstance(item, str) and len(item) > 100:
+                        html = item
+                        break
+
+        # Parse travel time from missionController(freeTrans, capacity, transportJourneyTime, ...)
+        travel_seconds = 0
+        mc_m = re.search(
+            r"new missionController\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)",
+            html
+        )
+        if mc_m:
+            try:
+                travel_seconds = int(float(mc_m.group(3)))
+            except (ValueError, TypeError):
+                pass
+
+        return {"travel_seconds": travel_seconds, "html": html}
+
+
 class PlunderLandAction(BaseAction):
     """Send an army to plunder a player city (land raid).
 
