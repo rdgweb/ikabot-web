@@ -107,7 +107,7 @@
             <div class="grid max-h-[18rem] grid-cols-2 gap-2 overflow-y-auto p-1 xl:grid-cols-4">
               <template x-for="city in filteredCities('origin')" :key="`origin-${city.id}`">
                 <button type="button"
-                        class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                        class="group relative rounded-[18px] border text-left transition-all duration-150"
                         :disabled="isBlocked('origin', city.id)"
                         :class="String(originId) === String(city.id)
                           ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]'
@@ -184,7 +184,7 @@
             <div class="grid max-h-[18rem] grid-cols-2 gap-2 overflow-y-auto p-1 xl:grid-cols-4">
               <template x-for="city in filteredCities('destination')" :key="`destination-${city.id}`">
                 <button type="button"
-                        class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                        class="group relative rounded-[18px] border text-left transition-all duration-150"
                         :disabled="isBlocked('destination', city.id)"
                         :class="String(destinationId) === String(city.id)
                           ? 'translate-y-[-1px] ring-2 ring-[var(--ik-gold-dark)] shadow-[0_10px_28px_rgba(166,124,46,0.18)]'

@@ -8,10 +8,10 @@
   {% endif %}
 
   {% if cities %}
-  <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 max-h-[22rem] overflow-y-auto pr-1">
+  <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 max-h-[22rem] overflow-y-auto p-0.5">
     {% for city in cities %}
     <button type="button"
-            class="relative overflow-hidden rounded-[18px] border text-left transition-all duration-150 hover:translate-y-[-1px]"
+            class="relative rounded-[18px] border text-left transition-all duration-150 hover:translate-y-[-1px]"
             :class="targetCityId === '{{ city.game_city_id }}'
               ? 'ring-2 ring-[var(--ik-bad)] translate-y-[-1px] shadow-[0_8px_20px_rgba(187,81,67,0.18)]'
               : 'hover:border-[rgba(187,81,67,0.4)] hover:shadow-[0_6px_16px_rgba(187,81,67,0.08)]'"

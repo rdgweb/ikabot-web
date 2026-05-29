@@ -173,7 +173,7 @@
             {# Land units #}
             <div x-show="activeTab === 'land'" class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
               {% for unit in upgrade_units_ui.land_units %}
-              <div class="group relative flex items-center gap-3 overflow-hidden rounded-[18px] border p-3 transition-all duration-150"
+              <div class="group relative flex items-center gap-3 rounded-[18px] border p-3 transition-all duration-150"
                      @click="toggleUnit('{{ unit.key }}')"
                      :class="unitSelected('{{ unit.key }}')
                        ? 'ring-1 shadow-md translate-y-[-1px]'
@@ -271,7 +271,7 @@
             {# Sea units #}
             <div x-show="activeTab === 'sea'" class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
               {% for unit in upgrade_units_ui.sea_units %}
-              <div class="group relative flex items-center gap-3 overflow-hidden rounded-[18px] border p-3 transition-all duration-150"
+              <div class="group relative flex items-center gap-3 rounded-[18px] border p-3 transition-all duration-150"
                      @click="toggleUnit('{{ unit.key }}')"
                      :class="unitSelected('{{ unit.key }}')
                        ? 'ring-1 shadow-md translate-y-[-1px]'
@@ -389,7 +389,7 @@
                 <div class="mt-3 grid max-h-[22rem] grid-cols-1 gap-2 overflow-y-auto p-1">
                   <template x-for="city in filteredCities()" :key="`workshop-${city.id}`">
                     <button type="button"
-                            class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                            class="group relative rounded-[18px] border text-left transition-all duration-150"
                             :class="String(cityId) === String(city.id)
                               ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]'
                               : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"

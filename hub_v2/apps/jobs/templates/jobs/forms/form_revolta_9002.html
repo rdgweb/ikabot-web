@@ -88,7 +88,7 @@
             <div class="grid grid-cols-1 gap-2 xl:grid-cols-2">
               {% for city in cities %}
               <button type="button"
-                      class="group overflow-hidden rounded-[18px] border text-left transition-all duration-150 hover:translate-y-[-1px] hover:shadow-[0_10px_24px_rgba(185,79,79,0.10)]"
+                      class="group rounded-[18px] border text-left transition-all duration-150 hover:translate-y-[-1px] hover:shadow-[0_10px_24px_rgba(185,79,79,0.10)]"
                       :class="selectedCityId === '{{ city.id|stringformat:'s'|escapejs }}' ? 'ring-2 ring-red-500 shadow-[0_10px_26px_rgba(185,79,79,0.18)]' : ''"
                       :style="selectedCityId === '{{ city.id|stringformat:'s'|escapejs }}'
                         ? 'border-color: rgba(185,79,79,0.62); background: linear-gradient(180deg, rgba(185,79,79,0.10), rgba(255,255,255,0.92));'

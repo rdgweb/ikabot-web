@@ -257,7 +257,7 @@
         <template x-for="city in cities" :key="`bm-buy-city-${city.id}`">
           <button type="button"
                   @click="selectedCityId = String(city.id); resetSelection();"
-                  class="relative overflow-hidden rounded-[18px] border p-3 text-left transition-all duration-150"
+                  class="relative rounded-[18px] border p-3 text-left transition-all duration-150"
                   :class="String(selectedCityId) === String(city.id)
                     ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_8px_22px_rgba(79,134,185,0.18)] translate-y-[-1px]'
                     : 'hover:translate-y-[-1px] hover:border-[rgba(79,134,185,0.4)] hover:shadow-[0_8px_16px_rgba(79,134,185,0.08)]'"
@@ -365,7 +365,7 @@
           <template x-for="unit in groupedUnits()" :key="`unit-${unit.unit_id}`">
             <button type="button"
                     @click="selectUnit(unit)"
-                    class="relative overflow-hidden rounded-[18px] border p-3 text-left transition-all duration-150"
+                    class="relative rounded-[18px] border p-3 text-left transition-all duration-150"
                     :class="selectedUnitId === unit.unit_id
                       ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_8px_22px_rgba(79,134,185,0.18)] translate-y-[-1px]'
                       : 'hover:translate-y-[-1px] hover:border-[rgba(79,134,185,0.4)]'"

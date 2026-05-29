@@ -201,11 +201,11 @@
           <input type="hidden" name="{{ form.city_id.html_name }}" x-model="cityId">
           <input type="hidden" name="{{ form.position.html_name }}"
                  :value="cityById(cityId) && buildingType==='troops' ? cityById(cityId).barracks_pos : (cityById(cityId) ? cityById(cityId).shipyard_pos : 0)">
-          <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[16rem] overflow-y-auto pr-1">
+          <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[16rem] overflow-y-auto p-0.5">
             <template x-for="city in filteredCities(buildingType, trainQuery)" :key="city.id">
               <button type="button"
                 @click="cityId = String(city.id)"
-                class="relative overflow-hidden rounded-[18px] border text-left transition-all duration-150 p-3 hover:translate-y-[-1px]"
+                class="relative rounded-[18px] border text-left transition-all duration-150 p-3 hover:translate-y-[-1px]"
                 :class="String(cityId) === String(city.id) ? 'ring-2 ring-[var(--ik-sea)] translate-y-[-1px] shadow-[0_8px_20px_rgba(79,134,185,0.18)]' : 'hover:border-[rgba(79,134,185,0.4)]'"
                 :style="String(cityId) === String(city.id)
                   ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.88));'
@@ -268,7 +268,7 @@
           <div class="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Consolidação opcional</div>
           <p class="mb-3 text-xs text-muted">Se informar uma cidade alvo, o sistema agenda a movimentação das unidades treinadas para lá após o tempo estimado de treino.</p>
           <input type="hidden" name="consolidate_city_id" x-model="consolidateCityId">
-          <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[12rem] overflow-y-auto pr-1">
+          <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[12rem] overflow-y-auto p-0.5">
             <template x-for="city in filteredCities('', '')" :key="'consolidate-' + city.id">
               <button type="button"
                 @click="consolidateCityId = String(consolidateCityId) === String(city.id) ? '' : String(city.id)"
@@ -294,9 +294,9 @@
             <button type="button" class="link-sea" @click="selectedCities = visibleSourceCities().map(city => String(city.id))">Selecionar visiveis</button>
             <button type="button" class="text-muted hover:text-ink" @click="selectedCities = []">Limpar</button>
           </div>
-          <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[16rem] overflow-y-auto pr-1">
+          <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[16rem] overflow-y-auto p-0.5">
             <template x-for="city in visibleSourceCities()" :key="'source-' + city.id">
-              <label class="relative overflow-hidden rounded-[18px] border text-left transition-all duration-150 cursor-pointer p-3 hover:translate-y-[-1px]"
+              <label class="relative rounded-[18px] border text-left transition-all duration-150 cursor-pointer p-3 hover:translate-y-[-1px]"
                      :class="isSourceSelected(city.id) ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_8px_20px_rgba(79,134,185,0.18)]' : 'hover:border-[rgba(79,134,185,0.4)]'"
                      :style="isSourceSelected(city.id)
                        ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.88));'
@@ -416,7 +416,7 @@
           {# Troops grid — 4 cols #}
           <div x-show="buildingType==='troops'" class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {% for unit in training_ui.troops_units %}
-            <div class="relative overflow-hidden rounded-[18px] border transition-all duration-200 flex flex-col"
+            <div class="relative rounded-[18px] border transition-all duration-200 flex flex-col"
                  :class="total('{{ unit.id }}') > 0 ? 'ring-2 ring-[rgba(187,81,67,0.55)] shadow-[0_10px_28px_rgba(187,81,67,0.18)]' : 'hover:shadow-[0_6px_20px_rgba(187,81,67,0.10)] hover:translate-y-[-1px]'"
                  style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.92);">
               <input type="hidden" name="units_{{ unit.id }}" :value="total('{{ unit.id }}')">
@@ -471,7 +471,7 @@
           {# Fleet grid — 4 cols #}
           <div x-show="buildingType==='fleet'" class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {% for unit in training_ui.fleet_units %}
-            <div class="relative overflow-hidden rounded-[18px] border transition-all duration-200 flex flex-col"
+            <div class="relative rounded-[18px] border transition-all duration-200 flex flex-col"
                  :class="total('{{ unit.id }}') > 0 ? 'ring-2 ring-[rgba(79,134,185,0.55)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : 'hover:shadow-[0_6px_20px_rgba(79,134,185,0.10)] hover:translate-y-[-1px]'"
                  style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.92);">
               <input type="hidden" name="units_{{ unit.id }}" :value="total('{{ unit.id }}')">

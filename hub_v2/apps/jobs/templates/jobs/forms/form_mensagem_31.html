@@ -50,7 +50,7 @@
         <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 py-1 pb-1">
           <template x-for="city in cities.filter(c => !query || [c.name,c.tradegood_name,String(c.x),String(c.y)].join(' ').toLowerCase().includes(query.toLowerCase()))" :key="`sm-city-${city.id}`">
             <button type="button"
-                    class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                    class="group relative rounded-[18px] border text-left transition-all duration-150"
                     :class="String(selectedCityId) === String(city.id)
                       ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_8px_24px_rgba(79,134,185,0.18)]'
                       : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_8px_20px_rgba(79,134,185,0.12)]'"

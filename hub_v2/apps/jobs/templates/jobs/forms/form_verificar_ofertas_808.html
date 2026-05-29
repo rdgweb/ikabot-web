@@ -74,7 +74,7 @@
         <template x-for="city in cities" :key="`bm-check-city-${city.id}`">
           <button type="button"
                   @click="selectedCityId = String(city.id)"
-                  class="relative overflow-hidden rounded-[18px] border text-left transition-all duration-150 p-3"
+                  class="relative rounded-[18px] border text-left transition-all duration-150 p-3"
                   :class="String(selectedCityId) === String(city.id)
                     ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_8px_22px_rgba(79,134,185,0.18)] translate-y-[-1px]'
                     : 'hover:translate-y-[-1px] hover:border-[rgba(79,134,185,0.4)] hover:shadow-[0_8px_16px_rgba(79,134,185,0.08)]'"
@@ -134,7 +134,7 @@
         <template x-for="opt in [{val:'0',label:'Todas',icon:'bi-grid-fill',desc:'Frotas e tropas'},{val:'444',label:'Frotas',icon:'bi-water',desc:'Unidades marítimas'},{val:'111',label:'Tropas',icon:'bi-shield-shaded',desc:'Unidades terrestres'}]"
                   :key="opt.val">
           <button type="button" @click="unitCategory = opt.val"
-                  class="relative overflow-hidden rounded-[18px] border p-3 text-left transition-all duration-150"
+                  class="relative rounded-[18px] border p-3 text-left transition-all duration-150"
                   :class="unitCategory === opt.val
                     ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_6px_16px_rgba(79,134,185,0.18)] translate-y-[-1px]'
                     : 'hover:translate-y-[-1px] hover:shadow-[0_6px_12px_rgba(79,134,185,0.08)]'"

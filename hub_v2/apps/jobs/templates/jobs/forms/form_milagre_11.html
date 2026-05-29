@@ -100,7 +100,7 @@
             <div class="grid max-h-[22rem] grid-cols-2 gap-2 overflow-y-auto p-1 xl:grid-cols-4">
               <template x-for="city in filteredCities()" :key="`miracle-${city.id}`">
                 <button type="button"
-                        class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                        class="group relative rounded-[18px] border text-left transition-all duration-150"
                         :class="String(cityId) === String(city.id)
                           ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]'
                           : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"

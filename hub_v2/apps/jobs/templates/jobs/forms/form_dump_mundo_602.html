@@ -87,7 +87,7 @@
               </div>
               <div class="grid max-h-[18rem] grid-cols-2 gap-2 overflow-y-auto p-1 xl:grid-cols-4">
                 <template x-for="city in cities" :key="`world-dump-${city.id}`">
-                  <label class="relative cursor-pointer overflow-hidden rounded-[18px] border text-left transition-all duration-150 hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]"
+                  <label class="relative cursor-pointer rounded-[18px] border text-left transition-all duration-150 hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]"
                          :style="isSelected(city.id)
                            ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.90));'
                            : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'">

@@ -96,7 +96,7 @@
           <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
             <template x-for="city in targetCities" :key="city.game_city_id">
               <button type="button"
-                      class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                      class="group relative rounded-[18px] border text-left transition-all duration-150"
                       :style="targetCityId === String(city.game_city_id)
                         ? 'transform:translateY(-1px); outline:2px solid rgba(185,79,79,0.65); outline-offset:2px; border-color:rgba(185,79,79,0.50); background:linear-gradient(180deg,rgba(255,255,255,0.94),rgba(185,79,79,0.09)); box-shadow:0 8px 20px rgba(185,79,79,0.16);'
                         : 'border-color:rgba(219,201,167,0.9); background:rgba(255,255,255,0.82);'"
@@ -175,7 +175,7 @@
         <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
           {% for city in spy_cities %}
           <button type="button"
-                  class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                  class="group relative rounded-[18px] border text-left transition-all duration-150"
                   :class="selectedCityId === '{{ city.id }}' ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
                   :style="selectedCityId === '{{ city.id }}' ? 'border-color: rgba(79,134,185,0.50); background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(79,134,185,0.10));' : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'"
                   @click="selectedCityId = '{{ city.id }}'">

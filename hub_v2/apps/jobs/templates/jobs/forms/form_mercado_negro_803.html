@@ -123,7 +123,7 @@
         <template x-for="city in cities" :key="`bm-city-${city.id}`">
           <button type="button"
                   @click="selectedCityId = String(city.id); selectedUnitId = 0; selectedUnitName = '';"
-                  class="relative overflow-hidden rounded-[18px] border text-left transition-all duration-150 p-3"
+                  class="relative rounded-[18px] border text-left transition-all duration-150 p-3"
                   :class="String(selectedCityId) === String(city.id)
                     ? 'ring-2 ring-[var(--ik-bad)] shadow-[0_8px_22px_rgba(187,81,67,0.18)] translate-y-[-1px]'
                     : 'hover:translate-y-[-1px] hover:border-[rgba(187,81,67,0.4)] hover:shadow-[0_8px_16px_rgba(187,81,67,0.08)]'"

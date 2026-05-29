@@ -109,7 +109,7 @@
             <div class="grid max-h-[23rem] grid-cols-2 gap-2 overflow-y-auto p-1 xl:grid-cols-4">
               <template x-for="city in filteredCities()" :key="`daily-${city.id}`">
                 <button type="button"
-                        class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                        class="group relative rounded-[18px] border text-left transition-all duration-150"
                         :class="String(cityId) === String(city.id)
                           ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]'
                           : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
@@ -222,7 +222,7 @@
                  style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.84);">
               <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Leitura atual</div>
               {% if daily_login_ui.tasks %}
-              <div class="mt-3 max-h-[14rem] space-y-2 overflow-y-auto pr-1">
+              <div class="mt-3 max-h-[14rem] space-y-2 overflow-y-auto p-0.5">
                 {% for task in daily_login_ui.tasks|slice:":6" %}
                 <div class="rounded-xl border px-3 py-2"
                      style="border-color: var(--ik-line); background: {% if task.collectible %}rgba(95,140,78,0.08){% elif task.claimed %}rgba(219,201,167,0.28){% else %}var(--ik-sand-light){% endif %};">

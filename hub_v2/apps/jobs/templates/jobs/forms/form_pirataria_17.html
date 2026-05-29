@@ -144,7 +144,7 @@
         <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
           {% for city in piracy_cities %}
           <button type="button"
-                  class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150"
+                  class="group relative rounded-[18px] border text-left transition-all duration-150"
                   :class="selectedCityId === '{{ city.id }}' ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
                   :style="selectedCityId === '{{ city.id }}' ? 'border-color: rgba(79,134,185,0.50); background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(79,134,185,0.10));' : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'"
                   @click="selectCity('{{ city.id }}')">

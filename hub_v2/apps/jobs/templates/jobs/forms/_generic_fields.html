@@ -129,7 +129,7 @@
                 {% with choice_value=choice.0|stringformat:"s" %}
                 {% for city in cities %}
                 {% if city.id|stringformat:"s" == choice_value %}
-                <label class="group relative cursor-pointer overflow-hidden rounded-[18px] border text-left transition-all duration-150 hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]"
+                <label class="group relative cursor-pointer rounded-[18px] border text-left transition-all duration-150 hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]"
                        :class="isSelected('{{ choice_value|escapejs }}') ? 'translate-y-[-1px] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : ''"
                        :style="isSelected('{{ choice_value|escapejs }}')
                          ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.88));'

@@ -154,11 +154,11 @@
       <label class="mb-2 block max-w-xs">
         <input type="text" x-model="sourceQuery" class="form-input" placeholder="Filtrar por nome ou coordenada">
       </label>
-      <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[16rem] overflow-y-auto pr-1">
+      <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[16rem] overflow-y-auto p-0.5">
         <template x-for="city in filteredCities(sourceQuery)" :key="city.id">
           <button type="button"
             @click="sourceCityId = String(city.id)"
-            class="relative overflow-hidden rounded-[18px] border text-left transition-all duration-150 p-3 hover:translate-y-[-1px]"
+            class="relative rounded-[18px] border text-left transition-all duration-150 p-3 hover:translate-y-[-1px]"
             :class="String(sourceCityId) === String(city.id) ? 'ring-2 ring-[var(--ik-bad)] translate-y-[-1px] shadow-[0_8px_20px_rgba(187,81,67,0.18)]' : 'hover:border-[rgba(187,81,67,0.4)]'"
             :style="String(sourceCityId) === String(city.id)
               ? 'border-color: var(--ik-bad); background: linear-gradient(180deg, rgba(187,81,67,0.10), rgba(255,255,255,0.88));'
@@ -221,7 +221,7 @@
           <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {% for unit in training_ui.troops_units %}
             <template x-if="parseInt(availableTroops(sourceCityId)['{{ unit.name }}'] || 0) > 0">
-              <div class="relative overflow-hidden rounded-[18px] border transition-all duration-200 flex flex-col"
+              <div class="relative rounded-[18px] border transition-all duration-200 flex flex-col"
                    :class="total('{{ unit.id }}') > 0 ? 'ring-2 ring-[rgba(187,81,67,0.55)] shadow-[0_10px_28px_rgba(187,81,67,0.18)]' : 'hover:shadow-[0_6px_20px_rgba(187,81,67,0.10)]'"
                    style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.92);">
                 <input type="hidden" name="units_{{ unit.id }}" :value="total('{{ unit.id }}')">
