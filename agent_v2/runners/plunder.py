@@ -131,19 +131,14 @@ class RaidCityRunner(BaseRunner):
                 self.log(jid, "error", "[Raid] Sem tropas disponíveis e sem especificação manual.")
                 return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE)
 
-        # ── Transportadores: snapshot → se 0, buscar live ────────────────────
+        # ── Transportadores: sempre buscar live (mercantes são dinâmicos) ──────
         if transporters <= 0:
-            available_transporters = self._get_transporters(snap, source_city_id)
-            if available_transporters <= 0:
-                # Buscar live — mercantes podem ter voltado desde último snapshot
-                try:
-                    live_client = self._get_client(jid, ga_id)
-                    available_transporters = self._get_transporters(
-                        snap, source_city_id, client=live_client, jid=jid
-                    )
-                except Exception:
-                    pass
-            transporters = available_transporters
+            try:
+                live_client = self._get_client(jid, ga_id)
+                transporters = self._get_transporters(snap, source_city_id, client=live_client, jid=jid)
+            except Exception as exc:
+                self.log(jid, "warn", f"[Raid] Falha ao buscar mercantes live: {exc}. Usando snapshot.")
+                transporters = self._get_transporters(snap, source_city_id)
 
         if transporters <= 0:
             self.log(jid, "warn", "[Raid] Sem navios mercantes disponíveis para carregar saque.")
@@ -276,45 +271,49 @@ class RaidCityRunner(BaseRunner):
             self.log(jid, "warn", f"[Raid] Falha ao obter snapshot: {exc}")
             return {}
 
+    def _get_military_by_city(self, snap: dict) -> list[dict]:
+        """Return by_city list from snapshot.military."""
+        return (snap.get("military") or {}).get("by_city") or []
+
     def _get_available_units(self, jid: str, snap: dict, city_id: str) -> dict[int, int]:
-        """Extract available land units at source city from snapshot."""
-        cities = snap.get("cities") or []
-        for city in cities:
-            if str(city.get("id") or city.get("game_city_id") or "") == str(city_id):
-                army = city.get("army") or city.get("military", {}).get("army") or {}
-                return {int(k): int(v) for k, v in army.items() if int(v) > 0}
+        """Extract available land units at source city from snapshot.military.by_city."""
+        for city_mil in self._get_military_by_city(snap):
+            if str(city_mil.get("city_id") or "") == str(city_id):
+                troops = city_mil.get("troops") or {}
+                # Keys may be unit_id (int/str) or unit_name (str)
+                result = {}
+                for k, v in troops.items():
+                    try:
+                        uid = int(k)
+                        result[uid] = int(v or 0)
+                    except (ValueError, TypeError):
+                        pass
+                return {k: v for k, v in result.items() if v > 0}
         return {}
 
     def _get_transporters(self, snap: dict, city_id: str, client=None, jid: str = "") -> int:
-        """Count available merchant ships at source city.
+        """Count available merchant ships — always queries live when client provided."""
+        # Live query is preferred (merchants are dynamic)
+        if client is not None:
+            try:
+                result = client.fetch_stationed_units(int(city_id), building_type="fleet")
+                counts = result.get("counts") or {}
+                # 201=Barco Mercante, 202=Blindado, 204=Cargueiro
+                live_count = sum(int(counts.get(uid, 0)) for uid in (201, 202, 204))
+                if jid:
+                    self.log(jid, "info", f"[Raid] Mercantes live: {live_count} na cidade {city_id}")
+                return live_count
+            except Exception as exc:
+                if jid:
+                    self.log(jid, "warn", f"[Raid] Falha ao buscar mercantes live: {exc}. Usando snapshot.")
 
-        Tries snapshot first. If 0, queries live from game (FetchStationedUnitsAction)
-        since merchants may have returned since last snapshot update.
-        """
-        # Try snapshot
-        cities = snap.get("cities") or []
-        for city in cities:
-            if str(city.get("id") or city.get("game_city_id") or "") == str(city_id):
-                fleet = city.get("fleet") or city.get("military", {}).get("fleet") or {}
-                snap_count = int(fleet.get("201", 0)) + int(fleet.get("201 ", 0)) + int(fleet.get(201, 0))
-                if snap_count > 0:
-                    return snap_count
-
-        # Fallback: query live from game
-        if client is None:
-            return 0
-        try:
-            result = client.fetch_stationed_units(int(city_id), building_type="fleet")
-            counts = result.get("counts") or {}
-            live_count = int(counts.get(201, 0)) + int(counts.get(202, 0))
-            if jid and live_count > 0:
-                self.log(jid, "info",
-                         f"[Raid] Mercantes (live): {live_count} na cidade {city_id}")
-            return live_count
-        except Exception as exc:
-            if jid:
-                self.log(jid, "warn", f"[Raid] Falha ao buscar mercantes live: {exc}")
-            return 0
+        # Fallback: snapshot.military.by_city
+        for city_mil in self._get_military_by_city(snap):
+            if str(city_mil.get("city_id") or "") == str(city_id):
+                fleet = city_mil.get("fleet") or {}
+                snap_count = sum(int(fleet.get(str(uid), 0)) for uid in (201, 202, 204))
+                return snap_count
+        return 0
 
     def _auto_calculate_units(
         self, jid: str, inputs: dict, available: dict[int, int]
@@ -364,12 +363,15 @@ class RaidCityRunner(BaseRunner):
 
         from services.combat import recommend_army, pick_minimum_siege
 
-        cities = snap.get("cities") or []
+        # city_name lookup from snap.cities
+        city_names = {str(c.get("id","")): c.get("name","") for c in (snap.get("cities") or [])}
+
+        by_city = self._get_military_by_city(snap)
         best = None
         best_score = -1
 
-        for city in cities:
-            cid = str(city.get("id") or city.get("game_city_id") or "")
+        for city_mil in by_city:
+            cid = str(city_mil.get("city_id") or "")
             if not cid:
                 continue
 
@@ -382,12 +384,11 @@ class RaidCityRunner(BaseRunner):
                 continue
 
             # Check has minimum siege
-            siege = pick_minimum_siege(army)
             has_siege = any(army.get(uid, 0) >= min_q for uid, min_q in [(305,6),(306,12),(307,18)])
 
-            # Merchant ships from snapshot
-            fleet = city.get("fleet") or city.get("military", {}).get("fleet") or {}
-            merchants = int(fleet.get("201", 0)) + int(fleet.get(201, 0))
+            # Merchant ships from snapshot (live will be fetched separately)
+            fleet = city_mil.get("fleet") or {}
+            merchants = sum(int(fleet.get(str(uid), 0)) for uid in (201, 202, 204))
 
             # Score: prefer siege available, then most troops, then merchants
             score = (10000 if has_siege else 0) + total_troops + merchants * 5
@@ -404,7 +405,7 @@ class RaidCityRunner(BaseRunner):
                 clamped = {k: min(v, army.get(k, 0)) for k, v in rec_units.items() if army.get(k, 0) > 0}
                 best = {
                     "city_id":   cid,
-                    "city_name": city.get("name", cid),
+                    "city_name": city_names.get(cid, cid),
                     "units":     clamped or army,
                     "merchants": merchants,
                 }
@@ -429,16 +430,19 @@ class RaidCityRunner(BaseRunner):
 
     def _auto_select_fleet(self, jid: str, snap: dict, city_id: str) -> dict[int, int]:
         """Auto-select all available combat fleet at source city for blockade."""
-        cities = snap.get("cities") or []
-        for city in cities:
-            if str(city.get("id") or city.get("game_city_id") or "") == str(city_id):
-                fleet = city.get("fleet") or city.get("military", {}).get("fleet") or {}
-                # Exclude merchants (201, 202, 204) and support (220=Reparador)
-                combat = {
-                    int(k): int(v)
-                    for k, v in fleet.items()
-                    if int(v or 0) > 0 and int(k) not in {201, 202, 204, 220}
-                }
+        for city_mil in self._get_military_by_city(snap):
+            if str(city_mil.get("city_id") or "") == str(city_id):
+                fleet = city_mil.get("fleet") or {}
+                # Exclude merchants (201,202,204) and support (220=Reparador)
+                combat = {}
+                for k, v in fleet.items():
+                    try:
+                        uid = int(k)
+                        qty = int(v or 0)
+                        if qty > 0 and uid not in {201, 202, 204, 220}:
+                            combat[uid] = qty
+                    except (ValueError, TypeError):
+                        pass
                 return combat
         return {}
 
