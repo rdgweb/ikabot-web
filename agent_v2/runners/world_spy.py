@@ -53,13 +53,13 @@ FALLBACK_DELAY   = 4  * 60 * 60  # 4h — fallback caso notificação falhe
 # Basta espiionar UMA cidade por owner_id por ciclo completo.
 PLAYER_SCOPE_MISSIONS: frozenset[int] = frozenset({
     3,   # Nível de pesquisa
+    7,   # Tropas e frotas (movimentos — global ao player)
     10,  # Observar comunicação
     21,  # Ver estado
     24,  # Cargo na aliança
     25,  # Forma de governo
     26,  # Invenções
     27,  # Colônias
-    # "movimentos" — ID ainda não capturado; adicionar quando confirmado
 })
 
 
