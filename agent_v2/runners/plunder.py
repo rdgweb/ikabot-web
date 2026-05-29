@@ -440,20 +440,45 @@ class RaidCityRunner(BaseRunner):
         """Return by_city list from snapshot.military."""
         return (snap.get("military") or {}).get("by_city") or []
 
+    # Name → unit_id map (from UNIT_STATS)
+    _UNIT_NAME_TO_ID: dict[str, int] = {}
+
+    @classmethod
+    def _build_name_map(cls) -> None:
+        if cls._UNIT_NAME_TO_ID:
+            return
+        try:
+            from game_client.unit_stats import UNIT_STATS
+            cls._UNIT_NAME_TO_ID = {
+                str(v.get("name", "")): k
+                for k, v in UNIT_STATS.items()
+                if v.get("name")
+            }
+        except Exception:
+            pass
+
     def _get_available_units(self, jid: str, snap: dict, city_id: str) -> dict[int, int]:
-        """Extract available land units at source city from snapshot.military.by_city."""
+        """Extract available land units from snapshot.military.by_city.
+
+        Handles both name-keyed ('Morteiro': 1) and id-keyed (305: 1) snapshots.
+        """
+        self._build_name_map()
         for city_mil in self._get_military_by_city(snap):
             if str(city_mil.get("city_id") or "") == str(city_id):
                 troops = city_mil.get("troops") or {}
-                # Keys may be unit_id (int/str) or unit_name (str)
                 result = {}
                 for k, v in troops.items():
+                    qty = int(v or 0)
+                    if qty <= 0:
+                        continue
                     try:
                         uid = int(k)
-                        result[uid] = int(v or 0)
                     except (ValueError, TypeError):
-                        pass
-                return {k: v for k, v in result.items() if v > 0}
+                        # Name-based key → look up ID
+                        uid = self._UNIT_NAME_TO_ID.get(str(k), 0)
+                    if uid > 0:
+                        result[uid] = result.get(uid, 0) + qty
+                return result
         return {}
 
     def _get_transporters(self, snap: dict, city_id: str, client=None, jid: str = "") -> int:
@@ -680,19 +705,22 @@ class RaidCityRunner(BaseRunner):
 
     def _auto_select_fleet(self, jid: str, snap: dict, city_id: str) -> dict[int, int]:
         """Auto-select all available combat fleet at source city for blockade."""
+        self._build_name_map()
+        merchant_ids = {201, 202, 204, 220}  # exclude transport/support ships
         for city_mil in self._get_military_by_city(snap):
             if str(city_mil.get("city_id") or "") == str(city_id):
                 fleet = city_mil.get("fleet") or {}
-                # Exclude merchants (201,202,204) and support (220=Reparador)
                 combat = {}
                 for k, v in fleet.items():
+                    qty = int(v or 0)
+                    if qty <= 0:
+                        continue
                     try:
                         uid = int(k)
-                        qty = int(v or 0)
-                        if qty > 0 and uid not in {201, 202, 204, 220}:
-                            combat[uid] = qty
                     except (ValueError, TypeError):
-                        pass
+                        uid = self._UNIT_NAME_TO_ID.get(str(k), 0)
+                    if uid > 0 and uid not in merchant_ids:
+                        combat[uid] = combat.get(uid, 0) + qty
                 return combat
         return {}
 
