@@ -110,12 +110,16 @@ class HubClient:
         delay_seconds: int = 0,
         timeout_sec: int | None = None,
         game_account_id: str | None = None,
+        node_id: str | None = None,
     ) -> dict:
         """POST /api/agent/jobs/{parent_job_id}/spawn/
 
         Optional game_account_id overrides the parent's GA for the child job.
         Must share the same server_id. Used by WorldSpyRunner to spawn ac=15 jobs
         from different safehouse accounts.
+
+        Optional node_id explicitly routes the child job to a specific node.
+        Use when the child account belongs to a different node than the parent.
         """
         payload: dict[str, Any] = {
             "action_code": action_code,
@@ -126,6 +130,8 @@ class HubClient:
             payload["timeout_sec"] = timeout_sec
         if game_account_id:
             payload["game_account_id"] = str(game_account_id)
+        if node_id:
+            payload["node_id"] = str(node_id)
         return self._post(f"/api/agent/jobs/{parent_job_id}/spawn", payload)
 
     def get_job_info(self, job_id: str) -> dict:
@@ -322,6 +328,7 @@ class HubClient:
         limit: int = 50,
         game_account_id: str = "",
         intel_ttl_hours: int = 0,
+        source_cities: list[str] | None = None,
     ) -> dict:
         """GET /api/agent/worldintel/spy-targets/
 
@@ -354,6 +361,8 @@ class HubClient:
             params["game_account_id"] = game_account_id
         if intel_ttl_hours and intel_ttl_hours > 0:
             params["intel_ttl_hours"] = intel_ttl_hours
+        if source_cities:
+            params["source_cities"] = ",".join(source_cities)
         return self._get("/api/agent/worldintel/spy-targets", params=params)
 
     def save_combat_report(self, game_account_id: str, report: dict) -> dict:

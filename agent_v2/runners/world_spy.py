@@ -200,6 +200,7 @@ class WorldSpyRunner(BaseRunner):
                  f"ttl={ttl_desc} root={root_id[:8]}")
 
         # ── Consulta hub ──────────────────────────────────────────────────────
+        all_source_city_ids = [e["city_game_id"] for e in city_entries]
         try:
             result = self.hub.get_spy_targets(
                 only_inactive=only_inactive,
@@ -214,6 +215,7 @@ class WorldSpyRunner(BaseRunner):
                 limit=200,
                 game_account_id=ga_id,
                 intel_ttl_hours=intel_ttl_hours,
+                source_cities=all_source_city_ids,
             )
         except Exception as exc:
             self.log(jid, "error", f"Erro ao buscar alvos: {exc}")
@@ -222,7 +224,21 @@ class WorldSpyRunner(BaseRunner):
         targets: list[dict]    = result.get("targets") or []
         dump_id                = result.get("dump_id") or "?"
         busy_sources: set[str] = set(result.get("busy_source_cities") or [])
+        source_coords: dict    = result.get("source_coords") or {}
         free_entries           = [e for e in city_entries if e["city_game_id"] not in busy_sources]
+
+        # Ordenar alvos por distância mínima de qualquer safehouse livre.
+        if targets and source_coords and free_entries:
+            free_coords = [
+                source_coords[e["city_game_id"]]
+                for e in free_entries
+                if e["city_game_id"] in source_coords
+            ]
+            if free_coords:
+                def _min_dist_sq(t: dict) -> float:
+                    tx, ty = t.get("x", 0), t.get("y", 0)
+                    return min((tx - s["x"]) ** 2 + (ty - s["y"]) ** 2 for s in free_coords)
+                targets.sort(key=_min_dist_sq)
 
         self.log(jid, "info",
                  f"[WorldSpy] Dump {dump_id}: {len(targets)} alvos pendentes | "

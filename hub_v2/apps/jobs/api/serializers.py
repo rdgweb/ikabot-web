@@ -70,6 +70,7 @@ class JobSpawnSerializer(serializers.Serializer):
     delay_seconds = serializers.IntegerField(min_value=0, default=0)
     timeout_sec = serializers.IntegerField(min_value=1, required=False)
     game_account_id = serializers.UUIDField(required=False, allow_null=True)
+    node_id = serializers.UUIDField(required=False, allow_null=True)
 
 
 class JobSpawnResponseSerializer(serializers.Serializer):

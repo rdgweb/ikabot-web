@@ -399,10 +399,29 @@ class SpawnJobView(APIView):
         else:
             child_ga = parent_job.game_account
 
+        # Explicit node_id override takes priority.
+        # When game_account_id is overridden (no explicit node_id), auto-route to the
+        # node that owns the child account — the calling agent doesn't know cross-node IDs.
+        # When neither is overridden, inherit parent node (unchanged behavior).
+        node_override_id = serializer.validated_data.get("node_id")
+        if node_override_id:
+            from apps.accounts.models import Node
+            try:
+                child_node = Node.objects.get(pk=node_override_id)
+            except Node.DoesNotExist:
+                return Response(
+                    {"error": f"node_id {node_override_id} not found."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        elif ga_override_id:
+            child_node = child_ga.account.node or parent_job.node
+        else:
+            child_node = parent_job.node
+
         new_job = create_job_with_workflow(
             account=child_ga.account,
             game_account=child_ga,
-            node=parent_job.node,
+            node=child_node,
             profile=parent_job.profile,
             action_code=serializer.validated_data["action_code"],
             inputs=serializer.validated_data.get("inputs") or {},

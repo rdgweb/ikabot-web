@@ -483,12 +483,24 @@ class WorldSpyTargetsView(APIView):
             "ally_tag":     c.ally_tag or "",
         } for c in cities]
 
+        # Return safehouse coordinates so the agent can sort targets by distance.
+        source_coords: dict[str, dict] = {}
+        source_cities_param = request.query_params.get("source_cities", "")
+        if source_cities_param:
+            sc_ids = [c.strip() for c in source_cities_param.split(",") if c.strip()]
+            for sc in WorldDumpCity.objects.filter(
+                dump=dump, game_city_id__in=sc_ids
+            ).select_related("island"):
+                if sc.island:
+                    source_coords[sc.game_city_id] = {"x": sc.island.x, "y": sc.island.y}
+
         return Response({
             "targets":            targets,
             "dump_id":            str(dump.pk),
             "dump_captured_at":   dump.captured_at.isoformat() if dump.captured_at else None,
             "total":              len(targets),
             "busy_source_cities": busy_source_cities,
+            "source_coords":      source_coords,
         })
 
 
