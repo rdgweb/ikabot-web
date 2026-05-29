@@ -71,19 +71,62 @@
   {# ── Header ── #}
   <div class="border-b px-5 py-4 md:px-6"
        style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
-    <div class="flex flex-wrap items-center justify-between gap-4">
-      <div>
-        <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-bad);">
-          <i class="bi bi-lightning-charge-fill"></i> Roubar Cidade
-        </div>
-        <h3 class="mt-1 text-lg font-bold text-ink">Configure o ataque e selecione as tropas</h3>
+    <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-bad);">
+      <i class="bi bi-lightning-charge-fill"></i> Roubar Cidade
+    </div>
+    <h3 class="mt-1 text-lg font-bold text-ink">Configure o ataque e selecione as tropas</h3>
+  </div>
+
+  <div class="px-5 py-5 md:px-6 space-y-6">
+
+    {# ═══ 0. CIDADE ALVO ═══ #}
+    <div>
+      <div class="text-[11px] font-semibold uppercase tracking-[0.16em] mb-2" style="color: var(--ik-bad);">
+        <i class="bi bi-crosshair"></i> Cidade alvo
       </div>
-      {# Cidade alvo: busca por coordenada (como colonizar) ou pré-preenchida da inteligência #}
+
+      {# Target pré-preenchido da inteligência #}
+      {% if raid_target %}
+      <div class="rounded-xl border border-[rgba(187,81,67,0.3)] bg-[rgba(187,81,67,0.06)] px-4 py-3 space-y-2">
+        <div class="text-[10px] uppercase tracking-wider text-muted font-semibold">Cidade alvo</div>
+        <div class="flex items-center gap-2">
+          <i class="bi bi-building text-[var(--ik-bad)]"></i>
+          <span class="font-bold text-ink">{{ raid_target.city_name }}</span>
+          <span class="text-muted text-xs">· {{ raid_target.owner }}</span>
+          {% if raid_target.valid %}<span class="badge badge-success text-[9px]">intel válida</span>
+          {% else %}<span class="badge badge-warning text-[9px]">intel expirada</span>{% endif %}
+        </div>
+        {% if raid_target.has_resources %}
+        <div class="grid grid-cols-3 gap-1.5 mt-1">
+          {% if raid_target.resources.wood %}<div class="flex items-center gap-1 text-[10px]"><img src="{% static 'game/resources/icon_wood.png' %}" class="h-3.5 w-3.5"><span class="font-semibold text-ink">{{ raid_target.resources.wood|floatformat:0 }}</span></div>{% endif %}
+          {% if raid_target.resources.wine %}<div class="flex items-center gap-1 text-[10px]"><img src="{% static 'game/resources/icon_wine.png' %}" class="h-3.5 w-3.5"><span class="font-semibold text-ink">{{ raid_target.resources.wine|floatformat:0 }}</span></div>{% endif %}
+          {% if raid_target.resources.marble %}<div class="flex items-center gap-1 text-[10px]"><img src="{% static 'game/resources/icon_marble.png' %}" class="h-3.5 w-3.5"><span class="font-semibold text-ink">{{ raid_target.resources.marble|floatformat:0 }}</span></div>{% endif %}
+          {% if raid_target.resources.glass %}<div class="flex items-center gap-1 text-[10px]"><img src="{% static 'game/resources/icon_glass.png' %}" class="h-3.5 w-3.5"><span class="font-semibold text-ink">{{ raid_target.resources.glass|floatformat:0 }}</span></div>{% endif %}
+          {% if raid_target.resources.sulfur %}<div class="flex items-center gap-1 text-[10px]"><img src="{% static 'game/resources/icon_sulfur.png' %}" class="h-3.5 w-3.5"><span class="font-semibold text-ink">{{ raid_target.resources.sulfur|floatformat:0 }}</span></div>{% endif %}
+        </div>
+        <div class="text-[10px] text-muted">Total: <span class="font-bold text-ink">{{ raid_target.total_res }}</span> recursos</div>
+        {% else %}
+        <div class="text-[10px] text-muted italic">Sem relatório de armazém (missão 5) — espionar primeiro.</div>
+        {% endif %}
+      </div>
+      {% elif form.target_city_id.value %}
+      <div class="rounded-xl border border-[rgba(187,81,67,0.3)] bg-[rgba(187,81,67,0.06)] px-3 py-2 text-sm">
+        <div class="text-[10px] uppercase tracking-wider text-muted mb-0.5">Cidade alvo</div>
+        <div class="font-semibold text-ink font-mono">ID {{ form.target_city_id.value }}</div>
+        <div class="text-[10px] text-muted italic mt-1">Sem relatório de espionagem disponível.</div>
+      </div>
+      {% endif %}
+
+      {# Lookup manual por coordenada (quando não vem da inteligência) #}
       <div class="rounded-xl border border-[rgba(187,81,67,0.3)] bg-[rgba(187,81,67,0.04)] px-4 py-3 space-y-3">
         <div class="flex items-center justify-between">
-          <div class="text-[10px] uppercase tracking-wider text-muted font-semibold">Cidade alvo</div>
+          <span class="text-[10px] uppercase tracking-wider text-muted font-semibold" x-show="!targetCityId">Buscar por coordenada</span>
+          <span class="text-[11px] font-semibold text-ink" x-show="targetCityId" x-text="selectedTarget || ('ID ' + targetCityId)"></span>
           <template x-if="targetCityId">
-            <span class="text-[11px] font-semibold text-ink" x-text="selectedTarget || ('ID ' + targetCityId)"></span>
+            <button type="button" @click="targetCityId=''; islandId=''; selectedTarget='';"
+                    class="text-[10px] text-muted hover:text-ink transition-colors">
+              <i class="bi bi-x-circle mr-1"></i>Trocar
+            </button>
           </template>
         </div>
 
@@ -117,55 +160,8 @@
             </div>
           </div>
         </template>
-
-        <template x-if="targetCityId">
-          <button type="button"
-                  @click="targetCityId=''; islandId=''; selectedTarget='';
-                          $nextTick(() => {
-                            if (coordX && coordY) {
-                              htmx.trigger(document.querySelector('#raid-city-lookup-panel'), 'search-coords');
-                            }
-                          })"
-                  class="text-[10px] text-muted hover:text-ink transition-colors">
-            <i class="bi bi-x-circle mr-1"></i>Trocar cidade
-          </button>
-        </template>
       </div>
-
-      {% if raid_target %}
-      <div class="rounded-xl border border-[rgba(187,81,67,0.3)] bg-[rgba(187,81,67,0.06)] px-4 py-3 space-y-2">
-        <div class="text-[10px] uppercase tracking-wider text-muted font-semibold">Cidade alvo</div>
-        <div class="flex items-center gap-2">
-          <i class="bi bi-building text-[var(--ik-bad)]"></i>
-          <span class="font-bold text-ink">{{ raid_target.city_name }}</span>
-          <span class="text-muted text-xs">· {{ raid_target.owner }}</span>
-          {% if raid_target.valid %}<span class="badge badge-success text-[9px]">intel válida</span>
-          {% else %}<span class="badge badge-warning text-[9px]">intel expirada</span>{% endif %}
-        </div>
-        {% if raid_target.has_resources %}
-        <div class="grid grid-cols-3 gap-1.5 mt-1">
-          {% if raid_target.resources.wood %}<div class="flex items-center gap-1 text-[10px]"><img src="{% static 'game/resources/icon_wood.png' %}" class="h-3.5 w-3.5"><span class="font-semibold text-ink">{{ raid_target.resources.wood|floatformat:0 }}</span></div>{% endif %}
-          {% if raid_target.resources.wine %}<div class="flex items-center gap-1 text-[10px]"><img src="{% static 'game/resources/icon_wine.png' %}" class="h-3.5 w-3.5"><span class="font-semibold text-ink">{{ raid_target.resources.wine|floatformat:0 }}</span></div>{% endif %}
-          {% if raid_target.resources.marble %}<div class="flex items-center gap-1 text-[10px]"><img src="{% static 'game/resources/icon_marble.png' %}" class="h-3.5 w-3.5"><span class="font-semibold text-ink">{{ raid_target.resources.marble|floatformat:0 }}</span></div>{% endif %}
-          {% if raid_target.resources.glass %}<div class="flex items-center gap-1 text-[10px]"><img src="{% static 'game/resources/icon_glass.png' %}" class="h-3.5 w-3.5"><span class="font-semibold text-ink">{{ raid_target.resources.glass|floatformat:0 }}</span></div>{% endif %}
-          {% if raid_target.resources.sulfur %}<div class="flex items-center gap-1 text-[10px]"><img src="{% static 'game/resources/icon_sulfur.png' %}" class="h-3.5 w-3.5"><span class="font-semibold text-ink">{{ raid_target.resources.sulfur|floatformat:0 }}</span></div>{% endif %}
-        </div>
-        <div class="text-[10px] text-muted">Total: <span class="font-bold text-ink">{{ raid_target.total_res }}</span> recursos</div>
-        {% else %}
-        <div class="text-[10px] text-muted italic">Sem relatório de armazém (missão 5) — espionar primeiro.</div>
-        {% endif %}
-      </div>
-      {% elif form.target_city_id.value %}
-      <div class="rounded-xl border border-[rgba(187,81,67,0.3)] bg-[rgba(187,81,67,0.06)] px-3 py-2 text-sm">
-        <div class="text-[10px] uppercase tracking-wider text-muted mb-0.5">Cidade alvo</div>
-        <div class="font-semibold text-ink font-mono">ID {{ form.target_city_id.value }}</div>
-        <div class="text-[10px] text-muted italic mt-1">Sem relatório de espionagem disponível.</div>
-      </div>
-      {% endif %}
     </div>
-  </div>
-
-  <div class="px-5 py-5 md:px-6 space-y-6">
 
     {# ═══ 1. CIDADE DE ORIGEM ═══ #}
     <div>
