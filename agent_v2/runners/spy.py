@@ -394,20 +394,32 @@ class SpyRunner(BaseRunner):
                         f"→ sucesso={risk['success']}% risco={risk['agent_risk']}% "
                         f"(precisamos {needed} estacionados no total, temos {stationed})")
 
-                    ok, msg = self._send_spy_raw(client, city_id, target_city_id, island_id, 1, ag, dec)
+                    send_result = client.send_spy(
+                        source_city_id=city_id, target_city_id=target_city_id,
+                        island_id=island_id, mission_id=1, agents=ag, decoys=dec,
+                    )
+                    ok, msg = send_result.get("success", False), send_result.get("message", "")
                     if ok:
-                        time.sleep(3)
+                        # Pegar return_timestamp diretamente do response do send.
+                        # Se não vier no response, fazer fallback com releitura da safehouse.
                         travel = 0
-                        try:
-                            fs = client.get_safehouse_state(city_id, position=safehouse_position)
-                            fg = self._get_target_groups(fs, target_city_id, target_city_name, target_owner)
-                            for g in fg:
-                                ts = g.get("return_timestamp")
-                                if ts and int(ts) - int(time.time()) > 30:
-                                    travel = int(ts) - int(time.time())
-                                    break
-                        except Exception:
-                            pass
+                        rt = int(send_result.get("return_timestamp") or 0)
+                        now_ts = int(time.time())
+                        if rt and rt - now_ts > 30:
+                            travel = rt - now_ts
+                        else:
+                            # Fallback: re-ler safehouse (pode não ter atualizado ainda)
+                            try:
+                                time.sleep(3)
+                                fs = client.get_safehouse_state(city_id, position=safehouse_position)
+                                fg = self._get_target_groups(fs, target_city_id, target_city_name, target_owner)
+                                for g in fg:
+                                    ts = g.get("return_timestamp")
+                                    if ts and int(ts) - now_ts > 30:
+                                        travel = int(ts) - now_ts
+                                        break
+                            except Exception:
+                                pass
 
                         # Depois da infiltração: esperar viagem + riskAfter decair.
                         # Usa riskAfter real de M1 do live_params (default RISK_AFTER_M1=5).
@@ -415,10 +427,11 @@ class SpyRunner(BaseRunner):
                         _m1_ra = float(_md_m1.get("riskAfter") or RISK_AFTER_M1)
                         risk_after_total = current_risk + _m1_ra
                         risk_wait_s = _risk_wait(risk_after_total)
-                        # travel=0 = mesma ilha (espião já está lá) → não usar ARRIVAL_WAIT
                         # Usa o maior entre: tempo de viagem e tempo de risco
-                        travel_wait = (travel + 30) if travel > 0 else 30
-                        wait_total = max(travel_wait, risk_wait_s)
+                        wait_total = max(
+                            travel + 30 if travel > 0 else ARRIVAL_WAIT,
+                            risk_wait_s if risk_after_total > 10 else 0
+                        )
                         wait_total = max(60, wait_total)
 
                         new_sent  = r_sent_total + ag + dec

@@ -1219,13 +1219,37 @@ class SpySendAction(BaseAction):
 
         success = False
         message = ""
+        return_timestamp = 0  # unix timestamp when spy returns to safehouse
+
         for entry in data:
-            if isinstance(entry, list) and entry[0] == "provideFeedback":
+            if not isinstance(entry, list) or len(entry) < 2:
+                continue
+            if entry[0] == "provideFeedback":
                 for fb in (entry[1] or []):
                     if isinstance(fb, dict):
                         message = fb.get("text", "")
                         if fb.get("type") == 10:
                             success = True
+            elif entry[0] == "updateTemplateData" and isinstance(entry[1], dict):
+                # Safehouse state update contains the new spy group with enddate
+                for val in entry[1].values():
+                    if isinstance(val, str) and "enddate" in val:
+                        ts_m = re.search(r"enddate:\s*(\d{8,12})", val)
+                        if ts_m:
+                            ts = int(ts_m.group(1))
+                            if ts > return_timestamp:
+                                return_timestamp = ts
+                        break
+            elif entry[0] in ("changeHTML", "changeView"):
+                # Also check HTML updates for safehouse enddate
+                items = entry[1] if isinstance(entry[1], list) else [entry[1]]
+                for item in items:
+                    if isinstance(item, str) and "enddate" in item:
+                        ts_m = re.search(r"enddate:\s*(\d{8,12})", item)
+                        if ts_m:
+                            ts = int(ts_m.group(1))
+                            if ts > return_timestamp:
+                                return_timestamp = ts
 
         mission_name = MISSION_DATA.get(mission_id, {}).get("name", f"missão {mission_id}")
         if not message:
@@ -1233,10 +1257,11 @@ class SpySendAction(BaseAction):
             message = f"{mission_name} enviada"
 
         logger.info(
-            "SpySend: source=%s target=%s mission=%s agents=%d decoys=%d success=%s",
+            "SpySend: source=%s target=%s mission=%s agents=%d decoys=%d success=%s return_ts=%s",
             source_city_id, target_city_id, mission_id, agents, decoys, success,
+            return_timestamp or "unknown",
         )
-        return {"success": success, "message": message}
+        return {"success": success, "message": message, "return_timestamp": return_timestamp}
 
 
 class SpyTrainAction(BaseAction):
