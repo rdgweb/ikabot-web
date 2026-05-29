@@ -86,9 +86,9 @@ class RaidCityRunner(BaseRunner):
             return RunnerResult(success=False)
 
         # ── Config de viagens ─────────────────────────────────────────────────
-        multi_trip    = bool(inputs.get("multi_trip", True))
-        max_trips     = _parse_int(inputs.get("max_trips"), 10)
-        min_res_cont  = _parse_int(inputs.get("min_resources_to_continue"), 0)
+        multi_trip   = str(inputs.get("multi_trip", "true")).lower() not in {"false", "0", "no"}
+        max_trips    = _parse_int(inputs.get("max_trips"), 10)
+        min_res_cont = _parse_int(inputs.get("min_resources_to_continue"), 0)
         trips_done    = _parse_int(inputs.get("_trips_done"), 0)
         travel_cached = _parse_int(inputs.get("_travel_seconds"), 0)
 
@@ -123,15 +123,50 @@ class RaidCityRunner(BaseRunner):
         if transporters <= 0:
             self.log(jid, "warn", "[Raid] Sem navios mercantes disponíveis para carregar saque.")
 
-        # ── Gancho futuro: bloqueio naval ─────────────────────────────────────
-        needs_blockade   = bool(inputs.get("needs_blockade", False))
-        blockade_fleet   = _parse_units(inputs.get("blockade_fleet_units") or {})
-        if needs_blockade and blockade_fleet:
-            # FUTURE: enviar frota para bloqueio antes do ataque terrestre
-            # Por enquanto, apenas log de aviso
-            self.log(jid, "warn",
-                     "[Raid] needs_blockade=True mas bloqueio naval ainda não implementado. "
-                     "Prosseguindo sem bloqueio.")
+        # ── Verificar se ainda vale continuar (viagens 2+) ───────────────────
+        if trips_done > 0 and min_res_cont > 0:
+            intel = self._check_remaining_resources(jid, ga_id, target_city_id)
+            if intel is not None:
+                remaining = intel.get("total", 0)
+                self.log(jid, "info",
+                         f"[Raid] Recursos restantes no alvo: {remaining:,} "
+                         f"(mínimo para continuar: {min_res_cont:,})")
+                if remaining < min_res_cont:
+                    self.log(jid, "info",
+                             f"[Raid] Recursos abaixo do mínimo. Encerrando após {trips_done} viagem(ns).")
+                    return RunnerResult(success=True)
+
+        # ── Bloqueio naval (se alvo tem frota) ───────────────────────────────
+        # Detecta frota inimiga via intel e dispara blockade antes do ataque.
+        # O blockade é enviado e o raid terrestre segue imediatamente depois.
+        # A frota fica bloqueando indefinidamente — chamada de volta não implementada.
+        needs_blockade      = bool(inputs.get("needs_blockade", False))
+        blockade_fleet_raw  = inputs.get("blockade_fleet_units") or {}
+        blockade_fleet      = _parse_units(blockade_fleet_raw)
+
+        if needs_blockade:
+            if not blockade_fleet:
+                # Auto-selecionar frota de combate disponível na cidade de origem
+                blockade_fleet = self._auto_select_fleet(jid, snap, source_city_id)
+
+            if blockade_fleet:
+                try:
+                    client_for_blockade = self._get_client(jid, ga_id)
+                    client_for_blockade.blockade_fleet(
+                        from_city_id=int(source_city_id),
+                        to_city_id=int(target_city_id),
+                        island_id=int(island_id),
+                        fleet_units=blockade_fleet,
+                    )
+                    self.log(jid, "info",
+                             f"[Raid] ⚓ Frota enviada para bloqueio: {blockade_fleet}")
+                except Exception as exc:
+                    self.log(jid, "warn",
+                             f"[Raid] Falha ao enviar bloqueio naval: {exc}. "
+                             f"Prosseguindo com ataque terrestre mesmo assim.")
+            else:
+                self.log(jid, "warn",
+                         "[Raid] needs_blockade=True mas sem frota disponível para bloqueio.")
 
         # ── Modo Land (padrão) ────────────────────────────────────────────────
         if mode != "land":
@@ -270,6 +305,37 @@ class RaidCityRunner(BaseRunner):
             have = available.get(uid, 0)
             result[uid] = min(qty, have)
         return {k: v for k, v in result.items() if v > 0}
+
+    def _check_remaining_resources(self, jid: str, ga_id: str, target_city_id: str) -> dict | None:
+        """Query hub for latest spy intel and return total resources. None if unavailable."""
+        try:
+            intel = self.hub.get_latest_spy_intel(
+                target_city_id=target_city_id,
+                game_account_id=ga_id,
+            )
+            if not intel:
+                return None
+            resources = intel.get("resources") or {}
+            total = sum(int(v) for v in resources.values() if v)
+            return {"total": total, "resources": resources}
+        except Exception as exc:
+            self.log(jid, "warn", f"[Raid] Falha ao verificar recursos restantes: {exc}")
+            return None
+
+    def _auto_select_fleet(self, jid: str, snap: dict, city_id: str) -> dict[int, int]:
+        """Auto-select all available combat fleet at source city for blockade."""
+        cities = snap.get("cities") or []
+        for city in cities:
+            if str(city.get("id") or city.get("game_city_id") or "") == str(city_id):
+                fleet = city.get("fleet") or city.get("military", {}).get("fleet") or {}
+                # Exclude merchants (201, 202, 204) and support (220=Reparador)
+                combat = {
+                    int(k): int(v)
+                    for k, v in fleet.items()
+                    if int(v or 0) > 0 and int(k) not in {201, 202, 204, 220}
+                }
+                return combat
+        return {}
 
     def _get_client(self, jid: str, ga_id: str):
         """Get authenticated game client."""

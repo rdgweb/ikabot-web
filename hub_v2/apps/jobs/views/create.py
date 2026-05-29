@@ -860,6 +860,71 @@ def _world_spy_context(ga, gas: list[str] | None = None) -> dict:
     }
 
 
+def _raid_context(ga, initial: dict | None = None) -> dict:
+    """Build raid form context — target city intel from latest spy reports."""
+    from apps.espionage.models import SpyReport
+    initial = initial or {}
+    target_city_id = str(initial.get("target_city_id") or "").strip()
+
+    raid_target = None
+    if target_city_id:
+        # Latest successful report for resources (mission 5)
+        res_report = (
+            SpyReport.objects
+            .filter(target_city_id=target_city_id, mission_id=5)
+            .order_by("-created_at")
+            .first()
+        )
+        # Latest report for troops (mission 6)
+        troop_report = (
+            SpyReport.objects
+            .filter(target_city_id=target_city_id, mission_id__in=[6, 7])
+            .order_by("-created_at")
+            .first()
+        )
+        any_report = res_report or troop_report or (
+            SpyReport.objects.filter(target_city_id=target_city_id).order_by("-created_at").first()
+        )
+
+        if any_report:
+            data = any_report.data_json or {}
+            resources = {}
+            if res_report:
+                rd = res_report.data_json or {}
+                for label, key in [("Madeira","wood"),("Vinho","wine"),("Mármore","marble"),("Cristal","glass"),("Enxofre","sulfur")]:
+                    v = rd.get(label) or rd.get(key)
+                    if v is not None:
+                        try:
+                            resources[key] = int(str(v).replace(".","").replace(",","").strip())
+                        except Exception:
+                            pass
+                stocks = rd.get("stocks") or {}
+                if stocks and not resources:
+                    for label, key in [("Madeira","wood"),("Vinho","wine"),("Mármore","marble"),("Cristal","glass"),("Enxofre","sulfur")]:
+                        v = stocks.get(label)
+                        if v is not None:
+                            try:
+                                resources[key] = int(str(v).replace(".","").replace(",","").strip())
+                            except Exception:
+                                pass
+
+            total_res = sum(resources.values())
+            raid_target = {
+                "city_id":    target_city_id,
+                "city_name":  any_report.target_city_name or target_city_id,
+                "owner":      any_report.target_owner or "?",
+                "owner_id":   any_report.target_owner_id or "",
+                "island_id":  str(initial.get("island_id") or ""),
+                "resources":  resources,
+                "total_res":  total_res,
+                "has_resources": bool(resources),
+                "report_age": any_report.created_at,
+                "valid":      any_report.is_valid,
+            }
+
+    return {"raid_target": raid_target}
+
+
 def _spy_context(ga, all_cities: list, initial: dict | None = None) -> dict:
     """Build spy form context — source cities with safehouse + target cities from worldintel."""
     from django.templatetags.static import static as _static
@@ -1768,6 +1833,8 @@ def _job_form_context(form, action_meta, action_code, ga, cities, request=None, 
     }
     if int(action_code) == 15:
         ctx.update(_spy_context(ga, cities, getattr(form, "initial", {})))
+    if int(action_code) == 1008:
+        ctx.update(_raid_context(ga, getattr(form, "initial", {})))
     if int(action_code) == 16:
         # World spy: safehouses from selected GAs (passed via ?gas=) or all on same server
         ctx.update(_world_spy_context(ga, gas=gas))
