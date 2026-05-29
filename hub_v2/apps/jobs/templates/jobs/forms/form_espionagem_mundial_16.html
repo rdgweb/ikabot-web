@@ -4,42 +4,47 @@
 {% if action_code == 16 %}
 {{ spy_missions|json_script:"ws-missions-data" }}
 {{ spy_cities|json_script:"ws-cities-data" }}
+
+{# Missões player-scope (resultado global ao jogador, uma cidade basta) #}
+{% comment %}IDs: 3,7,10,21,24,25,26,27{% endcomment %}
+
 <script>
+const WS_PLAYER_SCOPE = new Set([3,7,10,21,24,25,26,27]);
+
 function worldSpyForm() {
   return {
     cities: [],
-    selectedCityIds: [],  // city_values selecionados ({ga_pk}:{city_game_id})
+    selectedCityIds: [],
     missions: [],
     intelMissionIds: [],
 
-    // Região
     xMin: 0, xMax: 99, yMin: 0, yMax: 99,
-
-    // Filtros
     onlyInactive: true,
     maxTotalScore: 0,
     maxArmyScore: 0,
-
-    // Operação
     skipIfValid: true,
     intelTtlHours: 0,
     maxRisk: 35,
     recallAfter: true,
     saveReports: true,
 
+    // Raid alert
+    raidAlertEnabled: false,
+    raidThreshold: 50000,
+    raidSourceCityId: '',
+    raidTransporters: 0,
+    raidMaxTrips: 5,
+
     init(initialCityIds, initialMissions, opts) {
-      this.cities = JSON.parse(document.getElementById('ws-cities-data')?.textContent || '[]');
+      this.cities  = JSON.parse(document.getElementById('ws-cities-data')?.textContent || '[]');
       this.missions = JSON.parse(document.getElementById('ws-missions-data')?.textContent || '[]');
 
-      // All safehouses selected by default — contas já filtradas pelo Step 1
       const pre = initialCityIds ? String(initialCityIds).split(',').map(s => s.trim()).filter(Boolean) : [];
       this.selectedCityIds = pre.length ? pre : this.cities.map(c => String(c.city_value || c.id));
 
-      // Missions
-      const mids = String(initialMissions || '3,5').split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x) && x !== 1 && x !== 8);
+      const mids = String(initialMissions || '5,7,26').split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x) && x !== 1 && x !== 8);
       this.intelMissionIds = mids;
 
-      // Options
       if (opts) {
         this.xMin = parseInt(opts.xMin) || 0;
         this.xMax = parseInt(opts.xMax) || 99;
@@ -47,39 +52,43 @@ function worldSpyForm() {
         this.yMax = parseInt(opts.yMax) || 99;
         this.onlyInactive = opts.onlyInactive !== false && opts.onlyInactive !== 'false';
         this.maxTotalScore = parseInt(opts.maxTotalScore) || 0;
-        this.maxArmyScore = parseInt(opts.maxArmyScore) || 0;
-        this.skipIfValid = opts.skipIfValid !== false && opts.skipIfValid !== 'false';
+        this.maxArmyScore  = parseInt(opts.maxArmyScore)  || 0;
+        this.skipIfValid   = opts.skipIfValid !== false && opts.skipIfValid !== 'false';
         this.intelTtlHours = parseInt(opts.intelTtlHours) || 0;
-        this.maxRisk = parseInt(opts.maxRisk) || 35;
-        this.recallAfter = opts.recallAfter !== false && opts.recallAfter !== 'false';
-        this.saveReports = opts.saveReports !== false && opts.saveReports !== 'false';
+        this.maxRisk       = parseInt(opts.maxRisk) || 35;
+        this.recallAfter   = opts.recallAfter !== false && opts.recallAfter !== 'false';
+        this.saveReports   = opts.saveReports !== false && opts.saveReports !== 'false';
+        this.raidAlertEnabled  = opts.raidAlertEnabled === true || opts.raidAlertEnabled === 'true';
+        this.raidThreshold     = parseInt(opts.raidThreshold) || 50000;
+        this.raidSourceCityId  = opts.raidSourceCityId || '';
+        this.raidTransporters  = parseInt(opts.raidTransporters) || 0;
+        this.raidMaxTrips      = parseInt(opts.raidMaxTrips) || 5;
       }
     },
 
-    // ── City helpers ──────────────────────────────────────────────────────────
     toggleCity(id) {
       const s = String(id);
-      if (this.selectedCityIds.includes(s)) {
-        this.selectedCityIds = this.selectedCityIds.filter(x => x !== s);
-      } else {
-        this.selectedCityIds = [...this.selectedCityIds, s];
-      }
+      this.selectedCityIds = this.selectedCityIds.includes(s)
+        ? this.selectedCityIds.filter(x => x !== s)
+        : [...this.selectedCityIds, s];
     },
     isCitySelected(id) { return this.selectedCityIds.includes(String(id)); },
-    cityIdsValue() { return this.selectedCityIds.join(','); },
+    cityIdsValue()     { return this.selectedCityIds.join(','); },
 
-    // ── Mission helpers ───────────────────────────────────────────────────────
     toggleMission(id) {
-      if (this.intelMissionIds.includes(id)) {
-        this.intelMissionIds = this.intelMissionIds.filter(x => x !== id);
-      } else {
-        this.intelMissionIds = [...this.intelMissionIds, id];
-      }
+      this.intelMissionIds = this.intelMissionIds.includes(id)
+        ? this.intelMissionIds.filter(x => x !== id)
+        : [...this.intelMissionIds, id];
     },
     isMissionSelected(id) { return this.intelMissionIds.includes(id); },
-    missionsValue() { return this.intelMissionIds.length ? this.intelMissionIds.join(',') : ''; },
+    missionsValue()        { return this.intelMissionIds.length ? this.intelMissionIds.join(',') : ''; },
+    isPlayerScope(id)      { return WS_PLAYER_SCOPE.has(id); },
 
-    riskColor(r) { return r <= 30 ? 'var(--ik-good)' : r <= 55 ? 'var(--ik-warn)' : 'var(--ik-bad)'; },
+    riskColor(r)  { return r <= 30 ? 'var(--ik-good)' : r <= 55 ? 'var(--ik-warn)' : 'var(--ik-bad)'; },
+    riskBg(r)     { return r <= 30 ? 'rgba(95,140,78,0.10)' : r <= 55 ? 'rgba(201,156,78,0.10)' : 'rgba(187,81,67,0.10)'; },
+
+    cityMissions()   { return this.intelMissionIds.filter(id => !WS_PLAYER_SCOPE.has(id)); },
+    playerMissions() { return this.intelMissionIds.filter(id =>  WS_PLAYER_SCOPE.has(id)); },
   };
 }
 </script>
@@ -88,96 +97,105 @@ function worldSpyForm() {
      x-data="worldSpyForm()"
      x-init="init(
        '{{ form.city_ids.value|default:''|escapejs }}',
-       '{{ form.missions.value|default:'3,5'|escapejs }}',
+       '{{ form.missions.value|default:'5,7,26'|escapejs }}',
        {
          xMin: '{{ form.region_x_min.value|default:0 }}',
          xMax: '{{ form.region_x_max.value|default:99 }}',
          yMin: '{{ form.region_y_min.value|default:0 }}',
          yMax: '{{ form.region_y_max.value|default:99 }}',
-         onlyInactive: {{ form.only_inactive.value|yesno:'true,false,true' }},
+         onlyInactive:  {{ form.only_inactive.value|yesno:'true,false,true' }},
          maxTotalScore: '{{ form.max_total_score.value|default:0 }}',
-         maxArmyScore: '{{ form.max_army_score.value|default:0 }}',
-         skipIfValid: {{ form.skip_if_valid.value|yesno:'true,false,true' }},
+         maxArmyScore:  '{{ form.max_army_score.value|default:0 }}',
+         skipIfValid:   {{ form.skip_if_valid.value|yesno:'true,false,true' }},
          intelTtlHours: '{{ form.intel_ttl_hours.value|default:0 }}',
-         maxRisk: '{{ form.max_detection_risk.value|default:35 }}',
-         recallAfter: {{ form.recall_after.value|yesno:'true,false,true' }},
-         saveReports: {{ form.save_reports.value|yesno:'true,false,true' }},
+         maxRisk:       '{{ form.max_detection_risk.value|default:35 }}',
+         recallAfter:   {{ form.recall_after.value|yesno:'true,false,true' }},
+         saveReports:   {{ form.save_reports.value|yesno:'true,false,true' }},
+         raidAlertEnabled: {{ form.raid_alert_enabled.value|yesno:'true,false,false' }},
+         raidThreshold:    '{{ form.raid_alert_threshold.value|default:50000 }}',
+         raidSourceCityId: '{{ form.raid_source_city_id.value|default:''|escapejs }}',
+         raidTransporters: '{{ form.raid_transporters.value|default:0 }}',
+         raidMaxTrips:     '{{ form.raid_max_trips.value|default:5 }}',
        })">
 
-  {# Hidden fields enviados ao submit #}
-  <input type="hidden" name="{{ form.city_ids.html_name }}" :value="cityIdsValue()">
-  <input type="hidden" name="{{ form.missions.html_name }}" :value="missionsValue()">
-  <input type="hidden" name="{{ form.region_x_min.html_name }}" :value="xMin">
-  <input type="hidden" name="{{ form.region_x_max.html_name }}" :value="xMax">
-  <input type="hidden" name="{{ form.region_y_min.html_name }}" :value="yMin">
-  <input type="hidden" name="{{ form.region_y_max.html_name }}" :value="yMax">
-  <input type="hidden" name="{{ form.only_inactive.html_name }}" :value="onlyInactive ? 'true' : 'false'">
-  <input type="hidden" name="{{ form.max_total_score.html_name }}" :value="maxTotalScore">
-  <input type="hidden" name="{{ form.max_army_score.html_name }}" :value="maxArmyScore">
-  <input type="hidden" name="{{ form.skip_if_valid.html_name }}" :value="skipIfValid ? 'true' : 'false'">
-  <input type="hidden" name="{{ form.intel_ttl_hours.html_name }}" :value="intelTtlHours">
-  <input type="hidden" name="{{ form.max_targets.html_name }}" value="200">
+  {# ── Hidden fields ── #}
+  <input type="hidden" name="{{ form.city_ids.html_name }}"          :value="cityIdsValue()">
+  <input type="hidden" name="{{ form.missions.html_name }}"          :value="missionsValue()">
+  <input type="hidden" name="{{ form.region_x_min.html_name }}"      :value="xMin">
+  <input type="hidden" name="{{ form.region_x_max.html_name }}"      :value="xMax">
+  <input type="hidden" name="{{ form.region_y_min.html_name }}"      :value="yMin">
+  <input type="hidden" name="{{ form.region_y_max.html_name }}"      :value="yMax">
+  <input type="hidden" name="{{ form.only_inactive.html_name }}"     :value="onlyInactive ? 'true' : 'false'">
+  <input type="hidden" name="{{ form.max_total_score.html_name }}"   :value="maxTotalScore">
+  <input type="hidden" name="{{ form.max_army_score.html_name }}"    :value="maxArmyScore">
+  <input type="hidden" name="{{ form.skip_if_valid.html_name }}"     :value="skipIfValid ? 'true' : 'false'">
+  <input type="hidden" name="{{ form.intel_ttl_hours.html_name }}"   :value="intelTtlHours">
+  <input type="hidden" name="{{ form.max_targets.html_name }}"       value="200">
   <input type="hidden" name="{{ form.max_detection_risk.html_name }}" :value="maxRisk">
-  <input type="hidden" name="{{ form.recall_after.html_name }}" :value="recallAfter ? 'true' : 'false'">
-  <input type="hidden" name="{{ form.save_reports.html_name }}" :value="saveReports ? 'true' : 'false'">
+  <input type="hidden" name="{{ form.recall_after.html_name }}"      :value="recallAfter ? 'true' : 'false'">
+  <input type="hidden" name="{{ form.save_reports.html_name }}"      :value="saveReports ? 'true' : 'false'">
   <input type="hidden" name="{{ form.delete_after_save.html_name }}" value="false">
+  <input type="hidden" name="{{ form.raid_alert_enabled.html_name }}"  :value="raidAlertEnabled ? 'true' : 'false'">
+  <input type="hidden" name="{{ form.raid_alert_threshold.html_name }}" :value="raidThreshold">
+  <input type="hidden" name="{{ form.raid_source_city_id.html_name }}"  :value="raidSourceCityId">
+  <input type="hidden" name="{{ form.raid_transporters.html_name }}"    :value="raidTransporters">
+  <input type="hidden" name="{{ form.raid_max_trips.html_name }}"       :value="raidMaxTrips">
 
-  {# ── 1. Safehouses de origem ── #}
-  {# Contas já foram selecionadas no Step 1 — só mostra as safehouses delas #}
-  <div class="card !p-4">
-    <div class="flex items-center justify-between mb-3">
-      <label class="form-label text-xs">
-        <i class="bi bi-house-fill text-sea mr-1"></i>Safehouses de origem
-        <span class="text-[var(--ik-bad)]">*</span>
-      </label>
-      <div class="flex items-center gap-2">
-        <span class="text-[10px] text-muted" x-text="selectedCityIds.length + ' selecionada(s)'"></span>
-        <button type="button" class="text-[10px] text-sea hover:underline"
-                @click="selectedCityIds = cities.map(c => String(c.city_value || c.id))">Todas</button>
-        <span class="text-muted text-[10px]">·</span>
-        <button type="button" class="text-[10px] text-muted hover:underline"
-                @click="selectedCityIds = []">Nenhuma</button>
+  {# ══════════════════════════════════════════════════════════ #}
+  {# 1. SAFEHOUSES                                              #}
+  {# ══════════════════════════════════════════════════════════ #}
+  <div class="overflow-hidden rounded-[22px] border shadow-[0_8px_28px_rgba(60,45,18,0.08)]"
+       style="border-color:var(--ik-line);background:linear-gradient(180deg,rgba(255,252,245,0.98),rgba(247,241,229,0.94));">
+
+    <div class="border-b px-5 py-3 flex items-center justify-between"
+         style="border-color:rgba(219,201,167,0.7);background:linear-gradient(180deg,rgba(255,255,255,0.6),transparent);">
+      <div>
+        <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Passo 2</div>
+        <h3 class="text-sm font-bold text-ink">Safehouses de origem</h3>
+      </div>
+      <div class="flex items-center gap-2 text-[10px]">
+        <span class="text-muted" x-text="selectedCityIds.length + ' de ' + cities.length + ' selecionada(s)'"></span>
+        <button type="button" @click="selectedCityIds = cities.map(c => String(c.city_value || c.id))"
+                class="text-sea hover:underline font-semibold">Todas</button>
+        <span class="text-muted">·</span>
+        <button type="button" @click="selectedCityIds = []"
+                class="text-muted hover:text-ink">Nenhuma</button>
       </div>
     </div>
 
-    {% if spy_cities %}
-    {% regroup spy_cities by ga_name as ga_city_groups %}
-    <div class="space-y-4">
-      {% for group in ga_city_groups %}
-      <div>
-        {# Cabeçalho da conta #}
-        <div class="flex items-center gap-2 mb-2">
-          <div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
-               style="background:rgba(79,134,185,0.12);color:var(--ik-sea);">
-            <i class="bi bi-controller text-[9px]"></i>
+    <div class="px-5 py-4">
+      {% if spy_cities %}
+      {% regroup spy_cities by ga_name as ga_city_groups %}
+      <div class="space-y-5">
+        {% for group in ga_city_groups %}
+        <div>
+          <div class="flex items-center gap-2 mb-2.5">
+            <div class="h-5 w-5 shrink-0 rounded-full flex items-center justify-center"
+                 style="background:rgba(79,134,185,0.12);color:var(--ik-sea);">
+              <i class="bi bi-controller text-[9px]"></i>
+            </div>
+            <span class="text-[10px] font-bold uppercase tracking-wider" style="color:var(--ik-sea);">{{ group.grouper }}</span>
+            <span class="flex-1 h-px" style="background:rgba(79,134,185,0.15);"></span>
+            <span class="text-[10px] text-muted">{{ group.list|length }}</span>
           </div>
-          <span class="text-[10px] font-bold uppercase tracking-wider" style="color:var(--ik-sea);">{{ group.grouper }}</span>
-          <span class="flex-1 h-px" style="background:rgba(79,134,185,0.15);"></span>
-          <span class="text-[10px] text-muted">{{ group.list|length }} safehouse(s)</span>
-        </div>
-        <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
-          {% for city in group.list %}
-          {% with cv=city.city_value|default:city.id %}
-          <button type="button"
-                  class="group relative overflow-hidden rounded-[18px] border text-left transition-all duration-150 w-full"
-                  :class="isCitySelected('{{ cv }}') ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
-                  :style="isCitySelected('{{ cv }}') ? 'border-color:rgba(79,134,185,0.50);background:linear-gradient(180deg,rgba(255,255,255,0.94),rgba(79,134,185,0.10));' : 'border-color:rgba(219,201,167,0.9);background:rgba(255,255,255,0.82);'"
-                  @click="toggleCity('{{ cv }}')">
-            <div class="absolute inset-x-0 top-0 h-14" style="background:linear-gradient(135deg,rgba(79,134,185,0.16),rgba(79,134,185,0.02));"></div>
-            <div class="relative p-3">
-              <div class="flex items-start gap-2">
+          <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
+            {% for city in group.list %}
+            {% with cv=city.city_value|default:city.id %}
+            <button type="button" @click="toggleCity('{{ cv }}')"
+                    class="relative overflow-hidden rounded-[16px] border text-left transition-all duration-150"
+                    :class="isCitySelected('{{ cv }}') ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_8px_20px_rgba(79,134,185,0.18)] translate-y-[-1px]' : 'hover:translate-y-[-1px] hover:border-[rgba(79,134,185,0.4)]'"
+                    :style="isCitySelected('{{ cv }}') ? 'border-color:rgba(79,134,185,0.5);background:linear-gradient(180deg,rgba(255,255,255,0.94),rgba(79,134,185,0.10));' : 'border-color:rgba(219,201,167,0.9);background:rgba(255,255,255,0.84);'">
+              <div class="absolute inset-x-0 top-0 h-12" style="background:linear-gradient(135deg,rgba(79,134,185,0.14),rgba(79,134,185,0.02));"></div>
+              <div class="relative p-3 flex items-start gap-2">
                 <div class="relative shrink-0">
-                  <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                  <div class="h-10 w-10 rounded-[14px] border flex items-center justify-center"
                        style="border-color:rgba(79,134,185,0.18);background:linear-gradient(180deg,#fffdf8,#f4ecda);">
-                    {% if city.city_art %}
-                    <img src="{{ city.city_art }}" alt="" class="h-8 w-8 object-contain">
-                    {% else %}
-                    <i class="bi bi-buildings text-xl" style="color:var(--ik-muted);"></i>
-                    {% endif %}
+                    {% if city.city_art %}<img src="{{ city.city_art }}" class="h-7 w-7 object-contain">
+                    {% else %}<i class="bi bi-buildings text-base" style="color:var(--ik-muted);"></i>{% endif %}
                   </div>
                   {% if city.tradegood_icon %}
-                  <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
-                    <img src="{{ city.tradegood_icon }}" alt="" class="h-4 w-4 object-contain">
+                  <div class="absolute -right-1 -top-1 h-5 w-5 rounded-full border-2 border-white bg-white shadow-sm flex items-center justify-center">
+                    <img src="{{ city.tradegood_icon }}" class="h-3.5 w-3.5 object-contain">
                   </div>
                   {% endif %}
                 </div>
@@ -187,9 +205,9 @@ function worldSpyForm() {
                       <div class="truncate text-xs font-semibold text-ink">{{ city.name }}</div>
                       <div class="text-[10px] text-muted">{{ city.tradegood_name }} · [{{ city.x }}:{{ city.y }}]</div>
                     </div>
-                    <span class="mt-0.5 flex-shrink-0 inline-flex h-5 w-5 items-center justify-center rounded-full border transition-colors"
-                          :style="isCitySelected('{{ cv }}') ? 'border-color:var(--ik-sea);color:white;background:var(--ik-sea);' : 'border-color:rgba(79,134,185,0.24);color:var(--ik-sea);background:rgba(79,134,185,0.06);'">
-                      <i class="bi text-[9px]" :class="isCitySelected('{{ cv }}') ? 'bi-check-lg' : 'bi-circle'"></i>
+                    <span class="shrink-0 h-4 w-4 rounded-full border transition-colors flex items-center justify-center mt-0.5"
+                          :style="isCitySelected('{{ cv }}') ? 'border-color:var(--ik-sea);background:var(--ik-sea);' : 'border-color:rgba(79,134,185,0.3);'">
+                      <i class="bi bi-check text-[9px] text-white" x-show="isCitySelected('{{ cv }}')"></i>
                     </span>
                   </div>
                   <div class="mt-1 text-[10px] font-semibold" style="color:var(--ik-sea);">
@@ -197,229 +215,312 @@ function worldSpyForm() {
                   </div>
                 </div>
               </div>
-            </div>
-          </button>
-          {% endwith %}
-          {% endfor %}
+            </button>
+            {% endwith %}
+            {% endfor %}
+          </div>
         </div>
+        {% endfor %}
       </div>
-      {% endfor %}
-    </div>
-    {% else %}
-    <p class="text-sm text-muted">
-      <i class="bi bi-exclamation-triangle text-[var(--ik-warn)] mr-1"></i>
-      Nenhuma cidade com Guilda dos Ladrões encontrada nas contas selecionadas. Execute snapshots primeiro.
-    </p>
-    {% endif %}
-
-    <div x-show="selectedCityIds.length === 0 && cities.length > 0" class="mt-2 text-[11px] text-muted italic">
-      <i class="bi bi-exclamation-triangle text-[var(--ik-warn)] mr-1"></i>Selecione ao menos uma safehouse.
+      {% else %}
+      <p class="text-sm text-muted py-2">
+        <i class="bi bi-exclamation-triangle text-[var(--ik-warn)] mr-1"></i>
+        Nenhuma cidade com Guilda dos Ladrões. Execute snapshots primeiro.
+      </p>
+      {% endif %}
     </div>
   </div>
 
-  {# ── 3. Região de destino ── #}
-  <div class="card !p-4">
-    <label class="form-label text-xs mb-3 block">
-      <i class="bi bi-geo-alt text-sea mr-1"></i>Região de destino no mapa
-    </label>
-    <div class="grid grid-cols-2 gap-4">
-      <div class="space-y-3">
-        <p class="text-[10px] text-muted font-semibold uppercase tracking-wider">Coordenadas X</p>
-        <div class="flex items-center gap-2">
-          <div class="flex-1">
-            <label class="text-[10px] text-muted mb-1 block">X mínimo</label>
-            <input type="number" min="0" max="99" x-model.number="xMin"
-                   class="form-input !text-sm w-full text-center" placeholder="0">
-          </div>
-          <i class="bi bi-arrow-right text-muted text-sm mt-4 shrink-0"></i>
-          <div class="flex-1">
-            <label class="text-[10px] text-muted mb-1 block">X máximo</label>
-            <input type="number" min="0" max="99" x-model.number="xMax"
-                   class="form-input !text-sm w-full text-center" placeholder="99">
-          </div>
-        </div>
-      </div>
-      <div class="space-y-3">
-        <p class="text-[10px] text-muted font-semibold uppercase tracking-wider">Coordenadas Y</p>
-        <div class="flex items-center gap-2">
-          <div class="flex-1">
-            <label class="text-[10px] text-muted mb-1 block">Y mínimo</label>
-            <input type="number" min="0" max="99" x-model.number="yMin"
-                   class="form-input !text-sm w-full text-center" placeholder="0">
-          </div>
-          <i class="bi bi-arrow-right text-muted text-sm mt-4 shrink-0"></i>
-          <div class="flex-1">
-            <label class="text-[10px] text-muted mb-1 block">Y máximo</label>
-            <input type="number" min="0" max="99" x-model.number="yMax"
-                   class="form-input !text-sm w-full text-center" placeholder="99">
-          </div>
-        </div>
-      </div>
-    </div>
-    <p class="text-[10px] text-muted mt-3">
-      <i class="bi bi-info-circle mr-1"></i>
-      Região selecionada: <span class="font-mono font-semibold text-ink">[<span x-text="xMin"></span>:<span x-text="yMin"></span>] → [<span x-text="xMax"></span>:<span x-text="yMax"></span>]</span>
-    </p>
-  </div>
+  {# ══════════════════════════════════════════════════════════ #}
+  {# 2. O QUE ESPIONAR                                          #}
+  {# ══════════════════════════════════════════════════════════ #}
+  <div class="overflow-hidden rounded-[22px] border shadow-[0_8px_28px_rgba(60,45,18,0.08)]"
+       style="border-color:var(--ik-line);background:linear-gradient(180deg,rgba(255,252,245,0.98),rgba(247,241,229,0.94));">
 
-  {# ── 4. Filtros de alvo ── #}
-  <div class="card !p-4 space-y-4">
-    <label class="form-label text-xs block">
-      <i class="bi bi-funnel text-sea mr-1"></i>Filtros de alvo
-    </label>
-
-    {# Apenas inativos #}
-    <label class="flex items-center justify-between cursor-pointer select-none gap-3"
-           @click.prevent="onlyInactive = !onlyInactive">
-      <div>
-        <div class="text-xs font-semibold text-ink">Apenas jogadores inativos</div>
-        <div class="text-[10px] text-muted">Modo férias não pode ser espionado. Recomendado manter ativo.</div>
-      </div>
-      <span class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200"
-            :class="onlyInactive ? 'bg-[var(--ik-sea)]' : 'bg-gray-300'">
-        <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200"
-              :style="onlyInactive ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
-      </span>
-    </label>
-
-    <div style="border-top:1px solid var(--ik-line);"></div>
-
-    {# Score filters #}
-    <div class="grid grid-cols-2 gap-4">
-      <div>
-        <label class="text-[10px] text-muted font-semibold uppercase tracking-wider mb-1.5 block">
-          <i class="bi bi-trophy mr-1"></i>Pontuação total máxima
-        </label>
-        <input type="number" min="0" x-model.number="maxTotalScore"
-               class="form-input !text-sm w-full" placeholder="0 = sem limite">
-        <p class="text-[10px] text-muted mt-1">Construção + pesquisa + exército. 0 = sem limite.</p>
-      </div>
-      <div>
-        <label class="text-[10px] text-muted font-semibold uppercase tracking-wider mb-1.5 block">
-          <i class="bi bi-shield-fill mr-1"></i>Pontuação de generais máxima
-        </label>
-        <input type="number" min="0" x-model.number="maxArmyScore"
-               class="form-input !text-sm w-full" placeholder="0 = sem limite">
-        <p class="text-[10px] text-muted mt-1">Pontuação de exército do WorldDump. 0 = sem limite.</p>
-      </div>
-    </div>
-  </div>
-
-  {# ── 5. O que espionar ── #}
-  <div class="card !p-4">
-    <div class="mb-3">
-      <label class="form-label text-xs">
-        <i class="bi bi-binoculars text-sea mr-1"></i>O que espionar?
-      </label>
-      <p class="text-[10px] text-muted mt-1">
-        Infiltração é <strong>automática</strong>. Selecione as missões de inteligência desejadas.
+    <div class="border-b px-5 py-3"
+         style="border-color:rgba(219,201,167,0.7);background:linear-gradient(180deg,rgba(255,255,255,0.6),transparent);">
+      <h3 class="text-sm font-bold text-ink">O que espionar?</h3>
+      <p class="text-[10px] text-muted mt-0.5">
+        Infiltração é automática. <span style="color:var(--ik-sea);">Azul = por jogador</span> (basta espiionar uma cidade) ·
+        <span class="text-muted">Cinza = por cidade</span>
       </p>
     </div>
-    <div class="space-y-1">
-      {% for mission in spy_missions %}
-      <label class="flex items-center gap-3 rounded-xl border px-3 py-2.5 cursor-pointer transition-all select-none"
-             :class="isMissionSelected({{ mission.id }})
-               ? 'border-[var(--ik-sea)] bg-[rgba(79,134,185,0.05)]'
-               : 'border-[var(--ik-line)] hover:border-[var(--ik-sea)]/40'"
-             @click.prevent="toggleMission({{ mission.id }})">
-        <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors"
-             :class="isMissionSelected({{ mission.id }}) ? 'bg-[var(--ik-sea)] text-white' : 'bg-[var(--ik-sand)] text-muted'">
-          <i class="bi {{ mission.icon }} text-[11px]"></i>
-        </div>
-        <div class="min-w-0 flex-1">
-          <div class="text-xs font-semibold text-ink">{{ mission.name }}</div>
-          <div class="text-[10px] text-muted">{{ mission.desc }}</div>
-        </div>
-        <div class="flex items-center gap-2 flex-shrink-0 text-[10px]">
-          <span class="font-semibold" :style="{ color: riskColor({{ mission.risk_before }}) }">{{ mission.risk_before }}% risco</span>
-          <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center"
-               :class="isMissionSelected({{ mission.id }}) ? 'border-[var(--ik-sea)] bg-[var(--ik-sea)]' : 'border-[var(--ik-line)]'">
-            <i class="bi bi-check text-[8px] text-white" x-show="isMissionSelected({{ mission.id }})"></i>
+
+    <div class="px-5 py-4">
+      {# Resumo dos selecionados #}
+      <div class="mb-3 flex flex-wrap gap-1.5 text-[10px]">
+        <span x-show="playerMissions().length > 0"
+              class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold"
+              style="background:rgba(79,134,185,0.10);color:var(--ik-sea);">
+          <i class="bi bi-person-fill text-[9px]"></i>
+          <span x-text="playerMissions().length + ' por jogador'"></span>
+        </span>
+        <span x-show="cityMissions().length > 0"
+              class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold"
+              style="background:rgba(219,201,167,0.3);color:var(--ik-text);">
+          <i class="bi bi-building text-[9px]"></i>
+          <span x-text="cityMissions().length + ' por cidade'"></span>
+        </span>
+        <span x-show="intelMissionIds.length === 0" class="text-muted italic">nenhuma selecionada</span>
+      </div>
+
+      <div class="space-y-1.5">
+        {% for mission in spy_missions %}
+        <label class="flex items-center gap-3 rounded-[14px] border px-3 py-2.5 cursor-pointer transition-all select-none"
+               :class="isMissionSelected({{ mission.id }})
+                 ? (isPlayerScope({{ mission.id }}) ? 'border-[var(--ik-sea)] bg-[rgba(79,134,185,0.07)]' : 'border-[rgba(219,201,167,0.9)] bg-[rgba(255,255,255,0.7)]')
+                 : 'border-[rgba(219,201,167,0.6)] hover:border-[rgba(79,134,185,0.35)] bg-white/50'"
+               @click.prevent="toggleMission({{ mission.id }})">
+
+          {# Ícone de escopo #}
+          <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors"
+               :class="isMissionSelected({{ mission.id }})
+                 ? (isPlayerScope({{ mission.id }}) ? 'bg-[var(--ik-sea)] text-white' : 'bg-[rgba(219,201,167,0.8)] text-ink')
+                 : 'bg-[rgba(219,201,167,0.4)] text-muted'">
+            <i class="bi {{ mission.icon }} text-[11px]"></i>
           </div>
-        </div>
-      </label>
-      {% endfor %}
-    </div>
-    <div x-show="intelMissionIds.length === 0" class="mt-2 text-[11px] text-muted italic">
-      <i class="bi bi-info-circle mr-1"></i>Sem missões — só infiltração (agentes ficam estacionados aguardando).
+
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="text-xs font-semibold text-ink">{{ mission.name }}</span>
+              {% if mission.id in "3 7 10 21 24 25 26 27"|split:" " %}
+              <span class="text-[9px] font-bold rounded-full px-1.5 py-0.5"
+                    style="background:rgba(79,134,185,0.12);color:var(--ik-sea);">
+                <i class="bi bi-person-fill text-[8px]"></i> por jogador
+              </span>
+              {% else %}
+              <span class="text-[9px] font-bold rounded-full px-1.5 py-0.5"
+                    style="background:rgba(219,201,167,0.4);color:var(--ik-muted);">
+                <i class="bi bi-building text-[8px]"></i> por cidade
+              </span>
+              {% endif %}
+            </div>
+            <div class="text-[10px] text-muted mt-0.5">{{ mission.desc }}</div>
+          </div>
+
+          <div class="flex items-center gap-2 flex-shrink-0">
+            <span class="text-[10px] font-semibold tabular-nums px-2 py-0.5 rounded-lg"
+                  :style="{ color: riskColor({{ mission.risk_before }}), background: riskBg({{ mission.risk_before }}) }">
+              {{ mission.risk_before }}% risco
+            </span>
+            <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors"
+                 :class="isMissionSelected({{ mission.id }}) ? 'border-[var(--ik-sea)] bg-[var(--ik-sea)]' : 'border-[rgba(219,201,167,0.9)]'">
+              <i class="bi bi-check text-[8px] text-white" x-show="isMissionSelected({{ mission.id }})"></i>
+            </div>
+          </div>
+        </label>
+        {% endfor %}
+      </div>
     </div>
   </div>
 
-  {# ── 6. Configurações do ciclo ── #}
-  <div class="card !p-4 space-y-4">
-    <label class="form-label text-xs block">
-      <i class="bi bi-gear text-sea mr-1"></i>Configurações do ciclo
-    </label>
+  {# ══════════════════════════════════════════════════════════ #}
+  {# 3. REGIÃO + FILTROS                                        #}
+  {# ══════════════════════════════════════════════════════════ #}
+  <div class="overflow-hidden rounded-[22px] border shadow-[0_8px_28px_rgba(60,45,18,0.08)]"
+       style="border-color:var(--ik-line);background:linear-gradient(180deg,rgba(255,252,245,0.98),rgba(247,241,229,0.94));">
 
-    <div>
-      <label class="text-[10px] text-muted font-semibold uppercase tracking-wider mb-1.5 block">Validade da intel (horas)</label>
-      <input type="number" min="0" x-model.number="intelTtlHours"
-             class="form-input !text-sm w-full" placeholder="0 = padrão global">
-      <p class="text-[10px] text-muted mt-1">0 = usa configuração global. Ex: 48 = re-espia a cada 2 dias.</p>
+    <div class="border-b px-5 py-3"
+         style="border-color:rgba(219,201,167,0.7);background:linear-gradient(180deg,rgba(255,255,255,0.6),transparent);">
+      <h3 class="text-sm font-bold text-ink">Região e filtros de alvo</h3>
     </div>
 
-    {# Risco #}
-    <div>
-      <label class="text-[10px] text-muted font-semibold uppercase tracking-wider mb-1.5 block">
-        <i class="bi bi-shield-half mr-1"></i>Risco máximo aceito
+    <div class="px-5 py-4 space-y-5">
+      {# Coordenadas #}
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <p class="text-[10px] font-semibold uppercase tracking-wider text-muted mb-2">Eixo X</p>
+          <div class="flex items-center gap-2">
+            <div class="flex-1">
+              <label class="text-[10px] text-muted mb-1 block">Mínimo</label>
+              <input type="number" min="0" max="99" x-model.number="xMin" class="form-input !text-sm w-full text-center" placeholder="0">
+            </div>
+            <i class="bi bi-arrow-right text-muted text-sm mt-4 shrink-0"></i>
+            <div class="flex-1">
+              <label class="text-[10px] text-muted mb-1 block">Máximo</label>
+              <input type="number" min="0" max="99" x-model.number="xMax" class="form-input !text-sm w-full text-center" placeholder="99">
+            </div>
+          </div>
+        </div>
+        <div>
+          <p class="text-[10px] font-semibold uppercase tracking-wider text-muted mb-2">Eixo Y</p>
+          <div class="flex items-center gap-2">
+            <div class="flex-1">
+              <label class="text-[10px] text-muted mb-1 block">Mínimo</label>
+              <input type="number" min="0" max="99" x-model.number="yMin" class="form-input !text-sm w-full text-center" placeholder="0">
+            </div>
+            <i class="bi bi-arrow-right text-muted text-sm mt-4 shrink-0"></i>
+            <div class="flex-1">
+              <label class="text-[10px] text-muted mb-1 block">Máximo</label>
+              <input type="number" min="0" max="99" x-model.number="yMax" class="form-input !text-sm w-full text-center" placeholder="99">
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="text-[10px] text-muted">
+        Região: <span class="font-mono font-semibold text-ink">[<span x-text="xMin"></span>:<span x-text="yMin"></span>] → [<span x-text="xMax"></span>:<span x-text="yMax"></span>]</span>
+      </p>
+
+      <div style="border-top:1px solid var(--ik-line);"></div>
+
+      {# Toggle inativos #}
+      <label class="flex items-center justify-between cursor-pointer select-none gap-3"
+             @click.prevent="onlyInactive = !onlyInactive">
+        <div>
+          <div class="text-xs font-semibold text-ink">Apenas jogadores inativos</div>
+          <div class="text-[10px] text-muted">Modo férias não pode ser espionado — recomendado manter ativo</div>
+        </div>
+        <span class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200"
+              :class="onlyInactive ? 'bg-[var(--ik-sea)]' : 'bg-gray-200'">
+          <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200"
+                :style="onlyInactive ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
+        </span>
       </label>
-      <div class="flex items-center gap-3">
-        <input type="range" min="5" max="90" step="5" x-model.number="maxRisk" class="flex-1 accent-[var(--ik-sea)]">
-        <div class="text-base font-bold w-20 text-right" :style="{ color: riskColor(maxRisk) }"
-             x-text="maxRisk + '%'"></div>
+
+      {# Score filters #}
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="text-[10px] text-muted font-semibold uppercase tracking-wider mb-1.5 block">
+            <i class="bi bi-trophy mr-1"></i>Pontuação total máxima
+          </label>
+          <input type="number" min="0" x-model.number="maxTotalScore" class="form-input !text-sm w-full" placeholder="0 = sem limite">
+        </div>
+        <div>
+          <label class="text-[10px] text-muted font-semibold uppercase tracking-wider mb-1.5 block">
+            <i class="bi bi-shield-fill mr-1"></i>Pontuação de generais máxima
+          </label>
+          <input type="number" min="0" x-model.number="maxArmyScore" class="form-input !text-sm w-full" placeholder="0 = sem limite">
+        </div>
       </div>
-      <div class="flex justify-between text-[10px] text-muted mt-1">
-        <span style="color:var(--ik-good)">5%</span>
-        <span style="color:var(--ik-warn)">45%</span>
-        <span style="color:var(--ik-bad)">90%</span>
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════════════ #}
+  {# 4. CICLO                                                    #}
+  {# ══════════════════════════════════════════════════════════ #}
+  <div class="overflow-hidden rounded-[22px] border shadow-[0_8px_28px_rgba(60,45,18,0.08)]"
+       style="border-color:var(--ik-line);background:linear-gradient(180deg,rgba(255,252,245,0.98),rgba(247,241,229,0.94));">
+
+    <div class="border-b px-5 py-3"
+         style="border-color:rgba(219,201,167,0.7);background:linear-gradient(180deg,rgba(255,255,255,0.6),transparent);">
+      <h3 class="text-sm font-bold text-ink">Configurações do ciclo</h3>
+    </div>
+
+    <div class="px-5 py-4 space-y-4">
+      {# Risco #}
+      <div>
+        <label class="text-[10px] font-semibold uppercase tracking-wider text-muted mb-2 block">
+          <i class="bi bi-shield-half mr-1"></i>Risco máximo aceito
+        </label>
+        <div class="flex items-center gap-3">
+          <input type="range" min="5" max="90" step="5" x-model.number="maxRisk" class="flex-1 accent-[var(--ik-sea)]">
+          <div class="text-base font-bold w-16 text-right" :style="{ color: riskColor(maxRisk) }"
+               x-text="maxRisk + '%'"></div>
+        </div>
+        <div class="flex justify-between text-[10px] mt-1">
+          <span style="color:var(--ik-good);">5% — conservador</span>
+          <span style="color:var(--ik-warn);">45%</span>
+          <span style="color:var(--ik-bad);">90% — agressivo</span>
+        </div>
+      </div>
+
+      <div>
+        <label class="text-[10px] font-semibold uppercase tracking-wider text-muted mb-1.5 block">Validade da intel (horas)</label>
+        <input type="number" min="0" x-model.number="intelTtlHours" class="form-input !text-sm w-full" placeholder="0 = padrão global (48h)">
+        <p class="text-[10px] text-muted mt-1">0 = usa configuração global. Ex: 24 = re-espia a cada dia.</p>
+      </div>
+
+      <div style="border-top:1px solid var(--ik-line);"></div>
+
+      {# Toggles #}
+      {% for toggle_data in "skipIfValid:Pular se já tem intel válida:Ignora cidades com relatórios válidos para todas as missões,recallAfter:Chamar espiões de volta:Envia missão de retirada após completar cada alvo,saveReports:Salvar relatórios no hub:Persiste os relatórios de espionagem para consulta posterior"|split:"," %}
+      {% with parts=toggle_data|split:":" %}
+      <label class="flex items-center justify-between cursor-pointer select-none gap-3"
+             @click.prevent="{{ parts.0 }} = !{{ parts.0 }}">
+        <div>
+          <div class="text-xs font-semibold text-ink">{{ parts.1 }}</div>
+          <div class="text-[10px] text-muted">{{ parts.2 }}</div>
+        </div>
+        <span class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200"
+              :class="{{ parts.0 }} ? 'bg-[var(--ik-sea)]' : 'bg-gray-200'">
+          <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200"
+                :style="{{ parts.0 }} ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
+        </span>
+      </label>
+      {% endwith %}
+      {% endfor %}
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════════════ #}
+  {# 5. ALERTA DE RAID                                          #}
+  {# ══════════════════════════════════════════════════════════ #}
+  <div class="overflow-hidden rounded-[22px] border shadow-[0_8px_28px_rgba(60,45,18,0.08)]"
+       style="border-color:var(--ik-line);background:linear-gradient(180deg,rgba(255,252,245,0.98),rgba(247,241,229,0.94));">
+
+    <div class="border-b px-5 py-3 flex items-center justify-between"
+         style="border-color:rgba(219,201,167,0.7);background:linear-gradient(180deg,rgba(255,255,255,0.6),transparent);">
+      <div>
+        <h3 class="text-sm font-bold text-ink">🏴‍☠️ Alerta de raid via Telegram</h3>
+        <p class="text-[10px] text-muted mt-0.5">Notifica quando encontrar recursos acima do threshold — com força recomendada e ETA</p>
+      </div>
+      <label class="cursor-pointer" @click.prevent="raidAlertEnabled = !raidAlertEnabled">
+        <span class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200"
+              :class="raidAlertEnabled ? 'bg-[var(--ik-bad)]' : 'bg-gray-200'">
+          <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200"
+                :style="raidAlertEnabled ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
+        </span>
+      </label>
+    </div>
+
+    <div class="px-5 py-4 space-y-4" x-show="raidAlertEnabled" x-cloak>
+      {# Threshold #}
+      <div>
+        <label class="text-[10px] font-semibold uppercase tracking-wider text-muted mb-1.5 block">
+          <i class="bi bi-gem mr-1"></i>Threshold de recursos para alertar
+        </label>
+        <input type="number" min="0" step="1000" x-model.number="raidThreshold"
+               class="form-input !text-sm w-full" placeholder="50000">
+        <p class="text-[10px] text-muted mt-1">Soma total (madeira + vinho + mármore + cristal + enxofre). Ex: 50000.</p>
+      </div>
+
+      {# Cidade de origem #}
+      <div>
+        <label class="text-[10px] font-semibold uppercase tracking-wider text-muted mb-1.5 block">
+          <i class="bi bi-shield-shaded mr-1"></i>Cidade de origem para o raid
+        </label>
+        <select x-model="raidSourceCityId" class="form-input !text-sm w-full">
+          <option value="">Auto-selecionar (runner decide)</option>
+          {% for city in raid_cities %}
+          <option value="{{ city.id }}">{{ city.name }} [{{ city.x }}:{{ city.y }}] — {{ city.ga_name }}</option>
+          {% endfor %}
+        </select>
+        <p class="text-[10px] text-muted mt-1">Cidade com tropas que vai roubar quando alertado. Vazio = runner escolhe automaticamente.</p>
+      </div>
+
+      {# Configuração de viagens #}
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="text-[10px] font-semibold uppercase tracking-wider text-muted mb-1.5 block">Navios mercantes</label>
+          <input type="number" min="0" x-model.number="raidTransporters" class="form-input !text-sm w-full" placeholder="0 = todos">
+          <p class="text-[10px] text-muted mt-1">0 = usa todos disponíveis</p>
+        </div>
+        <div>
+          <label class="text-[10px] font-semibold uppercase tracking-wider text-muted mb-1.5 block">Máx. viagens por raid</label>
+          <input type="number" min="1" max="50" x-model.number="raidMaxTrips" class="form-input !text-sm w-full" placeholder="5">
+        </div>
+      </div>
+
+      <div class="rounded-[14px] border border-[rgba(187,81,67,0.2)] bg-[rgba(187,81,67,0.04)] px-4 py-2.5 text-[10px] text-muted">
+        <i class="bi bi-info-circle text-[var(--ik-bad)] mr-1"></i>
+        Requer missão 5 (Inspecionar armazém) nas missões selecionadas para detectar recursos.
+        A notificação Telegram inclui força recomendada baseada nas tropas e invenções espionadas.
       </div>
     </div>
 
-    <div style="border-top:1px solid var(--ik-line);"></div>
-
-    {# Toggles #}
-    <label class="flex items-center justify-between cursor-pointer select-none gap-3"
-           @click.prevent="skipIfValid = !skipIfValid">
-      <div>
-        <div class="text-xs font-semibold text-ink">Pular se já tem intel válida</div>
-        <div class="text-[10px] text-muted">Ignora cidades com relatórios recentes (não expirados) para todas as missões</div>
-      </div>
-      <span class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200"
-            :class="skipIfValid ? 'bg-[var(--ik-sea)]' : 'bg-gray-300'">
-        <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200"
-              :style="skipIfValid ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
-      </span>
-    </label>
-
-    <div style="border-top:1px solid var(--ik-line);"></div>
-
-    <label class="flex items-center justify-between cursor-pointer select-none gap-3"
-           @click.prevent="recallAfter = !recallAfter">
-      <div>
-        <div class="text-xs font-semibold text-ink">Chamar espiões de volta ao terminar</div>
-        <div class="text-[10px] text-muted">Envia missão de retirada após completar cada alvo</div>
-      </div>
-      <span class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200"
-            :class="recallAfter ? 'bg-[var(--ik-sea)]' : 'bg-gray-300'">
-        <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200"
-              :style="recallAfter ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
-      </span>
-    </label>
-
-    <div style="border-top:1px solid var(--ik-line);"></div>
-
-    <label class="flex items-center justify-between cursor-pointer select-none gap-3"
-           @click.prevent="saveReports = !saveReports">
-      <div>
-        <div class="text-xs font-semibold text-ink">Salvar relatórios no hub</div>
-        <div class="text-[10px] text-muted">Persiste os relatórios de espionagem para consulta posterior</div>
-      </div>
-      <span class="relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200"
-            :class="saveReports ? 'bg-[var(--ik-sea)]' : 'bg-gray-300'">
-        <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200"
-              :style="saveReports ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
-      </span>
-    </label>
+    <div class="px-5 py-3 text-[10px] text-muted" x-show="!raidAlertEnabled">
+      Ative para receber alertas no Telegram quando encontrar alvos ricos.
+    </div>
   </div>
 
 </div>

@@ -860,6 +860,20 @@ def _world_spy_context(ga, gas: list[str] | None = None) -> dict:
     }
 
 
+def _raid_cities_for_select(cities: list) -> list:
+    """Return cities available as raid source (all cities with any troops/fleet info)."""
+    result = []
+    for city in (cities or []):
+        result.append({
+            "id":      city.get("id", ""),
+            "name":    city.get("name", ""),
+            "x":       city.get("x", 0),
+            "y":       city.get("y", 0),
+            "ga_name": city.get("ga_name", ""),
+        })
+    return result
+
+
 def _raid_context(ga, initial: dict | None = None) -> dict:
     """Build raid form context — target city intel from latest spy reports."""
     from apps.espionage.models import SpyReport
@@ -1833,6 +1847,8 @@ def _job_form_context(form, action_meta, action_code, ga, cities, request=None, 
     }
     if int(action_code) == 15:
         ctx.update(_spy_context(ga, cities, getattr(form, "initial", {})))
+    if int(action_code) == 16:
+        ctx["raid_cities"] = _raid_cities_for_select(cities)
     if int(action_code) == 1008:
         ctx.update(_raid_context(ga, getattr(form, "initial", {})))
     if int(action_code) == 16:
