@@ -1,25 +1,39 @@
 """
-Runner de Saque de Cidade (ac=1007) — RaidCityRunner.
+Runner de Saque de Cidade (ac=1008) — RaidCityRunner.
 
-Envia um exército para roubar recursos de uma cidade inimiga.
-Suporta múltiplas viagens até esgotar os recursos disponíveis.
+Máquina de estados baseada em polling do Military Advisor:
+
+  Phase "send":
+    1. Auto-selecionar cidade de origem se não especificada
+    2. Enviar blockade (se configurado) + plunder terrestre
+    3. Parsear ETA de chegada do scatteredUnitsSidebar
+    4. Reagendar para ETA + buffer (fase "check_battle")
+
+  Phase "check_battle":
+    5. Fetch militaryAdvisor → has_active_battle?
+    6. Se sim → reagendar +15min (ciclo de batalha)
+    7. Se não → batalha resolvida → buscar relatório de combate
+    8. Parsear saque real (loot dict)
+    9. Se derrota → encerrar ou tentar com mais tropas
+    10. Se vitória → checar multi_trip e recursos restantes → "send" ou encerrar
 
 Inputs:
-    source_city_id          str  — cidade de origem (onde estão as tropas)
-    target_city_id          str  — cidade alvo
-    island_id               str  — ilha da cidade alvo
-    mode                    str  — "land" (padrão) | "fleet" (futuro: bloqueio naval)
-    units                   dict — {unit_id: qty}; se vazio, usa cálculo automático
-    transporters            int  — navios mercantes para carregar saque (0 = auto)
-    multi_trip              bool — continuar atacando até esgotar recursos
-    max_trips               int  — limite de segurança (padrão 10)
-    min_resources_to_continue int — para de atacar se recursos < X
-    # Internos (gerenciados pelo runner entre reexecuções)
-    _trips_done             int  — contador de viagens completadas
-    _travel_seconds         int  — tempo de viagem calculado na 1ª vez
-    # Gancho futuro (bloqueio naval)
-    needs_blockade          bool — se True, enviar frota antes de atacar
-    blockade_fleet_units    dict — {ship_unit_id: qty} para bloqueio
+    source_city_id          str  — cidade de origem (auto-selecionada se vazio)
+    target_city_id          str  — cidade alvo (obrigatório)
+    island_id               str  — ilha da cidade alvo (obrigatório)
+    units                   dict — {unit_id: qty}; vazio = auto
+    transporters            int  — navios mercantes (0 = live count)
+    needs_blockade          bool — enviar blockade antes do plunder
+    blockade_fleet_units    dict — {ship_id: qty} para blockade (vazio = auto)
+    multi_trip              bool — continuar após vitória
+    max_trips               int  — limite de viagens
+    min_resources_to_continue int — parar se recursos < X
+    # Internos (gerenciados pelo runner)
+    _phase                  str  — "send" | "check_battle"
+    _trips_done             int  — contador de viagens
+    _travel_seconds         int  — ETA em segundos (calculado na 1ª viagem)
+    _eta_timestamp          str  — "DD.MM.YYYY H:MM:SS" do advisor
+    _source_city_id         str  — cidade escolhida automaticamente
 """
 
 from __future__ import annotations
@@ -41,10 +55,9 @@ from services.combat import (
 
 logger = logging.getLogger(__name__)
 
-# Extra buffer after army is expected to return before we re-check/re-dispatch
-RETURN_BUFFER_SECONDS = 300   # 5 min after estimated return
-BATTLE_DURATION_EST   = 1800  # ~30 min battle estimate
-ERROR_RESCHEDULE      = 5 * 60
+BATTLE_CYCLE_SECONDS  = 15 * 60   # cada ciclo de batalha = 15 min
+RETURN_BUFFER_SECONDS = 5  * 60   # buffer após estimativa de retorno
+ERROR_RESCHEDULE      = 5  * 60
 
 
 def _parse_units(raw) -> dict[int, int]:
@@ -68,165 +81,120 @@ def _parse_int(value, default=0) -> int:
 
 @register_runner(1008)
 class RaidCityRunner(BaseRunner):
-    """Ataca e saqueia cidade inimiga. Suporta múltiplas viagens."""
+    """Ataca e saqueia cidade inimiga. Máquina de estados via Military Advisor."""
 
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid    = job["job_id"]
         ga_id  = str(job.get("game_account_id") or "").strip()
         inputs = job.get("inputs") or {}
 
-        # ── Inputs básicos ────────────────────────────────────────────────────
-        source_city_id = str(inputs.get("source_city_id") or "").strip()
         target_city_id = str(inputs.get("target_city_id") or "").strip()
         island_id      = str(inputs.get("island_id")      or "").strip()
-        mode           = str(inputs.get("mode")           or "land").strip().lower()
-
         if not target_city_id or not island_id:
             self.log(jid, "error", "target_city_id e island_id são obrigatórios.")
             return RunnerResult(success=False)
 
-        # ── Config de viagens ─────────────────────────────────────────────────
-        multi_trip   = str(inputs.get("multi_trip", "true")).lower() not in {"false", "0", "no"}
-        max_trips    = _parse_int(inputs.get("max_trips"), 10)
-        min_res_cont = _parse_int(inputs.get("min_resources_to_continue"), 0)
-        trips_done    = _parse_int(inputs.get("_trips_done"), 0)
-        travel_cached = _parse_int(inputs.get("_travel_seconds"), 0)
+        phase = str(inputs.get("_phase") or "send").strip()
 
-        # ── Checar limite de viagens ──────────────────────────────────────────
+        if phase == "check_battle":
+            return self._phase_check_battle(jid, ga_id, inputs)
+        else:
+            return self._phase_send(jid, ga_id, inputs)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # PHASE: send — selecionar tropas, enviar plunder + blockade, agendar check
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _phase_send(self, jid: str, ga_id: str, inputs: dict) -> RunnerResult:
+        target_city_id = str(inputs.get("target_city_id") or "").strip()
+        island_id      = str(inputs.get("island_id")      or "").strip()
+        multi_trip     = str(inputs.get("multi_trip", "true")).lower() not in {"false", "0", "no"}
+        max_trips      = _parse_int(inputs.get("max_trips"), 10)
+        min_res_cont   = _parse_int(inputs.get("min_resources_to_continue"), 0)
+        trips_done     = _parse_int(inputs.get("_trips_done"), 0)
+        source_city_id = str(inputs.get("_source_city_id") or inputs.get("source_city_id") or "").strip()
+
         if trips_done >= max_trips:
-            self.log(jid, "info",
-                     f"[Raid] Limite de {max_trips} viagem(ns) atingido. Encerrando.")
+            self.log(jid, "info", f"[Raid] Limite {max_trips} viagens atingido. Encerrando.")
             return RunnerResult(success=True)
 
-        # ── Obter snapshot ────────────────────────────────────────────────────
-        snap = self._get_snapshot(jid, ga_id)
+        snap  = self._get_snapshot(jid, ga_id)
+        units = _parse_units(inputs.get("units") or {})
 
-        # ── Auto-selecionar cidade de origem se não especificada ──────────────
-        # O runner decide quem vai roubar com base nas tropas disponíveis.
-        # Prioridade: 1) source_city_id explícito  2) cidade com mais tropas + mercantes
-        raw_units    = inputs.get("units") or {}
-        units        = _parse_units(raw_units)
-        transporters = _parse_int(inputs.get("transporters"), 0)
-
+        # Auto-selecionar cidade de origem
         if not source_city_id:
-            selection = self._auto_select_source_city(jid, snap, units, inputs)
-            if not selection:
-                self.log(jid, "error",
-                         "[Raid] Nenhuma cidade com tropas suficientes encontrada. "
-                         "Verifique snapshot ou especifique source_city_id.")
+            sel = self._auto_select_source_city(jid, snap, units, inputs)
+            if not sel:
+                self.log(jid, "error", "[Raid] Sem cidade/tropas disponíveis.")
                 return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE)
-            source_city_id = selection["city_id"]
+            source_city_id = sel["city_id"]
             if not units:
-                units = selection["units"]
+                units = sel["units"]
             self.log(jid, "info",
-                     f"[Raid] Cidade selecionada automaticamente: {selection.get('city_name',source_city_id)} "
-                     f"(tropas={sum(units.values())} mercantes={selection.get('merchants',0)})")
+                     f"[Raid] Origem: {sel.get('city_name', source_city_id)} "
+                     f"tropas={sum(units.values())} mercantes={sel.get('merchants',0)}")
 
-        available_units        = self._get_available_units(jid, snap, source_city_id)
-
-        # ── Auto-calcular tropas se ainda não definido ────────────────────────
+        available = self._get_available_units(jid, snap, source_city_id)
         if not units:
-            units = self._auto_calculate_units(jid, inputs, available_units)
+            units = self._auto_calculate_units(jid, inputs, available)
             if not units:
-                self.log(jid, "error", "[Raid] Sem tropas disponíveis e sem especificação manual.")
+                self.log(jid, "error", "[Raid] Sem tropas para enviar.")
                 return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE)
 
-        # ── Transportadores: sempre buscar live (mercantes são dinâmicos) ──────
-        if transporters <= 0:
-            try:
-                live_client = self._get_client(jid, ga_id)
-                transporters = self._get_transporters(snap, source_city_id, client=live_client, jid=jid)
-            except Exception as exc:
-                self.log(jid, "warn", f"[Raid] Falha ao buscar mercantes live: {exc}. Usando snapshot.")
-                transporters = self._get_transporters(snap, source_city_id)
-
-        if transporters <= 0:
-            self.log(jid, "warn", "[Raid] Sem navios mercantes disponíveis para carregar saque.")
-
-        # ── Verificar se ainda vale continuar (viagens 2+) ───────────────────
+        # Verificar recursos restantes (viagens 2+)
         if trips_done > 0 and min_res_cont > 0:
             intel = self._check_remaining_resources(jid, ga_id, target_city_id)
-            if intel is not None:
-                remaining = intel.get("total", 0)
+            if intel is not None and intel.get("total", 0) < min_res_cont:
                 self.log(jid, "info",
-                         f"[Raid] Recursos restantes no alvo: {remaining:,} "
-                         f"(mínimo para continuar: {min_res_cont:,})")
-                if remaining < min_res_cont:
-                    self.log(jid, "info",
-                             f"[Raid] Recursos abaixo do mínimo. Encerrando após {trips_done} viagem(ns).")
-                    return RunnerResult(success=True)
+                         f"[Raid] Recursos {intel.get('total',0):,} < mínimo {min_res_cont:,}. "
+                         f"Encerrando após {trips_done} viagem(ns).")
+                return RunnerResult(success=True)
 
-        # ── Bloqueio naval (se alvo tem frota) ───────────────────────────────
-        # Detecta frota inimiga via intel e dispara blockade antes do ataque.
-        # O blockade é enviado e o raid terrestre segue imediatamente depois.
-        # A frota fica bloqueando indefinidamente — chamada de volta não implementada.
-        needs_blockade      = bool(inputs.get("needs_blockade", False))
-        blockade_fleet_raw  = inputs.get("blockade_fleet_units") or {}
-        blockade_fleet      = _parse_units(blockade_fleet_raw)
+        try:
+            client = self._get_client(jid, ga_id)
+        except Exception as exc:
+            self.log(jid, "error", f"[Raid] Falha de sessão: {exc}")
+            return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE)
 
+        # Transportadores live
+        transporters = _parse_int(inputs.get("transporters"), 0)
+        if transporters <= 0:
+            transporters = self._get_transporters(snap, source_city_id, client=client, jid=jid)
+
+        # Blockade antes do plunder (navegar para cidade de frota)
+        needs_blockade = bool(inputs.get("needs_blockade", False))
         if needs_blockade:
+            blockade_fleet = _parse_units(inputs.get("blockade_fleet_units") or {})
             if not blockade_fleet:
-                # Auto-selecionar frota de combate disponível na cidade de origem
                 blockade_fleet = self._auto_select_fleet(jid, snap, source_city_id)
-
             if blockade_fleet:
                 try:
-                    client_for_blockade = self._get_client(jid, ga_id)
-                    client_for_blockade.blockade_fleet(
+                    # Navegar para cidade de origem da frota antes de enviar blockade
+                    import requests as _req
+                    client._request("GET", client._server_url, params={
+                        "view": "city",
+                        "cityId": int(source_city_id),
+                        "backgroundView": "city",
+                        "actionRequest": client._action_request,
+                        "ajax": "0",
+                    }, timeout=15)
+                    client.blockade_fleet(
                         from_city_id=int(source_city_id),
                         to_city_id=int(target_city_id),
                         island_id=int(island_id),
                         fleet_units=blockade_fleet,
                     )
-                    self.log(jid, "info",
-                             f"[Raid] ⚓ Frota enviada para bloqueio: {blockade_fleet}")
+                    self.log(jid, "info", f"[Raid] Blockade enviado: {blockade_fleet}")
                 except Exception as exc:
-                    self.log(jid, "warn",
-                             f"[Raid] Falha ao enviar bloqueio naval: {exc}. "
-                             f"Prosseguindo com ataque terrestre mesmo assim.")
-            else:
-                self.log(jid, "warn",
-                         "[Raid] needs_blockade=True mas sem frota disponível para bloqueio.")
+                    self.log(jid, "warn", f"[Raid] Blockade falhou: {exc}. Prosseguindo sem bloqueio.")
 
-        # ── Modo Land (padrão) ────────────────────────────────────────────────
-        if mode != "land":
-            self.log(jid, "error", f"[Raid] Modo '{mode}' não suportado ainda.")
-            return RunnerResult(success=False)
-
-        try:
-            client = self._get_client(jid, ga_id)
-        except Exception as exc:
-            self.log(jid, "error", f"[Raid] Falha ao obter sessão: {exc}")
-            return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE)
-
-        # ── Fetch plunder view → tempo de viagem ─────────────────────────────
-        travel_seconds = travel_cached
-        if not travel_seconds:
-            try:
-                view = client.fetch_plunder_view(
-                    int(source_city_id), int(target_city_id), int(island_id)
-                )
-                travel_seconds = view.get("travel_seconds", 0)
-                if travel_seconds:
-                    self.log(jid, "info",
-                             f"[Raid] Tempo de viagem: {travel_seconds // 60}min {travel_seconds % 60}s")
-            except Exception as exc:
-                self.log(jid, "warn", f"[Raid] Não foi possível obter tempo de viagem: {exc}")
-
-        if not travel_seconds:
-            travel_seconds = 3600  # fallback 1h
-
-        # ── Log da operação ───────────────────────────────────────────────────
+        # Enviar plunder
         cap = loot_capacity(transporters)
         self.log(jid, "info",
-                 f"[Raid] Viagem {trips_done + 1}/{max_trips} | "
-                 f"alvo={target_city_id} ilha={island_id} | "
-                 f"tropas={dict(units)} | transportadores={transporters} (cap={cap:,}) | "
-                 f"viagem={travel_seconds // 60}min")
-
-        # ── Enviar exército ───────────────────────────────────────────────────
+                 f"[Raid] Viagem {trips_done+1}/{max_trips} | alvo={target_city_id} | "
+                 f"tropas={dict(units)} | transportadores={transporters} ({cap:,} cap)")
         try:
-            result = client.plunder_land(
+            client.plunder_land(
                 from_city_id=int(source_city_id),
                 to_city_id=int(target_city_id),
                 island_id=int(island_id),
@@ -234,32 +202,131 @@ class RaidCityRunner(BaseRunner):
                 transporters=transporters,
             )
         except Exception as exc:
-            self.log(jid, "error", f"[Raid] Falha ao enviar exército: {exc}")
+            self.log(jid, "error", f"[Raid] Plunder falhou: {exc}")
             return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE)
 
-        self.log(jid, "info", f"[Raid] Exército enviado. Aguardando retorno.")
+        # Buscar ETA real do Military Advisor
+        eta_ts = None
+        travel_seconds = _parse_int(inputs.get("_travel_seconds"), 3600)
+        try:
+            advisor = client.fetch_military_advisor(int(source_city_id))
+            eta_ts  = advisor.get("eta_timestamp")  # "DD.MM.YYYY H:MM:SS"
+            if eta_ts:
+                self.log(jid, "info", f"[Raid] ETA confirmado pelo advisor: {eta_ts}")
+        except Exception as exc:
+            self.log(jid, "warn", f"[Raid] Falha ao buscar ETA do advisor: {exc}")
 
-        # ── Agendar próxima viagem ou encerrar ────────────────────────────────
-        trips_done += 1
+        # Calcular delay para check_battle (chegada ida + margem)
+        if eta_ts:
+            eta_secs = self._parse_eta_to_seconds(eta_ts)
+            check_delay = max(eta_secs + 120, 300)   # ETA + 2min buffer
+        else:
+            check_delay = travel_seconds + 300  # fallback
 
-        if multi_trip and trips_done < max_trips:
-            # Retornar = 2× tempo de viagem + duração da batalha + buffer
-            return_delay = (travel_seconds * 2) + BATTLE_DURATION_EST + RETURN_BUFFER_SECONDS
-            self.log(jid, "info",
-                     f"[Raid] Multi-trip: reagendando viagem {trips_done + 1} em "
-                     f"{return_delay // 60}min.")
+        self.log(jid, "info",
+                 f"[Raid] Exército enviado. Checando advisor em {check_delay//60}min.")
+        return RunnerResult(
+            success=True,
+            reschedule_seconds=int(check_delay),
+            reschedule_inputs={
+                **inputs,
+                "_phase":           "check_battle",
+                "_trips_done":      trips_done,
+                "_travel_seconds":  travel_seconds,
+                "_eta_timestamp":   eta_ts or "",
+                "_source_city_id":  source_city_id,
+                "units":            {str(k): v for k, v in units.items()},
+            },
+        )
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # PHASE: check_battle — polling do Military Advisor após chegada
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _phase_check_battle(self, jid: str, ga_id: str, inputs: dict) -> RunnerResult:
+        source_city_id = str(inputs.get("_source_city_id") or inputs.get("source_city_id") or "").strip()
+        target_city_id = str(inputs.get("target_city_id") or "").strip()
+        trips_done     = _parse_int(inputs.get("_trips_done"), 0)
+        travel_seconds = _parse_int(inputs.get("_travel_seconds"), 3600)
+        multi_trip     = str(inputs.get("multi_trip", "true")).lower() not in {"false", "0", "no"}
+
+        try:
+            client = self._get_client(jid, ga_id)
+        except Exception as exc:
+            self.log(jid, "error", f"[Raid] Falha de sessão em check_battle: {exc}")
+            return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE)
+
+        try:
+            advisor = client.fetch_military_advisor(int(source_city_id))
+        except Exception as exc:
+            self.log(jid, "warn", f"[Raid] Falha ao buscar advisor: {exc}. Retry em 5min.")
+            return RunnerResult(success=True, reschedule_seconds=ERROR_RESCHEDULE, reschedule_inputs=inputs)
+
+        has_battle = advisor.get("has_active_battle", False)
+        eta_ts     = advisor.get("eta_timestamp")
+
+        self.log(jid, "info",
+                 f"[Raid] check_battle: batalha_ativa={has_battle} "
+                 f"eta={eta_ts} porto_bloqueado={advisor.get('port_occupied',False)}")
+
+        # Se ainda tem batalha ativa → reagendar +15min (ciclo de batalha)
+        if has_battle:
+            self.log(jid, "info", "[Raid] Batalha em andamento. Aguardando 15min (próximo ciclo).")
             return RunnerResult(
                 success=True,
-                reschedule_seconds=int(return_delay),
-                reschedule_inputs={
-                    **inputs,
-                    "_trips_done":      trips_done,
-                    "_travel_seconds":  travel_seconds,
-                    "units":            {str(k): v for k, v in units.items()},
-                },
+                reschedule_seconds=BATTLE_CYCLE_SECONDS,
+                reschedule_inputs=inputs,
             )
 
-        self.log(jid, "info", f"[Raid] {trips_done} viagem(ns) concluída(s). Encerrando.")
+        # Batalha resolvida — buscar relatório mais recente contra o alvo
+        report = self._find_latest_combat_report(jid, client, source_city_id, target_city_id)
+        if report:
+            if report.get("army_lost"):
+                self.log(jid, "warn",
+                         f"[Raid] Derrota no combate {report.get('combat_id')}. "
+                         f"Exército perdido. Encerrando.")
+                return RunnerResult(success=False)
+
+            loot = report.get("loot") or {}
+            total_loot = report.get("total_loot", 0)
+            self.log(jid, "info",
+                     f"[Raid] Vitória! combatId={report.get('combat_id')} "
+                     f"rounds={report.get('rounds')} saque={loot} total={total_loot:,}")
+
+            # Se navios cheios → provavelmente mais recursos → re-raid
+            snap = self._get_snapshot(jid, ga_id)
+            transporters_live = self._get_transporters(snap, source_city_id, client=client, jid=jid)
+            capacity = loot_capacity(transporters_live or 1)
+            ships_full = total_loot >= capacity * 0.9 if capacity > 0 else False
+        else:
+            self.log(jid, "info", "[Raid] Sem relatório recente. Assumindo que terminou.")
+            ships_full = False
+
+        # Se ETA ainda no futuro (exército voltando) → aguardar retorno antes do próximo raid
+        if eta_ts:
+            return_secs = self._parse_eta_to_seconds(eta_ts)
+            if return_secs > 60:
+                self.log(jid, "info",
+                         f"[Raid] Exército voltando. Aguardando {return_secs//60}min.")
+                next_inputs = {**inputs, "_phase": "send", "_trips_done": trips_done + 1}
+                return RunnerResult(
+                    success=True,
+                    reschedule_seconds=int(return_secs + RETURN_BUFFER_SECONDS),
+                    reschedule_inputs=next_inputs,
+                )
+
+        # Exército voltou — decidir sobre próxima viagem
+        trips_done += 1
+        max_trips = _parse_int(inputs.get("max_trips"), 10)
+        if multi_trip and trips_done < max_trips and ships_full:
+            self.log(jid, "info",
+                     f"[Raid] Navios cheios ({total_loot:,}). Enviando nova viagem ({trips_done+1}/{max_trips}).")
+            next_inputs = {**inputs, "_phase": "send", "_trips_done": trips_done}
+            return RunnerResult(success=True, reschedule_seconds=60, reschedule_inputs=next_inputs)
+
+        self.log(jid, "info",
+                 f"[Raid] Concluído. {trips_done} viagem(ns). "
+                 f"{'Sem navios cheios para continuar.' if not ships_full else 'Limite de viagens atingido.'}")
         return RunnerResult(success=True)
 
     # ── Helpers ───────────────────────────────────────────────────────────────
@@ -411,6 +478,39 @@ class RaidCityRunner(BaseRunner):
                 }
 
         return best
+
+    def _parse_eta_to_seconds(self, eta_str: str) -> int:
+        """Convert 'DD.MM.YYYY H:MM:SS' from game to seconds from now."""
+        import time as _time
+        from datetime import datetime
+        try:
+            dt = datetime.strptime(eta_str.strip(), "%d.%m.%Y %H:%M:%S")
+            now = datetime.now()
+            diff = (dt - now).total_seconds()
+            return max(0, int(diff))
+        except Exception:
+            return 0
+
+    def _find_latest_combat_report(
+        self, jid: str, client, source_city_id: str, target_city_id: str
+    ) -> dict | None:
+        """Find the most recent combat report against target_city_id and parse it."""
+        try:
+            reports = client.fetch_combat_reports(int(source_city_id), limit=10)
+        except Exception as exc:
+            self.log(jid, "warn", f"[Raid] Falha ao buscar relatórios: {exc}")
+            return None
+
+        for r in reports:
+            if str(r.get("city_id_target", "")) == str(target_city_id):
+                try:
+                    detail = client.fetch_combat_report_detail(int(source_city_id), r["combat_id"])
+                    detail["rounds"] = r.get("rounds", 0)
+                    return detail
+                except Exception as exc:
+                    self.log(jid, "warn", f"[Raid] Falha ao buscar detalhe do combate: {exc}")
+                    return {"combat_id": r["combat_id"], "army_lost": r.get("result") == "defeat"}
+        return None
 
     def _check_remaining_resources(self, jid: str, ga_id: str, target_city_id: str) -> dict | None:
         """Query hub for latest spy intel and return total resources. None if unavailable."""

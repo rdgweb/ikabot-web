@@ -709,6 +709,285 @@ class BlockadeFleetAction(BaseAction):
         return {"ok": True, "blockade_active": True}
 
 
+class FetchMilitaryAdvisorAction(BaseAction):
+    """Fetch military advisor state — movements, battles, occupied ports.
+
+    Confirmed API from live traffic:
+      GET view=militaryAdvisor → returns HTML + updateTemplateData with:
+        js_MilitaryMovementsCombatsInProgress  — {addClass:"invisible"} or HTML when battle active
+        js_MilitaryMovementsFleetMovementsTable — active movements HTML table
+        js_MilitaryMovementsOccupiedPortsTable  — occupied ports (blockades)
+
+    scatteredUnitsSidebar contains:
+        <tr><td>Tempo de chegada: DD.MM.YYYY H:MM:SS</td></tr><tr><td>Barcos de guerra: N</td></tr>
+    """
+
+    def execute(self, city_id: int, **kwargs) -> dict:
+        resp = self.client._request(
+            "GET",
+            self.client._server_url,
+            params={
+                "view": "militaryAdvisor",
+                "activeTab": "tab_militaryAdvisor",
+                "backgroundView": "city",
+                "currentCityId": int(city_id),
+                "actionRequest": self.client._action_request,
+                "ajax": "1",
+            },
+            timeout=30,
+        )
+        try:
+            data = resp.json()
+        except Exception:
+            return {}
+
+        if data and isinstance(data[0], list) and len(data[0]) > 1:
+            gd = data[0][1]
+            if isinstance(gd, dict) and "actionRequest" in gd:
+                self.client._action_request = gd["actionRequest"]
+
+        template = {}
+        sidebar_html = ""
+        for entry in data:
+            if not isinstance(entry, list) or len(entry) < 2:
+                continue
+            if entry[0] == "updateTemplateData" and isinstance(entry[1], dict):
+                template = entry[1]
+            elif entry[0] in ("changeHTML", "changeView"):
+                items = entry[1] if isinstance(entry[1], list) else [entry[1]]
+                for item in items:
+                    if isinstance(item, str) and "scatteredUnitsSidebar" in item:
+                        sidebar_html = item
+                        break
+
+        # Parse battle state from template
+        combat_raw = template.get("js_MilitaryMovementsCombatsInProgress") or {}
+        has_active_battle = not (isinstance(combat_raw, dict) and combat_raw.get("addClass") == "invisible")
+
+        # Parse movement table
+        movements_html = str(template.get("js_MilitaryMovementsFleetMovementsTable") or "")
+        occupied_ports_html = str(template.get("js_MilitaryMovementsOccupiedPortsTable") or "")
+        occupied_cities_html = str(template.get("js_MilitaryMovementsOccupiedCitiesTable") or "")
+
+        # Check if port is actually occupied (not just empty table)
+        port_occupied = bool(
+            occupied_ports_html
+            and "Você não tem portos ocupados" not in occupied_ports_html
+            and "<tr>" in occupied_ports_html
+            and '<td colspan="5">' not in occupied_ports_html
+        )
+
+        # Parse ETA from scatteredUnitsSidebar
+        eta_timestamp = None
+        ships_moving = 0
+        if sidebar_html:
+            for m in re.finditer(
+                r"Tempo de chegada:\s*(\d{2}\.\d{2}\.\d{4}\s+\d{1,2}:\d{2}:\d{2})",
+                sidebar_html,
+            ):
+                eta_timestamp = m.group(1).strip()
+                break
+            m_ships = re.search(r"Barcos de guerra:\s*(\d+)", sidebar_html)
+            if m_ships:
+                ships_moving = int(m_ships.group(1))
+
+        # Parse active movement missions from fleet movements table
+        movements = []
+        if movements_html:
+            for mission_m in re.finditer(r'data-mission["\s]*=["\s]*([a-z_]+)', movements_html, re.IGNORECASE):
+                movements.append(mission_m.group(1))
+
+        return {
+            "has_active_battle":   has_active_battle,
+            "port_occupied":       port_occupied,
+            "eta_timestamp":       eta_timestamp,   # "DD.MM.YYYY H:MM:SS" string
+            "ships_moving":        ships_moving,
+            "movements":           movements,        # list of mission types
+            "movements_html":      movements_html,
+            "occupied_ports_html": occupied_ports_html,
+        }
+
+
+class FetchCombatReportsAction(BaseAction):
+    """Fetch latest combat reports from militaryAdvisorCombatList.
+
+    Returns list of recent combat report entries with:
+      combat_id, date, rounds, city_name, owner_name, result (green=victory, red=defeat)
+    """
+
+    def execute(self, city_id: int, limit: int = 10, **kwargs) -> list[dict]:
+        resp = self.client._request(
+            "GET",
+            self.client._server_url,
+            params={
+                "view": "militaryAdvisorCombatList",
+                "activeTab": "tab_militaryAdvisorCombatList",
+                "backgroundView": "city",
+                "currentCityId": int(city_id),
+                "actionRequest": self.client._action_request,
+                "ajax": "1",
+            },
+            timeout=30,
+        )
+        try:
+            data = resp.json()
+        except Exception:
+            return []
+
+        if data and isinstance(data[0], list) and len(data[0]) > 1:
+            gd = data[0][1]
+            if isinstance(gd, dict) and "actionRequest" in gd:
+                self.client._action_request = gd["actionRequest"]
+
+        html = ""
+        for entry in data:
+            if isinstance(entry, list) and entry[0] in ("changeHTML", "changeView"):
+                items = entry[1] if isinstance(entry[1], list) else [entry[1]]
+                for item in items:
+                    if isinstance(item, str) and "combatList" in item:
+                        html = item
+                        break
+
+        reports = []
+        # Each <tr class="green"> or <tr class="red"> is a combat report
+        for row_m in re.finditer(
+            r'<tr class="(green|red)[^"]*"[^>]*>(.*?)</tr>',
+            html, re.DOTALL
+        ):
+            result_class = row_m.group(1)
+            row_html = row_m.group(0)
+
+            # combatId
+            cid_m = re.search(r"combatId=(\d+)", row_html)
+            if not cid_m:
+                continue
+            combat_id = int(cid_m.group(1))
+
+            # date
+            date_m = re.search(r'class="date"[^>]*>\s*([^<]+)<', row_html)
+            date_str = date_m.group(1).strip() if date_m else ""
+
+            # rounds
+            rounds_m = re.search(r'class="right"[^>]*>\s*(\d+)<', row_html)
+            rounds = int(rounds_m.group(1)) if rounds_m else 0
+
+            # city_name
+            city_m = re.search(r'href="\?view=island&cityId=(\d+)"[^>]*>([^<]+)<', row_html)
+            city_name = city_m.group(2).strip() if city_m else ""
+            city_id_target = int(city_m.group(1)) if city_m else 0
+
+            # owner_name
+            owner_m = re.search(r'href="\?view=avatarProfile&avatarId=\d+"[^>]*>([^<]+)<', row_html)
+            owner_name = owner_m.group(1).strip() if owner_m else ""
+
+            reports.append({
+                "combat_id":      combat_id,
+                "result":         "victory" if result_class == "green" else "defeat",
+                "date":           date_str,
+                "rounds":         rounds,
+                "city_id_target": city_id_target,
+                "city_name":      city_name,
+                "owner_name":     owner_name,
+            })
+
+            if len(reports) >= limit:
+                break
+
+        return reports
+
+
+class FetchCombatReportDetailAction(BaseAction):
+    """Fetch full combat report for a specific combatId.
+
+    Returns: attacker, defender, loot dict, winner, losers, units table HTML.
+    """
+
+    def execute(self, city_id: int, combat_id: int, **kwargs) -> dict:
+        resp = self.client._request(
+            "GET",
+            self.client._server_url,
+            params={
+                "view": "militaryAdvisorReportView",
+                "combatId": int(combat_id),
+                "activeTab": "combatReports",
+                "backgroundView": "city",
+                "currentCityId": int(city_id),
+                "templateView": "militaryAdvisorCombatList",
+                "currentTab": "tab_militaryAdvisorCombatList",
+                "actionRequest": self.client._action_request,
+                "ajax": "1",
+            },
+            timeout=30,
+        )
+        try:
+            data = resp.json()
+        except Exception:
+            return {}
+
+        if data and isinstance(data[0], list) and len(data[0]) > 1:
+            gd = data[0][1]
+            if isinstance(gd, dict) and "actionRequest" in gd:
+                self.client._action_request = gd["actionRequest"]
+
+        html = ""
+        for entry in data:
+            if isinstance(entry, list) and entry[0] in ("changeHTML", "changeView"):
+                items = entry[1] if isinstance(entry[1], list) else [entry[1]]
+                for item in items:
+                    if isinstance(item, str) and ("troopsReport" in item or "militaryAdvisorReportView" in item):
+                        html = item
+                        break
+
+        # Parse attacker / defender
+        att_m = re.search(r'class="attacker[^"]*"[^>]*>.*?<span>([^<]+)</span>', html, re.DOTALL)
+        def_m = re.search(r'class="defender[^"]*"[^>]*>.*?<span>([^<]+)</span>', html, re.DOTALL)
+
+        # Parse winner / loser
+        winner_m = re.search(r'class="winners headline"[^>]*>.*?Vencedores:\s*<br\s*/>([^<]+)<', html, re.DOTALL)
+        loser_m  = re.search(r'class="losers headline"[^>]*>.*?Perdedores:\s*<br\s*/>([^<]+)<', html, re.DOTALL)
+
+        # Parse loot
+        loot: dict[str, int] = {}
+        loot_m = re.search(r'recursos foram roubados.*?<ul[^>]*>(.*?)</ul>', html, re.DOTALL)
+        if loot_m:
+            loot_html = loot_m.group(1)
+            res_map = {
+                "Materiais de construção": "wood",
+                "Vinho": "wine",
+                "Mármore": "marble",
+                "Cristal": "glass",
+                "Enxofre": "sulfur",
+            }
+            for li_m in re.finditer(r'<li[^>]*>\s*([\d.]+)\s*<img[^>]+title="([^"]+)"', loot_html):
+                qty_raw = li_m.group(1).replace(".", "").replace(",", "")
+                title   = li_m.group(2).strip()
+                key     = res_map.get(title, title)
+                try:
+                    loot[key] = int(qty_raw)
+                except ValueError:
+                    pass
+
+        # Parse date from header
+        date_m = re.search(r'<span class="date">\(([^)]+)\)</span>', html)
+        date_str = date_m.group(1) if date_m else ""
+
+        # Defeat message
+        lost_m = re.search(r'dado como perdido', html, re.IGNORECASE)
+
+        return {
+            "combat_id":  combat_id,
+            "date":       date_str,
+            "attacker":   att_m.group(1).strip() if att_m else "",
+            "defender":   def_m.group(1).strip() if def_m else "",
+            "winner":     winner_m.group(1).strip() if winner_m else "",
+            "loser":      loser_m.group(1).strip() if loser_m else "",
+            "loot":       loot,
+            "total_loot": sum(loot.values()),
+            "army_lost":  bool(lost_m),
+            "html":       html,
+        }
+
+
 class AttackAction(BaseAction):
     """Send an attack against another city."""
 

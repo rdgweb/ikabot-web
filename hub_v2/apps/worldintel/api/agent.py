@@ -393,13 +393,16 @@ class WorldSpyTargetsView(APIView):
             cities = [c for c in cities if c.game_city_id not in occupied_targets]
 
         # ── skip_if_valid ─────────────────────────────────────────────────────
+        # Missões player-scope: resultado é global ao jogador (não varia por cidade).
+        # Para essas, basta UMA cidade válida do mesmo owner_id → skip todas as outras.
+        PLAYER_SCOPE_MISSIONS = frozenset({3, 7, 10, 21, 24, 25, 26, 27})
+
         if skip_if_valid and cities:
             from datetime import timedelta
-            city_ids_check = [c.game_city_id for c in cities]
+            city_ids_check  = [c.game_city_id for c in cities]
+            owner_ids_check = list({c.owner_id for c in cities if c.owner_id})
             now = timezone.now()
 
-            # intel_ttl_hours=0 → usa expires_at (TTL baked in no momento do save)
-            # intel_ttl_hours>0 → override: filtra por created_at >= now - TTL
             if intel_ttl_hours and intel_ttl_hours > 0:
                 valid_since = now - timedelta(hours=intel_ttl_hours)
                 ttl_filter  = {"created_at__gte": valid_since}
@@ -407,15 +410,38 @@ class WorldSpyTargetsView(APIView):
                 ttl_filter  = {"expires_at__gt": now}
 
             if mission_ids:
-                valid_map: dict[str, set] = defaultdict(set)
-                for row in SpyReport.objects.filter(
-                    target_city_id__in=city_ids_check,
-                    mission_id__in=mission_ids,
-                    **ttl_filter,
-                ).values("target_city_id", "mission_id").distinct():
-                    valid_map[row["target_city_id"]].add(row["mission_id"])
                 mission_set = set(mission_ids)
-                cities = [c for c in cities if not (mission_set <= valid_map.get(c.game_city_id, set()))]
+                city_missions   = mission_set - PLAYER_SCOPE_MISSIONS   # per-city
+                player_missions = mission_set & PLAYER_SCOPE_MISSIONS    # per-owner
+
+                # Valid per city (city-scope missions)
+                city_valid_map: dict[str, set] = defaultdict(set)
+                if city_missions:
+                    for row in SpyReport.objects.filter(
+                        target_city_id__in=city_ids_check,
+                        mission_id__in=list(city_missions),
+                        **ttl_filter,
+                    ).values("target_city_id", "mission_id").distinct():
+                        city_valid_map[row["target_city_id"]].add(row["mission_id"])
+
+                # Valid per owner (player-scope missions — any city of that owner counts)
+                owner_valid_map: dict[str, set] = defaultdict(set)
+                if player_missions and owner_ids_check:
+                    for row in SpyReport.objects.filter(
+                        target_owner_id__in=owner_ids_check,
+                        mission_id__in=list(player_missions),
+                        **ttl_filter,
+                    ).values("target_owner_id", "mission_id").distinct():
+                        owner_valid_map[row["target_owner_id"]].add(row["mission_id"])
+
+                def _needs_spy(city) -> bool:
+                    covered = (
+                        city_valid_map.get(city.game_city_id, set())
+                        | owner_valid_map.get(city.owner_id or "", set())
+                    )
+                    return not (mission_set <= covered)
+
+                cities = [c for c in cities if _needs_spy(c)]
             else:
                 has_valid = set(
                     SpyReport.objects.filter(
