@@ -351,8 +351,9 @@ def format_battle_summary(
         f"🗡️  Força recomendada: {rec_str}",
         f"{can_win} ({surv:.0f}% HP restante)",
         "",
-        f"🚢 {n_transporters} barcos → {capacity:,}/viagem → {trips} viagem(ns)",
-        f"⏱️  Tempo de viagem: {travel_h}h {travel_m:02d}m",
+        f"🚢 {n_transporters} barco(s) mercante(s) × 500 = {capacity:,}/viagem",
+        f"   → {trips} viagem(ns) para levar tudo",
+        f"⏱️  Tempo de viagem: {travel_h}h {travel_m:02d}m" if travel_seconds else "⏱️  Tempo: não calculado",
     ]
     if recommendation.get("missing_units"):
         lines.append("")

@@ -415,11 +415,10 @@ class SpyRunner(BaseRunner):
                         _m1_ra = float(_md_m1.get("riskAfter") or RISK_AFTER_M1)
                         risk_after_total = current_risk + _m1_ra
                         risk_wait_s = _risk_wait(risk_after_total)
+                        # travel=0 = mesma ilha (espião já está lá) → não usar ARRIVAL_WAIT
                         # Usa o maior entre: tempo de viagem e tempo de risco
-                        wait_total = max(
-                            travel + 30 if travel > 0 else ARRIVAL_WAIT,
-                            risk_wait_s if risk_after_total > 10 else 0
-                        )
+                        travel_wait = (travel + 30) if travel > 0 else 30
+                        wait_total = max(travel_wait, risk_wait_s)
                         wait_total = max(60, wait_total)
 
                         new_sent  = r_sent_total + ag + dec
