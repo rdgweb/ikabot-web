@@ -1194,9 +1194,9 @@ class SpyRunner(BaseRunner):
             snap     = self.hub.get_snapshot(game_account_id=ga_id)
             cities   = snap.get("cities") or []
             spy_city = next((c for c in cities if str(c.get("id") or "") == str(city_id)), {})
-            # Ouro é recurso global da conta (snap["gold"]), não da cidade
+            # Ouro é recurso global da conta em snap["base_snapshot"]["gold"]
             if resource_key == "gold":
-                have_raw = snap.get("gold", 0)
+                have_raw = (snap.get("base_snapshot") or {}).get("gold", 0)
             else:
                 have_raw = spy_city.get(resource_key)
             committed = int((committed_res or {}).get(resource_key) or 0)
