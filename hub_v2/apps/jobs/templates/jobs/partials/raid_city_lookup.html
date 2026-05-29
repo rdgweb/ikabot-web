@@ -37,9 +37,9 @@
   </button>
   {% endfor %}
 
-  {% if not cities and not error %}
+  {% if not cities %}
   <div class="text-[11px] text-muted italic text-center py-4">
-    Digite coordenadas para buscar cidades no mapa.
+    {% if error %}{% else %}Digite coordenadas para buscar cidades no mapa.{% endif %}
   </div>
   {% endif %}
 </div>
