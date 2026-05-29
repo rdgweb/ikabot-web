@@ -528,11 +528,24 @@ class RaidCityRunner(BaseRunner):
         wall_level  = _parse_int(inputs.get("wall_level"), 1)
 
         if not enemy_units:
-            # No intel → use minimum siege only as fallback
-            siege = pick_minimum_siege(available)
+            # No intel → use available siege/front-line (clamped to what's at city)
+            siege_result: dict[int, int] = {}
+            # Try siege in priority order, use ALL available of first found type
+            for uid in (305, 306, 307):  # Morteiro, Catapulta, Ariete
+                have = available.get(uid, 0)
+                if have > 0:
+                    siege_result[uid] = have
+                    break
+            # Add front-line if no siege
+            if not siege_result:
+                for uid in (303, 308, 302, 315):  # Hoplita, Gigante, Espadachim, Lanceiro
+                    have = available.get(uid, 0)
+                    if have > 0:
+                        siege_result[uid] = have
+                        break
             self.log(jid, "warn",
-                     "[Raid] Sem intel de tropas inimigas. Usando apenas artilharia mínima.")
-            return siege
+                     f"[Raid] Sem intel. Usando disponíveis: {siege_result}")
+            return siege_result
 
         rec = recommend_army(
             enemy_units,
