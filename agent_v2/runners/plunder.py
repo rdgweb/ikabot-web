@@ -66,7 +66,7 @@ def _parse_int(value, default=0) -> int:
         return default
 
 
-@register_runner(1007)
+@register_runner(1008)
 class RaidCityRunner(BaseRunner):
     """Ataca e saqueia cidade inimiga. Suporta múltiplas viagens."""
 

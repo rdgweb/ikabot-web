@@ -395,7 +395,7 @@ ACTIONS = {
              "min": 1, "label": "Máximo de viagens por raid"},
         ],
     },
-    1007: {
+    1008: {
         "name": "Roubar Cidade",
         "name_en": "Raid City",
         "category": CAT_MILITARY,

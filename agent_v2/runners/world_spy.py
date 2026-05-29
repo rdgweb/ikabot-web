@@ -49,6 +49,19 @@ logger = logging.getLogger(__name__)
 ERROR_RESCHEDULE = 5  * 60        # 5 min em caso de erro
 FALLBACK_DELAY   = 4  * 60 * 60  # 4h — fallback caso notificação falhe
 
+# Missões cujo resultado é global ao jogador (não varia por cidade).
+# Basta espiionar UMA cidade por owner_id por ciclo completo.
+PLAYER_SCOPE_MISSIONS: frozenset[int] = frozenset({
+    3,   # Nível de pesquisa
+    10,  # Observar comunicação
+    21,  # Ver estado
+    24,  # Cargo na aliança
+    25,  # Forma de governo
+    26,  # Invenções
+    27,  # Colônias
+    # "movimentos" — ID ainda não capturado; adicionar quando confirmado
+})
+
 
 def _parse_int(value, default=None):
     try:
@@ -154,7 +167,11 @@ class WorldSpyRunner(BaseRunner):
         save_reports       = bool(inputs.get("save_reports", True))
         delete_after_save  = bool(inputs.get("delete_after_save", False))
 
-        # Parse missions
+        # Jogadores que já receberam missões player-scope neste ciclo.
+        # Persiste entre fallbacks via inputs do reschedule.
+        spied_player_ids: set[str] = set(inputs.get("__spied_player_ids") or [])
+
+        # Parse missions e separar por escopo
         mission_ids: list[int] = []
         for m in missions_raw.split(","):
             try:
@@ -163,6 +180,10 @@ class WorldSpyRunner(BaseRunner):
                 pass
         if not mission_ids:
             mission_ids = [3, 5]
+
+        city_missions:   list[int] = [m for m in mission_ids if m not in PLAYER_SCOPE_MISSIONS]
+        player_missions: list[int] = [m for m in mission_ids if m in PLAYER_SCOPE_MISSIONS]
+        has_player_scope = bool(player_missions)
 
         unique_gas  = len({e["ga_pk"] for e in city_entries})
         region_desc = (
@@ -221,7 +242,10 @@ class WorldSpyRunner(BaseRunner):
             resp_next = self.hub.reschedule_job(
                 jid,
                 delay_seconds=FALLBACK_DELAY,
-                inputs={"__campaign_root_id": root_id},
+                inputs={
+                    "__campaign_root_id": root_id,
+                    "__spied_player_ids": list(spied_player_ids),
+                },
             )
             next_jid = resp_next.get("new_job_id", "")
             self.log(jid, "info",
@@ -264,6 +288,27 @@ class WorldSpyRunner(BaseRunner):
                 skipped += 1
                 continue
 
+            # Determinar missões para esta cidade
+            owner_id = str(target.get("owner_id") or "").strip()
+            player_already_covered = owner_id in spied_player_ids
+
+            if has_player_scope and not player_already_covered:
+                # Primeira cidade deste player: todas as missões (city + player-scope)
+                effective_missions = mission_ids
+                spied_player_ids.add(owner_id)
+            elif city_missions:
+                # Demais cidades do mesmo player: só missões por-cidade
+                effective_missions = city_missions
+            else:
+                # Apenas missões player-scope e player já foi coberto → pular cidade
+                skipped += 1
+                self.log(jid, "info",
+                         f"[WorldSpy] Pulando {target.get('city_name')} — player {owner_id[:8]} "
+                         f"já coberto (sem missões por-cidade pendentes).")
+                continue
+
+            effective_missions_raw = ",".join(str(m) for m in effective_missions)
+
             source_entry = remaining_free[spawned % len(remaining_free)]
             source_city  = source_entry["city_game_id"]
             source_ga_pk = source_entry["ga_pk"]
@@ -276,7 +321,7 @@ class WorldSpyRunner(BaseRunner):
                 "target_owner":        str(target.get("owner_name") or ""),
                 "target_owner_id":     str(target.get("owner_id") or ""),
                 "island_id":           str(target.get("island_id") or ""),
-                "mission_id":          missions_raw,
+                "mission_id":          effective_missions_raw,
                 "max_detection_risk":  max_detection_risk,
                 "recall_after":        recall_after,
                 "save_reports":        save_reports,
@@ -294,8 +339,10 @@ class WorldSpyRunner(BaseRunner):
                 )
                 spawned += 1
                 child_jid = resp.get("new_job_id", "?")
+                scope_tag = "city+player" if not player_already_covered and has_player_scope else "city"
                 self.log(jid, "info",
                          f"[WorldSpy] → {target.get('city_name')} ({target.get('owner_name')}) "
+                         f"missions={effective_missions} [{scope_tag}] "
                          f"safehouse={source_city} ga={source_ga_pk[:8]}… job={str(child_jid)[:8]}")
             except Exception as exc:
                 skipped += 1
