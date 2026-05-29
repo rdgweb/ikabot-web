@@ -307,19 +307,34 @@ class SpyRunner(BaseRunner):
                 if stationed >= needed and stationed > 0:
                     self.log(jid, "info",
                         f"Espiões suficientes ({stationed}/{needed}). Passando para execução.")
-                    # Esperar remaining_risk decair antes de executar se necessário
-                    if current_risk > 5:
-                        wait = _risk_wait(current_risk)
-                        self.log(jid, "info",
-                            f"remaining_risk={current_risk:.1f} antes de executar. "
-                            f"Aguardando {wait}s ({wait//60}min) para decair.")
-                        self.save_game_client(ga_id, client)
-                        return RunnerResult(success=True, reschedule_seconds=wait,
-                            reschedule_inputs={**inputs, "__recovery": _rec(
-                                phase="executing",
-                                missions_pending=missions_pending,
-                                missions_done=missions_done,
-                                last_stationed=stationed)})
+                    # Verificar se a próxima missão já é segura com o remaining_risk atual.
+                    # Só esperar decair se o risco real (remaining + base - agentes) > max_risk.
+                    # Evita espera desnecessária quando remaining é pequeno e agentes suficientes.
+                    if current_risk > 5 and missions_pending:
+                        next_mission = missions_pending[0]
+                        md = (live_params.get("missionData") or {}).get(str(next_mission)) or {}
+                        rb = float(md.get("riskBefore") or 0)
+                        rps = float(md.get("riskPerSpy") or 1)
+                        # Risco real com agentes estacionados
+                        effective = current_risk + rb - stationed * rps
+                        if effective > eff_risk:
+                            # Ainda muito arriscado → esperar decair
+                            wait = _risk_wait(current_risk)
+                            self.log(jid, "info",
+                                f"remaining_risk={current_risk:.1f} + missão {next_mission} "
+                                f"(base={rb:.0f}) = {effective:.1f}% > {eff_risk:.0f}% max. "
+                                f"Aguardando {wait}s ({wait//60}min) para decair.")
+                            self.save_game_client(ga_id, client)
+                            return RunnerResult(success=True, reschedule_seconds=wait,
+                                reschedule_inputs={**inputs, "__recovery": _rec(
+                                    phase="executing",
+                                    missions_pending=missions_pending,
+                                    missions_done=missions_done,
+                                    last_stationed=stationed)})
+                        else:
+                            self.log(jid, "info",
+                                f"remaining_risk={current_risk:.1f} mas missão {next_mission} "
+                                f"ainda segura ({effective:.1f}% < {eff_risk:.0f}%). Executando já.")
                     phase = "executing"
 
                 # Em-trânsito chegará ao necessário → aguardar
