@@ -356,6 +356,20 @@ class HubClient:
             params["intel_ttl_hours"] = intel_ttl_hours
         return self._get("/api/agent/worldintel/spy-targets", params=params)
 
+    def save_combat_report(self, game_account_id: str, report: dict) -> dict:
+        """POST /api/agent/combat/reports/ — save/update a combat report.
+
+        report dict fields (see CombatReport model):
+            combat_id, combat_type, result, combat_date, total_rounds,
+            source_city_id, source_city_name, target_city_id, target_city_name,
+            target_owner, target_owner_id, loot_json, attacker_losses,
+            defender_losses, summary_html, detailed_html
+        """
+        return self._post("/api/agent/combat/reports", {
+            "game_account_id": game_account_id,
+            **report,
+        })
+
     def get_latest_spy_intel(
         self,
         target_city_id: str,

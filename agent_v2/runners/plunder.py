@@ -279,7 +279,7 @@ class RaidCityRunner(BaseRunner):
             )
 
         # Batalha resolvida — buscar relatório mais recente contra o alvo
-        report = self._find_latest_combat_report(jid, client, source_city_id, target_city_id)
+        report = self._find_latest_combat_report(jid, client, source_city_id, target_city_id, ga_id=ga_id)
         if report:
             if report.get("army_lost"):
                 self.log(jid, "warn",
@@ -492,9 +492,10 @@ class RaidCityRunner(BaseRunner):
             return 0
 
     def _find_latest_combat_report(
-        self, jid: str, client, source_city_id: str, target_city_id: str
+        self, jid: str, client, source_city_id: str, target_city_id: str,
+        ga_id: str = "",
     ) -> dict | None:
-        """Find the most recent combat report against target_city_id and parse it."""
+        """Find most recent combat report against target, fetch detail + detailed rounds, save to hub."""
         try:
             reports = client.fetch_combat_reports(int(source_city_id), limit=10)
         except Exception as exc:
@@ -503,13 +504,50 @@ class RaidCityRunner(BaseRunner):
 
         for r in reports:
             if str(r.get("city_id_target", "")) == str(target_city_id):
+                combat_id = r["combat_id"]
                 try:
-                    detail = client.fetch_combat_report_detail(int(source_city_id), r["combat_id"])
+                    detail = client.fetch_combat_report_detail(int(source_city_id), combat_id)
                     detail["rounds"] = r.get("rounds", 0)
-                    return detail
                 except Exception as exc:
-                    self.log(jid, "warn", f"[Raid] Falha ao buscar detalhe do combate: {exc}")
-                    return {"combat_id": r["combat_id"], "army_lost": r.get("result") == "defeat"}
+                    self.log(jid, "warn", f"[Raid] Falha ao buscar detalhe {combat_id}: {exc}")
+                    return {"combat_id": combat_id, "army_lost": r.get("result") == "defeat"}
+
+                # Buscar relatório detalhado round por round
+                detailed: dict = {}
+                try:
+                    detailed = client.fetch_combat_detailed_report(int(source_city_id), combat_id)
+                    self.log(jid, "info",
+                             f"[Raid] Relatório detalhado: {detailed.get('total_rounds',0)} round(s) "
+                             f"perdas_atacante={detailed.get('attacker_losses')} "
+                             f"perdas_defensor={detailed.get('defender_losses')}")
+                except Exception as exc:
+                    self.log(jid, "warn", f"[Raid] Falha relatório detalhado: {exc}")
+
+                # Salvar no hub
+                if ga_id:
+                    try:
+                        self.hub.save_combat_report(ga_id, {
+                            "combat_id":        combat_id,
+                            "combat_type":      "land",
+                            "result":           r.get("result", ""),
+                            "combat_date":      detail.get("date", ""),
+                            "total_rounds":     r.get("rounds", 1),
+                            "source_city_id":   source_city_id,
+                            "target_city_id":   target_city_id,
+                            "target_city_name": r.get("city_name", ""),
+                            "target_owner":     r.get("owner_name", ""),
+                            "loot_json":        detail.get("loot") or {},
+                            "total_loot":       detail.get("total_loot", 0),
+                            "attacker_losses":  detailed.get("attacker_losses") or {},
+                            "defender_losses":  detailed.get("defender_losses") or {},
+                            "summary_html":     detail.get("html", ""),
+                            "detailed_html":    detailed.get("combined_html", ""),
+                        })
+                        self.log(jid, "info", f"[Raid] Relatório de combate {combat_id} salvo no hub.")
+                    except Exception as exc:
+                        self.log(jid, "warn", f"[Raid] Falha ao salvar relatório no hub: {exc}")
+
+                return detail
         return None
 
     def _check_remaining_resources(self, jid: str, ga_id: str, target_city_id: str) -> dict | None:

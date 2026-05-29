@@ -45,7 +45,7 @@ from .actions.black_market import (
 )
 from .actions.market import BuyAction, CreateOfferAction, GetOffersAction, SellAction
 from .actions.miracle import MiracleAction
-from .actions.military import AttackAction, BlockadeFleetAction, FetchBarracksStateAction, FetchCombatReportDetailAction, FetchCombatReportsAction, FetchMilitaryAdvisorAction, FetchStationedUnitsAction, PlunderLandAction, SendTroopsAction, StationAction, TrainAction
+from .actions.military import AttackAction, BlockadeFleetAction, FetchBarracksStateAction, FetchCombatDetailedReportAction, FetchCombatReportDetailAction, FetchCombatReportsAction, FetchMilitaryAdvisorAction, FetchStationedUnitsAction, PlunderLandAction, SendTroopsAction, StationAction, TrainAction
 from .actions.research import ResearchAction
 from .actions.resources import CollectAction, DonateAction, SendResourcesAction
 from .actions.shrine import ShrineAction
@@ -566,6 +566,10 @@ class GameClient(IslandActions):
     def fetch_combat_report_detail(self, city_id: int, combat_id: int) -> dict:
         """Fetch full combat report — loot, winner, units."""
         return FetchCombatReportDetailAction(self).execute(city_id=city_id, combat_id=combat_id)
+
+    def fetch_combat_detailed_report(self, city_id: int, combat_id: int) -> dict:
+        """Fetch per-round detailed report — all rounds with slot/unit data."""
+        return FetchCombatDetailedReportAction(self).execute(city_id=city_id, combat_id=combat_id)
 
     def fetch_plunder_view(
         self, from_city_id: int, to_city_id: int, island_id: int

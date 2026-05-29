@@ -52,4 +52,5 @@ urlpatterns = [
     path("api/agent/", include("apps.generals_bank.api_urls", namespace="agent-generals-bank")),
     path("api/agent/", include("apps.diplomacy.api_urls", namespace="agent-diplomacy")),
     path("api/agent/", include("apps.espionage.api_urls", namespace="agent-espionage")),
+    path("api/agent/", include("apps.combat.api_urls", namespace="agent-combat")),
 ]

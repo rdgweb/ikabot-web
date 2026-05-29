@@ -988,6 +988,102 @@ class FetchCombatReportDetailAction(BaseAction):
         }
 
 
+class FetchCombatDetailedReportAction(BaseAction):
+    """Fetch detailed per-round combat report — iterates all rounds.
+
+    URL: view=militaryAdvisorDetailedReportView&combatRound=N&detailedCombatId=X
+
+    Returns: {
+        "total_rounds": N,
+        "rounds": [{"round": N, "html": "..."}],
+        "combined_html": "<all rounds concatenated>",
+        "attacker_losses": {unit_id: count},
+        "defender_losses": {unit_id: count},
+    }
+    Slot pattern: id="slot{N}_{field}_{slot}" class="slot army_small normal s{unit_id}"
+                  <div class="number center"> {qty} (-{lost})
+    """
+
+    def execute(self, city_id: int, combat_id: int, max_rounds: int = 20, **kwargs) -> dict:
+        rounds_html: list[dict] = []
+        attacker_losses: dict[str, int] = {}
+        defender_losses: dict[str, int] = {}
+
+        for round_num in range(max_rounds):
+            resp = self.client._request(
+                "GET",
+                self.client._server_url,
+                params={
+                    "view": "militaryAdvisorDetailedReportView",
+                    "combatRound": round_num,
+                    "detailedCombatId": int(combat_id),
+                    "activeTab": "combatReports",
+                    "backgroundView": "city",
+                    "currentCityId": int(city_id),
+                    "actionRequest": self.client._action_request,
+                    "ajax": "1",
+                },
+                timeout=30,
+            )
+            try:
+                data = resp.json()
+            except Exception:
+                break
+
+            if data and isinstance(data[0], list) and len(data[0]) > 1:
+                gd = data[0][1]
+                if isinstance(gd, dict) and "actionRequest" in gd:
+                    self.client._action_request = gd["actionRequest"]
+
+            html = ""
+            for entry in data:
+                if isinstance(entry, list) and entry[0] in ("changeHTML", "changeView"):
+                    items = entry[1] if isinstance(entry[1], list) else [entry[1]]
+                    for item in items:
+                        if isinstance(item, str) and "militaryAdvisorDetailedReportView" in item:
+                            html = item
+                            break
+
+            if not html or "militaryAdvisorDetailedReportView" not in html:
+                break
+
+            # Parse total rounds from "Round N / M"
+            total_m = re.search(r"Round\s*<br\s*/>\s*(\d+)\s*/\s*(\d+)", html)
+            total_rounds = int(total_m.group(2)) if total_m else round_num + 1
+            current_round = int(total_m.group(1)) if total_m else round_num + 1
+
+            # Parse slot losses: class="slot army_small normal s{unit_id}"
+            # followed by <div class="number center"> N (-lost)
+            ATTACKER_FIELD = "11"
+            DEFENDER_FIELD = "12"
+            for slot_m in re.finditer(
+                r'id="slot(\d+)_\d+_\d+"\s+class="slot[^"]*\bs(\d+)\b[^"]*"'
+                r'.*?<div class="number center">\s*([\d,]+)\s*\(-([\d,]+)\)',
+                html, re.DOTALL
+            ):
+                side   = slot_m.group(1)
+                uid    = slot_m.group(2)
+                # qty  = int(slot_m.group(3).replace(",",""))
+                lost   = int(slot_m.group(4).replace(",", ""))
+                if lost > 0:
+                    target = attacker_losses if side == ATTACKER_FIELD else defender_losses
+                    target[uid] = target.get(uid, 0) + lost
+
+            rounds_html.append({"round": current_round, "html": html})
+
+            if current_round >= total_rounds:
+                break
+
+        combined = "\n<!-- ROUND SEPARATOR -->\n".join(r["html"] for r in rounds_html)
+        return {
+            "total_rounds":     len(rounds_html),
+            "rounds":           rounds_html,
+            "combined_html":    combined,
+            "attacker_losses":  attacker_losses,
+            "defender_losses":  defender_losses,
+        }
+
+
 class AttackAction(BaseAction):
     """Send an attack against another city."""
 

@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     "apps.market",
     "apps.diplomacy",
     "apps.espionage",
+    "apps.combat",
     "apps.telegram",
     "apps.proxy",
     "apps.captcha",

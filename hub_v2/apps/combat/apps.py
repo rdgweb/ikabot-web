@@ -1,0 +1,7 @@
+from django.apps import AppConfig
+
+
+class CombatConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "apps.combat"
+    verbose_name = "Relatórios de Combate"
