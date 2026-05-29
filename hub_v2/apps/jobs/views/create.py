@@ -1867,6 +1867,11 @@ def _job_form_context(form, action_meta, action_code, ga, cities, request=None, 
         ctx["raid_cities"] = _raid_cities_for_select(cities)
     if int(action_code) == 1008:
         ctx.update(_raid_context(ga, getattr(form, "initial", {})))
+        # Free transporters from base_snapshot (global pool)
+        if snapshot:
+            base = snapshot.base_snapshot or {}
+            ctx["free_transporters"] = int(base.get("free_transporters") or 0)
+            ctx["max_transporters"] = int(base.get("max_transporters") or 0)
     if int(action_code) == 16:
         # World spy: safehouses from selected GAs (passed via ?gas=) or all on same server
         ctx.update(_world_spy_context(ga, gas=gas))

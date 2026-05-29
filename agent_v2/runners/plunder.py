@@ -456,27 +456,41 @@ class RaidCityRunner(BaseRunner):
         return {}
 
     def _get_transporters(self, snap: dict, city_id: str, client=None, jid: str = "") -> int:
-        """Count available merchant ships — always queries live when client provided."""
-        # Live query is preferred (merchants are dynamic)
+        """Count available merchant ships.
+
+        Merchant ships (transportadores) are a GLOBAL resource — not per-city.
+        Use base_snapshot.free_transporters for the total available count.
+        Live query via updateGlobalData as fallback.
+        """
+        # Global transporters from base_snapshot (most reliable)
+        base = snap.get("base_snapshot") or {}
+        free = int(base.get("free_transporters") or 0)
+        if free > 0:
+            if jid:
+                self.log(jid, "info",
+                         f"[Raid] Mercantes globais disponíveis: {free} / {base.get('max_transporters',0)}")
+            return free
+
+        # Live query fallback — fetch from game header
         if client is not None:
             try:
-                result = client.fetch_stationed_units(int(city_id), building_type="fleet")
-                counts = result.get("counts") or {}
-                # 201=Barco Mercante, 202=Blindado, 204=Cargueiro
-                live_count = sum(int(counts.get(uid, 0)) for uid in (201, 202, 204))
-                if jid:
-                    self.log(jid, "info", f"[Raid] Mercantes live: {live_count} na cidade {city_id}")
-                return live_count
+                # fetch any city page to get updateGlobalData with freeTransporters
+                resp = client._request("GET", client._server_url,
+                    params={"view": "city", "cityId": int(city_id),
+                            "backgroundView": "city", "actionRequest": client._action_request,
+                            "ajax": "1"}, timeout=15)
+                data = resp.json()
+                for entry in data:
+                    if isinstance(entry, list) and entry[0] == "updateGlobalData" and isinstance(entry[1], dict):
+                        ft = int(entry[1].get("freeTransporters") or 0)
+                        if ft > 0:
+                            if jid:
+                                self.log(jid, "info", f"[Raid] Mercantes live (header): {ft}")
+                            return ft
             except Exception as exc:
                 if jid:
-                    self.log(jid, "warn", f"[Raid] Falha ao buscar mercantes live: {exc}. Usando snapshot.")
+                    self.log(jid, "warn", f"[Raid] Falha ao buscar mercantes live: {exc}")
 
-        # Fallback: snapshot.military.by_city
-        for city_mil in self._get_military_by_city(snap):
-            if str(city_mil.get("city_id") or "") == str(city_id):
-                fleet = city_mil.get("fleet") or {}
-                snap_count = sum(int(fleet.get(str(uid), 0)) for uid in (201, 202, 204))
-                return snap_count
         return 0
 
     def _auto_calculate_units(

@@ -19,6 +19,8 @@
        sourceQuery: '',
        units: {},
        transporters: {{ form.transporters.value|default:0 }},
+       freeTransporters: {{ free_transporters|default:0 }},
+       maxTransporters: {{ max_transporters|default:0 }},
        wallLevel: {{ form.wall_level.value|default:15 }},
        multiTrip: true,
        maxTrips: {{ form.max_trips.value|default:5 }},
@@ -289,8 +291,11 @@
     <template x-if="sourceCityId">
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div class="rounded-[16px] border border-[rgba(79,134,185,0.3)] bg-[rgba(79,134,185,0.05)] p-4">
-          <div class="text-[11px] font-semibold uppercase tracking-[0.14em] mb-3" style="color: var(--ik-sea);">
+          <div class="text-[11px] font-semibold uppercase tracking-[0.14em] mb-1" style="color: var(--ik-sea);">
             <i class="bi bi-box-seam"></i> Navios mercantes
+          </div>
+          <div class="text-[10px] text-muted mb-2">
+            Disponíveis: <span class="font-bold text-ink" x-text="freeTransporters"></span> / <span x-text="maxTransporters"></span>
           </div>
           <div class="flex items-center gap-2 mb-2">
             <button type="button"
@@ -298,16 +303,16 @@
                     class="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-xl border text-ink font-bold hover:bg-red-50 transition-colors"
                     style="border-color: rgba(219,201,167,0.9);">−</button>
             <input type="number" min="0" x-model.number="transporters"
-                   :max="merchantCount(sourceCityId)"
+                   :max="freeTransporters"
                    class="flex-1 text-center text-sm font-bold text-ink rounded-xl border py-2 outline-none focus:ring-1"
                    style="border-color: rgba(79,134,185,0.4); background: rgba(255,255,255,0.9);">
             <button type="button"
-                    @click="transporters = Math.min(merchantCount(sourceCityId), transporters + 1)"
+                    @click="transporters = Math.min(freeTransporters, transporters + 1)"
                     class="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-xl border text-ink font-bold hover:bg-green-50 transition-colors"
                     style="border-color: rgba(219,201,167,0.9);">+</button>
             <button type="button"
-                    @click="transporters = merchantCount(sourceCityId)"
-                    class="text-xs text-muted hover:text-ink px-2">tudo (<span x-text="merchantCount(sourceCityId)"></span>)</button>
+                    @click="transporters = freeTransporters"
+                    class="text-xs text-muted hover:text-ink px-2">tudo (<span x-text="freeTransporters"></span>)</button>
           </div>
           <div class="text-[10px] text-muted">
             Capacidade: <span class="font-bold text-ink" x-text="new Intl.NumberFormat('pt-BR').format(lootCapacity())"></span> recursos/viagem
