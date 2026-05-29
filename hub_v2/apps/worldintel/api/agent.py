@@ -503,3 +503,60 @@ class WorldDumpReplaceIslandsView(APIView):
                 "status": dump.status,
             }
         )
+
+
+class UpdateCityStateView(APIView):
+    """POST /api/agent/worldintel/cities/update-state/
+
+    Called by the spy runner when it detects a city changed state
+    (went into vacation mode, player left, etc.) after the dump was captured.
+
+    Updates the state field on the most recent WorldDumpCity for that game_city_id
+    across ALL dumps for the given game_account's server.
+
+    Payload:
+        game_city_id  str  — game ID of the city
+        state         str  — new state ("vacation", "inactive_banned", "gone", "active")
+        game_account_id str — (optional) to scope the dump lookup by server
+        reason        str  — (optional) human-readable reason for the update
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    VALID_STATES = {"vacation", "inactive_banned", "gone", "active", "inactive"}
+
+    def post(self, request):
+        game_city_id    = str(request.data.get("game_city_id") or "").strip()
+        new_state       = str(request.data.get("state") or "").strip()
+        game_account_id = str(request.data.get("game_account_id") or "").strip()
+        reason          = str(request.data.get("reason") or "").strip()
+
+        if not game_city_id:
+            return Response({"error": "game_city_id required."}, status=status.HTTP_400_BAD_REQUEST)
+        if new_state not in self.VALID_STATES:
+            return Response(
+                {"error": f"state must be one of {sorted(self.VALID_STATES)}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Find most recent WorldDumpCity entries for this game_city_id
+        qs = WorldDumpCity.objects.filter(game_city_id=game_city_id).order_by("-dump__captured_at")
+        if game_account_id:
+            # Scope to dumps from the same server as this game_account
+            try:
+                ga = GameAccount.objects.get(pk=game_account_id)
+                qs = qs.filter(dump__game_account__server_id=ga.server_id)
+            except (GameAccount.DoesNotExist, Exception):
+                pass
+
+        updated = qs.update(state=new_state)
+
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(
+            "UpdateCityState: game_city_id=%s → state=%s updated=%s reason=%s",
+            game_city_id, new_state, updated, reason,
+        )
+
+        return Response({"ok": True, "game_city_id": game_city_id, "state": new_state, "updated_rows": updated})

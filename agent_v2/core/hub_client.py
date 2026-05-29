@@ -370,6 +370,28 @@ class HubClient:
             **report,
         })
 
+    def update_city_state(
+        self,
+        game_city_id: str,
+        state: str,
+        game_account_id: str | None = None,
+        reason: str = "",
+    ) -> dict:
+        """POST /api/agent/worldintel/cities/update-state/
+
+        Update the state of a city in the WorldDump when the spy detects
+        the player changed state (vacation, gone, etc.) after the dump was captured.
+        state: "vacation" | "inactive_banned" | "gone" | "active" | "inactive"
+        """
+        payload: dict[str, Any] = {
+            "game_city_id": game_city_id,
+            "state": state,
+            "reason": reason,
+        }
+        if game_account_id:
+            payload["game_account_id"] = game_account_id
+        return self._post("/api/agent/worldintel/cities/update-state", payload)
+
     def get_latest_spy_intel(
         self,
         target_city_id: str,
