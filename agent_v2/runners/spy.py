@@ -41,6 +41,7 @@ from runners.base import BaseRunner, RunnerResult
 logger = logging.getLogger(__name__)
 
 ARRIVAL_WAIT     = 20 * 60   # fallback quando return_timestamp indisponível
+ARRIVAL_WAIT_MAX = 6 * 3600  # fallback conservador quando enddate não vem na response
 ERROR_RESCHEDULE = 10 * 60
 MAX_RETRIES      = 3         # tentativas por missão interna antes de pular
 MAX_NO_PROGRESS  = 8         # ciclos sem progresso antes de tentar escape
@@ -450,7 +451,10 @@ class SpyRunner(BaseRunner):
                         wait_total = max(60, wait_total)
 
                         new_sent  = r_sent_total + ag + dec
-                        new_arriv = int(time.time()) + travel if travel > 0 else 0
+                        # Se travel=0 (enddate não veio na response do jogo), usa 6h como
+                        # fallback conservador para que o recovery tracking funcione até os
+                        # espiões chegarem (distâncias longas podem levar 4-5h).
+                        new_arriv = int(time.time()) + (travel if travel > 0 else ARRIVAL_WAIT_MAX)
                         self.log(jid, "info",
                             f"Infiltração enviada ({msg}). Viagem={travel}s "
                             f"risk_after={risk_after_total:.1f} → aguardando {wait_total}s "

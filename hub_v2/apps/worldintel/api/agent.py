@@ -469,7 +469,15 @@ class WorldSpyTargetsView(APIView):
                 )
                 cities = [c for c in cities if c.game_city_id not in has_valid]
 
-        cities = cities[:limit]
+        # Deduplicate by game_city_id (safety — should not happen but guards against
+        # duplicate rows in the dump).
+        seen_city_ids: set[str] = set()
+        deduped: list = []
+        for c in cities:
+            if c.game_city_id not in seen_city_ids:
+                seen_city_ids.add(c.game_city_id)
+                deduped.append(c)
+        cities = deduped[:limit]
 
         targets = [{
             "game_city_id": c.game_city_id,

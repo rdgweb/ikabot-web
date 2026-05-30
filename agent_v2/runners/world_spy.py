@@ -288,9 +288,10 @@ class WorldSpyRunner(BaseRunner):
             return RunnerResult(success=True)
 
         # ── Spawna jobs filhos (ac=15) para safehouses livres ─────────────────
-        spawned        = 0
-        skipped        = 0
-        remaining_free = list(free_entries)
+        spawned           = 0
+        skipped           = 0
+        remaining_free    = list(free_entries)
+        dispatched_cities: set[str] = set()  # guard contra duplicatas no dump
 
         for target in targets:
             if not remaining_free:
@@ -300,7 +301,7 @@ class WorldSpyRunner(BaseRunner):
                 break
 
             target_city_id = str(target.get("game_city_id") or "").strip()
-            if not target_city_id:
+            if not target_city_id or target_city_id in dispatched_cities:
                 skipped += 1
                 continue
 
@@ -354,6 +355,7 @@ class WorldSpyRunner(BaseRunner):
                     game_account_id=source_ga_pk,
                 )
                 spawned += 1
+                dispatched_cities.add(target_city_id)
                 child_jid = resp.get("new_job_id", "?")
                 scope_tag = "city+player" if not player_already_covered and has_player_scope else "city"
                 self.log(jid, "info",
