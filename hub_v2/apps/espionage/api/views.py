@@ -47,8 +47,152 @@ _SIEGE_UNITS = {
     "balão bombardeiro", "balao bombardeiro",
 }
 
+# PT-BR/EN nome de unidade → unit_id (UNIT_STATS)
+_NAME_TO_ID: dict[str, int] = {
+    "Fundeiro": 301, "Espadachim": 302, "Hoplita": 303, "Carabineiro": 304,
+    "Morteiro": 305, "Catapulta": 306, "Aríete": 307, "Ariete": 307,
+    "Gigante a Vapor": 308, "Balão-Bombardeiro": 309, "Balao-Bombardeiro": 309,
+    "Balão Bombardeiro": 309,
+    "Cozinheiro": 310, "Médico": 311, "Medico": 311, "Girocóptero": 312,
+    "Girocoptero": 312, "Arqueiro": 313, "Lanceiro": 315,
+    # Navais
+    "Trireme": 210, "Lança-Chamas": 211, "Submergível": 212, "Barco Balista": 213,
+    "Barco Catapulta": 214, "Barco Morteiro": 215, "Aríete a Vapor": 216,
+    "Lança-Foguetes": 217, "Lancha Rápida": 218, "Porta-balões": 219, "Reparador": 220,
+}
 
-def _choose_raid_account(target_city_id: str, target_owner_id: str, server_id: str, top_n: int = 5):
+
+def _troops_dict_to_ids(troops: dict) -> dict[int, int]:
+    """Converte {nome_pt: qty} ou {id: qty} → {unit_id: qty}."""
+    out: dict[int, int] = {}
+    for k, v in (troops or {}).items():
+        try:
+            qty = int(v)
+        except (TypeError, ValueError):
+            continue
+        if qty <= 0:
+            continue
+        try:
+            uid = int(k)
+        except (TypeError, ValueError):
+            uid = _NAME_TO_ID.get(str(k))
+        if uid:
+            out[uid] = out.get(uid, 0) + qty
+    return out
+
+
+def _parse_enemy_intel(target_city_id: str, target_owner_id: str, server_id: str) -> dict:
+    """Lê reports mission 7 + 26 do alvo + invenções do owner → enemy_units + levels."""
+    enemy_units: dict[int, int] = {}
+    enemy_off = 0
+    enemy_def = 0
+    needs_blockade = False
+
+    # Mission 7 — tropas terrestres + warships
+    r7 = SpyReport.objects.filter(
+        target_city_id=target_city_id, mission_id=7,
+        game_account__server_id=server_id,
+    ).order_by("-created_at").first()
+    if r7 and r7.data_json:
+        for cat in (r7.data_json.get("troops_data") or []):
+            if not isinstance(cat, dict): continue
+            cat_type = (cat.get("category_type") or "").lower()
+            is_naval = "naval" in cat_type or "naval" in (cat.get("category","") or "").lower()
+            for u in (cat.get("units") or []):
+                name = str(u.get("name") or "").strip()
+                cnt = int(u.get("count") or 0)
+                if cnt <= 0: continue
+                if is_naval:
+                    needs_blockade = True
+                else:
+                    uid = _NAME_TO_ID.get(name)
+                    if uid:
+                        enemy_units[uid] = enemy_units.get(uid, 0) + cnt
+
+    # Mission 26 — upgrades (offensive/defensive max levels)
+    r26 = SpyReport.objects.filter(
+        target_owner_id=target_owner_id, mission_id=26,
+        game_account__server_id=server_id,
+    ).order_by("-created_at").first()
+    if r26 and r26.data_json:
+        for imp in (r26.data_json.get("workshop_improvements") or []):
+            if not isinstance(imp, dict): continue
+            enemy_off = max(enemy_off, int(imp.get("offensive") or 0))
+            enemy_def = max(enemy_def, int(imp.get("defensive") or 0))
+
+    return {
+        "enemy_units": enemy_units,
+        "enemy_off_level": enemy_off,
+        "enemy_def_level": enemy_def,
+        "needs_blockade": needs_blockade,
+    }
+
+
+def _simulate_attack(own_troops_pt: dict, enemy_intel: dict, wall_level: int = 1) -> dict:
+    """Simula combate atacante (todas tropas da cidade) vs defensores conhecidos."""
+    from apps.espionage.services.combat import calculate
+    own_units = _troops_dict_to_ids(own_troops_pt)
+    if not own_units:
+        return {"can_win": False, "surviving_hp_pct": 0.0, "rounds_to_kill_enemy": 0}
+    return calculate(
+        enemy_units=enemy_intel.get("enemy_units") or {},
+        enemy_off_level=enemy_intel.get("enemy_off_level") or 0,
+        enemy_def_level=enemy_intel.get("enemy_def_level") or 0,
+        wall_level=wall_level,
+        own_units=own_units,
+    )
+
+
+def _recommend_units(own_troops_pt: dict, enemy_intel: dict, wall_level: int = 1) -> dict:
+    """Recomenda mínimo de unidades pra vencer (com margem de segurança 3×)."""
+    from apps.espionage.services.combat import recommend_army
+    available = _troops_dict_to_ids(own_troops_pt)
+    if not available:
+        return {}
+    rec = recommend_army(
+        enemy_units=enemy_intel.get("enemy_units") or {},
+        enemy_off_level=enemy_intel.get("enemy_off_level") or 0,
+        enemy_def_level=enemy_intel.get("enemy_def_level") or 0,
+        wall_level=wall_level,
+        available_units=available,
+        safety_margin=3.0,
+    )
+    return rec.get("recommended") or {}
+
+
+def _recommend_fleet_for_blockade(own_fleet_pt: dict) -> dict:
+    """Recomenda frota pra ocupar porto (blockade). Prioriza Aríete a Vapor, Trireme."""
+    fleet_ids = _troops_dict_to_ids(own_fleet_pt)
+    if not fleet_ids:
+        return {}
+    # Prioridade: Aríete a Vapor (216), Trireme (210), Pironavio (223)
+    rec: dict[int, int] = {}
+    for uid in (216, 210, 223, 211, 213, 214, 215):
+        have = fleet_ids.get(uid, 0)
+        if have > 0:
+            # 2 mínimo, ou todos disponíveis se < 2
+            rec[uid] = min(have, 2)
+            if sum(rec.values()) >= 2:
+                break
+    return rec
+
+
+# Inverso para mostrar nome
+_ID_TO_NAME = {v: k for k, v in _NAME_TO_ID.items() if "Ariete" not in k or k == "Aríete"}
+_ID_TO_NAME.update({
+    301: "Fundeiro", 302: "Espadachim", 303: "Hoplita", 304: "Carabineiro",
+    305: "Morteiro", 306: "Catapulta", 307: "Aríete", 308: "Gigante a Vapor",
+    309: "Balão-Bombardeiro", 310: "Cozinheiro", 311: "Médico",
+    312: "Girocóptero", 313: "Arqueiro", 315: "Lanceiro",
+    # Navais
+    210: "Trireme", 211: "Lança-Chamas", 212: "Submergível", 213: "Barco Balista",
+    214: "Barco Catapulta", 215: "Barco Morteiro", 216: "Aríete a Vapor",
+    217: "Lança-Foguetes", 218: "Lancha Rápida", 219: "Porta-balões", 220: "Reparador",
+    223: "Pironavio",
+})
+
+
+def _choose_raid_account(target_city_id: str, target_owner_id: str, server_id: str, top_n: int = 5, enemy_intel: dict | None = None):
     """Escolhe contas elegíveis pra roubar.
 
     Filtros: tem mercantes + tropas frontline+siege, NÃO está em raid/blockade ativa pra esse alvo.
@@ -97,11 +241,29 @@ def _choose_raid_account(target_city_id: str, target_owner_id: str, server_id: s
             if not isinstance(troops_holder, dict):
                 continue
             troops = troops_holder.get("troops") or {}
+            fleet  = troops_holder.get("fleet")  or {}
             frontline = sum(int(qty) for name, qty in troops.items() if str(name).lower() in _FRONTLINE_UNITS)
             siege = sum(int(qty) for name, qty in troops.items() if str(name).lower() in _SIEGE_UNITS)
             if frontline <= 0 or siege <= 0:
                 continue
-            score = frontline + siege * 2
+
+            # Simulação de combate (se temos intel do inimigo)
+            sim = None
+            recommended = None
+            recommended_fleet = None
+            if enemy_intel and enemy_intel.get("enemy_units"):
+                sim = _simulate_attack(troops, enemy_intel, wall_level=1)
+                if not sim.get("can_win"):
+                    continue  # pula cidade que não vence
+                recommended = _recommend_units(troops, enemy_intel, wall_level=1)
+            if enemy_intel and enemy_intel.get("needs_blockade"):
+                recommended_fleet = _recommend_fleet_for_blockade(fleet)
+
+            # Score = sobra de HP após combate (se simulado) ou frontline+siege
+            if sim:
+                score = sim.get("surviving_hp_pct", 0) * 1000 + sim.get("own_total_hp", 0)
+            else:
+                score = frontline + siege * 2
             if best is None or score > best["score"]:
                 best = {
                     "city_id": str(cid),
@@ -109,6 +271,9 @@ def _choose_raid_account(target_city_id: str, target_owner_id: str, server_id: s
                     "frontline": frontline,
                     "siege": siege,
                     "score": score,
+                    "sim": sim,
+                    "recommended": recommended,
+                    "recommended_fleet": recommended_fleet,
                 }
         if not best:
             continue
@@ -128,6 +293,9 @@ def _choose_raid_account(target_city_id: str, target_owner_id: str, server_id: s
             "frontline": best["frontline"],
             "siege": best["siege"],
             "has_spied": has_report,
+            "sim": best.get("sim"),
+            "recommended": best.get("recommended"),
+            "recommended_fleet": best.get("recommended_fleet"),
             "_score": score_total,
         })
 
@@ -379,9 +547,10 @@ class ScanRaidAlertsView(APIView):
                 skipped += 1
                 continue
 
-            # Todos snapshots frescos — escolher conta e enviar
+            # Todos snapshots frescos — escolher conta com base na simulação
             target_owner_id = report.target_owner_id or ""
-            choices = _choose_raid_account(cid, target_owner_id, ga.server_id, top_n=5)
+            enemy_intel = _parse_enemy_intel(cid, target_owner_id, ga.server_id)
+            choices = _choose_raid_account(cid, target_owner_id, ga.server_id, top_n=5, enemy_intel=enemy_intel)
             top = choices[0] if choices else None
 
             target_name  = report.target_city_name or cid
@@ -434,13 +603,38 @@ class ScanRaidAlertsView(APIView):
             if top:
                 eta_min = _eta_minutes(top["source_city_id"], report.target_x, report.target_y)
                 eta_text = f"~{eta_min}min" if eta_min else "?"
+                sim = top.get("sim") or {}
+                if sim:
+                    rounds = sim.get("rounds_to_kill_enemy", 0)
+                    pct = sim.get("surviving_hp_pct", 0)
+                    win_text = f"\n  ✅ Vitória: {pct:.0f}% HP restante / {rounds:.1f} rounds"
+                else:
+                    win_text = "\n  ⚠️ Sem intel completo (mission 7+26) — combate não simulado"
+                rec_units = top.get("recommended") or {}
+                if rec_units:
+                    rec_lines = ", ".join(
+                        f"{qty}× {_ID_TO_NAME.get(uid, str(uid))}"
+                        for uid, qty in rec_units.items()
+                    )
+                    troops_text = f"\n🗡️ Tropas a enviar: {rec_lines}"
+                else:
+                    troops_text = ""
+                rec_fleet = top.get("recommended_fleet") or {}
+                if rec_fleet:
+                    fleet_lines = ", ".join(
+                        f"{qty}× {_ID_TO_NAME.get(uid, str(uid))}"
+                        for uid, qty in rec_fleet.items()
+                    )
+                    troops_text += f"\n⚓ Frota p/ bloquear porto: {fleet_lines}"
                 origin_block = (
                     f"🚢 Sugestão: {top['source_city_name']} ({top['ga_name']})\n"
                     f"  Mercantes: {top['transporters']} | Frontline: {top['frontline']} | Cerco: {top['siege']}\n"
                     f"  Viagem estimada: {eta_text}"
+                    f"{win_text}"
+                    f"{troops_text}"
                 )
             else:
-                origin_block = "⚠️ Nenhuma conta elegível (sem tropas/mercantes ou todas em raid)"
+                origin_block = "⚠️ Nenhuma conta vence esse alvo (ou todas em raid/sem mercantes)"
 
             title = f"🏴‍☠️ Alvo rico: {target_name} {xy} ({target_owner})"
             body  = (

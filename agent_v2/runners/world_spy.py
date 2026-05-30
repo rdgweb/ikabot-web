@@ -384,14 +384,14 @@ class WorldSpyRunner(BaseRunner):
                                 continue
                             seen_gas.add(stale_ga)
                             try:
-                                self.hub.spawn_job(jid, action_code=2, inputs={}, game_account_id=stale_ga)
-                                self.hub.spawn_job(jid, action_code=13, inputs={}, game_account_id=stale_ga)
+                                self.hub.spawn_job(jid, action_code=100, inputs={}, game_account_id=stale_ga)
+                                self.hub.spawn_job(jid, action_code=13,  inputs={}, game_account_id=stale_ga)
                                 spawned_refresh += 1
                             except Exception as _exc:
                                 self.log(jid, "warn", f"[WorldSpy] Falha refresh ga={stale_ga[:8]}: {_exc}")
                     if spawned_refresh:
                         self.log(jid, "info",
-                                 f"[WorldSpy] {spawned_refresh} conta(s) refrescando (ac=2+ac=13). "
+                                 f"[WorldSpy] {spawned_refresh} conta(s) refrescando (ac=100+ac=13). "
                                  f"Alerta Telegram virá no próximo ciclo.")
             except Exception as exc:
                 self.log(jid, "warn", f"[WorldSpy] Falha no scan de raid alerts: {exc}")

@@ -673,16 +673,12 @@ class PlunderLandAction(BaseAction):
         if not units or not any(int(q) > 0 for q in units.values()):
             raise ActionError("No units specified for plunder", action="plunder")
 
-        # Phase 0a: SWITCH active city to the source city. Sem isso, o jogo manda
-        # tropas da cidade atualmente aberta (que pode ser outra), e ignora
-        # from_city_id do payload.
+        # Phase 0a: SWITCH active city to the source city via header changeCurrentCity.
+        # Sem isso, o jogo manda tropas da cidade da sessão (que pode ser outra)
+        # e ignora from_city_id do payload.
         try:
-            self.client._request(
-                "GET",
-                self.client._server_url,
-                params={"view": "city", "cityId": int(from_city_id), "ajax": "1"},
-                timeout=20,
-            )
+            from services.resource_transport import change_current_city
+            change_current_city(self.client, int(from_city_id))
         except Exception:
             pass
 

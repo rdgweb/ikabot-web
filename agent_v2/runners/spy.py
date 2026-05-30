@@ -197,7 +197,7 @@ class SpyRunner(BaseRunner):
                     self.log(jid, "warn", f"Falha ao consultar missões cobertas: {_exc}")
 
             # Se não sobrou missão pendente, encerrar
-            if not missions_pending and intel_missions:
+            if phase != "recalling" and not recall_after and not missions_pending and intel_missions:
                 self.log(jid, "info", "Todas as missões já têm intel válido. Encerrando job.")
                 self._notify_parent(jid, inputs, success=True, data={
                     "missions_done":   missions_done,
@@ -243,6 +243,25 @@ class SpyRunner(BaseRunner):
                 f"Alvo {target_owner}/{target_city_name}: "
                 f"estacionados={stationed} em_transito={in_transit} "
                 f"(ant={last_stationed} no_progress={no_progress})")
+
+            if not missions_pending and intel_missions and recall_after and stationed > 0 and phase != "done":
+                if phase != "recalling":
+                    self.log(
+                        jid,
+                        "info",
+                        f"Intel jÃ¡ coberta, mas ainda hÃ¡ {stationed} espiÃ£o(Ãµes) estacionado(s). "
+                        "Entrando na fase de recall.",
+                    )
+                phase = "recalling"
+            elif not missions_pending and intel_missions and phase != "recalling":
+                self.log(jid, "info", "Todas as missÃµes jÃ¡ tÃªm intel vÃ¡lido. Encerrando job.")
+                self._notify_parent(jid, inputs, success=True, data={
+                    "missions_done":   missions_done,
+                    "missions_failed": [],
+                    "target_city_id":  target_city_id,
+                    "source_city_id":  city_id,
+                })
+                return RunnerResult(success=True, data={"skipped": "already_covered"})
 
             # Detectar perda de espiões entre ciclos (ignorar na fase done — espiões voltaram para casa)
             if stationed < last_stationed and last_stationed > 0 and phase != "done":
@@ -1465,12 +1484,24 @@ class SpyRunner(BaseRunner):
                          capacity: int, total: int, secs_per: int, *,
                          safehouse_position: int) -> None:
         try:
-            missing = max(0, capacity - total)
+            try:
+                fresh_state = client.get_safehouse_state(city_id, position=safehouse_position)
+                fresh_capacity = int(fresh_state.get("spy_capacity") or capacity or 0)
+                fresh_total = int(fresh_state.get("total_spies") or total or 0)
+                fresh_secs_per = int(fresh_state.get("training_secs_per_spy") or secs_per or 250)
+            except Exception as exc:
+                self.log(jid, "warn", f"ReposiÃ§Ã£o: falha ao reler safehouse, usando estado do job ({exc}).")
+                fresh_capacity = int(capacity or 0)
+                fresh_total = int(total or 0)
+                fresh_secs_per = int(secs_per or 250)
+
+            missing = max(0, fresh_capacity - fresh_total)
             if missing <= 0:
+                self.log(jid, "info", f"ReposiÃ§Ã£o: safehouse sem vagas para treino ({fresh_total}/{fresh_capacity}).")
                 return
             ok, msg = client.train_spies(city_id, count=missing, position=safehouse_position)
             if ok:
-                wait = secs_per * missing
+                wait = fresh_secs_per * missing
                 self.log(jid, "info",
                     f"Reposição: treinando {missing} espião(ões) → prontos em ~{wait}s ({wait//60}min).")
             else:

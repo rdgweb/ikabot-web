@@ -41,9 +41,12 @@ def _create_raid_job(
 ) -> tuple[bool, str]:
     """Create ac=1008 (RaidCityRunner) job from Telegram callback.
 
+    Lê reports mission 7 mais recente do alvo pra detectar warships defensoras
+    (needs_blockade) e calcular units recomendadas.
     Returns (success, message).
     """
     from apps.accounts.models import GameAccount
+    from apps.espionage.models import SpyReport
     from apps.jobs.services.workflows import create_job_with_workflow
 
     try:
@@ -55,6 +58,45 @@ def _create_raid_job(
     if not node:
         return False, "Nenhum nó disponível para esta conta."
 
+    # PT-BR → unit_id (terrestres) mapping
+    _NAME_TO_ID = {
+        "Fundeiro": 301, "Espadachim": 302, "Hoplita": 303, "Carabineiro": 304,
+        "Morteiro": 305, "Catapulta": 306, "Aríete": 307, "Ariete": 307,
+        "Gigante a Vapor": 308, "Balão-Bombardeiro": 309, "Balao-Bombardeiro": 309,
+        "Cozinheiro": 310, "Médico": 311, "Medico": 311, "Girocóptero": 312,
+        "Girocoptero": 312, "Arqueiro": 313, "Lanceiro": 315,
+    }
+
+    # Detectar warships na defesa via mission 7 + mapear tropas terrestres pra IDs
+    needs_blockade = False
+    enemy_units: dict[int, int] = {}  # {unit_id: qty} — só terrestres
+    enemy_wall_level = 1
+    try:
+        r7 = SpyReport.objects.filter(
+            target_city_id=target_city_id, mission_id=7,
+            game_account__server_id=ga.server_id,
+        ).order_by("-created_at").first()
+        if r7 and r7.data_json:
+            for cat in (r7.data_json.get("troops_data") or []):
+                if not isinstance(cat, dict):
+                    continue
+                cat_type = (cat.get("category_type") or "").lower()
+                cat_label = (cat.get("category") or "").lower()
+                is_naval = "naval" in cat_type or "naval" in cat_label
+                for u in (cat.get("units") or []):
+                    name = str(u.get("name") or "").strip()
+                    cnt = int(u.get("count") or 0)
+                    if cnt <= 0:
+                        continue
+                    if is_naval:
+                        needs_blockade = True
+                    else:
+                        uid = _NAME_TO_ID.get(name)
+                        if uid:
+                            enemy_units[uid] = enemy_units.get(uid, 0) + cnt
+    except Exception as exc:
+        logger.warning("Failed to read defender intel for %s: %s", target_city_id, exc)
+
     inputs: dict = {
         "target_city_id": target_city_id,
         "island_id": island_id,
@@ -62,7 +104,11 @@ def _create_raid_job(
         "multi_trip": True,
         "max_trips": 50,
         "min_resources_to_continue": 5000,
+        "needs_blockade": needs_blockade,
+        "wall_level": enemy_wall_level,
     }
+    if enemy_units:
+        inputs["enemy_units"] = enemy_units
     if source_city_id:
         inputs["source_city_id"] = source_city_id
     try:
@@ -75,7 +121,8 @@ def _create_raid_job(
             status="queued",
             trigger_type="telegram_callback",
         )
-        logger.info("RaidJob created %s ga=%s target=%s source=%s", job.pk, ga_id, target_city_id, source_city_id)
+        logger.info("RaidJob created %s ga=%s target=%s source=%s blockade=%s",
+                    job.pk, ga_id, target_city_id, source_city_id, needs_blockade)
         return True, str(job.pk)
     except Exception as exc:
         logger.exception("Failed to create raid job: %s", exc)
