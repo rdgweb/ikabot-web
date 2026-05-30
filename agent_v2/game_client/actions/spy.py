@@ -1109,8 +1109,18 @@ class SpyMissionDataAction(BaseAction):
                             js_params = json.loads(params_str)
                         except Exception:
                             pass
-            if isinstance(entry, list) and entry[0] in ("changeHTML", "changeView") and isinstance(entry[1], str):
-                html_fragments.append(entry[1])
+            if isinstance(entry, list) and entry[0] in ("changeHTML", "changeView"):
+                v = entry[1]
+                if isinstance(v, str):
+                    html_fragments.append(v)
+                elif isinstance(v, list):
+                    for it in v:
+                        if isinstance(it, str):
+                            html_fragments.append(it)
+                elif isinstance(v, dict):
+                    for it in v.values():
+                        if isinstance(it, str):
+                            html_fragments.append(it)
 
         if not js_params:
             return {"missions": {}, "target": {}}

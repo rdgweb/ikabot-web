@@ -425,18 +425,22 @@ class SpyRunner(BaseRunner):
                         if rt and rt - now_ts > 30:
                             travel = rt - now_ts
                         else:
-                            # Fallback: re-ler safehouse (pode não ter atualizado ainda)
-                            try:
-                                time.sleep(3)
-                                fs = client.get_safehouse_state(city_id, position=safehouse_position)
-                                fg = self._get_target_groups(fs, target_city_id, target_city_name, target_owner)
-                                for g in fg:
-                                    ts = g.get("return_timestamp")
-                                    if ts and int(ts) - now_ts > 30:
-                                        travel = int(ts) - now_ts
-                                        break
-                            except Exception:
-                                pass
+                            # Fallback: re-ler safehouse com retry (pode demorar para atualizar)
+                            for sleep_s in (3, 5, 7):
+                                if travel > 0:
+                                    break
+                                try:
+                                    time.sleep(sleep_s)
+                                    fs = client.get_safehouse_state(city_id, position=safehouse_position)
+                                    fg = self._get_target_groups(fs, target_city_id, target_city_name, target_owner)
+                                    for g in fg:
+                                        ts = g.get("return_timestamp")
+                                        if ts and int(ts) - now_ts > 30:
+                                            travel = int(ts) - now_ts
+                                            self.log(jid, "info", f"Recovery: ETA do safehouse após {sleep_s}s = {travel}s")
+                                            break
+                                except Exception:
+                                    pass
 
                         # Depois da infiltração: esperar viagem + riskAfter decair.
                         # Usa riskAfter real de M1 do live_params (default RISK_AFTER_M1=5).
@@ -444,20 +448,21 @@ class SpyRunner(BaseRunner):
                         _m1_ra = float(_md_m1.get("riskAfter") or RISK_AFTER_M1)
                         risk_after_total = current_risk + _m1_ra
                         risk_wait_s = _risk_wait(risk_after_total)
+                        # Fallback: usa form_travel_secs (do HTML do form) se enddate não veio.
+                        _effective_travel = travel if travel > 0 else form_travel_secs
                         # Usa o maior entre: tempo de viagem e tempo de risco
                         wait_total = max(
-                            travel + 30 if travel > 0 else ARRIVAL_WAIT,
+                            _effective_travel + 30 if _effective_travel > 0 else ARRIVAL_WAIT,
                             risk_wait_s if risk_after_total > 10 else 0
                         )
                         wait_total = max(60, wait_total)
 
                         new_sent  = r_sent_total + ag + dec
-                        # Se travel=0 (enddate não veio no response do send), usa o tempo
-                        # do form HTML (totalTime) como fallback, ou 6h conservador.
-                        _fallback = (form_travel_secs + 120) if form_travel_secs > 30 else ARRIVAL_WAIT_MAX
-                        new_arriv = int(time.time()) + (travel if travel > 0 else _fallback)
+                        # arrival_at: usa travel real, ou form HTML, ou 6h conservador.
+                        _fallback = (_effective_travel + 120) if _effective_travel > 30 else ARRIVAL_WAIT_MAX
+                        new_arriv = int(time.time()) + (_effective_travel if _effective_travel > 0 else _fallback)
                         self.log(jid, "info",
-                            f"Infiltração enviada ({msg}). Viagem={travel}s "
+                            f"Infiltração enviada ({msg}). Viagem={travel}s form={form_travel_secs}s "
                             f"risk_after={risk_after_total:.1f} → aguardando {wait_total}s "
                             f"({wait_total//60}min) para viagem+risco decaírem.")
                     else:
