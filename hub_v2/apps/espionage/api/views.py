@@ -33,22 +33,167 @@ _RESOURCE_NAMES = {
     "Enxofre": "sulfur", "Sulfur": "sulfur",
 }
 
+# Frontline/siege unit names (PT-BR + EN + advisor cssClass) — case-insensitive
+_FRONTLINE_UNITS = {
+    # EN/cssClass
+    "hoplite", "swordsman", "spearman", "viking", "spartan", "marksman",
+    # PT-BR (snapshot.military.by_city.troops keys)
+    "hoplita", "espadachim", "lanceiro", "carabineiro", "fundeiro", "arqueiro",
+    "gigante a vapor", "girocóptero", "girocoptero",
+}
+_SIEGE_UNITS = {
+    "ram", "catapult", "mortar", "balloon", "balloonbombardier",
+    "aríete", "ariete", "catapulta", "morteiro", "balão-bombardeiro", "balao-bombardeiro",
+    "balão bombardeiro", "balao bombardeiro",
+}
+
+
+def _choose_raid_account(target_city_id: str, target_owner_id: str, server_id: str, top_n: int = 5):
+    """Escolhe contas elegíveis pra roubar.
+
+    Filtros: tem mercantes + tropas frontline+siege, NÃO está em raid/blockade ativa pra esse alvo.
+    Prioridade: conta que tem report mission 5 desse alvo (espionou).
+    Retorna lista [{ga_id, ga_name, source_city_id, source_city_name, transporters, frontline, siege}]
+    ordenada por score (melhor primeiro).
+    """
+    from apps.game.models import AccountSnapshot
+    candidates = []
+    for ga in GameAccount.objects.filter(server_id=server_id, active=True):
+        snap = AccountSnapshot.objects.filter(game_account=ga).first()
+        if not snap:
+            continue
+        # Skip se já tem raid/blockade ativa pra esse target_city_id
+        movs = (snap.movements or {}).get("movement_details") or []
+        in_raid = any(
+            (m.get("target") or {}).get("cityId") == int(target_city_id or 0)
+            and m.get("mission") in {"plunder", "blockade"}
+            for m in movs
+        )
+        if in_raid:
+            continue
+
+        base = snap.base_snapshot or {}
+        free_t = int(base.get("free_transporters") or 0)
+        if free_t < 1:
+            continue
+
+        # Iterar cidades, pegar a que tem mais tropas frontline+siege
+        cities = snap.cities or []
+        military = snap.military or {}
+        # by_city pode ser list ou dict
+        _bc = military.get("by_city") if isinstance(military, dict) else None
+        if isinstance(_bc, list):
+            military_by_city = {str(x.get("city_id")): x for x in _bc if isinstance(x, dict)}
+        elif isinstance(_bc, dict):
+            military_by_city = _bc
+        else:
+            military_by_city = {}
+        best = None
+        for c in cities:
+            if not isinstance(c, dict):
+                continue
+            cid = c.get("id")
+            troops_holder = military_by_city.get(str(cid)) or military_by_city.get(cid) or {}
+            if not isinstance(troops_holder, dict):
+                continue
+            troops = troops_holder.get("troops") or {}
+            frontline = sum(int(qty) for name, qty in troops.items() if str(name).lower() in _FRONTLINE_UNITS)
+            siege = sum(int(qty) for name, qty in troops.items() if str(name).lower() in _SIEGE_UNITS)
+            if frontline <= 0 or siege <= 0:
+                continue
+            score = frontline + siege * 2
+            if best is None or score > best["score"]:
+                best = {
+                    "city_id": str(cid),
+                    "city_name": c.get("name", ""),
+                    "frontline": frontline,
+                    "siege": siege,
+                    "score": score,
+                }
+        if not best:
+            continue
+
+        # Bônus: conta que espionou esse alvo
+        has_report = SpyReport.objects.filter(
+            target_city_id=target_city_id, mission_id=5, game_account=ga,
+        ).exists()
+        score_total = best["score"] + (100000 if has_report else 0) + free_t
+
+        candidates.append({
+            "ga_id": str(ga.id),
+            "ga_name": ga.name or ga.server_id,
+            "source_city_id": best["city_id"],
+            "source_city_name": best["city_name"],
+            "transporters": free_t,
+            "frontline": best["frontline"],
+            "siege": best["siege"],
+            "has_spied": has_report,
+            "_score": score_total,
+        })
+
+    candidates.sort(key=lambda c: -c["_score"])
+    return candidates[:top_n]
+
+
+def _already_raiding_target(target_city_id: str, server_id: str) -> bool:
+    """Retorna True se qualquer conta do server já tem raid/blockade ativo pra esse target.
+
+    Lê snapshot.movements.movement_details (populado pelo ac=13). Considera ativo
+    quando há `mission ∈ {plunder, blockade, occupy}` com target.cityId == target.
+    """
+    from apps.game.models import AccountSnapshot
+    try:
+        target_int = int(target_city_id)
+    except (TypeError, ValueError):
+        return False
+    for snap in AccountSnapshot.objects.filter(game_account__server_id=server_id):
+        movs = (snap.movements or {}).get("movement_details") or []
+        if not isinstance(movs, list):
+            continue
+        for m in movs:
+            if not isinstance(m, dict):
+                continue
+            mission = m.get("mission") or ""
+            tgt = m.get("target") or {}
+            if mission in {"plunder", "blockade", "occupy"} and tgt.get("cityId") == target_int:
+                return True
+    return False
+
+
+def _stale_game_accounts(server_id: str, max_age_minutes: int = 60) -> list[str]:
+    """Retorna ga_ids cujo AccountSnapshot está velho ou inexistente."""
+    from apps.game.models import AccountSnapshot
+    cutoff = timezone.now() - timedelta(minutes=max_age_minutes)
+    stale = []
+    for ga in GameAccount.objects.filter(server_id=server_id, active=True):
+        snap = AccountSnapshot.objects.filter(game_account=ga).first()
+        if not snap or (snap.updated_at and snap.updated_at < cutoff):
+            stale.append(str(ga.id))
+    return stale
+
 
 def _parse_resources_from_data(data_json: dict) -> dict[str, int]:
-    """Extract resource amounts from spy report data_json (mission 3/stocks)."""
+    """Extract resource amounts from spy report data_json."""
     resources: dict[str, int] = {}
-    # Mission 3 (Estoques): data_json may contain {"stocks": {"Madeira": "12.345", ...}}
+    # Format 1: direct lowercase keys (current parser output: wood, wine, marble, crystal, sulfur)
+    for k in ("wood", "wine", "marble", "crystal", "glass", "sulfur"):
+        if k in data_json:
+            try:
+                resources[k] = int(data_json[k])
+            except (ValueError, TypeError):
+                pass
+    # Format 2: nested stocks/resources dict with localized names
     stocks = data_json.get("stocks") or data_json.get("resources") or {}
     if isinstance(stocks, dict):
         for name, val in stocks.items():
             key = _RESOURCE_NAMES.get(str(name).strip())
-            if key:
+            if key and key not in resources:
                 raw = str(val).replace(".", "").replace(",", "").strip()
                 try:
                     resources[key] = int(raw)
                 except ValueError:
                     pass
-    # Fallback: look for direct resource keys
+    # Format 3: localized names at root level
     for name, key in _RESOURCE_NAMES.items():
         if name in data_json and key not in resources:
             raw = str(data_json[name]).replace(".", "").replace(",", "").strip()
@@ -60,8 +205,24 @@ def _parse_resources_from_data(data_json: dict) -> dict[str, int]:
 
 
 def _parse_troops_from_data(data_json: dict) -> dict[str, int]:
-    """Extract troop counts {unit_id: qty} from spy report data_json (mission 5/6)."""
+    """Extract troop counts {unit_name: qty} from spy report data_json."""
     troops: dict[str, int] = {}
+    # Format 1 (mission 7 — Observar tropas/frotas): troops_data = [{category, units: [{name, count}]}]
+    td = data_json.get("troops_data")
+    if isinstance(td, list):
+        for cat in td:
+            if not isinstance(cat, dict):
+                continue
+            for u in (cat.get("units") or []):
+                if not isinstance(u, dict):
+                    continue
+                name = str(u.get("name") or "").strip()
+                cnt = u.get("count") or 0
+                if name and int(cnt) > 0:
+                    troops[name] = troops.get(name, 0) + int(cnt)
+        return troops
+
+    # Format 2 (legacy): troops/army dict {unit_id: qty}
     raw = data_json.get("troops") or data_json.get("army") or {}
     if isinstance(raw, dict):
         for k, v in raw.items():
@@ -70,6 +231,344 @@ def _parse_troops_from_data(data_json: dict) -> dict[str, int]:
             except (ValueError, TypeError):
                 pass
     return troops
+
+
+class ScanRaidAlertsView(APIView):
+    """POST /api/agent/espionage/scan-raid-alerts/
+
+    Varre todos reports mission 5 (Inspecionar armazém) válidos do server,
+    e dispara alertas Telegram para cidades acima do threshold que ainda não
+    foram alertadas (ou foram alertadas mas chegou report novo).
+
+    Botão "Ignorar" do Telegram marca report_id atual como ignorado — próximo
+    report novo (id diferente) volta a alertar.
+
+    Payload:
+        game_account_id   str (required)  — ga que está disparando
+        threshold         int (default 50000)
+        raid_source_city  str (optional)  — usado no body do alerta
+        raid_transporters int (optional)
+        raid_max_trips    int (default 5)
+        intel_ttl_hours   int (default 24)
+    Returns: {"checked": N, "alerted": N, "skipped": N}
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request):
+        from datetime import timedelta
+        from django.utils import timezone
+
+        from apps.accounts.models import GameAccount
+        from apps.espionage.models import RaidAlertSent
+        from apps.telegram.services.notifications import notify
+
+        ga_id     = str(request.data.get("game_account_id") or "").strip()
+        threshold = int(request.data.get("threshold") or 50000)
+        raid_source_city  = str(request.data.get("raid_source_city") or "").strip()
+        raid_transporters = int(request.data.get("raid_transporters") or 0)
+        raid_max_trips    = int(request.data.get("raid_max_trips") or 5)
+        ttl_hours = int(request.data.get("intel_ttl_hours") or 24)
+
+        if not ga_id:
+            return Response({"error": "game_account_id required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            ga = GameAccount.objects.get(pk=ga_id)
+        except GameAccount.DoesNotExist:
+            return Response({"error": "GameAccount not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        cutoff = timezone.now() - timedelta(hours=ttl_hours)
+
+        # Coletar reports mais recentes por (target_city_id, mission_id) — server scope.
+        # Missão 26 é player-scope: vale qualquer cidade do mesmo owner.
+        reports_qs = (
+            SpyReport.objects
+            .filter(
+                mission_id__in=[5, 7, 26],
+                created_at__gte=cutoff,
+                game_account__server_id=ga.server_id,
+            )
+            .order_by("target_city_id", "mission_id", "-created_at")
+        )
+
+        latest_by_city: dict[str, dict] = {}  # {city_id: {5: report, 6: report, ...}}
+        latest_m26_by_owner: dict[str, "SpyReport"] = {}  # missão 26 mais recente por owner
+        for r in reports_qs:
+            cid = r.target_city_id
+            if not cid:
+                continue
+            slot = latest_by_city.setdefault(cid, {})
+            if r.mission_id not in slot:
+                slot[r.mission_id] = r
+            if r.mission_id == 26 and r.target_owner_id and r.target_owner_id not in latest_m26_by_owner:
+                latest_m26_by_owner[r.target_owner_id] = r
+
+        # Para cada cidade com 5+6, anexar mission 26 do mesmo owner (player-scope)
+        for cid, slot in latest_by_city.items():
+            if 26 not in slot:
+                report5 = slot.get(5)
+                owner_id = (report5.target_owner_id if report5 else "")
+                if owner_id and owner_id in latest_m26_by_owner:
+                    slot[26] = latest_m26_by_owner[owner_id]
+
+        # Exige TODAS: mission 5 (recursos) + 7 (tropas/frotas) + 26 (invenções/upgrades)
+        complete_cities = {cid: m for cid, m in latest_by_city.items() if 5 in m and 7 in m and 26 in m}
+
+        checked = 0
+        alerted = 0
+        skipped = 0
+        refresh_needed: list[dict] = []
+
+        for cid, missions in complete_cities.items():
+            checked += 1
+            report_res = missions[5]   # mission 5 — recursos
+            report_grn = missions[7]   # mission 7 — movimento de tropas/frotas
+            report_upg = missions[26]  # mission 26 — invenções/upgrades (player-scope)
+            data_res = report_res.data_json or {}
+            data_grn = report_grn.data_json or {}
+            resources = _parse_resources_from_data(data_res)
+            troops = _parse_troops_from_data(data_grn) or _parse_troops_from_data(data_res)
+            total_res = sum(resources.values())
+            if total_res < threshold:
+                skipped += 1
+                continue
+
+            # Combina os ids dos 3 reports — qualquer um novo gera novo alerta
+            combined_report_id = f"{report_res.report_id}+{report_grn.report_id}+{report_upg.report_id}"
+            report = report_res  # usado para fields gerais (name, owner, etc.)
+
+            ras, _ = RaidAlertSent.objects.get_or_create(
+                game_account=ga,
+                target_city_id=cid,
+            )
+            if ras.last_report_id == combined_report_id or ras.ignored_report_id == combined_report_id:
+                skipped += 1
+                continue
+            report_id = combined_report_id
+
+            # ── Antes do alerta, garantir dados frescos ─────────────────────
+            # Se ainda não disparou refresh pra esse alvo nesse ciclo, pede ao
+            # WorldSpy pra spawnar ac=2 + ac=13 em TODAS contas. Próximo ciclo
+            # (snapshots atualizados) escolhe conta e envia Telegram.
+            all_gas = list(
+                GameAccount.objects
+                .filter(server_id=ga.server_id, active=True)
+                .values_list("id", flat=True)
+            )
+            if not ras.pending_since:
+                ras.pending_since = timezone.now()
+                ras.save(update_fields=["pending_since", "updated_at"])
+                refresh_needed.append({
+                    "target_city_id": cid,
+                    "stale_game_account_ids": [str(g) for g in all_gas],
+                })
+                continue
+            # pending_since velho (>30min) → re-spawna refresh (jobs perdidos?)
+            if (timezone.now() - ras.pending_since).total_seconds() > 1800:
+                ras.pending_since = timezone.now()
+                ras.save(update_fields=["pending_since", "updated_at"])
+                refresh_needed.append({
+                    "target_city_id": cid,
+                    "stale_game_account_ids": [str(g) for g in all_gas],
+                })
+                continue
+
+            # Já tem raid/blockade ativo pra esse alvo? Pula sem alertar.
+            if _already_raiding_target(cid, ga.server_id):
+                skipped += 1
+                continue
+
+            # Todos snapshots frescos — escolher conta e enviar
+            target_owner_id = report.target_owner_id or ""
+            choices = _choose_raid_account(cid, target_owner_id, ga.server_id, top_n=5)
+            top = choices[0] if choices else None
+
+            target_name  = report.target_city_name or cid
+            target_owner = report.target_owner or "?"
+            # Resolve island_id via dump
+            island_id = ""
+            try:
+                from apps.worldintel.models import WorldDumpCity
+                wdc = (WorldDumpCity.objects
+                       .filter(game_city_id=cid, dump__game_account__server_id=ga.server_id)
+                       .select_related("island")
+                       .order_by("-dump__captured_at")
+                       .first())
+                if wdc and wdc.island:
+                    island_id = wdc.island.island_id
+            except Exception:
+                pass
+            _emoji = {"wood": "🪵", "wine": "🍷", "marble": "🏛️", "crystal": "💎", "glass": "💎", "sulfur": "💛"}
+            _names = {"wood": "Madeira", "wine": "Vinho", "marble": "Mármore", "crystal": "Cristal", "glass": "Cristal", "sulfur": "Enxofre"}
+            res_lines = "\n".join(
+                f"  {_emoji.get(k,'•')} {_names.get(k,k)}: {v:,}"
+                for k, v in resources.items() if v > 0
+            )
+            xy = f"[{report.target_x}:{report.target_y}]" if report.target_x is not None else ""
+            if troops:
+                troops_lines = "\n".join(f"  {qty}× {uid}" for uid, qty in troops.items())
+                defense_block = f"⚔️ Defesa:\n{troops_lines}"
+            else:
+                defense_block = "⚔️ Defesa: sem tropas"
+
+            # Bloco de sugestão da conta escolhida + ETA estimada
+            def _eta_minutes(src_city_id: str, target_x, target_y) -> int:
+                """Distância euclidiana entre source (snapshot) e target (xy do report)."""
+                if target_x is None or target_y is None:
+                    return 0
+                from apps.game.models import AccountSnapshot
+                # Encontrar source no snapshot
+                for s in AccountSnapshot.objects.all():
+                    for c in (s.cities or []):
+                        if str(c.get("id")) == str(src_city_id):
+                            sx, sy = c.get("x"), c.get("y")
+                            if sx is None or sy is None: return 0
+                            import math
+                            d = math.sqrt((target_x - sx) ** 2 + (target_y - sy) ** 2)
+                            # Aproximação: cada unidade de distância no mapa = ~6min
+                            # (mercantes ~60 vel; valor ajustável)
+                            return int(d * 6)
+                return 0
+
+            if top:
+                eta_min = _eta_minutes(top["source_city_id"], report.target_x, report.target_y)
+                eta_text = f"~{eta_min}min" if eta_min else "?"
+                origin_block = (
+                    f"🚢 Sugestão: {top['source_city_name']} ({top['ga_name']})\n"
+                    f"  Mercantes: {top['transporters']} | Frontline: {top['frontline']} | Cerco: {top['siege']}\n"
+                    f"  Viagem estimada: {eta_text}"
+                )
+            else:
+                origin_block = "⚠️ Nenhuma conta elegível (sem tropas/mercantes ou todas em raid)"
+
+            title = f"🏴‍☠️ Alvo rico: {target_name} {xy} ({target_owner})"
+            body  = (
+                f"{title}\n\n"
+                f"💎 Total: {total_res:,}\n{res_lines}\n\n"
+                f"{defense_block}\n\n"
+                f"{origin_block}"
+            )
+
+            buttons: list[list[dict]] = []
+            if top:
+                raid_cb = f"raid_now:{cid}:{island_id}:{top['ga_id']}:{top['source_city_id']}"
+                buttons.append([{"text": f"🏴 Roubar com {top['source_city_name']}", "callback_data": raid_cb}])
+            # Overrides — até 4 outras opções
+            for alt in choices[1:5]:
+                cb = f"raid_now:{cid}:{island_id}:{alt['ga_id']}:{alt['source_city_id']}"
+                buttons.append([{"text": f"↪ {alt['source_city_name']} ({alt['ga_name']})", "callback_data": cb}])
+            buttons.append([{"text": "❌ Ignorar", "callback_data": f"raid_skip:{cid}:{report_id}"}])
+            reply_markup = {"inline_keyboard": buttons}
+
+            ok = notify(
+                event_key="raid_alert",
+                game_account=ga,
+                title=title,
+                body=body,
+                reply_markup=reply_markup,
+                metadata={
+                    "target_city_id": cid,
+                    "report_id":      report_id,
+                    "total_resources": total_res,
+                },
+            )
+            if ok:
+                ras.last_report_id = report_id
+                ras.last_alerted_at = timezone.now()
+                ras.pending_since = None
+                ras.save(update_fields=["last_report_id", "last_alerted_at", "pending_since", "updated_at"])
+                alerted += 1
+            else:
+                skipped += 1
+
+        return Response({
+            "checked": checked,
+            "alerted": alerted,
+            "skipped": skipped,
+            "refresh_needed": refresh_needed,
+        })
+
+
+class MissionsCoveredView(APIView):
+    """GET /api/agent/espionage/missions-covered/
+
+    Returns missions that already have a valid recent report for the given
+    target. City-scope missions match by target_city_id; player-scope missions
+    (3,7,10,21,24,25,26,27) match by target_owner_id (any city of the player).
+
+    Params:
+        target_city_id  required
+        target_owner_id required for player-scope coverage
+        game_account_id optional — scope by server
+        intel_ttl_hours optional — default from AppSetting (24h)
+    Returns: {"covered": [int, ...]}
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    PLAYER_SCOPE = {3, 7, 10, 21, 24, 25, 26, 27}
+
+    def get(self, request):
+        target_city_id  = request.query_params.get("target_city_id", "").strip()
+        target_owner_id = request.query_params.get("target_owner_id", "").strip()
+        ga_id           = request.query_params.get("game_account_id", "").strip()
+        try:
+            ttl_hours = int(request.query_params.get("intel_ttl_hours") or 0)
+        except Exception:
+            ttl_hours = 0
+
+        if not target_city_id and not target_owner_id:
+            return Response({"covered": []})
+
+        if not ttl_hours:
+            try:
+                from apps.settings_app.models import AppSetting
+                ttl_hours = int(AppSetting.objects.get(key="spy_intel_ttl_hours").value)
+            except Exception:
+                ttl_hours = 24
+
+        from django.utils import timezone
+        from datetime import timedelta
+        cutoff = timezone.now() - timedelta(hours=ttl_hours)
+
+        # Server scope
+        server_id = ""
+        if ga_id:
+            try:
+                from apps.accounts.models import GameAccount
+                ga = GameAccount.objects.get(pk=ga_id)
+                server_id = ga.server_id
+            except Exception:
+                pass
+
+        covered: set[int] = set()
+        # City-scope: same city only
+        city_qs = SpyReport.objects.filter(
+            target_city_id=target_city_id,
+            created_at__gte=cutoff,
+            result_status__icontains="sucess",
+        )
+        if server_id:
+            city_qs = city_qs.filter(game_account__server_id=server_id)
+        for mid in city_qs.values_list("mission_id", flat=True).distinct():
+            if mid: covered.add(int(mid))
+
+        # Player-scope: any city of the same owner
+        if target_owner_id:
+            owner_qs = SpyReport.objects.filter(
+                target_owner_id=target_owner_id,
+                created_at__gte=cutoff,
+                result_status__icontains="sucess",
+                mission_id__in=self.PLAYER_SCOPE,
+            )
+            if server_id:
+                owner_qs = owner_qs.filter(game_account__server_id=server_id)
+            for mid in owner_qs.values_list("mission_id", flat=True).distinct():
+                if mid: covered.add(int(mid))
+
+        return Response({"covered": sorted(covered)})
 
 
 class SpyIntelView(APIView):
@@ -96,18 +595,30 @@ class SpyIntelView(APIView):
         if not target_city_id:
             return Response({"error": "target_city_id required."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Scope reports to the same server as the caller's game_account, NOT just
+        # the same game_account — spy reports can come from any safehouse in the
+        # multi-account config and consolidated intel is shared across them.
+        server_id = ""
+        if ga_id:
+            try:
+                from apps.accounts.models import GameAccount
+                ga = GameAccount.objects.get(pk=ga_id)
+                server_id = ga.server_id
+            except Exception:
+                pass
+
         qs = SpyReport.objects.filter(
             target_city_id=target_city_id,
             result_status__icontains="sucess",  # only successful reports
         ).order_by("-created_at")
-        if ga_id:
-            qs = qs.filter(game_account_id=ga_id)
+        if server_id:
+            qs = qs.filter(game_account__server_id=server_id)
 
         # Also include reports without explicit result_status filter as fallback
         if not qs.exists():
             qs = SpyReport.objects.filter(target_city_id=target_city_id).order_by("-created_at")
-            if ga_id:
-                qs = qs.filter(game_account_id=ga_id)
+            if server_id:
+                qs = qs.filter(game_account__server_id=server_id)
 
         if not qs.exists():
             return Response({})

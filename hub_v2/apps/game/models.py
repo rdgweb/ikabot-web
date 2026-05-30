@@ -44,6 +44,10 @@ class AccountSnapshot(UUIDTimestampModel):
         default=dict, blank=True,
         help_text="Troops and fleet data",
     )
+    movements = models.JSONField(
+        default=dict, blank=True,
+        help_text="Military advisor state — active movements, battles, occupied ports",
+    )
     # Tracking
     source_job_id = models.UUIDField(blank=True, null=True)
     full_snapshot_updated_at = models.DateTimeField(

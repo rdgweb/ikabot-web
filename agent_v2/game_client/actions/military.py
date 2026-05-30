@@ -673,6 +673,30 @@ class PlunderLandAction(BaseAction):
         if not units or not any(int(q) > 0 for q in units.values()):
             raise ActionError("No units specified for plunder", action="plunder")
 
+        # Phase 0a: SWITCH active city to the source city. Sem isso, o jogo manda
+        # tropas da cidade atualmente aberta (que pode ser outra), e ignora
+        # from_city_id do payload.
+        try:
+            self.client._request(
+                "GET",
+                self.client._server_url,
+                params={"view": "city", "cityId": int(from_city_id), "ajax": "1"},
+                timeout=20,
+            )
+        except Exception:
+            pass
+
+        # Phase 0b: navigate to target island to set form context.
+        try:
+            self.client._request(
+                "GET",
+                self.client._server_url,
+                params={"view": "island", "islandId": int(island_id), "ajax": "1"},
+                timeout=20,
+            )
+        except Exception:
+            pass
+
         # Phase 1: get travel time
         view_data = self.fetch_plunder_view(from_city_id, to_city_id, island_id)
         travel_seconds = view_data.get("travel_seconds", 0)
@@ -933,14 +957,15 @@ class FetchMilitaryAdvisorAction(BaseAction):
     """
 
     def execute(self, city_id: int, **kwargs) -> dict:
+        # Movimentos ativos vêm em viewScriptParams.militaryAndFleetMovements
+        # (JSON limpo dentro do changeView), não no updateTemplateData.
         resp = self.client._request(
             "GET",
             self.client._server_url,
             params={
                 "view": "militaryAdvisor",
-                "activeTab": "tab_militaryAdvisor",
-                "backgroundView": "city",
-                "currentCityId": int(city_id),
+                "oldView": "militaryAdvisor",
+                "cityId": int(city_id),
                 "actionRequest": self.client._action_request,
                 "ajax": "1",
             },
@@ -958,12 +983,27 @@ class FetchMilitaryAdvisorAction(BaseAction):
 
         template = {}
         sidebar_html = ""
+        movements_json: list[dict] = []
         for entry in data:
             if not isinstance(entry, list) or len(entry) < 2:
                 continue
             if entry[0] == "updateTemplateData" and isinstance(entry[1], dict):
                 template = entry[1]
-            elif entry[0] in ("changeHTML", "changeView"):
+            elif entry[0] == "changeView":
+                # entry[1] = [view_name, html_string, view_script_params]
+                if isinstance(entry[1], list) and len(entry[1]) >= 3:
+                    vsp = entry[1][2]
+                    if isinstance(vsp, dict):
+                        # viewScriptParams pode estar aninhado
+                        ms = vsp.get("viewScriptParams") or vsp
+                        if isinstance(ms, dict):
+                            mfm = ms.get("militaryAndFleetMovements") or []
+                            if isinstance(mfm, list):
+                                movements_json = mfm
+                    # sidebar HTML
+                    if isinstance(entry[1][1], str) and "scatteredUnitsSidebar" in entry[1][1]:
+                        sidebar_html = entry[1][1]
+            elif entry[0] == "changeHTML":
                 items = entry[1] if isinstance(entry[1], list) else [entry[1]]
                 for item in items:
                     if isinstance(item, str) and "scatteredUnitsSidebar" in item:
@@ -974,10 +1014,23 @@ class FetchMilitaryAdvisorAction(BaseAction):
         combat_raw = template.get("js_MilitaryMovementsCombatsInProgress") or {}
         has_active_battle = not (isinstance(combat_raw, dict) and combat_raw.get("addClass") == "invisible")
 
-        # Parse movement table
-        movements_html = str(template.get("js_MilitaryMovementsFleetMovementsTable") or "")
-        occupied_ports_html = str(template.get("js_MilitaryMovementsOccupiedPortsTable") or "")
-        occupied_cities_html = str(template.get("js_MilitaryMovementsOccupiedCitiesTable") or "")
+        # Parse movement table — pode vir como string, lista, ou dict {html:..., addClass:...}
+        def _flatten(v) -> str:
+            if isinstance(v, str): return v
+            if isinstance(v, list):
+                return "\n".join(_flatten(it) for it in v)
+            if isinstance(v, dict):
+                return "\n".join(_flatten(it) for it in v.values())
+            return ""
+        movements_html = _flatten(template.get("js_MilitaryMovementsFleetMovementsTable"))
+        occupied_ports_html = _flatten(template.get("js_MilitaryMovementsOccupiedPortsTable"))
+        occupied_cities_html = _flatten(template.get("js_MilitaryMovementsOccupiedCitiesTable"))
+
+        # Debug: log template keys disponíveis para diagnose
+        logger.info(
+            "MilitaryAdvisor keys: %s | movements_html=%d bytes",
+            list(template.keys())[:20], len(movements_html),
+        )
 
         # Check if port is actually occupied (not just empty table)
         port_occupied = bool(
@@ -1007,12 +1060,111 @@ class FetchMilitaryAdvisorAction(BaseAction):
             for mission_m in re.finditer(r'data-mission["\s]*=["\s]*([a-z_]+)', movements_html, re.IGNORECASE):
                 movements.append(mission_m.group(1))
 
+        # Parse movements from JSON (militaryAndFleetMovements in viewScriptParams).
+        # Estrutura: {event:{id,mission,missionText,...}, eventTime, fleet:{ships:[]}, army:{units:[]}, resources:[], origin:{}, target:{}}
+        def _qty(s):
+            try:
+                return int(str(s).replace(".","").replace(",",""))
+            except Exception:
+                return 0
+        movement_details: list[dict] = []
+        for ev in movements_json:
+            if not isinstance(ev, dict):
+                continue
+            event = ev.get("event") or {}
+            cargo: dict[str, int] = {}
+            fleet: dict[str, int] = {}
+            troops: dict[str, int] = {}
+            for r in (ev.get("resources") or []):
+                cls = (r.get("cssClass") or "").split()
+                # cssClass = "resource_icon NAME"
+                name = cls[-1] if cls else ""
+                if name and name != "resource_icon":
+                    cargo[name] = _qty(r.get("amount"))
+            for s in ((ev.get("fleet") or {}).get("ships") or []):
+                cls = s.get("cssClass") or ""
+                if cls.startswith("ship_"):
+                    fleet[cls[5:]] = _qty(s.get("amount"))
+            for u in ((ev.get("army") or {}).get("units") or []):
+                cls = u.get("cssClass") or ""
+                if cls:
+                    troops[cls] = _qty(u.get("amount"))
+            movement_details.append({
+                "event_id":      event.get("id"),
+                "mission":       event.get("missionIconClass") or "",
+                "mission_text":  event.get("missionText") or "",
+                "is_own":        bool(ev.get("isOwnArmyOrFleet")),
+                "is_returning":  bool(event.get("isReturning")) or bool(event.get("isFleetReturning")),
+                "event_time":    ev.get("eventTime"),
+                "event_date":    ev.get("eventDate"),
+                "origin":        ev.get("origin") or {},
+                "target":        ev.get("target") or {},
+                "cargo":         cargo,
+                "fleet":         fleet,
+                "troops":        troops,
+            })
+
+        # Fallback: parse HTML if JSON empty (legacy code path)
+        if not movement_details and movements_html:
+            # Cada bloco fleetInfo<id> aparece em um <div> próprio; dividimos pelos delimitadores
+            blocks = re.split(r"fleetInfo(\d+)", movements_html)
+            # blocks = [head, id1, content1, id2, content2, ...]
+            for i in range(1, len(blocks), 2):
+                fleet_id = blocks[i]
+                content = blocks[i+1] if i+1 < len(blocks) else ""
+                cargo: dict[str, int] = {}
+                fleet: dict[str, int] = {}
+                troops: dict[str, int] = {}
+                # Cada ícone é um <div class="... CLASSES ..." title="N">
+                for icon_m in re.finditer(
+                    r'class="unit_detail_icon[^"]*"\s+title="([\d.,]+)"',
+                    content,
+                ):
+                    # Re-extrai a class para inspecionar tipo
+                    cls_m = re.search(
+                        r'class="(unit_detail_icon[^"]*)"\s+title="' + re.escape(icon_m.group(1)) + '"',
+                        content[icon_m.start():icon_m.end()+50],
+                    )
+                    if not cls_m:
+                        continue
+                    classes = cls_m.group(1).split()
+                    try:
+                        qty = int(icon_m.group(1).replace(".", "").replace(",", ""))
+                    except Exception:
+                        continue
+                    # resource_icon X
+                    if "resource_icon" in classes:
+                        # próxima class após resource_icon = nome do recurso
+                        idx = classes.index("resource_icon")
+                        if idx + 1 < len(classes):
+                            cargo[classes[idx + 1]] = qty
+                        continue
+                    # ship_X
+                    ship_cls = next((c for c in classes if c.startswith("ship_")), "")
+                    if ship_cls:
+                        fleet[ship_cls[len("ship_"):]] = qty
+                        continue
+                    # Tropa: última class que NÃO é layout (floatleft, icon40, bold, center)
+                    layout = {"unit_detail_icon", "floatleft", "icon40", "bold", "center"}
+                    troop_cls = next((c for c in reversed(classes) if c not in layout), "")
+                    if troop_cls:
+                        troops[troop_cls] = qty
+
+                if cargo or fleet or troops:
+                    movement_details.append({
+                        "fleet_id": fleet_id,
+                        "cargo":   cargo,
+                        "fleet":   fleet,
+                        "troops":  troops,
+                    })
+
         return {
             "has_active_battle":   has_active_battle,
             "port_occupied":       port_occupied,
             "eta_timestamp":       eta_timestamp,   # "DD.MM.YYYY H:MM:SS" string
             "ships_moving":        ships_moving,
             "movements":           movements,        # list of mission types
+            "movement_details":    movement_details, # [{fleet_id, cargo, fleet, troops}]
             "movements_html":      movements_html,
             "occupied_ports_html": occupied_ports_html,
         }

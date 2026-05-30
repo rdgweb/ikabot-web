@@ -785,3 +785,38 @@ class CaptchaChallengePollView(APIView):
             "status": challenge.status,
             "solution": challenge.solution or "",
         })
+
+
+class MilitaryMovementsUpdateView(APIView):
+    """POST /api/agent/game/military-movements/
+
+    Persists military advisor state for a game account (used by ac=13 runner).
+    Stored on AccountSnapshot.movements JSONField.
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request):
+        from apps.accounts.models import GameAccount
+        from apps.game.models import AccountSnapshot
+
+        ga_id = str(request.data.get("game_account_id") or "").strip()
+        movements = request.data.get("movements") or {}
+        if not ga_id:
+            return Response({"error": "game_account_id required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(movements, dict):
+            return Response({"error": "movements must be a dict."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            ga = GameAccount.objects.get(pk=ga_id)
+        except GameAccount.DoesNotExist:
+            return Response({"error": "GameAccount not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        snap, _ = AccountSnapshot.objects.get_or_create(
+            game_account=ga,
+            defaults={"account": ga.account},
+        )
+        snap.movements = movements
+        snap.save(update_fields=["movements", "updated_at"])
+        return Response({"ok": True})

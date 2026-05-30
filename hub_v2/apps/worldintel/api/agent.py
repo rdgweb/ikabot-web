@@ -492,15 +492,31 @@ class WorldSpyTargetsView(APIView):
         } for c in cities]
 
         # Return safehouse coordinates so the agent can sort targets by distance.
+        # Prefer LIVE snapshot data (may be hours old) over dump data (may be days old).
         source_coords: dict[str, dict] = {}
         source_cities_param = request.query_params.get("source_cities", "")
         if source_cities_param:
-            sc_ids = [c.strip() for c in source_cities_param.split(",") if c.strip()]
-            for sc in WorldDumpCity.objects.filter(
-                dump=dump, game_city_id__in=sc_ids
-            ).select_related("island"):
-                if sc.island:
-                    source_coords[sc.game_city_id] = {"x": sc.island.x, "y": sc.island.y}
+            sc_ids = {c.strip() for c in source_cities_param.split(",") if c.strip()}
+            # Step 1: try snapshots (always fresher than dumps)
+            try:
+                from apps.game.models import AccountSnapshot
+                for snap in AccountSnapshot.objects.all().only("cities"):
+                    if not sc_ids:
+                        break
+                    for city in (snap.cities or []):
+                        cid = str(city.get("id") or "").strip()
+                        if cid in sc_ids:
+                            source_coords[cid] = {"x": int(city.get("x") or 0), "y": int(city.get("y") or 0)}
+                            sc_ids.discard(cid)
+            except Exception:
+                pass
+            # Step 2: fall back to dump for any still unresolved
+            if sc_ids:
+                for sc in WorldDumpCity.objects.filter(
+                    dump=dump, game_city_id__in=sc_ids
+                ).select_related("island"):
+                    if sc.island:
+                        source_coords[sc.game_city_id] = {"x": sc.island.x, "y": sc.island.y}
 
         return Response({
             "targets":            targets,
@@ -543,6 +559,51 @@ class WorldDumpReplaceIslandsView(APIView):
         )
 
 
+class RefreshIslandView(APIView):
+    """POST /api/agent/worldintel/islands/refresh/
+
+    Refresh a single island in the most recent dump for the given game_account's server.
+    Used by the spy runner to keep island state fresh before sending spies.
+
+    Payload:
+        game_account_id  str  — required, used to find dump scope by server
+        island           dict — single island payload (same shape as world-dump append)
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request):
+        ga_id = str(request.data.get("game_account_id") or "").strip()
+        island = request.data.get("island") or {}
+        if not ga_id:
+            return Response({"error": "game_account_id required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(island, dict) or not island.get("island_id"):
+            return Response({"error": "island.island_id required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            ga = GameAccount.objects.get(pk=ga_id)
+        except GameAccount.DoesNotExist:
+            return Response({"error": "GameAccount not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        dump = (
+            WorldDump.objects
+            .filter(game_account__server_id=ga.server_id)
+            .order_by("-captured_at")
+            .first()
+        )
+        if not dump:
+            return Response({"error": "no dump found for this server."}, status=status.HTTP_404_NOT_FOUND)
+
+        cities_added, players_added = _replace_islands_in_dump(dump, [island])
+        return Response({
+            "ok": True,
+            "dump_id": str(dump.pk),
+            "island_id": str(island.get("island_id")),
+            "cities_added": cities_added,
+            "players_added": players_added,
+        })
+
+
 class UpdateCityStateView(APIView):
     """POST /api/agent/worldintel/cities/update-state/
 
@@ -566,20 +627,25 @@ class UpdateCityStateView(APIView):
 
     def post(self, request):
         game_city_id    = str(request.data.get("game_city_id") or "").strip()
+        owner_id        = str(request.data.get("owner_id") or "").strip()
         new_state       = str(request.data.get("state") or "").strip()
         game_account_id = str(request.data.get("game_account_id") or "").strip()
         reason          = str(request.data.get("reason") or "").strip()
 
-        if not game_city_id:
-            return Response({"error": "game_city_id required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not game_city_id and not owner_id:
+            return Response({"error": "game_city_id or owner_id required."}, status=status.HTTP_400_BAD_REQUEST)
         if new_state not in self.VALID_STATES:
             return Response(
                 {"error": f"state must be one of {sorted(self.VALID_STATES)}."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Find most recent WorldDumpCity entries for this game_city_id
-        qs = WorldDumpCity.objects.filter(game_city_id=game_city_id).order_by("-dump__captured_at")
+        # Filter by owner_id (todos cidades do player) ou game_city_id (apenas uma)
+        if owner_id:
+            qs = WorldDumpCity.objects.filter(owner_id=owner_id)
+        else:
+            qs = WorldDumpCity.objects.filter(game_city_id=game_city_id)
+        qs = qs.order_by("-dump__captured_at")
         if game_account_id:
             # Scope to dumps from the same server as this game_account
             try:

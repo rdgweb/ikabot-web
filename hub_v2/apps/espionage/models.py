@@ -90,3 +90,39 @@ class SpyReport(UUIDTimestampModel):
         """Missão executada com sucesso (normaliza PT/EN)."""
         s = (self.result_status or "").lower()
         return "success" in s or "sucesso" in s
+
+
+class RaidAlertSent(UUIDTimestampModel):
+    """Rastreia qual report já gerou alerta de raid por cidade.
+
+    Comportamento:
+      - last_report_id é o ID do SpyReport (mission 5) que disparou o último alerta
+      - ignored_until_report_id é setado quando o usuário clica "Ignorar" no Telegram
+      - Próximo alerta dispara somente se o report mais recente tem ID diferente de
+        ambos os campos acima — novo report → re-alerta automaticamente
+    """
+
+    game_account = models.ForeignKey(
+        "accounts.GameAccount",
+        on_delete=models.CASCADE,
+        related_name="raid_alerts_sent",
+    )
+    target_city_id = models.CharField(max_length=32, db_index=True)
+    last_report_id = models.CharField(max_length=32, blank=True, default="")
+    ignored_report_id = models.CharField(max_length=32, blank=True, default="")
+    last_alerted_at = models.DateTimeField(null=True, blank=True)
+    # Marca quando WorldSpy disparou refresh (ac=2 + ac=13) pra esse alvo.
+    # Hub considera snapshots "frescos" se updated_at >= pending_since.
+    pending_since = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Raid Alert Sent"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["game_account", "target_city_id"],
+                name="uq_raidalert_ga_city",
+            )
+        ]
+
+    def __str__(self):
+        return f"RaidAlert {self.target_city_id} last={self.last_report_id} ignored={self.ignored_report_id}"

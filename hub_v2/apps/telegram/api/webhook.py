@@ -37,6 +37,7 @@ def _create_raid_job(
     target_city_id: str,
     island_id: str,
     ga_id: str,
+    source_city_id: str = "",
 ) -> tuple[bool, str]:
     """Create ac=1008 (RaidCityRunner) job from Telegram callback.
 
@@ -44,35 +45,37 @@ def _create_raid_job(
     """
     from apps.accounts.models import GameAccount
     from apps.jobs.services.workflows import create_job_with_workflow
-    from core.contracts import ACTION_CATALOG
 
     try:
-        ga = GameAccount.objects.select_related("account", "node_set").get(pk=ga_id)
+        ga = GameAccount.objects.select_related("account").get(pk=ga_id)
     except GameAccount.DoesNotExist:
         return False, f"Conta {ga_id[:8]} não encontrada."
 
-    node = ga.account.node_set.first()
+    node = ga.account.node
     if not node:
         return False, "Nenhum nó disponível para esta conta."
 
-    action_meta = ACTION_CATALOG.get(1008, {})
+    inputs: dict = {
+        "target_city_id": target_city_id,
+        "island_id": island_id,
+        "mode": "land",
+        "multi_trip": True,
+        "max_trips": 50,
+        "min_resources_to_continue": 5000,
+    }
+    if source_city_id:
+        inputs["source_city_id"] = source_city_id
     try:
         job = create_job_with_workflow(
             account=ga.account,
             game_account=ga,
             node=node,
             action_code=1008,
-            inputs={
-                "target_city_id": target_city_id,
-                "island_id": island_id,
-                "mode": "land",
-                "multi_trip": True,
-                "max_trips": 5,
-            },
+            inputs=inputs,
             status="queued",
             trigger_type="telegram_callback",
         )
-        logger.info("RaidJob created %s ga=%s target=%s", job.pk, ga_id, target_city_id)
+        logger.info("RaidJob created %s ga=%s target=%s source=%s", job.pk, ga_id, target_city_id, source_city_id)
         return True, str(job.pk)
     except Exception as exc:
         logger.exception("Failed to create raid job: %s", exc)
@@ -276,7 +279,23 @@ class TelegramWebhookView(APIView):
                         answer_callback_query(cq_id, err[:200])
                         send_message(cq_chat_id, f"❌ {err}")
             elif cq_data.startswith("raid_skip:"):
-                # User dismissed the raid alert
+                # raid_skip:{target_city_id}:{report_id} OR legacy raid_skip:{target_city_id}
+                payload = cq_data[len("raid_skip:"):]
+                parts = payload.split(":")
+                target_city_id = parts[0] if parts else ""
+                report_id      = parts[1] if len(parts) > 1 else ""
+                # Mark this report as ignored so future alerts only re-fire if a newer
+                # report comes in for this city.
+                if target_city_id and report_id:
+                    try:
+                        from apps.espionage.models import RaidAlertSent
+                        from apps.accounts.models import GameAccount
+                        # find latest RaidAlertSent for this city across all GAs and mark ignored
+                        for ras in RaidAlertSent.objects.filter(target_city_id=target_city_id):
+                            ras.ignored_report_id = report_id
+                            ras.save(update_fields=["ignored_report_id", "updated_at"])
+                    except Exception:
+                        pass
                 answer_callback_query(cq_id, "✅ Alerta ignorado.")
                 if cq_message_id and cq_chat_id:
                     edit_message_text(cq_chat_id, cq_message_id,
@@ -284,14 +303,21 @@ class TelegramWebhookView(APIView):
                 return Response({"status": "ok"})
 
             elif cq_data.startswith("raid_now:"):
-                # raid_now:{target_city_id}:{island_id}:{ga_id}
+                # raid_now:{target_city_id}:{island_id}:{ga_id}[:{source_city_id}]
                 parts = cq_data[9:].split(":")
                 if len(parts) >= 3:
                     target_city_id = parts[0]
                     island_id      = parts[1]
-                    ga_id_str      = ":".join(parts[2:])  # ga_id may contain -
+                    # ga_id contém - (UUID), pega o segmento certo
+                    # formato: parts[2:] pode incluir source_city_id no fim se 5 segmentos+
+                    if len(parts) >= 4 and parts[-1].isdigit():
+                        source_city_id = parts[-1]
+                        ga_id_str      = ":".join(parts[2:-1])
+                    else:
+                        source_city_id = ""
+                        ga_id_str      = ":".join(parts[2:])
 
-                    ok, msg = _create_raid_job(target_city_id, island_id, ga_id_str)
+                    ok, msg = _create_raid_job(target_city_id, island_id, ga_id_str, source_city_id=source_city_id)
                     if ok:
                         answer_callback_query(cq_id, "🏴‍☠️ Raid criado!")
                         if cq_message_id and cq_chat_id:

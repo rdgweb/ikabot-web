@@ -582,8 +582,24 @@ class SpySafehouseAction(BaseAction):
                 status_m = re.search(r'<span[^>]*class="missionTxt"[^>]*>([\s\S]*?)</span>', block)
                 if status_m:
                     status = _strip_html(status_m.group(1))
-                elif waiting:
+                else:
+                    # Status in <li title="Status" class="status">TEXT</li>
+                    for sm in re.finditer(r'<li[^>]*class="status"[^>]*>([\s\S]*?)</li>', block):
+                        _txt = _strip_html(sm.group(1)).strip()
+                        if _txt:
+                            status = _txt
+                            break
+                if not status and waiting:
                     status = "Os teus espiÃµes esperam novas ordens."
+
+                # Direction: "Voltar" or "regressar" → returning home; "a caminho" → outbound
+                _status_lower = status.lower()
+                is_returning = (
+                    "voltar" in _status_lower
+                    or "regress" in _status_lower
+                    or "returning" in _status_lower
+                    or "return" in _status_lower
+                )
 
                 spy_id = ""
                 spy_id_m = re.search(r"spy=(\d+)", block)
@@ -646,6 +662,7 @@ class SpySafehouseAction(BaseAction):
                     "status": status,
                     "is_waiting": waiting,
                     "is_travelling": travelling and not waiting,
+                    "is_returning": is_returning,
                     "return_timestamp": return_ts,
                     "mission_view_url": mission_view_url,
                     "retreat_url": retreat_url,

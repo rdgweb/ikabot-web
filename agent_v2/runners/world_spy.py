@@ -114,24 +114,8 @@ class WorldSpyRunner(BaseRunner):
                          f"[WorldSpy]   ↳ job={cid} src={csrc} tgt={ctgt} "
                          f"success={cok} done={mdone} fail={mfail}")
 
-                # ── Raid alert: verificar intel da cidade espionada ───────────
-                if raid_alert_enabled and cok and ctgt:
-                    try:
-                        self._check_raid_alert(
-                            jid=jid,
-                            ga_id=ga_id,
-                            target_city_id=str(ctgt),
-                            island_id=str(entry.get("island_id") or ""),
-                            target_name=str(entry.get("target_city_name") or ""),
-                            target_owner=str(entry.get("target_owner") or ""),
-                            threshold=raid_threshold,
-                            raid_source_city=raid_source_city,
-                            raid_transporters=raid_transporters,
-                            raid_max_trips=raid_max_trips,
-                        )
-                    except Exception as exc:
-                        self.log(jid, "warn",
-                                 f"[WorldSpy] Falha no raid alert para {ctgt}: {exc}")
+                # Raid alert é tratado pelo scan_raid_alerts no fim da execução
+                # (varredura completa do server, idempotente, controla ignored via DB).
 
         # ── Inputs de configuração ────────────────────────────────────────────
         city_ids_raw = str(inputs.get("city_ids") or "").strip()
@@ -372,6 +356,46 @@ class WorldSpyRunner(BaseRunner):
                  f"[WorldSpy] {spawned} job(s) criado(s)"
                  + (f", {skipped} ignorado(s)" if skipped else "")
                  + f". Aguardando notificações via mailbox (root={root_id[:8]}).")
+
+        # ── Varredura completa de raid alerts ─────────────────────────────────
+        # Não depende do inbox — pega todos reports válidos do server e dispara
+        # alertas para cidades acima do threshold que ainda não foram alertadas
+        # (ou que têm report novo desde último alerta).
+        if raid_alert_enabled:
+            try:
+                result = self.hub.scan_raid_alerts(
+                    game_account_id=ga_id,
+                    threshold=raid_threshold,
+                    raid_source_city=raid_source_city,
+                    raid_transporters=raid_transporters,
+                    raid_max_trips=raid_max_trips,
+                )
+                if result:
+                    self.log(jid, "info",
+                             f"[WorldSpy] Raid alerts: checked={result.get('checked',0)} "
+                             f"alerted={result.get('alerted',0)} skipped={result.get('skipped',0)}")
+                    # Se hub indicar contas com snapshots velhos, spawna ac=2 + ac=13
+                    refresh = result.get("refresh_needed") or []
+                    spawned_refresh = 0
+                    seen_gas: set[str] = set()
+                    for r in refresh:
+                        for stale_ga in (r.get("stale_game_account_ids") or []):
+                            if stale_ga in seen_gas:
+                                continue
+                            seen_gas.add(stale_ga)
+                            try:
+                                self.hub.spawn_job(jid, action_code=2, inputs={}, game_account_id=stale_ga)
+                                self.hub.spawn_job(jid, action_code=13, inputs={}, game_account_id=stale_ga)
+                                spawned_refresh += 1
+                            except Exception as _exc:
+                                self.log(jid, "warn", f"[WorldSpy] Falha refresh ga={stale_ga[:8]}: {_exc}")
+                    if spawned_refresh:
+                        self.log(jid, "info",
+                                 f"[WorldSpy] {spawned_refresh} conta(s) refrescando (ac=2+ac=13). "
+                                 f"Alerta Telegram virá no próximo ciclo.")
+            except Exception as exc:
+                self.log(jid, "warn", f"[WorldSpy] Falha no scan de raid alerts: {exc}")
+
         return RunnerResult(success=True)
 
     # ── Raid Alert ────────────────────────────────────────────────────────────
@@ -406,10 +430,13 @@ class WorldSpyRunner(BaseRunner):
                 game_account_id=ga_id,
             )
         except Exception as exc:
-            logger.warning("[WorldSpy] Falha ao buscar intel de %s: %s", target_city_id, exc)
+            self.log(jid, "warn",
+                     f"[WorldSpy] Falha ao buscar intel de {target_city_id}: {exc}")
             return
 
         if not intel:
+            self.log(jid, "info",
+                     f"[WorldSpy] {target_name}/{target_city_id}: sem intel disponível no hub.")
             return
 
         # Extrair recursos e tropas
@@ -421,8 +448,8 @@ class WorldSpyRunner(BaseRunner):
         total_res  = sum(resources.values())
 
         if total_res < threshold:
-            logger.debug("[WorldSpy] %s: recursos=%d < threshold=%d — sem alerta.",
-                         target_city_id, total_res, threshold)
+            self.log(jid, "info",
+                     f"[WorldSpy] {target_name}: recursos={total_res:,} < threshold={threshold:,} — sem alerta.")
             return
 
         # Calcular força recomendada

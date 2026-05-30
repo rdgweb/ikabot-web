@@ -14,7 +14,15 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from typing import Any
+
+
+def _parse_int(v, default: int = 0) -> int:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
 
 from core.runner_registry import register_runner
 from runners.base import BaseRunner, RunnerResult
@@ -1017,40 +1025,93 @@ class AttackRunner(BaseRunner):
 
 
 @register_runner(13)
-class PillageRunner(BaseRunner):
-    """Launch a pillage raid against an enemy city.
+class MilitaryMovementsRunner(BaseRunner):
+    """Captura estado do conselheiro militar — movimentos, batalhas, portos ocupados.
 
-    Similar to attack but optimised for resource capture.
+    Salva resultado no hub via update_military_movements para que outros runners
+    (raid alert, etc.) possam consultar quem está em movimento sem precisar
+    fazer login na conta.
 
-    Inputs:
-        source_city_id  — origin city
-        target_city_id  — enemy city to pillage
-        units           — dict of {unit_type: quantity}
-        ships           — dict of {ship_type: quantity} (optional)
+    Inputs (todos opcionais):
+        city_id  — cidade a abrir (default: primeira do snapshot)
+
+    Recurring por padrão (intervalo configurável; default 10min).
     """
 
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
-        inputs = job.get("inputs", {})
+        ga_id = job.get("game_account_id") or ""
+        inputs = job.get("inputs") or {}
 
-        self.log(jid, "info", f"Launching pillage for account {aid}")
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        if not creds:
+            self.log(jid, "error", "Credenciais não encontradas")
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
 
         try:
-            client = self.get_game_session(aid)
+            client = self.get_or_login_game_client(jid, aid, ga_id, creds)
 
-            # TODO: call client.pillage(source, target, units, ships)
-            # source_city_id = inputs["source_city_id"]
-            # target_city_id = inputs["target_city_id"]
-            # units          = inputs["units"]
-            # ships          = inputs.get("ships", {})
-            # client.pillage(source_city_id, target_city_id, units, ships)
+            # Resolver cidade a abrir (qualquer uma da conta serve)
+            city_id = inputs.get("city_id")
+            if not city_id:
+                try:
+                    snap = self.hub.get_snapshot(game_account_id=ga_id) or {}
+                    cities = snap.get("cities") or []
+                    if cities:
+                        city_id = cities[0].get("id")
+                except Exception:
+                    pass
+            if not city_id:
+                self.log(jid, "warn", "Sem cidade no snapshot — abortando")
+                return RunnerResult(success=False, reschedule_seconds=600)
 
-            self.save_game_session(aid, client)
-            self.log(jid, "info", "Pillage launched")
+            advisor = client.fetch_military_advisor(int(city_id))
+            self.save_game_client(ga_id, client)
+
+            details = advisor.get("movement_details") or []
+            self.log(jid, "info", f"Total de movimentos ativos: {len(details)}")
+            for md in details:
+                origin = (md.get("origin") or {}).get("name") or "?"
+                target = (md.get("target") or {}).get("name") or "?"
+                target_player = (md.get("target") or {}).get("avatarName") or ""
+                mission = md.get("mission") or "?"
+                eta = md.get("event_date") or "?"
+                cargo = md.get("cargo") or {}
+                fleet = md.get("fleet") or {}
+                troops = md.get("troops") or {}
+                parts = []
+                if cargo:  parts.append(f"carga={cargo}")
+                if fleet:  parts.append(f"frota={fleet}")
+                if troops: parts.append(f"tropas={troops}")
+                arrow = "←" if md.get("is_returning") else "→"
+                self.log(jid, "info",
+                    f"  [{mission}] {origin} {arrow} {target} ({target_player}) "
+                    f"ETA={eta} | " + " | ".join(parts))
+
+            movements = {
+                "captured_at":         int(time.time()),
+                "has_active_battle":   bool(advisor.get("has_active_battle")),
+                "port_occupied":       bool(advisor.get("port_occupied")),
+                "eta_timestamp":       advisor.get("eta_timestamp"),
+                "ships_moving":        int(advisor.get("ships_moving") or 0),
+                "movements":           advisor.get("movements") or [],
+                "movement_details":    advisor.get("movement_details") or [],
+                "movements_html":      advisor.get("movements_html") or "",
+                "occupied_ports_html": advisor.get("occupied_ports_html") or "",
+            }
+            try:
+                self.hub.update_military_movements(ga_id, movements)
+            except Exception as exc:
+                self.log(jid, "warn", f"Falha ao salvar movimentos no hub: {exc}")
+
+            self.log(jid, "info",
+                     f"Movimentos OK: batalha={movements['has_active_battle']} "
+                     f"porto_ocupado={movements['port_occupied']} "
+                     f"barcos_em_mov={movements['ships_moving']}")
 
             return RunnerResult(success=True)
 
         except Exception as exc:
-            self.log(jid, "error", f"Pillage failed: {exc}")
+            self.log(jid, "error", f"Falha no advisor militar: {exc}")
             return RunnerResult(success=False, data={"error": str(exc)})

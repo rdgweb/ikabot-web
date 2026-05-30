@@ -261,7 +261,6 @@ class RaidCityRunner(BaseRunner):
                 "_phase":           "check_battle",
                 "_trips_done":      trips_done,
                 "_travel_seconds":  travel_seconds,
-                "_eta_timestamp":   eta_ts or "",
                 "_source_city_id":  source_city_id,
                 "units":            {str(k): v for k, v in units.items()},
             },

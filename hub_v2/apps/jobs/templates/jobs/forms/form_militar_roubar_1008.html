@@ -156,7 +156,7 @@
       <label class="mb-2 block max-w-xs">
         <input type="text" x-model="sourceQuery" class="form-input" placeholder="Filtrar por nome ou coordenada">
       </label>
-      <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[16rem] overflow-y-auto p-0.5">
+      <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[16rem] overflow-y-auto px-2 py-2">
         <template x-for="city in filteredCities(sourceQuery)" :key="city.id">
           <button type="button"
             @click="sourceCityId = String(city.id)"

@@ -144,16 +144,4 @@ ACTIONS = {
             {"key": "transport_load_percent", "type": FIELD_CHOICE, "label": "Carga por barco", "required": True, "choices": TRANSPORT_LOAD_CHOICES, "default": "100", "help": "Usa a mesma estrategia do envio de recursos."},
         ],
     },
-    13: {
-        "name": "Movimentos de Navios",
-        "name_en": "Ship movements",
-        "category": CAT_MONITORING,
-        "icon": "bi-water",
-        "runner": "ship_movements",
-        "requires_game_session": True,
-        "recurring": False,
-        "long_running": False,
-        "description": "Monitora movimentos de navios.",
-        "inputs": [],
-    },
 }

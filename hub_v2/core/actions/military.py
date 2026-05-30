@@ -2,6 +2,23 @@ from .constants import CAT_AUTOMATION, CAT_MILITARY, FIELD_BOOL, FIELD_CHOICE, F
 
 
 ACTIONS = {
+    13: {
+        "name": "Movimentos de Navios",
+        "name_en": "Ship movements",
+        "category": CAT_MILITARY,
+        "icon": "bi-radar",
+        "runner": "military_movements",
+        "requires_game_session": True,
+        "recurring": False,
+        "long_running": False,
+        "ready": True,
+        "description": (
+            "Lê o conselheiro militar uma vez e salva o estado "
+            "(movimentos ativos, batalhas, portos ocupados, conteúdo dos barcos) "
+            "no snapshot. Disparado automaticamente antes de cada raid alert."
+        ),
+        "inputs": [],
+    },
     19: {
         "name": "Roubar Bárbaros",
         "name_en": "Raid Barbarians",

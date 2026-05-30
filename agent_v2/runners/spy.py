@@ -156,6 +156,17 @@ class SpyRunner(BaseRunner):
         try:
             client = self.get_or_login_game_client(jid, aid, ga_id, creds)
 
+            # ── Refresh da ilha alvo antes de espionar ────────────────────────
+            # Atualiza o dump da ilha com state ao vivo (cidade pode ter virado
+            # vacation, sumido, mudado dono, etc) e melhora o sorting do world spy.
+            try:
+                island_data = client.fetch_island_by_id(island_id)
+                if island_data:
+                    self.hub.refresh_island(ga_id, island_data)
+                    self.log(jid, "info", f"Ilha {island_id} atualizada no dump")
+            except Exception as _ie:
+                self.log(jid, "warn", f"Falha ao atualizar ilha {island_id}: {_ie}")
+
             # ── Relatórios pendentes ──────────────────────────────────────────
             if save_reports:
                 self._save_reports(
@@ -163,6 +174,38 @@ class SpyRunner(BaseRunner):
                     target_owner_id=target_owner_id,
                     safehouse_position=safehouse_position,
                 )
+
+            # ── Pular missões já cobertas por relatórios válidos ──────────────
+            # (mesma cidade para city-scope, qualquer cidade do player para player-scope)
+            if missions_pending:
+                try:
+                    covered = self.hub.get_missions_covered(
+                        target_city_id=target_city_id,
+                        target_owner_id=target_owner_id,
+                        game_account_id=ga_id,
+                    )
+                    if covered:
+                        already = [m for m in missions_pending if m in covered]
+                        if already:
+                            self.log(jid, "info",
+                                f"Missões já cobertas por relatórios válidos: {already}. Pulando.")
+                            for m in already:
+                                if m not in missions_done:
+                                    missions_done.append(m)
+                            missions_pending = [m for m in missions_pending if m not in covered]
+                except Exception as _exc:
+                    self.log(jid, "warn", f"Falha ao consultar missões cobertas: {_exc}")
+
+            # Se não sobrou missão pendente, encerrar
+            if not missions_pending and intel_missions:
+                self.log(jid, "info", "Todas as missões já têm intel válido. Encerrando job.")
+                self._notify_parent(jid, inputs, success=True, data={
+                    "missions_done":   missions_done,
+                    "missions_failed": [],
+                    "target_city_id":  target_city_id,
+                    "source_city_id":  city_id,
+                })
+                return RunnerResult(success=True, data={"skipped": "already_covered"})
 
             # ── Estado da safehouse ───────────────────────────────────────────
             self.log(jid, "info", f"[{phase.upper()}] Lendo safehouse {city_id}")
@@ -181,6 +224,21 @@ class SpyRunner(BaseRunner):
             tgroup    = self._select_target_group(tgroups)
             stationed = sum(int(g.get("count_in_use") or 0) for g in tgroups if g.get("is_waiting"))
             in_transit = sum(int(g.get("count_in_use") or 0) for g in tgroups if g.get("is_travelling"))
+            _all_groups = state.get("target_groups", [])
+            _now = int(time.time())
+            self.log(jid, "info",
+                f"Safehouse groups: total={len(_all_groups)} matched_target={len(tgroups)}")
+            for i, g in enumerate(_all_groups):
+                ts = int(g.get("return_timestamp") or 0)
+                _eta_s = max(0, ts - _now) if ts else 0
+                _eta = f"{_eta_s//3600}h{(_eta_s%3600)//60:02d}m" if _eta_s else "-"
+                if g.get("is_waiting"):       _dir = "estacionado"
+                elif g.get("is_returning"):   _dir = "voltando"
+                elif g.get("is_travelling"): _dir = "indo"
+                else:                         _dir = "?"
+                self.log(jid, "info",
+                    f"  group[{i}]: {g.get('owner')}/{g.get('city_name')} "
+                    f"count={g.get('count_in_use')} {_dir} eta={_eta}")
             self.log(jid, "info",
                 f"Alvo {target_owner}/{target_city_name}: "
                 f"estacionados={stationed} em_transito={in_transit} "
@@ -219,6 +277,34 @@ class SpyRunner(BaseRunner):
                 self.log(jid, "info",
                     f"Alvo: lv={ti.get('city_level')} inativo={ti.get('is_inactive')} "
                     f"free_spies={ti.get('free_spies')} remaining_risk={current_risk}{decay_info}")
+
+                # ── Abort if target is no longer inactive ─────────────────────
+                # World spy targets inactive players. If the player came back online
+                # between spawn and execution, skip — espionar ativo é arriscado e
+                # desperdiça espião. Marca TODAS as cidades do player como active
+                # para o world spy não escolher outras cidades do mesmo player.
+                if ti.get("is_inactive") is False:
+                    self.log(jid, "warn",
+                        f"Alvo {target_owner}/{target_city_name} não está mais inativo. "
+                        f"Marcando todas as cidades do player como active e abortando.")
+                    try:
+                        if target_owner_id:
+                            self.hub.update_city_state(
+                                owner_id=target_owner_id,
+                                state="active",
+                                game_account_id=ga_id,
+                                reason="Spy abort: player voltou ao ativo no live params",
+                            )
+                        else:
+                            self.hub.update_city_state(
+                                game_city_id=target_city_id,
+                                state="active",
+                                game_account_id=ga_id,
+                                reason="Spy abort: target voltou ao ativo no live params",
+                            )
+                    except Exception:
+                        pass
+                    return RunnerResult(success=True, data={"aborted": "target_active"})
 
                 # TODO: detectar férias/cidade sumida via missionData real do game
                 # Precisamos capturar o HTML de uma cidade em férias para saber
@@ -796,10 +882,14 @@ class SpyRunner(BaseRunner):
                 )
                 self.save_game_client(ga_id, client)
                 result_data = {
-                    "missions_done":   missions_done,
-                    "missions_failed": missions_failed,
-                    "target_city_id":  target_city_id,
-                    "source_city_id":  city_id,
+                    "missions_done":     missions_done,
+                    "missions_failed":   missions_failed,
+                    "target_city_id":    target_city_id,
+                    "target_city_name":  target_city_name,
+                    "target_owner":      target_owner,
+                    "target_owner_id":   target_owner_id,
+                    "island_id":         island_id,
+                    "source_city_id":    city_id,
                 }
                 self._notify_parent(jid, inputs, success=True, data=result_data)
                 return RunnerResult(success=True, data=result_data)

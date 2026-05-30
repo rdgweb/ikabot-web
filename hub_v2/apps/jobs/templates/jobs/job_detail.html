@@ -140,6 +140,21 @@
         </a>
       </dd>
     </div>
+    {% if object.game_account %}
+    <div>
+      <dt class="text-muted">Conta de jogo</dt>
+      <dd class="mt-0.5">{{ object.game_account.name|default:object.game_account.server_id }}</dd>
+    </div>
+    {% endif %}
+    {% if spy_display.source_city_id and spy_display.source_city_id != "—" %}
+    <div>
+      <dt class="text-muted">Safehouse</dt>
+      <dd class="mt-0.5">
+        {% if spy_display.source_city_name %}{{ spy_display.source_city_name }}{% endif %}
+        <span class="font-mono text-xs text-muted">#{{ spy_display.source_city_id }}</span>
+      </dd>
+    </div>
+    {% endif %}
     <div>
       <dt class="text-muted">Nó</dt>
       <dd class="mt-0.5">
@@ -1086,9 +1101,21 @@
         <i class="bi bi-binoculars text-sea mr-1"></i> Espionagem
       </h3>
       <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-        <span><i class="bi bi-person text-[10px]"></i> {{ spy_display.target_owner }}</span>
-        <span><i class="bi bi-buildings text-[10px]"></i> {{ spy_display.target_city_name }}</span>
-        <span class="font-mono">#{{ spy_display.target_city_id }}</span>
+        <span><i class="bi bi-person text-[10px]"></i>
+          {% if spy_display.target_owner_url %}
+            <a href="{{ spy_display.target_owner_url }}" class="link-sea">{{ spy_display.target_owner }}</a>
+          {% else %}{{ spy_display.target_owner }}{% endif %}
+        </span>
+        <span><i class="bi bi-buildings text-[10px]"></i>
+          {% if spy_display.target_city_url %}
+            <a href="{{ spy_display.target_city_url }}" class="link-sea">{{ spy_display.target_city_name }}</a>
+          {% else %}{{ spy_display.target_city_name }}{% endif %}
+        </span>
+        <span class="font-mono">
+          {% if spy_display.target_city_url %}
+            <a href="{{ spy_display.target_city_url }}" class="link-sea">#{{ spy_display.target_city_id }}</a>
+          {% else %}#{{ spy_display.target_city_id }}{% endif %}
+        </span>
         <span><i class="bi bi-geo-alt text-[10px]"></i> ilha {{ spy_display.island_id }}</span>
         {% if spy_display.max_risk %}
         <span><i class="bi bi-shield text-[10px]"></i> max risco {{ spy_display.max_risk }}%</span>

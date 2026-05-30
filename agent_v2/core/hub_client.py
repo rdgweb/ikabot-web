@@ -274,6 +274,17 @@ class HubClient:
             payload["source_job_id"] = source_job_id
         return self._post("/api/agent/world-dumps", payload)
 
+    def refresh_island(self, game_account_id: str, island: dict[str, Any]) -> dict:
+        """POST /api/agent/worldintel/islands/refresh/ — replace island in latest dump."""
+        try:
+            return self._post(
+                "/api/agent/worldintel/islands/refresh",
+                {"game_account_id": game_account_id, "island": island},
+            )
+        except Exception as e:
+            logger.warning("Failed to refresh island: %s", e)
+            return {}
+
     def append_world_dump(
         self,
         dump_id: str,
@@ -381,25 +392,91 @@ class HubClient:
 
     def update_city_state(
         self,
-        game_city_id: str,
-        state: str,
+        game_city_id: str = "",
+        state: str = "",
         game_account_id: str | None = None,
         reason: str = "",
+        owner_id: str = "",
     ) -> dict:
         """POST /api/agent/worldintel/cities/update-state/
 
         Update the state of a city in the WorldDump when the spy detects
         the player changed state (vacation, gone, etc.) after the dump was captured.
+        Use owner_id to update ALL cities of a player at once.
         state: "vacation" | "inactive_banned" | "gone" | "active" | "inactive"
         """
         payload: dict[str, Any] = {
-            "game_city_id": game_city_id,
             "state": state,
             "reason": reason,
         }
+        if game_city_id:
+            payload["game_city_id"] = game_city_id
+        if owner_id:
+            payload["owner_id"] = owner_id
         if game_account_id:
             payload["game_account_id"] = game_account_id
         return self._post("/api/agent/worldintel/cities/update-state", payload)
+
+    def update_military_movements(self, game_account_id: str, movements: dict) -> dict:
+        """POST /api/agent/military-movements/ — persist military advisor state."""
+        try:
+            return self._post("/api/agent/military-movements", {
+                "game_account_id": game_account_id,
+                "movements": movements,
+            })
+        except Exception as e:
+            logger.warning("Failed to update military movements: %s", e)
+            return {}
+
+    def scan_raid_alerts(
+        self,
+        game_account_id: str,
+        threshold: int = 50000,
+        raid_source_city: str = "",
+        raid_transporters: int = 0,
+        raid_max_trips: int = 5,
+        intel_ttl_hours: int = 24,
+    ) -> dict:
+        """POST /api/agent/espionage/scan-raid-alerts/
+
+        Hub varre todos reports válidos do server e dispara alertas Telegram
+        para cidades acima do threshold que ainda não foram alertadas (ou que
+        têm report novo desde último alerta). Idempotente — pode ser chamado
+        a cada execução do world spy sem spam.
+        """
+        try:
+            return self._post("/api/agent/espionage/scan-raid-alerts", {
+                "game_account_id":   game_account_id,
+                "threshold":         threshold,
+                "raid_source_city":  raid_source_city,
+                "raid_transporters": raid_transporters,
+                "raid_max_trips":    raid_max_trips,
+                "intel_ttl_hours":   intel_ttl_hours,
+            })
+        except Exception as e:
+            logger.warning("Failed to scan raid alerts: %s", e)
+            return {}
+
+    def get_missions_covered(
+        self,
+        target_city_id: str,
+        target_owner_id: str = "",
+        game_account_id: str = "",
+        intel_ttl_hours: int = 0,
+    ) -> list[int]:
+        """GET /api/agent/espionage/missions-covered/ — missions already covered by valid recent reports."""
+        params: dict[str, Any] = {"target_city_id": target_city_id}
+        if target_owner_id:
+            params["target_owner_id"] = target_owner_id
+        if game_account_id:
+            params["game_account_id"] = game_account_id
+        if intel_ttl_hours:
+            params["intel_ttl_hours"] = intel_ttl_hours
+        try:
+            resp = self._get("/api/agent/espionage/missions-covered", params=params)
+            return [int(m) for m in (resp or {}).get("covered", [])]
+        except Exception:
+            return []
 
     def get_latest_spy_intel(
         self,

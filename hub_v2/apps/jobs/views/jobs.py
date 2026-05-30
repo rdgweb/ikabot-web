@@ -1528,6 +1528,23 @@ class JobListView(FilterSortListView):
         }
 
     @classmethod
+    def _resolve_city_name(cls, job, city_id) -> str:
+        """Lookup city name in the game_account's snapshot."""
+        if not city_id or not job.game_account_id:
+            return ""
+        try:
+            from apps.game.models import AccountSnapshot
+            snap = AccountSnapshot.objects.filter(game_account_id=job.game_account_id).first()
+            if not snap:
+                return ""
+            for c in (snap.cities or []):
+                if str(c.get("id")) == str(city_id):
+                    return str(c.get("name") or "")
+        except Exception:
+            pass
+        return ""
+
+    @classmethod
     def _spy_display(cls, job):
         inputs = cls._parse_inputs(job)
         if int(job.action_code) != 15:
@@ -1719,10 +1736,20 @@ class JobListView(FilterSortListView):
             "phase_label":        phase_label,
             "phase_badge":        phase_badge,
             "target_owner":       str(inputs.get("target_owner") or "—"),
+            "target_owner_id":    str(inputs.get("target_owner_id") or ""),
+            "target_owner_url":   (
+                f"/intel/players/detail/?owner_id={inputs.get('target_owner_id')}"
+                if inputs.get("target_owner_id") else ""
+            ),
             "target_city_name":   str(inputs.get("target_city_name") or "—"),
             "target_city_id":     str(inputs.get("target_city_id") or "—"),
+            "target_city_url":    (
+                f"/intel/players/city/?city_id={inputs.get('target_city_id')}"
+                if inputs.get("target_city_id") else ""
+            ),
             "island_id":          str(inputs.get("island_id") or "—"),
             "source_city_id":     str(inputs.get("city_id") or "—"),
+            "source_city_name":   cls._resolve_city_name(job, inputs.get("city_id")),
             "max_risk":           _to_int(inputs.get("max_detection_risk"), 35),
             "recall_after":       recall_after,
             "save_reports":       bool(inputs.get("save_reports", True)),
