@@ -502,7 +502,16 @@ class SpySafehouseAction(BaseAction):
         seen_spy_ids: set[str] = set()
         if mission_idx >= 0:
             mission_section = html[mission_idx:mission_idx + 30000]
-            for block in re.findall(r'<div class="spyinfo">([\s\S]{0,5000}?)</div>\s*</div>', mission_section):
+            # Split blocks by <div class="spyinfo"> opener; each chunk goes up to the next opener
+            # (or end of mission_section). More robust than matching closing </div></div> which
+            # is broken by intermediate </li></ul>.
+            _raw_blocks = re.split(r'<div class="spyinfo">', mission_section)
+            blocks_iter = []
+            for chunk in _raw_blocks[1:]:  # first chunk is before any spyinfo div
+                # Bound block to first </ul> after the spyinfo opener — end of the spy entry
+                _end = chunk.find("</ul>")
+                blocks_iter.append(chunk[:_end] if _end > 0 else chunk[:5000])
+            for block in blocks_iter:
                 block_text = re.sub(r"\s+", " ", _strip_html(block)).strip()
                 owner = ""
                 owner_m = re.search(r'<li[^>]*class="user"[^>]*>[\s\S]*?<a[^>]*>([^<]+)</a>', block)
@@ -510,9 +519,17 @@ class SpySafehouseAction(BaseAction):
                     owner = _strip_html(owner_m.group(1))
 
                 city_name = ""
+                # Try <a> inside <li class="city">; fallback to plain text inside the <li>
                 city_m = re.search(r'<li[^>]*class="city"[^>]*>[\s\S]*?<a[^>]*>([^<]+)</a>', block)
                 if city_m:
                     city_name = _strip_html(city_m.group(1))
+                else:
+                    city_li_m = re.search(r'<li[^>]*class="city"[^>]*>([\s\S]*?)</li>', block)
+                    if city_li_m:
+                        city_name = _strip_html(city_li_m.group(1))
+                if city_name:
+                    # Strip trailing "[x:y]" coordinates from city name
+                    city_name = re.sub(r"\s*\[\d+\s*:\s*\d+\]\s*$", "", city_name)
                     city_name = re.sub(r"\s*\(\s*\d+\s*:\s*\d+\s*\)\s*$", "", city_name).strip()
 
                 coords_m = re.search(r"\[(\d+)\s*:\s*(\d+)\]", block)
