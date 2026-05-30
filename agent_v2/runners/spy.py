@@ -200,9 +200,10 @@ class SpyRunner(BaseRunner):
             live_params: dict = {}
             md_result:   dict = {}
             try:
-                md_result   = client.get_spy_mission_data(city_id, target_city_id, island_id)
-                live_params = md_result.get("raw_params", {})
-                ti          = md_result.get("target", {})
+                md_result        = client.get_spy_mission_data(city_id, target_city_id, island_id)
+                live_params      = md_result.get("raw_params", {})
+                ti               = md_result.get("target", {})
+                form_travel_secs = int(md_result.get("travel_seconds") or 0)
                 current_risk = float(live_params.get("remainingRisk") or 0)
                 now_ts       = int(time.time())
 
@@ -451,10 +452,10 @@ class SpyRunner(BaseRunner):
                         wait_total = max(60, wait_total)
 
                         new_sent  = r_sent_total + ag + dec
-                        # Se travel=0 (enddate não veio na response do jogo), usa 6h como
-                        # fallback conservador para que o recovery tracking funcione até os
-                        # espiões chegarem (distâncias longas podem levar 4-5h).
-                        new_arriv = int(time.time()) + (travel if travel > 0 else ARRIVAL_WAIT_MAX)
+                        # Se travel=0 (enddate não veio no response do send), usa o tempo
+                        # do form HTML (totalTime) como fallback, ou 6h conservador.
+                        _fallback = (form_travel_secs + 120) if form_travel_secs > 30 else ARRIVAL_WAIT_MAX
+                        new_arriv = int(time.time()) + (travel if travel > 0 else _fallback)
                         self.log(jid, "info",
                             f"Infiltração enviada ({msg}). Viagem={travel}s "
                             f"risk_after={risk_after_total:.1f} → aguardando {wait_total}s "

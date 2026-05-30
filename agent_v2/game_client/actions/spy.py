@@ -1098,6 +1098,7 @@ class SpyMissionDataAction(BaseAction):
                 break
 
         js_params: dict[str, Any] = {}
+        html_fragments: list[str] = []
         for entry in data:
             if isinstance(entry, list) and entry[0] == "updateTemplateData" and isinstance(entry[1], dict):
                 lj = entry[1].get("load_js") or {}
@@ -1108,10 +1109,21 @@ class SpyMissionDataAction(BaseAction):
                             js_params = json.loads(params_str)
                         except Exception:
                             pass
-                break
+            if isinstance(entry, list) and entry[0] in ("changeHTML", "changeView") and isinstance(entry[1], str):
+                html_fragments.append(entry[1])
 
         if not js_params:
             return {"missions": {}, "target": {}}
+
+        # Parse journey time from id="totalTime" in the HTML (e.g. "5m", "2h 30m", "1h")
+        travel_seconds = 0
+        full_html = "\n".join(html_fragments)
+        _tt_m = re.search(r'id=["\']totalTime["\'][^>]*>([^<]+)<', full_html)
+        if _tt_m:
+            _tt = _tt_m.group(1).strip()
+            _h_m = re.search(r'(\d+)\s*h', _tt)
+            _m_m = re.search(r'(\d+)\s*m', _tt)
+            travel_seconds = (int(_h_m.group(1)) * 3600 if _h_m else 0) + (int(_m_m.group(1)) * 60 if _m_m else 0)
 
         target_info = {
             "city_level": js_params.get("targetCityLevel", 0),
@@ -1141,7 +1153,7 @@ class SpyMissionDataAction(BaseAction):
             "SpyMissionData: target=%s level=%d inactive=%s missions=%d",
             target_city_id, target_info["city_level"], target_info["is_inactive"], len(missions),
         )
-        return {"missions": missions, "target": target_info, "raw_params": js_params}
+        return {"missions": missions, "target": target_info, "raw_params": js_params, "travel_seconds": travel_seconds}
 
 
 def compute_agents_for_risk_dynamic(mission_data: dict, max_detection_risk: int) -> int:
