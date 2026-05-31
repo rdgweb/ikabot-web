@@ -491,6 +491,14 @@ class HubClient:
             logger.warning("Failed to scan raid alerts: %s", e)
             return {}
 
+    def lookup_city(self, city_id: str, game_account_id: str) -> dict:
+        """GET /api/agent/worldintel/city-lookup/ — resolve island_id pra cidade no dump."""
+        try:
+            return self._get("/api/agent/worldintel/city-lookup",
+                             params={"city_id": city_id, "ga_id": game_account_id}) or {}
+        except Exception:
+            return {}
+
     def list_active_spy_targets(self, game_account_id: str) -> list[dict]:
         """GET /api/agent/jobs/active-spy-targets/?ga_id=X
         Lista alvos com jobs ac=15 ativos pro GA. Usado pra detectar grupos órfãos.

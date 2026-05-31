@@ -5,7 +5,7 @@ from django.urls import reverse
 
 from apps.accounts.models import Account, GameAccount, Node
 
-from .models import Job, Workflow, WorkflowRun
+from .models import ConstructionResourceReservation, Job, Workflow, WorkflowRun
 from .services.workflows import create_job_with_workflow, ensure_workflow_for_job
 from .views.create import JobSubmitView
 
@@ -406,3 +406,88 @@ class AgentRescheduleIdempotencyTests(TestCase):
         self.assertEqual(legacy.workflow_id, workflow.pk)
         self.assertEqual(legacy.workflow_run_id, workflow_run.pk)
         self.assertEqual(workflow.status, "problem")
+
+
+class ConstructionReservationLifecycleTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="jobs-reservation-user",
+            email="jobs-reservation@example.com",
+            password="secret123",
+        )
+        self.node = Node.objects.create(name="node-reservation")
+        self.account = Account.objects.create(
+            node=self.node,
+            label="Conta Reservation",
+            email="reservation@example.com",
+            password_enc="x",
+        )
+        self.ga = GameAccount.objects.create(
+            account=self.account,
+            lobby_account_id=9,
+            server_id="s9-br",
+            server_language="br",
+            server_number=9,
+            name="LordDarkness",
+        )
+        self.root_job = Job.objects.create(
+            account=self.account,
+            game_account=self.ga,
+            node=self.node,
+            action_code=1002,
+            status="finished",
+            inputs_json="{}",
+            timeout_sec=1800,
+        )
+        self.workflow, self.run = ensure_workflow_for_job(self.root_job)
+        Job.objects.create(
+            account=self.account,
+            game_account=self.ga,
+            node=self.node,
+            action_code=1002,
+            status="scheduled",
+            inputs_json="{}",
+            timeout_sec=1800,
+            root_job_id=self.root_job.pk,
+            source_job_id=self.root_job.pk,
+            workflow=self.workflow,
+            workflow_run=self.run,
+        )
+        self.reservation = ConstructionResourceReservation.objects.create(
+            job=self.root_job,
+            account=self.account,
+            game_account=self.ga,
+            city_id="66480",
+            city_name="MM1",
+            resource="marble",
+            reserved_local_amount=100,
+            shortfall_amount=50,
+            status="active",
+        )
+
+    def test_workflow_delete_cancels_active_construction_reservations(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("jobs:workflow-action", args=[self.workflow.pk]),
+            {"workflow_action": "delete"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.reservation.refresh_from_db()
+        self.assertEqual(self.reservation.status, "cancelled")
+        self.assertFalse(Workflow.objects.filter(pk=self.workflow.pk).exists())
+
+    def test_workflow_cancel_cancels_active_construction_reservations(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("jobs:workflow-action", args=[self.workflow.pk]),
+            {"workflow_action": "cancel"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.reservation.refresh_from_db()
+        self.assertEqual(self.reservation.status, "cancelled")
+        self.workflow.refresh_from_db()
+        self.assertEqual(self.workflow.status, "cancelled")

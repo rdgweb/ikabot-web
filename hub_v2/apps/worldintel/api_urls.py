@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .api.agent import RefreshIslandView, UpdateCityStateView, WorldDumpAppendView, WorldDumpCreateView, WorldDumpReplaceIslandsView, WorldSpyTargetsView
+from .api.agent import CityLookupView, RefreshIslandView, UpdateCityStateView, WorldDumpAppendView, WorldDumpCreateView, WorldDumpReplaceIslandsView, WorldSpyTargetsView
 
 app_name = "agent-worldintel"
 
@@ -11,4 +11,5 @@ urlpatterns = [
     path("worldintel/spy-targets/", WorldSpyTargetsView.as_view(), name="spy-targets"),
     path("worldintel/cities/update-state/", UpdateCityStateView.as_view(), name="city-update-state"),
     path("worldintel/islands/refresh/", RefreshIslandView.as_view(), name="island-refresh"),
+    path("worldintel/city-lookup/", CityLookupView.as_view(), name="city-lookup"),
 ]

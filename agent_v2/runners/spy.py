@@ -239,42 +239,58 @@ class SpyRunner(BaseRunner):
                 f"(ant={last_stationed} no_progress={no_progress})")
 
             # ── Sweep de grupos órfãos (sem job ac=15 ativo pro alvo) ─────────
-            # Recall espiões parados em alvos não-relacionados a este job se não houver
-            # job ativo (running/scheduled) pra aquele (target_owner, target_city_id).
             try:
                 active_targets = self.hub.list_active_spy_targets(ga_id)
                 active_keys = {(t.get("target_owner") or "", str(t.get("target_city_id") or ""))
                                for t in active_targets}
+                self.log(jid, "debug",
+                    f"Sweep órfãos: {len(_all_groups)} grupos no safehouse, "
+                    f"{len(active_keys)} alvos ativos no hub")
                 for g in _all_groups:
                     g_owner = g.get("owner") or ""
                     g_tcid = str(g.get("target_city_id") or "")
                     g_cname = g.get("city_name") or ""
                     g_count = int(g.get("count_in_use") or 0)
                     g_spy_id = g.get("spy_id")
-                    # Pula alvo deste job (será tratado pela lógica normal)
-                    if g_owner == target_owner and (g_tcid == str(target_city_id) or g_cname == target_city_name):
+                    g_waiting = bool(g.get("is_waiting"))
+                    is_own = (g_owner == target_owner and
+                              (g_tcid == str(target_city_id) or g_cname == target_city_name))
+                    has_active = (g_owner, g_tcid) in active_keys
+                    self.log(jid, "debug",
+                        f"  sweep: {g_owner}/{g_cname} tcid={g_tcid} spy_id={g_spy_id} "
+                        f"count={g_count} waiting={g_waiting} is_own={is_own} has_active={has_active}")
+                    if is_own:
                         continue
-                    # Só age em parados (não em viagem)
-                    if not g.get("is_waiting"):
+                    if not g_waiting:
                         continue
-                    if g_count <= 0 or not g_spy_id:
+                    if g_count <= 0 or not g_tcid:
                         continue
-                    # Tem job ativo pra esse alvo?
-                    if (g_owner, g_tcid) in active_keys:
-                        continue  # outro job cuida — não interfere
-                    # Órfão confirmado — recall
+                    if has_active:
+                        continue
+                    # Resolver island_id do alvo via hub (mission 8 sendSpy precisa)
+                    info = self.hub.lookup_city(g_tcid, ga_id)
+                    g_island = info.get("island_id") or ""
+                    if not g_island:
+                        self.log(jid, "warn",
+                            f"Recall órfão pulado: {g_owner}/{g_cname} — sem island_id no dump")
+                        continue
                     self.log(jid, "info",
                         f"Recall órfão: {g_owner}/{g_cname} ({g_count} espiões, "
-                        f"sem job ac=15 ativo). Chamando de volta.")
+                        f"sem job ac=15 ativo, island={g_island}). Chamando mission 8.")
                     try:
-                        r = client.retreat_spy_group(
+                        r = client.execute_spy_mission(
                             source_city_id=city_id,
                             target_city_id=g_tcid,
-                            position=safehouse_position,
+                            mission_id=8,
+                            agents=g_count,
+                            decoys=0,
                             spy_id=g_spy_id,
+                            island_id=g_island,
+                            position=safehouse_position,
                         )
                         if r.get("success"):
-                            self.log(jid, "info", f"Recall órfão OK: {g_owner}/{g_cname}")
+                            self.log(jid, "info",
+                                f"Recall órfão OK: {g_owner}/{g_cname} — {r.get('message','')}")
                         else:
                             self.log(jid, "warn",
                                 f"Recall órfão falhou: {g_owner}/{g_cname} — {r.get('message','')}")

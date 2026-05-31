@@ -556,6 +556,14 @@ class SpySafehouseAction(BaseAction):
                     if target_city_m:
                         target_city_id = target_city_m.group(1)
                         break
+                # Fallback: <li class="city"><a href="...cityId=N"> — pra grupos parados
+                if not target_city_id:
+                    city_link_m = re.search(
+                        r'<li[^>]*class="city"[^>]*>[\s\S]*?<a[^>]*href="[^"]*cityId=(\d+)',
+                        block,
+                    )
+                    if city_link_m:
+                        target_city_id = city_link_m.group(1)
 
                 count = 0
                 stationed_m = re.search(r'(\d+)\s+est[aÃƒÂ£]o em uso', block)
@@ -602,13 +610,25 @@ class SpySafehouseAction(BaseAction):
                 )
 
                 spy_id = ""
-                spy_id_m = re.search(r"spy=(\d+)", block)
-                if spy_id_m:
-                    spy_id = spy_id_m.group(1)
-                else:
-                    spy_countdown_m = re.search(r"SpyCountDown(\d+)", block)
-                    if spy_countdown_m:
-                        spy_id = spy_countdown_m.group(1)
+                for sp_pattern in (
+                    r"spy=(\d+)",
+                    r"spy%3D(\d+)",
+                    r"spyId[\"'\s:=]+(\d+)",
+                    r"data-spy[-_]?id=[\"'](\d+)",
+                    r"id=[\"']spy_(\d+)",
+                    r"SpyCountDown(\d+)",
+                    r"name=[\"']spyId[\"'][^>]*value=[\"'](\d+)",
+                ):
+                    sp_m = re.search(sp_pattern, block)
+                    if sp_m:
+                        spy_id = sp_m.group(1)
+                        break
+                # Dump bloco se ainda não achou (parados) — vai pra log do dump
+                if not spy_id:
+                    import logging as _lg
+                    _lg.getLogger("spy_parser").warning(
+                        f"SPY_ID_NAO_ACHADO owner={owner!r} city={city_name!r} "
+                        f"block_preview={block[:1200]!r}")
 
                 return_ts = None
                 ts_m = re.search(rf"SpyCountDown{re.escape(spy_id)}[\s\S]*?enddate:\s*(\d+)", mission_section) if spy_id else None
@@ -1537,6 +1557,11 @@ class SpyRetreatAction(BaseAction):
         except Exception:
             data = []
 
+        import logging as _lg
+        _lg.getLogger("spy_retreat").warning(
+            f"RETREAT_RESP target={target_city_id} status={resp.status_code} "
+            f"body_preview={str(data)[:1500]!r}")
+
         for entry in data:
             if isinstance(entry, list) and entry[0] == "updateGlobalData" and isinstance(entry[1], dict):
                 action_request = entry[1].get("actionRequest")
@@ -1570,7 +1595,8 @@ class SpyRetreatAction(BaseAction):
                 message = "Retirada solicitada"
             return {"success": success or not bool(fallback_data), "message": message}
 
-        return {"success": True, "message": "Retirada solicitada"}
+        # Sem feedback explícito + sem spy_id pra fallback → não temos confirmação real
+        return {"success": False, "message": "Sem confirmação do jogo (resposta vazia)"}
 
 
 class SpyReportsAction(BaseAction):

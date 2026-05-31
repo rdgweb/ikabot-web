@@ -636,6 +636,42 @@ class RefreshIslandView(APIView):
         })
 
 
+class CityLookupView(APIView):
+    """GET /api/agent/worldintel/city-lookup/?city_id=X&ga_id=Y
+    Retorna info da cidade no dump mais recente do server do GA.
+    Usado pra resolver island_id pra ações que precisam (mission send/recall).
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def get(self, request):
+        city_id = str(request.query_params.get("city_id") or "").strip()
+        ga_id = str(request.query_params.get("ga_id") or "").strip()
+        if not city_id or not ga_id:
+            return Response({"error": "city_id and ga_id required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            ga = GameAccount.objects.get(pk=ga_id)
+        except GameAccount.DoesNotExist:
+            return Response({"error": "GameAccount not found"}, status=status.HTTP_404_NOT_FOUND)
+        wdc = (WorldDumpCity.objects
+               .filter(game_city_id=city_id, dump__game_account__server_id=ga.server_id)
+               .select_related("island")
+               .order_by("-dump__captured_at").first())
+        if not wdc:
+            return Response({"error": "city not found in dump"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            "city_id": wdc.game_city_id,
+            "city_name": wdc.name,
+            "owner_id": wdc.owner_id,
+            "owner_name": wdc.owner_name,
+            "level": wdc.level,
+            "island_id": wdc.island.island_id if wdc.island else "",
+            "x": wdc.island.x if wdc.island else None,
+            "y": wdc.island.y if wdc.island else None,
+        })
+
+
 class UpdateCityStateView(APIView):
     """POST /api/agent/worldintel/cities/update-state/
 

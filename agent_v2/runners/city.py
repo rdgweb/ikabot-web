@@ -1055,6 +1055,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     city=city,
                     missing=missing,
                     support_by_city=support_by_city,
+                    reserved_by_city=live_reserved_by_city,
                     )
                 )
                 skip_reason = getattr(self, "_last_missing_skip_reason", None)

@@ -21,7 +21,7 @@ from core.catalogs import get_building_info
 from core.contracts import ACTION_CATALOG, RESOURCE_CHOICES
 from core.mixins.views import FilterSortListView
 from ..filters import JobFilter, WorkflowFilter
-from ..models import Job, JobLog, Workflow, WorkflowRun
+from ..models import ConstructionResourceReservation, Job, JobLog, Workflow, WorkflowRun
 from ..services.dispatch import dispatch_job
 from ..services.workflows import create_job_with_workflow, ensure_workflow_for_job
 
@@ -74,6 +74,23 @@ SCIENTIST_TARGET_MODE_META = {
     "absolute": "Quantidade fixa",
     "percent_max": "% do maximo",
 }
+
+
+def _cancel_active_construction_reservations_for_jobs(job_qs) -> int:
+    job_ids = list(job_qs.values_list("pk", flat=True))
+    if not job_ids:
+        return 0
+    return ConstructionResourceReservation.objects.filter(
+        job_id__in=job_ids,
+        status="active",
+    ).update(status="cancelled")
+
+
+def _chain_jobs_qs(job: Job):
+    root_id = job.root_job_id or job.pk
+    return Job.objects.filter(
+        models.Q(pk=root_id) | models.Q(root_job_id=root_id)
+    )
 
 
 _WORKFLOW_BORDER_COLOR = {
@@ -2272,8 +2289,15 @@ class JobChainHistoryPartialView(LoginRequiredMixin, View):
 class JobCancelView(LoginRequiredMixin, View):
     def post(self, request, pk):
         job = get_object_or_404(Job, pk=pk)
-        job.status = "cancelled"
-        job.save(update_fields=["status"])
+        now = timezone.now()
+        chain_qs = _chain_jobs_qs(job)
+        chain_qs.filter(status__in=("queued", "running", "scheduled")).update(
+            status="cancelled",
+            finished_at=now,
+            updated_at=now,
+            lease_expires_at=None,
+        )
+        _cancel_active_construction_reservations_for_jobs(chain_qs)
         return redirect("jobs:job-detail", pk=job.pk)
 
 
@@ -3039,12 +3063,13 @@ class WorkflowActionView(LoginRequiredMixin, View):
         workflow = get_object_or_404(Workflow, pk=pk)
         action = request.POST.get("workflow_action", "").strip()
         now = timezone.now()
+        workflow_jobs = Job.objects.filter(workflow=workflow)
 
         if action == "delete":
-            Job.objects.filter(
-                workflow=workflow,
+            workflow_jobs.filter(
                 status__in=("queued", "running", "scheduled"),
             ).update(status="cancelled", finished_at=now, updated_at=now, lease_expires_at=None)
+            _cancel_active_construction_reservations_for_jobs(workflow_jobs)
             workflow.delete()
             resp = HttpResponse(status=200)
             resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": "Workflow excluído."}})
@@ -3066,16 +3091,15 @@ class WorkflowActionView(LoginRequiredMixin, View):
 
         if action == "pause":
             # Cancel only scheduled (future) jobs — let running jobs finish naturally
-            Job.objects.filter(
-                workflow=workflow,
+            workflow_jobs.filter(
                 status="scheduled",
             ).update(status="cancelled", finished_at=now, updated_at=now, lease_expires_at=None)
         elif action == "cancel":
             # Cancel all active jobs in the chain
-            Job.objects.filter(
-                workflow=workflow,
+            workflow_jobs.filter(
                 status__in=("queued", "running", "scheduled"),
             ).update(status="cancelled", finished_at=now, updated_at=now, lease_expires_at=None)
+            _cancel_active_construction_reservations_for_jobs(workflow_jobs)
 
         labels = {"pause": "Workflow pausado.", "resume": "Workflow retomado.", "cancel": "Workflow cancelado."}
         resp = HttpResponse(status=200)
@@ -3163,10 +3187,11 @@ class WorkflowBulkDeleteView(LoginRequiredMixin, View):
         else:
             qs = Workflow.objects.filter(pk__in=pks)
 
-        Job.objects.filter(
-            workflow__in=qs,
+        workflow_jobs = Job.objects.filter(workflow__in=qs)
+        workflow_jobs.filter(
             status__in=("queued", "running", "scheduled"),
         ).update(status="cancelled", finished_at=now, updated_at=now, lease_expires_at=None)
+        _cancel_active_construction_reservations_for_jobs(workflow_jobs)
 
         deleted_count, _ = qs.delete()
         msg = f"{deleted_count} workflow(s) excluído(s)."
