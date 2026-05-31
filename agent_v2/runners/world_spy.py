@@ -70,6 +70,26 @@ def _parse_int(value, default=None):
         return default
 
 
+def _owner_scope_key(owner_id: str, owner_name: str) -> str:
+    name = str(owner_name or "").strip().casefold()
+    if name:
+        return f"name:{name}"
+    return str(owner_id or "").strip()
+
+
+def _parse_mission_list(raw: Any) -> list[int]:
+    values = raw if isinstance(raw, (list, tuple, set)) else str(raw or "").split(",")
+    parsed: list[int] = []
+    for value in values:
+        try:
+            mission_id = int(str(value).strip())
+        except (TypeError, ValueError):
+            continue
+        if mission_id not in parsed:
+            parsed.append(mission_id)
+    return parsed
+
+
 @register_runner(16)
 class WorldSpyRunner(BaseRunner):
     """Orquestra espionagem event-driven em múltiplas cidades via ac=15.
@@ -238,13 +258,34 @@ class WorldSpyRunner(BaseRunner):
         # reschedule_job com __campaign_root_id faz hub atualizar
         # root.progress_json["current_runner_id"] = novo_fallback.
         # Filhos notificam o root (ID estável) → hub acorda o fallback correto.
+        projected_spied_player_ids = set(spied_player_ids)
+        if has_player_scope and free_entries and targets:
+            projected_free_slots = len(free_entries)
+            projected_dispatched: set[str] = set()
+            for target in targets:
+                if projected_free_slots <= 0:
+                    break
+                projected_city_id = str(target.get("game_city_id") or "").strip()
+                if not projected_city_id or projected_city_id in projected_dispatched:
+                    continue
+                projected_missing = _parse_mission_list(target.get("missing_missions")) or mission_ids
+                if any(m in PLAYER_SCOPE_MISSIONS for m in projected_missing):
+                    projected_owner_key = _owner_scope_key(
+                        str(target.get("owner_id") or "").strip(),
+                        str(target.get("owner_name") or "").strip(),
+                    )
+                    if projected_owner_key:
+                        projected_spied_player_ids.add(projected_owner_key)
+                projected_dispatched.add(projected_city_id)
+                projected_free_slots -= 1
+
         try:
             resp_next = self.hub.reschedule_job(
                 jid,
                 delay_seconds=FALLBACK_DELAY,
                 inputs={
                     "__campaign_root_id": root_id,
-                    "__spied_player_ids": list(spied_player_ids),
+                    "__spied_player_ids": sorted(projected_spied_player_ids),
                 },
             )
             next_jid = resp_next.get("new_job_id", "")
@@ -291,21 +332,27 @@ class WorldSpyRunner(BaseRunner):
 
             # Determinar missões para esta cidade
             owner_id = str(target.get("owner_id") or "").strip()
-            player_already_covered = owner_id in spied_player_ids
+            owner_name = str(target.get("owner_name") or "").strip()
+            player_scope_key = _owner_scope_key(owner_id, owner_name)
+            player_already_covered = player_scope_key in spied_player_ids
+            target_missing = _parse_mission_list(target.get("missing_missions")) or mission_ids
+            target_city_missions = [m for m in target_missing if m not in PLAYER_SCOPE_MISSIONS]
+            target_player_missions = [m for m in target_missing if m in PLAYER_SCOPE_MISSIONS]
 
-            if has_player_scope and not player_already_covered:
-                # Primeira cidade deste player: todas as missões (city + player-scope)
-                effective_missions = mission_ids
-                spied_player_ids.add(owner_id)
-            elif city_missions:
-                # Demais cidades do mesmo player: só missões por-cidade
-                effective_missions = city_missions
+            if target_player_missions and not player_already_covered:
+                # Primeira cidade deste player: apenas as missões realmente faltantes.
+                effective_missions = target_missing
+                if player_scope_key:
+                    spied_player_ids.add(player_scope_key)
+            elif target_city_missions:
+                # Demais cidades do mesmo player: só missões por-cidade ainda faltantes.
+                effective_missions = target_city_missions
             else:
-                # Apenas missões player-scope e player já foi coberto → pular cidade
+                # Nada faltando nesta cidade, ou só faltam missões player-scope já cobertas.
                 skipped += 1
                 self.log(jid, "info",
-                         f"[WorldSpy] Pulando {target.get('city_name')} — player {owner_id[:8]} "
-                         f"já coberto (sem missões por-cidade pendentes).")
+                         f"[WorldSpy] Pulando {target.get('city_name')} — sem missões pendentes "
+                         f"para este alvo (missing={target_missing}, owner_covered={player_already_covered}).")
                 continue
 
             effective_missions_raw = ",".join(str(m) for m in effective_missions)
@@ -341,7 +388,7 @@ class WorldSpyRunner(BaseRunner):
                 spawned += 1
                 dispatched_cities.add(target_city_id)
                 child_jid = resp.get("new_job_id", "?")
-                scope_tag = "city+player" if not player_already_covered and has_player_scope else "city"
+                scope_tag = "city+player" if any(m in PLAYER_SCOPE_MISSIONS for m in effective_missions) else "city"
                 self.log(jid, "info",
                          f"[WorldSpy] → {target.get('city_name')} ({target.get('owner_name')}) "
                          f"missions={effective_missions} [{scope_tag}] "

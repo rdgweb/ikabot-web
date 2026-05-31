@@ -1686,8 +1686,11 @@ class SpyReportsAction(BaseAction):
             m6 = re.search(r'class="date[^"]*"[^>]*>([^<]+)', header_html)
             report["date_str"] = m6.group(1).strip() if m6 else ""
 
-            # Infer mission_id from subject
+            # Infer mission_id from subject (best-effort)
             report["mission_id"] = _infer_mission_id(report.get("subject", ""))
+            # Override: se report tiver "quartel/estaleiro" no data_json, é mission 6 (Guarnição),
+            # independente do subject "Tropas em X" que o jogo retorna.
+            # Aplicado depois de parsear data_json (ver abaixo).
             report["mission_name"] = _normalise_mission_name(report["mission_id"], report.get("subject", ""))
             report["is_read"] = not report.get("unread", False)
 
@@ -1770,6 +1773,17 @@ class SpyReportsAction(BaseAction):
                     merged = dict(report.get("data_json") or {})
                     merged.update(detail_payload)
                     report["data_json"] = merged
+
+            # Override mission_id baseado em estrutura do data_json — corrige
+            # subject ambíguo "Tropas em X" do jogo que pode ser m6 OU m7
+            _dj = report.get("data_json") or {}
+            _has_garrison_keys = any(k in _dj for k in ("quartel", "estaleiro")) or any(
+                k.startswith("tropas_em_") or k.startswith("frotas_em_")
+                for k in _dj.keys()
+            )
+            if _has_garrison_keys:
+                report["mission_id"] = 6  # Guarnição militar
+                report["mission_name"] = _normalise_mission_name(6, report.get("subject", ""))
 
             # HTML-based structured parsers — run after all_pairs / detail_payload
             _mid = report.get("mission_id")

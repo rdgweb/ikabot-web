@@ -182,6 +182,7 @@ class SpyRunner(BaseRunner):
                     covered = self.hub.get_missions_covered(
                         target_city_id=target_city_id,
                         target_owner_id=target_owner_id,
+                        target_owner=target_owner,
                         game_account_id=ga_id,
                     )
                     if covered:

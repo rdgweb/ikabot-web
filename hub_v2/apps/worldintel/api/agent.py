@@ -415,6 +415,8 @@ class WorldSpyTargetsView(APIView):
         # Para essas, basta UMA cidade válida do mesmo owner_id → skip todas as outras.
         PLAYER_SCOPE_MISSIONS = frozenset({3, 7, 10, 21, 24, 25, 26, 27})
 
+        missing_missions_map: dict[str, list[int]] = {}
+
         if skip_if_valid and cities:
             from datetime import timedelta
             city_ids_check  = [c.game_city_id for c in cities]
@@ -442,8 +444,11 @@ class WorldSpyTargetsView(APIView):
                     ).values("target_city_id", "mission_id").distinct():
                         city_valid_map[row["target_city_id"]].add(row["mission_id"])
 
-                # Valid per owner (player-scope missions — any city of that owner counts)
+                # Valid per owner (player-scope missions — any city of that owner counts).
+                # Some older/newer spy reports can carry inconsistent target_owner_id for the
+                # same player, so also fall back to target_owner name.
                 owner_valid_map: dict[str, set] = defaultdict(set)
+                owner_name_valid_map: dict[str, set] = defaultdict(set)
                 if player_missions and owner_ids_check:
                     for row in SpyReport.objects.filter(
                         target_owner_id__in=owner_ids_check,
@@ -451,15 +456,29 @@ class WorldSpyTargetsView(APIView):
                         **ttl_filter,
                     ).values("target_owner_id", "mission_id").distinct():
                         owner_valid_map[row["target_owner_id"]].add(row["mission_id"])
+                if player_missions:
+                    owner_names_check = list({(c.owner_name or "").strip() for c in cities if (c.owner_name or "").strip()})
+                    if owner_names_check:
+                        for row in SpyReport.objects.filter(
+                            target_owner__in=owner_names_check,
+                            mission_id__in=list(player_missions),
+                            **ttl_filter,
+                        ).values("target_owner", "mission_id").distinct():
+                            owner_name = (row["target_owner"] or "").strip()
+                            if owner_name:
+                                owner_name_valid_map[owner_name].add(row["mission_id"])
 
-                def _needs_spy(city) -> bool:
+                def _missing_missions(city) -> list[int]:
                     covered = (
                         city_valid_map.get(city.game_city_id, set())
                         | owner_valid_map.get(city.owner_id or "", set())
+                        | owner_name_valid_map.get((city.owner_name or "").strip(), set())
                     )
-                    return not (mission_set <= covered)
+                    missing = sorted(mission_set - covered)
+                    missing_missions_map[city.game_city_id] = missing
+                    return missing
 
-                cities = [c for c in cities if _needs_spy(c)]
+                cities = [c for c in cities if _missing_missions(c)]
             else:
                 has_valid = set(
                     SpyReport.objects.filter(
@@ -489,6 +508,7 @@ class WorldSpyTargetsView(APIView):
             "y":            c.island.y if c.island else 0,
             "state":        c.state or "",
             "ally_tag":     c.ally_tag or "",
+            "missing_missions": missing_missions_map.get(c.game_city_id, sorted(mission_ids) if mission_ids else []),
         } for c in cities]
 
         # Return safehouse coordinates so the agent can sort targets by distance.

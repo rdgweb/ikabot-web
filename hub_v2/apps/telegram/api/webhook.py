@@ -73,7 +73,7 @@ def _create_raid_job(
     enemy_wall_level = 1
     try:
         r7 = SpyReport.objects.filter(
-            target_city_id=target_city_id, mission_id=7,
+            target_city_id=target_city_id, mission_id=6,
             game_account__server_id=ga.server_id,
         ).order_by("-created_at").first()
         if r7 and r7.data_json:
@@ -111,6 +111,29 @@ def _create_raid_job(
         inputs["enemy_units"] = enemy_units
     if source_city_id:
         inputs["source_city_id"] = source_city_id
+
+    # Blockade: calcular frota mínima a partir do snapshot da source city
+    if needs_blockade and source_city_id:
+        try:
+            from apps.game.models import AccountSnapshot
+            from apps.espionage.api.views import _recommend_fleet_for_blockade
+            snap = AccountSnapshot.objects.filter(game_account=ga).first()
+            if snap:
+                military = snap.military or {}
+                bc = military.get("by_city") if isinstance(military, dict) else None
+                fleet = {}
+                if isinstance(bc, list):
+                    for c in bc:
+                        if str(c.get("city_id")) == str(source_city_id):
+                            fleet = c.get("fleet") or {}
+                            break
+                elif isinstance(bc, dict):
+                    fleet = (bc.get(str(source_city_id)) or {}).get("fleet") or {}
+                rec_fleet = _recommend_fleet_for_blockade(fleet)
+                if rec_fleet:
+                    inputs["blockade_fleet_units"] = rec_fleet
+        except Exception as exc:
+            logger.warning("Failed to recommend blockade fleet: %s", exc)
     try:
         job = create_job_with_workflow(
             account=ga.account,

@@ -109,6 +109,23 @@ def _city_name(city: dict[str, Any]) -> str:
     return str(city.get("name") or city.get("city_name") or city.get("id") or "?")
 
 
+def _normalize_reserved_map(raw: Any) -> dict[str, dict[str, int]]:
+    out: dict[str, dict[str, int]] = {}
+    if not isinstance(raw, dict):
+        return out
+    for city_id, bucket in raw.items():
+        if not isinstance(bucket, dict):
+            continue
+        out[str(city_id).strip()] = {
+            "wood": _to_int(bucket.get("wood"), 0, 0),
+            "wine": _to_int(bucket.get("wine"), 0, 0),
+            "marble": _to_int(bucket.get("marble"), 0, 0),
+            "crystal": _to_int(bucket.get("crystal", bucket.get("glas")), 0, 0),
+            "sulfur": _to_int(bucket.get("sulfur"), 0, 0),
+        }
+    return out
+
+
 def _parse_snapshot_time(raw: Any) -> datetime | None:
     if not raw:
         return None
@@ -570,6 +587,15 @@ class DistributeResourcesRunner(BaseRunner):
             self._ensure_status_refresh(jid)
             return RunnerResult(success=True, reschedule_seconds=refresh_wait_seconds, data={"status": "insufficient_cities"})
 
+        reserved_by_city = self._get_construction_reservations(
+            jid,
+            ga_id,
+            [str(city.get("id")) for city in planned_cities],
+        )
+        if reserved_by_city:
+            touched = sum(1 for bucket in reserved_by_city.values() if any(int(v or 0) > 0 for v in bucket.values()))
+            self.log(jid, "info", f"Reservas ativas de construcao detectadas em {touched} cidade(s); estoque reservado sera preservado")
+
         allocations, planning = self._build_distribution_plan(
             planned_cities,
             selected_resources=selected_resources,
@@ -579,6 +605,7 @@ class DistributeResourcesRunner(BaseRunner):
             origin_reserve_stock=origin_reserve_stock,
             useful_transfer_min=useful_transfer_min,
             shipment_cap=shipment_cap,
+            reserved_by_city=reserved_by_city,
         )
 
         for line in planning["logs"]:
@@ -693,9 +720,11 @@ class DistributeResourcesRunner(BaseRunner):
         origin_reserve_stock: int,
         useful_transfer_min: int,
         shipment_cap: int,
+        reserved_by_city: dict[str, dict[str, int]] | None = None,
     ) -> tuple[dict[tuple[str, str], dict[str, Any]], dict[str, Any]]:
         allocations: dict[tuple[str, str], dict[str, Any]] = {}
         logs: list[str] = []
+        reserved_by_city = reserved_by_city or {}
 
         for resource in selected_resources:
             deficits: dict[str, dict[str, Any]] = {}
@@ -706,11 +735,19 @@ class DistributeResourcesRunner(BaseRunner):
 
             # Pre-compute totals for evenly
             if strategy == "evenly":
-                total_amount = sum(_resource_amount(c, resource) for c in cities)
+                total_amount = sum(
+                    max(
+                        0,
+                        _resource_amount(c, resource)
+                        - _to_int((reserved_by_city.get(str(c.get("id")) or {}) or {}).get(resource), 0, 0),
+                    )
+                    for c in cities
+                )
                 avg_stock = floor(total_amount / max(1, len(cities)))
                 for city in cities:
                     city_id = str(city.get("id"))
-                    amount = _resource_amount(city, resource)
+                    reserved_amount = _to_int((reserved_by_city.get(city_id) or {}).get(resource), 0, 0)
+                    amount = max(0, _resource_amount(city, resource) - reserved_amount)
                     is_producer = _resource_production_per_hour(city, resource) > 0
                     need = max(0, avg_stock - amount)
                     available = max(0, amount - avg_stock)
@@ -732,7 +769,8 @@ class DistributeResourcesRunner(BaseRunner):
             else:
                 for city in cities:
                     city_id = str(city.get("id"))
-                    amount = _resource_amount(city, resource)
+                    reserved_amount = _to_int((reserved_by_city.get(city_id) or {}).get(resource), 0, 0)
+                    amount = max(0, _resource_amount(city, resource) - reserved_amount)
                     total_amount += amount
                     capacity = _resource_capacity(city, resource)
                     effective_target = min(target_stock, capacity) if capacity > 0 else target_stock
@@ -892,6 +930,22 @@ class DistributeResourcesRunner(BaseRunner):
         except Exception as exc:
             self.log(job_id, "warn", f"Falha ao buscar snapshot atual: {exc}")
             return None
+
+    def _get_construction_reservations(
+        self,
+        job_id: str,
+        game_account_id: str,
+        city_ids: list[str],
+    ) -> dict[str, dict[str, int]]:
+        try:
+            payload = self.hub.get_construction_reservations(
+                game_account_id=game_account_id,
+                city_ids=city_ids,
+            )
+        except Exception as exc:
+            self.log(job_id, "warn", f"Falha ao buscar reservas de construcao: {exc}")
+            return {}
+        return _normalize_reserved_map((payload or {}).get("reservations"))
 
     def _ensure_status_refresh(self, job_id: str) -> None:
         try:

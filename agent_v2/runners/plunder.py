@@ -221,7 +221,7 @@ class RaidCityRunner(BaseRunner):
                  f"[Raid] Viagem {trips_done+1}/{max_trips} | alvo={target_city_id} | "
                  f"tropas={dict(units)} | transportadores={transporters} ({cap:,} cap)")
         try:
-            client.plunder_land(
+            plunder_result = client.plunder_land(
                 from_city_id=int(source_city_id),
                 to_city_id=int(target_city_id),
                 island_id=int(island_id),
@@ -232,22 +232,13 @@ class RaidCityRunner(BaseRunner):
             self.log(jid, "error", f"[Raid] Plunder falhou: {exc}")
             return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE)
 
-        # ETA das tropas vem do fetch_plunder_view (missionController.transportJourneyTime)
-        # NÃO usar o military advisor aqui — ele mistura frotas e tropas no mesmo timestamp.
-        # O advisor é usado apenas para checar ESTADO (batalha ativa, porto ocupado).
-        travel_seconds = _parse_int(inputs.get("_travel_seconds"), 0)
+        # ETA das tropas — vem do retorno do plunder_land (parseado do form ANTES do envio)
+        travel_seconds = int((plunder_result or {}).get("travel_seconds") or 0)
         if not travel_seconds:
-            # Buscar do form de plunder (mais preciso que advisor)
-            try:
-                pv = client.fetch_plunder_view(
-                    int(source_city_id), int(target_city_id), int(island_id)
-                )
-                travel_seconds = pv.get("travel_seconds", 0)
-                if travel_seconds:
-                    self.log(jid, "info",
-                             f"[Raid] Tempo de viagem das tropas: {travel_seconds//60}min {travel_seconds%60}s")
-            except Exception as exc:
-                self.log(jid, "warn", f"[Raid] Falha ao ler ETA das tropas: {exc}")
+            travel_seconds = _parse_int(inputs.get("_travel_seconds"), 0)
+        if travel_seconds:
+            self.log(jid, "info",
+                     f"[Raid] Tempo de viagem das tropas: {travel_seconds//60}min {travel_seconds%60}s")
 
         # Agendar check_battle: tempo de ida + 2min buffer (chegada → início da batalha)
         check_delay = max((travel_seconds + 120) if travel_seconds > 30 else 300, 300)

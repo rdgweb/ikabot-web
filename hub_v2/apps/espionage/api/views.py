@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -82,19 +83,19 @@ def _troops_dict_to_ids(troops: dict) -> dict[int, int]:
 
 
 def _parse_enemy_intel(target_city_id: str, target_owner_id: str, server_id: str) -> dict:
-    """Lê reports mission 7 + 26 do alvo + invenções do owner → enemy_units + levels."""
+    """Lê reports mission 6 + 26 + 5 → enemy_units + upgrades per-unit + city_level."""
     enemy_units: dict[int, int] = {}
-    enemy_off = 0
-    enemy_def = 0
+    enemy_upgrades: dict[int, dict] = {}  # {unit_id: {offensive, defensive}}
     needs_blockade = False
+    city_level = 1
 
-    # Mission 7 — tropas terrestres + warships
-    r7 = SpyReport.objects.filter(
-        target_city_id=target_city_id, mission_id=7,
+    # Mission 6 (Guarnição militar)
+    r6 = SpyReport.objects.filter(
+        target_city_id=target_city_id, mission_id=6,
         game_account__server_id=server_id,
     ).order_by("-created_at").first()
-    if r7 and r7.data_json:
-        for cat in (r7.data_json.get("troops_data") or []):
+    if r6 and r6.data_json:
+        for cat in (r6.data_json.get("troops_data") or []):
             if not isinstance(cat, dict): continue
             cat_type = (cat.get("category_type") or "").lower()
             is_naval = "naval" in cat_type or "naval" in (cat.get("category","") or "").lower()
@@ -109,7 +110,7 @@ def _parse_enemy_intel(target_city_id: str, target_owner_id: str, server_id: str
                     if uid:
                         enemy_units[uid] = enemy_units.get(uid, 0) + cnt
 
-    # Mission 26 — upgrades (offensive/defensive max levels)
+    # Mission 26 — upgrades per unit_id
     r26 = SpyReport.objects.filter(
         target_owner_id=target_owner_id, mission_id=26,
         game_account__server_id=server_id,
@@ -117,45 +118,65 @@ def _parse_enemy_intel(target_city_id: str, target_owner_id: str, server_id: str
     if r26 and r26.data_json:
         for imp in (r26.data_json.get("workshop_improvements") or []):
             if not isinstance(imp, dict): continue
-            enemy_off = max(enemy_off, int(imp.get("offensive") or 0))
-            enemy_def = max(enemy_def, int(imp.get("defensive") or 0))
+            uid = imp.get("unit_id")
+            if uid:
+                enemy_upgrades[int(uid)] = {
+                    "offensive": int(imp.get("offensive") or 0),
+                    "defensive": int(imp.get("defensive") or 0),
+                }
+
+    # City level: pega do WorldDumpCity (autoritativo)
+    try:
+        from apps.worldintel.models import WorldDumpCity
+        wdc = (WorldDumpCity.objects
+               .filter(game_city_id=target_city_id, dump__game_account__server_id=server_id)
+               .order_by("-dump__captured_at").first())
+        if wdc and wdc.level:
+            city_level = int(wdc.level)
+    except Exception:
+        pass
 
     return {
         "enemy_units": enemy_units,
-        "enemy_off_level": enemy_off,
-        "enemy_def_level": enemy_def,
+        "enemy_upgrades": enemy_upgrades,
         "needs_blockade": needs_blockade,
+        "city_level": city_level,
+        "wall_level": 15,  # padrão razoável
     }
 
 
-def _simulate_attack(own_troops_pt: dict, enemy_intel: dict, wall_level: int = 1) -> dict:
-    """Simula combate atacante (todas tropas da cidade) vs defensores conhecidos."""
-    from apps.espionage.services.combat import calculate
+def _simulate_attack(own_troops_pt: dict, enemy_intel: dict,
+                     own_upgrades: dict | None = None) -> dict:
+    """Simula combate completo terrestre."""
+    from apps.espionage.services.battle_land import simulate_land_battle
     own_units = _troops_dict_to_ids(own_troops_pt)
     if not own_units:
-        return {"can_win": False, "surviving_hp_pct": 0.0, "rounds_to_kill_enemy": 0}
-    return calculate(
-        enemy_units=enemy_intel.get("enemy_units") or {},
-        enemy_off_level=enemy_intel.get("enemy_off_level") or 0,
-        enemy_def_level=enemy_intel.get("enemy_def_level") or 0,
-        wall_level=wall_level,
-        own_units=own_units,
+        return {"winner": "defender", "attacker_survivors_pct": 0.0, "rounds": 0}
+    return simulate_land_battle(
+        attacker_units=own_units,
+        defender_units=enemy_intel.get("enemy_units") or {},
+        attacker_upgrades=own_upgrades or {},
+        defender_upgrades=enemy_intel.get("enemy_upgrades") or {},
+        town_hall_level=enemy_intel.get("city_level") or 1,
+        wall_level=enemy_intel.get("wall_level") or 15,
     )
 
 
-def _recommend_units(own_troops_pt: dict, enemy_intel: dict, wall_level: int = 1) -> dict:
-    """Recomenda mínimo de unidades pra vencer (com margem de segurança 3×)."""
-    from apps.espionage.services.combat import recommend_army
+def _recommend_units(own_troops_pt: dict, enemy_intel: dict,
+                     own_upgrades: dict | None = None) -> dict:
+    """Recomenda força mínima usando simulação iterativa."""
+    from apps.espionage.services.battle_land import recommend_attack_force
     available = _troops_dict_to_ids(own_troops_pt)
     if not available:
         return {}
-    rec = recommend_army(
-        enemy_units=enemy_intel.get("enemy_units") or {},
-        enemy_off_level=enemy_intel.get("enemy_off_level") or 0,
-        enemy_def_level=enemy_intel.get("enemy_def_level") or 0,
-        wall_level=wall_level,
+    rec = recommend_attack_force(
         available_units=available,
-        safety_margin=3.0,
+        defender_units=enemy_intel.get("enemy_units") or {},
+        attacker_upgrades=own_upgrades or {},
+        defender_upgrades=enemy_intel.get("enemy_upgrades") or {},
+        town_hall_level=enemy_intel.get("city_level") or 1,
+        wall_level=enemy_intel.get("wall_level") or 15,
+        max_loss_pct=30.0,
     )
     return rec.get("recommended") or {}
 
@@ -247,21 +268,26 @@ def _choose_raid_account(target_city_id: str, target_owner_id: str, server_id: s
             if frontline <= 0 or siege <= 0:
                 continue
 
+            # Meus upgrades vêm de base_snapshot.unit_improvements
+            own_upgrades = (snap.base_snapshot or {}).get("unit_improvements") or {}
+            # Normalizar keys pra int
+            own_upgrades = {int(k): v for k, v in own_upgrades.items() if str(k).isdigit()}
+
             # Simulação de combate (se temos intel do inimigo)
             sim = None
             recommended = None
             recommended_fleet = None
             if enemy_intel and enemy_intel.get("enemy_units"):
-                sim = _simulate_attack(troops, enemy_intel, wall_level=1)
-                if not sim.get("can_win"):
+                sim = _simulate_attack(troops, enemy_intel, own_upgrades)
+                if sim.get("winner") != "attacker":
                     continue  # pula cidade que não vence
-                recommended = _recommend_units(troops, enemy_intel, wall_level=1)
+                recommended = _recommend_units(troops, enemy_intel, own_upgrades)
             if enemy_intel and enemy_intel.get("needs_blockade"):
                 recommended_fleet = _recommend_fleet_for_blockade(fleet)
 
-            # Score = sobra de HP após combate (se simulado) ou frontline+siege
+            # Score = sobrevivência atacante após combate (mais alto = melhor)
             if sim:
-                score = sim.get("surviving_hp_pct", 0) * 1000 + sim.get("own_total_hp", 0)
+                score = sim.get("attacker_survivors_pct", 0) * 1000
             else:
                 score = frontline + siege * 2
             if best is None or score > best["score"]:
@@ -453,7 +479,7 @@ class ScanRaidAlertsView(APIView):
         reports_qs = (
             SpyReport.objects
             .filter(
-                mission_id__in=[5, 7, 26],
+                mission_id__in=[5, 6, 26],
                 created_at__gte=cutoff,
                 game_account__server_id=ga.server_id,
             )
@@ -480,8 +506,8 @@ class ScanRaidAlertsView(APIView):
                 if owner_id and owner_id in latest_m26_by_owner:
                     slot[26] = latest_m26_by_owner[owner_id]
 
-        # Exige TODAS: mission 5 (recursos) + 7 (tropas/frotas) + 26 (invenções/upgrades)
-        complete_cities = {cid: m for cid, m in latest_by_city.items() if 5 in m and 7 in m and 26 in m}
+        # Exige TODAS: mission 5 (recursos) + 6 (guarnição) + 26 (invenções)
+        complete_cities = {cid: m for cid, m in latest_by_city.items() if 5 in m and 6 in m and 26 in m}
 
         checked = 0
         alerted = 0
@@ -491,7 +517,7 @@ class ScanRaidAlertsView(APIView):
         for cid, missions in complete_cities.items():
             checked += 1
             report_res = missions[5]   # mission 5 — recursos
-            report_grn = missions[7]   # mission 7 — movimento de tropas/frotas
+            report_grn = missions[6]   # mission 6 — guarnição militar
             report_upg = missions[26]  # mission 26 — invenções/upgrades (player-scope)
             data_res = report_res.data_json or {}
             data_grn = report_grn.data_json or {}
@@ -605,11 +631,14 @@ class ScanRaidAlertsView(APIView):
                 eta_text = f"~{eta_min}min" if eta_min else "?"
                 sim = top.get("sim") or {}
                 if sim:
-                    rounds = sim.get("rounds_to_kill_enemy", 0)
-                    pct = sim.get("surviving_hp_pct", 0)
-                    win_text = f"\n  ✅ Vitória: {pct:.0f}% HP restante / {rounds:.1f} rounds"
+                    rounds = sim.get("rounds", 0)
+                    pct = sim.get("attacker_survivors_pct", 0)
+                    field = sim.get("field_level", 1)
+                    losses_total = sum((sim.get("attacker_losses") or {}).values())
+                    win_text = (f"\n  ✅ Vitória em {rounds} rounds | sobrevive {pct:.0f}% "
+                                f"| perdas: {losses_total} | campo CM≥{field}")
                 else:
-                    win_text = "\n  ⚠️ Sem intel completo (mission 7+26) — combate não simulado"
+                    win_text = "\n  ⚠️ Sem intel completo (mission 6+26) — combate não simulado"
                 rec_units = top.get("recommended") or {}
                 if rec_units:
                     rec_lines = ", ".join(
@@ -707,6 +736,7 @@ class MissionsCoveredView(APIView):
     def get(self, request):
         target_city_id  = request.query_params.get("target_city_id", "").strip()
         target_owner_id = request.query_params.get("target_owner_id", "").strip()
+        target_owner    = request.query_params.get("target_owner", "").strip()
         ga_id           = request.query_params.get("game_account_id", "").strip()
         try:
             ttl_hours = int(request.query_params.get("intel_ttl_hours") or 0)
@@ -750,13 +780,18 @@ class MissionsCoveredView(APIView):
             if mid: covered.add(int(mid))
 
         # Player-scope: any city of the same owner
-        if target_owner_id:
+        if target_owner_id or target_owner:
             owner_qs = SpyReport.objects.filter(
-                target_owner_id=target_owner_id,
                 created_at__gte=cutoff,
                 result_status__icontains="sucess",
                 mission_id__in=self.PLAYER_SCOPE,
             )
+            if target_owner_id and target_owner:
+                owner_qs = owner_qs.filter(Q(target_owner_id=target_owner_id) | Q(target_owner__iexact=target_owner))
+            elif target_owner_id:
+                owner_qs = owner_qs.filter(target_owner_id=target_owner_id)
+            else:
+                owner_qs = owner_qs.filter(target_owner__iexact=target_owner)
             if server_id:
                 owner_qs = owner_qs.filter(game_account__server_id=server_id)
             for mid in owner_qs.values_list("mission_id", flat=True).distinct():

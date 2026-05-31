@@ -150,6 +150,17 @@ class HubClient:
         """GET /api/agent/jobs/{job_id}/construction-support/."""
         return self._get(f"/api/agent/jobs/{job_id}/construction-support")
 
+    def get_construction_reservations(
+        self,
+        *,
+        game_account_id: str,
+        city_ids: list[str] | None = None,
+    ) -> dict:
+        params: dict[str, Any] = {}
+        if city_ids:
+            params["city_ids"] = ",".join(str(city_id).strip() for city_id in city_ids if str(city_id).strip())
+        return self._get(f"/api/agent/game-accounts/{game_account_id}/construction-reservations", params=params)
+
     def send_notification(
         self,
         *,
@@ -461,6 +472,7 @@ class HubClient:
         self,
         target_city_id: str,
         target_owner_id: str = "",
+        target_owner: str = "",
         game_account_id: str = "",
         intel_ttl_hours: int = 0,
     ) -> list[int]:
@@ -468,6 +480,8 @@ class HubClient:
         params: dict[str, Any] = {"target_city_id": target_city_id}
         if target_owner_id:
             params["target_owner_id"] = target_owner_id
+        if target_owner:
+            params["target_owner"] = target_owner
         if game_account_id:
             params["game_account_id"] = game_account_id
         if intel_ttl_hours:

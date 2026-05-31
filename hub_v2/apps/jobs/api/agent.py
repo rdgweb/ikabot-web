@@ -6,6 +6,7 @@ import logging
 from datetime import timedelta
 from uuid import UUID
 
+from django.db.models import Sum
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers as drf_serializers
@@ -14,7 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.models import GameAccount
-from apps.jobs.models import Job, JobLog
+from apps.jobs.models import ConstructionResourceReservation, Job, JobLog
 from apps.jobs.services.workflows import create_job_with_workflow
 from apps.market.services import reconcile_internal_order_for_job
 from core.auth.backends import AgentTokenAuthentication
@@ -586,6 +587,62 @@ class ConstructionSupportView(APIView):
             )
 
         return Response({"ok": True, "lineage": [str(root_id)], "entries": entries})
+
+
+class ConstructionReservationsView(APIView):
+    """GET /api/agent/game-accounts/<uuid:game_account_id>/construction-reservations/."""
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    @extend_schema(
+        responses={
+            200: inline_serializer(
+                name="ConstructionReservationsResponse",
+                fields={
+                    "ok": drf_serializers.BooleanField(),
+                    "reservations": drf_serializers.DictField(),
+                },
+            )
+        }
+    )
+    def get(self, request, game_account_id):
+        query = getattr(request, "query_params", None) or request.GET
+        city_ids_raw = str(query.get("city_ids") or "").strip()
+        city_ids = [part.strip() for part in city_ids_raw.split(",") if part.strip()]
+
+        qs = ConstructionResourceReservation.objects.filter(
+            game_account_id=game_account_id,
+            job__action_code=1002,
+            status="active",
+        )
+        if city_ids:
+            qs = qs.filter(city_id__in=city_ids)
+
+        aggregated = (
+            qs.values("city_id", "resource")
+            .annotate(total=Sum("reserved_local_amount"))
+            .order_by("city_id", "resource")
+        )
+
+        reservations: dict[str, dict[str, int]] = {}
+        for row in aggregated:
+            city_id = str(row.get("city_id") or "").strip()
+            if not city_id:
+                continue
+            resource = str(row.get("resource") or "").strip()
+            total = int(row.get("total") or 0)
+            if total <= 0:
+                continue
+            key = "crystal" if resource == "glas" else resource
+            bucket = reservations.setdefault(
+                city_id,
+                {"wood": 0, "wine": 0, "marble": 0, "crystal": 0, "sulfur": 0},
+            )
+            if key in bucket:
+                bucket[key] += total
+
+        return Response({"ok": True, "reservations": reservations})
 
 
 class NotifyParentView(APIView):

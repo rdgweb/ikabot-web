@@ -2709,6 +2709,7 @@ class JobSubmitView(LoginRequiredMixin, View):
             status="queued",
         )
         self._create_construction_reservations(job, plan_preview)
+        self._deactivate_stale_construction_reservations(job)
 
         trigger_data = json.dumps({
             "toast": {
@@ -2766,6 +2767,7 @@ class JobSubmitView(LoginRequiredMixin, View):
         # Recreate reservations for the full merged plan
         existing_job.construction_reservations.all().delete()
         self._create_construction_reservations(existing_job, plan_preview)
+        self._deactivate_stale_construction_reservations(existing_job)
 
         n = len(new_steps)
         resp = HttpResponse(
@@ -2807,6 +2809,14 @@ class JobSubmitView(LoginRequiredMixin, View):
                 )
         if reservations:
             ConstructionResourceReservation.objects.bulk_create(reservations)
+
+    @staticmethod
+    def _deactivate_stale_construction_reservations(job):
+        ConstructionResourceReservation.objects.filter(
+            game_account=job.game_account,
+            job__action_code=1002,
+            status="active",
+        ).exclude(job=job).update(status="cancelled")
 
     def _create_jobs(self, ga, action_code, action_meta, inputs, cities):
         city_choices = {
