@@ -982,6 +982,13 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             ignored_step_indices,
         )
         if not pending_steps:
+            self._sync_live_construction_reservations(
+                job_id=jid,
+                cities=cities,
+                plan_steps=plan_steps,
+                support_by_city={},
+                cost_overrides={},
+            )
             self.log(jid, "info", "Plano de construcao concluido")
             return RunnerResult(success=True, data={"status": "complete"})
 
@@ -995,6 +1002,13 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         any_transport_dispatched = False
         reschedule_context: dict[str, Any] = {}
         support_by_city = self._get_open_construction_support(jid)
+        reservation_cost_overrides: dict[tuple[str, int], dict[str, int]] = {}
+        live_reserved_by_city = self._build_live_construction_reservations(
+            cities=cities,
+            plan_steps=plan_steps,
+            support_by_city=support_by_city,
+            cost_overrides=reservation_cost_overrides,
+        )
         city_skip_reasons: dict[str, str] = {}
         self._last_missing_skip_reason = None
 
@@ -1383,6 +1397,13 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     live_stock = live_debug["live_stock"]
                     live_costs = live_debug["live_costs"]
                     if live_costs is not None:
+                        reservation_cost_overrides[(str(pending["city_id"]), _to_int(pending.get("index"), 0))] = dict(live_costs)
+                        live_reserved_by_city = self._build_live_construction_reservations(
+                            cities=cities,
+                            plan_steps=plan_steps,
+                            support_by_city=support_by_city,
+                            cost_overrides=reservation_cost_overrides,
+                        )
                         live_missing = live_debug["live_missing"] or {key: 0 for key in RESOURCE_KEYS}
                         if any(amount > 0 for amount in live_missing.values()):
                             self.log(
@@ -1403,6 +1424,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                 city=city,
                                 missing=live_missing,
                                 support_by_city=support_by_city,
+                                reserved_by_city=live_reserved_by_city,
                                 )
                             )
                             skip_reason = getattr(self, "_last_missing_skip_reason", None)
@@ -1618,6 +1640,14 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                 feedback=action_feedback,
                             )
                             post_missing = post_debug["live_missing"] or {key: 0 for key in RESOURCE_KEYS}
+                            if post_debug["live_costs"] is not None:
+                                reservation_cost_overrides[(str(pending["city_id"]), _to_int(pending.get("index"), 0))] = dict(post_debug["live_costs"])
+                                live_reserved_by_city = self._build_live_construction_reservations(
+                                    cities=cities,
+                                    plan_steps=plan_steps,
+                                    support_by_city=support_by_city,
+                                    cost_overrides=reservation_cost_overrides,
+                                )
                             if any(amount > 0 for amount in post_missing.values()):
                                 self.log(
                                     jid,
@@ -1637,6 +1667,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                     city=city,
                                     missing=post_missing,
                                     support_by_city=support_by_city,
+                                    reserved_by_city=live_reserved_by_city,
                                     )
                                 )
                                 skip_reason = getattr(self, "_last_missing_skip_reason", None)
@@ -1773,6 +1804,13 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
 
             if ga_id:
                 self.save_game_client(ga_id, client)
+            self._sync_live_construction_reservations(
+                job_id=jid,
+                cities=cities,
+                plan_steps=plan_steps,
+                support_by_city=support_by_city,
+                cost_overrides=reservation_cost_overrides,
+            )
             if refresh_needed or step_failures:
                 self._ensure_status_refresh(jid)
 
@@ -2282,6 +2320,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         city: dict[str, Any],
         missing: dict[str, int],
         support_by_city: dict[str, dict[str, int]],
+        reserved_by_city: dict[str, dict[str, dict[str, int]]] | None = None,
     ) -> tuple[int, bool, dict[str, Any] | None, bool]:
         """Returns (reschedule_seconds, transport_was_dispatched, reschedule_inputs, should_skip_city_step_now)."""
         jid = job["job_id"]
@@ -2292,11 +2331,12 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         base_snapshot = dict((snapshot or {}).get("base_snapshot") or {})
 
         existing_support = support_by_city.get(target_city_id) or _empty_resource_map()
+        existing_support_open = any(int(amount or 0) > 0 for amount in existing_support.values())
         adjusted_missing = {
             key: max(0, int(missing.get(key, 0)) - int(existing_support.get(SNAPSHOT_RESOURCE_TO_INPUT.get(key, key), 0)))
             for key in RESOURCE_KEYS
         }
-        if any(existing_support.values()):
+        if existing_support_open:
             support_bits = []
             for resource_key in ("wood", "wine", "marble", "crystal", "sulfur"):
                 amount = int(existing_support.get(resource_key, 0))
@@ -2319,6 +2359,22 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             )
             self._last_missing_skip_reason = None
             return TRANSPORT_RECHECK_SECONDS, False, None, False
+
+        if existing_support_open:
+            uncovered_bits = []
+            for resource_key in RESOURCE_KEYS:
+                amount = int(missing.get(resource_key, 0))
+                if amount > 0:
+                    uncovered_bits.append(f"{resource_key}={amount}")
+            if uncovered_bits:
+                self.log(
+                    jid,
+                    "info",
+                    (
+                        f"{pending['city_name']} ainda com suporte parcial em aberto; "
+                        f"faltante descoberto atual: {', '.join(uncovered_bits)}"
+                    ),
+                )
 
         wait_seconds = self._estimate_local_wait_seconds(city, missing)
         if wait_seconds:
@@ -2348,7 +2404,9 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         if ga_id:
                             self.save_game_client(ga_id, client)
                         self._last_missing_skip_reason = None
-                        return max(wait_seconds or 0, incoming_wait + FINISH_BUFFER_SECONDS), False, None, False
+                        return max(MIN_RECHECK_SECONDS, incoming_wait + FINISH_BUFFER_SECONDS), False, {
+                            "resource_wait_reason": "incoming_transport",
+                        }, False
                     if ga_id:
                         self.save_game_client(ga_id, client)
             except Exception as exc:
@@ -2361,6 +2419,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 pending=pending,
                 missing=missing,
                 support_by_city=support_by_city,
+                reserved_by_city=reserved_by_city or {},
             )
             if transported:
                 self.log(
@@ -2369,7 +2428,23 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                     f"Suporte logistico criado para {pending['city_name']} | aguardando transporte antes da proxima obra",
                 )
                 self._last_missing_skip_reason = None
-                return max(wait_seconds or 0, TRANSPORT_RECHECK_SECONDS), True, None, False
+                return TRANSPORT_RECHECK_SECONDS, True, {
+                    "resource_wait_reason": "transport_support_opened",
+                }, False
+
+            if existing_support_open:
+                self.log(
+                    jid,
+                    "info",
+                    (
+                        f"{pending['city_name']} ainda aguarda remessas abertas para "
+                        f"{pending['building_name']}; reavaliando apos o ciclo logistico"
+                    ),
+                )
+                self._last_missing_skip_reason = None
+                return TRANSPORT_RECHECK_SECONDS, False, {
+                    "resource_wait_reason": "partial_support_pending",
+                }, False
 
             donor_wait = self._estimate_donor_wait_seconds(
                 cities=cities,
@@ -2635,6 +2710,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         pending: dict[str, Any],
         missing: dict[str, int],
         support_by_city: dict[str, dict[str, int]],
+        reserved_by_city: dict[str, dict[str, dict[str, int]]],
     ) -> bool:
         next_rows = []
         for row in pending.get("level_rows") or []:
@@ -2665,12 +2741,18 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         if not any(amount > 0 for amount in transport_need.values()):
             return False
 
-        donor = self._pick_donor_city(cities=cities, target_city_id=str(target_city.get("id")), needed=transport_need)
+        donor = self._pick_donor_city(
+            cities=cities,
+            target_city_id=str(target_city.get("id")),
+            needed=transport_need,
+            reserved_by_city=reserved_by_city,
+        )
         if donor is None:
             self.log(job_id, "warn", f"Nenhuma cidade doadora com sobra util para {pending['city_name']}")
             return False
 
         donor_stock = _city_stock(donor)
+        donor_reserved = reserved_by_city.get(str(donor.get("id") or ""), {})
         payload: dict[str, Any] = {
             "from_city": str(donor.get("id")),
             "from_city_name": _city_name(donor),
@@ -2682,7 +2764,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         }
         for key in RESOURCE_KEYS:
             input_key = SNAPSHOT_RESOURCE_TO_INPUT[key]
-            available = max(0, donor_stock.get(key, 0) - DONOR_RESERVE_DEFAULT)
+            reserved_local = max(0, int((donor_reserved.get(key) or {}).get("reserved_local", 0) or 0))
+            available = max(0, donor_stock.get(key, 0) - reserved_local - DONOR_RESERVE_DEFAULT)
             amount = min(transport_need[key], available)
             if amount > 0:
                 payload[input_key] = int(amount)
@@ -2691,11 +2774,17 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             return False
 
         self.hub.spawn_job(job_id, action_code=2, inputs=payload)
+        covered_levels = max(1, len(next_rows))
+        cover_label = (
+            "Remessa criada para cobrir o proximo nivel: "
+            if covered_levels == 1
+            else f"Remessa criada para cobrir ate {covered_levels} niveis: "
+        )
         self.log(
             job_id,
             "info",
             (
-                "Remessa criada para cobrir ate 2 niveis: "
+                f"{cover_label}"
                 f"{payload['from_city_name']} ({payload['from_city']}) -> "
                 f"{payload['to_city_name']} ({payload['to_city']})"
             ),
@@ -2739,18 +2828,22 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         cities: list[dict[str, Any]],
         target_city_id: str,
         needed: dict[str, int],
+        reserved_by_city: dict[str, dict[str, dict[str, int]]] | None = None,
     ) -> dict[str, Any] | None:
         best_city = None
         best_score = 0
+        reserved_by_city = reserved_by_city or {}
         for city in cities:
             if str(city.get("id")) == str(target_city_id):
                 continue
             stock = _city_stock(city)
+            city_reserved = reserved_by_city.get(str(city.get("id") or ""), {})
             score = 0
             for key, amount in needed.items():
                 if amount <= 0:
                     continue
-                score += max(0, stock.get(key, 0) - DONOR_RESERVE_DEFAULT)
+                reserved_local = max(0, int((city_reserved.get(key) or {}).get("reserved_local", 0) or 0))
+                score += max(0, stock.get(key, 0) - reserved_local - DONOR_RESERVE_DEFAULT)
             if score > best_score:
                 best_score = score
                 best_city = city
@@ -2875,6 +2968,76 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             for key in RESOURCE_KEYS:
                 bucket[key] += _to_int(raw_reserved.get(key), 0)
         return reserved
+
+    def _build_live_construction_reservations(
+        self,
+        *,
+        cities: list[dict[str, Any]],
+        plan_steps: list[dict[str, Any]],
+        support_by_city: dict[str, dict[str, int]] | None = None,
+        cost_overrides: dict[tuple[str, int], dict[str, int]] | None = None,
+    ) -> dict[str, dict[str, dict[str, int]]]:
+        support_by_city = support_by_city or {}
+        cost_overrides = cost_overrides or {}
+        reservations: dict[str, dict[str, dict[str, int]]] = {}
+
+        for step in plan_steps:
+            city_id = str(step.get("city_id") or "").strip()
+            if not city_id:
+                continue
+            city = _find_city(cities, city_id)
+            if city is None:
+                continue
+            current_level, _, current_entry = self._resolve_step_state(city, step)
+            target_level = _to_int(step.get("target_level"), 0)
+            if target_level > 0 and current_level >= target_level:
+                continue
+            if current_entry and bool(current_entry.get("is_upgrading")):
+                continue
+
+            next_level = max(1, current_level + 1)
+            level_row = self._find_level_row(step, next_level) or ((step.get("level_rows") or [None])[0])
+            if level_row is None:
+                continue
+            costs = cost_overrides.get((city_id, _to_int(step.get("index"), 0))) or self._normalize_costs(level_row.get("costs") or {})
+            stock = _city_stock(city)
+            support = support_by_city.get(city_id) or _empty_resource_map()
+            city_bucket = reservations.setdefault(city_id, {})
+
+            for key in RESOURCE_KEYS:
+                cost = max(0, int(costs.get(key, 0) or 0))
+                if cost <= 0:
+                    continue
+                support_open = max(0, int(support.get(SNAPSHOT_RESOURCE_TO_INPUT[key], 0) or 0))
+                reserved_local = min(cost, max(0, int(stock.get(key, 0) or 0)))
+                shortfall = max(0, cost - max(0, int(stock.get(key, 0) or 0)) - support_open)
+                bucket = city_bucket.setdefault(key, {"reserved_local": 0, "shortfall": 0})
+                bucket["reserved_local"] += reserved_local
+                bucket["shortfall"] += shortfall
+
+        return reservations
+
+    def _sync_live_construction_reservations(
+        self,
+        *,
+        job_id: str,
+        cities: list[dict[str, Any]],
+        plan_steps: list[dict[str, Any]],
+        support_by_city: dict[str, dict[str, int]] | None = None,
+        cost_overrides: dict[tuple[str, int], dict[str, int]] | None = None,
+    ) -> None:
+        if not hasattr(self, "hub") or not callable(getattr(self.hub, "sync_construction_reservations", None)):
+            return
+        payload = self._build_live_construction_reservations(
+            cities=cities,
+            plan_steps=plan_steps,
+            support_by_city=support_by_city,
+            cost_overrides=cost_overrides,
+        )
+        try:
+            self.hub.sync_construction_reservations(job_id=job_id, reservations=payload)
+        except Exception as exc:
+            self.log(job_id, "warn", f"Nao foi possivel sincronizar reservas de construcao: {exc}")
 
     def _best_buy_estimate(
         self,

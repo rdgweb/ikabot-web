@@ -197,16 +197,9 @@ class SpyRunner(BaseRunner):
                 except Exception as _exc:
                     self.log(jid, "warn", f"Falha ao consultar missões cobertas: {_exc}")
 
-            # Se não sobrou missão pendente, encerrar
-            if phase != "recalling" and not recall_after and not missions_pending and intel_missions:
-                self.log(jid, "info", "Todas as missões já têm intel válido. Encerrando job.")
-                self._notify_parent(jid, inputs, success=True, data={
-                    "missions_done":   missions_done,
-                    "missions_failed": [],
-                    "target_city_id":  target_city_id,
-                    "source_city_id":  city_id,
-                })
-                return RunnerResult(success=True, data={"skipped": "already_covered"})
+            # NOTA: A decisão de encerrar foi movida para DEPOIS da leitura do safehouse.
+            # Encerrar prematuro ANTES de ler o safehouse deixava espiões em viagem órfãos
+            # quando os relatórios já estavam cobertos mas grupos ainda não tinham retornado.
 
             # ── Estado da safehouse ───────────────────────────────────────────
             self.log(jid, "info", f"[{phase.upper()}] Lendo safehouse {city_id}")
@@ -245,17 +238,60 @@ class SpyRunner(BaseRunner):
                 f"estacionados={stationed} em_transito={in_transit} "
                 f"(ant={last_stationed} no_progress={no_progress})")
 
+            # ── Sweep de grupos órfãos (sem job ac=15 ativo pro alvo) ─────────
+            # Recall espiões parados em alvos não-relacionados a este job se não houver
+            # job ativo (running/scheduled) pra aquele (target_owner, target_city_id).
+            try:
+                active_targets = self.hub.list_active_spy_targets(ga_id)
+                active_keys = {(t.get("target_owner") or "", str(t.get("target_city_id") or ""))
+                               for t in active_targets}
+                for g in _all_groups:
+                    g_owner = g.get("owner") or ""
+                    g_tcid = str(g.get("target_city_id") or "")
+                    g_cname = g.get("city_name") or ""
+                    g_count = int(g.get("count_in_use") or 0)
+                    g_spy_id = g.get("spy_id")
+                    # Pula alvo deste job (será tratado pela lógica normal)
+                    if g_owner == target_owner and (g_tcid == str(target_city_id) or g_cname == target_city_name):
+                        continue
+                    # Só age em parados (não em viagem)
+                    if not g.get("is_waiting"):
+                        continue
+                    if g_count <= 0 or not g_spy_id:
+                        continue
+                    # Tem job ativo pra esse alvo?
+                    if (g_owner, g_tcid) in active_keys:
+                        continue  # outro job cuida — não interfere
+                    # Órfão confirmado — recall
+                    self.log(jid, "info",
+                        f"Recall órfão: {g_owner}/{g_cname} ({g_count} espiões, "
+                        f"sem job ac=15 ativo). Chamando de volta.")
+                    try:
+                        r = client.retreat_spy_group(
+                            source_city_id=city_id,
+                            target_city_id=g_tcid,
+                            position=safehouse_position,
+                            spy_id=g_spy_id,
+                        )
+                        if r.get("success"):
+                            self.log(jid, "info", f"Recall órfão OK: {g_owner}/{g_cname}")
+                        else:
+                            self.log(jid, "warn",
+                                f"Recall órfão falhou: {g_owner}/{g_cname} — {r.get('message','')}")
+                    except Exception as _exc:
+                        self.log(jid, "warn", f"Erro no recall órfão {g_owner}/{g_cname}: {_exc}")
+            except Exception as _exc:
+                self.log(jid, "warn", f"Falha no sweep de órfãos: {_exc}")
+
+            # ── Decisão: recall do alvo deste job OU encerrar ─────────────────
             if not missions_pending and intel_missions and recall_after and stationed > 0 and phase != "done":
                 if phase != "recalling":
-                    self.log(
-                        jid,
-                        "info",
-                        f"Intel jÃ¡ coberta, mas ainda hÃ¡ {stationed} espiÃ£o(Ãµes) estacionado(s). "
-                        "Entrando na fase de recall.",
-                    )
+                    self.log(jid, "info",
+                        f"Intel já coberta, mas ainda há {stationed} espião(ões) estacionado(s). "
+                        "Entrando na fase de recall.")
                 phase = "recalling"
-            elif not missions_pending and intel_missions and phase != "recalling":
-                self.log(jid, "info", "Todas as missÃµes jÃ¡ tÃªm intel vÃ¡lido. Encerrando job.")
+            elif not missions_pending and intel_missions and stationed == 0 and in_transit == 0 and phase != "recalling":
+                self.log(jid, "info", "Todas as missões já têm intel válido e nenhum espião pendente. Encerrando job.")
                 self._notify_parent(jid, inputs, success=True, data={
                     "missions_done":   missions_done,
                     "missions_failed": [],
@@ -263,6 +299,17 @@ class SpyRunner(BaseRunner):
                     "source_city_id":  city_id,
                 })
                 return RunnerResult(success=True, data={"skipped": "already_covered"})
+            elif not missions_pending and intel_missions and in_transit > 0 and phase != "recalling":
+                # Espiões ainda chegando. Aguardar pra fazer recall depois.
+                wait = self._arrival_wait(tgroups, ARRIVAL_WAIT)
+                self.log(jid, "info",
+                    f"Intel coberta, mas {in_transit} espião(ões) em viagem. "
+                    f"Aguardando {wait}s para fazer recall ao chegarem.")
+                self.save_game_client(ga_id, client)
+                return RunnerResult(success=True, reschedule_seconds=wait,
+                    reschedule_inputs={**inputs, "__recovery": _rec(
+                        phase="recalling", last_stationed=stationed,
+                        missions_done=missions_done)})
 
             # Detectar perda de espiões entre ciclos (ignorar na fase done — espiões voltaram para casa)
             if stationed < last_stationed and last_stationed > 0 and phase != "done":

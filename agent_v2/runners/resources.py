@@ -453,6 +453,15 @@ class SendResourcesRunner(BaseRunner):
                     incoming_delta={name: -int(sent.get(name, 0) or 0) for name in RESOURCE_ORDER},
                     reason=f"chegada de transporte de {from_city_name}",
                 )
+            if sent:
+                try:
+                    self.hub.apply_construction_reservation_arrival(
+                        job_id=str(job.get("root_job_id") or job.get("source_job_id") or jid),
+                        city_id=to_city,
+                        resources={name: int(sent.get(name, 0) or 0) for name in RESOURCE_ORDER if int(sent.get(name, 0) or 0) > 0},
+                    )
+                except Exception as exc:
+                    self.log(jid, "warn", f"Nao foi possivel abater shortfall de construcao apos chegada: {exc}")
             if ga_id:
                 self.save_game_client(ga_id, client)
             return RunnerResult(success=True, data={"status": "arrival_confirmed", **result})
@@ -494,6 +503,15 @@ class SendResourcesRunner(BaseRunner):
                 incoming_delta={name: -int(sent.get(name, 0) or 0) for name in RESOURCE_ORDER},
                 reason=f"chegada fraca de transporte de {from_city_name}",
             )
+        if sent:
+            try:
+                self.hub.apply_construction_reservation_arrival(
+                    job_id=str(job.get("root_job_id") or job.get("source_job_id") or jid),
+                    city_id=to_city,
+                    resources={name: int(sent.get(name, 0) or 0) for name in RESOURCE_ORDER if int(sent.get(name, 0) or 0) > 0},
+                )
+            except Exception as exc:
+                self.log(jid, "warn", f"Nao foi possivel abater shortfall de construcao apos chegada fraca: {exc}")
         if ga_id:
             self.save_game_client(ga_id, client)
         return RunnerResult(success=True, data={"status": "arrival_confirmed_weak", **result})

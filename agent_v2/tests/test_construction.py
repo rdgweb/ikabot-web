@@ -1051,6 +1051,140 @@ class ConstructionMarketInterventionTests(unittest.TestCase):
         self.assertEqual(reschedule_inputs["market_intervention_request_id"], "req-1")
         self.assertEqual(reschedule_inputs["market_intervention_status"], "pending")
 
+    def test_handle_missing_resources_prefers_transport_sync_over_local_eta_when_transport_opened(self):
+        runner = ConstructionPlanRunner.__new__(ConstructionPlanRunner)
+        logs = []
+        runner.log = lambda jid, level, msg: logs.append((jid, level, msg))
+        runner.resolve_credentials = lambda *_args, **_kwargs: None
+        runner.get_or_login_game_client = lambda *_args, **_kwargs: None
+        runner.save_game_client = lambda *_args, **_kwargs: None
+        runner._estimate_local_wait_seconds = lambda *_args, **_kwargs: 493449
+        runner._spawn_transport_cover = lambda **_kwargs: True
+        runner._get_snapshot = lambda *_args, **_kwargs: {"base_snapshot": {}}
+
+        city = {"id": "66480", "name": "MM1"}
+        pending = {
+            "city_name": "MM1",
+            "building_name": "Prefeitura",
+            "next_level": 35,
+            "level_rows": [{"level": 35, "costs": {"wood": 0, "wine": 0, "marble": 100, "glas": 0, "sulfur": 0}}],
+        }
+        job = {
+            "job_id": "job-transport-sync",
+            "account_id": "acc-1",
+            "game_account_id": "ga-1",
+            "inputs": {"auto_transport": True},
+        }
+
+        wait_seconds, transport_spawned, reschedule_inputs, should_skip_now = runner._handle_missing_resources(
+            job=job,
+            pending=pending,
+            cities=[city],
+            city=city,
+            missing={"wood": 0, "wine": 0, "marble": 100, "glas": 0, "sulfur": 0},
+            support_by_city={},
+        )
+
+        self.assertEqual(wait_seconds, CITY_MODULE.TRANSPORT_RECHECK_SECONDS)
+        self.assertTrue(transport_spawned)
+        self.assertFalse(should_skip_now)
+        self.assertEqual(reschedule_inputs["resource_wait_reason"], "transport_support_opened")
+        self.assertTrue(any("aguardando transporte antes da proxima obra" in msg for _jid, _level, msg in logs))
+
+    def test_handle_missing_resources_prefers_partial_support_sync_over_local_eta(self):
+        runner = ConstructionPlanRunner.__new__(ConstructionPlanRunner)
+        logs = []
+        runner.log = lambda jid, level, msg: logs.append((jid, level, msg))
+        runner.resolve_credentials = lambda *_args, **_kwargs: None
+        runner.get_or_login_game_client = lambda *_args, **_kwargs: None
+        runner.save_game_client = lambda *_args, **_kwargs: None
+        runner._estimate_local_wait_seconds = lambda *_args, **_kwargs: 1074354
+        runner._spawn_transport_cover = lambda **_kwargs: False
+        runner._estimate_donor_wait_seconds = lambda **_kwargs: None
+        runner._get_snapshot = lambda *_args, **_kwargs: {"base_snapshot": {}}
+
+        city = {"id": "66481", "name": "MM2"}
+        pending = {
+            "city_name": "MM2",
+            "building_name": "Prefeitura",
+            "next_level": 35,
+            "level_rows": [{"level": 35, "costs": {"wood": 0, "wine": 0, "marble": 540460, "glas": 0, "sulfur": 0}}],
+        }
+        job = {
+            "job_id": "job-partial-support",
+            "account_id": "acc-1",
+            "game_account_id": "ga-1",
+            "inputs": {"auto_transport": True, "auto_market_buy": False},
+        }
+
+        wait_seconds, transport_spawned, reschedule_inputs, should_skip_now = runner._handle_missing_resources(
+            job=job,
+            pending=pending,
+            cities=[city],
+            city=city,
+            missing={"wood": 0, "wine": 0, "marble": 540460, "glas": 0, "sulfur": 0},
+            support_by_city={"66481": {"wood": 0, "wine": 0, "marble": 90000, "crystal": 0, "sulfur": 0}},
+        )
+
+        self.assertEqual(wait_seconds, CITY_MODULE.TRANSPORT_RECHECK_SECONDS)
+        self.assertFalse(transport_spawned)
+        self.assertFalse(should_skip_now)
+        self.assertEqual(reschedule_inputs["resource_wait_reason"], "partial_support_pending")
+        self.assertTrue(any("suporte parcial em aberto" in msg.lower() for _jid, _level, msg in logs))
+
+    def test_spawn_transport_cover_logs_single_level_when_plan_has_one_row(self):
+        runner = ConstructionPlanRunner.__new__(ConstructionPlanRunner)
+        logs = []
+        spawned = []
+        runner.log = lambda jid, level, msg: logs.append((jid, level, msg))
+        runner.hub = pytypes.SimpleNamespace(
+            spawn_job=lambda source_job_id, action_code, inputs: spawned.append(
+                {"source_job_id": source_job_id, "action_code": action_code, "inputs": inputs}
+            )
+        )
+
+        target_city = {
+            "id": "66480",
+            "name": "MM1",
+            "wood": 0,
+            "wine": 0,
+            "marble": 850498,
+            "crystal": 0,
+            "sulfur": 0,
+            "buildings": [],
+        }
+        donor_city = {
+            "id": "66487",
+            "name": "MM4",
+            "wood": 0,
+            "wine": 0,
+            "marble": 500000,
+            "crystal": 0,
+            "sulfur": 0,
+            "buildings": [],
+        }
+        pending = {
+            "city_name": "MM1",
+            "building_name": "Prefeitura",
+            "next_level": 35,
+            "level_rows": [
+                {"level": 35, "costs": {"wood": 0, "wine": 0, "marble": 1123951, "glas": 0, "sulfur": 0}},
+            ],
+        }
+
+        created = runner._spawn_transport_cover(
+            job_id="job-one-level",
+            cities=[target_city, donor_city],
+            target_city=target_city,
+            pending=pending,
+            missing={"wood": 0, "wine": 0, "marble": 273453, "glas": 0, "sulfur": 0},
+            support_by_city={},
+        )
+
+        self.assertTrue(created)
+        self.assertEqual(len(spawned), 1)
+        self.assertTrue(any("cobrir o proximo nivel" in msg.lower() for _jid, _level, msg in logs))
+
 
 class ConstructionLiveStockTests(unittest.TestCase):
     def test_live_city_stock_prefers_update_global_data_header_resources(self):

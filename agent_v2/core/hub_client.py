@@ -161,6 +161,29 @@ class HubClient:
             params["city_ids"] = ",".join(str(city_id).strip() for city_id in city_ids if str(city_id).strip())
         return self._get(f"/api/agent/game-accounts/{game_account_id}/construction-reservations", params=params)
 
+    def sync_construction_reservations(
+        self,
+        *,
+        job_id: str,
+        reservations: dict[str, dict[str, dict[str, int]]],
+    ) -> dict:
+        return self._post(
+            f"/api/agent/jobs/{job_id}/construction-reservations/sync",
+            {"mode": "refresh_remaining", "reservations": reservations},
+        )
+
+    def apply_construction_reservation_arrival(
+        self,
+        *,
+        job_id: str,
+        city_id: str | int,
+        resources: dict[str, int],
+    ) -> dict:
+        return self._post(
+            f"/api/agent/jobs/{job_id}/construction-reservations/sync",
+            {"mode": "apply_arrival", "city_id": str(city_id), "resources": resources},
+        )
+
     def send_notification(
         self,
         *,
@@ -467,6 +490,17 @@ class HubClient:
         except Exception as e:
             logger.warning("Failed to scan raid alerts: %s", e)
             return {}
+
+    def list_active_spy_targets(self, game_account_id: str) -> list[dict]:
+        """GET /api/agent/jobs/active-spy-targets/?ga_id=X
+        Lista alvos com jobs ac=15 ativos pro GA. Usado pra detectar grupos órfãos.
+        Retorna: [{target_owner, target_owner_id, target_city_name, target_city_id}, ...]
+        """
+        try:
+            resp = self._get("/api/agent/jobs/active-spy-targets", params={"ga_id": game_account_id})
+            return list((resp or {}).get("targets") or [])
+        except Exception:
+            return []
 
     def get_missions_covered(
         self,

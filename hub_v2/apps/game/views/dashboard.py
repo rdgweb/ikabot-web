@@ -20,6 +20,7 @@ from django.views.generic import TemplateView
 from apps.accounts.models import Account, GameAccount, Node
 from apps.game.models import AccountSnapshotHistory
 from apps.game.services.dashboard_cache import get_dashboard_cache_key
+from apps.jobs.models import ConstructionResourceReservation
 
 _DASHBOARD_CACHE_TTL = 60  # seconds
 
@@ -36,7 +37,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
             ctx["now_epoch"] = int(timezone.now().timestamp())
             return ctx
 
-        accounts = (
+        accounts = list(
             Account.objects
             .filter(active=True)
             .select_related("node")
@@ -49,6 +50,26 @@ class DashboardView(LoginRequiredMixin, TemplateView):
             )
             .order_by("label")
         )
+
+        game_account_ids = [
+            ga.pk
+            for acct in accounts
+            for ga in getattr(acct, "active_game_accounts", [])
+        ]
+        construction_reservations: dict[str, dict[str, dict[str, dict[str, int]]]] = {}
+        if game_account_ids:
+            for reservation in ConstructionResourceReservation.objects.filter(
+                game_account_id__in=game_account_ids,
+                status="active",
+            ):
+                ga_bucket = construction_reservations.setdefault(str(reservation.game_account_id), {})
+                city_bucket = ga_bucket.setdefault(str(reservation.city_id), {})
+                resource_bucket = city_bucket.setdefault(
+                    str(reservation.resource),
+                    {"reserved_local": 0, "shortfall": 0},
+                )
+                resource_bucket["reserved_local"] += _si(reservation.reserved_local_amount)
+                resource_bucket["shortfall"] += _si(reservation.shortfall_amount)
 
         total_gold = 0
         total_cities = 0
@@ -67,6 +88,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                 base = snapshot.base_snapshot if snapshot else {}
                 raw_cities = snapshot.cities if snapshot else []
                 military = snapshot.military if snapshot else {}
+                ga_reservations = construction_reservations.get(str(ga.pk), {})
 
                 if isinstance(raw_cities, dict):
                     city_list = raw_cities.get("cities", [])
@@ -143,6 +165,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                         "wine_hours": wine_hours,
                         "population": _si(city.get("population")),
                         "construction_end_at": city_construction_end_at,
+                        "construction_reserved": ga_reservations.get(str(city.get("id") or ""), {}),
                     })
                     city_name = str(city.get("name") or "").strip()
                     if city_name:
@@ -181,6 +204,17 @@ class DashboardView(LoginRequiredMixin, TemplateView):
 
                 for ec in enriched_cities:
                     city_projection = resource_projections.get(_si(ec.get("id"), default=-1), {})
+                    reserved_map = ec.get("construction_reserved") if isinstance(ec.get("construction_reserved"), dict) else {}
+                    resources_with_reservations = []
+                    for res in city_projection.get("resources", []):
+                        reservation = reserved_map.get(str(res.get("key") or "")) if isinstance(reserved_map, dict) else None
+                        reservation = reservation if isinstance(reservation, dict) else {}
+                        resources_with_reservations.append({
+                            **res,
+                            "construction_reserved_local": _si(reservation.get("reserved_local")),
+                            "construction_reserved_shortfall": _si(reservation.get("shortfall")),
+                        })
+                    city_projection["resources"] = resources_with_reservations
                     ec["resource_projections"] = city_projection.get("resources", [])
                     ec["cap_resource"] = city_projection.get("cap_resource")
                     ec["cap_pct"] = city_projection.get("cap_pct", ec.get("cap_pct", 0))

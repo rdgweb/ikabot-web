@@ -10,6 +10,7 @@ from django.utils import timezone
 from apps.accounts.models import Account, GameAccount, Node
 from apps.game.models import AccountSnapshot, AccountSnapshotHistory
 from apps.game.views.dashboard import DashboardView
+from apps.jobs.models import ConstructionResourceReservation, Job
 
 
 @override_settings(AGENT_TOKEN="test-agent-token", AGENT_ALLOWED_IPS="")
@@ -254,3 +255,86 @@ class DashboardHistoryLazyLoadTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertIn(str(self.game_account.pk), payload["history"])
+
+
+class DashboardConstructionReservationTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.factory = RequestFactory()
+        self.user = get_user_model().objects.create_user(
+            username="reservation-tester",
+            email="reservation@example.com",
+            password="secret123",
+        )
+        node = Node.objects.create(name="agent-reservation")
+        self.account = Account.objects.create(
+            node=node,
+            label="Lobby Reservation",
+            email="reservation-cache@example.com",
+            password_enc="enc",
+        )
+        self.game_account = GameAccount.objects.create(
+            account=self.account,
+            lobby_account_id=777,
+            server_id="s7-br",
+            server_language="br",
+            server_number=7,
+            name="ReservationPlayer",
+        )
+        AccountSnapshot.objects.create(
+            account=self.account,
+            game_account=self.game_account,
+            base_snapshot={"gold": 1000, "income": 100},
+            cities=[
+                {
+                    "id": "42",
+                    "name": "Marble City",
+                    "wood": 100,
+                    "wine": 200,
+                    "marble": 300,
+                    "crystal": 400,
+                    "sulfur": 500,
+                    "warehouse_capacity": 5000,
+                    "max_resources": {"wood": 5000, "wine": 5000, "marble": 5000, "glass": 5000, "sulfur": 5000},
+                    "market_resources": {},
+                    "produced_tradegood": 2,
+                    "resource_production_per_hour": 10,
+                    "tradegood_production_per_hour": 20,
+                    "population": 100,
+                    "wine_consumption": 0,
+                    "buildings": [],
+                }
+            ],
+            military={},
+        )
+        self.job = Job.objects.create(
+            account=self.account,
+            game_account=self.game_account,
+            action_code=1002,
+            status="scheduled",
+            inputs_json="{}",
+        )
+        ConstructionResourceReservation.objects.create(
+            job=self.job,
+            account=self.account,
+            game_account=self.game_account,
+            city_id="42",
+            city_name="Marble City",
+            resource="marble",
+            reserved_local_amount=1234,
+            shortfall_amount=567,
+            status="active",
+        )
+
+    def test_dashboard_city_resource_projection_contains_construction_reservation(self):
+        request = self.factory.get("/game/")
+        request.user = self.user
+        response = DashboardView.as_view()(request)
+        response.render()
+
+        card = response.context_data["account_cards"][0]
+        city = card["cities"][0]
+        marble = next(res for res in city["resource_projections"] if res["key"] == "marble")
+
+        self.assertEqual(marble["construction_reserved_local"], 1234)
+        self.assertEqual(marble["construction_reserved_shortfall"], 567)

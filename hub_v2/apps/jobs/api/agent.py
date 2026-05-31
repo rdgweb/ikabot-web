@@ -6,6 +6,7 @@ import logging
 from datetime import timedelta
 from uuid import UUID
 
+from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema, inline_serializer
@@ -35,6 +36,22 @@ from .serializers import (
 logger = logging.getLogger(__name__)
 
 _TERMINAL_STATUSES = {"finished", "error", "cancelled"}
+
+
+def _normalize_json_object(raw) -> dict:
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw or "{}")
+        except Exception:
+            try:
+                parsed = ast.literal_eval(raw or "{}")
+            except Exception:
+                parsed = {}
+    else:
+        parsed = raw
+    if not isinstance(parsed, dict):
+        return {}
+    return parsed
 
 
 class JobStatusView(APIView):
@@ -205,15 +222,33 @@ class RescheduleJobView(APIView):
                     status=status.HTTP_409_CONFLICT,
                 )
 
-            # Idempotency: if this exact job was already rescheduled recently, return existing child.
-            # Filter by trigger_type="agent_reschedule" to distinguish from spawn_job children
-            # (e.g. ac=2 transport spawns ac=2 monitor, but that's NOT a reschedule).
-            existing_child = Job.objects.filter(
+            delay = serializer.validated_data["delay_seconds"]
+            scheduled_for = timezone.now() + timedelta(seconds=delay)
+            patch = serializer.validated_data.get("inputs")
+
+            existing = _normalize_json_object(job.inputs_json)
+            if patch is None:
+                new_inputs_dict = dict(existing)
+            else:
+                new_inputs_dict = dict(existing)
+                new_inputs_dict.update(patch)
+            new_inputs_json = json.dumps(new_inputs_dict)
+
+            # Idempotency: only reuse a recent child if it is a true reschedule equivalent.
+            # This avoids confusing ac=2 monitor children (spawned with the same workflow_run)
+            # with the follow-up child that should carry the remaining payload.
+            existing_children = Job.objects.filter(
                 source_job_id=job.pk,
                 action_code=job.action_code,
                 workflow_run__trigger_type="agent_reschedule",
                 created_at__gte=timezone.now() - timedelta(seconds=120),
-            ).order_by("-created_at").first()
+            ).order_by("-created_at")
+            existing_child = None
+            for candidate in existing_children:
+                candidate_inputs = _normalize_json_object(candidate.inputs_json)
+                if candidate_inputs == new_inputs_dict:
+                    existing_child = candidate
+                    break
             if existing_child:
                 logger.info(
                     "Job %s already rescheduled as %s (idempotent return)",
@@ -227,25 +262,6 @@ class RescheduleJobView(APIView):
                     }).data,
                     status=status.HTTP_201_CREATED,
                 )
-
-            delay = serializer.validated_data["delay_seconds"]
-            scheduled_for = timezone.now() + timedelta(seconds=delay)
-            patch = serializer.validated_data.get("inputs")
-
-            if patch is None:
-                new_inputs_json = job.inputs_json
-            else:
-                try:
-                    existing = json.loads(job.inputs_json or "{}")
-                except (json.JSONDecodeError, TypeError):
-                    try:
-                        existing = ast.literal_eval(job.inputs_json or "{}")
-                    except Exception:
-                        existing = {}
-                if not isinstance(existing, dict):
-                    existing = {}
-                existing.update(patch)
-                new_inputs_json = json.dumps(existing)
 
             new_job = create_job_with_workflow(
                 account=job.account,
@@ -472,6 +488,36 @@ class JobStatusReadView(APIView):
         })
 
 
+class ActiveSpyTargetsView(APIView):
+    """GET /api/agent/jobs/active-spy-targets/?ga_id=X
+    Lista alvos com jobs ac=15 ativos (running/scheduled) pro GA.
+    Usado pelo SpyRunner pra identificar grupos órfãos no safehouse.
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def get(self, request):
+        ga_id = request.query_params.get("ga_id")
+        if not ga_id:
+            return Response({"error": "missing ga_id"}, status=status.HTTP_400_BAD_REQUEST)
+        qs = Job.objects.filter(
+            action_code=15,
+            game_account_id=ga_id,
+            status__in=("running", "scheduled"),
+        )
+        targets = []
+        for j in qs:
+            inp = _normalize_json_object(j.inputs_json)
+            targets.append({
+                "target_owner": inp.get("target_owner") or "",
+                "target_owner_id": str(inp.get("target_owner_id") or ""),
+                "target_city_name": inp.get("target_city_name") or "",
+                "target_city_id": str(inp.get("target_city_id") or ""),
+            })
+        return Response({"targets": targets})
+
+
 class ConstructionSupportView(APIView):
     """GET /api/agent/jobs/<uuid:job_id>/construction-support/."""
 
@@ -643,6 +689,143 @@ class ConstructionReservationsView(APIView):
                 bucket[key] += total
 
         return Response({"ok": True, "reservations": reservations})
+
+
+class ConstructionReservationSyncView(APIView):
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    @staticmethod
+    def _resolve_plan_job(job_id):
+        try:
+            job = Job.objects.get(pk=job_id)
+        except Job.DoesNotExist:
+            return None
+
+        root_id = job.root_job_id or job.pk
+        if str(job.action_code) == "1002" and str(job.pk) == str(root_id):
+            return job
+
+        return (
+            Job.objects.filter(pk=root_id, action_code=1002)
+            .first()
+            or Job.objects.filter(root_job_id=root_id, action_code=1002).order_by("created_at").first()
+        )
+
+    def post(self, request, job_id):
+        plan_job = self._resolve_plan_job(job_id)
+        if plan_job is None:
+            return Response({"ok": True, "updated": 0, "mode": "noop"})
+
+        mode = str(request.data.get("mode") or "refresh_remaining").strip().lower()
+
+        if mode == "apply_arrival":
+            city_id = str(request.data.get("city_id") or "").strip()
+            resources = request.data.get("resources") if isinstance(request.data.get("resources"), dict) else {}
+            if not city_id or not resources:
+                return Response({"error": "city_id and resources are required for apply_arrival"}, status=status.HTTP_400_BAD_REQUEST)
+
+            updated = 0
+            with transaction.atomic():
+                active_rows = list(
+                    ConstructionResourceReservation.objects.select_for_update()
+                    .filter(job=plan_job, status="active", city_id=city_id)
+                    .order_by("city_name", "resource", "created_at")
+                )
+                for resource_key, amount in resources.items():
+                    amount = max(0, int(amount or 0))
+                    if amount <= 0:
+                        continue
+                    model_resource = "glas" if str(resource_key) == "crystal" else str(resource_key)
+                    rows = [row for row in active_rows if str(row.resource) == model_resource]
+                    for row in rows:
+                        if amount <= 0:
+                            break
+                        before = int(row.shortfall_amount or 0)
+                        if before <= 0:
+                            continue
+                        consume = min(before, amount)
+                        row.shortfall_amount = before - consume
+                        row.save(update_fields=["shortfall_amount", "updated_at"])
+                        updated += 1
+                        amount -= consume
+
+            return Response({"ok": True, "updated": updated, "mode": mode})
+
+        if mode != "refresh_remaining":
+            return Response({"error": f"unsupported mode: {mode}"}, status=status.HTTP_400_BAD_REQUEST)
+
+        raw_reservations = request.data.get("reservations") if isinstance(request.data.get("reservations"), dict) else {}
+        normalized: dict[tuple[str, str], dict[str, int]] = {}
+        for city_id, resource_map in raw_reservations.items():
+            city_id = str(city_id or "").strip()
+            if not city_id or not isinstance(resource_map, dict):
+                continue
+            for resource_key, amounts in resource_map.items():
+                model_resource = "glas" if str(resource_key) == "crystal" else str(resource_key)
+                if not isinstance(amounts, dict):
+                    continue
+                reserved_local = max(0, int(amounts.get("reserved_local", 0) or 0))
+                shortfall = max(0, int(amounts.get("shortfall", 0) or 0))
+                if reserved_local <= 0 and shortfall <= 0:
+                    continue
+                normalized[(city_id, model_resource)] = {
+                    "reserved_local": reserved_local,
+                    "shortfall": shortfall,
+                }
+
+        updated = 0
+        created = 0
+        spent = 0
+        with transaction.atomic():
+            active_rows = list(
+                ConstructionResourceReservation.objects.select_for_update()
+                .filter(job=plan_job, status="active")
+                .order_by("city_name", "resource", "created_at")
+            )
+            grouped: dict[tuple[str, str], list[ConstructionResourceReservation]] = {}
+            for row in active_rows:
+                grouped.setdefault((str(row.city_id), str(row.resource)), []).append(row)
+
+            seen_keys = set()
+            for key, payload in normalized.items():
+                rows = grouped.get(key, [])
+                target = rows[0] if rows else None
+                if target is None:
+                    city_id, resource = key
+                    target = ConstructionResourceReservation.objects.create(
+                        job=plan_job,
+                        account=plan_job.account,
+                        game_account=plan_job.game_account,
+                        city_id=city_id,
+                        city_name=city_id,
+                        resource=resource,
+                        reserved_local_amount=int(payload["reserved_local"]),
+                        shortfall_amount=int(payload["shortfall"]),
+                        status="active",
+                    )
+                    created += 1
+                else:
+                    target.reserved_local_amount = int(payload["reserved_local"])
+                    target.shortfall_amount = int(payload["shortfall"])
+                    target.status = "active"
+                    target.save(update_fields=["reserved_local_amount", "shortfall_amount", "status", "updated_at"])
+                    updated += 1
+                    for extra in rows[1:]:
+                        extra.status = "spent"
+                        extra.save(update_fields=["status", "updated_at"])
+                        spent += 1
+                seen_keys.add(key)
+
+            for key, rows in grouped.items():
+                if key in seen_keys:
+                    continue
+                for row in rows:
+                    row.status = "spent"
+                    row.save(update_fields=["status", "updated_at"])
+                    spent += 1
+
+        return Response({"ok": True, "updated": updated, "created": created, "spent": spent, "mode": mode})
 
 
 class NotifyParentView(APIView):

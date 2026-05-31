@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from django.test import TestCase
 from django.urls import reverse
 
@@ -278,6 +279,79 @@ class WorkflowFoundationServiceTests(TestCase):
         )
 
         self.assertIsNotNone(job.workflow_id)
+
+
+@override_settings(AGENT_TOKEN="test-agent-token", AGENT_ALLOWED_IPS="")
+class AgentRescheduleIdempotencyTests(TestCase):
+    def setUp(self):
+        self.node = Node.objects.create(name="node-agent")
+        self.account = Account.objects.create(
+            node=self.node,
+            label="Conta Agent",
+            email="agent@example.com",
+            password_enc="x",
+        )
+        self.ga = GameAccount.objects.create(
+            account=self.account,
+            lobby_account_id=5,
+            server_id="s5-br",
+            server_language="br",
+            server_number=5,
+            name="Argos",
+        )
+
+    def test_reschedule_does_not_confuse_monitor_child_with_remaining_followup(self):
+        root = create_job_with_workflow(
+            account=self.account,
+            game_account=self.ga,
+            node=self.node,
+            action_code=2,
+            inputs={"from_city": "1", "to_city": "2", "marble": 352738},
+            status="finished",
+        )
+        parent = create_job_with_workflow(
+            account=self.account,
+            game_account=self.ga,
+            node=self.node,
+            action_code=2,
+            inputs={"from_city": "1", "to_city": "2", "marble": 352738},
+            status="scheduled",
+            source_job=root,
+            start_new_run=True,
+            trigger_type="agent_reschedule",
+        )
+        monitor = create_job_with_workflow(
+            account=self.account,
+            game_account=self.ga,
+            node=self.node,
+            action_code=2,
+            inputs={
+                "from_city": "1",
+                "to_city": "2",
+                "monitor_mode": "arrival_check",
+                "sent_resources": {"wood": 0, "wine": 0, "marble": 90000, "crystal": 0, "sulfur": 0},
+            },
+            status="scheduled",
+            source_job=parent,
+            start_new_run=False,
+        )
+
+        response = self.client.post(
+            reverse("agent-api:reschedule", args=[parent.pk]),
+            data={"delay_seconds": 1262, "inputs": {"marble": 262738}},
+            content_type="application/json",
+            HTTP_X_AGENT_TOKEN="test-agent-token",
+            HTTP_X_AGENT_NODE_ID=str(self.node.pk),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertNotEqual(str(monitor.pk), payload["new_job_id"])
+
+        followup = Job.objects.get(pk=payload["new_job_id"])
+        self.assertEqual(followup.source_job_id, parent.pk)
+        self.assertEqual(followup.action_code, 2)
+        self.assertIn('"marble": 262738', followup.inputs_json)
         self.assertIsNotNone(job.workflow_run_id)
         self.assertEqual(job.workflow.workflow_type, "construction_plan")
         self.assertEqual(job.workflow.status, "active")

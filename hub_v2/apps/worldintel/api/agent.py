@@ -488,6 +488,31 @@ class WorldSpyTargetsView(APIView):
                 )
                 cities = [c for c in cities if c.game_city_id not in has_valid]
 
+        # Resolve safehouse coordinates before truncating targets so we can
+        # prioritize by proximity on the full candidate set.
+        source_coords: dict[str, dict] = {}
+        source_cities_param = request.query_params.get("source_cities", "")
+        if source_cities_param:
+            sc_ids = {c.strip() for c in source_cities_param.split(",") if c.strip()}
+            try:
+                from apps.game.models import AccountSnapshot
+                for snap in AccountSnapshot.objects.all().only("cities"):
+                    if not sc_ids:
+                        break
+                    for city in (snap.cities or []):
+                        cid = str(city.get("id") or "").strip()
+                        if cid in sc_ids:
+                            source_coords[cid] = {"x": int(city.get("x") or 0), "y": int(city.get("y") or 0)}
+                            sc_ids.discard(cid)
+            except Exception:
+                pass
+            if sc_ids:
+                for sc in WorldDumpCity.objects.filter(
+                    dump=dump, game_city_id__in=sc_ids
+                ).select_related("island"):
+                    if sc.island:
+                        source_coords[sc.game_city_id] = {"x": sc.island.x, "y": sc.island.y}
+
         # Deduplicate by game_city_id (safety — should not happen but guards against
         # duplicate rows in the dump).
         seen_city_ids: set[str] = set()
@@ -496,7 +521,21 @@ class WorldSpyTargetsView(APIView):
             if c.game_city_id not in seen_city_ids:
                 seen_city_ids.add(c.game_city_id)
                 deduped.append(c)
-        cities = deduped[:limit]
+        cities = deduped
+
+        if source_coords:
+            safehouse_points = list(source_coords.values())
+            if safehouse_points:
+                def _min_dist_sq(city) -> int:
+                    if not city.island:
+                        return 10**12
+                    tx = int(city.island.x or 0)
+                    ty = int(city.island.y or 0)
+                    return min((tx - s["x"]) ** 2 + (ty - s["y"]) ** 2 for s in safehouse_points)
+
+                cities.sort(key=_min_dist_sq)
+
+        cities = cities[:limit]
 
         targets = [{
             "game_city_id": c.game_city_id,
@@ -510,33 +549,6 @@ class WorldSpyTargetsView(APIView):
             "ally_tag":     c.ally_tag or "",
             "missing_missions": missing_missions_map.get(c.game_city_id, sorted(mission_ids) if mission_ids else []),
         } for c in cities]
-
-        # Return safehouse coordinates so the agent can sort targets by distance.
-        # Prefer LIVE snapshot data (may be hours old) over dump data (may be days old).
-        source_coords: dict[str, dict] = {}
-        source_cities_param = request.query_params.get("source_cities", "")
-        if source_cities_param:
-            sc_ids = {c.strip() for c in source_cities_param.split(",") if c.strip()}
-            # Step 1: try snapshots (always fresher than dumps)
-            try:
-                from apps.game.models import AccountSnapshot
-                for snap in AccountSnapshot.objects.all().only("cities"):
-                    if not sc_ids:
-                        break
-                    for city in (snap.cities or []):
-                        cid = str(city.get("id") or "").strip()
-                        if cid in sc_ids:
-                            source_coords[cid] = {"x": int(city.get("x") or 0), "y": int(city.get("y") or 0)}
-                            sc_ids.discard(cid)
-            except Exception:
-                pass
-            # Step 2: fall back to dump for any still unresolved
-            if sc_ids:
-                for sc in WorldDumpCity.objects.filter(
-                    dump=dump, game_city_id__in=sc_ids
-                ).select_related("island"):
-                    if sc.island:
-                        source_coords[sc.game_city_id] = {"x": sc.island.x, "y": sc.island.y}
 
         return Response({
             "targets":            targets,

@@ -409,6 +409,8 @@
                     pct: {{ resource.pct }},
                     fill_hours: {% if resource.fill_hours is not None %}{{ resource.fill_hours }}{% else %}null{% endif %},
                     is_wine: {% if resource.key == 'wine' %}true{% else %}false{% endif %},
+                    construction_reserved_local: {{ resource.construction_reserved_local|default:0 }},
+                    construction_reserved_shortfall: {{ resource.construction_reserved_shortfall|default:0 }},
                     in_transit_total: {{ resource.in_transit_total|default:0 }},
                     in_transit_routes: {{ resource.in_transit_routes|default:'[]'|safe }}
                   })"
@@ -505,6 +507,18 @@
               <tr>
                 <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">Mercado:</td>
                 <td class="py-0.5 text-right font-mono font-bold" style="color:#3a2a0a;" x-text="new Intl.NumberFormat('pt-BR').format(tt.market)"></td>
+              </tr>
+            </template>
+            <template x-if="tt.construction_reserved_local > 0">
+              <tr>
+                <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">Reservado p/ obra:</td>
+                <td class="py-0.5 text-right font-mono font-bold" style="color:#7a4b17;" x-text="new Intl.NumberFormat('pt-BR').format(tt.construction_reserved_local)"></td>
+              </tr>
+            </template>
+            <template x-if="tt.construction_reserved_shortfall > 0">
+              <tr>
+                <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">Falta p/ obra:</td>
+                <td class="py-0.5 text-right font-mono font-bold" style="color:#a33;" x-text="new Intl.NumberFormat('pt-BR').format(tt.construction_reserved_shortfall)"></td>
               </tr>
             </template>
           </table>
