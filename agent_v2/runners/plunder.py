@@ -390,6 +390,55 @@ class RaidCityRunner(BaseRunner):
 
             loot = report.get("loot") or {}
             total_loot = report.get("total_loot", 0)
+
+            # Fallback: parser do combat HTML pode vir sem o bloco de loot.
+            # Olha advisor militar — pega o movimento de PLUNDER VOLTANDO desse alvo.
+            # No retorno: origin=cidade alvo (pilhada), target=nossa cidade (source).
+            if not loot:
+                try:
+                    movs = advisor.get("movement_details") or []
+                    candidates = []
+                    for m in movs:
+                        mtxt = (m.get("mission_text") or "").lower()
+                        mclass = (m.get("mission") or "").lower()
+                        is_plunder = ("plunder" in mclass or "saque" in mtxt or
+                                      "pilhag" in mtxt or "plunder" in mtxt)
+                        if not is_plunder:
+                            continue
+                        if not m.get("is_returning"):
+                            continue
+                        # No retorno, origin = alvo pilhado, target = source nossa
+                        origin = m.get("origin") or {}
+                        target = m.get("target") or {}
+                        origin_cid = str(origin.get("id") or origin.get("cityId") or "")
+                        target_cid = str(target.get("id") or target.get("cityId") or "")
+                        # Match: origem do retorno == cidade pilhada, OU target == nossa source
+                        if origin_cid == str(target_city_id) or target_cid == str(source_city_id):
+                            candidates.append(m)
+                    if candidates:
+                        # Usa o primeiro candidato (deveria ser único pra esse par origem/destino)
+                        m = candidates[0]
+                        cargo = m.get("cargo") or {}
+                        if cargo:
+                            loot = dict(cargo)
+                            total_loot = sum(int(v or 0) for v in cargo.values())
+                            self.log(jid, "info",
+                                f"[Raid] Loot do advisor (combat HTML sem loot): {loot}")
+                            try:
+                                self.hub.save_combat_report(ga_id, {
+                                    "combat_id": report.get("combat_id"),
+                                    "loot_json": loot,
+                                    "total_loot": total_loot,
+                                })
+                            except Exception:
+                                pass
+                    else:
+                        self.log(jid, "info",
+                            f"[Raid] Advisor sem movimento de plunder voltando "
+                            f"de {target_city_id} pra {source_city_id}.")
+                except Exception as _exc:
+                    self.log(jid, "warn", f"[Raid] Falha fallback loot advisor: {_exc}")
+
             self.log(jid, "info",
                      f"[Raid] Vitória! combatId={report.get('combat_id')} "
                      f"rounds={report.get('rounds')} saque={loot} total={total_loot:,}")

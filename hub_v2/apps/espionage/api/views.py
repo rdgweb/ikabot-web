@@ -82,7 +82,7 @@ def _troops_dict_to_ids(troops: dict) -> dict[int, int]:
     return out
 
 
-def _parse_enemy_intel(target_city_id: str, target_owner_id: str, server_id: str) -> dict:
+def _parse_enemy_intel(target_city_id: str, target_owner_id: str, server_id: str, target_owner: str = "") -> dict:
     """Lê reports mission 6 + 26 + 5 → enemy_units + upgrades per-unit + city_level."""
     enemy_units: dict[int, int] = {}
     enemy_upgrades: dict[int, dict] = {}  # {unit_id: {offensive, defensive}}
@@ -111,10 +111,19 @@ def _parse_enemy_intel(target_city_id: str, target_owner_id: str, server_id: str
                         enemy_units[uid] = enemy_units.get(uid, 0) + cnt
 
     # Mission 26 — upgrades per unit_id
-    r26 = SpyReport.objects.filter(
-        target_owner_id=target_owner_id, mission_id=26,
+    r26_qs = SpyReport.objects.filter(
+        mission_id=26,
         game_account__server_id=server_id,
-    ).order_by("-created_at").first()
+    )
+    if target_owner_id and target_owner:
+        r26_qs = r26_qs.filter(Q(target_owner_id=target_owner_id) | Q(target_owner__iexact=target_owner))
+    elif target_owner_id:
+        r26_qs = r26_qs.filter(target_owner_id=target_owner_id)
+    elif target_owner:
+        r26_qs = r26_qs.filter(target_owner__iexact=target_owner)
+    else:
+        r26_qs = r26_qs.none()
+    r26 = r26_qs.order_by("-created_at").first()
     if r26 and r26.data_json:
         for imp in (r26.data_json.get("workshop_improvements") or []):
             if not isinstance(imp, dict): continue
@@ -487,7 +496,8 @@ class ScanRaidAlertsView(APIView):
         )
 
         latest_by_city: dict[str, dict] = {}  # {city_id: {5: report, 6: report, ...}}
-        latest_m26_by_owner: dict[str, "SpyReport"] = {}  # missão 26 mais recente por owner
+        latest_m26_by_owner: dict[str, "SpyReport"] = {}  # missão 26 mais recente por owner_id
+        latest_m26_by_owner_name: dict[str, "SpyReport"] = {}  # fallback legado por owner name
         for r in reports_qs:
             cid = r.target_city_id
             if not cid:
@@ -497,14 +507,20 @@ class ScanRaidAlertsView(APIView):
                 slot[r.mission_id] = r
             if r.mission_id == 26 and r.target_owner_id and r.target_owner_id not in latest_m26_by_owner:
                 latest_m26_by_owner[r.target_owner_id] = r
+            owner_name_key = (r.target_owner or "").strip().casefold()
+            if r.mission_id == 26 and owner_name_key and owner_name_key not in latest_m26_by_owner_name:
+                latest_m26_by_owner_name[owner_name_key] = r
 
         # Para cada cidade com 5+6, anexar mission 26 do mesmo owner (player-scope)
         for cid, slot in latest_by_city.items():
             if 26 not in slot:
                 report5 = slot.get(5)
                 owner_id = (report5.target_owner_id if report5 else "")
+                owner_name = ((report5.target_owner if report5 else "") or "").strip().casefold()
                 if owner_id and owner_id in latest_m26_by_owner:
                     slot[26] = latest_m26_by_owner[owner_id]
+                elif owner_name and owner_name in latest_m26_by_owner_name:
+                    slot[26] = latest_m26_by_owner_name[owner_name]
 
         # Exige TODAS: mission 5 (recursos) + 6 (guarnição) + 26 (invenções)
         complete_cities = {cid: m for cid, m in latest_by_city.items() if 5 in m and 6 in m and 26 in m}
@@ -575,7 +591,7 @@ class ScanRaidAlertsView(APIView):
 
             # Todos snapshots frescos — escolher conta com base na simulação
             target_owner_id = report.target_owner_id or ""
-            enemy_intel = _parse_enemy_intel(cid, target_owner_id, ga.server_id)
+            enemy_intel = _parse_enemy_intel(cid, target_owner_id, ga.server_id, report.target_owner or "")
             choices = _choose_raid_account(cid, target_owner_id, ga.server_id, top_n=5, enemy_intel=enemy_intel)
             top = choices[0] if choices else None
 
@@ -637,8 +653,10 @@ class ScanRaidAlertsView(APIView):
                     losses_total = sum((sim.get("attacker_losses") or {}).values())
                     win_text = (f"\n  ✅ Vitória em {rounds} rounds | sobrevive {pct:.0f}% "
                                 f"| perdas: {losses_total} | campo CM≥{field}")
+                elif enemy_intel.get("enemy_units") == {} and 6 in missions and 26 in missions:
+                    win_text = "\n  ℹ️ Intel completa; sem tropas detectadas para simulação"
                 else:
-                    win_text = "\n  ⚠️ Sem intel completo (mission 6+26) — combate não simulado"
+                    win_text = "\n  ⚠️ Intel parcial; combate não simulado"
                 rec_units = top.get("recommended") or {}
                 if rec_units:
                     rec_lines = ", ".join(

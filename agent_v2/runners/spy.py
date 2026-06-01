@@ -1386,10 +1386,16 @@ class SpyRunner(BaseRunner):
                 "target_owner":     r.get("target_owner", ""),
                 # Prioriza owner_id parseado do próprio report. Fallback pro input do job
                 # SÓ se o target_city_id do report bater com o alvo do job (mesma cidade,
-                # mesmo owner). Senão deixa vazio (evita poluir reports de outros alvos).
+                # mesmo owner). Missões player-scope herdam o owner_id do job.
                 "target_owner_id":  (
                     r.get("target_owner_id")
-                    or (target_owner_id if str(r.get("target_city_id") or "") == str(target_city_id or "") else "")
+                    or (
+                        target_owner_id
+                        if (
+                            r.get("mission_id") in {3, 7, 10, 21, 24, 25, 26, 27}
+                            or str(r.get("target_city_id") or "") == str(target_city_id or "")
+                        ) else ""
+                    )
                 ),
                 "target_city_id":   r.get("target_city_id", ""),
                 "target_city_name": r.get("target_city_name", ""),

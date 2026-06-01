@@ -64,29 +64,43 @@ class CombatReportSaveView(APIView):
                 except ValueError:
                     continue
 
-        loot_json       = data.get("loot_json") or {}
-        attacker_losses = data.get("attacker_losses") or {}
-        defender_losses = data.get("defender_losses") or {}
-        total_loot      = int(data.get("total_loot") or sum(int(v) for v in loot_json.values()))
+        # Partial update: só sobrescreve campos que vêm no payload.
+        # Permite chamada secundária pra atualizar só loot quando o parser primário falha.
+        existing = CombatReport.objects.filter(combat_id=combat_id).first()
+
+        def _get(key, default, transform=lambda x: x):
+            raw = data.get(key)
+            if raw is None or raw == "":
+                return getattr(existing, key, default) if existing else default
+            return transform(raw)
+
+        loot_json_in = data.get("loot_json")
+        loot_json = loot_json_in if isinstance(loot_json_in, dict) and loot_json_in else (
+            existing.loot_json if existing else {}
+        )
+        total_loot_in = data.get("total_loot")
+        total_loot = int(total_loot_in) if total_loot_in not in (None, "", 0) else (
+            existing.total_loot if existing else sum(int(v or 0) for v in (loot_json or {}).values())
+        )
 
         defaults = {
-            "game_account":   ga,
-            "combat_type":    str(data.get("combat_type") or "land").strip(),
-            "result":         str(data.get("result") or "").strip(),
-            "combat_date":    combat_date,
-            "total_rounds":   int(data.get("total_rounds") or 1),
-            "source_city_id":  str(data.get("source_city_id") or "").strip(),
-            "source_city_name": str(data.get("source_city_name") or "").strip(),
-            "target_city_id":  str(data.get("target_city_id") or "").strip(),
-            "target_city_name": str(data.get("target_city_name") or "").strip(),
-            "target_owner":    str(data.get("target_owner") or "").strip(),
-            "target_owner_id": str(data.get("target_owner_id") or "").strip(),
-            "loot_json":       loot_json,
+            "game_account":     ga if ga else (existing.game_account if existing else None),
+            "combat_type":      _get("combat_type", "land", lambda x: str(x).strip()),
+            "result":           _get("result", "", lambda x: str(x).strip()),
+            "combat_date":      combat_date if combat_date else (existing.combat_date if existing else None),
+            "total_rounds":     _get("total_rounds", 1, lambda x: int(x)),
+            "source_city_id":   _get("source_city_id", "", lambda x: str(x).strip()),
+            "source_city_name": _get("source_city_name", "", lambda x: str(x).strip()),
+            "target_city_id":   _get("target_city_id", "", lambda x: str(x).strip()),
+            "target_city_name": _get("target_city_name", "", lambda x: str(x).strip()),
+            "target_owner":     _get("target_owner", "", lambda x: str(x).strip()),
+            "target_owner_id":  _get("target_owner_id", "", lambda x: str(x).strip()),
+            "loot_json":        loot_json,
             "total_loot":      total_loot,
-            "attacker_losses": attacker_losses,
-            "defender_losses": defender_losses,
-            "summary_html":    str(data.get("summary_html") or ""),
-            "detailed_html":   str(data.get("detailed_html") or ""),
+            "attacker_losses": data.get("attacker_losses") or (existing.attacker_losses if existing else {}),
+            "defender_losses": data.get("defender_losses") or (existing.defender_losses if existing else {}),
+            "summary_html":    str(data.get("summary_html") or (existing.summary_html if existing else "")),
+            "detailed_html":   str(data.get("detailed_html") or (existing.detailed_html if existing else "")),
         }
 
         obj, created = CombatReport.objects.update_or_create(
