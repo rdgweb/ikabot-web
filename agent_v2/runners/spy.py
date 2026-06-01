@@ -172,6 +172,7 @@ class SpyRunner(BaseRunner):
                 self._save_reports(
                     jid, client, ga_id, city_id, delete_after,
                     target_owner_id=target_owner_id,
+                    target_city_id=target_city_id,
                     safehouse_position=safehouse_position,
                 )
 
@@ -821,6 +822,7 @@ class SpyRunner(BaseRunner):
                                     jid, client, ga_id, city_id, delete_after,
                                     return_reports=True,
                                     target_owner_id=target_owner_id,
+                                    target_city_id=target_city_id,
                                     safehouse_position=safehouse_position,
                                 )
                                 succeeded = self._mission_succeeded(fresh, current_mission, target_owner)
@@ -1364,6 +1366,7 @@ class SpyRunner(BaseRunner):
     def _save_reports(self, jid, client, ga_id, city_id, delete_after,
                       return_reports: bool = False,
                       target_owner_id: str = "",
+                      target_city_id: str = "",
                       safehouse_position: int = 19) -> list:
         try:
             reports = client.get_spy_reports(city_id, position=safehouse_position)
@@ -1373,7 +1376,13 @@ class SpyRunner(BaseRunner):
                 "report_id":        r.get("report_id", ""),
                 "source_city_id":   city_id,
                 "target_owner":     r.get("target_owner", ""),
-                "target_owner_id":  target_owner_id or "",
+                # Prioriza owner_id parseado do próprio report. Fallback pro input do job
+                # SÓ se o target_city_id do report bater com o alvo do job (mesma cidade,
+                # mesmo owner). Senão deixa vazio (evita poluir reports de outros alvos).
+                "target_owner_id":  (
+                    r.get("target_owner_id")
+                    or (target_owner_id if str(r.get("target_city_id") or "") == str(target_city_id or "") else "")
+                ),
                 "target_city_id":   r.get("target_city_id", ""),
                 "target_city_name": r.get("target_city_name", ""),
                 "target_x":         r.get("target_x"),
@@ -1393,7 +1402,7 @@ class SpyRunner(BaseRunner):
                 "mission_id":       r.get("mission_id"),
                 "is_read":          r.get("is_read", not r.get("unread", False)),
             } for r in reports]
-            res = self.hub.save_spy_reports(ga_id, dicts)
+            res = self.hub.save_spy_reports(ga_id, dicts, job_id=jid)
             saved, new = res.get("saved", 0), res.get("new_count", 0)
             self.log(jid, "info", f"Relatórios: {saved} total ({new} novos)")
             if delete_after and new > 0:

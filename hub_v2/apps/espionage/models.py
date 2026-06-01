@@ -64,6 +64,15 @@ class SpyReport(UUIDTimestampModel):
     # Validade — None = sem expiração definida (relatórios antigos)
     expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
+    # Job que coletou este relatório (link clicável no histórico)
+    created_by_job = models.ForeignKey(
+        "jobs.Job",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="spy_reports",
+    )
+
     class Meta:
         ordering = ["-created_at"]
         verbose_name = "Relatório de Espionagem"

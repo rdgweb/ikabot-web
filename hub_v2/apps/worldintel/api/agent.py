@@ -380,7 +380,51 @@ class WorldSpyTargetsView(APIView):
                 player_army=Subquery(army_sq, output_field=BigIntegerField())
             ).filter(Q(player_army__isnull=True) | Q(player_army__lte=max_army_score))
 
-        cities = list(cities_qs[:limit * 3])
+        # ── Resolver source_coords antes do truncate para ordenar por proximidade ─
+        source_coords: dict[str, dict] = {}
+        source_cities_param = request.query_params.get("source_cities", "")
+        if source_cities_param:
+            sc_ids = {c.strip() for c in source_cities_param.split(",") if c.strip()}
+            try:
+                from apps.game.models import AccountSnapshot
+                for snap in AccountSnapshot.objects.all().only("cities"):
+                    if not sc_ids:
+                        break
+                    for city in (snap.cities or []):
+                        cid = str(city.get("id") or "").strip()
+                        if cid in sc_ids:
+                            source_coords[cid] = {"x": int(city.get("x") or 0), "y": int(city.get("y") or 0)}
+                            sc_ids.discard(cid)
+            except Exception:
+                pass
+            if sc_ids:
+                for sc in WorldDumpCity.objects.filter(
+                    dump=dump, game_city_id__in=sc_ids
+                ).select_related("island"):
+                    if sc.island:
+                        source_coords[sc.game_city_id] = {"x": sc.island.x, "y": sc.island.y}
+
+        # ── Ordenar por distância (anel se expandindo): proximidade SQL ─────
+        # Annotate min_dist_sq = LEAST((x-sx)² + (y-sy)²) por safehouse
+        if source_coords:
+            from django.db.models import F, Value, IntegerField
+            from django.db.models.functions import Cast, Least
+            distance_exprs = []
+            for sc in source_coords.values():
+                # Cast pra SIGNED (campos x/y são unsigned em MySQL → subtração estoura)
+                x_signed = Cast(F("island__x"), output_field=IntegerField())
+                y_signed = Cast(F("island__y"), output_field=IntegerField())
+                dx = x_signed - Value(int(sc["x"]))
+                dy = y_signed - Value(int(sc["y"]))
+                distance_exprs.append(dx * dx + dy * dy)
+            if len(distance_exprs) == 1:
+                dist_expr = distance_exprs[0]
+            else:
+                dist_expr = Least(*distance_exprs)
+            cities_qs = cities_qs.annotate(min_dist_sq=dist_expr).order_by("min_dist_sq")
+
+        # Truncate generoso pra absorver filtros subsequentes (occupied/skip_if_valid)
+        cities = list(cities_qs[:limit * 5])
 
         # ── Lock global: excluir targets com job ac=15 ativo ─────────────────
         # Garante que nenhum alvo seja espionado por duas contas simultaneamente.
@@ -488,33 +532,7 @@ class WorldSpyTargetsView(APIView):
                 )
                 cities = [c for c in cities if c.game_city_id not in has_valid]
 
-        # Resolve safehouse coordinates before truncating targets so we can
-        # prioritize by proximity on the full candidate set.
-        source_coords: dict[str, dict] = {}
-        source_cities_param = request.query_params.get("source_cities", "")
-        if source_cities_param:
-            sc_ids = {c.strip() for c in source_cities_param.split(",") if c.strip()}
-            try:
-                from apps.game.models import AccountSnapshot
-                for snap in AccountSnapshot.objects.all().only("cities"):
-                    if not sc_ids:
-                        break
-                    for city in (snap.cities or []):
-                        cid = str(city.get("id") or "").strip()
-                        if cid in sc_ids:
-                            source_coords[cid] = {"x": int(city.get("x") or 0), "y": int(city.get("y") or 0)}
-                            sc_ids.discard(cid)
-            except Exception:
-                pass
-            if sc_ids:
-                for sc in WorldDumpCity.objects.filter(
-                    dump=dump, game_city_id__in=sc_ids
-                ).select_related("island"):
-                    if sc.island:
-                        source_coords[sc.game_city_id] = {"x": sc.island.x, "y": sc.island.y}
-
-        # Deduplicate by game_city_id (safety — should not happen but guards against
-        # duplicate rows in the dump).
+        # Deduplicate by game_city_id (safety guard)
         seen_city_ids: set[str] = set()
         deduped: list = []
         for c in cities:
@@ -522,18 +540,6 @@ class WorldSpyTargetsView(APIView):
                 seen_city_ids.add(c.game_city_id)
                 deduped.append(c)
         cities = deduped
-
-        if source_coords:
-            safehouse_points = list(source_coords.values())
-            if safehouse_points:
-                def _min_dist_sq(city) -> int:
-                    if not city.island:
-                        return 10**12
-                    tx = int(city.island.x or 0)
-                    ty = int(city.island.y or 0)
-                    return min((tx - s["x"]) ** 2 + (ty - s["y"]) ** 2 for s in safehouse_points)
-
-                cities.sort(key=_min_dist_sq)
 
         cities = cities[:limit]
 

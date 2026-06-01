@@ -1678,9 +1678,15 @@ class SpyReportsAction(BaseAction):
             # Is it unread?
             report["unread"] = 'value="unread"' in header_html or 'class="espionageReports bold"' in html[max(0, html.find(f'id="message{report_id}"')):html.find(f'id="message{report_id}"')+200]
 
-            # Target owner
+            # Target owner (nome)
             m = re.search(r'class="targetOwner[^"]*"[^>]*>\s*([^<\n]+)', header_html)
             report["target_owner"] = _strip_html(m.group(1)) if m else ""
+            # Target owner ID — extrair avatarId do link próximo ao targetOwner
+            # Fallback: qualquer avatarId no header (alvo é o único avatar do header)
+            mo_id = re.search(r'class="targetOwner[^"]*"[\s\S]{0,400}?avatarId=(\d+)', header_html)
+            if not mo_id:
+                mo_id = re.search(r'avatarId=(\d+)', header_html)
+            report["target_owner_id"] = mo_id.group(1) if mo_id else ""
 
             # Target city + coords
             m2 = re.search(r'selectCity=(\d+)[^>]*>([^<]+)', header_html)

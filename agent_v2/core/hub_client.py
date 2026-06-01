@@ -556,16 +556,18 @@ class HubClient:
             params["game_account_id"] = game_account_id
         return self._get("/api/agent/espionage/intel", params=params)
 
-    def save_spy_reports(self, game_account_id: str, reports: list[dict]) -> dict:
+    def save_spy_reports(self, game_account_id: str, reports: list[dict],
+                         job_id: str | None = None) -> dict:
         """POST /api/agent/espionage/reports/
 
         Upserts a batch of spy reports captured from the safehouse.
+        job_id (opcional): vincula os reports ao Job que os capturou.
         Returns {"saved": N, "new_count": N}.
         """
-        return self._post("/api/agent/espionage/reports", {
-            "game_account_id": game_account_id,
-            "reports": reports,
-        })
+        payload = {"game_account_id": game_account_id, "reports": reports}
+        if job_id:
+            payload["job_id"] = str(job_id)
+        return self._post("/api/agent/espionage/reports", payload)
 
     def save_diplomacy_messages(self, game_account_id: str, messages: list[dict]) -> dict:
         """POST /api/agent/diplomacy/messages/

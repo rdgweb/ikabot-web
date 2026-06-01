@@ -292,6 +292,7 @@
             <th class="py-2 px-3 text-center text-muted font-semibold">Resultado</th>
             <th class="py-2 px-3 text-center text-muted font-semibold">Agentes</th>
             <th class="py-2 px-3 text-center text-muted font-semibold">Validade</th>
+            <th class="py-2 px-3 text-center text-muted font-semibold">Job</th>
             <th class="py-2 px-3 text-center text-muted font-semibold">Ver</th>
           </tr>
         </thead>
@@ -321,6 +322,17 @@
                 <span class="badge badge-secondary text-[10px]">Expirado</span>
               {% else %}
                 <span class="text-muted text-[10px]">—</span>
+              {% endif %}
+            </td>
+            <td class="py-2 px-3 text-center">
+              {% if report.created_by_job_id %}
+              <a href="{% url 'jobs:job-detail' report.created_by_job_id %}"
+                 class="text-sea hover:underline font-mono text-[10px]"
+                 title="Ver job que coletou">
+                {{ report.created_by_job_id|stringformat:"s"|slice:":8" }}
+              </a>
+              {% else %}
+                <span class="text-muted">—</span>
               {% endif %}
             </td>
             <td class="py-2 px-3 text-center">

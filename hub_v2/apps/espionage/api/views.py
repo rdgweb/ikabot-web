@@ -915,6 +915,16 @@ class SpyReportsSaveView(APIView):
         except GameAccount.DoesNotExist:
             return Response({"error": "GameAccount not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        # Job que coletou (opcional, pra linkar no histórico)
+        from apps.jobs.models import Job as JobModel
+        created_by_job = None
+        job_id_raw = request.data.get("job_id")
+        if job_id_raw:
+            try:
+                created_by_job = JobModel.objects.filter(pk=str(job_id_raw)).first()
+            except Exception:
+                created_by_job = None
+
         # Calcula expires_at com base na configuração global (default 48h)
         try:
             expiry_hours = int(AppSetting.objects.get(key="spy_report_expiry_hours").value)
@@ -928,6 +938,7 @@ class SpyReportsSaveView(APIView):
         for report_data in data["reports"]:
             defaults = {
                 "game_account": ga,
+                "created_by_job": created_by_job,
                 "source_city_id": report_data.get("source_city_id") or "",
                 "target_city_id": report_data.get("target_city_id") or "",
                 "target_city_name": report_data.get("target_city_name") or "",

@@ -161,6 +161,26 @@ def _city_prod_per_hour(city: dict[str, Any]) -> dict[str, int]:
     return out
 
 
+def _apply_local_city_resource_debit(city: dict[str, Any], costs: dict[str, int] | None) -> None:
+    if not isinstance(costs, dict):
+        return
+    city["wood"] = max(0, _to_int(city.get("wood"), 0) - _to_int(costs.get("wood"), 0))
+    city["wine"] = max(0, _to_int(city.get("wine"), 0) - _to_int(costs.get("wine"), 0))
+    city["marble"] = max(0, _to_int(city.get("marble"), 0) - _to_int(costs.get("marble"), 0))
+    city["crystal"] = max(0, _to_int(city.get("crystal"), 0) - _to_int(costs.get("glas"), 0))
+    city["sulfur"] = max(0, _to_int(city.get("sulfur"), 0) - _to_int(costs.get("sulfur"), 0))
+
+    current_resources = city.get("current_resources")
+    if not isinstance(current_resources, dict):
+        current_resources = {}
+        city["current_resources"] = current_resources
+    current_resources["0"] = city["wood"]
+    current_resources["1"] = city["wine"]
+    current_resources["2"] = city["marble"]
+    current_resources["3"] = city["crystal"]
+    current_resources["4"] = city["sulfur"]
+
+
 def _find_city(cities: list[dict[str, Any]], city_id: str) -> dict[str, Any] | None:
     for city in cities:
         if str(city.get("id")) == str(city_id):
@@ -1577,6 +1597,13 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                         "construction_end_at": _end_at,
                                     },
                                 )
+                                self._apply_snapshot_resource_debit(
+                                    job_id=jid,
+                                    ga_id=str(ga_id),
+                                    city=city,
+                                    costs=estimated_costs,
+                                    reason=f"construction_started:{building_id}",
+                                )
                             except Exception as _patch_exc:
                                 logger.debug("[%s] Snapshot patch after build failed: %s", _city_name(city), _patch_exc)
                     else:
@@ -1731,6 +1758,13 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                                     "is_upgrading": True,
                                     "construction_end_at": _end_at,
                                 },
+                            )
+                            self._apply_snapshot_resource_debit(
+                                job_id=jid,
+                                ga_id=str(ga_id),
+                                city=city,
+                                costs=(live_costs or estimated_costs),
+                                reason=f"upgrade_started:{building_id}:{current_level}->{next_level}",
                             )
                         except Exception as _patch_exc:
                             logger.debug("[%s] Snapshot patch after upgrade failed: %s", _city_name(city), _patch_exc)
@@ -1945,6 +1979,55 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             city_id=str(city.get("id") or ""),
             position=position,
             patch=patch,
+        )
+
+    def _apply_snapshot_resource_debit(
+        self,
+        *,
+        job_id: str,
+        ga_id: str,
+        city: dict[str, Any],
+        costs: dict[str, int] | None,
+        reason: str,
+    ) -> None:
+        if not ga_id or not isinstance(costs, dict):
+            return
+        if not any(_to_int(costs.get(key), 0) > 0 for key in RESOURCE_KEYS):
+            return
+
+        resource_patch = {
+            "wood": max(0, _to_int(city.get("wood"), 0) - _to_int(costs.get("wood"), 0)),
+            "wine": max(0, _to_int(city.get("wine"), 0) - _to_int(costs.get("wine"), 0)),
+            "marble": max(0, _to_int(city.get("marble"), 0) - _to_int(costs.get("marble"), 0)),
+            "crystal": max(0, _to_int(city.get("crystal"), 0) - _to_int(costs.get("glas"), 0)),
+            "sulfur": max(0, _to_int(city.get("sulfur"), 0) - _to_int(costs.get("sulfur"), 0)),
+        }
+
+        city["wood"] = resource_patch["wood"]
+        city["wine"] = resource_patch["wine"]
+        city["marble"] = resource_patch["marble"]
+        city["crystal"] = resource_patch["crystal"]
+        city["sulfur"] = resource_patch["sulfur"]
+
+        current_resources = city.get("current_resources")
+        if not isinstance(current_resources, dict):
+            current_resources = {}
+            city["current_resources"] = current_resources
+        current_resources["0"] = resource_patch["wood"]
+        current_resources["1"] = resource_patch["wine"]
+        current_resources["2"] = resource_patch["marble"]
+        current_resources["3"] = resource_patch["crystal"]
+        current_resources["4"] = resource_patch["sulfur"]
+
+        self.hub.patch_snapshot_resources(
+            game_account_id=ga_id,
+            city_id=str(city.get("id") or ""),
+            resources=resource_patch,
+        )
+        self.log(
+            job_id,
+            "debug",
+            f"Snapshot de recursos debitado: cidade={_city_name(city)} | motivo={reason} | {_format_costs(costs)}",
         )
 
     @staticmethod
@@ -2795,6 +2878,16 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             support_by_city.setdefault(target_key, _empty_resource_map())
             for field in ("wood", "wine", "marble", "crystal", "sulfur"):
                 support_by_city[target_key][field] += _to_int(payload.get(field), 0)
+        _apply_local_city_resource_debit(
+            donor,
+            {
+                "wood": _to_int(payload.get("wood"), 0),
+                "wine": _to_int(payload.get("wine"), 0),
+                "marble": _to_int(payload.get("marble"), 0),
+                "glas": _to_int(payload.get("crystal"), 0),
+                "sulfur": _to_int(payload.get("sulfur"), 0),
+            },
+        )
         return True
 
     def _get_open_construction_support(self, job_id: str) -> dict[str, dict[str, int]]:
