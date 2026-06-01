@@ -137,13 +137,26 @@ class _Army:
     def total_units_alive(self) -> int:
         return sum(self.units.values())
 
+    def _classify_promoted(self, unit_id: int) -> str:
+        """Classifica unidade considerando promoção: flancos sobe pra principal
+        se não há unidades principais (regra Ikariam — flancos fillam main vazia).
+        """
+        cls = _classify(unit_id)
+        if cls == "flancos":
+            has_principal = any(self.units.get(u, 0) > 0 for u in LINE_PRINCIPAL)
+            if not has_principal:
+                return "principal"
+        return cls
+
     def line_units(self, line: str) -> dict[int, int]:
-        """Retorna unidades em uma linha (limitado pela capacidade)."""
+        """Retorna unidades em uma linha (limitado pela capacidade).
+        Aplica promoção: flancos sobem pra principal se principal vazia.
+        """
         cap = _line_capacity(self.field_level, line) if line != "bagagem" else 10**9
         result: dict[int, int] = {}
         used = 0
         for uid, qty in self.units.items():
-            if _classify(uid) != line:
+            if self._classify_promoted(uid) != line:
                 continue
             available = max(0, cap - used)
             if available <= 0:
@@ -161,21 +174,27 @@ class _Army:
         return int((self.upgrades.get(uid) or {}).get("defensive", 0))
 
     def line_dps(self, line: str, weapon_index: int = 0) -> tuple[float, int]:
-        """DPS total da linha (com upgrades) + número de unidades efetivas (com munição)."""
+        """DPS total da linha (com upgrades) + número de unidades efetivas (com munição).
+        Quando ammo zera, unidade usa weapon[0] (corpo-a-corpo) — Ikariam real.
+        """
         line_units = self.line_units(line)
         dps = 0.0
         active = 0
         for uid, qty in line_units.items():
-            # ammo check
-            if uid in self.ammo_left:
+            actual_weapon = weapon_index
+            # ammo check — só relevante pra weapon_index >= 1 (arma com ammo)
+            if uid in self.ammo_left and weapon_index >= 1:
                 shots_left = self.ammo_left[uid]
                 if shots_left <= 0:
-                    continue
-                effective_qty = min(qty, shots_left)
-                self.ammo_left[uid] = shots_left - effective_qty
+                    # Sem ammo → cai pro corpo-a-corpo (weapon[0]) com dano bem menor
+                    actual_weapon = 0
+                    effective_qty = qty
+                else:
+                    effective_qty = min(qty, shots_left)
+                    self.ammo_left[uid] = shots_left - effective_qty
             else:
                 effective_qty = qty
-            dmg = _damage_per_unit(uid, weapon_index, self._off_level(uid))
+            dmg = _damage_per_unit(uid, actual_weapon, self._off_level(uid))
             dps += effective_qty * dmg
             active += effective_qty
         return dps, active
@@ -232,7 +251,7 @@ def simulate_land_battle(
     defender_upgrades: dict[int, dict] | None = None,
     town_hall_level: int = 1,
     wall_level: int = 15,
-    max_rounds: int = 50,
+    max_rounds: int = 12,
 ) -> dict[str, Any]:
     """Simula batalha terrestre round-by-round.
 
@@ -351,6 +370,10 @@ def simulate_land_battle(
             att.apply_damage_to_line("flancos", int(dfn_fl_dps))
 
         # ── Critério de fim ─
+        # Real Ikariam: batalha termina quando um lado fica sem PRINCIPAL (incl. flancos
+        # promovidos). Sem main, exército sem proteção e bate em retirada.
+        att_principal = sum(att.line_units("principal").values())
+        dfn_principal = sum(dfn.line_units("principal").values())
         att_combat = sum(att.units.get(u, 0) for u in (
             list(LINE_PRINCIPAL) + list(LINE_FLANCOS) + list(LINE_LONGA)
             + list(LINE_ARTILH) + list(LINE_BOMB) + list(LINE_AA)
@@ -359,8 +382,17 @@ def simulate_land_battle(
             list(LINE_PRINCIPAL) + list(LINE_FLANCOS) + list(LINE_LONGA)
             + list(LINE_ARTILH) + list(LINE_BOMB) + list(LINE_AA)
         ))
+        # Sem main de nenhum lado → empate
         if att_combat == 0 and dfn_combat == 0:
             winner = "draw"
+            break
+        # Atacante sem principal/flancos (sem main promovida) = retira
+        if att_principal == 0:
+            winner = "defender"
+            break
+        # Defensor sem principal (e sem flancos pra promover) = exército quebra
+        if dfn_principal == 0:
+            winner = "attacker"
             break
         if att_combat == 0:
             winner = "defender"
@@ -455,19 +487,37 @@ def recommend_attack_force(
     field = _field_level_from_th(town_hall_level)
     principal_cap = _line_capacity(field, "principal")
 
-    def _prune_flancos_if_principal_unfilled(force: dict[int, int]) -> dict[int, int]:
-        """Se principal não enche, remove flancos (eles viram frontline e morrem fácil)."""
-        principal_qty = sum(force.get(u, 0) for u in LINE_PRINCIPAL)
+    # Regras (preferência do usuário):
+    # 1. Hoplita preferido sobre Gigante — Gigante só se Hoplita não chega na cap
+    # 2. Flanco só com principal cheia
+    # 3. Balão só se defensor tem Balão (Balão é lento, dobra viagem)
+    # 4. Carabineiro/Fundeiro/Arqueiro (longa) só se útil
+    defender_has_bomb = any(defender_units.get(u, 0) > 0 for u in LINE_BOMB)
+
+    def _apply_preferences(force: dict[int, int]) -> dict[int, int]:
+        out = dict(force)
+        # Regra 3: Balão só se inimigo tem Balão (Balão é lento, dobra viagem)
+        if not defender_has_bomb:
+            for u in LINE_BOMB:
+                out.pop(u, None)
+        # Regra 1: Hoplita preferido — se Hop disponível ≥ principal_cap, remove Gigante.
+        # NÃO força mais Hop; deixa o bottom-up encontrar a quantidade mínima.
+        hop_avail = available_units.get(303, 0)
+        if hop_avail >= principal_cap:
+            out.pop(308, None)
+        # Regra 2: flanco só com principal cheia
+        principal_qty = sum(out.get(u, 0) for u in LINE_PRINCIPAL)
         if principal_qty < principal_cap:
-            return {u: q for u, q in force.items() if u not in LINE_FLANCOS}
-        return force
+            for u in LINE_FLANCOS:
+                out.pop(u, None)
+        return {u: q for u, q in out.items() if q > 0}
 
     # Bottom-up: menor força que vence com perdas aceitáveis
-    best_recommended = dict(available_units)
+    best_recommended = _apply_preferences(dict(available_units))
     best_sim = full
     for factor in (0.05, 0.10, 0.20, 0.35, 0.50, 0.70):
         scaled = {uid: max(1, int(qty * factor)) for uid, qty in available_units.items() if qty > 0}
-        scaled = _prune_flancos_if_principal_unfilled(scaled)
+        scaled = _apply_preferences(scaled)
         sim = simulate_land_battle(
             scaled, defender_units,
             attacker_upgrades=attacker_upgrades,
@@ -480,9 +530,6 @@ def recommend_attack_force(
             best_recommended = scaled
             best_sim = sim
             break
-
-    # Sanity final: aplica prune também na recomendação 100%-fallback
-    best_recommended = _prune_flancos_if_principal_unfilled(best_recommended)
 
     return {
         "can_win": True,

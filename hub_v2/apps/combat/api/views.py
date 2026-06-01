@@ -104,3 +104,97 @@ class CombatReportSaveView(APIView):
             {"ok": True, "combat_report_id": str(obj.pk), "created": created},
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
+
+
+class CombatRecommendView(APIView):
+    """POST /api/agent/combat/recommend/
+
+    Fonte única de simulação de combate. Usa apps.espionage.services.battle_land
+    (mesmo simulador do alerta Telegram).
+
+    Payload:
+        enemy_units:        {"303": 162, ...} ou {303: 162, ...}
+        available_units:    {"303": 100, ...} (tropas disponíveis no atacante)
+        wall_level:         int (default 15)
+        town_hall_level:    int (default 1) — define field slots
+        attacker_upgrades:  {unit_id: {offensive: N, defensive: N}}
+        defender_upgrades:  {unit_id: {offensive: N, defensive: N}}
+        max_loss_pct:       float (default 30.0)
+        reserve_pct:        float (default 50.0) — % extra além do mínimo (linha+reserva)
+
+    Resposta:
+        {
+            "can_win": bool,
+            "recommended": {unit_id: qty},
+            "simulation": {winner, rounds, attacker_survivors_pct, ...}
+        }
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request):
+        from apps.espionage.services.battle_land import recommend_attack_force
+
+        def _coerce_units(raw) -> dict:
+            return {int(k): int(v) for k, v in (raw or {}).items() if int(v or 0) > 0}
+
+        def _coerce_upgrades(raw) -> dict:
+            out = {}
+            for k, v in (raw or {}).items():
+                if isinstance(v, dict):
+                    out[int(k)] = {
+                        "offensive": int(v.get("offensive", 0) or 0),
+                        "defensive": int(v.get("defensive", 0) or 0),
+                    }
+            return out
+
+        try:
+            enemy_units = _coerce_units(request.data.get("enemy_units"))
+            available = _coerce_units(request.data.get("available_units"))
+        except (TypeError, ValueError) as exc:
+            return Response({"error": f"invalid units: {exc}"}, status=status.HTTP_400_BAD_REQUEST)
+
+        wall_level       = int(request.data.get("wall_level") or 15)
+        town_hall_level  = int(request.data.get("town_hall_level") or 1)
+        attacker_upgrades = _coerce_upgrades(request.data.get("attacker_upgrades"))
+        defender_upgrades = _coerce_upgrades(request.data.get("defender_upgrades"))
+        max_loss_pct     = float(request.data.get("max_loss_pct") or 30.0)
+        reserve_pct      = float(request.data.get("reserve_pct") or 25.0)
+
+        rec = recommend_attack_force(
+            available_units=available,
+            defender_units=enemy_units,
+            attacker_upgrades=attacker_upgrades,
+            defender_upgrades=defender_upgrades,
+            town_hall_level=town_hall_level,
+            wall_level=wall_level,
+            max_loss_pct=max_loss_pct,
+        )
+
+        # Aplica reserva: envia linha+reserva (default 50% extra) clampado ao disponível
+        recommended_raw = rec.get("recommended") or {}
+        if reserve_pct > 0 and recommended_raw:
+            multiplier = 1.0 + (reserve_pct / 100.0)
+            recommended = {}
+            for uid, qty in recommended_raw.items():
+                have = available.get(uid, 0)
+                recommended[uid] = min(have, int(qty * multiplier))
+            rec["recommended"] = recommended
+
+        # Sanitiza pra JSON (keys int → str)
+        sim = rec.get("simulation") or {}
+        return Response({
+            "can_win":     bool(rec.get("can_win")),
+            "recommended": {str(k): v for k, v in (rec.get("recommended") or {}).items()},
+            "simulation": {
+                "winner":               sim.get("winner"),
+                "rounds":               sim.get("rounds"),
+                "field_level":          sim.get("field_level"),
+                "attacker_survivors_pct": sim.get("attacker_survivors_pct"),
+                "defender_survivors_pct": sim.get("defender_survivors_pct"),
+                "attacker_losses":      {str(k): v for k, v in (sim.get("attacker_losses") or {}).items()},
+                "defender_losses":      {str(k): v for k, v in (sim.get("defender_losses") or {}).items()},
+            },
+            "note": rec.get("note", ""),
+        })

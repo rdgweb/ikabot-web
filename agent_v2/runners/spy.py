@@ -81,6 +81,7 @@ class SpyRunner(BaseRunner):
         delete_after     = bool(inputs.get("delete_after_save", False))
         recall_after     = bool(inputs.get("recall_after", True))
         inputs = {**inputs, "__ga_id": ga_id}
+        last_action_job_id = str(inputs.get("__last_action_job_id") or "").strip()
         safehouse_position = self._resolve_safehouse_position(jid, ga_id, city_id, inputs)
         inputs["safehouse_position"] = safehouse_position
 
@@ -173,6 +174,7 @@ class SpyRunner(BaseRunner):
                     jid, client, ga_id, city_id, delete_after,
                     target_owner_id=target_owner_id,
                     target_city_id=target_city_id,
+                    action_job_id=last_action_job_id,
                     safehouse_position=safehouse_position,
                 )
 
@@ -421,7 +423,11 @@ class SpyRunner(BaseRunner):
                         self.log(jid, "info", f"Infiltração enviada. Retorno estimado em {wait}s.")
                         self.save_game_client(ga_id, client)
                         return RunnerResult(success=True, reschedule_seconds=wait,
-                            reschedule_inputs={**inputs, "__recovery": _rec(phase="done")})
+                            reschedule_inputs={
+                                **inputs,
+                                "__last_action_job_id": jid,
+                                "__recovery": _rec(phase="done"),
+                            })
                 self.log(jid, "warn",
                     f"Infiltração impossível com {available} disponíveis e risco≤{eff_risk}%.")
                 self.save_game_client(ga_id, client)
@@ -643,7 +649,7 @@ class SpyRunner(BaseRunner):
 
                     self.save_game_client(ga_id, client)
                     return RunnerResult(success=True, reschedule_seconds=wait_total,
-                        reschedule_inputs={**inputs, "__recovery": _rec(
+                        reschedule_inputs={**inputs, "__last_action_job_id": jid if ok else last_action_job_id, "__recovery": _rec(
                             phase="accumulating",
                             missions_pending=missions_pending,
                             missions_done=missions_done,
@@ -823,6 +829,7 @@ class SpyRunner(BaseRunner):
                                     return_reports=True,
                                     target_owner_id=target_owner_id,
                                     target_city_id=target_city_id,
+                                    action_job_id=jid,
                                     safehouse_position=safehouse_position,
                                 )
                                 succeeded = self._mission_succeeded(fresh, current_mission, target_owner)
@@ -889,7 +896,7 @@ class SpyRunner(BaseRunner):
                                             "result_status":    "Pulado (risco excessivo)",
                                             "status":           "skipped",
                                             "report_text":      f"Missão {mname} pulada após {MAX_RETRIES} tentativas por risco > {max_risk}%.",
-                                        }])
+                                        }], action_job_id=jid)
                                     except Exception as _e:
                                         self.log(jid, "warn", f"Falha ao salvar report de missão pulada: {_e}")
 
@@ -903,7 +910,7 @@ class SpyRunner(BaseRunner):
 
                             self.save_game_client(ga_id, client)
                             return RunnerResult(success=True, reschedule_seconds=post_risk_wait,
-                                reschedule_inputs={**inputs, "__recovery": _rec(
+                                reschedule_inputs={**inputs, "__last_action_job_id": jid, "__recovery": _rec(
                                     phase=next_phase,
                                     missions_pending=missions_pending,
                                     missions_done=missions_done,
@@ -943,7 +950,7 @@ class SpyRunner(BaseRunner):
                         self.log(jid, "info", f"Recall enviado. Espiões retornam em ~{wait}s.")
                         self.save_game_client(ga_id, client)
                         return RunnerResult(success=True, reschedule_seconds=wait,
-                            reschedule_inputs={**inputs, "__recovery": _rec(
+                            reschedule_inputs={**inputs, "__last_action_job_id": jid, "__recovery": _rec(
                                 phase="done", missions_done=missions_done)})
                     self.log(jid, "warn", f"Recall falhou: {msg}. Tentando em 10min.")
                     self.save_game_client(ga_id, client)
@@ -1367,6 +1374,7 @@ class SpyRunner(BaseRunner):
                       return_reports: bool = False,
                       target_owner_id: str = "",
                       target_city_id: str = "",
+                      action_job_id: str = "",
                       safehouse_position: int = 19) -> list:
         try:
             reports = client.get_spy_reports(city_id, position=safehouse_position)
@@ -1402,7 +1410,12 @@ class SpyRunner(BaseRunner):
                 "mission_id":       r.get("mission_id"),
                 "is_read":          r.get("is_read", not r.get("unread", False)),
             } for r in reports]
-            res = self.hub.save_spy_reports(ga_id, dicts, job_id=jid)
+            res = self.hub.save_spy_reports(
+                ga_id,
+                dicts,
+                job_id=jid,
+                action_job_id=(action_job_id or None),
+            )
             saved, new = res.get("saved", 0), res.get("new_count", 0)
             self.log(jid, "info", f"Relatórios: {saved} total ({new} novos)")
             if delete_after and new > 0:

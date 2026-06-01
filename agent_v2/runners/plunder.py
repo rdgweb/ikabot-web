@@ -141,7 +141,24 @@ class RaidCityRunner(BaseRunner):
 
         available = self._get_available_units(jid, snap, source_city_id)
         if not units:
-            units = self._auto_calculate_units(jid, inputs, available)
+            # Viagem 2+: cidade já foi limpa na 1ª — força mínima (30 Hop + 6 Mort)
+            # Apenas pra carregar mais saque e manter pressão sobre muralha.
+            if trips_done > 0:
+                units = {}
+                hop = available.get(303, 0)
+                mort = available.get(305, 0)
+                if hop > 0:
+                    units[303] = min(hop, 30)
+                if mort > 0:
+                    units[305] = min(mort, 6)
+                if not units:
+                    self.log(jid, "warn", "[Raid] Viagem 2+: sem 30 Hop/6 Mort. Recalc.")
+                    units = self._auto_calculate_units(jid, inputs, available)
+                else:
+                    self.log(jid, "info",
+                        f"[Raid] Viagem {trips_done+1}: força mínima (cidade já limpa): {units}")
+            else:
+                units = self._auto_calculate_units(jid, inputs, available)
             if not units:
                 self.log(jid, "error", "[Raid] Sem tropas para enviar.")
                 return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE)
@@ -547,26 +564,53 @@ class RaidCityRunner(BaseRunner):
                      f"[Raid] Sem intel. Usando disponíveis (siege+frente): {result}")
             return result
 
-        rec = recommend_army(
-            enemy_units,
-            wall_level=wall_level,
-            available_units=available,
-        )
-        self.log(jid, "info",
-                 f"[Raid] Força recomendada: {rec['recommended']} "
-                 f"({'vitória estimada' if rec['can_win_with_recommended'] else 'RISCO'}) "
-                 f"HP restante: {rec['battle_estimate']['surviving_hp_pct']:.0f}%")
+        # Se inputs já trouxeram recommended_units (passado pelo callback Telegram
+        # via _create_raid_job), usa direto — evita re-calcular e diverge da simulação.
+        rec_from_input = inputs.get("recommended_units") or {}
+        if rec_from_input:
+            result = {int(uid): min(int(qty), available.get(int(uid), 0))
+                      for uid, qty in rec_from_input.items() if int(qty) > 0}
+            self.log(jid, "info",
+                     f"[Raid] Usando recomendação do callback: {result}")
+            return {k: v for k, v in result.items() if v > 0}
 
-        if rec.get("missing_units"):
+        # Senão, chama hub pra usar fonte única (battle_land.recommend_attack_force)
+        town_hall_level = _parse_int(inputs.get("city_level"), 1)
+        atk_up = inputs.get("attacker_upgrades") or {}
+        dfn_up = inputs.get("defender_upgrades") or {}
+        try:
+            r = self.hub.recommend_combat_force(
+                enemy_units=enemy_units,
+                available_units=available,
+                wall_level=wall_level,
+                town_hall_level=town_hall_level,
+                attacker_upgrades=atk_up,
+                defender_upgrades=dfn_up,
+            )
+            sim = r.get("simulation") or {}
+            self.log(jid, "info",
+                f"[Raid] Recomendação hub: {r.get('recommended')} "
+                f"({'vitória' if r.get('can_win') else 'RISCO'}) "
+                f"rounds={sim.get('rounds')} sobrevive={sim.get('attacker_survivors_pct')}%")
+            result = {int(uid): min(int(qty), available.get(int(uid), 0))
+                      for uid, qty in (r.get("recommended") or {}).items() if int(qty) > 0}
+            return {k: v for k, v in result.items() if v > 0}
+        except Exception as exc:
             self.log(jid, "warn",
-                     f"[Raid] Unidades insuficientes: {rec['missing_units']}")
-
-        # Clamp to available
-        result = {}
-        for uid, qty in rec["recommended"].items():
-            have = available.get(uid, 0)
-            result[uid] = min(qty, have)
-        return {k: v for k, v in result.items() if v > 0}
+                f"[Raid] Falha recommend hub ({exc}). Fallback: siege+frente.")
+            # Fallback mínimo — siege + frente
+            result: dict = {}
+            for uid in (305, 306, 307):
+                have = available.get(uid, 0)
+                if have > 0:
+                    result[uid] = min(have, 20)
+                    break
+            for uid in (303, 308):
+                have = available.get(uid, 0)
+                if have > 0:
+                    result[uid] = result.get(uid, 0) + min(have, 50)
+                    break
+            return result
 
     def _auto_select_source_city(
         self, jid: str, snap: dict, explicit_units: dict, inputs: dict
@@ -697,6 +741,11 @@ class RaidCityRunner(BaseRunner):
                     except Exception as exc:
                         self.log(jid, "warn", f"[Raid] Falha ao salvar relatório no hub: {exc}")
 
+                # Propagar resultado real do relatório pro caller decidir
+                # vitória vs derrota — antes só checava no fallback de exceção.
+                detail["combat_id"] = combat_id
+                detail["result"] = r.get("result", "")
+                detail["army_lost"] = (r.get("result") == "defeat")
                 return detail
         return None
 

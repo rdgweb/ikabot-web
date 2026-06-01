@@ -410,6 +410,33 @@ class HubClient:
             params["source_cities"] = ",".join(source_cities)
         return self._get("/api/agent/worldintel/spy-targets", params=params)
 
+    def recommend_combat_force(
+        self,
+        *,
+        enemy_units: dict,
+        available_units: dict,
+        wall_level: int = 15,
+        town_hall_level: int = 1,
+        attacker_upgrades: dict | None = None,
+        defender_upgrades: dict | None = None,
+        max_loss_pct: float = 30.0,
+        reserve_pct: float = 25.0,
+    ) -> dict:
+        """POST /api/agent/combat/recommend/ — fonte única de simulação.
+        Mesma lógica do Telegram (battle_land.recommend_attack_force).
+        Retorna {can_win, recommended, simulation, note}.
+        """
+        return self._post("/api/agent/combat/recommend", {
+            "enemy_units":       {str(k): v for k, v in (enemy_units or {}).items()},
+            "available_units":   {str(k): v for k, v in (available_units or {}).items()},
+            "wall_level":        wall_level,
+            "town_hall_level":   town_hall_level,
+            "attacker_upgrades": attacker_upgrades or {},
+            "defender_upgrades": defender_upgrades or {},
+            "max_loss_pct":      max_loss_pct,
+            "reserve_pct":       reserve_pct,
+        }) or {}
+
     def save_combat_report(self, game_account_id: str, report: dict) -> dict:
         """POST /api/agent/combat/reports/ — save/update a combat report.
 
@@ -556,8 +583,13 @@ class HubClient:
             params["game_account_id"] = game_account_id
         return self._get("/api/agent/espionage/intel", params=params)
 
-    def save_spy_reports(self, game_account_id: str, reports: list[dict],
-                         job_id: str | None = None) -> dict:
+    def save_spy_reports(
+        self,
+        game_account_id: str,
+        reports: list[dict],
+        job_id: str | None = None,
+        action_job_id: str | None = None,
+    ) -> dict:
         """POST /api/agent/espionage/reports/
 
         Upserts a batch of spy reports captured from the safehouse.
@@ -567,6 +599,8 @@ class HubClient:
         payload = {"game_account_id": game_account_id, "reports": reports}
         if job_id:
             payload["job_id"] = str(job_id)
+        if action_job_id:
+            payload["action_job_id"] = str(action_job_id)
         return self._post("/api/agent/espionage/reports", payload)
 
     def save_diplomacy_messages(self, game_account_id: str, messages: list[dict]) -> dict:

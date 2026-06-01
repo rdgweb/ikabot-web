@@ -366,13 +366,23 @@
                 {% if report.decoys_sent > 0 %}
                 <div class="mt-1"><i class="bi bi-person-dash mr-1"></i>{{ report.decoys_sent }} iscas</div>
                 {% endif %}
+                {% if report.action_job_id %}
+                <div class="mt-1">
+                  <i class="bi bi-crosshair2 mr-1"></i>
+                  <a href="{% url 'jobs:job-detail' report.action_job_id %}"
+                     class="text-sea hover:underline font-mono"
+                     title="Ver job que executou a missão">
+                    ação {{ report.action_job_id|stringformat:"s"|slice:":8" }}
+                  </a>
+                </div>
+                {% endif %}
                 {% if report.created_by_job_id %}
                 <div class="mt-1">
                   <i class="bi bi-link-45deg mr-1"></i>
                   <a href="{% url 'jobs:job-detail' report.created_by_job_id %}"
                      class="text-sea hover:underline font-mono"
                      title="Ver job que coletou este relatório">
-                    job {{ report.created_by_job_id|stringformat:"s"|slice:":8" }}
+                    leitura {{ report.created_by_job_id|stringformat:"s"|slice:":8" }}
                   </a>
                 </div>
                 {% endif %}

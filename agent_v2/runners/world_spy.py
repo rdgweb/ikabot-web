@@ -116,6 +116,11 @@ class WorldSpyRunner(BaseRunner):
         raid_source_city     = str(inputs.get("raid_source_city_id") or "").strip()
         raid_transporters    = _parse_int(inputs.get("raid_transporters"), 0)
         raid_max_trips       = _parse_int(inputs.get("raid_max_trips"), 5)
+        spied_player_ids: set[str] = set(inputs.get("__spied_player_ids") or [])
+        claimed_targets_raw = inputs.get("__claimed_targets") or {}
+        claimed_targets: dict[str, dict[str, Any]] = (
+            dict(claimed_targets_raw) if isinstance(claimed_targets_raw, dict) else {}
+        )
 
         # ── Inbox: notificações de filhos acumuladas ──────────────────────────
         progress: dict = job.get("progress") or {}
@@ -130,6 +135,8 @@ class WorldSpyRunner(BaseRunner):
                 cok   = entry.get("success", "?")
                 mdone = entry.get("missions_done", [])
                 mfail = entry.get("missions_failed", [])
+                if ctgt and ctgt in claimed_targets:
+                    claimed_targets.pop(ctgt, None)
                 self.log(jid, "info",
                          f"[WorldSpy]   ↳ job={cid} src={csrc} tgt={ctgt} "
                          f"success={cok} done={mdone} fail={mfail}")
@@ -170,10 +177,6 @@ class WorldSpyRunner(BaseRunner):
         recall_after       = bool(inputs.get("recall_after", True))
         save_reports       = bool(inputs.get("save_reports", True))
         delete_after_save  = bool(inputs.get("delete_after_save", False))
-
-        # Jogadores que já receberam missões player-scope neste ciclo.
-        # Persiste entre fallbacks via inputs do reschedule.
-        spied_player_ids: set[str] = set(inputs.get("__spied_player_ids") or [])
 
         # Parse missions e separar por escopo
         mission_ids: list[int] = []
@@ -249,6 +252,15 @@ class WorldSpyRunner(BaseRunner):
                  f"safehouses ocupadas={len(busy_sources)}/{len(city_entries)} "
                  f"livres={len(free_entries)}")
 
+        if claimed_targets and not busy_sources:
+            claimed_targets.clear()
+
+        if claimed_targets:
+            targets = [
+                t for t in targets
+                if str(t.get("game_city_id") or "").strip() not in claimed_targets
+            ]
+
         # ── Ciclo completo? ───────────────────────────────────────────────────
         if not targets and not busy_sources:
             self.log(jid, "info", "[WorldSpy] ✓ Ciclo completo. Sem alvos e sem filhos ativos. Encerrando.")
@@ -259,6 +271,7 @@ class WorldSpyRunner(BaseRunner):
         # root.progress_json["current_runner_id"] = novo_fallback.
         # Filhos notificam o root (ID estável) → hub acorda o fallback correto.
         projected_spied_player_ids = set(spied_player_ids)
+        projected_claimed_targets = dict(claimed_targets)
         if has_player_scope and free_entries and targets:
             projected_free_slots = len(free_entries)
             projected_dispatched: set[str] = set()
@@ -269,14 +282,34 @@ class WorldSpyRunner(BaseRunner):
                 if not projected_city_id or projected_city_id in projected_dispatched:
                     continue
                 projected_missing = _parse_mission_list(target.get("missing_missions")) or mission_ids
+                projected_owner_key = ""
                 if any(m in PLAYER_SCOPE_MISSIONS for m in projected_missing):
                     projected_owner_key = _owner_scope_key(
                         str(target.get("owner_id") or "").strip(),
                         str(target.get("owner_name") or "").strip(),
                     )
-                    if projected_owner_key:
-                        projected_spied_player_ids.add(projected_owner_key)
+                if projected_owner_key:
+                    projected_spied_player_ids.add(projected_owner_key)
                 projected_dispatched.add(projected_city_id)
+                projected_claimed_targets[projected_city_id] = {
+                    "target_city_name": str(target.get("city_name") or ""),
+                    "target_owner": str(target.get("owner_name") or ""),
+                }
+                projected_free_slots -= 1
+        elif free_entries and targets:
+            projected_free_slots = len(free_entries)
+            projected_dispatched: set[str] = set()
+            for target in targets:
+                if projected_free_slots <= 0:
+                    break
+                projected_city_id = str(target.get("game_city_id") or "").strip()
+                if not projected_city_id or projected_city_id in projected_dispatched:
+                    continue
+                projected_dispatched.add(projected_city_id)
+                projected_claimed_targets[projected_city_id] = {
+                    "target_city_name": str(target.get("city_name") or ""),
+                    "target_owner": str(target.get("owner_name") or ""),
+                }
                 projected_free_slots -= 1
 
         try:
@@ -286,6 +319,7 @@ class WorldSpyRunner(BaseRunner):
                 inputs={
                     "__campaign_root_id": root_id,
                     "__spied_player_ids": sorted(projected_spied_player_ids),
+                    "__claimed_targets": projected_claimed_targets,
                 },
             )
             next_jid = resp_next.get("new_job_id", "")
@@ -387,6 +421,12 @@ class WorldSpyRunner(BaseRunner):
                 )
                 spawned += 1
                 dispatched_cities.add(target_city_id)
+                claimed_targets[target_city_id] = {
+                    "target_city_name": str(target.get("city_name") or ""),
+                    "target_owner": str(target.get("owner_name") or ""),
+                    "source_city_id": source_city,
+                    "child_job_id": str(resp.get("new_job_id") or ""),
+                }
                 child_jid = resp.get("new_job_id", "?")
                 scope_tag = "city+player" if any(m in PLAYER_SCOPE_MISSIONS for m in effective_missions) else "city"
                 self.log(jid, "info",
@@ -396,6 +436,7 @@ class WorldSpyRunner(BaseRunner):
             except Exception as exc:
                 skipped += 1
                 remaining_free.append(source_entry)
+                claimed_targets.pop(target_city_id, None)
                 self.log(jid, "warn",
                          f"[WorldSpy] Falha ao criar job para {target.get('city_name')}: {exc}")
 
@@ -408,6 +449,21 @@ class WorldSpyRunner(BaseRunner):
         # Não depende do inbox — pega todos reports válidos do server e dispara
         # alertas para cidades acima do threshold que ainda não foram alertadas
         # (ou que têm report novo desde último alerta).
+        if next_jid:
+            try:
+                self.hub.reschedule_job(
+                    next_jid,
+                    delay_seconds=FALLBACK_DELAY,
+                    inputs={
+                        "__campaign_root_id": root_id,
+                        "__spied_player_ids": sorted(spied_player_ids),
+                        "__claimed_targets": claimed_targets,
+                    },
+                )
+            except Exception as exc:
+                self.log(jid, "warn",
+                         f"[WorldSpy] Falha ao sincronizar claims do fallback {str(next_jid)[:8]}: {exc}")
+
         if raid_alert_enabled:
             try:
                 result = self.hub.scan_raid_alerts(

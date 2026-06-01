@@ -72,6 +72,13 @@ class SpyReport(UUIDTimestampModel):
         blank=True,
         related_name="spy_reports",
     )
+    action_job = models.ForeignKey(
+        "jobs.Job",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="spy_action_reports",
+    )
 
     class Meta:
         ordering = ["-created_at"]

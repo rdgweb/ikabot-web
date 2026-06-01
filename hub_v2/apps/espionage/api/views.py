@@ -918,12 +918,19 @@ class SpyReportsSaveView(APIView):
         # Job que coletou (opcional, pra linkar no histórico)
         from apps.jobs.models import Job as JobModel
         created_by_job = None
-        job_id_raw = request.data.get("job_id")
+        action_job = None
+        job_id_raw = data.get("job_id") or request.data.get("job_id")
         if job_id_raw:
             try:
                 created_by_job = JobModel.objects.filter(pk=str(job_id_raw)).first()
             except Exception:
                 created_by_job = None
+        action_job_id_raw = data.get("action_job_id") or request.data.get("action_job_id")
+        if action_job_id_raw:
+            try:
+                action_job = JobModel.objects.filter(pk=str(action_job_id_raw)).first()
+            except Exception:
+                action_job = None
 
         # Calcula expires_at com base na configuração global (default 48h)
         try:
@@ -939,6 +946,7 @@ class SpyReportsSaveView(APIView):
             defaults = {
                 "game_account": ga,
                 "created_by_job": created_by_job,
+                "action_job": action_job,
                 "source_city_id": report_data.get("source_city_id") or "",
                 "target_city_id": report_data.get("target_city_id") or "",
                 "target_city_name": report_data.get("target_city_name") or "",
@@ -970,8 +978,13 @@ class SpyReportsSaveView(APIView):
 
             if not created:
                 for field, value in defaults.items():
+                    if field == "action_job" and obj.action_job_id:
+                        continue
                     setattr(obj, field, value)
-                update_fields = list(defaults.keys()) + ["updated_at"]
+                update_fields = [
+                    field for field in defaults.keys()
+                    if field != "action_job" or not obj.action_job_id
+                ] + ["updated_at"]
                 obj.save(update_fields=update_fields)
             else:
                 new_count += 1

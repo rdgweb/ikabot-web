@@ -1287,18 +1287,34 @@ class FetchCombatReportDetailAction(BaseAction):
             if isinstance(gd, dict) and "actionRequest" in gd:
                 self.client._action_request = gd["actionRequest"]
 
+        # Estrutura: changeView body é lista [view_name, html, ...]. O 1º item é
+        # o nome da view (curto); o 2º+ é o HTML real. Pegamos o maior item que
+        # contém marcadores HTML — evita o bug de salvar só "militaryAdvisorReportView".
         html = ""
         for entry in data:
-            if isinstance(entry, list) and entry[0] in ("changeHTML", "changeView"):
-                items = entry[1] if isinstance(entry[1], list) else [entry[1]]
-                for item in items:
-                    if isinstance(item, str) and ("troopsReport" in item or "militaryAdvisorReportView" in item):
-                        html = item
-                        break
+            if not (isinstance(entry, list) and entry[0] in ("changeHTML", "changeView")):
+                continue
+            items = entry[1] if isinstance(entry[1], list) else [entry[1]]
+            for item in items:
+                if isinstance(item, str) and len(item) > 200 and ("<div" in item or "<table" in item):
+                    if "troopsReport" in item or "militaryAdvisorReportView" in item or 'class="winners' in item:
+                        if len(item) > len(html):
+                            html = item
 
-        # Parse attacker / defender
-        att_m = re.search(r'class="attacker[^"]*"[^>]*>.*?<span>([^<]+)</span>', html, re.DOTALL)
-        def_m = re.search(r'class="defender[^"]*"[^>]*>.*?<span>([^<]+)</span>', html, re.DOTALL)
+        # Parse attacker / defender — <span> contém <b><a> etc, então capturamos
+        # tudo até </span> e depois extraímos só o nome principal.
+        def _name_from_span(span_inner: str) -> str:
+            # "BlackShadow701 de <b><a>...</a></b>" → "BlackShadow701"
+            # ou "<a>Melkor545[PLC]</a> de <b><a>...</a></b>" → "Melkor545[PLC]"
+            first_a = re.search(r'<a[^>]*>([^<]+)</a>', span_inner)
+            if first_a:
+                return first_a.group(1).strip()
+            return re.sub(r'<[^>]+>', '', span_inner).split(" de ")[0].strip()
+
+        att_m = re.search(r'class="attacker[^"]*"[^>]*>.*?<span>([\s\S]*?)</span>', html, re.DOTALL)
+        def_m = re.search(r'class="defender[^"]*"[^>]*>.*?<span>([\s\S]*?)</span>', html, re.DOTALL)
+        attacker_name = _name_from_span(att_m.group(1)) if att_m else ""
+        defender_name = _name_from_span(def_m.group(1)) if def_m else ""
 
         # Parse winner / loser
         winner_m = re.search(r'class="winners headline"[^>]*>.*?Vencedores:\s*<br\s*/>([^<]+)<', html, re.DOTALL)
@@ -1335,8 +1351,8 @@ class FetchCombatReportDetailAction(BaseAction):
         return {
             "combat_id":  combat_id,
             "date":       date_str,
-            "attacker":   att_m.group(1).strip() if att_m else "",
-            "defender":   def_m.group(1).strip() if def_m else "",
+            "attacker":   attacker_name,
+            "defender":   defender_name,
             "winner":     winner_m.group(1).strip() if winner_m else "",
             "loser":      loser_m.group(1).strip() if loser_m else "",
             "loot":       loot,
@@ -1362,10 +1378,14 @@ class FetchCombatDetailedReportAction(BaseAction):
                   <div class="number center"> {qty} (-{lost})
     """
 
-    def execute(self, city_id: int, combat_id: int, max_rounds: int = 20, **kwargs) -> dict:
+    def execute(self, city_id: int, combat_id: int, max_rounds: int = 100, **kwargs) -> dict:
+        """Itera todos os rounds reais. max_rounds=100 é só guarda de loop infinito —
+        para quando todos os N rounds (descobertos do HTML "Round X / N") foram vistos."""
         rounds_html: list[dict] = []
         attacker_losses: dict[str, int] = {}
         defender_losses: dict[str, int] = {}
+        seen_rounds: set[int] = set()
+        total_rounds_known = 0  # descoberto no primeiro response
 
         for round_num in range(max_rounds):
             resp = self.client._request(
@@ -1393,22 +1413,38 @@ class FetchCombatDetailedReportAction(BaseAction):
                 if isinstance(gd, dict) and "actionRequest" in gd:
                     self.client._action_request = gd["actionRequest"]
 
+            # Mesmo bug do summary: 1º item de changeView é só o nome da view.
+            # HTML real está em items[1+]. Pegamos o maior item com tags HTML.
             html = ""
             for entry in data:
-                if isinstance(entry, list) and entry[0] in ("changeHTML", "changeView"):
-                    items = entry[1] if isinstance(entry[1], list) else [entry[1]]
-                    for item in items:
-                        if isinstance(item, str) and "militaryAdvisorDetailedReportView" in item:
-                            html = item
-                            break
+                if not (isinstance(entry, list) and entry[0] in ("changeHTML", "changeView")):
+                    continue
+                items = entry[1] if isinstance(entry[1], list) else [entry[1]]
+                for item in items:
+                    if isinstance(item, str) and len(item) > 200 and ("<div" in item or "<table" in item):
+                        if "militaryAdvisorDetailedReportView" in item or "battlefield" in item or 'id="slot' in item:
+                            if len(item) > len(html):
+                                html = item
 
-            if not html or "militaryAdvisorDetailedReportView" not in html:
+            if not html or "battlefield" not in html:
                 break
 
             # Parse total rounds from "Round N / M"
             total_m = re.search(r"Round\s*<br\s*/>\s*(\d+)\s*/\s*(\d+)", html)
-            total_rounds = int(total_m.group(2)) if total_m else round_num + 1
-            current_round = int(total_m.group(1)) if total_m else round_num + 1
+            if total_m:
+                current_round = int(total_m.group(1))
+                total_rounds_known = int(total_m.group(2))
+            else:
+                current_round = round_num + 1
+
+            # Servidor pode retornar mesmo round se combatRound for inválido (fallback).
+            # Pulamos duplicados pra não somar perdas duas vezes.
+            if current_round in seen_rounds:
+                # Já vimos todos os rounds reais → sair.
+                if total_rounds_known > 0 and len(seen_rounds) >= total_rounds_known:
+                    break
+                continue
+            seen_rounds.add(current_round)
 
             # Parse slot losses: class="slot army_small normal s{unit_id}"
             # followed by <div class="number center"> N (-lost)
@@ -1421,7 +1457,6 @@ class FetchCombatDetailedReportAction(BaseAction):
             ):
                 side   = slot_m.group(1)
                 uid    = slot_m.group(2)
-                # qty  = int(slot_m.group(3).replace(",",""))
                 lost   = int(slot_m.group(4).replace(",", ""))
                 if lost > 0:
                     target = attacker_losses if side == ATTACKER_FIELD else defender_losses
@@ -1429,7 +1464,8 @@ class FetchCombatDetailedReportAction(BaseAction):
 
             rounds_html.append({"round": current_round, "html": html})
 
-            if current_round >= total_rounds:
+            # Vimos todos os rounds reais? Encerra.
+            if total_rounds_known > 0 and len(seen_rounds) >= total_rounds_known:
                 break
 
         combined = "\n<!-- ROUND SEPARATOR -->\n".join(r["html"] for r in rounds_html)

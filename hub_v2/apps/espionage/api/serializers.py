@@ -32,4 +32,6 @@ class _SpyReportSerializer(serializers.Serializer):
 
 class SpyReportsSaveSerializer(serializers.Serializer):
     game_account_id = serializers.UUIDField()
+    job_id = serializers.UUIDField(required=False, allow_null=True)
+    action_job_id = serializers.UUIDField(required=False, allow_null=True)
     reports = _SpyReportSerializer(many=True)

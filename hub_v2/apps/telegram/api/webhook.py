@@ -112,6 +112,60 @@ def _create_raid_job(
     if source_city_id:
         inputs["source_city_id"] = source_city_id
 
+    # Pré-calcular força recomendada (mesmo simulador do alerta) e passar pro runner.
+    # Evita que o runner recalcule com fórmula diferente e mande tropas erradas.
+    if enemy_units and source_city_id:
+        try:
+            from apps.espionage.api.views import _parse_enemy_intel, _choose_raid_account
+            enemy_intel = _parse_enemy_intel(target_city_id, "", ga.server_id)
+            # Reusa _choose_raid_account com filtro = só GA escolhida → traz recommended
+            # Simples: chama o recommend direto.
+            from apps.espionage.services.battle_land import recommend_attack_force
+            from apps.game.models import AccountSnapshot
+            snap = AccountSnapshot.objects.filter(game_account=ga).first()
+            available: dict[int, int] = {}
+            if snap:
+                military = snap.military or {}
+                bc = military.get("by_city") if isinstance(military, dict) else None
+                troops_raw = {}
+                if isinstance(bc, list):
+                    for c in bc:
+                        if str(c.get("city_id")) == str(source_city_id):
+                            troops_raw = c.get("troops") or {}
+                            break
+                for k, v in (troops_raw or {}).items():
+                    try:
+                        available[int(k)] = int(v)
+                    except (TypeError, ValueError):
+                        pass
+            if available:
+                # Upgrades próprios do atacante (mission 26 own, base_snapshot.unit_improvements)
+                own_upgrades_raw = (snap.base_snapshot or {}).get("unit_improvements") if snap else None
+                own_upgrades: dict = {}
+                if isinstance(own_upgrades_raw, dict):
+                    for k, v in own_upgrades_raw.items():
+                        if str(k).isdigit() and isinstance(v, dict):
+                            own_upgrades[int(k)] = v
+                rec = recommend_attack_force(
+                    available_units=available,
+                    defender_units=enemy_units,
+                    attacker_upgrades=own_upgrades,
+                    defender_upgrades=enemy_intel.get("enemy_upgrades") or {},
+                    town_hall_level=enemy_intel.get("city_level") or 1,
+                    wall_level=enemy_wall_level,
+                )
+                rec_units = rec.get("recommended") or {}
+                # Aplica reserva 25% (margem de segurança)
+                rec_with_reserve = {}
+                for uid, qty in rec_units.items():
+                    have = available.get(uid, 0)
+                    rec_with_reserve[str(uid)] = min(have, int(qty * 1.25))
+                if rec_with_reserve:
+                    inputs["recommended_units"] = rec_with_reserve
+                inputs["city_level"] = enemy_intel.get("city_level") or 1
+        except Exception as exc:
+            logger.warning("Failed to precompute recommended_units: %s", exc)
+
     # Blockade: calcular frota mínima a partir do snapshot da source city
     if needs_blockade and source_city_id:
         try:
