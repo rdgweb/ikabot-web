@@ -797,12 +797,33 @@ class MilitaryMovementsUpdateView(APIView):
     authentication_classes = [AgentTokenAuthentication]
     permission_classes = [IsAgent]
 
+    def get(self, request):
+        from apps.accounts.models import GameAccount
+        from apps.game.models import AccountSnapshot
+
+        ga_id = str(request.query_params.get("game_account_id") or "").strip()
+        if not ga_id:
+            return Response({"error": "game_account_id required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            ga = GameAccount.objects.get(pk=ga_id)
+        except GameAccount.DoesNotExist:
+            return Response({"error": "GameAccount not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        snap = AccountSnapshot.objects.filter(game_account=ga).first()
+        return Response({
+            "ok": True,
+            "game_account_id": ga_id,
+            "movements": (snap.movements if snap else {}) or {},
+        })
+
     def post(self, request):
         from apps.accounts.models import GameAccount
         from apps.game.models import AccountSnapshot
 
         ga_id = str(request.data.get("game_account_id") or "").strip()
         movements = request.data.get("movements") or {}
+        probe_key = str(request.data.get("probe_key") or "").strip()
         if not ga_id:
             return Response({"error": "game_account_id required."}, status=status.HTTP_400_BAD_REQUEST)
         if not isinstance(movements, dict):
@@ -817,6 +838,14 @@ class MilitaryMovementsUpdateView(APIView):
             game_account=ga,
             defaults={"account": ga.account},
         )
-        snap.movements = movements
+        current = dict(snap.movements or {})
+        current.update(movements)
+        if probe_key:
+            probes = current.get("probes") or {}
+            if not isinstance(probes, dict):
+                probes = {}
+            probes[probe_key] = movements
+            current["probes"] = probes
+        snap.movements = current
         snap.save(update_fields=["movements", "updated_at"])
         return Response({"ok": True})

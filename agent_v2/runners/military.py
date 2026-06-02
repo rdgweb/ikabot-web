@@ -1043,6 +1043,7 @@ class MilitaryMovementsRunner(BaseRunner):
         aid = job["account_id"]
         ga_id = job.get("game_account_id") or ""
         inputs = job.get("inputs") or {}
+        probe_key = str(inputs.get("probe_key") or "").strip()
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
         if not creds:
@@ -1101,7 +1102,7 @@ class MilitaryMovementsRunner(BaseRunner):
                 "occupied_ports_html": advisor.get("occupied_ports_html") or "",
             }
             try:
-                self.hub.update_military_movements(ga_id, movements)
+                self.hub.update_military_movements(ga_id, movements, probe_key=probe_key)
             except Exception as exc:
                 self.log(jid, "warn", f"Falha ao salvar movimentos no hub: {exc}")
 

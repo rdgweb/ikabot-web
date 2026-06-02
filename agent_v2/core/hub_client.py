@@ -478,15 +478,34 @@ class HubClient:
             payload["game_account_id"] = game_account_id
         return self._post("/api/agent/worldintel/cities/update-state", payload)
 
-    def update_military_movements(self, game_account_id: str, movements: dict) -> dict:
+    def update_military_movements(
+        self,
+        game_account_id: str,
+        movements: dict,
+        *,
+        probe_key: str = "",
+    ) -> dict:
         """POST /api/agent/military-movements/ — persist military advisor state."""
         try:
-            return self._post("/api/agent/military-movements", {
+            payload = {
                 "game_account_id": game_account_id,
                 "movements": movements,
-            })
+            }
+            if probe_key:
+                payload["probe_key"] = probe_key
+            return self._post("/api/agent/military-movements", payload)
         except Exception as e:
             logger.warning("Failed to update military movements: %s", e)
+            return {}
+
+    def get_military_movements(self, game_account_id: str) -> dict:
+        """GET /api/agent/military-movements/?game_account_id=<uuid>."""
+        try:
+            return self._get("/api/agent/military-movements", {
+                "game_account_id": game_account_id,
+            })
+        except Exception as e:
+            logger.warning("Failed to get military movements: %s", e)
             return {}
 
     def scan_raid_alerts(

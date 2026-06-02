@@ -29,7 +29,7 @@ Inputs:
     max_trips               int  — limite de viagens
     min_resources_to_continue int — parar se recursos < X
     # Internos (gerenciados pelo runner)
-    _phase                  str  — "send" | "check_battle"
+    _phase                  str  — "send" | "check_battle" | "wait_movements"
     _trips_done             int  — contador de viagens
     _travel_seconds         int  — ETA em segundos (calculado na 1ª viagem)
     _eta_timestamp          str  — "DD.MM.YYYY H:MM:SS" do advisor
@@ -99,6 +99,8 @@ class RaidCityRunner(BaseRunner):
 
         if phase == "check_battle":
             return self._phase_check_battle(jid, ga_id, aid, inputs)
+        elif phase == "wait_movements":
+            return self._phase_wait_movements(jid, ga_id, aid, inputs)
         elif phase == "wait_blockade":
             return self._phase_wait_blockade(jid, ga_id, aid, inputs)
         elif phase == "recall_fleet":
@@ -182,6 +184,22 @@ class RaidCityRunner(BaseRunner):
         transporters = _parse_int(inputs.get("transporters"), 0)
         if transporters <= 0:
             transporters = self._get_transporters(snap, source_city_id, client=client, jid=jid)
+        if trips_done > 0 and transporters <= 0:
+            self.log(
+                jid,
+                "info",
+                "[Raid] Viagem seguinte sem mercantes livres. "
+                "Sincronizando com movimentos antes de tentar novo saque.",
+            )
+            return self._schedule_wait_movements(
+                jid=jid,
+                ga_id=ga_id,
+                inputs=inputs,
+                source_city_id=source_city_id,
+                target_city_id=target_city_id,
+                trips_done=trips_done,
+                delay_seconds=90,
+            )
 
         # Blockade PRIMEIRO (se configurado) — sempre na primeira viagem.
         # Não depende de enemy_fleet — se needs_blockade=True, vai bloquear.
@@ -247,6 +265,22 @@ class RaidCityRunner(BaseRunner):
             )
         except Exception as exc:
             self.log(jid, "error", f"[Raid] Plunder falhou: {exc}")
+            if trips_done > 0 and "barcos de comércio não têm espaço suficiente" in str(exc).lower():
+                self.log(
+                    jid,
+                    "info",
+                    "[Raid] Falha por falta de mercantes na viagem seguinte. "
+                    "Migrando para sincronização por movimentos.",
+                )
+                return self._schedule_wait_movements(
+                    jid=jid,
+                    ga_id=ga_id,
+                    inputs=inputs,
+                    source_city_id=source_city_id,
+                    target_city_id=target_city_id,
+                    trips_done=trips_done,
+                    delay_seconds=90,
+                )
             return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE)
 
         # ETA das tropas — vem do retorno do plunder_land (parseado do form ANTES do envio)
@@ -470,9 +504,17 @@ class RaidCityRunner(BaseRunner):
         max_trips = _parse_int(inputs.get("max_trips"), 10)
         if multi_trip and trips_done < max_trips and ships_full:
             self.log(jid, "info",
-                     f"[Raid] Navios cheios ({total_loot:,}). Enviando nova viagem ({trips_done+1}/{max_trips}).")
-            next_inputs = {**inputs, "_phase": "send", "_trips_done": trips_done}
-            return RunnerResult(success=True, reschedule_seconds=60, reschedule_inputs=next_inputs)
+                     f"[Raid] Navios cheios ({total_loot:,}). "
+                     f"Sincronizando com movimentos antes da próxima viagem ({trips_done+1}/{max_trips}).")
+            return self._schedule_wait_movements(
+                jid=jid,
+                ga_id=ga_id,
+                inputs=inputs,
+                source_city_id=source_city_id,
+                target_city_id=target_city_id,
+                trips_done=trips_done,
+                delay_seconds=90,
+            )
 
         self.log(jid, "info",
                  f"[Raid] Concluído. {trips_done} viagem(ns). "
@@ -489,6 +531,75 @@ class RaidCityRunner(BaseRunner):
             )
 
         return RunnerResult(success=True)
+
+    def _phase_wait_movements(self, jid: str, ga_id: str, aid: str, inputs: dict) -> RunnerResult:
+        source_city_id = str(inputs.get("_movement_source_city_id") or inputs.get("_source_city_id") or inputs.get("source_city_id") or "").strip()
+        target_city_id = str(inputs.get("_movement_target_city_id") or inputs.get("target_city_id") or "").strip()
+        movements_resp = self.hub.get_military_movements(ga_id) or {}
+        movements = movements_resp.get("movements") or {}
+        probe_key = str(inputs.get("_movement_probe_key") or "").strip()
+        if probe_key:
+            probes = movements.get("probes") or {}
+            if isinstance(probes, dict) and isinstance(probes.get(probe_key), dict):
+                movements = probes.get(probe_key) or movements
+
+        secs = self._find_returning_plunder_seconds(
+            movements=movements,
+            source_city_id=source_city_id,
+            target_city_id=target_city_id,
+        )
+        if secs > 60:
+            self.log(
+                jid,
+                "info",
+                f"[Raid] Movimentos confirmam saque carregando/voltando. "
+                f"Próxima viagem em {secs//60}min {secs%60}s.",
+            )
+            next_inputs = {**inputs, "_phase": "send"}
+            return RunnerResult(
+                success=True,
+                reschedule_seconds=int(secs + RETURN_BUFFER_SECONDS),
+                reschedule_inputs=next_inputs,
+            )
+
+        self.log(
+            jid,
+            "info",
+            "[Raid] Movimento de retorno não encontrado ou já encerrado. "
+            "Tentando nova viagem em 60s.",
+        )
+        next_inputs = {**inputs, "_phase": "send"}
+        return RunnerResult(success=True, reschedule_seconds=60, reschedule_inputs=next_inputs)
+
+    def _schedule_wait_movements(
+        self,
+        *,
+        jid: str,
+        ga_id: str,
+        inputs: dict,
+        source_city_id: str,
+        target_city_id: str,
+        trips_done: int,
+        delay_seconds: int = 90,
+    ) -> RunnerResult:
+        try:
+            self.hub.spawn_job(
+                jid,
+                action_code=13,
+                inputs={"city_id": source_city_id, "probe_key": jid},
+                game_account_id=ga_id,
+            )
+        except Exception as exc:
+            self.log(jid, "warn", f"[Raid] Falha ao spawnar movimentos (13): {exc}")
+        next_inputs = {
+            **inputs,
+            "_phase": "wait_movements",
+            "_trips_done": trips_done,
+            "_movement_source_city_id": source_city_id,
+            "_movement_target_city_id": target_city_id,
+            "_movement_probe_key": jid,
+        }
+        return RunnerResult(success=True, reschedule_seconds=delay_seconds, reschedule_inputs=next_inputs)
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -733,6 +844,55 @@ class RaidCityRunner(BaseRunner):
             return max(0, int(diff))
         except Exception:
             return 0
+
+    def _find_returning_plunder_seconds(
+        self,
+        *,
+        movements: dict,
+        source_city_id: str,
+        target_city_id: str,
+    ) -> int:
+        import time as _time
+
+        details = movements.get("movement_details") or []
+        if not isinstance(details, list):
+            return 0
+
+        now_ts = int(_time.time())
+        best = 0
+        for md in details:
+            if not isinstance(md, dict):
+                continue
+            mission_text = str(md.get("mission_text") or "").lower()
+            mission = str(md.get("mission") or "").lower()
+            is_plunder = (
+                "plunder" in mission
+                or "saque" in mission_text
+                or "pilhag" in mission_text
+            )
+            if not is_plunder or not md.get("is_returning"):
+                continue
+
+            origin = md.get("origin") or {}
+            target = md.get("target") or {}
+            origin_cid = str(origin.get("id") or origin.get("cityId") or "")
+            target_cid = str(target.get("id") or target.get("cityId") or "")
+            pair = {origin_cid, target_cid}
+            expected = {str(source_city_id), str(target_city_id)}
+            if pair != expected:
+                continue
+
+            event_time = md.get("event_time")
+            try:
+                secs = max(0, int(float(event_time)) - now_ts)
+            except Exception:
+                secs = 0
+            if secs <= 0:
+                event_date = str(md.get("event_date") or "").strip()
+                secs = self._parse_eta_to_seconds(event_date) if event_date else 0
+            if secs > 0 and (best == 0 or secs < best):
+                best = secs
+        return best
 
     def _find_latest_combat_report(
         self, jid: str, client, source_city_id: str, target_city_id: str,
