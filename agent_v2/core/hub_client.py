@@ -161,6 +161,21 @@ class HubClient:
             params["city_ids"] = ",".join(str(city_id).strip() for city_id in city_ids if str(city_id).strip())
         return self._get(f"/api/agent/game-accounts/{game_account_id}/construction-reservations", params=params)
 
+    def get_login_cooldown(self, *, game_account_id: str) -> dict:
+        return self._get(f"/api/agent/game-accounts/{game_account_id}/login-cooldown")
+
+    def record_login_400(self, *, game_account_id: str, reason: str = "") -> dict:
+        return self._post(
+            f"/api/agent/game-accounts/{game_account_id}/login-cooldown",
+            {"mode": "record_400", "reason": reason},
+        )
+
+    def clear_login_cooldown(self, *, game_account_id: str) -> dict:
+        return self._post(
+            f"/api/agent/game-accounts/{game_account_id}/login-cooldown",
+            {"mode": "clear"},
+        )
+
     def sync_construction_reservations(
         self,
         *,

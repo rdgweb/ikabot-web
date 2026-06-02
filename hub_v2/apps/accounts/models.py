@@ -194,6 +194,22 @@ class GameAccount(UUIDTimestampModel):
         help_text="When the cached session was last saved by the agent",
     )
 
+    # Login cooldown / anti-rate-limit state
+    login_blocked_until = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text="Temporary login cooldown after repeated loginLink 400 responses.",
+    )
+    login_block_backoff_hours = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Current consecutive loginLink 400 backoff in hours.",
+    )
+    login_block_reason = models.TextField(
+        blank=True,
+        default="",
+        help_text="Last login-block reason reported by the agent.",
+    )
+
     class Meta:
         ordering = ["account", "server_id"]
         constraints = [

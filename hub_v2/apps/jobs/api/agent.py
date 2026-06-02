@@ -19,6 +19,7 @@ from apps.accounts.models import GameAccount
 from apps.jobs.models import ConstructionResourceReservation, Job, JobLog
 from apps.jobs.services.workflows import create_job_with_workflow
 from apps.market.services import reconcile_internal_order_for_job
+from apps.telegram.services.notifications import notify
 from core.auth.backends import AgentTokenAuthentication
 from core.auth.permissions import IsAgent
 from apps.settings_app.utils import get_int_setting
@@ -52,6 +53,18 @@ def _normalize_json_object(raw) -> dict:
     if not isinstance(parsed, dict):
         return {}
     return parsed
+
+
+def _serialize_login_block_state(ga: GameAccount) -> dict:
+    blocked_until = ga.login_blocked_until
+    active = bool(blocked_until and blocked_until > timezone.now())
+    return {
+        "game_account_id": str(ga.pk),
+        "active": active,
+        "blocked_until": blocked_until.isoformat() if blocked_until else "",
+        "backoff_hours": int(ga.login_block_backoff_hours or 0),
+        "reason": ga.login_block_reason or "",
+    }
 
 
 class JobStatusView(APIView):
@@ -133,6 +146,76 @@ class JobStatusView(APIView):
                 {"ok": True, "job_id": str(job.pk), "status": job.status}
             ).data
         )
+
+
+class GameAccountLoginCooldownView(APIView):
+    """GET/POST /api/agent/game-accounts/<uuid:game_account_id>/login-cooldown/."""
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def get(self, request, game_account_id):
+        try:
+            ga = GameAccount.objects.select_related("account", "account__node").get(pk=game_account_id)
+        except GameAccount.DoesNotExist:
+            return Response({"error": "GameAccount not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"ok": True, **_serialize_login_block_state(ga)}, status=status.HTTP_200_OK)
+
+    def post(self, request, game_account_id):
+        mode = str(request.data.get("mode") or "").strip().lower()
+        reason = str(request.data.get("reason") or "").strip()
+        if mode not in {"record_400", "clear"}:
+            return Response({"error": "invalid_mode"}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            try:
+                ga = GameAccount.objects.select_for_update().select_related("account", "account__node").get(pk=game_account_id)
+            except GameAccount.DoesNotExist:
+                return Response({"error": "GameAccount not found."}, status=status.HTTP_404_NOT_FOUND)
+
+            if mode == "clear":
+                ga.login_blocked_until = None
+                ga.login_block_backoff_hours = 0
+                ga.login_block_reason = ""
+                ga.save(update_fields=[
+                    "login_blocked_until",
+                    "login_block_backoff_hours",
+                    "login_block_reason",
+                    "updated_at",
+                ])
+                return Response({"ok": True, **_serialize_login_block_state(ga)}, status=status.HTTP_200_OK)
+
+            prev_hours = int(ga.login_block_backoff_hours or 0)
+            next_hours = max(1, prev_hours + 1)
+            now = timezone.now()
+            ga.login_block_backoff_hours = next_hours
+            ga.login_blocked_until = now + timedelta(hours=next_hours)
+            ga.login_block_reason = reason[:4000]
+            ga.save(update_fields=[
+                "login_blocked_until",
+                "login_block_backoff_hours",
+                "login_block_reason",
+                "updated_at",
+            ])
+
+        if prev_hours < 8 <= next_hours:
+            try:
+                notify(
+                    event_key="job_failed",
+                    game_account=ga,
+                    account=ga.account,
+                    node=ga.account.node,
+                    title="Login temporariamente bloqueado",
+                    body=(
+                        f"{ga.name or ga.server_id} entrou em backoff de login por {next_hours}h.\n"
+                        f"Bloqueado até: {ga.login_blocked_until:%d/%m/%Y %H:%M:%S}\n"
+                        f"Motivo: {reason or 'loginLink 400'}"
+                    ),
+                )
+            except Exception:
+                logger.warning("Failed to notify login block for game account %s", ga.pk, exc_info=True)
+
+        return Response({"ok": True, **_serialize_login_block_state(ga)}, status=status.HTTP_200_OK)
 
 
 class JobLogView(APIView):

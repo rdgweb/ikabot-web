@@ -12,6 +12,7 @@ from core.config import settings
 from core.hub_client import HubClient
 from core.runner_registry import get_runner
 from sessions import SessionManager
+from sessions.game_session_service import LoginCooldownActive
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,21 @@ def execute_job_payload(job: dict, sessions: SessionManager, proxy_url: str = ""
                     return
                 raise
             logger.info("Job %s completed (success=%s)", job_id, result.success)
+        except LoginCooldownActive as exc:
+            try:
+                if heartbeat is not None:
+                    heartbeat.stop()
+            except Exception:
+                pass
+            logger.warning("Job %s: login cooldown ativo â€” reagendando em %ss", job_id, exc.delay_seconds)
+            hub.report_log(job_id, "warn", str(exc))
+            try:
+                hub.reschedule_job(job_id, exc.delay_seconds)
+                hub.report_log(job_id, "info", f"Rescheduled in {exc.delay_seconds}s")
+                hub.report_status(job_id, status="error", exit_code=1, agent=settings.agent_name)
+            except Exception:
+                pass
+            return
         except Exception as exc:
             try:
                 if heartbeat is not None:

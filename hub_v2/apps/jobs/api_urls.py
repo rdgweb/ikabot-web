@@ -5,6 +5,7 @@ from .api.agent import (
     ConstructionReservationSyncView,
     ConstructionReservationsView,
     ConstructionSupportView,
+    GameAccountLoginCooldownView,
     JobLogView,
     JobStatusReadView,
     NotifyParentView,
@@ -26,6 +27,7 @@ urlpatterns = [
     path("jobs/<uuid:job_id>/construction-support/", ConstructionSupportView.as_view(), name="construction-support"),
     path("jobs/<uuid:job_id>/construction-reservations/sync/", ConstructionReservationSyncView.as_view(), name="construction-reservations-sync"),
     path("game-accounts/<uuid:game_account_id>/construction-reservations/", ConstructionReservationsView.as_view(), name="construction-reservations"),
+    path("game-accounts/<uuid:game_account_id>/login-cooldown/", GameAccountLoginCooldownView.as_view(), name="login-cooldown"),
     path("jobs/<uuid:job_id>/notify/", NotifyParentView.as_view(), name="notify"),
     path("jobs/active-spy-targets/", ActiveSpyTargetsView.as_view(), name="active-spy-targets"),
 ]
