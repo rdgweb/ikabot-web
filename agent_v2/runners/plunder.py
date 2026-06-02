@@ -702,26 +702,27 @@ class RaidCityRunner(BaseRunner):
         wall_level  = _parse_int(inputs.get("wall_level"), 1)
 
         if not enemy_units:
-            # Sem intel — usar o que tem disponível.
-            # SEMPRE incluir: 1) artilharia para muralha + 2) linha de frente (Hoplita/Gigante)
+            # Intel completa/ausência de tropas detectadas:
+            # usar um lote mínimo conservador, não todo o disponível.
+            # Padrão desejado: 6 morteiros/catapulta/aríete + 50 linha de frente.
             result: dict[int, int] = {}
 
-            # Artilharia (siege) — pega o que tiver, na ordem de prioridade
+            # Artilharia (siege) — lote mínimo
             for uid in (305, 306, 307):  # Morteiro, Catapulta, Ariete
                 have = available.get(uid, 0)
                 if have > 0:
-                    result[uid] = have
+                    result[uid] = min(have, 6)
                     break
 
-            # Linha de frente — OBRIGATÓRIA (Hoplita preferido, Gigante, Espadachim)
+            # Linha de frente — OBRIGATÓRIA, com teto conservador de 30
             for uid in (303, 308, 302, 315):
                 have = available.get(uid, 0)
                 if have > 0:
-                    result[uid] = result.get(uid, 0) + have
+                    result[uid] = result.get(uid, 0) + min(have, 30)
                     break
 
             self.log(jid, "warn",
-                     f"[Raid] Sem intel. Usando disponíveis (siege+frente): {result}")
+                     f"[Raid] Sem tropas detectadas. Usando lote mínimo (siege+frente): {result}")
             return result
 
         # Se inputs já trouxeram recommended_units (passado pelo callback Telegram
