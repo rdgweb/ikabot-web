@@ -114,14 +114,22 @@ class UpdateSnapshotView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        base_snapshot = data["base_snapshot"]
+        base_snapshot = dict(data["base_snapshot"] or {})
         cities = data["cities"]
         military = data.get("military", {})
         source_job_id = data.get("source_job_id")
 
-        # Upsert current snapshot
         from django.utils import timezone as _tz
         lookup = {"game_account": game_account} if game_account else {"account": account, "game_account__isnull": True}
+        existing_snapshot = AccountSnapshot.objects.filter(**lookup).first()
+        existing_base_snapshot = dict(getattr(existing_snapshot, "base_snapshot", {}) or {})
+
+        # Preserve incremental fields populated by specialized runners when a full
+        # check_status payload does not include them.
+        if "unit_improvements" not in base_snapshot and existing_base_snapshot.get("unit_improvements"):
+            base_snapshot["unit_improvements"] = existing_base_snapshot["unit_improvements"]
+
+        # Upsert current snapshot
         snapshot, created = AccountSnapshot.objects.update_or_create(
             **lookup,
             defaults={

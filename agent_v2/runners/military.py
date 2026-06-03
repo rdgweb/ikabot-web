@@ -196,6 +196,11 @@ class UpgradeUnitsRunner(BaseRunner):
                 self.log(jid, "info", f"[{city_name}] Verificando Oficina do Inventor (pos={position})")
                 change_current_city(client, city_id)
                 state = client.get_workshop_state(city_id, position)
+                city_snapshot = self._get_city_snapshot(snapshot, city_id)
+                current_crystal = _to_int(
+                    (city_snapshot.get("resources") or {}).get("crystal"),
+                    _to_int(city_snapshot.get("crystal"), 0),
+                )
 
                 # ── Collect current improvement levels from this workshop ──
                 _collect_improvement_levels(state.get("improvements") or [], accumulated_levels)
@@ -230,7 +235,14 @@ class UpgradeUnitsRunner(BaseRunner):
 
                 # ── Find first eligible improvement ──
                 chosen = self._pick_improvement(
-                    improvements, unit_filter, target_all, min_crystal, city_name, jid, priority_mode,
+                    improvements,
+                    unit_filter,
+                    target_all,
+                    min_crystal,
+                    current_crystal,
+                    city_name,
+                    jid,
+                    priority_mode,
                 )
 
                 if chosen is None:
@@ -338,6 +350,7 @@ class UpgradeUnitsRunner(BaseRunner):
         unit_filter: dict[str, dict[str, int | None]],
         target_all: bool,
         min_crystal: int,
+        current_crystal: int,
         city_name: str,
         job_id: str,
         priority_mode: str,
@@ -354,10 +367,13 @@ class UpgradeUnitsRunner(BaseRunner):
 
             # Crystal reserve check
             if min_crystal > 0 and imp_crystal > 0:
-                # We don't know current crystal from workshop state; skip this check
-                # if crystal_cost > 0 and reserve is set — the runner will log a warning
-                # but proceed (the game will reject it if truly insufficient).
-                pass
+                if current_crystal - imp_crystal < min_crystal:
+                    self.log(
+                        job_id, "info",
+                        f"[{city_name}] {imp_name} — cristal insuficiente para manter reserva "
+                        f"({current_crystal} - {imp_crystal} < {min_crystal}); pulando",
+                    )
+                    continue
 
             # Unit filter
             if not target_all and unit_filter:
@@ -478,6 +494,18 @@ class UpgradeUnitsRunner(BaseRunner):
         except Exception as exc:
             self.log(job_id, "warn", f"Nao foi possivel obter snapshot: {exc}")
             return None
+
+    @staticmethod
+    def _get_city_snapshot(snapshot: dict[str, Any], city_id: int) -> dict[str, Any]:
+        cities = snapshot.get("cities") or []
+        if isinstance(cities, dict):
+            cities = list(cities.values())
+        for city in cities:
+            if not isinstance(city, dict):
+                continue
+            if _to_int(city.get("id"), 0) == int(city_id):
+                return city
+        return {}
 
     def _ensure_status_refresh(self, job_id: str) -> None:
         """Spawn a check_status job if one is not already running."""
