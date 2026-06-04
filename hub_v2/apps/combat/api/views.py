@@ -196,6 +196,30 @@ class CombatRecommendView(APIView):
                 recommended[uid] = min(have, int(qty * multiplier))
             rec["recommended"] = recommended
 
+        # Piso rígido para saque terrestre: se houver linha/siege disponível,
+        # nunca recomendar menos que 30 frente + 6 cerco.
+        recommended_final = dict(rec.get("recommended") or {})
+        if available:
+            current_front = sum(int(recommended_final.get(uid, 0) or 0) for uid in (303, 308, 302, 315))
+            current_siege = sum(int(recommended_final.get(uid, 0) or 0) for uid in (305, 306, 307))
+            if current_front < 30:
+                for uid in (303, 308, 302, 315):
+                    have = int(available.get(uid, 0) or 0)
+                    if have > 0:
+                        extra_needed = 30 - current_front
+                        recommended_final[uid] = min(have, int(recommended_final.get(uid, 0) or 0) + extra_needed)
+                        current_front = sum(int(recommended_final.get(x, 0) or 0) for x in (303, 308, 302, 315))
+                        break
+            if current_siege < 6:
+                for uid in (305, 306, 307):
+                    have = int(available.get(uid, 0) or 0)
+                    if have > 0:
+                        extra_needed = 6 - current_siege
+                        recommended_final[uid] = min(have, int(recommended_final.get(uid, 0) or 0) + extra_needed)
+                        current_siege = sum(int(recommended_final.get(x, 0) or 0) for x in (305, 306, 307))
+                        break
+        rec["recommended"] = {uid: qty for uid, qty in recommended_final.items() if int(qty or 0) > 0}
+
         # Sanitiza pra JSON (keys int → str)
         sim = rec.get("simulation") or {}
         return Response({
@@ -209,6 +233,7 @@ class CombatRecommendView(APIView):
                 "defender_survivors_pct": sim.get("defender_survivors_pct"),
                 "attacker_losses":      {str(k): v for k, v in (sim.get("attacker_losses") or {}).items()},
                 "defender_losses":      {str(k): v for k, v in (sim.get("defender_losses") or {}).items()},
+                "details":              sim.get("details") or {},
             },
             "note": rec.get("note", ""),
         })

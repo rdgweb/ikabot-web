@@ -83,6 +83,31 @@ def _parse_int(value, default=0) -> int:
 class RaidCityRunner(BaseRunner):
     """Ataca e saqueia cidade inimiga. Máquina de estados via Military Advisor."""
 
+    def _log_simulation_rounds(self, jid: str, sim: dict | None) -> None:
+        sim = sim or {}
+        details = sim.get("details") or {}
+        rounds = details.get("rounds") or []
+        if not isinstance(rounds, list) or not rounds:
+            return
+        self.log(
+            jid,
+            "info",
+            f"[Raid][Sim] winner={sim.get('winner')} rounds={sim.get('rounds')} "
+            f"survive={sim.get('attacker_survivors_pct')}% field={sim.get('field_level')}",
+        )
+        for item in rounds:
+            if not isinstance(item, dict):
+                continue
+            self.log(
+                jid,
+                "info",
+                "[Raid][Sim] "
+                f"R{item.get('round')}: "
+                f"A P={item.get('attacker_principal', 0)} F={item.get('attacker_flanks', 0)} "
+                f"D P={item.get('defender_principal', 0)} F={item.get('defender_flanks', 0)} "
+                f"wall={item.get('wall_hp', 0)}",
+            )
+
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid    = job["job_id"]
         aid    = str(job.get("account_id") or "").strip()
@@ -406,6 +431,24 @@ class RaidCityRunner(BaseRunner):
 
         # Se ainda tem batalha ativa → reagendar +15min (ciclo de batalha)
         if has_battle:
+            try:
+                partial_report = self._find_latest_combat_report(
+                    jid,
+                    client,
+                    source_city_id,
+                    target_city_id,
+                    ga_id=ga_id,
+                )
+                if partial_report:
+                    self.log(
+                        jid,
+                        "info",
+                        "[Raid] Relatório parcial atualizado durante a batalha: "
+                        f"combatId={partial_report.get('combat_id')} "
+                        f"rounds={partial_report.get('rounds') or 0}",
+                    )
+            except Exception as exc:
+                self.log(jid, "warn", f"[Raid] Falha ao atualizar relatório parcial: {exc}")
             self.log(jid, "info", "[Raid] Batalha em andamento. Aguardando 15min (próximo ciclo).")
             return RunnerResult(
                 success=True,
@@ -731,6 +774,7 @@ class RaidCityRunner(BaseRunner):
         if rec_from_input:
             result = {int(uid): min(int(qty), available.get(int(uid), 0))
                       for uid, qty in rec_from_input.items() if int(qty) > 0}
+            self._log_simulation_rounds(jid, inputs.get("simulation_preview") or {})
             self.log(jid, "info",
                      f"[Raid] Usando recomendação do callback: {result}")
             return {k: v for k, v in result.items() if v > 0}
@@ -749,6 +793,7 @@ class RaidCityRunner(BaseRunner):
                 defender_upgrades=dfn_up,
             )
             sim = r.get("simulation") or {}
+            self._log_simulation_rounds(jid, sim)
             self.log(jid, "info",
                 f"[Raid] Recomendação hub: {r.get('recommended')} "
                 f"({'vitória' if r.get('can_win') else 'RISCO'}) "

@@ -63,6 +63,14 @@ _NAME_TO_ID: dict[str, int] = {
 }
 
 
+def _guess_wall_level_from_city_level(city_level: int) -> int:
+    try:
+        level = int(city_level or 1)
+    except (TypeError, ValueError):
+        level = 1
+    return max(1, int(level * 0.8))
+
+
 def _troops_dict_to_ids(troops: dict) -> dict[int, int]:
     """Converte {nome_pt: qty} ou {id: qty} → {unit_id: qty}."""
     out: dict[int, int] = {}
@@ -150,7 +158,7 @@ def _parse_enemy_intel(target_city_id: str, target_owner_id: str, server_id: str
         "enemy_upgrades": enemy_upgrades,
         "needs_blockade": needs_blockade,
         "city_level": city_level,
-        "wall_level": 15,  # padrão razoável
+        "wall_level": _guess_wall_level_from_city_level(city_level),
     }
 
 
@@ -410,6 +418,16 @@ def _parse_resources_from_data(data_json: dict) -> dict[str, int]:
 def _parse_troops_from_data(data_json: dict) -> dict[str, int]:
     """Extract troop counts {unit_name: qty} from spy report data_json."""
     troops: dict[str, int] = {}
+    raw = data_json.get("troops") or data_json.get("army") or {}
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            try:
+                troops[str(int(k))] = int(v)
+            except (ValueError, TypeError):
+                pass
+        if troops:
+            return troops
+
     # Format 1 (mission 7 — Observar tropas/frotas): troops_data = [{category, units: [{name, count}]}]
     td = data_json.get("troops_data")
     if isinstance(td, list):
@@ -419,20 +437,16 @@ def _parse_troops_from_data(data_json: dict) -> dict[str, int]:
             for u in (cat.get("units") or []):
                 if not isinstance(u, dict):
                     continue
-                name = str(u.get("name") or "").strip()
+                uid = u.get("unit_id")
                 cnt = u.get("count") or 0
+                if uid and int(cnt) > 0:
+                    key = str(int(uid))
+                    troops[key] = troops.get(key, 0) + int(cnt)
+                    continue
+                name = str(u.get("name") or "").strip()
                 if name and int(cnt) > 0:
                     troops[name] = troops.get(name, 0) + int(cnt)
         return troops
-
-    # Format 2 (legacy): troops/army dict {unit_id: qty}
-    raw = data_json.get("troops") or data_json.get("army") or {}
-    if isinstance(raw, dict):
-        for k, v in raw.items():
-            try:
-                troops[str(int(k))] = int(v)
-            except (ValueError, TypeError):
-                pass
     return troops
 
 
@@ -873,7 +887,19 @@ class SpyIntelView(APIView):
         resources: dict[str, int] = {}
         troops:    dict[str, int] = {}
         fleet:     dict[str, int] = {}
-        wall_level = 1
+        city_level = 1
+        wall_level = 15
+        try:
+            from apps.worldintel.models import WorldDumpCity
+            if server_id:
+                wdc = (WorldDumpCity.objects
+                       .filter(game_city_id=target_city_id, dump__game_account__server_id=server_id)
+                       .order_by("-dump__captured_at").first())
+                if wdc and wdc.level:
+                    city_level = int(wdc.level)
+        except Exception:
+            pass
+        wall_level = _guess_wall_level_from_city_level(city_level)
         last_updated = None
 
         # Consolidate from most recent reports per mission

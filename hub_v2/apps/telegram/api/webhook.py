@@ -70,7 +70,7 @@ def _create_raid_job(
     # Detectar warships na defesa via mission 7 + mapear tropas terrestres pra IDs
     needs_blockade = False
     enemy_units: dict[int, int] = {}  # {unit_id: qty} — só terrestres
-    enemy_wall_level = 1
+    enemy_wall_level = 15
     try:
         r7 = SpyReport.objects.filter(
             target_city_id=target_city_id, mission_id=6,
@@ -118,6 +118,7 @@ def _create_raid_job(
         try:
             from apps.espionage.api.views import _parse_enemy_intel, _choose_raid_account
             enemy_intel = _parse_enemy_intel(target_city_id, "", ga.server_id)
+            enemy_wall_level = int(enemy_intel.get("wall_level") or 15)
             # Reusa _choose_raid_account com filtro = só GA escolhida → traz recommended
             # Simples: chama o recommend direto.
             from apps.espionage.services.battle_land import recommend_attack_force
@@ -155,14 +156,13 @@ def _create_raid_job(
                     wall_level=enemy_wall_level,
                 )
                 rec_units = rec.get("recommended") or {}
-                # Aplica reserva 25% (margem de segurança)
-                rec_with_reserve = {}
-                for uid, qty in rec_units.items():
-                    have = available.get(uid, 0)
-                    rec_with_reserve[str(uid)] = min(have, int(qty * 1.25))
-                if rec_with_reserve:
-                    inputs["recommended_units"] = rec_with_reserve
+                if rec_units:
+                    inputs["recommended_units"] = {str(uid): int(qty) for uid, qty in rec_units.items() if int(qty or 0) > 0}
+                sim = rec.get("simulation") or {}
+                if sim:
+                    inputs["simulation_preview"] = sim
                 inputs["city_level"] = enemy_intel.get("city_level") or 1
+                inputs["wall_level"] = enemy_wall_level
         except Exception as exc:
             logger.warning("Failed to precompute recommended_units: %s", exc)
 

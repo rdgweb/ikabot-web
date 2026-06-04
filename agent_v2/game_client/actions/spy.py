@@ -1022,7 +1022,7 @@ def _parse_troops_from_html(report_html: str) -> list[dict[str, Any]]:
     Only units with count > 0 are included.
     """
     # Accumulate counts per (category_type, unit_name)
-    land_counts: dict[str, dict[str, Any]] = {}   # unit_name -> {name, count, icon}
+    land_counts: dict[str, dict[str, Any]] = {}   # unit_name -> {name, count, icon, unit_id}
     naval_counts: dict[str, dict[str, Any]] = {}
 
     tables = re.findall(
@@ -1062,11 +1062,12 @@ def _parse_troops_from_html(report_html: str) -> list[dict[str, Any]]:
                 if count <= 0:
                     continue
                 uname = unit_names[idx]
+                uid = _NAME_TO_ID.get(uname)
                 if uname in target:
                     target[uname]["count"] += count
                 else:
                     icon = _UNIT_NAME_TO_ICON.get(uname, "game/units/hoplita.png")
-                    target[uname] = {"name": uname, "count": count, "icon": icon}
+                    target[uname] = {"name": uname, "count": count, "icon": icon, "unit_id": uid}
 
     sections: list[dict[str, Any]] = []
     if land_counts:
@@ -1082,6 +1083,25 @@ def _parse_troops_from_html(report_html: str) -> list[dict[str, Any]]:
             "units":         list(naval_counts.values()),
         })
     return sections
+
+
+def _troops_sections_to_flat_maps(sections: list[dict[str, Any]]) -> tuple[dict[str, int], dict[str, int]]:
+    land: dict[str, int] = {}
+    naval: dict[str, int] = {}
+    for section in sections or []:
+        if not isinstance(section, dict):
+            continue
+        is_naval = (section.get("category_type") or "").lower() == "naval"
+        target = naval if is_naval else land
+        for unit in section.get("units") or []:
+            if not isinstance(unit, dict):
+                continue
+            uid = unit.get("unit_id")
+            count = int(unit.get("count") or 0)
+            if not uid or count <= 0:
+                continue
+            target[str(int(uid))] = target.get(str(int(uid)), 0) + count
+    return land, naval
 
 
 def _extract_research_pairs(report_text: str) -> list[tuple[str, str]]:
@@ -1830,6 +1850,12 @@ class SpyReportsAction(BaseAction):
                 if troops:
                     dj = dict(report.get("data_json") or {})
                     dj["troops_data"] = troops
+                    flat_land, flat_naval = _troops_sections_to_flat_maps(troops)
+                    if flat_land:
+                        dj["troops"] = flat_land
+                        dj["army"] = flat_land
+                    if flat_naval:
+                        dj["fleet"] = flat_naval
                     report["data_json"] = dj
 
             if report.get("mission_id") == 1 and not report.get("result_status"):
