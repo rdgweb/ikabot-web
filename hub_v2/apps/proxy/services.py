@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 from core.encryption import encrypt
@@ -21,6 +22,7 @@ IP_CHECK_SERVICES = [
 ]
 
 PROXY_TEST_TIMEOUT = 15
+MAX_LOBBY_PROXIES_PER_ACCOUNT = 3
 
 
 def test_proxy(proxy_profile) -> dict:
@@ -94,6 +96,46 @@ def test_proxy(proxy_profile) -> dict:
     )
 
     return result
+
+
+def reserve_lobby_proxies(*, account, limit: int = MAX_LOBBY_PROXIES_PER_ACCOUNT) -> list:
+    """Return up to ``limit`` stable proxies reserved for one lobby account.
+
+    Existing reservations are reused. When the lobby has fewer than ``limit``
+    total reservations, new proxies are allocated from the free pool.
+    A proxy reserved for one lobby is never handed to another lobby.
+    """
+    from .models import AccountProxyReservation, ProxyProfile
+
+    limit = max(1, min(int(limit or MAX_LOBBY_PROXIES_PER_ACCOUNT), MAX_LOBBY_PROXIES_PER_ACCOUNT))
+
+    with transaction.atomic():
+        reservations = list(
+            AccountProxyReservation.objects.select_for_update()
+            .filter(account=account)
+            .select_related("proxy_profile")
+            .order_by("created_at", "proxy_profile__address")[:limit]
+        )
+
+        missing = limit - len(reservations)
+        if missing > 0:
+            free_proxies = list(
+                ProxyProfile.objects.select_for_update()
+                .filter(active=True, last_test_status=True, account_reservation__isnull=True)
+                .order_by("last_test_latency_ms", "address")[:missing]
+            )
+            for proxy in free_proxies:
+                reservations.append(
+                    AccountProxyReservation.objects.create(account=account, proxy_profile=proxy)
+                )
+
+    reservations.sort(key=lambda item: (item.created_at, item.proxy_profile.address))
+    usable = [
+        reservation.proxy_profile
+        for reservation in reservations[:limit]
+        if reservation.proxy_profile.active and reservation.proxy_profile.last_test_status is True
+    ]
+    return usable
 
 
 def sync_webshare(api_key: str | None = None) -> dict:

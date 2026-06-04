@@ -164,7 +164,7 @@ class GameAccountLoginCooldownView(APIView):
     def post(self, request, game_account_id):
         mode = str(request.data.get("mode") or "").strip().lower()
         reason = str(request.data.get("reason") or "").strip()
-        if mode not in {"record_400", "clear"}:
+        if mode not in {"record_400", "record_proxy", "clear"}:
             return Response({"error": "invalid_mode"}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
@@ -209,7 +209,7 @@ class GameAccountLoginCooldownView(APIView):
                     body=(
                         f"{ga.name or ga.server_id} entrou em backoff de login por {next_hours}h.\n"
                         f"Bloqueado até: {ga.login_blocked_until:%d/%m/%Y %H:%M:%S}\n"
-                        f"Motivo: {reason or 'loginLink 400'}"
+                        f"Motivo: {reason or ('loginLink 400' if mode == 'record_400' else 'Falha de proxy no lobby')}"
                     ),
                 )
             except Exception:

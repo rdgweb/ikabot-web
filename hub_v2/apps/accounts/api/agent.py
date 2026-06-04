@@ -16,7 +16,8 @@ from rest_framework import serializers as drf_serializers
 from core.auth.backends import AgentTokenAuthentication
 from core.auth.permissions import IsAgent
 from core.encryption import decrypt, encrypt
-from apps.accounts.models import GameAccount, Node
+from apps.accounts.models import Account, GameAccount, Node
+from apps.proxy.services import reserve_lobby_proxies
 from apps.settings_app.utils import get_int_setting
 from apps.jobs.services.recovery import recover_stale_running_jobs, recover_stale_scheduled_jobs
 
@@ -270,6 +271,58 @@ class AgentConfigView(APIView):
         }
         return Response(
             NodeConfigResponseSerializer(response_data).data,
+        )
+
+
+class AccountLobbyProxiesView(APIView):
+    """POST /api/agent/accounts/<uuid:account_id>/lobby-proxies/."""
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    @extend_schema(
+        responses={
+            200: inline_serializer(
+                name="AccountLobbyProxiesResponse",
+                fields={
+                    "ok": drf_serializers.BooleanField(),
+                    "account_id": drf_serializers.UUIDField(),
+                    "proxies": drf_serializers.JSONField(),
+                },
+            )
+        },
+    )
+    def post(self, request, account_id):
+        try:
+            account = Account.objects.get(pk=account_id, active=True)
+        except Account.DoesNotExist:
+            return Response({"error": "Account not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        raw_limit = request.data.get("limit", 3)
+        try:
+            limit = int(raw_limit)
+        except Exception:
+            limit = 3
+
+        proxies = reserve_lobby_proxies(account=account, limit=limit)
+        payload = []
+        for proxy in proxies:
+            payload.append({
+                "id": proxy.pk,
+                "proxy_url": proxy.proxy_url,
+                "address": proxy.address,
+                "port": proxy.port,
+                "country_code": proxy.country_code,
+                "last_test_status": proxy.last_test_status,
+            })
+
+        return Response(
+            {
+                "ok": True,
+                "account_id": str(account.pk),
+                "proxies": payload,
+            },
+            status=status.HTTP_200_OK,
         )
 
 

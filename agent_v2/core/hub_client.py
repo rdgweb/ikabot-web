@@ -176,6 +176,18 @@ class HubClient:
             {"mode": "clear"},
         )
 
+    def record_login_proxy_failure(self, *, game_account_id: str, reason: str = "") -> dict:
+        return self._post(
+            f"/api/agent/game-accounts/{game_account_id}/login-cooldown",
+            {"mode": "record_proxy", "reason": reason},
+        )
+
+    def reserve_lobby_proxies(self, *, account_id: str, limit: int = 3) -> dict:
+        return self._post(
+            f"/api/agent/accounts/{account_id}/lobby-proxies",
+            {"limit": max(1, int(limit or 1))},
+        )
+
     def sync_construction_reservations(
         self,
         *,

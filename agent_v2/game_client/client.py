@@ -204,7 +204,13 @@ class GameClient(IslandActions):
         """
         return dict(self._cookies)
 
-    def is_session_valid(self, server_id: str, cookies: dict[str, str] | None = None) -> bool:
+    def is_session_valid(
+        self,
+        server_id: str,
+        cookies: dict[str, str] | None = None,
+        *,
+        raise_on_error: bool = False,
+    ) -> bool:
         """Validate whether cached game cookies still open the target server.
 
         Args:
@@ -218,7 +224,11 @@ class GameClient(IslandActions):
         if not cookies_to_check:
             return False
         server_url = self._build_server_url(server_id)
-        return self.auth.is_session_valid(cookies_to_check, server_url)
+        return self.auth.is_session_valid(
+            cookies_to_check,
+            server_url,
+            raise_on_error=raise_on_error,
+        )
 
     # ── City Operations ──
 

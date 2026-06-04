@@ -131,7 +131,7 @@ class IkariamAuth:
         # Session is valid — return potentially updated cookies
         return dict(self.session.cookies)
 
-    def is_session_valid(self, cookies: dict, server_url: str) -> bool:
+    def is_session_valid(self, cookies: dict, server_url: str, *, raise_on_error: bool = False) -> bool:
         """Check if session cookies are still valid.
 
         Makes a lightweight GET to the game server and checks the response.
@@ -155,6 +155,8 @@ class IkariamAuth:
                 allow_redirects=False,
             )
         except Exception:
+            if raise_on_error:
+                raise
             return False
 
         # 302/303 redirect = session expired (redirects to login)

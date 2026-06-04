@@ -80,3 +80,30 @@ class ProxyProfile(TimestampModel):
         if self.last_test_status is None:
             return "Nunca testado"
         return "OK" if self.last_test_status else "Falha"
+
+
+class AccountProxyReservation(TimestampModel):
+    """Stable proxy reservation for one lobby account."""
+
+    account = models.ForeignKey(
+        "accounts.Account",
+        on_delete=models.CASCADE,
+        related_name="proxy_reservations",
+    )
+    proxy_profile = models.OneToOneField(
+        ProxyProfile,
+        on_delete=models.CASCADE,
+        related_name="account_reservation",
+    )
+
+    class Meta:
+        ordering = ["created_at", "proxy_profile__address"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["account", "proxy_profile"],
+                name="uq_account_proxy_reservation_account_proxy",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.account_id} -> {self.proxy_profile.address}:{self.proxy_profile.port}"
