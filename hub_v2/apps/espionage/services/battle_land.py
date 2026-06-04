@@ -1203,6 +1203,7 @@ def recommend_attack_force(
         }
 
     defender_has_bomb = any(int(defender_units.get(uid, 0) or 0) > 0 for uid in LINE_BOMB)
+    defender_has_aa = any(int(defender_units.get(uid, 0) or 0) > 0 for uid in LINE_AA)
     field_level = _field_level_from_th(town_hall_level)
     principal_cap = _line_capacity(field_level, "principal")
 
@@ -1211,6 +1212,9 @@ def recommend_attack_force(
 
         if not defender_has_bomb:
             for uid in LINE_BOMB:
+                out.pop(uid, None)
+        if not defender_has_bomb and not defender_has_aa:
+            for uid in LINE_AA:
                 out.pop(uid, None)
 
         hop_available = int(available_units.get(303, 0) or 0)

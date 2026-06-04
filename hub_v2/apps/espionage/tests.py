@@ -46,6 +46,17 @@ class BattleLandTests(unittest.TestCase):
         self.assertTrue(rec["can_win"])
         self.assertEqual(rec["recommended"], {303: 30, 305: 6})
 
+    def test_recommendation_skips_aa_without_enemy_air(self):
+        rec = recommend_attack_force(
+            available_units={303: 800, 302: 300, 304: 150, 305: 40, 312: 120},
+            defender_units={303: 200, 308: 40, 304: 20},
+            town_hall_level=17,
+            wall_level=10,
+        )
+
+        self.assertTrue(rec["can_win"])
+        self.assertNotIn(312, rec["recommended"])
+
     def test_size_aware_field_prevents_steam_giant_overfill(self):
         sim = simulate_land_battle(
             attacker_units={308: 100},

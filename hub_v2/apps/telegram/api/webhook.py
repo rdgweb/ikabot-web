@@ -70,6 +70,7 @@ def _create_raid_job(
     # Detectar warships na defesa via mission 7 + mapear tropas terrestres pra IDs
     needs_blockade = False
     enemy_units: dict[int, int] = {}  # {unit_id: qty} — só terrestres
+    enemy_fleet: dict[int, int] = {}
     enemy_wall_level = 15
     try:
         r7 = SpyReport.objects.filter(
@@ -90,6 +91,9 @@ def _create_raid_job(
                         continue
                     if is_naval:
                         needs_blockade = True
+                        uid = _NAME_TO_ID.get(name)
+                        if uid:
+                            enemy_fleet[uid] = enemy_fleet.get(uid, 0) + cnt
                     else:
                         uid = _NAME_TO_ID.get(name)
                         if uid:
@@ -170,7 +174,7 @@ def _create_raid_job(
     if needs_blockade and source_city_id:
         try:
             from apps.game.models import AccountSnapshot
-            from apps.espionage.api.views import _recommend_fleet_for_blockade
+            from apps.espionage.api.views import _recommend_fleet_for_blockade, _parse_enemy_intel
             snap = AccountSnapshot.objects.filter(game_account=ga).first()
             if snap:
                 military = snap.military or {}
@@ -183,7 +187,12 @@ def _create_raid_job(
                             break
                 elif isinstance(bc, dict):
                     fleet = (bc.get(str(source_city_id)) or {}).get("fleet") or {}
-                rec_fleet = _recommend_fleet_for_blockade(fleet)
+                enemy_intel = _parse_enemy_intel(target_city_id, "", ga.server_id)
+                rec_fleet = _recommend_fleet_for_blockade(
+                    fleet,
+                    enemy_fleet=enemy_intel.get("enemy_fleet") or enemy_fleet,
+                    enemy_upgrades=enemy_intel.get("enemy_upgrades") or {},
+                )
                 if rec_fleet:
                     inputs["blockade_fleet_units"] = rec_fleet
         except Exception as exc:

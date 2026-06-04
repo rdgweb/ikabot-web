@@ -8,6 +8,7 @@ Auth: AgentTokenAuthentication + IsAgent
 from __future__ import annotations
 
 import logging
+import math
 from datetime import timedelta
 
 from django.db.models import Q
@@ -60,7 +61,35 @@ _NAME_TO_ID: dict[str, int] = {
     "Trireme": 210, "Lança-Chamas": 211, "Submergível": 212, "Barco Balista": 213,
     "Barco Catapulta": 214, "Barco Morteiro": 215, "Aríete a Vapor": 216,
     "Lança-Foguetes": 217, "Lancha Rápida": 218, "Porta-balões": 219, "Reparador": 220,
+    "Destruidor de Conveses": 221, "Triturador de Velas": 222, "Pironavio": 223,
+    "Catapulta de Pedregulhos": 224, "Rachador a Remos": 225,
 }
+
+_NAVAL_LINE_FRONT = {210, 211, 212, 216, 217, 221, 223, 225}
+_NAVAL_LINE_RANGED = {213, 214, 215, 222, 224}
+_NAVAL_LINE_BOMB = {219}
+_NAVAL_SUPPORT = {218, 220, 201, 202, 204}
+
+_NAVAL_LINE_PREFERENCE = {
+    "front": [216, 225, 223, 211, 221, 212, 217, 210],
+    "ranged": [215, 224, 214, 222, 213],
+    "bomb": [219],
+}
+
+
+def _classify_naval_line(unit_id: int) -> str | None:
+    if unit_id in _NAVAL_LINE_FRONT:
+        return "front"
+    if unit_id in _NAVAL_LINE_RANGED:
+        return "ranged"
+    if unit_id in _NAVAL_LINE_BOMB:
+        return "bomb"
+    return None
+
+
+def _naval_upgrade_suppression(enemy_upgrades: dict[int, dict] | None, unit_id: int) -> int:
+    raw = (enemy_upgrades or {}).get(int(unit_id)) or {}
+    return max(int(raw.get("offensive") or 0), int(raw.get("defensive") or 0))
 
 
 def _guess_wall_level_from_city_level(city_level: int) -> int:
@@ -93,6 +122,7 @@ def _troops_dict_to_ids(troops: dict) -> dict[int, int]:
 def _parse_enemy_intel(target_city_id: str, target_owner_id: str, server_id: str, target_owner: str = "") -> dict:
     """Lê reports mission 6 + 26 + 5 → enemy_units + upgrades per-unit + city_level."""
     enemy_units: dict[int, int] = {}
+    enemy_fleet: dict[int, int] = {}
     enemy_upgrades: dict[int, dict] = {}  # {unit_id: {offensive, defensive}}
     needs_blockade = False
     city_level = 1
@@ -113,6 +143,9 @@ def _parse_enemy_intel(target_city_id: str, target_owner_id: str, server_id: str
                 if cnt <= 0: continue
                 if is_naval:
                     needs_blockade = True
+                    uid = _NAME_TO_ID.get(name)
+                    if uid:
+                        enemy_fleet[uid] = enemy_fleet.get(uid, 0) + cnt
                 else:
                     uid = _NAME_TO_ID.get(name)
                     if uid:
@@ -155,6 +188,7 @@ def _parse_enemy_intel(target_city_id: str, target_owner_id: str, server_id: str
 
     return {
         "enemy_units": enemy_units,
+        "enemy_fleet": enemy_fleet,
         "enemy_upgrades": enemy_upgrades,
         "needs_blockade": needs_blockade,
         "city_level": city_level,
@@ -198,19 +232,61 @@ def _recommend_units(own_troops_pt: dict, enemy_intel: dict,
     return rec.get("recommended") or {}
 
 
-def _recommend_fleet_for_blockade(own_fleet_pt: dict) -> dict:
-    """Recomenda frota pra ocupar porto (blockade). Prioriza Aríete a Vapor, Trireme."""
+def _recommend_fleet_for_blockade(
+    own_fleet_pt: dict,
+    enemy_fleet: dict[int, int] | None = None,
+    enemy_upgrades: dict[int, dict] | None = None,
+) -> dict:
+    """Recomenda frota para blockade.
+
+    Regra:
+    - toda unidade naval relevante: envia `ceil(enemy * 1.25) + supressão_upgrade`
+    - a montagem respeita a linha naval do alvo e preenche usando a melhor
+      frota disponível da mesma linha.
+    """
     fleet_ids = _troops_dict_to_ids(own_fleet_pt)
     if not fleet_ids:
         return {}
-    # Prioridade: Aríete a Vapor (216), Trireme (210), Pironavio (223)
+    if not enemy_fleet:
+        rec: dict[int, int] = {}
+        for uid in (216, 225, 223, 211, 221, 212, 217, 210):
+            have = fleet_ids.get(uid, 0)
+            if have > 0:
+                rec[uid] = min(have, 2)
+                if sum(rec.values()) >= 2:
+                    break
+        return rec
+
+    line_demand: dict[str, int] = {"front": 0, "ranged": 0, "bomb": 0}
+    for uid, qty in (enemy_fleet or {}).items():
+        uid = int(uid)
+        qty = int(qty or 0)
+        if qty <= 0:
+            continue
+        line = _classify_naval_line(uid)
+        if not line:
+            continue
+        suppression = _naval_upgrade_suppression(enemy_upgrades, uid)
+        demand = int(math.ceil(qty * 1.25)) + suppression
+        line_demand[line] += max(0, demand)
+
     rec: dict[int, int] = {}
-    for uid in (216, 210, 223, 211, 213, 214, 215):
-        have = fleet_ids.get(uid, 0)
-        if have > 0:
-            # 2 mínimo, ou todos disponíveis se < 2
-            rec[uid] = min(have, 2)
-            if sum(rec.values()) >= 2:
+    remaining = {int(uid): int(qty or 0) for uid, qty in fleet_ids.items()}
+    for line in ("front", "ranged", "bomb"):
+        demand = int(line_demand.get(line, 0) or 0)
+        if demand <= 0:
+            continue
+        for uid in _NAVAL_LINE_PREFERENCE[line]:
+            have = remaining.get(uid, 0)
+            if have <= 0:
+                continue
+            take = min(have, demand)
+            if take <= 0:
+                continue
+            rec[uid] = rec.get(uid, 0) + take
+            remaining[uid] = have - take
+            demand -= take
+            if demand <= 0:
                 break
     return rec
 
@@ -300,7 +376,11 @@ def _choose_raid_account(target_city_id: str, target_owner_id: str, server_id: s
                     continue  # pula cidade que não vence
                 recommended = _recommend_units(troops, enemy_intel, own_upgrades)
             if enemy_intel and enemy_intel.get("needs_blockade"):
-                recommended_fleet = _recommend_fleet_for_blockade(fleet)
+                recommended_fleet = _recommend_fleet_for_blockade(
+                    fleet,
+                    enemy_fleet=enemy_intel.get("enemy_fleet") or {},
+                    enemy_upgrades=enemy_intel.get("enemy_upgrades") or {},
+                )
 
             # Score = sobrevivência atacante após combate (mais alto = melhor)
             if sim:
