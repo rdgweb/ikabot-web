@@ -1245,18 +1245,18 @@ def recommend_attack_force(
             "note": "Mesmo enviando tudo, nao vence.",
         }
 
-    best_recommended = dict(full_force)
-    best_sim = full_sim
-    for factor in (0.05, 0.10, 0.20, 0.35, 0.50, 0.70, 1.00):
+    def build_scaled_force(factor: float) -> dict[int, int]:
         scaled = {
             int(uid): max(1, int(int(qty) * factor))
             for uid, qty in available_units.items()
             if int(qty or 0) > 0
         }
-        scaled = _enforce_minimum_raid_force(apply_preferences(scaled), available_units)
-        if not scaled:
-            continue
+        return _enforce_minimum_raid_force(apply_preferences(scaled), available_units)
 
+    def run_scaled(factor: float) -> tuple[dict[int, int], dict[str, Any]] | None:
+        scaled = build_scaled_force(factor)
+        if not scaled:
+            return None
         sim = simulate_land_battle(
             scaled,
             defender_units,
@@ -1265,11 +1265,65 @@ def recommend_attack_force(
             town_hall_level=town_hall_level,
             wall_level=wall_level,
         )
+        return scaled, sim
+
+    best_recommended = dict(full_force)
+    best_sim = full_sim
+    coarse_factors = (0.05, 0.10, 0.20, 0.35, 0.50, 0.70, 1.00)
+    previous_factor = 0.0
+    winning_factor: float | None = None
+    lower_bound = 0.0
+    upper_bound = 1.0
+
+    for factor in coarse_factors:
+        result = run_scaled(factor)
+        if not result:
+            previous_factor = factor
+            continue
+        scaled, sim = result
         loss_pct = 100.0 - sim["attacker_survivors_pct"]
         if sim["winner"] == "attacker" and loss_pct <= max_loss_pct:
             best_recommended = scaled
             best_sim = sim
+            winning_factor = factor
+            lower_bound = previous_factor
+            upper_bound = factor
             break
+        previous_factor = factor
+
+    if winning_factor is not None:
+        for _ in range(8):
+            probe = (lower_bound + upper_bound) / 2.0
+            result = run_scaled(probe)
+            if not result:
+                lower_bound = probe
+                continue
+            scaled, sim = result
+            loss_pct = 100.0 - sim["attacker_survivors_pct"]
+            if sim["winner"] == "attacker" and loss_pct <= max_loss_pct:
+                best_recommended = scaled
+                best_sim = sim
+                upper_bound = probe
+            else:
+                lower_bound = probe
+
+        # Small downward probes around the best threshold to smooth integer jumps.
+        for probe in (
+            max(0.0, upper_bound - 0.01),
+            max(0.0, upper_bound - 0.02),
+            max(0.0, upper_bound - 0.03),
+        ):
+            result = run_scaled(probe)
+            if not result:
+                continue
+            scaled, sim = result
+            loss_pct = 100.0 - sim["attacker_survivors_pct"]
+            if sim["winner"] == "attacker" and loss_pct <= max_loss_pct:
+                current_total = sum(best_recommended.values())
+                candidate_total = sum(scaled.values())
+                if candidate_total <= current_total:
+                    best_recommended = scaled
+                    best_sim = sim
 
     return {
         "can_win": True,
