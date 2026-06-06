@@ -6,7 +6,7 @@ from django.urls import reverse
 from apps.accounts.models import Account, GameAccount, Node
 
 from .models import ConstructionResourceReservation, Job, Workflow, WorkflowRun
-from .services.workflows import create_job_with_workflow, ensure_workflow_for_job
+from .services.workflows import create_job_with_workflow, ensure_workflow_for_job, reconcile_workflow_for_job
 from .views.create import JobSubmitView
 
 
@@ -279,6 +279,37 @@ class WorkflowFoundationServiceTests(TestCase):
         )
 
         self.assertIsNotNone(job.workflow_id)
+
+    def test_reconcile_marks_workflow_finished_when_chain_has_no_active_jobs(self):
+        root = create_job_with_workflow(
+            account=self.account,
+            game_account=self.ga,
+            node=self.node,
+            action_code=1002,
+            inputs={"construction_plan_json": [{"city_name": "Mileto"}]},
+            status="finished",
+        )
+        child = create_job_with_workflow(
+            account=self.account,
+            game_account=self.ga,
+            node=self.node,
+            action_code=1002,
+            inputs={"construction_plan_json": [{"city_name": "Mileto"}], "step": 2},
+            status="scheduled",
+            source_job=root,
+            start_new_run=True,
+            trigger_type="agent_reschedule",
+        )
+        child.status = "finished"
+        child.save(update_fields=["status", "updated_at"])
+
+        reconcile_workflow_for_job(child)
+
+        child.workflow.refresh_from_db()
+        child.workflow_run.refresh_from_db()
+        self.assertEqual(child.workflow.status, "finished")
+        self.assertEqual(child.workflow.active_run_id, child.workflow_run_id)
+        self.assertEqual(child.workflow_run.status, "finished")
 
 
 @override_settings(AGENT_TOKEN="test-agent-token", AGENT_ALLOWED_IPS="")

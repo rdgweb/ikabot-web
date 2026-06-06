@@ -248,6 +248,7 @@ class Army:
         self.field_level = field_level
         self.is_defender = is_defender
         self.wall_hp = int(wall_hp) if is_defender else 0
+        self.wall_segments: list[int] = []
         self.damage_bonus_pct = float(damage_bonus_pct or 0.0)
         self.armor_bonus = int(armor_bonus or 0)
         self.ammo_left: dict[tuple[int, int], int] = {}
@@ -265,6 +266,12 @@ class Army:
             "bomb": {},
             "aa": {},
         }
+        if self.is_defender and self.wall_hp > 0:
+            principal_slots = FIELD_SLOTS.get(self.field_level, FIELD_SLOTS[1]).get("principal", (0, 0))[0]
+            principal_slots = max(1, int(principal_slots or 1))
+            base_seg = self.wall_hp // principal_slots
+            rem = self.wall_hp % principal_slots
+            self.wall_segments = [base_seg + (1 if idx < rem else 0) for idx in range(principal_slots)]
 
         for uid, qty in self.units.items():
             self.hp_pools[uid] = qty * self.unit_max_hp(uid)
@@ -317,6 +324,38 @@ class Army:
         if self.damage_bonus_pct:
             base = int(base * (1.0 + self.damage_bonus_pct / 100.0))
         return base
+
+    def wall_segment_count(self) -> int:
+        return len(self.wall_segments)
+
+    def wall_broken_segments(self) -> int:
+        if not self.wall_segments:
+            return 0
+        return sum(1 for hp in self.wall_segments if int(hp or 0) <= 0)
+
+    def wall_exposed_fraction(self) -> float:
+        total = self.wall_segment_count()
+        if total <= 0:
+            return 1.0
+        return max(0.0, min(1.0, self.wall_broken_segments() / total))
+
+    def absorb_wall_damage(self, damage: int) -> tuple[int, int, int]:
+        if damage <= 0 or not self.wall_segments or self.wall_hp <= 0:
+            return damage, self.wall_broken_segments(), self.wall_broken_segments()
+        broken_before = self.wall_broken_segments()
+        remaining = int(damage)
+        for idx, hp in enumerate(self.wall_segments):
+            hp = int(hp or 0)
+            if hp <= 0:
+                continue
+            take = min(hp, remaining)
+            self.wall_segments[idx] = hp - take
+            remaining -= take
+            if remaining <= 0:
+                break
+        self.wall_hp = max(0, sum(max(0, int(hp or 0)) for hp in self.wall_segments))
+        broken_after = self.wall_broken_segments()
+        return remaining, broken_before, broken_after
 
     def heal_end_of_round(self) -> None:
         medics = self.units.get(311, 0)
@@ -640,14 +679,21 @@ def _apply_damage_to_line(
     avg_hit_damage = attack.avg_hit_damage
 
     if use_wall and army.is_defender and army.wall_hp > 0 and line == "principal":
-        absorbed = min(army.wall_hp, damage)
-        if absorbed > 0:
-            damage -= absorbed
-            army.wall_hp -= absorbed
-            if damage <= 0:
-                return 0, AttackProfile()
-            ratio = damage / max(1, attack.total_damage)
-            hits = max(1, int(round(hits * ratio)))
+        damage_after_wall, broken_before, broken_after = army.absorb_wall_damage(damage)
+        if damage_after_wall <= 0:
+            return 0, AttackProfile()
+        opened_segments = max(0, broken_after - broken_before)
+        exposed_fraction = army.wall_exposed_fraction()
+        if opened_segments > 0 and army.wall_segment_count() > 0:
+            exposed_fraction = max(
+                exposed_fraction,
+                opened_segments / max(1, army.wall_segment_count()),
+            )
+        if exposed_fraction <= 0:
+            return 0, AttackProfile()
+        damage = max(1, int(round(damage_after_wall * exposed_fraction)))
+        ratio = damage / max(1, attack.total_damage)
+        hits = max(1, int(round(hits * ratio)))
 
     alive_stacks = [stack for stack in deployment.lines.get(line, []) if stack.count > 0]
     if not alive_stacks:
@@ -1204,13 +1250,17 @@ def recommend_attack_force(
 
     defender_has_bomb = any(int(defender_units.get(uid, 0) or 0) > 0 for uid in LINE_BOMB)
     defender_has_aa = any(int(defender_units.get(uid, 0) or 0) > 0 for uid in LINE_AA)
+    defender_has_bomb_targets = any(
+        int(defender_units.get(uid, 0) or 0) > 0
+        for uid in (LINE_BOMB | LINE_ARTILH | LINE_LONGA)
+    )
     field_level = _field_level_from_th(town_hall_level)
     principal_cap = _line_capacity(field_level, "principal")
 
     def apply_preferences(force: dict[int, int]) -> dict[int, int]:
         out = {int(uid): int(qty) for uid, qty in force.items() if int(qty or 0) > 0}
 
-        if not defender_has_bomb:
+        if not defender_has_bomb_targets:
             for uid in LINE_BOMB:
                 out.pop(uid, None)
         if not defender_has_bomb and not defender_has_aa:

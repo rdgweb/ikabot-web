@@ -73,6 +73,44 @@ def _city_stock(city: dict, resource_idx: int) -> int:
     return int(city.get(key) or 0)
 
 
+def _branchoffice_capacity(level: int | None) -> int:
+    """Total resources that can be listed for sale in this Branch Office."""
+    try:
+        level_int = int(level or 0)
+    except Exception:
+        level_int = 0
+    if level_int <= 0:
+        return 0
+    if level_int < 40:
+        return 400 * level_int * level_int
+    return int(608_400 * (1.0533241 ** (level_int - 39)))
+
+
+def _market_resource_amounts(city: dict) -> dict[str, int]:
+    raw = city.get("market_resources") if isinstance(city.get("market_resources"), dict) else {}
+    amounts: dict[str, int] = {}
+    for key in ("resource", "1", "2", "3", "4"):
+        try:
+            amounts[key] = max(0, int(float(raw.get(key) or 0)))
+        except Exception:
+            amounts[key] = 0
+    return amounts
+
+
+def _market_offer_total(city: dict) -> int:
+    return sum(_market_resource_amounts(city).values())
+
+
+def _seller_market_free_capacity(city: dict) -> int | None:
+    info = _find_branchoffice_info(city)
+    if not info or info.get("level") is None:
+        return None
+    capacity = _branchoffice_capacity(info.get("level"))
+    if capacity <= 0:
+        return None
+    return max(0, capacity - _market_offer_total(city))
+
+
 def _find_branchoffice(city: dict) -> int:
     buildings = city.get("buildings") or city.get("position") or []
     for b in buildings:
@@ -283,6 +321,79 @@ def _set_order_terminal_state(order: InternalMarketOrder, *, status: str, note: 
     return True
 
 
+def _published_internal_offer_orders(order: InternalMarketOrder):
+    return InternalMarketOrder.objects.filter(
+        seller_game_account=order.seller_game_account,
+        seller_city_id=order.seller_city_id,
+        resource_idx=order.resource_idx,
+        sell_job__status="finished",
+    ).filter(Q(pk=order.pk) | ~Q(status__in=("completed", "canceled")))
+
+
+def _has_active_cleanup_job(order: InternalMarketOrder) -> bool:
+    token = f'"cleanup_for_order_id": "{order.pk}"'
+    return Job.objects.filter(
+        action_code=802,
+        status__in=("queued", "scheduled", "running"),
+        inputs_json__contains=token,
+    ).exists()
+
+
+def schedule_internal_offer_cleanup(order: InternalMarketOrder, *, note: str = "") -> Job | None:
+    """Schedule a safe live-checked cleanup for a bot-managed offer.
+
+    Branch Office offers are per city/resource totals. The agent will read the live
+    current offer total and only mutate it when it matches expected_current_total.
+    """
+    if order.seller_game_account is None or order.seller_city_id is None or order.seller_branchoffice_pos is None:
+        return None
+    if order.sell_job_id is None or getattr(order.sell_job, "status", "") != "finished":
+        return None
+    if _has_active_cleanup_job(order):
+        return None
+
+    published_orders = list(_published_internal_offer_orders(order))
+    expected_total = sum(max(0, int(item.amount or 0)) for item in published_orders)
+    remaining_total = sum(
+        max(0, int(item.amount or 0))
+        for item in published_orders
+        if item.pk != order.pk
+    )
+    offer_mode = "replace" if remaining_total > 0 else "clear"
+    seller_snap = _load_snapshot(order.seller_game_account)
+    seller_city = _find_city_in_snapshot(seller_snap, order.seller_city_id)
+    cleanup_job = create_job_with_workflow(
+        account=order.seller_game_account.account,
+        game_account=order.seller_game_account,
+        node=order.seller_game_account.account.node,
+        action_code=802,
+        source_job=order.buy_job or order.sell_job,
+        inputs={
+            "city_id": order.seller_city_id,
+            "city_name": _city_name(seller_city, order.seller_city_id),
+            "branchoffice_pos": order.seller_branchoffice_pos,
+            "resource_idx": order.resource_idx,
+            "amount": int(remaining_total),
+            "unit_price": int(order.unit_price or 0),
+            "offer_mode": offer_mode,
+            "cleanup_only": True,
+            "cleanup_for_order_id": str(order.pk),
+            "expected_current_total": int(expected_total),
+            "internal_order_id": str(order.pk),
+        },
+        status="queued",
+        start_new_run=False,
+        trigger_type="internal_market_cleanup",
+    )
+    order.result_note = _result_note(
+        order.result_note,
+        f"cleanup_job_id={cleanup_job.pk} remaining_total={remaining_total}{(' | ' + note) if note else ''}",
+    )
+    order.save(update_fields=["result_note", "updated_at"])
+    logger.info("cleanup_job %s created for internal order %s", cleanup_job.pk, order.pk)
+    return cleanup_job
+
+
 def _create_redistribution_job(order: InternalMarketOrder) -> Job | None:
     buyer_ga = order.buyer_game_account
     if buyer_ga is None or order.buyer_city_id in (None, "") or order.target_city_id in (None, ""):
@@ -441,8 +552,10 @@ def reconcile_internal_order_for_job(job: Job, *, terminal_status: str, note: st
             complete_internal_order(order)
         elif terminal_status == "error":
             _set_order_terminal_state(order, status="failed", note=_result_note("Falha na compra interna.", note_text))
+            schedule_internal_offer_cleanup(order, note="buy_failed")
         elif terminal_status == "cancelled":
             _set_order_terminal_state(order, status="canceled", note=_result_note("Compra interna cancelada.", note_text))
+            schedule_internal_offer_cleanup(order, note="buy_cancelled")
         return order
 
     if job.pk == order.redistribution_job_id:
@@ -845,6 +958,17 @@ def iter_eligible_sellers(
 
             reserved = _active_reservation(seller_ga, int(city_id), resource_idx)
             min_stock = int(getattr(seller_ga, "market_min_stock", 0) or 0)
+            free_market_capacity = _seller_market_free_capacity(city)
+            if free_market_capacity is not None and free_market_capacity < amount:
+                logger.info(
+                    "Skipping seller %s city=%s for res=%s amount=%s: Branch Office free capacity=%s",
+                    seller_ga.pk,
+                    city_id,
+                    resource_idx,
+                    amount,
+                    free_market_capacity,
+                )
+                continue
             if stock - reserved - min_stock >= amount:
                 matches.append((seller_ga, city, bo_pos))
 

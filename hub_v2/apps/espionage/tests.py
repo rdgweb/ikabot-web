@@ -57,6 +57,17 @@ class BattleLandTests(unittest.TestCase):
         self.assertTrue(rec["can_win"])
         self.assertNotIn(312, rec["recommended"])
 
+    def test_recommendation_keeps_bomb_for_enemy_artillery_or_ranged(self):
+        rec = recommend_attack_force(
+            available_units={303: 800, 302: 300, 304: 150, 305: 40, 309: 30},
+            defender_units={303: 200, 304: 20, 306: 10},
+            town_hall_level=17,
+            wall_level=10,
+        )
+
+        self.assertTrue(rec["can_win"])
+        self.assertIn(309, rec["recommended"])
+
     def test_size_aware_field_prevents_steam_giant_overfill(self):
         sim = simulate_land_battle(
             attacker_units={308: 100},
@@ -68,6 +79,29 @@ class BattleLandTests(unittest.TestCase):
 
         round_1 = sim["details"]["rounds"][0]
         self.assertEqual(round_1["attacker_principal"], 30)
+
+    def test_segmented_wall_slows_first_round_principal_losses(self):
+        no_wall = simulate_land_battle(
+            attacker_units={303: 280, 305: 24, 304: 70},
+            defender_units={303: 280},
+            town_hall_level=17,
+            wall_level=0,
+            max_rounds=1,
+        )
+        with_wall = simulate_land_battle(
+            attacker_units={303: 280, 305: 24, 304: 70},
+            defender_units={303: 280},
+            town_hall_level=17,
+            wall_level=16,
+            max_rounds=1,
+        )
+
+        no_wall_round = no_wall["details"]["rounds"][0]
+        with_wall_round = with_wall["details"]["rounds"][0]
+        self.assertGreaterEqual(
+            with_wall_round["defender_principal"],
+            no_wall_round["defender_principal"],
+        )
 
     def test_cristaleira_like_case_is_not_one_round_stomp(self):
         sim = simulate_land_battle(

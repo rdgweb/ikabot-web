@@ -122,6 +122,93 @@ def _run_status_from_job(status: str) -> str:
     return "scheduled"
 
 
+def _derive_run_status_from_jobs(jobs) -> str:
+    statuses = {str(status or "") for status in jobs.values_list("status", flat=True)}
+    if not statuses:
+        return "scheduled"
+    if "error" in statuses:
+        return "problem"
+    if "running" in statuses:
+        return "running"
+    if statuses & {"queued", "scheduled"}:
+        return "scheduled"
+    if statuses == {"cancelled"}:
+        return "cancelled"
+    return "finished"
+
+
+def _derive_workflow_status_from_jobs(workflow: Workflow) -> tuple[str, object | None, object | None, str]:
+    jobs = Job.objects.filter(workflow=workflow)
+    active_job = (
+        jobs.filter(status__in=("queued", "running", "scheduled"))
+        .order_by("-created_at")
+        .first()
+    )
+    if active_job is not None:
+        return (
+            _workflow_status_from_job(active_job.status),
+            active_job.workflow_run,
+            active_job.scheduled_for,
+            "",
+        )
+
+    error_job = jobs.filter(status="error").order_by("-finished_at", "-updated_at").first()
+    if error_job is not None:
+        return (
+            "problem",
+            error_job.workflow_run,
+            None,
+            f"Job {error_job.pk} terminou com erro.",
+        )
+
+    latest_job = jobs.order_by("-finished_at", "-updated_at", "-created_at").first()
+    if latest_job is None:
+        return workflow.status, workflow.active_run, workflow.next_scheduled_for, ""
+    if latest_job.status == "cancelled":
+        return "cancelled", latest_job.workflow_run, None, ""
+    return "finished", latest_job.workflow_run, None, ""
+
+
+def reconcile_workflow_for_job(job: Job) -> None:
+    """Recalculate Workflow/WorkflowRun state from the current linked jobs."""
+    if not job.workflow_id:
+        return
+
+    with transaction.atomic():
+        workflow = Workflow.objects.select_for_update().get(pk=job.workflow_id)
+        if job.workflow_run_id:
+            run_jobs = Job.objects.filter(workflow_run_id=job.workflow_run_id)
+            run_status = _derive_run_status_from_jobs(run_jobs)
+            run = WorkflowRun.objects.select_for_update().get(pk=job.workflow_run_id)
+            run.status = run_status
+            run.scheduled_for = (
+                run_jobs.filter(status__in=("queued", "scheduled"))
+                .order_by("scheduled_for", "created_at")
+                .values_list("scheduled_for", flat=True)
+                .first()
+            )
+            if run_status in {"finished", "cancelled", "problem"} and run.finished_at is None:
+                run.finished_at = timezone.now()
+            run.save(update_fields=["status", "scheduled_for", "finished_at", "updated_at"])
+
+        status, active_run, next_scheduled_for, error_summary = _derive_workflow_status_from_jobs(workflow)
+        workflow.status = status
+        workflow.active_run = active_run
+        workflow.next_scheduled_for = next_scheduled_for
+        workflow.last_event_at = timezone.now()
+        update_fields = ["status", "active_run", "next_scheduled_for", "last_event_at", "updated_at"]
+        if status == "problem":
+            workflow.last_error_at = workflow.last_event_at
+            workflow.last_error_summary = error_summary
+            update_fields.extend(["last_error_at", "last_error_summary"])
+        elif status == "finished":
+            workflow.finished_at = workflow.last_event_at
+            workflow.last_error_summary = ""
+            workflow.last_error_at = None
+            update_fields.extend(["finished_at", "last_error_at", "last_error_summary"])
+        workflow.save(update_fields=update_fields)
+
+
 def _next_run_sequence(workflow: Workflow) -> int:
     current_max = WorkflowRun.objects.filter(workflow=workflow).aggregate(max_sequence=Max("sequence"))["max_sequence"] or 0
     return int(current_max) + 1

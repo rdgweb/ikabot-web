@@ -44,6 +44,7 @@ MIN_RECHECK_SECONDS = 5 * 60
 TRANSPORT_RECHECK_SECONDS = 30 * 60
 FINISH_BUFFER_SECONDS = 2 * 60
 DONOR_RESERVE_DEFAULT = 5_000
+INTERNAL_MARKET_MIN_BATCH = 5_000
 
 RESOURCE_PT = {
     "wood": "madeira",
@@ -2722,6 +2723,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
 
             extra = costs_after.get(resource_key, 0)
             buy_amount = needed + extra if extra > 0 else math.ceil(needed * 1.20)
+            if extra > 0:
+                buy_amount = max(buy_amount, INTERNAL_MARKET_MIN_BATCH)
             try:
                 order = self.hub.create_market_order(
                     game_account_id=ga_id,

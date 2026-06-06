@@ -17,7 +17,7 @@ from rest_framework.views import APIView
 
 from apps.accounts.models import GameAccount
 from apps.jobs.models import ConstructionResourceReservation, Job, JobLog
-from apps.jobs.services.workflows import create_job_with_workflow
+from apps.jobs.services.workflows import create_job_with_workflow, reconcile_workflow_for_job
 from apps.market.services import reconcile_internal_order_for_job
 from apps.telegram.services.notifications import notify
 from core.auth.backends import AgentTokenAuthentication
@@ -140,6 +140,7 @@ class JobStatusView(APIView):
             if data["status"] == "error":
                 note = f"job_id={job.pk} exit_code={job.exit_code}"
             reconcile_internal_order_for_job(job, terminal_status=data["status"], note=note)
+            reconcile_workflow_for_job(job)
 
         return Response(
             JobStatusResponseSerializer(

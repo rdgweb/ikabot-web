@@ -133,6 +133,90 @@ class MarketServiceTests(TestCase):
         self.assertEqual(result.code, "buyer_below_min_gold")
         self.assertIsNone(result.order)
 
+    def test_create_internal_order_skips_seller_without_market_free_capacity(self):
+        seller_snapshot = AccountSnapshot.objects.get(game_account=self.seller_ga)
+        seller_snapshot.cities = [
+            {
+                "id": 303,
+                "name": "Small Market",
+                "x": 11,
+                "y": 11,
+                "wood": 50000,
+                "buildings": [{"building": "branchOffice", "position": 4, "level": 3}],
+                "market_resources": {"resource": 2570, "1": 0, "2": 0, "3": 0, "4": 0},
+            }
+        ]
+        seller_snapshot.save(update_fields=["cities"])
+
+        order = create_internal_order(
+            self.buyer_ga,
+            resource_idx=0,
+            amount=4627,
+            unit_price=0,
+        )
+
+        self.assertIsNone(order)
+
+    def test_buy_failure_schedules_cleanup_when_market_total_matches_bot_expected_total(self):
+        order = create_internal_order(
+            self.buyer_ga,
+            resource_idx=0,
+            amount=1000,
+            unit_price=0,
+        )
+        self.assertIsNotNone(order)
+        order.sell_job.status = "finished"
+        order.sell_job.save(update_fields=["status", "updated_at"])
+        create_buy_job(order)
+
+        seller_snapshot = AccountSnapshot.objects.get(game_account=self.seller_ga)
+        seller_snapshot.cities[0]["market_resources"] = {"resource": 1000, "1": 0, "2": 0, "3": 0, "4": 0}
+        seller_snapshot.save(update_fields=["cities"])
+
+        order.buy_job.status = "error"
+        order.buy_job.save(update_fields=["status", "updated_at"])
+        reconcile_internal_order_for_job(order.buy_job, terminal_status="error", note="test failure")
+
+        cleanup = Job.objects.filter(action_code=802, source_job=order.buy_job).latest("created_at")
+        self.assertIn('"cleanup_only": true', cleanup.inputs_json)
+        self.assertIn('"offer_mode": "clear"', cleanup.inputs_json)
+        self.assertIn('"amount": 0', cleanup.inputs_json)
+        self.assertIn('"expected_current_total": 1000', cleanup.inputs_json)
+
+    def test_buy_failure_cleanup_preserves_other_published_internal_orders(self):
+        order = create_internal_order(
+            self.buyer_ga,
+            resource_idx=0,
+            amount=1000,
+            unit_price=0,
+        )
+        self.assertIsNotNone(order)
+        order.sell_job.status = "finished"
+        order.sell_job.save(update_fields=["status", "updated_at"])
+        create_buy_job(order)
+
+        other_order = create_internal_order(
+            self.buyer_ga,
+            resource_idx=0,
+            amount=600,
+            unit_price=0,
+            target_city_id=202,
+            source_reason="other_need",
+        )
+        self.assertIsNotNone(other_order)
+        other_order.sell_job.status = "finished"
+        other_order.sell_job.save(update_fields=["status", "updated_at"])
+
+        order.buy_job.status = "error"
+        order.buy_job.save(update_fields=["status", "updated_at"])
+        reconcile_internal_order_for_job(order.buy_job, terminal_status="error", note="test failure")
+
+        cleanup = Job.objects.filter(action_code=802, source_job=order.buy_job).latest("created_at")
+        self.assertIn('"cleanup_only": true', cleanup.inputs_json)
+        self.assertIn('"offer_mode": "replace"', cleanup.inputs_json)
+        self.assertIn('"amount": 600', cleanup.inputs_json)
+        self.assertIn('"expected_current_total": 1600', cleanup.inputs_json)
+
     def test_create_internal_order_falls_back_to_other_bo_city_but_keeps_target_city(self):
         order = create_internal_order(
             self.buyer_ga,

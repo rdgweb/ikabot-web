@@ -160,20 +160,29 @@ class InternalMarketSellRunner(BaseRunner):
         unit_price = int(inputs.get("unit_price", 0))
         order_id = inputs.get("internal_order_id")
         offer_mode = str(inputs.get("offer_mode") or "add").strip().lower()
+        cleanup_only = bool(inputs.get("cleanup_only"))
         city_name = str(inputs.get("city_name") or city_id or "").strip()
         buyer_city_name = str(inputs.get("buyer_city_name") or inputs.get("buyer_city_id") or "").strip()
         resource_label = RESOURCE_LABELS.get(resource_idx, f"res={resource_idx}")
 
-        if not city_id or bo_pos is None or amount <= 0 or not order_id:
+        if not city_id or bo_pos is None or not order_id or (amount <= 0 and offer_mode != "clear"):
             self.log(jid, "error", "Missing required inputs for InternalMarketSellRunner")
             return RunnerResult(success=False, data={"error": "missing inputs"})
 
-        self.log(
-            jid,
-            "info",
-            f"[Order {order_id}] Venda interna: {city_name} -> {buyer_city_name} | "
-            f"{resource_label} x{amount} @{'auto' if unit_price <= 0 else unit_price}",
-        )
+        if cleanup_only:
+            self.log(
+                jid,
+                "info",
+                f"[Order {order_id}] Cleanup de oferta interna: {city_name} | "
+                f"{resource_label} total={amount} modo={offer_mode}",
+            )
+        else:
+            self.log(
+                jid,
+                "info",
+                f"[Order {order_id}] Venda interna: {city_name} -> {buyer_city_name} | "
+                f"{resource_label} x{amount} @{'auto' if unit_price <= 0 else unit_price}",
+            )
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
         if not creds:
@@ -182,20 +191,60 @@ class InternalMarketSellRunner(BaseRunner):
 
         try:
             client = self.get_or_login_game_client(jid, aid, ga_id, creds)
-            offer_result = client.create_market_offer(
-                city_id=int(city_id),
-                branchoffice_pos=int(bo_pos),
-                resource_idx=resource_idx,
-                amount=amount,
-                unit_price=unit_price,
-                offer_mode=offer_mode,
-            )
+            if cleanup_only:
+                action = CreateOfferAction(client)
+                _limits, current_offer_state = action.get_market_context(int(city_id), int(bo_pos))
+                target_field = "resource" if resource_idx == 0 else f"tradegood{resource_idx}"
+                current_total = int(current_offer_state.get(target_field, 0) or 0)
+                expected_current_total = int(inputs.get("expected_current_total", -1))
+                if expected_current_total >= 0 and current_total != expected_current_total:
+                    self.log(
+                        jid,
+                        "warn",
+                        f"[Order {order_id}] Cleanup ignorado: total vivo {current_total} "
+                        f"!= esperado {expected_current_total}.",
+                    )
+                    self.save_game_client(ga_id or aid, client)
+                    return RunnerResult(
+                        success=True,
+                        data={
+                            "cleanup_skipped": "market_total_mismatch",
+                            "current_total": current_total,
+                            "expected_current_total": expected_current_total,
+                        },
+                    )
+                offer_result = action.execute(
+                    city_id=int(city_id),
+                    branchoffice_pos=int(bo_pos),
+                    resource_idx=resource_idx,
+                    amount=amount,
+                    unit_price=unit_price,
+                    offer_mode=offer_mode,
+                )
+            else:
+                offer_result = client.create_market_offer(
+                    city_id=int(city_id),
+                    branchoffice_pos=int(bo_pos),
+                    resource_idx=resource_idx,
+                    amount=amount,
+                    unit_price=unit_price,
+                    offer_mode=offer_mode,
+                )
             self.save_game_client(ga_id or aid, client)
 
             used_unit_price = int(offer_result.get("used_unit_price", 0)) if isinstance(offer_result, dict) else 0
             price_min = int(offer_result.get("price_min", 0)) if isinstance(offer_result, dict) else 0
             price_max = int(offer_result.get("price_max", 0)) if isinstance(offer_result, dict) else 0
             final_offer_amount = int(offer_result.get("final_offer_amount", amount)) if isinstance(offer_result, dict) else amount
+            if cleanup_only:
+                self.log(
+                    jid,
+                    "info",
+                    f"[Order {order_id}] Cleanup aplicado em {city_name} | bo={bo_pos} | "
+                    f"{resource_label} total={final_offer_amount} | modo={offer_mode}",
+                )
+                return RunnerResult(success=True, data={"cleanup_total": final_offer_amount})
+
             self.log(
                 jid,
                 "info",
