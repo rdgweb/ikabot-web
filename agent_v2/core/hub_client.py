@@ -285,6 +285,22 @@ class HubClient:
             "patch": patch or {},
         })
 
+    def patch_snapshot_ships(
+        self,
+        game_account_id: str,
+        *,
+        delta_transporters: int = 0,
+        delta_freighters: int = 0,
+    ) -> dict:
+        """PATCH /api/agent/snapshots/patch-ships/ - atomic delta on ship counts.
+        Negative pra despachar, positive pra liberar.
+        """
+        return self._patch("/api/agent/snapshots/patch-ships", {
+            "game_account_id": game_account_id,
+            "delta_transporters": int(delta_transporters),
+            "delta_freighters": int(delta_freighters),
+        })
+
     def retime_root_followup_job(
         self,
         *,

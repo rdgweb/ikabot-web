@@ -207,11 +207,12 @@ class SendResourcesRunner(BaseRunner):
             capacity_percent=transport_load_percent,
         )
 
+        ship_kind = "cargueiro" if use_freighters else "mercante"
         self.log(
             jid,
             "info",
             (
-                f"Plano de transporte: {plan.origin.city_name} -> {plan.destination.city_name} | "
+                f"Plano de transporte ({ship_kind}): {plan.origin.city_name} -> {plan.destination.city_name} | "
                 f"solicitado={plan.total_requested:,} | despachavel={plan.total_dispatched:,} | "
                 f"navios_livres={plan.free_transporters} | capacidade/navio={plan.effective_ship_capacity} "
                 f"({plan.capacity_percent}% de {plan.ship_capacity})"
@@ -289,10 +290,26 @@ class SendResourcesRunner(BaseRunner):
             jid,
             "info",
             (
-                f"Transporte enviado: {plan.origin.city_name} -> {plan.destination.city_name} | "
+                f"Transporte enviado ({ship_kind}): {plan.origin.city_name} -> {plan.destination.city_name} | "
                 f"despachado={plan.total_dispatched:,}"
             ),
         )
+
+        # Desconta navios no snapshot (delta atômico no hub)
+        if ga_id and plan.total_dispatched > 0:
+            from math import ceil
+            ship_cap = plan.ship_capacity or (50000 if use_freighters else 500)
+            ships_used = max(1, ceil(plan.total_dispatched / max(1, ship_cap)))
+            try:
+                if use_freighters:
+                    self.hub.patch_snapshot_ships(ga_id, delta_freighters=-ships_used)
+                    self.log(jid, "info", f"  ↳ {ships_used} cargueiro(s) reservado(s) no snapshot")
+                else:
+                    self.hub.patch_snapshot_ships(ga_id, delta_transporters=-ships_used)
+                    self.log(jid, "info", f"  ↳ {ships_used} mercante(s) reservado(s) no snapshot")
+            except Exception as _exc:
+                self.log(jid, "warn", f"  ↳ Falha ao patch snapshot ships: {_exc}")
+
         if ga_id:
             origin_after_dispatch = {
                 name: max(0, int(plan.origin.available_resources.get(name, 0)) - int(plan.dispatched.get(name, 0)))
@@ -463,7 +480,23 @@ class SendResourcesRunner(BaseRunner):
                     )
                 except Exception as exc:
                     self.log(jid, "warn", f"Nao foi possivel abater shortfall de construcao apos chegada: {exc}")
+            # Libera navios no snapshot — chegada = barcos retornam (aprox)
             if ga_id:
+                try:
+                    used_freighters = bool(inputs.get("use_freighters"))
+                    sent_total = sum(int(sent.get(n, 0) or 0) for n in RESOURCE_ORDER)
+                    if sent_total > 0:
+                        from math import ceil
+                        cap = 50000 if used_freighters else 500
+                        ships = max(1, ceil(sent_total / cap))
+                        if used_freighters:
+                            self.hub.patch_snapshot_ships(ga_id, delta_freighters=ships)
+                            self.log(jid, "info", f"  ↳ {ships} cargueiro(s) liberado(s) no snapshot")
+                        else:
+                            self.hub.patch_snapshot_ships(ga_id, delta_transporters=ships)
+                            self.log(jid, "info", f"  ↳ {ships} mercante(s) liberado(s) no snapshot")
+                except Exception as _exc:
+                    self.log(jid, "warn", f"  ↳ Falha ao liberar ships no snapshot: {_exc}")
                 self.save_game_client(ga_id, client)
             return RunnerResult(success=True, data={"status": "arrival_confirmed", **result})
 
@@ -680,7 +713,7 @@ class DistributeResourcesRunner(BaseRunner):
                 continue
 
             # Cargueiros globais: split em N spawns (cargueiros + sobra mercantes)
-            base_snap = (snapshot.get("base") or {}) if isinstance(snapshot, dict) else {}
+            base_snap = (snapshot.get("base_snapshot") or {}) if isinstance(snapshot, dict) else {}
             free_freighters = int(base_snap.get("free_freighters") or 0)
             freighter_threshold = _to_int(inputs.get("freighter_threshold", 30000), 30000, 0)
 
@@ -705,9 +738,16 @@ class DistributeResourcesRunner(BaseRunner):
                     **chunk,
                 }
                 self.hub.spawn_job(jid, action_code=2, inputs=child_inputs)
-                # Decrementa local pra próximos splits no mesmo ciclo
+                chunk_total = sum(chunk.values())
                 if use_freighters:
-                    free_freighters = max(0, free_freighters - max(1, sum(chunk.values()) // 50000 + (1 if sum(chunk.values()) % 50000 else 0)))
+                    n = max(1, chunk_total // 50000 + (1 if chunk_total % 50000 else 0))
+                    free_freighters = max(0, free_freighters - n)
+                    self.log(jid, "info",
+                        f"  ↳ cargueiro × {n} ({chunk_total:,}) — cargueiros restantes: {free_freighters}")
+                else:
+                    n = max(1, chunk_total // 500 + (1 if chunk_total % 500 else 0))
+                    self.log(jid, "info",
+                        f"  ↳ mercante × {n} ({chunk_total:,})")
             actions_spawned += 1
             self.log(
                 jid,

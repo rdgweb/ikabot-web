@@ -9,6 +9,7 @@ from .api.agent import (
     PatchSnapshotBaseView,
     PatchSnapshotBuildingView,
     PatchSnapshotResourcesView,
+    PatchSnapshotShipsView,
     SolveCaptchaView,
     UpdateSnapshotView,
 )
@@ -21,6 +22,7 @@ urlpatterns = [
     path("snapshots/patch-base/", PatchSnapshotBaseView.as_view(), name="snapshots-patch-base"),
     path("snapshots/patch-building/", PatchSnapshotBuildingView.as_view(), name="snapshots-patch-building"),
     path("snapshots/patch-resources/", PatchSnapshotResourcesView.as_view(), name="snapshots-patch-resources"),
+    path("snapshots/patch-ships/", PatchSnapshotShipsView.as_view(), name="snapshots-patch-ships"),
     path("blackbox/token/", BlackboxTokenView.as_view(), name="blackbox-token"),
     path("captcha/solve/", SolveCaptchaView.as_view(), name="captcha-solve"),
     path("captcha/challenge/", CaptchaChallengeCreateView.as_view(), name="captcha-challenge-create"),

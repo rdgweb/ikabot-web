@@ -2868,7 +2868,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         }
         # Free freighters do snapshot do GA
         snap = self._get_snapshot(job_id, str(target_city.get("game_account_id") or "")) if hasattr(self, "_get_snapshot") else None
-        base_snap = (snap or {}).get("base") or {}
+        base_snap = (snap or {}).get("base_snapshot") or {}
         free_freighters = int(base_snap.get("free_freighters") or 0)
         freighter_threshold = _to_int(inputs.get("freighter_threshold", 30000), 30000, 0)
 

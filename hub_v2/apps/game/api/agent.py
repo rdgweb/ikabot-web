@@ -390,6 +390,61 @@ class PatchSnapshotBaseView(APIView):
         return Response({"ok": True, "patched": True, "base_snapshot": normalized_patch})
 
 
+class PatchSnapshotShipsView(APIView):
+    """PATCH /api/agent/snapshots/patch-ships/
+
+    Aplica deltas atomicamente nos contadores free_transporters/free_freighters
+    do base_snapshot. Permite refletir dispatches/retornos sem esperar ac=100.
+
+    Body: {game_account_id, delta_transporters: int, delta_freighters: int}
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def patch(self, request):
+        from django.db import transaction
+        from django.utils import timezone
+
+        ga_id = str(request.data.get("game_account_id") or "").strip()
+        try:
+            delta_t = int(request.data.get("delta_transporters") or 0)
+            delta_f = int(request.data.get("delta_freighters") or 0)
+        except (TypeError, ValueError):
+            return Response({"error": "deltas must be int"}, status=status.HTTP_400_BAD_REQUEST)
+        if not ga_id:
+            return Response({"error": "game_account_id required"}, status=status.HTTP_400_BAD_REQUEST)
+        if delta_t == 0 and delta_f == 0:
+            return Response({"ok": True, "no_change": True})
+
+        with transaction.atomic():
+            try:
+                snapshot = AccountSnapshot.objects.select_for_update().get(game_account__id=ga_id)
+            except AccountSnapshot.DoesNotExist:
+                return Response({"error": "snapshot not found"}, status=status.HTTP_404_NOT_FOUND)
+
+            base = dict(snapshot.base_snapshot or {})
+            free_t = max(0, int(base.get("free_transporters") or 0) + delta_t)
+            free_f = max(0, int(base.get("free_freighters") or 0) + delta_f)
+            max_t = int(base.get("max_transporters") or 0)
+            max_f = int(base.get("max_freighters") or 0)
+            # Clamp to max
+            if max_t > 0:
+                free_t = min(free_t, max_t)
+            if max_f > 0:
+                free_f = min(free_f, max_f)
+            base["free_transporters"] = free_t
+            base["free_freighters"] = free_f
+            snapshot.base_snapshot = base
+            snapshot.updated_at = timezone.now()
+            snapshot.save(update_fields=["base_snapshot", "updated_at"])
+            bump_dashboard_cache_version()
+
+        logger.info("Snapshot ships patched: ga=%s dt=%+d df=%+d → t=%d f=%d",
+                    ga_id, delta_t, delta_f, free_t, free_f)
+        return Response({"ok": True, "free_transporters": free_t, "free_freighters": free_f})
+
+
 class CurrentSnapshotView(APIView):
     """GET /api/agent/snapshots/current/?game_account_id=<uuid>"""
 
