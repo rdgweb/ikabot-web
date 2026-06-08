@@ -12,6 +12,79 @@ from game_client.parsers.html_parser import GamePageParser
 
 
 RESOURCE_ORDER = ("wood", "wine", "marble", "crystal", "sulfur")
+
+# Capacidade por barco — valores reais Ikariam
+TRANSPORT_CAPACITY = 500       # mercante
+FREIGHTER_CAPACITY = 50000     # cargueiro
+
+
+def split_shipment(
+    cargo_by_resource: dict[str, int],
+    *,
+    threshold: int = 30000,
+    free_freighters: int = 0,
+) -> list[tuple[dict[str, int], bool]]:
+    """Decide split de cargo entre cargueiros e mercantes.
+
+    Args:
+        cargo_by_resource: {wood: 50000, sulfur: 8000, ...} a despachar
+        threshold: cargo mínimo pra alocar 1 cargueiro extra (default 30k)
+        free_freighters: cargueiros livres na conta (limita uso)
+
+    Returns:
+        Lista de (cargo_dict, use_freighters) — cada item vira 1 spawn ac=2.
+        Mantém proporção entre recursos ao distribuir.
+
+    Regras:
+      - cargueiros_cheios = total // 50000
+      - resto = total % 50000
+      - se resto >= threshold: +1 cargueiro (subutilizado mas vale)
+      - mercantes só pegam o sobra que não vale 1 cargueiro
+      - limita cargueiros a free_freighters; sobra cai pra mercantes
+    """
+    total = sum(int(v or 0) for v in cargo_by_resource.values())
+    if total <= 0:
+        return []
+
+    cargueiros_cheios = total // FREIGHTER_CAPACITY
+    resto = total % FREIGHTER_CAPACITY
+
+    if resto >= threshold:
+        cargueiros = cargueiros_cheios + 1
+        sobra_mercante = 0
+    else:
+        cargueiros = cargueiros_cheios
+        sobra_mercante = resto
+
+    # Clamp ao disponível
+    if free_freighters >= 0 and cargueiros > free_freighters:
+        sobra_mercante += (cargueiros - free_freighters) * FREIGHTER_CAPACITY
+        cargueiros = free_freighters
+
+    splits: list[tuple[dict[str, int], bool]] = []
+    # Distribui cargo proporcionalmente pelos recursos pra cada split
+    remaining = dict(cargo_by_resource)
+    if cargueiros > 0:
+        cap_total = cargueiros * FREIGHTER_CAPACITY
+        cap_used = min(total - sobra_mercante, cap_total)
+        chunk = {}
+        running = 0
+        for key in RESOURCE_ORDER:
+            want = int(remaining.get(key, 0) or 0)
+            if want <= 0:
+                continue
+            take = min(want, max(0, cap_used - running))
+            if take > 0:
+                chunk[key] = take
+                remaining[key] = want - take
+                running += take
+        if chunk:
+            splits.append((chunk, True))
+    if sobra_mercante > 0:
+        chunk = {k: v for k, v in remaining.items() if int(v or 0) > 0}
+        if chunk:
+            splits.append((chunk, False))
+    return splits
 RESOURCE_INDEX = {
     "wood": 0,
     "wine": 1,

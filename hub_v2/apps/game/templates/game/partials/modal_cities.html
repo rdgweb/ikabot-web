@@ -80,6 +80,9 @@
               <div class="mt-2 grid grid-cols-2 gap-2 text-[10px]">
                 <span :class="Number(account.free_transporters || 0) > 0 ? 'gm-text-positive' : 'gm-text-negative'" x-text="'Transportes ' + account.free_transporters + '/' + account.max_transporters"></span>
                 <span :class="account.total_wine_hours ? 'gm-text-warning' : 'gm-text-positive'" x-text="'Vinho ' + (account.total_wine_hours ? fmtHours(account.total_wine_hours) : 'Estavel')"></span>
+                <template x-if="Number(account.max_freighters || 0) > 0">
+                  <span :class="Number(account.free_freighters || 0) > 0 ? 'gm-text-positive' : 'gm-text-negative'" x-text="'Cargueiros ' + account.free_freighters + '/' + account.max_freighters"></span>
+                </template>
               </div>
             </div>
           </template>

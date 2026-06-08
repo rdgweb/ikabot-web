@@ -95,6 +95,7 @@ ACTIONS = {
         "description": "Executa um plano multi-etapa de construcoes, com fila por cidade e reserva de recursos.",
         "inputs": [
             {"key": "auto_transport", "type": FIELD_BOOL, "label": "Transportar recursos automaticamente", "required": False, "default": True},
+            {"key": "freighter_threshold", "type": FIELD_INT, "label": "Mínimo de cargo pra usar cargueiro", "required": False, "min": 0, "default": 30000, "help": "Cargo desse valor ou mais usa cargueiro (1 cargueiro = 50k). Resto vai mercante. Default 30k."},
             {"key": "queue_strategy", "type": FIELD_CHOICE, "label": "Prioridade do plano", "required": False, "default": "eta_first", "choices": CONSTRUCTION_QUEUE_STRATEGY_CHOICES},
             {"key": "research_reduction", "type": FIELD_CHOICE, "label": "Pesquisa economica", "required": False, "default": "14", "choices": RESEARCH_REDUCTION_CHOICES},
         ],

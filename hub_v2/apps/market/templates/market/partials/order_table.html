@@ -41,6 +41,7 @@
             <th>Recurso</th>
             <th class="text-right">Qtd.</th>
             <th class="text-right">Preco/un.</th>
+            <th class="text-right">Total</th>
             <th>Comprador</th>
             <th>Cidade compra</th>
             <th>Vendedor</th>
@@ -74,6 +75,7 @@
               <div>{{ order.unit_price|intcomma }}</div>
               <div class="text-[10px] text-muted">min {{ order.price_min|intcomma }} / max {{ order.price_max|intcomma }}</div>
             </td>
+            <td class="text-sm text-right font-mono tabular-nums font-semibold">{{ order.total_value|intcomma }}</td>
             <td>
               <div class="text-sm text-ink leading-tight">{{ order.buyer_account.label }}</div>
               {% if order.buyer_game_account %}
@@ -142,7 +144,7 @@
           </tr>
           {% empty %}
           <tr>
-            <td colspan="11" class="text-center py-8 text-muted">
+            <td colspan="12" class="text-center py-8 text-muted">
               <i class="bi bi-shop text-2xl block mb-2"></i>
               Nenhuma ordem encontrada para os filtros aplicados.
             </td>

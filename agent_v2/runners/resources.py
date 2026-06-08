@@ -23,6 +23,7 @@ from core.runner_registry import register_runner
 from runners.base import BaseRunner, RunnerResult
 from services.island_donation import fetch_city_context
 from services.resource_transport import (
+    split_shipment,
     RESOURCE_ORDER,
     change_current_city,
     confirm_arrival,
@@ -678,17 +679,35 @@ class DistributeResourcesRunner(BaseRunner):
             if not viable_resources:
                 continue
 
-            child_inputs = {
-                "from_city": route["from_city"],
-                "from_city_name": route["from_city_name"],
-                "to_city": route["to_city"],
-                "to_city_name": route["to_city_name"],
-                "transport_load_percent": transport_load_percent,
-                "confirm_arrival": confirm_arrival_enabled,
-                "confirmation_margin_minutes": confirmation_margin_minutes,
-                **viable_resources,
-            }
-            self.hub.spawn_job(jid, action_code=2, inputs=child_inputs)
+            # Cargueiros globais: split em N spawns (cargueiros + sobra mercantes)
+            base_snap = (snapshot.get("base") or {}) if isinstance(snapshot, dict) else {}
+            free_freighters = int(base_snap.get("free_freighters") or 0)
+            freighter_threshold = _to_int(inputs.get("freighter_threshold", 30000), 30000, 0)
+
+            splits = split_shipment(
+                viable_resources,
+                threshold=freighter_threshold,
+                free_freighters=free_freighters,
+            )
+            if not splits:
+                splits = [(viable_resources, False)]
+
+            for chunk, use_freighters in splits:
+                child_inputs = {
+                    "from_city": route["from_city"],
+                    "from_city_name": route["from_city_name"],
+                    "to_city": route["to_city"],
+                    "to_city_name": route["to_city_name"],
+                    "transport_load_percent": transport_load_percent,
+                    "use_freighters": use_freighters,
+                    "confirm_arrival": confirm_arrival_enabled,
+                    "confirmation_margin_minutes": confirmation_margin_minutes,
+                    **chunk,
+                }
+                self.hub.spawn_job(jid, action_code=2, inputs=child_inputs)
+                # Decrementa local pra próximos splits no mesmo ciclo
+                if use_freighters:
+                    free_freighters = max(0, free_freighters - max(1, sum(chunk.values()) // 50000 + (1 if sum(chunk.values()) % 50000 else 0)))
             actions_spawned += 1
             self.log(
                 jid,

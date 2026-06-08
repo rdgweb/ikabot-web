@@ -79,6 +79,9 @@
                 <span x-text="account.share + '%'"></span>
               </div>
               <div class="mt-2 text-[10px]" :class="Number(account.free_transporters || 0) > 0 ? 'gm-text-positive' : 'gm-text-negative'" x-text="'Transportes ' + account.free_transporters + '/' + account.max_transporters"></div>
+              <template x-if="Number(account.max_freighters || 0) > 0">
+                <div class="mt-0.5 text-[10px]" :class="Number(account.free_freighters || 0) > 0 ? 'gm-text-positive' : 'gm-text-negative'" x-text="'Cargueiros ' + account.free_freighters + '/' + account.max_freighters"></div>
+              </template>
             </div>
           </template>
           <div x-show="!shipAccountRanking().length" class="gm-empty">

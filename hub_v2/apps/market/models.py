@@ -116,6 +116,10 @@ class InternalMarketOrder(UUIDTimestampModel):
     def __str__(self):
         return f"Order {self.id} [{self.status}] {self.amount}x res{self.resource_idx}"
 
+    @property
+    def total_value(self) -> int:
+        return int(self.amount or 0) * int(self.unit_price or 0)
+
 
 class BlackMarketOffer(UUIDTimestampModel):
     """Tracks offers listed on the game's Black Market by this hub."""

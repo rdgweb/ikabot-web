@@ -1754,8 +1754,9 @@ def _custom_field_names(action_code: int) -> list[str]:
         return ["city"]
     if int(action_code) == 2:
         return [
-            "from_city", "to_city", "transport_load_percent", "confirm_arrival",
-            "confirmation_margin_minutes", "wood", "wine", "marble", "crystal", "sulfur",
+            "from_city", "to_city", "transport_load_percent", "use_freighters",
+            "confirm_arrival", "confirmation_margin_minutes",
+            "wood", "wine", "marble", "crystal", "sulfur",
         ]
     if int(action_code) == 8:
         return ["buyer_city_id", "seller_city_id", "resource_idx", "amount"]

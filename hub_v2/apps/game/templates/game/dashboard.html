@@ -168,6 +168,8 @@
        data-tg-production="{{ card.tradegood_production }}"
        data-free-transporters="{{ card.free_transporters }}"
        data-max-transporters="{{ card.max_transporters }}"
+       data-free-freighters="{{ card.free_freighters }}"
+       data-max-freighters="{{ card.max_freighters }}"
        data-player="{{ card.player_name }}"
        data-server-label="{{ card.server_id }}"
        data-total-wine-hours="{{ card.total_wine_hours|default:'' }}">
@@ -228,6 +230,11 @@
           <span class="flex items-center gap-1" title="Transportes">
             <i class="bi bi-truck"></i> {{ card.free_transporters }}/{{ card.max_transporters }}
           </span>
+          {% if card.max_freighters %}
+          <span class="flex items-center gap-1" title="Cargueiros">
+            <i class="bi bi-truck-flatbed"></i> {{ card.free_freighters }}/{{ card.max_freighters }}
+          </span>
+          {% endif %}
           {% if card.wine_spendings %}
           <span class="relative group flex items-center gap-1 {% if card.net_wine_rate < 0 %}text-red-500{% else %}text-green-600{% endif %} cursor-help">
             <img src="{% static 'game/resources/icon_wine.png' %}" class="w-4 h-4">

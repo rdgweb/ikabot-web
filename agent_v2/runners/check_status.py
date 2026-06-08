@@ -299,6 +299,8 @@ class CheckStatusRunner(BaseRunner):
                     "scientists_upkeep": global_data.get("scientistsUpkeep", 0),
                     "free_transporters": global_data.get("freeTransporters", 0),
                     "max_transporters": global_data.get("maxTransporters", 0),
+                    "free_freighters": global_data.get("freeFreighters", 0),
+                    "max_freighters": global_data.get("maxFreighters", 0),
                     "resource_production": global_data.get("resourceProduction", 0),
                     "tradegood_production": global_data.get("tradegoodProduction", 0),
                     "wine_spendings": total_city_wine_consumption,
@@ -493,6 +495,8 @@ class CheckStatusRunner(BaseRunner):
                 "scientistsUpkeep": _safe_num_like(header_data.get("scientistsUpkeep")),
                 "freeTransporters": _safe_num_like(header_data.get("freeTransporters")),
                 "maxTransporters": _safe_num_like(header_data.get("maxTransporters")),
+                "freeFreighters": _safe_num_like(header_data.get("freeFreighters")),
+                "maxFreighters": _safe_num_like(header_data.get("maxFreighters")),
                 # NOTE: production rates from the Ikariam API are per-SECOND, not per-hour
                 # Dashboard must convert: rate_per_hour = rate * 3600
                 "resourceProduction": float(header_data.get("resourceProduction", 0) or 0),

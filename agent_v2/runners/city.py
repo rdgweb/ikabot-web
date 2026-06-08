@@ -13,7 +13,7 @@ from typing import Any
 from core.runner_registry import register_runner
 from game_client.constants import GAME_AJAX_HEADERS
 from runners.base import BaseRunner, RunnerResult
-from services.resource_transport import estimate_incoming_transport_wait_seconds, change_current_city
+from services.resource_transport import estimate_incoming_transport_wait_seconds, change_current_city, split_shipment
 from services.island_donation import extract_city_data
 
 logger = logging.getLogger(__name__)
@@ -2860,7 +2860,39 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         if not any(_to_int(payload.get(field), 0) > 0 for field in ("wood", "wine", "marble", "crystal", "sulfur")):
             return False
 
-        self.hub.spawn_job(job_id, action_code=2, inputs=payload)
+        # Split entre cargueiros e mercantes baseado em cargo + freighter threshold
+        cargo_by_resource = {
+            field: int(_to_int(payload.get(field), 0))
+            for field in ("wood", "wine", "marble", "crystal", "sulfur")
+            if _to_int(payload.get(field), 0) > 0
+        }
+        # Free freighters do snapshot do GA
+        snap = self._get_snapshot(job_id, str(target_city.get("game_account_id") or "")) if hasattr(self, "_get_snapshot") else None
+        base_snap = (snap or {}).get("base") or {}
+        free_freighters = int(base_snap.get("free_freighters") or 0)
+        freighter_threshold = _to_int(inputs.get("freighter_threshold", 30000), 30000, 0)
+
+        splits = split_shipment(
+            cargo_by_resource,
+            threshold=freighter_threshold,
+            free_freighters=free_freighters,
+        )
+        if not splits:
+            splits = [(cargo_by_resource, False)]
+
+        for chunk, use_freighters in splits:
+            chunk_payload = {
+                "from_city": payload["from_city"],
+                "from_city_name": payload["from_city_name"],
+                "to_city": payload["to_city"],
+                "to_city_name": payload["to_city_name"],
+                "transport_load_percent": payload["transport_load_percent"],
+                "confirm_arrival": payload["confirm_arrival"],
+                "confirmation_margin_minutes": payload["confirmation_margin_minutes"],
+                "use_freighters": use_freighters,
+                **chunk,
+            }
+            self.hub.spawn_job(job_id, action_code=2, inputs=chunk_payload)
         covered_levels = max(1, len(next_rows))
         cover_label = (
             "Remessa criada para cobrir o proximo nivel: "
