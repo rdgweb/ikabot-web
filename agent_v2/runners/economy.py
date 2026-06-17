@@ -8,6 +8,7 @@ from typing import Any
 
 from core.runner_registry import register_runner
 from runners.base import BaseRunner, RunnerResult
+from sessions.game_session_service import LoginCooldownActive
 
 logger = logging.getLogger(__name__)
 
@@ -55,10 +56,15 @@ class _ShrineRunnerMixin(BaseRunner):
             self.log(job_id, "warn", f"Nao foi possivel obter snapshot: {exc}")
             return None
 
-    def _ensure_status_refresh(self, job_id: str) -> None:
+    def _ensure_status_refresh(self, job_id: str, game_account_id: str | None = None) -> None:
         try:
-            self.hub.spawn_job(job_id, action_code=100, inputs={})
-            self.log(job_id, "info", "Check status solicitado para atualizar snapshot do santuario")
+            self.ensure_status_refresh(
+                job_id,
+                game_account_id=game_account_id,
+                message="Check status solicitado para atualizar snapshot do santuario",
+            )
+        except LoginCooldownActive:
+            raise
         except Exception as exc:
             self.log(job_id, "warn", f"Nao foi possivel solicitar check_status: {exc}")
 
@@ -134,12 +140,12 @@ class _ShrineRunnerMixin(BaseRunner):
 
         snapshot = self._get_snapshot(jid, ga_id)
         if snapshot is None:
-            self._ensure_status_refresh(jid)
+            self._ensure_status_refresh(jid, ga_id)
             return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "waiting_snapshot"})
 
         if self.is_snapshot_stale(snapshot):
             self.log(jid, "warn", "Snapshot antigo para santuario; solicitando refresh")
-            self._ensure_status_refresh(jid)
+            self._ensure_status_refresh(jid, ga_id)
             return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "stale_snapshot"})
 
         shrine = self._find_shrine(snapshot)

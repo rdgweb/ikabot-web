@@ -43,6 +43,7 @@ from typing import Any
 
 from core.runner_registry import register_runner
 from runners.base import BaseRunner, RunnerResult
+from sessions.game_session_service import LoginCooldownActive
 
 logger = logging.getLogger(__name__)
 
@@ -487,9 +488,16 @@ class WorldSpyRunner(BaseRunner):
                                 continue
                             seen_gas.add(stale_ga)
                             try:
-                                self.hub.spawn_job(jid, action_code=100, inputs={}, game_account_id=stale_ga)
+                                self.ensure_status_refresh(
+                                    jid,
+                                    game_account_id=stale_ga,
+                                    spawn_game_account_id=stale_ga,
+                                    message=f"[WorldSpy] Check status solicitado para ga={stale_ga[:8]}",
+                                )
                                 self.hub.spawn_job(jid, action_code=13,  inputs={}, game_account_id=stale_ga)
                                 spawned_refresh += 1
+                            except LoginCooldownActive:
+                                self.log(jid, "warn", f"[WorldSpy] Refresh pulado para ga={stale_ga[:8]}: login em cooldown")
                             except Exception as _exc:
                                 self.log(jid, "warn", f"[WorldSpy] Falha refresh ga={stale_ga[:8]}: {_exc}")
                     if spawned_refresh:

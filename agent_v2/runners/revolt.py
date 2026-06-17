@@ -17,6 +17,7 @@ from typing import Any
 from core.runner_registry import register_runner
 from game_client.constants import GAME_AJAX_HEADERS
 from runners.base import BaseRunner, RunnerResult
+from sessions.game_session_service import LoginCooldownActive
 
 logger = logging.getLogger(__name__)
 
@@ -92,10 +93,16 @@ class RevoltRunner(BaseRunner):
         except Exception as exc:
             self.log(job_id, "warn", f"Nao foi possivel ajustar snapshot apos revolta: {exc}")
 
-    def _schedule_snapshot_refresh(self, *, job_id: str) -> None:
+    def _schedule_snapshot_refresh(self, *, job_id: str, game_account_id: str) -> None:
         try:
-            self.hub.spawn_job(job_id, action_code=100, inputs={}, delay_seconds=15)
-            self.log(job_id, "info", "Check Status agendado para reconciliar o snapshot")
+            self.ensure_status_refresh(
+                job_id,
+                game_account_id=game_account_id,
+                delay_seconds=15,
+                message="Check Status agendado para reconciliar o snapshot",
+            )
+        except LoginCooldownActive:
+            self.log(job_id, "warn", "Check Status pos-revolta nao agendado: login em cooldown")
         except Exception as exc:
             self.log(job_id, "warn", f"Nao foi possivel agendar Check Status apos revolta: {exc}")
 
@@ -276,7 +283,7 @@ class RevoltRunner(BaseRunner):
                 city_id=city_id,
                 revolt_type=revolt_type,
             )
-            self._schedule_snapshot_refresh(job_id=jid)
+            self._schedule_snapshot_refresh(job_id=jid, game_account_id=game_account_id)
         return RunnerResult(
             success=ok,
             data={"city_id": city_id, "city_name": city_name, "revolt_type": revolt_type},

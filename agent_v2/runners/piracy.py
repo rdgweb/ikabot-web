@@ -824,7 +824,11 @@ class PiracyMissionRunner(BaseRunner):
                             )
                         inputs = {**inputs, "_targeted_pending_check_status_id": ""}
                     else:
-                        spawned = self.hub.spawn_job(jid, action_code=100, inputs={})
+                        spawned = self.ensure_status_refresh(
+                            jid,
+                            game_account_id=game_account_id,
+                            message="Check status solicitado para atualizar snapshot antes de colonizar",
+                        )
                         cs_id = str(spawned.get("new_job_id") or "").strip()
                         self.log(jid, "info", f"Disparando check_status {cs_id} para atualizar snapshot antes de colonizar")
                         self.save_game_client(game_account_id, client)

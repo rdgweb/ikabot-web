@@ -13,6 +13,7 @@ from typing import Any
 from core.runner_registry import register_runner
 from game_client.constants import GAME_AJAX_HEADERS
 from runners.base import BaseRunner, RunnerResult
+from sessions.game_session_service import LoginCooldownActive
 from services.resource_transport import estimate_incoming_transport_wait_seconds, change_current_city, split_shipment
 from services.island_donation import extract_city_data
 
@@ -743,10 +744,11 @@ class _SnapshotMixin:
             self.log(job_id, "warn", f"Nao foi possivel obter snapshot: {exc}")
             return None
 
-    def _ensure_status_refresh(self, job_id: str) -> None:
+    def _ensure_status_refresh(self, job_id: str, game_account_id: str | None = None) -> None:
         try:
-            self.hub.spawn_job(job_id, action_code=100, inputs={})
-            self.log(job_id, "info", "Check status solicitado para atualizar snapshot")
+            self.ensure_status_refresh(job_id, game_account_id=game_account_id)
+        except LoginCooldownActive:
+            raise
         except Exception as exc:
             self.log(job_id, "warn", f"Nao foi possivel solicitar check_status: {exc}")
 
@@ -950,13 +952,13 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
 
         snapshot = self._get_snapshot(jid, ga_id)
         if snapshot is None:
-            self._ensure_status_refresh(jid)
+            self._ensure_status_refresh(jid, ga_id)
             return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "waiting_snapshot"})
 
         updated_at = _snapshot_time(snapshot.get("full_snapshot_updated_at") or snapshot.get("updated_at"))
         if self.is_snapshot_stale(snapshot):
             logger.debug("[%s] Snapshot desatualizado; solicitando refresh", jid)
-            self._ensure_status_refresh(jid)
+            self._ensure_status_refresh(jid, ga_id)
             return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "stale_snapshot"})
 
         # Ensure snapshot is newer than the last time we started builds.
@@ -966,21 +968,21 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         if last_builds_started_at > 0 and updated_at is not None:
             if updated_at.timestamp() < last_builds_started_at:
                 logger.debug("[%s] Aguardando snapshot pós-construção", jid)
-                self._ensure_status_refresh(jid)
+                self._ensure_status_refresh(jid, ga_id)
                 return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "waiting_post_build_snapshot"})
 
         last_transport_dispatched_at = _to_float(inputs.get("last_transport_dispatched_at"), 0.0)
         if last_transport_dispatched_at > 0 and updated_at is not None:
             if updated_at.timestamp() < last_transport_dispatched_at:
                 logger.debug("[%s] Aguardando snapshot pós-transporte", jid)
-                self._ensure_status_refresh(jid)
+                self._ensure_status_refresh(jid, ga_id)
                 return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "waiting_post_transport_snapshot"})
 
         last_market_order_requested_at = _to_float(inputs.get("last_market_order_requested_at"), 0.0)
         if last_market_order_requested_at > 0 and updated_at is not None:
             if updated_at.timestamp() < last_market_order_requested_at:
                 logger.debug("[%s] Aguardando snapshot pós-mercado", jid)
-                self._ensure_status_refresh(jid)
+                self._ensure_status_refresh(jid, ga_id)
                 return RunnerResult(success=True, reschedule_seconds=MIN_RECHECK_SECONDS, data={"status": "waiting_post_market_snapshot"})
 
         # Resolve time reductions for this game account
@@ -1141,7 +1143,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 raise
 
         if refresh_needed:
-            self._ensure_status_refresh(jid)
+            self._ensure_status_refresh(jid, ga_id)
 
         if not ready_steps and not busy_pending:
             next_wait = min(
@@ -1848,7 +1850,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 cost_overrides=reservation_cost_overrides,
             )
             if refresh_needed or step_failures:
-                self._ensure_status_refresh(jid)
+                self._ensure_status_refresh(jid, ga_id)
 
             if not started:
                 next_wait = min(
@@ -2505,6 +2507,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 missing=missing,
                 support_by_city=support_by_city,
                 reserved_by_city=reserved_by_city or {},
+                game_account_id=str(job.get("game_account_id") or ""),
+                freighter_threshold=max(0, _to_int(inputs.get("freighter_threshold", 30000), 30000)),
             )
             if transported:
                 self.log(
@@ -2797,8 +2801,11 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         pending: dict[str, Any],
         missing: dict[str, int],
         support_by_city: dict[str, dict[str, int]],
-        reserved_by_city: dict[str, dict[str, dict[str, int]]],
+        reserved_by_city: dict[str, dict[str, dict[str, int]]] | None = None,
+        game_account_id: str = "",
+        freighter_threshold: int = 30000,
     ) -> bool:
+        reserved_by_city = reserved_by_city or {}
         next_rows = []
         for row in pending.get("level_rows") or []:
             if _to_int(row.get("level"), 0) >= int(pending["next_level"]):
@@ -2867,10 +2874,10 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             if _to_int(payload.get(field), 0) > 0
         }
         # Free freighters do snapshot do GA
-        snap = self._get_snapshot(job_id, str(target_city.get("game_account_id") or "")) if hasattr(self, "_get_snapshot") else None
+        snap = self._get_snapshot(job_id, str(game_account_id or "")) if game_account_id and hasattr(self, "_get_snapshot") else None
         base_snap = (snap or {}).get("base_snapshot") or {}
         free_freighters = int(base_snap.get("free_freighters") or 0)
-        freighter_threshold = _to_int(inputs.get("freighter_threshold", 30000), 30000, 0)
+        freighter_threshold = max(0, _to_int(freighter_threshold, 30000))
 
         splits = split_shipment(
             cargo_by_resource,

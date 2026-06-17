@@ -21,13 +21,14 @@ from typing import Any
 from game_client.constants import GAME_AJAX_HEADERS
 from core.runner_registry import register_runner
 from runners.base import BaseRunner, RunnerResult
+from sessions.game_session_service import LoginCooldownActive
 from services.island_donation import fetch_city_context
 from services.resource_transport import (
     split_shipment,
     RESOURCE_ORDER,
     change_current_city,
     confirm_arrival,
-    estimate_next_ship_availability_seconds,
+    estimate_next_ship_availability,
     prepare_transport,
     submit_transport,
 )
@@ -136,6 +137,29 @@ def _parse_snapshot_time(raw: Any) -> datetime | None:
         return None
 
 
+def _positive_resource_signature(resources: dict[str, Any]) -> tuple[str, ...]:
+    return tuple(name for name in RESOURCE_ORDER if _to_int(resources.get(name, 0), 0, 0) > 0)
+
+
+def _seconds_until(raw: Any) -> int | None:
+    target = _parse_snapshot_time(raw)
+    if target is None:
+        return None
+    now = datetime.now(timezone.utc)
+    delta = int((target - now).total_seconds())
+    return max(0, delta)
+
+
+def _entry_delay_seconds(entry: dict[str, Any]) -> int | None:
+    scheduled_delay = _seconds_until(entry.get("scheduled_for"))
+    if scheduled_delay is not None and scheduled_delay > 0:
+        return scheduled_delay
+    eta_delay = _to_int(entry.get("eta_total_seconds"), 0, 0)
+    if eta_delay > 0:
+        return eta_delay
+    return None
+
+
 @register_runner(2)
 @register_runner(10)
 class SendResourcesRunner(BaseRunner):
@@ -231,9 +255,14 @@ class SendResourcesRunner(BaseRunner):
         )
 
         if plan.total_dispatched <= 0:
-            wait_seconds = estimate_next_ship_availability_seconds(client)
+            wait_seconds = self._estimate_ship_wait_seconds(
+                jid=jid,
+                client=client,
+                use_freighters=use_freighters,
+            )
             if wait_seconds > 0:
                 self.log(jid, "warn", f"Sem capacidade imediata; reagendando em {wait_seconds}s")
+                self._retime_distribution_followup(jid=jid, job=job, delay_seconds=wait_seconds)
                 if ga_id:
                     self.save_game_client(ga_id, client)
                 return RunnerResult(
@@ -248,7 +277,11 @@ class SendResourcesRunner(BaseRunner):
         if not response["ok"]:
             feedback_text = " | ".join(str(entry.get("text") or entry.get("locakey") or "") for entry in response["feedbacks"])
             if not feedback_text and plan.total_dispatched > 0 and plan.total_requested > plan.total_dispatched:
-                wait_seconds = estimate_next_ship_availability_seconds(client)
+                wait_seconds = self._estimate_ship_wait_seconds(
+                    jid=jid,
+                    client=client,
+                    use_freighters=use_freighters,
+                )
                 if wait_seconds <= 0:
                     wait_seconds = max(60, plan.eta["queue_seconds"] + 30)
                 next_inputs = dict(inputs)
@@ -262,6 +295,7 @@ class SendResourcesRunner(BaseRunner):
                         f"nova tentativa em {wait_seconds}s"
                     ),
                 )
+                self._retime_distribution_followup(jid=jid, job=job, delay_seconds=wait_seconds)
                 if ga_id:
                     self.save_game_client(ga_id, client)
                 return RunnerResult(
@@ -350,6 +384,7 @@ class SendResourcesRunner(BaseRunner):
                 "eta_travel_seconds": plan.eta["travel_seconds"],
                 "eta_total_seconds": plan.eta["total_seconds"],
                 "confirmation_margin_minutes": confirmation_margin_minutes,
+                "use_freighters": use_freighters,
             }
             internal_order_id = str(inputs.get("internal_order_id") or "").strip()
             if internal_order_id:
@@ -371,6 +406,7 @@ class SendResourcesRunner(BaseRunner):
                 delay_seconds=monitor_delay,
                 inputs=monitor_payload,
             )
+            self._retime_distribution_followup(jid=jid, job=job, delay_seconds=monitor_delay)
             self.log(
                 jid,
                 "info",
@@ -385,12 +421,30 @@ class SendResourcesRunner(BaseRunner):
 
         remaining_total = sum(plan.remaining.values())
         if remaining_total > 0:
-            wait_seconds = estimate_next_ship_availability_seconds(client)
+            wait_seconds = 0
+            if monitor_delay > 0:
+                wait_seconds = monitor_delay
+                ship_kind = "cargueiro" if use_freighters else "mercante"
+                self.log(
+                    jid,
+                    "info",
+                    (
+                        f"[ShipAvail:{ship_kind}] usando ETA conhecido da propria remessa "
+                        f"(monitor agendado) = {wait_seconds}s"
+                    ),
+                )
+            else:
+                wait_seconds = self._estimate_ship_wait_seconds(
+                    jid=jid,
+                    client=client,
+                    use_freighters=use_freighters,
+                )
             if wait_seconds <= 0:
                 wait_seconds = max(60, plan.eta["queue_seconds"] + 30)
             next_inputs = dict(inputs)
             next_inputs.update(plan.remaining)
             self.log(jid, "warn", f"Restante pendente={remaining_total:,}; reagendando em {wait_seconds}s")
+            self._retime_distribution_followup(jid=jid, job=job, delay_seconds=wait_seconds)
             if ga_id:
                 self.save_game_client(ga_id, client)
             return RunnerResult(
@@ -416,6 +470,114 @@ class SendResourcesRunner(BaseRunner):
             },
         )
 
+    def _estimate_known_chain_ship_delay(
+        self,
+        *,
+        job_id: str,
+        use_freighters: bool,
+    ) -> tuple[int, dict[str, Any]] | tuple[None, None]:
+        try:
+            payload = self.hub.get_transport_support(job_id)
+        except Exception as exc:
+            self.log(job_id, "warn", f"Nao foi possivel consultar ETAs da cadeia de transporte: {exc}")
+            return None, None
+
+        raw_entries = payload.get("entries") if isinstance(payload, dict) else []
+        if not isinstance(raw_entries, list):
+            return None, None
+
+        candidates: list[tuple[int, dict[str, Any]]] = []
+        for entry in raw_entries:
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("monitor_mode") or "").strip().lower() != "arrival_check":
+                continue
+            if bool(entry.get("use_freighters")) != bool(use_freighters):
+                continue
+            delay = _seconds_until(entry.get("scheduled_for"))
+            if delay is None or delay <= 0:
+                continue
+            candidates.append((delay, entry))
+
+        if not candidates:
+            return None, None
+
+        delay, chosen = min(candidates, key=lambda item: item[0])
+        return max(60, int(delay)), chosen
+
+    def _estimate_ship_wait_seconds(
+        self,
+        *,
+        jid: str,
+        client: Any,
+        use_freighters: bool,
+    ) -> int:
+        known_delay, known_entry = self._estimate_known_chain_ship_delay(
+            job_id=jid,
+            use_freighters=use_freighters,
+        )
+        ship_kind = "cargueiro" if use_freighters else "mercante"
+        if known_delay and known_entry:
+            self.log(
+                jid,
+                "info",
+                (
+                    f"[ShipAvail:{ship_kind}] usando ETA conhecido da cadeia = {known_delay}s | "
+                    f"origem={known_entry.get('from_city_name') or known_entry.get('from_city') or '?'} -> "
+                    f"destino={known_entry.get('to_city_name') or known_entry.get('to_city') or '?'} | "
+                    f"job={known_entry.get('job_id') or '?'}"
+                ),
+            )
+            return known_delay
+
+        availability = estimate_next_ship_availability(client, use_freighters=use_freighters)
+        wait_seconds = int(availability.get("wait_seconds") or 0)
+        if wait_seconds > 0:
+            self._log_ship_availability_debug(jid, availability=availability, use_freighters=use_freighters)
+        return wait_seconds
+
+    def _log_ship_availability_debug(
+        self,
+        job_id: str,
+        *,
+        availability: dict[str, Any],
+        use_freighters: bool,
+    ) -> None:
+        chosen = availability.get("chosen") if isinstance(availability.get("chosen"), dict) else {}
+        entries = availability.get("entries") if isinstance(availability.get("entries"), list) else []
+        fallback_used = bool(availability.get("fallback_used"))
+        ship_kind = "cargueiro" if use_freighters else "mercante"
+        if chosen:
+            self.log(
+                job_id,
+                "info",
+                (
+                    f"[ShipAvail:{ship_kind}] wait={int(availability.get('wait_seconds') or 0)}s | "
+                    f"fallback={'sim' if fallback_used else 'nao'} | "
+                    f"escolhido mission={chosen.get('mission_text') or '?'} | "
+                    f"returning={chosen.get('is_returning')} | "
+                    f"origem={chosen.get('origin_city_name') or chosen.get('origin_city_id') or '?'} -> "
+                    f"destino={chosen.get('target_city_name') or chosen.get('target_city_id') or '?'} | "
+                    f"eta={int(chosen.get('eta_seconds') or 0)}s | "
+                    f"fleet={chosen.get('fleet') or {}} | "
+                    f"carga={int(chosen.get('resource_total') or 0):,}"
+                ),
+            )
+        for idx, entry in enumerate(entries[:5], start=1):
+            self.log(
+                job_id,
+                "info",
+                (
+                    f"[ShipAvail:{ship_kind}] cand#{idx} mission={entry.get('mission_text') or '?'} | "
+                    f"returning={entry.get('is_returning')} | "
+                    f"origem={entry.get('origin_city_name') or entry.get('origin_city_id') or '?'} -> "
+                    f"destino={entry.get('target_city_name') or entry.get('target_city_id') or '?'} | "
+                    f"eta={int(entry.get('eta_seconds') or 0)}s | "
+                    f"fleet={entry.get('fleet') or {}} | "
+                    f"carga={int(entry.get('resource_total') or 0):,}"
+                ),
+            )
+
     def _confirm_arrival(self, job: dict[str, Any], inputs: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
@@ -440,6 +602,7 @@ class SendResourcesRunner(BaseRunner):
                 "info",
                 f"Transporte {from_city_name} -> {to_city_name} ainda em rota; novo check em {delay}s",
             )
+            self._retime_distribution_followup(jid=jid, job=job, delay_seconds=delay)
             if ga_id:
                 self.save_game_client(ga_id, client)
             next_inputs = dict(inputs)
@@ -513,6 +676,7 @@ class SendResourcesRunner(BaseRunner):
                 self.save_game_client(ga_id, client)
             next_inputs = dict(inputs)
             next_inputs["probe_count"] = probe_count + 1
+            self._retime_distribution_followup(jid=jid, job=job, delay_seconds=60)
             return RunnerResult(
                 success=True,
                 reschedule_seconds=60,
@@ -549,6 +713,28 @@ class SendResourcesRunner(BaseRunner):
         if ga_id:
             self.save_game_client(ga_id, client)
         return RunnerResult(success=True, data={"status": "arrival_confirmed_weak", **result})
+
+    def _retime_distribution_followup(
+        self,
+        *,
+        jid: str,
+        job: dict[str, Any],
+        delay_seconds: int,
+    ) -> None:
+        root_job_id = str(job.get("root_job_id") or "").strip()
+        if not root_job_id:
+            return
+        try:
+            resp = self.hub.retime_root_followup_job(
+                root_job_id=root_job_id,
+                action_code=3,
+                delay_seconds=max(0, int(delay_seconds)),
+                exclude_job_id=str(job.get("job_id") or ""),
+            )
+            if resp.get("updated"):
+                self.log(jid, "info", f"Proximo 3 reagendado pela cadeia raiz em {delay_seconds}s.")
+        except Exception as exc:
+            self.log(jid, "warn", f"Nao foi possivel reagendar o proximo 3 pelo ETA do transporte: {exc}")
 
     def _patch_city_resources(
         self,
@@ -623,12 +809,12 @@ class DistributeResourcesRunner(BaseRunner):
 
         snapshot = self._get_snapshot(jid, ga_id)
         if snapshot is None:
-            self._ensure_status_refresh(jid)
+            self._ensure_status_refresh(jid, ga_id)
             return RunnerResult(success=True, reschedule_seconds=refresh_wait_seconds, data={"status": "waiting_snapshot"})
 
         if self.is_snapshot_stale(snapshot):
             self.log(jid, "warn", "Snapshot antigo demais para distribuir com seguranca; atualizando status")
-            self._ensure_status_refresh(jid)
+            self._ensure_status_refresh(jid, ga_id)
             return RunnerResult(success=True, reschedule_seconds=refresh_wait_seconds, data={"status": "stale_snapshot"})
 
         snapshot_cities = _as_city_list(snapshot.get("cities"))
@@ -636,7 +822,7 @@ class DistributeResourcesRunner(BaseRunner):
         planned_cities = [city_map[city_id] for city_id in selected_city_ids if city_id in city_map]
         if len(planned_cities) < 2:
             self.log(jid, "warn", "Distribuicao exige pelo menos duas cidades com snapshot valido")
-            self._ensure_status_refresh(jid)
+            self._ensure_status_refresh(jid, ga_id)
             return RunnerResult(success=True, reschedule_seconds=refresh_wait_seconds, data={"status": "insufficient_cities"})
 
         reserved_by_city = self._get_construction_reservations(
@@ -669,6 +855,9 @@ class DistributeResourcesRunner(BaseRunner):
             useful_transfer_min=useful_transfer_min,
         )
         route_entries.sort(key=lambda item: (item["critical"], item["total"]), reverse=True)
+        active_transport_entries = self._get_active_transport_entries(jid)
+        base_snap = (snapshot.get("base_snapshot") or {}) if isinstance(snapshot, dict) else {}
+        free_freighters = int(base_snap.get("free_freighters") or 0)
 
         total_routes = len(route_entries)
         if total_routes > max_routes_per_cycle:
@@ -713,8 +902,6 @@ class DistributeResourcesRunner(BaseRunner):
                 continue
 
             # Cargueiros globais: split em N spawns (cargueiros + sobra mercantes)
-            base_snap = (snapshot.get("base_snapshot") or {}) if isinstance(snapshot, dict) else {}
-            free_freighters = int(base_snap.get("free_freighters") or 0)
             freighter_threshold = _to_int(inputs.get("freighter_threshold", 30000), 30000, 0)
 
             splits = split_shipment(
@@ -726,6 +913,24 @@ class DistributeResourcesRunner(BaseRunner):
                 splits = [(viable_resources, False)]
 
             for chunk, use_freighters in splits:
+                if self._route_chunk_is_active(
+                    active_transport_entries,
+                    from_city=str(route["from_city"]),
+                    to_city=str(route["to_city"]),
+                    use_freighters=use_freighters,
+                    resources=chunk,
+                ):
+                    self.log(
+                        jid,
+                        "info",
+                        (
+                            f"Rota ja coberta por transporte ativo: "
+                            f"{route['from_city_name']} -> {route['to_city_name']} | "
+                            f"modal={'cargueiro' if use_freighters else 'mercante'} | "
+                            + ", ".join(f"{key}={value:,}" for key, value in chunk.items() if value > 0)
+                        ),
+                    )
+                    continue
                 child_inputs = {
                     "from_city": route["from_city"],
                     "from_city_name": route["from_city_name"],
@@ -738,6 +943,15 @@ class DistributeResourcesRunner(BaseRunner):
                     **chunk,
                 }
                 self.hub.spawn_job(jid, action_code=2, inputs=child_inputs)
+                active_transport_entries.append(
+                    {
+                        "from_city": str(route["from_city"]),
+                        "to_city": str(route["to_city"]),
+                        "use_freighters": bool(use_freighters),
+                        "resources": {key: int(value) for key, value in chunk.items() if int(value) > 0},
+                        "scheduled_for": "",
+                    }
+                )
                 chunk_total = sum(chunk.values())
                 if use_freighters:
                     n = max(1, chunk_total // 50000 + (1 if chunk_total % 50000 else 0))
@@ -769,7 +983,10 @@ class DistributeResourcesRunner(BaseRunner):
                 min_recheck_seconds=min_recheck_seconds,
                 max_recheck_seconds=max_recheck_seconds,
             )
-            if total_routes > max_routes_per_cycle:
+            concrete_delay = self._choose_next_transport_followup_delay(active_transport_entries)
+            if concrete_delay is not None:
+                next_seconds = max(min_recheck_seconds, concrete_delay)
+            elif total_routes > max_routes_per_cycle:
                 next_seconds = min(next_seconds, min_recheck_seconds)
             self.log(jid, "info", f"Proxima avaliacao de distribuicao em {next_seconds}s")
 
@@ -1001,6 +1218,73 @@ class DistributeResourcesRunner(BaseRunner):
         chosen = min(candidates)
         return max(min_recheck_seconds, min(max_recheck_seconds, chosen))
 
+    def _get_active_transport_entries(self, job_id: str) -> list[dict[str, Any]]:
+        try:
+            payload = self.hub.get_transport_support(job_id)
+        except Exception as exc:
+            self.log(job_id, "warn", f"Falha ao buscar transportes ativos da cadeia: {exc}")
+            return []
+        raw_entries = payload.get("entries") if isinstance(payload, dict) else []
+        entries: list[dict[str, Any]] = []
+        if not isinstance(raw_entries, list):
+            return entries
+        for raw in raw_entries:
+            if not isinstance(raw, dict):
+                continue
+            resources = raw.get("resources") if isinstance(raw.get("resources"), dict) else {}
+            normalized = {
+                "job_id": str(raw.get("job_id") or ""),
+                "status": str(raw.get("status") or ""),
+                "monitor_mode": str(raw.get("monitor_mode") or ""),
+                "from_city": str(raw.get("from_city") or ""),
+                "to_city": str(raw.get("to_city") or ""),
+                "use_freighters": bool(raw.get("use_freighters")),
+                "scheduled_for": str(raw.get("scheduled_for") or ""),
+                "eta_total_seconds": _to_int(raw.get("eta_total_seconds"), 0, 0),
+                "resources": {name: _to_int(resources.get(name), 0, 0) for name in RESOURCE_ORDER},
+            }
+            if normalized["from_city"] and normalized["to_city"] and any(normalized["resources"].values()):
+                entries.append(normalized)
+        return entries
+
+    def _route_chunk_is_active(
+        self,
+        entries: list[dict[str, Any]],
+        *,
+        from_city: str,
+        to_city: str,
+        use_freighters: bool,
+        resources: dict[str, int],
+    ) -> bool:
+        wanted_signature = _positive_resource_signature(resources)
+        if not wanted_signature:
+            return False
+        for entry in entries:
+            if str(entry.get("from_city") or "") != from_city:
+                continue
+            if str(entry.get("to_city") or "") != to_city:
+                continue
+            if bool(entry.get("use_freighters")) != bool(use_freighters):
+                continue
+            if _positive_resource_signature(entry.get("resources") or {}) != wanted_signature:
+                continue
+            return True
+        return False
+
+    def _choose_next_transport_followup_delay(self, entries: list[dict[str, Any]]) -> int | None:
+        delays: list[int] = []
+        for entry in entries:
+            scheduled_delay = _seconds_until(entry.get("scheduled_for"))
+            if scheduled_delay is not None and scheduled_delay > 0:
+                delays.append(scheduled_delay)
+                continue
+            eta_delay = _to_int(entry.get("eta_total_seconds"), 0, 0)
+            if eta_delay > 0:
+                delays.append(eta_delay)
+        if not delays:
+            return None
+        return min(delays)
+
     def _get_snapshot(self, job_id: str, game_account_id: str) -> dict[str, Any] | None:
         try:
             return self.hub.get_snapshot(game_account_id=game_account_id)
@@ -1024,10 +1308,11 @@ class DistributeResourcesRunner(BaseRunner):
             return {}
         return _normalize_reserved_map((payload or {}).get("reservations"))
 
-    def _ensure_status_refresh(self, job_id: str) -> None:
+    def _ensure_status_refresh(self, job_id: str, game_account_id: str | None = None) -> None:
         try:
-            self.hub.spawn_job(job_id, action_code=100, inputs={})
-            self.log(job_id, "info", "Check status solicitado para atualizar snapshot")
+            self.ensure_status_refresh(job_id, game_account_id=game_account_id)
+        except LoginCooldownActive:
+            raise
         except Exception as exc:
             self.log(job_id, "warn", f"Nao foi possivel solicitar check_status: {exc}")
 

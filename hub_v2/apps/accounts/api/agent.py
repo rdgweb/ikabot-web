@@ -31,6 +31,16 @@ from .serializers import (
 logger = logging.getLogger(__name__)
 
 
+def _stale_recovery_offline_seconds() -> int:
+    return max(300, get_int_setting("stale_job_recovery_offline_seconds", 900))
+
+
+def _should_run_stale_recovery(previous_last_seen, *, now) -> bool:
+    if previous_last_seen is None:
+        return True
+    return (now - previous_last_seen).total_seconds() >= _stale_recovery_offline_seconds()
+
+
 class AgentRegisterView(APIView):
     """
     POST /api/agent/register/
@@ -124,12 +134,19 @@ class AgentHeartbeatView(APIView):
         data = serializer.validated_data
         node_id = data["node_id"]
         external_ip = data.get("external_ip", "")
+        now = timezone.now()
 
-        update_fields = {"agent_last_seen_at": timezone.now()}
+        previous_last_seen = (
+            Node.objects.filter(pk=node_id)
+            .values_list("agent_last_seen_at", flat=True)
+            .first()
+        )
+
+        update_fields = {"agent_last_seen_at": now}
         if external_ip:
             update_fields["external_ip"] = external_ip
             update_fields["ip_source"] = "agent"
-            update_fields["ip_checked_at"] = timezone.now()
+            update_fields["ip_checked_at"] = now
         for field in ("agent_name", "agent_host", "agent_version", "agent_image"):
             value = str(data.get(field, "") or "").strip()
             if value:
@@ -143,12 +160,13 @@ class AgentHeartbeatView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        try:
-            node = Node.objects.get(pk=node_id)
-            recover_stale_running_jobs(node=node)
-            recover_stale_scheduled_jobs(node=node)
-        except Exception as exc:
-            logger.warning("Failed to recover stale jobs for node %s: %s", node_id, exc)
+        if _should_run_stale_recovery(previous_last_seen, now=now):
+            try:
+                node = Node.objects.get(pk=node_id)
+                recover_stale_running_jobs(node=node)
+                recover_stale_scheduled_jobs(node=node)
+            except Exception as exc:
+                logger.warning("Failed to recover stale jobs for node %s: %s", node_id, exc)
 
         return Response({"ok": True})
 

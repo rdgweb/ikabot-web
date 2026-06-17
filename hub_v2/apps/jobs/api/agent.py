@@ -706,12 +706,15 @@ class ConstructionSupportView(APIView):
                     "job_id": str(child.pk),
                     "source_job_id": str(child.source_job_id) if child.source_job_id else "",
                     "status": child.status,
+                    "scheduled_for": child.scheduled_for.isoformat() if child.scheduled_for else "",
                     "monitor_mode": monitor_mode,
+                    "use_freighters": bool(inputs.get("use_freighters")),
                     "from_city": str(inputs.get("from_city") or ""),
                     "to_city": str(inputs.get("to_city") or ""),
                     "from_city_name": str(inputs.get("from_city_name") or ""),
                     "to_city_name": str(inputs.get("to_city_name") or ""),
                     "resources": resources,
+                    "eta_total_seconds": int(inputs.get("eta_total_seconds") or 0),
                     "created_at": child.created_at.isoformat(),
                 }
             )

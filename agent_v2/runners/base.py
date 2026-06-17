@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+import random
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from sessions import GameSessionService
+from sessions.game_session_service import LoginCooldownActive
 from core.config import settings
 
 if TYPE_CHECKING:
@@ -231,6 +233,75 @@ class BaseRunner:
         except Exception as exc:
             self.log(job_id, "warn", f"Falha ao buscar snapshot atual: {exc}")
             return None
+
+    def ensure_status_refresh(
+        self,
+        job_id: str,
+        *,
+        game_account_id: str | None,
+        message: str = "Check status solicitado para atualizar snapshot",
+        delay_seconds: int = 0,
+        spawn_game_account_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Spawn check_status only when login cooldown allows it.
+
+        If the account is in login cooldown, raise LoginCooldownActive so the
+        executor reschedules the current job instead of creating a doomed
+        check_status job.
+        """
+        self._raise_if_login_cooldown(job_id, game_account_id=game_account_id)
+        spawned = self.hub.spawn_job(
+            job_id,
+            action_code=100,
+            inputs={},
+            delay_seconds=delay_seconds,
+            game_account_id=spawn_game_account_id,
+        )
+        self.log(job_id, "info", message)
+        return spawned
+
+    def _raise_if_login_cooldown(self, job_id: str, *, game_account_id: str | None) -> None:
+        if not game_account_id:
+            return
+        try:
+            cooldown = self.hub.get_login_cooldown(game_account_id=game_account_id)
+        except Exception:
+            self.log(job_id, "warn", "Falha ao consultar cooldown de login antes do check_status; seguindo.")
+            return
+        blocked_until = self._parse_hub_datetime(cooldown.get("blocked_until") or "")
+        if not blocked_until:
+            return
+        now = datetime.now(timezone.utc)
+        if blocked_until <= now:
+            return
+        wait_seconds = int((blocked_until - now).total_seconds())
+        jitter_seconds = random.randint(0, 15 * 60)
+        delay_seconds = wait_seconds + jitter_seconds
+        self.log(
+            job_id,
+            "warn",
+            f"Check status nao criado: login em cooldown ate {blocked_until.isoformat()} "
+            f"(backoff={int(cooldown.get('backoff_hours') or 0)}h). "
+            f"Reagendando job atual em {delay_seconds}s.",
+        )
+        raise LoginCooldownActive(
+            delay_seconds=delay_seconds,
+            blocked_until=blocked_until.isoformat(),
+            backoff_hours=int(cooldown.get("backoff_hours") or 0),
+            reason=str(cooldown.get("reason") or ""),
+        )
+
+    @staticmethod
+    def _parse_hub_datetime(raw: Any) -> datetime | None:
+        if not raw:
+            return None
+        try:
+            dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except Exception:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
 
 
 class GenericRunner(BaseRunner):

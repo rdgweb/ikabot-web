@@ -26,6 +26,7 @@ def _parse_int(v, default: int = 0) -> int:
 
 from core.runner_registry import register_runner
 from runners.base import BaseRunner, RunnerResult
+from sessions.game_session_service import LoginCooldownActive
 from services.resource_transport import change_current_city
 
 logger = logging.getLogger(__name__)
@@ -161,7 +162,7 @@ class UpgradeUnitsRunner(BaseRunner):
         snapshot = self._get_snapshot(jid, ga_id)
         if snapshot is None:
             self.log(jid, "warn", "Snapshot indisponivel; aguardando refresh")
-            self._ensure_status_refresh(jid)
+            self._ensure_status_refresh(jid, ga_id)
             return RunnerResult(success=True, reschedule_seconds=_MIN_RECHECK, data={"status": "waiting_snapshot"})
 
         workshop_cities = self._find_workshop_cities(snapshot, inputs)
@@ -507,10 +508,12 @@ class UpgradeUnitsRunner(BaseRunner):
                 return city
         return {}
 
-    def _ensure_status_refresh(self, job_id: str) -> None:
+    def _ensure_status_refresh(self, job_id: str, game_account_id: str | None = None) -> None:
         """Spawn a check_status job if one is not already running."""
         try:
-            self.hub.spawn_job(job_id, action_code=100, inputs={})
+            self.ensure_status_refresh(job_id, game_account_id=game_account_id)
+        except LoginCooldownActive:
+            raise
         except Exception:
             pass
 

@@ -111,6 +111,7 @@ class WorkflowRun(UUIDTimestampModel):
         ]
         indexes = [
             models.Index(fields=["workflow", "-sequence"]),
+            models.Index(fields=["workflow", "archived_at", "-sequence"], name="jobs_run_wf_arch_seq_idx"),
             models.Index(fields=["status", "-created_at"]),
         ]
 
@@ -203,6 +204,8 @@ class Job(UUIDTimestampModel):
             models.Index(fields=["status", "-created_at"]),
             models.Index(fields=["workflow", "status"]),
             models.Index(fields=["workflow_run", "status"]),
+            models.Index(fields=["workflow", "archived_at", "-created_at"], name="jobs_job_wf_arch_created_idx"),
+            models.Index(fields=["workflow", "archived_at", "status", "-created_at"], name="jobs_job_wf_arch_stat_idx"),
         ]
 
     def __str__(self):
@@ -229,6 +232,9 @@ class JobLog(models.Model):
 
     class Meta:
         ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["job", "-created_at"], name="jobs_joblog_job_created_desc"),
+        ]
 
     def __str__(self):
         return f"[{self.level}] {self.message[:80]}"

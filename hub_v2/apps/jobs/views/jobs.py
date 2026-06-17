@@ -8,7 +8,8 @@ from collections import Counter
 from datetime import timedelta
 
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.db.models import Count
+from django.db.models import Count, F, Max, Window
+from django.db.models.functions import RowNumber
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.db import models, transaction
@@ -204,7 +205,8 @@ class JobListView(FilterSortListView):
         page_jobs = list(context.get("page_obj").object_list if context.get("page_obj") else context.get("object_list", []))
         active_descendants = self._load_active_descendants(page_jobs)
         chain_history_counts = self._load_chain_history_counts(page_jobs)
-        grouped_rows = self._build_grouped_rows(page_jobs, active_descendants, chain_history_counts)
+        recent_log_messages = self._load_recent_log_messages(page_jobs)
+        grouped_rows = self._build_grouped_rows(page_jobs, active_descendants, chain_history_counts, recent_log_messages)
         context["grouped_rows"] = grouped_rows
         action_options = []
         seen_actions = set()
@@ -266,10 +268,34 @@ class JobListView(FilterSortListView):
         )
         return {row["root_job_id"]: int(row["total"]) for row in rows}
 
-    def _build_grouped_rows(self, jobs, active_descendants=None, chain_history_counts=None):
+    @staticmethod
+    def _load_recent_log_messages(jobs, *, per_job=6):
+        job_ids = [job.pk for job in jobs]
+        if not job_ids:
+            return {}
+        rows = (
+            JobLog.objects.filter(job_id__in=job_ids)
+            .annotate(
+                row_number=Window(
+                    expression=RowNumber(),
+                    partition_by=[F("job_id")],
+                    order_by=F("created_at").desc(),
+                )
+            )
+            .filter(row_number__lte=per_job)
+            .order_by("job_id", "-created_at")
+            .values_list("job_id", "message")
+        )
+        messages = {}
+        for job_id, message in rows:
+            messages.setdefault(job_id, []).append(message)
+        return messages
+
+    def _build_grouped_rows(self, jobs, active_descendants=None, chain_history_counts=None, recent_log_messages=None):
         parent_map = self._load_parent_map(jobs)
         active_descendants = active_descendants or {}
         chain_history_counts = chain_history_counts or {}
+        recent_log_messages = recent_log_messages or {}
         grouped = {}
         ordered_keys = []
 
@@ -296,6 +322,7 @@ class JobListView(FilterSortListView):
                     "status_counts": Counter(),
                     "city_labels": [],
                     "resource_totals": Counter(),
+                    "recent_log_messages": recent_log_messages,
                     # Latest active descendant when the root itself is terminal
                     "chain_active_job": active_descendants.get(root_job.pk),
                     # Child jobs are fetched on demand for history expand
@@ -1305,9 +1332,7 @@ class JobListView(FilterSortListView):
         blocker_message = ""
 
         for item in sorted(entry["jobs"], key=lambda row: row["object"].created_at, reverse=True):
-            recent_logs = list(
-                JobLog.objects.filter(job=item["object"]).order_by("-created_at").values_list("message", flat=True)[:6]
-            )
+            recent_logs = entry.get("recent_log_messages", {}).get(item["object"].pk, [])
             for msg in recent_logs:
                 if "Evolucao iniciada:" in msg or "Construcao iniciada:" in msg:
                     current_message = msg.split(":", 1)[-1].strip()
@@ -2455,86 +2480,61 @@ class WorkflowListView(FilterSortListView):
             self._prune_runs_for_workflows(workflow_ids)
 
         run_map = {}
-        job_map = {}
         if workflow_ids:
-            # Fetch the 3 most recent non-archived runs per workflow.
-            # One small query per workflow with LIMIT 3 is faster than a single
-            # unbounded query that scans all runs for the page.
-            for wf_id in workflow_ids:
-                runs = list(
-                    WorkflowRun.objects.filter(
-                        workflow_id=wf_id,
-                        archived_at__isnull=True,
-                    )
-                    .order_by("-sequence", "-created_at")[:3]
+            for run in (
+                WorkflowRun.objects.filter(
+                    workflow_id__in=workflow_ids,
+                    archived_at__isnull=True,
                 )
-                if runs:
-                    run_map[wf_id] = runs
-
-            active_run_ids = [workflow.active_run_id for workflow in workflows if workflow.active_run_id]
-            if active_run_ids:
-                for job in (
-                    Job.objects.filter(workflow_run_id__in=active_run_ids)
-                    .select_related("account", "game_account", "node")
-                    .order_by("workflow_run_id", "-created_at")
-                ):
-                    job_map.setdefault(job.workflow_run_id, [])
-                    if len(job_map[job.workflow_run_id]) < 3:
-                        job_map[job.workflow_run_id].append(job)
+                .annotate(
+                    row_number=Window(
+                        expression=RowNumber(),
+                        partition_by=[F("workflow_id")],
+                        order_by=[F("sequence").desc(), F("created_at").desc()],
+                    )
+                )
+                .filter(row_number__lte=3)
+                .order_by("workflow_id", "-sequence", "-created_at")
+            ):
+                run_map.setdefault(run.workflow_id, []).append(run)
 
         # Load recent jobs per workflow (for preview display).
         # One small query per workflow with LIMIT 5 is much faster than a single
         # unbounded query across all workflows — avoids scanning thousands of rows
         # for long-running workflows that accumulate many history entries.
         recent_job_map: dict = {}
-        if workflow_ids:
-            for wf_id in workflow_ids:
-                recent_job_map[wf_id] = list(
-                    Job.objects.filter(
-                        workflow_id=wf_id,
-                        archived_at__isnull=True,
-                    )
-                    .order_by("-created_at")[:5]
-                )
 
-        # Workflows with running jobs (truly active right now)
-        running_workflow_ids = set(
-            Job.objects.filter(
-                workflow_id__in=workflow_ids,
-                status="running",
-            ).values_list("workflow_id", flat=True).distinct()
-        )
-        # Workflows with any active job (running OR scheduled/queued)
-        active_workflow_ids = running_workflow_ids | set(
-            Job.objects.filter(
-                workflow_id__in=workflow_ids,
-                status__in=("queued", "scheduled"),
-            ).values_list("workflow_id", flat=True).distinct()
-        )
-        from django.db.models import Max as _Max
-        # Latest error time per workflow
-        _error_times = {
-            row["workflow_id"]: row["max_t"]
-            for row in Job.objects.filter(
-                workflow_id__in=workflow_ids, status="error"
-            ).values("workflow_id").annotate(max_t=_Max("created_at"))
+        status_times = {}
+        if workflow_ids:
+            for row in (
+                Job.objects.filter(
+                    workflow_id__in=workflow_ids,
+                    archived_at__isnull=True,
+                )
+                .values("workflow_id", "status")
+                .annotate(max_t=Max("created_at"))
+            ):
+                status_times.setdefault(row["workflow_id"], {})[row["status"]] = row["max_t"]
+
+        running_workflow_ids = {
+            wf_id for wf_id, statuses in status_times.items()
+            if statuses.get("running")
         }
-        # Latest active time per workflow
-        _active_times = {
-            row["workflow_id"]: row["max_t"]
-            for row in Job.objects.filter(
-                workflow_id__in=workflow_ids,
-                status__in=("queued", "running", "scheduled"),
-            ).values("workflow_id").annotate(max_t=_Max("created_at"))
+        active_workflow_ids = {
+            wf_id for wf_id, statuses in status_times.items()
+            if statuses.get("running") or statuses.get("queued") or statuses.get("scheduled")
+        }
+        _error_times = {
+            wf_id: statuses["error"]
+            for wf_id, statuses in status_times.items()
+            if statuses.get("error")
         }
         error_workflow_ids = set(_error_times.keys())
         # Errors superseded by any newer job (not just active) — compare vs most recent job overall
-        from django.db.models import Max as _MaxLatest
         _latest_times = {
-            row["workflow_id"]: row["max_t"]
-            for row in Job.objects.filter(
-                workflow_id__in=workflow_ids,
-            ).values("workflow_id").annotate(max_t=_MaxLatest("created_at"))
+            wf_id: max(t for t in statuses.values() if t)
+            for wf_id, statuses in status_times.items()
+            if statuses
         }
         superseded_error_ids = {
             wf_id for wf_id, err_t in _error_times.items()
@@ -2545,8 +2545,9 @@ class WorkflowListView(FilterSortListView):
             self._build_workflow_row(
                 workflow,
                 run_map.get(workflow.pk, []),
-                job_map,
+                {},
                 recent_job_map.get(workflow.pk, []),
+                recent_statuses=set(status_times.get(workflow.pk, {})),
                 has_active_job=workflow.pk in active_workflow_ids,
                 has_running_job=workflow.pk in running_workflow_ids,
                 has_error_job=workflow.pk in error_workflow_ids and workflow.pk not in superseded_error_ids,
@@ -2728,64 +2729,13 @@ class WorkflowListView(FilterSortListView):
         """Count effective_status across ALL workflows (ignoring status filter) so stats bar is always global."""
         # Use the full queryset without status filter — stats are always total picture
         base_qs = context.get("_global_qs") or Workflow.objects.filter(archived_at__isnull=True)
-        all_ids = list(base_qs.values_list("pk", flat=True))
-        total = len(all_ids)
-
-        if not all_ids:
-            return {"total": 0, "active": 0, "waiting": 0, "problem": 0, "paused": 0, "finished": 0, "cancelled": 0}
-
-        from django.db.models import Max as _SumMax
-        running_ids = set(Job.objects.filter(workflow_id__in=all_ids, status="running").values_list("workflow_id", flat=True).distinct())
-        active_ids = running_ids | set(Job.objects.filter(workflow_id__in=all_ids, status__in=("queued", "scheduled")).values_list("workflow_id", flat=True).distinct())
-        error_times = {r["workflow_id"]: r["t"] for r in Job.objects.filter(workflow_id__in=all_ids, status="error").values("workflow_id").annotate(t=_SumMax("created_at"))}
-        latest_times = {r["workflow_id"]: r["t"] for r in Job.objects.filter(workflow_id__in=all_ids).values("workflow_id").annotate(t=_SumMax("created_at"))}
-        superseded = {wid for wid, et in error_times.items() if latest_times.get(wid) and latest_times[wid] > et}
-
-        summary = {"total": total, "active": 0, "waiting": 0, "problem": 0, "paused": 0, "finished": 0, "cancelled": 0}
-
-        # Load stored statuses to detect stale ones
-        stored_status = dict(Workflow.objects.filter(pk__in=all_ids).values_list("pk", "status"))
-        paused_ids = {wid for wid, s in stored_status.items() if s == "paused"}
-
-        # Recurring workflows: load config to detect stopped loops
-        recurring_ids = set(
-            wf.pk for wf in Workflow.objects.filter(pk__in=all_ids)
-            if json.loads(wf.config_json or "{}").get("recurring")
-        )
-        # Only explicit user actions block the recurring-stopped check
-        cancelled_paused_finished = {
-            wid for wid, s in stored_status.items() if s in ("paused", "cancelled")
-        }
-
-        effective_map: dict = {}
-        for wf_id in all_ids:
-            has_active = wf_id in active_ids
-            has_error = wf_id in error_times and wf_id not in superseded
-            if wf_id in paused_ids:
-                s = "paused"
-            elif has_active:
-                s = "problem" if has_error else ("active" if wf_id in running_ids else "waiting")
-            elif has_error:
-                s = "problem"
-            else:
-                s = "finished"
-                # Recurring workflow with no active jobs = loop stopped = problem
-                if (wf_id in recurring_ids and wf_id not in cancelled_paused_finished):
-                    s = "problem"
-            effective_map[wf_id] = s
-            if s in summary:
-                summary[s] += 1
-
-        # Sync stale workflow.status so DB filters stay accurate
-        stale_pks = [wid for wid, eff in effective_map.items() if stored_status.get(wid) != eff]
-        if stale_pks:
-            wfs_to_update = list(Workflow.objects.filter(pk__in=stale_pks))
-            for wf in wfs_to_update:
-                wf.status = effective_map[wf.pk]
-            Workflow.objects.bulk_update(wfs_to_update, ["status"])
-
+        summary = {"total": 0, "active": 0, "waiting": 0, "problem": 0, "paused": 0, "finished": 0, "cancelled": 0}
+        for row in base_qs.values("status").annotate(total=Count("id")):
+            status = row["status"]
+            if status in summary:
+                summary[status] = int(row["total"])
+        summary["total"] = sum(amount for key, amount in summary.items() if key != "total")
         return summary
-
     @staticmethod
     def _effective_status(workflow, recent_job_statuses: set) -> str:
         """Derive display status from actual job reality, not stale workflow.status."""
@@ -2815,7 +2765,7 @@ class WorkflowListView(FilterSortListView):
         return workflow.workflow_type.replace("_", " ").title()
 
     @classmethod
-    def _build_workflow_row(cls, workflow, runs, job_map, recent_jobs=None, has_active_job=False, has_running_job=False, has_error_job=False):
+    def _build_workflow_row(cls, workflow, runs, job_map, recent_jobs=None, recent_statuses=None, has_active_job=False, has_running_job=False, has_error_job=False):
         scope = cls._parse_workflow_json(workflow.scope_json)
         config = cls._parse_workflow_json(workflow.config_json)
         active_run = workflow.active_run or (runs[0] if runs else None)
@@ -2840,7 +2790,7 @@ class WorkflowListView(FilterSortListView):
         elif has_error_job:
             effective_status = "problem"
         else:
-            recent_statuses = {j.status for j in (recent_jobs or [])}
+            recent_statuses = set(recent_statuses or {j.status for j in (recent_jobs or [])})
             # has_error_job=False means any error is superseded — don't let stale error status leak
             recent_statuses.discard("error")
             effective_status = cls._effective_status(workflow, recent_statuses)
@@ -2869,7 +2819,7 @@ class WorkflowListView(FilterSortListView):
             "preview_jobs": preview_jobs,
             "recent_active_job": recent_active_job,
             "job_count": len(recent_jobs) if recent_jobs is not None else workflow.jobs.count(),
-            "run_count": workflow.runs.count(),
+            "run_count": len(runs),
             "can_pause": effective_status in ("active", "waiting"),
             "can_resume": workflow.status == "paused",
             "can_cancel": effective_status in _WORKFLOW_CANCELABLE,

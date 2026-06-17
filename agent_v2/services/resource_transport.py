@@ -99,6 +99,10 @@ RESOURCE_FORM_KEYS = {
     "crystal": "cargo_tradegood3",
     "sulfur": "cargo_tradegood4",
 }
+TRANSPORT_MISSION_KEYWORDS = ("transport", "trade", "mercante", "cargueiro")
+TRANSPORT_LOADING_KEYWORDS = ("carreg", "loading", "laden", "load")
+FREIGHTER_SHIP_KEYS = {"204", "cargueiro", "freighter", "premiumTransporter"}
+MERCHANT_SHIP_KEYS = {"201", "mercante", "transporter", "transporters"}
 TRANSPORT_CONFIRM_MARGIN_SECONDS = 60
 TRANSPORT_LOAD_STEP_BY_PERCENT = {
     100: 5,
@@ -169,6 +173,118 @@ def _extract_update_global(text: str) -> dict[str, Any]:
         if isinstance(item, list) and len(item) > 1 and item[0] == "updateGlobalData":
             return item[1] if isinstance(item[1], dict) else {}
     return {}
+
+
+def _fetch_military_movements(client) -> tuple[int, list[dict[str, Any]]]:
+    home = client.session.get(client._server_url, timeout=30).text
+    current_city_id = _extract_current_city_id(home)
+    if not current_city_id:
+        return 0, []
+    action_request = GamePageParser().extract_action_request(home) or client._action_request
+    response = client.session.post(
+        client._server_url,
+        params={
+            "view": "militaryAdvisor",
+            "oldView": "city",
+            "oldBackgroundView": "city",
+            "backgroundView": "city",
+            "currentCityId": current_city_id,
+            "actionRequest": action_request,
+            "ajax": "1",
+        },
+        timeout=30,
+    )
+    try:
+        data = json.loads(response.text)
+    except Exception:
+        return 0, []
+
+    time_now = 0
+    movements: list[dict[str, Any]] = []
+    for item in data:
+        if not isinstance(item, list) or len(item) < 2:
+            continue
+        if item[0] == "updateGlobalData" and isinstance(item[1], dict):
+            time_now = _num(item[1].get("time"), default=0)
+        elif item[0] == "changeView" and isinstance(item[1], list):
+            try:
+                movements = item[1][2]["viewScriptParams"]["militaryAndFleetMovements"] or []
+            except Exception:
+                movements = []
+    return time_now, movements
+
+
+def _movement_resource_total(movement: dict[str, Any]) -> int:
+    total = 0
+    for row in (movement.get("resources") or []):
+        if not isinstance(row, dict):
+            continue
+        total += _num(row.get("amount"), default=0)
+    return total
+
+
+def _movement_fleet_map(movement: dict[str, Any]) -> dict[str, int]:
+    fleet: dict[str, int] = {}
+    for row in ((movement.get("fleet") or {}).get("ships") or []):
+        if not isinstance(row, dict):
+            continue
+        css = str(row.get("cssClass") or "")
+        amount = _num(row.get("amount"), default=0)
+        if amount <= 0:
+            continue
+        key = css[5:] if css.startswith("ship_") else css
+        if key:
+            fleet[key] = amount
+    return fleet
+
+
+def _movement_matches_transport(movement: dict[str, Any]) -> bool:
+    event = movement.get("event") or {}
+    mission = str(event.get("missionText") or "").lower()
+    if any(token in mission for token in TRANSPORT_MISSION_KEYWORDS):
+        return True
+    if _movement_resource_total(movement) > 0:
+        return True
+    fleet = _movement_fleet_map(movement)
+    return bool(fleet)
+
+
+def _movement_matches_ship_kind(movement: dict[str, Any], *, use_freighters: bool | None) -> bool:
+    if use_freighters is None:
+        return True
+    fleet = _movement_fleet_map(movement)
+    if not fleet:
+        return not use_freighters
+    keys = set(fleet.keys())
+    if use_freighters:
+        return bool(keys & FREIGHTER_SHIP_KEYS)
+    return bool(keys & MERCHANT_SHIP_KEYS) or not bool(keys & FREIGHTER_SHIP_KEYS)
+
+
+def _movement_is_loading_state(movement: dict[str, Any]) -> bool:
+    event = movement.get("event") or {}
+    mission = str(event.get("missionText") or "").lower()
+    return any(token in mission for token in TRANSPORT_LOADING_KEYWORDS)
+
+
+def _movement_debug_entry(movement: dict[str, Any], *, time_now: int) -> dict[str, Any]:
+    event = movement.get("event") or {}
+    origin = movement.get("origin") or {}
+    target = movement.get("target") or {}
+    event_time = _num(movement.get("eventTime"), default=0)
+    eta_seconds = max(0, event_time - time_now) if event_time > 0 and time_now > 0 else 0
+    return {
+        "mission_text": str(event.get("missionText") or ""),
+        "is_returning": bool(event.get("isFleetReturning")) or bool(event.get("isReturning")),
+        "origin_city_id": str(origin.get("cityId") or ""),
+        "origin_city_name": str(origin.get("cityName") or origin.get("name") or ""),
+        "target_city_id": str(target.get("cityId") or ""),
+        "target_city_name": str(target.get("cityName") or target.get("name") or ""),
+        "eta_seconds": eta_seconds,
+        "event_time": event_time,
+        "resource_total": _movement_resource_total(movement),
+        "fleet": _movement_fleet_map(movement),
+    }
 
 
 def _extract_city_background(html: str) -> dict[str, Any]:
@@ -556,41 +672,9 @@ def submit_transport(client, plan: TransportPlan, *, use_freighters: bool = Fals
 
 def estimate_incoming_transport_wait_seconds(client, destination_city_id: int | str) -> int | None:
     destination_city_id = str(destination_city_id)
-    home = client.session.get(client._server_url, timeout=30).text
-    current_city_id = _extract_current_city_id(home)
-    if not current_city_id:
+    time_now, movements = _fetch_military_movements(client)
+    if time_now <= 0:
         return None
-    action_request = GamePageParser().extract_action_request(home) or client._action_request
-    response = client.session.post(
-        client._server_url,
-        params={
-            "view": "militaryAdvisor",
-            "oldView": "city",
-            "oldBackgroundView": "city",
-            "backgroundView": "city",
-            "currentCityId": current_city_id,
-            "actionRequest": action_request,
-            "ajax": "1",
-        },
-        timeout=30,
-    )
-    try:
-        data = json.loads(response.text)
-    except Exception:
-        return None
-
-    time_now = 0
-    movements: list[dict[str, Any]] = []
-    for item in data:
-        if not isinstance(item, list) or len(item) < 2:
-            continue
-        if item[0] == "updateGlobalData" and isinstance(item[1], dict):
-            time_now = _num(item[1].get("time"), default=0)
-        elif item[0] == "changeView" and isinstance(item[1], list):
-            try:
-                movements = item[1][2]["viewScriptParams"]["militaryAndFleetMovements"] or []
-            except Exception:
-                movements = []
 
     waits: list[int] = []
     for movement in movements:
@@ -609,53 +693,45 @@ def estimate_incoming_transport_wait_seconds(client, destination_city_id: int | 
     return max(TRANSPORT_CONFIRM_MARGIN_SECONDS, min(waits))
 
 
-def estimate_next_ship_availability_seconds(client) -> int:
-    home = client.session.get(client._server_url, timeout=30).text
-    current_city_id = _extract_current_city_id(home)
-    if not current_city_id:
-        return 0
-    action_request = GamePageParser().extract_action_request(home) or client._action_request
-    response = client.session.post(
-        client._server_url,
-        params={
-            "view": "militaryAdvisor",
-            "oldView": "city",
-            "oldBackgroundView": "city",
-            "backgroundView": "city",
-            "currentCityId": current_city_id,
-            "actionRequest": action_request,
-            "ajax": "1",
-        },
-        timeout=30,
-    )
-    try:
-        data = json.loads(response.text)
-    except Exception:
-        return 0
+def estimate_next_ship_availability(client, *, use_freighters: bool | None = None) -> dict[str, Any]:
+    time_now, movements = _fetch_military_movements(client)
+    if time_now <= 0:
+        return {"wait_seconds": 0, "chosen": None, "entries": [], "fallback_used": False}
 
-    time_now = 0
-    movements: list[dict[str, Any]] = []
-    for item in data:
-        if not isinstance(item, list) or len(item) < 2:
-            continue
-        if item[0] == "updateGlobalData" and isinstance(item[1], dict):
-            time_now = _num(item[1].get("time"), default=0)
-        elif item[0] == "changeView" and isinstance(item[1], list):
-            try:
-                movements = item[1][2]["viewScriptParams"]["militaryAndFleetMovements"] or []
-            except Exception:
-                movements = []
-
-    waits: list[int] = []
+    candidates: list[dict[str, Any]] = []
+    fallback_candidates: list[dict[str, Any]] = []
     for movement in movements:
         if not bool(movement.get("isOwnArmyOrFleet")):
             continue
-        event_time = _num(movement.get("eventTime"), default=0)
-        if event_time > 0 and time_now > 0:
-            waits.append(max(0, event_time - time_now))
-    if not waits:
-        return 0
-    return min(waits) + TRANSPORT_CONFIRM_MARGIN_SECONDS
+        entry = _movement_debug_entry(movement, time_now=time_now)
+        event_time = int(entry.get("event_time") or 0)
+        if event_time <= 0:
+            continue
+        fallback_candidates.append(entry)
+        if not _movement_matches_transport(movement):
+            continue
+        if not _movement_matches_ship_kind(movement, use_freighters=use_freighters):
+            continue
+        if _movement_is_loading_state(movement):
+            continue
+        candidates.append(entry)
+
+    chosen_pool = candidates if candidates else fallback_candidates
+    if not chosen_pool:
+        return {"wait_seconds": 0, "chosen": None, "entries": [], "fallback_used": False}
+
+    chosen = min(chosen_pool, key=lambda item: int(item.get("eta_seconds") or 0))
+    wait_seconds = max(0, int(chosen.get("eta_seconds") or 0)) + TRANSPORT_CONFIRM_MARGIN_SECONDS
+    return {
+        "wait_seconds": wait_seconds,
+        "chosen": chosen,
+        "entries": sorted(chosen_pool, key=lambda item: int(item.get("eta_seconds") or 0)),
+        "fallback_used": not bool(candidates),
+    }
+
+
+def estimate_next_ship_availability_seconds(client) -> int:
+    return int(estimate_next_ship_availability(client).get("wait_seconds") or 0)
 
 
 def confirm_arrival(client, *, to_city_id: int | str, baseline: dict[str, int], sent: dict[str, int]) -> dict[str, Any]:

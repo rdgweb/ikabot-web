@@ -42,6 +42,7 @@ def _load_city_runner_module():
     resource_transport = types.ModuleType("services.resource_transport")
     resource_transport.estimate_incoming_transport_wait_seconds = lambda *_args, **_kwargs: 0
     resource_transport.change_current_city = lambda *_args, **_kwargs: None
+    resource_transport.split_shipment = lambda cargo_by_resource, threshold, free_freighters: [(cargo_by_resource, False)]
     island_donation = types.ModuleType("services.island_donation")
     island_donation.extract_city_data = lambda _html: {}
     services_pkg.resource_transport = resource_transport
@@ -1184,6 +1185,73 @@ class ConstructionMarketInterventionTests(unittest.TestCase):
         self.assertTrue(created)
         self.assertEqual(len(spawned), 1)
         self.assertTrue(any("cobrir o proximo nivel" in msg.lower() for _jid, _level, msg in logs))
+
+    def test_spawn_transport_cover_uses_job_game_account_snapshot_and_threshold(self):
+        runner = ConstructionPlanRunner.__new__(ConstructionPlanRunner)
+        spawned = []
+        snapshot_calls = []
+        split_calls = []
+        runner.log = lambda *_args, **_kwargs: None
+        runner.hub = pytypes.SimpleNamespace(
+            spawn_job=lambda source_job_id, action_code, inputs: spawned.append(
+                {"source_job_id": source_job_id, "action_code": action_code, "inputs": inputs}
+            )
+        )
+        runner._get_snapshot = lambda jid, ga_id: snapshot_calls.append((jid, ga_id)) or {"base_snapshot": {"free_freighters": 7}}
+
+        original_split = CITY_MODULE.split_shipment
+        CITY_MODULE.split_shipment = lambda cargo_by_resource, threshold, free_freighters: (
+            split_calls.append((dict(cargo_by_resource), threshold, free_freighters)) or [(cargo_by_resource, True)]
+        )
+        try:
+            target_city = {
+                "id": "66480",
+                "name": "MM1",
+                "wood": 0,
+                "wine": 0,
+                "marble": 850498,
+                "crystal": 0,
+                "sulfur": 0,
+                "buildings": [],
+            }
+            donor_city = {
+                "id": "66487",
+                "name": "MM4",
+                "wood": 0,
+                "wine": 0,
+                "marble": 500000,
+                "crystal": 0,
+                "sulfur": 0,
+                "buildings": [],
+            }
+            pending = {
+                "city_name": "MM1",
+                "building_name": "Prefeitura",
+                "next_level": 35,
+                "level_rows": [
+                    {"level": 35, "costs": {"wood": 0, "wine": 0, "marble": 1123951, "glas": 0, "sulfur": 0}},
+                ],
+            }
+
+            created = runner._spawn_transport_cover(
+                job_id="job-ga-snapshot",
+                cities=[target_city, donor_city],
+                target_city=target_city,
+                pending=pending,
+                missing={"wood": 0, "wine": 0, "marble": 273453, "glas": 0, "sulfur": 0},
+                support_by_city={},
+                reserved_by_city={},
+                game_account_id="ga-1",
+                freighter_threshold=45000,
+            )
+        finally:
+            CITY_MODULE.split_shipment = original_split
+
+        self.assertTrue(created)
+        self.assertEqual(snapshot_calls, [("job-ga-snapshot", "ga-1")])
+        self.assertEqual(split_calls[0][1], 45000)
+        self.assertEqual(split_calls[0][2], 7)
+        self.assertTrue(spawned[0]["inputs"]["use_freighters"])
 
 
 class ConstructionLiveStockTests(unittest.TestCase):

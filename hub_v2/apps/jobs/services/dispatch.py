@@ -38,6 +38,8 @@ def build_payload(job: Job) -> dict:
         "job_id": str(job.pk),
         "account_id": str(job.account_id),
         "game_account_id": str(job.game_account_id) if job.game_account_id else None,
+        "source_job_id": str(job.source_job_id) if job.source_job_id else None,
+        "root_job_id": str(job.root_job_id) if job.root_job_id else None,
         "action_code": job.action_code,
         "inputs": _serialize_inputs(job),
         "progress": _serialize_progress(job),

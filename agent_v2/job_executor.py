@@ -103,7 +103,7 @@ def execute_job_payload(job: dict, sessions: SessionManager, proxy_url: str = ""
             try:
                 hub.reschedule_job(job_id, exc.delay_seconds)
                 hub.report_log(job_id, "info", f"Rescheduled in {exc.delay_seconds}s")
-                hub.report_status(job_id, status="error", exit_code=1, agent=settings.agent_name)
+                hub.report_status(job_id, status="finished", exit_code=0, agent=settings.agent_name)
             except Exception:
                 pass
             return

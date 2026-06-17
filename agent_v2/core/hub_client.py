@@ -150,6 +150,13 @@ class HubClient:
         """GET /api/agent/jobs/{job_id}/construction-support/."""
         return self._get(f"/api/agent/jobs/{job_id}/construction-support")
 
+    def get_transport_support(self, job_id: str) -> dict:
+        """GET /api/agent/jobs/{job_id}/construction-support/.
+
+        Reuses the existing root-chain endpoint to inspect active transport jobs.
+        """
+        return self._get(f"/api/agent/jobs/{job_id}/construction-support")
+
     def get_construction_reservations(
         self,
         *,

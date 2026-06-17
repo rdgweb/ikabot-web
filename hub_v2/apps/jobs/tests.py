@@ -1,7 +1,11 @@
+from datetime import timedelta
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.test import override_settings
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.accounts.models import Account, GameAccount, Node
 
@@ -437,6 +441,54 @@ class AgentRescheduleIdempotencyTests(TestCase):
         self.assertEqual(legacy.workflow_id, workflow.pk)
         self.assertEqual(legacy.workflow_run_id, workflow_run.pk)
         self.assertEqual(workflow.status, "problem")
+
+
+@override_settings(AGENT_TOKEN="test-agent-token", AGENT_ALLOWED_IPS="")
+class AgentHeartbeatRecoveryTests(TestCase):
+    def setUp(self):
+        self.node = Node.objects.create(
+            name="node-heartbeat",
+            agent_last_seen_at=timezone.now(),
+        )
+
+    @patch("apps.accounts.api.agent.recover_stale_scheduled_jobs")
+    @patch("apps.accounts.api.agent.recover_stale_running_jobs")
+    def test_heartbeat_skips_recovery_while_node_is_online(self, running_mock, scheduled_mock):
+        response = self.client.post(
+            reverse("agent-accounts:heartbeat"),
+            data={
+                "node_id": str(self.node.pk),
+                "agent_name": "ikabot-agent",
+            },
+            content_type="application/json",
+            HTTP_X_AGENT_TOKEN="test-agent-token",
+            HTTP_X_AGENT_NODE_ID=str(self.node.pk),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        running_mock.assert_not_called()
+        scheduled_mock.assert_not_called()
+
+    @patch("apps.accounts.api.agent.recover_stale_scheduled_jobs")
+    @patch("apps.accounts.api.agent.recover_stale_running_jobs")
+    def test_heartbeat_recovers_after_long_offline_gap(self, running_mock, scheduled_mock):
+        self.node.agent_last_seen_at = timezone.now() - timedelta(minutes=20)
+        self.node.save(update_fields=["agent_last_seen_at", "updated_at"])
+
+        response = self.client.post(
+            reverse("agent-accounts:heartbeat"),
+            data={
+                "node_id": str(self.node.pk),
+                "agent_name": "ikabot-agent",
+            },
+            content_type="application/json",
+            HTTP_X_AGENT_TOKEN="test-agent-token",
+            HTTP_X_AGENT_NODE_ID=str(self.node.pk),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        running_mock.assert_called_once()
+        scheduled_mock.assert_called_once()
 
 
 class ConstructionReservationLifecycleTests(TestCase):
