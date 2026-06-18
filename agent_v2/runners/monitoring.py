@@ -502,6 +502,9 @@ class AlertWineRunner(BaseRunner):
 
         actions_spawned = 0
         incoming_waits: list[int] = []
+        planned_transport = self._pending_planned_transport_summary(jid)
+        planned_transport_by_target = dict(planned_transport.get("by_target") or {})
+        planned_transport_by_source = dict(planned_transport.get("by_source") or {})
         for index, target in enumerate(needy, start=1):
             self.checkpoint(
                 jid,
@@ -533,6 +536,18 @@ class AlertWineRunner(BaseRunner):
                 shipment_cap=shipment_cap,
                 protect_hours=protect_hours,
             )
+            planned_pending = int(planned_transport_by_target.get(str(target["id"]), 0) or 0)
+            if planned_pending > 0 and target_need > 0:
+                adjusted_need = max(0, target_need - planned_pending)
+                self.log(
+                    jid,
+                    "info",
+                    (
+                        f"{target['name']}: ja existe vinho planejado na cadeia "
+                        f"({planned_pending:,}); necessidade ajustada para {adjusted_need:,}"
+                    ),
+                )
+                target_need = adjusted_need
             if target_need < 1:
                 continue
 
@@ -542,6 +557,7 @@ class AlertWineRunner(BaseRunner):
                 donor_reserve_hours=donor_reserve_hours,
                 useful_transfer_min=useful_transfer_min,
                 requested=target_need,
+                planned_by_source=planned_transport_by_source,
             )
             if donor is None:
                 self.log(jid, "warn", f"{target['name']}: nenhum doador com vinho suficiente")
@@ -571,12 +587,15 @@ class AlertWineRunner(BaseRunner):
                     "from_city": donor["id"],
                     "to_city": target["id"],
                     "wine": int(amount),
+                    "min_dispatch_total": int(useful_transfer_min),
                     "transport_load_percent": transport_load_percent,
                 },
             )
             actions_spawned += 1
             donor["available"] = max(0, donor["available"] - int(amount))
             donor["wine"] = max(0, donor["wine"] - int(amount))
+            planned_transport_by_target[str(target["id"])] = planned_transport_by_target.get(str(target["id"]), 0) + int(amount)
+            planned_transport_by_source[str(donor["id"])] = planned_transport_by_source.get(str(donor["id"]), 0) + int(amount)
             self.log(
                 jid,
                 "info",
@@ -933,16 +952,18 @@ class AlertWineRunner(BaseRunner):
         donor_reserve_hours: int,
         useful_transfer_min: int,
         requested: int,
+        planned_by_source: dict[str, int] | None = None,
     ) -> dict[str, Any] | None:
         candidates: list[dict[str, Any]] = []
         for info in city_infos:
             if info["id"] == target_id:
                 continue
             reserve = self._donor_reserve_stock(info["raw"], donor_reserve_hours, useful_transfer_min)
-            available = max(0, int(info["wine"]) - reserve)
+            pending_outbound = max(0, int((planned_by_source or {}).get(str(info["id"]), 0) or 0))
+            available = max(0, int(info["wine"]) - reserve - pending_outbound)
             if available < useful_transfer_min:
                 continue
-            candidates.append({**info, "reserve": reserve, "available": available})
+            candidates.append({**info, "reserve": reserve, "available": available, "pending_outbound": pending_outbound})
 
         if not candidates:
             return None
@@ -965,6 +986,38 @@ class AlertWineRunner(BaseRunner):
         if net < 0:
             return max(useful_transfer_min, int(ceil(abs(net) * donor_reserve_hours)))
         return useful_transfer_min
+
+    def _pending_planned_transport_summary(self, job_id: str) -> dict[str, dict[str, int]]:
+        try:
+            payload = self.hub.get_transport_support(job_id)
+        except Exception as exc:
+            self.log(job_id, "warn", f"Nao foi possivel consultar pendencias de transporte da cadeia: {exc}")
+            return {"by_target": {}, "by_source": {}}
+
+        raw_entries = payload.get("entries") if isinstance(payload, dict) else []
+        if not isinstance(raw_entries, list):
+            return {"by_target": {}, "by_source": {}}
+
+        pending_by_target: dict[str, int] = {}
+        pending_by_source: dict[str, int] = {}
+        for entry in raw_entries:
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("monitor_mode") or "").strip().lower() == "arrival_check":
+                continue
+            from_city = str(entry.get("from_city") or "").strip()
+            to_city = str(entry.get("to_city") or "").strip()
+            if not to_city and not from_city:
+                continue
+            resources = entry.get("resources") if isinstance(entry.get("resources"), dict) else {}
+            wine = max(0, int(resources.get("wine", 0) or 0))
+            if wine <= 0:
+                continue
+            if to_city:
+                pending_by_target[to_city] = pending_by_target.get(to_city, 0) + wine
+            if from_city:
+                pending_by_source[from_city] = pending_by_source.get(from_city, 0) + wine
+        return {"by_target": pending_by_target, "by_source": pending_by_source}
 
     def _choose_next_check(
         self,

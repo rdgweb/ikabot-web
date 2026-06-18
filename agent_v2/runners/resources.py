@@ -203,6 +203,7 @@ class SendResourcesRunner(BaseRunner):
         transport_load_percent = int(inputs.get("transport_load_percent", 100) or 100)
         confirm_arrival_enabled = bool(inputs.get("confirm_arrival", True))
         confirmation_margin_minutes = max(0, int(inputs.get("confirmation_margin_minutes", 2) or 0))
+        min_dispatch_total = max(0, int(inputs.get("min_dispatch_total", 0) or 0))
 
         if confirm_arrival_enabled and previous_phase == "dispatched":
             monitor_payload = previous_meta.get("monitor_payload") if isinstance(previous_meta.get("monitor_payload"), dict) else {}
@@ -253,6 +254,28 @@ class SendResourcesRunner(BaseRunner):
                 f"total={plan.eta['total_seconds']}s"
             ),
         )
+
+        if min_dispatch_total > 0 and 0 < plan.total_dispatched < min_dispatch_total:
+            self.log(
+                jid,
+                "warn",
+                (
+                    f"Despachavel abaixo do minimo util; envio cancelado. "
+                    f"Solicitado={plan.total_requested:,} | despachavel={plan.total_dispatched:,} | "
+                    f"minimo={min_dispatch_total:,}"
+                ),
+            )
+            if ga_id:
+                self.save_game_client(ga_id, client)
+            return RunnerResult(
+                success=True,
+                data={
+                    "status": "dispatch_below_minimum",
+                    "requested": plan.requested,
+                    "remaining": plan.requested,
+                    "minimum": min_dispatch_total,
+                },
+            )
 
         if plan.total_dispatched <= 0:
             wait_seconds = self._estimate_ship_wait_seconds(

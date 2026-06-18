@@ -49,6 +49,8 @@ def execute_job_payload(job: dict, sessions: SessionManager, proxy_url: str = ""
     action_code = job.get("action_code", 0)
     account_id = job.get("account_id", "")
     lock_key = job.get("game_account_id") or account_id
+    runner_completed = False
+    followup_committed = False
 
     with sessions.get_lock(lock_key):
         heartbeat: JobHeartbeatThread | None = None
@@ -69,6 +71,7 @@ def execute_job_payload(job: dict, sessions: SessionManager, proxy_url: str = ""
             runner_cls = get_runner(action_code)
             runner = runner_cls(hub=hub, sessions=sessions, proxy_url=proxy_url)
             result = runner.execute(job)
+            runner_completed = True
             heartbeat.stop()
 
             if result.reschedule_seconds:
@@ -77,6 +80,7 @@ def execute_job_payload(job: dict, sessions: SessionManager, proxy_url: str = ""
                     result.reschedule_seconds,
                     inputs=result.reschedule_inputs,
                 )
+                followup_committed = True
                 hub.report_log(job_id, "info", f"Rescheduled in {result.reschedule_seconds}s")
 
             try:
@@ -121,6 +125,12 @@ def execute_job_payload(job: dict, sessions: SessionManager, proxy_url: str = ""
             is_network = any(k in exc_str.lower() for k in _TRANSIENT)
 
             if is_network:
+                if runner_completed and followup_committed:
+                    logger.warning(
+                        "Job %s: rede falhou apos commit do follow-up; evitando reschedule duplicado do job original",
+                        job_id,
+                    )
+                    return
                 logger.warning("Job %s: erro de rede transitório (%s) — reagendando em 5min",
                                job_id, type(exc).__name__)
                 hub.report_log(job_id, "warn",
