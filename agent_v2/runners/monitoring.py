@@ -537,6 +537,18 @@ class AlertWineRunner(BaseRunner):
                 protect_hours=protect_hours,
             )
             planned_pending = int(planned_transport_by_target.get(str(target["id"]), 0) or 0)
+            self.log(
+                jid,
+                "info",
+                (
+                    f"{target['name']}: avaliacao de vinho | "
+                    f"estoque={int(target.get('effective_wine', target.get('wine', 0)) or 0):,} | "
+                    f"net={int(target.get('desired_net', target.get('net', 0)) or 0):,}/h | "
+                    f"cobertura={self._format_hours(target.get('desired_hours', target.get('hours')))} | "
+                    f"necessidade_bruta={int(target_need):,} | "
+                    f"planejado_cadeia={planned_pending:,}"
+                ),
+            )
             if planned_pending > 0 and target_need > 0:
                 adjusted_need = max(0, target_need - planned_pending)
                 self.log(
@@ -549,9 +561,14 @@ class AlertWineRunner(BaseRunner):
                 )
                 target_need = adjusted_need
             if target_need < 1:
+                self.log(
+                    jid,
+                    "info",
+                    f"{target['name']}: sem envio novo; necessidade final zerada apos descontos e regras de cobertura",
+                )
                 continue
 
-            donor = self._pick_donor(
+            donor, donor_candidates = self._pick_donor(
                 city_infos,
                 target_id=target["id"],
                 donor_reserve_hours=donor_reserve_hours,
@@ -559,6 +576,12 @@ class AlertWineRunner(BaseRunner):
                 requested=target_need,
                 planned_by_source=planned_transport_by_source,
             )
+            if donor_candidates:
+                self.log(
+                    jid,
+                    "info",
+                    f"{target['name']}: candidatos doador -> {self._format_donor_candidates(donor_candidates)}",
+                )
             if donor is None:
                 self.log(jid, "warn", f"{target['name']}: nenhum doador com vinho suficiente")
                 continue
@@ -596,6 +619,17 @@ class AlertWineRunner(BaseRunner):
             donor["wine"] = max(0, donor["wine"] - int(amount))
             planned_transport_by_target[str(target["id"])] = planned_transport_by_target.get(str(target["id"]), 0) + int(amount)
             planned_transport_by_source[str(donor["id"])] = planned_transport_by_source.get(str(donor["id"]), 0) + int(amount)
+            self.log(
+                jid,
+                "info",
+                (
+                    f"{target['name']}: doador escolhido {donor['name']} | "
+                    f"pedido_final={int(target_need):,} | "
+                    f"disponivel={int(donor['available']):,} | "
+                    f"reserva={int(donor.get('reserve', 0)):,} | "
+                    f"ja_comprometido={int(donor.get('pending_outbound', 0)):,}"
+                ),
+            )
             self.log(
                 jid,
                 "info",
@@ -953,7 +987,7 @@ class AlertWineRunner(BaseRunner):
         useful_transfer_min: int,
         requested: int,
         planned_by_source: dict[str, int] | None = None,
-    ) -> dict[str, Any] | None:
+    ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
         candidates: list[dict[str, Any]] = []
         for info in city_infos:
             if info["id"] == target_id:
@@ -966,12 +1000,12 @@ class AlertWineRunner(BaseRunner):
             candidates.append({**info, "reserve": reserve, "available": available, "pending_outbound": pending_outbound})
 
         if not candidates:
-            return None
+            return None, []
         candidates.sort(key=lambda item: (item["available"], item["net"], item["wine"]), reverse=True)
         for candidate in candidates:
             if candidate["available"] >= requested:
-                return candidate
-        return candidates[0]
+                return candidate, candidates
+        return candidates[0], candidates
 
     def _format_hours(self, hours: Any) -> str:
         try:
@@ -986,6 +1020,22 @@ class AlertWineRunner(BaseRunner):
         if net < 0:
             return max(useful_transfer_min, int(ceil(abs(net) * donor_reserve_hours)))
         return useful_transfer_min
+
+    def _format_donor_candidates(self, candidates: list[dict[str, Any]]) -> str:
+        parts: list[str] = []
+        for candidate in candidates[:5]:
+            parts.append(
+                (
+                    f"{candidate['name']}: vinho={int(candidate.get('wine', 0)):,}, "
+                    f"reserva={int(candidate.get('reserve', 0)):,}, "
+                    f"comprometido={int(candidate.get('pending_outbound', 0)):,}, "
+                    f"disponivel={int(candidate.get('available', 0)):,}, "
+                    f"net={int(candidate.get('net', 0)):,}/h"
+                )
+            )
+        if len(candidates) > 5:
+            parts.append(f"... +{len(candidates) - 5} outro(s)")
+        return " | ".join(parts) if parts else "nenhum"
 
     def _pending_planned_transport_summary(self, job_id: str) -> dict[str, dict[str, int]]:
         try:
