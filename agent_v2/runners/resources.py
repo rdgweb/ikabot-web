@@ -141,6 +141,15 @@ def _positive_resource_signature(resources: dict[str, Any]) -> tuple[str, ...]:
     return tuple(name for name in RESOURCE_ORDER if _to_int(resources.get(name, 0), 0, 0) > 0)
 
 
+def _format_resource_amounts(resources: dict[str, Any]) -> str:
+    parts = [
+        f"{name}={_to_int(resources.get(name), 0, 0):,}"
+        for name in RESOURCE_ORDER
+        if _to_int(resources.get(name), 0, 0) > 0
+    ]
+    return ", ".join(parts) if parts else "nenhum"
+
+
 def _seconds_until(raw: Any) -> int | None:
     target = _parse_snapshot_time(raw)
     if target is None:
@@ -935,14 +944,17 @@ class DistributeResourcesRunner(BaseRunner):
             if not splits:
                 splits = [(viable_resources, False)]
 
+            route_spawned = False
+            route_spawned_resources = {name: 0 for name in RESOURCE_ORDER}
             for chunk, use_freighters in splits:
-                if self._route_chunk_is_active(
+                remaining_chunk, covered_chunk = self._subtract_active_transport_support(
                     active_transport_entries,
                     from_city=str(route["from_city"]),
                     to_city=str(route["to_city"]),
                     use_freighters=use_freighters,
                     resources=chunk,
-                ):
+                )
+                if not remaining_chunk:
                     self.log(
                         jid,
                         "info",
@@ -950,10 +962,24 @@ class DistributeResourcesRunner(BaseRunner):
                             f"Rota ja coberta por transporte ativo: "
                             f"{route['from_city_name']} -> {route['to_city_name']} | "
                             f"modal={'cargueiro' if use_freighters else 'mercante'} | "
-                            + ", ".join(f"{key}={value:,}" for key, value in chunk.items() if value > 0)
+                            f"planejado={_format_resource_amounts(chunk)} | "
+                            f"ativo={_format_resource_amounts(covered_chunk)}"
                         ),
                     )
                     continue
+                if covered_chunk:
+                    self.log(
+                        jid,
+                        "info",
+                        (
+                            f"Rota parcialmente coberta por transporte ativo: "
+                            f"{route['from_city_name']} -> {route['to_city_name']} | "
+                            f"modal={'cargueiro' if use_freighters else 'mercante'} | "
+                            f"planejado={_format_resource_amounts(chunk)} | "
+                            f"ativo={_format_resource_amounts(covered_chunk)} | "
+                            f"restante={_format_resource_amounts(remaining_chunk)}"
+                        ),
+                    )
                 child_inputs = {
                     "from_city": route["from_city"],
                     "from_city_name": route["from_city_name"],
@@ -963,19 +989,22 @@ class DistributeResourcesRunner(BaseRunner):
                     "use_freighters": use_freighters,
                     "confirm_arrival": confirm_arrival_enabled,
                     "confirmation_margin_minutes": confirmation_margin_minutes,
-                    **chunk,
+                    **remaining_chunk,
                 }
                 self.hub.spawn_job(jid, action_code=2, inputs=child_inputs)
+                route_spawned = True
+                for key, value in remaining_chunk.items():
+                    route_spawned_resources[key] = route_spawned_resources.get(key, 0) + int(value)
                 active_transport_entries.append(
                     {
                         "from_city": str(route["from_city"]),
                         "to_city": str(route["to_city"]),
                         "use_freighters": bool(use_freighters),
-                        "resources": {key: int(value) for key, value in chunk.items() if int(value) > 0},
+                        "resources": {key: int(value) for key, value in remaining_chunk.items() if int(value) > 0},
                         "scheduled_for": "",
                     }
                 )
-                chunk_total = sum(chunk.values())
+                chunk_total = sum(remaining_chunk.values())
                 if use_freighters:
                     n = max(1, chunk_total // 50000 + (1 if chunk_total % 50000 else 0))
                     free_freighters = max(0, free_freighters - n)
@@ -985,16 +1014,17 @@ class DistributeResourcesRunner(BaseRunner):
                     n = max(1, chunk_total // 500 + (1 if chunk_total % 500 else 0))
                     self.log(jid, "info",
                         f"  ↳ mercante × {n} ({chunk_total:,})")
-            actions_spawned += 1
-            self.log(
-                jid,
-                "info",
-                (
-                    f"Remessa criada: {route['from_city_name']} -> {route['to_city_name']} | "
-                    f"total={sum(viable_resources.values()):,} | "
-                    + ", ".join(f"{key}={value:,}" for key, value in viable_resources.items() if value > 0)
-                ),
-            )
+            if route_spawned:
+                actions_spawned += 1
+                self.log(
+                    jid,
+                    "info",
+                    (
+                        f"Job de remessa criado: {route['from_city_name']} -> {route['to_city_name']} | "
+                        f"total={sum(route_spawned_resources.values()):,} | "
+                        + ", ".join(f"{key}={value:,}" for key, value in route_spawned_resources.items() if value > 0)
+                    ),
+                )
 
         next_seconds = 0
         if loop_enabled:
@@ -1270,7 +1300,7 @@ class DistributeResourcesRunner(BaseRunner):
                 entries.append(normalized)
         return entries
 
-    def _route_chunk_is_active(
+    def _subtract_active_transport_support(
         self,
         entries: list[dict[str, Any]],
         *,
@@ -1278,10 +1308,11 @@ class DistributeResourcesRunner(BaseRunner):
         to_city: str,
         use_freighters: bool,
         resources: dict[str, int],
-    ) -> bool:
-        wanted_signature = _positive_resource_signature(resources)
-        if not wanted_signature:
-            return False
+    ) -> tuple[dict[str, int], dict[str, int]]:
+        remaining = {name: max(0, _to_int(resources.get(name), 0, 0)) for name in RESOURCE_ORDER}
+        covered = {name: 0 for name in RESOURCE_ORDER}
+        if not any(remaining.values()):
+            return {}, {}
         for entry in entries:
             if str(entry.get("from_city") or "") != from_city:
                 continue
@@ -1289,10 +1320,23 @@ class DistributeResourcesRunner(BaseRunner):
                 continue
             if bool(entry.get("use_freighters")) != bool(use_freighters):
                 continue
-            if _positive_resource_signature(entry.get("resources") or {}) != wanted_signature:
-                continue
-            return True
-        return False
+            entry_resources = entry.get("resources") if isinstance(entry.get("resources"), dict) else {}
+            for name in RESOURCE_ORDER:
+                need = int(remaining.get(name, 0) or 0)
+                available = max(0, _to_int(entry_resources.get(name), 0, 0))
+                if need <= 0 or available <= 0:
+                    continue
+                used = min(need, available)
+                remaining[name] = need - used
+                covered[name] += used
+                entry_resources[name] = available - used
+            entry["resources"] = entry_resources
+            if not any(remaining.values()):
+                break
+        return (
+            {name: amount for name, amount in remaining.items() if amount > 0},
+            {name: amount for name, amount in covered.items() if amount > 0},
+        )
 
     def _choose_next_transport_followup_delay(self, entries: list[dict[str, Any]]) -> int | None:
         delays: list[int] = []
