@@ -88,6 +88,50 @@ def _duration_human(seconds: int) -> str:
     return f"{d}d" if h == 0 else f"{d}d {h}h"
 
 
+def _parse_eta_seconds(raw: Any) -> int:
+    text = str(raw or "").strip()
+    if not text:
+        return 0
+    colon = re.fullmatch(r"(?:(\d+):)?(\d{1,2}):(\d{2})", text)
+    if colon:
+        h = _to_int(colon.group(1), 0)
+        m = _to_int(colon.group(2), 0)
+        s = _to_int(colon.group(3), 0)
+        return h * 3600 + m * 60 + s
+    total = 0
+    for value, unit in re.findall(r"(\d+)\s*([dhms])", text.lower()):
+        ivalue = _to_int(value)
+        if unit == "d":
+            total += ivalue * 86400
+        elif unit == "h":
+            total += ivalue * 3600
+        elif unit == "m":
+            total += ivalue * 60
+        elif unit == "s":
+            total += ivalue
+    return total
+
+
+def _movement_remaining_seconds(md: dict[str, Any], now: float | None = None) -> int:
+    event_time = _to_int(md.get("event_time"), 0)
+    if event_time > 0:
+        current = time.time() if now is None else now
+        return max(0, int(event_time - current))
+    return _parse_eta_seconds(md.get("remaining_time") or md.get("duration") or "")
+
+
+def _movement_matches_expected(md: dict[str, Any], expected: dict[str, Any]) -> bool:
+    origin = str((md.get("origin") or {}).get("name") or "").strip().lower()
+    target = str((md.get("target") or {}).get("name") or "").strip().lower()
+    expected_origin = str(expected.get("from_city_name") or "").strip().lower()
+    expected_target = str(expected.get("to_city_name") or "").strip().lower()
+    if expected_origin and origin != expected_origin:
+        return False
+    if expected_target and target != expected_target:
+        return False
+    return True
+
+
 @register_runner(1203)
 class UpgradeUnitsRunner(BaseRunner):
     """Automatically research unit improvements in the Workshop (Oficina do Inventor).
@@ -614,9 +658,20 @@ class TrainUnitsRunner(BaseRunner):
                 self.log(jid, 'error', f'Nenhum {bname} encontrado na cidade {city_id}')
                 return RunnerResult(success=False, data={"error": "no_building_found"})
 
-            # Fetch current state from game
+            # Fetch train options from game.
             state = client.fetch_barracks_state(city_id, position, building_type)
             units_in_game = {str(u["unit_id"]): u for u in state.get("units", [])}
+            stationed_counts: dict[str, int] = {}
+            if mode == "maintain":
+                try:
+                    stationed = client.fetch_stationed_units(city_id, building_type)
+                    stationed_counts = {
+                        str(uid): _to_int(qty)
+                        for uid, qty in (stationed.get("counts") or {}).items()
+                        if _to_int(qty) > 0
+                    }
+                except Exception as exc:
+                    self.log(jid, "warn", f"Erro ao buscar guarnicao -- usando estado do edificio ({exc})")
             # Use snapshot occupation data (more reliable than HTML parse)
             occupied = False
             try:
@@ -642,7 +697,13 @@ class TrainUnitsRunner(BaseRunner):
                 for unit_id_str, target_qty in target_garrison.items():
                     if target_qty <= 0:
                         continue
-                    current = _to_int((units_in_game.get(unit_id_str) or {}).get("current_count"), 0)
+                    current = _to_int(
+                        stationed_counts.get(
+                            unit_id_str,
+                            (units_in_game.get(unit_id_str) or {}).get("current_count"),
+                        ),
+                        0,
+                    )
                     deficit = max(0, target_qty - current)
                     if deficit > 0:
                         to_train[int(unit_id_str)] = deficit
@@ -702,6 +763,96 @@ class TrainUnitsRunner(BaseRunner):
             self.save_game_client(ga_id or aid, client)
             return RunnerResult(success=False, data={"error": str(exc)})
 
+    def _patch_snapshot_city_garrisons(
+        self,
+        *,
+        job_id: str,
+        account_id: str,
+        game_account_id: str | None,
+        snapshot: dict[str, Any],
+        city_ids: list[int],
+        live_city_ids: set[int],
+        city_current: dict[int, dict[str, int]],
+        building_type: str,
+        catalog: dict[int, str],
+        city_names: dict[int, str],
+    ) -> None:
+        if not live_city_ids:
+            return
+
+        military = dict((snapshot or {}).get("military") or {})
+        raw_by_city = military.get("by_city") or []
+        unit_bucket = "fleet" if building_type == "fleet" else "troops"
+        target_city_ids = {cid for cid in city_ids if cid in live_city_ids}
+        if not target_city_ids:
+            return
+
+        seen: set[int] = set()
+        changed = False
+        by_city: list[Any] = []
+
+        for entry in raw_by_city:
+            item = dict(entry) if isinstance(entry, dict) else entry
+            if not isinstance(item, dict):
+                by_city.append(item)
+                continue
+            city_id = _to_int(item.get("city_id"), 0)
+            if city_id not in target_city_ids:
+                by_city.append(item)
+                continue
+
+            seen.add(city_id)
+            current_counts = {
+                catalog.get(_to_int(uid), str(uid)): _to_int(qty)
+                for uid, qty in (city_current.get(city_id) or {}).items()
+                if _to_int(qty) > 0
+            }
+            if dict(item.get(unit_bucket) or {}) != current_counts:
+                changed = True
+                item[unit_bucket] = current_counts
+            if not item.get("city_name") and city_names.get(city_id):
+                changed = True
+                item["city_name"] = city_names[city_id]
+            by_city.append(item)
+
+        for city_id in target_city_ids - seen:
+            changed = True
+            by_city.append(
+                {
+                    "city_id": city_id,
+                    "city_name": city_names.get(city_id, str(city_id)),
+                    "fleet": {
+                        catalog.get(_to_int(uid), str(uid)): _to_int(qty)
+                        for uid, qty in (city_current.get(city_id) or {}).items()
+                        if unit_bucket == "fleet" and _to_int(qty) > 0
+                    },
+                    "troops": {
+                        catalog.get(_to_int(uid), str(uid)): _to_int(qty)
+                        for uid, qty in (city_current.get(city_id) or {}).items()
+                        if unit_bucket == "troops" and _to_int(qty) > 0
+                    },
+                }
+            )
+
+        if not changed:
+            return
+
+        military["by_city"] = by_city
+        try:
+            self.hub.update_snapshot(
+                account_id,
+                {
+                    "base_snapshot": (snapshot or {}).get("base_snapshot") or {},
+                    "cities": (snapshot or {}).get("cities") or [],
+                    "military": military,
+                    "source_job_id": job_id,
+                },
+                game_account_id=game_account_id,
+            )
+            self.log(job_id, "info", f"Snapshot militar atualizado com guarnicao real ({unit_bucket})")
+        except Exception as exc:
+            self.log(job_id, "warn", f"Snapshot militar nao atualizado com guarnicao real: {exc}")
+
     def _maintain_multi_city(self, jid, aid, ga_id, inputs, building_type, maintain_scope, recheck_minutes):
         """Maintain garrison across multiple cities (selected_custom or selected_uniform)."""
         city_ids = [_to_int(c) for c in (inputs.get('city_ids') or []) if _to_int(c)]
@@ -723,10 +874,12 @@ class TrainUnitsRunner(BaseRunner):
             snap = self.hub.get_snapshot(game_account_id=ga_id)
             city_list = (snap or {}).get('cities') or []
 
-            # Build city_id -> {name, position} from snapshot
+            # Build city_id -> {name, position} from snapshot for cities that can train.
             city_meta = {}
+            city_names = {}
             for city in city_list:
                 cid = _to_int(city.get('id'))
+                city_names[cid] = str(city.get('name') or cid)
                 for b in city.get('buildings') or []:
                     if str(b.get('building') or '').strip() == bname:
                         pos = _to_int(b.get('position'))
@@ -740,19 +893,18 @@ class TrainUnitsRunner(BaseRunner):
             except Exception:
                 catalog = {}
 
-            # Build island_id map for station dispatch
-            island_map = {_to_int(c.get('id')): _to_int(c.get('island_id')) for c in city_list if c.get('id')}
-
             import time as _time
 
-            # Phase 1: fetch current counts for all cities
-            # - Cities WITH barracks: use live barracks state (accurate, includes max_build)
-            # - Cities WITHOUT barracks: use snapshot military data (may be stale, but enables redistribution)
+            # Phase 1: fetch current stationed counts for all cities. Barracks/shipyard
+            # pages describe training options, not reliable garrison distribution.
             city_current: dict[int, dict[str, int]] = {}
             city_target_map: dict[int, dict[str, int]] = {}
+            city_live_ok: set[int] = set()
 
-            # Build snapshot garrison map for cities without barracks
+            # Build snapshot garrison map as fallback for live cityMilitary reads.
             snap_military = {}
+            city_queued: dict[int, dict[str, int]] = {}
+            queue_wait_seconds: list[int] = []
             for bc in ((snap or {}).get('military') or {}).get('by_city') or []:
                 if not isinstance(bc, dict):
                     continue
@@ -771,24 +923,53 @@ class TrainUnitsRunner(BaseRunner):
                         target = {str(k): _to_int(v) for k, v in raw.items() if _to_int(v) > 0}
                 city_target_map[city_id] = target
 
-                meta = city_meta.get(city_id)
-                if not meta:
-                    # No barracks: use snapshot data — can receive redistributed troops but can't train
-                    city_current[city_id] = snap_military.get(city_id, {})
-                    city_name = next((str(c.get('name') or city_id) for c in city_list if _to_int(c.get('id')) == city_id), str(city_id))
-                    self.log(jid, 'info', f'{city_name}: sem {bname} -- usando snapshot para calculo de deficit (so pode receber redistribuicao)')
-                    continue
-
                 try:
-                    _time.sleep(0.4)
-                    state = client.fetch_barracks_state(city_id, meta['position'], building_type)
+                    _time.sleep(0.25)
+                    state = client.fetch_stationed_units(city_id, building_type)
                     city_current[city_id] = {
-                        str(u['unit_id']): _to_int(u.get('current_count'), 0)
-                        for u in state.get('units', []) if u.get('unit_id')
+                        str(uid): _to_int(qty)
+                        for uid, qty in (state.get('counts') or {}).items()
+                        if _to_int(qty) > 0
                     }
+                    city_live_ok.add(city_id)
                 except Exception as exc:
-                    self.log(jid, 'warn', f'{meta.get("name", city_id)}: erro ao buscar estado -- {exc}')
+                    city_name = city_names.get(city_id, str(city_id))
+                    self.log(jid, 'warn', f'{city_name}: erro ao buscar guarnicao -- usando snapshot ({exc})')
                     city_current[city_id] = snap_military.get(city_id, {})
+
+                meta = city_meta.get(city_id)
+                if meta:
+                    try:
+                        _time.sleep(0.25)
+                        train_state = client.fetch_barracks_state(city_id, meta['position'], building_type)
+                        for entry in train_state.get('training_queue') or []:
+                            uid_str = str(entry.get('unit_id') or '')
+                            qty = _to_int(entry.get('quantity'), 0)
+                            if uid_str and qty > 0:
+                                queued = city_queued.setdefault(city_id, {})
+                                queued[uid_str] = queued.get(uid_str, 0) + qty
+                                remaining = _to_int(entry.get('remaining_seconds'), 0)
+                                if remaining > 0:
+                                    queue_wait_seconds.append(remaining)
+                    except Exception as exc:
+                        city_name = city_names.get(city_id, str(city_id))
+                        self.log(jid, 'warn', f'{city_name}: erro ao buscar fila de treino -- ignorando fila ({exc})')
+                else:
+                    city_name = city_names.get(city_id, str(city_id))
+                    self.log(jid, 'info', f'{city_name}: sem {bname} -- pode receber redistribuicao, mas nao treinar')
+
+            self._patch_snapshot_city_garrisons(
+                job_id=jid,
+                account_id=aid,
+                game_account_id=ga_id,
+                snapshot=snap or {},
+                city_ids=city_ids,
+                live_city_ids=city_live_ok,
+                city_current=city_current,
+                building_type=building_type,
+                catalog=catalog,
+                city_names=city_names,
+            )
 
             # Phase 2: compute surplus and deficit per city per unit
             # surplus[city_id][uid_str] = how many above target
@@ -807,72 +988,143 @@ class TrainUnitsRunner(BaseRunner):
                         surplus[city_id][uid_str] = cur_qty - tgt_qty
                 # Deficit: target > current
                 for uid_str, tgt_qty in target.items():
-                    cur_qty = _to_int(current.get(uid_str), 0)
+                    cur_qty = _to_int(current.get(uid_str), 0) + _to_int(city_queued.get(city_id, {}).get(uid_str), 0)
                     if tgt_qty > cur_qty:
                         deficit[city_id][uid_str] = tgt_qty - cur_qty
 
-            # Phase 3: redistribute surplus to deficit cities
+            # Phase 3: redistribute surplus to deficit cities through action 1202.
             transfers_done = []
             for donor_id, donor_surplus in surplus.items():
-                donor_meta = city_meta.get(donor_id)
-                if not donor_meta or not donor_surplus:
+                if not donor_surplus:
                     continue
                 for recv_id, recv_deficit in deficit.items():
                     if recv_id == donor_id or not recv_deficit:
-                        continue
-                    recv_meta = city_meta.get(recv_id)
-                    if not recv_meta:
                         continue
                     to_move = {}
                     for uid_str, needed in list(recv_deficit.items()):
                         available = donor_surplus.get(uid_str, 0)
                         move_qty = min(needed, available)
                         if move_qty > 0:
-                            to_move[int(uid_str)] = move_qty
-                            donor_surplus[uid_str] = available - move_qty
-                            recv_deficit[uid_str] = needed - move_qty
-                            if recv_deficit[uid_str] == 0:
+                            to_move[uid_str] = move_qty
+                    if not to_move:
+                        continue
+                    try:
+                        self.hub.spawn_job(
+                            jid,
+                            action_code=1202,
+                            inputs={
+                                'from_city_id': donor_id,
+                                'to_city_id': recv_id,
+                                'units': to_move,
+                            },
+                        )
+                        for uid_str, move_qty in to_move.items():
+                            donor_surplus[uid_str] = donor_surplus.get(uid_str, 0) - move_qty
+                            recv_deficit[uid_str] = recv_deficit.get(uid_str, 0) - move_qty
+                            if recv_deficit[uid_str] <= 0:
                                 del recv_deficit[uid_str]
-                    if to_move:
-                        try:
-                            to_island = island_map.get(recv_id, 0)
-                            scope = 'fleet' if building_type == 'fleet' else 'troops'
-                            client.station_units(donor_id, recv_id, to_move, scope=scope, to_island_id=to_island)
-                            summary = ', '.join(f'{catalog.get(uid, uid)} x{qty}' for uid, qty in to_move.items())
-                            self.log(jid, 'info', f'Redistribuindo: {donor_meta["name"]} -> {recv_meta["name"]} | {summary}')
-                            transfers_done.append({'from': donor_id, 'to': recv_id, 'units': to_move})
-                        except Exception as exc:
-                            self.log(jid, 'warn', f'Transferencia {donor_id}->{recv_id} falhou -- {exc}')
+                        summary = ', '.join(f'{catalog.get(_to_int(uid), uid)} x{qty}' for uid, qty in to_move.items())
+                        donor_name = city_names.get(donor_id, str(donor_id))
+                        recv_name = city_names.get(recv_id, str(recv_id))
+                        self.log(jid, 'info', f'Job 1202 criado para redistribuir: {donor_name} -> {recv_name} | {summary}')
+                        transfers_done.append({'from': donor_id, 'to': recv_id, 'units': to_move})
+                    except Exception as exc:
+                        self.log(jid, 'warn', f'Transferencia {donor_id}->{recv_id} falhou -- {exc}')
 
             if transfers_done:
-                self.log(jid, 'info', f'{len(transfers_done)} redistribuicao(oes) de excesso despachada(s)')
+                try:
+                    self.hub.spawn_job(
+                        jid,
+                        action_code=13,
+                        inputs={
+                            "probe_key": "post_redistribution",
+                            "trigger": "after_1202_dispatch",
+                            "retime_followup_action_code": 1005,
+                            "expected_movements": [
+                                {
+                                    "from_city_id": item.get("from"),
+                                    "to_city_id": item.get("to"),
+                                    "from_city_name": city_names.get(_to_int(item.get("from")), str(item.get("from"))),
+                                    "to_city_name": city_names.get(_to_int(item.get("to")), str(item.get("to"))),
+                                    "units": item.get("units") or {},
+                                }
+                                for item in transfers_done
+                            ],
+                        },
+                        delay_seconds=45,
+                    )
+                    self.log(jid, 'info', 'Job 13 criado para capturar movimentos apos redistribuicao')
+                except Exception as exc:
+                    self.log(jid, 'warn', f'Nao foi possivel criar job 13 para movimentos: {exc}')
+                self.save_game_client(ga_id or aid, client)
+                self.log(jid, 'info', f'{len(transfers_done)} redistribuicao(oes) agendada(s); treino adiado ate a proxima verificacao')
+                return RunnerResult(
+                    success=True,
+                    reschedule_seconds=recheck_minutes * 60,
+                    reschedule_inputs=inputs,
+                    data={
+                        "status": "redistribution_scheduled",
+                        "transfers": len(transfers_done),
+                    },
+                )
 
             # Phase 4: train remaining deficit
             trained_any = False
             at_target = []
             errors = []
+            train_plan: dict[int, dict[int, int]] = {}
+            trainable_city_ids = [city_id for city_id in city_ids if city_meta.get(city_id)]
+            extra_train_cursor = 0
+
+            def add_to_train_plan(city_id: int, units: dict[str, int]) -> None:
+                if not units:
+                    return
+                bucket = train_plan.setdefault(city_id, {})
+                for uid_str, qty in units.items():
+                    uid = _to_int(uid_str)
+                    amount = _to_int(qty)
+                    if uid and amount > 0:
+                        bucket[uid] = bucket.get(uid, 0) + amount
 
             for city_id in city_ids:
-                remaining_deficit = deficit.get(city_id, {})
-                meta = city_meta.get(city_id)
-                if not meta:
-                    # No barracks: deficit can only be resolved via redistribution, not training
-                    if remaining_deficit:
-                        city_name = next((str(c.get('name') or city_id) for c in city_list if _to_int(c.get('id')) == city_id), str(city_id))
-                        self.log(jid, 'warn', f'{city_name}: deficit restante sem {bname} para treinar -- necessario mais excesso em outras cidades')
-                    continue
+                remaining_deficit = dict(deficit.get(city_id, {}))
                 if not remaining_deficit:
                     at_target.append(city_id)
                     continue
-                to_train = {int(uid_str): qty for uid_str, qty in remaining_deficit.items() if qty > 0}
+                if city_meta.get(city_id):
+                    add_to_train_plan(city_id, remaining_deficit)
+                    continue
+                if not trainable_city_ids:
+                    city_name = city_names.get(city_id, str(city_id))
+                    self.log(jid, 'warn', f'{city_name}: deficit restante sem {bname} para treinar -- necessario mais excesso em outras cidades')
+                    continue
+                production_city = trainable_city_ids[extra_train_cursor % len(trainable_city_ids)]
+                extra_train_cursor += 1
+                add_to_train_plan(production_city, remaining_deficit)
+                city_name = city_names.get(city_id, str(city_id))
+                producer_name = city_names.get(production_city, str(production_city))
+                summary = ', '.join(f'{catalog.get(_to_int(uid), uid)} x{qty}' for uid, qty in remaining_deficit.items())
+                self.log(jid, 'info', f'{city_name}: deficit sem {bname}; treinando excedente em {producer_name} para redistribuir depois | {summary}')
+
+            for city_id in trainable_city_ids:
+                meta = city_meta.get(city_id)
+                to_train = train_plan.get(city_id, {})
                 if not to_train:
-                    at_target.append(city_id)
                     continue
                 try:
                     _time.sleep(0.4)
                     summary = ', '.join(f'{catalog.get(uid, uid)} x{qty}' for uid, qty in to_train.items())
                     self.log(jid, 'info', f'{meta["name"]}: treinando {summary}')
                     client.train_units(city_id, meta['position'], to_train, building_type)
+                    try:
+                        _time.sleep(0.25)
+                        train_state = client.fetch_barracks_state(city_id, meta['position'], building_type)
+                        for entry in train_state.get('training_queue') or []:
+                            remaining = _to_int(entry.get('remaining_seconds'), 0)
+                            if remaining > 0:
+                                queue_wait_seconds.append(remaining)
+                    except Exception as eta_exc:
+                        self.log(jid, 'warn', f'{meta.get("name", city_id)}: treino iniciado, mas ETA da fila nao foi lido -- {eta_exc}')
                     trained_any = True
                 except Exception as exc:
                     self.log(jid, 'warn', f'{meta.get("name", city_id)}: treino falhou -- {exc}')
@@ -882,12 +1134,20 @@ class TrainUnitsRunner(BaseRunner):
 
             if at_target:
                 self.log(jid, 'info', f'{len(at_target)} cidade(s) no alvo')
+            if queue_wait_seconds:
+                wait_seconds = max(300, min(queue_wait_seconds) + 90)
+                self.log(jid, 'info', f'Fila de treino detectada -- proxima verificacao em {_duration_human(wait_seconds)}')
+            else:
+                wait_seconds = recheck_minutes * 60
             if not trained_any and not transfers_done and not errors:
-                self.log(jid, 'info', f'Sistema equilibrado -- proxima verificacao em {recheck_minutes}min')
+                if queue_wait_seconds:
+                    self.log(jid, 'info', 'Sistema aguardando conclusao da fila de treino')
+                else:
+                    self.log(jid, 'info', f'Sistema equilibrado -- proxima verificacao em {recheck_minutes}min')
 
             return RunnerResult(
                 success=True,
-                reschedule_seconds=recheck_minutes * 60,
+                reschedule_seconds=wait_seconds,
                 reschedule_inputs=inputs,
                 data={
                     "status": "trained" if trained_any else ("redistributed" if transfers_done else "at_target"),
@@ -910,6 +1170,75 @@ class StationUnitsRunner(BaseRunner):
         to_city_id      int    destination city
         units           dict   {unit_id_str: quantity}
     """
+
+    def _patch_snapshot_after_station(
+        self,
+        *,
+        job_id: str,
+        account_id: str,
+        game_account_id: str | None,
+        from_city_id: int,
+        units: dict[int, int],
+        scope: str,
+        catalog: dict[int, str],
+    ) -> None:
+        if not game_account_id or not units:
+            return
+        try:
+            snapshot = self.hub.get_snapshot(game_account_id=game_account_id)
+        except Exception as exc:
+            self.log(job_id, "warn", f"Snapshot militar nao lido apos movimentacao: {exc}")
+            return
+        if not snapshot:
+            return
+
+        military = dict(snapshot.get("military") or {})
+        by_city_raw = military.get("by_city") or []
+        unit_bucket = "fleet" if scope == "fleet" else "troops"
+        changed = False
+        by_city = []
+
+        for entry in by_city_raw:
+            item = dict(entry) if isinstance(entry, dict) else entry
+            if not isinstance(item, dict):
+                by_city.append(item)
+                continue
+            if _to_int(item.get("city_id")) != from_city_id:
+                by_city.append(item)
+                continue
+
+            counts = dict(item.get(unit_bucket) or {})
+            for uid, qty in units.items():
+                name = catalog.get(_to_int(uid), str(uid))
+                current = _to_int(counts.get(name), 0)
+                new_value = max(0, current - _to_int(qty))
+                if current != new_value:
+                    changed = True
+                    if new_value:
+                        counts[name] = new_value
+                    else:
+                        counts.pop(name, None)
+            item[unit_bucket] = counts
+            by_city.append(item)
+
+        if not changed:
+            return
+
+        military["by_city"] = by_city
+        try:
+            self.hub.update_snapshot(
+                account_id,
+                {
+                    "base_snapshot": snapshot.get("base_snapshot") or {},
+                    "cities": snapshot.get("cities") or [],
+                    "military": military,
+                    "source_job_id": job_id,
+                },
+                game_account_id=game_account_id,
+            )
+            self.log(job_id, "info", f"Snapshot militar ajustado: saida de {from_city_id} ({unit_bucket})")
+        except Exception as exc:
+            self.log(job_id, "warn", f"Snapshot militar nao atualizado apos movimentacao: {exc}")
 
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
@@ -965,6 +1294,15 @@ class StationUnitsRunner(BaseRunner):
                 summary = ', '.join(f'{catalog.get(uid, uid)} x{qty}' for uid, qty in troop_units.items())
                 self.log(jid, 'info', f'Estacionando tropas [{summary}] de {from_city} -> {to_city}')
                 result = client.station_units(from_city, to_city, troop_units, scope='troops', to_island_id=to_island_id)
+                self._patch_snapshot_after_station(
+                    job_id=jid,
+                    account_id=aid,
+                    game_account_id=ga_id,
+                    from_city_id=from_city,
+                    units=troop_units,
+                    scope='troops',
+                    catalog=catalog,
+                )
                 eta = _to_int((result or {}).get('eta_seconds'), 0)
                 if eta:
                     max_eta = max(max_eta, eta)
@@ -975,6 +1313,15 @@ class StationUnitsRunner(BaseRunner):
                 summary = ', '.join(f'{catalog.get(uid, uid)} x{qty}' for uid, qty in fleet_units.items())
                 self.log(jid, 'info', f'Estacionando frotas [{summary}] de {from_city} -> {to_city}')
                 result = client.station_units(from_city, to_city, fleet_units, scope='fleet', to_island_id=to_island_id)
+                self._patch_snapshot_after_station(
+                    job_id=jid,
+                    account_id=aid,
+                    game_account_id=ga_id,
+                    from_city_id=from_city,
+                    units=fleet_units,
+                    scope='fleet',
+                    catalog=catalog,
+                )
                 eta = _to_int((result or {}).get('eta_seconds'), 0)
                 if eta:
                     max_eta = max(max_eta, eta)
@@ -985,6 +1332,17 @@ class StationUnitsRunner(BaseRunner):
             label = ', '.join(results)
             if max_eta:
                 self.log(jid, 'info', f'Movimentacao iniciada: {label} | ETA {_duration_human(max_eta)}')
+                root_job_id = str(job.get("root_job_id") or "")
+                if root_job_id:
+                    try:
+                        self.hub.retime_root_followup_job(
+                            root_job_id=root_job_id,
+                            action_code=1005,
+                            delay_seconds=max(300, max_eta + 90),
+                            exclude_job_id=jid,
+                        )
+                    except Exception as exc:
+                        self.log(jid, 'warn', f'Nao foi possivel adiantar rechecagem do treino: {exc}')
             else:
                 self.log(jid, 'info', f'Movimentacao iniciada: {label}')
             return RunnerResult(success=True, data={"from": from_city, "to": to_city, "island": to_island_id, "units": units, "eta_seconds": max_eta})
@@ -1103,6 +1461,10 @@ class MilitaryMovementsRunner(BaseRunner):
 
             details = advisor.get("movement_details") or []
             self.log(jid, "info", f"Total de movimentos ativos: {len(details)}")
+            expected_movements = inputs.get("expected_movements") or []
+            if not isinstance(expected_movements, list):
+                expected_movements = []
+            eta_candidates: list[int] = []
             for md in details:
                 origin = (md.get("origin") or {}).get("name") or "?"
                 target = (md.get("target") or {}).get("name") or "?"
@@ -1116,10 +1478,18 @@ class MilitaryMovementsRunner(BaseRunner):
                 if cargo:  parts.append(f"carga={cargo}")
                 if fleet:  parts.append(f"frota={fleet}")
                 if troops: parts.append(f"tropas={troops}")
+                eta_seconds = _movement_remaining_seconds(md)
+                matches_expected = bool(expected_movements) and any(
+                    _movement_matches_expected(md, expected)
+                    for expected in expected_movements
+                    if isinstance(expected, dict)
+                )
+                if eta_seconds > 0 and not md.get("is_returning") and (fleet or troops) and matches_expected:
+                    eta_candidates.append(eta_seconds)
                 arrow = "←" if md.get("is_returning") else "→"
                 self.log(jid, "info",
                     f"  [{mission}] {origin} {arrow} {target} ({target_player}) "
-                    f"ETA={eta} | " + " | ".join(parts))
+                    f"chega={eta} falta={_duration_human(eta_seconds)} | " + " | ".join(parts))
 
             movements = {
                 "captured_at":         int(time.time()),
@@ -1141,6 +1511,26 @@ class MilitaryMovementsRunner(BaseRunner):
                      f"Movimentos OK: batalha={movements['has_active_battle']} "
                      f"porto_ocupado={movements['port_occupied']} "
                      f"barcos_em_mov={movements['ships_moving']}")
+
+            retime_action = _to_int(inputs.get("retime_followup_action_code"), 0)
+            root_job_id = str(job.get("root_job_id") or "")
+            if retime_action and root_job_id and eta_candidates:
+                delay_seconds = max(300, max(eta_candidates) + 90)
+                try:
+                    result = self.hub.retime_root_followup_job(
+                        root_job_id=root_job_id,
+                        action_code=retime_action,
+                        delay_seconds=delay_seconds,
+                        exclude_job_id=jid,
+                    )
+                    if result.get("updated"):
+                        self.log(jid, "info", f"Proximo {retime_action} adiantado para {_duration_human(delay_seconds)} apos ETA de movimento")
+                    else:
+                        self.log(jid, "warn", f"Nao encontrei follow-up {retime_action} para adiantar: {result.get('reason')}")
+                except Exception as exc:
+                    self.log(jid, "warn", f"Falha ao adiantar follow-up {retime_action}: {exc}")
+            elif retime_action and root_job_id and expected_movements:
+                self.log(jid, "warn", f"Nenhum movimento esperado encontrado para retimar follow-up {retime_action}")
 
             return RunnerResult(success=True)
 
