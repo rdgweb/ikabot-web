@@ -61,3 +61,8 @@ tmp_modal_scroll_test.png
 /unit_*.html
 /workshop_template.json
 /tmp_capture/
+
+# Itens fora do escopo do projeto (não publicar)
+/batocera/
+/pve_clean.py
+/pve_docker.py

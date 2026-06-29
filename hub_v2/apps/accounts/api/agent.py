@@ -36,9 +36,11 @@ def _stale_recovery_offline_seconds() -> int:
 
 
 def _should_run_stale_recovery(previous_last_seen, *, now) -> bool:
-    if previous_last_seen is None:
-        return True
-    return (now - previous_last_seen).total_seconds() >= _stale_recovery_offline_seconds()
+    # Sempre executa: zombies (jobs running com lease expirado) acumulam mesmo
+    # com agent online se um worker celery travar/morrer sem atualizar status.
+    # Recovery filtra internamente via _is_job_stale (lease+grace), então
+    # rodar a cada heartbeat é barato e mantém o estado limpo.
+    return True
 
 
 class AgentRegisterView(APIView):
