@@ -1228,6 +1228,11 @@ class GameClient(IslandActions):
         # Enforce human-like delay between requests
         self._enforce_delay()
 
+        # Default timeout defensivo: sem timeout explícito, requests fica bloqueado
+        # indefinidamente se o servidor não responde. Isso já causou jobs zumbi
+        # (48h+ marcados como "running" sem heartbeat) em produção.
+        kwargs.setdefault("timeout", 60)
+
         for attempt in range(MAX_RETRIES):
             try:
                 resp = self.session.request(method, url, **kwargs)

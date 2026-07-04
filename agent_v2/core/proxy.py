@@ -12,6 +12,11 @@ GAME_DOMAINS = [
     "lobby.ikariam",
 ]
 
+# Default timeout defensivo — sem isso requests fica bloqueado indefinidamente
+# se o servidor não responde. Jobs zumbi (48h+ "running" sem heartbeat) foram
+# rastreados até chamadas HTTP sem timeout explícito.
+DEFAULT_TIMEOUT_SECONDS = 60
+
 
 class StrictProxySession(requests.Session):
     """
@@ -25,6 +30,11 @@ class StrictProxySession(requests.Session):
         self._proxy_url = proxy_url
 
     def send(self, request, **kwargs):
+        # Aplica timeout default se caller não passou — evita hang infinito.
+        # Session.request sempre propaga timeout (mesmo None), então setdefault
+        # não pega — precisa checar None explicitamente.
+        if kwargs.get("timeout") is None:
+            kwargs["timeout"] = DEFAULT_TIMEOUT_SECONDS
         if self._is_game_request(request.url):
             if self._proxy_url:
                 kwargs["proxies"] = {
