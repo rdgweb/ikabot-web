@@ -37,6 +37,7 @@ ACTIONS = {
         "requires_game_session": True,
         "recurring": False,
         "long_running": False,
+        "ui_hidden": True,
         "description": "Mostra status resumido da conta.",
         "inputs": [],
     },

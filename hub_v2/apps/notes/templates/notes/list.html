@@ -1,0 +1,209 @@
+{% extends base_template|default:"base.html" %}
+{% load humanize %}
+
+{% block title %}Notas{% endblock %}
+
+{% block content %}
+<div class="mx-auto w-full max-w-6xl">
+  <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-ink">Notas</h1>
+      <p class="text-sm text-muted mt-1">Bugs, tarefas e melhorias para acompanhar dentro do hub.</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <div x-data="{ filterOpen: false }" class="relative">
+        <button @click="filterOpen = !filterOpen" class="btn btn-secondary btn-sm relative" type="button">
+          <i class="bi bi-funnel"></i> Filtros
+          {% if has_filters %}
+          <span class="filter-badge"></span>
+          {% endif %}
+        </button>
+        <div x-show="filterOpen" x-cloak
+             x-transition:enter="transition ease-out duration-150"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100"
+             x-transition:leave="transition ease-in duration-100"
+             x-transition:leave-start="opacity-100 scale-100"
+             x-transition:leave-end="opacity-0 scale-95"
+             @click.away="filterOpen = false"
+             class="filter-panel right-0">
+          <h3 class="text-sm font-semibold text-ink mb-3">Filtros de notas</h3>
+          <form method="get" class="grid grid-cols-1 gap-3">
+            <div>
+              <label class="filter-panel-label">Busca</label>
+              <input type="text" name="q" value="{{ q }}" class="filter-input" placeholder="Titulo, texto ou tag">
+            </div>
+            <div>
+              <label class="filter-panel-label">Status</label>
+              <select name="status" class="filter-select">
+                <option value="active" {% if status_filter == "active" %}selected{% endif %}>Ativas</option>
+                <option value="" {% if status_filter == "" %}selected{% endif %}>Todas</option>
+                {% for value,label in status_choices %}
+                  <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="filter-panel-label">Tipo</label>
+              <select name="type" class="filter-select">
+                <option value="">Todos</option>
+                {% for value,label in type_choices %}
+                  <option value="{{ value }}" {% if type_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="filter-panel-label">Prioridade</label>
+              <select name="priority" class="filter-select">
+                <option value="">Todas</option>
+                {% for value,label in priority_choices %}
+                  <option value="{{ value }}" {% if priority_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="flex justify-between items-center mt-1 pt-3" style="border-top: 1px solid var(--ik-line);">
+              <a href="{% url 'notes:list' %}" class="text-sm text-muted hover:text-ink">Limpar filtros</a>
+              <button type="submit" class="btn btn-primary btn-sm">Aplicar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <a href="{% url 'notes:changelog' %}" class="btn btn-secondary btn-sm">
+        <i class="bi bi-journal-code"></i> Atualizacoes
+      </a>
+      <a href="{% url 'notes:create' %}" class="btn btn-primary btn-sm">
+        <i class="bi bi-plus-lg"></i> Nova nota
+      </a>
+    </div>
+  </div>
+
+  <div class="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
+    <a href="?status=active" class="rounded px-3 py-2 hover:bg-[var(--ik-sand-light)]/50"
+       style="border:1px solid var(--ik-line); background:var(--ik-paper);">
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] font-semibold uppercase text-muted">Ativas</span>
+        <i class="bi bi-circle text-amber-700"></i>
+      </div>
+      <div class="mt-0.5 text-xl font-bold text-ink tabular-nums">{{ open_count|intcomma }}</div>
+    </a>
+    <a href="?status=authorized" class="rounded px-3 py-2 hover:bg-[var(--ik-sand-light)]/50"
+       style="border:1px solid var(--ik-line); background:var(--ik-paper);">
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] font-semibold uppercase text-muted">Autorizadas</span>
+        <i class="bi bi-check2-square text-emerald-700"></i>
+      </div>
+      <div class="mt-0.5 text-xl font-bold text-emerald-700 tabular-nums">{{ authorized_count|intcomma }}</div>
+    </a>
+    <a href="?status=doing" class="rounded px-3 py-2 hover:bg-[var(--ik-sand-light)]/50"
+       style="border:1px solid var(--ik-line); background:var(--ik-paper);">
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] font-semibold uppercase text-muted">Em andamento</span>
+        <i class="bi bi-arrow-repeat text-sea"></i>
+      </div>
+      <div class="mt-0.5 text-xl font-bold text-sea tabular-nums">{{ doing_count|intcomma }}</div>
+    </a>
+    <a href="?status=pending_approval" class="rounded px-3 py-2 hover:bg-[var(--ik-sand-light)]/50"
+       style="border:1px solid var(--ik-line); background:var(--ik-paper);">
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] font-semibold uppercase text-muted">Aguardando aprovacao</span>
+        <i class="bi bi-hourglass-split text-amber-700"></i>
+      </div>
+      <div class="mt-0.5 text-xl font-bold text-amber-700 tabular-nums">{{ pending_approval_count|intcomma }}</div>
+    </a>
+    <a href="?status=active&priority=urgent" class="rounded px-3 py-2 hover:bg-[var(--ik-sand-light)]/50"
+       style="border:1px solid var(--ik-line); background:var(--ik-paper);">
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] font-semibold uppercase text-muted">Urgentes</span>
+        <i class="bi bi-flag-fill text-red-700"></i>
+      </div>
+      <div class="mt-0.5 text-xl font-bold text-red-700 tabular-nums">{{ urgent_count|intcomma }}</div>
+    </a>
+    <a href="?status=done" class="rounded px-3 py-2 hover:bg-[var(--ik-sand-light)]/50"
+       style="border:1px solid var(--ik-line); background:var(--ik-paper);">
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] font-semibold uppercase text-muted">Concluidas</span>
+        <i class="bi bi-check2-circle text-emerald-700"></i>
+      </div>
+      <div class="mt-0.5 text-xl font-bold text-emerald-700 tabular-nums">{{ done_count|intcomma }}</div>
+    </a>
+  </div>
+
+  {% if has_filters %}
+  <div class="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted">
+    <span>Filtro ativo</span>
+    {% if q %}<span class="rounded bg-[var(--ik-sand-light)] px-2 py-1">Busca: {{ q }}</span>{% endif %}
+    {% if status_filter and status_filter != "active" %}<span class="rounded bg-[var(--ik-sand-light)] px-2 py-1">Status: {{ status_filter }}</span>{% endif %}
+    {% if type_filter %}<span class="rounded bg-[var(--ik-sand-light)] px-2 py-1">Tipo: {{ type_filter }}</span>{% endif %}
+    {% if priority_filter %}<span class="rounded bg-[var(--ik-sand-light)] px-2 py-1">Prioridade: {{ priority_filter }}</span>{% endif %}
+    <a href="{% url 'notes:list' %}" class="text-sea hover:underline">limpar</a>
+  </div>
+  {% endif %}
+
+  <div class="grid gap-3">
+    {% for note in notes %}
+    <article class="group rounded-lg p-4 transition-colors hover:bg-[var(--ik-sand-light)]/40"
+             style="border:1px solid var(--ik-line); background:var(--ik-paper);">
+      <div class="flex gap-3">
+        <form method="post" action="{% if note.status == 'pending_approval' %}{% url 'notes:approve' note.pk %}{% else %}{% url 'notes:done' note.pk %}{% endif %}" class="pt-1">
+          {% csrf_token %}
+          {% if note.status == "pending_approval" %}
+            <button type="submit" class="h-6 w-6 rounded-full border text-amber-700 hover:text-emerald-700 hover:border-emerald-700" title="Aprovar e concluir">
+              <i class="bi bi-check2-circle"></i>
+            </button>
+          {% elif note.status != "done" %}
+            <button type="submit" class="h-6 w-6 rounded-full border text-muted hover:text-amber-700 hover:border-amber-700" title="Enviar para aprovacao">
+              <i class="bi bi-check2"></i>
+            </button>
+          {% else %}
+            <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-emerald-800">
+              <i class="bi bi-check2"></i>
+            </span>
+          {% endif %}
+        </form>
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <a href="{% url 'notes:detail' note.pk %}" class="min-w-0 text-base font-semibold text-ink hover:text-sea">
+              <span class="font-mono text-sm text-muted">{{ note.code }}</span> {{ note.title }}
+            </a>
+            <div class="flex flex-wrap items-center gap-1 text-[11px]">
+              <span class="rounded px-2 py-0.5 font-semibold
+                           {% if note.priority == 'urgent' %}bg-red-100 text-red-800{% elif note.priority == 'high' %}bg-orange-100 text-orange-800{% elif note.priority == 'low' %}bg-stone-100 text-stone-700{% else %}bg-slate-100 text-slate-700{% endif %}">
+                {{ note.get_priority_display }}
+              </span>
+              <span class="rounded px-2 py-0.5 font-semibold
+                           {% if note.status == 'done' %}bg-emerald-100 text-emerald-800{% elif note.status == 'authorized' %}bg-green-100 text-green-800{% elif note.status == 'doing' %}bg-blue-100 text-blue-800{% elif note.status == 'pending_approval' %}bg-amber-100 text-amber-800{% elif note.status == 'archived' %}bg-stone-100 text-stone-700{% else %}bg-amber-100 text-amber-800{% endif %}">
+                {{ note.get_status_display }}
+              </span>
+            </div>
+          </div>
+          {% if note.body %}
+            <p class="mt-1 text-sm text-muted">{{ note.body|truncatechars:220 }}</p>
+          {% endif %}
+          <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
+              <span><i class="bi {% if note.note_type == 'bug' %}bi-bug{% elif note.note_type == 'idea' %}bi-lightbulb{% elif note.note_type == 'note' %}bi-sticky{% else %}bi-list-check{% endif %}"></i> {{ note.get_note_type_display }}</span>
+              <span><i class="bi bi-clock"></i> {{ note.updated_at|date:"d/m/Y H:i" }}</span>
+              {% if note.claimed_by_label %}<span><i class="bi bi-person-check"></i> {{ note.claimed_by_label }}</span>{% endif %}
+              {% if note.created_by %}<span><i class="bi bi-person"></i> {{ note.created_by.username }}</span>{% endif %}
+              {% if note.tags %}<span><i class="bi bi-tags"></i> {{ note.tags }}</span>{% endif %}
+              {% if note.source_url %}<a class="text-sea hover:underline" href="{{ note.source_url }}" target="_blank"><i class="bi bi-link-45deg"></i> origem</a>{% endif %}
+            </div>
+            <a href="{% url 'notes:edit' note.pk %}" class="text-xs font-semibold text-sea opacity-80 hover:opacity-100">
+              <i class="bi bi-pencil"></i> Editar
+            </a>
+          </div>
+        </div>
+      </div>
+    </article>
+    {% empty %}
+    <div class="rounded-lg p-10 text-center" style="border:1px solid var(--ik-line); background:var(--ik-paper);">
+      <div class="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-[var(--ik-sand-light)] text-muted">
+        <i class="bi bi-card-checklist text-lg"></i>
+      </div>
+      <div class="font-semibold text-ink">Nenhuma nota encontrada</div>
+      <div class="mt-1 text-sm text-muted">Crie uma nota para acompanhar bugs, tarefas ou melhorias.</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

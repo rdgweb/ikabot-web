@@ -1,0 +1,59 @@
+{% extends base_template|default:"base.html" %}
+
+{% block title %}{% if object %}Editar nota{% else %}Nova nota{% endif %}{% endblock %}
+
+{% block content %}
+<div class="mx-auto w-full max-w-4xl">
+  <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-ink">{% if object %}Editar nota{% else %}Nova nota{% endif %}</h1>
+      <p class="text-sm text-muted mt-1">Registre uma tarefa com contexto suficiente para resolver depois.</p>
+    </div>
+    <a href="{% url 'notes:list' %}" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Voltar</a>
+  </div>
+
+  <form method="post" class="rounded-lg overflow-hidden" style="border:1px solid var(--ik-line); background:var(--ik-paper);">
+    {% csrf_token %}
+    <div class="px-5 py-4" style="border-bottom:1px solid var(--ik-line); background:var(--ik-sand-light);">
+      <label class="form-label">Titulo</label>
+      {{ form.title }}
+      {{ form.title.errors }}
+    </div>
+
+    <div class="grid gap-0 lg:grid-cols-[260px_1fr]">
+      <aside class="p-5 space-y-4" style="border-right:1px solid var(--ik-line);">
+        <div>
+          <label class="form-label">Tipo</label>
+          {{ form.note_type }}
+        </div>
+        <div>
+          <label class="form-label">Prioridade</label>
+          {{ form.priority }}
+        </div>
+        <div>
+          <label class="form-label">Status</label>
+          {{ form.status }}
+        </div>
+        <div>
+          <label class="form-label">Tags</label>
+          {{ form.tags }}
+        </div>
+        <div>
+          <label class="form-label">URL relacionada</label>
+          {{ form.source_url }}
+        </div>
+      </aside>
+
+      <section class="p-5">
+        <label class="form-label">Detalhes</label>
+        {{ form.body }}
+      </section>
+    </div>
+
+    <div class="flex justify-end gap-2 px-5 py-4" style="border-top:1px solid var(--ik-line);">
+      <a href="{% url 'notes:list' %}" class="btn btn-secondary">Cancelar</a>
+      <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Salvar</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

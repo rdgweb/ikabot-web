@@ -18,11 +18,73 @@
 {% block detail_subtitle %}
   <span class="font-mono text-xs">{{ object.pk|truncatechars:16 }}</span>
   <span class="badge {{ object.status|status_badge_class }} ml-2">{{ object.get_status_display }}</span>
+  {% if is_stuck %}
+  <span class="ml-2 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+        style="background: var(--ik-gold); color: white;">
+    <i class="bi bi-exclamation-triangle-fill"></i> Travado
+  </span>
+  {% endif %}
 {% endblock %}
 
 {% block detail_actions %}
 {% if object.status == "queued" or object.status == "running" or object.status == "scheduled" or can_retry %}
-<div x-data="{ showCancel: false }" class="flex items-center gap-2">
+<div x-data="{ showCancel: false, showUnstuck: false, unstuckDelay: 5 }" class="flex items-center gap-2">
+  {% if is_stuck %}
+  <button @click="showUnstuck = true" type="button" class="btn btn-gold btn-sm">
+    <i class="bi bi-wrench-adjustable"></i> Destravar
+  </button>
+  <template x-if="showUnstuck">
+    <div class="fixed inset-0 z-50 flex items-center justify-center" @keydown.escape.window="showUnstuck = false">
+      <div class="fixed inset-0 bg-black/50 backdrop-blur-sm" @click="showUnstuck = false"></div>
+      <div class="relative z-10 mx-4 w-full max-w-md overflow-hidden rounded-xl border shadow-2xl"
+           style="border-color: var(--ik-line); background: var(--ik-paper);">
+        <div class="flex items-center gap-3 px-5 py-4 border-b" style="border-color: var(--ik-line); background: linear-gradient(135deg, rgba(201,156,78,0.12), rgba(201,156,78,0.04));">
+          <div class="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full" style="background: var(--ik-gold);">
+            <i class="bi bi-wrench-adjustable text-lg text-white"></i>
+          </div>
+          <div class="flex-1 min-w-0">
+            <h3 class="text-sm font-bold text-ink">Destravar job</h3>
+            <p class="mt-0.5 text-[11px] text-muted">Cancela execução parada e reagenda como novo job.</p>
+          </div>
+        </div>
+        <form method="post" action="{% url 'jobs:job-unstuck' object.pk %}" class="px-5 py-4">
+          {% csrf_token %}
+          <div class="mb-3 rounded-lg p-2.5 text-[11px]" style="background: var(--ik-sand-light); border: 1px solid var(--ik-line);">
+            <div class="flex items-center gap-1.5 font-semibold text-ink mb-1">
+              <i class="bi bi-info-circle"></i> Diagnóstico
+            </div>
+            <div class="text-muted">
+              Job em <span class="font-semibold text-ink">running</span>
+              {% if object.last_heartbeat_at %}
+              — último heartbeat <span class="font-semibold text-ink">{{ object.last_heartbeat_at|timesince }}</span> atrás
+              {% elif object.started_at %}
+              — iniciou <span class="font-semibold text-ink">{{ object.started_at|timesince }}</span> atrás, sem heartbeat
+              {% endif %}
+            </div>
+          </div>
+          <label class="block text-xs font-medium text-ink mb-1.5">Reagendar em (minutos):</label>
+          <div class="flex items-center gap-2 mb-4">
+            <input type="number" name="delay_minutes" min="1" max="1440" x-model="unstuckDelay"
+                   class="w-24 rounded-md border px-3 py-1.5 text-sm text-ink focus:outline-none focus:ring-2"
+                   style="border-color: var(--ik-line); background: var(--ik-surface);" required>
+            <div class="flex gap-1">
+              <button type="button" @click="unstuckDelay = 1" class="text-[10px] rounded px-1.5 py-1 border" style="border-color: var(--ik-line);">1m</button>
+              <button type="button" @click="unstuckDelay = 5" class="text-[10px] rounded px-1.5 py-1 border" style="border-color: var(--ik-line);">5m</button>
+              <button type="button" @click="unstuckDelay = 15" class="text-[10px] rounded px-1.5 py-1 border" style="border-color: var(--ik-line);">15m</button>
+              <button type="button" @click="unstuckDelay = 60" class="text-[10px] rounded px-1.5 py-1 border" style="border-color: var(--ik-line);">1h</button>
+            </div>
+          </div>
+          <div class="flex justify-end gap-2">
+            <button @click="showUnstuck = false" type="button" class="btn btn-secondary btn-sm">Voltar</button>
+            <button type="submit" class="btn btn-gold btn-sm">
+              <i class="bi bi-wrench-adjustable"></i> Destravar e reagendar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </template>
+  {% endif %}
   {% if can_retry %}
   <form method="post" action="{% url 'jobs:job-retry' object.pk %}">
     {% csrf_token %}

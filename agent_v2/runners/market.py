@@ -766,6 +766,36 @@ class InternalMarketBuyRunner(BaseRunner):
         match = re.search(r"need\s+(\d+),\s+have\s+(\d+).*ship_capacity=(\d+)", exc_str, re.I)
         if not match:
             return None
+        have_transporters = int(match.group(2))
+        ship_capacity = max(1, int(match.group(3)))
+        partial_amount = max(0, min(int(amount), have_transporters * ship_capacity))
+        if 0 < partial_amount < int(amount):
+            retry_inputs = dict(inputs)
+            retry_inputs["amount"] = partial_amount
+            retry_inputs["order_total_amount"] = int(inputs.get("order_total_amount") or amount)
+            retry_inputs["order_completed_amount"] = int(inputs.get("order_completed_amount") or 0)
+            retry_inputs["order_remaining_after_leg"] = max(
+                0,
+                int(retry_inputs["order_total_amount"]) - int(retry_inputs["order_completed_amount"]) - partial_amount,
+            )
+            retry_inputs["partial_purchase_retry_count"] = int(inputs.get("partial_purchase_retry_count", 0)) + 1
+            self.hub.reschedule_job(jid, delay_seconds=0, inputs=retry_inputs)
+            self.log(
+                jid,
+                "info",
+                (
+                    f"[Order {order_id}] Compra parcial reagendada por navios disponiveis; "
+                    f"{partial_amount}/{amount} agora, restante={int(amount) - partial_amount}"
+                ),
+            )
+            return RunnerResult(
+                success=True,
+                data={
+                    "status": "partial_purchase_scheduled",
+                    "amount": partial_amount,
+                    "remaining_amount": int(amount) - partial_amount,
+                },
+            )
         delay_seconds = self._estimate_transporter_retry_delay(client=client, buyer_city_id=buyer_city_id, fallback_eta=0)
         retry_inputs = dict(inputs)
         retry_inputs["transporter_retry_count"] = int(inputs.get("transporter_retry_count", 0)) + 1

@@ -185,6 +185,20 @@ def _can_retry(job: Job) -> bool:
     return bool(_action_meta(int(job.action_code)).get("allow_retry", True))
 
 
+def _is_stuck(job: Job) -> bool:
+    """Job travado: running mas lease expirou ou heartbeat parou ha muito tempo."""
+    if job.status != "running":
+        return False
+    now = timezone.now()
+    if job.lease_expires_at and job.lease_expires_at < now:
+        return True
+    if job.last_heartbeat_at and (now - job.last_heartbeat_at).total_seconds() > 300:
+        return True
+    if not job.last_heartbeat_at and job.started_at and (now - job.started_at).total_seconds() > 600:
+        return True
+    return False
+
+
 class JobListView(FilterSortListView):
     model = Job
     filterset_class = JobFilter
@@ -2360,6 +2374,7 @@ class JobDetailView(LoginRequiredMixin, DetailView):
         context["progress"] = _parse_json_object(self.object.progress_json or "{}")
         context["can_execute_now"] = _can_execute_now(self.object)
         context["can_retry"] = _can_retry(self.object)
+        context["is_stuck"] = _is_stuck(self.object)
         return context
 
 
@@ -2463,6 +2478,64 @@ class JobRunNowView(LoginRequiredMixin, View):
         if next_url and next_url.startswith("/"):
             return redirect(next_url)
         return redirect("jobs:job-detail", pk=immediate_job.pk)
+
+
+class JobUnstuckView(LoginRequiredMixin, View):
+    """Destrava job travado: cancela execucao atual e reagenda em N minutos."""
+
+    def post(self, request, pk):
+        job = get_object_or_404(Job, pk=pk)
+        if not _is_stuck(job):
+            return redirect("jobs:job-detail", pk=job.pk)
+
+        try:
+            delay_minutes = int(request.POST.get("delay_minutes", "5"))
+        except (TypeError, ValueError):
+            delay_minutes = 5
+        delay_minutes = max(1, min(1440, delay_minutes))
+        eta = timezone.now() + timedelta(minutes=delay_minutes)
+
+        with transaction.atomic():
+            locked = Job.objects.select_for_update().get(pk=job.pk)
+            if not _is_stuck(locked):
+                return redirect("jobs:job-detail", pk=locked.pk)
+
+            now = timezone.now()
+            locked.status = "cancelled"
+            locked.finished_at = now
+            locked.exit_code = 98
+            locked.lease_expires_at = None
+            locked.save(update_fields=["status", "finished_at", "exit_code", "lease_expires_at", "updated_at"])
+
+            _cancel_active_construction_reservations_for_jobs(Job.objects.filter(pk=locked.pk))
+
+            rescheduled = create_job_with_workflow(
+                account=locked.account,
+                game_account=locked.game_account,
+                node=locked.node,
+                profile=locked.profile,
+                action_code=locked.action_code,
+                inputs=locked.inputs_json,
+                timeout_sec=locked.timeout_sec,
+                source_job=locked,
+                status="scheduled",
+                scheduled_for=eta,
+                start_new_run=False,
+                trigger_type="manual_unstuck",
+            )
+
+            JobLog.objects.create(
+                job=locked,
+                level="warn",
+                message=f"Job destravado manualmente. Cancelado e reagendado em {delay_minutes} min (novo job {rescheduled.pk}).",
+            )
+
+            transaction.on_commit(lambda: dispatch_job(rescheduled, eta=eta))
+
+        next_url = request.POST.get("next", "").strip()
+        if next_url and next_url.startswith("/"):
+            return redirect(next_url)
+        return redirect("jobs:job-detail", pk=rescheduled.pk)
 
 
 class JobRetryView(LoginRequiredMixin, View):

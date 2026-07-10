@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     "apps.settings_app",
     "apps.users",
     "apps.generals_bank",
+    "apps.notes",
 ]
 
 MIDDLEWARE = [

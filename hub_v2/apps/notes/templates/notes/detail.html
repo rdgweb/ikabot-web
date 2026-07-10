@@ -1,0 +1,120 @@
+{% extends base_template|default:"base.html" %}
+{% load humanize %}
+
+{% block title %}{{ note.title }}{% endblock %}
+
+{% block content %}
+<div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+  <div class="min-w-0">
+    <div class="mb-2 flex flex-wrap items-center gap-2 text-[11px]">
+      <span class="inline-flex items-center gap-1 rounded px-2 py-0.5 font-semibold
+                   {% if note.status == 'done' %}bg-emerald-100 text-emerald-800{% elif note.status == 'authorized' %}bg-green-100 text-green-800{% elif note.status == 'doing' %}bg-blue-100 text-blue-800{% elif note.status == 'pending_approval' %}bg-amber-100 text-amber-800{% elif note.status == 'archived' %}bg-stone-100 text-stone-700{% else %}bg-amber-100 text-amber-800{% endif %}">
+        <i class="bi {% if note.status == 'done' %}bi-check2-circle{% elif note.status == 'authorized' %}bi-check2-square{% elif note.status == 'doing' %}bi-arrow-repeat{% elif note.status == 'pending_approval' %}bi-hourglass-split{% elif note.status == 'archived' %}bi-archive{% else %}bi-circle{% endif %}"></i>
+        {{ note.get_status_display }}
+      </span>
+      <span class="inline-flex items-center gap-1 rounded px-2 py-0.5 font-semibold
+                   {% if note.priority == 'urgent' %}bg-red-100 text-red-800{% elif note.priority == 'high' %}bg-orange-100 text-orange-800{% elif note.priority == 'low' %}bg-stone-100 text-stone-700{% else %}bg-slate-100 text-slate-700{% endif %}">
+        <i class="bi bi-flag"></i>
+        {{ note.get_priority_display }}
+      </span>
+      <span class="inline-flex items-center gap-1 rounded px-2 py-0.5 bg-[var(--ik-sand-light)] text-muted font-semibold">
+        <i class="bi {% if note.note_type == 'bug' %}bi-bug{% elif note.note_type == 'idea' %}bi-lightbulb{% elif note.note_type == 'note' %}bi-sticky{% else %}bi-list-check{% endif %}"></i>
+        {{ note.get_note_type_display }}
+      </span>
+    </div>
+    <h1 class="text-2xl font-bold text-ink"><span class="font-mono text-lg text-muted">{{ note.code }}</span> {{ note.title }}</h1>
+  </div>
+  <div class="flex items-center gap-2">
+    <a href="{% url 'notes:list' %}" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Voltar</a>
+    <a href="{% url 'notes:edit' note.pk %}" class="btn btn-secondary btn-sm"><i class="bi bi-pencil"></i> Editar</a>
+    {% if note.status == "authorized" %}
+    <form method="post" action="{% url 'notes:claim' note.pk %}">
+      {% csrf_token %}
+      <input type="hidden" name="actor_label" value="{{ user.username }}">
+      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-person-check"></i> Assumir</button>
+    </form>
+    {% endif %}
+    {% if note.status == "pending_approval" %}
+    <form method="post" action="{% url 'notes:approve' note.pk %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check2-circle"></i> Aprovar e concluir</button>
+    </form>
+    {% elif note.status != "done" %}
+    <form method="post" action="{% url 'notes:done' note.pk %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-hourglass-split"></i> Enviar para aprovacao</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid gap-4 lg:grid-cols-[1fr_320px]">
+  <section class="rounded-lg p-5" style="border:1px solid var(--ik-line); background:var(--ik-paper);">
+    <h2 class="mb-3 text-sm font-semibold uppercase text-muted">Detalhes</h2>
+    {% if note.body %}
+      <div class="text-sm leading-6 text-ink whitespace-pre-wrap">{{ note.body }}</div>
+    {% else %}
+      <p class="text-muted">Sem detalhes.</p>
+    {% endif %}
+  </section>
+
+  <aside class="space-y-4">
+    <div class="rounded-lg p-4 text-sm" style="border:1px solid var(--ik-line); background:var(--ik-paper);">
+      <h2 class="mb-3 text-sm font-semibold uppercase text-muted">Contexto</h2>
+      <dl class="space-y-2">
+        <div class="flex justify-between gap-3"><dt class="text-muted">Criada</dt><dd>{{ note.created_at|date:"d/m/Y H:i" }}</dd></div>
+        <div class="flex justify-between gap-3"><dt class="text-muted">Atualizada</dt><dd>{{ note.updated_at|date:"d/m/Y H:i" }}</dd></div>
+        {% if note.completed_at %}<div class="flex justify-between gap-3"><dt class="text-muted">Concluida</dt><dd>{{ note.completed_at|date:"d/m/Y H:i" }}</dd></div>{% endif %}
+        {% if note.claimed_by_label %}<div class="flex justify-between gap-3"><dt class="text-muted">Assumida por</dt><dd>{{ note.claimed_by_label }}</dd></div>{% endif %}
+        {% if note.claimed_at %}<div class="flex justify-between gap-3"><dt class="text-muted">Assumida em</dt><dd>{{ note.claimed_at|date:"d/m/Y H:i" }}</dd></div>{% endif %}
+        {% if note.created_by %}<div class="flex justify-between gap-3"><dt class="text-muted">Autor</dt><dd>{{ note.created_by.username }}</dd></div>{% endif %}
+        {% if note.source_url %}<div><dt class="text-muted">URL</dt><dd><a class="text-sea hover:underline break-all" href="{{ note.source_url }}" target="_blank">{{ note.source_url }}</a></dd></div>{% endif %}
+        {% if note.tags %}<div><dt class="text-muted">Tags</dt><dd>{{ note.tags }}</dd></div>{% endif %}
+      </dl>
+    </div>
+    <div class="rounded-lg p-4" style="border:1px solid var(--ik-line); background:var(--ik-paper);">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-semibold uppercase text-muted">Historico</h2>
+      </div>
+      <form method="post" action="{% url 'notes:event-create' note.pk %}" class="mb-4 space-y-2">
+        {% csrf_token %}
+        {{ event_form.event_type }}
+        {{ event_form.message }}
+        <div class="flex justify-end">
+          <button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-plus-lg"></i> Registrar</button>
+        </div>
+      </form>
+      <div class="space-y-3 text-sm">
+        {% for event in note.events.all %}
+          <div style="border-top:1px solid var(--ik-line);" class="pt-2 first:border-0 first:pt-0">
+            <div class="flex items-center justify-between gap-2">
+              <div class="font-medium text-ink">{{ event.get_event_type_display }}</div>
+              <div class="text-xs text-muted">{{ event.created_at|date:"d/m/Y H:i" }}</div>
+            </div>
+            {% if event.actor_label %}<div class="text-xs text-muted">{{ event.actor_label }}</div>{% endif %}
+            {% if event.message %}<div class="mt-1 text-sm text-ink whitespace-pre-wrap">{{ event.message }}</div>{% endif %}
+          </div>
+        {% empty %}
+          <p class="text-muted">Nenhum evento registrado.</p>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="rounded-lg p-4" style="border:1px solid var(--ik-line); background:var(--ik-paper);">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-semibold uppercase text-muted">Atualizacoes ligadas</h2>
+        <a href="{% url 'notes:changelog-create' %}" class="text-xs text-sea hover:underline">Registrar</a>
+      </div>
+      <div class="space-y-3 text-sm">
+        {% for change in note.changes.all %}
+          <div style="border-top:1px solid var(--ik-line);" class="pt-2 first:border-0 first:pt-0">
+            <div class="font-medium text-ink">{{ change.title }}</div>
+            <div class="text-xs text-muted">{{ change.get_visibility_display }} · {{ change.get_component_display }}{% if change.version %} · v{{ change.version }}{% endif %}{% if change.published_version %} · publicado {{ change.published_version }}{% endif %} · {{ change.created_at|date:"d/m/Y H:i" }}</div>
+          </div>
+        {% empty %}
+          <p class="text-muted">Nenhuma atualizacao registrada.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </aside>
+</div>
+{% endblock %}

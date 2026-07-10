@@ -85,7 +85,7 @@
               <th class="text-right">Total est.</th>
               <th>Listada em</th>
               <th>Job</th>
-              <th class="w-10"></th>
+              <th class="w-24 text-right">Acoes</th>
             </tr>
           </thead>
           <tbody>
@@ -118,19 +118,33 @@
                 {% else %}—{% endif %}
               </td>
               <td>
-                <form method="post" action="{% url 'market:bm-offer-close' offer.pk %}"
-                      hx-post="{% url 'market:bm-offer-close' offer.pk %}"
-                      hx-swap="none"
-                      hx-push-url="false">
-                  {% csrf_token %}
-                  <button type="submit"
-                          title="Retirar oferta do jogo (cria job ac=8031)"
-                          class="btn btn-danger btn-sm text-[11px]"
-                          onclick="return confirm('Retirar {{ offer.unit_name }} do Mercado Negro no jogo?')">
-                    <i class="bi bi-x-circle"></i>
-                  </button>
-                </form>
-                <span title="ID da oferta não capturado — execute um novo job 803 para habilitar" class="text-muted cursor-help text-sm">
+                <div class="flex justify-end gap-1">
+                  <form method="post" action="{% url 'market:bm-offer-archive' offer.pk %}"
+                        hx-post="{% url 'market:bm-offer-archive' offer.pk %}"
+                        hx-swap="none"
+                        hx-push-url="false"
+                        hx-on::after-request="if(event.detail.successful) location.reload()">
+                    {% csrf_token %}
+                    <button type="submit"
+                            title="Remover apenas da lista ativa do hub"
+                            class="btn btn-secondary btn-sm text-[11px]"
+                            onclick="return confirm('Marcar esta oferta como removida somente no hub? Use quando ela nao existe mais no jogo.')">
+                      <i class="bi bi-archive"></i>
+                    </button>
+                  </form>
+                  <form method="post" action="{% url 'market:bm-offer-close' offer.pk %}"
+                        hx-post="{% url 'market:bm-offer-close' offer.pk %}"
+                        hx-swap="none"
+                        hx-push-url="false">
+                    {% csrf_token %}
+                    <button type="submit"
+                            title="Retirar oferta do jogo (cria job ac=8031)"
+                            class="btn btn-danger btn-sm text-[11px]"
+                            onclick="return confirm('Retirar {{ offer.unit_name }} do Mercado Negro no jogo?')">
+                      <i class="bi bi-x-circle"></i>
+                    </button>
+                  </form>
+                </div>
               </td>
             </tr>
             {% endfor %}
@@ -139,8 +153,8 @@
       </div>
       <p class="mt-2 text-[11px] text-muted">
         <i class="bi bi-info-circle"></i>
-        Botão vermelho retira a oferta do jogo via job ac=8031 (executado pelo agente).
-        Ofertas sem ID capturado precisam de um novo job ac=803 para rastrear o offerId.
+        Botao cinza remove somente da lista ativa do hub quando a oferta ja nao existe no jogo.
+        Botao vermelho retira a oferta do jogo via job ac=8031 (executado pelo agente).
       </p>
       {% else %}
       <div class="card flex flex-col items-center justify-center py-12 text-center">

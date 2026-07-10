@@ -40,6 +40,8 @@ def nav_context(request):
                 {"name": "Telegram", "url": "/telegram/", "icon": "bi-telegram"},
                 {"name": "Mensagens", "url": "/telegram/audit/", "icon": "bi-chat-dots"},
                 {"name": "Captcha", "url": "/captcha/", "icon": "bi-robot"},
+                {"name": "Notas", "url": "/notes/", "icon": "bi-card-checklist"},
+                {"name": "Atualizacoes", "url": "/notes/atualizacoes/", "icon": "bi-journal-code"},
                 {"name": "Configuracoes", "url": "/settings/", "icon": "bi-gear", "perm": "admin"},
                 {"name": "Usuarios", "url": "/users/", "icon": "bi-people", "perm": "admin"},
             ],

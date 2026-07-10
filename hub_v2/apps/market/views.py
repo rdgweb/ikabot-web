@@ -9,7 +9,7 @@ import logging
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views import View
 from django.views.generic import DetailView, TemplateView
@@ -115,6 +115,7 @@ def _build_participant_rows() -> list[dict]:
             {
                 "ga": ga,
                 "gold": int(base.get("gold") or 0),
+                "gold_position": services.buyer_market_gold_position(ga),
                 "stock": stock,
                 "has_snapshot": snap is not None,
                 "snapshot_updated_at": snap.updated_at if snap else None,
@@ -525,6 +526,30 @@ class BlackMarketOfferCloseView(LoginRequiredMixin, View):
         resp = HttpResponse(status=200)
         resp["HX-Trigger"] = trigger
         return resp
+
+
+class BlackMarketOfferArchiveView(LoginRequiredMixin, View):
+    """POST: hide a stale hub-tracked offer without touching the game."""
+
+    def post(self, request, pk):
+        offer = get_object_or_404(BlackMarketOffer, pk=pk, status="active")
+        offer.status = "cancelled"
+        offer.closed_at = timezone.now()
+        offer.save(update_fields=["status", "closed_at", "updated_at"])
+
+        if request.headers.get("HX-Request"):
+            trigger = json.dumps({
+                "toast": {
+                    "type": "success",
+                    "message": f"Oferta {offer.unit_name or offer.unit_id} removida da lista ativa do hub.",
+                },
+                "bm-offer-archived": {"offer_id": str(offer.pk)},
+            })
+            resp = HttpResponse(status=200)
+            resp["HX-Trigger"] = trigger
+            return resp
+
+        return redirect("market:black-market")
 
 
 class MarketOrderBulkDeleteView(LoginRequiredMixin, View):

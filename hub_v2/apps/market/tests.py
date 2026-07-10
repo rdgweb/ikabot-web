@@ -6,6 +6,7 @@ from apps.jobs.models import Job
 
 from .services import (
     approve_construction_market_intervention,
+    buyer_market_gold_position,
     cancel_internal_order,
     complete_internal_order,
     create_buy_job,
@@ -131,7 +132,31 @@ class MarketServiceTests(TestCase):
 
         self.assertFalse(result.ok)
         self.assertEqual(result.code, "buyer_below_min_gold")
+        self.assertEqual(
+            result.detail,
+            "ouro atual 999.999; reservado 0; disponivel 999.999; minimo 2.000.000",
+        )
         self.assertIsNone(result.order)
+
+    def test_buyer_market_gold_position_counts_reserved_internal_orders(self):
+        InternalMarketOrder.objects.create(
+            buyer_account=self.buyer_account,
+            buyer_game_account=self.buyer_ga,
+            buyer_node=self.buyer_node,
+            seller_account=self.seller_account,
+            seller_game_account=self.seller_ga,
+            seller_node=self.seller_node,
+            resource_idx=1,
+            amount=25_000,
+            unit_price=35,
+            status="jobs_running",
+        )
+
+        position = buyer_market_gold_position(self.buyer_ga)
+
+        self.assertEqual(position["current"], 999_999)
+        self.assertEqual(position["reserved"], 875_000)
+        self.assertEqual(position["available"], 124_999)
 
     def test_create_internal_order_skips_seller_without_market_free_capacity(self):
         seller_snapshot = AccountSnapshot.objects.get(game_account=self.seller_ga)

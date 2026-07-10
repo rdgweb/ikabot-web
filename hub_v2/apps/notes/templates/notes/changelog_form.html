@@ -1,0 +1,61 @@
+{% extends base_template|default:"base.html" %}
+
+{% block title %}Registrar atualizacao{% endblock %}
+
+{% block content %}
+<div class="mx-auto w-full max-w-4xl">
+  <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-ink">Registrar atualizacao</h1>
+      <p class="text-sm text-muted mt-1">Documente o que mudou, onde mudou e qual nota originou a alteracao.</p>
+    </div>
+    <a href="{% url 'notes:changelog' %}" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Voltar</a>
+  </div>
+
+  <form method="post" class="rounded-lg overflow-hidden" style="border:1px solid var(--ik-line); background:var(--ik-paper);">
+    {% csrf_token %}
+    <div class="grid gap-0 lg:grid-cols-[280px_1fr]">
+      <aside class="p-5 space-y-4" style="border-right:1px solid var(--ik-line); background:var(--ik-sand-light);">
+        <div>
+          <label class="form-label">Tipo de changelog</label>
+          {{ form.visibility }}
+        </div>
+        <div>
+          <label class="form-label">Componente</label>
+          {{ form.component }}
+        </div>
+        <div>
+          <label class="form-label">Versao geral</label>
+          {{ form.version }}
+        </div>
+        <div>
+          <label class="form-label">Versao dev</label>
+          {{ form.dev_version }}
+        </div>
+        <div>
+          <label class="form-label">Versao publicada</label>
+          {{ form.published_version }}
+        </div>
+        <div>
+          <label class="form-label">Nota vinculada</label>
+          {{ form.note }}
+        </div>
+      </aside>
+      <section class="p-5 space-y-4">
+        <div>
+          <label class="form-label">Titulo</label>
+          {{ form.title }}
+        </div>
+        <div>
+          <label class="form-label">Detalhes</label>
+          {{ form.body }}
+        </div>
+      </section>
+    </div>
+    <div class="flex justify-end gap-2 px-5 py-4" style="border-top:1px solid var(--ik-line);">
+      <a href="{% url 'notes:changelog' %}" class="btn btn-secondary">Cancelar</a>
+      <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Salvar</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

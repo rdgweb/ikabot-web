@@ -224,15 +224,51 @@ def _estimate_committed_buy_gold(buyer_ga: GameAccount) -> int:
 
 
 def _available_gold_for_buyer(game_account: GameAccount) -> int:
+    return buyer_market_gold_position(game_account)["available"]
+
+
+def buyer_market_gold_position(game_account: GameAccount) -> dict[str, int]:
     snap = _load_snapshot(game_account)
-    if snap is None:
-        return 0
-    try:
-        current_gold = int((snap.base_snapshot or {}).get("gold", 0))
-    except Exception:
-        current_gold = 0
-    committed_gold = _estimate_committed_buy_gold(game_account)
-    return current_gold - committed_gold
+    current_gold = 0
+    if snap is not None:
+        try:
+            current_gold = int((snap.base_snapshot or {}).get("gold", 0))
+        except Exception:
+            current_gold = 0
+    reserved_gold = _estimate_committed_buy_gold(game_account)
+    available_gold = current_gold - reserved_gold
+    return {
+        "current": current_gold,
+        "reserved": reserved_gold,
+        "available": available_gold,
+        "minimum": int(getattr(game_account, "market_min_gold", 0) or 0),
+    }
+
+
+def _has_gold_for_market_order(game_account: GameAccount, *, amount: int, unit_price: int) -> tuple[bool, dict[str, int]]:
+    position = buyer_market_gold_position(game_account)
+    required_gold = max(0, int(amount)) * max(0, int(unit_price))
+    position["required"] = required_gold
+    if position["available"] - required_gold < position["minimum"]:
+        return False, position
+    return True, position
+
+
+def _format_gold_position_detail(position: dict[str, int]) -> str:
+    parts = [
+        f"ouro atual {_fmt_market_gold(position.get('current', 0))}",
+        f"reservado {_fmt_market_gold(position.get('reserved', 0))}",
+        f"disponivel {_fmt_market_gold(position.get('available', 0))}",
+    ]
+    required = int(position.get("required", 0) or 0)
+    if required > 0:
+        parts.append(f"compra {_fmt_market_gold(required)}")
+    parts.append(f"minimo {_fmt_market_gold(position.get('minimum', 0))}")
+    return "; ".join(parts)
+
+
+def _fmt_market_gold(value: int) -> str:
+    return f"{int(value):,}".replace(",", ".")
 
 
 def _city_name(city: dict | None, fallback: int | None = None) -> str:
@@ -591,31 +627,23 @@ def create_internal_order_result(
     production_eta_seconds: int | None = None,
     missing_resource_keys: str = "",
 ) -> InternalOrderCreateResult:
-    min_gold = int(getattr(buyer_ga, "market_min_gold", 0) or 0)
-    buyer_snap = None
-    if min_gold > 0:
-        buyer_snap = _load_snapshot(buyer_ga)
-        try:
-            current_gold = int((buyer_snap.base_snapshot or {}).get("gold", 0)) if buyer_snap else 0
-        except Exception:
-            current_gold = 0
-        committed_gold = _estimate_committed_buy_gold(buyer_ga)
-        available_gold = current_gold - committed_gold
-        if available_gold < min_gold:
-            logger.warning(
-                "Buyer %s available gold %s (current=%s - committed=%s) < market_min_gold %s; skipping order",
-                buyer_ga.pk, available_gold, current_gold, committed_gold, min_gold,
-            )
-            return InternalOrderCreateResult(
-                ok=False,
-                code="buyer_below_min_gold",
-                detail=(
-                    f"current_gold={current_gold} committed_gold={committed_gold} "
-                    f"available_gold={available_gold} min_gold={min_gold}"
-                ),
-            )
-    elif buyer_snap is None:
-        buyer_snap = _load_snapshot(buyer_ga)
+    has_gold, gold_position = _has_gold_for_market_order(buyer_ga, amount=amount, unit_price=unit_price)
+    if not has_gold:
+        logger.warning(
+            "Buyer %s market gold unavailable: current=%s reserved=%s available=%s required=%s minimum=%s; skipping order",
+            buyer_ga.pk,
+            gold_position["current"],
+            gold_position["reserved"],
+            gold_position["available"],
+            gold_position["required"],
+            gold_position["minimum"],
+        )
+        return InternalOrderCreateResult(
+            ok=False,
+            code="buyer_below_min_gold",
+            detail=_format_gold_position_detail(gold_position),
+        )
+    buyer_snap = _load_snapshot(buyer_ga)
 
     resolved_target_city_id = _resolve_target_city_id(
         target_city_id=target_city_id,

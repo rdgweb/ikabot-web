@@ -40,6 +40,7 @@ urlpatterns = [
     path("captcha/", include("apps.captcha.urls")),
     path("settings/", include("apps.settings_app.urls")),
     path("users/", include("apps.users.urls")),
+    path("notes/", include("apps.notes.urls")),
     # --- Telegram Webhook API ---
     path("api/telegram/", include("apps.telegram.api_urls")),
     # --- Agent API ---

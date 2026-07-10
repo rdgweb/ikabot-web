@@ -15,6 +15,7 @@ from .jobs import (
     JobCancelView,
     JobRunNowView,
     JobRetryView,
+    JobUnstuckView,
     JobBulkDeleteView,
 )
 from .create import (

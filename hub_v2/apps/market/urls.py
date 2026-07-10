@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    BlackMarketOfferArchiveView,
     BlackMarketDashboardView,
     BlackMarketOfferCloseView,
     MarketDashboardView,
@@ -19,6 +20,7 @@ app_name = "market"
 urlpatterns = [
     path("", MarketDashboardView.as_view(), name="dashboard"),
     path("black-market/", BlackMarketDashboardView.as_view(), name="black-market"),
+    path("black-market/offers/<uuid:pk>/archive/", BlackMarketOfferArchiveView.as_view(), name="bm-offer-archive"),
     path("black-market/offers/<uuid:pk>/close/", BlackMarketOfferCloseView.as_view(), name="bm-offer-close"),
     path("orders/", MarketOrdersPartialView.as_view(), name="orders-partial"),
     path("orders/create/", MarketOrderCreateView.as_view(), name="order-create"),
