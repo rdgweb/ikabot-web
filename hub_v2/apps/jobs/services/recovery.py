@@ -92,6 +92,28 @@ def recover_stale_running_jobs(*, node: Node | None = None) -> dict[str, int]:
                 progress = {}
 
             if locked.action_code in SAFE_REQUEUE_ACTIONS:
+                has_active_followup = Job.objects.filter(
+                    workflow_id=locked.workflow_id,
+                    action_code=locked.action_code,
+                    status__in=("queued", "running", "scheduled"),
+                ).exclude(pk=locked.pk).exists()
+                if has_active_followup:
+                    locked.status = "cancelled"
+                    locked.exit_code = 98
+                    locked.finished_at = now
+                    locked.lease_expires_at = None
+                    locked.save(update_fields=["status", "exit_code", "finished_at", "lease_expires_at", "updated_at"])
+                    JobLog.objects.create(
+                        job=locked,
+                        level="warn",
+                        message=(
+                            f"Execucao orfa recuperada apos {elapsed_seconds}s -- "
+                            f"workflow ja possui follow-up ativo da mesma acao; cancelando o orphan."
+                        ),
+                    )
+                    recovered += 1
+                    continue
+
                 # Guard: if job already rescheduled itself, don't create a second child.
                 # Filter by trigger_type="agent_reschedule" to avoid confusing spawn children
                 # (e.g. ac=2 transport spawns ac=2 arrival monitor — that's NOT a reschedule).

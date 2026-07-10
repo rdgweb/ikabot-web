@@ -304,6 +304,8 @@ class MarketOrderCreateView(LoginRequiredMixin, View):
                     "no_visible_market_city": "sem cidade compradora com alcance de mercado para o vendedor",
                     "no_seller": "sem vendedor elegivel",
                 }.get(result.error, result.error or "falha ao criar ordem")
+                if result.detail:
+                    failure_reason = f"{failure_reason} ({result.detail})"
                 failures.append(f"{RESOURCE_LABELS.get(resource_idx, resource_idx)}: {failure_reason}")
                 continue
             order = result.order

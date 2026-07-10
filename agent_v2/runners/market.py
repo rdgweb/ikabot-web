@@ -298,6 +298,8 @@ class InternalMarketBuyRunner(BaseRunner):
         is_raise_gold_mode = market_order_mode == "raise_gold" or str(inputs.get("source_reason") or "").strip() == "construction_raise_gold"
         unit_price = int(inputs.get("unit_price", 0) or 0)
         seller_game_account_id = str(inputs.get("seller_game_account_id") or "").strip()
+        order_total_amount = int(inputs.get("order_total_amount") or amount)
+        order_completed_amount = int(inputs.get("order_completed_amount") or 0)
 
         if not all([
             buyer_city_id, buyer_bo is not None,
@@ -354,14 +356,6 @@ class InternalMarketBuyRunner(BaseRunner):
                         expected_total_seconds=expected_total_seconds,
                     )
                 if status["state"] == "arrived":
-                    if is_raise_gold_mode:
-                        self._apply_raise_gold_snapshot_updates(
-                            jid=jid,
-                            seller_game_account_id=seller_game_account_id,
-                            credited_gold=max(0, amount * max(0, unit_price)),
-                            seller_city_id=int(seller_city_id),
-                            order_id=str(order_id),
-                        )
                     self.save_game_client(ga_id or aid, client)
                     self.log(
                         jid,
@@ -369,15 +363,24 @@ class InternalMarketBuyRunner(BaseRunner):
                         f"[Order {order_id}] Compra confirmada na cidade compradora | "
                         f"modo={status['mode']} | evidencia={status['evidence']}",
                     )
-                    self.hub.market_order_complete(order_id)
-                    self.log(jid, "info", f"[Order {order_id}] Order marked as completed")
-                    if is_raise_gold_mode:
-                        self._retime_followup_construction_job(
-                            jid=jid,
-                            job=job,
-                            delay_seconds=self._RAISE_GOLD_BUFFER_SECONDS,
-                        )
-                    return RunnerResult(success=True)
+                    return self._finish_arrived_purchase_leg(
+                        jid=jid,
+                        job=job,
+                        client=client,
+                        ga_id=ga_id,
+                        aid=aid,
+                        inputs=inputs,
+                        order_id=str(order_id),
+                        buyer_city_id=int(buyer_city_id),
+                        seller_city_id=int(seller_city_id),
+                        is_raise_gold_mode=is_raise_gold_mode,
+                        seller_game_account_id=seller_game_account_id,
+                        unit_price=unit_price,
+                        leg_amount=amount,
+                        order_total_amount=order_total_amount,
+                        order_completed_amount=order_completed_amount,
+                        fallback_eta=expected_outbound_seconds,
+                    )
 
                 if status["state"] == "pending":
                     retry_inputs = dict(inputs)
@@ -411,6 +414,33 @@ class InternalMarketBuyRunner(BaseRunner):
                 resource_idx=resource_idx,
                 amount=amount,
             )
+            purchase_amount = self._available_purchase_amount(amount=amount, preview=preview)
+            if purchase_amount <= 0:
+                transporter_wait = self._maybe_reschedule_for_transporters(
+                    jid=jid,
+                    inputs=inputs,
+                    order_id=str(order_id),
+                    buyer_city_id=int(buyer_city_id),
+                    amount=amount,
+                    preview=preview,
+                )
+                if transporter_wait is not None:
+                    return transporter_wait
+            if purchase_amount < amount:
+                self.log(
+                    jid,
+                    "info",
+                    f"[Order {order_id}] Compra parcial por navios disponiveis: "
+                    f"{purchase_amount}/{amount} agora; restante={amount - purchase_amount}",
+                )
+                preview = self._preview_purchase_eta(
+                    client,
+                    buyer_city_id=int(buyer_city_id),
+                    buyer_branchoffice_pos=int(buyer_bo),
+                    seller_city_id=int(seller_city_id),
+                    resource_idx=resource_idx,
+                    amount=purchase_amount,
+                )
             baseline_city = fetch_city_state(client, buyer_city_id)
             baseline_amount = int(baseline_city.available_resources.get(resource_key, 0))
             self.log(
@@ -420,26 +450,21 @@ class InternalMarketBuyRunner(BaseRunner):
                 f"carregamento={preview['loading_seconds']}s | ida={preview['travel_seconds']}s | "
                 f"total_ate_compra={preview['total_seconds']}s | estoque_base_{resource_key}={baseline_amount}",
             )
-            transporter_wait = self._maybe_reschedule_for_transporters(
-                jid=jid,
-                inputs=inputs,
-                order_id=str(order_id),
-                buyer_city_id=int(buyer_city_id),
-                amount=amount,
-                preview=preview,
-            )
-            if transporter_wait is not None:
-                return transporter_wait
             client.buy_market_offer(
                 buyer_city_id=int(buyer_city_id),
                 buyer_branchoffice_pos=int(buyer_bo),
                 seller_city_id=int(seller_city_id),
                 seller_branchoffice_pos=int(seller_bo),
                 resource_idx=resource_idx,
-                amount=amount,
+                amount=purchase_amount,
             )
             self.save_game_client(ga_id or aid, client)
-            self.log(jid, "info", f"[Order {order_id}] Compra executada | destino={buyer_city_name} | origem={seller_city_name}")
+            self.log(
+                jid,
+                "info",
+                f"[Order {order_id}] Compra executada | destino={buyer_city_name} | origem={seller_city_name} | "
+                f"quantidade={purchase_amount}/{order_total_amount}",
+            )
             purchase_started_at = int(time.time())
             if is_raise_gold_mode:
                 status = self._check_raise_gold_arrival_status(
@@ -457,21 +482,13 @@ class InternalMarketBuyRunner(BaseRunner):
                     buyer_city_id=int(buyer_city_id),
                     seller_city_id=int(seller_city_id),
                     resource_idx=resource_idx,
-                    amount=amount,
+                    amount=purchase_amount,
                     baseline_amount=baseline_amount,
                     purchase_started_at=purchase_started_at,
                     expected_outbound_seconds=int(preview["travel_seconds"]),
                     expected_total_seconds=int(preview["total_seconds"]),
                 )
             if status["state"] == "arrived":
-                if is_raise_gold_mode:
-                    self._apply_raise_gold_snapshot_updates(
-                        jid=jid,
-                        seller_game_account_id=seller_game_account_id,
-                        credited_gold=max(0, amount * max(0, unit_price)),
-                        seller_city_id=int(seller_city_id),
-                        order_id=str(order_id),
-                    )
                 self.save_game_client(ga_id or aid, client)
                 self.log(
                     jid,
@@ -479,15 +496,24 @@ class InternalMarketBuyRunner(BaseRunner):
                     f"[Order {order_id}] Compra confirmada na cidade compradora | "
                     f"modo={status['mode']} | evidencia={status['evidence']}",
                 )
-                self.hub.market_order_complete(order_id)
-                self.log(jid, "info", f"[Order {order_id}] Order marked as completed")
-                if is_raise_gold_mode:
-                    self._retime_followup_construction_job(
-                        jid=jid,
-                        job=job,
-                        delay_seconds=self._RAISE_GOLD_BUFFER_SECONDS,
-                    )
-                return RunnerResult(success=True)
+                return self._finish_arrived_purchase_leg(
+                    jid=jid,
+                    job=job,
+                    client=client,
+                    ga_id=ga_id,
+                    aid=aid,
+                    inputs=inputs,
+                    order_id=str(order_id),
+                    buyer_city_id=int(buyer_city_id),
+                    seller_city_id=int(seller_city_id),
+                    is_raise_gold_mode=is_raise_gold_mode,
+                    seller_game_account_id=seller_game_account_id,
+                    unit_price=unit_price,
+                    leg_amount=purchase_amount,
+                    order_total_amount=order_total_amount,
+                    order_completed_amount=order_completed_amount,
+                    fallback_eta=int(preview["travel_seconds"]),
+                )
 
             if status["state"] != "pending":
                 raise RuntimeError(str(status.get("error") or "Purchase arrival confirmation failed"))
@@ -498,6 +524,10 @@ class InternalMarketBuyRunner(BaseRunner):
             retry_inputs["purchase_expected_outbound_seconds"] = int(preview["travel_seconds"])
             retry_inputs["purchase_expected_total_seconds"] = int(preview["total_seconds"])
             retry_inputs["purchase_baseline_amount"] = baseline_amount
+            retry_inputs["amount"] = purchase_amount
+            retry_inputs["order_total_amount"] = order_total_amount
+            retry_inputs["order_completed_amount"] = order_completed_amount
+            retry_inputs["order_remaining_after_leg"] = max(0, order_total_amount - order_completed_amount - purchase_amount)
             self.hub.reschedule_job(jid, delay_seconds=int(status["delay_seconds"]), inputs=retry_inputs)
             self.log(
                 jid,
@@ -579,6 +609,114 @@ class InternalMarketBuyRunner(BaseRunner):
                 self.log(jid, "error", f"[Order {order_id}] Ouro insuficiente após {max_gold_retries} tentativas — cancelando")
             self.log(jid, "error", f"[Order {order_id}] Buy failed: {exc}")
             return RunnerResult(success=False, data={"error": exc_str})
+
+    def _available_purchase_amount(self, *, amount: int, preview: dict[str, int]) -> int:
+        free_transporters = int(preview.get("free_transporters") or 0)
+        ship_capacity = max(1, int(preview.get("ship_capacity") or 500))
+        required_ships = max(1, int(math.ceil(max(1, amount) / ship_capacity)))
+        if free_transporters >= required_ships:
+            return int(amount)
+        if free_transporters <= 0:
+            return 0
+        return max(1, min(int(amount), free_transporters * ship_capacity))
+
+    def _next_partial_purchase_inputs(
+        self,
+        inputs: dict[str, Any],
+        *,
+        remaining_amount: int,
+        completed_amount: int,
+        total_amount: int,
+    ) -> dict[str, Any]:
+        retry_inputs = dict(inputs)
+        for key in (
+            "purchase_monitor_mode",
+            "purchase_started_at",
+            "purchase_expected_outbound_seconds",
+            "purchase_expected_total_seconds",
+            "purchase_baseline_amount",
+            "order_remaining_after_leg",
+        ):
+            retry_inputs.pop(key, None)
+        retry_inputs["amount"] = int(remaining_amount)
+        retry_inputs["order_total_amount"] = int(total_amount)
+        retry_inputs["order_completed_amount"] = int(completed_amount)
+        retry_inputs["partial_purchase_retry_count"] = int(inputs.get("partial_purchase_retry_count", 0)) + 1
+        return retry_inputs
+
+    def _finish_arrived_purchase_leg(
+        self,
+        *,
+        jid: str,
+        job: dict[str, Any],
+        client,
+        ga_id: str | None,
+        aid: str,
+        inputs: dict[str, Any],
+        order_id: str,
+        buyer_city_id: int,
+        seller_city_id: int,
+        is_raise_gold_mode: bool,
+        seller_game_account_id: str,
+        unit_price: int,
+        leg_amount: int,
+        order_total_amount: int,
+        order_completed_amount: int,
+        fallback_eta: int,
+    ) -> RunnerResult:
+        if is_raise_gold_mode:
+            self._apply_raise_gold_snapshot_updates(
+                jid=jid,
+                seller_game_account_id=seller_game_account_id,
+                credited_gold=max(0, int(leg_amount) * max(0, int(unit_price))),
+                seller_city_id=int(seller_city_id),
+                order_id=str(order_id),
+            )
+        next_completed_amount = min(int(order_total_amount), int(order_completed_amount) + int(leg_amount))
+        remaining_amount = max(0, int(order_total_amount) - next_completed_amount)
+        if remaining_amount > 0:
+            retry_inputs = self._next_partial_purchase_inputs(
+                inputs,
+                remaining_amount=remaining_amount,
+                completed_amount=next_completed_amount,
+                total_amount=order_total_amount,
+            )
+            delay_seconds = self._estimate_transporter_retry_delay(
+                client=client,
+                buyer_city_id=int(buyer_city_id),
+                fallback_eta=int(fallback_eta or 0),
+            )
+            self.hub.reschedule_job(jid, delay_seconds=delay_seconds, inputs=retry_inputs)
+            self.log(
+                jid,
+                "info",
+                f"[Order {order_id}] Compra parcial confirmada: {next_completed_amount}/{order_total_amount}. "
+                f"Restante={remaining_amount}; proxima compra em {delay_seconds}s",
+            )
+            if is_raise_gold_mode:
+                self._retime_followup_construction_job(
+                    jid=jid,
+                    job=job,
+                    delay_seconds=delay_seconds + self._RAISE_GOLD_BUFFER_SECONDS,
+                )
+            return RunnerResult(
+                success=True,
+                data={
+                    "status": "partial_purchase_confirmed",
+                    "completed_amount": next_completed_amount,
+                    "remaining_amount": remaining_amount,
+                },
+            )
+
+        self.hub.market_order_complete(order_id)
+        self.log(jid, "info", f"[Order {order_id}] Order marked as completed")
+        if is_raise_gold_mode:
+            self._retime_followup_construction_job(
+                jid=jid,
+                job=job,
+                delay_seconds=self._RAISE_GOLD_BUFFER_SECONDS,
+            )
+        return RunnerResult(success=True)
 
     def _maybe_reschedule_for_transporters(
         self,

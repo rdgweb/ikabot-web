@@ -1920,8 +1920,12 @@ class JobListView(FilterSortListView):
                     "adjusted_duration": str(lr.get("adjusted_duration") or ""),
                     "adjusted_seconds": _to_int(lr.get("adjusted_seconds"), 0),
                     "is_current": False,
+                    "is_done": False,       # marcado depois com base no active_transition
+                    "is_waiting": True,
                     "costs": lr_cost_items,
                 })
+            # Ordena por to_level pra garantir sequência correta
+            level_queue.sort(key=lambda r: r.get("to_level", 0))
             has_level_queue = len(level_queue) > 1
             last_to_level = level_queue[-1]["to_level"] if level_queue else target_level
 
@@ -1954,6 +1958,42 @@ class JobListView(FilterSortListView):
                             if amt > 0:
                                 active_resources.append({"key": key, "label": label, "icon": icon, "amount": amt})
                         break
+
+            # Marca is_done/is_current/is_waiting em cada level_row do queue.
+            # Step "done" (skipped): todos rows = done.
+            # Step "active": rows com to_level < active.to_level = done; == = current; > = waiting.
+            # Step "waiting": todos rows = waiting.
+            # Step "blocked": todos rows = waiting (blocked).
+            if step_status == "done":
+                for lrow in level_queue:
+                    lrow["is_done"] = True
+                    lrow["is_waiting"] = False
+                    lrow["is_current"] = False
+            elif step_status == "active" and active_trans and active_trans.get("to_level"):
+                curr_to = int(active_trans["to_level"])
+                for lrow in level_queue:
+                    to_l = int(lrow.get("to_level") or 0)
+                    if to_l < curr_to:
+                        lrow["is_done"] = True
+                        lrow["is_waiting"] = False
+                        lrow["is_current"] = False
+                    elif to_l == curr_to:
+                        lrow["is_current"] = True
+                        lrow["is_done"] = False
+                        lrow["is_waiting"] = False
+                    else:
+                        lrow["is_current"] = False
+                        lrow["is_done"] = False
+                        lrow["is_waiting"] = True
+
+            # Contadores + ETA restante deste step
+            step_levels_total = len(level_queue)
+            step_levels_done = sum(1 for lr in level_queue if lr.get("is_done"))
+            step_eta_remaining_seconds = sum(
+                int(lr.get("adjusted_seconds") or 0)
+                for lr in level_queue
+                if not lr.get("is_done")
+            )
 
             # Next transition = first level row (what will be built next for waiting steps)
             next_transition: dict | None = None
@@ -1990,6 +2030,11 @@ class JobListView(FilterSortListView):
                 "has_shortfall": any(item["amount"] > 0 for item in resource_missing),
                 "level_queue": level_queue,
                 "has_level_queue": has_level_queue,
+                "levels_total": step_levels_total,
+                "levels_done": step_levels_done,
+                "levels_progress_pct": int(round(100 * step_levels_done / step_levels_total)) if step_levels_total else 0,
+                "eta_remaining_seconds": step_eta_remaining_seconds,
+                "eta_remaining_human": _duration_human(step_eta_remaining_seconds),
                 "status": step_status,
                 "active_transition": active_trans,
                 "active_resources": active_resources,
@@ -2042,6 +2087,35 @@ class JobListView(FilterSortListView):
                         matched["active_duration_human"] = str(lrow.get("adjusted_duration") or "")
                         matched["active_resources"] = lrow.get("costs") or []
                         break
+                # Re-marca is_done/is_current no queue deste step
+                curr_to = int(to_lv)
+                for lrow in matched.get("level_queue") or []:
+                    to_l = int(lrow.get("to_level") or 0)
+                    if to_l < curr_to:
+                        lrow["is_done"] = True
+                        lrow["is_waiting"] = False
+                        lrow["is_current"] = False
+                    elif to_l == curr_to:
+                        lrow["is_current"] = True
+                        lrow["is_done"] = False
+                        lrow["is_waiting"] = False
+                    else:
+                        lrow["is_current"] = False
+                        lrow["is_done"] = False
+                        lrow["is_waiting"] = True
+                # Recalcula progresso
+                total_lv = len(matched.get("level_queue") or [])
+                done_lv = sum(1 for lr in (matched.get("level_queue") or []) if lr.get("is_done"))
+                remaining_secs = sum(
+                    int(lr.get("adjusted_seconds") or 0)
+                    for lr in (matched.get("level_queue") or [])
+                    if not lr.get("is_done")
+                )
+                matched["levels_total"] = total_lv
+                matched["levels_done"] = done_lv
+                matched["levels_progress_pct"] = int(round(100 * done_lv / total_lv)) if total_lv else 0
+                matched["eta_remaining_seconds"] = remaining_secs
+                matched["eta_remaining_human"] = _duration_human(remaining_secs)
 
         # Compute totals: plan total and remaining (non-done steps only)
         plan_totals: dict[str, int] = {}
@@ -2120,6 +2194,12 @@ class JobListView(FilterSortListView):
             city_next = next((s for s in city_steps if s["status"] == "waiting" and s["index"] > active_idx), None)
             if city_next is None:
                 city_next = next((s for s in city_steps if s["status"] == "waiting"), None)
+
+            # Agregado: soma dos níveis feitos vs total (todos steps)
+            city_levels_total = sum(int(s.get("levels_total") or 0) for s in city_steps)
+            city_levels_done = sum(int(s.get("levels_done") or 0) for s in city_steps)
+            city_eta_remaining = sum(int(s.get("eta_remaining_seconds") or 0) for s in city_steps)
+
             city_cards.append({
                 "city_name": city_name_key,
                 "step_count": len(city_steps),
@@ -2129,6 +2209,11 @@ class JobListView(FilterSortListView):
                 "next_step": city_next,
                 "open_by_default": bool(city_active),
                 "steps": city_steps,
+                "levels_total": city_levels_total,
+                "levels_done": city_levels_done,
+                "levels_progress_pct": int(round(100 * city_levels_done / city_levels_total)) if city_levels_total else 0,
+                "eta_remaining_seconds": city_eta_remaining,
+                "eta_remaining_human": _duration_human(city_eta_remaining),
             })
         city_cards.sort(key=lambda item: item["city_name"].lower())
 
@@ -2137,10 +2222,20 @@ class JobListView(FilterSortListView):
         next_steps = [c["next_step"] for c in city_cards if c["next_step"]]
         done_count = sum(1 for s in all_steps_flat if s["status"] == "done")
 
+        # Progresso global (soma de todos os níveis feitos vs total do plano)
+        total_levels_all = sum(int(c.get("levels_total") or 0) for c in city_cards)
+        total_levels_done = sum(int(c.get("levels_done") or 0) for c in city_cards)
+        total_eta_remaining = sum(int(c.get("eta_remaining_seconds") or 0) for c in city_cards)
+
         return {
             "step_count": len(all_steps_flat),
             "done_count": done_count,
             "city_count": len(city_cards),
+            "levels_total_all": total_levels_all,
+            "levels_done_all": total_levels_done,
+            "levels_progress_pct_all": int(round(100 * total_levels_done / total_levels_all)) if total_levels_all else 0,
+            "eta_remaining_all_seconds": total_eta_remaining,
+            "eta_remaining_all_human": _duration_human(total_eta_remaining),
             "queue_strategy_label": CONSTRUCTION_QUEUE_STRATEGY_META.get(str(inputs.get("queue_strategy") or "eta_first"), "Ordem do plano"),
             "auto_transport": cls._bool_label(inputs.get("auto_transport", True)),
             "city_cards": city_cards,
@@ -2506,11 +2601,13 @@ class WorkflowListView(FilterSortListView):
 
         status_times = {}
         if workflow_ids:
+            now_ts = timezone.now()
             for row in (
                 Job.objects.filter(
                     workflow_id__in=workflow_ids,
                     archived_at__isnull=True,
                 )
+                .exclude(status="running", lease_expires_at__lte=now_ts)
                 .values("workflow_id", "status")
                 .annotate(max_t=Max("created_at"))
             ):

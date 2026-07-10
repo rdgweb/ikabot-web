@@ -1445,36 +1445,81 @@
   </div>
   {% endif %}
 
+  {# ── Progresso global do plano ── #}
+  {% if construction_display.levels_total_all %}
+  <div class="rounded-xl border p-4" style="border-color: var(--ik-line); background: linear-gradient(135deg, rgba(95,140,78,0.06), rgba(79,134,185,0.04));">
+    <div class="flex items-center justify-between gap-3 mb-2">
+      <div class="flex items-center gap-2">
+        <i class="bi bi-diagram-3-fill text-sea"></i>
+        <span class="text-xs font-semibold uppercase tracking-wide text-muted">Progresso do plano</span>
+      </div>
+      <div class="flex items-baseline gap-2">
+        <span class="text-2xl font-bold text-ink">{{ construction_display.levels_progress_pct_all }}%</span>
+        <span class="text-[11px] text-muted">{{ construction_display.levels_done_all }}/{{ construction_display.levels_total_all }} níveis</span>
+      </div>
+    </div>
+    <div class="h-2 rounded-full overflow-hidden" style="background: var(--ik-sand);">
+      <div class="h-full rounded-full transition-all duration-500"
+           style="width: {{ construction_display.levels_progress_pct_all }}%; background: linear-gradient(90deg, var(--ik-good), #7fa96b);"></div>
+    </div>
+    {% if construction_display.eta_remaining_all_seconds %}
+    <div class="mt-2 flex items-center gap-1.5 text-[11px] text-muted">
+      <i class="bi bi-hourglass-split"></i>
+      <span>Tempo restante estimado: <span class="font-semibold text-ink">{{ construction_display.eta_remaining_all_human }}</span></span>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {# ── Por cidade ── #}
   {% if construction_display.city_cards %}
   <div class="space-y-2">
     {% for city in construction_display.city_cards %}
-    <div x-data="{ open: {{ city.open_by_default|yesno:'true,false' }} }"
+    <div x-data="{ open: {{ city.open_by_default|yesno:'true,false' }}, showDone: false }"
          class="overflow-hidden rounded-xl border"
          style="border-color: var(--ik-line);">
 
-      {# Cabeçalho clicável #}
+      {# Cabeçalho clicável — nome + progress bar + ETA + counts #}
       <button type="button" @click="open = !open"
-              class="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--ik-sand-light)]"
+              class="w-full text-left transition-colors hover:bg-[var(--ik-sand-light)]"
               style="background: var(--ik-sand-light);">
-        <i class="bi bi-buildings shrink-0 text-sm text-muted"></i>
-        <span class="flex-1 text-sm font-semibold text-ink">{{ city.city_name }}</span>
-        <div class="flex shrink-0 items-center gap-2">
-          {% if city.active_step %}
-          <span class="text-[11px] font-medium" style="color: var(--ik-good);">
-            <i class="bi bi-hammer"></i> {{ city.active_step.building_name }}
-            {% with t=city.active_step.active_transition %}
-            {% if t.from_level is not None %}Lv {{ t.from_level }}→{{ t.to_level }}{% endif %}
-            {% endwith %}
-          </span>
-          {% endif %}
-          {% if city.shortfall_count %}
-          <span class="text-[11px]" style="color: var(--ik-gold);">
-            <i class="bi bi-exclamation-triangle"></i> {{ city.shortfall_count }}
-          </span>
-          {% endif %}
-          <span class="text-[10px] text-muted">{{ city.done_count }}/{{ city.step_count }}</span>
-          <i class="bi text-muted transition-transform duration-150"
+        <div class="flex items-center gap-3 px-4 py-3">
+          <i class="bi bi-buildings shrink-0 text-sm text-muted"></i>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-sm font-semibold text-ink truncate">{{ city.city_name }}</span>
+              {% if city.active_step %}
+              <span class="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded"
+                    style="background: rgba(95,140,78,0.12); color: var(--ik-good);">
+                <i class="bi bi-hammer"></i> {{ city.active_step.building_name }}
+                {% with t=city.active_step.active_transition %}{% if t.from_level is not None %} {{ t.from_level }}→{{ t.to_level }}{% endif %}{% endwith %}
+              </span>
+              {% endif %}
+              {% if city.shortfall_count %}
+              <span class="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded"
+                    style="background: rgba(196,155,79,0.12); color: var(--ik-gold);">
+                <i class="bi bi-exclamation-triangle-fill"></i> {{ city.shortfall_count }} sem recurso
+              </span>
+              {% endif %}
+            </div>
+            {% if city.levels_total %}
+            <div class="mt-1.5 flex items-center gap-2">
+              <div class="flex-1 h-1.5 rounded-full overflow-hidden" style="background: rgba(219,201,167,0.5);">
+                <div class="h-full rounded-full transition-all"
+                     style="width: {{ city.levels_progress_pct }}%; background: var(--ik-good);"></div>
+              </div>
+              <span class="text-[10px] font-mono text-muted shrink-0 tabular-nums">
+                {{ city.levels_done }}/{{ city.levels_total }}
+              </span>
+              {% if city.eta_remaining_seconds %}
+              <span class="text-[10px] text-muted shrink-0">
+                <i class="bi bi-hourglass"></i> {{ city.eta_remaining_human }}
+              </span>
+              {% endif %}
+            </div>
+            {% endif %}
+          </div>
+          <i class="bi text-muted transition-transform duration-150 shrink-0"
              :class="open ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
         </div>
       </button>
@@ -1482,42 +1527,91 @@
       {# Conteúdo: steps agrupados, level_rows individuais #}
       <div x-show="open" x-cloak>
         {% for step in city.steps %}
-        {# Step header #}
-        <div class="flex items-center gap-2 border-t px-4 py-1.5
-                    {% if step.status == 'done' %}opacity-50{% endif %}"
+        {# Step header — edifício + status + progress do step #}
+        <div class="flex items-center gap-2 border-t px-4 py-2
+                    {% if step.status == 'done' %}opacity-60{% endif %}"
              style="border-color: var(--ik-line); background: var(--ik-sand-light);">
           {% if step.building_icon %}
           <img src="{% static 'game/buildings/'|add:step.building_icon %}" alt=""
-               class="h-5 w-5 shrink-0 rounded border object-contain p-0.5"
-               style="border-color: var(--ik-line); background: rgba(255,255,255,0.8);">
+               class="h-6 w-6 shrink-0 rounded border object-contain p-0.5"
+               style="border-color: var(--ik-line); background: rgba(255,255,255,0.85);">
+          {% else %}
+          <i class="bi bi-building shrink-0 text-sea text-sm"></i>
           {% endif %}
-          <span class="text-[11px] font-semibold {% if step.status == 'done' %}line-through text-muted{% else %}text-ink{% endif %}">{{ step.building_name }}</span>
-          <span class="text-[10px] text-muted">meta Lv {{ step.target_level }}</span>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-xs font-semibold {% if step.status == 'done' %}line-through text-muted{% else %}text-ink{% endif %}">{{ step.building_name }}</span>
+              <span class="text-[10px] text-muted">→ Lv {{ step.target_level }}</span>
+              {% if step.levels_total > 1 %}
+              <span class="text-[10px] font-mono text-muted tabular-nums">{{ step.levels_done }}/{{ step.levels_total }}</span>
+              {% endif %}
+            </div>
+          </div>
           {% if step.status == 'done' %}
-          <span class="ml-auto text-[10px]" style="color: var(--ik-good);"><i class="bi bi-check-circle-fill"></i></span>
+          <span class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded" style="background: rgba(95,140,78,0.15); color: var(--ik-good);">
+            <i class="bi bi-check-circle-fill"></i> concluído
+          </span>
           {% elif step.status == 'blocked' %}
-          <span class="ml-auto text-[10px]" style="color: var(--ik-bad);"><i class="bi bi-x-circle"></i> bloqueado</span>
+          <span class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded" style="background: rgba(180,60,60,0.15); color: var(--ik-bad);">
+            <i class="bi bi-x-circle-fill"></i> bloqueado
+          </span>
           {% elif step.status == 'active' %}
-          <span class="ml-auto text-[10px] font-bold" style="color: var(--ik-good);"><i class="bi bi-hammer"></i> em obra</span>
+          <span class="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded" style="background: var(--ik-good); color: white;">
+            <i class="bi bi-hammer"></i> em obra
+          </span>
+          {% else %}
+          <span class="inline-flex items-center gap-1 text-[10px] text-muted px-1.5 py-0.5 rounded" style="background: rgba(219,201,167,0.3);">
+            <i class="bi bi-clock"></i> aguarda
+          </span>
           {% endif %}
         </div>
-        {# Level rows individuais (só para steps não-concluídos) #}
-        {% if step.status != 'done' %}
+
+        {# Level rows: done colapsáveis, current destaque, waiting normal #}
+        {% if step.has_level_queue and step.levels_done > 0 and step.status != 'done' %}
+        <button type="button" @click="showDone = !showDone"
+                class="flex w-full items-center gap-2 border-t px-6 py-1 text-[10px] text-muted transition-colors hover:bg-[var(--ik-sand)]"
+                style="border-color: rgba(219,201,167,0.35);">
+          <i class="bi transition-transform" :class="showDone ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+          <span x-show="!showDone">Ver {{ step.levels_done }} nível(is) concluído(s)</span>
+          <span x-show="showDone" x-cloak>Esconder concluídos</span>
+        </button>
+        {% endif %}
+
         {% for lrow in step.level_queue %}
-        {% if step.status == 'active' and step.active_transition.to_level == lrow.to_level %}
-        <div class="flex items-center gap-3 border-t px-6 py-1 bg-[rgba(95,140,78,0.06)]"
+        {% if lrow.is_done %}
+        {# DONE: riscado + opacidade + check verde. Colapsado quando step ainda em progresso #}
+        <div {% if step.status != 'done' %}x-show="showDone" x-cloak{% endif %}
+             class="flex items-center gap-3 border-t px-6 py-1 opacity-60"
              style="border-color: rgba(219,201,167,0.35);">
-          <div class="w-3 shrink-0"><i class="bi bi-hammer text-[9px]" style="color: var(--ik-good);"></i></div>
-          <span class="w-20 shrink-0 text-[11px] font-semibold" style="color: var(--ik-good);">Lv {{ lrow.from_level }} → {{ lrow.to_level }}</span>
-          <div class="flex flex-1 flex-wrap gap-x-2 gap-y-0.5">
-            {% for item in lrow.costs %}<span class="inline-flex items-center gap-0.5 text-[10px] text-muted"><img src="{% static item.icon %}" alt="" class="h-3 w-3">{{ item.amount|intcomma }}</span>{% endfor %}
+          <div class="w-4 shrink-0 text-center">
+            <i class="bi bi-check-circle-fill text-[10px]" style="color: var(--ik-good);"></i>
           </div>
-          {% if lrow.adjusted_duration %}<span class="shrink-0 text-[10px] text-muted">{{ lrow.adjusted_duration }}</span>{% endif %}
+          <span class="w-20 shrink-0 text-[11px] font-medium line-through" style="color: var(--ik-good);">Lv {{ lrow.from_level }} → {{ lrow.to_level }}</span>
+          <div class="flex flex-1 flex-wrap gap-x-2 gap-y-0.5">
+            {% for item in lrow.costs %}<span class="inline-flex items-center gap-0.5 text-[10px] text-muted line-through"><img src="{% static item.icon %}" alt="" class="h-3 w-3 opacity-70">{{ item.amount|intcomma }}</span>{% endfor %}
+          </div>
+          {% if lrow.adjusted_duration %}<span class="shrink-0 text-[10px] text-muted line-through">{{ lrow.adjusted_duration }}</span>{% endif %}
+        </div>
+        {% elif lrow.is_current %}
+        {# CURRENT: fundo verde vibrante, martelo pulsando, destaque forte #}
+        <div class="relative flex items-center gap-3 border-t px-6 py-2 border-l-2"
+             style="border-color: rgba(219,201,167,0.35); border-left-color: var(--ik-good); background: linear-gradient(90deg, rgba(95,140,78,0.14), rgba(95,140,78,0.04));">
+          <div class="w-4 shrink-0 text-center">
+            <i class="bi bi-hammer text-[11px] animate-pulse" style="color: var(--ik-good);"></i>
+          </div>
+          <span class="w-20 shrink-0 text-[11px] font-bold" style="color: var(--ik-good);">Lv {{ lrow.from_level }} → {{ lrow.to_level }}</span>
+          <div class="flex flex-1 flex-wrap gap-x-2 gap-y-0.5">
+            {% for item in lrow.costs %}<span class="inline-flex items-center gap-0.5 text-[10px] font-medium text-ink"><img src="{% static item.icon %}" alt="" class="h-3 w-3">{{ item.amount|intcomma }}</span>{% endfor %}
+          </div>
+          {% if lrow.adjusted_duration %}<span class="shrink-0 text-[10px] font-semibold" style="color: var(--ik-good);">{{ lrow.adjusted_duration }}</span>{% endif %}
         </div>
         {% else %}
+        {# WAITING: cinza neutro #}
         <div class="flex items-center gap-3 border-t px-6 py-1"
              style="border-color: rgba(219,201,167,0.35);">
-          <div class="w-3 shrink-0"><span class="text-[9px] text-muted">·</span></div>
+          <div class="w-4 shrink-0 text-center">
+            <span class="text-[9px] text-muted">·</span>
+          </div>
           <span class="w-20 shrink-0 text-[11px] text-muted">Lv {{ lrow.from_level }} → {{ lrow.to_level }}</span>
           <div class="flex flex-1 flex-wrap gap-x-2 gap-y-0.5">
             {% for item in lrow.costs %}<span class="inline-flex items-center gap-0.5 text-[10px] text-muted"><img src="{% static item.icon %}" alt="" class="h-3 w-3">{{ item.amount|intcomma }}</span>{% endfor %}
@@ -1526,7 +1620,6 @@
         </div>
         {% endif %}
         {% endfor %}
-        {% endif %}
         {% endfor %}
       </div>
     </div>

@@ -609,7 +609,10 @@ def create_internal_order_result(
             return InternalOrderCreateResult(
                 ok=False,
                 code="buyer_below_min_gold",
-                detail=f"available_gold={available_gold} min_gold={min_gold}",
+                detail=(
+                    f"current_gold={current_gold} committed_gold={committed_gold} "
+                    f"available_gold={available_gold} min_gold={min_gold}"
+                ),
             )
     elif buyer_snap is None:
         buyer_snap = _load_snapshot(buyer_ga)
