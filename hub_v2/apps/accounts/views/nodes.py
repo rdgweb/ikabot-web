@@ -4,8 +4,8 @@ Node CRUD views + deploy page.
 
 import json
 from collections import Counter
-import os
 
+from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -14,6 +14,7 @@ from django.views import View
 from django.views.generic import DetailView, CreateView, UpdateView, DeleteView
 
 from core.mixins.views import FilterSortListView
+from apps.settings_app.utils import get_setting
 from ..models import Node
 from ..filters import NodeFilter
 from ..forms import NodeCreateForm, NodeEditForm
@@ -182,20 +183,30 @@ class NodeDeployView(LoginRequiredMixin, DetailView):
         ctx = super().get_context_data(**kwargs)
         # Build the hub URL for the deploy command
         request = self.request
-        hub_url = f"{request.scheme}://{request.get_host()}"
-        hub_host = request.get_host().split(":")[0]
-        redis_port = os.environ.get("REDIS_PORT", "6379")
-        redis_password = os.environ.get("REDIS_PASSWORD", "change-me-redis-password")
-        redis_url = f"redis://:{redis_password}@{hub_host}:{redis_port}/0"
+        default_hub_url = f"{request.scheme}://{request.get_host()}"
+        hub_url = get_setting("agent_deploy_hub_url", "").strip() or default_hub_url
+        redis_url = get_setting("agent_deploy_redis_url", "").strip() or getattr(settings, "REDIS_URL", "") or "redis://redis:6379/0"
+        agent_image = get_setting("agent_deploy_image", "").strip() or "blackoneal/ikabot-web-agent:latest"
         ctx["hub_url"] = hub_url
+        ctx["redis_url"] = redis_url
+        ctx["agent_image"] = agent_image
+        command_lines = [
+            "docker run -d --restart unless-stopped --name ikabot-agent",
+            f"  -e HUB_URL={hub_url}",
+            f"  -e REDIS_URL={redis_url}",
+            f"  -e AGENT_TOKEN={self.object.deploy_token}",
+            f"  -e AGENT_NODE_ID={self.object.pk}",
+            f"  -e AGENT_IMAGE={agent_image}",
+            f"  {agent_image}",
+        ]
         ctx["deploy_command"] = (
             f"docker run -d --restart unless-stopped --name ikabot-agent \\\n"
             f"  -e HUB_URL={hub_url} \\\n"
             f"  -e REDIS_URL={redis_url} \\\n"
             f"  -e AGENT_TOKEN={self.object.deploy_token} \\\n"
             f"  -e AGENT_NODE_ID={self.object.pk} \\\n"
-            f"  -e AGENT_VERSION=0.0.1 \\\n"
-            f"  -e AGENT_IMAGE=blackoneal/ikabot-web-agent:latest \\\n"
-            f"  blackoneal/ikabot-web-agent:latest"
+            f"  -e AGENT_IMAGE={agent_image} \\\n"
+            f"  {agent_image}"
         )
+        ctx["deploy_command_windows"] = " `\n".join(command_lines)
         return ctx

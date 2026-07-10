@@ -14,7 +14,7 @@ from django.views import View
 from django.views.generic import TemplateView, UpdateView
 
 from core.encryption import decrypt, encrypt
-from .forms import AppSettingForm, WebshareSettingsForm, IkabotApiSettingsForm, AgentSecurityForm, SnapshotPolicyForm, SpyIntelSettingsForm
+from .forms import AppSettingForm, WebshareSettingsForm, IkabotApiSettingsForm, AgentSecurityForm, AgentDeploySettingsForm, SnapshotPolicyForm, SpyIntelSettingsForm
 from .models import AppSetting
 
 
@@ -61,6 +61,11 @@ class SettingsPageView(LoginRequiredMixin, TemplateView):
         agent_token = settings.AGENT_TOKEN
         allowed_ips = _get_setting("agent_allowed_ips", settings.AGENT_ALLOWED_IPS)
         ctx["agent_form"] = AgentSecurityForm(initial={"allowed_ips": allowed_ips})
+        ctx["agent_deploy_form"] = AgentDeploySettingsForm(initial={
+            "hub_url": _get_setting("agent_deploy_hub_url", ""),
+            "redis_url": _get_setting("agent_deploy_redis_url", ""),
+            "agent_image": _get_setting("agent_deploy_image", "blackoneal/ikabot-web-agent:latest"),
+        })
         ctx["agent_token"] = agent_token
         ctx["agent_token_masked"] = ("*" * 8 + agent_token[-6:]) if len(agent_token) > 6 else "*" * len(agent_token)
 
@@ -85,6 +90,9 @@ class SettingsPageView(LoginRequiredMixin, TemplateView):
                 "webshare_api_key",
                 "ikabotapi_url",
                 "agent_allowed_ips",
+                "agent_deploy_hub_url",
+                "agent_deploy_redis_url",
+                "agent_deploy_image",
                 "workflow_auto_archive_days",
                 "workflow_auto_archive_last_run",
                 "workflow_max_runs_per_workflow",
@@ -180,6 +188,19 @@ class AgentSecuritySaveView(LoginRequiredMixin, View):
         if form.is_valid():
             _set_setting("agent_allowed_ips", form.cleaned_data["allowed_ips"])
             messages.success(request, "Configuracao de seguranca do agent salva.")
+        return redirect("settings_app:list")
+
+
+class AgentDeploySettingsSaveView(LoginRequiredMixin, View):
+    def post(self, request):
+        form = AgentDeploySettingsForm(request.POST)
+        if form.is_valid():
+            _set_setting("agent_deploy_hub_url", form.cleaned_data["hub_url"].strip())
+            _set_setting("agent_deploy_redis_url", form.cleaned_data["redis_url"].strip())
+            _set_setting("agent_deploy_image", form.cleaned_data["agent_image"].strip())
+            messages.success(request, "Configuracao de deploy do agent salva.")
+        else:
+            messages.error(request, "Nao foi possivel salvar a configuracao de deploy do agent.")
         return redirect("settings_app:list")
 
 

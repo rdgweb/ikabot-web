@@ -3204,18 +3204,54 @@ class WorkflowActionView(LoginRequiredMixin, View):
 
         workflow.status = transition["to"]
         update_fields = ["status", "updated_at"]
+
         if action == "pause":
             workflow.paused_at = now
             update_fields.append("paused_at")
+            scheduled_jobs = list(workflow_jobs.filter(status="scheduled").order_by("scheduled_for"))
+            if scheduled_jobs:
+                earliest = scheduled_jobs[0].scheduled_for
+                if earliest and (workflow.next_scheduled_for is None or earliest < workflow.next_scheduled_for):
+                    workflow.next_scheduled_for = earliest
+                    update_fields.append("next_scheduled_for")
+
         workflow.save(update_fields=update_fields)
 
         if action == "pause":
-            # Cancel only scheduled (future) jobs — let running jobs finish naturally
             workflow_jobs.filter(
                 status="scheduled",
             ).update(status="cancelled", finished_at=now, updated_at=now, lease_expires_at=None)
+        elif action == "resume":
+            latest = workflow_jobs.order_by("-created_at").first()
+            if latest is not None:
+                eta = workflow.next_scheduled_for or now
+                if eta < now:
+                    eta = now
+                resumed = create_job_with_workflow(
+                    account=latest.account,
+                    game_account=latest.game_account,
+                    node=latest.node,
+                    profile=latest.profile,
+                    action_code=latest.action_code,
+                    inputs=latest.inputs_json,
+                    timeout_sec=latest.timeout_sec,
+                    source_job=latest,
+                    status="scheduled",
+                    scheduled_for=eta,
+                    start_new_run=False,
+                    trigger_type="manual_resume",
+                    explicit_workflow=workflow,
+                )
+                JobLog.objects.create(
+                    job=resumed,
+                    level="info",
+                    message=f"Workflow retomado. Reagendado para {eta.isoformat()} (era next_scheduled_for={workflow.next_scheduled_for}).",
+                )
+                if workflow.next_scheduled_for is not None:
+                    workflow.next_scheduled_for = None
+                    workflow.save(update_fields=["next_scheduled_for", "updated_at"])
+                transaction.on_commit(lambda: dispatch_job(resumed, eta=eta))
         elif action == "cancel":
-            # Cancel all active jobs in the chain
             workflow_jobs.filter(
                 status__in=("queued", "running", "scheduled"),
             ).update(status="cancelled", finished_at=now, updated_at=now, lease_expires_at=None)

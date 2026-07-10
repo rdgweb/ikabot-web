@@ -64,6 +64,36 @@ class AgentSecurityForm(forms.Form):
     )
 
 
+class AgentDeploySettingsForm(forms.Form):
+    hub_url = forms.CharField(
+        label="URL do hub para deploy",
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-input",
+            "placeholder": "https://ikabot.rdgh.com.br ou http://192.168.3.202:8000",
+        }),
+        help_text="Vazio = usar a URL atual acessada no navegador.",
+    )
+    redis_url = forms.CharField(
+        label="Redis URL para o agent",
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-input",
+            "placeholder": "redis://:senha@host:6379/0",
+        }),
+        help_text="Vazio = usar REDIS_URL configurado no hub.",
+    )
+    agent_image = forms.CharField(
+        label="Imagem Docker do agent",
+        required=False,
+        widget=forms.TextInput(attrs={
+            "class": "form-input",
+            "placeholder": "blackoneal/ikabot-web-agent:latest",
+        }),
+        help_text="Vazio = blackoneal/ikabot-web-agent:latest.",
+    )
+
+
 class SpyIntelSettingsForm(forms.Form):
     spy_report_expiry_hours = forms.IntegerField(
         label="Validade do relatório de espionagem (horas)",

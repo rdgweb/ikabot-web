@@ -19,20 +19,63 @@
 
 {% block detail_main %}
 <!-- Deploy command -->
-<div class="card" x-data="{ copied: false }">
+<div class="card" x-data="{ copiedLinux: false, copiedWindows: false }">
   <h3 class="text-sm font-semibold text-ink mb-3">
     <i class="bi bi-terminal"></i> Comando de Deploy
   </h3>
-  <div class="relative">
+  <p class="text-sm text-muted mb-3">
+    Comando pronto para copiar no servidor do agent. A versao do agent e reportada pelo proprio container; nao e necessario informar <code>AGENT_VERSION</code>.
+  </p>
+  <div class="mb-4">
+    <div class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-muted">
+      <i class="bi bi-terminal"></i> Linux / macOS / Ubuntu
+    </div>
+    <div class="relative">
     <pre class="bg-gray-900 text-green-400 rounded-lg p-4 text-sm font-mono overflow-x-auto"><code>{{ deploy_command }}</code></pre>
     <button
-      @click="navigator.clipboard.writeText($refs.cmd.textContent); copied = true; setTimeout(() => copied = false, 2000)"
+      @click="navigator.clipboard.writeText($refs.cmdLinux.textContent); copiedLinux = true; setTimeout(() => copiedLinux = false, 2000)"
       class="absolute top-2 right-2 px-2 py-1 bg-gray-700 hover:bg-gray-600 text-muted rounded text-xs">
-      <span x-show="!copied"><i class="bi bi-clipboard"></i> Copiar</span>
-      <span x-show="copied" x-cloak><i class="bi bi-check"></i> Copiado!</span>
+      <span x-show="!copiedLinux"><i class="bi bi-clipboard"></i> Copiar</span>
+      <span x-show="copiedLinux" x-cloak><i class="bi bi-check"></i> Copiado!</span>
     </button>
-    <span x-ref="cmd" class="hidden">{{ deploy_command }}</span>
+    <span x-ref="cmdLinux" class="hidden">{{ deploy_command }}</span>
+    </div>
   </div>
+  <div>
+    <div class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-muted">
+      <i class="bi bi-windows"></i> Windows PowerShell
+    </div>
+    <div class="relative">
+    <pre class="bg-gray-900 text-green-400 rounded-lg p-4 text-sm font-mono overflow-x-auto"><code>{{ deploy_command_windows }}</code></pre>
+    <button
+      @click="navigator.clipboard.writeText($refs.cmdWindows.textContent); copiedWindows = true; setTimeout(() => copiedWindows = false, 2000)"
+      class="absolute top-2 right-2 px-2 py-1 bg-gray-700 hover:bg-gray-600 text-muted rounded text-xs">
+      <span x-show="!copiedWindows"><i class="bi bi-clipboard"></i> Copiar</span>
+      <span x-show="copiedWindows" x-cloak><i class="bi bi-check"></i> Copiado!</span>
+    </button>
+    <span x-ref="cmdWindows" class="hidden">{{ deploy_command_windows }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h3 class="text-sm font-semibold text-ink mb-3">
+    <i class="bi bi-sliders"></i> Variaveis usadas
+  </h3>
+  <dl class="grid gap-2 text-sm">
+    <div>
+      <dt class="text-xs font-semibold uppercase text-muted">Hub</dt>
+      <dd class="font-mono break-all">{{ hub_url }}</dd>
+    </div>
+    <div>
+      <dt class="text-xs font-semibold uppercase text-muted">Redis</dt>
+      <dd class="font-mono break-all">{{ redis_url }}</dd>
+    </div>
+    <div>
+      <dt class="text-xs font-semibold uppercase text-muted">Imagem</dt>
+      <dd class="font-mono break-all">{{ agent_image }}</dd>
+    </div>
+  </dl>
 </div>
 
 <!-- Token info -->
@@ -44,6 +87,20 @@
   <code class="block bg-sand rounded px-3 py-2 text-sm font-mono text-ink break-all">
     {{ node.deploy_token }}
   </code>
+</div>
+
+<div class="card">
+  <h3 class="text-sm font-semibold text-ink mb-3">
+    <i class="bi bi-cookie"></i> Como pegar o gf-token-production
+  </h3>
+  <ol class="space-y-2 text-sm text-muted list-decimal list-inside">
+    <li>Entre normalmente na conta da Gameforge ate chegar no lobby.</li>
+    <li>Abra as ferramentas de desenvolvedor do navegador com F12.</li>
+    <li>Abra a aba Console.</li>
+    <li>Cole o comando abaixo e pressione Enter.</li>
+    <li>Copie o valor exibido de <code>gf-token-production</code> para o cadastro da conta no hub.</li>
+  </ol>
+  <pre class="mt-3 bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto"><code>document.cookie.split(';').forEach(x =&gt; { if (x.includes('production')) console.log(x.trim()) })</code></pre>
 </div>
 
 <!-- Status check -->
@@ -104,6 +161,7 @@
   <ol class="space-y-2 text-sm text-muted list-decimal list-inside">
     <li>Execute o comando de deploy no servidor</li>
     <li>Aguarde o agent se conectar</li>
+    <li>Cadastre ou atualize o gf-token-production da conta</li>
     <li><a href="{% url 'accounts:account-create' %}?node={{ node.pk }}" class="link-sea">Vincule uma conta</a></li>
     <li>Crie um job para testar</li>
   </ol>

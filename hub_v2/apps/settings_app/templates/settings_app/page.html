@@ -219,6 +219,44 @@
 <div class="card mb-6">
   <div class="card-header !px-5 !py-3">
     <div class="flex items-center gap-2">
+      <i class="bi bi-terminal text-sea"></i>
+      <h3 class="text-sm font-semibold text-ink">Deploy do Agent</h3>
+    </div>
+  </div>
+
+  <div class="p-5">
+    <p class="text-xs text-muted mb-4">Define os valores usados para montar o comando de instalaÃ§Ã£o do agent em NÃ³s &amp; Agents.</p>
+    <form method="post" action="{% url 'settings_app:agent-deploy-save' %}">
+      {% csrf_token %}
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div>
+          <label class="form-label text-xs">{{ agent_deploy_form.hub_url.label }}</label>
+          {{ agent_deploy_form.hub_url }}
+          {% if agent_deploy_form.hub_url.help_text %}<p class="form-help">{{ agent_deploy_form.hub_url.help_text }}</p>{% endif %}
+        </div>
+        <div>
+          <label class="form-label text-xs">{{ agent_deploy_form.redis_url.label }}</label>
+          {{ agent_deploy_form.redis_url }}
+          {% if agent_deploy_form.redis_url.help_text %}<p class="form-help">{{ agent_deploy_form.redis_url.help_text }}</p>{% endif %}
+        </div>
+        <div>
+          <label class="form-label text-xs">{{ agent_deploy_form.agent_image.label }}</label>
+          {{ agent_deploy_form.agent_image }}
+          {% if agent_deploy_form.agent_image.help_text %}<p class="form-help">{{ agent_deploy_form.agent_image.help_text }}</p>{% endif %}
+        </div>
+      </div>
+      <div class="mt-4">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-check-lg"></i> Salvar deploy
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card mb-6">
+  <div class="card-header !px-5 !py-3">
+    <div class="flex items-center gap-2">
       <i class="bi bi-hourglass-split text-sea"></i>
       <h3 class="text-sm font-semibold text-ink">Política de Snapshot</h3>
     </div>

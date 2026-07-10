@@ -10,6 +10,10 @@ def get_setting(key: str, default: str = "") -> str:
         return default
 
 
+def set_setting(key: str, value: str) -> None:
+    AppSetting.objects.update_or_create(key=key, defaults={"value": value})
+
+
 def get_int_setting(key: str, default: int) -> int:
     raw = str(get_setting(key, str(default)) or "").strip()
     try:
