@@ -6,8 +6,14 @@ import json
 import logging
 
 from apps.jobs.services.workflows import create_job_with_workflow
+from core.contracts import ACTION_CATALOG
 
 from .models import Preset
+
+
+def _city_select_fields(action_code: int) -> list[dict]:
+    meta = ACTION_CATALOG.get(int(action_code), {})
+    return [f for f in meta.get("inputs", []) if f.get("type") == "city_select"]
 
 # Buildings that are relevant for __auto__ city detection per action code
 _AUTO_BUILDING_MAP = {
@@ -105,46 +111,64 @@ def execute_preset(preset: Preset, created_by=None) -> tuple[int, list[str]]:
             ga_key = str(ga.pk)
             ga_override = per_account.get(ga_key, {})
 
-            # Resolve city fields based on mode
+            city_fields = _city_select_fields(pa.action_code)
+            multi_field = next((f for f in city_fields if f.get("multiple")), None)
+            single_field = next((f for f in city_fields if not f.get("multiple")), None)
+
+            fanout_city_ids: list[str] | None = None
+
             if city_mode == "all":
-                # Expand to all city IDs from snapshot
-                city_ids = _resolve_all_cities(ga)
-                if city_ids is not None:
-                    inputs["cities"] = city_ids
+                city_ids = _resolve_all_cities(ga) or []
+                if multi_field:
+                    inputs[multi_field["key"]] = city_ids
+                elif single_field and city_ids:
+                    auto_id = _resolve_auto_city(ga, pa.action_code) or city_ids[0]
+                    inputs[single_field["key"]] = auto_id
             elif city_mode == "auto":
-                # Auto-detect relevant city (e.g. pirate fortress, shrine)
                 city_id = _resolve_auto_city(ga, pa.action_code)
                 if city_id:
-                    inputs["city_id"] = city_id
-                    inputs["city"] = city_id
+                    if single_field:
+                        inputs[single_field["key"]] = city_id
+                    if multi_field:
+                        inputs[multi_field["key"]] = [city_id]
+                    inputs.setdefault("city_id", city_id)
+                    inputs.setdefault("city", city_id)
             elif city_mode == "per_account" and ga_override:
-                # Merge per-account city fields
                 for k, v in ga_override.items():
                     if v == "__all__":
                         inputs[k] = _resolve_all_cities(ga) or []
                     else:
                         inputs[k] = v
 
-            # Ensure game_account is set
             inputs["game_account"] = str(ga.pk)
 
-            try:
-                create_job_with_workflow(
-                    account=account,
-                    game_account=ga,
-                    node=node,
-                    profile=None,
-                    action_code=pa.action_code,
-                    inputs=inputs,
-                    status="queued",
-                    start_new_run=True,
-                    trigger_type="manual",
-                    created_by=created_by,
-                )
-                jobs_created += 1
-            except Exception as exc:
-                msg = f"Erro ao criar job para {ga} / ac={pa.action_code}: {exc}"
-                logger.warning(msg)
-                errors.append(msg)
+            def _spawn(job_inputs: dict) -> None:
+                nonlocal jobs_created
+                try:
+                    create_job_with_workflow(
+                        account=account,
+                        game_account=ga,
+                        node=node,
+                        profile=None,
+                        action_code=pa.action_code,
+                        inputs=job_inputs,
+                        status="queued",
+                        start_new_run=True,
+                        trigger_type="manual",
+                        created_by=created_by,
+                    )
+                    jobs_created += 1
+                except Exception as exc:
+                    msg = f"Erro ao criar job para {ga} / ac={pa.action_code}: {exc}"
+                    logger.warning(msg)
+                    errors.append(msg)
+
+            if fanout_city_ids:
+                for city_id in fanout_city_ids:
+                    per_city_inputs = dict(inputs)
+                    per_city_inputs[single_field["key"]] = city_id
+                    _spawn(per_city_inputs)
+            else:
+                _spawn(inputs)
 
     return jobs_created, errors

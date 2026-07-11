@@ -123,50 +123,79 @@ def _run_status_from_job(status: str) -> str:
 
 
 def _derive_run_status_from_jobs(jobs) -> str:
+    """Derive run status.
+
+    Erro apenas em job antigo do ciclo (que depois teve sucesso subsequente) nao
+    marca run como problem - trata como transiente/recuperado. So marca problem
+    quando o ultimo job do ciclo (por finished_at, com fallback em created_at)
+    esta em erro.
+    """
     statuses = {str(status or "") for status in jobs.values_list("status", flat=True)}
     if not statuses:
         return "scheduled"
-    if "error" in statuses:
-        return "problem"
     if "running" in statuses:
         return "running"
     if statuses & {"queued", "scheduled"}:
         return "scheduled"
-    if statuses == {"cancelled"}:
-        return "cancelled"
+
+    last = jobs.order_by("-finished_at", "-created_at").first()
+    if last is None:
+        if "error" in statuses:
+            return "problem"
+        if statuses == {"cancelled"}:
+            return "cancelled"
+        return "finished"
+    if last.status == "error":
+        return "problem"
+    if last.status == "cancelled":
+        return "cancelled" if statuses == {"cancelled"} else "finished"
     return "finished"
 
 
 def _derive_workflow_status_from_jobs(workflow: Workflow) -> tuple[str, object | None, object | None, str]:
-    jobs = Job.objects.filter(workflow=workflow)
-    active_job = (
-        jobs.filter(status__in=("queued", "running", "scheduled"))
-        .order_by("-created_at")
-        .first()
-    )
-    if active_job is not None:
-        return (
-            _workflow_status_from_job(active_job.status),
-            active_job.workflow_run,
-            active_job.scheduled_for,
-            "",
-        )
+    """Derive workflow status.
 
-    error_job = jobs.filter(status="error").order_by("-finished_at", "-updated_at").first()
-    if error_job is not None:
-        return (
-            "problem",
-            error_job.workflow_run,
-            None,
-            f"Job {error_job.pk} terminou com erro.",
-        )
+    Uses WorkflowRun as source of truth for finished workflows so that partial
+    failures inside a run (ex.: plano de construcao com build->transporte->build
+    onde o build errou mas o transporte deu ok) sao respeitados. Um workflow so
+    e considerado 'finished' quando a ultima run inteira terminou sem 'problem'.
+    """
+    jobs = Job.objects.filter(workflow=workflow)
+
+    active_job = jobs.filter(status__in=("queued", "running")).order_by("-created_at").first()
+    if active_job is not None:
+        return ("active", active_job.workflow_run, active_job.scheduled_for, "")
+
+    scheduled_job = jobs.filter(status="scheduled").order_by("scheduled_for", "created_at").first()
+    if scheduled_job is not None:
+        return ("waiting", scheduled_job.workflow_run, scheduled_job.scheduled_for, "")
+
+    latest_run = WorkflowRun.objects.filter(workflow=workflow).order_by("-sequence").first()
+    if latest_run is not None:
+        if latest_run.status == "problem":
+            return (
+                "problem",
+                latest_run,
+                None,
+                f"Ciclo {latest_run.sequence} terminou com problema.",
+            )
+        if latest_run.status == "cancelled":
+            return ("cancelled", latest_run, None, "")
+        return ("finished", latest_run, None, "")
 
     latest_job = jobs.order_by("-finished_at", "-updated_at", "-created_at").first()
     if latest_job is None:
         return workflow.status, workflow.active_run, workflow.next_scheduled_for, ""
+    if latest_job.status == "error":
+        return (
+            "problem",
+            latest_job.workflow_run,
+            None,
+            f"Job {latest_job.pk} terminou com erro.",
+        )
     if latest_job.status == "cancelled":
-        return "cancelled", latest_job.workflow_run, None, ""
-    return "finished", latest_job.workflow_run, None, ""
+        return ("cancelled", latest_job.workflow_run, None, "")
+    return ("finished", latest_job.workflow_run, None, "")
 
 
 def reconcile_workflow_for_job(job: Job) -> None:

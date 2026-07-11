@@ -22,6 +22,10 @@ function gameDashboard() {
     _charts: {},
     _numberFormatter: numberFormatter,
 
+    get historyLoading() {
+      return Boolean(this._historyPromise && !this.historyLoaded);
+    },
+
     init() {
       this.historyMap = this.loadHistoryMap();
       this.historyLoaded = Object.keys(this.historyMap || {}).length > 0;
@@ -102,6 +106,7 @@ function gameDashboard() {
         .then((payload) => {
           this.historyMap = payload?.history || {};
           this.historyLoaded = true;
+          this.$nextTick(() => this.renderKpiCharts());
           return this.historyMap;
         })
         .catch((error) => {

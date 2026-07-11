@@ -9,8 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.db.models import F, Prefetch, Window
-from django.db.models.functions import RowNumber
+from django.db.models import Prefetch
 from django.core.cache import cache
 from django.http import JsonResponse
 from django.utils import timezone
@@ -508,9 +507,11 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                 ],
             })
 
+        history_map = _build_history_map(game_account_ids)
+
         ctx["account_cards"] = account_cards
         ctx["city_options"] = sorted(city_options, key=str.lower)
-        ctx["kpi_history"] = {}
+        ctx["kpi_history"] = history_map
         ctx["resource_modal_data"] = resource_modal_data
         ctx["account_detail_data"] = account_detail_data
         ctx["now_epoch"] = int(timezone.now().timestamp())
@@ -532,7 +533,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         cache_payload = {
             "account_cards": account_cards,
             "city_options": ctx["city_options"],
-            "kpi_history": {},
+            "kpi_history": history_map,
             "resource_modal_data": resource_modal_data,
             "account_detail_data": account_detail_data,
             "now_epoch": ctx["now_epoch"],
@@ -796,56 +797,45 @@ def _build_history_map(game_account_ids: list) -> dict[str, dict]:
     if not game_account_ids:
         return {}
 
-    rows = (
-        AccountSnapshotHistory.objects
-        .filter(game_account_id__in=game_account_ids)
-        .annotate(
-            history_rank=Window(
-                expression=RowNumber(),
-                partition_by=[F("game_account_id")],
-                order_by=F("captured_at").desc(),
-            )
-        )
-        .filter(history_rank__lte=12)
-        .only("game_account_id", "captured_at", "base_snapshot", "cities", "military")
-        .order_by("game_account_id", "-captured_at")
-    )
-
     grouped: dict[str, list[dict]] = {}
-    for row in rows:
-        key = str(row.game_account_id)
-        bucket = grouped.setdefault(key, [])
-        if len(bucket) >= 12:
-            continue
-        base = row.base_snapshot or {}
-        cities = row.cities if isinstance(row.cities, list) else []
-        military = row.military if isinstance(row.military, dict) else {}
-        gross_income = _si(base.get("income"))
-        upkeep = _si(base.get("upkeep"))
-        scientists_upkeep = _si(base.get("scientists_upkeep"))
-        wood = sum(_si(city.get("wood")) for city in cities if isinstance(city, dict))
-        wine = sum(_si(city.get("wine")) for city in cities if isinstance(city, dict))
-        marble = sum(_si(city.get("marble")) for city in cities if isinstance(city, dict))
-        crystal = sum(_si(city.get("crystal")) for city in cities if isinstance(city, dict))
-        sulfur = sum(_si(city.get("sulfur")) for city in cities if isinstance(city, dict))
-        troop_total = sum(_si(unit.get("count")) for unit in (military.get("troops") or []) if isinstance(unit, dict))
-        ship_total = sum(_si(unit.get("count")) for unit in (military.get("fleet") or []) if isinstance(unit, dict))
-        bucket.append({
-            "captured_at": row.captured_at.isoformat(),
-            "gold": _si(base.get("gold")),
-            "income": gross_income + upkeep + scientists_upkeep,
-            "cities": len(cities),
-            "resources": wood + wine + marble + crystal + sulfur,
-            "troops": troop_total,
-            "ships": ship_total,
-            "wood": wood,
-            "wine": wine,
-            "marble": marble,
-            "crystal": crystal,
-            "sulfur": sulfur,
-        })
+    for game_account_id in game_account_ids:
+        rows = list(
+            AccountSnapshotHistory.objects
+            .filter(game_account_id=game_account_id)
+            .only("game_account_id", "captured_at", "base_snapshot", "cities", "military")
+            .order_by("-captured_at")[:12]
+        )
 
-    for key, points in grouped.items():
-        grouped[key] = list(reversed(points))
+        bucket: list[dict] = []
+        for row in reversed(rows):
+            base = row.base_snapshot or {}
+            cities = row.cities if isinstance(row.cities, list) else []
+            military = row.military if isinstance(row.military, dict) else {}
+            gross_income = _si(base.get("income"))
+            upkeep = _si(base.get("upkeep"))
+            scientists_upkeep = _si(base.get("scientists_upkeep"))
+            wood = sum(_si(city.get("wood")) for city in cities if isinstance(city, dict))
+            wine = sum(_si(city.get("wine")) for city in cities if isinstance(city, dict))
+            marble = sum(_si(city.get("marble")) for city in cities if isinstance(city, dict))
+            crystal = sum(_si(city.get("crystal")) for city in cities if isinstance(city, dict))
+            sulfur = sum(_si(city.get("sulfur")) for city in cities if isinstance(city, dict))
+            troop_total = sum(_si(unit.get("count")) for unit in (military.get("troops") or []) if isinstance(unit, dict))
+            ship_total = sum(_si(unit.get("count")) for unit in (military.get("fleet") or []) if isinstance(unit, dict))
+            bucket.append({
+                "captured_at": row.captured_at.isoformat(),
+                "gold": _si(base.get("gold")),
+                "income": gross_income + upkeep + scientists_upkeep,
+                "cities": len(cities),
+                "resources": wood + wine + marble + crystal + sulfur,
+                "troops": troop_total,
+                "ships": ship_total,
+                "wood": wood,
+                "wine": wine,
+                "marble": marble,
+                "crystal": crystal,
+                "sulfur": sulfur,
+            })
+        if bucket:
+            grouped[str(game_account_id)] = bucket
 
     return grouped

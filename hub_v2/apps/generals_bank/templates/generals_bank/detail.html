@@ -39,11 +39,50 @@
         </div>
       </div>
     </div>
-    {% if not active_cycle and bank.is_active %}
-    <button @click="showStartModal = true" class="btn btn-primary btn-sm">
-      <i class="bi bi-play-fill"></i> Iniciar Ciclo
-    </button>
-    {% endif %}
+    <div class="flex items-center gap-2" x-data="{ showDelete: false }">
+      {% if not active_cycle and bank.is_active %}
+      <button @click="showStartModal = true" class="btn btn-primary btn-sm">
+        <i class="bi bi-play-fill"></i> Iniciar Ciclo
+      </button>
+      {% endif %}
+      <button @click="showDelete = true" type="button" class="btn btn-danger btn-sm">
+        <i class="bi bi-trash"></i> Excluir banco
+      </button>
+      <template x-if="showDelete">
+        <div class="fixed inset-0 z-50 flex items-center justify-center" @keydown.escape.window="showDelete = false">
+          <div class="fixed inset-0 bg-black/50 backdrop-blur-sm" @click="showDelete = false"></div>
+          <div class="relative z-10 mx-4 w-full max-w-md overflow-hidden rounded-xl border shadow-2xl"
+               style="border-color: var(--ik-line); background: var(--ik-paper);">
+            <div class="flex items-center gap-3 px-5 py-4 border-b"
+                 style="border-color: var(--ik-line); background: linear-gradient(135deg, rgba(187,81,67,0.12), rgba(187,81,67,0.04));">
+              <div class="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full"
+                   style="background: var(--ik-bad);">
+                <i class="bi bi-trash-fill text-lg text-white"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <h3 class="text-sm font-bold text-ink">Excluir banco</h3>
+                <p class="mt-0.5 text-[11px] text-muted">Cancela auto-scheduler e jobs do ciclo ativo. Ação irreversível.</p>
+              </div>
+            </div>
+            <form method="post" action="{% url 'generals_bank:delete' bank.pk %}" class="px-5 py-4">
+              {% csrf_token %}
+              <p class="text-xs text-ink mb-4">
+                Confirma exclusão do banco <span class="font-semibold">{{ bank.bank_game_account.name }}</span>?
+                {% if active_cycle %}
+                <br><span class="text-[var(--ik-bad)]">Existe um ciclo ativo — seus jobs serão cancelados.</span>
+                {% endif %}
+              </p>
+              <div class="flex justify-end gap-2">
+                <button @click="showDelete = false" type="button" class="btn btn-secondary btn-sm">Voltar</button>
+                <button type="submit" class="btn btn-danger btn-sm">
+                  <i class="bi bi-trash"></i> Confirmar exclusão
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </template>
+    </div>
   </div>
 
   {# ── Tabs ── #}
@@ -187,12 +226,12 @@
                 <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] text-ink"
                       style="border-color: var(--ik-line); background: rgba(79,134,185,0.06);">
                   <i class="bi bi-box-seam text-[10px] text-muted"></i>
-                  {% if producer.sell_only_cycle_production %}Vende sÃ³ o lote do ciclo{% else %}Pode usar estoque antigo{% endif %}
+                  {% if producer.sell_only_cycle_production %}Vende só o lote do ciclo{% else %}Pode usar estoque antigo{% endif %}
                 </span>
                 <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] text-ink"
                       style="border-color: var(--ik-line); background: rgba(79,134,185,0.06);">
                   <i class="bi bi-coin text-[10px] text-muted"></i>
-                  {% if producer.keep_net_gold_positive %}MantÃ©m ouro/h positivo{% else %}Ignora saldo/h{% endif %}
+                  {% if producer.keep_net_gold_positive %}Mantém ouro/h positivo{% else %}Ignora saldo/h{% endif %}
                 </span>
               </div>
               {% if producer.production_template %}
@@ -225,7 +264,7 @@
                       <label class="flex items-center gap-3">
                         <input type="checkbox" name="sell_only_cycle_production" {% if producer.sell_only_cycle_production %}checked{% endif %}
                                class="h-4 w-4 rounded" style="accent-color: var(--ik-sea);">
-                        <span class="text-sm text-ink">Vender sÃ³ o lote da composiÃ§Ã£o do ciclo</span>
+                        <span class="text-sm text-ink">Vender só o lote da composição do ciclo</span>
                       </label>
                       <label class="flex items-center gap-3">
                         <input type="checkbox" name="keep_net_gold_positive" {% if producer.keep_net_gold_positive %}checked{% endif %}
@@ -341,7 +380,7 @@
                    style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.72);">
               <input type="checkbox" name="sell_only_cycle_production" checked
                      class="h-4 w-4 rounded" style="accent-color: var(--ik-sea);">
-              <span class="text-ink">Vender sÃ³ o lote produzido no ciclo</span>
+              <span class="text-ink">Vender só o lote produzido no ciclo</span>
             </label>
             <label class="flex items-center gap-3 rounded-[14px] border px-3 py-2 text-sm"
                    style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.72);">

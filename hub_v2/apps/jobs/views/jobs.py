@@ -2965,10 +2965,14 @@ class WorkflowListView(FilterSortListView):
             recent_statuses.discard("error")
             effective_status = cls._effective_status(workflow, recent_statuses)
             # Recurring workflows with no active jobs = loop stopped = problem
-            # "paused"/"cancelled" are explicit user actions; "finished" got there via stale sync
+            # Excecoes: paused/cancelled sao acoes explicitas do usuario; finished
+            # significa que a derivacao autoritativa (workflow.status via reconcile)
+            # ja marcou o workflow como concluido de verdade (ex.: plano de construcao
+            # que atingiu todos os steps do plano - nao e loop parado, e loop terminado
+            # com sucesso).
             if (effective_status == "finished"
                     and config.get("recurring")
-                    and workflow.status not in ("paused", "cancelled")):
+                    and workflow.status not in ("paused", "cancelled", "finished")):
                 effective_status = "problem"
         status_choices = dict(Workflow.STATUS_CHOICES)
         recent_active_job = next((j for j in (recent_jobs or []) if j.status in ("running", "queued", "scheduled")), None)

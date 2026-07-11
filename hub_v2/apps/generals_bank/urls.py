@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     BankCycleStatusPartialView,
     BankCreateView,
+    BankDeleteView,
     BankDetailView,
     BankHistoryPartialView,
     BankListView,
@@ -20,6 +21,7 @@ urlpatterns = [
     path("novo/", BankCreateView.as_view(), name="create"),
     path("<uuid:pk>/", BankDetailView.as_view(), name="detail"),
     path("<uuid:pk>/editar/", BankUpdateView.as_view(), name="update"),
+    path("<uuid:pk>/excluir/", BankDeleteView.as_view(), name="delete"),
     path("<uuid:pk>/produtores/adicionar/", BankProducerAddView.as_view(), name="producer-add"),
     path("<uuid:pk>/produtores/<uuid:producer_pk>/editar/", BankProducerUpdateView.as_view(), name="producer-update"),
     path("<uuid:pk>/produtores/<uuid:producer_pk>/remover/", BankProducerRemoveView.as_view(), name="producer-remove"),

@@ -336,6 +336,38 @@ class BankProducerRemoveView(LoginRequiredMixin, View):
         return redirect("generals_bank:detail", pk=bank.pk)
 
 
+class BankDeleteView(LoginRequiredMixin, View):
+    """POST /generais/<pk>/excluir/ - cancela jobs auto e apaga o banco."""
+
+    def post(self, request, pk):
+        bank = get_object_or_404(GeneralsBankConfig, pk=pk)
+        _cancel_auto_scheduler(bank)
+        active_cycle = services.get_active_cycle(bank)
+        if active_cycle:
+            now = timezone.now()
+            for job_field in ("manager_job", "buy_job"):
+                job = getattr(active_cycle, job_field, None)
+                if job and job.status in ("queued", "running", "scheduled"):
+                    Job.objects.filter(pk=job.pk).update(
+                        status="cancelled",
+                        finished_at=now,
+                        updated_at=now,
+                        lease_expires_at=None,
+                    )
+            for task in GeneralsBankCycleTask.objects.filter(cycle=active_cycle):
+                for job_field in ("training_job", "transport_job", "sell_job"):
+                    job = getattr(task, job_field, None)
+                    if job and job.status in ("queued", "running", "scheduled"):
+                        Job.objects.filter(pk=job.pk).update(
+                            status="cancelled",
+                            finished_at=now,
+                            updated_at=now,
+                            lease_expires_at=None,
+                        )
+        bank.delete()
+        return redirect("generals_bank:list")
+
+
 class BankStartCycleView(LoginRequiredMixin, View):
     """POST — creates manager job (ac=806) to start a cycle."""
 
