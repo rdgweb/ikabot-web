@@ -1,0 +1,37 @@
+{% comment %}
+Dispatcher compartilhado dos forms especificos por action_code.
+Usado pela criacao normal de job (create_step_form.html) e pela configuracao
+de acao em presets (preset_configure_action.html) para garantir o MESMO visual
+nos dois fluxos. Sempre termina em _generic_fields.html, que renderiza os
+campos do catalog nao cobertos pelo form especifico.
+{% endcomment %}
+{% if action_code == 2 %}{% include "jobs/forms/form_transport_enviar_2.html" %}
+{% elif action_code == 25 %}{% include "jobs/forms/form_modo_ferias_25.html" %}
+{% elif action_code == 808 %}{% include "jobs/forms/form_verificar_ofertas_808.html" %}
+{% elif action_code == 803 %}{% include "jobs/forms/form_mercado_negro_803.html" %}
+{% elif action_code == 804 %}{% include "jobs/forms/form_mercado_negro_804.html" %}
+{% elif action_code == 8 or action_code == 9 %}{% include "jobs/forms/form_mercado_comprar_vender_8_9.html" %}
+{% elif action_code == 6 %}{% include "jobs/forms/form_construcao_individual_6.html" %}
+{% elif action_code == 18 %}{% include "jobs/forms/form_academia_pesquisar_18.html" %}
+{% elif action_code == 26 %}{% include "jobs/forms/form_academia_experimento_26.html" %}
+{% elif action_code == 27 %}{% include "jobs/forms/form_academia_cientistas_27.html" %}
+{% elif action_code == 11 %}{% include "jobs/forms/form_milagre_11.html" %}
+{% elif action_code == 1005 or action_code == 1202 %}{% include "jobs/forms/form_militar_treino_mover_1005_1202.html" %}
+{% elif action_code == 5 or action_code == 1007 %}{% include "jobs/forms/form_santuario_5_1007.html" %}
+{% elif action_code == 1203 %}{% include "jobs/forms/form_oficina_melhorias_1203.html" %}
+{% elif action_code == 1002 %}{% include "jobs/forms/form_construcao_lote_1002.html" %}
+{% elif action_code == 902 or action_code == 1006 %}{% include "jobs/forms/form_doacao_automatica_902_1006.html" %}
+{% elif action_code == 23 %}{% include "jobs/forms/form_modificar_producao_23.html" %}
+{% elif action_code == 31 %}{% include "jobs/forms/form_mensagem_31.html" %}
+{% elif action_code == 17 %}{% include "jobs/forms/form_pirataria_17.html" %}
+{% elif action_code == 820 %}{% include "jobs/forms/form_colonizar_820.html" %}
+{% elif action_code == 821 %}{% include "jobs/forms/form_abandonar_colonia_821.html" %}
+{% elif action_code == 15 %}{% include "jobs/forms/form_espionagem_15.html" %}
+{% elif action_code == 16 %}{% include "jobs/forms/form_espionagem_mundial_16.html" %}
+{% elif action_code == 1008 %}{% include "jobs/forms/form_militar_roubar_1008.html" %}
+{% elif action_code == 9002 %}{% include "jobs/forms/form_revolta_9002.html" %}
+{% elif action_code == 601 %}{% include "jobs/forms/form_monitor_ilha_601.html" %}
+{% elif action_code == 602 %}{% include "jobs/forms/form_dump_mundo_602.html" %}
+{% endif %}
+
+{% include "jobs/forms/_generic_fields.html" %}

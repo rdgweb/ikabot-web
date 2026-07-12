@@ -71,9 +71,11 @@
       </div>
       {% endif %}
 
-      {# Render the action-specific form fields — no_footer=True to suppress job-specific footer #}
+      {# Mesmo form da criacao normal de job (dispatcher por action_code). #}
+      {# no_footer=True suprime o rodape de submit do fluxo de job; campos de #}
+      {# cidade sao configurados na secao por conta abaixo e ignorados no save. #}
       {% if action_meta.inputs %}
-        {% include "jobs/forms/_generic_fields.html" with no_footer=True %}
+        {% include "jobs/forms/_action_form_dispatcher.html" with no_footer=True %}
       {% else %}
       <div class="text-center py-8 rounded-lg" style="background: var(--ik-sand-light);">
         <i class="bi bi-check-circle text-[var(--ik-good)] text-2xl"></i>
