@@ -185,6 +185,24 @@ def _can_retry(job: Job) -> bool:
     return bool(_action_meta(int(job.action_code)).get("allow_retry", True))
 
 
+def _can_restart(job: Job) -> bool:
+    """Recomecar: recriar job cancelado/concluido com os mesmos inputs."""
+    if job.status not in ("cancelled", "finished"):
+        return False
+    if _chain_has_active_job(job):
+        return False
+    return bool(_action_meta(int(job.action_code)).get("allow_retry", True))
+
+
+def _chain_has_active_job(job: Job) -> bool:
+    root_id = job.root_job_id or job.pk
+    return (
+        Job.objects.filter(models.Q(root_job_id=root_id) | models.Q(pk=root_id))
+        .filter(status__in=("queued", "running", "scheduled"))
+        .exists()
+    )
+
+
 def _is_stuck(job: Job) -> bool:
     """Job travado: running mas lease expirou ou heartbeat parou ha muito tempo."""
     if job.status != "running":
@@ -2374,6 +2392,7 @@ class JobDetailView(LoginRequiredMixin, DetailView):
         context["progress"] = _parse_json_object(self.object.progress_json or "{}")
         context["can_execute_now"] = _can_execute_now(self.object)
         context["can_retry"] = _can_retry(self.object)
+        context["can_restart"] = _can_restart(self.object)
         context["is_stuck"] = _is_stuck(self.object)
         return context
 
@@ -2575,6 +2594,47 @@ class JobRetryView(LoginRequiredMixin, View):
         if next_url and next_url.startswith("/"):
             return redirect(next_url)
         return redirect("jobs:job-detail", pk=immediate_job.pk)
+
+
+class JobRestartView(LoginRequiredMixin, View):
+    """Recomecar: recria job cancelado/concluido com os mesmos inputs e executa."""
+
+    def post(self, request, pk):
+        job = get_object_or_404(Job, pk=pk)
+        if not _can_restart(job):
+            return redirect("jobs:job-detail", pk=job.pk)
+
+        with transaction.atomic():
+            locked = Job.objects.select_for_update().get(pk=job.pk)
+            if not _can_restart(locked):
+                return redirect("jobs:job-detail", pk=locked.pk)
+
+            restarted = create_job_with_workflow(
+                account=locked.account,
+                game_account=locked.game_account,
+                node=locked.node,
+                profile=locked.profile,
+                action_code=locked.action_code,
+                inputs=locked.inputs_json,
+                timeout_sec=locked.timeout_sec,
+                source_job=locked,
+                status="queued",
+                start_new_run=True,
+                trigger_type="manual_restart",
+            )
+
+            JobLog.objects.create(
+                job=locked,
+                level="info",
+                message=f"Recomecar solicitado; novo job criado: {restarted.pk}",
+            )
+
+            transaction.on_commit(lambda: dispatch_job(restarted, eta=None))
+
+        next_url = request.POST.get("next", "").strip()
+        if next_url and next_url.startswith("/"):
+            return redirect(next_url)
+        return redirect("jobs:job-detail", pk=restarted.pk)
 
 
 class JobBulkDeleteView(LoginRequiredMixin, View):
@@ -2957,6 +3017,10 @@ class WorkflowListView(FilterSortListView):
                 effective_status = "active"
             else:
                 effective_status = "waiting"
+        elif workflow.status == "paused":
+            # Pausa e acao explicita do usuario — sem jobs ativos, mostra pausado
+            # (jobs finished/cancelled do historico nao viram "Concluido" na lista).
+            effective_status = "paused"
         elif has_error_job:
             effective_status = "problem"
         else:
@@ -3218,6 +3282,9 @@ class WorkflowActionView(LoginRequiredMixin, View):
                 if earliest and (workflow.next_scheduled_for is None or earliest < workflow.next_scheduled_for):
                     workflow.next_scheduled_for = earliest
                     update_fields.append("next_scheduled_for")
+        elif action == "resume":
+            workflow.paused_at = None
+            update_fields.append("paused_at")
 
         workflow.save(update_fields=update_fields)
 

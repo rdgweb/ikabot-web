@@ -17,6 +17,7 @@ from .views import (
     JobCancelView,
     JobRunNowView,
     JobRetryView,
+    JobRestartView,
     JobUnstuckView,
     JobBulkDeleteView,
     JobCreateModalView,
@@ -66,4 +67,5 @@ urlpatterns = [
     path("<uuid:pk>/run-now/", JobRunNowView.as_view(), name="job-run-now"),
     path("<uuid:pk>/retry/", JobRetryView.as_view(), name="job-retry"),
     path("<uuid:pk>/unstuck/", JobUnstuckView.as_view(), name="job-unstuck"),
+    path("<uuid:pk>/restart/", JobRestartView.as_view(), name="job-restart"),
 ]

@@ -27,8 +27,16 @@
 {% endblock %}
 
 {% block detail_actions %}
-{% if object.status == "queued" or object.status == "running" or object.status == "scheduled" or can_retry %}
+{% if object.status == "queued" or object.status == "running" or object.status == "scheduled" or can_retry or can_restart %}
 <div x-data="{ showCancel: false, showUnstuck: false, unstuckDelay: 5 }" class="flex items-center gap-2">
+  {% if can_restart %}
+  <form method="post" action="{% url 'jobs:job-restart' object.pk %}">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-primary btn-sm">
+      <i class="bi bi-arrow-counterclockwise"></i> Recomeçar
+    </button>
+  </form>
+  {% endif %}
   {% if is_stuck %}
   <button @click="showUnstuck = true" type="button" class="btn btn-gold btn-sm">
     <i class="bi bi-wrench-adjustable"></i> Destravar

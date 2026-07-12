@@ -170,6 +170,12 @@ def _derive_workflow_status_from_jobs(workflow: Workflow) -> tuple[str, object |
     if scheduled_job is not None:
         return ("waiting", scheduled_job.workflow_run, scheduled_job.scheduled_for, "")
 
+    # Pausa e acao explicita do usuario: sem jobs ativos, o workflow permanece
+    # pausado (nao vira finished/cancelled so porque os jobs agendados foram
+    # cancelados no pause). next_scheduled_for preservado para o resume.
+    if workflow.status == "paused":
+        return ("paused", workflow.active_run, workflow.next_scheduled_for, "")
+
     latest_run = WorkflowRun.objects.filter(workflow=workflow).order_by("-sequence").first()
     if latest_run is not None:
         if latest_run.status == "problem":
