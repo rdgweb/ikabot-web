@@ -441,6 +441,40 @@ class InternalMarketBuyRunner(BaseRunner):
                     resource_idx=resource_idx,
                     amount=purchase_amount,
                 )
+            # Guard de ouro: nao deixa a compra automatica gastar alem do saldo
+            # disponivel (menos o minimo configurado da conta). Ajusta a
+            # quantidade ou reagenda ANTES de postar a compra no jogo.
+            if unit_price > 0 and ga_id:
+                affordable = self._affordable_purchase_amount(
+                    jid=jid,
+                    ga_id=str(ga_id),
+                    order_id=str(order_id),
+                    unit_price=unit_price,
+                    min_gold=max(0, int(inputs.get("buyer_min_gold") or 0)),
+                )
+                if affordable is not None and affordable <= 0:
+                    gold_wait = self._maybe_reschedule_for_gold(
+                        jid=jid,
+                        inputs=inputs,
+                        order_id=str(order_id),
+                        buyer_city_name=buyer_city_name,
+                    )
+                    if gold_wait is not None:
+                        return gold_wait
+                    self.hub.market_order_fail(
+                        str(order_id),
+                        note="Ouro insuficiente para a compra apos varias tentativas (guard pre-compra).",
+                    )
+                    return RunnerResult(success=False, data={"error": "gold_insufficient_precheck"})
+                if affordable is not None and affordable < purchase_amount:
+                    self.log(
+                        jid,
+                        "warn",
+                        f"[Order {order_id}] Compra reduzida pelo ouro disponivel: "
+                        f"{affordable}/{purchase_amount} unidades a {unit_price} ouro/un",
+                    )
+                    purchase_amount = affordable
+
             baseline_city = fetch_city_state(client, buyer_city_id)
             baseline_amount = int(baseline_city.available_resources.get(resource_key, 0))
             self.log(
@@ -606,9 +640,73 @@ class InternalMarketBuyRunner(BaseRunner):
                     retry_inputs["gold_retry_count"] = next_retry
                     self.hub.reschedule_job(jid, delay_seconds=600, inputs=retry_inputs)
                     return RunnerResult(success=True, data={"status": "gold_retry", "retry": next_retry})
-                self.log(jid, "error", f"[Order {order_id}] Ouro insuficiente após {max_gold_retries} tentativas — cancelando")
+                self.log(jid, "error", f"[Order {order_id}] Ouro insuficiente após {max_gold_retries} tentativas — falhando a ordem")
+                try:
+                    self.hub.market_order_fail(
+                        str(order_id),
+                        note=f"Ouro insuficiente apos {max_gold_retries} tentativas: {exc_str[:300]}",
+                    )
+                except Exception as fail_exc:
+                    self.log(jid, "warn", f"[Order {order_id}] Falha ao marcar ordem como failed: {fail_exc}")
             self.log(jid, "error", f"[Order {order_id}] Buy failed: {exc}")
             return RunnerResult(success=False, data={"error": exc_str})
+
+    def _affordable_purchase_amount(
+        self,
+        *,
+        jid: str,
+        ga_id: str,
+        order_id: str,
+        unit_price: int,
+        min_gold: int,
+    ) -> int | None:
+        """Quantas unidades o ouro do comprador cobre. None = snapshot indisponivel (nao bloqueia)."""
+        try:
+            snapshot = self.hub.get_snapshot(game_account_id=ga_id)
+            base = (snapshot or {}).get("base_snapshot") or {}
+            gold = int(base.get("gold") or 0)
+        except Exception as exc:
+            self.log(jid, "warn", f"[Order {order_id}] Guard de ouro pulado (snapshot indisponivel): {exc}")
+            return None
+        spendable = max(0, gold - max(0, int(min_gold)))
+        affordable = spendable // max(1, int(unit_price))
+        self.log(
+            jid,
+            "info",
+            f"[Order {order_id}] Guard de ouro: saldo={gold:,} | minimo={min_gold:,} | "
+            f"gastavel={spendable:,} | preco={unit_price} | max_unidades={affordable}",
+        )
+        return int(affordable)
+
+    def _maybe_reschedule_for_gold(
+        self,
+        *,
+        jid: str,
+        inputs: dict[str, Any],
+        order_id: str,
+        buyer_city_name: str,
+    ) -> RunnerResult | None:
+        """Reagenda com backoff quando o ouro nao cobre nem 1 unidade. None = retries esgotados."""
+        gold_retry_count = int(inputs.get("gold_retry_count", 0))
+        max_gold_retries = 6
+        if gold_retry_count >= max_gold_retries:
+            self.log(
+                jid,
+                "error",
+                f"[Order {order_id}] Ouro insuficiente apos {max_gold_retries} tentativas (guard pre-compra) — falhando a ordem",
+            )
+            return None
+        next_retry = gold_retry_count + 1
+        retry_inputs = dict(inputs)
+        retry_inputs["gold_retry_count"] = next_retry
+        self.hub.reschedule_job(jid, delay_seconds=600, inputs=retry_inputs)
+        self.log(
+            jid,
+            "warn",
+            f"[Order {order_id}] Ouro insuficiente para 1 unidade (tentativa {next_retry}/{max_gold_retries}) | "
+            f"destino={buyer_city_name}; reagendando em 10min",
+        )
+        return RunnerResult(success=True, data={"status": "gold_retry_precheck", "retry": next_retry})
 
     def _available_purchase_amount(self, *, amount: int, preview: dict[str, int]) -> int:
         free_transporters = int(preview.get("free_transporters") or 0)
@@ -664,13 +762,32 @@ class InternalMarketBuyRunner(BaseRunner):
         order_completed_amount: int,
         fallback_eta: int,
     ) -> RunnerResult:
+        leg_gold = max(0, int(leg_amount) * max(0, int(unit_price)))
         if is_raise_gold_mode:
             self._apply_raise_gold_snapshot_updates(
                 jid=jid,
                 seller_game_account_id=seller_game_account_id,
-                credited_gold=max(0, int(leg_amount) * max(0, int(unit_price))),
+                credited_gold=leg_gold,
                 seller_city_id=int(seller_city_id),
                 order_id=str(order_id),
+            )
+        elif leg_gold > 0 and seller_game_account_id:
+            # Credita o vendedor no snapshot (delta atomico, idempotente por leg)
+            self._apply_gold_delta(
+                jid=jid,
+                game_account_id=str(seller_game_account_id),
+                delta_gold=leg_gold,
+                op_key=f"order:{order_id}:leg:{order_completed_amount}:seller",
+                label="vendedor",
+            )
+        if leg_gold > 0 and ga_id:
+            # Debita o comprador no snapshot (delta atomico, idempotente por leg)
+            self._apply_gold_delta(
+                jid=jid,
+                game_account_id=str(ga_id),
+                delta_gold=-leg_gold,
+                op_key=f"order:{order_id}:leg:{order_completed_amount}:buyer",
+                label="comprador",
             )
         next_completed_amount = min(int(order_total_amount), int(order_completed_amount) + int(leg_amount))
         remaining_amount = max(0, int(order_total_amount) - next_completed_amount)
@@ -1003,6 +1120,33 @@ class InternalMarketBuyRunner(BaseRunner):
             "delay_seconds": delay_seconds,
             "evidence": "aguardando ETA minimo de chegada do comprador",
         }
+
+    def _apply_gold_delta(
+        self,
+        *,
+        jid: str,
+        game_account_id: str,
+        delta_gold: int,
+        op_key: str,
+        label: str,
+    ) -> None:
+        """Reflete movimentacao de ouro no snapshot sem esperar check_status."""
+        try:
+            resp = self.hub.patch_snapshot_gold(
+                game_account_id,
+                delta_gold=int(delta_gold),
+                op_key=op_key,
+            )
+            if resp.get("duplicate"):
+                self.log(jid, "info", f"Ouro do {label} ja refletido no snapshot (op {op_key}).")
+            else:
+                self.log(
+                    jid,
+                    "info",
+                    f"Ouro do {label} atualizado no snapshot: {int(delta_gold):+,} -> saldo {int(resp.get('gold') or 0):,}",
+                )
+        except Exception as exc:
+            self.log(jid, "warn", f"Falha ao refletir ouro do {label} no snapshot: {exc}")
 
     def _apply_raise_gold_snapshot_updates(
         self,

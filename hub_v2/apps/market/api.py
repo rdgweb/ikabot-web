@@ -30,6 +30,7 @@ from .services import (
     create_buy_job,
     create_construction_market_intervention,
     create_internal_order_result,
+    fail_internal_order,
 )
 
 logger = logging.getLogger(__name__)
@@ -158,6 +159,35 @@ class MarketOrderCompleteView(APIView):
         if result.get("redistribution_job_id"):
             payload["redistribution_job_id"] = result["redistribution_job_id"]
         return Response(payload)
+
+
+class MarketOrderFailView(APIView):
+    """POST /api/agent/market/orders/<uuid>/fail/
+
+    Called by Runner 801 when the purchase failed terminally (e.g. gold
+    exhausted after retries). Marks the order as failed with the reason so it
+    doesn't linger forever in jobs_running.
+
+    Body: { "note": "reason" }
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request, order_id):
+        try:
+            order = InternalMarketOrder.objects.get(pk=order_id)
+        except InternalMarketOrder.DoesNotExist:
+            return Response({"error": "Order not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        note = str(request.data.get("note") or "").strip()
+        result = fail_internal_order(order, note=note)
+        return Response({
+            "ok": True,
+            "order_id": str(order.pk),
+            "status": order.status,
+            "changed": bool(result.get("changed")),
+        })
 
 
 class MarketOrderCreateView(APIView):

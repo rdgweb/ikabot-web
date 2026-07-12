@@ -308,6 +308,24 @@ class HubClient:
             "delta_freighters": int(delta_freighters),
         })
 
+    def patch_snapshot_gold(
+        self,
+        game_account_id: str,
+        *,
+        delta_gold: int,
+        op_key: str = "",
+    ) -> dict:
+        """PATCH /api/agent/snapshots/patch-gold/ - atomic gold delta.
+
+        Negative debita (compra), positive credita (venda). op_key torna a
+        operacao idempotente em retries.
+        """
+        return self._patch("/api/agent/snapshots/patch-gold", {
+            "game_account_id": game_account_id,
+            "delta_gold": int(delta_gold),
+            "op_key": str(op_key or ""),
+        })
+
     def retime_root_followup_job(
         self,
         *,
@@ -714,6 +732,14 @@ class HubClient:
         Called by Runner 801 after the purchase is confirmed in-game.
         """
         return self._post(f"/api/agent/market/orders/{order_id}/complete", {})
+
+    def market_order_fail(self, order_id: str, note: str = "") -> dict:
+        """POST /api/agent/market/orders/<uuid>/fail/
+
+        Called by Runner 801 when the purchase failed terminally (e.g. gold
+        exhausted after retries) so the order doesn't linger in jobs_running.
+        """
+        return self._post(f"/api/agent/market/orders/{order_id}/fail", {"note": str(note or "")})
 
     def create_market_order(
         self,

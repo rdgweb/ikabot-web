@@ -1119,6 +1119,7 @@ def create_buy_job(order: InternalMarketOrder) -> Job | None:
             "resource_idx": order.resource_idx,
             "amount": order.amount,
             "unit_price": order.unit_price,
+            "buyer_min_gold": int(getattr(buyer_ga, "market_min_gold", 0) or 0),
             "internal_order_id": str(order.pk),
             "source_reason": order.source_reason,
             "source_action_code": order.source_action_code,
@@ -1138,32 +1139,52 @@ def create_buy_job(order: InternalMarketOrder) -> Job | None:
     return buy_job
 
 
+def fail_internal_order(order: InternalMarketOrder, *, note: str = "") -> dict[str, bool]:
+    """Marca a ordem como failed (falha terminal reportada pelo agent).
+
+    Nao cancela jobs da cadeia: o proprio job que reportou ja esta terminando.
+    Limpa a oferta interna publicada quando aplicavel.
+    """
+    changed = _set_order_terminal_state(
+        order,
+        status="failed",
+        note=_result_note("Compra interna falhou.", note),
+    )
+    if changed:
+        schedule_internal_offer_cleanup(order, note="buy_failed")
+    return {"ok": True, "changed": changed}
+
+
 def cancel_internal_order(order: InternalMarketOrder) -> dict[str, int]:
-    """Cancel an internal market order and any active jobs in its chain."""
+    """Cancel an internal market order and any active jobs in its chain.
+
+    Cancela APENAS os jobs da propria ordem (sell/buy/redistribution) e os
+    descendentes deles (via source_job_id: retries, transportes, monitores).
+    Nunca expande para o root_job_id da cadeia: quando a ordem foi criada por
+    outro workflow (ex. plano de construcao comprando recurso), o root e o
+    plano inteiro - cancelar a ordem nao pode derrubar o plano.
+    """
     active_job_statuses = {"queued", "running", "scheduled"}
 
     direct_job_ids = [job_id for job_id in [order.sell_job_id, order.buy_job_id, order.redistribution_job_id] if job_id]
-    root_ids = set(direct_job_ids)
-    for root_id in direct_job_ids:
-        root_job = Job.objects.filter(pk=root_id).only("pk", "root_job_id").first()
-        if root_job and root_job.root_job_id:
-            root_ids.add(root_job.root_job_id)
+
+    chain_ids: set = set(direct_job_ids)
+    frontier = list(direct_job_ids)
+    while frontier:
+        children = list(
+            Job.objects.filter(source_job_id__in=frontier)
+            .exclude(pk__in=chain_ids)
+            .values_list("pk", flat=True)
+        )
+        chain_ids.update(children)
+        frontier = children
 
     active_jobs: list[Job] = []
-    if root_ids:
+    if chain_ids:
         active_jobs = list(
-            Job.objects.filter(root_job_id__in=root_ids, status__in=active_job_statuses)
+            Job.objects.filter(pk__in=chain_ids, status__in=active_job_statuses)
             .only("pk", "status")
         )
-        direct_active = list(
-            Job.objects.filter(pk__in=direct_job_ids, status__in=active_job_statuses)
-            .only("pk", "status")
-        )
-        seen = {job.pk for job in active_jobs}
-        for job in direct_active:
-            if job.pk not in seen:
-                active_jobs.append(job)
-                seen.add(job.pk)
 
     now = timezone.now()
     cancelled_job_ids = [job.pk for job in active_jobs]

@@ -445,6 +445,63 @@ class PatchSnapshotShipsView(APIView):
         return Response({"ok": True, "free_transporters": free_t, "free_freighters": free_f})
 
 
+class PatchSnapshotGoldView(APIView):
+    """PATCH /api/agent/snapshots/patch-gold/
+
+    Aplica delta atomico no ouro do base_snapshot (compra interna debita o
+    comprador, venda credita o vendedor) sem esperar um check_status completo.
+
+    Idempotente por op_key: a mesma operacao (ex. mesma leg de compra em retry)
+    nao aplica o delta duas vezes.
+
+    Body: {game_account_id, delta_gold: int, op_key: str}
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    _MAX_OP_KEYS = 30
+
+    def patch(self, request):
+        from django.db import transaction
+        from django.utils import timezone
+
+        ga_id = str(request.data.get("game_account_id") or "").strip()
+        op_key = str(request.data.get("op_key") or "").strip()
+        try:
+            delta_gold = int(request.data.get("delta_gold") or 0)
+        except (TypeError, ValueError):
+            return Response({"error": "delta_gold must be int"}, status=status.HTTP_400_BAD_REQUEST)
+        if not ga_id:
+            return Response({"error": "game_account_id required"}, status=status.HTTP_400_BAD_REQUEST)
+        if delta_gold == 0:
+            return Response({"ok": True, "no_change": True})
+
+        with transaction.atomic():
+            try:
+                snapshot = AccountSnapshot.objects.select_for_update().get(game_account__id=ga_id)
+            except AccountSnapshot.DoesNotExist:
+                return Response({"error": "snapshot not found"}, status=status.HTTP_404_NOT_FOUND)
+
+            base = dict(snapshot.base_snapshot or {})
+            op_keys = list(base.get("gold_op_keys") or [])
+            if op_key and op_key in op_keys:
+                return Response({"ok": True, "duplicate": True, "gold": int(base.get("gold") or 0)})
+
+            gold = max(0, int(base.get("gold") or 0) + delta_gold)
+            base["gold"] = gold
+            if op_key:
+                op_keys.append(op_key)
+                base["gold_op_keys"] = op_keys[-self._MAX_OP_KEYS:]
+            snapshot.base_snapshot = base
+            snapshot.updated_at = timezone.now()
+            snapshot.save(update_fields=["base_snapshot", "updated_at"])
+            bump_dashboard_cache_version()
+
+        logger.info("Snapshot gold patched: ga=%s delta=%+d → gold=%d", ga_id, delta_gold, gold)
+        return Response({"ok": True, "gold": gold})
+
+
 class CurrentSnapshotView(APIView):
     """GET /api/agent/snapshots/current/?game_account_id=<uuid>"""
 

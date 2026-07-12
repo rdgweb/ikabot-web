@@ -10,6 +10,7 @@ from .api import (
     ConstructionMarketInterventionRequestView,
     MarketOrderCompleteView,
     MarketOrderCreateView,
+    MarketOrderFailView,
     MarketSellCompleteView,
 )
 
@@ -19,6 +20,7 @@ urlpatterns = [
     path("market/orders/create/", MarketOrderCreateView.as_view(), name="order-create"),
     path("market/orders/<uuid:order_id>/sell-complete/", MarketSellCompleteView.as_view(), name="sell-complete"),
     path("market/orders/<uuid:order_id>/complete/", MarketOrderCompleteView.as_view(), name="order-complete"),
+    path("market/orders/<uuid:order_id>/fail/", MarketOrderFailView.as_view(), name="order-fail"),
     path("market/interventions/request/", ConstructionMarketInterventionRequestView.as_view(), name="intervention-request"),
     path("market/bm-offers/", BlackMarketOfferSaveView.as_view(), name="bm-offer-save"),
     path("market/bm-offers/sync/", BlackMarketOfferSyncView.as_view(), name="bm-offer-sync"),
