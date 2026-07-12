@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -106,6 +107,94 @@ class ResearchAction(BaseAction):
                     if isinstance(entry, dict):
                         feedbacks.append(entry)
         return {"ok": True, "payload": payload, "feedbacks": feedbacks}
+
+    def get_branch_details(self, *, city_id: int, research_type: str, **kwargs: Any) -> dict[str, Any]:
+        """Arvore completa de um ramo + requisitos da pesquisa selecionada.
+
+        Usa view=noViewChange&researchType=<ramo> (mesma chamada que o jogo faz
+        ao clicar na aba do ramo). Os dados vem em updateTemplateData.new_js_params:
+          - currResearchType: {nome: {aHref(researchId), liClass}} onde
+            liClass explored=pesquisada, selected explorable green=pesquisavel,
+            selected unexplorable red=indisponivel, gray=futura
+          - currResearchPrecond: {nome_requisito: {type, spanClass}} onde
+            spanClass arrow_ok=cumprido (pode ser pesquisa OU predio c/ nivel)
+          - currResearchBtnState: 'invisible' quando nao da pra pesquisar
+        """
+        params = {
+            "view": "noViewChange",
+            "researchType": str(research_type),
+            "oldView": "researchAdvisor",
+            "templateView": "researchAdvisor",
+            "cityId": str(city_id),
+            "backgroundView": "city",
+            "currentCityId": str(city_id),
+            "actionRequest": self.client._action_request,
+            "ajax": "1",
+        }
+        resp = self.client._request("POST", self.client._server_url, data=params, headers=GAME_AJAX_HEADERS)
+        try:
+            payload = resp.json()
+        except Exception as exc:
+            raise ActionError("Invalid research branch response", action="research_branch") from exc
+
+        template_data: dict[str, Any] = {}
+        for item in payload if isinstance(payload, list) else []:
+            if isinstance(item, list) and len(item) >= 2 and item[0] == "updateTemplateData" and isinstance(item[1], dict):
+                template_data = item[1]
+            elif isinstance(item, list) and len(item) >= 2 and item[0] == "updateGlobalData" and isinstance(item[1], dict):
+                token = str(item[1].get("actionRequest") or "").strip()
+                if token:
+                    self.client._action_request = token
+
+        raw_params = str(template_data.get("new_js_params") or "")
+        try:
+            data = json.loads(raw_params) if raw_params else {}
+        except Exception:
+            data = {}
+
+        researches = []
+        for name, info in (data.get("currResearchType") or {}).items():
+            info = info or {}
+            li_class = str(info.get("liClass") or "")
+            rid_match = re.search(r"researchId=(\d+)", str(info.get("aHref") or ""))
+            if "explored" in li_class:
+                status = "explored"
+            elif "explorable" in li_class and "unexplorable" not in li_class:
+                status = "available"
+            elif "unexplorable" in li_class:
+                status = "unavailable"
+            else:
+                status = "future"
+            researches.append({
+                "name": str(name),
+                "research_id": rid_match.group(1) if rid_match else "",
+                "li_class": li_class,
+                "status": status,
+            })
+
+        preconditions = []
+        for name, info in (data.get("currResearchPrecond") or {}).items():
+            info = info or {}
+            span_class = str(info.get("spanClass") or "")
+            preconditions.append({
+                "name": str(name),
+                "detail": str(info.get("type") or ""),
+                "fulfilled": "arrow_ok" in span_class,
+                "span_class": span_class,
+            })
+
+        btn_state = str(data.get("currResearchBtnState") or "")
+        return {
+            "research_type": str(research_type),
+            "researches": researches,
+            "selected_name": str(data.get("currResearchName") or ""),
+            "preconditions": preconditions,
+            "cost_text": str(data.get("currResearchCosts") or ""),
+            "time_needed": str(data.get("currResearchTimeNeeded") or ""),
+            "points_missing_text": str(data.get("currResearchPointsNotEnoughTxt") or ""),
+            "button_available": bool(btn_state) and "invisible" not in btn_state,
+            "raw_btn_state": btn_state,
+        }
 
     @classmethod
     def _parse_state_payload(cls, payload: Any) -> dict[str, Any]:

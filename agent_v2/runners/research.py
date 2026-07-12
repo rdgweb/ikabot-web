@@ -204,6 +204,44 @@ class ResearchRunner(BaseRunner):
                 next_name = str(branch.get("next_name") or RESEARCH_BRANCH_META[research_type]["fallback_name"]).strip()
                 before_next = str(branch.get("next_name") or "").strip()
 
+                # Pre-check: le a arvore do ramo e os REQUISITOS exatos da
+                # proxima pesquisa (predio/pesquisa). Se ha requisito nao
+                # cumprido, pula SEM gastar a tentativa de descoberta.
+                try:
+                    details = client.get_research_branch_details(int(city_id), research_type)
+                except Exception as exc:
+                    details = {}
+                    self.log(jid, "warn", f"Pre-check da arvore falhou para {branch_label}: {exc} — segue com verificacao pos-descoberta.")
+                missing = [
+                    f"{item['name']} ({item['detail']})" if item.get("detail") else str(item["name"])
+                    for item in (details.get("preconditions") or [])
+                    if not item.get("fulfilled")
+                ]
+                if missing:
+                    reason = "requisito pendente: " + ", ".join(missing)
+                    blocked.append(branch_label)
+                    blocked_map[research_type] = {
+                        "next_name": before_next,
+                        "reason": reason,
+                        "blocked_at": now_ts,
+                    }
+                    self.log(
+                        jid,
+                        "warn",
+                        (
+                            f"Pesquisa bloqueada por requisito: ramo={branch_label} | pesquisa={next_name or '-'} | "
+                            f"{reason}. Nao sera tentada; proximos ciclos pulam (reteste em {retest_seconds // 3600}h)."
+                        ),
+                    )
+                    continue
+                if details and not details.get("button_available") and details.get("points_missing_text"):
+                    self.log(
+                        jid,
+                        "info",
+                        f"Pesquisa sem pontos suficientes: ramo={branch_label} | {details.get('points_missing_text')}",
+                    )
+                    continue
+
                 discover_result = client.discover_research(int(city_id), research_type)
                 after_state = client.get_research_state(int(city_id))
                 after_branch = next(

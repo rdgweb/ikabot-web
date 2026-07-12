@@ -90,53 +90,76 @@ class DebugResearchDumpRunner(BaseRunner):
 
         time.sleep(1.5)
 
-        # 2. Views candidatas da arvore completa de pesquisas
-        research_ids: list[str] = []
-        for view in ("researchOverview", "researchDetail"):
+        # 2. Cada ramo via noViewChange&researchType — o load_js.params traz a
+        # arvore (explored/gray/red) e o detalhe da pesquisa selecionada
+        # (currResearchPrecond com as exigencias).
+        pending_ids: list[str] = []
+        for research_type in ("seafaring", "economy", "knowledge", "military", "mythology"):
             try:
                 resp = client._request(
                     "POST",
                     client._server_url,
                     data={
-                        "view": view,
+                        "view": "noViewChange",
+                        "researchType": research_type,
+                        "oldView": "researchAdvisor",
+                        "templateView": "researchAdvisor",
                         "cityId": city_id,
                         "backgroundView": "city",
                         "currentCityId": city_id,
-                        "templateView": view,
                         "actionRequest": client._action_request,
                         "ajax": "1",
                     },
                     headers=GAME_AJAX_HEADERS,
                 )
-                _save(f"{view}.txt", resp.text)
-                if view == "researchOverview":
-                    research_ids = list(dict.fromkeys(re.findall(r"researchId[=\":]+(\d+)", resp.text)))
-                    self.log(jid, "info", f"researchIds encontrados na overview: {research_ids[:40]}")
+                _save(f"branch_{research_type}.json", resp.text)
+                # researchIds das pesquisas NAO exploradas deste ramo.
+                # O bloco de dados (params com currResearchType) pode vir em
+                # updateTemplateData.load_js ou em updateViewScriptData — extrai
+                # por regex do texto bruto para nao depender da estrutura.
+                try:
+                    m_params = re.search(r'"params":\s*"((?:[^"\\]|\\.)*currResearchType(?:[^"\\]|\\.)*)"', resp.text)
+                    params = json.loads(json.loads(f'"{m_params.group(1)}"')) if m_params else {}
+                    found = 0
+                    for name, info in (params.get("currResearchType") or {}).items():
+                        li_class = str((info or {}).get("liClass") or "")
+                        if "explored" in li_class:
+                            continue
+                        m = re.search(r"researchId=(\d+)", str((info or {}).get("aHref") or ""))
+                        if m:
+                            pending_ids.append(m.group(1))
+                            found += 1
+                            self.log(jid, "info", f"[{research_type}] pendente: {name} | li={li_class} | id={m.group(1)}")
+                    if not params:
+                        self.log(jid, "warn", f"[{research_type}] sem bloco currResearchType na resposta")
+                except Exception as exc:
+                    self.log(jid, "warn", f"parse branch {research_type} falhou: {exc}")
             except Exception as exc:
-                self.log(jid, "warn", f"{view} falhou: {exc}")
+                self.log(jid, "warn", f"branch {research_type} falhou: {exc}")
             time.sleep(1.5)
 
-        # 3. Detalhe de algumas pesquisas (onde ficam as exigencias)
-        for research_id in research_ids[:12]:
+        # 3. Detalhe de cada pesquisa pendente (precond com exigencias)
+        for research_id in list(dict.fromkeys(pending_ids))[:20]:
             try:
                 resp = client._request(
                     "POST",
                     client._server_url,
                     data={
-                        "view": "researchDetail",
-                        "cityId": city_id,
+                        "view": "noViewChange",
                         "researchId": research_id,
+                        "oldView": "researchAdvisor",
+                        "templateView": "researchAdvisor",
+                        "cityId": city_id,
                         "backgroundView": "city",
                         "currentCityId": city_id,
-                        "templateView": "researchDetail",
                         "actionRequest": client._action_request,
                         "ajax": "1",
                     },
                     headers=GAME_AJAX_HEADERS,
                 )
-                _save(f"researchDetail_{research_id}.txt", resp.text)
+                _save(f"pending_{research_id}.json", resp.text)
             except Exception as exc:
-                self.log(jid, "warn", f"researchDetail {research_id} falhou: {exc}")
+                self.log(jid, "warn", f"pending {research_id} falhou: {exc}")
             time.sleep(1.2)
 
         self.save_game_client(ga_id, client)

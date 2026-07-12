@@ -443,6 +443,11 @@ class GameClient(IslandActions):
         action = ResearchAction(self)
         return action.discover(city_id=city_id, research_type=research_type)
 
+    def get_research_branch_details(self, city_id: int, research_type: str) -> dict[str, Any]:
+        """Full branch tree + preconditions of the selected research."""
+        action = ResearchAction(self)
+        return action.get_branch_details(city_id=city_id, research_type=research_type)
+
     def get_academy_state(self, city_id: int, position: int) -> dict[str, Any]:
         """Fetch academy state for a city academy slot."""
         action = AcademyAction(self)
