@@ -29,4 +29,5 @@ from runners import (  # noqa: F401
     world_spy,
     generals_bank,
     plunder,
+    debug_research_dump,
 )

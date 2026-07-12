@@ -92,7 +92,8 @@ class ResearchAction(BaseAction):
         try:
             payload = resp.json()
         except Exception:
-            return {"ok": True}
+            return {"ok": True, "feedbacks": []}
+        feedbacks: list[dict[str, Any]] = []
         for item in payload if isinstance(payload, list) else []:
             if not isinstance(item, list) or len(item) < 2:
                 continue
@@ -100,7 +101,11 @@ class ResearchAction(BaseAction):
                 token = str(item[1].get("actionRequest") or "").strip()
                 if token:
                     self.client._action_request = token
-        return {"ok": True, "payload": payload}
+            elif item[0] == "provideFeedback" and isinstance(item[1], list):
+                for entry in item[1]:
+                    if isinstance(entry, dict):
+                        feedbacks.append(entry)
+        return {"ok": True, "payload": payload, "feedbacks": feedbacks}
 
     @classmethod
     def _parse_state_payload(cls, payload: Any) -> dict[str, Any]:

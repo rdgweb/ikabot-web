@@ -120,15 +120,56 @@ class ResearchRunner(BaseRunner):
                 )
 
             pending.sort(key=lambda item: (_to_int(item.get("eta_seconds"), 0), str(item.get("branch_name") or "")))
-            branch = pending[0]
-            research_type = str(branch.get("research_type") or "").strip().lower()
-            branch_label = str(branch.get("branch_name") or RESEARCH_BRANCH_META[research_type]["label"]).strip()
-            next_name = str(branch.get("next_name") or RESEARCH_BRANCH_META[research_type]["fallback_name"]).strip()
-            cost_text = str(branch.get("cost_text") or branch.get("cost") or "-").strip()
-            eta_seconds = _to_int(branch.get("eta_seconds"), 0)
-            eta_human = self._duration_human(eta_seconds)
 
-            if not branch.get("ready"):
+            # Memoria de bloqueios (persistida nos inputs do ciclo): pesquisas ja
+            # recusadas pelo jogo (requisito pendente) sao PULADAS sem tentar de
+            # novo, ate o requisito mudar ou passar o periodo de reteste.
+            now_ts = int(datetime.now(timezone.utc).timestamp())
+            retest_seconds = 6 * 3600
+            blocked_map = dict(inputs.get("__blocked_research") or {})
+
+            def _is_blocked(item: dict[str, Any]) -> bool:
+                rtype = str(item.get("research_type") or "").strip().lower()
+                entry = blocked_map.get(rtype)
+                if not isinstance(entry, dict):
+                    return False
+                if str(entry.get("next_name") or "") != str(item.get("next_name") or ""):
+                    # a pesquisa do ramo mudou -> bloqueio antigo nao vale mais
+                    blocked_map.pop(rtype, None)
+                    return False
+                if now_ts - _to_int(entry.get("blocked_at"), 0) >= retest_seconds:
+                    return False  # hora de retestar
+                return True
+
+            ready_branches = []
+            for item in pending:
+                if not item.get("ready"):
+                    continue
+                if _is_blocked(item):
+                    rtype = str(item.get("research_type") or "").strip().lower()
+                    entry = blocked_map.get(rtype) or {}
+                    self.log(
+                        jid,
+                        "info",
+                        (
+                            f"Pesquisa pulada (bloqueio conhecido): ramo={item.get('branch_name')} | "
+                            f"pesquisa={item.get('next_name') or '-'} | motivo={entry.get('reason') or 'requisito pendente'}"
+                        ),
+                    )
+                    continue
+                ready_branches.append(item)
+
+            # blocked_map e atualizado in-place daqui em diante; a mesma referencia
+            # segue nos reschedule_inputs de todos os retornos abaixo.
+            inputs["__blocked_research"] = blocked_map
+            if not ready_branches:
+                branch = pending[0]
+                research_type = str(branch.get("research_type") or "").strip().lower()
+                branch_label = str(branch.get("branch_name") or RESEARCH_BRANCH_META[research_type]["label"]).strip()
+                next_name = str(branch.get("next_name") or RESEARCH_BRANCH_META[research_type]["fallback_name"]).strip()
+                cost_text = str(branch.get("cost_text") or branch.get("cost") or "-").strip()
+                eta_seconds = _to_int(branch.get("eta_seconds"), 0)
+                eta_human = self._duration_human(eta_seconds)
                 delay = max(fallback_seconds, eta_seconds + ready_margin_seconds if eta_seconds > 0 else fallback_seconds)
                 self.save_game_client(ga_id, client)
                 self.log(
@@ -151,8 +192,82 @@ class ResearchRunner(BaseRunner):
                     },
                 )
 
-            client.discover_research(int(city_id), research_type)
-            after_state = client.get_research_state(int(city_id))
+            # Tenta os ramos prontos em ordem de ETA. A descoberta e VERIFICADA
+            # comparando o next_name do ramo antes/depois: se nao avancou, o jogo
+            # recusou (tipicamente requisito de predio pendente, ex CM nivel 5) —
+            # nesse caso nao marca como concluida e tenta o proximo ramo.
+            blocked: list[str] = []
+            after_state = state
+            for branch in ready_branches:
+                research_type = str(branch.get("research_type") or "").strip().lower()
+                branch_label = str(branch.get("branch_name") or RESEARCH_BRANCH_META[research_type]["label"]).strip()
+                next_name = str(branch.get("next_name") or RESEARCH_BRANCH_META[research_type]["fallback_name"]).strip()
+                before_next = str(branch.get("next_name") or "").strip()
+
+                discover_result = client.discover_research(int(city_id), research_type)
+                after_state = client.get_research_state(int(city_id))
+                after_branch = next(
+                    (item for item in after_state.get("branches") or [] if item.get("research_type") == research_type),
+                    None,
+                ) or {}
+                after_next = str(after_branch.get("next_name") or "").strip()
+
+                advanced = bool(after_branch.get("max_reached")) or (after_next and after_next != before_next)
+                if not advanced:
+                    reason = self._feedback_reason(discover_result) or "requisito pendente (ex. predio exigido)"
+                    blocked.append(branch_label)
+                    blocked_map[research_type] = {
+                        "next_name": before_next,
+                        "reason": reason,
+                        "blocked_at": now_ts,
+                    }
+                    self.log(
+                        jid,
+                        "warn",
+                        (
+                            f"Pesquisa NAO avancou: ramo={branch_label} | pesquisa={next_name or '-'} — "
+                            f"motivo do jogo: {reason}. Proximos ciclos pulam essa pesquisa "
+                            f"(reteste em {retest_seconds // 3600}h). Tentando proximo ramo."
+                        ),
+                    )
+                    continue
+
+                blocked_map.pop(research_type, None)
+
+                self.save_game_client(ga_id, client)
+                self._persist_research_state(
+                    job_id=jid,
+                    account_id=aid,
+                    game_account_id=ga_id,
+                    snapshot=snapshot,
+                    city_snapshot=city_snapshot,
+                    state=after_state,
+                )
+                self.log(
+                    jid,
+                    "info",
+                    (
+                        f"Pesquisa concluida (verificada): ramo={branch_label} | descoberta={next_name or '-'} | "
+                        f"proxima={(after_next or 'maximo atingido')}"
+                    ),
+                )
+                return RunnerResult(
+                    success=True,
+                    reschedule_seconds=max(60, ready_margin_seconds or 60),
+                    reschedule_inputs=inputs,
+                    data={
+                        "status": "discovered",
+                        "city_id": int(city_id),
+                        "city_name": city_name,
+                        "branch_name": branch_label,
+                        "discovered_name": next_name,
+                        "next_name": after_next,
+                        "selected_branches": selected_types,
+                        "blocked_branches": blocked,
+                    },
+                )
+
+            # Todos os ramos prontos foram recusados pelo jogo (requisitos pendentes)
             self.save_game_client(ga_id, client)
             self._persist_research_state(
                 job_id=jid,
@@ -162,26 +277,23 @@ class ResearchRunner(BaseRunner):
                 city_snapshot=city_snapshot,
                 state=after_state,
             )
-            after_branch = next((item for item in after_state.get("branches") or [] if item.get("research_type") == research_type), None) or {}
             self.log(
                 jid,
-                "info",
+                "warn",
                 (
-                    f"Pesquisa concluida: ramo={branch_label} | descoberta={next_name or '-'} | "
-                    f"proxima={(after_branch.get('next_name') or 'maximo atingido')}"
+                    f"Nenhuma pesquisa avancou: ramos recusados={', '.join(blocked)}. "
+                    f"Provavel requisito de predio pendente (confira a academia). Reagendando em {fallback_seconds}s."
                 ),
             )
             return RunnerResult(
                 success=True,
-                reschedule_seconds=max(60, ready_margin_seconds or 60),
+                reschedule_seconds=fallback_seconds,
                 reschedule_inputs=inputs,
                 data={
-                    "status": "discovered",
+                    "status": "blocked_requirements",
                     "city_id": int(city_id),
                     "city_name": city_name,
-                    "branch_name": branch_label,
-                    "discovered_name": next_name,
-                    "next_name": str(after_branch.get("next_name") or ""),
+                    "blocked_branches": blocked,
                     "selected_branches": selected_types,
                 },
             )
@@ -202,6 +314,21 @@ class ResearchRunner(BaseRunner):
         except Exception as exc:
             self.log(job_id, "warn", f"Nao foi possivel obter snapshot para pesquisa: {exc}")
             return None
+
+    @staticmethod
+    def _feedback_reason(discover_result: Any) -> str:
+        """Extrai o texto de erro do provideFeedback do jogo (ex. exigencia de predio)."""
+        if not isinstance(discover_result, dict):
+            return ""
+        texts = []
+        for entry in discover_result.get("feedbacks") or []:
+            if not isinstance(entry, dict):
+                continue
+            text = str(entry.get("text") or "").strip()
+            # type 10 = confirmacao de sucesso; qualquer outro tipo e aviso/erro
+            if text and _to_int(entry.get("type"), 0) != 10:
+                texts.append(text)
+        return " | ".join(texts)
 
     @staticmethod
     def _selected_branches(inputs: dict[str, Any]) -> list[str]:
