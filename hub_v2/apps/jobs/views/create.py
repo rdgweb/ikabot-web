@@ -825,10 +825,12 @@ def _ships_form_context(snapshot):
         "transporter_max": _sint(port.get("transporter_max")),
         "transporter_bonus": _sint(port.get("transporter_bonus")),
         "transporter_next_cost": _sint(port.get("transporter_next_cost")),
+        "transporter_buyable": bool(port.get("transporter_buyable")),
         "freighter_count": _sint(port.get("freighter_count")),
         "freighter_max": _sint(port.get("freighter_max")),
         "freighter_bonus": _sint(port.get("freighter_bonus")),
         "freighter_next_cost": _sint(port.get("freighter_next_cost")),
+        "freighter_buyable": bool(port.get("freighter_buyable")),
     }
 
 
