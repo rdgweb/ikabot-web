@@ -21,11 +21,11 @@
       <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Comprar Barcos</div>
       <h3 class="mt-1 text-xl font-bold text-ink">Amplie sua frota de transporte</h3>
     </div>
-    <div class="inline-flex items-center gap-2 rounded-xl border px-3.5 py-2" style="border-color: rgba(201,156,78,0.35); background: rgba(255,255,255,0.8);">
-      <img src="{% static 'game/resources/icon_gold.png' %}" class="h-5 w-5">
+    <div class="inline-flex items-center gap-2.5 rounded-xl border px-4 py-2.5" style="border-color: rgba(201,156,78,0.35); background: rgba(255,255,255,0.8);">
+      <img src="{% static 'game/resources/icon_gold.png' %}" class="h-6 w-6 shrink-0">
       <div class="leading-tight">
-        <div class="text-[10px] uppercase tracking-wide text-muted">Ouro</div>
-        <div class="text-sm font-bold text-ink" x-text="fmt(gold)"></div>
+        <div class="text-[10px] uppercase tracking-wide text-muted">Ouro disponivel</div>
+        <div class="font-bold text-ink tabular-nums whitespace-nowrap text-lg" x-text="fmt(gold)"></div>
       </div>
     </div>
   </div>
@@ -75,10 +75,18 @@
         </select>
       </label>
       <div class="rounded-xl border p-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.8);">
-        <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Quantos comprar</span>
+        <div class="mb-1 flex items-center justify-between">
+          <span class="text-[11px] uppercase tracking-[0.14em] text-muted">Quantos comprar</span>
+          <button type="button" @click="amount = maxAffordable()" class="text-[10px] rounded border px-1.5 py-0.5" style="border-color: var(--ik-line);"
+                  x-show="maxAffordable() > 0">Maximo (<span x-text="maxAffordable()"></span>)</button>
+        </div>
         <div class="flex items-center gap-2">
-          <input type="range" min="1" max="50" step="1" x-model.number="amount" class="flex-1" style="accent-color: var(--ik-sea);">
-          <input type="number" min="1" max="500" x-model.number="amount" @input="clampAmount()" class="w-24 rounded border px-2 py-1 text-right text-[13px]" style="border-color: var(--ik-line);">
+          <input type="range" min="1" :max="Math.max(1, maxAffordable())" step="1" x-model.number="amount" class="flex-1" style="accent-color: var(--ik-sea);">
+          <input type="number" min="1" :max="maxAffordable()" x-model.number="amount" @input="clampAmount()" class="w-24 rounded border px-2 py-1 text-right text-[13px]" style="border-color: var(--ik-line);">
+        </div>
+        <div class="mt-1 text-[11px]" :class="canBuy(kind) ? 'text-muted' : 'text-[var(--ik-bad)]'">
+          <template x-if="canBuy(kind)"><span>Seu ouro compra ate <b class="text-ink" x-text="maxAffordable()"></b> barco(s)</span></template>
+          <template x-if="!canBuy(kind)"><span>Este tipo esta indisponivel para compra agora</span></template>
         </div>
       </div>
     </div>
@@ -143,7 +151,24 @@ function shipsForm() {
     // Nao ha teto rigido de compra no jogo (o max e o total atual, comprados +
     // bonus). Se o jogo permite (buyable), a compra e limitada so pelo ouro.
     canBuy(kind) { return !!this.port[kind].buyable; },
-    clampAmount() { if (this.amount < 1) this.amount = 1; if (this.amount > 500) this.amount = 500; },
+    // Maximo de barcos que o ouro cobre (custo cumulativo ancorado no jogo).
+    maxAffordable() {
+      if (!this.canBuy(this.kind)) return 0;
+      let n = 0, acc = 0;
+      while (n < 1000) {
+        const c = this.costAt(this.kind, n);
+        if (c <= 0) break;
+        if (acc + c > this.gold) break;
+        acc += c; n++;
+      }
+      return n;
+    },
+    clampAmount() {
+      const mx = Math.max(0, this.maxAffordable());
+      if (this.amount < 1) this.amount = 1;
+      if (mx > 0 && this.amount > mx) this.amount = mx;
+      if (this.amount > 500) this.amount = 500;
+    },
     perShipCosts() {
       const a = Math.min(Number(this.amount)||0, 8);
       const out = []; for (let i=0;i<a;i++) out.push(this.costAt(this.kind, i)); return out;
