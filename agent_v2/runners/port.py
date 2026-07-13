@@ -73,11 +73,8 @@ class BuyShipsRunner(BaseRunner):
             bought = 0
             spent = 0
             for i in range(amount):
-                # max e' o teto de COMPRADOS (o bonus de login e' a parte).
-                if max_ships and count + bought >= max_ships:
-                    self.log(jid, "info", f"Limite de {label} atingido ({max_ships} comprados).")
-                    break
-                # custo do i-esimo barco desta compra
+                # Sem teto rigido de compra: limita so pelo ouro. O jogo recusa
+                # se houver algum limite e o loop para ao faltar ouro.
                 if anchor_cost > 0:
                     next_cost = int(anchor_cost * (1.03 ** bought))
                 else:
