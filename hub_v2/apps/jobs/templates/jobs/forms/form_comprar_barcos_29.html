@@ -45,9 +45,9 @@
                 :class="kind===t.key ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : 'hover:translate-y-[-1px]'"
                 :style="kind===t.key ? 'border-color: rgba(79,134,185,0.5); background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(79,134,185,0.09));' : 'border-color: var(--ik-line); background: rgba(255,255,255,0.82);'">
           <div class="flex items-center gap-3">
-            <div class="flex h-12 w-12 items-center justify-center rounded-2xl border text-xl"
-                 style="border-color: rgba(79,134,185,0.2); background: linear-gradient(180deg,#fffdf8,#f4ecda); color: var(--ik-sea);">
-              <i class="bi" :class="t.icon"></i>
+            <div class="flex h-14 w-14 items-center justify-center rounded-2xl border"
+                 style="border-color: rgba(79,134,185,0.2); background: linear-gradient(180deg,#fffdf8,#f4ecda);">
+              <img :src="t.img" :alt="t.label" class="h-11 w-11 object-contain">
             </div>
             <div class="min-w-0 flex-1">
               <div class="text-sm font-bold text-ink" x-text="t.label"></div>
@@ -123,31 +123,39 @@ function shipsForm() {
     kind: 'transporter',
     cities: [], cityId: '', amount: 1, gold: 0, port: {},
     shipTypes: [
-      { key: 'transporter', label: 'Barco Mercante', icon: 'bi-box-seam' },
-      { key: 'freighter', label: 'Cargueiro', icon: 'bi-truck-flatbed' },
+      { key: 'transporter', label: 'Barco Mercante', img: '{% static "game/units/barco_mercante.png" %}' },
+      { key: 'freighter', label: 'Cargueiro', img: '{% static "game/units/cargueiro.png" %}' },
     ],
     init() {
       this.cities = JSON.parse(document.getElementById('ships-cities-data')?.textContent || '[]');
       const d = JSON.parse(document.getElementById('ships-port-data')?.textContent || '{}');
       this.gold = Number(d.gold)||0;
       this.port = {
-        transporter: { count: d.transporter_count||0, max: d.transporter_max||0, bonus: d.transporter_bonus||0, next: d.transporter_next_cost||0 },
-        freighter: { count: d.freighter_count||0, max: d.freighter_max||0, bonus: d.freighter_bonus||0, next: d.freighter_next_cost||0 },
+        transporter: { count: d.transporter_count||0, max: d.transporter_max||0, bonus: d.transporter_bonus||0, next: d.transporter_next_cost||0, buyable: !!d.transporter_buyable },
+        freighter: { count: d.freighter_count||0, max: d.freighter_max||0, bonus: d.freighter_bonus||0, next: d.freighter_next_cost||0, buyable: !!d.freighter_buyable },
       };
       if (this.cities.length) this.cityId = String(this.cities[0].id);
     },
     fmt(n) { return Math.round(Number(n)||0).toLocaleString('pt-BR'); },
-    // custo do n-esimo barco COMPRADO: floor(13500*1.03^n - 13425). Confere com o jogo.
-    shipCost(n) { return Math.floor(13500 * Math.pow(1.03, n) - 13425); },
-    canBuyMore(kind) { const p = this.port[kind]; return p.max ? Math.max(0, p.max - p.count - p.bonus) : 999; },
+    // Ancorado no custo REAL do proximo barco (do jogo) e projetado x1.03.
+    // Funciona para os dois tipos sem depender da formula base de cada um.
+    costAt(kind, i) { const nx = this.port[kind].next || 0; return Math.floor(nx * Math.pow(1.03, i)); },
+    // Quantos ainda cabem: se o jogo permite (buyable), usa a folga ate o max
+    // (max e o teto de comprados); se nao ha max, deixa livre.
+    canBuyMore(kind) {
+      const p = this.port[kind];
+      if (!p.buyable) return 0;
+      const folga = p.max ? (p.max - p.count) : 0;
+      return folga > 0 ? folga : 999; // buyable mas sem folga clara: confia no jogo/runner
+    },
     clampAmount() { const mx = Math.max(1, this.canBuyMore(this.kind)); if (this.amount > mx) this.amount = mx; if (this.amount < 1) this.amount = 1; },
     perShipCosts() {
-      const start = this.port[this.kind].count; const a = Math.min(Number(this.amount)||0, 8);
-      const out = []; for (let i=1;i<=a;i++) out.push(this.shipCost(start + i)); return out;
+      const a = Math.min(Number(this.amount)||0, 8);
+      const out = []; for (let i=0;i<a;i++) out.push(this.costAt(this.kind, i)); return out;
     },
     totalCost() {
-      const start = this.port[this.kind].count; const a = Math.max(0, Number(this.amount)||0);
-      let t = 0; for (let i=1;i<=a;i++) t += this.shipCost(start + i); return t;
+      const a = Math.max(0, Number(this.amount)||0);
+      let t = 0; for (let i=0;i<a;i++) t += this.costAt(this.kind, i); return t;
     },
     canAfford() { return this.totalCost() <= this.gold; },
   };
