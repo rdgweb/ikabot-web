@@ -767,16 +767,18 @@ def _bm_available_offers_context(cities, snapshot):
     return {"offers_by_city": offers_by_city, "scanned_at_by_city": scanned_at_by_city}
 
 
-# Mapa tipo-do-item-premium -> icone recortado do sprite oficial do jogo.
+# Mapa tipo-do-item-premium -> icone. Imagens grandes por tipo (o icone base
+# do jogo e o mesmo entre duracoes; muda so o selo de dias).
 _PREMIUM_ITEM_ICONS = {
-    "resource_bonus": "game/premium/resource.png",
-    "wood_bonus": "game/premium/resource.png",
-    "marble_bonus": "game/premium/marble.png",
-    "wine_bonus": "game/premium/wine.png",
-    "sulfur_bonus": "game/premium/sulfur.png",
-    "crystal_bonus": "game/premium/crystal.png",
+    "resource_bonus": "game/premium/serra60.png",
+    "wood_bonus": "game/premium/serra60.png",
+    "marble_bonus": "game/premium/marmore60.png",
+    "wine_bonus": "game/premium/vinho60.png",
+    "sulfur_bonus": "game/premium/enxofre60.png",
+    "crystal_bonus": "game/premium/cristal60.png",
     "storage_capacity_bonus": "game/premium/storagecapacity.png",
-    "safe_capacity_bonus": "game/premium/safecapacity.png",
+    "safe_capacity_bonus": "game/premium/cadeado2.png",
+    "bad_tax_accountant": "game/premium/ouro7.png",
 }
 
 
