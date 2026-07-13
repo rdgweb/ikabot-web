@@ -59,27 +59,28 @@ class BuyShipsRunner(BaseRunner):
             change_current_city(client, int(city_id))
             state = client.get_port_state(int(city_id))
             gold = int(state.get("gold") or 0)
-            count = int(state.get(f"{kind}_count") or 0) if kind == "transporter" else 0
-            max_ships = int(state.get("transporter_max") or 0) if kind == "transporter" else 0
-            buyable = state.get(f"{kind}_buyable")
-            if not buyable:
+            if not state.get(f"{kind}_buyable"):
                 self.log(jid, "error", f"Compra de {label} indisponivel no jogo agora.")
                 return RunnerResult(success=False, data={"error": "not_buyable"})
+
+            count = int(state.get(f"{kind}_count") or 0)
+            bonus = int(state.get(f"{kind}_bonus") or 0)
+            max_ships = int(state.get(f"{kind}_max") or 0)
+            # Ancora no custo real do proximo barco reportado pelo jogo; os
+            # seguintes seguem a curva (x1.03) a partir dele.
+            anchor_cost = int(state.get(f"{kind}_next_cost") or 0)
 
             bought = 0
             spent = 0
             for i in range(amount):
-                # Numero do proximo barco (mercante usa contador; cargueiro nao
-                # temos o count exato, entao confia no custo reportado do jogo).
-                if kind == "transporter":
-                    if max_ships and count + bought >= max_ships:
-                        self.log(jid, "info", f"Limite de {label} atingido ({max_ships}).")
-                        break
-                    next_cost = ship_cost(count + bought + 1)
+                if max_ships and count + bonus + bought >= max_ships:
+                    self.log(jid, "info", f"Limite de {label} atingido ({max_ships}).")
+                    break
+                # custo do i-esimo barco desta compra
+                if anchor_cost > 0:
+                    next_cost = int(anchor_cost * (1.03 ** bought))
                 else:
-                    next_cost = int(state.get("freighter_next_cost") or 0)
-                if next_cost <= 0:
-                    next_cost = int(state.get(f"{kind}_next_cost") or 0)
+                    next_cost = ship_cost(count + bought + 1)
                 if gold - spent < next_cost:
                     self.log(jid, "warn", f"Ouro insuficiente para o proximo {label}: precisa {next_cost:,}, tem {gold - spent:,}.")
                     break
@@ -87,7 +88,7 @@ class BuyShipsRunner(BaseRunner):
                 client.buy_ship(int(city_id), kind)
                 bought += 1
                 spent += next_cost
-                self.log(jid, "info", f"Comprado {label} {bought}/{amount} por ~{next_cost:,} ouro.")
+                self.log(jid, "info", f"Comprado {label} {bought}/{amount} (#{count + bought}) por ~{next_cost:,} ouro.")
 
             if bought == 0:
                 self.log(jid, "error", f"Nenhum {label} comprado.")

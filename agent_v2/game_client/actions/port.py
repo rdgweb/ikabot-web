@@ -81,13 +81,22 @@ class PortAction(BaseAction):
             v = td.get(action_key) or {}
             return str(v.get("buttonState") or "")
 
+        t_count = _to_int((td.get("bonusShipTableTransporters") or {}).get("text"))
+        t_max = _to_int(td.get("js_maxTransporter"))
+        f_count = _to_int((td.get("bonusShipTableFreighters") or {}).get("text"))
+        f_max = _to_int(td.get("js_maxFreighter"))
         return {
             "city_id": int(city_id),
             "gold": gold,
-            "transporter_count": _to_int((td.get("bonusShipTableTransporters") or {}).get("text")),
-            "transporter_max": _to_int(td.get("js_maxTransporter")),
+            # mercante: comprados (count), bonus de login = max - comprados
+            "transporter_count": t_count,
+            "transporter_max": t_max,
+            "transporter_bonus": max(0, t_max - t_count) if t_max else 0,
             "transporter_next_cost": _to_int(td.get("js_transporterCosts")),
             "transporter_buyable": _state("js_buyTransporterAction") == "enabled",
+            "freighter_count": f_count,
+            "freighter_max": f_max,
+            "freighter_bonus": max(0, f_max - f_count) if f_max else 0,
             "freighter_next_cost": _to_int(td.get("js_freighterCosts")),
             "freighter_buyable": _state("js_buyFreighterAction") == "enabled",
         }

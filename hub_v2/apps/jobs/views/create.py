@@ -802,8 +802,9 @@ _TRADE_TO_CITY_KEY = {
 
 
 def _ships_form_context(snapshot):
-    """Cidades + ouro/barcos para o form de Comprar Barcos (custo calculado em JS)."""
+    """Cidades + porto (comprados/bonus/custo) para o form de Comprar Barcos."""
     base = (snapshot.base_snapshot if snapshot else {}) or {}
+    port = base.get("port_state") or {}
 
     def _sint(v):
         try:
@@ -819,10 +820,15 @@ def _ships_form_context(snapshot):
     return {
         "cities": cities,
         "gold": _sint(base.get("gold")),
-        "free_transporters": _sint(base.get("free_transporters")),
-        "max_transporters": _sint(base.get("max_transporters")),
-        "free_freighters": _sint(base.get("free_freighters")),
-        "max_freighters": _sint(base.get("max_freighters")),
+        "has_port": bool(port),
+        "transporter_count": _sint(port.get("transporter_count")),
+        "transporter_max": _sint(port.get("transporter_max")),
+        "transporter_bonus": _sint(port.get("transporter_bonus")),
+        "transporter_next_cost": _sint(port.get("transporter_next_cost")),
+        "freighter_count": _sint(port.get("freighter_count")),
+        "freighter_max": _sint(port.get("freighter_max")),
+        "freighter_bonus": _sint(port.get("freighter_bonus")),
+        "freighter_next_cost": _sint(port.get("freighter_next_cost")),
     }
 
 

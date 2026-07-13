@@ -318,6 +318,33 @@ class CheckStatusRunner(BaseRunner):
             except Exception as _pe:
                 self.log(jid, "info", f"Leitura premium ignorada: {_pe}")
 
+            # ── Porto: barcos comprados/bonus/custo (frota e' global da conta) ──
+            port_state = existing_base.get("port_state") or {}
+            try:
+                ref_city_id2 = None
+                for _c in cities_data:
+                    if isinstance(_c, dict) and str(_c.get("id") or "").strip():
+                        ref_city_id2 = int(str(_c.get("id")).strip())
+                        break
+                if ref_city_id2 is not None:
+                    ps = client.get_port_state(ref_city_id2)
+                    port_state = {
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "transporter_count": ps.get("transporter_count", 0),
+                        "transporter_max": ps.get("transporter_max", 0),
+                        "transporter_bonus": ps.get("transporter_bonus", 0),
+                        "transporter_next_cost": ps.get("transporter_next_cost", 0),
+                        "transporter_buyable": ps.get("transporter_buyable", False),
+                        "freighter_count": ps.get("freighter_count", 0),
+                        "freighter_max": ps.get("freighter_max", 0),
+                        "freighter_bonus": ps.get("freighter_bonus", 0),
+                        "freighter_next_cost": ps.get("freighter_next_cost", 0),
+                        "freighter_buyable": ps.get("freighter_buyable", False),
+                    }
+                    self.log(jid, "info", f"Porto: {port_state['transporter_count']} mercantes comprados + {port_state['transporter_bonus']} bonus")
+            except Exception as _poe:
+                self.log(jid, "info", f"Leitura do porto ignorada: {_poe}")
+
             snapshot = {
                 "base_snapshot": {
                     "player_name": player_name,
@@ -354,6 +381,7 @@ class CheckStatusRunner(BaseRunner):
                     "shrine_gods": existing_base.get("shrine_gods") or {},
                     "shrine_updated_at": existing_base.get("shrine_updated_at", ""),
                     "premium_state": premium_state,
+                    "port_state": port_state,
                 },
                 "cities": cities_data,
                 "military": military_data,
