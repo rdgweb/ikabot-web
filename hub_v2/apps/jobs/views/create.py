@@ -780,12 +780,32 @@ _PREMIUM_ITEM_ICONS = {
 }
 
 
+# Recursos do negociante premium: chave interna -> (label, icone).
+_PREMIUM_TRADE_RESOURCES = [
+    ("resource", "Madeira", "game/resources/icon_wood.png"),
+    ("wine", "Vinho", "game/resources/icon_wine.png"),
+    ("marble", "Marmore", "game/resources/icon_marble.png"),
+    ("crystal", "Cristal", "game/resources/icon_glass.png"),
+    ("sulfur", "Enxofre", "game/resources/icon_sulfur.png"),
+]
+
+# Chave de recurso do negociante -> chave de estoque na cidade do snapshot.
+_TRADE_TO_CITY_KEY = {
+    "resource": "wood",
+    "wine": "wine",
+    "marble": "marble",
+    "crystal": "crystal",
+    "sulfur": "sulfur",
+}
+
+
 def _premium_form_context(snapshot):
     """Monta a UI do form de Recursos Premium a partir do premium_state do snapshot.
 
-    So expoe, por ora, os itens usaveis DIRETO do inventario (sem escolher
-    cidade/deus) e o negociante premium. A leitura e feita pelo Verificar
-    Status (ac=100); aqui apenas apresentamos para o usuario escolher.
+    Itens usaveis DIRETO do inventario + negociante premium. Para o negociante,
+    monta por cidade o estoque e a capacidade de cada recurso para o usuario
+    montar uma troca 1:1 por porcentagem (o valor real e recalculado na
+    execucao, ja que o snapshot tem atraso).
     """
     base = (snapshot.base_snapshot if snapshot else {}) or {}
     state = base.get("premium_state") or {}
@@ -808,10 +828,36 @@ def _premium_form_context(snapshot):
         })
     direct_items.sort(key=lambda r: (not r["has_icon"], str(r["name"])))
 
+    trade_resources = [
+        {"key": key, "label": label, "icon": static(icon)}
+        for key, label, icon in _PREMIUM_TRADE_RESOURCES
+    ]
+
+    def _sint(v):
+        try:
+            return max(0, int(float(v or 0)))
+        except (TypeError, ValueError):
+            return 0
+
+    trade_cities = []
+    for city in (snapshot.cities if snapshot else []) or []:
+        if not isinstance(city, dict) or str(city.get("id") or "").strip() == "":
+            continue
+        capacity = _sint(city.get("warehouse_capacity"))
+        stock = {key: _sint(city.get(_TRADE_TO_CITY_KEY[key])) for key, _, _ in _PREMIUM_TRADE_RESOURCES}
+        trade_cities.append({
+            "id": str(city.get("id")),
+            "name": str(city.get("name") or city.get("id")),
+            "capacity": capacity,
+            "stock": stock,
+        })
+
     trader = state.get("trader") or {}
     return {
         "direct_items": direct_items,
         "trader": trader,
+        "trade_resources": trade_resources,
+        "trade_cities": trade_cities,
         "updated_at": state.get("updated_at", ""),
         "has_data": bool(items),
     }
@@ -2587,19 +2633,24 @@ class JobSubmitView(LoginRequiredMixin, View):
                 return self._error("Selecione um item para usar.")
             inputs["premium_item_id"] = int(item_id)
         else:
-            send = str(request.POST.get("premium_trade_send") or "").strip()
-            receive = str(request.POST.get("premium_trade_receive") or "").strip()
+            city_id = str(request.POST.get("premium_trade_city_id") or "").strip()
+            if not city_id:
+                return self._error("Selecione a cidade do negociante.")
             try:
-                amount = int(request.POST.get("premium_trade_amount") or 0)
-            except (TypeError, ValueError):
-                amount = 0
-            if not send or not receive or send == receive:
-                return self._error("Escolha recursos diferentes para enviar e receber.")
-            if amount <= 0:
-                return self._error("Informe uma quantidade valida para a troca.")
-            inputs["premium_trade_send"] = send
-            inputs["premium_trade_receive"] = receive
-            inputs["premium_trade_amount"] = amount
+                send_pct = json.loads(request.POST.get("premium_send_pct_json") or "{}")
+                receive_weights = json.loads(request.POST.get("premium_receive_weights_json") or "{}")
+            except Exception:
+                return self._error("Dados da troca invalidos.")
+            valid_keys = {"resource", "wine", "marble", "crystal", "sulfur"}
+            send_pct = {k: max(0, min(100, int(v or 0))) for k, v in send_pct.items() if k in valid_keys}
+            receive_weights = {k: max(0, int(v or 0)) for k, v in receive_weights.items() if k in valid_keys}
+            if not any(v > 0 for v in send_pct.values()):
+                return self._error("Defina quanto enviar de pelo menos um recurso.")
+            if not any(v > 0 for v in receive_weights.values()):
+                return self._error("Defina o recebimento (use Equilibrar).")
+            inputs["premium_trade_city_id"] = city_id
+            inputs["premium_send_pct"] = send_pct
+            inputs["premium_receive_weights"] = receive_weights
 
         create_job_with_workflow(
             account=ga.account,

@@ -3,29 +3,20 @@
 {% if action_code == 28 %}
 {{ premium_ui.direct_items|json_script:"premium-items-data" }}
 {{ premium_ui.trader|json_script:"premium-trader-data" }}
+{{ premium_ui.trade_resources|json_script:"premium-resources-data" }}
+{{ premium_ui.trade_cities|json_script:"premium-cities-data" }}
 
 <div class="mb-5 rounded-[24px] border shadow-[0_12px_36px_rgba(60,45,18,0.10)]"
      style="border-color: var(--ik-line); background:
        radial-gradient(760px 280px at 0% 0%, rgba(140,90,180,0.12), transparent 60%),
        linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
-     x-data="{
-       mode: 'use_item',
-       items: [],
-       trader: {},
-       itemId: '',
-       tradeSend: 'wine',
-       tradeReceive: 'crystal',
-       tradeAmount: 0,
-       selectedItem() { return this.items.find(i => String(i.item_id) === String(this.itemId)) || null; }
-     }"
-     x-init="items = JSON.parse(document.getElementById('premium-items-data')?.textContent || '[]');
-             trader = JSON.parse(document.getElementById('premium-trader-data')?.textContent || '{}');">
+     x-data="premiumForm()" x-init="init()">
 
   <input type="hidden" name="premium_mode" :value="mode">
   <input type="hidden" name="premium_item_id" :value="mode === 'use_item' ? itemId : ''">
-  <input type="hidden" name="premium_trade_send" :value="mode === 'trade' ? tradeSend : ''">
-  <input type="hidden" name="premium_trade_receive" :value="mode === 'trade' ? tradeReceive : ''">
-  <input type="hidden" name="premium_trade_amount" :value="mode === 'trade' ? tradeAmount : ''">
+  <input type="hidden" name="premium_trade_city_id" :value="mode === 'trade' ? cityId : ''">
+  <input type="hidden" name="premium_send_pct_json" :value="mode === 'trade' ? JSON.stringify(sendPct) : ''">
+  <input type="hidden" name="premium_receive_weights_json" :value="mode === 'trade' ? JSON.stringify(receiveWeights) : ''">
 
   <div class="border-b px-5 py-5 md:px-6"
        style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
@@ -114,9 +105,9 @@
     </template>
   </div>
 
-  {# ── Negociante premium ── #}
+  {# ── Negociante premium (troca 1:1, multiplos recursos, por %) ── #}
   <div x-show="mode === 'trade'" x-cloak class="px-5 py-5 md:px-6">
-    <div class="mb-3 flex flex-wrap items-center gap-3">
+    <div class="mb-4 flex flex-wrap items-center gap-3">
       <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: #8c5ab4;">Negociante premium</div>
       <template x-if="trader.payment_method">
         <span class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px]"
@@ -127,35 +118,135 @@
             : `Paga ${trader.payment_price || trader.trade_price_ambrosia} ambrosia (voce tem ${trader.ambrosia_available})`"></span>
         </span>
       </template>
+      <span class="text-[11px] text-muted"><i class="bi bi-info-circle"></i> Troca 1:1 — o total enviado e igual ao recebido</span>
     </div>
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      <label class="rounded-xl border p-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.8);">
-        <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Enviar</span>
-        <select x-model="tradeSend" class="form-input">
-          <option value="wine">Vinho</option><option value="marble">Marmore</option>
-          <option value="crystal">Cristal</option><option value="sulfur">Enxofre</option>
-          <option value="resource">Madeira</option>
-        </select>
-      </label>
-      <label class="rounded-xl border p-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.8);">
-        <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Receber</span>
-        <select x-model="tradeReceive" class="form-input">
-          <option value="crystal">Cristal</option><option value="marble">Marmore</option>
-          <option value="wine">Vinho</option><option value="sulfur">Enxofre</option>
-          <option value="resource">Madeira</option>
-        </select>
-      </label>
-      <label class="rounded-xl border p-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.8);">
-        <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Quantidade</span>
-        <input type="number" min="0" x-model="tradeAmount" class="form-input" placeholder="0">
-      </label>
+
+    {# Cidade #}
+    <label class="mb-4 block max-w-sm">
+      <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Cidade (armazem)</span>
+      <select x-model="cityId" @change="onCityChange()" class="form-input">
+        <template x-for="c in cities" :key="c.id">
+          <option :value="c.id" x-text="c.name"></option>
+        </template>
+      </select>
+    </label>
+
+    <div x-show="!currentCity()" class="rounded-xl border px-3 py-4 text-sm text-muted"
+         style="border-color: var(--ik-line); background: rgba(255,255,255,0.7);">Selecione uma cidade.</div>
+
+    <div x-show="currentCity()" class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      {# ENVIAR: slider % por recurso #}
+      <section class="rounded-[20px] border p-4" style="border-color: rgba(196,80,60,0.22); background: linear-gradient(180deg, rgba(196,80,60,0.07), rgba(255,255,255,0.82));">
+        <div class="mb-3 flex items-center justify-between">
+          <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: #b34a3a;"><i class="bi bi-box-arrow-up"></i> Enviar</div>
+          <div class="text-[11px] font-semibold text-ink">Total: <span x-text="fmt(totalSend())"></span></div>
+        </div>
+        <template x-for="r in resources" :key="'s-'+r.key">
+          <div class="mb-3">
+            <div class="mb-1 flex items-center justify-between gap-2">
+              <span class="inline-flex items-center gap-1.5 text-sm text-ink">
+                <img :src="r.icon" :alt="r.label" class="h-4 w-4 object-contain"> <span x-text="r.label"></span>
+              </span>
+              <span class="text-[11px] text-muted">
+                <span x-text="sendPct[r.key] || 0"></span>% de <span x-text="fmt(currentCity().stock[r.key])"></span>
+                = <b class="text-ink" x-text="fmt(sendAmount(r.key))"></b>
+              </span>
+            </div>
+            <input type="range" min="0" max="100" step="5" x-model.number="sendPct[r.key]"
+                   class="w-full" style="accent-color: #b34a3a;">
+          </div>
+        </template>
+        <div class="flex flex-wrap gap-1.5">
+          <button type="button" @click="sendAll()" class="text-[11px] rounded-lg border px-2 py-1" style="border-color: var(--ik-line);">Tudo 100%</button>
+          <button type="button" @click="sendNone()" class="text-[11px] rounded-lg border px-2 py-1" style="border-color: var(--ik-line);">Zerar</button>
+        </div>
+      </section>
+
+      {# RECEBER: distribuicao do total, limitado por espaco #}
+      <section class="rounded-[20px] border p-4" style="border-color: rgba(95,140,78,0.22); background: linear-gradient(180deg, rgba(95,140,78,0.08), rgba(255,255,255,0.82));">
+        <div class="mb-3 flex items-center justify-between">
+          <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);"><i class="bi bi-box-arrow-in-down"></i> Receber</div>
+          <div class="text-[11px] font-semibold" :class="totalReceive() === totalSend() ? 'text-ink' : 'text-[var(--ik-bad)]'">
+            Total: <span x-text="fmt(totalReceive())"></span>
+          </div>
+        </div>
+        <template x-for="r in resources" :key="'r-'+r.key">
+          <div class="mb-3">
+            <div class="mb-1 flex items-center justify-between gap-2">
+              <span class="inline-flex items-center gap-1.5 text-sm text-ink">
+                <img :src="r.icon" :alt="r.label" class="h-4 w-4 object-contain"> <span x-text="r.label"></span>
+              </span>
+              <span class="text-[11px] text-muted">
+                receber <b class="text-ink" x-text="fmt(receiveAmount(r.key))"></b>
+                · livre <span x-text="fmt(freeSpace(r.key))"></span>
+              </span>
+            </div>
+            <input type="range" min="0" max="10" step="1" x-model.number="receiveWeights[r.key]"
+                   class="w-full" style="accent-color: var(--ik-good);">
+          </div>
+        </template>
+        <div class="flex flex-wrap gap-1.5">
+          <button type="button" @click="balance()" class="text-[11px] rounded-lg border px-2 py-1" style="border-color: var(--ik-line);"><i class="bi bi-distribute-vertical"></i> Equilibrar</button>
+          <button type="button" @click="receiveNone()" class="text-[11px] rounded-lg border px-2 py-1" style="border-color: var(--ik-line);">Zerar</button>
+        </div>
+      </section>
     </div>
-    <div class="mt-3 rounded-xl border px-4 py-3 text-[11px] text-muted"
-         style="border-color: rgba(201,156,78,0.25); background: rgba(201,156,78,0.06);">
-      <i class="bi bi-exclamation-triangle"></i>
-      A troca so acontece quando o job roda. Confirme os valores — o negociante cobra
-      <span x-text="trader.payment_method === 'item' ? 'um item do inventario' : 'ambrosia'"></span> por operacao.
+
+    <div x-show="currentCity()" class="mt-4 rounded-xl border px-4 py-3 text-[11px]"
+         :style="totalReceive() === totalSend() && totalSend() > 0
+           ? 'border-color: rgba(95,140,78,0.3); background: rgba(95,140,78,0.06); color: var(--ik-good);'
+           : 'border-color: rgba(201,156,78,0.3); background: rgba(201,156,78,0.06); color: var(--ik-gold);'">
+      <template x-if="totalSend() === 0"><span><i class="bi bi-info-circle"></i> Defina quanto enviar de cada recurso.</span></template>
+      <template x-if="totalSend() > 0 && totalReceive() !== totalSend()">
+        <span><i class="bi bi-exclamation-triangle"></i> A troca e 1:1: ajuste o recebimento para bater com o total enviado (<b x-text="fmt(totalSend())"></b>). O runner recalcula pelos valores reais na hora, mas mantenha a proporcao.</span>
+      </template>
+      <template x-if="totalSend() > 0 && totalReceive() === totalSend()">
+        <span><i class="bi bi-check-circle"></i> Troca equilibrada. Como o snapshot tem atraso, os valores sao aplicados por % do estoque real no momento da execucao, limitados pelo espaco do armazem.</span>
+      </template>
     </div>
   </div>
 </div>
+
+<script>
+function premiumForm() {
+  return {
+    mode: 'use_item',
+    items: [], trader: {}, resources: [], cities: [],
+    itemId: '',
+    cityId: '',
+    sendPct: {}, receiveWeights: {},
+    init() {
+      this.items = JSON.parse(document.getElementById('premium-items-data')?.textContent || '[]');
+      this.trader = JSON.parse(document.getElementById('premium-trader-data')?.textContent || '{}');
+      this.resources = JSON.parse(document.getElementById('premium-resources-data')?.textContent || '[]');
+      this.cities = JSON.parse(document.getElementById('premium-cities-data')?.textContent || '[]');
+      this.resources.forEach(r => { this.sendPct[r.key] = 0; this.receiveWeights[r.key] = 0; });
+      if (this.cities.length) this.cityId = String(this.cities[0].id);
+    },
+    selectedItem() { return this.items.find(i => String(i.item_id) === String(this.itemId)) || null; },
+    currentCity() { return this.cities.find(c => String(c.id) === String(this.cityId)) || null; },
+    onCityChange() { /* mantem selecoes */ },
+    fmt(n) { return Math.round(Number(n)||0).toLocaleString('pt-BR'); },
+    sendAmount(key) { const c = this.currentCity(); if (!c) return 0; return Math.floor((c.stock[key]||0) * (this.sendPct[key]||0) / 100); },
+    totalSend() { return this.resources.reduce((s, r) => s + this.sendAmount(r.key), 0); },
+    totalWeight() { return this.resources.reduce((s, r) => s + (Number(this.receiveWeights[r.key])||0), 0); },
+    freeSpace(key) { const c = this.currentCity(); if (!c) return 0; return Math.max(0, (c.capacity||0) - (c.stock[key]||0)); },
+    receiveAmount(key) {
+      const tw = this.totalWeight(); if (tw <= 0) return 0;
+      const raw = Math.floor(this.totalSend() * (Number(this.receiveWeights[key])||0) / tw);
+      return Math.min(raw, this.freeSpace(key));
+    },
+    totalReceive() { return this.resources.reduce((s, r) => s + this.receiveAmount(r.key), 0); },
+    sendAll() { this.resources.forEach(r => this.sendPct[r.key] = 100); },
+    sendNone() { this.resources.forEach(r => this.sendPct[r.key] = 0); },
+    receiveNone() { this.resources.forEach(r => this.receiveWeights[r.key] = 0); },
+    balance() {
+      // distribui peso 1 aos recursos com espaco livre e que nao estao sendo enviados 100%
+      this.resources.forEach(r => {
+        this.receiveWeights[r.key] = this.freeSpace(r.key) > 0 ? 1 : 0;
+      });
+    },
+  };
+}
+</script>
 {% endif %}
