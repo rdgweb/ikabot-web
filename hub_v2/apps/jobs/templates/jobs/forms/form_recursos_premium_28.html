@@ -15,8 +15,8 @@
   <input type="hidden" name="premium_mode" :value="mode">
   <input type="hidden" name="premium_item_id" :value="mode === 'use_item' ? itemId : ''">
   <input type="hidden" name="premium_trade_city_id" :value="mode === 'trade' ? cityId : ''">
-  <input type="hidden" name="premium_send_pct_json" :value="mode === 'trade' ? JSON.stringify(sendPct) : ''">
-  <input type="hidden" name="premium_receive_weights_json" :value="mode === 'trade' ? JSON.stringify(receiveWeights) : ''">
+  <input type="hidden" name="premium_reduce_pct_json" :value="mode === 'trade' ? JSON.stringify(reducePct()) : ''">
+  <input type="hidden" name="premium_receive_json" :value="mode === 'trade' ? JSON.stringify(receiveAmt) : ''">
 
   <div class="border-b px-5 py-5 md:px-6"
        style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
@@ -134,12 +134,21 @@
     <div x-show="!currentCity()" class="rounded-xl border px-3 py-4 text-sm text-muted"
          style="border-color: var(--ik-line); background: rgba(255,255,255,0.7);">Selecione uma cidade.</div>
 
+    {# Resumo do pool #}
+    <div x-show="currentCity()" class="mb-4 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-2.5"
+         style="border-color: rgba(140,90,180,0.22); background: rgba(255,255,255,0.7);">
+      <span class="text-[11px] text-muted">Liberado para receber (o que tirei do enviar):</span>
+      <span class="text-sm font-bold" style="color: #8c5ab4;" x-text="fmt(pool())"></span>
+      <span class="text-[11px] text-muted">· ja alocado <b class="text-ink" x-text="fmt(totalReceive())"></b></span>
+      <span class="text-[11px]" :class="poolFree() === 0 ? 'text-[var(--ik-good)]' : 'text-muted'">· restante <b x-text="fmt(poolFree())"></b></span>
+    </div>
+
     <div x-show="currentCity()" class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      {# ENVIAR: slider % por recurso #}
+      {# ENVIAR: slider comeca 100%, reduzir libera pool #}
       <section class="rounded-[20px] border p-4" style="border-color: rgba(196,80,60,0.22); background: linear-gradient(180deg, rgba(196,80,60,0.07), rgba(255,255,255,0.82));">
-        <div class="mb-3 flex items-center justify-between">
+        <div class="mb-1 flex items-center justify-between">
           <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: #b34a3a;"><i class="bi bi-box-arrow-up"></i> Enviar</div>
-          <div class="text-[11px] font-semibold text-ink">Total: <span x-text="fmt(totalSend())"></span></div>
+          <div class="text-[11px] text-muted">Reduza para liberar recebimento</div>
         </div>
         <template x-for="r in resources" :key="'s-'+r.key">
           <div class="mb-3">
@@ -148,27 +157,31 @@
                 <img :src="r.icon" :alt="r.label" class="h-4 w-4 object-contain"> <span x-text="r.label"></span>
               </span>
               <span class="text-[11px] text-muted">
-                <span x-text="sendPct[r.key] || 0"></span>% de <span x-text="fmt(currentCity().stock[r.key])"></span>
-                = <b class="text-ink" x-text="fmt(sendAmount(r.key))"></b>
+                envia <b class="text-ink" x-text="fmt(sendKeep(r.key))"></b>
+                · liberei <b style="color:#8c5ab4;" x-text="fmt(released(r.key))"></b>
               </span>
             </div>
-            <input type="range" min="0" max="100" step="5" x-model.number="sendPct[r.key]"
-                   class="w-full" style="accent-color: #b34a3a;">
+            <div class="flex items-center gap-2">
+              <input type="range" min="0" max="100" step="1" x-model.number="sendPct[r.key]"
+                     class="flex-1" style="accent-color: #b34a3a;">
+              <input type="number" min="0" :max="currentCity().stock[r.key]"
+                     :value="sendKeep(r.key)"
+                     @input="setSendKeep(r.key, $event.target.value)"
+                     class="w-28 rounded border px-2 py-1 text-right text-[12px]" style="border-color: var(--ik-line);">
+            </div>
           </div>
         </template>
         <div class="flex flex-wrap gap-1.5">
-          <button type="button" @click="sendAll()" class="text-[11px] rounded-lg border px-2 py-1" style="border-color: var(--ik-line);">Tudo 100%</button>
-          <button type="button" @click="sendNone()" class="text-[11px] rounded-lg border px-2 py-1" style="border-color: var(--ik-line);">Zerar</button>
+          <button type="button" @click="sendAll()" class="text-[11px] rounded-lg border px-2 py-1" style="border-color: var(--ik-line);">Enviar tudo (100%)</button>
+          <button type="button" @click="sendNone()" class="text-[11px] rounded-lg border px-2 py-1" style="border-color: var(--ik-line);">Liberar tudo (0%)</button>
         </div>
       </section>
 
-      {# RECEBER: distribuicao do total, limitado por espaco #}
+      {# RECEBER: valor livre por recurso, limitado por pool E espaco do armazem #}
       <section class="rounded-[20px] border p-4" style="border-color: rgba(95,140,78,0.22); background: linear-gradient(180deg, rgba(95,140,78,0.08), rgba(255,255,255,0.82));">
-        <div class="mb-3 flex items-center justify-between">
+        <div class="mb-1 flex items-center justify-between">
           <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);"><i class="bi bi-box-arrow-in-down"></i> Receber</div>
-          <div class="text-[11px] font-semibold" :class="totalReceive() === totalSend() ? 'text-ink' : 'text-[var(--ik-bad)]'">
-            Total: <span x-text="fmt(totalReceive())"></span>
-          </div>
+          <div class="text-[11px] text-muted">Limite: pool e espaco do armazem</div>
         </div>
         <template x-for="r in resources" :key="'r-'+r.key">
           <div class="mb-3">
@@ -177,31 +190,36 @@
                 <img :src="r.icon" :alt="r.label" class="h-4 w-4 object-contain"> <span x-text="r.label"></span>
               </span>
               <span class="text-[11px] text-muted">
-                receber <b class="text-ink" x-text="fmt(receiveAmount(r.key))"></b>
-                · livre <span x-text="fmt(freeSpace(r.key))"></span>
+                livre armazem <b class="text-ink" x-text="fmt(freeSpace(r.key))"></b>
               </span>
             </div>
-            <input type="range" min="0" max="10" step="1" x-model.number="receiveWeights[r.key]"
-                   class="w-full" style="accent-color: var(--ik-good);">
+            <div class="flex items-center gap-2">
+              <input type="range" min="0" :max="maxReceive(r.key)" step="1"
+                     x-model.number="receiveAmt[r.key]" @input="clampReceive(r.key)"
+                     class="flex-1" style="accent-color: var(--ik-good);">
+              <input type="number" min="0" :max="maxReceive(r.key)"
+                     x-model.number="receiveAmt[r.key]" @input="clampReceive(r.key)"
+                     class="w-28 rounded border px-2 py-1 text-right text-[12px]" style="border-color: var(--ik-line);">
+            </div>
           </div>
         </template>
         <div class="flex flex-wrap gap-1.5">
-          <button type="button" @click="balance()" class="text-[11px] rounded-lg border px-2 py-1" style="border-color: var(--ik-line);"><i class="bi bi-distribute-vertical"></i> Equilibrar</button>
+          <button type="button" @click="balance()" class="text-[11px] rounded-lg border px-2 py-1" style="border-color: var(--ik-line);"><i class="bi bi-distribute-vertical"></i> Equilibrar pool</button>
           <button type="button" @click="receiveNone()" class="text-[11px] rounded-lg border px-2 py-1" style="border-color: var(--ik-line);">Zerar</button>
         </div>
       </section>
     </div>
 
     <div x-show="currentCity()" class="mt-4 rounded-xl border px-4 py-3 text-[11px]"
-         :style="totalReceive() === totalSend() && totalSend() > 0
+         :style="totalReceive() === pool() && pool() > 0
            ? 'border-color: rgba(95,140,78,0.3); background: rgba(95,140,78,0.06); color: var(--ik-good);'
            : 'border-color: rgba(201,156,78,0.3); background: rgba(201,156,78,0.06); color: var(--ik-gold);'">
-      <template x-if="totalSend() === 0"><span><i class="bi bi-info-circle"></i> Defina quanto enviar de cada recurso.</span></template>
-      <template x-if="totalSend() > 0 && totalReceive() !== totalSend()">
-        <span><i class="bi bi-exclamation-triangle"></i> A troca e 1:1: ajuste o recebimento para bater com o total enviado (<b x-text="fmt(totalSend())"></b>). O runner recalcula pelos valores reais na hora, mas mantenha a proporcao.</span>
+      <template x-if="pool() === 0"><span><i class="bi bi-info-circle"></i> Reduza o envio de algum recurso para liberar quanto pode receber.</span></template>
+      <template x-if="pool() > 0 && totalReceive() < pool()">
+        <span><i class="bi bi-exclamation-triangle"></i> Sobrou <b x-text="fmt(poolFree())"></b> do pool para alocar no recebimento (troca e 1:1). O runner recalcula pelos valores reais na hora.</span>
       </template>
-      <template x-if="totalSend() > 0 && totalReceive() === totalSend()">
-        <span><i class="bi bi-check-circle"></i> Troca equilibrada. Como o snapshot tem atraso, os valores sao aplicados por % do estoque real no momento da execucao, limitados pelo espaco do armazem.</span>
+      <template x-if="pool() > 0 && totalReceive() === pool()">
+        <span><i class="bi bi-check-circle"></i> Troca 1:1 fechada. Como o snapshot atrasa, o envio e enviado por % do estoque real na hora; o recebimento respeita o espaco do armazem.</span>
       </template>
     </div>
   </div>
@@ -214,37 +232,55 @@ function premiumForm() {
     items: [], trader: {}, resources: [], cities: [],
     itemId: '',
     cityId: '',
-    sendPct: {}, receiveWeights: {},
+    sendPct: {}, receiveAmt: {},
     init() {
       this.items = JSON.parse(document.getElementById('premium-items-data')?.textContent || '[]');
       this.trader = JSON.parse(document.getElementById('premium-trader-data')?.textContent || '{}');
       this.resources = JSON.parse(document.getElementById('premium-resources-data')?.textContent || '[]');
       this.cities = JSON.parse(document.getElementById('premium-cities-data')?.textContent || '[]');
-      this.resources.forEach(r => { this.sendPct[r.key] = 0; this.receiveWeights[r.key] = 0; });
+      // Enviar comeca em 100% (tudo do lado de enviar); receber comeca zerado
+      this.resources.forEach(r => { this.sendPct[r.key] = 100; this.receiveAmt[r.key] = 0; });
       if (this.cities.length) this.cityId = String(this.cities[0].id);
     },
     selectedItem() { return this.items.find(i => String(i.item_id) === String(this.itemId)) || null; },
     currentCity() { return this.cities.find(c => String(c.id) === String(this.cityId)) || null; },
-    onCityChange() { /* mantem selecoes */ },
+    onCityChange() { this.resources.forEach(r => { this.sendPct[r.key] = 100; this.receiveAmt[r.key] = 0; }); },
     fmt(n) { return Math.round(Number(n)||0).toLocaleString('pt-BR'); },
-    sendAmount(key) { const c = this.currentCity(); if (!c) return 0; return Math.floor((c.stock[key]||0) * (this.sendPct[key]||0) / 100); },
-    totalSend() { return this.resources.reduce((s, r) => s + this.sendAmount(r.key), 0); },
-    totalWeight() { return this.resources.reduce((s, r) => s + (Number(this.receiveWeights[r.key])||0), 0); },
-    freeSpace(key) { const c = this.currentCity(); if (!c) return 0; return Math.max(0, (c.capacity||0) - (c.stock[key]||0)); },
-    receiveAmount(key) {
-      const tw = this.totalWeight(); if (tw <= 0) return 0;
-      const raw = Math.floor(this.totalSend() * (Number(this.receiveWeights[key])||0) / tw);
-      return Math.min(raw, this.freeSpace(key));
+    stock(key) { const c = this.currentCity(); return c ? (c.stock[key]||0) : 0; },
+    sendKeep(key) { return Math.floor(this.stock(key) * (this.sendPct[key]||0) / 100); },
+    released(key) { return this.stock(key) - this.sendKeep(key); },
+    setSendKeep(key, val) {
+      const s = this.stock(key); let keep = Math.max(0, Math.min(s, Math.round(Number(val)||0)));
+      this.sendPct[key] = s > 0 ? Math.round(keep / s * 100) : 0;
     },
-    totalReceive() { return this.resources.reduce((s, r) => s + this.receiveAmount(r.key), 0); },
-    sendAll() { this.resources.forEach(r => this.sendPct[r.key] = 100); },
+    reducePct() { const o = {}; this.resources.forEach(r => o[r.key] = 100 - (this.sendPct[r.key]||0)); return o; },
+    pool() { return this.resources.reduce((s, r) => s + this.released(r.key), 0); },
+    freeSpace(key) { const c = this.currentCity(); if (!c) return 0; return Math.max(0, (c.capacity||0) - (c.stock[key]||0)); },
+    totalReceive() { return this.resources.reduce((s, r) => s + (Number(this.receiveAmt[r.key])||0), 0); },
+    poolFree() { return Math.max(0, this.pool() - this.totalReceive()); },
+    maxReceive(key) {
+      // teto do recurso: espaco do armazem E (pool restante + o que ja esta neste recurso)
+      const already = Number(this.receiveAmt[key])||0;
+      return Math.min(this.freeSpace(key), this.poolFree() + already);
+    },
+    clampReceive(key) {
+      const mx = this.maxReceive(key);
+      if ((Number(this.receiveAmt[key])||0) > mx) this.receiveAmt[key] = mx;
+      if ((Number(this.receiveAmt[key])||0) < 0) this.receiveAmt[key] = 0;
+    },
+    sendAll() { this.resources.forEach(r => this.sendPct[r.key] = 100); this.receiveNone(); },
     sendNone() { this.resources.forEach(r => this.sendPct[r.key] = 0); },
-    receiveNone() { this.resources.forEach(r => this.receiveWeights[r.key] = 0); },
+    receiveNone() { this.resources.forEach(r => this.receiveAmt[r.key] = 0); },
     balance() {
-      // distribui peso 1 aos recursos com espaco livre e que nao estao sendo enviados 100%
-      this.resources.forEach(r => {
-        this.receiveWeights[r.key] = this.freeSpace(r.key) > 0 ? 1 : 0;
-      });
+      this.receiveNone();
+      // distribui o pool igualmente entre recursos com espaco, respeitando limites
+      let remaining = this.pool();
+      const elig = this.resources.filter(r => this.freeSpace(r.key) > 0);
+      if (!elig.length) return;
+      let per = Math.floor(remaining / elig.length);
+      elig.forEach(r => { const give = Math.min(per, this.freeSpace(r.key)); this.receiveAmt[r.key] = give; remaining -= give; });
+      // sobra
+      for (const r of elig) { if (remaining <= 0) break; const room = Math.min(this.freeSpace(r.key) - this.receiveAmt[r.key], remaining); this.receiveAmt[r.key] += room; remaining -= room; }
     },
   };
 }

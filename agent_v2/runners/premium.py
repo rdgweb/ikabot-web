@@ -17,6 +17,7 @@ from typing import Any
 
 from core.runner_registry import register_runner
 from runners.base import BaseRunner, RunnerResult
+from services.resource_transport import change_current_city
 
 logger = logging.getLogger(__name__)
 
@@ -88,19 +89,23 @@ class PremiumResourcesRunner(BaseRunner):
                 self.log(jid, "info", f"Item ativado: {target.get('name')} (id={item_id}) {('| ' + fb) if fb else ''}")
                 return RunnerResult(success=True, data={"status": "item_used", "item_id": item_id, "name": target.get("name"), "feedback": fb})
 
-            # mode == "trade" — troca 1:1 multi-recurso por % do estoque real
+            # mode == "trade" — troca 1:1 por cidade. Enviar comeca 100%; o que
+            # o usuario REDUZ (reduce_pct) vira o envio real e libera o pool para
+            # receber. Como o snapshot atrasa, tudo e recalculado pelo estoque real.
             trade_city_id = str(inputs.get("premium_trade_city_id") or city_id).strip()
-            send_pct = dict(inputs.get("premium_send_pct") or {})
-            receive_weights = dict(inputs.get("premium_receive_weights") or {})
-            send_pct = {k: max(0, min(100, int(v or 0))) for k, v in send_pct.items() if k in _RESOURCE_KEYS}
-            receive_weights = {k: max(0, int(v or 0)) for k, v in receive_weights.items() if k in _RESOURCE_KEYS}
-            if not any(v > 0 for v in send_pct.values()):
-                self.log(jid, "error", "Nenhum recurso para enviar")
-                return RunnerResult(success=False, data={"error": "nothing_to_send"})
-            total_weight = sum(receive_weights.values())
-            if total_weight <= 0:
-                self.log(jid, "error", "Sem distribuicao de recebimento")
-                return RunnerResult(success=False, data={"error": "no_receive_weights"})
+            reduce_pct = dict(inputs.get("premium_reduce_pct") or {})
+            receive_req = dict(inputs.get("premium_receive") or {})
+            reduce_pct = {k: max(0, min(100, int(v or 0))) for k, v in reduce_pct.items() if k in _RESOURCE_KEYS}
+            receive_req = {k: max(0, int(v or 0)) for k, v in receive_req.items() if k in _RESOURCE_KEYS}
+            if not any(v > 0 for v in reduce_pct.values()):
+                self.log(jid, "error", "Nada foi tirado do envio")
+                return RunnerResult(success=False, data={"error": "nothing_released"})
+            if not any(v > 0 for v in receive_req.values()):
+                self.log(jid, "error", "Sem recebimento definido")
+                return RunnerResult(success=False, data={"error": "no_receive"})
+
+            # Navega ate a cidade do negociante ANTES de ler/operar (por cidade!)
+            change_current_city(client, int(trade_city_id))
 
             trader = client.get_premium_trader_state(int(trade_city_id))
             price = trader.get("payment_price") or 0
@@ -110,30 +115,31 @@ class PremiumResourcesRunner(BaseRunner):
                 self.log(jid, "error", f"Sem saldo para a troca: precisa {price} ({method}), tem {available}")
                 return RunnerResult(success=False, data={"error": "insufficient_payment"})
 
-            # Estoque real na hora (do trader) + capacidade (do snapshot da cidade)
+            # Estoque real agora (do trader) + capacidade real (do trader/snapshot)
             stock = {k: int((trader.get("stock") or {}).get(k, 0)) for k in _RESOURCE_KEYS}
             city = next((c for c in cities if str(c.get("id") or "") == str(trade_city_id)), {}) or {}
             capacity = int(city.get("warehouse_capacity") or 0)
             city_key = {"resource": "wood", "wine": "wine", "marble": "marble", "crystal": "crystal", "sulfur": "sulfur"}
-            free_space = {k: max(0, capacity - int(city.get(city_key[k]) or 0)) for k in _RESOURCE_KEYS} if capacity else {k: 10**12 for k in _RESOURCE_KEYS}
+            free_space = {k: max(0, capacity - stock[k]) for k in _RESOURCE_KEYS} if capacity else {k: 10**12 for k in _RESOURCE_KEYS}
 
-            send = {k: (stock[k] * send_pct.get(k, 0)) // 100 for k in _RESOURCE_KEYS}
-            total_send = sum(send.values())
-            if total_send <= 0:
-                self.log(jid, "error", "Total a enviar ficou zero (estoque real insuficiente)")
-                return RunnerResult(success=False, data={"error": "zero_send"})
+            # Envio real = o que foi tirado do envio (reduce_pct) sobre o estoque real
+            send = {k: (stock[k] * reduce_pct.get(k, 0)) // 100 for k in _RESOURCE_KEYS}
+            pool = sum(send.values())
+            if pool <= 0:
+                self.log(jid, "error", "Pool liberado ficou zero (estoque real menor)")
+                return RunnerResult(success=False, data={"error": "zero_pool"})
 
-            # Distribui o total pelos pesos, limitado pelo espaco livre; ajusta pra 1:1
+            # Recebimento: mantem a proporcao pedida, limitado pelo pool real e espaco
+            req_total = sum(receive_req.values())
             receive = {k: 0 for k in _RESOURCE_KEYS}
-            remaining = total_send
-            ordered = sorted((k for k in _RESOURCE_KEYS if receive_weights.get(k, 0) > 0),
-                             key=lambda k: receive_weights[k], reverse=True)
+            remaining = pool
+            ordered = sorted((k for k in _RESOURCE_KEYS if receive_req.get(k, 0) > 0),
+                             key=lambda k: receive_req[k], reverse=True)
             for k in ordered:
-                want = (total_send * receive_weights[k]) // total_weight
+                want = (pool * receive_req[k]) // req_total if req_total else 0
                 give = min(want, free_space.get(k, 0), remaining)
                 receive[k] = give
                 remaining -= give
-            # sobra por arredondamento/limite: joga no primeiro recurso com espaco
             if remaining > 0:
                 for k in ordered:
                     room = min(free_space.get(k, 0) - receive[k], remaining)
@@ -146,13 +152,11 @@ class PremiumResourcesRunner(BaseRunner):
             if total_receive <= 0:
                 self.log(jid, "error", "Sem espaco no armazem para receber")
                 return RunnerResult(success=False, data={"error": "no_free_space"})
-            # forca 1:1: envia exatamente o que consegue receber
-            if total_receive < total_send:
-                # reduz o envio proporcionalmente para igualar ao recebido
-                factor_num, factor_den = total_receive, total_send
-                send = {k: (v * factor_num) // factor_den for k, v in send.items()}
-                total_send = sum(send.values())
-                self.log(jid, "info", f"Envio ajustado para 1:1 pelo espaco disponivel: total={total_send}")
+            # 1:1 — envia exatamente o que consegue receber
+            if total_receive < pool:
+                send = {k: (v * total_receive) // pool for k, v in send.items()}
+                pool = sum(send.values())
+                self.log(jid, "info", f"Envio ajustado para 1:1 pelo espaco disponivel: total={pool}")
 
             result = client.premium_trade(
                 int(trade_city_id),
@@ -163,8 +167,8 @@ class PremiumResourcesRunner(BaseRunner):
             fb = _feedback_text(result)
             send_str = ", ".join(f"{v} {k}" for k, v in send.items() if v > 0)
             recv_str = ", ".join(f"{v} {k}" for k, v in receive.items() if v > 0)
-            self.log(jid, "info", f"Troca 1:1 no negociante ({total_send}): enviou [{send_str}] recebeu [{recv_str}] (paga {price} {method}) {('| ' + fb) if fb else ''}")
-            return RunnerResult(success=True, data={"status": "traded", "send": send, "receive": receive, "total": total_send, "feedback": fb})
+            self.log(jid, "info", f"Troca 1:1 na cidade {trade_city_id} ({pool}): enviou [{send_str}] recebeu [{recv_str}] (paga {price} {method}) {('| ' + fb) if fb else ''}")
+            return RunnerResult(success=True, data={"status": "traded", "city_id": trade_city_id, "send": send, "receive": receive, "total": pool, "feedback": fb})
 
         except Exception as exc:
             logger.exception("PremiumResourcesRunner failed for job %s", jid)

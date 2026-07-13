@@ -2637,20 +2637,21 @@ class JobSubmitView(LoginRequiredMixin, View):
             if not city_id:
                 return self._error("Selecione a cidade do negociante.")
             try:
-                send_pct = json.loads(request.POST.get("premium_send_pct_json") or "{}")
-                receive_weights = json.loads(request.POST.get("premium_receive_weights_json") or "{}")
+                reduce_pct = json.loads(request.POST.get("premium_reduce_pct_json") or "{}")
+                receive = json.loads(request.POST.get("premium_receive_json") or "{}")
             except Exception:
                 return self._error("Dados da troca invalidos.")
             valid_keys = {"resource", "wine", "marble", "crystal", "sulfur"}
-            send_pct = {k: max(0, min(100, int(v or 0))) for k, v in send_pct.items() if k in valid_keys}
-            receive_weights = {k: max(0, int(v or 0)) for k, v in receive_weights.items() if k in valid_keys}
-            if not any(v > 0 for v in send_pct.values()):
-                return self._error("Defina quanto enviar de pelo menos um recurso.")
-            if not any(v > 0 for v in receive_weights.values()):
-                return self._error("Defina o recebimento (use Equilibrar).")
+            # reduce_pct[r] = quanto FOI TIRADO do envio (0-100) -> vira o envio real
+            reduce_pct = {k: max(0, min(100, int(v or 0))) for k, v in reduce_pct.items() if k in valid_keys}
+            receive = {k: max(0, int(v or 0)) for k, v in receive.items() if k in valid_keys}
+            if not any(v > 0 for v in reduce_pct.values()):
+                return self._error("Reduza o envio de algum recurso para liberar a troca.")
+            if not any(v > 0 for v in receive.values()):
+                return self._error("Defina quanto receber (use Equilibrar).")
             inputs["premium_trade_city_id"] = city_id
-            inputs["premium_send_pct"] = send_pct
-            inputs["premium_receive_weights"] = receive_weights
+            inputs["premium_reduce_pct"] = reduce_pct
+            inputs["premium_receive"] = receive
 
         create_job_with_workflow(
             account=ga.account,
