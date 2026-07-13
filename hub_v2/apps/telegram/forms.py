@@ -49,6 +49,7 @@ class TelegramGlobalNotificationForm(forms.ModelForm):
             "notify_daily_summary",
             "notify_diplomacy_message",
             "notify_island_monitor",
+            "notify_cinema_available",
         ]
         labels = {
             "notify_attack_alert": "Alerta de ataque",
@@ -60,6 +61,7 @@ class TelegramGlobalNotificationForm(forms.ModelForm):
             "notify_daily_summary": "Resumo diario",
             "notify_diplomacy_message": "Mensagem de diplomacia",
             "notify_island_monitor": "Monitor de ilha",
+            "notify_cinema_available": "Cineteatro disponivel",
         }
 
 
@@ -80,6 +82,7 @@ class TelegramAccountConfigForm(forms.ModelForm):
             "notify_daily_summary",
             "notify_diplomacy_message",
             "notify_island_monitor",
+            "notify_cinema_available",
         ]
         widgets = {
             "chat_id": forms.TextInput(attrs={
@@ -99,6 +102,7 @@ class TelegramAccountConfigForm(forms.ModelForm):
             "notify_daily_summary": "Resumo diario",
             "notify_diplomacy_message": "Mensagem de diplomacia",
             "notify_island_monitor": "Monitor de ilha",
+            "notify_cinema_available": "Cineteatro disponivel",
         }
 
 
@@ -123,6 +127,7 @@ class TelegramNotificationForm(forms.ModelForm):
             "notify_daily_summary",
             "notify_diplomacy_message",
             "notify_island_monitor",
+            "notify_cinema_available",
         ]
         labels = {
             "enabled": "Notificacoes ativadas",
@@ -135,6 +140,7 @@ class TelegramNotificationForm(forms.ModelForm):
             "notify_daily_summary": "Resumo diario",
             "notify_diplomacy_message": "Mensagem de diplomacia",
             "notify_island_monitor": "Monitor de ilha",
+            "notify_cinema_available": "Cineteatro disponivel",
         }
 
 

@@ -222,6 +222,21 @@ ACTIONS = {
             {"key": "ready_margin_minutes", "type": FIELD_INT, "label": "Margem apos ETA (min)", "required": True, "min": 0, "default": 10, "help": "Tempo extra somado ao ETA antes do proximo check."},
         ],
     },
+    28: {
+        "name": "Recursos Premium",
+        "name_en": "Premium resources",
+        "category": CAT_ECONOMY,
+        "icon": "bi-gem",
+        "runner": "premium_resources",
+        "requires_game_session": True,
+        "recurring": False,
+        "long_running": False,
+        "ready": True,
+        "description": "Le o inventario de itens premium e o negociante premium e mostra no painel. Nao ativa nem troca nada automaticamente — apenas prepara para uso manual sob confirmacao.",
+        "inputs": [
+            {"key": "city_id", "type": FIELD_CITY_SELECT, "label": "Cidade", "multiple": False, "required": False, "help": "Cidade de referencia para ler o inventario. Deixe em branco para usar a primeira."},
+        ],
+    },
     26: {
         "name": "Conduzir Ensaio",
         "name_en": "Conduct experiment",

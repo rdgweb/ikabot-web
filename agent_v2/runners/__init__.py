@@ -30,4 +30,6 @@ from runners import (  # noqa: F401
     generals_bank,
     plunder,
     debug_research_dump,
+    debug_view_dump,
+    premium,
 )

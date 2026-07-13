@@ -75,6 +75,14 @@ EVENT_TYPES = [
         "icon": "bi-geo-alt-fill",
         "field": "notify_island_monitor",
     },
+    {
+        "key": "cinema_available",
+        "label": "Cineteatro disponivel",
+        "description": "Avisa quando o cineteatro tem sessao disponivel. A coleta e manual no jogo (o bonus exige assistir um video de anuncio; nao e automatizavel).",
+        "category": "operational",
+        "icon": "bi-film",
+        "field": "notify_cinema_available",
+    },
 ]
 
 # Lookup by field name -> event info

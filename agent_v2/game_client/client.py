@@ -31,7 +31,9 @@ from .actions.academy import AcademyAction
 from .actions.barbarians import AttackBarbarianVillageAction, ATTACK_SCHEMATICS, LOOT_SCHEMATICS, get_schematic, calculate_transporters
 from .actions.island import IslandActions
 from .actions.city import BuildAction, DemolishAction, UpgradeAction
+from .actions.cinema import CinemaAction
 from .actions.daily import DailyTasksAction
+from .actions.premium import PremiumInventoryAction, PremiumTraderAction
 from .actions.diplomacy import DiplomacyInboxAction, DiplomacySendAction
 from .actions.black_market import (
     AddBlackMarketOfferAction,
@@ -447,6 +449,32 @@ class GameClient(IslandActions):
         """Full branch tree + preconditions of the selected research."""
         action = ResearchAction(self)
         return action.get_branch_details(city_id=city_id, research_type=research_type)
+
+    def get_cinema_state(self, city_id: int) -> dict[str, Any]:
+        """Cineteatro: recompensas disponiveis + videoId da sessao."""
+        action = CinemaAction(self)
+        return action.get_state(city_id=city_id)
+
+    def get_premium_inventory(self, city_id: int) -> dict[str, Any]:
+        """Itens do inventario premium (leitura)."""
+        return PremiumInventoryAction(self).get_inventory(city_id=city_id)
+
+    def activate_premium_item(self, city_id: int, item_id: int, *, target_city_id: int | None = None, target_god: int | None = None) -> dict[str, Any]:
+        """Ativa um item premium. So sob confirmacao explicita — nao automatico."""
+        return PremiumInventoryAction(self).activate_item(item_id=item_id, city_id=city_id, target_city_id=target_city_id, target_god=target_god)
+
+    def get_premium_trader_state(self, city_id: int) -> dict[str, Any]:
+        """Estado do negociante premium (leitura)."""
+        return PremiumTraderAction(self).get_state(city_id=city_id)
+
+    def premium_trade(self, city_id: int, *, send: dict, receive: dict, displayed_price: int, position: int = 0) -> dict[str, Any]:
+        """Troca no negociante premium. So sob confirmacao explicita — nao automatico."""
+        return PremiumTraderAction(self).trade(city_id=city_id, send=send, receive=receive, displayed_price=displayed_price, position=position)
+
+    def claim_cinema_bonus(self, city_id: int, bonus_id: int, video_id: int) -> dict[str, Any]:
+        """Cineteatro: coleta uma recompensa (AdVideoRewardAction/RequestBonus)."""
+        action = CinemaAction(self)
+        return action.claim(city_id=city_id, bonus_id=bonus_id, video_id=video_id)
 
     def get_academy_state(self, city_id: int, position: int) -> dict[str, Any]:
         """Fetch academy state for a city academy slot."""

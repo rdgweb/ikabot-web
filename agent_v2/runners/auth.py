@@ -199,6 +199,7 @@ class DailyLoginRunner(BaseRunner):
                     state = client.get_daily_tasks_state(bonus_city_id)
 
             fountain_collected = False
+            overview = None
             if collect_fountain:
                 overview = client.get_daily_city_overview(bonus_city_id)
                 if overview.get("ambrosia_fountain_active"):
@@ -207,6 +208,30 @@ class DailyLoginRunner(BaseRunner):
                     self.log(jid, "info", "Fonte de ambrosia coletada")
                 else:
                     self.log(jid, "info", "Fonte de ambrosia nao estava ativa")
+
+            # Cineteatro: coleta e manual (ad-gate). So avisa no Telegram quando
+            # disponivel, no maximo 1x por ciclo de reset (dedup por data UTC).
+            if overview is None:
+                overview = client.get_daily_city_overview(bonus_city_id)
+            if overview.get("city_cinema_active"):
+                today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                if str(inputs.get("cinema_notified_date") or "") != today:
+                    try:
+                        self.hub.send_notification(
+                            event="cinema_available",
+                            game_account_id=ga_id,
+                            account_id=aid,
+                            title="Cineteatro disponivel",
+                            body=(
+                                f"O cineteatro tem sessao disponivel em {before_state.get('city_name') or bonus_city_name}. "
+                                f"A coleta e manual no jogo (o bonus exige assistir um video)."
+                            ),
+                            agent_name=str(job.get("agent") or ""),
+                        )
+                        inputs["cinema_notified_date"] = today
+                        self.log(jid, "info", "Cineteatro disponivel — notificacao Telegram enviada")
+                    except Exception as exc:
+                        self.log(jid, "warn", f"Falha ao notificar cineteatro: {exc}")
 
             final_state = client.get_daily_tasks_state(bonus_city_id)
             next_delay = int(final_state.get("countdown_seconds") or 0) + (reschedule_margin_minutes * 60)
