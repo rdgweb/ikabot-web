@@ -232,10 +232,8 @@ ACTIONS = {
         "recurring": False,
         "long_running": False,
         "ready": True,
-        "description": "Le o inventario de itens premium e o negociante premium e mostra no painel. Nao ativa nem troca nada automaticamente — apenas prepara para uso manual sob confirmacao.",
-        "inputs": [
-            {"key": "city_id", "type": FIELD_CITY_SELECT, "label": "Cidade", "multiple": False, "required": False, "help": "Cidade de referencia para ler o inventario. Deixe em branco para usar a primeira."},
-        ],
+        "description": "Usa um item premium usavel direto do inventario ou troca recursos no negociante premium. O inventario e lido pelo Verificar Status; aqui voce escolhe a acao e ela so acontece quando o job roda.",
+        "inputs": [],
     },
     26: {
         "name": "Conduzir Ensaio",

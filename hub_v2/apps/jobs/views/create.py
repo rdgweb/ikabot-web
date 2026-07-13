@@ -767,6 +767,56 @@ def _bm_available_offers_context(cities, snapshot):
     return {"offers_by_city": offers_by_city, "scanned_at_by_city": scanned_at_by_city}
 
 
+# Mapa tipo-do-item-premium -> icone recortado do sprite oficial do jogo.
+_PREMIUM_ITEM_ICONS = {
+    "resource_bonus": "game/premium/resource.png",
+    "wood_bonus": "game/premium/resource.png",
+    "marble_bonus": "game/premium/marble.png",
+    "wine_bonus": "game/premium/wine.png",
+    "sulfur_bonus": "game/premium/sulfur.png",
+    "crystal_bonus": "game/premium/crystal.png",
+    "storage_capacity_bonus": "game/premium/storagecapacity.png",
+    "safe_capacity_bonus": "game/premium/safecapacity.png",
+}
+
+
+def _premium_form_context(snapshot):
+    """Monta a UI do form de Recursos Premium a partir do premium_state do snapshot.
+
+    So expoe, por ora, os itens usaveis DIRETO do inventario (sem escolher
+    cidade/deus) e o negociante premium. A leitura e feita pelo Verificar
+    Status (ac=100); aqui apenas apresentamos para o usuario escolher.
+    """
+    base = (snapshot.base_snapshot if snapshot else {}) or {}
+    state = base.get("premium_state") or {}
+    items = state.get("items") or []
+
+    direct_items = []
+    for it in items:
+        if not it.get("usable_direct"):
+            continue
+        item_type = str(it.get("type") or "")
+        icon = _PREMIUM_ITEM_ICONS.get(item_type)
+        direct_items.append({
+            "item_id": it.get("item_id"),
+            "name": it.get("name", ""),
+            "description": it.get("description", ""),
+            "comment": it.get("comment", ""),
+            "count": it.get("count", 0),
+            "icon_static": static(icon) if icon else "",
+            "has_icon": bool(icon),
+        })
+    direct_items.sort(key=lambda r: (not r["has_icon"], str(r["name"])))
+
+    trader = state.get("trader") or {}
+    return {
+        "direct_items": direct_items,
+        "trader": trader,
+        "updated_at": state.get("updated_at", ""),
+        "has_data": bool(items),
+    }
+
+
 def _market_form_context(cities):
     market_cities = []
     for city in cities or []:
@@ -1861,6 +1911,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities, request=None, 
         "training_ui": _training_form_context(snapshot, cities),
         "black_market_ui": _black_market_form_context(cities, snapshot),
         "bm_buy_ui": _bm_available_offers_context(cities, snapshot),
+        "premium_ui": _premium_form_context(snapshot),
     }
     if int(action_code) == 15:
         ctx.update(_spy_context(ga, cities, getattr(form, "initial", {})))
@@ -2456,6 +2507,9 @@ class JobSubmitView(LoginRequiredMixin, View):
         if int(action_code) == 1203:
             return self._submit_upgrade_units(request, ga, action_code, action_meta, cities)
 
+        if int(action_code) == 28:
+            return self._submit_premium(request, ga, action_code, action_meta)
+
         form = JobCreateForm(
             request.POST,
             action_code=action_code,
@@ -2518,6 +2572,55 @@ class JobSubmitView(LoginRequiredMixin, View):
             )
         )
         resp["HX-Trigger"] = trigger_data
+        return resp
+
+    def _submit_premium(self, request, ga, action_code, action_meta):
+        """Cria o job de Recursos Premium (ac=28) a partir da escolha no form."""
+        mode = str(request.POST.get("premium_mode") or "").strip()
+        if mode not in ("use_item", "trade"):
+            return self._error("Escolha usar um item ou o negociante.")
+
+        inputs: dict = {"premium_mode": mode}
+        if mode == "use_item":
+            item_id = str(request.POST.get("premium_item_id") or "").strip()
+            if not item_id:
+                return self._error("Selecione um item para usar.")
+            inputs["premium_item_id"] = int(item_id)
+        else:
+            send = str(request.POST.get("premium_trade_send") or "").strip()
+            receive = str(request.POST.get("premium_trade_receive") or "").strip()
+            try:
+                amount = int(request.POST.get("premium_trade_amount") or 0)
+            except (TypeError, ValueError):
+                amount = 0
+            if not send or not receive or send == receive:
+                return self._error("Escolha recursos diferentes para enviar e receber.")
+            if amount <= 0:
+                return self._error("Informe uma quantidade valida para a troca.")
+            inputs["premium_trade_send"] = send
+            inputs["premium_trade_receive"] = receive
+            inputs["premium_trade_amount"] = amount
+
+        create_job_with_workflow(
+            account=ga.account,
+            game_account=ga,
+            node=ga.account.node,
+            action_code=action_code,
+            inputs=inputs,
+            status="queued",
+        )
+
+        resp = HttpResponse(
+            render_to_string(
+                "jobs/partials/create_step_success.html",
+                {"jobs_created": 1, "action_name": action_meta["name"]},
+                request=request,
+            )
+        )
+        resp["HX-Trigger"] = json.dumps({
+            "toast": {"type": "success", "message": "Job Recursos Premium criado!"},
+            "jobsCreated": True,
+        })
         return resp
 
     def _submit_upgrade_units(self, request, ga, action_code, action_meta, cities):
