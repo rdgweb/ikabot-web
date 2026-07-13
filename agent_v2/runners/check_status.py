@@ -289,6 +289,35 @@ class CheckStatusRunner(BaseRunner):
                 if isinstance(city, dict)
             ]
             cities_data = self._merge_city_building_sync_data(cities_data, existing_cities)
+
+            # ── Recursos premium: le inventario + negociante e guarda no snapshot ──
+            # Leitura barata (2 requests); nao ativa nem troca nada.
+            premium_state = existing_base.get("premium_state") or {}
+            try:
+                ref_city_id = None
+                for _c in cities_data:
+                    if isinstance(_c, dict) and str(_c.get("id") or "").strip():
+                        ref_city_id = int(str(_c.get("id")).strip())
+                        break
+                if ref_city_id is not None:
+                    inv = client.get_premium_inventory(ref_city_id)
+                    inv_items = inv.get("items") or []
+                    trader = {}
+                    try:
+                        trader = client.get_premium_trader_state(ref_city_id)
+                    except Exception as _te:
+                        self.log(jid, "info", f"Negociante premium indisponivel: {_te}")
+                    premium_state = {
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "city_id": ref_city_id,
+                        "items": inv_items,
+                        "usable_direct_count": sum(1 for it in inv_items if it.get("usable_direct")),
+                        "trader": trader,
+                    }
+                    self.log(jid, "info", f"Premium: {len(inv_items)} itens ({premium_state['usable_direct_count']} usaveis direto)")
+            except Exception as _pe:
+                self.log(jid, "info", f"Leitura premium ignorada: {_pe}")
+
             snapshot = {
                 "base_snapshot": {
                     "player_name": player_name,
@@ -324,6 +353,7 @@ class CheckStatusRunner(BaseRunner):
                     "shrine_researched_gods": existing_base.get("shrine_researched_gods") or [],
                     "shrine_gods": existing_base.get("shrine_gods") or {},
                     "shrine_updated_at": existing_base.get("shrine_updated_at", ""),
+                    "premium_state": premium_state,
                 },
                 "cities": cities_data,
                 "military": military_data,

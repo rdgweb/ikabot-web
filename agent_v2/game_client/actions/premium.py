@@ -71,6 +71,19 @@ class PremiumInventoryAction(BaseAction):
         for it in raw_items:
             if not isinstance(it, dict):
                 continue
+            require_city = bool(it.get("requireCity"))
+            require_god = bool(it.get("requireGod"))
+            use_from_inv = bool(it.get("canBeUsedFromInventory"))
+            # canBeActivated vem True (usavel) ou um dict {cityId: True} (usavel por cidade)
+            raw_can_act = it.get("canBeActivated")
+            activatable_cities: list[str] = []
+            if isinstance(raw_can_act, dict):
+                activatable_cities = [str(k) for k, v in raw_can_act.items() if v]
+                can_be_activated = bool(activatable_cities)
+            else:
+                can_be_activated = bool(raw_can_act)
+            # "usavel direto": ativa do inventario sem escolher cidade/deus
+            usable_direct = use_from_inv and not require_city and not require_god and can_be_activated
             items.append({
                 "item_id": int(it.get("itemId") or 0),
                 "type": str(it.get("type") or ""),
@@ -82,10 +95,12 @@ class PremiumInventoryAction(BaseAction):
                 "category_id": int(it.get("categoryId") or 0),
                 "css_class": str(it.get("cssClass") or ""),
                 "activation_url": str(it.get("activationUrl") or ""),
-                "can_use_from_inventory": bool(it.get("canBeUsedFromInventory")),
-                "can_be_activated": bool(it.get("canBeActivated")),
-                "require_city": bool(it.get("requireCity")),
-                "require_god": bool(it.get("requireGod")),
+                "can_use_from_inventory": use_from_inv,
+                "can_be_activated": can_be_activated,
+                "require_city": require_city,
+                "require_god": require_god,
+                "activatable_cities": activatable_cities,
+                "usable_direct": usable_direct,
                 "security_question": _clean(it.get("securityQuestion") or ""),
             })
         return {"city_id": int(city_id), "items": items}
@@ -163,11 +178,27 @@ class PremiumTraderAction(BaseAction):
             "sulfur": _int(td.get("js_start_sulfur")),
         }
         ambrosia_available = _int((td.get("js_available_premium_trader") or {}).get("text"))
-        price = _int((td.get("js_displayedPrice") or {}).get("value"))
+        ambrosia_price = _int((td.get("js_displayedPrice") or {}).get("value"))
+        # Forma de pagamento: se o jogador tem o item "Negociante Premium" no
+        # inventario, a troca custa 1 item (mais barato); senao, custa ambrosia.
+        order = td.get("js_orderAvailable_premium_trader") or {}
+        order_class = str(order.get("class") or "")
+        order_price = td.get("js_orderPrice_premium_trader") or {}
+        if "inventory" in order_class:
+            payment_method = "item"
+            payment_available = _int(order.get("text"))         # qtd de itens
+            payment_price = _int(order_price.get("text")) or 1  # itens por troca
+        else:
+            payment_method = "ambrosia"
+            payment_available = ambrosia_available
+            payment_price = ambrosia_price or _int(order_price.get("text"))
         return {
             "city_id": int(td.get("js_cityId", {}).get("value") or city_id),
             "ambrosia_available": ambrosia_available,
-            "trade_price_ambrosia": price,
+            "trade_price_ambrosia": ambrosia_price,
+            "payment_method": payment_method,
+            "payment_available": payment_available,
+            "payment_price": payment_price,
             "stock": stock,
         }
 
