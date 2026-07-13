@@ -1,0 +1,97 @@
+{% load static hub_tags %}
+
+{% if action_code == 29 %}
+{{ ships_ui.cities|json_script:"ships-cities-data" }}
+
+<div class="mb-5 rounded-[24px] border shadow-[0_12px_36px_rgba(60,45,18,0.10)]"
+     style="border-color: var(--ik-line); background:
+       radial-gradient(760px 280px at 0% 0%, rgba(79,134,185,0.14), transparent 60%),
+       linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
+     x-data="shipsForm({{ ships_ui.gold }})" x-init="init()">
+
+  <input type="hidden" name="ship_kind" :value="kind">
+  <input type="hidden" name="ship_city_id" :value="cityId">
+  <input type="hidden" name="ship_amount" :value="amount">
+
+  <div class="border-b px-5 py-5 md:px-6" style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
+    <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Comprar Barcos</div>
+    <h3 class="mt-2 text-xl font-bold text-ink">Compre barcos de transporte no porto de uma cidade</h3>
+    <p class="mt-2 text-sm leading-relaxed text-muted">
+      Escolha o tipo e a quantidade. O custo total e estimado pela curva do jogo; o runner respeita o ouro e o limite do porto,
+      comprando um a um ate a quantidade pedida.
+    </p>
+    <div class="mt-3 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm" style="border-color: var(--ik-line); background: rgba(255,255,255,0.7);">
+      <img src="{% static 'game/resources/icon_gold.png' %}" class="h-4 w-4"> Ouro atual: <b class="text-ink" x-text="fmt(gold)"></b>
+    </div>
+  </div>
+
+  <div class="px-5 py-5 md:px-6 space-y-4">
+    {# Tipo de barco #}
+    <div class="grid grid-cols-2 gap-3 max-w-md">
+      <button type="button" @click="kind='transporter'"
+              class="rounded-xl border p-3 text-left transition"
+              :class="kind==='transporter' ? 'ring-2 ring-[var(--ik-sea)]' : ''"
+              :style="kind==='transporter' ? 'border-color: rgba(79,134,185,0.5); background: rgba(79,134,185,0.08);' : 'border-color: var(--ik-line); background: rgba(255,255,255,0.8);'">
+        <div class="text-sm font-semibold text-ink"><i class="bi bi-box-seam"></i> Mercante</div>
+        <div class="text-[11px] text-muted">Barco mercante (carga leve)</div>
+      </button>
+      <button type="button" @click="kind='freighter'"
+              class="rounded-xl border p-3 text-left transition"
+              :class="kind==='freighter' ? 'ring-2 ring-[var(--ik-sea)]' : ''"
+              :style="kind==='freighter' ? 'border-color: rgba(79,134,185,0.5); background: rgba(79,134,185,0.08);' : 'border-color: var(--ik-line); background: rgba(255,255,255,0.8);'">
+        <div class="text-sm font-semibold text-ink"><i class="bi bi-truck"></i> Cargueiro</div>
+        <div class="text-[11px] text-muted">Cargueiro (carga pesada)</div>
+      </button>
+    </div>
+
+    {# Cidade + quantidade #}
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 max-w-2xl">
+      <label class="rounded-xl border p-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.8);">
+        <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Cidade (porto)</span>
+        <select x-model="cityId" class="form-input">
+          <template x-for="c in cities" :key="c.id"><option :value="c.id" x-text="c.name"></option></template>
+        </select>
+      </label>
+      <label class="rounded-xl border p-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.8);">
+        <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Quantidade</span>
+        <input type="number" min="1" max="200" x-model.number="amount" class="form-input">
+      </label>
+    </div>
+
+    {# Preview de custo #}
+    <div class="rounded-xl border px-4 py-3 max-w-2xl"
+         :style="canAfford() ? 'border-color: rgba(95,140,78,0.3); background: rgba(95,140,78,0.06);' : 'border-color: rgba(196,80,60,0.3); background: rgba(196,80,60,0.06);'">
+      <div class="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+        <span class="text-muted">Custo estimado (<b class="text-ink" x-text="amount"></b> barcos):
+          <b class="text-ink" x-text="fmt(totalCost())"></b> ouro</span>
+        <span class="text-muted">Sobra: <b :class="canAfford() ? 'text-[var(--ik-good)]' : 'text-[var(--ik-bad)]'" x-text="fmt(gold - totalCost())"></b></span>
+      </div>
+      <div class="mt-1 text-[11px] text-muted">
+        <i class="bi bi-info-circle"></i>
+        Estimativa pela curva do jogo (custo cresce a cada barco). O runner usa o custo real do jogo na compra e para se faltar ouro.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function shipsForm(gold) {
+  return {
+    kind: 'transporter',
+    cities: [], cityId: '',
+    amount: 5,
+    gold: Number(gold)||0,
+    init() {
+      this.cities = JSON.parse(document.getElementById('ships-cities-data')?.textContent || '[]');
+      if (this.cities.length) this.cityId = String(this.cities[0].id);
+    },
+    fmt(n) { return Math.round(Number(n)||0).toLocaleString('pt-BR'); },
+    // custo do n-esimo barco: floor(13500 * 1.03^n - 13425). Sem o count atual,
+    // estima a partir de 1 (limite inferior). O runner recalcula pelo real.
+    shipCost(n) { return Math.floor(13500 * Math.pow(1.03, n) - 13425); },
+    totalCost() { let t = 0; const a = Math.max(0, Number(this.amount)||0); for (let i=1;i<=a;i++) t += this.shipCost(i); return t; },
+    canAfford() { return this.totalCost() <= this.gold; },
+  };
+}
+</script>
+{% endif %}

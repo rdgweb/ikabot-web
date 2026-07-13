@@ -33,6 +33,7 @@ from .actions.island import IslandActions
 from .actions.city import BuildAction, DemolishAction, UpgradeAction
 from .actions.cinema import CinemaAction
 from .actions.daily import DailyTasksAction
+from .actions.port import PortAction
 from .actions.premium import PremiumInventoryAction, PremiumTraderAction
 from .actions.diplomacy import DiplomacyInboxAction, DiplomacySendAction
 from .actions.black_market import (
@@ -454,6 +455,14 @@ class GameClient(IslandActions):
         """Cineteatro: recompensas disponiveis + videoId da sessao."""
         action = CinemaAction(self)
         return action.get_state(city_id=city_id)
+
+    def get_port_state(self, city_id: int) -> dict[str, Any]:
+        """Estado do porto: barcos, custos, ouro."""
+        return PortAction(self).get_state(city_id=city_id)
+
+    def buy_ship(self, city_id: int, kind: str) -> dict[str, Any]:
+        """Compra 1 barco (kind='transporter' ou 'freighter')."""
+        return PortAction(self).buy_one(city_id=city_id, kind=kind)
 
     def get_premium_inventory(self, city_id: int) -> dict[str, Any]:
         """Itens do inventario premium (leitura)."""

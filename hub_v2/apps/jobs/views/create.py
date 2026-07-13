@@ -801,6 +801,31 @@ _TRADE_TO_CITY_KEY = {
 }
 
 
+def _ships_form_context(snapshot):
+    """Cidades + ouro/barcos para o form de Comprar Barcos (custo calculado em JS)."""
+    base = (snapshot.base_snapshot if snapshot else {}) or {}
+
+    def _sint(v):
+        try:
+            return max(0, int(float(v or 0)))
+        except (TypeError, ValueError):
+            return 0
+
+    cities = []
+    for city in (snapshot.cities if snapshot else []) or []:
+        if not isinstance(city, dict) or str(city.get("id") or "").strip() == "":
+            continue
+        cities.append({"id": str(city.get("id")), "name": str(city.get("name") or city.get("id"))})
+    return {
+        "cities": cities,
+        "gold": _sint(base.get("gold")),
+        "free_transporters": _sint(base.get("free_transporters")),
+        "max_transporters": _sint(base.get("max_transporters")),
+        "free_freighters": _sint(base.get("free_freighters")),
+        "max_freighters": _sint(base.get("max_freighters")),
+    }
+
+
 def _premium_form_context(snapshot):
     """Monta a UI do form de Recursos Premium a partir do premium_state do snapshot.
 
@@ -1960,6 +1985,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities, request=None, 
         "black_market_ui": _black_market_form_context(cities, snapshot),
         "bm_buy_ui": _bm_available_offers_context(cities, snapshot),
         "premium_ui": _premium_form_context(snapshot),
+        "ships_ui": _ships_form_context(snapshot),
     }
     if int(action_code) == 15:
         ctx.update(_spy_context(ga, cities, getattr(form, "initial", {})))
@@ -2558,6 +2584,9 @@ class JobSubmitView(LoginRequiredMixin, View):
         if int(action_code) == 28:
             return self._submit_premium(request, ga, action_code, action_meta)
 
+        if int(action_code) == 29:
+            return self._submit_buy_ships(request, ga, action_code, action_meta)
+
         form = JobCreateForm(
             request.POST,
             action_code=action_code,
@@ -2673,6 +2702,42 @@ class JobSubmitView(LoginRequiredMixin, View):
         )
         resp["HX-Trigger"] = json.dumps({
             "toast": {"type": "success", "message": "Job Recursos Premium criado!"},
+            "jobsCreated": True,
+        })
+        return resp
+
+    def _submit_buy_ships(self, request, ga, action_code, action_meta):
+        """Cria o job de Comprar Barcos (ac=29)."""
+        kind = str(request.POST.get("ship_kind") or "transporter").strip()
+        if kind not in ("transporter", "freighter"):
+            kind = "transporter"
+        city_id = str(request.POST.get("ship_city_id") or "").strip()
+        if not city_id:
+            return self._error("Selecione a cidade do porto.")
+        try:
+            amount = int(request.POST.get("ship_amount") or 0)
+        except (TypeError, ValueError):
+            amount = 0
+        if amount <= 0:
+            return self._error("Informe quantos barcos comprar.")
+
+        create_job_with_workflow(
+            account=ga.account,
+            game_account=ga,
+            node=ga.account.node,
+            action_code=action_code,
+            inputs={"ship_kind": kind, "city_id": city_id, "amount": amount},
+            status="queued",
+        )
+        resp = HttpResponse(
+            render_to_string(
+                "jobs/partials/create_step_success.html",
+                {"jobs_created": 1, "action_name": action_meta["name"]},
+                request=request,
+            )
+        )
+        resp["HX-Trigger"] = json.dumps({
+            "toast": {"type": "success", "message": "Job Comprar Barcos criado!"},
             "jobsCreated": True,
         })
         return resp
