@@ -168,6 +168,19 @@ class PremiumResourcesRunner(BaseRunner):
             send_str = ", ".join(f"{v} {k}" for k, v in send.items() if v > 0)
             recv_str = ", ".join(f"{v} {k}" for k, v in receive.items() if v > 0)
             self.log(jid, "info", f"Troca 1:1 na cidade {trade_city_id} ({pool}): enviou [{send_str}] recebeu [{recv_str}] (paga {price} {method}) {('| ' + fb) if fb else ''}")
+
+            # Patch do snapshot: reflete a troca no estoque da cidade sem esperar
+            # o proximo Verificar Status. novo = estoque - enviado + recebido.
+            try:
+                new_stock = {
+                    city_key[k]: max(0, stock[k] - send[k] + receive[k])
+                    for k in _RESOURCE_KEYS
+                }
+                self.hub.patch_snapshot_resources(str(ga_id), int(trade_city_id), resources=new_stock)
+                self.log(jid, "info", f"Snapshot da cidade {trade_city_id} atualizado apos a troca.")
+            except Exception as exc:
+                self.log(jid, "warn", f"Falha ao refletir a troca no snapshot: {exc}")
+
             return RunnerResult(success=True, data={"status": "traded", "city_id": trade_city_id, "send": send, "receive": receive, "total": pool, "feedback": fb})
 
         except Exception as exc:
