@@ -41,4 +41,17 @@ ACTIONS = {
         "description": "Mostra status resumido da conta.",
         "inputs": [],
     },
+    33: {
+        "name": "Renomear Cidade",
+        "name_en": "Rename city",
+        "category": CAT_ADMIN,
+        "icon": "bi-pencil-square",
+        "runner": "rename_city",
+        "requires_game_session": True,
+        "recurring": False,
+        "long_running": False,
+        "ui_hidden": True,
+        "description": "Renomeia uma cidade no jogo (usado pela edicao inline do painel).",
+        "inputs": [],
+    },
 }
