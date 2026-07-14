@@ -14,6 +14,59 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _unit_name(unit_id: str) -> str:
+    try:
+        from core.catalogs import UNIT_CATALOG
+        info = UNIT_CATALOG.get(f"s{unit_id}") or UNIT_CATALOG.get(str(unit_id)) or {}
+        return str(info.get("name") or f"u{unit_id}")
+    except Exception:
+        return f"u{unit_id}"
+
+
+def _format_combat_report(kwargs: dict) -> str:
+    def _e(v):
+        return html.escape(str(v)) if v is not None else ""
+
+    result = str(kwargs.get("result") or "")
+    won = result == "victory"
+    icon = "\U0001f6e1️" if won else "⚔️"
+    head = "Vitoria" if won else "Derrota"
+    city = _e(kwargs.get("city_name"))
+    owner = _e(kwargs.get("owner_name"))
+    rounds = _e(kwargs.get("total_rounds") or 0)
+    date = _e(kwargs.get("date"))
+
+    lines = [f"{icon} <b>Relatorio de combate — {head}</b>"]
+    meta = " | ".join(p for p in [f"Cidade: {city}" if city else "", f"vs {owner}" if owner else "", f"{rounds} round(s)"] if p)
+    if meta:
+        lines.append(meta)
+    if date:
+        lines.append(f"<i>{date}</i>")
+
+    def _losses_block(title: str, losses: dict) -> list:
+        if not isinstance(losses, dict) or not losses:
+            return []
+        rows = sorted(losses.items(), key=lambda kv: -int(kv[1] or 0))
+        body = [f"<b>{title}</b>"]
+        for uid, qty in rows:
+            if int(qty or 0) <= 0:
+                continue
+            body.append(f"  {_e(_unit_name(uid))}: <code>-{int(qty)}</code>")
+        return body if len(body) > 1 else []
+
+    atk = _losses_block("Perdas do atacante", kwargs.get("attacker_losses") or {})
+    dfn = _losses_block("Perdas do defensor", kwargs.get("defender_losses") or {})
+    if atk:
+        lines.append("")
+        lines.extend(atk)
+    if dfn:
+        lines.append("")
+        lines.extend(dfn)
+    if not atk and not dfn:
+        lines.append("Sem perdas registradas.")
+    return "\n".join(lines)
+
+
 def format_message(event_key: str, **kwargs) -> str:
     """
     Format a notification message for a given event type.
@@ -21,6 +74,9 @@ def format_message(event_key: str, **kwargs) -> str:
     Loads the NotificationTemplate from DB and renders with context.
     Falls back to a richer generic format if no template exists.
     """
+    if event_key == "combat_report":
+        return _format_combat_report(kwargs)
+
     try:
         from apps.telegram.models import NotificationTemplate
 

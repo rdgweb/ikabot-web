@@ -83,6 +83,14 @@ EVENT_TYPES = [
         "icon": "bi-film",
         "field": "notify_cinema_available",
     },
+    {
+        "key": "combat_report",
+        "label": "Relatorio de combate",
+        "description": "Envia o resumo dos relatorios de combate (perdas de cada lado) captados pelo Monitor de Combate.",
+        "category": "operational",
+        "icon": "bi-shield-shaded",
+        "field": "notify_combat_report",
+    },
 ]
 
 # Lookup by field name -> event info

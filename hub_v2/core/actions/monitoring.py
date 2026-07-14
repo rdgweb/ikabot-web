@@ -123,6 +123,23 @@ ACTIONS = {
             {"key": "notify_telegram", "type": FIELD_BOOL, "label": "Notificar no Telegram", "required": False, "default": True, "help": "Envia notificacao para ataques novos detectados."},
         ],
     },
+    34: {
+        "name": "Monitor de Combate",
+        "name_en": "Combat monitor",
+        "category": CAT_MONITORING,
+        "icon": "bi-shield-shaded",
+        "runner": "combat_monitor",
+        "requires_game_session": True,
+        "recurring": True,
+        "long_running": True,
+        "ready": True,
+        "description": "Acompanha os relatorios de combate da conta e envia ao Telegram o resumo com a tabela de perdas de cada lado, round a round.",
+        "inputs": [
+            {"key": "interval_minutes", "type": FIELD_INT, "label": "Intervalo de checagem (min)", "required": True, "min": 3, "default": 10, "help": "Frequencia com que a lista de combates e relida."},
+            {"key": "with_rounds", "type": FIELD_BOOL, "label": "Detalhar perdas por round", "required": False, "default": True, "help": "Le o relatorio detalhado para somar as perdas de cada unidade."},
+            {"key": "notify_telegram", "type": FIELD_BOOL, "label": "Notificar no Telegram", "required": False, "default": True},
+        ],
+    },
     702: {
         "name": "Alerta de Vinho",
         "name_en": "Low wine alerts",
