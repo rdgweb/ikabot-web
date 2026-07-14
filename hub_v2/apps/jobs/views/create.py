@@ -801,6 +801,32 @@ _TRADE_TO_CITY_KEY = {
 }
 
 
+def _clone_city_context(construction_cities):
+    """Cidades + seus edificios (id, nome, nivel, posicao) para o Clonar Cidade."""
+    from core.catalogs import get_building_info
+    out = []
+    for city in construction_cities or []:
+        blds = []
+        for b in city.get("buildings") or []:
+            bid = str(b.get("building") or "")
+            if not bid:
+                continue
+            blds.append({
+                "building_id": bid,
+                "name": str(get_building_info(bid).get("name") or bid),
+                "level": int(b.get("level") or 0),
+                "position": int(b.get("position") or 0),
+            })
+        blds.sort(key=lambda r: -r["level"])
+        out.append({
+            "id": str(city.get("id")),
+            "name": str(city.get("name") or city.get("id")),
+            "buildings": blds,
+            "building_count": len(blds),
+        })
+    return {"cities": out}
+
+
 def _ships_form_context(snapshot):
     """Cidades + porto (comprados/bonus/custo) para o form de Comprar Barcos."""
     base = (snapshot.base_snapshot if snapshot else {}) or {}
@@ -1994,6 +2020,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities, request=None, 
         "bm_buy_ui": _bm_available_offers_context(cities, snapshot),
         "premium_ui": _premium_form_context(snapshot),
         "ships_ui": _ships_form_context(snapshot),
+        "clone_ui": _clone_city_context(cities) if int(action_code) == 1301 else {"cities": []},
     }
     if int(action_code) == 15:
         ctx.update(_spy_context(ga, cities, getattr(form, "initial", {})))
@@ -2595,6 +2622,9 @@ class JobSubmitView(LoginRequiredMixin, View):
         if int(action_code) == 29:
             return self._submit_buy_ships(request, ga, action_code, action_meta)
 
+        if int(action_code) == 1301:
+            return self._submit_clone_city(request, ga, action_meta, construction_cities)
+
         form = JobCreateForm(
             request.POST,
             action_code=action_code,
@@ -2710,6 +2740,101 @@ class JobSubmitView(LoginRequiredMixin, View):
         )
         resp["HX-Trigger"] = json.dumps({
             "toast": {"type": "success", "message": "Job Recursos Premium criado!"},
+            "jobsCreated": True,
+        })
+        return resp
+
+    def _submit_clone_city(self, request, ga, action_meta, construction_cities):
+        """Gera um plano de construcao (ac=1002) por cidade alvo para igualar a modelo."""
+        from core.catalogs import get_building_info
+
+        model_id = str(request.POST.get("clone_model_id") or "").strip()
+        target_ids = [t for t in request.POST.getlist("clone_target_ids") if str(t).strip()]
+        try:
+            max_level = int(request.POST.get("clone_max_level") or 0)
+        except (TypeError, ValueError):
+            max_level = 0
+        if not model_id:
+            return self._error("Selecione a cidade modelo.")
+        if not target_ids:
+            return self._error("Selecione ao menos uma cidade alvo.")
+
+        by_id = {str(c.get("id")): c for c in construction_cities}
+        model = by_id.get(model_id)
+        if not model:
+            return self._error("Cidade modelo nao encontrada.")
+
+        # edificios da modelo por building_id -> maior nivel
+        model_blds: dict[str, int] = {}
+        for b in model.get("buildings") or []:
+            bid = str(b.get("building") or "")
+            if bid:
+                model_blds[bid] = max(model_blds.get(bid, 0), int(b.get("level") or 0))
+
+        jobs_created = 0
+        for tid in target_ids:
+            if tid == model_id:
+                continue
+            target = by_id.get(tid)
+            if not target:
+                continue
+            tgt_levels: dict[str, int] = {}
+            for b in target.get("buildings") or []:
+                bid = str(b.get("building") or "")
+                if bid:
+                    tgt_levels[bid] = max(tgt_levels.get(bid, 0), int(b.get("level") or 0))
+            tgt_positions = {str(b.get("building")): str(b.get("position")) for b in target.get("buildings") or []}
+
+            steps = []
+            for bid, mlevel in model_blds.items():
+                goal = min(mlevel, max_level) if max_level > 0 else mlevel
+                cur = tgt_levels.get(bid, 0)
+                if goal <= cur:
+                    continue
+                steps.append({
+                    "city_id": tid,
+                    "city_name": target.get("name", tid),
+                    "building_id": bid,
+                    "building_type": bid,
+                    "building_name": str(get_building_info(bid).get("name") or bid),
+                    "building_position": tgt_positions.get(bid, ""),
+                    "mode": "upgrade" if bid in tgt_levels else "new",
+                    "target_level": int(goal),
+                })
+            if not steps:
+                continue
+
+            steps = _resolve_construction_new_slots(steps, construction_cities)
+            rr, btr, gtr = _resolve_construction_modifiers(1002, ga, {})
+            preview = build_construction_plan_preview(
+                game_account=ga, steps=steps,
+                research_reduction=rr, build_time_reduction=btr, government_time_reduction=gtr,
+            )
+            inputs = {
+                "research_reduction": rr, "build_time_reduction": btr, "government_time_reduction": gtr,
+                "construction_plan_json": steps,
+                "construction_plan_steps": preview.steps,
+                "construction_summary": {"steps": len(steps), "totals": preview.totals,
+                                         "reserved_local": preview.reserved_local, "missing": preview.missing,
+                                         "base_seconds": preview.base_seconds, "adjusted_seconds": preview.adjusted_seconds},
+                "clone_source": {"model_city_id": model_id, "max_level": max_level},
+            }
+            job = create_job_with_workflow(
+                account=ga.account, game_account=ga, node=ga.account.node,
+                action_code=1002, inputs=inputs, status="queued",
+            )
+            self._create_construction_reservations(job, preview)
+            jobs_created += 1
+
+        if jobs_created == 0:
+            return self._error("As cidades alvo ja estao iguais ou acima da modelo (nada a construir).")
+
+        resp = HttpResponse(
+            render_to_string("jobs/partials/create_step_success.html",
+                             {"jobs_created": jobs_created, "action_name": action_meta["name"]}, request=request)
+        )
+        resp["HX-Trigger"] = json.dumps({
+            "toast": {"type": "success", "message": f"{jobs_created} plano(s) de clonagem criado(s)!"},
             "jobsCreated": True,
         })
         return resp

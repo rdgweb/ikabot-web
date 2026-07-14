@@ -1,0 +1,76 @@
+{% load static hub_tags %}
+
+{% if action_code == 1301 %}
+{{ clone_ui.cities|json_script:"clone-cities-data" }}
+
+<div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_36px_rgba(60,45,18,0.10)]"
+     style="border-color: var(--ik-line); background:
+       radial-gradient(760px 300px at 0% 0%, rgba(95,140,78,0.14), transparent 60%),
+       linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
+     x-data="cloneForm()" x-init="init()">
+
+  <input type="hidden" name="clone_model_id" :value="modelId">
+  <input type="hidden" name="clone_max_level" :value="maxLevel">
+  <template x-for="t in targets" :key="t"><input type="hidden" name="clone_target_ids" :value="t"></template>
+
+  <div class="border-b px-6 py-5" style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0));">
+    <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-good);">Clonar Cidade</div>
+    <h3 class="mt-1 text-xl font-bold text-ink">Replique os edificios de uma cidade em outras</h3>
+    <p class="mt-2 text-sm leading-relaxed text-muted">
+      Escolha a cidade <b>modelo</b> e as cidades <b>alvo</b>. Cada alvo recebe um plano de construcao para
+      igualar os niveis dos edificios da modelo. Opcionalmente limite por um nivel maximo.
+    </p>
+  </div>
+
+  <div class="px-6 py-5 grid grid-cols-1 lg:grid-cols-2 gap-5">
+    {# Modelo #}
+    <section class="rounded-2xl border p-4" style="border-color: rgba(79,134,185,0.22); background: rgba(255,255,255,0.82);">
+      <div class="text-[11px] font-semibold uppercase tracking-[0.16em] mb-2" style="color: var(--ik-sea);">Cidade modelo</div>
+      <select x-model="modelId" class="form-input mb-3">
+        <option value="">— escolha —</option>
+        <template x-for="c in cities" :key="'m'+c.id"><option :value="c.id" x-text="c.name + ' (' + c.building_count + ' edificios)'"></option></template>
+      </select>
+      <template x-if="model()">
+        <div class="max-h-52 overflow-y-auto rounded-lg border p-2 text-[12px]" style="border-color: var(--ik-line);">
+          <template x-for="b in model().buildings" :key="'mb'+b.building_id+b.position">
+            <div class="flex items-center justify-between py-0.5">
+              <span class="text-ink" x-text="b.name"></span>
+              <span class="font-mono text-muted">Lv <span x-text="b.level"></span></span>
+            </div>
+          </template>
+        </div>
+      </template>
+    </section>
+
+    {# Alvos + nivel maximo #}
+    <section class="rounded-2xl border p-4" style="border-color: rgba(95,140,78,0.22); background: rgba(255,255,255,0.82);">
+      <div class="text-[11px] font-semibold uppercase tracking-[0.16em] mb-2" style="color: var(--ik-good);">Cidades alvo</div>
+      <div class="max-h-40 overflow-y-auto rounded-lg border p-2 mb-3" style="border-color: var(--ik-line);">
+        <template x-for="c in cities" :key="'t'+c.id">
+          <label class="flex items-center gap-2 py-1 cursor-pointer" x-show="c.id !== modelId">
+            <input type="checkbox" :value="c.id" x-model="targets" class="h-4 w-4">
+            <span class="text-sm text-ink" x-text="c.name"></span>
+          </label>
+        </template>
+      </div>
+      <label class="block">
+        <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Nivel maximo (0 = igual a modelo)</span>
+        <input type="number" min="0" max="60" x-model.number="maxLevel" class="form-input w-32">
+      </label>
+      <div class="mt-3 text-[11px] text-muted">
+        <i class="bi bi-info-circle"></i> Cada alvo vira um plano de construcao (ac=1002) que so inclui o que falta subir.
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+function cloneForm() {
+  return {
+    cities: [], modelId: '', targets: [], maxLevel: 0,
+    init() { this.cities = JSON.parse(document.getElementById('clone-cities-data')?.textContent || '[]'); },
+    model() { return this.cities.find(c => String(c.id) === String(this.modelId)) || null; },
+  };
+}
+</script>
+{% endif %}
