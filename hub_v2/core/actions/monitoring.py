@@ -121,6 +121,7 @@ ACTIONS = {
             {"key": "min_troops", "type": FIELD_INT, "label": "Ignorar abaixo de tropas", "required": True, "min": 0, "default": 0, "help": "Ataques com menos tropas do que isso nao geram alerta novo."},
             {"key": "min_fleet", "type": FIELD_INT, "label": "Ignorar abaixo de frotas", "required": True, "min": 0, "default": 0, "help": "Ataques com menos navios do que isso nao geram alerta novo."},
             {"key": "notify_telegram", "type": FIELD_BOOL, "label": "Notificar no Telegram", "required": False, "default": True, "help": "Envia notificacao para ataques novos detectados."},
+            {"key": "spawn_combat_monitor", "type": FIELD_BOOL, "label": "Acompanhar batalha ao vivo (Telegram)", "required": False, "default": True, "help": "Ao detectar um ataque, aciona o Monitor de Combate para enviar cada round e o relatorio final no Telegram."},
         ],
     },
     34: {
@@ -133,12 +134,9 @@ ACTIONS = {
         "recurring": True,
         "long_running": True,
         "ready": True,
-        "description": "Acompanha os relatorios de combate da conta e envia ao Telegram o resumo com a tabela de perdas de cada lado, round a round.",
-        "inputs": [
-            {"key": "interval_minutes", "type": FIELD_INT, "label": "Intervalo de checagem (min)", "required": True, "min": 3, "default": 10, "help": "Frequencia com que a lista de combates e relida."},
-            {"key": "with_rounds", "type": FIELD_BOOL, "label": "Detalhar perdas por round", "required": False, "default": True, "help": "Le o relatorio detalhado para somar as perdas de cada unidade."},
-            {"key": "notify_telegram", "type": FIELD_BOOL, "label": "Notificar no Telegram", "required": False, "default": True},
-        ],
+        "ui_hidden": True,
+        "description": "Acompanha a batalha ao vivo, round a round, e envia ao Telegram cada round e o relatorio final. E' acionado automaticamente pelo Alerta de Ataques quando ha um ataque; nao precisa ser criado manualmente.",
+        "inputs": [],
     },
     702: {
         "name": "Alerta de Vinho",

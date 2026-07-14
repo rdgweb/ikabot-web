@@ -214,6 +214,24 @@ class AlertAttacksRunner(BaseRunner):
                         agent_name=str(job.get("agent") or ""),
                     )
                     notified_map[event_id] = now_ts
+                    # Acorda o Monitor de Combate (ac=34) para acompanhar a
+                    # batalha ao vivo: agenda pela chegada do ataque.
+                    if bool(inputs.get("spawn_combat_monitor", True)):
+                        try:
+                            self.hub.spawn_job(
+                                jid,
+                                action_code=34,
+                                inputs={
+                                    "target_city_id": str(event.get("target_city_id") or ""),
+                                    "arrival_eta_seconds": int(event.get("time_left_sec") or 0),
+                                    "notify_telegram": True,
+                                },
+                                delay_seconds=max(0, int(event.get("time_left_sec") or 0) - 60),
+                                game_account_id=ga_id,
+                            )
+                            self.log(jid, "info", "Monitor de Combate acionado para acompanhar a batalha ao vivo.")
+                        except Exception as exc:
+                            self.log(jid, "warn", f"Falha ao acionar Monitor de Combate: {exc}")
 
             if new_events:
                 notified_map = self._prune_seen_map(notified_map, now_ts)
