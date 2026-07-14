@@ -33,4 +33,5 @@ from runners import (  # noqa: F401
     debug_view_dump,
     premium,
     port,
+    rename_city,
 )

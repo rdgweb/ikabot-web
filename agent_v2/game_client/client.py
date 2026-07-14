@@ -456,6 +456,11 @@ class GameClient(IslandActions):
         action = CinemaAction(self)
         return action.get_state(city_id=city_id)
 
+    def rename_city(self, city_id: int, name: str) -> dict[str, Any]:
+        """Renomeia a cidade no townHall."""
+        from .actions.rename_city import RenameCityAction
+        return RenameCityAction(self).execute(city_id=city_id, name=name)
+
     def get_port_state(self, city_id: int) -> dict[str, Any]:
         """Estado do porto: barcos, custos, ouro."""
         return PortAction(self).get_state(city_id=city_id)
