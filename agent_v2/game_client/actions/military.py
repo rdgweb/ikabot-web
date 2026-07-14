@@ -1450,6 +1450,8 @@ class FetchCombatDetailedReportAction(BaseAction):
             # followed by <div class="number center"> N (-lost)
             ATTACKER_FIELD = "11"
             DEFENDER_FIELD = "12"
+            round_atk: dict[str, int] = {}
+            round_def: dict[str, int] = {}
             for slot_m in re.finditer(
                 r'id="slot(\d+)_\d+_\d+"\s+class="slot[^"]*\bs(\d+)\b[^"]*"'
                 r'.*?<div class="number center">\s*([\d,]+)\s*\(-([\d,]+)\)',
@@ -1461,8 +1463,15 @@ class FetchCombatDetailedReportAction(BaseAction):
                 if lost > 0:
                     target = attacker_losses if side == ATTACKER_FIELD else defender_losses
                     target[uid] = target.get(uid, 0) + lost
+                    rtarget = round_atk if side == ATTACKER_FIELD else round_def
+                    rtarget[uid] = rtarget.get(uid, 0) + lost
 
-            rounds_html.append({"round": current_round, "html": html})
+            rounds_html.append({
+                "round": current_round,
+                "html": html,
+                "attacker_losses": round_atk,
+                "defender_losses": round_def,
+            })
 
             # Vimos todos os rounds reais? Encerra.
             if total_rounds_known > 0 and len(seen_rounds) >= total_rounds_known:
@@ -1470,11 +1479,12 @@ class FetchCombatDetailedReportAction(BaseAction):
 
         combined = "\n<!-- ROUND SEPARATOR -->\n".join(r["html"] for r in rounds_html)
         return {
-            "total_rounds":     len(rounds_html),
-            "rounds":           rounds_html,
-            "combined_html":    combined,
-            "attacker_losses":  attacker_losses,
-            "defender_losses":  defender_losses,
+            "total_rounds":        len(rounds_html),
+            "total_rounds_known":  total_rounds_known,
+            "rounds":              rounds_html,
+            "combined_html":       combined,
+            "attacker_losses":     attacker_losses,
+            "defender_losses":     defender_losses,
         }
 
 

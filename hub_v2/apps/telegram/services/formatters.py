@@ -14,6 +14,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _to_i(v) -> int:
+    try:
+        return int(v)
+    except Exception:
+        return 0
+
+
 def _unit_name(unit_id: str) -> str:
     try:
         from core.catalogs import UNIT_CATALOG
@@ -27,19 +34,27 @@ def _format_combat_report(kwargs: dict) -> str:
     def _e(v):
         return html.escape(str(v)) if v is not None else ""
 
+    phase = str(kwargs.get("phase") or "final")
     result = str(kwargs.get("result") or "")
     won = result == "victory"
-    icon = "\U0001f6e1️" if won else "⚔️"
-    head = "Vitoria" if won else "Derrota"
     city = _e(kwargs.get("city_name"))
     owner = _e(kwargs.get("owner_name"))
-    rounds = _e(kwargs.get("total_rounds") or 0)
+    total = _to_i(kwargs.get("total_rounds"))
     date = _e(kwargs.get("date"))
 
-    lines = [f"{icon} <b>Relatorio de combate — {head}</b>"]
-    meta = " | ".join(p for p in [f"Cidade: {city}" if city else "", f"vs {owner}" if owner else "", f"{rounds} round(s)"] if p)
-    if meta:
-        lines.append(meta)
+    if phase == "round":
+        rnum = _to_i(kwargs.get("round"))
+        lines = [f"⚔️ <b>Combate — Round {rnum}{('/' + str(total)) if total else ''}</b>"]
+        meta = " | ".join(p for p in [f"Cidade: {city}" if city else "", f"vs {owner}" if owner else ""] if p)
+        if meta:
+            lines.append(meta)
+    else:
+        icon = "\U0001f6e1️" if won else "⚔️"
+        head = "Vitoria" if won else "Derrota"
+        lines = [f"{icon} <b>Relatorio final — {head}</b>"]
+        meta = " | ".join(p for p in [f"Cidade: {city}" if city else "", f"vs {owner}" if owner else "", f"{total} round(s)" if total else ""] if p)
+        if meta:
+            lines.append(meta)
     if date:
         lines.append(f"<i>{date}</i>")
 
