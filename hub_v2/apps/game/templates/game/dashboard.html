@@ -368,22 +368,18 @@
                   <i class="bi bi-geo-alt-fill text-sea text-[10px]"></i>
                   {% endif %}
                   {% endwith %}
-                  <span x-data="{ editing: false, val: '{{ city.name|default:'Cidade'|escapejs }}' }" class="inline-flex items-center gap-1">
-                    <span x-show="!editing" x-text="val" @dblclick="editing = true; $nextTick(() => $refs.inp && $refs.inp.select())"
+                  <span x-data="cityRename('{{ card.game_account.pk }}', '{{ city.id }}', '{{ city.name|default:'Cidade'|escapejs }}')" class="inline-flex items-center gap-1">
+                    <span x-show="!editing" x-text="val" @dblclick="startEdit()"
                           class="font-medium text-ink cursor-text" title="Duplo clique para renomear"></span>
                     <template x-if="editing">
                       <span class="inline-flex items-center gap-1"
-                            @keydown.enter.prevent="$refs.saveBtn.click()"
-                            @keydown.escape.prevent="editing = false">
+                            @keydown.enter.prevent="save()"
+                            @keydown.escape.prevent="cancel()">
                         <input x-ref="inp" type="text" maxlength="15" x-model="val"
                                class="w-28 rounded border px-1.5 py-0.5 text-[13px]" style="border-color: var(--ik-line);">
-                        <button type="button" x-ref="saveBtn" title="Salvar"
-                                hx-post="{% url 'game:rename-city' %}"
-                                :hx-vals="JSON.stringify({game_account_id: '{{ card.game_account.pk }}', city_id: '{{ city.id }}', name: val})"
-                                hx-swap="none"
-                                @click="if (val.trim()) editing = false"
-                                class="text-[var(--ik-good)]"><i class="bi bi-check-lg"></i></button>
-                        <button type="button" title="Cancelar" @click="editing = false; val = '{{ city.name|default:'Cidade'|escapejs }}'"
+                        <button type="button" title="Salvar" @click="save()" :disabled="saving"
+                                class="text-[var(--ik-good)]"><i class="bi" :class="saving ? 'bi-hourglass-split' : 'bi-check-lg'"></i></button>
+                        <button type="button" title="Cancelar" @click="cancel()"
                                 class="text-[var(--ik-bad)]"><i class="bi bi-x-lg"></i></button>
                       </span>
                     </template>
@@ -930,6 +926,40 @@
 <script src="{% static 'js/game-dashboard-modals.js' %}"></script>
 <script src="{% static 'js/game-dashboard-charts.js' %}"></script>
 <script src="{% static 'js/game-dashboard-core.js' %}"></script>
+<script>
+  // Edicao inline do nome da cidade (fetch direto — HTMX nao processa
+  // elementos criados dentro de <template x-if>).
+  function cityRename(gaId, cityId, initial) {
+    return {
+      editing: false, saving: false, val: initial, original: initial,
+      startEdit() { this.editing = true; this.$nextTick(() => this.$refs.inp && this.$refs.inp.select()); },
+      cancel() { this.val = this.original; this.editing = false; },
+      _csrf() {
+        const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+        return m ? decodeURIComponent(m[1]) : '';
+      },
+      async save() {
+        const name = (this.val || '').trim().slice(0, 15);
+        if (!name || name === this.original) { this.editing = false; return; }
+        this.saving = true;
+        try {
+          const body = new URLSearchParams({ game_account_id: gaId, city_id: cityId, name });
+          const resp = await fetch("{% url 'game:rename-city' %}", {
+            method: 'POST',
+            headers: { 'X-CSRFToken': this._csrf(), 'Content-Type': 'application/x-www-form-urlencoded' },
+            body,
+          });
+          if (resp.ok) { this.original = name; this.val = name; }
+          window.dispatchEvent(new CustomEvent('toast', { detail: { type: resp.ok ? 'success' : 'error', message: resp.ok ? `Renomeando para ${name}...` : 'Falha ao renomear.' } }));
+        } catch (e) {
+          window.dispatchEvent(new CustomEvent('toast', { detail: { type: 'error', message: 'Erro de rede ao renomear.' } }));
+        } finally {
+          this.saving = false; this.editing = false;
+        }
+      },
+    };
+  }
+</script>
 {% endblock %}
 
 {% block extra_js %}
