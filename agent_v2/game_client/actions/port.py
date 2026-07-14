@@ -37,10 +37,18 @@ def ships_total_cost(start_count: int, amount: int) -> int:
 
 
 def _to_int(raw: Any) -> int:
+    # Campos podem vir como {"text": N}, N, "1.234" ou "-". Normaliza tudo.
+    if isinstance(raw, dict):
+        raw = raw.get("text", raw.get("value", 0))
     try:
-        return int(re.sub(r"[^\d]", "", str(raw or "0")) or 0)
+        return int(re.sub(r"[^\d]", "", str(raw if raw is not None else "0")) or 0)
     except Exception:
         return 0
+
+
+def _dget(d: Any) -> dict:
+    """Retorna d se for dict, senao {} (campos do jogo variam de tipo)."""
+    return d if isinstance(d, dict) else {}
 
 
 class PortAction(BaseAction):
@@ -75,15 +83,14 @@ class PortAction(BaseAction):
                 token = str(item[1].get("actionRequest") or "").strip()
                 if token:
                     self.client._action_request = token
-                gold = _to_int((item[1].get("headerData") or {}).get("gold"))
+                gold = _to_int(_dget(item[1].get("headerData")).get("gold"))
 
         def _state(action_key):
-            v = td.get(action_key) or {}
-            return str(v.get("buttonState") or "")
+            return str(_dget(td.get(action_key)).get("buttonState") or "")
 
-        t_count = _to_int((td.get("bonusShipTableTransporters") or {}).get("text"))
+        t_count = _to_int(td.get("bonusShipTableTransporters"))
         t_max = _to_int(td.get("js_maxTransporter"))
-        f_count = _to_int((td.get("bonusShipTableFreighters") or {}).get("text"))
+        f_count = _to_int(td.get("bonusShipTableFreighters"))
         f_max = _to_int(td.get("js_maxFreighter"))
         return {
             "city_id": int(city_id),
