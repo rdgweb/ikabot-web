@@ -141,7 +141,8 @@
 {% if account_cards %}
 <div class="space-y-6">
   {% for card in account_cards %}
-  <div class="card game-card" x-data="{ tab: 'cities', open: true }"
+  <div class="card game-card {% if card.under_attack %}under-attack{% endif %}" x-data="{ tab: 'cities', open: true }"
+       {% if card.under_attack %}style="border-color: var(--ik-bad); box-shadow: 0 0 0 2px rgba(187,81,67,0.35), 0 10px 30px rgba(187,81,67,0.18); background: linear-gradient(180deg, rgba(187,81,67,0.06), transparent 40%);"{% endif %}
        data-node="{{ card.account.node_id }}"
        data-account="{{ card.account.pk }}"
        data-game-account="{{ card.game_account_id }}"
@@ -185,7 +186,15 @@
           {{ card.player_name|truncatechars:2|upper }}
         </div>
         <div>
-          <h3 class="text-sm font-semibold text-ink">{{ card.player_name|default:card.account.label }}</h3>
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-semibold text-ink">{{ card.player_name|default:card.account.label }}</h3>
+            {% if card.under_attack %}
+            <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold text-white animate-pulse"
+                  style="background: var(--ik-bad);" title="{{ card.attack_hostile_count }} movimento(s) hostil(is)">
+              <i class="bi bi-exclamation-triangle-fill"></i> SOB ATAQUE
+            </span>
+            {% endif %}
+          </div>
           <p class="text-xs text-muted">{{ card.server_id }} &middot; {{ card.city_count }} cidades</p>
         </div>
       </div>

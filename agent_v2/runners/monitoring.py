@@ -233,15 +233,24 @@ class AlertAttacksRunner(BaseRunner):
             if ga_id:
                 self.save_game_client(ga_id, client)
 
+            # Sob ataque: intensifica a verificacao para 2 min ate o ataque
+            # chegar/passar; sem ataque, volta ao intervalo normal.
+            if matching_events:
+                next_seconds = 120
+                self.log(jid, "info", "Ataque ativo — verificando a cada 2 min ate resolver.")
+            else:
+                next_seconds = max(180, interval_minutes * 60)
+
             return RunnerResult(
                 success=True,
-                reschedule_seconds=max(180, interval_minutes * 60),
+                reschedule_seconds=next_seconds,
                 data={
                     "status": "ok",
                     "total_movements": total_movements,
                     "hostile_count": hostile_count,
                     "matching_count": len(matching_events),
                     "new_count": len(new_events),
+                    "under_attack": bool(matching_events),
                 },
             )
         except Exception as exc:

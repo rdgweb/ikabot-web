@@ -384,12 +384,16 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                 total_troops += troop_total
                 total_ships += ship_total
 
+                _attack_state = base.get("attack_alert_state") or {}
+                _under_attack = int(_attack_state.get("hostile_count") or 0) > 0
                 account_cards.append({
                     "account": acct,
                     "game_account": ga,
                     "game_account_id": str(ga.pk),
                     "snapshot": snapshot,
                     "base": base,
+                    "under_attack": _under_attack,
+                    "attack_hostile_count": int(_attack_state.get("hostile_count") or 0),
                     "gold": acct_gold,
                     "income": acct_income,
                     "gross_income": gross_income,
