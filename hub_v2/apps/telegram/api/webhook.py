@@ -33,6 +33,75 @@ from apps.market.services import (
 logger = logging.getLogger(__name__)
 
 
+def _create_defense_job(target_city_id: str, ga_id: str, kind: str = "troops") -> tuple[bool, str]:
+    """Cria um job ac=1202 (mover forcas) para defender a cidade atacada.
+
+    Escolhe a cidade com mais forca (tropas ou frotas) diferente da atacada e
+    move todas as unidades dela para a cidade sob ataque.
+    """
+    from apps.accounts.models import GameAccount
+    from apps.game.models import AccountSnapshot
+    from apps.jobs.services.workflows import create_job_with_workflow
+    from core.catalogs import UNIT_CATALOG
+
+    kind = "fleet" if kind == "fleet" else "troops"
+    try:
+        ga = GameAccount.objects.select_related("account__node").get(pk=ga_id)
+    except GameAccount.DoesNotExist:
+        return False, "Conta nao encontrada."
+    if not ga.account.node:
+        return False, "Conta sem no."
+
+    # mapa nome -> unit_id a partir do UNIT_CATALOG (chaves sXXX)
+    name_to_id: dict[str, int] = {}
+    for key, info in UNIT_CATALOG.items():
+        if isinstance(key, str) and key.startswith("s") and key[1:].isdigit():
+            name_to_id[str(info.get("name") or "").strip()] = int(key[1:])
+
+    try:
+        snap = AccountSnapshot.objects.get(game_account=ga)
+    except AccountSnapshot.DoesNotExist:
+        return False, "Sem snapshot da conta (rode Verificar Status)."
+    by_city = (snap.military or {}).get("by_city") or []
+    bucket = "fleet" if kind == "fleet" else "troops"
+
+    best = None
+    best_total = 0
+    for c in by_city:
+        if not isinstance(c, dict):
+            continue
+        cid = str(c.get("city_id") or "")
+        if cid == str(target_city_id):
+            continue
+        forces = c.get(bucket) or {}
+        total = sum(int(v or 0) for v in forces.values())
+        if total > best_total:
+            best_total, best = total, c
+
+    if not best or best_total <= 0:
+        return False, f"Nenhuma cidade com {'frotas' if kind == 'fleet' else 'tropas'} para enviar."
+
+    units = {}
+    for name, qty in (best.get(bucket) or {}).items():
+        uid = name_to_id.get(str(name).strip())
+        if uid and int(qty or 0) > 0:
+            units[str(uid)] = int(qty)
+    if not units:
+        return False, "Nao consegui mapear as unidades da cidade de origem."
+
+    from_city_id = str(best.get("city_id"))
+    create_job_with_workflow(
+        account=ga.account,
+        game_account=ga,
+        node=ga.account.node,
+        action_code=1202,
+        inputs={"scope": kind, "from_city_id": from_city_id, "to_city_id": str(target_city_id), "units": units},
+        status="queued",
+    )
+    label = "frotas" if kind == "fleet" else "tropas"
+    return True, f"Enviando {best_total} {label} de {from_city_id} para {target_city_id}."
+
+
 def _create_raid_job(
     target_city_id: str,
     island_id: str,
@@ -460,6 +529,30 @@ class TelegramWebhookView(APIView):
                         answer_callback_query(cq_id, f"❌ {msg[:180]}", show_alert=True)
                 else:
                     answer_callback_query(cq_id, "❌ Dados inválidos.", show_alert=True)
+                return Response({"status": "ok"})
+
+            elif cq_data.startswith("defend:"):
+                # defend:{target_city_id}:{ga_id}[:{kind}]
+                parts = cq_data[len("defend:"):].split(":")
+                if len(parts) >= 2:
+                    target_city_id = parts[0]
+                    kind = parts[-1] if parts[-1] in ("troops", "fleet") else "troops"
+                    ga_id_str = ":".join(parts[1:-1]) if parts[-1] in ("troops", "fleet") else ":".join(parts[1:])
+                    ok, msg = _create_defense_job(target_city_id, ga_id_str, kind=kind)
+                    if ok:
+                        answer_callback_query(cq_id, "🛡️ Defesa enviada!")
+                        if cq_message_id and cq_chat_id:
+                            edit_message_text(cq_chat_id, cq_message_id, f"{cq_message_text}\n\n<i>🛡️ {msg}</i>")
+                    else:
+                        answer_callback_query(cq_id, f"❌ {msg[:180]}", show_alert=True)
+                else:
+                    answer_callback_query(cq_id, "❌ Dados invalidos.", show_alert=True)
+                return Response({"status": "ok"})
+
+            elif cq_data.startswith("defend_skip:"):
+                answer_callback_query(cq_id, "Ignorado.")
+                if cq_message_id and cq_chat_id:
+                    edit_message_text(cq_chat_id, cq_message_id, f"{cq_message_text}\n\n<i>Ataque ignorado</i>")
                 return Response({"status": "ok"})
 
             else:

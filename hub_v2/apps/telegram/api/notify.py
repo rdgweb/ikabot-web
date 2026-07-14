@@ -88,6 +88,21 @@ class AgentNotifyView(APIView):
                     ]]
                 }
 
+        if data["event"] == "attack_alert":
+            tc = str(metadata.get("target_city_id") or "").strip()
+            ga_str = str(game_account.pk) if game_account else ""
+            # tipo de defesa: se ha frota atacando e nenhuma tropa, sugere frota
+            troops = int(metadata.get("troops") or 0)
+            fleet = int(metadata.get("fleet") or 0)
+            kind = "fleet" if (fleet > 0 and troops == 0) else "troops"
+            if tc and ga_str:
+                metadata["reply_markup"] = {
+                    "inline_keyboard": [[
+                        {"text": "🛡️ Defender", "callback_data": f"defend:{tc}:{ga_str}:{kind}"},
+                        {"text": "❌ Ignorar", "callback_data": f"defend_skip:{tc}"},
+                    ]]
+                }
+
         if data["event"] == "diplomacy_message":
             reply_command = TelegramIncomingCommand.command_for(
                 TelegramIncomingCommand.COMMAND_DIPLOMACY_REPLY
