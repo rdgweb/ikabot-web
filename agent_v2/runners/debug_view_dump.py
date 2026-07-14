@@ -34,9 +34,11 @@ class DebugViewDumpRunner(BaseRunner):
         ga_id = job.get("game_account_id")
         inputs = dict(job.get("inputs") or {})
 
+        fetch_home = bool(inputs.get("fetch_home"))
         cinema_claim_test = bool(inputs.get("cinema_claim_test"))
+        rename_probe = inputs.get("rename_probe")  # {"city_id":..,"name":..}
         captures = [c for c in (inputs.get("captures") or []) if isinstance(c, dict) and c.get("params")]
-        if not captures and not cinema_claim_test:
+        if not captures and not cinema_claim_test and not fetch_home and not inputs.get("fetch_assets") and not rename_probe:
             self.log(jid, "error", "Nenhuma captura configurada (inputs.captures)")
             return RunnerResult(success=False, data={"error": "missing_captures"})
 
@@ -59,6 +61,42 @@ class DebugViewDumpRunner(BaseRunner):
         self.log(jid, "info", f"Cidade base: {city_id}")
 
         saved: list[str] = []
+
+        for asset_url in (inputs.get("fetch_assets") or []):
+            try:
+                full = "https:" + asset_url if asset_url.startswith("//") else (
+                    asset_url if asset_url.startswith("http") else client._server_url.rsplit("/", 1)[0] + "/" + asset_url.lstrip("/")
+                )
+                resp = client.session.get(full, timeout=30)
+                import os as _os
+                fname = _os.path.basename(asset_url.split("?")[0]) or "asset.bin"
+                with open(os.path.join(DUMP_DIR, fname), "wb") as fh:
+                    fh.write(resp.content)
+                self.log(jid, "info", f"Asset {fname}: {len(resp.content)} bytes")
+            except Exception as exc:
+                self.log(jid, "warn", f"Asset {asset_url} falhou: {exc}")
+            time.sleep(0.8)
+
+        if fetch_home:
+            import re as _re
+            home = client.session.get(client._server_url, timeout=30).text
+            with open(os.path.join(DUMP_DIR, "home.html"), "w", encoding="utf-8") as fh:
+                fh.write(home)
+            css_links = _re.findall(r'<link[^>]+href="([^"]+\.css[^"]*)"', home)
+            self.log(jid, "info", f"home CSS links: {css_links[:20]}")
+            for css_url in css_links[:8]:
+                full = css_url if css_url.startswith("http") else ("https:" + css_url if css_url.startswith("//") else client._server_url.rsplit("/", 1)[0] + "/" + css_url.lstrip("/"))
+                try:
+                    css = client.session.get(full, timeout=30).text
+                    fname = "css_" + _re.sub(r"[^a-zA-Z0-9]", "_", css_url)[-40:] + ".css"
+                    with open(os.path.join(DUMP_DIR, fname), "w", encoding="utf-8") as fh:
+                        fh.write(css)
+                    hits = css.count("itemIcon") + css.count("crystalBonus")
+                    self.log(jid, "info", f"CSS {fname}: {len(css)} chars | itemIcon/bonus hits={hits}")
+                except Exception as exc:
+                    self.log(jid, "warn", f"CSS {css_url} falhou: {exc}")
+                time.sleep(0.8)
+
         for capture in captures[:15]:
             name = str(capture.get("name") or capture["params"].get("view") or "capture").strip()
             params = dict(capture["params"])
@@ -84,6 +122,45 @@ class DebugViewDumpRunner(BaseRunner):
             except Exception as exc:
                 self.log(jid, "warn", f"Captura {name} falhou: {exc}")
             time.sleep(1.5)
+
+        if rename_probe:
+            from game_client.constants import GAME_AJAX_HEADERS as _H
+            from services.resource_transport import change_current_city as _ccc
+            rc_id = int(rename_probe.get("city_id") or city_id)
+            rc_name = str(rename_probe.get("name") or "")
+            _ccc(client, rc_id)
+            # 1. abre o townHall e captura o actionRequest fresco
+            th = client._request("POST", client._server_url, data={
+                "view": "townHall", "cityId": rc_id, "position": "0",
+                "backgroundView": "city", "currentCityId": rc_id,
+                "templateView": "townHall", "actionRequest": client._action_request, "ajax": "1",
+            }, headers=_H)
+            import re as _re
+            mt = _re.search(r'"actionRequest"\s*:\s*"([a-f0-9]{32})"', th.text)
+            if mt:
+                client._action_request = mt.group(1)
+            self.log(jid, "info", f"townHall aberto, actionRequest={client._action_request[:10]}...")
+            # 2. rename com o token fresco
+            rn = client._request("POST", client._server_url, data={
+                "action": "CityScreen", "function": "rename", "cityId": rc_id, "position": "0",
+                "name": rc_name, "backgroundView": "city", "currentCityId": rc_id,
+                "templateView": "townHall", "actionRequest": client._action_request, "ajax": "1",
+            }, headers=_H)
+            with open(os.path.join(DUMP_DIR, "rename_resp.txt"), "w", encoding="utf-8") as fh:
+                fh.write(rn.text)
+            self.log(jid, "info", f"rename resp salvo ({len(rn.text)} chars) | inicio: {rn.text[:300]}")
+            # revert opcional: renomeia de volta para o nome informado em revert_to
+            revert_to = str(rename_probe.get("revert_to") or "")
+            if revert_to:
+                time.sleep(1.5)
+                rn2 = client._request("POST", client._server_url, data={
+                    "action": "CityScreen", "function": "rename", "cityId": rc_id, "position": "0",
+                    "name": revert_to, "backgroundView": "city", "currentCityId": rc_id,
+                    "templateView": "townHall", "actionRequest": client._action_request, "ajax": "1",
+                }, headers=_H)
+                self.log(jid, "info", f"revertido para '{revert_to}'")
+            self.save_game_client(ga_id, client)
+            return RunnerResult(success=True, data={"status": "rename_probe"})
 
         if cinema_claim_test:
             import json as _json

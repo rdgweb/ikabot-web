@@ -17,6 +17,23 @@ class RenameCityAction(BaseAction):
         new_name = str(name or "").strip()[:15]
         if not new_name:
             return {"ok": False, "error": "empty_name"}
+
+        # O rename e submit de um form DENTRO do townHall: e' preciso abrir a
+        # tela antes para o jogo aceitar (e pegar o actionRequest fresco).
+        import re
+        th = self.client._request(
+            "POST", self.client._server_url,
+            data={
+                "view": "townHall", "cityId": str(city_id), "position": "0",
+                "backgroundView": "city", "currentCityId": str(city_id),
+                "templateView": "townHall", "actionRequest": self.client._action_request, "ajax": "1",
+            },
+            headers=GAME_AJAX_HEADERS,
+        )
+        mt = re.search(r'"actionRequest"\s*:\s*"([a-f0-9]{32})"', th.text)
+        if mt:
+            self.client._action_request = mt.group(1)
+
         params = {
             "action": "CityScreen",
             "function": "rename",
