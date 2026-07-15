@@ -1,4 +1,5 @@
 {% extends base_template|default:"base.html" %}
+{% load static hub_tags humanize %}
 
 {% block title %}Construções{% endblock %}
 
@@ -7,13 +8,356 @@
 {% endblock %}
 
 {% block content %}
-<div class="mb-6">
-  <h1 class="text-2xl font-bold text-ink">Construções</h1>
-  <p class="text-sm text-muted mt-1">Gerenciamento de filas de construção</p>
+<div x-data="constructionPanel({{ now_ts }})" x-init="init()">
+
+  {# ===== Cabeçalho ===== #}
+  <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-ink">Construções</h1>
+      <p class="mt-1 text-sm text-muted">Visão geral de obras, planos e gargalos de todas as contas</p>
+    </div>
+    <a href="{% url 'jobs:job-create' %}?action=1002"
+       class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90"
+       style="background: var(--ik-sea);">
+      <i class="bi bi-building-gear"></i> Novo plano
+    </a>
+  </div>
+
+  {# ===== KPIs ===== #}
+  <div class="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div class="rounded-[20px] border p-4" style="border-color: var(--ik-line); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.82));">
+      <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Em obra agora</div>
+      <div class="mt-1 flex items-center gap-2">
+        <i class="bi bi-hammer text-xl" style="color: var(--ik-sea);"></i>
+        <span class="text-3xl font-bold text-ink">{{ kpi_building_now }}</span>
+      </div>
+    </div>
+    <div class="rounded-[20px] border p-4" style="border-color: var(--ik-line); background: linear-gradient(180deg, rgba(95,140,78,0.10), rgba(255,255,255,0.82));">
+      <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">Planos ativos</div>
+      <div class="mt-1 flex items-center gap-2">
+        <i class="bi bi-list-check text-xl" style="color: var(--ik-good);"></i>
+        <span class="text-3xl font-bold text-ink">{{ kpi_active_plans }}</span>
+      </div>
+    </div>
+    <div class="rounded-[20px] border p-4" style="border-color: var(--ik-line); background: linear-gradient(180deg, rgba(201,156,78,0.12), rgba(255,255,255,0.82));">
+      <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">Próxima conclusão</div>
+      <div class="mt-1 flex items-center gap-2">
+        <i class="bi bi-alarm text-xl" style="color: var(--ik-gold-dark);"></i>
+        {% if kpi_next_eta %}
+          <span class="text-2xl font-bold text-ink font-mono" x-text="countdown({{ kpi_next_eta }})"></span>
+        {% else %}
+          <span class="text-lg font-semibold text-muted">—</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="rounded-[20px] border p-4" style="border-color: var(--ik-line); background: linear-gradient(180deg, rgba(185,79,79,0.10), rgba(255,255,255,0.82));">
+      <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: #b94f4f;">Recursos em falta</div>
+      <div class="mt-1 flex items-center gap-2">
+        <i class="bi bi-exclamation-triangle text-xl" style="color: #b94f4f;"></i>
+        <span class="text-3xl font-bold text-ink">{{ kpi_shortfall_total|floatformat:"0" }}</span>
+      </div>
+    </div>
+  </div>
+
+  {# ===== A. Em obra agora ===== #}
+  <section class="mb-8">
+    <div class="mb-3 flex items-center gap-2">
+      <i class="bi bi-hammer" style="color: var(--ik-sea);"></i>
+      <h2 class="text-lg font-bold text-ink">Em obra agora</h2>
+      <span class="rounded-full border px-2 py-0.5 text-[11px] text-muted" style="border-color: var(--ik-line);">{{ building_now|length }}</span>
+    </div>
+    {% if building_now %}
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {% for b in building_now %}
+      <div class="relative overflow-hidden rounded-[18px] border p-4 shadow-sm" style="border-color: var(--ik-line); background: rgba(255,255,255,0.85);">
+        <div class="flex items-start gap-3">
+          <div class="relative shrink-0">
+            <div class="flex h-14 w-14 items-center justify-center rounded-[16px] border" style="border-color: rgba(79,134,185,0.2); background: linear-gradient(180deg,#fffdf8,#f4ecda);">
+              {% with b.building|building_icon as bi %}
+              {% if bi %}<img src="{% static bi %}" alt="" class="h-10 w-10 object-contain">
+              {% else %}<i class="bi {{ b.building|building_bi_icon }} text-2xl" style="color: var(--ik-sea);"></i>{% endif %}
+              {% endwith %}
+            </div>
+            <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+              <img src="{{ b.tradegood_icon }}" alt="" class="h-4 w-4 object-contain">
+            </div>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-sm font-bold text-ink">{{ b.building|building_name }}</div>
+            <div class="truncate text-[12px] text-muted">{{ b.city_name }} · {{ b.ga_name }}</div>
+            <div class="mt-1 inline-flex items-center gap-1 text-[12px]">
+              <span class="rounded-md bg-black/5 px-1.5 py-0.5 font-mono text-ink">Lv {{ b.from_level }}</span>
+              <i class="bi bi-arrow-right text-[10px] text-muted"></i>
+              <span class="rounded-md px-1.5 py-0.5 font-mono font-bold text-white" style="background: var(--ik-sea);">Lv {{ b.to_level }}</span>
+            </div>
+          </div>
+        </div>
+        {% if b.end_at %}
+        <div class="mt-3 flex items-center justify-between rounded-lg px-2.5 py-1.5" style="background: rgba(79,134,185,0.08);">
+          <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold" style="color: var(--ik-sea);">
+            <span class="relative flex h-2 w-2">
+              <span class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-70" style="background: var(--ik-sea);"></span>
+              <span class="relative inline-flex h-2 w-2 rounded-full" style="background: var(--ik-sea);"></span>
+            </span>
+            Conclui em
+          </span>
+          <span class="font-mono text-sm font-bold text-ink" x-text="countdown({{ b.end_at }})"></span>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="rounded-[18px] border border-dashed p-8 text-center text-muted" style="border-color: var(--ik-line);">
+      <i class="bi bi-moon-stars mb-2 block text-2xl"></i> Nenhuma obra em andamento agora.
+    </div>
+    {% endif %}
+  </section>
+
+  {# ===== B. Planos ativos ===== #}
+  <section class="mb-8">
+    <div class="mb-3 flex items-center gap-2">
+      <i class="bi bi-list-check" style="color: var(--ik-good);"></i>
+      <h2 class="text-lg font-bold text-ink">Planos ativos</h2>
+      <span class="rounded-full border px-2 py-0.5 text-[11px] text-muted" style="border-color: var(--ik-line);">{{ plans|length }}</span>
+    </div>
+    {% if plans %}
+    <div class="grid grid-cols-1 gap-3 xl:grid-cols-2">
+      {% for p in plans %}
+      <div class="rounded-[18px] border p-4 shadow-sm" style="border-color: var(--ik-line); background: rgba(255,255,255,0.85);">
+        <div class="mb-2 flex items-start justify-between gap-2">
+          <div class="min-w-0">
+            <div class="truncate text-sm font-bold text-ink">{{ p.city_names|join:", "|default:"—" }}</div>
+            <div class="truncate text-[12px] text-muted">{{ p.ga_name }} · {{ p.account }}</div>
+          </div>
+          <div class="flex shrink-0 items-center gap-1">
+            <span class="rounded-full border px-2 py-0.5 text-[10px] font-semibold" style="border-color: rgba(95,140,78,0.35); color: var(--ik-good); background: rgba(95,140,78,0.08);">
+              {{ p.strategy_label }}
+            </span>
+          </div>
+        </div>
+
+        <div class="mb-1 flex items-center justify-between text-[12px]">
+          <span class="text-muted">{{ p.done }}/{{ p.total }} etapas</span>
+          <span class="font-mono font-semibold text-ink">{{ p.pct }}%</span>
+        </div>
+        <div class="h-2 overflow-hidden rounded-full bg-black/10">
+          <div class="h-full rounded-full" style="background: var(--ik-good); width: {{ p.pct }}%;"></div>
+        </div>
+
+        <div class="mt-3 flex flex-wrap items-center gap-1.5">
+          {% for ns in p.next_steps %}
+          <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px]" style="border-color: var(--ik-line); background: rgba(255,255,255,0.7);">
+            <img src="{{ ns.icon }}" class="h-3.5 w-3.5 object-contain" alt="">
+            <span class="text-ink">{{ ns.name }}</span>
+            <span class="font-mono text-muted">{{ ns.cur }}→{{ ns.target }}</span>
+          </span>
+          {% empty %}
+          <span class="text-[12px] text-muted">Plano concluído aguardando snapshot.</span>
+          {% endfor %}
+        </div>
+
+        <div class="mt-3 flex flex-wrap items-center justify-between gap-2 text-[12px]">
+          <div class="flex items-center gap-3 text-muted">
+            <span><i class="bi bi-alarm"></i> ETA {{ p.eta_label }}</span>
+            <span><i class="bi bi-bricks"></i> {{ p.remaining_levels }} níveis restantes</span>
+          </div>
+          <a href="{% url 'jobs:job-detail' p.job_id %}" class="inline-flex items-center gap-1 font-semibold" style="color: var(--ik-sea);">
+            Ver job <i class="bi bi-arrow-right"></i>
+          </a>
+        </div>
+
+        {% if p.missing %}
+        <div class="mt-2 flex flex-wrap items-center gap-1.5 rounded-lg p-2" style="background: rgba(185,79,79,0.08);">
+          <span class="text-[11px] font-semibold" style="color: #b94f4f;">Falta:</span>
+          {% for m in p.missing %}
+          <span class="inline-flex items-center gap-1 text-[11px] text-ink">
+            <img src="{{ m.icon }}" class="h-3.5 w-3.5 object-contain" alt="">{{ m.amount|floatformat:"0" }}
+          </span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="rounded-[18px] border border-dashed p-8 text-center text-muted" style="border-color: var(--ik-line);">
+      <i class="bi bi-clipboard-check mb-2 block text-2xl"></i> Nenhum plano de construção ativo.
+    </div>
+    {% endif %}
+  </section>
+
+  {# ===== C. Reservas & faltas ===== #}
+  <section class="mb-8">
+    <div class="mb-3 flex items-center gap-2">
+      <i class="bi bi-box-seam" style="color: var(--ik-gold-dark);"></i>
+      <h2 class="text-lg font-bold text-ink">Reservas & gargalos</h2>
+    </div>
+
+    {# Tiles por recurso — reservado + falta #}
+    <div class="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
+      {% for r in reserved_total %}
+      <div class="relative overflow-hidden rounded-[16px] border p-3 shadow-sm"
+           style="border-color: var(--ik-line); background: {% if r.shortfall %}linear-gradient(180deg, rgba(185,79,79,0.08), rgba(255,255,255,0.85)){% else %}linear-gradient(180deg, rgba(201,156,78,0.10), rgba(255,255,255,0.85)){% endif %};">
+        <div class="flex items-center gap-2">
+          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border" style="border-color: var(--ik-line); background: rgba(255,255,255,0.7);">
+            <img src="{{ r.icon }}" class="h-5 w-5 object-contain" alt="">
+          </div>
+          <div class="min-w-0">
+            <div class="truncate text-[11px] font-semibold uppercase tracking-wide text-muted">{{ r.label }}</div>
+            <div class="truncate font-mono text-sm font-bold text-ink">{{ r.reserved|intcomma }}</div>
+          </div>
+        </div>
+        <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-black/10">
+          <div class="h-full rounded-full" style="background: var(--ik-gold); width: {{ r.pct }}%;"></div>
+        </div>
+        {% if r.shortfall %}
+        <div class="mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold" style="background: rgba(185,79,79,0.12); color:#b94f4f;">
+          <i class="bi bi-exclamation-triangle-fill"></i> falta {{ r.shortfall|intcomma }}
+        </div>
+        {% else %}
+        <div class="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold" style="color: var(--ik-good);">
+          <i class="bi bi-check-circle-fill"></i> coberto
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    {# Gargalos — onde travou #}
+    <div class="rounded-[18px] border p-4" style="border-color: var(--ik-line); background: rgba(255,255,255,0.85);">
+      <div class="mb-3 flex items-center gap-2 text-[12px] font-semibold text-ink">
+        <i class="bi bi-sign-stop text-[13px]" style="color:#b94f4f;"></i> Onde travou por falta de recurso
+      </div>
+      {% if bottlenecks %}
+      <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {% for b in bottlenecks %}
+        <div class="flex items-center gap-3 rounded-[14px] border p-3" style="border-color: rgba(185,79,79,0.25); background: rgba(185,79,79,0.05);">
+          <div class="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border" style="border-color: rgba(185,79,79,0.25); background: rgba(255,255,255,0.8);">
+            <img src="{{ b.resource_icon }}" class="h-6 w-6 object-contain" alt="{{ b.resource_label }}">
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-[13px] font-bold text-ink">{{ b.city_name }}</div>
+            <div class="truncate text-[11px] text-muted">{{ b.ga_name }} · {{ b.account }}</div>
+          </div>
+          <div class="shrink-0 text-right">
+            <div class="font-mono text-[13px] font-bold" style="color:#b94f4f;">−{{ b.shortfall|intcomma }}</div>
+            <div class="text-[10px] uppercase tracking-wide text-muted">{{ b.resource_label }}</div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="py-6 text-center text-[12px] text-muted"><i class="bi bi-check-circle mb-1 block text-2xl" style="color: var(--ik-good);"></i> Nenhum gargalo — recursos cobrem todos os planos.</div>
+      {% endif %}
+    </div>
+  </section>
+
+  {# ===== D. Mapa de níveis ===== #}
+  <section class="mb-4">
+    <div class="mb-3 flex items-center gap-2">
+      <i class="bi bi-grid-3x3-gap" style="color: var(--ik-sea);"></i>
+      <h2 class="text-lg font-bold text-ink">Mapa de níveis</h2>
+      <span class="text-[11px] text-muted">todos os edifícios de cada cidade · <i class="bi bi-arrow-up-circle-fill text-amber-500"></i> em obra</span>
+    </div>
+    {% for acc in level_map %}
+    <div class="mb-4 rounded-[18px] border p-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.85);">
+      <div class="mb-2 flex items-center gap-2 text-[13px] font-semibold text-ink">
+        <i class="bi bi-person-badge" style="color: var(--ik-sea);"></i> {{ acc.ga_name }} <span class="font-normal text-muted">· {{ acc.account }}</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="border-collapse text-[11px]">
+          <thead>
+            <tr>
+              <th class="sticky left-0 z-10 bg-paper p-1.5 text-left font-semibold text-muted">Cidade</th>
+              {% for col in level_columns %}
+              <th class="p-1 text-center align-bottom" title="{{ col.name }}">
+                {% with col.building_id|building_icon as ci %}
+                {% if ci %}<img src="{% static ci %}" class="mx-auto h-11 w-11 object-contain" alt="{{ col.name }}">
+                {% else %}<i class="bi {{ col.building_id|building_bi_icon }} text-2xl" style="color: var(--ik-sea);"></i>{% endif %}
+                {% endwith %}
+              </th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in acc.rows %}
+            <tr class="border-t" style="border-color: var(--ik-line);">
+              <td class="sticky left-0 z-10 whitespace-nowrap bg-paper p-1.5 font-semibold text-ink">
+                <span class="inline-flex items-center gap-1"><img src="{{ row.tradegood_icon }}" class="h-4 w-4 object-contain" alt="">{{ row.city_name }}</span>
+              </td>
+              {% for cell in row.cells %}
+              <td class="p-1 text-center">
+                {% if cell.count == 0 %}
+                <span class="text-muted/40">·</span>
+                {% elif cell.count == 1 %}
+                {% with inst=cell.instances.0 %}
+                <span class="relative inline-flex h-7 w-8 items-center justify-center rounded-md font-mono font-bold text-white {% if inst.is_upgrading %}ring-2 ring-amber-400{% endif %}"
+                      style="background: {% if inst.level >= 30 %}#3d6a2f{% elif inst.level >= 20 %}#5f8c4e{% elif inst.level >= 10 %}#8ab06f{% else %}#c2d0a8{% endif %};">{{ inst.level }}{% if inst.is_upgrading %}<i class="bi bi-arrow-up-circle-fill absolute -right-1.5 -top-1.5 text-amber-500" style="font-size:12px;"></i>{% endif %}</span>
+                {% endwith %}
+                {% else %}
+                {# clique troca: soma <-> instancias lado a lado #}
+                <div class="inline-flex items-center justify-center" x-data="{open:false}">
+                  {# badge da soma #}
+                  <button type="button" x-show="!open" @click="open=true"
+                          x-transition:enter="transition ease-out duration-150" x-transition:enter-start="opacity-0 scale-90" x-transition:enter-end="opacity-100 scale-100"
+                          class="relative inline-flex h-7 min-w-8 items-center justify-center rounded-md px-1 font-mono font-bold text-white {% if cell.any_upgrading %}ring-2 ring-amber-400{% endif %}"
+                          style="background: {% if cell.total >= 30 %}#3d6a2f{% elif cell.total >= 20 %}#5f8c4e{% elif cell.total >= 10 %}#8ab06f{% else %}#c2d0a8{% endif %};"
+                          title="{{ cell.count }} unidades · soma {{ cell.total }} — clique para detalhar">
+                    {{ cell.total }}<sup class="ml-0.5 text-[9px] font-bold leading-none opacity-90">{{ cell.count }}</sup>
+                    {% if cell.any_upgrading %}<i class="bi bi-arrow-up-circle-fill absolute -right-1.5 -top-1.5 text-amber-500" style="font-size:12px;"></i>{% endif %}
+                  </button>
+                  {# instancias lado a lado #}
+                  <div x-show="open" @click="open=false"
+                       x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-90" x-transition:enter-end="opacity-100 scale-100"
+                       class="flex cursor-pointer items-center gap-0.5" title="clique para recolher">
+                    {% for inst in cell.instances %}
+                    <span class="relative inline-flex h-7 w-8 items-center justify-center rounded-md font-mono font-bold text-white {% if inst.is_upgrading %}ring-2 ring-amber-400{% endif %}"
+                          style="background: {% if inst.level >= 30 %}#3d6a2f{% elif inst.level >= 20 %}#5f8c4e{% elif inst.level >= 10 %}#8ab06f{% else %}#c2d0a8{% endif %};">{{ inst.level }}{% if inst.is_upgrading %}<i class="bi bi-arrow-up-circle-fill absolute -right-1.5 -top-1.5 text-amber-500" style="font-size:11px;"></i>{% endif %}</span>
+                    {% endfor %}
+                  </div>
+                </div>
+                {% endif %}
+              </td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% empty %}
+    <div class="rounded-[18px] border border-dashed p-8 text-center text-muted" style="border-color: var(--ik-line);">
+      <i class="bi bi-grid mb-2 block text-2xl"></i> Sem dados de cidades no snapshot.
+    </div>
+    {% endfor %}
+  </section>
 </div>
 
-<div class="bg-paper rounded-lg shadow p-8 text-center text-muted">
-  <i class="bi bi-building text-4xl mb-3 block"></i>
-  <p>Em breve — esta funcionalidade está em desenvolvimento.</p>
-</div>
+<script>
+function constructionPanel(nowTs) {
+  return {
+    now: nowTs,
+    _start: Math.floor(Date.now() / 1000),
+    init() { setInterval(() => { this.now = this._start + Math.floor((Date.now()/1000) - this._start); }, 1000); },
+    countdown(ts) {
+      let s = ts - this.now;
+      if (s <= 0) return 'concluído';
+      const d = Math.floor(s / 86400); s -= d*86400;
+      const h = Math.floor(s / 3600); s -= h*3600;
+      const m = Math.floor(s / 60); s -= m*60;
+      if (d) return `${d}d ${h}h ${m}m`;
+      if (h) return `${h}h ${m}m ${s}s`;
+      if (m) return `${m}m ${s}s`;
+      return `${s}s`;
+    },
+    progressPct(endTs) {
+      // sem start real; estima janela de 4h para a barra visual
+      const window = 4 * 3600;
+      const remaining = Math.max(0, endTs - this.now);
+      return Math.max(2, Math.min(100, Math.round((1 - remaining / window) * 100)));
+    },
+  };
+}
+</script>
 {% endblock %}

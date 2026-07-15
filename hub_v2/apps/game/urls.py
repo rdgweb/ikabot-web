@@ -1,7 +1,13 @@
 from django.urls import path
-from django.views.generic import TemplateView
 
-from .views import ActionCatalogView, DashboardHistoryView, DashboardView, RenameCityView, RunActionView
+from .views import (
+    ActionCatalogView,
+    ConstructionPanelView,
+    DashboardHistoryView,
+    DashboardView,
+    RenameCityView,
+    RunActionView,
+)
 
 app_name = "game"
 
@@ -11,9 +17,5 @@ urlpatterns = [
     path("run-action/", RunActionView.as_view(), name="run-action"),
     path("rename-city/", RenameCityView.as_view(), name="rename-city"),
     path("actions/", ActionCatalogView.as_view(), name="action-catalog"),
-    path(
-        "construction/",
-        TemplateView.as_view(template_name="game/construction.html"),
-        name="construction",
-    ),
+    path("construction/", ConstructionPanelView.as_view(), name="construction"),
 ]
