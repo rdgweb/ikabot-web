@@ -124,16 +124,24 @@
     {% if plans %}
     <div class="grid grid-cols-1 gap-3 xl:grid-cols-2">
       {% for p in plans %}
-      <div class="rounded-[18px] border p-4 shadow-sm" style="border-color: var(--ik-line); background: rgba(255,255,255,0.85);">
+      {{ p.pending_steps|json_script:p.steps_id }}
+      {{ p.ga_cities|json_script:p.cities_id }}
+      <div class="rounded-[18px] border p-4 shadow-sm" style="border-color: var(--ik-line); background: rgba(255,255,255,0.85);"
+           x-data="planCard('{{ p.job_id }}', '{{ p.strategy }}')">
         <div class="mb-2 flex items-start justify-between gap-2">
           <div class="min-w-0">
             <div class="truncate text-sm font-bold text-ink">{{ p.city_names|join:", "|default:"—" }}</div>
             <div class="truncate text-[12px] text-muted">{{ p.ga_name }} · {{ p.account }}</div>
           </div>
           <div class="flex shrink-0 items-center gap-1">
-            <span class="rounded-full border px-2 py-0.5 text-[10px] font-semibold" style="border-color: rgba(95,140,78,0.35); color: var(--ik-good); background: rgba(95,140,78,0.08);">
-              {{ p.strategy_label }}
-            </span>
+            <select x-model="strategy" @change="setStrategy()"
+                    class="rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                    style="border-color: rgba(95,140,78,0.35); color: var(--ik-good); background: rgba(95,140,78,0.08);"
+                    title="Prioridade do plano">
+              <option value="smart">Balanceado</option>
+              <option value="eta_first">Menor ETA</option>
+              <option value="fifo">Ordem do plano</option>
+            </select>
           </div>
         </div>
 
@@ -177,6 +185,80 @@
           {% endfor %}
         </div>
         {% endif %}
+
+        {# Ações inline #}
+        <div class="mt-3 flex items-center gap-2 border-t pt-3" style="border-color: var(--ik-line);">
+          <button type="button" @click="tab = tab==='steps' ? null : 'steps'"
+                  class="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition"
+                  :style="tab==='steps' ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);' : 'border-color: var(--ik-line); color: var(--ik-sea);'">
+            <i class="bi bi-sliders"></i> Editar etapas
+          </button>
+          <button type="button" @click="tab = tab==='send' ? null : 'send'"
+                  class="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition"
+                  :style="tab==='send' ? 'border-color: var(--ik-gold-dark); color: white; background: var(--ik-gold-dark);' : 'border-color: var(--ik-line); color: var(--ik-gold-dark);'">
+            <i class="bi bi-truck"></i> Enviar recursos
+          </button>
+        </div>
+
+        {# Editor de etapas: priorizar / remover #}
+        <div x-show="tab==='steps'" x-transition class="mt-2 rounded-[14px] border p-2" style="border-color: rgba(79,134,185,0.25); background: rgba(79,134,185,0.04);">
+          <template x-if="steps.length === 0"><div class="py-3 text-center text-[11px] text-muted">Nenhuma etapa pendente.</div></template>
+          <div class="max-h-56 space-y-1 overflow-y-auto">
+            <template x-for="st in steps" :key="st.idx">
+              <div class="flex items-center gap-2 rounded-lg border px-2 py-1" style="border-color: var(--ik-line); background: rgba(255,255,255,0.8);"
+                   :class="st.priority ? 'ring-1 ring-[var(--ik-sea)]' : ''">
+                <img :src="st.icon" class="h-5 w-5 shrink-0 object-contain" alt="">
+                <div class="min-w-0 flex-1">
+                  <div class="truncate text-[11px] font-semibold text-ink" x-text="st.name"></div>
+                  <div class="truncate text-[10px] text-muted"><span x-text="st.city_name"></span> · <span class="font-mono" x-text="st.cur + '→' + st.target"></span></div>
+                </div>
+                <span x-show="st.priority" class="rounded-full px-1.5 py-0.5 text-[9px] font-bold text-white" style="background: var(--ik-sea);">próxima</span>
+                <button type="button" @click="prioritize(st.idx)" title="Priorizar — vira a próxima nesta cidade"
+                        class="inline-flex h-6 w-6 items-center justify-center rounded-md border text-[11px]" style="border-color: rgba(79,134,185,0.4); color: var(--ik-sea);">
+                  <i class="bi bi-star-fill"></i>
+                </button>
+                <button type="button" @click="removeStep(st.idx)" title="Remover etapa"
+                        class="inline-flex h-6 w-6 items-center justify-center rounded-md border text-[11px]" style="border-color: rgba(185,79,79,0.4); color:#b94f4f;">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </div>
+            </template>
+          </div>
+          <p class="mt-2 text-[10px] text-muted"><i class="bi bi-info-circle"></i> Mudanças entram no próximo ciclo do plano.</p>
+        </div>
+
+        {# Enviar recursos #}
+        <div x-show="tab==='send'" x-transition class="mt-2 rounded-[14px] border p-3" style="border-color: rgba(201,156,78,0.3); background: rgba(201,156,78,0.06);">
+          <div class="grid grid-cols-2 gap-2">
+            <label class="block">
+              <span class="mb-0.5 block text-[10px] uppercase tracking-wide text-muted">Origem</span>
+              <select x-model="fromCity" class="form-input text-[12px]">
+                <option value="">—</option>
+                <template x-for="c in cities" :key="'f'+c.id"><option :value="c.id" x-text="c.name"></option></template>
+              </select>
+            </label>
+            <label class="block">
+              <span class="mb-0.5 block text-[10px] uppercase tracking-wide text-muted">Destino</span>
+              <select x-model="toCity" class="form-input text-[12px]">
+                <option value="">—</option>
+                <template x-for="c in cities" :key="'t'+c.id"><option :value="c.id" x-text="c.name"></option></template>
+              </select>
+            </label>
+          </div>
+          <div class="mt-2 grid grid-cols-5 gap-1.5">
+            <template x-for="r in resKeys" :key="r.k">
+              <label class="block">
+                <span class="mb-0.5 flex items-center justify-center"><img :src="r.icon" class="h-4 w-4 object-contain" :alt="r.label"></span>
+                <input type="number" min="0" x-model.number="amounts[r.k]" class="form-input px-1 py-1 text-center text-[11px]" placeholder="0">
+              </label>
+            </template>
+          </div>
+          <button type="button" @click="sendResources()" :disabled="sending"
+                  class="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-50"
+                  style="background: var(--ik-gold-dark);">
+            <i class="bi bi-truck"></i> <span x-text="sending ? 'Enviando…' : 'Enviar transporte'"></span>
+          </button>
+        </div>
       </div>
       {% endfor %}
     </div>
@@ -334,7 +416,73 @@
   </section>
 </div>
 
+{% csrf_token %}
+{{ res_icons|json_script:"cs-res-icons" }}
 <script>
+function _csrfToken() {
+  const el = document.querySelector('input[name=csrfmiddlewaretoken]');
+  return el ? el.value : '';
+}
+async function _ikPost(url, data) {
+  const body = new URLSearchParams(data);
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {'X-CSRFToken': _csrfToken(), 'X-Requested-With': 'XMLHttpRequest'},
+    body,
+  });
+  let j = {};
+  try { j = await r.json(); } catch (e) {}
+  return {ok: r.ok && j.ok, message: j.message || j.error || (r.ok ? 'OK' : 'Erro')};
+}
+function _toast(type, message) {
+  window.dispatchEvent(new CustomEvent('toast', {detail: {type, message}}));
+}
+function planCard(jobId, strategy) {
+  return {
+    jobId, strategy, tab: null,
+    steps: JSON.parse(document.getElementById('cs-'+jobId+'-steps')?.textContent || '[]'),
+    cities: JSON.parse(document.getElementById('cs-'+jobId+'-cities')?.textContent || '[]'),
+    resIcons: JSON.parse(document.getElementById('cs-res-icons')?.textContent || '{}'),
+    fromCity: '', toCity: '', sending: false,
+    amounts: {wood:0, wine:0, marble:0, crystal:0, sulfur:0},
+    get resKeys() {
+      return [
+        {k:'wood', label:'Madeira', icon:this.resIcons.wood},
+        {k:'wine', label:'Vinho', icon:this.resIcons.wine},
+        {k:'marble', label:'Marmore', icon:this.resIcons.marble},
+        {k:'crystal', label:'Cristal', icon:this.resIcons.crystal},
+        {k:'sulfur', label:'Enxofre', icon:this.resIcons.sulfur},
+      ];
+    },
+    async setStrategy() {
+      const res = await _ikPost(`/jobs/${this.jobId}/plan-patch/`, {queue_strategy: this.strategy});
+      _toast(res.ok ? 'success' : 'error', res.message);
+    },
+    async prioritize(idx) {
+      const res = await _ikPost(`/jobs/${this.jobId}/plan-patch/`, {prioritize_index: idx});
+      if (res.ok) {
+        this.steps.forEach(s => { if (s.city_name === (this.steps.find(x=>x.idx===idx)||{}).city_name) s.priority = false; });
+        const t = this.steps.find(s => s.idx === idx); if (t) t.priority = true;
+      }
+      _toast(res.ok ? 'success' : 'error', res.message);
+    },
+    async removeStep(idx) {
+      const res = await _ikPost(`/jobs/${this.jobId}/plan-patch/`, {remove_index: idx});
+      if (res.ok) this.steps = this.steps.filter(s => s.idx !== idx);
+      _toast(res.ok ? 'success' : 'error', res.message);
+    },
+    async sendResources() {
+      if (!this.fromCity || !this.toCity) { _toast('error', 'Escolha origem e destino.'); return; }
+      this.sending = true;
+      const res = await _ikPost(`/jobs/${this.jobId}/send-resources/`, {
+        from_city: this.fromCity, to_city: this.toCity, ...this.amounts,
+      });
+      this.sending = false;
+      if (res.ok) { this.amounts = {wood:0,wine:0,marble:0,crystal:0,sulfur:0}; this.tab = null; }
+      _toast(res.ok ? 'success' : 'error', res.message);
+    },
+  };
+}
 function constructionPanel(nowTs) {
   return {
     now: nowTs,

@@ -11,6 +11,8 @@
 
   <input type="hidden" name="clone_model_id" :value="modelId">
   <input type="hidden" name="clone_max_level" :value="maxLevel">
+  <input type="hidden" name="clone_research_reduction" :value="research">
+  <input type="hidden" name="clone_queue_strategy" :value="strategy">
   <template x-for="t in targets" :key="t"><input type="hidden" name="clone_target_ids" :value="t"></template>
 
   <div class="border-b px-6 py-5" style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0));">
@@ -22,41 +24,182 @@
     </p>
   </div>
 
-  <div class="px-6 py-5 grid grid-cols-1 lg:grid-cols-2 gap-5">
-    {# Modelo #}
-    <section class="rounded-2xl border p-4" style="border-color: rgba(79,134,185,0.22); background: rgba(255,255,255,0.82);">
-      <div class="text-[11px] font-semibold uppercase tracking-[0.16em] mb-2" style="color: var(--ik-sea);">Cidade modelo</div>
-      <select x-model="modelId" class="form-input mb-3">
-        <option value="">— escolha —</option>
-        <template x-for="c in cities" :key="'m'+c.id"><option :value="c.id" x-text="c.name + ' (' + c.building_count + ' edificios)'"></option></template>
-      </select>
-      <template x-if="model()">
-        <div class="max-h-52 overflow-y-auto rounded-lg border p-2 text-[12px]" style="border-color: var(--ik-line);">
-          <template x-for="b in model().buildings" :key="'mb'+b.building_id+b.position">
-            <div class="flex items-center justify-between py-0.5">
-              <span class="text-ink" x-text="b.name"></span>
-              <span class="font-mono text-muted">Lv <span x-text="b.level"></span></span>
+  <div class="px-6 py-5 space-y-5">
+    {# ===== Cidade modelo (single-select cards) ===== #}
+    <section class="rounded-[22px] border p-4"
+             style="border-color: rgba(79,134,185,0.28); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.82));">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Cidade modelo</div>
+          <div class="mt-1 text-sm font-semibold text-ink">A cidade que sera copiada</div>
+        </div>
+        <div class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
+             style="background: rgba(79,134,185,0.14); color: var(--ik-sea);">
+          <i class="bi bi-diagram-2 text-base"></i>
+        </div>
+      </div>
+      <label class="mb-3 block">
+        <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Filtrar cidades</span>
+        <input type="text" x-model="modelQuery" class="form-input" placeholder="Buscar por nome, luxo ou coordenada">
+      </label>
+      <div class="grid max-h-[18rem] grid-cols-2 gap-2 overflow-y-auto p-1 xl:grid-cols-4">
+        <template x-for="city in filteredCities('model')" :key="`model-${city.id}`">
+          <button type="button"
+                  class="group relative rounded-[18px] border text-left transition-all duration-150"
+                  :class="String(modelId) === String(city.id)
+                    ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]'
+                    : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
+                  style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);"
+                  @click="selectModel(city.id)">
+            <div class="absolute inset-x-0 top-0 h-14"
+                 style="background: linear-gradient(135deg, rgba(79,134,185,0.16), rgba(79,134,185,0.02));"></div>
+            <div class="relative p-3">
+              <div class="flex items-start gap-3">
+                <div class="relative shrink-0">
+                  <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                       style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                    <img :src="city.city_art" alt="" class="h-8 w-8 object-contain">
+                  </div>
+                  <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                    <img :src="city.tradegood_icon" :alt="city.tradegood_name" class="h-4 w-4 object-contain">
+                  </div>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                      <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
+                      <div class="mt-1 text-[11px] text-muted">
+                        <span x-text="city.tradegood_name"></span>
+                        <span x-show="city.x && city.y" x-text="` • [${city.x}:${city.y}]`"></span>
+                      </div>
+                    </div>
+                    <span class="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border"
+                          :style="String(modelId) === String(city.id)
+                            ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
+                            : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
+                      <i class="bi" :class="String(modelId) === String(city.id) ? 'bi-check-lg' : 'bi-diagram-2'"></i>
+                    </span>
+                  </div>
+                  <div class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]"
+                       style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">
+                    <i class="bi bi-buildings text-[10px]" style="color: var(--ik-sea);"></i>
+                    <span x-text="`${city.building_count} edificios`"></span>
+                  </div>
+                </div>
+              </div>
             </div>
-          </template>
+          </button>
+        </template>
+      </div>
+      {# Preview dos edificios da modelo #}
+      <template x-if="model()">
+        <div class="mt-3 rounded-[16px] border p-3" style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.7);">
+          <div class="mb-2 text-[11px] uppercase tracking-[0.14em] text-muted">Edificios da modelo</div>
+          <div class="grid max-h-40 grid-cols-2 gap-x-4 gap-y-0.5 overflow-y-auto text-[12px] xl:grid-cols-3">
+            <template x-for="b in model().buildings" :key="'mb'+b.building_id+b.position">
+              <div class="flex items-center justify-between py-0.5">
+                <span class="truncate text-ink" x-text="b.name"></span>
+                <span class="ml-2 shrink-0 font-mono text-muted">Lv <span x-text="b.level"></span></span>
+              </div>
+            </template>
+          </div>
         </div>
       </template>
     </section>
 
-    {# Alvos + nivel maximo #}
-    <section class="rounded-2xl border p-4" style="border-color: rgba(95,140,78,0.22); background: rgba(255,255,255,0.82);">
-      <div class="text-[11px] font-semibold uppercase tracking-[0.16em] mb-2" style="color: var(--ik-good);">Cidades alvo</div>
-      <div class="max-h-40 overflow-y-auto rounded-lg border p-2 mb-3" style="border-color: var(--ik-line);">
-        <template x-for="c in cities" :key="'t'+c.id">
-          <label class="flex items-center gap-2 py-1 cursor-pointer" x-show="c.id !== modelId">
-            <input type="checkbox" :value="c.id" x-model="targets" class="h-4 w-4">
-            <span class="text-sm text-ink" x-text="c.name"></span>
-          </label>
+    {# ===== Cidades alvo (multi-select cards) ===== #}
+    <section class="rounded-[22px] border p-4"
+             style="border-color: rgba(95,140,78,0.28); background: linear-gradient(180deg, rgba(95,140,78,0.10), rgba(255,255,255,0.82));">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">Cidades alvo</div>
+          <div class="mt-1 text-sm font-semibold text-ink">Quem vai receber a copia</div>
+        </div>
+        <span class="inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[11px] font-semibold"
+              style="border-color: rgba(95,140,78,0.3); color: var(--ik-good); background: rgba(95,140,78,0.08);">
+          <i class="bi bi-check2-square"></i><span x-text="`${targets.length} selecionada(s)`"></span>
+        </span>
+      </div>
+      <label class="mb-3 block">
+        <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Filtrar cidades</span>
+        <input type="text" x-model="targetQuery" class="form-input" placeholder="Buscar por nome, luxo ou coordenada">
+      </label>
+      <div class="grid max-h-[18rem] grid-cols-2 gap-2 overflow-y-auto p-1 xl:grid-cols-4">
+        <template x-for="city in filteredCities('target')" :key="`target-${city.id}`">
+          <button type="button"
+                  class="group relative rounded-[18px] border text-left transition-all duration-150"
+                  :disabled="String(modelId) === String(city.id)"
+                  :class="targets.includes(String(city.id))
+                    ? 'translate-y-[-1px] ring-2 ring-[var(--ik-good)] shadow-[0_10px_28px_rgba(95,140,78,0.18)]'
+                    : 'hover:translate-y-[-1px] hover:border-[var(--ik-good)]/45 hover:shadow-[0_10px_24px_rgba(95,140,78,0.12)]'"
+                  :style="String(modelId) === String(city.id)
+                    ? 'opacity:.42; cursor:not-allowed; border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.42);'
+                    : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'"
+                  @click="toggleTarget(city.id)">
+            <div class="absolute inset-x-0 top-0 h-14"
+                 style="background: linear-gradient(135deg, rgba(95,140,78,0.16), rgba(95,140,78,0.02));"></div>
+            <div class="relative p-3">
+              <div class="flex items-start gap-3">
+                <div class="relative shrink-0">
+                  <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                       style="border-color: rgba(95,140,78,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                    <img :src="city.city_art" alt="" class="h-8 w-8 object-contain">
+                  </div>
+                  <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                    <img :src="city.tradegood_icon" :alt="city.tradegood_name" class="h-4 w-4 object-contain">
+                  </div>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                      <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
+                      <div class="mt-1 text-[11px] text-muted">
+                        <span x-text="city.tradegood_name"></span>
+                        <span x-show="city.x && city.y" x-text="` • [${city.x}:${city.y}]`"></span>
+                      </div>
+                    </div>
+                    <span class="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border"
+                          :style="targets.includes(String(city.id))
+                            ? 'border-color: var(--ik-good); color: white; background: var(--ik-good);'
+                            : 'border-color: rgba(95,140,78,0.24); color: var(--ik-good); background: rgba(95,140,78,0.06);'">
+                      <i class="bi" :class="targets.includes(String(city.id)) ? 'bi-check-lg' : 'bi-plus-lg'"></i>
+                    </span>
+                  </div>
+                  <div class="mt-2 inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]"
+                       style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">
+                    <i class="bi bi-buildings text-[10px]" style="color: var(--ik-good);"></i>
+                    <span x-text="`${city.building_count} edificios`"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </button>
         </template>
       </div>
-      <label class="block">
-        <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Nivel maximo (0 = igual a modelo)</span>
-        <input type="number" min="0" max="60" x-model.number="maxLevel" class="form-input w-32">
-      </label>
+      <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <label class="block">
+          <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Nivel maximo</span>
+          <input type="number" min="0" max="60" x-model.number="maxLevel" class="form-input">
+          <span class="mt-1 block text-[10px] text-muted">0 = igual a modelo</span>
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Prioridade do plano</span>
+          <select x-model="strategy" class="form-input">
+            <option value="smart">Balanceado (tempo + recursos)</option>
+            <option value="eta_first">Menor ETA primeiro</option>
+            <option value="fifo">Ordem do plano</option>
+          </select>
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Pesquisa economica</span>
+          <select x-model="research" class="form-input">
+            <option value="0">0% (nada pesquisado)</option>
+            <option value="2">2% (Flaschenzug)</option>
+            <option value="6">6% (Geometria)</option>
+            <option value="14">14% (Wasserwaage)</option>
+          </select>
+        </label>
+      </div>
       <div class="mt-3 text-[11px] text-muted">
         <i class="bi bi-info-circle"></i> Cada alvo vira um plano de construcao (ac=1002) que so inclui o que falta subir.
       </div>
@@ -68,8 +211,31 @@
 function cloneForm() {
   return {
     cities: [], modelId: '', targets: [], maxLevel: 0,
+    research: '6', strategy: 'smart',
+    modelQuery: '', targetQuery: '',
     init() { this.cities = JSON.parse(document.getElementById('clone-cities-data')?.textContent || '[]'); },
+    _match(city, q) {
+      q = (q || '').trim().toLowerCase();
+      if (!q) return true;
+      return [city.name, city.tradegood_name, city.x, city.y]
+        .filter(v => v !== null && v !== undefined)
+        .some(v => String(v).toLowerCase().includes(q));
+    },
+    filteredCities(side) {
+      const q = side === 'model' ? this.modelQuery : this.targetQuery;
+      return this.cities.filter(c => this._match(c, q));
+    },
     model() { return this.cities.find(c => String(c.id) === String(this.modelId)) || null; },
+    selectModel(id) {
+      this.modelId = String(id);
+      this.targets = this.targets.filter(t => t !== String(id));
+    },
+    toggleTarget(id) {
+      id = String(id);
+      if (String(this.modelId) === id) return;
+      const i = this.targets.indexOf(id);
+      if (i === -1) this.targets.push(id); else this.targets.splice(i, 1);
+    },
   };
 }
 </script>

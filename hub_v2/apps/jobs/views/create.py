@@ -17,7 +17,8 @@ from datetime import datetime
 from pathlib import Path
 
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import HttpResponse
+from django.core.exceptions import ValidationError
+from django.http import HttpResponse, JsonResponse
 from django.template.loader import render_to_string
 from django.views import View
 from django.templatetags.static import static
@@ -39,6 +40,12 @@ from ..services.construction_preview import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Acoes recorrentes que criam UM job por cidade (a lista "cities" do form vira N
+# jobs, cada um com city_id). Ao editar um desses, a cidade fica fixa e so os
+# parametros mudam (nao mexe em cidade -> nao duplica doacao/execucao).
+_PER_CITY_SPLIT_ACTIONS = {902, 1006}
+_CITY_KEYS_IN_PATCH = {"cities", "city_id", "city", "city_name"}
 
 CONSTRUCTION_REPEATABLE_BUILDINGS = {"port", "warehouse", "dump"}
 CONSTRUCTION_EXCLUDED_NEW_BUILDINGS = {"empty", "brpiort", "forpiester", "winpiegrower", "firpieworker", "pipiracy", "marpiket"}
@@ -801,6 +808,46 @@ _TRADE_TO_CITY_KEY = {
 }
 
 
+def _reorder_construction_plan(steps, preview_steps):
+    """Reordena o plano por prioridade de execucao (o que deve construir antes):
+    primeiro o que da pra pagar agora, depois por menor tempo (base_seconds) e
+    menor custo. Mantem steps e preview_steps alinhados e re-indexa.
+
+    Isso faz o plano GRAVADO/EXIBIDO bater com a intencao de execucao (e deixa o
+    fifo sensato), em vez da ordem crua de criacao (que colocava a prefeitura no
+    topo so por ser a primeira da modelo).
+    """
+    if not preview_steps or len(preview_steps) != len(steps):
+        return steps, preview_steps
+
+    import math
+
+    def _key(pair):
+        _step, pstep = pair
+        rows = pstep.get("level_rows") or []
+        row0 = rows[0] if rows else {}
+        base0 = _safe_int(row0.get("base_seconds") or pstep.get("base_seconds") or 0)
+        costs0 = row0.get("costs") or pstep.get("totals") or {}
+        cost0 = sum(_safe_int(v) for v in costs0.values())
+        missing0 = sum(_safe_int(v) for v in (pstep.get("missing") or {}).values())
+        # mesmo criterio "balanceado" do runner (smart): tempo + custo ponderado,
+        # com o que da pra pagar agora vindo primeiro.
+        composite = base0 + math.log10(1 + cost0) * 3600
+        return (1 if missing0 > 0 else 0, composite)
+
+    order = sorted(zip(steps, preview_steps), key=_key)
+    new_steps = []
+    new_preview = []
+    for i, (step, pstep) in enumerate(order, start=1):
+        step = dict(step)
+        pstep = dict(pstep)
+        step["index"] = i
+        pstep["index"] = i
+        new_steps.append(step)
+        new_preview.append(pstep)
+    return new_steps, new_preview
+
+
 def _clone_city_context(construction_cities):
     """Cidades + seus edificios (id, nome, nivel, posicao) para o Clonar Cidade."""
     from core.catalogs import get_building_info
@@ -818,9 +865,27 @@ def _clone_city_context(construction_cities):
                 "position": int(b.get("position") or 0),
             })
         blds.sort(key=lambda r: -r["level"])
+        try:
+            tradegood_id = int(city.get("tradegood_id") or city.get("produced_tradegood") or city.get("tradegood") or 0)
+        except Exception:
+            tradegood_id = 0
+        tradegood_meta = TRADEGOOD_UI.get(tradegood_id, TRADEGOOD_UI[0])
+        try:
+            x = int(city.get("x")) if city.get("x") not in (None, "") else None
+        except Exception:
+            x = None
+        try:
+            y = int(city.get("y")) if city.get("y") not in (None, "") else None
+        except Exception:
+            y = None
         out.append({
             "id": str(city.get("id")),
             "name": str(city.get("name") or city.get("id")),
+            "x": x,
+            "y": y,
+            "tradegood_name": tradegood_meta["name"],
+            "tradegood_icon": static(tradegood_meta["icon"]),
+            "city_art": static("game/buildings/townhall.png"),
             "buildings": blds,
             "building_count": len(blds),
         })
@@ -2359,6 +2424,177 @@ class JobFormView(LoginRequiredMixin, View):
         return HttpResponse(html)
 
 
+class JobEditFormView(LoginRequiredMixin, View):
+    """GET: abre o MESMO form de criacao, pre-preenchido com os inputs atuais de
+    um job recorrente em andamento, para editar seus parametros (N-13)."""
+
+    def get(self, request, pk):
+        try:
+            job = Job.objects.select_related("game_account", "game_account__account").get(pk=pk)
+        except (Job.DoesNotExist, ValueError, ValidationError):
+            return HttpResponse("")
+
+        ga = job.game_account
+        action_code = int(job.action_code)
+        action_meta = ACTION_CATALOG.get(action_code)
+        if ga is None or not action_meta:
+            return HttpResponse("")
+        if not action_meta.get("recurring"):
+            return HttpResponse(
+                '<div class="p-6 text-center text-sm text-muted">Este job nao e recorrente e nao pode ser editado.</div>'
+            )
+
+        # Loops rodam em cadeia (cada ciclo cria um filho). Edita sempre o job
+        # ATIVO da cadeia, mesmo que o usuario tenha aberto um ciclo ja concluido.
+        target = JobSubmitView._find_active_chain_job(job) or job
+        job = target
+
+        try:
+            current_inputs = json.loads(job.inputs_json or "{}")
+            if not isinstance(current_inputs, dict):
+                current_inputs = {}
+        except (ValueError, TypeError):
+            current_inputs = {}
+        current_inputs.pop("__pending_patch", None)
+
+        # Acoes que rodam UM job por cidade (a lista de cidades vira N jobs).
+        # Ao editar, a cidade fica fixa: pre-seleciona a cidade atual no seletor
+        # (so pra contexto) e a edicao altera apenas os parametros.
+        per_city_edit = action_code in _PER_CITY_SPLIT_ACTIONS
+        if per_city_edit and current_inputs.get("city_id") and not current_inputs.get("cities"):
+            current_inputs["cities"] = [str(current_inputs.get("city_id"))]
+
+        cities = _get_cities(ga)
+        construction_cities = _construction_city_data(cities)
+
+        initial = {"game_account": str(ga.pk), "action_code": action_code}
+        initial.update(current_inputs)
+
+        form = JobCreateForm(
+            action_code=action_code,
+            game_account=ga,
+            cities=construction_cities,
+            initial=initial,
+        )
+        ctx = _job_form_context(form, action_meta, action_code, ga, construction_cities, request=request)
+        ctx["edit_job_id"] = str(job.pk)
+        ctx["edit_current_inputs"] = current_inputs
+        ctx["edit_per_city"] = per_city_edit
+        ctx["edit_city_name"] = current_inputs.get("city_name") or ""
+        if action_code == 31:
+            ctx["diplomacy_msg_types"] = _diplomacy_msg_types(current_inputs.get("receiver_id") or "")
+        html = render_to_string("jobs/partials/create_step_form.html", ctx, request=request)
+        return HttpResponse(html)
+
+
+class JobPlanQuickPatchView(LoginRequiredMixin, View):
+    """POST inline (painel de construcoes): ajustes rapidos num plano 1002 ativo.
+
+    Aceita:
+      - queue_strategy: muda a estrategia do plano (smart|eta_first|fifo)
+      - prioritize_index: marca a etapa como priority=True -> vira a PROXIMA
+        construida naquela cidade, independente da estrategia
+      - remove_index: remove uma etapa do construction_plan_json (indice)
+    Aplica via __pending_patch (proximo ciclo).
+    """
+
+    def post(self, request, pk):
+        try:
+            job = Job.objects.select_related("game_account").get(pk=pk)
+        except (Job.DoesNotExist, ValueError, ValidationError):
+            return JsonResponse({"ok": False, "error": "Job nao encontrado."}, status=404)
+        if int(job.action_code) != 1002:
+            return JsonResponse({"ok": False, "error": "Nao e um plano de construcao."}, status=400)
+
+        target = JobSubmitView._find_active_chain_job(job)
+        if target is None:
+            return JsonResponse({"ok": False, "error": "Plano nao esta mais ativo."}, status=409)
+
+        patch = {}
+        message = "Plano atualizado."
+
+        strategy = str(request.POST.get("queue_strategy") or "").strip()
+        if strategy in {"smart", "eta_first", "fifo"}:
+            patch["queue_strategy"] = strategy
+            message = "Prioridade atualizada."
+
+        remove_index = request.POST.get("remove_index")
+        prioritize_index = request.POST.get("prioritize_index")
+        if remove_index is not None or prioritize_index is not None:
+            try:
+                inp = json.loads(target.inputs_json or "{}")
+                steps = list(inp.get("construction_plan_json") or [])
+            except (ValueError, TypeError):
+                steps = []
+            if remove_index is not None:
+                try:
+                    i = int(remove_index)
+                    if 0 <= i < len(steps):
+                        steps.pop(i)
+                        message = "Etapa removida."
+                except (TypeError, ValueError):
+                    pass
+            if prioritize_index is not None:
+                try:
+                    i = int(prioritize_index)
+                    if 0 <= i < len(steps):
+                        tgt_city = str(steps[i].get("city_id") or "")
+                        # so um priorizado por cidade: limpa os outros da mesma cidade
+                        for idx, s in enumerate(steps):
+                            if str(s.get("city_id") or "") == tgt_city:
+                                s.pop("priority", None)
+                        steps[i]["priority"] = True
+                        message = "Etapa priorizada — sera a proxima nesta cidade."
+                except (TypeError, ValueError):
+                    pass
+            patch["construction_plan_json"] = steps
+
+        if not patch:
+            return JsonResponse({"ok": False, "error": "Nada a alterar."}, status=400)
+
+        JobSubmitView._write_pending_patch(target, patch)
+        return JsonResponse({"ok": True, "message": message})
+
+
+class JobSendResourcesView(LoginRequiredMixin, View):
+    """POST inline: cria um transporte (ac=2) para uma cidade, sem evoluir nada.
+    Usado no painel de construcoes para reforcar recursos de uma cidade do plano."""
+
+    def post(self, request, pk):
+        try:
+            job = Job.objects.select_related("game_account", "game_account__account").get(pk=pk)
+        except (Job.DoesNotExist, ValueError, ValidationError):
+            return JsonResponse({"ok": False, "error": "Job nao encontrado."}, status=404)
+        ga = job.game_account
+        if ga is None:
+            return JsonResponse({"ok": False, "error": "Conta invalida."}, status=400)
+
+        from_city = str(request.POST.get("from_city") or "").strip()
+        to_city = str(request.POST.get("to_city") or "").strip()
+        if not from_city or not to_city:
+            return JsonResponse({"ok": False, "error": "Escolha origem e destino."}, status=400)
+        if from_city == to_city:
+            return JsonResponse({"ok": False, "error": "Origem e destino iguais."}, status=400)
+
+        res = {}
+        for key in ("wood", "wine", "marble", "crystal", "sulfur"):
+            try:
+                v = max(0, int(request.POST.get(key) or 0))
+            except (TypeError, ValueError):
+                v = 0
+            if v:
+                res[key] = v
+        if not res:
+            return JsonResponse({"ok": False, "error": "Informe algum recurso."}, status=400)
+
+        inputs = {"from_city": from_city, "to_city": to_city, "confirm_arrival": True, **res}
+        create_job_with_workflow(
+            account=ga.account, game_account=ga, node=ga.account.node,
+            action_code=2, inputs=inputs, status="queued",
+        )
+        return JsonResponse({"ok": True, "message": "Transporte criado."})
+
+
 class ColonizeIslandLookupView(LoginRequiredMixin, View):
     """GET: resolve current dump island by coords and render the slot selector partial."""
 
@@ -2669,6 +2905,13 @@ class JobSubmitView(LoginRequiredMixin, View):
             inputs = self._normalize_raid_inputs(inputs, request)
         if int(action_code) == 18 and not any(bool(inputs.get(key)) for key in ("branch_seafaring", "branch_economy", "branch_knowledge", "branch_military", "branch_mythology")):
             return self._error("Selecione pelo menos um ramo de pesquisa.")
+
+        # Modo edicao (N-13): em vez de criar, atualiza os parametros do job
+        # recorrente em andamento; aplica no proximo ciclo.
+        edit_job_id = str(request.POST.get("edit_job_id") or "").strip()
+        if edit_job_id:
+            return self._apply_job_edit(request, edit_job_id, ga, action_code, action_meta, inputs)
+
         jobs_created = self._create_jobs(ga, action_code, action_meta, inputs, construction_cities)
 
         trigger_data = json.dumps({
@@ -2687,6 +2930,94 @@ class JobSubmitView(LoginRequiredMixin, View):
             )
         )
         resp["HX-Trigger"] = trigger_data
+        return resp
+
+    # Chaves internas de estado que NUNCA devem ser sobrescritas pela edicao.
+    _EDIT_PROTECTED_KEYS = {"__recovery", "__campaign_root_id", "internal_order_id"}
+
+    @staticmethod
+    def _write_pending_patch(target, patch: dict) -> None:
+        """Grava um patch nos inputs do job ativo: aplica imediato (se ainda nao
+        rodou) e em __pending_patch (proximo ciclo, vence reenvio do agente)."""
+        try:
+            current = json.loads(target.inputs_json or "{}")
+            if not isinstance(current, dict):
+                current = {}
+        except (ValueError, TypeError):
+            current = {}
+        merged = dict(current)
+        merged.update(patch)
+        existing_pending = merged.get("__pending_patch") if isinstance(merged.get("__pending_patch"), dict) else {}
+        merged["__pending_patch"] = {**existing_pending, **patch}
+        target.inputs_json = json.dumps(merged)
+        target.save(update_fields=["inputs_json", "updated_at"])
+
+    @staticmethod
+    def _find_active_chain_job(job):
+        """Dado um job (possivelmente ja reagendado), retorna o job ativo atual
+        da MESMA cadeia recorrente (mesmo action_code), seguindo os filhos.
+
+        Ignora jobs spawnados de outro tipo (ex: ac=23 modify disparado por um
+        loop de doacao), que tambem sao filhos mas nao sao a continuacao do loop."""
+        active = {"queued", "running", "scheduled"}
+        ac = job.action_code
+        if job.status in active:
+            return job
+        seen = set()
+        frontier = [job.pk]
+        found = None
+        while frontier:
+            children = Job.objects.filter(
+                source_job_id__in=frontier, action_code=ac
+            ).exclude(pk__in=seen)
+            frontier = []
+            for child in children:
+                seen.add(child.pk)
+                if child.status in active:
+                    if found is None or child.created_at > found.created_at:
+                        found = child
+                frontier.append(child.pk)
+        return found
+
+    def _apply_job_edit(self, request, edit_job_id, ga, action_code, action_meta, inputs):
+        """N-13: aplica novos parametros a um job recorrente em andamento.
+
+        Grava os campos editados no inputs_json do job ativo (efeito imediato se
+        ainda nao rodou) e tambem em __pending_patch, que o endpoint de reschedule
+        aplica por ultimo no proximo ciclo (vencendo o reenvio de inputs do agente).
+        """
+        if not action_meta.get("recurring"):
+            return self._error("So e possivel editar parametros de jobs recorrentes.")
+        try:
+            job = Job.objects.get(pk=edit_job_id, game_account=ga)
+        except (Job.DoesNotExist, ValueError, ValidationError):
+            return self._error("Job nao encontrado.")
+
+        target = self._find_active_chain_job(job)
+        if target is None:
+            return self._error("Este job nao esta mais em andamento.")
+
+        # remove chaves internas do patch do usuario
+        patch = {k: v for k, v in (inputs or {}).items() if k not in self._EDIT_PROTECTED_KEYS}
+        # Acoes por-cidade: nunca alterar a cidade na edicao (cidade e fixa por job).
+        # Evita quebrar city_id e evita duplicar execucao para a mesma cidade.
+        if int(action_code) in _PER_CITY_SPLIT_ACTIONS:
+            patch = {k: v for k, v in patch.items() if k not in _CITY_KEYS_IN_PATCH}
+            if not patch:
+                return self._error("Nada para atualizar nos parametros.")
+        self._write_pending_patch(target, patch)
+
+        resp = HttpResponse(
+            render_to_string(
+                "jobs/partials/create_step_success.html",
+                {"jobs_created": 0, "edited": True, "action_name": action_meta["name"]},
+                request=request,
+            )
+        )
+        resp["HX-Trigger"] = json.dumps({
+            "toast": {"type": "success", "message": "Parametros atualizados — aplicam no proximo ciclo."},
+            "jobsCreated": True,
+        })
         return resp
 
     def _submit_premium(self, request, ga, action_code, action_meta):
@@ -2759,82 +3090,124 @@ class JobSubmitView(LoginRequiredMixin, View):
         if not target_ids:
             return self._error("Selecione ao menos uma cidade alvo.")
 
+        clone_research = str(request.POST.get("clone_research_reduction") or "6").strip() or "6"
+        clone_strategy = str(request.POST.get("clone_queue_strategy") or "smart").strip() or "smart"
+        if clone_strategy not in {"fifo", "eta_first", "smart"}:
+            clone_strategy = "smart"
+
+        # palace (capital) e governorsResidence (residencia do governador, ja
+        # normalizado de palaceColony) sao o mesmo slot: comparamos por uma
+        # chave canonica e usamos o tipo certo por cidade.
+        _EQUIV = {"palace": "residence", "governorsResidence": "residence"}
+
+        def _canon(bid):
+            return _EQUIV.get(bid, bid)
+
         by_id = {str(c.get("id")): c for c in construction_cities}
         model = by_id.get(model_id)
         if not model:
             return self._error("Cidade modelo nao encontrada.")
 
-        # edificios da modelo por building_id -> maior nivel
+        # edificios da modelo por chave canonica -> maior nivel
         model_blds: dict[str, int] = {}
         for b in model.get("buildings") or []:
             bid = str(b.get("building") or "")
             if bid:
-                model_blds[bid] = max(model_blds.get(bid, 0), int(b.get("level") or 0))
+                key = _canon(bid)
+                model_blds[key] = max(model_blds.get(key, 0), int(b.get("level") or 0))
 
-        jobs_created = 0
+        # Junta os steps de TODAS as cidades alvo num unico plano, pra depois
+        # mesclar no plano ativo existente (ou criar um so) — mesmo comportamento
+        # do submit normal de Plano de Construcao.
+        all_steps = []
         for tid in target_ids:
             if tid == model_id:
                 continue
             target = by_id.get(tid)
             if not target:
                 continue
-            tgt_levels: dict[str, int] = {}
+            tgt_levels: dict[str, int] = {}      # canon -> nivel
+            tgt_type: dict[str, str] = {}        # canon -> building_id real no alvo
+            tgt_positions: dict[str, str] = {}   # canon -> posicao no alvo
             for b in target.get("buildings") or []:
                 bid = str(b.get("building") or "")
-                if bid:
-                    tgt_levels[bid] = max(tgt_levels.get(bid, 0), int(b.get("level") or 0))
-            tgt_positions = {str(b.get("building")): str(b.get("position")) for b in target.get("buildings") or []}
+                if not bid:
+                    continue
+                key = _canon(bid)
+                lvl = int(b.get("level") or 0)
+                if lvl >= tgt_levels.get(key, -1):
+                    tgt_levels[key] = lvl
+                    tgt_type[key] = bid
+                    tgt_positions[key] = str(b.get("position"))
+            # a cidade e capital (tem palace) ou colonia (palaceColony)?
+            is_capital = any(str(b.get("building")) == "palace" for b in target.get("buildings") or [])
 
-            steps = []
-            for bid, mlevel in model_blds.items():
+            for key, mlevel in model_blds.items():
                 goal = min(mlevel, max_level) if max_level > 0 else mlevel
-                cur = tgt_levels.get(bid, 0)
+                cur = tgt_levels.get(key, 0)
                 if goal <= cur:
                     continue
-                steps.append({
+                # tipo do edificio no alvo: o que ele ja tem no slot, senao converte
+                # palace<->palaceColony conforme a cidade alvo ser capital ou colonia.
+                if key == "residence":
+                    bid = tgt_type.get(key) or ("palace" if is_capital else "governorsResidence")
+                else:
+                    bid = tgt_type.get(key, key)
+                all_steps.append({
                     "city_id": tid,
                     "city_name": target.get("name", tid),
                     "building_id": bid,
                     "building_type": bid,
                     "building_name": str(get_building_info(bid).get("name") or bid),
-                    "building_position": tgt_positions.get(bid, ""),
-                    "mode": "upgrade" if bid in tgt_levels else "new",
+                    "building_position": tgt_positions.get(key, ""),
+                    "mode": "upgrade" if key in tgt_levels else "new",
                     "target_level": int(goal),
                 })
-            if not steps:
-                continue
 
-            steps = _resolve_construction_new_slots(steps, construction_cities)
-            rr, btr, gtr = _resolve_construction_modifiers(1002, ga, {})
-            preview = build_construction_plan_preview(
-                game_account=ga, steps=steps,
-                research_reduction=rr, build_time_reduction=btr, government_time_reduction=gtr,
-            )
-            inputs = {
-                "research_reduction": rr, "build_time_reduction": btr, "government_time_reduction": gtr,
-                "construction_plan_json": steps,
-                "construction_plan_steps": preview.steps,
-                "construction_summary": {"steps": len(steps), "totals": preview.totals,
-                                         "reserved_local": preview.reserved_local, "missing": preview.missing,
-                                         "base_seconds": preview.base_seconds, "adjusted_seconds": preview.adjusted_seconds},
-                "clone_source": {"model_city_id": model_id, "max_level": max_level},
-            }
-            job = create_job_with_workflow(
-                account=ga.account, game_account=ga, node=ga.account.node,
-                action_code=1002, inputs=inputs, status="queued",
-            )
-            self._create_construction_reservations(job, preview)
-            jobs_created += 1
-
-        if jobs_created == 0:
+        if not all_steps:
             return self._error("As cidades alvo ja estao iguais ou acima da modelo (nada a construir).")
+
+        all_steps = _resolve_construction_new_slots(all_steps, construction_cities)
+
+        # Mescla no plano ativo existente do ga, se houver.
+        existing_job = Job.objects.filter(
+            game_account=ga, action_code=1002,
+            status__in=["queued", "running", "scheduled"],
+        ).order_by("-created_at").first()
+        if existing_job:
+            return self._merge_construction_plan(request, existing_job, ga, all_steps, action_meta)
+
+        rr, btr, gtr = _resolve_construction_modifiers(
+            1002, ga, {"research_reduction": clone_research},
+        )
+        preview = build_construction_plan_preview(
+            game_account=ga, steps=all_steps,
+            research_reduction=rr, build_time_reduction=btr, government_time_reduction=gtr,
+        )
+        all_steps, preview_steps = _reorder_construction_plan(all_steps, preview.steps)
+        inputs = {
+            "research_reduction": rr, "build_time_reduction": btr, "government_time_reduction": gtr,
+            "queue_strategy": clone_strategy,
+            "construction_plan_json": all_steps,
+            "construction_plan_steps": preview_steps,
+            "construction_summary": {"steps": len(all_steps), "totals": preview.totals,
+                                     "reserved_local": preview.reserved_local, "missing": preview.missing,
+                                     "base_seconds": preview.base_seconds, "adjusted_seconds": preview.adjusted_seconds},
+            "clone_source": {"model_city_id": model_id, "max_level": max_level},
+        }
+        job = create_job_with_workflow(
+            account=ga.account, game_account=ga, node=ga.account.node,
+            action_code=1002, inputs=inputs, status="queued",
+        )
+        self._create_construction_reservations(job, preview)
+        self._deactivate_stale_construction_reservations(job)
 
         resp = HttpResponse(
             render_to_string("jobs/partials/create_step_success.html",
-                             {"jobs_created": jobs_created, "action_name": action_meta["name"]}, request=request)
+                             {"jobs_created": 1, "action_name": action_meta["name"]}, request=request)
         )
         resp["HX-Trigger"] = json.dumps({
-            "toast": {"type": "success", "message": f"{jobs_created} plano(s) de clonagem criado(s)!"},
+            "toast": {"type": "success", "message": "Plano de clonagem criado com reservas de recursos."},
             "jobsCreated": True,
         })
         return resp
@@ -3031,11 +3404,12 @@ class JobSubmitView(LoginRequiredMixin, View):
             build_time_reduction=build_time_reduction,
             government_time_reduction=government_time_reduction,
         )
+        clean_steps, _reordered_preview = _reorder_construction_plan(clean_steps, plan_preview.steps)
         inputs["research_reduction"] = research_reduction
         inputs["build_time_reduction"] = build_time_reduction
         inputs["government_time_reduction"] = government_time_reduction
         inputs["construction_plan_json"] = clean_steps
-        inputs["construction_plan_steps"] = plan_preview.steps
+        inputs["construction_plan_steps"] = _reordered_preview
         inputs["construction_summary"] = {
             "steps": len(clean_steps),
             "totals": plan_preview.totals,
@@ -3107,8 +3481,9 @@ class JobSubmitView(LoginRequiredMixin, View):
             government_time_reduction=government_time_reduction,
         )
 
+        merged_plan, _merged_preview = _reorder_construction_plan(merged_plan, plan_preview.steps)
         existing_inputs["construction_plan_json"] = merged_plan
-        existing_inputs["construction_plan_steps"] = plan_preview.steps
+        existing_inputs["construction_plan_steps"] = _merged_preview
         existing_inputs["construction_summary"] = {
             "steps": len(merged_plan),
             "totals": plan_preview.totals,

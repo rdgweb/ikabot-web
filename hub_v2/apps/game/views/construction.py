@@ -152,6 +152,7 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
         # --- Snapshot: em obra agora + lookup de niveis ---
         building_now: list[dict] = []
         level_lookup: dict[str, dict[str, dict[str, int]]] = {}  # ga -> city -> {pos: lvl, bid: lvl}
+        level_lookup_cities: dict[str, list[dict]] = {}  # ga -> [{id, name}]
         ga_meta: dict[str, dict] = {}
         level_map: list[dict] = []
 
@@ -161,11 +162,13 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                 ga_meta[str(ga.pk)] = {"name": ga.name or ga.server_id, "account": acct.label}
                 cities = _city_list(snap)
                 city_pos_lvl: dict[str, dict[str, int]] = {}
+                ga_city_list: list[dict] = []
                 lm_rows = []
                 for city in cities:
                     if not isinstance(city, dict):
                         continue
                     cid = str(city.get("id") or "")
+                    ga_city_list.append({"id": cid, "name": str(city.get("name") or cid)})
                     try:
                         tg = int(city.get("tradegood_id") or city.get("produced_tradegood") or city.get("tradegood") or 0)
                     except (TypeError, ValueError):
@@ -208,6 +211,7 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                         "bid_instances": bid_instances,
                     })
                 level_lookup[str(ga.pk)] = city_pos_lvl
+                level_lookup_cities[str(ga.pk)] = ga_city_list
                 if lm_rows:
                     level_map.append({
                         "ga_name": ga.name or ga.server_id,
@@ -264,14 +268,16 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
             done = 0
             remaining_levels = 0
             next_steps: list[dict] = []
+            pending_steps: list[dict] = []
             city_names: set[str] = set()
-            for s in steps:
+            for idx, s in enumerate(steps):
                 cid = str(s.get("city_id") or "")
                 pos = str(s.get("building_position") or "")
                 bid = str(s.get("building_id") or s.get("building_type") or "")
                 target = _si(s.get("target_level"))
-                if s.get("city_name"):
-                    city_names.add(str(s.get("city_name")))
+                cname = str(s.get("city_name") or "")
+                if cname:
+                    city_names.add(cname)
                 cl = city_lookup.get(cid, {})
                 cur = _si((cl.get("_pos") or {}).get(pos)) if pos and pos in (cl.get("_pos") or {}) else _si((cl.get("_bid") or {}).get(bid))
                 if target and cur >= target:
@@ -285,6 +291,15 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                             "cur": cur,
                             "target": target,
                         })
+                    pending_steps.append({
+                        "idx": idx,
+                        "city_name": cname or cid,
+                        "icon": _building_icon(bid),
+                        "name": _building_name(bid),
+                        "cur": cur,
+                        "target": target,
+                        "priority": bool(s.get("priority")),
+                    })
             summary = inp.get("construction_summary") or {}
             eta_seconds = _si(summary.get("adjusted_seconds"))
             missing = {k: _si(v) for k, v in (summary.get("missing") or {}).items() if _si(v) > 0}
@@ -297,8 +312,14 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                 "total": total, "done": done, "pct": pct,
                 "remaining_levels": remaining_levels,
                 "next_steps": next_steps,
+                "pending_steps": pending_steps,
+                "steps_id": f"cs-{job.pk}-steps",
+                "cities_id": f"cs-{job.pk}-cities",
+                "ga_cities": [{"id": str(c.get("id")), "name": str(c.get("name") or c.get("id"))}
+                              for c in (level_lookup_cities.get(ga_id) or [])],
                 "eta_seconds": eta_seconds,
                 "eta_label": _fmt_eta(eta_seconds),
+                "strategy": inp.get("queue_strategy") or "eta_first",
                 "strategy_label": {"smart": "Balanceado", "eta_first": "Menor ETA", "fifo": "Ordem do plano"}.get(
                     inp.get("queue_strategy") or "eta_first", inp.get("queue_strategy") or "eta_first"),
                 "status": job.status,
@@ -331,5 +352,6 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
             "bottlenecks": bottleneck_rows,
             "level_map": level_map,
             "level_columns": level_columns,
+            "res_icons": {k: static(RESOURCE_META[k]["icon"]) for k in RESOURCE_KEYS},
         })
         return ctx

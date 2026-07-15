@@ -27,7 +27,7 @@
 {% endblock %}
 
 {% block detail_actions %}
-{% if object.status == "queued" or object.status == "running" or object.status == "scheduled" or can_retry or can_restart %}
+{% if object.status == "queued" or object.status == "running" or object.status == "scheduled" or can_retry or can_restart or can_edit_params %}
 <div x-data="{ showCancel: false, showUnstuck: false, unstuckDelay: 5 }" class="flex items-center gap-2">
   {% if can_restart %}
   <form method="post" action="{% url 'jobs:job-restart' object.pk %}">
@@ -36,6 +36,15 @@
       <i class="bi bi-arrow-counterclockwise"></i> Recomeçar
     </button>
   </form>
+  {% endif %}
+  {% if can_edit_params %}
+  <button type="button" class="btn btn-secondary btn-sm"
+          hx-get="{% url 'jobs:job-edit' object.pk %}"
+          hx-target="#job-modal-body"
+          hx-swap="innerHTML"
+          onclick="event.stopPropagation(); this.dispatchEvent(new CustomEvent('open-modal-jobcreate', {bubbles: true}));">
+    <i class="bi bi-pencil-square"></i> Editar parâmetros
+  </button>
   {% endif %}
   {% if is_stuck %}
   <button @click="showUnstuck = true" type="button" class="btn btn-gold btn-sm">
@@ -1389,163 +1398,171 @@
 {% endif %}
 
 {% if construction_display %}
-<div class="card space-y-4">
+<div class="card space-y-4"
+     x-data="{ showPlan: {% if construction_display.step_count <= 6 %}true{% else %}false{% endif %}, showResources: false }">
 
-  {# ── Header ── #}
-  <div class="flex items-start justify-between gap-3">
-    <div>
-      <h3 class="text-sm font-semibold text-ink">Plano de Construção</h3>
-      <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-        <span><i class="bi bi-hammer text-[10px]"></i> {{ construction_display.step_count }} obras</span>
-        <span><i class="bi bi-buildings text-[10px]"></i> {{ construction_display.city_count }} cidade{% if construction_display.city_count != 1 %}s{% endif %}</span>
-        <span><i class="bi bi-sort-down text-[10px]"></i> {{ construction_display.queue_strategy_label }}</span>
-        {% if construction_display.auto_transport == "Sim" %}
-        <span class="text-[var(--ik-sea)]"><i class="bi bi-truck text-[10px]"></i> Transporte automático</span>
-        {% endif %}
-      </div>
-    </div>
-    {% if construction_display.done_count %}
-    <div class="shrink-0 text-right">
-      <div class="text-xs font-semibold text-ink">{{ construction_display.done_count }}/{{ construction_display.step_count }}</div>
-      <div class="mt-1 h-1.5 w-24 overflow-hidden rounded-full bg-[var(--ik-line)]">
-        <div class="h-full rounded-full" style="background: var(--ik-good); width: {{ construction_display.done_count|floatformat:0 }}00%; max-width: 100%;"></div>
-      </div>
-    </div>
-    {% endif %}
-  </div>
-
-  {# ── Em andamento ── #}
-  {% if construction_display.active_steps %}
-  <div class="overflow-hidden rounded-xl border" style="border-color: rgba(95,140,78,0.30); background: rgba(95,140,78,0.04);">
-    <div class="flex items-center gap-2 border-b px-3 py-2" style="border-color: rgba(95,140,78,0.20); background: rgba(95,140,78,0.08);">
-      <i class="bi bi-hammer text-xs" style="color: var(--ik-good);"></i>
-      <span class="text-[10px] font-bold uppercase tracking-wide" style="color: var(--ik-good);">Em andamento</span>
-      <span class="ml-auto text-[10px] text-muted">{{ construction_display.active_steps|length }} cidade{% if construction_display.active_steps|length != 1 %}s{% endif %}</span>
-    </div>
-    <div class="divide-y" style="border-color: rgba(95,140,78,0.12);">
-      {% for step in construction_display.active_steps %}
-      <div class="px-3 py-2">
-        <div class="flex items-center gap-3">
-          {% if step.building_icon %}
-          <img src="{% static 'game/buildings/'|add:step.building_icon %}" alt=""
-               class="h-7 w-7 shrink-0 rounded border object-contain p-0.5"
-               style="border-color: var(--ik-line); background: var(--ik-sand-light);">
-          {% else %}
-          <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded text-sm" style="background: rgba(95,140,78,0.10); color: var(--ik-good);"><i class="bi bi-hammer"></i></span>
-          {% endif %}
-          <div class="min-w-0 flex-1">
-            <div class="mb-0.5 text-[10px] font-semibold uppercase tracking-wide" style="color: var(--ik-good);">{{ step.city_name }}</div>
-            <div class="flex flex-wrap items-baseline gap-x-2">
-              <span class="text-xs font-semibold text-ink">{{ step.building_name }}</span>
-              {% if step.active_transition.from_level is not None %}
-              <span class="text-[11px] font-medium" style="color: var(--ik-good);">Lv {{ step.active_transition.from_level }} → {{ step.active_transition.to_level }}</span>
-              {% endif %}
-            </div>
-          </div>
-          {% if step.active_duration_human %}
-          <span class="shrink-0 text-[10px] text-muted">≈{{ step.active_duration_human }}</span>
-          {% endif %}
+  {# ── Header: titulo + estrategia + progresso grande + ETA ── #}
+  <div class="rounded-2xl border p-4"
+       style="border-color: var(--ik-line); background: linear-gradient(135deg, rgba(95,140,78,0.08), rgba(79,134,185,0.05));">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2">
+          <i class="bi bi-building-gear text-base" style="color: var(--ik-sea);"></i>
+          <h3 class="text-sm font-bold text-ink">Plano de Construção</h3>
         </div>
-        {% if step.active_resources %}
-        <div class="mt-1.5 ml-10 flex flex-wrap gap-1">
-          {% for item in step.active_resources %}
-          <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px]"
-                style="border-color: var(--ik-line); background: rgba(255,255,255,0.8);">
-            <img src="{% static item.icon %}" alt="" class="h-3 w-3">
-            {{ item.amount|intcomma }}
+        <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
+          <span><i class="bi bi-hammer text-[10px]"></i> {{ construction_display.step_count }} obras</span>
+          <span><i class="bi bi-buildings text-[10px]"></i> {{ construction_display.city_count }} cidade{% if construction_display.city_count != 1 %}s{% endif %}</span>
+          <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5" style="border-color: rgba(79,134,185,0.3); color: var(--ik-sea); background: rgba(79,134,185,0.06);">
+            <i class="bi bi-sort-down text-[10px]"></i> {{ construction_display.queue_strategy_label }}
           </span>
-          {% endfor %}
+          {% if construction_display.auto_transport == "Sim" %}
+          <span class="text-[var(--ik-sea)]"><i class="bi bi-truck text-[10px]"></i> Transporte automático</span>
+          {% endif %}
         </div>
+      </div>
+      {% if construction_display.levels_total_all %}
+      <div class="shrink-0 text-right">
+        <div class="flex items-baseline justify-end gap-1.5">
+          <span class="text-3xl font-bold leading-none text-ink">{{ construction_display.levels_progress_pct_all }}%</span>
+        </div>
+        <div class="mt-1 text-[11px] text-muted">{{ construction_display.levels_done_all }}/{{ construction_display.levels_total_all }} níveis</div>
+        {% if construction_display.eta_remaining_all_seconds %}
+        <div class="mt-0.5 text-[11px] text-muted"><i class="bi bi-hourglass-split"></i> {{ construction_display.eta_remaining_all_human }}</div>
         {% endif %}
       </div>
-      {% endfor %}
+      {% endif %}
     </div>
-  </div>
-  {% endif %}
-
-  {# ── Próximas na fila (uma por cidade) ── #}
-  {% if construction_display.next_steps %}
-  <div class="overflow-hidden rounded-xl border" style="border-color: rgba(79,134,185,0.25); background: rgba(79,134,185,0.04);">
-    <div class="flex items-center gap-2 border-b px-3 py-2" style="border-color: rgba(79,134,185,0.15); background: rgba(79,134,185,0.07);">
-      <i class="bi bi-arrow-right-circle text-xs" style="color: var(--ik-sea);"></i>
-      <span class="text-[10px] font-bold uppercase tracking-wide" style="color: var(--ik-sea);">Próximas na fila</span>
-    </div>
-    <div class="divide-y" style="border-color: rgba(79,134,185,0.10);">
-      {% for step in construction_display.next_steps %}
-      <div class="px-3 py-2.5">
-        <div class="flex items-start gap-3">
-          {% if step.building_icon %}
-          <img src="{% static 'game/buildings/'|add:step.building_icon %}" alt=""
-               class="mt-0.5 h-8 w-8 shrink-0 rounded-lg border object-contain p-0.5"
-               style="border-color: var(--ik-line); background: var(--ik-sand-light);">
-          {% else %}
-          <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style="background: rgba(79,134,185,0.10); color: var(--ik-sea);"><i class="bi bi-arrow-right"></i></span>
-          {% endif %}
-          <div class="min-w-0 flex-1">
-            {# Cidade em destaque #}
-            <div class="mb-0.5 text-[10px] font-semibold uppercase tracking-wide" style="color: var(--ik-sea);">{{ step.city_name }}</div>
-            <div class="flex flex-wrap items-baseline gap-x-2">
-              <span class="text-xs font-semibold text-ink">{{ step.building_name }}</span>
-              {% if step.next_transition %}
-              <span class="text-[11px] font-medium text-ink">{{ step.next_level_label }}</span>
-              <span class="text-[10px] text-muted">· meta Lv {{ step.target_level }}</span>
-              {% else %}
-              <span class="text-[11px] text-muted">{{ step.level_label }}</span>
-              {% endif %}
-              {% if step.next_duration_human %}
-              <span class="text-[10px] text-muted">≈{{ step.next_duration_human }}</span>
-              {% endif %}
-            </div>
-            {% if step.next_resources %}
-            <div class="mt-1 flex flex-wrap gap-1">
-              {% for item in step.next_resources %}
-              <span class="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px]"
-                    style="border-color: var(--ik-line); background: rgba(255,255,255,0.8);">
-                <img src="{% static item.icon %}" alt="" class="h-3 w-3">
-                {{ item.amount|intcomma }}
-              </span>
-              {% endfor %}
-            </div>
-            {% endif %}
-          </div>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
-
-  {# ── Progresso global do plano ── #}
-  {% if construction_display.levels_total_all %}
-  <div class="rounded-xl border p-4" style="border-color: var(--ik-line); background: linear-gradient(135deg, rgba(95,140,78,0.06), rgba(79,134,185,0.04));">
-    <div class="flex items-center justify-between gap-3 mb-2">
-      <div class="flex items-center gap-2">
-        <i class="bi bi-diagram-3-fill text-sea"></i>
-        <span class="text-xs font-semibold uppercase tracking-wide text-muted">Progresso do plano</span>
-      </div>
-      <div class="flex items-baseline gap-2">
-        <span class="text-2xl font-bold text-ink">{{ construction_display.levels_progress_pct_all }}%</span>
-        <span class="text-[11px] text-muted">{{ construction_display.levels_done_all }}/{{ construction_display.levels_total_all }} níveis</span>
-      </div>
-    </div>
-    <div class="h-2 rounded-full overflow-hidden" style="background: var(--ik-sand);">
+    {% if construction_display.levels_total_all %}
+    <div class="mt-3 h-2 overflow-hidden rounded-full" style="background: rgba(219,201,167,0.5);">
       <div class="h-full rounded-full transition-all duration-500"
            style="width: {{ construction_display.levels_progress_pct_all }}%; background: linear-gradient(90deg, var(--ik-good), #7fa96b);"></div>
     </div>
-    {% if construction_display.eta_remaining_all_seconds %}
-    <div class="mt-2 flex items-center gap-1.5 text-[11px] text-muted">
-      <i class="bi bi-hourglass-split"></i>
-      <span>Tempo restante estimado: <span class="font-semibold text-ink">{{ construction_display.eta_remaining_all_human }}</span></span>
-    </div>
     {% endif %}
   </div>
-  {% endif %}
 
-  {# ── Por cidade ── #}
+  {# ── Foco: o que importa em planos grandes — agora + proximas, lado a lado ── #}
+  <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+
+    {# EXECUTANDO AGORA #}
+    <div class="overflow-hidden rounded-xl border" style="border-color: rgba(95,140,78,0.30); background: rgba(95,140,78,0.04);">
+      <div class="flex items-center gap-2 border-b px-3 py-2" style="border-color: rgba(95,140,78,0.20); background: rgba(95,140,78,0.08);">
+        <span class="relative flex h-2 w-2">
+          <span class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-70" style="background: var(--ik-good);"></span>
+          <span class="relative inline-flex h-2 w-2 rounded-full" style="background: var(--ik-good);"></span>
+        </span>
+        <span class="text-[10px] font-bold uppercase tracking-wide" style="color: var(--ik-good);">Executando agora</span>
+        <span class="ml-auto text-[10px] text-muted">{{ construction_display.active_steps|length }}</span>
+      </div>
+      {% if construction_display.active_steps %}
+      <div class="divide-y" style="border-color: rgba(95,140,78,0.12);">
+        {% for step in construction_display.active_steps %}
+        <div class="px-3 py-2.5">
+          <div class="flex items-center gap-3">
+            {% if step.building_icon %}
+            <img src="{% static 'game/buildings/'|add:step.building_icon %}" alt=""
+                 class="h-9 w-9 shrink-0 rounded-lg border object-contain p-0.5"
+                 style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+            {% else %}
+            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" style="background: rgba(95,140,78,0.10); color: var(--ik-good);"><i class="bi bi-hammer"></i></span>
+            {% endif %}
+            <div class="min-w-0 flex-1">
+              <div class="text-[10px] font-semibold uppercase tracking-wide" style="color: var(--ik-good);">{{ step.city_name }}</div>
+              <div class="flex flex-wrap items-baseline gap-x-2">
+                <span class="text-sm font-bold text-ink">{{ step.building_name }}</span>
+                {% if step.active_transition.from_level is not None %}
+                <span class="rounded-md px-1.5 py-0.5 text-[11px] font-bold text-white" style="background: var(--ik-good);">Lv {{ step.active_transition.from_level }} → {{ step.active_transition.to_level }}</span>
+                {% endif %}
+              </div>
+            </div>
+            {% if step.active_duration_human %}
+            <span class="shrink-0 text-[11px] font-semibold" style="color: var(--ik-good);"><i class="bi bi-clock"></i> {{ step.active_duration_human }}</span>
+            {% endif %}
+          </div>
+          {% if step.active_resources %}
+          <div class="mt-1.5 ml-12 flex flex-wrap gap-1">
+            {% for item in step.active_resources %}
+            <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px]" style="border-color: var(--ik-line); background: rgba(255,255,255,0.8);">
+              <img src="{% static item.icon %}" alt="" class="h-3 w-3">{{ item.amount|intcomma }}
+            </span>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="px-3 py-4 text-center text-[11px] text-muted"><i class="bi bi-pause-circle"></i> Nenhuma obra em execução no momento.</div>
+      {% endif %}
+    </div>
+
+    {# PROXIMAS NA FILA (uma por cidade) #}
+    <div class="overflow-hidden rounded-xl border" style="border-color: rgba(79,134,185,0.25); background: rgba(79,134,185,0.04);">
+      <div class="flex items-center gap-2 border-b px-3 py-2" style="border-color: rgba(79,134,185,0.15); background: rgba(79,134,185,0.07);">
+        <i class="bi bi-arrow-right-circle text-xs" style="color: var(--ik-sea);"></i>
+        <span class="text-[10px] font-bold uppercase tracking-wide" style="color: var(--ik-sea);">Próxima na fila</span>
+        <span class="ml-auto text-[10px] text-muted">por cidade</span>
+      </div>
+      {% if construction_display.next_steps %}
+      <div class="divide-y" style="border-color: rgba(79,134,185,0.10);">
+        {% for step in construction_display.next_steps %}
+        <div class="px-3 py-2.5">
+          <div class="flex items-start gap-3">
+            {% if step.building_icon %}
+            <img src="{% static 'game/buildings/'|add:step.building_icon %}" alt=""
+                 class="mt-0.5 h-9 w-9 shrink-0 rounded-lg border object-contain p-0.5"
+                 style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+            {% else %}
+            <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" style="background: rgba(79,134,185,0.10); color: var(--ik-sea);"><i class="bi bi-arrow-right"></i></span>
+            {% endif %}
+            <div class="min-w-0 flex-1">
+              <div class="text-[10px] font-semibold uppercase tracking-wide" style="color: var(--ik-sea);">{{ step.city_name }}</div>
+              <div class="flex flex-wrap items-baseline gap-x-2">
+                <span class="text-sm font-bold text-ink">{{ step.building_name }}</span>
+                {% if step.next_transition %}
+                <span class="rounded-md px-1.5 py-0.5 text-[11px] font-semibold" style="background: rgba(79,134,185,0.12); color: var(--ik-sea);">{{ step.next_level_label }}</span>
+                <span class="text-[10px] text-muted">meta Lv {{ step.target_level }}</span>
+                {% else %}
+                <span class="text-[11px] text-muted">{{ step.level_label }}</span>
+                {% endif %}
+                {% if step.next_duration_human %}
+                <span class="text-[10px] text-muted"><i class="bi bi-clock"></i> {{ step.next_duration_human }}</span>
+                {% endif %}
+              </div>
+              {% if step.next_resources %}
+              <div class="mt-1 flex flex-wrap gap-1">
+                {% for item in step.next_resources %}
+                <span class="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px]" style="border-color: var(--ik-line); background: rgba(255,255,255,0.8);">
+                  <img src="{% static item.icon %}" alt="" class="h-3 w-3">{{ item.amount|intcomma }}
+                </span>
+                {% endfor %}
+              </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="px-3 py-4 text-center text-[11px] text-muted"><i class="bi bi-check-circle"></i> Sem etapas pendentes.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Plano completo (colapsavel — fechado por padrao em planos grandes) ── #}
   {% if construction_display.city_cards %}
-  <div class="space-y-2">
+  <div class="rounded-xl border" style="border-color: var(--ik-line);">
+    <button type="button" @click="showPlan = !showPlan"
+            class="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-[var(--ik-sand-light)]"
+            style="background: var(--ik-sand-light);">
+      <i class="bi bi-list-nested text-sm" style="color: var(--ik-sea);"></i>
+      <span class="text-xs font-semibold text-ink">Plano completo por cidade</span>
+      <span class="text-[10px] text-muted">{{ construction_display.step_count }} obras · {{ construction_display.levels_total_all }} níveis</span>
+      <i class="bi ml-auto text-muted transition-transform" :class="showPlan ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+    </button>
+    <div x-show="showPlan" x-cloak class="space-y-2 p-2">
     {% for city in construction_display.city_cards %}
-    <div x-data="{ open: {{ city.open_by_default|yesno:'true,false' }}, showDone: false }"
+    <div x-data="{ open: {{ city.open_by_default|yesno:'true,false' }}, showDone: false, view: 'order' }"
          class="overflow-hidden rounded-xl border"
          style="border-color: var(--ik-line);">
 
@@ -1594,8 +1611,80 @@
         </div>
       </button>
 
-      {# Conteúdo: steps agrupados, level_rows individuais #}
+      {# Conteúdo: ordem de execução (intercalada) OU por edifício #}
       <div x-show="open" x-cloak>
+
+        {# Toggle de visão #}
+        <div class="flex items-center gap-1 border-t px-3 py-2" style="border-color: var(--ik-line); background: rgba(255,255,255,0.5);">
+          <span class="mr-1 text-[10px] uppercase tracking-wide text-muted">Ver:</span>
+          <button type="button" @click="view='order'"
+                  class="rounded-md px-2 py-0.5 text-[11px] font-semibold transition"
+                  :style="view==='order' ? 'background: var(--ik-sea); color: white;' : 'color: var(--ik-sea);'">
+            <i class="bi bi-sort-numeric-down"></i> Ordem estimada
+          </button>
+          <button type="button" @click="view='building'"
+                  class="rounded-md px-2 py-0.5 text-[11px] font-semibold transition"
+                  :style="view==='building' ? 'background: var(--ik-sea); color: white;' : 'color: var(--ik-sea);'">
+            <i class="bi bi-buildings"></i> Por edifício
+          </button>
+        </div>
+
+        {# ── ORDEM ESTIMADA (aproxima como o runner constroi nivel a nivel) ── #}
+        <div x-show="view==='order'">
+        <div class="flex items-start gap-1.5 px-3 py-2 text-[10px] text-muted" style="background: rgba(201,156,78,0.08);">
+          <i class="bi bi-info-circle mt-0.5"></i>
+          <span>
+            Menor <b>score</b> = construído primeiro.
+            {% if construction_display.queue_strategy == 'smart' %}
+            Score = <b>tempo</b> (base, s) + <b>falta</b>×2 + <b>penal. custo</b> (log₁₀(1+custo)×3600). Barato+rápido+que dá pra pagar agora ganha.
+            {% elif construction_display.queue_strategy == 'fifo' %}
+            Ordem do plano (índice). Score = posição no plano.
+            {% else %}
+            Ordena por <b>falta</b> de recurso, depois <b>tempo</b> (base), depois <b>custo</b>. O nº é indicativo (tempo+penal. custo).
+            {% endif %}
+            O agente decide ao vivo — se faltar recurso/slot ele pula pra próxima possível.
+          </span>
+        </div>
+        <div class="divide-y" style="border-color: var(--ik-line);">
+          {% for it in city.execution_order.items %}
+          <div class="flex items-center gap-2 px-3 py-1.5 {% if it.is_current %}border-l-2{% endif %}"
+               style="{% if it.is_current %}border-left-color: var(--ik-good); background: linear-gradient(90deg, rgba(95,140,78,0.12), transparent);{% endif %}">
+            <span class="w-6 shrink-0 text-center text-[10px] font-mono text-muted">{{ it.seq }}</span>
+            {% if it.building_icon %}
+            <img src="{% static 'game/buildings/'|add:it.building_icon %}" alt="" class="h-6 w-6 shrink-0 rounded border object-contain p-0.5" style="border-color: var(--ik-line); background: rgba(255,255,255,0.85);">
+            {% else %}
+            <i class="bi bi-building shrink-0 text-sm text-sea"></i>
+            {% endif %}
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-baseline gap-x-2">
+                <span class="text-xs font-semibold text-ink">{{ it.building_name }}</span>
+                <span class="text-[11px] font-medium {% if it.is_current %}font-bold{% endif %}" style="color: {% if it.is_current %}var(--ik-good){% else %}var(--ik-sea){% endif %};">Lv {{ it.from_level }} → {{ it.to_level }}</span>
+                {% if it.is_current %}<span class="rounded px-1 py-0.5 text-[9px] font-bold text-white" style="background: var(--ik-good);"><i class="bi bi-hammer"></i> agora</span>{% endif %}
+              </div>
+              {% if it.costs %}
+              <div class="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
+                {% for c in it.costs %}<span class="inline-flex items-center gap-0.5 text-[10px] text-muted"><img src="{% static c.icon %}" alt="" class="h-3 w-3">{{ c.amount|intcomma }}</span>{% endfor %}
+              </div>
+              {% endif %}
+            </div>
+            <div class="flex shrink-0 flex-col items-end gap-0.5">
+              {% if it.adjusted_duration %}<span class="text-[10px] text-muted">{{ it.adjusted_duration }}</span>{% endif %}
+              <span class="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-semibold text-ink"
+                    style="border-color: var(--ik-line); background: rgba(79,134,185,0.06);"
+                    title="Score {{ it.score }}{% if construction_display.queue_strategy == 'smart' %} = tempo {{ it.sc_base }}s + falta {{ it.sc_missing|intcomma }}×2 + penal.custo {{ it.sc_cost_pen }} (custo total {{ it.sc_cost|intcomma }}){% elif construction_display.queue_strategy == 'fifo' %} = posição no plano{% else %} indicativo: tempo {{ it.sc_base }}s + penal.custo {{ it.sc_cost_pen }}; ordena por falta {{ it.sc_missing|intcomma }} primeiro{% endif %}">
+                <i class="bi bi-speedometer2 text-[9px]" style="color: var(--ik-sea);"></i> {{ it.score|intcomma }}
+              </span>
+            </div>
+          </div>
+          {% endfor %}
+          {% if city.execution_order.truncated %}
+          <div class="px-3 py-2 text-center text-[10px] text-muted">Mostrando os primeiros {{ city.execution_order.items|length }} de {{ city.execution_order.total }} níveis</div>
+          {% endif %}
+        </div>{# /divide-y #}
+        </div>{# /x-show view==='order' #}
+
+        {# ── POR EDIFÍCIO (agrupado, níveis de cada obra) ── #}
+        <div x-show="view==='building'" x-cloak>
         {% for step in city.steps %}
         {# Step header — edifício + status + progress do step #}
         <div class="flex items-center gap-2 border-t px-4 py-2
@@ -1691,16 +1780,28 @@
         {% endif %}
         {% endfor %}
         {% endfor %}
-      </div>
+        </div>{# /x-show view==='building' #}
+      </div>{# /x-show open #}
     </div>
     {% endfor %}
-  </div>
+    </div>{# /x-show showPlan #}
+  </div>{# /wrapper colapsavel do plano #}
   {% endif %}
 
-  {# ── Recursos ── #}
+  {# ── Recursos (colapsavel) ── #}
   {% if construction_display.has_progress %}
-  <div>
-    <div class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Recursos do plano</div>
+  <div class="rounded-xl border" style="border-color: var(--ik-line);">
+    <button type="button" @click="showResources = !showResources"
+            class="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-[var(--ik-sand-light)]"
+            style="background: var(--ik-sand-light);">
+      <i class="bi bi-box-seam text-sm" style="color: var(--ik-gold-dark);"></i>
+      <span class="text-xs font-semibold text-ink">Recursos do plano</span>
+      {% if construction_display.missing_by_resource %}
+      <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold" style="background: rgba(185,79,79,0.12); color:#b94f4f;"><i class="bi bi-exclamation-triangle-fill"></i> falta recurso</span>
+      {% endif %}
+      <i class="bi ml-auto text-muted transition-transform" :class="showResources ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+    </button>
+    <div x-show="showResources" x-cloak class="p-3">
     <div class="grid grid-cols-1 gap-3 lg:grid-cols-4">
     <div class="rounded-lg border border-[var(--ik-line)] px-3 py-2">
       <div class="text-[11px] text-muted uppercase tracking-wide">Tempo estimado</div>
@@ -1749,6 +1850,7 @@
       </div>
     </div>
     </div>{# /grid recursos #}
+    </div>{# /x-show showResources #}
   </div>{# /{% if has_progress %} #}
   {% endif %}
 

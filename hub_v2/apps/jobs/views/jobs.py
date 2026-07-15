@@ -1601,6 +1601,48 @@ class JobListView(FilterSortListView):
             "has_state": capture_points is not None,
         }
 
+    @staticmethod
+    def _snapshot_current_levels(job):
+        """Niveis atuais e ESTOQUE reais por cidade, do snapshot do jogo.
+        Retorna {city_id: {"_pos": {pos: lvl}, "_bid": {bid: lvl}, "stock": {wood,wine,marble,glas,sulfur}}}.
+        Usado para marcar concluidos e para prever o proximo como o runner (estoque ao vivo)."""
+        out: dict[str, dict] = {}
+        if not job.game_account_id:
+            return out
+        try:
+            from apps.game.models import AccountSnapshot
+            snap = AccountSnapshot.objects.filter(game_account_id=job.game_account_id).first()
+            if not snap:
+                return out
+            for c in (snap.cities or []):
+                if not isinstance(c, dict):
+                    continue
+                cid = str(c.get("id") or "")
+                pos_map: dict[str, int] = {}
+                bid_map: dict[str, int] = {}
+                for b in c.get("buildings") or []:
+                    if not isinstance(b, dict):
+                        continue
+                    bid = str(b.get("building") or "")
+                    if not bid or bid == "empty":
+                        continue
+                    lvl = _to_int(b.get("level"), 0)
+                    pos_map[str(b.get("position"))] = lvl
+                    if lvl > bid_map.get(bid, -1):
+                        bid_map[bid] = lvl
+                # estoque atual (chaves iguais as dos itens de custo do display)
+                stock = {
+                    "wood": _to_int(c.get("wood"), 0),
+                    "wine": _to_int(c.get("wine"), 0),
+                    "marble": _to_int(c.get("marble"), 0),
+                    "crystal": _to_int(c.get("crystal"), 0),
+                    "sulfur": _to_int(c.get("sulfur"), 0),
+                }
+                out[cid] = {"_pos": pos_map, "_bid": bid_map, "stock": stock}
+        except Exception:
+            pass
+        return out
+
     @classmethod
     def _resolve_city_name(cls, job, city_id) -> str:
         """Lookup city name in the game_account's snapshot."""
@@ -1857,6 +1899,157 @@ class JobListView(FilterSortListView):
             "captcha_timeout_sec": _to_int(inputs.get("captcha_timeout_sec"), 120),
         }
 
+    @staticmethod
+    def _sort_steps_for_display(raw_steps):
+        """Ordena as etapas do plano por prioridade de execucao (balanceado):
+        o que da pra pagar agora, depois menor tempo+custo do PROXIMO nivel.
+        Igual ao criterio do runner (smart). Usado so para exibir."""
+        import math
+
+        def _key(step):
+            rows = step.get("level_rows") or []
+            row0 = rows[0] if rows else {}
+            base0 = _to_int(row0.get("base_seconds") or step.get("base_seconds"), 0)
+            costs0 = row0.get("costs") or step.get("totals") or {}
+            cost0 = sum(_to_int(v, 0) for v in costs0.values())
+            missing0 = sum(_to_int(v, 0) for v in (step.get("missing") or {}).values())
+            composite = base0 + math.log10(1 + max(0, cost0)) * 3600
+            return (1 if missing0 > 0 else 0, composite)
+
+        try:
+            return sorted(raw_steps, key=_key)
+        except Exception:
+            return raw_steps
+
+    _RES_KEYS = ("wood", "wine", "marble", "crystal", "sulfur")
+
+    @classmethod
+    def _simulate_execution_order(cls, city_steps, stock=None, strategy="eta_first", limit=80):
+        """Simula a ORDEM REAL de execucao (intercalada) dos niveis pendentes de
+        uma cidade REPLICANDO o criterio do runner: por estrategia, com o ESTOQUE
+        ao vivo (o que da pra pagar agora vem primeiro), respeitando o cap da
+        Prefeitura. O primeiro item = proxima obra que o agente vai pegar.
+
+        Retorna {items:[{seq, building_name, building_icon, building_id, from_level,
+        to_level, target_level, adjusted_duration, costs, is_current}], total, truncated}.
+        """
+        import math
+        strategy = str(strategy or "eta_first").strip().lower()
+        # estoque de trabalho (depleta a cada obra simulada)
+        work = {k: _to_int((stock or {}).get(k), 0) for k in cls._RES_KEYS}
+
+        queues = []
+        townhall_level = None
+        has_townhall = False
+        for s in city_steps:
+            bid = str(s.get("building_id") or "")
+            rows = [lr for lr in (s.get("level_queue") or []) if not lr.get("is_done")]
+            if not rows:
+                continue
+            queues.append({"step": s, "rows": rows, "ptr": 0, "bid": bid,
+                           "sindex": _to_int(s.get("index"), 0)})
+            if bid == "townHall":
+                has_townhall = True
+                townhall_level = _to_int(rows[0].get("from_level"), 0)
+        if townhall_level is None:
+            townhall_level = 10 ** 9
+        exempt = {"warehouse", "dump"}
+
+        def _cost_map(row):
+            return {str(c.get("key")): _to_int(c.get("amount"), 0) for c in (row.get("costs") or [])}
+
+        def _missing(cost_map):
+            return sum(max(0, amt - work.get(k, 0)) for k, amt in cost_map.items())
+
+        def _key(qrow):
+            q, row = qrow
+            cm = _cost_map(row)
+            cost_sum = sum(cm.values())
+            missing = _missing(cm)
+            base = _to_int(row.get("base_seconds"), 0) or _to_int(row.get("adjusted_seconds"), 0)
+            if strategy == "fifo":
+                # ordem do plano: menor indice de step primeiro, depois nivel
+                return (q["sindex"], _to_int(row.get("to_level"), 0))
+            if strategy == "smart":
+                composite = base + missing * 2 + math.log10(1 + max(0, cost_sum)) * 3600
+                return (composite,)
+            # eta_first: o que da pra pagar (missing), depois tempo, depois custo
+            return (missing, base, cost_sum)
+
+        active_key = None
+        for s in city_steps:
+            at = s.get("active_transition")
+            if s.get("status") == "active" and at and at.get("to_level"):
+                active_key = (str(s.get("building_id") or ""), int(at["to_level"]))
+                break
+
+        out = []
+        guard = 0
+        max_iter = sum(len(q["rows"]) for q in queues) + 5
+        while len(out) < limit and guard < max_iter:
+            guard += 1
+            candidates = []
+            for q in queues:
+                if q["ptr"] >= len(q["rows"]):
+                    continue
+                row = q["rows"][q["ptr"]]
+                allowed = (
+                    not has_townhall
+                    or q["bid"] == "townHall"
+                    or q["bid"] in exempt
+                    or _to_int(row.get("to_level"), 0) <= townhall_level
+                )
+                if allowed:
+                    candidates.append((q, row))
+            if not candidates:
+                for q in queues:
+                    if q["ptr"] < len(q["rows"]):
+                        candidates.append((q, q["rows"][q["ptr"]]))
+                if not candidates:
+                    break
+            q, row = min(candidates, key=_key)
+            s = q["step"]
+            bid = q["bid"]
+            # score explicavel deste pick (com o estoque no momento)
+            _cm = _cost_map(row)
+            _cost_sum = sum(_cm.values())
+            _miss = _missing(_cm)
+            _base = _to_int(row.get("base_seconds"), 0) or _to_int(row.get("adjusted_seconds"), 0)
+            _cost_pen = round(math.log10(1 + max(0, _cost_sum)) * 3600)
+            if strategy == "smart":
+                _score = round(_base + _miss * 2 + _cost_pen)
+            elif strategy == "fifo":
+                _score = q["sindex"]
+            else:
+                _score = round(_base + _cost_pen)  # indicativo (eta ordena: falta, tempo, custo)
+            out.append({
+                "seq": len(out) + 1,
+                "building_name": s.get("building_name"),
+                "building_icon": s.get("building_icon"),
+                "building_id": bid,
+                "city_name": s.get("city_name"),
+                "from_level": row.get("from_level"),
+                "to_level": row.get("to_level"),
+                "target_level": s.get("target_level"),
+                "adjusted_duration": row.get("adjusted_duration"),
+                "costs": row.get("costs") or [],
+                "is_current": active_key == (bid, int(_to_int(row.get("to_level"), 0))),
+                "score": _score,
+                "sc_base": _base,
+                "sc_cost": _cost_sum,
+                "sc_cost_pen": _cost_pen,
+                "sc_missing": _miss,
+            })
+            # depleta estoque e sobe cap da prefeitura
+            for k, amt in _cost_map(row).items():
+                work[k] = max(0, work.get(k, 0) - amt)
+            if bid == "townHall":
+                townhall_level = _to_int(row.get("to_level"), townhall_level)
+            q["ptr"] += 1
+
+        total_pending = sum(len(q["rows"]) for q in queues)
+        return {"items": out, "total": total_pending, "truncated": total_pending > len(out)}
+
     @classmethod
     def _construction_display(cls, job, *, logs=None):
         inputs = cls._parse_inputs(job)
@@ -1868,6 +2061,15 @@ class JobListView(FilterSortListView):
             raw_steps = inputs.get("construction_plan_json")
         if not isinstance(raw_steps, list):
             raw_steps = []
+
+        # Sempre exibir na ordem de execucao (balanceado tempo+custo), pela
+        # economia do PROXIMO nivel de cada etapa — independe da ordem gravada,
+        # entao planos antigos tambem aparecem corretos. Nao altera nada salvo.
+        raw_steps = cls._sort_steps_for_display(raw_steps)
+
+        # Niveis atuais reais (snapshot) para marcar concluidos com precisao —
+        # nem sempre ha log de cada nivel; o estado do jogo e a fonte confiavel.
+        current_levels = cls._snapshot_current_levels(job)
 
         summary = inputs.get("construction_summary") if isinstance(inputs.get("construction_summary"), dict) else {}
         logs = list(logs or [])
@@ -1901,7 +2103,11 @@ class JobListView(FilterSortListView):
         missing_by_resource = []
         all_steps_flat: list[dict] = []
 
-        for idx, step in enumerate(raw_steps, start=1):
+        for _pos, step in enumerate(raw_steps, start=1):
+            # Usa o indice GRAVADO do step (o que o runner loga como "#N de M"),
+            # nao a posicao apos ordenar para exibicao — senao os logs casam com
+            # o step errado (ex: mostrar Mercado "em obra" sem nunca ter sido).
+            idx = _to_int(step.get("index"), _pos)
             building_id = str(step.get("building_id") or step.get("building_type") or "").strip()
             building_info = get_building_info(building_id) if building_id else {}
             building_name = str(step.get("building_name") or building_info.get("name") or building_id or "?")
@@ -1951,6 +2157,7 @@ class JobListView(FilterSortListView):
                     "to_level": lvl,
                     "adjusted_duration": str(lr.get("adjusted_duration") or ""),
                     "adjusted_seconds": _to_int(lr.get("adjusted_seconds"), 0),
+                    "base_seconds": _to_int(lr.get("base_seconds"), 0),
                     "is_current": False,
                     "is_done": False,       # marcado depois com base no active_transition
                     "is_waiting": True,
@@ -1961,8 +2168,26 @@ class JobListView(FilterSortListView):
             has_level_queue = len(level_queue) > 1
             last_to_level = level_queue[-1]["to_level"] if level_queue else target_level
 
+            # Nivel atual REAL desta obra (snapshot): por posicao, senao por edificio.
+            _cid = str(step.get("city_id") or "")
+            _pos_key = str(step.get("building_position") or step.get("preferred_position") or "").strip()
+            _cl = current_levels.get(_cid) or {}
+            snapshot_level = None
+            if _pos_key and _pos_key in (_cl.get("_pos") or {}):
+                snapshot_level = _cl["_pos"][_pos_key]
+            elif building_id and building_id in (_cl.get("_bid") or {}):
+                snapshot_level = _cl["_bid"][building_id]
+
+            # Marca como concluidos todos os niveis ja atingidos no jogo.
+            if snapshot_level is not None:
+                for lrow in level_queue:
+                    if _to_int(lrow.get("to_level"), 0) <= snapshot_level:
+                        lrow["is_done"] = True
+                        lrow["is_waiting"] = False
+                        lrow["is_current"] = False
+
             # Determine step status
-            if idx in skipped_indices:
+            if idx in skipped_indices or (snapshot_level is not None and target_level > 0 and snapshot_level >= target_level):
                 step_status = "done"
             elif idx in blocked_indices:
                 step_status = "blocked"
@@ -2027,21 +2252,19 @@ class JobListView(FilterSortListView):
                 if not lr.get("is_done")
             )
 
-            # Next transition = first level row (what will be built next for waiting steps)
+            level_label = (f"Lv {from_level} → {target_level}" if from_level > 0
+                           else f"Novo → Lv {target_level}")
+            # Next transition = primeiro nivel AINDA NAO concluido (o que sera
+            # construido em seguida) — pula os ja feitos (snapshot/logs).
             next_transition: dict | None = None
             next_duration_human = ""
             next_resources: list[dict] = []
-            if level_queue:
-                first_row = level_queue[0]
+            first_row = next((lr for lr in level_queue if not lr.get("is_done")), None)
+            if first_row is not None:
                 next_transition = {"from_level": first_row["from_level"], "to_level": first_row["to_level"]}
                 next_duration_human = str(first_row.get("adjusted_duration") or "")
-            if raw_level_rows:
-                first_lr_costs = (raw_level_rows[0].get("costs") or {})
-                for key, (label, icon) in RESOURCE_ICON_MAP.items():
-                    lk = "glas" if key == "crystal" else key
-                    amt = _to_int(first_lr_costs.get(lk), 0)
-                    if amt > 0:
-                        next_resources.append({"key": key, "label": label, "icon": icon, "amount": amt})
+                for c in first_row.get("costs") or []:
+                    next_resources.append(dict(c))
 
             step_display = {
                 "index": idx,
@@ -2050,7 +2273,7 @@ class JobListView(FilterSortListView):
                 "building_icon": building_icon,
                 "building_id": building_id,
                 "mode_label": "Construir novo" if mode == "new" else "Evoluir",
-                "level_label": f"Lv {from_level} → {target_level}" if from_level > 0 else f"Novo → Lv {target_level}",
+                "level_label": level_label,
                 "level_range_label": f"Lv {from_level} → {last_to_level} ({len(level_queue)} níveis)" if has_level_queue else "",
                 "slot_label": f"Slot {preferred_position}" if preferred_position else "",
                 "adjusted_human": _duration_human(adjusted_seconds),
@@ -2152,7 +2375,8 @@ class JobListView(FilterSortListView):
         # Compute totals: plan total and remaining (non-done steps only)
         plan_totals: dict[str, int] = {}
         remaining_totals: dict[str, int] = {}
-        for i, step in enumerate(raw_steps, start=1):
+        for _pos2, step in enumerate(raw_steps, start=1):
+            i = _to_int(step.get("index"), _pos2)
             step_totals = step.get("totals") or {}
             for key in RESOURCE_ICON_MAP:
                 lookup_key = "glas" if key == "crystal" else key
@@ -2218,14 +2442,31 @@ class JobListView(FilterSortListView):
             if current_message and blocker_message:
                 break
 
+        plan_strategy = str(inputs.get("queue_strategy") or "eta_first")
         city_cards = []
         for city_name_key, city_steps in city_groups.items():
+            _cid_city = str((city_steps[0].get("city_id") if city_steps else "") or "")
+            city_stock = (current_levels.get(_cid_city) or {}).get("stock") or {}
+            city_exec_order = cls._simulate_execution_order(city_steps, city_stock, plan_strategy)
             city_active = next((s for s in city_steps if s["status"] == "active"), None)
-            # next = first waiting step after the active one (or any waiting if no active)
-            active_idx = city_active["index"] if city_active else -1
-            city_next = next((s for s in city_steps if s["status"] == "waiting" and s["index"] > active_idx), None)
-            if city_next is None:
-                city_next = next((s for s in city_steps if s["status"] == "waiting"), None)
+            # Proxima na fila = primeiro item da ordem simulada que NAO e o que ja
+            # esta em obra — mesmo criterio do runner (estoque ao vivo + estrategia).
+            nxt_item = next((it for it in city_exec_order["items"] if not it.get("is_current")), None)
+            if nxt_item is not None:
+                city_next = {
+                    "city_name": city_name_key,
+                    "building_name": nxt_item.get("building_name"),
+                    "building_icon": nxt_item.get("building_icon"),
+                    "building_id": nxt_item.get("building_id"),
+                    "next_transition": {"from_level": nxt_item.get("from_level"), "to_level": nxt_item.get("to_level")},
+                    "next_level_label": f"Lv {nxt_item.get('from_level')} → {nxt_item.get('to_level')}",
+                    "target_level": nxt_item.get("target_level"),
+                    "next_duration_human": nxt_item.get("adjusted_duration"),
+                    "next_resources": nxt_item.get("costs") or [],
+                    "level_label": f"Lv {nxt_item.get('from_level')} → {nxt_item.get('to_level')}",
+                }
+            else:
+                city_next = None
 
             # Agregado: soma dos níveis feitos vs total (todos steps)
             city_levels_total = sum(int(s.get("levels_total") or 0) for s in city_steps)
@@ -2241,6 +2482,7 @@ class JobListView(FilterSortListView):
                 "next_step": city_next,
                 "open_by_default": bool(city_active),
                 "steps": city_steps,
+                "execution_order": city_exec_order,
                 "levels_total": city_levels_total,
                 "levels_done": city_levels_done,
                 "levels_progress_pct": int(round(100 * city_levels_done / city_levels_total)) if city_levels_total else 0,
@@ -2268,6 +2510,7 @@ class JobListView(FilterSortListView):
             "levels_progress_pct_all": int(round(100 * total_levels_done / total_levels_all)) if total_levels_all else 0,
             "eta_remaining_all_seconds": total_eta_remaining,
             "eta_remaining_all_human": _duration_human(total_eta_remaining),
+            "queue_strategy": str(inputs.get("queue_strategy") or "eta_first"),
             "queue_strategy_label": CONSTRUCTION_QUEUE_STRATEGY_META.get(str(inputs.get("queue_strategy") or "eta_first"), "Ordem do plano"),
             "auto_transport": cls._bool_label(inputs.get("auto_transport", True)),
             "city_cards": city_cards,
@@ -2302,6 +2545,16 @@ class JobDetailView(LoginRequiredMixin, DetailView):
         context["log_rows"] = _build_log_rows(self.object, list(logs_qs))
         action_info = ACTION_CATALOG.get(self.object.action_code)
         context["action_name"] = action_info["name"] if action_info else None
+        # N-13: pode editar parametros se acao recorrente e existe um job ativo na
+        # cadeia (o loop pode ter reagendado; edita-se sempre o ciclo ativo).
+        can_edit = False
+        if action_info and action_info.get("recurring"):
+            if self.object.status in ("queued", "running", "scheduled"):
+                can_edit = True
+            else:
+                from .create import JobSubmitView
+                can_edit = JobSubmitView._find_active_chain_job(self.object) is not None
+        context["can_edit_params"] = can_edit
 
         # Workflow context for breadcrumb and sidebar
         job_workflow = self.object.workflow

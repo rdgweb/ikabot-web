@@ -25,7 +25,10 @@
          style="background: rgba(95,140,78,0.12);">
       <i class="bi bi-check-circle-fill text-3xl text-[var(--ik-good)]"></i>
     </div>
-    {% if merged %}
+    {% if edited %}
+    <p class="text-base font-bold text-ink">Parametros atualizados!</p>
+    <p class="text-sm text-muted mt-1">{{ action_name }} • aplicam no proximo ciclo</p>
+    {% elif merged %}
     <p class="text-base font-bold text-ink">
       {{ merged_count }} etapa{{ merged_count|pluralize }} mesclada{{ merged_count|pluralize }}!
     </p>

@@ -316,6 +316,13 @@ class RescheduleJobView(APIView):
             else:
                 new_inputs_dict = dict(existing)
                 new_inputs_dict.update(patch)
+            # Mailbox de edicao (N-13): parametros editados pelo usuario num job
+            # recorrente em andamento ficam em __pending_patch e sao aplicados
+            # POR ULTIMO, vencendo o reenvio de inputs do agente. Aplica no filho
+            # e limpa o ponteiro para nao repetir nos ciclos seguintes.
+            pending_patch = new_inputs_dict.pop("__pending_patch", None)
+            if isinstance(pending_patch, dict) and pending_patch:
+                new_inputs_dict.update(pending_patch)
             new_inputs_json = json.dumps(new_inputs_dict)
 
             # Idempotency: only reuse a recent child if it is a true reschedule equivalent.

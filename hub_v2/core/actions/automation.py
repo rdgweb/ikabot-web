@@ -70,23 +70,6 @@ ACTIONS = {
             {"key": "cycle_hours", "type": FIELD_INT, "label": "Ciclo do loop (h)", "required": True, "min": 6, "default": 72, "help": "Depois de ativar, agenda o proximo ciclo nesse intervalo."},
         ],
     },
-    1301: {
-        "name": "Clonar Cidade",
-        "name_en": "Clone city",
-        "category": CAT_AUTOMATION,
-        "icon": "bi-copy",
-        "runner": "city_clone",
-        "requires_game_session": True,
-        "recurring": True,
-        "long_running": True,
-        "description": "Replica a estrutura de uma cidade em outra.",
-        "inputs": [
-            {"key": "source_city", "type": FIELD_CITY_SELECT, "label": "Cidade modelo", "multiple": False, "required": True},
-            {"key": "target_city", "type": FIELD_CITY_SELECT, "label": "Cidade destino", "multiple": False, "required": True},
-            {"key": "max_target_level", "type": FIELD_INT, "label": "Nivel maximo", "required": True, "min": 1, "max": 50},
-            {"key": "auto_transport", "type": FIELD_BOOL, "label": "Transportar recursos", "required": False, "default": True},
-        ],
-    },
     1902: {
         "name": "Rotina Automatica",
         "name_en": "Auto routine",
