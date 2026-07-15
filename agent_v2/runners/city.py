@@ -2310,6 +2310,11 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         if not city_candidates:
             return None
 
+        # Priorizado pelo usuario (painel): vem antes de qualquer estrategia.
+        priority_candidates = [c for c in city_candidates if c.get("priority")]
+        if priority_candidates:
+            return sorted(priority_candidates, key=lambda step: _to_int(step.get("index"), 0))[0]
+
         strategy = str(queue_strategy or "fifo").strip().lower()
         if strategy in ("eta_first", "smart"):
             city = _find_city(cities, city_id)
@@ -2353,8 +2358,11 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             else:
                 composite = base_seconds + cost_penalty
             return (composite, _to_int(step.get("index"), 0))
-        # eta_first (default)
-        return (missing_total, adjusted_seconds, cost_sum, _to_int(step.get("index"), 0))
+        # eta_first (default): usa base_seconds (estavel, independente de Chronos)
+        # em vez de adjusted_seconds, que pode vir inflado/deflacionado pela
+        # simulacao de Chronos futuro feita na criacao do plano.
+        base_seconds = max(0, _to_int(level_row.get("base_seconds"), adjusted_seconds))
+        return (missing_total, base_seconds, cost_sum, _to_int(step.get("index"), 0))
 
     @staticmethod
     def _missing_can_be_sourced(
