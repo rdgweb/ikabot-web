@@ -1,8 +1,19 @@
 """Agent configuration from environment variables."""
 
 import uuid
+from pathlib import Path
 
 from pydantic_settings import BaseSettings
+
+
+def _read_version() -> str:
+    """Le a versao do arquivo agent_v2/VERSION (fonte unica). Env AGENT_VERSION
+    ainda sobrescreve. Assim a versao reportada acompanha o VERSION do repo."""
+    try:
+        text = (Path(__file__).resolve().parent.parent / "VERSION").read_text(encoding="utf-8").strip()
+        return text or "0.0.0"
+    except Exception:
+        return "0.0.0"
 
 
 class AgentSettings(BaseSettings):
@@ -11,7 +22,7 @@ class AgentSettings(BaseSettings):
     agent_token: str = ""
     agent_node_id: str = ""
     agent_name: str = "ikabot-agent"
-    agent_version: str = "0.0.95"
+    agent_version: str = _read_version()
     agent_image: str = ""
     agent_image_digest: str = ""
     max_parallel: int = 12
