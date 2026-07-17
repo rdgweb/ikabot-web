@@ -899,6 +899,18 @@ class DistributeResourcesRunner(BaseRunner):
                 f"Plano gerou {total_routes} rotas; selecionando até {max_routes_per_cycle} viáveis neste ciclo",
             )
 
+        # Recursos JA EM TRANSITO por destino (todas as rotas ativas da cadeia).
+        # Precisam ser descontados do espaco livre, senao o runner acha que cabe
+        # e manda de novo -> estoura o armazem na chegada (N-55).
+        incoming_by_dest: dict[str, dict[str, int]] = {}
+        for _e in active_transport_entries:
+            _tc = str(_e.get("to_city") or "")
+            if not _tc:
+                continue
+            _bucket = incoming_by_dest.setdefault(_tc, {})
+            for _name, _amt in (_e.get("resources") or {}).items():
+                _bucket[_name] = _bucket.get(_name, 0) + max(0, _to_int(_amt, 0))
+
         actions_spawned = 0
         skipped_full = 0
         for route in route_entries:
@@ -906,22 +918,26 @@ class DistributeResourcesRunner(BaseRunner):
                 break
 
             dest_city = city_map.get(str(route["to_city"]))
-            wh_cap = _to_int((dest_city or {}).get("warehouse_capacity"), 0) if dest_city else 0
+            dest_incoming = incoming_by_dest.get(str(route["to_city"]), {})
 
             blocked_resources: list[str] = []
             viable_resources: dict[str, int] = {}
             for res, amount in route["resources"].items():
                 if amount <= 0:
                     continue
-                if wh_cap > 0:
+                # capacidade do armazem para o recurso (com fallback robusto)
+                cap_res = _resource_capacity(dest_city, res) if dest_city else 0
+                if cap_res > 0:
                     current = _to_int((dest_city or {}).get(res), 0)
-                    free = max(0, wh_cap - current)
+                    incoming = _to_int(dest_incoming.get(res), 0)
+                    free = max(0, cap_res - current - incoming)
                     if free < useful_transfer_min:
                         blocked_resources.append(f"{res} (livre={free:,})")
                         continue
                     viable_resources[res] = min(amount, free)
                 else:
-                    viable_resources[res] = amount
+                    # capacidade desconhecida: nao arrisca estourar, so o minimo util
+                    viable_resources[res] = min(amount, useful_transfer_min)
 
             if blocked_resources:
                 self.log(
