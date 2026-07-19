@@ -412,6 +412,10 @@ class CheckStatusRunner(BaseRunner):
             self.log(jid, "error", f"Falha no login: {e}")
             return RunnerResult(success=False, data={"error": "login_failed", "detail": str(e)})
         except Exception as exc:
+            # Erros de rede transitorios (timeout, conexao) nao sao "inesperados":
+            # reagenda em vez de falhar o job.
+            if self.is_network_error(exc):
+                return self.network_error_result(jid, exc)
             logger.exception("CheckStatusRunner failed for account %s", aid)
             self.log(jid, "error", f"Erro inesperado: {exc}")
             return RunnerResult(success=False, data={"error": str(exc)})
