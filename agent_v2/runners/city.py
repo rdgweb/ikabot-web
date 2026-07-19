@@ -1012,6 +1012,32 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 support_by_city={},
                 cost_overrides={},
             )
+            # Plano concluido; apenas registra as etapas que ficaram puladas
+            # (ignoradas/bloqueadas sem atingir a meta) como observacao.
+            skipped: list[dict[str, Any]] = []
+            for step in plan_steps:
+                sidx = _to_int(step.get("index"), 0)
+                if sidx not in ignored_step_indices:
+                    continue
+                city = _find_city(cities, str(step.get("city_id") or ""))
+                cur = self._resolve_step_state(city, step)[0] if city else 0
+                tgt = _to_int(step.get("target_level"), 0)
+                if tgt > 0 and cur < tgt:
+                    skipped.append({
+                        "city_id": str(step.get("city_id") or ""),
+                        "city_name": step.get("city_name") or "",
+                        "building_id": str(step.get("building_id") or ""),
+                        "building_name": step.get("building_name") or step.get("building_id") or "",
+                        "current_level": cur,
+                        "target_level": tgt,
+                    })
+            if skipped:
+                detail = "; ".join(
+                    f"{u['city_name']} {u['building_name']} {u['current_level']}->{u['target_level']}"
+                    for u in skipped
+                )
+                self.log(jid, "info", f"Plano de construcao concluido — {len(skipped)} etapa(s) pulada(s): {detail}")
+                return RunnerResult(success=True, data={"status": "complete", "skipped_steps": skipped})
             self.log(jid, "info", "Plano de construcao concluido")
             return RunnerResult(success=True, data={"status": "complete"})
 
