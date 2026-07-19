@@ -108,6 +108,41 @@
   </dl>
 </div>
 
+{# ── Fila Celery/Redis ── #}
+<div class="card">
+  <div class="mb-3 flex items-center justify-between">
+    <h3 class="text-sm font-semibold text-ink"><i class="bi bi-stack"></i> Fila do agent (Celery/Redis)</h3>
+    {% if queue_stats %}
+    <form method="post" action="{% url 'accounts:node-purge-queue' node.pk %}"
+          onsubmit="return confirm('Limpar a fila deste nó (imediatas + reservadas)? Depois reinicie o worker.');">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger btn-sm"
+              {% if not queue_stats.queue_len and not queue_stats.unacked %}disabled{% endif %}>
+        <i class="bi bi-trash3"></i> Limpar fila
+      </button>
+    </form>
+    {% endif %}
+  </div>
+  {% if queue_stats %}
+  <dl class="grid grid-cols-2 gap-3 text-sm">
+    <div>
+      <dt class="text-muted">Imediatas na fila</dt>
+      <dd class="mt-0.5 font-mono {% if queue_stats.queue_len %}text-[var(--ik-bad)] font-bold{% endif %}">{{ queue_stats.queue_len }}</dd>
+    </div>
+    <div>
+      <dt class="text-muted">Reservadas / ETA (unacked)</dt>
+      <dd class="mt-0.5 font-mono {% if queue_stats.unacked %}text-[var(--ik-bad)] font-bold{% endif %}">{{ queue_stats.unacked }}</dd>
+    </div>
+  </dl>
+  <p class="mt-3 text-[11px] text-muted">
+    <i class="bi bi-info-circle"></i> Tasks presas no broker (não somem ao apagar jobs no banco). Após limpar,
+    <b>reinicie o worker deste nó</b> para soltar o que ele já tem em memória.
+  </p>
+  {% else %}
+  <p class="text-sm text-muted">Não foi possível ler a fila (Redis indisponível).</p>
+  {% endif %}
+</div>
+
 {# ── Proxy card ── #}
 <div class="card">
   <div class="flex items-center justify-between mb-3">

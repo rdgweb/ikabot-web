@@ -84,7 +84,34 @@ class NodeDetailView(LoginRequiredMixin, DetailView):
         else:
             ctx["ip_conflict_nodes"] = []
 
+        # Fila Celery/Redis deste no (tasks presas no broker)
+        try:
+            from apps.jobs.services.agent_queue import node_queue_stats
+            ctx["queue_stats"] = node_queue_stats(str(node.pk))
+        except Exception:
+            ctx["queue_stats"] = None
+
         return ctx
+
+
+class NodeQueuePurgeView(LoginRequiredMixin, View):
+    """POST: limpa a fila Celery/Redis (imediata + unacked) de um no."""
+
+    def post(self, request, pk):
+        from django.contrib import messages
+        from django.shortcuts import redirect
+        from apps.jobs.services.agent_queue import purge_node
+        node = get_object_or_404(Node, pk=pk)
+        try:
+            res = purge_node(str(node.pk))
+            messages.success(
+                request,
+                f"Fila limpa: {res['queue_len']} imediata(s) + {res['unacked']} reservada(s). "
+                f"Reinicie o worker deste no para soltar o que ele tem em memoria.",
+            )
+        except Exception as exc:
+            messages.error(request, f"Falha ao limpar fila: {exc}")
+        return redirect("accounts:node-detail", pk=node.pk)
 
 
 class NodeCreateView(LoginRequiredMixin, CreateView):

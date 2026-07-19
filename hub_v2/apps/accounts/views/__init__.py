@@ -7,6 +7,7 @@ from .nodes import (
     NodeDeployView,
     NodeToggleView,
     NodeProxyTestView,
+    NodeQueuePurgeView,
 )
 from .accounts import (
     AccountListView,

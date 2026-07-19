@@ -2,7 +2,7 @@ from django.urls import path
 
 from .views import (
     NodeListView, NodeDetailView, NodeCreateView, NodeEditView, NodeDeleteView, NodeDeployView,
-    NodeToggleView, NodeProxyTestView,
+    NodeToggleView, NodeProxyTestView, NodeQueuePurgeView,
     AccountListView, AccountDetailView, AccountCreateView, AccountEditView, AccountDeleteView,
     AccountToggleView,
     GameAccountToggleView,
@@ -25,6 +25,7 @@ urlpatterns = [
     path("nodes/<uuid:pk>/toggle/", NodeToggleView.as_view(), name="node-toggle"),
     path("nodes/<uuid:pk>/deploy/", NodeDeployView.as_view(), name="node-deploy"),
     path("nodes/<uuid:pk>/proxy-test/", NodeProxyTestView.as_view(), name="node-proxy-test"),
+    path("nodes/<uuid:pk>/purge-queue/", NodeQueuePurgeView.as_view(), name="node-purge-queue"),
     # Accounts
     path("", AccountListView.as_view(), name="account-list"),
     path("create/", AccountCreateView.as_view(), name="account-create"),
