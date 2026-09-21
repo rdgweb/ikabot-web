@@ -1,0 +1,28 @@
+{# Opt-in prompt: shown only to admins until someone decides. Nothing is sent before "Aceitar". #}
+<div class="card mb-6" style="border-left: 4px solid var(--ik-gold, #b8976a);">
+  <div class="p-5 flex flex-col gap-3">
+    <div class="flex items-center gap-2">
+      <i class="bi bi-graph-up-arrow text-sea"></i>
+      <h3 class="text-sm font-semibold text-ink">Ajude a melhorar o ikabot: estatísticas de uso</h3>
+    </div>
+    <p class="text-sm text-muted">
+      O ikabot é open source. Você aceita enviar, <strong>uma vez por dia</strong>, um resumo de uso
+      (versão, quantidade de contas, servidores/mundos do Ikariam, fuso horário e categorias de jobs mais usadas)?
+      O servidor também registra o <strong>endereço IP</strong> de onde o resumo chega (guardado por até 90 dias) para estimar
+      a localização (país/cidade). <strong>Nunca</strong> enviamos e-mails, senhas, nomes de jogadores/cidades nem qualquer dado do jogo,
+      e os dados só servem para análise de uso do projeto. Você pode ver o JSON exato, desativar e apagar tudo o que foi enviado quando quiser.
+      <a href="{{ TELEMETRY_PUBLIC_URL|default:'https://telemetry.rdgh.com.br' }}/transparencia" target="_blank" rel="noopener" class="underline">Ler a página de transparência</a>.
+    </p>
+    <form method="post" action="{% url 'telemetry:consent' %}" class="flex flex-wrap items-center gap-2">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <button type="submit" name="choice" value="accept" class="btn btn-primary btn-sm">
+        <i class="bi bi-check2-circle"></i> Aceitar
+      </button>
+      <button type="submit" name="choice" value="decline" class="btn btn-secondary btn-sm">
+        Agora não
+      </button>
+      <a href="{% url 'settings_app:list' %}#telemetria" class="text-xs text-muted underline ml-2">Ver detalhes em Configurações</a>
+    </form>
+  </div>
+</div>

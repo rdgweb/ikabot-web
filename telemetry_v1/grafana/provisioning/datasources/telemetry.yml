@@ -1,0 +1,17 @@
+apiVersion: 1
+datasources:
+  - name: Telemetry
+    uid: telemetry-pg
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: db:5432
+    user: grafana_ro
+    isDefault: true
+    editable: false
+    jsonData:
+      database: telemetry
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+    secureJsonData:
+      password: $GRAFANA_RO_PASSWORD

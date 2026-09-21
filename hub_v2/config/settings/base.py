@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     "apps.users",
     "apps.generals_bank",
     "apps.notes",
+    "apps.telemetry",
 ]
 
 MIDDLEWARE = [
@@ -83,6 +84,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
     "core.middleware.HtmxBoostMiddleware",
+    "apps.telemetry.middleware.TelemetryMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -112,6 +114,7 @@ TEMPLATES = [
                 "core.context_processors.nav_context",
                 "core.context_processors.hub_version",
                 "core.context_processors.htmx_context",
+                "apps.telemetry.context.telemetry_prompt",
             ],
         },
     },
@@ -231,6 +234,10 @@ APP_SECRET = os.environ.get("APP_SECRET", "troque-este-segredo")
 AGENT_TOKEN = os.environ.get("AGENT_TOKEN", "troque-agent-token")
 AGENT_ALLOWED_IPS = os.environ.get("AGENT_ALLOWED_IPS", "")
 IKABOTAPI_URL = os.environ.get("IKABOTAPI_URL", "http://ikabotapi:5005")
+
+# --- Telemetry (opt-in; see apps/telemetry and telemetry_v1) ---
+TELEMETRY_URL = os.environ.get("TELEMETRY_URL") or "https://telemetry.rdgh.com.br"
+TELEMETRY_DISABLED = os.environ.get("TELEMETRY_DISABLED", "false").lower() in ("true", "1", "yes")
 WEBSHARE_API_KEY = os.environ.get("WEBSHARE_API_KEY", "")
 
 # --- Celery ---

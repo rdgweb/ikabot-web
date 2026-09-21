@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transparência — telemetria do ikabot</title>
+<meta name="robots" content="noindex">
+<style>
+  :root { --bg:#fbf8f2; --fg:#2a2118; --muted:#6f6353; --card:#fff; --line:#e3d9c6; --accent:#8a6a2f; --good:#3f7a3a; --bad:#a83a2c; --code:#f3ece0; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#17130e; --fg:#efe6d6; --muted:#a99c86; --card:#211b13; --line:#3a3125; --accent:#d2a856; --good:#7cc16f; --bad:#e2806f; --code:#2a2318; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.9rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1.2rem; margin: 2.2rem 0 .6rem; color: var(--accent); }
+  p, li { color: var(--fg); }
+  .lead { color: var(--muted); margin-top: 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin: 12px 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  ul { padding-left: 1.2rem; }
+  li { margin: .25rem 0; }
+  .yes li::marker { color: var(--good); content: "✔  "; }
+  .no li::marker { color: var(--bad); content: "✘  "; }
+  pre, code { background: var(--code); border-radius: 6px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; }
+  code { padding: 1px 5px; }
+  table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+  td, th { text-align: left; border-bottom: 1px solid var(--line); padding: 6px 8px; }
+  .stat { font-size: 2rem; font-weight: 700; color: var(--accent); line-height: 1.1; }
+  .small { font-size: .88rem; color: var(--muted); }
+  a { color: var(--accent); }
+  .lang { float: right; font-size: .85rem; }
+</style>
+</head>
+<body>
+<main>
+  <a class="lang" href="#english">English ↓</a>
+  <h1>Transparência</h1>
+  <p class="lead">Como e por que o ikabot coleta estatísticas de uso — e o que <strong>nunca</strong> coleta.</p>
+
+  <p>O ikabot é open source. Para entender como o projeto é usado (versões em campo, mundos mais populares, quais recursos importam mais), cada instalação <strong>pode</strong> enviar um resumo de uso <strong>uma vez por dia</strong> para este servidor, sem nenhum dado de conta ou de jogo. Isso só acontece se o administrador do hub <strong>aceitar</strong> em <em>Configurações → Telemetria</em>. Enquanto ninguém decidir, nada é enviado.</p>
+
+  <h2>O que é enviado</h2>
+  <div class="grid">
+    <div class="card">
+      <strong>Sim, enviamos</strong>
+      <ul class="yes">
+        <li>Um identificador aleatório da instalação (UUID gerado no aceite, sem relação com você)</li>
+        <li>Versão do hub e dos agents; arquitetura (amd64/arm64)</li>
+        <li>Fuso horário configurado (ex.: <code>America/Cuiaba</code>)</li>
+        <li>Quantidades: contas do lobby, contas de jogo, nós</li>
+        <li>Servidor e mundo do Ikariam com o nº de contas em cada (ex.: <code>br</code> / <code>61</code> → 3)</li>
+        <li>Quantos jobs por categoria (militar, mercado…) nos últimos 30 dias</li>
+        <li><strong>Seu endereço IP</strong>: o servidor o vê ao receber o resumo e o guarda (veja abaixo), e dele deriva uma localização aproximada (país, região e cidade)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <strong>Não, nunca enviamos</strong>
+      <ul class="no">
+        <li>E-mail, usuário, senha, tokens ou cookies</li>
+        <li>Nomes de jogadores, cidades, ilhas, alianças ou qualquer dado do jogo</li>
+        <li>URLs, hostnames ou IPs internos do seu hub, dos seus nós ou proxies (só o IP público de onde o resumo chega)</li>
+        <li>Conteúdo de jobs, mensagens, relatórios ou logs</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Exemplo real do envio</h2>
+  <p class="small">Este é o formato exato do que o hub envia (schema v1); o IP não vai no JSON — o servidor o observa na conexão. Dentro do hub, <em>Configurações → Telemetria → Ver o que será enviado</em> mostra o JSON da sua instalação.</p>
+<pre>{
+  "schema": 1,
+  "install_id": "3f0c9c2e-8d5e-4a58-9a3b-0c2f6f6a1d11",
+  "hub_version": "0.2.80",
+  "arch": "amd64",
+  "timezone": "America/Cuiaba",
+  "counts": { "lobby_accounts": 2, "game_accounts": 5, "nodes": 1 },
+  "agents": [ { "version": "0.1.57", "nodes": 1 } ],
+  "worlds": [ { "server": "br", "world": 61, "accounts": 3 },
+              { "server": "br", "world": 44, "accounts": 2 } ],
+  "usage_30d": [ { "category": "military", "jobs": 120 },
+                 { "category": "market", "jobs": 48 } ]
+}</pre>
+
+  <h2>Como tratamos o que chega</h2>
+  <ul>
+    <li><strong>Endereço IP:</strong> é guardado <strong>por até 90 dias</strong> numa tabela separada e depois apagado automaticamente. Serve para estimar a localização (país, região e cidade aproximada, por uma base de geolocalização local) e reconhecer instalações repetidas. Se a localização por IP não estiver disponível, usamos o país do fuso horário. A cidade/região derivada permanece enquanto a instalação existir nos dados.</li>
+    <li><strong>Uso restrito:</strong> os dados servem apenas para análise de uso do projeto pelo mantenedor. Não são vendidos, não são compartilhados com terceiros e não são usados para publicidade ou para identificar pessoas.</li>
+    <li><strong>Sem logs de acesso:</strong> o servidor não mantém logs de requisições nem cabeçalhos; o IP existe apenas onde descrito acima.</li>
+    <li><strong>Só o que está no schema.</strong> Qualquer campo extra é descartado antes de gravar.</li>
+    <li><strong>Um resumo por instalação por dia.</strong> Enviar de novo no mesmo dia substitui o resumo anterior.</li>
+    <li><strong>Retenção:</strong> IPs por 90 dias; demais dados por até 400 dias, depois apagados automaticamente.</li>
+    <li><strong>Números pequenos não aparecem.</strong> Nas estatísticas públicas, grupos com menos de 5 instalações são agrupados em “outros”; IPs e cidades nunca são publicados.</li>
+    <li><strong>Acesso:</strong> os dados brutos ficam num banco próprio, acessível apenas ao mantenedor do projeto.</li>
+    <li><strong>Base legal:</strong> seu consentimento, dado ao ativar a telemetria (LGPD, art. 7º, I). Você pode retirá-lo a qualquer momento.</li>
+  </ul>
+
+  <h2>Seu controle</h2>
+  <ul>
+    <li><strong>Desligar:</strong> <em>Configurações → Telemetria → Desativar</em>, ou defina <code>TELEMETRY_DISABLED=true</code> no ambiente do hub (chave-mestra: nada é enviado, mesmo com aceite anterior).</li>
+    <li><strong>Apagar:</strong> ao desativar pelo hub, o hub pede a remoção de tudo que essa instalação já enviou, incluindo o IP registrado. Também dá para pedir manualmente com <code>DELETE /v1/installs/&lt;install_id&gt;</code>.</li>
+    <li><strong>Auditar:</strong> o código do cliente (<code>hub_v2/apps/telemetry</code>) e do receptor (<code>telemetry_v1</code>) está no repositório do projeto.</li>
+  </ul>
+
+  <h2>Estatísticas públicas (ao vivo)</h2>
+  <div class="grid">
+    <div class="card"><div class="stat" id="a7">–</div><div class="small">instalações ativas em 7 dias</div></div>
+    <div class="card"><div class="stat" id="a30">–</div><div class="small">instalações ativas em 30 dias</div></div>
+  </div>
+  <div class="grid">
+    <div class="card"><strong>Versões do hub</strong><table id="versions"></table></div>
+    <div class="card"><strong>Países</strong><table id="countries"></table></div>
+  </div>
+  <p class="small" id="asof"></p>
+
+  <h2 id="english">English summary</h2>
+  <p>ikabot is open source. To understand how it is used, an installation <em>may</em> send one usage summary per day to this server — <strong>only if the hub admin opts in</strong> (Settings → Telemetry). It contains: a random install ID, hub/agent versions, CPU architecture, the configured timezone, counts of accounts/nodes, Ikariam server/world with account counts, and job counts per category over 30 days. <strong>The server also sees and stores your public IP address</strong>, keeps it for at most 90 days in a separate table, and derives an approximate location (country, region, city) from it using a local geolocation database. It never contains credentials, e-mails, player/city names, URLs or game content. Data is used only for project usage analytics by the maintainer — never sold, shared or used for advertising. No access logs are kept, other data is deleted after 400 days, and groups smaller than 5 are folded into “other” on public stats. Disable it in Settings, or set <code>TELEMETRY_DISABLED=true</code>; disabling asks the server to erase everything that installation sent, including the IP. Legal basis: your consent (LGPD art. 7-I / GDPR art. 6(1)(a)). Source: the <code>telemetry_v1</code> and <code>hub_v2/apps/telemetry</code> folders of the project repository.</p>
+  <p class="small">IP geolocation data by <a href="https://db-ip.com" target="_blank" rel="noopener">DB-IP</a> (CC BY 4.0).</p>
+</main>
+
+<script>
+(function () {
+  function fill(id, rows) {
+    var t = document.getElementById(id);
+    t.innerHTML = "";
+    (rows || []).forEach(function (r) {
+      var tr = document.createElement("tr");
+      var a = document.createElement("td"); a.textContent = r.name === "other" ? "outros" : (r.name === "unknown" ? "desconhecido" : r.name);
+      var b = document.createElement("td"); b.textContent = r.installs;
+      tr.appendChild(a); tr.appendChild(b); t.appendChild(tr);
+    });
+  }
+  fetch("/v1/stats/public").then(function (r) { return r.json(); }).then(function (d) {
+    document.getElementById("a7").textContent = d.active_installations_7d;
+    document.getElementById("a30").textContent = d.active_installations_30d;
+    fill("versions", d.hub_versions);
+    fill("countries", d.countries);
+    document.getElementById("asof").textContent = "Atualizado em " + d.generated_on + " (UTC). Grupos com menos de " + d.min_group_size + " instalações aparecem como “outros”.";
+  }).catch(function () {
+    document.getElementById("asof").textContent = "Estatísticas indisponíveis no momento.";
+  });
+})();
+</script>
+</body>
+</html>

@@ -85,6 +85,9 @@ class SettingsPageView(LoginRequiredMixin, TemplateView):
             "spy_report_expiry_hours": _get_setting("spy_report_expiry_hours", "48"),
         })
 
+        from apps.telemetry.services import TELEMETRY_KEYS, status_context
+        ctx.update(status_context())
+
         ctx["generic_settings"] = AppSetting.objects.exclude(
             key__in=[
                 "webshare_api_key",
@@ -101,6 +104,7 @@ class SettingsPageView(LoginRequiredMixin, TemplateView):
                 "running_job_recovery_grace_seconds",
                 "running_job_lease_seconds",
                 "spy_report_expiry_hours",
+                *TELEMETRY_KEYS,
             ]
         ).order_by("key")
 

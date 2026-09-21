@@ -1,0 +1,60 @@
+<div class="card mb-6" id="telemetria">
+  <div class="card-header !px-5 !py-3">
+    <div class="flex items-center gap-2">
+      <i class="bi bi-graph-up-arrow text-sea"></i>
+      <h3 class="text-sm font-semibold text-ink">Telemetria (estatísticas de uso)</h3>
+    </div>
+    {% if telemetry_kill_switch %}
+      <span class="text-xs text-muted">Desligada pelo ambiente</span>
+    {% elif telemetry_status == "enabled" %}
+      <span class="text-xs" style="color: var(--ik-good);"><i class="bi bi-check-circle-fill"></i> Ativada</span>
+    {% elif telemetry_status == "disabled" %}
+      <span class="text-xs text-muted">Desativada</span>
+    {% else %}
+      <span class="text-xs text-muted">Aguardando decisão</span>
+    {% endif %}
+  </div>
+  <div class="p-5 flex flex-col gap-4">
+    <p class="text-sm text-muted">
+      Opcional e <strong>desligada por padrão</strong>. Se ativada, o hub envia <strong>um resumo por dia</strong>
+      para <span class="font-mono text-xs">{{ telemetry_endpoint|default:"(sem endpoint)" }}</span>:
+      versão do hub/agents, arquitetura, fuso horário, quantidade de contas e nós, servidor/mundo do Ikariam (com nº de contas)
+      e jobs por categoria nos últimos 30 dias. O servidor também registra o <strong>endereço IP</strong> de origem
+      (por até 90 dias) para estimar a localização (país/cidade). <strong>Nunca</strong> enviamos credenciais, e-mails,
+      nomes de jogadores/cidades, URLs ou dados do jogo. O conteúdo enviado por este hub é exatamente o que aparece em
+      <em>“Ver o que será enviado”</em>. Desativar apaga no servidor tudo o que já foi enviado, inclusive o IP.
+    </p>
+
+    <div class="flex flex-wrap items-center gap-2">
+      {% if telemetry_kill_switch %}
+        <span class="text-xs text-muted">Para reativar, remova <code>TELEMETRY_DISABLED</code> do ambiente do hub.</span>
+      {% elif telemetry_status == "enabled" %}
+        <form method="post" action="{% url 'telemetry:send' %}">{% csrf_token %}
+          <button class="btn btn-secondary btn-sm" type="submit"><i class="bi bi-send"></i> Enviar agora</button>
+        </form>
+        <form method="post" action="{% url 'telemetry:disable' %}"
+              onsubmit="return confirm('Desativar a telemetria e pedir a remoção de tudo que este hub já enviou?');">{% csrf_token %}
+          <button class="btn btn-secondary btn-sm" type="submit"><i class="bi bi-x-circle"></i> Desativar e apagar dados enviados</button>
+        </form>
+      {% else %}
+        <form method="post" action="{% url 'telemetry:consent' %}">{% csrf_token %}
+          <button class="btn btn-primary btn-sm" type="submit" name="choice" value="accept"><i class="bi bi-check2-circle"></i> Ativar telemetria</button>
+        </form>
+      {% endif %}
+      <button class="btn btn-secondary btn-sm" type="button"
+              hx-get="{% url 'telemetry:preview' %}" hx-target="#telemetry-preview" hx-swap="innerHTML" hx-push-url="false">
+        <i class="bi bi-eye"></i> Ver o que será enviado
+      </button>
+      <a href="{{ telemetry_endpoint }}/transparencia" target="_blank" rel="noopener" class="text-xs text-muted underline">Página de transparência</a>
+    </div>
+
+    <div id="telemetry-preview"></div>
+
+    {% if telemetry_status == "enabled" %}
+    <div class="text-xs text-muted">
+      Último envio: {% if telemetry_last_sent %}{{ telemetry_last_sent|date:"d/m/Y H:i" }}{% else %}ainda não enviado{% endif %}
+      {% if telemetry_last_error %} · <span style="color: var(--ik-bad);">{{ telemetry_last_error }}</span>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>

@@ -36,6 +36,7 @@
       {% endif %}
 
       <main id="main-area" class="p-6">
+        {% if TELEMETRY_PROMPT %}{% include "telemetry/_banner.html" %}{% endif %}
         {% block content %}{% endblock %}
       </main>
     </div>
