@@ -1,0 +1,6 @@
+{% extends "base_form.html" %}
+{% block title %}{% if object %}Editar Host Docker{% else %}Novo Host Docker{% endif %}{% endblock %}
+{% block form_title %}{% if object %}Editar {{ object.name }}{% else %}Cadastrar Host Docker{% endif %}{% endblock %}
+{% block form_subtitle %}Um supervisor por servidor Docker, compartilhado por todos os agents vinculados.{% endblock %}
+{% block cancel_url %}{% url 'accounts:docker-host-list' %}{% endblock %}
+{% block submit_label %}Salvar Host{% endblock %}

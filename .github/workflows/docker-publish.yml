@@ -14,6 +14,7 @@ jobs:
     outputs:
       hub_version: ${{ steps.versions.outputs.hub_version }}
       agent_version: ${{ steps.versions.outputs.agent_version }}
+      supervisor_version: ${{ steps.versions.outputs.supervisor_version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -58,6 +59,10 @@ jobs:
             context: ./agent_v2
             image: blackoneal/ikabot-web-agent
             version_output: agent_version
+          - component: supervisor
+            context: ./supervisor_v1
+            image: blackoneal/ikabot-web-supervisor
+            version_output: supervisor_version
     permissions:
       contents: read
 

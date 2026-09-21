@@ -227,7 +227,7 @@ class ChangeLogListView(LoginRequiredMixin, ListView):
         hub_release = get_registry_release("hub")
         agent_release = get_registry_release("agent")
         hub_version = str(settings.VERSION or "").strip()
-        nodes = list(Node.objects.filter(active=True).order_by("name"))
+        nodes = list(Node.objects.filter(active=True).select_related("docker_host").order_by("name"))
         for node in nodes:
             node.release_state = classify_agent_version(
                 node.agent_version,

@@ -20,10 +20,10 @@
 {% block detail_main %}
 <div class="card" x-data="{ copiedUpdate: false }">
   <h3 class="text-sm font-semibold text-ink mb-3">
-    <i class="bi bi-arrow-repeat"></i> Atualizar instalação Docker Compose
+    <i class="bi bi-cloud-download"></i> Atualizações futuras pelo Hub
   </h3>
   <p class="text-sm text-muted mb-3">
-    Execute no host deste nó e substitua <code>&lt;servico-do-agent&gt;</code> pelo serviço correto. O Hub não reinicia agentes automaticamente.
+    Com o supervisor online, use a tela Atualizações. O comando abaixo fica apenas como recuperação operacional manual.
   </p>
   <div class="relative">
     <pre class="bg-gray-900 text-green-400 rounded-lg p-4 pr-24 text-sm font-mono overflow-x-auto"><code x-ref="updateCommand">{{ compose_update_command }}</code></pre>
@@ -50,14 +50,14 @@
       <i class="bi bi-terminal"></i> Linux / macOS / Ubuntu
     </div>
     <div class="relative">
-    <pre class="bg-gray-900 text-green-400 rounded-lg p-4 text-sm font-mono overflow-x-auto"><code>{{ deploy_command }}</code></pre>
+    <pre class="bg-gray-900 text-green-400 rounded-lg p-4 text-sm font-mono overflow-x-auto"><code>{{ first_install_command }}</code></pre>
     <button
       @click="navigator.clipboard.writeText($refs.cmdLinux.textContent); copiedLinux = true; setTimeout(() => copiedLinux = false, 2000)"
       class="absolute top-2 right-2 px-2 py-1 bg-gray-700 hover:bg-gray-600 text-muted rounded text-xs">
       <span x-show="!copiedLinux"><i class="bi bi-clipboard"></i> Copiar</span>
       <span x-show="copiedLinux" x-cloak><i class="bi bi-check"></i> Copiado!</span>
     </button>
-    <span x-ref="cmdLinux" class="hidden">{{ deploy_command }}</span>
+    <span x-ref="cmdLinux" class="hidden">{{ first_install_command }}</span>
     </div>
   </div>
   <div>
@@ -124,20 +124,22 @@
 
 <div class="card" x-data="{ copiedUpdater: false }">
   <h3 class="text-sm font-semibold text-ink mb-2"><i class="bi bi-shield-check"></i> Supervisor de atualizacoes</h3>
-  <p class="text-sm text-muted mb-3">Instale uma unica vez no host Docker deste no. Depois, as novas versoes podem ser aplicadas pela tela Atualizacoes.</p>
-  <div class="rounded p-3 mb-3 text-xs" style="background:var(--ik-sand-light); border:1px solid var(--ik-line);">
-    Antes de executar, troque <code>AGENT_TARGET_CONTAINER=ikabot-agent</code> pelo nome exato do conteiner deste agente. O supervisor recusara qualquer conteiner cujo <code>AGENT_NODE_ID</code> seja diferente deste no.
-  </div>
+  {% if docker_host %}
+  <p class="text-sm text-muted mb-3">Um unico supervisor atende todos os agents do host <strong>{{ docker_host.name }}</strong>. O comando e idempotente: se ele ja existir, nao cria outro.</p>
   <div class="relative">
-    <pre class="bg-gray-900 text-green-400 rounded-lg p-4 pr-24 text-sm font-mono overflow-x-auto"><code x-ref="updaterCommand">{{ updater_command }}</code></pre>
+    <pre class="bg-gray-900 text-green-400 rounded-lg p-4 pr-24 text-sm font-mono overflow-x-auto"><code x-ref="updaterCommand">{{ supervisor_command }}</code></pre>
     <button type="button" class="absolute right-3 top-3 rounded bg-gray-700 px-2 py-1 text-xs text-white" @click="navigator.clipboard.writeText($refs.updaterCommand.textContent); copiedUpdater = true; setTimeout(() => copiedUpdater = false, 2000)">
       <span x-show="!copiedUpdater"><i class="bi bi-clipboard"></i> Copiar</span>
       <span x-show="copiedUpdater" x-cloak><i class="bi bi-check"></i> Copiado</span>
     </button>
   </div>
   <div class="mt-3 text-sm">
-    Estado: {% if node.updater_is_online %}<span class="badge badge-success">Supervisor online</span>{% else %}<span class="badge badge-warning">Aguardando instalacao</span>{% endif %}
+    Estado: {% if docker_host.is_online %}<span class="badge badge-success">Supervisor online</span>{% else %}<span class="badge badge-warning">Aguardando instalacao</span>{% endif %}
   </div>
+  {% else %}
+    <p class="text-sm text-[var(--ik-bad)]">Este agent ainda nao foi vinculado a um Host Docker. Edite o no antes de gerar o deploy.</p>
+    <a href="{% url 'accounts:node-edit' node.pk %}" class="btn btn-secondary btn-sm mt-3">Vincular host</a>
+  {% endif %}
 </div>
 
 <!-- Status check -->

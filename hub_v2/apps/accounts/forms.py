@@ -7,7 +7,17 @@ from django.db import models
 
 from core.encryption import encrypt, decrypt
 from apps.proxy.models import ProxyProfile
-from .models import Node, Account
+from .models import Account, DockerHost, Node
+
+
+class DockerHostForm(forms.ModelForm):
+    class Meta:
+        model = DockerHost
+        fields = ["name", "description", "active"]
+        widgets = {
+            "name": forms.TextInput(attrs={"class": "form-input", "placeholder": "ex: docker-escritorio"}),
+            "description": forms.Textarea(attrs={"class": "form-input", "rows": 2}),
+        }
 
 
 # ── Node Forms ──
@@ -73,8 +83,9 @@ class _NodeFormBase(forms.ModelForm):
 class NodeCreateForm(_NodeFormBase):
     class Meta:
         model = Node
-        fields = ["name", "description", "location", "external_ip"]
+        fields = ["docker_host", "name", "description", "location", "external_ip"]
         widgets = {
+            "docker_host": forms.Select(attrs={"class": "form-input"}),
             "name": forms.TextInput(attrs={"class": "form-input", "placeholder": "ex: vps-us-east-1"}),
             "description": forms.Textarea(attrs={"class": "form-input", "rows": 2}),
             "location": forms.TextInput(attrs={"class": "form-input", "placeholder": "ex: São Paulo, BR"}),
@@ -85,8 +96,9 @@ class NodeCreateForm(_NodeFormBase):
 class NodeEditForm(_NodeFormBase):
     class Meta:
         model = Node
-        fields = ["name", "description", "location", "external_ip", "active"]
+        fields = ["docker_host", "name", "description", "location", "external_ip", "active"]
         widgets = {
+            "docker_host": forms.Select(attrs={"class": "form-input"}),
             "name": forms.TextInput(attrs={"class": "form-input"}),
             "description": forms.Textarea(attrs={"class": "form-input", "rows": 2}),
             "location": forms.TextInput(attrs={"class": "form-input"}),

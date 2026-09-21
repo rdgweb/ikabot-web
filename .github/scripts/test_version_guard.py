@@ -21,6 +21,11 @@ class VersionGuardTests(unittest.TestCase):
     def test_strict_version(self):
         self.assertEqual(version_guard.parse_version("1.2.30", source="test"), (1, 2, 30))
 
+    def test_supervisor_is_versioned_component(self):
+        self.assertIn("supervisor", version_guard.COMPONENTS)
+        value = version_guard.COMPONENTS["supervisor"][1].read_text(encoding="utf-8").strip()
+        self.assertEqual(version_guard.parse_version(value, source="supervisor"), (0, 1, 0))
+
     def test_rejects_non_release_values(self):
         for value in ("v1.2.3", "1.2", "01.2.3", "latest"):
             with self.subTest(value=value):

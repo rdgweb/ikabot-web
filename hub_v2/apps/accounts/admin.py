@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Account, AgentUpdateRequest, GameAccount, Node
+from .models import Account, AgentUpdateRequest, DockerHost, GameAccount, Node
 
 
 class GameAccountInline(admin.TabularInline):
@@ -24,6 +24,11 @@ class NodeAdmin(admin.ModelAdmin):
 class AgentUpdateRequestAdmin(admin.ModelAdmin):
     list_display = ("node", "target_version", "status", "requested_by", "created_at")
     list_filter = ("status",)
+
+
+@admin.register(DockerHost)
+class DockerHostAdmin(admin.ModelAdmin):
+    list_display = ("name", "active", "supervisor_version", "is_online", "last_seen_at")
 
 
 @admin.register(Account)

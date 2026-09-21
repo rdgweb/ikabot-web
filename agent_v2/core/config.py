@@ -27,8 +27,6 @@ class AgentSettings(BaseSettings):
     agent_image_digest: str = ""
     max_parallel: int = 12
     heartbeat_interval: int = 60
-    agent_target_container: str = ""
-    updater_poll_seconds: int = 30
     log_level: str = "INFO"
 
     class Config:

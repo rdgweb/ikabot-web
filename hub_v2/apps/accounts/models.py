@@ -45,6 +45,14 @@ class Node(UUIDTimestampModel):
     updater_container = models.CharField(max_length=128, blank=True, default="")
     updater_last_seen_at = models.DateTimeField(blank=True, null=True)
 
+    docker_host = models.ForeignKey(
+        "DockerHost",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="nodes",
+    )
+
     # Deploy token (used for agent auto-registration)
     deploy_token = models.CharField(max_length=64, blank=True, default="")
 
@@ -79,6 +87,44 @@ class Node(UUIDTimestampModel):
         from django.utils import timezone
 
         return (timezone.now() - self.updater_last_seen_at).total_seconds() < 120
+
+    @property
+    def supervisor_is_online(self) -> bool:
+        return bool(self.docker_host and self.docker_host.is_online)
+
+
+class DockerHost(UUIDTimestampModel):
+    """A Docker engine shared by one or more agent nodes."""
+
+    name = models.CharField(max_length=80, unique=True)
+    description = models.TextField(blank=True, default="")
+    enrollment_token = models.CharField(max_length=80, blank=True, default="")
+    machine_id = models.CharField(max_length=128, blank=True, default="", unique=True, null=True)
+    supervisor_version = models.CharField(max_length=64, blank=True, default="")
+    supervisor_image = models.CharField(max_length=255, blank=True, default="")
+    last_seen_at = models.DateTimeField(blank=True, null=True)
+    active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        if not self.enrollment_token:
+            self.enrollment_token = f"host_{secrets.token_hex(32)}"
+        if self.machine_id == "":
+            self.machine_id = None
+        super().save(*args, **kwargs)
+
+    @property
+    def is_online(self) -> bool:
+        if not self.last_seen_at:
+            return False
+        from django.utils import timezone
+
+        return (timezone.now() - self.last_seen_at).total_seconds() < 120
 
 
 class AgentUpdateRequest(UUIDTimestampModel):

@@ -110,17 +110,17 @@
               <td class="font-mono text-xs">{% if agent_release.version %}v{{ agent_release.version }}{% else %}—{% endif %}</td>
               <td><span class="badge {{ node.release_state.badge_class }}">{{ node.release_state.label }}</span></td>
               <td>
-                {% if node.updater_is_online %}<span class="badge badge-success">Online</span>{% else %}<span class="badge badge-warning">Nao instalado</span>{% endif %}
+                {% if node.supervisor_is_online %}<span class="badge badge-success">{{ node.docker_host.name }}</span>{% else %}<span class="badge badge-warning">Nao instalado</span>{% endif %}
                 {% if node.latest_update %}<div class="mt-1 text-[11px] text-muted">Ultima: {{ node.latest_update.get_status_display }}</div>{% endif %}
               </td>
               <td class="text-right">
-                {% if node.release_state.code == 'outdated' and node.is_online and node.updater_is_online %}
+                {% if node.release_state.code == 'outdated' and node.is_online and node.supervisor_is_online %}
                   <form method="post" action="{% url 'accounts:node-request-update' node.pk %}" class="inline" onsubmit="return confirm('Atualizar somente o agente {{ node.name|escapejs }}?');">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-cloud-download"></i> Atualizar pelo Hub</button>
                   </form>
                 {% else %}
-                  <a href="{% url 'accounts:node-deploy' node.pk %}" class="btn btn-secondary btn-sm"><i class="bi bi-shield-check"></i> {% if node.updater_is_online %}Detalhes{% else %}Instalar supervisor{% endif %}</a>
+                  <a href="{% url 'accounts:node-deploy' node.pk %}" class="btn btn-secondary btn-sm"><i class="bi bi-shield-check"></i> {% if node.supervisor_is_online %}Detalhes{% else %}Instalar supervisor{% endif %}</a>
                 {% endif %}
               </td>
             </tr>

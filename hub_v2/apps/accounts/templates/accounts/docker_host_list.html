@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Hosts Docker{% endblock %}
+{% block content %}
+<div class="mx-auto w-full max-w-5xl">
+  <div class="mb-5 flex items-center justify-between gap-3">
+    <div><h1 class="text-2xl font-bold text-ink">Hosts Docker</h1><p class="mt-1 text-sm text-muted">Um supervisor por host, compartilhado pelos agents.</p></div>
+    <a href="{% url 'accounts:docker-host-create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> Novo Host</a>
+  </div>
+  <div class="overflow-hidden rounded-lg" style="border:1px solid var(--ik-line); background:var(--ik-paper);">
+    <table class="data-table"><thead><tr><th>Host</th><th>Supervisor</th><th>Versao</th><th>Agents</th><th class="text-right">Acao</th></tr></thead>
+      <tbody>{% for host in hosts %}<tr>
+        <td class="font-medium">{{ host.name }}</td>
+        <td>{% if host.is_online %}<span class="badge badge-success">Online</span>{% else %}<span class="badge badge-warning">Offline / nao instalado</span>{% endif %}</td>
+        <td class="font-mono text-xs">{{ host.supervisor_version|default:"—" }}</td>
+        <td>{{ host.nodes.count }}</td>
+        <td class="text-right"><a href="{% url 'accounts:docker-host-edit' host.pk %}" class="btn btn-secondary btn-sm">Editar</a></td>
+      </tr>{% empty %}<tr><td colspan="5" class="py-8 text-center text-muted">Nenhum Host Docker cadastrado.</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

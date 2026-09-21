@@ -15,6 +15,7 @@ VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 COMPONENTS = {
     "hub": ("hub_v2", ROOT / "hub_v2" / "VERSION"),
     "agent": ("agent_v2", ROOT / "agent_v2" / "VERSION"),
+    "supervisor": ("supervisor_v1", ROOT / "supervisor_v1" / "VERSION"),
 }
 
 

@@ -230,12 +230,13 @@ docker compose build --no-cache  # Rebuild images from scratch
 
 The authenticated **Atualizacoes** page compares the Hub and agent versions
 currently reported in production with semantic version tags published on
-Docker Hub. After a one-time installation of the node-scoped updater
-supervisor, an operator can update an outdated agent directly from that page.
+Docker Hub. After a one-time installation of one supervisor per Docker host,
+an operator can update any agent assigned to that host directly from the page.
 The Hub blocks updates while jobs are queued or running, and the supervisor
 validates the target node before replacing one container with automatic
 rollback. Updates are requested per node; there is no unrestricted bulk
-restart of every worker.
+restart of every worker. The supervisor opens no inbound port and communicates
+with the public Hub only through outbound HTTPS polling.
 
 ## License
 

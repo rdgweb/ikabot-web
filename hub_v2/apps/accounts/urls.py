@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    DockerHostListView, DockerHostCreateView, DockerHostEditView,
     NodeListView, NodeDetailView, NodeCreateView, NodeEditView, NodeDeleteView, NodeDeployView,
     NodeToggleView, NodeProxyTestView, NodeQueuePurgeView,
     NodeRequestUpdateView,
@@ -17,6 +18,9 @@ from .views import (
 app_name = "accounts"
 
 urlpatterns = [
+    path("docker-hosts/", DockerHostListView.as_view(), name="docker-host-list"),
+    path("docker-hosts/create/", DockerHostCreateView.as_view(), name="docker-host-create"),
+    path("docker-hosts/<uuid:pk>/edit/", DockerHostEditView.as_view(), name="docker-host-edit"),
     # Nodes
     path("nodes/", NodeListView.as_view(), name="node-list"),
     path("nodes/create/", NodeCreateView.as_view(), name="node-create"),

@@ -13,14 +13,38 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.views import View
-from django.views.generic import DetailView, CreateView, UpdateView, DeleteView
+from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
 
 from core.mixins.views import FilterSortListView
 from apps.settings_app.utils import get_setting
 from ..services.agent_versions import classify_agent_version
-from ..models import AgentUpdateRequest, Node
+from ..models import AgentUpdateRequest, DockerHost, Node
 from ..filters import NodeFilter
-from ..forms import NodeCreateForm, NodeEditForm
+from ..forms import DockerHostForm, NodeCreateForm, NodeEditForm
+
+
+class DockerHostListView(LoginRequiredMixin, ListView):
+    model = DockerHost
+    template_name = "accounts/docker_host_list.html"
+    context_object_name = "hosts"
+
+
+class DockerHostCreateView(LoginRequiredMixin, CreateView):
+    model = DockerHost
+    form_class = DockerHostForm
+    template_name = "accounts/docker_host_form.html"
+
+    def get_success_url(self):
+        return reverse_lazy("accounts:node-create")
+
+
+class DockerHostEditView(LoginRequiredMixin, UpdateView):
+    model = DockerHost
+    form_class = DockerHostForm
+    template_name = "accounts/docker_host_form.html"
+
+    def get_success_url(self):
+        return reverse_lazy("accounts:docker-host-list")
 
 
 def _get_ip_conflicts():
@@ -229,11 +253,14 @@ class NodeDeployView(LoginRequiredMixin, DetailView):
         hub_url = get_setting("agent_deploy_hub_url", "").strip() or default_hub_url
         redis_url = get_setting("agent_deploy_redis_url", "").strip() or getattr(settings, "REDIS_URL", "") or "redis://redis:6379/0"
         agent_image = get_setting("agent_deploy_image", "").strip() or "blackoneal/ikabot-web-agent:latest"
+        supervisor_image = get_setting("supervisor_deploy_image", "").strip() or "blackoneal/ikabot-web-supervisor:0.1.0"
         ctx["hub_url"] = hub_url
         ctx["redis_url"] = redis_url
         ctx["agent_image"] = agent_image
+        ctx["supervisor_image"] = supervisor_image
+        agent_container_name = f"ikabot-agent-{str(self.object.pk)[:8]}"
         command_lines = [
-            "docker run -d --restart unless-stopped --name ikabot-agent",
+            f"docker run -d --restart unless-stopped --name {agent_container_name}",
             f"  -e HUB_URL={hub_url}",
             f"  -e REDIS_URL={redis_url}",
             f"  -e AGENT_TOKEN={self.object.deploy_token}",
@@ -242,7 +269,7 @@ class NodeDeployView(LoginRequiredMixin, DetailView):
             f"  {agent_image}",
         ]
         ctx["deploy_command"] = (
-            f"docker run -d --restart unless-stopped --name ikabot-agent \\\n"
+            f"docker run -d --restart unless-stopped --name {agent_container_name} \\\n"
             f"  -e HUB_URL={hub_url} \\\n"
             f"  -e REDIS_URL={redis_url} \\\n"
             f"  -e AGENT_TOKEN={self.object.deploy_token} \\\n"
@@ -255,16 +282,35 @@ class NodeDeployView(LoginRequiredMixin, DetailView):
             "docker compose pull <servico-do-agent> && "
             "docker compose up -d --no-deps <servico-do-agent>"
         )
-        updater_name = f"ikabot-updater-{str(self.object.pk)[:8]}"
-        ctx["updater_command"] = (
-            f"docker run -d --restart unless-stopped --name {updater_name} \\\n"
-            f"  -v /var/run/docker.sock:/var/run/docker.sock \\\n"
-            f"  -e HUB_URL={hub_url} \\\n"
-            f"  -e AGENT_TOKEN={self.object.deploy_token} \\\n"
-            f"  -e AGENT_NODE_ID={self.object.pk} \\\n"
-            f"  -e AGENT_TARGET_CONTAINER=ikabot-agent \\\n"
-            f"  {agent_image} python updater.py"
-        )
+        host = self.object.docker_host
+        ctx["docker_host"] = host
+        if host:
+            ctx["supervisor_command"] = (
+                "docker inspect ikabot-host-supervisor >/dev/null 2>&1 || docker run -d \\\n"
+                "  --name ikabot-host-supervisor --restart unless-stopped \\\n"
+                "  --read-only --cap-drop ALL --security-opt no-new-privileges:true \\\n"
+                "  --pids-limit 100 --memory 192m --cpus 0.50 --tmpfs /tmp:rw,noexec,nosuid,size=16m \\\n"
+                "  -v /var/run/docker.sock:/var/run/docker.sock \\\n"
+                f"  -e HUB_URL={hub_url} \\\n"
+                f"  -e IKABOT_HOST_ID={host.pk} \\\n"
+                f"  -e IKABOT_HOST_TOKEN={host.enrollment_token} \\\n"
+                f"  -e SUPERVISOR_IMAGE={supervisor_image} \\\n"
+                f"  {supervisor_image}"
+            )
+            ctx["deploy_command"] = (
+                ctx["deploy_command"].replace(
+                    f"  {agent_image}",
+                    f"  --label com.ikabot.managed=true \\\n"
+                    f"  --label com.ikabot.host-id={host.pk} \\\n"
+                    f"  --label com.ikabot.node-id={self.object.pk} \\\n"
+                    f"  --label com.ikabot.component=agent \\\n"
+                    f"  {agent_image}",
+                )
+            )
+            ctx["first_install_command"] = f"{ctx['supervisor_command']}\n\n{ctx['deploy_command']}"
+        else:
+            ctx["supervisor_command"] = ""
+            ctx["first_install_command"] = ctx["deploy_command"]
         return ctx
 
 
@@ -281,7 +327,9 @@ class NodeRequestUpdateView(LoginRequiredMixin, View):
             messages.error(request, release.error or "Nao foi possivel determinar a versao publicada.")
         elif not node.is_online:
             messages.error(request, "O agente precisa estar online para receber a atualizacao.")
-        elif not node.updater_is_online:
+        elif not node.docker_host:
+            messages.error(request, "Vincule o agente a um Host Docker antes de atualizar.")
+        elif not node.supervisor_is_online:
             messages.error(request, "Instale ou reconecte o supervisor deste no antes de atualizar.")
         elif node.agent_version == release.version:
             messages.info(request, f"{node.name} ja esta na versao {release.version}.")
@@ -296,11 +344,14 @@ class NodeRequestUpdateView(LoginRequiredMixin, View):
                 if active_update:
                     messages.warning(request, "Ja existe uma atualizacao pendente para este no.")
                 else:
+                    if not release.digest.startswith("sha256:"):
+                        messages.error(request, "A versao publicada nao possui digest verificavel.")
+                        return redirect("notes:changelog")
                     AgentUpdateRequest.objects.create(
                         node=node,
                         requested_by=request.user,
                         target_version=release.version,
-                        target_image=release.image,
+                        target_image=f"{release.repository}@{release.digest}",
                     )
                     messages.success(request, f"Atualizacao de {node.name} para v{release.version} solicitada.")
         return redirect("notes:changelog")
