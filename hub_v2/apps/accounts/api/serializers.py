@@ -36,6 +36,18 @@ class AgentHeartbeatSerializer(serializers.Serializer):
     agent_image = serializers.CharField(required=False, allow_blank=True, default="")
 
 
+class AgentUpdatePollSerializer(serializers.Serializer):
+    node_id = serializers.UUIDField()
+    updater_version = serializers.CharField(required=False, allow_blank=True, default="")
+    target_container = serializers.CharField(max_length=128)
+
+
+class AgentUpdateStatusSerializer(serializers.Serializer):
+    node_id = serializers.UUIDField()
+    status = serializers.ChoiceField(choices=["running", "succeeded", "failed"])
+    message = serializers.CharField(required=False, allow_blank=True, default="")
+
+
 # ── Config endpoint serializers ──────────────────────────────────────
 
 

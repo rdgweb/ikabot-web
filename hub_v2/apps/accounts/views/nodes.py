@@ -6,9 +6,11 @@ import json
 from collections import Counter
 
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db import transaction
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.views import View
 from django.views.generic import DetailView, CreateView, UpdateView, DeleteView
@@ -16,7 +18,7 @@ from django.views.generic import DetailView, CreateView, UpdateView, DeleteView
 from core.mixins.views import FilterSortListView
 from apps.settings_app.utils import get_setting
 from ..services.agent_versions import classify_agent_version
-from ..models import Node
+from ..models import AgentUpdateRequest, Node
 from ..filters import NodeFilter
 from ..forms import NodeCreateForm, NodeEditForm
 
@@ -253,4 +255,52 @@ class NodeDeployView(LoginRequiredMixin, DetailView):
             "docker compose pull <servico-do-agent> && "
             "docker compose up -d --no-deps <servico-do-agent>"
         )
+        updater_name = f"ikabot-updater-{str(self.object.pk)[:8]}"
+        ctx["updater_command"] = (
+            f"docker run -d --restart unless-stopped --name {updater_name} \\\n"
+            f"  -v /var/run/docker.sock:/var/run/docker.sock \\\n"
+            f"  -e HUB_URL={hub_url} \\\n"
+            f"  -e AGENT_TOKEN={self.object.deploy_token} \\\n"
+            f"  -e AGENT_NODE_ID={self.object.pk} \\\n"
+            f"  -e AGENT_TARGET_CONTAINER=ikabot-agent \\\n"
+            f"  {agent_image} python updater.py"
+        )
         return ctx
+
+
+class NodeRequestUpdateView(LoginRequiredMixin, View):
+    """Queue a versioned update for one node's scoped updater."""
+
+    def post(self, request, pk):
+        from apps.jobs.models import Job
+        from apps.notes.services import get_registry_release
+
+        node = get_object_or_404(Node, pk=pk, active=True)
+        release = get_registry_release("agent", force=True)
+        if release.error or not release.version:
+            messages.error(request, release.error or "Nao foi possivel determinar a versao publicada.")
+        elif not node.is_online:
+            messages.error(request, "O agente precisa estar online para receber a atualizacao.")
+        elif not node.updater_is_online:
+            messages.error(request, "Instale ou reconecte o supervisor deste no antes de atualizar.")
+        elif node.agent_version == release.version:
+            messages.info(request, f"{node.name} ja esta na versao {release.version}.")
+        elif Job.objects.filter(node=node, status__in=["queued", "running"]).exists():
+            messages.error(request, "A atualizacao foi bloqueada porque existem jobs em fila ou execucao.")
+        else:
+            with transaction.atomic():
+                Node.objects.select_for_update().get(pk=node.pk)
+                active_update = AgentUpdateRequest.objects.filter(
+                    node=node, status__in=["queued", "running"]
+                ).exists()
+                if active_update:
+                    messages.warning(request, "Ja existe uma atualizacao pendente para este no.")
+                else:
+                    AgentUpdateRequest.objects.create(
+                        node=node,
+                        requested_by=request.user,
+                        target_version=release.version,
+                        target_image=release.image,
+                    )
+                    messages.success(request, f"Atualizacao de {node.name} para v{release.version} solicitada.")
+        return redirect("notes:changelog")

@@ -230,8 +230,12 @@ docker compose build --no-cache  # Rebuild images from scratch
 
 The authenticated **Atualizacoes** page compares the Hub and agent versions
 currently reported in production with semantic version tags published on
-Docker Hub. It also links each agent node to scoped deployment instructions;
-the page never restarts every worker automatically.
+Docker Hub. After a one-time installation of the node-scoped updater
+supervisor, an operator can update an outdated agent directly from that page.
+The Hub blocks updates while jobs are queued or running, and the supervisor
+validates the target node before replacing one container with automatic
+rollback. Updates are requested per node; there is no unrestricted bulk
+restart of every worker.
 
 ## License
 

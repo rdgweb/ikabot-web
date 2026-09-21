@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Account, GameAccount, Node
+from .models import Account, AgentUpdateRequest, GameAccount, Node
 
 
 class GameAccountInline(admin.TabularInline):
@@ -18,6 +18,12 @@ class NodeAdmin(admin.ModelAdmin):
     list_display = ("name", "active", "agent_version", "is_online", "agent_last_seen_at")
     list_filter = ("active",)
     search_fields = ("name",)
+
+
+@admin.register(AgentUpdateRequest)
+class AgentUpdateRequestAdmin(admin.ModelAdmin):
+    list_display = ("node", "target_version", "status", "requested_by", "created_at")
+    list_filter = ("status",)
 
 
 @admin.register(Account)

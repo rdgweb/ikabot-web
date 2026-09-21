@@ -8,6 +8,7 @@ from .nodes import (
     NodeToggleView,
     NodeProxyTestView,
     NodeQueuePurgeView,
+    NodeRequestUpdateView,
 )
 from .accounts import (
     AccountListView,

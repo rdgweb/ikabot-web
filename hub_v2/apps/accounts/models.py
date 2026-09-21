@@ -11,6 +11,7 @@ Account hierarchy:
 
 import secrets
 
+from django.conf import settings
 from django.db import models
 
 from core.mixins.models import UUIDTimestampModel
@@ -39,6 +40,11 @@ class Node(UUIDTimestampModel):
     agent_version = models.CharField(max_length=64, blank=True, default="")
     agent_last_seen_at = models.DateTimeField(blank=True, null=True)
 
+    # Host-side updater supervisor (reported by the updater container).
+    updater_version = models.CharField(max_length=64, blank=True, default="")
+    updater_container = models.CharField(max_length=128, blank=True, default="")
+    updater_last_seen_at = models.DateTimeField(blank=True, null=True)
+
     # Deploy token (used for agent auto-registration)
     deploy_token = models.CharField(max_length=64, blank=True, default="")
 
@@ -64,6 +70,48 @@ class Node(UUIDTimestampModel):
 
         delta = timezone.now() - self.agent_last_seen_at
         return delta.total_seconds() < 180
+
+    @property
+    def updater_is_online(self) -> bool:
+        """Updater is online if it polled the Hub within 2 minutes."""
+        if not self.updater_last_seen_at:
+            return False
+        from django.utils import timezone
+
+        return (timezone.now() - self.updater_last_seen_at).total_seconds() < 120
+
+
+class AgentUpdateRequest(UUIDTimestampModel):
+    """One scoped request for a node updater to replace its agent container."""
+
+    STATUS_CHOICES = [
+        ("queued", "Na fila"),
+        ("running", "Atualizando"),
+        ("succeeded", "Concluida"),
+        ("failed", "Falhou"),
+        ("cancelled", "Cancelada"),
+    ]
+
+    node = models.ForeignKey(Node, on_delete=models.CASCADE, related_name="update_requests")
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="agent_update_requests",
+    )
+    target_version = models.CharField(max_length=64)
+    target_image = models.CharField(max_length=255)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="queued", db_index=True)
+    status_message = models.TextField(blank=True, default="")
+    started_at = models.DateTimeField(blank=True, null=True)
+    finished_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.node} -> {self.target_version} ({self.status})"
 
 
 class Account(UUIDTimestampModel):

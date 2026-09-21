@@ -6,6 +6,7 @@ All endpoints require X-Agent-Token authentication.
 
 import logging
 
+from django.db import transaction
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import status
@@ -16,7 +17,8 @@ from rest_framework import serializers as drf_serializers
 from core.auth.backends import AgentTokenAuthentication
 from core.auth.permissions import IsAgent
 from core.encryption import decrypt, encrypt
-from apps.accounts.models import Account, GameAccount, Node
+from apps.accounts.models import Account, AgentUpdateRequest, GameAccount, Node
+from apps.jobs.models import Job
 from apps.proxy.services import reserve_lobby_proxies
 from apps.settings_app.utils import get_int_setting
 from apps.jobs.services.recovery import recover_stale_running_jobs, recover_stale_scheduled_jobs
@@ -25,10 +27,16 @@ from .serializers import (
     AgentHeartbeatSerializer,
     AgentRegisterSerializer,
     AgentRegisterResponseSerializer,
+    AgentUpdatePollSerializer,
+    AgentUpdateStatusSerializer,
     NodeConfigResponseSerializer,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _request_node_matches(request, node_id) -> bool:
+    return request.META.get("HTTP_X_AGENT_NODE_ID", "").strip() == str(node_id)
 
 
 def _stale_recovery_offline_seconds() -> int:
@@ -170,6 +178,91 @@ class AgentHeartbeatView(APIView):
             except Exception as exc:
                 logger.warning("Failed to recover stale jobs for node %s: %s", node_id, exc)
 
+        return Response({"ok": True})
+
+
+class AgentUpdateNextView(APIView):
+    """Poll endpoint used only by the host-side updater supervisor."""
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def get(self, request):
+        serializer = AgentUpdatePollSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        node_id = data["node_id"]
+        if not _request_node_matches(request, node_id):
+            return Response({"error": "Node scope mismatch."}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            node = Node.objects.get(pk=node_id, active=True)
+        except Node.DoesNotExist:
+            return Response({"error": "Node not found or inactive."}, status=status.HTTP_404_NOT_FOUND)
+
+        node.updater_last_seen_at = timezone.now()
+        node.updater_version = data.get("updater_version", "")
+        node.updater_container = data["target_container"]
+        node.save(update_fields=["updater_last_seen_at", "updater_version", "updater_container"])
+
+        if Job.objects.filter(node=node, status__in=["queued", "running"]).exists():
+            return Response({"update": None, "waiting": "O no possui jobs em fila ou execucao."})
+
+        with transaction.atomic():
+            update = (
+                AgentUpdateRequest.objects.select_for_update()
+                .filter(node=node, status="queued")
+                .order_by("created_at")
+                .first()
+            )
+            if update:
+                update.status = "running"
+                update.started_at = timezone.now()
+                update.status_message = "Solicitacao recebida pelo supervisor."
+                update.save(update_fields=["status", "started_at", "status_message", "updated_at"])
+
+        if not update:
+            return Response({"update": None})
+        return Response({
+            "update": {
+                "id": str(update.pk),
+                "target_version": update.target_version,
+                "target_image": update.target_image,
+            }
+        })
+
+
+class AgentUpdateStatusView(APIView):
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request, update_id):
+        serializer = AgentUpdateStatusSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        if not _request_node_matches(request, data["node_id"]):
+            return Response({"error": "Node scope mismatch."}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            update = AgentUpdateRequest.objects.get(pk=update_id, node_id=data["node_id"])
+        except AgentUpdateRequest.DoesNotExist:
+            return Response({"error": "Update request not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        next_status = data["status"]
+        allowed = {
+            "queued": {"running", "failed"},
+            "running": {"running", "succeeded", "failed"},
+        }
+        if next_status not in allowed.get(update.status, set()):
+            return Response({"error": "Invalid status transition."}, status=status.HTTP_409_CONFLICT)
+
+        update.status = next_status
+        update.status_message = data.get("message", "")[:4000]
+        if next_status == "running" and not update.started_at:
+            update.started_at = timezone.now()
+        if next_status in {"succeeded", "failed"}:
+            update.finished_at = timezone.now()
+        update.save(update_fields=["status", "status_message", "started_at", "finished_at", "updated_at"])
         return Response({"ok": True})
 
 

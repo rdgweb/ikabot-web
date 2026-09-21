@@ -122,6 +122,24 @@
   <pre class="mt-3 bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto"><code>document.cookie.split(';').forEach(x =&gt; { if (x.includes('production')) console.log(x.trim()) })</code></pre>
 </div>
 
+<div class="card" x-data="{ copiedUpdater: false }">
+  <h3 class="text-sm font-semibold text-ink mb-2"><i class="bi bi-shield-check"></i> Supervisor de atualizacoes</h3>
+  <p class="text-sm text-muted mb-3">Instale uma unica vez no host Docker deste no. Depois, as novas versoes podem ser aplicadas pela tela Atualizacoes.</p>
+  <div class="rounded p-3 mb-3 text-xs" style="background:var(--ik-sand-light); border:1px solid var(--ik-line);">
+    Antes de executar, troque <code>AGENT_TARGET_CONTAINER=ikabot-agent</code> pelo nome exato do conteiner deste agente. O supervisor recusara qualquer conteiner cujo <code>AGENT_NODE_ID</code> seja diferente deste no.
+  </div>
+  <div class="relative">
+    <pre class="bg-gray-900 text-green-400 rounded-lg p-4 pr-24 text-sm font-mono overflow-x-auto"><code x-ref="updaterCommand">{{ updater_command }}</code></pre>
+    <button type="button" class="absolute right-3 top-3 rounded bg-gray-700 px-2 py-1 text-xs text-white" @click="navigator.clipboard.writeText($refs.updaterCommand.textContent); copiedUpdater = true; setTimeout(() => copiedUpdater = false, 2000)">
+      <span x-show="!copiedUpdater"><i class="bi bi-clipboard"></i> Copiar</span>
+      <span x-show="copiedUpdater" x-cloak><i class="bi bi-check"></i> Copiado</span>
+    </button>
+  </div>
+  <div class="mt-3 text-sm">
+    Estado: {% if node.updater_is_online %}<span class="badge badge-success">Supervisor online</span>{% else %}<span class="badge badge-warning">Aguardando instalacao</span>{% endif %}
+  </div>
+</div>
+
 <!-- Status check -->
 <div class="card" hx-get="{% url 'accounts:node-detail' node.pk %}" hx-trigger="every 10s" hx-select="#agent-status" hx-target="#agent-status" hx-swap="outerHTML">
   <h3 class="text-sm font-semibold text-ink mb-3">

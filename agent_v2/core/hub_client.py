@@ -61,6 +61,20 @@ class HubClient:
         """GET /api/agent/config"""
         return self._get("/api/agent/config", params={"node_id": settings.agent_node_id})
 
+    def poll_update(self, target_container: str) -> dict:
+        return self._get("/api/agent/updates/next", params={
+            "node_id": settings.agent_node_id,
+            "updater_version": settings.agent_version,
+            "target_container": target_container,
+        })
+
+    def report_update(self, update_id: str, status: str, message: str = "") -> dict:
+        return self._post(f"/api/agent/updates/{update_id}/status", {
+            "node_id": settings.agent_node_id,
+            "status": status,
+            "message": message,
+        })
+
     # ── Job Lifecycle ──
 
     def report_status(

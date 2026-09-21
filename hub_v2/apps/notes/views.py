@@ -233,6 +233,7 @@ class ChangeLogListView(LoginRequiredMixin, ListView):
                 node.agent_version,
                 agent_release.version,
             )
+            node.latest_update = node.update_requests.order_by("-created_at").first()
 
         ctx.update(
             {
