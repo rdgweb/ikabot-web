@@ -5,7 +5,7 @@ from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.accounts.models import Node
+from apps.accounts.models import DockerHost, Node
 
 from .models import Note, NoteEvent
 from .services import RegistryRelease, _release_from_payload, record_change
@@ -54,10 +54,15 @@ class NotesViewsTests(TestCase):
             RegistryRelease("hub", "blackoneal/ikabot-web-hub", "0.2.76"),
             RegistryRelease("agent", "blackoneal/ikabot-web-agent", "0.1.55"),
         ]
+        host = DockerHost.objects.create(
+            name="docker-test",
+            last_seen_at=timezone.now(),
+        )
         Node.objects.create(
             name="blackshadow-node",
             agent_version="0.1.54",
             agent_last_seen_at=timezone.now(),
+            docker_host=host,
         )
 
         response = self.client.get(reverse("notes:changelog"))
@@ -67,6 +72,10 @@ class NotesViewsTests(TestCase):
         self.assertContains(response, "v0.2.76")
         self.assertContains(response, "blackshadow-node")
         self.assertContains(response, "atualizacao disponivel")
+        self.assertContains(response, "Atualizar pelo Hub")
+        self.assertContains(response, "Atualizar agente")
+        self.assertContains(response, "fara rollback se ele nao iniciar")
+        self.assertNotContains(response, "return confirm(")
         self.assertNotContains(response, "Registrar")
 
     def test_create_note(self):

@@ -115,7 +115,16 @@
               </td>
               <td class="text-right">
                 {% if node.release_state.code == 'outdated' and node.is_online and node.supervisor_is_online %}
-                  <form method="post" action="{% url 'accounts:node-request-update' node.pk %}" class="inline" onsubmit="return confirm('Atualizar somente o agente {{ node.name|escapejs }}?');">
+                  <form method="post"
+                        action="{% url 'accounts:node-request-update' node.pk %}"
+                        class="inline"
+                        @submit.prevent="$dispatch('confirm', {
+                          title: 'Atualizar agente',
+                          message: 'O agente {{ node.name|escapejs }} sera atualizado da versao v{{ node.agent_version|escapejs }} para v{{ agent_release.version|escapejs }}. O supervisor validara o novo container e fara rollback se ele nao iniciar.',
+                          confirmLabel: 'Atualizar agente',
+                          style: 'primary',
+                          onConfirm: () => $el.submit()
+                        })">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-cloud-download"></i> Atualizar pelo Hub</button>
                   </form>
