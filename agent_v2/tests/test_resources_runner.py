@@ -4,6 +4,7 @@ import types
 import unittest
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +51,15 @@ def _load_resources_runner_module():
     services_pkg.island_donation = island_donation
     services_pkg.resource_transport = resource_transport
 
+    sessions_pkg = types.ModuleType("sessions")
+    game_session_service = types.ModuleType("sessions.game_session_service")
+
+    class LoginCooldownActive(Exception):
+        pass
+
+    game_session_service.LoginCooldownActive = LoginCooldownActive
+    sessions_pkg.game_session_service = game_session_service
+
     sys.modules.update(
         {
             "core": core_pkg,
@@ -61,6 +71,8 @@ def _load_resources_runner_module():
             "services": services_pkg,
             "services.island_donation": island_donation,
             "services.resource_transport": resource_transport,
+            "sessions": sessions_pkg,
+            "sessions.game_session_service": game_session_service,
         }
     )
 
@@ -81,7 +93,7 @@ class ResourceRunnerHelperTests(unittest.TestCase):
         self.runner = DistributeResourcesRunner()
         self.runner.log = lambda *_args, **_kwargs: None
 
-    def test_route_chunk_is_active_requires_same_route_modal_and_resource_signature(self):
+    def test_subtract_active_transport_support_uses_route_modal_and_amounts(self):
         entries = [
             {
                 "from_city": "10",
@@ -90,33 +102,37 @@ class ResourceRunnerHelperTests(unittest.TestCase):
                 "resources": {"wood": 200000, "wine": 0, "marble": 0, "crystal": 0, "sulfur": 0},
             }
         ]
-        self.assertTrue(
-            self.runner._route_chunk_is_active(
-                entries,
-                from_city="10",
-                to_city="20",
-                use_freighters=True,
-                resources={"wood": 50000},
-            )
+        remaining, covered = self.runner._subtract_active_transport_support(
+            entries,
+            from_city="10",
+            to_city="20",
+            use_freighters=True,
+            resources={"wood": 50000},
         )
-        self.assertFalse(
-            self.runner._route_chunk_is_active(
-                entries,
-                from_city="10",
-                to_city="20",
-                use_freighters=False,
-                resources={"wood": 50000},
-            )
+        self.assertEqual({}, remaining)
+        self.assertEqual({"wood": 50000}, covered)
+        self.assertEqual(150000, entries[0]["resources"]["wood"])
+
+        remaining, covered = self.runner._subtract_active_transport_support(
+            entries,
+            from_city="10",
+            to_city="20",
+            use_freighters=True,
+            resources={"wood": 200000},
         )
-        self.assertFalse(
-            self.runner._route_chunk_is_active(
-                entries,
-                from_city="10",
-                to_city="20",
-                use_freighters=True,
-                resources={"marble": 50000},
-            )
+        self.assertEqual({"wood": 50000}, remaining)
+        self.assertEqual({"wood": 150000}, covered)
+        self.assertEqual(0, entries[0]["resources"]["wood"])
+
+        remaining, covered = self.runner._subtract_active_transport_support(
+            entries,
+            from_city="10",
+            to_city="20",
+            use_freighters=False,
+            resources={"wood": 50000},
         )
+        self.assertEqual({"wood": 50000}, remaining)
+        self.assertEqual({}, covered)
 
     def test_choose_next_transport_followup_delay_prefers_scheduled_for(self):
         soon = (datetime.now(timezone.utc) + timedelta(minutes=45)).isoformat()
@@ -166,6 +182,46 @@ class ResourceRunnerHelperTests(unittest.TestCase):
         self.assertLessEqual(delay, 12 * 60 + 5)
         self.assertGreaterEqual(delay, 11 * 60)
         self.assertEqual("chosen-monitor", entry["job_id"])
+
+    def test_dispatch_transport_skips_tiny_partial_below_minimum(self):
+        send_runner = SendResourcesRunner()
+        logs = []
+        send_runner.log = lambda *_args: logs.append(_args[2] if len(_args) > 2 else "")
+        send_runner.resolve_credentials = lambda *_args, **_kwargs: {"server": "s78-br"}
+        send_runner.get_or_login_game_client = lambda *_args, **_kwargs: object()
+        saved = []
+        send_runner.save_game_client = lambda *_args, **_kwargs: saved.append(True)
+        send_runner.hub = SimpleNamespace(spawn_job=lambda *a, **k: None)
+
+        plan = SimpleNamespace(
+            origin=SimpleNamespace(city_name="VC1", available_resources={"wood": 0, "wine": 4, "marble": 0, "crystal": 0, "sulfur": 0}),
+            destination=SimpleNamespace(city_name="CP1"),
+            total_requested=4524,
+            total_dispatched=4,
+            free_transporters=160,
+            effective_ship_capacity=500,
+            capacity_percent=100,
+            ship_capacity=500,
+            eta={"queue_seconds": 0, "loading_seconds": 0, "travel_seconds": 1698, "total_seconds": 1698},
+            requested={"wood": 0, "wine": 4524, "marble": 0, "crystal": 0, "sulfur": 0},
+            dispatched={"wood": 0, "wine": 4, "marble": 0, "crystal": 0, "sulfur": 0},
+            remaining={"wood": 0, "wine": 4520, "marble": 0, "crystal": 0, "sulfur": 0},
+        )
+        RESOURCES_MODULE.prepare_transport = lambda *_args, **_kwargs: plan
+
+        submit_called = {"value": False}
+        RESOURCES_MODULE.submit_transport = lambda *_args, **_kwargs: submit_called.__setitem__("value", True) or {"ok": True, "feedbacks": []}
+
+        result = send_runner._dispatch_transport(
+            {"job_id": "job-1", "account_id": "acc-1", "game_account_id": "ga-1"},
+            {"from_city": "37436", "to_city": "37435", "wine": 4524, "min_dispatch_total": 5000},
+        )
+
+        self.assertTrue(result.success)
+        self.assertEqual("dispatch_below_minimum", result.data["status"])
+        self.assertFalse(submit_called["value"])
+        self.assertTrue(saved)
+        self.assertTrue(any("Despachavel abaixo do minimo util" in msg for msg in logs))
 
 
 if __name__ == "__main__":

@@ -193,6 +193,52 @@ class InternalMarketBuyRunnerTests(unittest.TestCase):
         self.assertEqual(calls[0][0], "j1")
         self.assertGreaterEqual(calls[0][1], 300)
 
+    def test_available_purchase_amount_uses_free_transporter_capacity(self):
+        runner = InternalMarketBuyRunner()
+
+        amount = runner._available_purchase_amount(
+            amount=36032,
+            preview={"free_transporters": 63, "ship_capacity": 500},
+        )
+
+        self.assertEqual(amount, 31500)
+
+    def test_arrived_partial_purchase_reschedules_remaining_amount(self):
+        runner = InternalMarketBuyRunner()
+        calls = []
+        runner.hub = types.SimpleNamespace(
+            reschedule_job=lambda jid, delay_seconds, inputs=None: calls.append((jid, delay_seconds, inputs)) or {"ok": True},
+            market_order_complete=lambda *_args, **_kwargs: calls.append(("complete",)),
+        )
+        runner.log = lambda *_args, **_kwargs: None
+        runner._estimate_transporter_retry_delay = lambda **_kwargs: 720
+
+        result = runner._finish_arrived_purchase_leg(
+            jid="j1",
+            job={"job_id": "j1"},
+            client=object(),
+            ga_id="ga1",
+            aid="a1",
+            inputs={"amount": 31500, "internal_order_id": "o1"},
+            order_id="o1",
+            buyer_city_id=123,
+            seller_city_id=456,
+            is_raise_gold_mode=False,
+            seller_game_account_id="seller-ga",
+            unit_price=35,
+            leg_amount=31500,
+            order_total_amount=36032,
+            order_completed_amount=0,
+            fallback_eta=600,
+        )
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.data["status"], "partial_purchase_confirmed")
+        self.assertEqual(calls[0][0], "j1")
+        self.assertEqual(calls[0][2]["amount"], 4532)
+        self.assertEqual(calls[0][2]["order_completed_amount"], 31500)
+        self.assertNotIn(("complete",), calls)
+
     def test_transporter_shortage_from_error_reschedules(self):
         runner = InternalMarketBuyRunner()
         calls = []
@@ -209,6 +255,10 @@ class InternalMarketBuyRunnerTests(unittest.TestCase):
         )
         self.assertIsNotNone(result)
         self.assertEqual(calls[0][0], "j1")
+        self.assertEqual(calls[0][1], 0)
+        self.assertEqual(calls[0][2]["amount"], 4000)
+        self.assertEqual(calls[0][2]["order_total_amount"], 6320)
+        self.assertEqual(result.data["status"], "partial_purchase_scheduled")
 
 
 if __name__ == "__main__":

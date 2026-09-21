@@ -366,20 +366,21 @@ class GameSessionService:
 
         client = self._build_game_client(account_id=effective_account_id, proxy_url=effective_proxy)
 
-        raw_token = creds.get("gf_token", "") or self.get_lobby_token(account_id) or ""
-        hint = raw_token.split("=", 1)[-1] if "=" in raw_token else raw_token
-        lobby_token = self.acquire_lobby_token(account_id, client.auth.lobby, email, password, hint)
+        with self.sessions.get_lobby_lock(f"server-login:{account_id}"):
+            raw_token = creds.get("gf_token", "") or self.get_lobby_token(account_id) or ""
+            hint = raw_token.split("=", 1)[-1] if "=" in raw_token else raw_token
+            lobby_token = self.acquire_lobby_token(account_id, client.auth.lobby, email, password, hint)
 
-        try:
-            client.login(
-                email,
-                password,
-                server_id,
-                existing_token=lobby_token,
-                lobby_account_id=lobby_account_id,
-            )
-        except LoginError:
-            raise
+            try:
+                client.login(
+                    email,
+                    password,
+                    server_id,
+                    existing_token=lobby_token,
+                    lobby_account_id=lobby_account_id,
+                )
+            except LoginError:
+                raise
 
         if log:
             log("info", "Login OK")
