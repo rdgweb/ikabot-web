@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Q
@@ -8,8 +9,12 @@ from django.utils import timezone
 from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
-from .forms import ChangeLogEntryForm, NoteEventForm, NoteForm
+from apps.accounts.models import Node
+from apps.accounts.services.agent_versions import classify_agent_version
+
+from .forms import NoteEventForm, NoteForm
 from .models import ChangeLogEntry, Note, NoteEvent
+from .services import clear_release_cache, get_registry_release
 
 
 def _actor_label(request) -> str:
@@ -216,27 +221,43 @@ class ChangeLogListView(LoginRequiredMixin, ListView):
         ctx["visibility_choices"] = ChangeLogEntry.VISIBILITY_CHOICES
         ctx["dev_count"] = ChangeLogEntry.objects.filter(visibility="dev").count()
         ctx["published_count"] = ChangeLogEntry.objects.filter(visibility="published").count()
-        return ctx
+        if self.request.GET.get("refresh") == "1":
+            clear_release_cache()
 
-
-class ChangeLogCreateView(LoginRequiredMixin, CreateView):
-    model = ChangeLogEntry
-    form_class = ChangeLogEntryForm
-    template_name = "notes/changelog_form.html"
-    success_url = reverse_lazy("notes:changelog")
-
-    def form_valid(self, form):
-        form.instance.created_by = self.request.user
-        response = super().form_valid(form)
-        if self.object.note_id:
-            _record_note_event(
-                self.object.note,
-                "changelog",
-                f"Changelog registrado: {self.object.title}",
-                _actor_label(self.request),
-                changelog_id=str(self.object.pk),
-                visibility=self.object.visibility,
-                version=self.object.version,
+        hub_release = get_registry_release("hub")
+        agent_release = get_registry_release("agent")
+        hub_version = str(settings.VERSION or "").strip()
+        nodes = list(Node.objects.filter(active=True).order_by("name"))
+        for node in nodes:
+            node.release_state = classify_agent_version(
+                node.agent_version,
+                agent_release.version,
             )
-        messages.success(self.request, "Atualizacao registrada.")
-        return response
+
+        ctx.update(
+            {
+                "hub_release": hub_release,
+                "hub_version": hub_version,
+                "hub_state": classify_agent_version(
+                    hub_version,
+                    hub_release.version,
+                ),
+                "agent_release": agent_release,
+                "agent_nodes": nodes,
+                "agent_current_count": sum(
+                    node.release_state.code == "current" for node in nodes
+                ),
+                "agent_update_count": sum(
+                    node.release_state.code == "outdated" for node in nodes
+                ),
+                "hub_update_command": (
+                    "docker compose pull hub && "
+                    "docker compose up -d --no-deps --wait hub"
+                ),
+                "agent_update_command": (
+                    "docker compose pull <servico-do-agent> && "
+                    "docker compose up -d --no-deps <servico-do-agent>"
+                ),
+            }
+        )
+        return ctx

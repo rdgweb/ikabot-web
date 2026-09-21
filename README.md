@@ -228,6 +228,11 @@ docker compose build --no-cache  # Rebuild images from scratch
 .\.github\scripts\update_containers.ps1 -Target agent
 ```
 
+The authenticated **Atualizacoes** page compares the Hub and agent versions
+currently reported in production with semantic version tags published on
+Docker Hub. It also links each agent node to scoped deployment instructions;
+the page never restarts every worker automatically.
+
 ## License
 
 This project builds upon [ikabot](https://github.com/Ikabot-Collective/ikabot) by the Ikabot Collective.

@@ -1,7 +1,6 @@
 from django.urls import path
 
 from .views import (
-    ChangeLogCreateView,
     ChangeLogListView,
     NoteCreateView,
     NoteDetailView,
@@ -25,5 +24,4 @@ urlpatterns = [
     path("<uuid:pk>/aprovar/", NoteApproveView.as_view(), name="approve"),
     path("<uuid:pk>/historico/", NoteEventCreateView.as_view(), name="event-create"),
     path("atualizacoes/", ChangeLogListView.as_view(), name="changelog"),
-    path("atualizacoes/nova/", ChangeLogCreateView.as_view(), name="changelog-create"),
 ]

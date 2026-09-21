@@ -1,8 +1,38 @@
-from django.contrib.auth import get_user_model
-from django.test import TestCase
-from django.urls import reverse
+from unittest.mock import patch
 
-from .models import ChangeLogEntry, Note, NoteEvent
+from django.contrib.auth import get_user_model
+from django.test import SimpleTestCase, TestCase
+from django.urls import reverse
+from django.utils import timezone
+
+from apps.accounts.models import Node
+
+from .models import Note, NoteEvent
+from .services import RegistryRelease, _release_from_payload, record_change
+
+
+class ReleaseStatusTests(SimpleTestCase):
+    def test_registry_payload_uses_highest_semantic_version(self):
+        release = _release_from_payload(
+            "hub",
+            "blackoneal/ikabot-web-hub",
+            {
+                "results": [
+                    {"name": "latest", "last_updated": "2026-09-21T15:00:00Z"},
+                    {"name": "sha-deadbee", "last_updated": "2026-09-21T15:00:00Z"},
+                    {"name": "v0.2.74", "last_updated": "2026-09-20T15:00:00Z"},
+                    {
+                        "name": "0.2.75",
+                        "last_updated": "2026-09-21T15:00:00Z",
+                        "digest": "sha256:abc",
+                    },
+                ]
+            },
+        )
+
+        self.assertEqual(release.version, "0.2.75")
+        self.assertEqual(release.image, "blackoneal/ikabot-web-hub:0.2.75")
+        self.assertEqual(release.digest, "sha256:abc")
 
 
 class NotesViewsTests(TestCase):
@@ -17,6 +47,27 @@ class NotesViewsTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Corrigir compra parcial")
+
+    @patch("apps.notes.views.get_registry_release")
+    def test_updates_page_tracks_installed_and_published_versions(self, registry_release):
+        registry_release.side_effect = [
+            RegistryRelease("hub", "blackoneal/ikabot-web-hub", "0.2.76"),
+            RegistryRelease("agent", "blackoneal/ikabot-web-agent", "0.1.55"),
+        ]
+        Node.objects.create(
+            name="blackshadow-node",
+            agent_version="0.1.54",
+            agent_last_seen_at=timezone.now(),
+        )
+
+        response = self.client.get(reverse("notes:changelog"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Atualizacoes do sistema")
+        self.assertContains(response, "v0.2.76")
+        self.assertContains(response, "blackshadow-node")
+        self.assertContains(response, "atualizacao disponivel")
+        self.assertNotContains(response, "Registrar")
 
     def test_create_note(self):
         response = self.client.post(
@@ -73,25 +124,21 @@ class NotesViewsTests(TestCase):
         self.assertTrue(NoteEvent.objects.filter(note=note, event_type="approved").exists())
         self.assertTrue(NoteEvent.objects.filter(note=note, event_type="completed").exists())
 
-    def test_create_changelog_entry_linked_to_note(self):
+    def test_record_change_service_links_entry_to_note(self):
         note = Note.objects.create(title="Bug no mercado", created_by=self.user)
 
-        response = self.client.post(
-            reverse("notes:changelog-create"),
-            {
-                "visibility": "dev",
-                "component": "hub",
-                "version": "0.0.96",
-                "dev_version": "0.0.96-dev",
-                "published_version": "",
-                "title": "Adiciona notas",
-                "note": str(note.pk),
-                "body": "Novo acompanhamento interno.",
-            },
+        entry = record_change(
+            title="Adiciona notas",
+            body="Novo acompanhamento interno.",
+            component="hub",
+            version="0.0.96",
+            note=note,
+            username=self.user.username,
         )
 
-        self.assertEqual(response.status_code, 302)
-        entry = ChangeLogEntry.objects.get(title="Adiciona notas")
         self.assertEqual(entry.note, note)
         self.assertEqual(entry.created_by, self.user)
         self.assertEqual(entry.visibility, "dev")
+        self.assertTrue(
+            NoteEvent.objects.filter(note=note, event_type="changelog").exists()
+        )

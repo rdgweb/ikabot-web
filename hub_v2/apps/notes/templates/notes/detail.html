@@ -102,7 +102,6 @@
     <div class="rounded-lg p-4" style="border:1px solid var(--ik-line); background:var(--ik-paper);">
       <div class="flex items-center justify-between mb-3">
         <h2 class="text-sm font-semibold uppercase text-muted">Atualizacoes ligadas</h2>
-        <a href="{% url 'notes:changelog-create' %}" class="text-xs text-sea hover:underline">Registrar</a>
       </div>
       <div class="space-y-3 text-sm">
         {% for change in note.changes.all %}

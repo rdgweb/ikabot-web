@@ -1,6 +1,6 @@
 from django import forms
 
-from .models import ChangeLogEntry, Note, NoteEvent
+from .models import Note, NoteEvent
 
 
 class NoteForm(forms.ModelForm):
@@ -15,22 +15,6 @@ class NoteForm(forms.ModelForm):
             "source_url": forms.URLInput(attrs={"class": "form-input", "placeholder": "URL relacionada, se tiver"}),
             "tags": forms.TextInput(attrs={"class": "form-input", "placeholder": "mercado, treino, snapshot"}),
             "body": forms.Textarea(attrs={"class": "form-input", "rows": 7, "placeholder": "Detalhes, contexto, passos para reproduzir ou checklist"}),
-        }
-
-
-class ChangeLogEntryForm(forms.ModelForm):
-    class Meta:
-        model = ChangeLogEntry
-        fields = ["visibility", "component", "version", "dev_version", "published_version", "title", "note", "body"]
-        widgets = {
-            "visibility": forms.Select(attrs={"class": "form-input"}),
-            "component": forms.Select(attrs={"class": "form-input"}),
-            "version": forms.TextInput(attrs={"class": "form-input", "placeholder": "ex: 0.0.96"}),
-            "dev_version": forms.TextInput(attrs={"class": "form-input", "placeholder": "ex: 0.2.42-dev"}),
-            "published_version": forms.TextInput(attrs={"class": "form-input", "placeholder": "ex: 0.3.0"}),
-            "title": forms.TextInput(attrs={"class": "form-input", "placeholder": "O que mudou"}),
-            "note": forms.Select(attrs={"class": "form-input"}),
-            "body": forms.Textarea(attrs={"class": "form-input", "rows": 6, "placeholder": "Resumo da alteracao, validacao e impacto"}),
         }
 
 

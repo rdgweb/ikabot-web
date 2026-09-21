@@ -249,4 +249,8 @@ class NodeDeployView(LoginRequiredMixin, DetailView):
             f"  {agent_image}"
         )
         ctx["deploy_command_windows"] = " `\n".join(command_lines)
+        ctx["compose_update_command"] = (
+            "docker compose pull <servico-do-agent> && "
+            "docker compose up -d --no-deps <servico-do-agent>"
+        )
         return ctx

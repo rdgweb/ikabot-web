@@ -8,8 +8,8 @@
   <span class="mx-1">/</span> <span class="text-ink">Deploy</span>
 {% endblock %}
 
-{% block detail_title %}Deploy do Agent{% endblock %}
-{% block detail_subtitle %}{{ node.name }} — copie o comando abaixo para iniciar o agent{% endblock %}
+{% block detail_title %}Deploy e atualização do Agent{% endblock %}
+{% block detail_subtitle %}{{ node.name }} — revise o nó antes de iniciar ou atualizar o container{% endblock %}
 
 {% block detail_actions %}
 <a href="{% url 'accounts:node-detail' node.pk %}" class="btn btn-secondary btn-sm">
@@ -18,6 +18,25 @@
 {% endblock %}
 
 {% block detail_main %}
+<div class="card" x-data="{ copiedUpdate: false }">
+  <h3 class="text-sm font-semibold text-ink mb-3">
+    <i class="bi bi-arrow-repeat"></i> Atualizar instalação Docker Compose
+  </h3>
+  <p class="text-sm text-muted mb-3">
+    Execute no host deste nó e substitua <code>&lt;servico-do-agent&gt;</code> pelo serviço correto. O Hub não reinicia agentes automaticamente.
+  </p>
+  <div class="relative">
+    <pre class="bg-gray-900 text-green-400 rounded-lg p-4 pr-24 text-sm font-mono overflow-x-auto"><code x-ref="updateCommand">{{ compose_update_command }}</code></pre>
+    <button
+      type="button"
+      @click="navigator.clipboard.writeText($refs.updateCommand.textContent); copiedUpdate = true; setTimeout(() => copiedUpdate = false, 2000)"
+      class="absolute top-2 right-2 px-2 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded text-xs">
+      <span x-show="!copiedUpdate"><i class="bi bi-clipboard"></i> Copiar</span>
+      <span x-show="copiedUpdate" x-cloak><i class="bi bi-check"></i> Copiado!</span>
+    </button>
+  </div>
+</div>
+
 <!-- Deploy command -->
 <div class="card" x-data="{ copiedLinux: false, copiedWindows: false }">
   <h3 class="text-sm font-semibold text-ink mb-3">
