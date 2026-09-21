@@ -21,7 +21,7 @@ hub (opt-in, 1 ping/day) ──HTTPS──> gateway (nginx, no access log)
   addresses and installs without a database fall back to the country of the client-declared IANA timezone.
   DB-IP data is CC BY 4.0: keep the attribution on `/transparencia`.
 - **No request logs**: nginx `access_log off`, uvicorn `--no-access-log`. If a reverse proxy sits in front
-  (Nginx Proxy Manager), add `access_log off;` in the host's *Advanced* tab and make sure it sends `X-Real-IP`.
+  (Nginx Proxy Manager), add `access_log off;` in the host's *Advanced* tab and make sure it forwards the client address (`X-Real-IP`, or `CF-Connecting-IP` when behind Cloudflare, which the gateway prefers).
 - **Erasure**: `DELETE /v1/installs/<install_id>` removes everything an install sent, IP included.
 - **Public stats** fold groups smaller than 5 into "other"; IPs and cities are never published.
 - **Access**: only the maintainer (Grafana login, or `psql` on the private database). Grafana is not public.
