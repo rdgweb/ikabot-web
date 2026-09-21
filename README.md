@@ -222,6 +222,10 @@ docker compose logs -f hub     # Follow hub logs
 docker compose logs -f agent   # Follow agent logs
 docker compose restart hub     # Restart hub only
 docker compose build --no-cache  # Rebuild images from scratch
+
+# PowerShell: pull, wait for health and print the versions actually running
+.\.github\scripts\update_containers.ps1
+.\.github\scripts\update_containers.ps1 -Target agent
 ```
 
 ## License

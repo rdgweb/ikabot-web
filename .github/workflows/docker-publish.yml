@@ -1,16 +1,63 @@
-name: Publish Docker Images
+name: Validate and Publish Docker Images
 
 on:
+  pull_request:
+    branches: [main]
   push:
-    branches:
-      - main
-    tags:
-      - "v*"
+    branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
 
 jobs:
-  publish:
+  validate:
     runs-on: ubuntu-latest
+    outputs:
+      hub_version: ${{ steps.versions.outputs.hub_version }}
+      agent_version: ${{ steps.versions.outputs.agent_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve comparison base
+        id: base
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "ref=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
+            echo "ref=${{ github.event.before }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate component versions
+        id: versions
+        shell: bash
+        run: |
+          args=(--github-output "$GITHUB_OUTPUT")
+          if [[ -n "${{ steps.base.outputs.ref }}" ]]; then
+            args+=(--base "${{ steps.base.outputs.ref }}")
+          fi
+          python .github/scripts/version_guard.py "${args[@]}"
+
+      - name: Test version rules
+        run: python .github/scripts/test_version_guard.py
+
+  build:
+    needs: validate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: hub
+            context: ./hub_v2
+            image: blackoneal/ikabot-web-hub
+            version_output: hub_version
+          - component: agent
+            context: ./agent_v2
+            image: blackoneal/ikabot-web-agent
+            version_output: agent_version
     permissions:
       contents: read
 
@@ -25,45 +72,32 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Docker metadata - hub
-        id: meta_hub
+      - name: Docker metadata
+        id: meta
         uses: docker/metadata-action@v5
         with:
-          images: blackoneal/ikabot-web-hub
+          images: ${{ matrix.image }}
           tags: |
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ github.event_name != 'pull_request' }}
+            type=raw,value=${{ needs.validate.outputs[matrix.version_output] }}
+            type=raw,value=v${{ needs.validate.outputs[matrix.version_output] }}
             type=sha
-            type=ref,event=tag
 
-      - name: Docker metadata - agent
-        id: meta_agent
-        uses: docker/metadata-action@v5
-        with:
-          images: blackoneal/ikabot-web-agent
-          tags: |
-            type=raw,value=latest
-            type=sha
-            type=ref,event=tag
-
-      - name: Build and push hub
+      - name: Build and optionally push
         uses: docker/build-push-action@v6
         with:
-          context: ./hub_v2
+          context: ${{ matrix.context }}
           platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta_hub.outputs.tags }}
-          labels: ${{ steps.meta_hub.outputs.labels }}
-
-      - name: Build and push agent
-        uses: docker/build-push-action@v6
-        with:
-          context: ./agent_v2
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta_agent.outputs.tags }}
-          labels: ${{ steps.meta_agent.outputs.labels }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            EXPECTED_AGENT_VERSION=${{ needs.validate.outputs.agent_version }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}

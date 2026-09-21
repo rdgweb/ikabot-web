@@ -51,9 +51,7 @@
               {% if node.agent_version %}
                 <span class="text-xs text-muted">
                   v{{ node.agent_version }}
-                  {% if mixed_agent_versions %}
-                    <span class="badge badge-warning ml-1">divergente</span>
-                  {% endif %}
+                  <span class="badge {{ node.agent_version_state.badge_class }} ml-1">{{ node.agent_version_state.label }}</span>
                 </span>
               {% endif %}
               {% if node.agent_image %}
@@ -101,6 +99,12 @@
 </div>
 
 {% include "components/table/pagination.html" %}
+
+{% if expected_agent_version %}
+<p class="mt-3 text-xs text-muted">
+  <i class="bi bi-box-seam"></i> Versao esperada pelo rollout: <span class="font-mono">v{{ expected_agent_version }}</span>
+</p>
+{% endif %}
 
 {% else %}
 {% include "components/table/empty.html" with icon="bi-hdd-network" message="Nenhum nó cadastrado." action_url="/accounts/nodes/create/" action_label="Criar Nó" %}

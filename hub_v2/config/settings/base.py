@@ -14,6 +14,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Read VERSION file
 VERSION = (BASE_DIR / "VERSION").read_text().strip()
+EXPECTED_AGENT_VERSION = os.environ.get("EXPECTED_AGENT_VERSION", "").strip()
 
 # --- Security ---
 

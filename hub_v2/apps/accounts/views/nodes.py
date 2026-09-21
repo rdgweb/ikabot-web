@@ -15,6 +15,7 @@ from django.views.generic import DetailView, CreateView, UpdateView, DeleteView
 
 from core.mixins.views import FilterSortListView
 from apps.settings_app.utils import get_setting
+from ..services.agent_versions import classify_agent_version
 from ..models import Node
 from ..filters import NodeFilter
 from ..forms import NodeCreateForm, NodeEditForm
@@ -43,6 +44,13 @@ class NodeListView(FilterSortListView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["ip_conflicts"] = _get_ip_conflicts()
+        expected_agent_version = getattr(settings, "EXPECTED_AGENT_VERSION", "").strip()
+        for node in ctx["object_list"]:
+            node.agent_version_state = classify_agent_version(
+                node.agent_version,
+                expected_agent_version,
+            )
+        ctx["expected_agent_version"] = expected_agent_version
         rollout_versions = {
             str(node.agent_version or "").strip()
             for node in ctx["object_list"]
@@ -66,6 +74,11 @@ class NodeDetailView(LoginRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["accounts"] = self.object.accounts.all()
+        ctx["expected_agent_version"] = getattr(settings, "EXPECTED_AGENT_VERSION", "").strip()
+        ctx["agent_version_state"] = classify_agent_version(
+            self.object.agent_version,
+            ctx["expected_agent_version"],
+        )
 
         # Proxy profile
         try:
