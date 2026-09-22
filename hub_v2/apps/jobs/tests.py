@@ -894,7 +894,10 @@ class MoveForcesFormTests(TestCase):
         fn_body = html[fn_body_start:fn_body_end]
         self.assertNotIn("has_barracks", fn_body)
         self.assertNotIn("has_shipyard", fn_body)
-        self.assertIn("destinationCities(toQuery).filter(c => String(c.id) !== String(fromCityId))", html)
+        self.assertIn(
+            "destinationCities(toQuery).filter(c => multiOrigin ? !selectedCities.includes(String(c.id)) : String(c.id) !== String(fromCityId))",
+            html,
+        )
 
     def test_units_panel_shows_troops_and_fleet_together_when_scope_is_ambos(self):
         html = self._render(1202)
@@ -920,3 +923,93 @@ class MoveForcesFormTests(TestCase):
         html = self._render(1202)
         self.assertNotIn('{#', html)
         self.assertNotIn('#}', html)
+
+
+class MultiOriginMoveForcesTests(TestCase):
+    """N-81: move forces from several origin cities to one destination in a
+    single submission. Each origin moves everything it has of the selected
+    scope (multi_move_units_json, built client-side from the snapshot) --
+    no agent/runner changes needed, StationUnitsRunner already processes
+    each job's from_city_id independently."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="multi-origin-user", email="multi-origin@example.com", password="secret123",
+        )
+        self.node = Node.objects.create(name="node-multi-origin")
+        self.account = Account.objects.create(
+            node=self.node, label="Conta MO", email="mo@example.com", password_enc="x",
+        )
+        self.ga = GameAccount.objects.create(
+            account=self.account, lobby_account_id=1, server_id="s1-br",
+            server_language="br", server_number=1, name="Test",
+        )
+        self.cities = [
+            {"id": "11", "name": "Alpha", "buildings": []},
+            {"id": "12", "name": "Beta", "buildings": []},
+            {"id": "13", "name": "Gamma", "buildings": []},
+        ]
+
+    def test_fan_out_creates_one_job_per_city_and_skips_cities_with_no_units(self):
+        import json as _json
+
+        count = JobSubmitView()._create_jobs(
+            self.ga,
+            1202,
+            {},
+            {
+                "scope": "troops",
+                "to_city_id": "13",
+                "from_city_ids": ["11", "12", "13"],
+                "_multi_move_units": {"11": {"301": 5}, "12": {"301": 3}},
+            },
+            self.cities,
+        )
+
+        self.assertEqual(count, 2)
+        jobs = Job.objects.filter(account=self.account, action_code=1202).order_by("created_at")
+        self.assertEqual(jobs.count(), 2)
+        by_from_city = {}
+        for job in jobs:
+            job_inputs = _json.loads(job.inputs_json)
+            by_from_city[job_inputs["from_city_id"]] = job_inputs
+
+        self.assertEqual(set(by_from_city.keys()), {"11", "12"})
+        self.assertEqual(by_from_city["11"]["units"], {"301": 5})
+        self.assertEqual(by_from_city["11"]["to_city_id"], "13")
+        self.assertEqual(by_from_city["11"]["scope"], "troops")
+        self.assertEqual(by_from_city["12"]["units"], {"301": 3})
+
+    def test_normalize_parses_from_city_ids_and_units_json_from_post(self):
+        from django.test import RequestFactory
+
+        rf = RequestFactory()
+        request = rf.post("/jobs/new/submit/", data={
+            "from_city_ids": ["11", "12"],
+            "multi_move_units_json": '{"11": {"301": 5}, "12": {"301": 3}}',
+            "scope": "troops",
+        })
+        normalized = JobSubmitView._normalize_station_units_inputs({}, request)
+        self.assertEqual(normalized["from_city_ids"], ["11", "12"])
+        self.assertEqual(normalized["_multi_move_units"], {"11": {"301": 5}, "12": {"301": 3}})
+
+    def test_normalize_ignores_from_city_ids_when_only_one_city_selected(self):
+        """Single-origin submissions must not accidentally trigger the fan-out path."""
+        from django.test import RequestFactory
+
+        rf = RequestFactory()
+        request = rf.post("/jobs/new/submit/", data={"from_city_ids": ["11"], "scope": "troops"})
+        normalized = JobSubmitView._normalize_station_units_inputs({}, request)
+        self.assertNotIn("from_city_ids", normalized)
+        self.assertNotIn("_multi_move_units", normalized)
+
+    def test_multi_origin_toggle_and_hidden_fields_render_for_move_forces(self):
+        self.client.force_login(self.user)
+        with patch("apps.jobs.views.create._get_cities", return_value=self.cities):
+            response = self.client.get(
+                reverse("jobs:job-form"), {"ga": str(self.ga.pk), "action": "1202"},
+            )
+        html = response.content.decode()
+        self.assertIn("toggleMultiOrigin()", html)
+        self.assertIn('name="multi_move_units_json"', html)
+        self.assertIn('name="from_city_ids"', html)

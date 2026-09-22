@@ -584,11 +584,17 @@ def _training_form_context(snapshot, cities):
             "fleet": city_mil.get("fleet") or {},
         })
 
+    unit_catalog = [
+        {"id": u.get("id"), "name": u.get("name", "")}
+        for u in [*TRAINING_UNITS["troops"], *TRAINING_UNITS["fleet"]]
+    ]
+
     return {
         "troops_units": enrich(TRAINING_UNITS["troops"]),
         "fleet_units": enrich(TRAINING_UNITS["fleet"]),
         "military": military,
         "training_cities": training_cities,
+        "unit_catalog": unit_catalog,
     }
 
 
@@ -3555,6 +3561,23 @@ class JobSubmitView(LoginRequiredMixin, View):
             for city in (cities or [])
             if city.get("id") is not None
         }
+
+        if int(action_code) == 1202 and inputs.get("from_city_ids"):
+            # N-81: multi-origin Mover Forcas -- one StationUnits job per
+            # selected origin city, each moving only what that city actually
+            # has (per _multi_move_units, built client-side from the snapshot).
+            from_city_ids = inputs.pop("from_city_ids")
+            per_city_units = inputs.pop("_multi_move_units", {}) or {}
+            base_inputs = dict(inputs)
+            count = 0
+            for city_id in from_city_ids:
+                city_units = per_city_units.get(str(city_id)) or {}
+                if not city_units:
+                    continue
+                job_inputs = {**base_inputs, "from_city_id": city_id, "units": city_units}
+                count += self._create_single_job(ga, action_code, job_inputs)
+            return count
+
         multi_city_key = None
         for field_def in action_meta.get("inputs", []):
             if field_def["type"] == "city_select" and field_def.get("multiple"):
@@ -3877,7 +3900,14 @@ class JobSubmitView(LoginRequiredMixin, View):
 
     @staticmethod
     def _normalize_station_units_inputs(inputs, request):
-        """Collect units_XXX POST fields into inputs['units'] dict for station."""
+        """Collect units_XXX POST fields into inputs['units'] dict for station.
+
+        N-81: when the origin is multiple cities (from_city_ids has more than
+        one entry), also pulls the per-city breakdown out of
+        multi_move_units_json -- built client-side from each city's own
+        troops/fleet snapshot -- so each origin moves exactly what it has,
+        not a single shared quantity.
+        """
         normalized = dict(inputs)
         normalized["scope"] = str(normalized.get("scope") or request.POST.get("scope") or "troops")
         units = {}
@@ -3891,6 +3921,16 @@ class JobSubmitView(LoginRequiredMixin, View):
                 except (ValueError, TypeError):
                     pass
         normalized["units"] = units
+
+        from_city_ids = [str(v).strip() for v in request.POST.getlist("from_city_ids") if str(v).strip()]
+        from_city_ids = list(dict.fromkeys(from_city_ids))
+        if len(from_city_ids) > 1:
+            normalized["from_city_ids"] = from_city_ids
+            try:
+                normalized["_multi_move_units"] = json.loads(request.POST.get("multi_move_units_json") or "{}")
+            except (TypeError, ValueError):
+                normalized["_multi_move_units"] = {}
+
         return normalized
 
     @staticmethod
