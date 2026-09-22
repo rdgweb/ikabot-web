@@ -7,7 +7,10 @@ from django.test import TestCase
 from django.urls import reverse
 
 from apps.accounts.models import Account, GameAccount, Node
+from apps.game.models import AccountSnapshot
+from apps.jobs.models import Job
 from .models import Preset, PresetAction, PresetGameAccount
+from .services import execute_preset
 
 
 class Controls(HTMLParser):
@@ -92,3 +95,82 @@ class PresetConfigurationTests(TestCase):
         self.assertContains(response, 'Selecione ao menos uma cidade')
         self.action.refresh_from_db()
         self.assertEqual(self.action.per_account_json, '{}')
+
+
+class ExecutePresetFanoutTests(TestCase):
+    """N-78 follow-up: execute_preset() must fan a multi-city + multi-donation_type
+    preset action out into one job per (city, donation_type) pair — donate_loop
+    (ac=902/1006) requires a singular city_id and a singular donation_type per job,
+    it does not accept the plural "cities"/"donation_type" lists the preset form
+    saves. Dumping the lists into one job is exactly what produced 10 "city_id nao
+    informado" errors when a real 10-account preset was executed."""
+
+    def setUp(self):
+        node = Node.objects.create(name='test-node')
+        account = Account.objects.create(node=node, label='test', email='test@example.com')
+        self.ga = GameAccount.objects.create(account=account, lobby_account_id=1,
+            server_id='s1-br', server_language='br', server_number=1, name='Test')
+        AccountSnapshot.objects.create(account=account, game_account=self.ga, cities=[
+            {'id': '11', 'name': 'Alpha'}, {'id': '22', 'name': 'Beta'}, {'id': '33', 'name': 'Gamma'},
+        ])
+        self.preset = Preset.objects.create(name='Donations')
+        PresetGameAccount.objects.create(preset=self.preset, game_account=self.ga)
+
+    def _donation_jobs(self):
+        return Job.objects.filter(game_account=self.ga, action_code=1006).order_by('created_at')
+
+    def test_all_cities_mode_fans_out_by_city_and_donation_type(self):
+        PresetAction.objects.create(
+            preset=self.preset, order=1, action_code=1006, action_name='Donation loop',
+            inputs_json=json.dumps({
+                'donation_type': ['wood', 'tradegood'], 'donation_method': '2',
+                'method_value': 50, 'interval_minutes': 1440, 'random_wait_minutes': 60,
+                'post_production_mode': 'preserve',
+            }),
+            per_account_json=json.dumps({'__mode__': 'all'}),
+        )
+        jobs_created, errors = execute_preset(self.preset)
+        self.assertEqual(errors, [])
+        self.assertEqual(jobs_created, 6)  # 3 cities x 2 donation types
+
+        jobs = self._donation_jobs()
+        self.assertEqual(jobs.count(), 6)
+        seen = set()
+        for job in jobs:
+            inputs = json.loads(job.inputs_json)
+            self.assertIn(inputs['city_id'], {'11', '22', '33'})
+            self.assertIn(inputs['donation_type'], {'wood', 'tradegood'})
+            self.assertNotIn('cities', inputs)  # plural key must not leak into the job
+            self.assertEqual(inputs['method_value'], 50)
+            seen.add((inputs['city_id'], inputs['donation_type']))
+        self.assertEqual(len(seen), 6)  # every (city, donation_type) pair is unique
+
+    def test_per_account_explicit_cities_fan_out_too(self):
+        PresetAction.objects.create(
+            preset=self.preset, order=1, action_code=1006, action_name='Donation loop',
+            inputs_json=json.dumps({
+                'donation_type': ['wood'], 'donation_method': '2', 'method_value': 50,
+                'interval_minutes': 1440, 'random_wait_minutes': 60, 'post_production_mode': 'preserve',
+            }),
+            per_account_json=json.dumps({'__mode__': 'per_account', str(self.ga.pk): {'cities': ['11', '22']}}),
+        )
+        jobs_created, errors = execute_preset(self.preset)
+        self.assertEqual(errors, [])
+        self.assertEqual(jobs_created, 2)
+        city_ids = sorted(json.loads(j.inputs_json)['city_id'] for j in self._donation_jobs())
+        self.assertEqual(city_ids, ['11', '22'])
+
+    def test_action_without_fanout_keeps_the_full_city_list_in_one_job(self):
+        """ac=27 (adjust scientists) plans across all selected cities in a single
+        job by design — must not be fanned out like donate_loop."""
+        PresetAction.objects.create(
+            preset=self.preset, order=1, action_code=27, action_name='Adjust scientists',
+            inputs_json=json.dumps({'target_mode': 'absolute', 'target_value': 5, 'reserve_citizens': 0}),
+            per_account_json=json.dumps({'__mode__': 'all'}),
+        )
+        jobs_created, errors = execute_preset(self.preset)
+        self.assertEqual(errors, [])
+        self.assertEqual(jobs_created, 1)
+        job = Job.objects.get(game_account=self.ga, action_code=27)
+        inputs = json.loads(job.inputs_json)
+        self.assertEqual(sorted(inputs['cities']), ['11', '22', '33'])

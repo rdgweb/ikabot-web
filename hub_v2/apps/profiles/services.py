@@ -115,12 +115,23 @@ def execute_preset(preset: Preset, created_by=None) -> tuple[int, list[str]]:
             multi_field = next((f for f in city_fields if f.get("multiple")), None)
             single_field = next((f for f in city_fields if not f.get("multiple")), None)
 
-            fanout_city_ids: list[str] | None = None
+            # Some runners plan across all selected cities in one job (transport
+            # distribution, academy scientists, island/world monitors) — everyone
+            # else (e.g. donate_loop) processes exactly one city per job and
+            # expects a singular "city_id" input, so the multi-select list must be
+            # fanned out into one job per city (mirrors JobSubmitView._create_jobs).
+            NO_FANOUT_ACTION_CODES = {3, 27, 601, 602}
+            fans_out = bool(multi_field) and int(pa.action_code) not in NO_FANOUT_ACTION_CODES
+
+            fanout_city_ids: list[str] = []
 
             if city_mode == "all":
                 city_ids = _resolve_all_cities(ga) or []
                 if multi_field:
-                    inputs[multi_field["key"]] = city_ids
+                    if fans_out:
+                        fanout_city_ids = city_ids
+                    else:
+                        inputs[multi_field["key"]] = city_ids
                 elif single_field and city_ids:
                     auto_id = _resolve_auto_city(ga, pa.action_code) or city_ids[0]
                     inputs[single_field["key"]] = auto_id
@@ -130,17 +141,31 @@ def execute_preset(preset: Preset, created_by=None) -> tuple[int, list[str]]:
                     if single_field:
                         inputs[single_field["key"]] = city_id
                     if multi_field:
-                        inputs[multi_field["key"]] = [city_id]
+                        if fans_out:
+                            fanout_city_ids = [city_id]
+                        else:
+                            inputs[multi_field["key"]] = [city_id]
                     inputs.setdefault("city_id", city_id)
                     inputs.setdefault("city", city_id)
             elif city_mode == "per_account" and ga_override:
                 for k, v in ga_override.items():
-                    if v == "__all__":
-                        inputs[k] = _resolve_all_cities(ga) or []
+                    selected = _resolve_all_cities(ga) or [] if v == "__all__" else v
+                    if fans_out and multi_field and k == multi_field["key"]:
+                        fanout_city_ids = selected if isinstance(selected, list) else [selected]
                     else:
-                        inputs[k] = v
+                        inputs[k] = selected
+
+            if fanout_city_ids and multi_field:
+                inputs.pop(multi_field["key"], None)
 
             inputs["game_account"] = str(ga.pk)
+
+            # donate_loop (ac=902/1006) takes a single donation_type string per
+            # job, not the multi-select list saved on the preset action — fan out
+            # one job per donation type too (mirrors JobSubmitView._create_jobs_for_city).
+            donation_types = inputs.pop("donation_type", None)
+            if donation_types and not isinstance(donation_types, list):
+                donation_types = [donation_types]
 
             def _spawn(job_inputs: dict) -> None:
                 nonlocal jobs_created
@@ -163,12 +188,19 @@ def execute_preset(preset: Preset, created_by=None) -> tuple[int, list[str]]:
                     logger.warning(msg)
                     errors.append(msg)
 
+            def _spawn_with_donation_types(job_inputs: dict) -> None:
+                if donation_types:
+                    for donation_type in donation_types:
+                        _spawn({**job_inputs, "donation_type": donation_type})
+                else:
+                    _spawn(job_inputs)
+
             if fanout_city_ids:
                 for city_id in fanout_city_ids:
                     per_city_inputs = dict(inputs)
-                    per_city_inputs[single_field["key"]] = city_id
-                    _spawn(per_city_inputs)
+                    per_city_inputs["city_id"] = str(city_id)
+                    _spawn_with_donation_types(per_city_inputs)
             else:
-                _spawn(inputs)
+                _spawn_with_donation_types(inputs)
 
     return jobs_created, errors
