@@ -8,6 +8,7 @@ from typing import Any
 
 from ..constants import ActionID
 from ..exceptions import ActionError
+from ..parsers.numbers import parse_game_int
 from ..unit_stats import UNIT_STATS
 from .base_action import BaseAction
 
@@ -1453,13 +1454,16 @@ class FetchCombatDetailedReportAction(BaseAction):
             round_atk: dict[str, int] = {}
             round_def: dict[str, int] = {}
             for slot_m in re.finditer(
+                # N-41: losses use "." as the thousands separator on pt-BR servers
+                # (e.g. "1.234") — a comma-only class here made the whole match (and
+                # so the loss) silently disappear from the report on those servers.
                 r'id="slot(\d+)_\d+_\d+"\s+class="slot[^"]*\bs(\d+)\b[^"]*"'
-                r'.*?<div class="number center">\s*([\d,]+)\s*\(-([\d,]+)\)',
+                r'.*?<div class="number center">\s*([\d.,]+)\s*\(-([\d.,]+)\)',
                 html, re.DOTALL
             ):
                 side   = slot_m.group(1)
                 uid    = slot_m.group(2)
-                lost   = int(slot_m.group(4).replace(",", ""))
+                lost   = parse_game_int(slot_m.group(4))
                 if lost > 0:
                     target = attacker_losses if side == ATTACKER_FIELD else defender_losses
                     target[uid] = target.get(uid, 0) + lost

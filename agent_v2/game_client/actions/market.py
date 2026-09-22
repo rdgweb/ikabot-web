@@ -47,6 +47,7 @@ from services.resource_transport import (
 )
 from ..constants import ActionID, GAME_AJAX_HEADERS
 from ..exceptions import ActionError
+from ..parsers.numbers import parse_game_int
 from .base_action import BaseAction
 
 logger = logging.getLogger(__name__)
@@ -624,24 +625,22 @@ class GetOffersAction(BaseAction):
         offers: list[dict[str, Any]] = []
         # Match each offer block: amount, price, then the href
         # takeOffer href: destinationCityId=SELLER_CITY, cityId=BUYER_CITY
+        # N-41: the char class used to omit "," — on en-locale servers (comma as
+        # thousands separator, e.g. "1,234") the amount/price simply failed to parse
+        # and the offer was dropped. parse_game_int already handles both separators
+        # correctly regardless of which one a given server uses.
         pattern = re.compile(
-            r'class="[^"]*amount[^"]*"[^>]*>\s*([\d\s.]+)\s*<'
-            r'|class="[^"]*price[^"]*"[^>]*>\s*([\d\s.]+)\s*<'
+            r'class="[^"]*amount[^"]*"[^>]*>\s*([\d\s.,]+)\s*<'
+            r'|class="[^"]*price[^"]*"[^>]*>\s*([\d\s.,]+)\s*<'
             r'|href="\?view=takeOffer[^"]*&destinationCityId=(\d+)[^"]*&type=(\d+)&resource=(\w+)"',
             re.IGNORECASE,
         )
         amount = price = None
         for m in pattern.finditer(html):
             if m.group(1) is not None:
-                try:
-                    amount = int(m.group(1).replace(" ", "").replace(".", ""))
-                except ValueError:
-                    amount = None
+                amount = parse_game_int(m.group(1), default=None)
             elif m.group(2) is not None:
-                try:
-                    price = int(m.group(2).replace(" ", "").replace(".", ""))
-                except ValueError:
-                    price = None
+                price = parse_game_int(m.group(2), default=None)
             elif m.group(5) == resource_str and m.group(3):
                 if amount is not None and price is not None:
                     offers.append({

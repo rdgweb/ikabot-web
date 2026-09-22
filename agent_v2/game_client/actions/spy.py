@@ -73,6 +73,7 @@ from urllib.parse import urlencode
 
 from ..constants import GAME_AJAX_HEADERS
 from ..exceptions import ActionError
+from ..parsers.numbers import parse_game_int
 from .base_action import BaseAction
 
 logger = logging.getLogger(__name__)
@@ -1731,8 +1732,11 @@ class SpyReportsAction(BaseAction):
             if m5:
                 agent_text = m5.group(1).strip()
                 parts = agent_text.split("/")
-                report["agents_lost"] = int(parts[0].strip().replace(".", "")) if len(parts) > 0 and parts[0].strip().isdigit() else 0
-                report["agents_sent"] = int(parts[1].strip().replace(".", "")) if len(parts) > 1 and parts[1].strip().isdigit() else 0
+                # N-41: the old .isdigit() check ran on the string BEFORE stripping
+                # thousand separators, so any count of 1000+ (with a "." or ","
+                # separator, in any locale) failed the check and silently became 0.
+                report["agents_lost"] = parse_game_int(parts[0]) if len(parts) > 0 else 0
+                report["agents_sent"] = parse_game_int(parts[1]) if len(parts) > 1 else 0
 
             # Date
             m6 = re.search(r'class="date[^"]*"[^>]*>([^<]+)', header_html)
