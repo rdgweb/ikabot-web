@@ -31,53 +31,11 @@ import requests
 
 from core.runner_registry import register_runner
 from game_client.exceptions import LoginError
+from game_client.parsers.numbers import parse_game_int as _safe_num_like
 from services.wine_tavern import parse_townhall_state
 from runners.base import BaseRunner, RunnerResult
 
 logger = logging.getLogger(__name__)
-
-
-def _safe_num_like(val, default=0):
-    """Parse numeric values coming from Ikariam JSON/HTML.
-
-    Handles plain ints/floats and localized strings such as `1.139`, `1,139`,
-    `1.139,0` and escaped HTML fragments.
-    """
-    if val is None:
-        return default
-    if isinstance(val, (int, float)):
-        return int(float(val))
-
-    raw = str(val).strip()
-    if not raw:
-        return default
-
-    # Keep only the first numeric token if extra characters are present.
-    match = re.search(r'-?[\d.,]+', raw)
-    if not match:
-        return default
-    token = match.group(0)
-
-    if "," in token and "." in token:
-        if token.rfind(",") > token.rfind("."):
-            token = token.replace(".", "").replace(",", ".")
-        else:
-            token = token.replace(",", "")
-    elif "," in token:
-        parts = token.split(",")
-        if len(parts[-1]) == 3 and all(p.isdigit() for p in parts):
-            token = "".join(parts)
-        else:
-            token = token.replace(",", ".")
-    elif "." in token:
-        parts = token.split(".")
-        if len(parts[-1]) == 3 and all(p.isdigit() for p in parts):
-            token = "".join(parts)
-
-    try:
-        return int(float(token))
-    except (ValueError, TypeError):
-        return default
 
 
 def _write_wine_debug(city_id: int, city_name: str, html: str) -> None:

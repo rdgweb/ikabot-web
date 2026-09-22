@@ -5,35 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from game_client.parsers.html_parser import GamePageParser
-
-def _num(raw: Any, default: int = 0) -> int:
-    if raw is None:
-        return default
-    if isinstance(raw, (int, float)):
-        return int(float(raw))
-    match = re.search(r"-?[\d.,]+", str(raw))
-    if not match:
-        return default
-    token = match.group(0)
-    if "," in token and "." in token:
-        if token.rfind(",") > token.rfind("."):
-            token = token.replace(".", "").replace(",", ".")
-        else:
-            token = token.replace(",", "")
-    elif "." in token:
-        parts = token.split(".")
-        if len(parts[-1]) == 3 and all(part.isdigit() for part in parts):
-            token = "".join(parts)
-    elif "," in token:
-        parts = token.split(",")
-        if len(parts[-1]) == 3 and all(part.isdigit() for part in parts):
-            token = "".join(parts)
-        else:
-            token = token.replace(",", ".")
-    try:
-        return int(float(token))
-    except Exception:
-        return default
+from game_client.parsers.numbers import parse_game_int as _num
 
 
 def find_tavern_position(city: dict[str, Any]) -> int:

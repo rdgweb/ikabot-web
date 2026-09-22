@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from game_client.parsers.html_parser import GamePageParser
+from game_client.parsers.numbers import parse_game_int as _num
 
 
 RESOURCE_ORDER = ("wood", "wine", "marble", "crystal", "sulfur")
@@ -111,36 +112,6 @@ TRANSPORT_LOAD_STEP_BY_PERCENT = {
     40: 2,
     20: 1,
 }
-
-
-def _num(raw: Any, default: int = 0) -> int:
-    if raw is None:
-        return default
-    if isinstance(raw, (int, float)):
-        return int(float(raw))
-    token_match = re.search(r"-?[\d.,]+", str(raw))
-    if not token_match:
-        return default
-    token = token_match.group(0)
-    if "," in token and "." in token:
-        if token.rfind(",") > token.rfind("."):
-            token = token.replace(".", "").replace(",", ".")
-        else:
-            token = token.replace(",", "")
-    elif "." in token:
-        parts = token.split(".")
-        if len(parts[-1]) == 3 and all(part.isdigit() for part in parts):
-            token = "".join(parts)
-    elif "," in token:
-        parts = token.split(",")
-        if len(parts[-1]) == 3 and all(part.isdigit() for part in parts):
-            token = "".join(parts)
-        else:
-            token = token.replace(",", ".")
-    try:
-        return int(float(token))
-    except Exception:
-        return default
 
 
 def _extract_current_city_id(html: str) -> str | None:
