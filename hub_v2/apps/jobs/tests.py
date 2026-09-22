@@ -788,3 +788,36 @@ class ConstructionReservationLifecycleTests(TestCase):
         self.assertEqual(self.reservation.status, "cancelled")
         self.workflow.refresh_from_db()
         self.assertEqual(self.workflow.status, "cancelled")
+
+
+class JobFormNormalFlowNestingTests(TestCase):
+    """Regression guard for the preset-form fix in jobs/forms/_generic_fields.html
+    (the trailing </div> is now guarded by the same `not no_footer` as the
+    </form> line above it, instead of always rendering). In this normal
+    (non-preset) modal flow no_footer is unset/falsy, so both lines must still
+    render exactly as before — footer and submit button stay inside the form."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="form-nesting-user", email="form-nesting@example.com", password="secret123",
+        )
+        self.node = Node.objects.create(name="node-form-nesting")
+        self.account = Account.objects.create(
+            node=self.node, label="Conta Nesting", email="nesting@example.com", password_enc="x",
+        )
+        self.ga = GameAccount.objects.create(
+            account=self.account, lobby_account_id=1, server_id="s1-br",
+            server_language="br", server_number=1, name="Test",
+        )
+
+    def test_submit_button_stays_inside_the_form_for_ac3(self):
+        self.client.force_login(self.user)
+        with patch("apps.jobs.views.create._get_cities", return_value=[{"id": "11", "name": "Alpha", "buildings": []}]):
+            response = self.client.get(reverse("jobs:job-form"), {"ga": str(self.ga.pk), "action": "3"})
+
+        html = response.content.decode()
+        form_start = html.index("<form")
+        form_end = html.index("</form>", form_start)
+        submit_pos = html.index('<button type="submit"')
+
+        self.assertTrue(form_start < submit_pos < form_end)

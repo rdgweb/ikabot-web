@@ -174,3 +174,48 @@ class ExecutePresetFanoutTests(TestCase):
         job = Job.objects.get(game_account=self.ga, action_code=27)
         inputs = json.loads(job.inputs_json)
         self.assertEqual(sorted(inputs['cities']), ['11', '22', '33'])
+
+
+class PresetConfigureActionFormNestingTests(TestCase):
+    """The unconditional </div> at the end of jobs/forms/_generic_fields.html
+    (meant to close a wrapper only present in the non-preset job-creation
+    modal) used to render even when no_footer=True. Real browsers implicitly
+    closed the still-open preset <form> while adopting it, kicking the
+    Cidades section and the Salvar button entirely out of the form — no
+    request fired on submit/Enter, no console error, no validation tooltip.
+    It only "worked" for actions whose own field divs happened to already be
+    unbalanced in a way that absorbed the stray tag first; ac=3 (many fields,
+    everything cleanly balanced) reproduces it every time."""
+
+    def setUp(self):
+        self.client.force_login(get_user_model().objects.create_user(username='nesting-test'))
+        node = Node.objects.create(name='test-node')
+        account = Account.objects.create(node=node, label='test', email='nesting@example.com')
+        self.ga = GameAccount.objects.create(account=account, lobby_account_id=1,
+            server_id='s1-br', server_language='br', server_number=1, name='Test')
+        self.preset = Preset.objects.create(name='Distribute')
+        PresetGameAccount.objects.create(preset=self.preset, game_account=self.ga)
+        PresetAction.objects.create(preset=self.preset, order=1, action_code=3, action_name='Distribuir Recursos')
+        self.url = reverse('profiles:preset-configure-action', args=[self.preset.pk, 1])
+        self.cities = patch('apps.profiles.views._get_cities', return_value=[
+            {'id': '11', 'name': 'Alpha', 'buildings': []}])
+        self.cities.start()
+        self.addCleanup(self.cities.stop)
+
+    def test_salvar_button_and_cidades_section_are_inside_the_form(self):
+        html = self.client.get(self.url).content.decode()
+
+        form_start = html.index('<form method="post">')
+        form_end = html.index('</form>', form_start)
+        salvar_pos = html.index('Salvar configuracao')
+        cidades_pos = html.index('Cidades</span>')
+
+        self.assertTrue(
+            form_start < cidades_pos < form_end,
+            "the Cidades section must be inside the preset <form>",
+        )
+        self.assertTrue(
+            form_start < salvar_pos < form_end,
+            "the Salvar button must be inside the preset <form> or clicking it "
+            "(or pressing Enter in any field) submits nothing at all",
+        )
