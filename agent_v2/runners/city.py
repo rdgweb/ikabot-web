@@ -2556,6 +2556,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 reserved_by_city=reserved_by_city or {},
                 game_account_id=str(job.get("game_account_id") or ""),
                 freighter_threshold=max(0, _to_int(inputs.get("freighter_threshold", 30000), 30000)),
+                transport_round_to=max(0, _to_int(inputs.get("transport_round_to", 100), 100)),
             )
             if transported:
                 self.log(
@@ -2839,6 +2840,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         )
         return TRANSPORT_RECHECK_SECONDS, {"last_market_order_requested_at": int(time.time())}, None
 
+    MAX_TRANSPORT_DONORS = 3
+
     def _spawn_transport_cover(
         self,
         *,
@@ -2851,6 +2854,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         reserved_by_city: dict[str, dict[str, dict[str, int]]] | None = None,
         game_account_id: str = "",
         freighter_threshold: int = 30000,
+        transport_round_to: int = 100,
     ) -> bool:
         reserved_by_city = reserved_by_city or {}
         next_rows = []
@@ -2882,18 +2886,142 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         if not any(amount > 0 for amount in transport_need.values()):
             return False
 
-        donor = self._pick_donor_city(
+        # N-45: pick a primary donor exactly as before — a single donor that fully
+        # (or mostly) covers the need behaves identically to before this note. Only
+        # when it DOESN'T fully cover do we fall back to additional donor cities
+        # (up to MAX_TRANSPORT_DONORS total) for the remainder, instead of giving up
+        # on whatever the single best donor couldn't supply.
+        target_id = str(target_city.get("id"))
+        remaining_need = dict(transport_need)
+        used_donor_ids: set[str] = set()
+        contributions: list[tuple[dict[str, Any], dict[str, int]]] = []
+
+        primary_donor = self._pick_donor_city(
             cities=cities,
-            target_city_id=str(target_city.get("id")),
-            needed=transport_need,
+            target_city_id=target_id,
+            needed=remaining_need,
             reserved_by_city=reserved_by_city,
         )
-        if donor is None:
+        if primary_donor is not None:
+            taken = self._take_donor_contribution(
+                primary_donor, remaining_need, reserved_by_city, transport_round_to,
+            )
+            if taken:
+                contributions.append((primary_donor, taken))
+                used_donor_ids.add(str(primary_donor.get("id") or ""))
+                for key, amount in taken.items():
+                    remaining_need[key] = max(0, remaining_need[key] - amount)
+
+        if any(amount > 0 for amount in remaining_need.values()) and len(contributions) < self.MAX_TRANSPORT_DONORS:
+            fallback_candidates = sorted(
+                (
+                    city for city in cities
+                    if str(city.get("id") or "") not in used_donor_ids
+                    and str(city.get("id") or "") != target_id
+                ),
+                key=lambda city: self._score_donor_candidate(city, remaining_need, reserved_by_city),
+                reverse=True,
+            )
+            for candidate in fallback_candidates:
+                if len(contributions) >= self.MAX_TRANSPORT_DONORS:
+                    break
+                if not any(amount > 0 for amount in remaining_need.values()):
+                    break
+                taken = self._take_donor_contribution(
+                    candidate, remaining_need, reserved_by_city, transport_round_to,
+                )
+                if not taken:
+                    continue
+                contributions.append((candidate, taken))
+                used_donor_ids.add(str(candidate.get("id") or ""))
+                for key, amount in taken.items():
+                    remaining_need[key] = max(0, remaining_need[key] - amount)
+
+        if not contributions:
             self.log(job_id, "warn", f"Nenhuma cidade doadora com sobra util para {pending['city_name']}")
             return False
 
+        covered_levels = max(1, len(next_rows))
+        multi_donor = len(contributions) > 1
+        for donor, amounts in contributions:
+            self._dispatch_transport_shipment(
+                job_id=job_id,
+                donor=donor,
+                target_city=target_city,
+                amounts=amounts,
+                support_by_city=support_by_city,
+                game_account_id=game_account_id,
+                freighter_threshold=freighter_threshold,
+                covered_levels=covered_levels,
+                multi_donor=multi_donor,
+            )
+        return True
+
+    @staticmethod
+    def _score_donor_candidate(
+        city: dict[str, Any],
+        needed: dict[str, int],
+        reserved_by_city: dict[str, dict[str, dict[str, int]]],
+    ) -> int:
+        """Combined available surplus (after each resource's own reserve guard)
+        across every resource still needed — shared by _pick_donor_city and the
+        N-45 multi-donor fallback so both rank candidates the same way."""
+        stock = _city_stock(city)
+        city_reserved = reserved_by_city.get(str(city.get("id") or ""), {})
+        score = 0
+        for key, amount in needed.items():
+            if amount <= 0:
+                continue
+            reserved_local = max(0, int((city_reserved.get(key) or {}).get("reserved_local", 0) or 0))
+            score += max(0, stock.get(key, 0) - reserved_local - DONOR_RESERVE_DEFAULT)
+        return score
+
+    @staticmethod
+    def _take_donor_contribution(
+        donor: dict[str, Any],
+        remaining_need: dict[str, int],
+        reserved_by_city: dict[str, dict[str, dict[str, int]]],
+        round_to: int,
+    ) -> dict[str, int]:
+        """How much of ``remaining_need`` this donor can spare, per resource.
+
+        N-46: the amount is rounded UP to the nearest ``round_to`` (0 disables)
+        so shipments don't look like an exact-need bot transfer — but never past
+        what the donor can actually spare (its real surplus always wins).
+        """
         donor_stock = _city_stock(donor)
         donor_reserved = reserved_by_city.get(str(donor.get("id") or ""), {})
+        taken: dict[str, int] = {}
+        for key in RESOURCE_KEYS:
+            need = remaining_need.get(key, 0)
+            if need <= 0:
+                continue
+            reserved_local = max(0, int((donor_reserved.get(key) or {}).get("reserved_local", 0) or 0))
+            available = max(0, donor_stock.get(key, 0) - reserved_local - DONOR_RESERVE_DEFAULT)
+            if available <= 0:
+                continue
+            amount = min(need, available)
+            if round_to > 0:
+                rounded = ((amount + round_to - 1) // round_to) * round_to
+                amount = min(rounded, available)
+            if amount > 0:
+                taken[key] = int(amount)
+        return taken
+
+    def _dispatch_transport_shipment(
+        self,
+        *,
+        job_id: str,
+        donor: dict[str, Any],
+        target_city: dict[str, Any],
+        amounts: dict[str, int],
+        support_by_city: dict[str, dict[str, int]],
+        game_account_id: str,
+        freighter_threshold: int,
+        covered_levels: int,
+        multi_donor: bool,
+    ) -> None:
+        """Spawn the ac=2 job(s) for one donor's share of a transport (N-45/N-46)."""
         payload: dict[str, Any] = {
             "from_city": str(donor.get("id")),
             "from_city_name": _city_name(donor),
@@ -2903,24 +3031,15 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             "confirm_arrival": True,
             "confirmation_margin_minutes": 2,
         }
-        for key in RESOURCE_KEYS:
-            input_key = SNAPSHOT_RESOURCE_TO_INPUT[key]
-            reserved_local = max(0, int((donor_reserved.get(key) or {}).get("reserved_local", 0) or 0))
-            available = max(0, donor_stock.get(key, 0) - reserved_local - DONOR_RESERVE_DEFAULT)
-            amount = min(transport_need[key], available)
+        for key, amount in amounts.items():
             if amount > 0:
-                payload[input_key] = int(amount)
+                payload[SNAPSHOT_RESOURCE_TO_INPUT[key]] = int(amount)
 
-        if not any(_to_int(payload.get(field), 0) > 0 for field in ("wood", "wine", "marble", "crystal", "sulfur")):
-            return False
-
-        # Split entre cargueiros e mercantes baseado em cargo + freighter threshold
         cargo_by_resource = {
             field: int(_to_int(payload.get(field), 0))
             for field in ("wood", "wine", "marble", "crystal", "sulfur")
             if _to_int(payload.get(field), 0) > 0
         }
-        # Free freighters do snapshot do GA
         snap = self._get_snapshot(job_id, str(game_account_id or "")) if game_account_id and hasattr(self, "_get_snapshot") else None
         base_snap = (snap or {}).get("base_snapshot") or {}
         free_freighters = int(base_snap.get("free_freighters") or 0)
@@ -2947,12 +3066,13 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 **chunk,
             }
             self.hub.spawn_job(job_id, action_code=2, inputs=chunk_payload)
-        covered_levels = max(1, len(next_rows))
-        cover_label = (
-            "Remessa criada para cobrir o proximo nivel: "
-            if covered_levels == 1
-            else f"Remessa criada para cobrir ate {covered_levels} niveis: "
-        )
+
+        if covered_levels == 1:
+            cover_label = "Remessa criada para cobrir o proximo nivel: "
+        else:
+            cover_label = f"Remessa criada para cobrir ate {covered_levels} niveis: "
+        if multi_donor:
+            cover_label = "[doador multiplo] " + cover_label
         self.log(
             job_id,
             "info",
@@ -2977,7 +3097,6 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 "sulfur": _to_int(payload.get("sulfur"), 0),
             },
         )
-        return True
 
     def _get_open_construction_support(self, job_id: str) -> dict[str, dict[str, int]]:
         support_by_city: dict[str, dict[str, int]] = {}
@@ -3019,14 +3138,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         for city in cities:
             if str(city.get("id")) == str(target_city_id):
                 continue
-            stock = _city_stock(city)
-            city_reserved = reserved_by_city.get(str(city.get("id") or ""), {})
-            score = 0
-            for key, amount in needed.items():
-                if amount <= 0:
-                    continue
-                reserved_local = max(0, int((city_reserved.get(key) or {}).get("reserved_local", 0) or 0))
-                score += max(0, stock.get(key, 0) - reserved_local - DONOR_RESERVE_DEFAULT)
+            score = ConstructionPlanRunner._score_donor_candidate(city, needed, reserved_by_city)
             if score > best_score:
                 best_score = score
                 best_city = city

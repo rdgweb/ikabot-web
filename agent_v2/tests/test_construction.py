@@ -726,7 +726,9 @@ class ConstructionRunnerExecutionTests(unittest.TestCase):
         self.assertEqual(len(spawned), 1)
         self.assertEqual(spawned[0]["action_code"], 2)
         self.assertEqual(spawned[0]["inputs"]["to_city"], "39267")
-        self.assertEqual(spawned[0]["inputs"]["crystal"], 54)
+        # N-46: transport_round_to defaults to 100, so the exact 54 need is rounded
+        # up (still well within the donor's real surplus of 2000 after the reserve).
+        self.assertEqual(spawned[0]["inputs"]["crystal"], 100)
 
     def test_execute_promotes_next_step_when_live_missing_has_no_eta(self):
         snapshot = {
