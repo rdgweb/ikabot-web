@@ -1,53 +1,47 @@
-<!-- Activity feed — recent jobs table partial for HTMX refresh -->
+<!-- N-64: substitui a lista crua de jobs recentes por workflows com problema
+     (o que realmente precisa de atencao) + a distribuicao geral de status. -->
 {% load hub_tags %}
 
 <div class="bg-paper rounded-lg shadow-sm" id="activity-feed">
-  <div class="px-4 py-3 border-b border-line">
+  <div class="px-4 py-3 border-b border-line flex items-center justify-between">
     <h2 class="text-base font-semibold text-ink">
-      <i class="bi bi-activity text-sea"></i> Atividade Recente
+      <i class="bi bi-exclamation-octagon text-[var(--ik-bad)]"></i> Workflows com Problema
     </h2>
+    <a href="{% url 'jobs:job-list' %}?status=problem" class="text-xs link-sea">Ver todos</a>
   </div>
 
-  {% if recent_jobs %}
-  <div class="overflow-x-auto">
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Status</th>
-          <th>Conta</th>
-          <th>A&ccedil;&atilde;o</th>
-          <th>N&oacute;</th>
-          <th>Criado em</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for job in recent_jobs %}
-        <tr class="hover:bg-sand cursor-pointer"
-            onclick="window.location='{% url 'jobs:job-detail' job.pk %}'">
-          <td>
-            <span class="badge {{ job.status|status_badge_class }}">
-              {{ job.get_status_display }}
-            </span>
-          </td>
-          <td class="text-sm text-ink">
-            {% if job.game_account %}
-              {{ job.game_account.name|default:job.game_account.server_id }}
-            {% else %}
-              {{ job.account.label }}
-            {% endif %}
-          </td>
-          <td class="text-sm text-muted">{{ job.action_code|action_name }}</td>
-          <td class="text-sm text-muted">{{ job.node.name }}</td>
-          <td class="text-sm text-muted">{{ job.created_at|localtime_format }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+  {% if problem_workflows %}
+  <ul class="divide-y divide-line">
+    {% for wf in problem_workflows %}
+    <li class="px-4 py-3 hover:bg-sand cursor-pointer" onclick="window.location='{% url 'jobs:workflow-detail' wf.pk %}'">
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="badge {{ wf.status|status_badge_class }}">{{ wf.get_status_display }}</span>
+            <span class="text-sm font-medium text-ink truncate">{{ wf.workflow_type }}</span>
+          </div>
+          <p class="text-xs text-muted mt-1 truncate">
+            {% if wf.game_account %}{{ wf.game_account.name|default:wf.game_account.server_id }}{% else %}{{ wf.account.label }}{% endif %}
+            · {{ wf.node.name }}
+          </p>
+          {% if wf.last_error_summary %}
+          <p class="text-xs text-[var(--ik-bad)] mt-1 truncate">{{ wf.last_error_summary }}</p>
+          {% endif %}
+        </div>
+        <span class="text-xs text-muted shrink-0">{{ wf.last_error_at|localtime_format }}</span>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
   {% else %}
-  <div class="text-center py-10">
-    <i class="bi bi-inbox text-3xl text-muted"></i>
-    <p class="mt-2 text-sm text-muted">Nenhum job registrado.</p>
+  <div class="text-center py-8">
+    <i class="bi bi-check-circle text-3xl text-[var(--ik-good)]"></i>
+    <p class="mt-2 text-sm text-muted">Nenhum workflow com problema agora.</p>
   </div>
   {% endif %}
+
+  <div class="px-4 py-3 border-t border-line">
+    <p class="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Distribuicao de status</p>
+    {% include "dashboard/partials/_donut.html" with chart=workflow_chart empty_label="Nenhum workflow ainda." %}
+  </div>
 </div>

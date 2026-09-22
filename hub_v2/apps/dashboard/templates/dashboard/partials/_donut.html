@@ -1,0 +1,35 @@
+{% comment %}
+Pure-SVG donut chart — no JS/chart library needed.
+Usage: {% include "dashboard/partials/_donut.html" with chart=some_chart empty_label="Nada ainda" %}
+`chart` is the dict returned by apps.dashboard.views._donut_segments:
+  {"segments": [{"label", "count", "color", "percent", "dash_offset"}, ...], "total": int}
+{% endcomment %}
+{% if chart.total %}
+<div class="flex items-center gap-4">
+  <svg viewBox="0 0 42 42" class="shrink-0" style="width: 108px; height: 108px;">
+    <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="var(--ik-line)" stroke-width="5"></circle>
+    {% for seg in chart.segments %}
+    <circle cx="21" cy="21" r="15.915" fill="transparent"
+            stroke="{{ seg.color }}" stroke-width="5"
+            stroke-dasharray="{{ seg.percent }} {{ seg.remainder }}"
+            stroke-dashoffset="{{ seg.dash_offset }}"
+            transform="rotate(-90 21 21)"></circle>
+    {% endfor %}
+    <text x="21" y="23" text-anchor="middle" font-size="7" fill="var(--ik-ink, #2b2416)" font-weight="600">{{ chart.total }}</text>
+  </svg>
+  <ul class="space-y-1 text-xs min-w-0">
+    {% for seg in chart.segments %}
+    <li class="flex items-center gap-2">
+      <span class="inline-block h-2.5 w-2.5 rounded-full shrink-0" style="background: {{ seg.color }};"></span>
+      <span class="text-muted truncate">{{ seg.label }}</span>
+      <span class="font-medium text-ink ml-auto">{{ seg.count }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% else %}
+<div class="text-center py-6">
+  <i class="bi bi-pie-chart text-2xl text-muted"></i>
+  <p class="mt-1 text-xs text-muted">{{ empty_label|default:"Sem dados ainda." }}</p>
+</div>
+{% endif %}

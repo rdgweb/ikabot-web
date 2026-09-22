@@ -1,0 +1,38 @@
+<!-- N-64: uso do bot — contas por mundo (dados locais) + saude da telemetria
+     publica e anonima (telemetry.rdgh.com.br). -->
+<div class="bg-paper rounded-lg shadow-sm" id="telemetry-panel">
+  <div class="px-4 py-3 border-b border-line">
+    <h2 class="text-base font-semibold text-ink">
+      <i class="bi bi-globe2 text-sea"></i> Telemetria &amp; Uso
+    </h2>
+  </div>
+
+  <div class="p-4">
+    <p class="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Contas por mundo</p>
+    {% include "dashboard/partials/_donut.html" with chart=accounts_by_world empty_label="Nenhuma conta com mundo definido." %}
+  </div>
+
+  <div class="px-4 pb-4 pt-2 border-t border-line">
+    <p class="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Rede de instalacoes (publico, anonimo)</p>
+    {% if telemetry %}
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <p class="text-xl font-bold text-ink">{{ telemetry.active_installations_7d }}</p>
+        <p class="text-xs text-muted">ativas (7d)</p>
+      </div>
+      <div>
+        <p class="text-xl font-bold text-ink">{{ telemetry.active_installations_30d }}</p>
+        <p class="text-xs text-muted">ativas (30d)</p>
+      </div>
+    </div>
+    <a href="https://telemetry.rdgh.com.br/transparencia" target="_blank" rel="noopener" class="text-xs link-sea mt-2 inline-block">
+      Ver pagina de transparencia <i class="bi bi-box-arrow-up-right"></i>
+    </a>
+    {% else %}
+    <div class="text-center py-4">
+      <i class="bi bi-wifi-off text-xl text-muted"></i>
+      <p class="mt-1 text-xs text-muted">Servico de telemetria indispon&iacute;vel no momento.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>

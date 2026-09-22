@@ -1,0 +1,37 @@
+<!-- N-64: fila de notas — o que esta autorizado/pendente e o que esta sendo
+     trabalhado agora. -->
+{% load hub_tags %}
+
+<div class="bg-paper rounded-lg shadow-sm" id="notes-queue">
+  <div class="px-4 py-3 border-b border-line flex items-center justify-between">
+    <h2 class="text-base font-semibold text-ink">
+      <i class="bi bi-journal-text text-sea"></i> Fila de Notas
+    </h2>
+    <a href="{% url 'notes:list' %}" class="text-xs link-sea">Ver todas</a>
+  </div>
+
+  <div class="p-4">
+    {% include "dashboard/partials/_donut.html" with chart=notes_chart empty_label="Nenhuma nota aberta." %}
+  </div>
+
+  {% if notes_doing_list %}
+  <div class="px-4 pb-4">
+    <p class="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Em andamento agora</p>
+    <ul class="space-y-2">
+      {% for note in notes_doing_list %}
+      <li>
+        <a href="{% url 'notes:detail' note.pk %}" class="block rounded-lg border border-line px-3 py-2 hover:bg-sand">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-sm text-ink truncate">N-{{ note.sequence }} &middot; {{ note.title }}</span>
+            <span class="badge badge-warning shrink-0">{{ note.get_priority_display }}</span>
+          </div>
+          {% if note.claimed_by_label %}
+          <p class="text-[11px] text-muted mt-0.5">{{ note.claimed_by_label }}</p>
+          {% endif %}
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
