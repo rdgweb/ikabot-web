@@ -10,6 +10,7 @@ from django.utils import timezone
 from apps.accounts.models import Account, GameAccount, Node
 
 from .models import ConstructionResourceReservation, Job, Workflow, WorkflowRun
+from .services.recovery import recover_stale_running_jobs
 from .services.workflows import create_job_with_workflow, ensure_workflow_for_job, reconcile_workflow_for_job
 from .views.create import JobSubmitView
 
@@ -206,6 +207,21 @@ class JobWorkflowViewTests(TestCase):
             timeout_sec=1800,
         )
 
+    def test_htmx_partial_swap_renders_workflow_table_with_selection_marker(self):
+        """N-63: this is the exact response an HTMX pagination/filter click swaps into
+        #table-content. It must render standalone (no base_list.html wrapper) and expose
+        data-filtered-count, which the persistent x-data root uses to keep the bulk
+        'select all filtered' count in sync after each swap."""
+        self.client.force_login(self.user)
+        ensure_workflow_for_job(self.root_finished)
+
+        response = self.client.get(reverse("jobs:job-list"), {"status": "finished"}, HTTP_HX_REQUEST="true")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "data-filtered-count=")
+        self.assertContains(response, "wf-bulk-check")
+        self.assertNotContains(response, "<html")  # standalone partial, not the full page
+
     def test_default_jobs_page_renders_operational_workflow_view(self):
         self.client.force_login(self.user)
         ensure_workflow_for_job(self.root_finished)
@@ -230,6 +246,35 @@ class JobWorkflowViewTests(TestCase):
         self.assertContains(response, str(active_workflow.pk)[:8], html=False)
         self.assertNotContains(response, str(error_workflow.pk)[:8], html=False)
 
+    def test_workflow_list_ignores_expired_running_lease_for_active_badge(self):
+        self.client.force_login(self.user)
+        workflow, run = ensure_workflow_for_job(self.active_child)
+        self.active_child.lease_expires_at = timezone.now() - timedelta(minutes=5)
+        self.active_child.save(update_fields=["lease_expires_at", "updated_at"])
+        scheduled = Job.objects.create(
+            account=self.account,
+            game_account=self.ga,
+            node=self.node,
+            action_code=1002,
+            status="scheduled",
+            scheduled_for=timezone.now() + timedelta(minutes=20),
+            inputs_json='{"city_name":"Corinto"}',
+            timeout_sec=1800,
+            root_job_id=self.root_finished.pk,
+            source_job_id=self.active_child.pk,
+            workflow=workflow,
+            workflow_run=run,
+        )
+        workflow.status = "waiting"
+        workflow.next_scheduled_for = scheduled.scheduled_for
+        workflow.save(update_fields=["status", "next_scheduled_for", "updated_at"])
+
+        response = self.client.get(reverse("jobs:job-list"))
+
+        self.assertEqual(response.status_code, 200)
+        row = next(row for row in response.context["workflow_rows"] if row["workflow"].pk == workflow.pk)
+        self.assertEqual(row["status"], "waiting")
+
     def test_technical_view_remains_available(self):
         self.client.force_login(self.user)
 
@@ -252,6 +297,110 @@ class JobWorkflowViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "workflow-runs")
         self.assertContains(response, "workflow-logs")
+
+
+class WorkflowBulkActionScopeTests(TestCase):
+    """N-63: 'select all filtered' must only ever affect workflows matching the
+    filters actually shown on screen, never every workflow in the system."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="bulk-ops-user", email="bulk-ops@example.com", password="secret123",
+        )
+        self.node = Node.objects.create(name="node-bulk")
+        self.account = Account.objects.create(
+            node=self.node, label="Conta Bulk", email="bulk@example.com", password_enc="x",
+        )
+        self.ga = GameAccount.objects.create(
+            account=self.account, lobby_account_id=9, server_id="s9-br",
+            server_language="br", server_number=9, name="Bulk",
+        )
+
+        def _workflow(status, category):
+            job = Job.objects.create(
+                account=self.account, game_account=self.ga, node=self.node,
+                action_code=1002, status=status, inputs_json="{}", timeout_sec=1800,
+            )
+            workflow, _ = ensure_workflow_for_job(job)
+            workflow.status = status
+            workflow.category = category
+            workflow.save(update_fields=["status", "category", "updated_at"])
+            return workflow
+
+        self.problem_construction = _workflow("problem", "construction")
+        self.finished_construction = _workflow("finished", "construction")
+        self.finished_military = _workflow("finished", "military")
+
+    def test_delete_all_with_status_filter_only_deletes_matching_workflows(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("jobs:workflow-bulk-delete"),
+            {"delete_all": "true", "querystring": "status=problem"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Workflow.objects.filter(pk=self.problem_construction.pk).exists())
+        self.assertTrue(Workflow.objects.filter(pk=self.finished_construction.pk).exists())
+        self.assertTrue(Workflow.objects.filter(pk=self.finished_military.pk).exists())
+
+    def test_delete_all_with_category_filter_only_deletes_matching_workflows(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("jobs:workflow-bulk-delete"),
+            {"delete_all": "true", "querystring": "category=military"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Workflow.objects.filter(pk=self.problem_construction.pk).exists())
+        self.assertTrue(Workflow.objects.filter(pk=self.finished_construction.pk).exists())
+        self.assertFalse(Workflow.objects.filter(pk=self.finished_military.pk).exists())
+
+    def test_delete_all_without_querystring_still_deletes_only_active_non_archived(self):
+        """No filter applied (blank querystring) must still mean 'every workflow shown
+        in the default (non-archived) view' — not literally every row in the table."""
+        self.finished_military.archived_at = timezone.now()
+        self.finished_military.save(update_fields=["archived_at"])
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse("jobs:workflow-bulk-delete"), {"delete_all": "true", "querystring": ""})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Workflow.objects.filter(pk=self.problem_construction.pk).exists())
+        self.assertFalse(Workflow.objects.filter(pk=self.finished_construction.pk).exists())
+        # Archived workflow was not part of the (default, non-archived) view — must survive.
+        self.assertTrue(Workflow.objects.filter(pk=self.finished_military.pk).exists())
+
+    def test_archive_all_with_status_filter_only_archives_matching_workflows(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("jobs:workflow-bulk-archive"),
+            {"delete_all": "true", "querystring": "status=finished&category=military"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.problem_construction.refresh_from_db()
+        self.finished_construction.refresh_from_db()
+        self.finished_military.refresh_from_db()
+        self.assertIsNone(self.problem_construction.archived_at)
+        self.assertIsNone(self.finished_construction.archived_at)
+        self.assertIsNotNone(self.finished_military.archived_at)
+
+    def test_explicit_selection_is_unaffected_by_current_filters(self):
+        """Explicitly checked workflow_ids must always be deleted regardless of any
+        filter — only 'select all filtered' is filter-scoped."""
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("jobs:workflow-bulk-delete"),
+            {"workflow_ids[]": [str(self.finished_military.pk)]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Workflow.objects.filter(pk=self.finished_military.pk).exists())
+        self.assertTrue(Workflow.objects.filter(pk=self.problem_construction.pk).exists())
 
 
 class WorkflowFoundationServiceTests(TestCase):
@@ -453,7 +602,7 @@ class AgentHeartbeatRecoveryTests(TestCase):
 
     @patch("apps.accounts.api.agent.recover_stale_scheduled_jobs")
     @patch("apps.accounts.api.agent.recover_stale_running_jobs")
-    def test_heartbeat_skips_recovery_while_node_is_online(self, running_mock, scheduled_mock):
+    def test_heartbeat_runs_recovery_even_while_node_is_online(self, running_mock, scheduled_mock):
         response = self.client.post(
             reverse("agent-accounts:heartbeat"),
             data={
@@ -466,8 +615,8 @@ class AgentHeartbeatRecoveryTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        running_mock.assert_not_called()
-        scheduled_mock.assert_not_called()
+        running_mock.assert_called_once()
+        scheduled_mock.assert_called_once()
 
     @patch("apps.accounts.api.agent.recover_stale_scheduled_jobs")
     @patch("apps.accounts.api.agent.recover_stale_running_jobs")
@@ -489,6 +638,56 @@ class AgentHeartbeatRecoveryTests(TestCase):
         self.assertEqual(response.status_code, 200)
         running_mock.assert_called_once()
         scheduled_mock.assert_called_once()
+
+    def test_recovery_cancels_orphan_when_active_followup_exists(self):
+        account = Account.objects.create(
+            node=self.node,
+            label="Conta Recovery",
+            email="recovery@example.com",
+            password_enc="x",
+        )
+        ga = GameAccount.objects.create(
+            account=account,
+            lobby_account_id=8,
+            server_id="s8-br",
+            server_language="br",
+            server_number=8,
+            name="Recovery",
+        )
+        orphan = create_job_with_workflow(
+            account=account,
+            game_account=ga,
+            node=self.node,
+            action_code=701,
+            inputs={"interval_minutes": 20},
+            status="running",
+        )
+        orphan.started_at = timezone.now() - timedelta(hours=2)
+        orphan.last_heartbeat_at = timezone.now() - timedelta(hours=2)
+        orphan.lease_expires_at = timezone.now() - timedelta(hours=1)
+        orphan.save(update_fields=["started_at", "last_heartbeat_at", "lease_expires_at", "updated_at"])
+        create_job_with_workflow(
+            account=account,
+            game_account=ga,
+            node=self.node,
+            action_code=701,
+            inputs={"interval_minutes": 20},
+            status="scheduled",
+            scheduled_for=timezone.now() + timedelta(minutes=20),
+            source_job=orphan,
+            start_new_run=True,
+        )
+
+        result = recover_stale_running_jobs(node=self.node)
+
+        orphan.refresh_from_db()
+        self.assertEqual(result["recovered"], 1)
+        self.assertEqual(result["requeued"], 0)
+        self.assertEqual(orphan.status, "cancelled")
+        self.assertEqual(
+            Job.objects.filter(workflow=orphan.workflow, action_code=701, status="scheduled").count(),
+            1,
+        )
 
 
 class ConstructionReservationLifecycleTests(TestCase):

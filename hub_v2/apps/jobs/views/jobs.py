@@ -10,7 +10,7 @@ from datetime import timedelta
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Count, F, Max, Window
 from django.db.models.functions import RowNumber
-from django.http import HttpResponse
+from django.http import HttpResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.db import models, transaction
 from django.utils import timezone
@@ -3630,6 +3630,18 @@ class WorkflowAutoArchiveView(LoginRequiredMixin, View):
         return resp
 
 
+def _filtered_workflow_queryset_from_querystring(querystring: str):
+    """Rebuild the exact queryset shown by WorkflowListView for a given querystring.
+
+    Used by the "select all filtered" bulk actions: the frontend sends the list
+    page's current querystring so "todos" means everything matching the filters
+    actually on screen, never every workflow in the system.
+    """
+    params = QueryDict(querystring or "")
+    qs = Workflow.objects.filter(archived_at__isnull=(params.get("archived") != "1"))
+    return WorkflowFilter(params, queryset=qs).qs
+
+
 class WorkflowBulkArchiveView(LoginRequiredMixin, View):
     def post(self, request):
         pks = request.POST.getlist("workflow_ids[]")
@@ -3640,7 +3652,7 @@ class WorkflowBulkArchiveView(LoginRequiredMixin, View):
             return resp
         now = timezone.now()
         if delete_all:
-            qs = Workflow.objects.filter(archived_at__isnull=True)
+            qs = _filtered_workflow_queryset_from_querystring(request.POST.get("querystring", "")).filter(archived_at__isnull=True)
         else:
             qs = Workflow.objects.filter(pk__in=pks, archived_at__isnull=True)
         count = qs.update(archived_at=now)
@@ -3663,7 +3675,7 @@ class WorkflowBulkDeleteView(LoginRequiredMixin, View):
         now = timezone.now()
 
         if delete_all:
-            qs = Workflow.objects.all()
+            qs = _filtered_workflow_queryset_from_querystring(request.POST.get("querystring", ""))
         else:
             qs = Workflow.objects.filter(pk__in=pks)
 

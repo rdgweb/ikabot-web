@@ -12,8 +12,11 @@
   </div>
 </div>
 
-<!-- Table content (HTMX target) -->
-<div id="table-content">
+<!-- Table content (HTMX target). table_content_attrs lets a page attach state (e.g.
+     Alpine x-data) that must survive HTMX swaps of the content inside — see
+     jobs/workflow_list.html for why (bulk-selection state otherwise resets on every
+     page/filter change, since hx-swap="innerHTML" replaces everything inside). -->
+<div id="table-content" {% block table_content_attrs %}{% endblock %}>
   {% block table_content %}{% endblock %}
 </div>
 {% endblock %}

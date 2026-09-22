@@ -130,6 +130,79 @@
 </div>
 {% endblock %}
 
+{% block table_content_attrs %}
+x-data="{
+  selected: [],
+  selectAllFiltered: false,
+  filteredCount: {{ paginator.count|default:0 }},
+  clearSelection() { this.selected = []; this.selectAllFiltered = false; },
+  selectCurrentPage() {
+    this.selectAllFiltered = false;
+    this.selected = Array.from(this.$el.querySelectorAll('.wf-bulk-check')).map(el => el.value);
+  },
+  syncFilteredCount() {
+    const marker = this.$el.querySelector('[data-filtered-count]');
+    if (!marker) return;
+    const n = parseInt(marker.dataset.filteredCount || '0', 10);
+    if (!Number.isNaN(n)) this.filteredCount = n;
+  },
+  confirmArchive() {
+    const self = this;
+    const count = this.selectAllFiltered ? this.filteredCount : this.selected.length;
+    window.dispatchEvent(new CustomEvent('confirm', {
+      detail: {
+        title: 'Arquivar workflows',
+        message: 'Arquivar ' + count + ' workflow(s)? Poderá restaurar depois.',
+        style: 'primary',
+        confirmLabel: 'Arquivar',
+        onConfirm: () => self._doArchive()
+      }
+    }));
+  },
+  _doArchive() {
+    const csrf = JSON.parse(document.body.getAttribute('hx-headers') || '{}')['X-CSRFToken'] || '';
+    const form = new FormData();
+    form.append('csrfmiddlewaretoken', csrf);
+    if (this.selectAllFiltered) { form.append('delete_all', 'true'); form.append('querystring', window.location.search); }
+    else { this.selected.forEach(pk => form.append('workflow_ids[]', pk)); }
+    const self = this;
+    fetch('/jobs/workflows/bulk-archive/', { method:'POST', body:form, headers:{'X-CSRFToken':csrf} })
+      .then(resp => {
+        try { const d = JSON.parse(resp.headers.get('HX-Trigger')||'{}'); if(d.toast) window.dispatchEvent(new CustomEvent('toast',{detail:d.toast})); } catch{}
+        self.clearSelection(); location.reload();
+      });
+  },
+  confirmDelete() {
+    const self = this;
+    const count = this.selectAllFiltered ? this.filteredCount : this.selected.length;
+    window.dispatchEvent(new CustomEvent('confirm', {
+      detail: {
+        title: 'Excluir workflows',
+        message: 'Excluir ' + count + ' workflow(s)? Jobs ativos serão cancelados primeiro. Esta ação não pode ser desfeita.',
+        style: 'danger',
+        confirmLabel: 'Excluir',
+        onConfirm: () => self._doDelete()
+      }
+    }));
+  },
+  _doDelete() {
+    const csrf = JSON.parse(document.body.getAttribute('hx-headers') || '{}')['X-CSRFToken'] || '';
+    const form = new FormData();
+    form.append('csrfmiddlewaretoken', csrf);
+    if (this.selectAllFiltered) { form.append('delete_all', 'true'); form.append('querystring', window.location.search); }
+    else { this.selected.forEach(pk => form.append('workflow_ids[]', pk)); }
+    const self = this;
+    fetch('/jobs/workflows/bulk-delete/', { method:'POST', body:form, headers:{'X-CSRFToken':csrf} })
+      .then(resp => {
+        try { const d = JSON.parse(resp.headers.get('HX-Trigger')||'{}'); if(d.toast) window.dispatchEvent(new CustomEvent('toast',{detail:d.toast})); } catch{}
+        self.clearSelection(); location.reload();
+      });
+  }
+}"
+x-init="syncFilteredCount()"
+@htmx:after-swap="syncFilteredCount()"
+{% endblock %}
+
 {% block table_content %}
 {% include "jobs/partials/workflow_table.html" %}
 {% endblock %}
