@@ -287,6 +287,16 @@ class GameAccount(UUIDTimestampModel):
         null=True,
         help_text="When the cached session was last saved by the agent",
     )
+    user_agent = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text=(
+            "User-Agent string used for this game account's session, picked once by the "
+            "agent on first login and reused for every request after (a real browser "
+            "never changes User-Agent mid-session — see N-38)."
+        ),
+    )
 
     # Login cooldown / anti-rate-limit state
     login_blocked_until = models.DateTimeField(

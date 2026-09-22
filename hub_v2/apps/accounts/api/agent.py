@@ -252,6 +252,7 @@ class AgentConfigView(APIView):
                     "blocked": ga.blocked,
                     "active": ga.active,
                     "cached_session": cached_session,
+                    "user_agent": ga.user_agent,
                 })
 
             accounts.append({
@@ -362,6 +363,7 @@ class AgentSessionView(APIView):
         game_account_id = request.data.get("game_account_id")
         cookies = request.data.get("cookies")
         lobby_token = request.data.get("lobby_token", "")
+        user_agent = str(request.data.get("user_agent", "") or "").strip()
 
         if not game_account_id or not cookies:
             return Response(
@@ -382,7 +384,15 @@ class AgentSessionView(APIView):
         cookies_json = json.dumps(cookies) if isinstance(cookies, dict) else str(cookies)
         ga.session_cookies_enc = encrypt(cookies_json)
         ga.session_updated_at = timezone.now()
-        ga.save(update_fields=["session_cookies_enc", "session_updated_at"])
+        update_fields = ["session_cookies_enc", "session_updated_at"]
+
+        # Persisted once: the agent only picks a new User-Agent when this was blank
+        # (see N-38). Never overwrite an already-persisted value with a different one.
+        if user_agent and not ga.user_agent:
+            ga.user_agent = user_agent
+            update_fields.append("user_agent")
+
+        ga.save(update_fields=update_fields)
 
         logger.info("Session saved for game_account %s (%s)", ga.pk, ga.server_id)
 

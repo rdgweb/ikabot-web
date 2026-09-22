@@ -206,7 +206,9 @@ class CheckStatusRunner(BaseRunner):
             new_lobby_token = client.lobby_token
             if ga_id:
                 self.save_game_client(ga_id, client)
-                self.hub.report_session(ga_id, client.export_cookies(), new_lobby_token)
+                self.hub.report_session(
+                    ga_id, client.export_cookies(), new_lobby_token, user_agent=client.user_agent,
+                )
 
             # ── 3. Fetch game data (uses client.session for raw GETs) ──
             session = client.session  # StrictProxySession with game headers set

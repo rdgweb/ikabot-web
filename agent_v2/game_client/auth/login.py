@@ -30,10 +30,13 @@ class IkariamAuth:
     session (loginLink → follow redirect → game cookies).
     """
 
-    def __init__(self, session: StrictProxySession, hub: HubClient):
+    def __init__(self, session: StrictProxySession, hub: HubClient, user_agent: str = ""):
         self.session = session
         self.hub = hub
-        self._user_agent = random.choice(USER_AGENTS)
+        # N-38: the caller (GameClient) owns picking/persisting the User-Agent so the
+        # whole session — lobby auth included — uses exactly one value. Only falls back
+        # to picking here when used standalone (e.g. in a test) without one.
+        self._user_agent = user_agent or random.choice(USER_AGENTS)
         self._lobby = LobbyAuthenticator(session, hub, self._user_agent)
         self._lobby_token: str = ""
         self.account_info: dict = {}  # Populated after login

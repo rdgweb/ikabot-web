@@ -154,11 +154,13 @@ class BaseRunner:
 
                 server = ""
                 lobby_account_id = None
+                user_agent = ""
                 if game_account_id:
                     for ga in acc.get("game_accounts", []):
                         if ga.get("id") == game_account_id:
                             server = ga.get("server_id", "")
                             lobby_account_id = ga.get("lobby_account_id")
+                            user_agent = ga.get("user_agent", "")
                             break
 
                 if not server:
@@ -166,6 +168,7 @@ class BaseRunner:
                         if ga.get("active") and ga.get("server_id"):
                             server = ga["server_id"]
                             lobby_account_id = ga.get("lobby_account_id")
+                            user_agent = ga.get("user_agent", "")
                             break
 
                 if server:
@@ -175,6 +178,10 @@ class BaseRunner:
                         "email": email,
                         "password": password,
                         "gf_token": gf_token,
+                        # N-38: persisted per game account so the session never
+                        # switches User-Agent mid-session — reused verbatim by
+                        # GameSessionService, only ever picked fresh when blank.
+                        "user_agent": user_agent,
                     }
         except Exception as e:
             logger.warning("Failed to fetch config from hub: %s", e)

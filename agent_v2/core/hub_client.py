@@ -410,14 +410,22 @@ class HubClient:
 
     # ── Session Persistence ──
 
-    def report_session(self, game_account_id: str, cookies: dict, lobby_token: str = "") -> dict:
-        """POST /api/agent/sessions/ — persist game session cookies to hub."""
+    def report_session(
+        self, game_account_id: str, cookies: dict, lobby_token: str = "", user_agent: str = "",
+    ) -> dict:
+        """POST /api/agent/sessions/ — persist game session cookies to hub.
+
+        ``user_agent`` is only ever written by the hub when it doesn't have one yet
+        for this game account (see N-38) — safe to pass on every call.
+        """
         payload: dict[str, Any] = {
             "game_account_id": game_account_id,
             "cookies": cookies,
         }
         if lobby_token:
             payload["lobby_token"] = lobby_token
+        if user_agent:
+            payload["user_agent"] = user_agent
         try:
             return self._post("/api/agent/sessions", payload)
         except Exception as e:

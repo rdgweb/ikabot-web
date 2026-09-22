@@ -90,7 +90,7 @@ class GameClient(IslandActions):
     the game exclusively through this class.
     """
 
-    def __init__(self, account_id: str, hub: HubClient, proxy_url: str = ""):
+    def __init__(self, account_id: str, hub: HubClient, proxy_url: str = "", user_agent: str = ""):
         """Initialize the game client.
 
         Args:
@@ -98,16 +98,21 @@ class GameClient(IslandActions):
             hub: HubClient instance for blackbox tokens, captcha solving, etc.
             proxy_url: SOCKS5/HTTP proxy URL for game requests.
                        Required — StrictProxySession will reject game requests without it.
+            user_agent: User-Agent to use for the whole session. Pass the account's
+                        persisted value (see N-38) so it never changes mid-session; if
+                        blank (no value persisted yet — first login), one is picked here
+                        and callers are expected to report it back to the hub to persist.
         """
         self.account_id = account_id
         self.hub = hub
 
         # HTTP session — all game requests go through proxy
         self.session = StrictProxySession(proxy_url)
-        self.session.headers["User-Agent"] = random.choice(USER_AGENTS)
+        self.user_agent = user_agent or random.choice(USER_AGENTS)
+        self.session.headers["User-Agent"] = self.user_agent
 
         # Sub-components
-        self.auth = IkariamAuth(self.session, hub)
+        self.auth = IkariamAuth(self.session, hub, self.user_agent)
         self.page_parser = GamePageParser()
         self.ajax_parser = AjaxResponseParser()
         self.captcha_detector = CaptchaDetector()

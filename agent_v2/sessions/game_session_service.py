@@ -138,8 +138,8 @@ class GameSessionService:
             reason=str(exc),
         )
 
-    def _build_game_client(self, *, account_id: str, proxy_url: str = ""):
-        return GameClient(account_id=account_id, hub=self.hub, proxy_url=proxy_url)
+    def _build_game_client(self, *, account_id: str, proxy_url: str = "", user_agent: str = ""):
+        return GameClient(account_id=account_id, hub=self.hub, proxy_url=proxy_url, user_agent=user_agent)
 
     def acquire_lobby_token(
         self,
@@ -184,25 +184,31 @@ class GameSessionService:
         return auth, token
 
     def get_game_client(self, game_account_id: str):
-        """Return a GameClient for ``game_account_id``, restoring cached cookies."""
+        """Return a GameClient for ``game_account_id``, restoring cached cookies.
+
+        Also restores the User-Agent the cached session was created with (N-38) — a
+        different runner reusing these same cookies must never switch browsers.
+        """
         cached = self.sessions.get_game_session(game_account_id)
         proxy_url = ""
+        user_agent = ""
         if cached:
             proxy_url = self._normalize_proxy_url((cached.metadata or {}).get("proxy_url", ""))
+            user_agent = str((cached.metadata or {}).get("user_agent", "") or "")
         if not proxy_url:
             proxy_url = self._normalize_proxy_url(self.proxy_url)
-        client = self._build_game_client(account_id=game_account_id, proxy_url=proxy_url)
+        client = self._build_game_client(account_id=game_account_id, proxy_url=proxy_url, user_agent=user_agent)
         if cached and cached.is_valid():
             client.restore_cookies(cached.cookies)
         return client
 
     def save_game_client(self, game_account_id: str, client) -> None:
-        """Persist a GameClient cookie jar into the session cache."""
+        """Persist a GameClient cookie jar (and its User-Agent — N-38) into the session cache."""
         proxy_url = self._normalize_proxy_url(getattr(getattr(client, "session", None), "_proxy_url", ""))
         self.sessions.save_game_session(
             game_account_id,
             client.export_cookies(),
-            metadata={"proxy_url": proxy_url},
+            metadata={"proxy_url": proxy_url, "user_agent": getattr(client, "user_agent", "")},
         )
 
     @staticmethod
@@ -341,11 +347,19 @@ class GameSessionService:
 
         effective_account_id = game_account_id or account_id
         effective_proxy = self._normalize_proxy_url(proxy_url)
+        # N-38: the hub-persisted value is authoritative; the local cache is only a
+        # fallback for the rare case where a session was just created in this same
+        # process and hasn't round-tripped to the hub yet.
+        effective_user_agent = str(creds.get("user_agent") or "")
 
         if allow_cached and game_account_id:
             cached = self.sessions.get_game_session(game_account_id)
+            if not effective_user_agent and cached:
+                effective_user_agent = str((cached.metadata or {}).get("user_agent", "") or "")
             if cached and cached.is_valid() and not cached.is_stale():
-                client = self._build_game_client(account_id=effective_account_id, proxy_url=effective_proxy)
+                client = self._build_game_client(
+                    account_id=effective_account_id, proxy_url=effective_proxy, user_agent=effective_user_agent,
+                )
                 try:
                     cached_valid = client.is_session_valid(server_id, cached.cookies, raise_on_error=True)
                 except requests.RequestException as exc:
@@ -364,7 +378,9 @@ class GameSessionService:
         if log:
             log("info", f"Login: {server_id} | {email[:3]}*** | proxy {attempt_no}/{total_attempts}")
 
-        client = self._build_game_client(account_id=effective_account_id, proxy_url=effective_proxy)
+        client = self._build_game_client(
+            account_id=effective_account_id, proxy_url=effective_proxy, user_agent=effective_user_agent,
+        )
 
         with self.sessions.get_lobby_lock(f"server-login:{account_id}"):
             raw_token = creds.get("gf_token", "") or self.get_lobby_token(account_id) or ""

@@ -58,6 +58,14 @@ class GameAccountConfigSerializer(serializers.Serializer):
         allow_blank=True, default="",
         help_text="Decrypted JSON of cached game session cookies",
     )
+    user_agent = serializers.CharField(
+        allow_blank=True, default="",
+        help_text=(
+            "Persisted User-Agent for this game account (empty until the agent's first "
+            "login picks and reports one — see N-38). The agent must reuse it verbatim "
+            "and never re-randomize once set."
+        ),
+    )
 
 
 class AccountConfigSerializer(serializers.Serializer):
