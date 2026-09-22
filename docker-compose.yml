@@ -112,6 +112,11 @@ services:
       TZ: America/Cuiaba
 
   ikabotapi:
+    # Required, not optional — generates the login (blackbox) token and
+    # solves captchas; the hub cannot log into the game without it. It used
+    # to be gated behind a "captcha" profile as if it were an add-on, which
+    # meant a plain `docker compose up -d` produced a hub that could never
+    # actually log in. No profile here on purpose — it always starts.
     build:
       context: https://github.com/Ikabot-Collective/IkabotAPI.git
     restart: unless-stopped
@@ -122,8 +127,6 @@ services:
       # blackbox tokens consistent with agent_v2's USER_AGENTS pool — see
       # ikabotapi_overrides/README.md (N-37).
       - ./ikabotapi_overrides/SupportedUserAgents.json:/ikabotapi/apps/token/SupportedUserAgents.json:ro
-    profiles:
-      - captcha
 
   phpmyadmin:
     image: phpmyadmin:latest

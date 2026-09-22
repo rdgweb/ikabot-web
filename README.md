@@ -48,11 +48,11 @@ Edit `.env` and **change every value that says `change-me`**:
 nano .env    # or use any text editor
 ```
 
-Start the stack (with IkabotAPI for game login):
+Start the stack:
 
 ```bash
-docker compose --profile captcha pull
-docker compose --profile captcha up -d
+docker compose pull
+docker compose up -d
 ```
 
 ### Option B -- Building from source
@@ -110,7 +110,7 @@ All configuration is done through the `.env` file. Here are the key variables:
 |----------|---------|---------|
 | `DJANGO_ALLOWED_HOSTS` | Hostnames the hub accepts | `localhost,127.0.0.1` |
 | `WEBSHARE_API_KEY` | Proxy rotation API key (webshare.io) | *(empty)* |
-| `IKABOTAPI_URL` | External captcha/token solver URL | *(empty)* |
+| `IKABOTAPI_URL` | Blackbox token/captcha solver URL | `http://ikabotapi:5005` |
 | `HUB_PORT` | Port for the web panel | `8000` |
 | `DB_PORT` | Exposed MariaDB port | `3306` |
 | `REDIS_PORT` | Exposed Redis port | `6379` |
@@ -142,25 +142,13 @@ Make sure `AGENT_TOKEN` matches the one in your hub's `.env` and that ports `800
 
 ## IkabotAPI (Blackbox Token & Captcha)
 
-[IkabotAPI](https://github.com/Ikabot-Collective/IkabotAPI) generates blackbox tokens (required for game login) and solves captchas. **It is required for the system to work properly.**
-
-Start the stack with the `captcha` profile to include it:
-
-```bash
-docker compose --profile captcha up -d
-```
+[IkabotAPI](https://github.com/Ikabot-Collective/IkabotAPI) generates blackbox tokens (required for game login) and solves captchas. **It is required for the system to work properly** — the hub cannot log into the game without it, so it's a core service in `docker-compose.yml` and starts automatically with `docker compose up -d`, no profile flag needed.
 
 This builds IkabotAPI directly from the official repository. The hub already points to it by default (`http://ikabotapi:5005`).
 
 > **Note:** The first build takes several minutes because it installs Playwright + Chromium.
 
 ## Optional Tools
-
-### Captcha Solver (IkabotAPI)
-
-```bash
-docker compose --profile captcha up -d
-```
 
 ### phpMyAdmin
 
@@ -169,12 +157,6 @@ docker compose --profile tools up -d
 ```
 
 Access at **http://localhost:8080**.
-
-### All optional services at once
-
-```bash
-docker compose --profile captcha --profile tools up -d
-```
 
 ## Updating
 
@@ -216,7 +198,7 @@ Check that `DJANGO_ALLOWED_HOSTS` includes the hostname or IP you are using.
 ## Common Commands
 
 ```bash
-docker compose --profile captcha up -d  # Start all services (recommended)
+docker compose up -d            # Start all services
 docker compose down            # Stop all services
 docker compose logs -f hub     # Follow hub logs
 docker compose logs -f agent   # Follow agent logs
