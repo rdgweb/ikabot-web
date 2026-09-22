@@ -2907,6 +2907,8 @@ class JobSubmitView(LoginRequiredMixin, View):
             inputs = self._normalize_train_units_inputs(inputs, request)
         if int(action_code) == 1202:
             inputs = self._normalize_station_units_inputs(inputs, request)
+            if "_multi_move_pairs" in inputs and not inputs["_multi_move_pairs"]:
+                return self._error("Escolha a quantidade de unidades a mover.")
         if int(action_code) == 1008:
             inputs = self._normalize_raid_inputs(inputs, request)
         if int(action_code) == 18 and not any(bool(inputs.get(key)) for key in ("branch_seafaring", "branch_economy", "branch_knowledge", "branch_military", "branch_mythology")):
@@ -3562,7 +3564,7 @@ class JobSubmitView(LoginRequiredMixin, View):
             if city.get("id") is not None
         }
 
-        if int(action_code) == 1202 and inputs.get("_multi_move_pairs"):
+        if int(action_code) == 1202 and "_multi_move_pairs" in inputs:
             # N-81: move from several origins and/or to several destinations
             # at once -- one StationUnits job per (origin, destination) pair
             # that actually has units in it. _multi_move_pairs is built
@@ -3940,9 +3942,27 @@ class JobSubmitView(LoginRequiredMixin, View):
         ))
         if len(from_city_ids) > 1 or len(to_city_ids) > 1:
             try:
-                normalized["_multi_move_pairs"] = json.loads(request.POST.get("multi_move_pairs_json") or "{}")
+                raw_pairs = json.loads(request.POST.get("multi_move_pairs_json") or "{}")
             except (TypeError, ValueError):
-                normalized["_multi_move_pairs"] = {}
+                raw_pairs = {}
+            pairs = {}
+            for from_id, by_dest in (raw_pairs.items() if isinstance(raw_pairs, dict) else []):
+                if not isinstance(by_dest, dict):
+                    continue
+                for to_id, pair_units in by_dest.items():
+                    if not isinstance(pair_units, dict) or not str(to_id).strip():
+                        continue
+                    clean = {}
+                    for uid, qty in pair_units.items():
+                        try:
+                            qty = int(qty)
+                        except (TypeError, ValueError):
+                            continue
+                        if qty > 0:
+                            clean[str(uid)] = qty
+                    if clean:
+                        pairs.setdefault(str(from_id), {})[str(to_id)] = clean
+            normalized["_multi_move_pairs"] = pairs
 
         return normalized
 

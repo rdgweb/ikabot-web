@@ -1020,6 +1020,35 @@ class MultiOriginMoveForcesTests(TestCase):
         normalized = JobSubmitView._normalize_station_units_inputs({}, request)
         self.assertEqual(normalized["_multi_move_pairs"], {"11": {"13": {"301": 5}}, "12": {"13": {"301": 3}}})
 
+    def test_normalize_drops_zero_and_garbage_quantities_from_pairs(self):
+        from django.test import RequestFactory
+
+        rf = RequestFactory()
+        request = rf.post("/jobs/new/submit/", data={
+            "from_city_ids": ["11", "12"],
+            "to_city_ids": ["13"],
+            "multi_move_pairs_json": '{"11": {"13": {"301": 0, "302": "x", "303": 2}}, "12": {"13": {"301": 0}}, "bad": 5}',
+            "scope": "troops",
+        })
+        normalized = JobSubmitView._normalize_station_units_inputs({}, request)
+        self.assertEqual(normalized["_multi_move_pairs"], {"11": {"13": {"303": 2}}})
+
+    def test_multi_submit_with_no_quantity_chosen_is_rejected_without_creating_jobs(self):
+        self.client.force_login(self.user)
+        with patch("apps.jobs.views.create._get_cities", return_value=self.cities):
+            response = self.client.post(reverse("jobs:job-submit"), {
+                "game_account": str(self.ga.pk),
+                "action_code": "1202",
+                "scope": "troops",
+                "from_city_id": "11",
+                "to_city_id": "13",
+                "from_city_ids": ["11", "12"],
+                "to_city_ids": ["13"],
+                "multi_move_pairs_json": "{}",
+            })
+        self.assertIn("Escolha a quantidade de unidades a mover.", response.content.decode())
+        self.assertFalse(Job.objects.filter(account=self.account, action_code=1202).exists())
+
     def test_normalize_ignores_single_city_on_both_sides(self):
         """Plain single-origin/single-destination submissions must not
         accidentally trigger the fan-out path."""
@@ -1044,3 +1073,17 @@ class MultiOriginMoveForcesTests(TestCase):
         self.assertIn('name="multi_move_pairs_json"', html)
         self.assertIn('name="from_city_ids"', html)
         self.assertIn('name="to_city_ids"', html)
+
+    def test_multi_modes_render_a_per_origin_quantity_picker(self):
+        """The multi modes must let the user pick how many of each unit leave
+        each origin, instead of always moving everything."""
+        self.client.force_login(self.user)
+        with patch("apps.jobs.views.create._get_cities", return_value=self.cities):
+            response = self.client.get(
+                reverse("jobs:job-form"), {"ga": str(self.ga.pk), "action": "1202"},
+            )
+        html = response.content.decode()
+        self.assertIn('x-for="originId in originsList()"', html)
+        self.assertIn("setMultiQty(originId,", html)
+        self.assertIn("fillAllOrigins()", html)
+        self.assertIn("const units = this.chosenUnitsFor(originId);", html)

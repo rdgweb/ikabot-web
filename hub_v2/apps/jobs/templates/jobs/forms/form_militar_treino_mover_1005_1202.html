@@ -22,6 +22,7 @@
            unitIdByName: {},
            selectedCities: [],
            selectedDestCities: [],
+           multiUnits: {},
            units: {},
            customTargets: {},
            trainQuery: '',
@@ -79,15 +80,15 @@
              return troopsTotal;
            },
            // N-81: move from several origins and/or to several destinations at
-           // once. Always moves EVERYTHING of the selected scope out of each
-           // origin (no per-unit picker across N cities, keeps the UI simple);
-           // when there is more than one destination, each origin's units are
-           // split EQUALLY across the selected destinations (remainder handed
-           // out one-by-one so no unit is lost).
+           // once. The user picks how many of each unit leaves each origin
+           // (multiUnits = {originId: {unitId: qty}}); when there is more than
+           // one destination, that amount is split EQUALLY across them
+           // (remainder handed out one-by-one so no unit is lost).
            toggleMultiOrigin() {
              this.multiOrigin = !this.multiOrigin;
              this.selectedCities = [];
              this.fromCityId = '';
+             this.multiUnits = {};
            },
            toggleMultiDestination() {
              this.multiDestination = !this.multiDestination;
@@ -131,13 +132,40 @@
              }
              return result;
            },
+           availableFor(originId, uid) {
+             return parseInt(this.cityUnitsForScope(this.cityById(originId))[String(uid)] || 0);
+           },
+           multiQty(originId, uid) {
+             return parseInt((this.multiUnits[String(originId)] || {})[String(uid)] || 0);
+           },
+           setMultiQty(originId, uid, value) {
+             const key = String(originId);
+             const qty = Math.min(this.availableFor(originId, uid), Math.max(0, parseInt(value || 0) || 0));
+             this.multiUnits = { ...this.multiUnits, [key]: { ...(this.multiUnits[key] || {}), [String(uid)]: qty } };
+           },
+           fillOrigin(originId) {
+             for (const [uid, qty] of Object.entries(this.cityUnitsForScope(this.cityById(originId)))) {
+               this.setMultiQty(originId, uid, qty);
+             }
+           },
+           fillAllOrigins() {
+             for (const originId of this.originsList()) this.fillOrigin(originId);
+           },
+           chosenUnitsFor(originId) {
+             const result = {};
+             for (const uid of Object.keys(this.cityUnitsForScope(this.cityById(originId)))) {
+               const qty = Math.min(this.multiQty(originId, uid), this.availableFor(originId, uid));
+               if (qty > 0) result[uid] = qty;
+             }
+             return result;
+           },
            multiMovePairsJson() {
              const origins = this.originsList();
              const dests = this.destsList();
              const result = {};
              if (!origins.length || !dests.length) return JSON.stringify(result);
              for (const originId of origins) {
-               const units = this.cityUnitsForScope(this.cityById(originId));
+               const units = this.chosenUnitsFor(originId);
                const pairs = {};
                const n = dests.length;
                dests.forEach((destId, idx) => {
@@ -153,7 +181,7 @@
              return JSON.stringify(result);
            },
            multiMoveGrandTotal() {
-             return this.originsList().reduce((sum, cid) => sum + this.unitsTotalForCity(this.cityById(cid) || {}, this.buildingType), 0);
+             return this.originsList().reduce((sum, cid) => sum + Object.values(this.chosenUnitsFor(cid)).reduce((s, q) => s + q, 0), 0);
            },
            visibleSourceCities() {
              // maintain: any city can be a garrison target (training happens where barracks exist, then moves)
@@ -825,15 +853,108 @@
           </div>
         </div>
 
-        {# N-81: multi-origin/multi-destination summary — always moves everything of the selected scope, split equally when there is more than one destination #}
-        <template x-if="isMultiMove() && originsList().length && destsList().length">
-          <div class="rounded-[16px] border border-[rgba(187,81,67,0.3)] bg-[rgba(187,81,67,0.06)] p-4 text-sm text-muted">
-            <i class="bi bi-info-circle text-[var(--ik-bad)]"></i>
-            Vai mover <strong>todas as unidades</strong> do escopo selecionado de
-            <strong x-text="originsList().length"></strong> cidade(s) de origem para
-            <strong x-text="destsList().length"></strong> cidade(s) de destino —
-            <span x-text="new Intl.NumberFormat('pt-BR').format(multiMoveGrandTotal())"></span> unidade(s) no total
-            <span x-show="destsList().length > 1"> — dividido igualmente entre os destinos</span>.
+        {# N-81: per-origin quantity picker for the multi modes — the chosen amount of each origin is split equally across destinations #}
+        <template x-if="isMultiMove() && originsList().length">
+          <div class="space-y-3">
+            <div class="flex items-center justify-between gap-3">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-bad);">Unidades a mover</div>
+              <div class="flex gap-3 text-[10px]">
+                <button type="button" class="link-sea" @click="fillAllOrigins()">Tudo de todas</button>
+                <button type="button" class="text-muted hover:text-ink" @click="multiUnits = {}">Zerar</button>
+              </div>
+            </div>
+            <template x-for="originId in originsList()" :key="'mu-' + originId">
+              <div class="rounded-[18px] border p-3" style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.7);">
+                <div class="mb-2 flex items-center justify-between gap-2">
+                  <div class="text-sm font-semibold text-ink">
+                    <span x-text="cityById(originId)?.name || 'Cidade'"></span>
+                    <span class="ml-1 text-[11px] font-normal text-muted" x-text="new Intl.NumberFormat('pt-BR').format(Object.values(chosenUnitsFor(originId)).reduce((s, q) => s + q, 0)) + ' selecionada(s)'"></span>
+                  </div>
+                  <button type="button" class="text-[10px] text-muted hover:text-ink transition-colors" @click="fillOrigin(originId)">tudo desta cidade</button>
+                </div>
+                <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                  {% for unit in training_ui.troops_units %}
+                  <template x-if="availableFor(originId, '{{ unit.id }}') > 0">
+                    <div class="relative rounded-[16px] border p-2.5"
+                         :class="multiQty(originId, '{{ unit.id }}') > 0 ? 'ring-2 ring-[rgba(187,81,67,0.5)]' : ''"
+                         style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);">
+                      <div class="flex items-center gap-2 mb-1.5">
+                        {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="h-8 w-8 object-contain">
+                        {% else %}<i class="bi bi-shield-fill text-base" style="color: var(--ik-bad);"></i>{% endif %}
+                        <div>
+                          <div class="text-[11px] font-bold text-ink">{{ unit.name }}</div>
+                          <div class="text-[10px] text-muted">disponível: <span class="font-semibold text-ink" x-text="availableFor(originId, '{{ unit.id }}')"></span></div>
+                        </div>
+                      </div>
+                      <div class="flex items-center gap-1">
+                        <button type="button" @click="setMultiQty(originId, '{{ unit.id }}', multiQty(originId, '{{ unit.id }}') - 1)"
+                                class="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-lg border text-xs font-bold hover:bg-red-50"
+                                style="border-color: rgba(219,201,167,0.9);">−</button>
+                        <input type="number" min="0"
+                               :max="availableFor(originId, '{{ unit.id }}')"
+                               :value="multiQty(originId, '{{ unit.id }}')"
+                               @input="setMultiQty(originId, '{{ unit.id }}', $event.target.value)"
+                               class="flex-1 min-w-0 text-center text-xs font-bold text-ink rounded-lg border py-1 outline-none"
+                               style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.9);">
+                        <button type="button" @click="setMultiQty(originId, '{{ unit.id }}', multiQty(originId, '{{ unit.id }}') + 1)"
+                                class="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-lg border text-xs font-bold hover:bg-green-50"
+                                style="border-color: rgba(219,201,167,0.9);">+</button>
+                      </div>
+                      <button type="button" @click="setMultiQty(originId, '{{ unit.id }}', availableFor(originId, '{{ unit.id }}'))"
+                              class="w-full mt-1 text-[9px] text-muted hover:text-ink transition-colors">tudo</button>
+                    </div>
+                  </template>
+                  {% endfor %}
+                  {% for unit in training_ui.fleet_units %}
+                  <template x-if="availableFor(originId, '{{ unit.id }}') > 0">
+                    <div class="relative rounded-[16px] border p-2.5"
+                         :class="multiQty(originId, '{{ unit.id }}') > 0 ? 'ring-2 ring-[rgba(79,134,185,0.5)]' : ''"
+                         style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);">
+                      <div class="flex items-center gap-2 mb-1.5">
+                        {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="h-8 w-8 object-contain">
+                        {% else %}<i class="bi bi-water text-base" style="color: var(--ik-sea);"></i>{% endif %}
+                        <div>
+                          <div class="text-[11px] font-bold text-ink">{{ unit.name }}</div>
+                          <div class="text-[10px] text-muted">disponível: <span class="font-semibold text-ink" x-text="availableFor(originId, '{{ unit.id }}')"></span></div>
+                        </div>
+                      </div>
+                      <div class="flex items-center gap-1">
+                        <button type="button" @click="setMultiQty(originId, '{{ unit.id }}', multiQty(originId, '{{ unit.id }}') - 1)"
+                                class="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-lg border text-xs font-bold hover:bg-red-50"
+                                style="border-color: rgba(219,201,167,0.9);">−</button>
+                        <input type="number" min="0"
+                               :max="availableFor(originId, '{{ unit.id }}')"
+                               :value="multiQty(originId, '{{ unit.id }}')"
+                               @input="setMultiQty(originId, '{{ unit.id }}', $event.target.value)"
+                               class="flex-1 min-w-0 text-center text-xs font-bold text-ink rounded-lg border py-1 outline-none"
+                               style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.9);">
+                        <button type="button" @click="setMultiQty(originId, '{{ unit.id }}', multiQty(originId, '{{ unit.id }}') + 1)"
+                                class="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-lg border text-xs font-bold hover:bg-green-50"
+                                style="border-color: rgba(219,201,167,0.9);">+</button>
+                      </div>
+                      <button type="button" @click="setMultiQty(originId, '{{ unit.id }}', availableFor(originId, '{{ unit.id }}'))"
+                              class="w-full mt-1 text-[9px] text-muted hover:text-ink transition-colors">tudo</button>
+                    </div>
+                  </template>
+                  {% endfor %}
+                </div>
+                <template x-if="!Object.keys(cityUnitsForScope(cityById(originId))).length">
+                  <p class="text-xs text-muted py-1"><i class="bi bi-info-circle"></i> Nenhuma unidade deste tipo nesta cidade.</p>
+                </template>
+              </div>
+            </template>
+
+            <template x-if="destsList().length">
+              <div class="rounded-[16px] border border-[rgba(187,81,67,0.3)] bg-[rgba(187,81,67,0.06)] p-4 text-sm text-muted">
+                <i class="bi bi-info-circle text-[var(--ik-bad)]"></i>
+                <span x-show="multiMoveGrandTotal() > 0">
+                  Vai mover <strong x-text="new Intl.NumberFormat('pt-BR').format(multiMoveGrandTotal())"></strong> unidade(s) de
+                  <strong x-text="originsList().length"></strong> cidade(s) de origem para
+                  <strong x-text="destsList().length"></strong> cidade(s) de destino<span x-show="destsList().length > 1"> — a quantidade de cada origem é dividida igualmente entre os destinos</span>.
+                </span>
+                <span x-show="multiMoveGrandTotal() === 0">Escolha a quantidade de cada unidade acima (ou use "Tudo de todas").</span>
+              </div>
+            </template>
           </div>
         </template>
 
