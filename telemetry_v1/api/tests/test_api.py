@@ -142,7 +142,7 @@ def test_transparency_page_and_health(client):
 
 def test_ip_is_stored_from_forwarded_header_with_timezone_country_fallback(client):
     body = payload()
-    assert client.post("/v1/ping", json=body, headers={"X-Real-IP": "203.0.113.7"}).status_code == 204
+    assert client.post("/v1/ping", json=dict(body, share_ip=True), headers={"X-Real-IP": "203.0.113.7"}).status_code == 204
 
     assert scalar("SELECT host(ip) FROM install_ips") == "203.0.113.7"
     assert scalar("SELECT geo_source FROM installs") == "timezone"  # no geoip database in tests
@@ -154,7 +154,7 @@ def test_geoip_result_overrides_timezone_country(client, monkeypatch):
         geoip, "lookup",
         lambda ip: geoip.Geo(country="PT", region="Lisbon", city="Lisbon", latitude=38.72, longitude=-9.14),
     )
-    assert client.post("/v1/ping", json=payload(), headers={"X-Real-IP": "198.51.100.9"}).status_code == 204
+    assert client.post("/v1/ping", json=payload(share_ip=True), headers={"X-Real-IP": "198.51.100.9"}).status_code == 204
 
     assert scalar("SELECT country FROM installs") == "PT"
     assert scalar("SELECT city FROM installs") == "Lisbon"
@@ -163,7 +163,7 @@ def test_geoip_result_overrides_timezone_country(client, monkeypatch):
 
 
 def test_invalid_forwarded_ip_is_ignored(client):
-    assert client.post("/v1/ping", json=payload(), headers={"X-Real-IP": "not-an-ip; DROP TABLE x"}).status_code == 204
+    assert client.post("/v1/ping", json=payload(share_ip=True), headers={"X-Real-IP": "not-an-ip; DROP TABLE x"}).status_code == 204
     assert scalar("SELECT count(*) FROM installs") == 1
 
 
@@ -176,7 +176,7 @@ def test_private_addresses_are_not_geolocated():
 
 def test_erase_also_removes_the_ip(client):
     body = payload()
-    client.post("/v1/ping", json=body, headers={"X-Real-IP": "203.0.113.7"})
+    client.post("/v1/ping", json=dict(body, share_ip=True), headers={"X-Real-IP": "203.0.113.7"})
     assert scalar("SELECT count(*) FROM install_ips") == 1
 
     client.delete(f"/v1/installs/{body['install_id']}")
@@ -185,7 +185,7 @@ def test_erase_also_removes_the_ip(client):
 
 def test_ips_are_purged_after_their_shorter_retention(client):
     body = payload()
-    client.post("/v1/ping", json=body, headers={"X-Real-IP": "203.0.113.7"})
+    client.post("/v1/ping", json=dict(body, share_ip=True), headers={"X-Real-IP": "203.0.113.7"})
     with db.connection() as conn:
         conn.execute("UPDATE install_ips SET day = current_date - 100")
 
@@ -193,3 +193,38 @@ def test_ips_are_purged_after_their_shorter_retention(client):
 
     assert scalar("SELECT count(*) FROM install_ips") == 0
     assert scalar("SELECT count(*) FROM installs") == 1  # the rest is kept until 400 days
+
+
+def test_ip_is_not_recorded_unless_the_hub_shares_it(client, monkeypatch):
+    seen = []
+    monkeypatch.setattr(geoip, "lookup", lambda ip: seen.append(ip) or geoip.Geo())
+    assert client.post("/v1/ping", json=payload(), headers={"X-Real-IP": "203.0.113.7"}).status_code == 204
+    assert client.post("/v1/ping", json=payload(share_ip=False), headers={"X-Real-IP": "203.0.113.8"}).status_code == 204
+
+    assert scalar("SELECT count(*) FROM install_ips") == 0
+    assert seen == [None, None]  # never even geolocated
+    assert scalar("SELECT count(*) FROM installs WHERE geo_source = 'timezone'") == 2
+
+
+def test_switching_ip_sharing_off_erases_the_ip_kept_before(client):
+    body = payload()
+    client.post("/v1/ping", json=dict(body, share_ip=True), headers={"X-Real-IP": "203.0.113.7"})
+    assert scalar("SELECT count(*) FROM install_ips") == 1
+    main._last_ping_by_install.clear()
+
+    assert client.post("/v1/ping", json=dict(body, share_ip=False), headers={"X-Real-IP": "203.0.113.7"}).status_code == 204
+    assert scalar("SELECT count(*) FROM install_ips") == 0
+    assert scalar("SELECT city FROM installs") is None
+    assert scalar("SELECT geo_source FROM installs") == "timezone"
+
+
+def test_items_switched_off_are_stored_as_absent_not_as_zero(client):
+    body = {"schema": 1, "install_id": str(uuid.uuid4()), "hub_version": "0.2.81"}
+    assert client.post("/v1/ping", json=body).status_code == 204
+
+    assert scalar("SELECT game_accounts FROM installs") is None
+    assert scalar("SELECT nodes FROM pings") is None
+    assert scalar("SELECT count(*) FROM ping_worlds") == 0
+    assert scalar("SELECT count(*) FROM ping_usage") == 0
+    assert scalar("SELECT timezone FROM installs") is None
+    assert scalar("SELECT country FROM installs") is None

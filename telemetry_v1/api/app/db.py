@@ -76,6 +76,13 @@ CREATE TABLE IF NOT EXISTS install_ips (
     PRIMARY KEY (install_id, day)
 );
 
+ALTER TABLE installs ALTER COLUMN lobby_accounts DROP NOT NULL, ALTER COLUMN lobby_accounts DROP DEFAULT,
+                     ALTER COLUMN game_accounts  DROP NOT NULL, ALTER COLUMN game_accounts  DROP DEFAULT,
+                     ALTER COLUMN nodes          DROP NOT NULL, ALTER COLUMN nodes          DROP DEFAULT;
+ALTER TABLE pings    ALTER COLUMN lobby_accounts DROP NOT NULL, ALTER COLUMN lobby_accounts DROP DEFAULT,
+                     ALTER COLUMN game_accounts  DROP NOT NULL, ALTER COLUMN game_accounts  DROP DEFAULT,
+                     ALTER COLUMN nodes          DROP NOT NULL, ALTER COLUMN nodes          DROP DEFAULT;
+
 CREATE INDEX IF NOT EXISTS pings_install_idx ON pings (install_id);
 CREATE INDEX IF NOT EXISTS installs_last_seen_idx ON installs (last_seen);
 """

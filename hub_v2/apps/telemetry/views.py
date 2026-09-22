@@ -21,18 +21,41 @@ def _back(request):
 
 
 class ConsentView(LoginRequiredMixin, StaffRequiredMixin, View):
-    """Explicit opt-in / decline. Nothing is sent before an admin posts here."""
+    """Acknowledge the first-use notice ("Entendi"), turn telemetry back on, or switch it off."""
 
     def post(self, request):
         if services.kill_switch_on():
             messages.info(request, "A telemetria está desligada por configuração do ambiente (TELEMETRY_DISABLED).")
-        elif request.POST.get("choice") == "accept":
+        elif request.POST.get("choice") == "decline":
+            services.decline()
+            messages.info(request, "Telemetria desativada. Nada será enviado.")
+        else:
             services.enable()
             ok, message = services.send_now()
-            messages.success(request, "Telemetria ativada. Obrigado por ajudar o projeto!" + ("" if ok else f" (primeiro envio pendente: {message})"))
-        else:
-            services.decline()
-            messages.info(request, "Tudo bem, nada será enviado. Você pode ativar depois em Configurações → Telemetria.")
+            messages.success(
+                request,
+                "Telemetria ativa. Você pode escolher o que é enviado em Configurações → Telemetria."
+                + ("" if ok else f" (primeiro envio pendente: {message})"),
+            )
+        return _back(request)
+
+
+class ItemsView(LoginRequiredMixin, StaffRequiredMixin, View):
+    """Save which optional items are sent; applies immediately (an off item is dropped server-side)."""
+
+    def post(self, request):
+        if services.kill_switch_on():
+            messages.info(request, "A telemetria está desligada por configuração do ambiente (TELEMETRY_DISABLED).")
+            return _back(request)
+        selected = set(request.POST.getlist("items")) & set(services.ITEM_KEYS)
+        services.save_items(selected)
+        services.enable()
+        ok, message = services.send_now()
+        messages.success(
+            request,
+            "Preferências de telemetria salvas."
+            + (" O servidor já recebeu o resumo atualizado." if ok else f" (envio pendente: {message})"),
+        )
         return _back(request)
 
 
@@ -54,10 +77,15 @@ class PreviewView(LoginRequiredMixin, StaffRequiredMixin, View):
     """Shows the exact JSON that would be sent — the transparency promise."""
 
     def get(self, request):
-        # A throw-away id keeps this preview from creating a persistent identifier.
-        install_id = services.get_setting(services.KEY_INSTALL_ID, "") or "(gerado ao ativar)"
+        # Do not create a persistent identifier just to preview.
+        install_id = services.get_setting(services.KEY_INSTALL_ID, "") or "(gerado no primeiro envio)"
         payload = json.dumps(services.build_payload(install_id), indent=2, ensure_ascii=False)
+        note = (
+            "O servidor também registra o IP de origem (por até 90 dias)."
+            if "ip" in services.enabled_items()
+            else "IP desligado: o servidor não registra o IP."
+        )
         return HttpResponse(
             '<pre class="text-xs p-3 rounded overflow-x-auto" style="background: var(--ik-paper-2, #f3ece0);">'
-            f"{escape(payload)}</pre>"
+            f"{escape(payload)}</pre><p class=\"text-xs text-muted mt-1\">{note}</p>"
         )

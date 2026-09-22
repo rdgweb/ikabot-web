@@ -1,10 +1,10 @@
 # ikabot telemetry
 
-Receiver and dashboards for the **opt-in, anonymous** usage telemetry of ikabot hubs
+Receiver and dashboards for the usage telemetry (on by default after a first-use notice, per-item opt-out) of ikabot hubs
 (client code: `hub_v2/apps/telemetry`). Public explanation for users: `/transparencia`.
 
 ```
-hub (opt-in, 1 ping/day) ──HTTPS──> gateway (nginx, no access log)
+hub (1 ping/day) ──HTTPS──> gateway (nginx, no access log)
                                       ├── /            -> api      (FastAPI: validate, derive country, store)
                                       └── /grafana/    -> grafana  (read-only role, provisioned dashboards)
                                                           db (Postgres, private network)
@@ -12,9 +12,11 @@ hub (opt-in, 1 ping/day) ──HTTPS──> gateway (nginx, no access log)
 
 ## Data handling (keep the code, the hub UI and /transparencia consistent)
 
-- **Consent first**: the hub sends nothing until an admin opts in; disabling asks the receiver to erase everything.
+- **On by default, notice first, per-item control**: the hub sends nothing until it has shown the notice to an admin;
+  each optional item (versions, counts, worlds, usage, timezone, IP) can be switched off, and an item that is off is
+  neither sent nor stored. Turning everything off asks the receiver to erase what that install sent.
 - **What is stored**: the schema-v1 payload (`api/app/schemas.py`; unknown fields are dropped) plus the client **IP**,
-  seen by the receiver on the connection (never sent in the JSON). The IP lives in its own table (`install_ips`)
+  seen by the receiver on the connection (never sent in the JSON) and recorded only when the payload says `share_ip: true`. The IP lives in its own table (`install_ips`)
   with a **90-day retention**; everything else is kept up to **400 days**. Both purges run daily.
 - **Location**: IP -> country/region/city/approx. lat-lon via the free DB-IP City Lite database
   (downloaded and refreshed monthly into the `geoip` volume; `GEOIP_AUTO_UPDATE=false` to disable). Private/unroutable

@@ -46,9 +46,12 @@ class Ping(_Model):
     schema_version: int = Field(alias="schema")
     install_id: UUID
     hub_version: str = Field(pattern=r"^[0-9A-Za-z.\-+]{1,32}$")
+    # Optional items: an absent key means the admin switched that item off.
     arch: Literal["amd64", "arm64", "other"] = "other"
     timezone: str = Field(default="", max_length=64)
-    counts: Counts = Field(default_factory=Counts)
+    counts: Counts | None = None
+    # The server may record the caller's IP (and geolocate it) only when this is true.
+    share_ip: bool = False
     agents: list[AgentVersion] = Field(default_factory=list, max_length=200)
     worlds: list[WorldUsage] = Field(default_factory=list, max_length=500)
     usage_30d: list[CategoryUsage] = Field(default_factory=list, max_length=32)

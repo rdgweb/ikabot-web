@@ -953,7 +953,7 @@
      "editorMode": "code",
      "format": "table",
      "rawQuery": true,
-     "rawSql": "SELECT bucket AS \"Contas\", count(*) AS \"Instalações\" FROM (SELECT CASE WHEN game_accounts = 0 THEN '0' WHEN game_accounts = 1 THEN '1' WHEN game_accounts <= 3 THEN '2-3' WHEN game_accounts <= 5 THEN '4-5' WHEN game_accounts <= 10 THEN '6-10' WHEN game_accounts <= 20 THEN '11-20' ELSE '21+' END AS bucket, CASE WHEN game_accounts = 0 THEN 0 WHEN game_accounts = 1 THEN 1 WHEN game_accounts <= 3 THEN 2 WHEN game_accounts <= 5 THEN 3 WHEN game_accounts <= 10 THEN 4 WHEN game_accounts <= 20 THEN 5 ELSE 6 END AS ord FROM installs WHERE last_seen >= current_date - 30) t GROUP BY bucket, ord ORDER BY ord",
+     "rawSql": "SELECT bucket AS \"Contas\", count(*) AS \"Instalações\" FROM (SELECT CASE WHEN game_accounts = 0 THEN '0' WHEN game_accounts = 1 THEN '1' WHEN game_accounts <= 3 THEN '2-3' WHEN game_accounts <= 5 THEN '4-5' WHEN game_accounts <= 10 THEN '6-10' WHEN game_accounts <= 20 THEN '11-20' ELSE '21+' END AS bucket, CASE WHEN game_accounts = 0 THEN 0 WHEN game_accounts = 1 THEN 1 WHEN game_accounts <= 3 THEN 2 WHEN game_accounts <= 5 THEN 3 WHEN game_accounts <= 10 THEN 4 WHEN game_accounts <= 20 THEN 5 ELSE 6 END AS ord FROM installs WHERE last_seen >= current_date - 30 AND game_accounts IS NOT NULL) t GROUP BY bucket, ord ORDER BY ord",
      "refId": "A"
     }
    ],

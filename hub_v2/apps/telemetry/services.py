@@ -1,9 +1,15 @@
-"""Opt-in usage telemetry.
+"""Usage telemetry: on by default, announced on first use, every item can be switched off.
 
-Nothing here runs unless an admin explicitly accepted it (Settings -> Telemetria)
-and ``TELEMETRY_DISABLED`` is not set. The payload is built by ``build_payload``
-and is exactly what ``/telemetry/preview/`` shows; the receiver is described at
-``telemetry_v1`` and documented publicly at ``<TELEMETRY_URL>/transparencia``.
+How it behaves:
+
+* Nothing is sent until an admin has been shown the notice (banner) at least once.
+* From then on a summary is sent once a day, unless an admin turns telemetry off
+  (Settings -> Telemetria) or ``TELEMETRY_DISABLED=true`` is set in the environment.
+* Each optional item (see ``ITEMS``) can be switched off individually; an item that
+  is off is neither sent nor recorded by the receiver.
+* The payload is built by ``build_payload`` and is exactly what ``/telemetry/preview/``
+  shows. The receiver lives in ``telemetry_v1`` and is documented publicly at
+  ``<TELEMETRY_URL>/transparencia``.
 """
 
 from __future__ import annotations
@@ -34,8 +40,8 @@ TICK_CACHE_KEY = "ikabot:telemetry:tick"
 TICK_SECONDS = 900
 LOCK_CACHE_KEY = "ikabot:telemetry:lock"
 
-STATUS_UNSET = "unset"
-STATUS_ENABLED = "enabled"
+STATUS_UNSET = "unset"  # nobody decided yet: on by default once the notice was shown
+STATUS_ENABLED = "enabled"  # an admin acknowledged / confirmed
 STATUS_DISABLED = "disabled"
 
 KEY_STATUS = "telemetry_status"
@@ -44,9 +50,51 @@ KEY_LAST_SENT = "telemetry_last_sent_at"
 KEY_LAST_ATTEMPT = "telemetry_last_attempt_at"
 KEY_LAST_ERROR = "telemetry_last_error"
 KEY_DECIDED_AT = "telemetry_decided_at"
+KEY_NOTICE_SHOWN = "telemetry_notice_shown_at"
+ITEM_KEY_PREFIX = "telemetry_item_"
+
+# Always sent while telemetry is on (they identify the installation and its release):
+# schema version, random install id, hub version.
+ITEMS = [
+    {
+        "key": "versions",
+        "label": "Versões e arquitetura",
+        "help": "Versão de cada agent e arquitetura da máquina (amd64/arm64).",
+    },
+    {
+        "key": "counts",
+        "label": "Quantidades",
+        "help": "Número de contas do lobby, contas de jogo e nós ativos.",
+    },
+    {
+        "key": "worlds",
+        "label": "Servidores e mundos do Ikariam",
+        "help": "Servidor e mundo (ex.: br / 61) com o número de contas em cada um.",
+    },
+    {
+        "key": "usage",
+        "label": "Uso por categoria",
+        "help": "Quantos jobs por categoria (militar, mercado…) nos últimos 30 dias.",
+    },
+    {
+        "key": "timezone",
+        "label": "Fuso horário",
+        "help": "O fuso horário configurado neste hub (ex.: America/Cuiaba).",
+    },
+    {
+        "key": "ip",
+        "label": "Endereço IP e localização aproximada",
+        "help": (
+            "O servidor registra o IP de onde o resumo chega (guardado por até 90 dias) "
+            "e deriva país, região e cidade aproximados. Desligado: sem IP, só o país do fuso."
+        ),
+    },
+]
+ITEM_KEYS = [item["key"] for item in ITEMS]
 
 TELEMETRY_KEYS = [
-    KEY_STATUS, KEY_INSTALL_ID, KEY_LAST_SENT, KEY_LAST_ATTEMPT, KEY_LAST_ERROR, KEY_DECIDED_AT,
+    KEY_STATUS, KEY_INSTALL_ID, KEY_LAST_SENT, KEY_LAST_ATTEMPT, KEY_LAST_ERROR,
+    KEY_DECIDED_AT, KEY_NOTICE_SHOWN, *[ITEM_KEY_PREFIX + key for key in ITEM_KEYS],
 ]
 
 _CATEGORY_RE = re.compile(r"[^a-z_]")
@@ -57,7 +105,7 @@ def endpoint() -> str:
 
 
 def kill_switch_on() -> bool:
-    """TELEMETRY_DISABLED=true (or an empty endpoint) overrides any earlier opt-in."""
+    """TELEMETRY_DISABLED=true (or an empty endpoint) overrides everything else."""
     return bool(getattr(settings, "TELEMETRY_DISABLED", False)) or not endpoint()
 
 
@@ -68,8 +116,26 @@ def get_status() -> str:
     return status if status in (STATUS_ENABLED, STATUS_DISABLED) else STATUS_UNSET
 
 
-def needs_decision() -> bool:
+def notice_shown() -> bool:
+    return bool(get_setting(KEY_NOTICE_SHOWN, ""))
+
+
+def is_active() -> bool:
+    """True when a ping may be sent: not disabled, and (confirmed or notice already shown)."""
+    status = get_status()
+    if status == STATUS_ENABLED:
+        return True
+    return status == STATUS_UNSET and notice_shown()
+
+
+def needs_notice() -> bool:
+    """The first-use banner is shown while nobody has decided yet."""
     return get_status() == STATUS_UNSET
+
+
+def mark_notice_shown() -> None:
+    if not notice_shown():
+        set_setting(KEY_NOTICE_SHOWN, timezone.now().isoformat())
 
 
 def get_install_id() -> str:
@@ -78,6 +144,29 @@ def get_install_id() -> str:
         value = str(uuid.uuid4())
         set_setting(KEY_INSTALL_ID, value)
     return value
+
+
+# --- items ----------------------------------------------------------------------------
+
+
+def item_enabled(key: str) -> bool:
+    return get_setting(ITEM_KEY_PREFIX + key, "1") != "0"
+
+
+def enabled_items() -> list[str]:
+    return [key for key in ITEM_KEYS if item_enabled(key)]
+
+
+def save_items(selected: set[str]) -> None:
+    for key in ITEM_KEYS:
+        set_setting(ITEM_KEY_PREFIX + key, "1" if key in selected else "0")
+
+
+def items_context() -> list[dict]:
+    return [dict(item, enabled=item_enabled(item["key"])) for item in ITEMS]
+
+
+# --- payload ----------------------------------------------------------------------------
 
 
 def _arch() -> str:
@@ -96,51 +185,57 @@ def _category_for(action_code: int) -> str:
     return _CATEGORY_RE.sub("", str(info.get("category") or "other").lower())[:32] or "other"
 
 
-def build_payload(install_id: str | None = None) -> dict:
-    """Build the exact JSON document that is sent (schema v1). No personal data."""
+def build_payload(install_id: str | None = None, items: list[str] | None = None) -> dict:
+    """Build the exact JSON document that is sent (schema v1). No credentials or game content."""
     from apps.accounts.models import Account, GameAccount, Node
     from apps.jobs.models import Job
 
-    nodes = Node.objects.filter(active=True)
-    agent_versions = (
-        nodes.exclude(agent_version="").values("agent_version").annotate(n=Count("id")).order_by("agent_version")
-    )
-    worlds = (
-        GameAccount.objects.filter(active=True)
-        .values("server_language", "server_number")
-        .annotate(n=Count("id"))
-        .order_by("server_language", "server_number")
-    )
-    since = timezone.now() - timedelta(days=30)
-    usage: dict[str, int] = {}
-    for row in (
-        Job.objects.filter(created_at__gte=since)
-        .values("action_code")
-        .annotate(n=Count("id"))
-    ):
-        category = _category_for(row["action_code"])
-        usage[category] = usage.get(category, 0) + row["n"]
-
-    return {
+    items = enabled_items() if items is None else items
+    payload: dict = {
         "schema": SCHEMA_VERSION,
         "install_id": install_id or get_install_id(),
         "hub_version": str(settings.VERSION),
-        "arch": _arch(),
-        "timezone": str(settings.TIME_ZONE),
-        "counts": {
+        # Tells the receiver whether it may record the caller's IP (and geolocate it).
+        "share_ip": "ip" in items,
+    }
+    nodes = Node.objects.filter(active=True)
+
+    if "versions" in items:
+        agent_versions = (
+            nodes.exclude(agent_version="").values("agent_version").annotate(n=Count("id")).order_by("agent_version")
+        )
+        payload["arch"] = _arch()
+        payload["agents"] = [{"version": row["agent_version"], "nodes": row["n"]} for row in agent_versions]
+    if "timezone" in items:
+        payload["timezone"] = str(settings.TIME_ZONE)
+    if "counts" in items:
+        payload["counts"] = {
             "lobby_accounts": Account.objects.filter(active=True).count(),
             "game_accounts": GameAccount.objects.filter(active=True).count(),
             "nodes": nodes.count(),
-        },
-        "agents": [
-            {"version": row["agent_version"], "nodes": row["n"]} for row in agent_versions
-        ],
-        "worlds": [
+        }
+    if "worlds" in items:
+        worlds = (
+            GameAccount.objects.filter(active=True)
+            .values("server_language", "server_number")
+            .annotate(n=Count("id"))
+            .order_by("server_language", "server_number")
+        )
+        payload["worlds"] = [
             {"server": str(row["server_language"]).lower(), "world": row["server_number"], "accounts": row["n"]}
             for row in worlds
-        ],
-        "usage_30d": [{"category": key, "jobs": value} for key, value in sorted(usage.items())],
-    }
+        ]
+    if "usage" in items:
+        since = timezone.now() - timedelta(days=30)
+        usage: dict[str, int] = {}
+        for row in Job.objects.filter(created_at__gte=since).values("action_code").annotate(n=Count("id")):
+            category = _category_for(row["action_code"])
+            usage[category] = usage.get(category, 0) + row["n"]
+        payload["usage_30d"] = [{"category": key, "jobs": value} for key, value in sorted(usage.items())]
+    return payload
+
+
+# --- transport ------------------------------------------------------------------------
 
 
 def _url(path: str) -> str:
@@ -153,10 +248,9 @@ def _headers() -> dict:
 
 def send_now() -> tuple[bool, str]:
     """Send one ping. Returns (ok, message). Never raises."""
-    if get_status() != STATUS_ENABLED:
+    if not is_active():
         return False, "Telemetria desativada."
-    now = timezone.now()
-    set_setting(KEY_LAST_ATTEMPT, now.isoformat())
+    set_setting(KEY_LAST_ATTEMPT, timezone.now().isoformat())
     try:
         response = requests.post(
             _url("/v1/ping"), json=build_payload(), headers=_headers(), timeout=(3, 8),
@@ -176,6 +270,7 @@ def send_now() -> tuple[bool, str]:
 
 
 def enable() -> None:
+    """Confirm telemetry (also used to turn it back on after it was disabled)."""
     get_install_id()
     set_setting(KEY_STATUS, STATUS_ENABLED)
     set_setting(KEY_DECIDED_AT, timezone.now().isoformat())
@@ -203,7 +298,7 @@ def disable_and_erase() -> tuple[bool, str]:
         except requests.RequestException:
             erased, message = False, "Telemetria desativada, mas não foi possível contatar o servidor para apagar os dados enviados."
     if erased:
-        # Forget the identifier: a future opt-in starts from a fresh, unrelated ID.
+        # Forget the identifier: turning it on again later starts from a fresh, unrelated ID.
         set_setting(KEY_INSTALL_ID, "")
     set_setting(KEY_LAST_SENT, "")
     return erased, message
@@ -214,7 +309,7 @@ def _parse(value: str):
 
 
 def is_due(now=None) -> bool:
-    if get_status() != STATUS_ENABLED:
+    if not is_active():
         return False
     now = now or timezone.now()
     last_sent = _parse(get_setting(KEY_LAST_SENT, ""))
@@ -254,8 +349,10 @@ def status_context() -> dict:
     """Template context for the settings card."""
     return {
         "telemetry_status": get_status(),
+        "telemetry_active": is_active(),
         "telemetry_kill_switch": kill_switch_on(),
         "telemetry_endpoint": endpoint(),
+        "telemetry_items": items_context(),
         "telemetry_last_sent": _parse(get_setting(KEY_LAST_SENT, "")),
         "telemetry_last_error": get_setting(KEY_LAST_ERROR, ""),
         "telemetry_install_id": get_setting(KEY_INSTALL_ID, ""),

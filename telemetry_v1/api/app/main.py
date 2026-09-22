@@ -1,8 +1,8 @@
 """ikabot telemetry receiver.
 
 Data-handling rules enforced here (and described on /transparencia):
-  * the client IP is stored (for approximate location and de-duplication) in its
-    own table with a 90-day retention; request headers and access logs are never
+  * the client IP is stored only when the hub says share_ip=true (default on, the
+    admin can switch it off), in its own table with a 90-day retention; request headers and access logs are never
     stored (uvicorn runs with --no-access-log and the gateway has access_log off);
   * only the fields declared in ``schemas.py`` are persisted;
   * location comes from the IP (DB-IP City Lite), falling back to the
@@ -129,7 +129,8 @@ async def receive_ping(request: Request) -> Response:
     if _rate_limited(ping.install_id):
         raise HTTPException(status_code=429, detail="too many requests")
 
-    ip = client_ip(request)
+    # The IP is recorded (and geolocated) only if the admin left that item on.
+    ip = client_ip(request) if ping.share_ip else None
     storage.save_ping(ping, _today(), VALID_TIMEZONES, ip=ip, geo=geoip.lookup(ip))
     return Response(status_code=204)
 

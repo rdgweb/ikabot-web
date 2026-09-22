@@ -22,6 +22,9 @@ def save_ping(
     country = geo.country or (country_for_timezone(timezone) if timezone else None)
     geo_source = "ip" if geo.country else ("timezone" if country else None)
     counts = ping.counts
+    lobby, games, nodes = (
+        (counts.lobby_accounts, counts.game_accounts, counts.nodes) if counts else (None, None, None)
+    )
 
     with db.connection() as conn:
         conn.execute(
@@ -39,10 +42,13 @@ def save_ping(
                 geo_source = EXCLUDED.geo_source
             """,
             (ping.install_id, today, today, ping.hub_version, ping.arch, timezone, country,
-             counts.lobby_accounts, counts.game_accounts, counts.nodes,
+             lobby, games, nodes,
              geo.region, geo.city, geo.latitude, geo.longitude, geo_source),
         )
-        if ip:
+        if not ip:
+            # IP sharing switched off (or no usable address): forget any IP kept before.
+            conn.execute("DELETE FROM install_ips WHERE install_id = %s", (ping.install_id,))
+        else:
             conn.execute(
                 "INSERT INTO install_ips (install_id, day, ip) VALUES (%s, %s, %s) "
                 "ON CONFLICT (install_id, day) DO UPDATE SET ip = EXCLUDED.ip",
@@ -56,8 +62,7 @@ def save_ping(
                                lobby_accounts, game_accounts, nodes)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            (today, ping.install_id, ping.hub_version, ping.arch, timezone, country,
-             counts.lobby_accounts, counts.game_accounts, counts.nodes),
+            (today, ping.install_id, ping.hub_version, ping.arch, timezone, country, lobby, games, nodes),
         )
         with conn.cursor() as cur:
             cur.executemany(
