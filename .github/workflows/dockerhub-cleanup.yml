@@ -1,0 +1,45 @@
+name: Docker Hub Tag Cleanup
+
+# N-79: manual, opt-in tag pruning — never runs on push. Docker Hub tags
+# accumulated to ~500 across the 3 image repos (mostly sha-<commit> tags
+# and duplicate bare-X.Y.Z twins of vX.Y.Z, both of which nothing in this
+# codebase depends on — see .github/scripts/dockerhub_cleanup.py).
+# Defaults to a dry run so the first invocation is always safe to inspect
+# in the logs before anyone flips execute to true.
+
+on:
+  workflow_dispatch:
+    inputs:
+      execute:
+        description: "Actually delete tags (unchecked = dry run, only prints what would be deleted)"
+        type: boolean
+        default: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run classify() tests
+        run: python .github/scripts/test_dockerhub_cleanup.py -v
+
+      - name: Prune tags
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [[ "${{ inputs.execute }}" == "true" ]]; then
+            python .github/scripts/dockerhub_cleanup.py --execute
+          else
+            python .github/scripts/dockerhub_cleanup.py
+          fi

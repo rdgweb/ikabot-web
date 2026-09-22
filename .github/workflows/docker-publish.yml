@@ -87,12 +87,17 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
+          # N-79: only "latest" (mutable) + "vX.Y.Z" (permanent) going
+          # forward — the plain "X.Y.Z" twin and the per-commit "sha-*" tag
+          # were pure duplicates of the same image and nothing resolves
+          # images by either (apps/notes/services.py's get_registry_release()
+          # already strips an optional "v" prefix, so it works from vX.Y.Z
+          # alone). They're what grew Docker Hub to ~500 tags/~50GB across
+          # the 3 repos — see .github/workflows/dockerhub-cleanup.yml.
           images: ${{ matrix.image }}
           tags: |
             type=raw,value=latest,enable=${{ github.event_name != 'pull_request' }}
-            type=raw,value=${{ needs.validate.outputs[matrix.version_output] }}
             type=raw,value=v${{ needs.validate.outputs[matrix.version_output] }}
-            type=sha
 
       - name: Build and optionally push
         uses: docker/build-push-action@v6
@@ -133,6 +138,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Push description to Docker Hub
+        # Docker Hub's description API needs a token with read/write/DELETE
+        # scope, stricter than the read/write scope that's enough for the
+        # build job's image push above. continue-on-error so a scope
+        # mismatch here (or any Docker Hub hiccup) never fails the whole
+        # run over a cosmetic sync — the actual image publish already
+        # succeeded by the time this job starts.
+        continue-on-error: true
         uses: peter-evans/dockerhub-description@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
