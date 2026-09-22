@@ -242,6 +242,18 @@ class JobWorkflowViewTests(TestCase):
         self.assertContains(response, "Operacao por workflow persistido")
         self.assertContains(response, "bi-box-arrow-up-right")
 
+    def test_workflow_table_has_no_leaked_template_comment(self):
+        """N-77: Django's {# #} comment tag does not support multi-line content
+        (a documented limitation) — a 5-line {# ... #} in workflow_table.html
+        was rendered as literal visible text instead of being stripped. Fixed
+        with {% comment %}...{% endcomment %}, which does support multi-line."""
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("jobs:job-list"))
+
+        self.assertNotContains(response, "Bulk-selection state")
+        self.assertNotContains(response, "syncFilteredCount() after each swap")
+
     def test_workflow_state_filter_uses_active_descendants(self):
         self.client.force_login(self.user)
         ensure_workflow_for_job(self.root_finished)

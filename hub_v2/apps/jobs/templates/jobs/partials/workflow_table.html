@@ -1,11 +1,13 @@
 {% load humanize hub_tags %}
 
 {% if object_list or request.GET %}
-{# Bulk-selection state (selected/selectAllFiltered/...) lives on the ancestor
-   #table-content element (see base_list.html + workflow_list.html), not here —
-   this partial gets its innerHTML replaced on every page/filter change, so any
-   x-data defined on this root would reset the selection on every navigation.
-   data-filtered-count is read by the ancestor's syncFilteredCount() after each swap. #}
+{% comment %}
+Bulk-selection state (selected/selectAllFiltered/...) lives on the ancestor
+#table-content element (see base_list.html + workflow_list.html), not here —
+this partial gets its innerHTML replaced on every page/filter change, so any
+x-data defined on this root would reset the selection on every navigation.
+data-filtered-count is read by the ancestor's syncFilteredCount() after each swap.
+{% endcomment %}
 <div class="space-y-3" data-filtered-count="{{ paginator.count|default:0 }}">
 
   {# Stats bar — clicáveis como filtro de status #}
