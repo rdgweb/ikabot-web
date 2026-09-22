@@ -117,6 +117,11 @@ services:
     restart: unless-stopped
     ports:
       - "5005:5005"
+    volumes:
+      # Third-party image; upstream's own list is stale/truncated. Keeps
+      # blackbox tokens consistent with agent_v2's USER_AGENTS pool — see
+      # ikabotapi_overrides/README.md (N-37).
+      - ./ikabotapi_overrides/SupportedUserAgents.json:/ikabotapi/apps/token/SupportedUserAgents.json:ro
     profiles:
       - captcha
 
