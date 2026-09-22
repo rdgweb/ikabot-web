@@ -900,3 +900,23 @@ class MoveForcesFormTests(TestCase):
         html = self._render(1202)
         self.assertIn("(buildingType === 'troops' || buildingType === 'both')", html)
         self.assertIn("(buildingType === 'fleet' || buildingType === 'both')", html)
+
+    def test_origin_and_destination_grids_have_padding_so_the_ring_is_not_clipped(self):
+        """N-80 follow-up: the selection ring (ring-2, a box-shadow) needs room to
+        render inside the scrollable grid container, or its own overflow clips it
+        — same as the other city grids in this file (ac=1005), which all carry
+        p-0.5 alongside overflow-y-auto for this exact reason."""
+        html = self._render(1202)
+        for marker in ('name="from_city_id"', 'name="to_city_id"'):
+            idx = html.index(marker)
+            grid_start = html.index('<div class="grid', idx)
+            grid_tag_end = html.index('>', grid_start)
+            grid_class = html[grid_start:grid_tag_end]
+            self.assertIn('overflow-y-auto', grid_class)
+            self.assertIn('p-0.5', grid_class)
+
+    def test_no_leaked_multiline_template_comment_in_units_section(self):
+        """N-77-style regression: a multi-line {# #} tag leaks as literal text."""
+        html = self._render(1202)
+        self.assertNotIn('{#', html)
+        self.assertNotIn('#}', html)

@@ -590,7 +590,7 @@
               <input type="text" x-model="fromQuery" class="form-input" placeholder="Nome, luxo ou coordenada">
             </label>
             <input type="hidden" name="{{ form.from_city_id.html_name }}" x-model="fromCityId">
-            <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[14rem] overflow-y-auto">
+            <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[14rem] overflow-y-auto p-0.5">
               <template x-for="city in originCitiesWithUnits(buildingType, fromQuery)" :key="'from-' + city.id">
                 <button type="button" @click="fromCityId = String(city.id)"
                   class="relative rounded-[16px] border p-3 text-left transition-all"
@@ -647,7 +647,7 @@
               <input type="text" x-model="toQuery" class="form-input" placeholder="Nome, luxo ou coordenada">
             </label>
             <input type="hidden" name="{{ form.to_city_id.html_name }}" x-model="toCityId">
-            <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[14rem] overflow-y-auto">
+            <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[14rem] overflow-y-auto p-0.5">
               <template x-for="city in destinationCities(toQuery).filter(c => String(c.id) !== String(fromCityId))" :key="'to-' + city.id">
                 <button type="button" @click="toCityId = String(city.id)"
                   class="relative rounded-[16px] border p-3 text-left transition-all"
@@ -698,9 +698,7 @@
               Unidades a mover de <span x-text="cityById(fromCityId)?.name || ''"></span>
             </div>
 
-            {# Troops — only when the selected scope actually includes troops (N-80:
-               used to always show both troops and fleet regardless of the
-               Tropas/Frotas toggle whenever the city had both) #}
+            {# Troops — only when the selected scope actually includes troops (N-80) #}
             <template x-if="(buildingType === 'troops' || buildingType === 'both') && Object.keys(cityById(fromCityId)?.troops || {}).length > 0">
               <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 mb-3">
                 {% for unit in training_ui.troops_units %}
