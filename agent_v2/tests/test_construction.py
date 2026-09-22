@@ -38,6 +38,15 @@ def _load_city_runner_module():
     base_mod.RunnerResult = RunnerResult
     runners_pkg.base = base_mod
 
+    sessions_pkg = types.ModuleType("sessions")
+    game_session_service = types.ModuleType("sessions.game_session_service")
+
+    class LoginCooldownActive(BaseException):
+        pass
+
+    game_session_service.LoginCooldownActive = LoginCooldownActive
+    sessions_pkg.game_session_service = game_session_service
+
     services_pkg = types.ModuleType("services")
     resource_transport = types.ModuleType("services.resource_transport")
     resource_transport.estimate_incoming_transport_wait_seconds = lambda *_args, **_kwargs: 0
@@ -56,6 +65,8 @@ def _load_city_runner_module():
             "game_client.constants": game_constants,
             "runners": runners_pkg,
             "runners.base": base_mod,
+            "sessions": sessions_pkg,
+            "sessions.game_session_service": game_session_service,
             "services": services_pkg,
             "services.resource_transport": resource_transport,
             "services.island_donation": island_donation,
@@ -236,6 +247,91 @@ class ConstructionQueueStrategyTests(unittest.TestCase):
                     "base_seconds": 220,
                     "costs": {"wood": 25063, "wine": 0, "marble": 22929, "glas": 0, "sulfur": 0},
                 }
+            ],
+        }
+
+        selected = ConstructionPlanRunner._pick_pending_steps([city], [step], "fifo")
+
+        self.assertEqual(selected, [])
+
+    def test_new_mode_multi_instance_building_at_empty_slot_stays_pending(self):
+        """Regression for N-56: a plan built 4 new warehouses + 5 new dumps (mode=new,
+        target_level=1). The 4 warehouse steps targeted an empty land slot (position 13)
+        but each city already had an unrelated, older warehouse at level 25 elsewhere.
+        The runner matched that unrelated warehouse and reported the plan complete
+        without ever building the new one. Ikariam allows several warehouses/dumps per
+        city, so a "new" step must only look at its own preferred_position.
+        """
+        city = {
+            "id": "39275",
+            "name": "lll2lll",
+            "wood": 1000,
+            "wine": 0,
+            "marble": 1000,
+            "crystal": 0,
+            "sulfur": 0,
+            "resource_production_per_hour": 0,
+            "tradegood_production_per_hour": 0,
+            "buildings": [
+                {"building": "warehouse", "level": 25, "position": 6, "is_upgrading": False},
+                {"building": "warehouse", "level": 25, "position": 23, "is_upgrading": False},
+                {"building": "empty", "level": 0, "position": 13, "is_upgrading": False},
+                {"building": "dump", "level": 10, "position": 15, "is_upgrading": True},
+            ],
+        }
+        step = {
+            "index": 1,
+            "city_id": "39275",
+            "city_name": "lll2lll",
+            "building_id": "warehouse",
+            "building_name": "Armazem",
+            "mode": "new",
+            "preferred_position": 13,
+            "target_level": 1,
+            "level_rows": [
+                {"level": 1, "adjusted_seconds": 37, "base_seconds": 17,
+                 "costs": {"wood": 95, "wine": 0, "marble": 0, "glas": 0, "sulfur": 0}},
+            ],
+        }
+
+        selected = ConstructionPlanRunner._pick_pending_steps([city], [step], "fifo")
+
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(selected[0]["current_level"], 0)
+        self.assertEqual(selected[0]["next_level"], 1)
+
+    def test_new_mode_single_instance_building_still_matches_elsewhere_in_city(self):
+        """Buildings the game allows only once per city (e.g. chronosForge) may still be
+        recognized when the plan's preferred_position has drifted from where it actually
+        got built — unlike multi-instance buildings, this can't false-positive a
+        still-empty slot."""
+        city = {
+            "id": "37440",
+            "name": "MH4",
+            "wood": 1000,
+            "wine": 0,
+            "marble": 1000,
+            "crystal": 0,
+            "sulfur": 0,
+            "resource_production_per_hour": 0,
+            "tradegood_production_per_hour": 0,
+            "buildings": [
+                {"building": "chronosForge", "level": 1, "position": 21, "is_upgrading": False},
+                {"building": "empty", "level": 0, "position": 9, "is_upgrading": False},
+            ],
+        }
+        step = {
+            "index": 1,
+            "city_id": "37440",
+            "city_name": "MH4",
+            "building_id": "chronos_forge",
+            "building_name": "Forja de Chronos",
+            "mode": "new",
+            "preferred_position": 9,
+            "target_level": 1,
+            "level_rows": [
+                {"level": 1, "adjusted_seconds": 594, "base_seconds": 220,
+                 "costs": {"wood": 25063, "wine": 0, "marble": 22929, "glas": 0, "sulfur": 0}},
             ],
         }
 

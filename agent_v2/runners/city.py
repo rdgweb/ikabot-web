@@ -41,6 +41,12 @@ BUILDING_ALIASES = {
     "carpentering": "carpentering",
     "vineyard": "vineyard",
 }
+# Buildings the game allows at most one of per city. Used only to decide when a
+# "new"-mode construction step may be matched against a building found anywhere in
+# the city rather than strictly at its own preferred_position — see N-56.
+SINGLE_INSTANCE_BUILDINGS = {
+    "chronosForge", "marineChartArchive", "pirateFortress", "blackMarket",
+}
 MIN_RECHECK_SECONDS = 5 * 60
 TRANSPORT_RECHECK_SECONDS = 30 * 60
 FINISH_BUFFER_SECONDS = 2 * 60
@@ -1959,10 +1965,17 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             slot_entry = _get_building_entry_at_position(city, preferred_position) if preferred_position > 0 else None
             if slot_entry and str(slot_entry.get("building") or "").strip() in _building_ids_to_match(step["building_id"]):
                 return _to_int(slot_entry.get("level"), 0), _to_int(slot_entry.get("position"), 0), slot_entry
-            current_level, position = _find_building(city, step["building_id"])
-            current_entry = _get_building_entry(city, step["building_id"])
-            if position is not None:
-                return current_level, position, current_entry
+            # The preferred_position slot doesn't show this building (empty, or a stale
+            # snapshot). Only fall back to searching the whole city for buildings the
+            # game allows at most one of per city (e.g. chronosForge) — for buildings
+            # Ikariam lets you build several of (warehouse, dump, resource buildings...),
+            # matching a different, unrelated instance elsewhere would make a "new"
+            # step at an actually-empty slot look already done. See N-56.
+            if _building_ids_to_match(step["building_id"]) & SINGLE_INSTANCE_BUILDINGS:
+                current_level, position = _find_building(city, step["building_id"])
+                current_entry = _get_building_entry(city, step["building_id"])
+                if position is not None:
+                    return current_level, position, current_entry
             return 0, preferred_position if preferred_position > 0 else None, None
 
         building_position = _to_int(step.get("building_position"), 0)
