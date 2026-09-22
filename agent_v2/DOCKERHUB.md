@@ -1,24 +1,12 @@
 # ikabot-web-agent
 
-Worker container for [ikabot-web](https://github.com/rdgweb/ikabot-web) — pulls queued jobs from the Hub and executes them against [Ikariam](https://www.ikariam.gameforge.com/): construction, resource donations/transport, market, military, espionage, and more.
+Worker container for the ikabot-web system — pulls queued jobs from the Hub and executes them against [Ikariam](https://www.ikariam.gameforge.com/): construction, resource donations/transport, market, military, espionage, and more.
 
-This is the **Agent**. It does nothing on its own — it needs a running [`blackoneal/ikabot-web-hub`](https://hub.docker.com/r/blackoneal/ikabot-web-hub) to connect to. The default `docker-compose.yml` already starts one agent alongside the hub; use this image directly when you want to run **extra agents** (e.g. on a separate VPS/IP) to spread work across different proxies.
-
-**Full documentation and source:** https://github.com/rdgweb/ikabot-web
-
-## Quick Start (full stack)
-
-```bash
-curl -LO https://raw.githubusercontent.com/rdgweb/ikabot-web/main/docker-compose.yml
-curl -LO https://raw.githubusercontent.com/rdgweb/ikabot-web/main/.env.example
-cp .env.example .env
-# edit .env, then:
-docker compose --profile captcha up -d
-```
+This is the **Agent**. It does nothing on its own — it needs a running [`blackoneal/ikabot-web-hub`](https://hub.docker.com/r/blackoneal/ikabot-web-hub) to connect to (see that image's page for the full stack). Use this image directly when you want to run **extra agents** — e.g. on a separate VPS/IP — to spread work across different proxies, beyond the one agent already started alongside the hub.
 
 ## Running a standalone remote agent
 
-On the remote machine, once you have a hub already running:
+On the remote machine, once you already have a hub running elsewhere:
 
 ```bash
 docker run -d --restart unless-stopped \
@@ -30,7 +18,7 @@ docker run -d --restart unless-stopped \
   blackoneal/ikabot-web-agent:latest
 ```
 
-`AGENT_TOKEN` must match the token configured on the hub, and the hub's ports must be reachable from this machine. The hub's **Nós** (Nodes) page generates this exact command pre-filled for you, including labels the optional supervisor needs for managed updates.
+`AGENT_TOKEN` must match the token configured on your hub, and the hub's ports must be reachable from this machine. Your hub's own **Nós** (Nodes) page generates this exact command pre-filled with your values, including labels the optional supervisor image needs for managed updates.
 
 ## Environment variables
 
@@ -45,13 +33,10 @@ docker run -d --restart unless-stopped \
 ## Tags
 
 - `latest` — most recent build from `main`
-- `X.Y.Z` / `vX.Y.Z` — a specific released version
-- `sha-XXXXXXX` — a specific commit
+- `vX.Y.Z` — a specific released version
 
-The hub's **Atualizações** page compares each running agent's reported version against the tags published here and can request an update per node (applied by the optional supervisor, with automatic rollback on failure).
+Your hub's **Atualizações** page compares each running agent's reported version against the tags published here and can request an update per node (applied by the optional supervisor image, with automatic rollback on failure).
 
 ## Links
 
-- Full README, architecture, troubleshooting: https://github.com/rdgweb/ikabot-web
-- Issues: https://github.com/rdgweb/ikabot-web/issues
 - Built on [ikabot](https://github.com/Ikabot-Collective/ikabot) by the Ikabot Collective
