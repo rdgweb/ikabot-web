@@ -12,6 +12,7 @@ Action codes:
 from __future__ import annotations
 
 import logging
+import random
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -1454,198 +1455,258 @@ class ModifyProductionRunner(BaseRunner):
         sawmill_raw = str(inputs.get("sawmill_percent", "100")).strip()
         luxury_raw = str(inputs.get("luxury_percent", "100")).strip()
 
+        # N-42: multi-city jobs used to run in a single all-or-nothing burst — one
+        # city failing a verification (e.g. a transient island-level rate limit)
+        # aborted the whole job, leaving already-applied cities applied, the rest
+        # never attempted, and a retry redoing everyone from scratch. Now each city
+        # gets its own try/except (one retry after a short pause before giving up
+        # on it) plus a humanized pause between cities, and the job only fails if
+        # EVERY city failed — a partial result is a warning with per-city detail.
         try:
             client = self.get_or_login_game_client(jid, aid, ga_id, creds)
-            updated = []
-            for city_id in city_ids:
-                change_current_city(client, city_id)
-                # fetch_city_context for island_id and tradegood_type only
-                context = fetch_city_context(client, int(city_id))
-                island_id = context["island_id"]
-                tradegood_type = context.get("tradegood_type") or "1"
-                snapshot_city = snapshot_city_map.get(str(city_id).strip()) or {}
-                snapshot_free_citizens = _to_int(snapshot_city.get("free_citizens"), 0, 0)
-
-                # --- Serraria (resource) ---
-                # Replicates ikabot: open the island resource view, read slider,
-                # then immediately set workers while that view is still "active".
-                resource_slider = self._open_view(
-                    client,
-                    city_id=city_id,
-                    island_id=island_id,
-                    resource_type="resource",
-                    page_type="resource",
-                )
-                resource_percent = self._resolve_target_percent(
-                    sawmill_raw,
-                    resource_slider["current_workers"],
-                    resource_slider["max_workers"],
-                )
-                requested_resource_workers = self._target_workers(
-                    resource_slider["max_workers"], resource_percent
-                )
-                resource_cap_workers = resource_slider["current_workers"] + resource_slider["citizens"]
-                resource_workers = min(requested_resource_workers, resource_cap_workers)
-                resource_feedback = self._set_workers(
-                    client,
-                    city_id=city_id,
-                    island_id=island_id,
-                    resource_type="resource",
-                    page_type="resource",
-                    workers=resource_workers,
-                )
-                resource_after = self._open_view(
-                    client,
-                    city_id=city_id,
-                    island_id=island_id,
-                    resource_type="resource",
-                    page_type="resource",
-                )
-                resource_applied_workers = resource_after["current_workers"]
-                resource_partial = (
-                    resource_applied_workers != resource_workers
-                    and self._is_population_limited_feedback(resource_feedback)
-                    and resource_applied_workers < resource_workers
-                )
-                if resource_applied_workers != resource_workers and not resource_partial:
-                    raise RuntimeError(
-                        f"serraria nao aplicada em {context['city_name']}: "
-                        f"esperado={resource_workers} atual={resource_applied_workers} "
-                        f"feedback={resource_feedback.get('feedback') or []} "
-                        f"errors={resource_feedback.get('errors') or []}"
-                    )
-
-                # --- Bem de luxo (tradegood) ---
-                tradegood_slider = self._open_view(
-                    client,
-                    city_id=city_id,
-                    island_id=island_id,
-                    resource_type="tradegood",
-                    page_type=tradegood_type,
-                )
-                luxury_percent = self._resolve_target_percent(
-                    luxury_raw,
-                    tradegood_slider["current_workers"],
-                    tradegood_slider["max_workers"],
-                )
-                requested_luxury_workers = self._target_workers(
-                    tradegood_slider["max_workers"], luxury_percent
-                )
-                luxury_cap_workers = tradegood_slider["current_workers"] + tradegood_slider["citizens"]
-                luxury_workers = min(requested_luxury_workers, luxury_cap_workers)
-                luxury_feedback = self._set_workers(
-                    client,
-                    city_id=city_id,
-                    island_id=island_id,
-                    resource_type="tradegood",
-                    page_type=tradegood_type,
-                    workers=luxury_workers,
-                )
-                luxury_after = self._open_view(
-                    client,
-                    city_id=city_id,
-                    island_id=island_id,
-                    resource_type="tradegood",
-                    page_type=tradegood_type,
-                )
-                luxury_applied_workers = luxury_after["current_workers"]
-                luxury_partial = (
-                    luxury_applied_workers != luxury_workers
-                    and self._is_population_limited_feedback(luxury_feedback)
-                    and luxury_applied_workers < luxury_workers
-                )
-                if luxury_applied_workers != luxury_workers and not luxury_partial:
-                    raise RuntimeError(
-                        f"luxo nao aplicado em {context['city_name']}: "
-                        f"esperado={luxury_workers} atual={luxury_applied_workers} "
-                        f"feedback={luxury_feedback.get('feedback') or []} "
-                        f"errors={luxury_feedback.get('errors') or []}"
-                    )
-
-                if resource_partial:
-                    self.log(
-                        jid,
-                        "warn",
-                        (
-                            f"Serraria limitada pelo jogo em {context['city_name']}: "
-                            f"solicitado={resource_percent}% ({resource_workers}) | "
-                            f"aplicado={self._workers_to_percent(resource_applied_workers, resource_slider['max_workers'])}% "
-                            f"({resource_applied_workers}/{resource_slider['max_workers']})"
-                        ),
-                    )
-                elif resource_workers < requested_resource_workers:
-                    self.log(
-                        jid,
-                        "warn",
-                        (
-                            f"Serraria limitada antes do envio em {context['city_name']}: "
-                            f"solicitado={resource_percent}% ({requested_resource_workers}) | "
-                            f"max_viavel={resource_workers} "
-                            f"(atuais={resource_slider['current_workers']} + livres={resource_slider['citizens']})"
-                        ),
-                    )
-                if luxury_partial:
-                    self.log(
-                        jid,
-                        "warn",
-                        (
-                            f"Luxo limitado pelo jogo em {context['city_name']}: "
-                            f"solicitado={luxury_percent}% ({luxury_workers}) | "
-                            f"aplicado={self._workers_to_percent(luxury_applied_workers, tradegood_slider['max_workers'])}% "
-                            f"({luxury_applied_workers}/{tradegood_slider['max_workers']})"
-                        ),
-                    )
-                elif luxury_workers < requested_luxury_workers:
-                    self.log(
-                        jid,
-                        "warn",
-                        (
-                            f"Luxo limitado antes do envio em {context['city_name']}: "
-                            f"solicitado={luxury_percent}% ({requested_luxury_workers}) | "
-                            f"max_viavel={luxury_workers} "
-                            f"(atuais={tradegood_slider['current_workers']} + livres={tradegood_slider['citizens']})"
-                        ),
-                    )
-
-                self.log(
-                    jid,
-                    "info",
-                    (
-                        f"Producao ajustada: {context['city_name']} | serraria={resource_percent}% "
-                        f"({resource_applied_workers}/{resource_slider['max_workers']}) | "
-                        f"luxo={luxury_percent}% ({luxury_applied_workers}/{tradegood_slider['max_workers']}) | "
-                        f"cidadaos={{resource:header={resource_slider['header_citizens']},template={resource_slider['template_citizens']},usado={resource_slider['citizens']}; "
-                        f"luxo:header={tradegood_slider['header_citizens']},template={tradegood_slider['template_citizens']},usado={tradegood_slider['citizens']}}} | "
-                        f"snapshot={snapshot_free_citizens}"
-                    ),
-                )
-                updated.append(
-                    {
-                        "city_id": city_id,
-                        "city_name": context["city_name"],
-                        "resource_percent": resource_percent,
-                        "resource_requested_workers": requested_resource_workers,
-                        "resource_workers": resource_applied_workers,
-                        "resource_applied_percent": self._workers_to_percent(
-                            resource_applied_workers, resource_slider["max_workers"]
-                        ),
-                        "resource_partial": resource_partial,
-                        "luxury_percent": luxury_percent,
-                        "luxury_requested_workers": requested_luxury_workers,
-                        "luxury_workers": luxury_applied_workers,
-                        "luxury_applied_percent": self._workers_to_percent(
-                            luxury_applied_workers, tradegood_slider["max_workers"]
-                        ),
-                        "luxury_partial": luxury_partial,
-                    }
-                )
-
-            if ga_id:
-                self.save_game_client(ga_id, client)
-            return RunnerResult(success=True, data={"cities": updated})
         except Exception as exc:
             self.log(jid, "error", f"Alterar producao falhou: {exc}")
             return RunnerResult(success=False, data={"error": str(exc)})
+
+        updated: list[dict[str, Any]] = []
+        failed: list[dict[str, Any]] = []
+        for index, city_id in enumerate(city_ids):
+            if index > 0:
+                time.sleep(random.uniform(2, 5))
+
+            last_exc: Exception | None = None
+            for attempt in (1, 2):
+                try:
+                    updated.append(
+                        self._apply_one_city(
+                            jid, client, city_id,
+                            sawmill_raw=sawmill_raw, luxury_raw=luxury_raw,
+                            snapshot_city_map=snapshot_city_map,
+                        )
+                    )
+                    last_exc = None
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    if attempt == 1:
+                        self.log(
+                            jid, "warn",
+                            f"Falha ao ajustar producao em {city_id} (tentativa 1/2): {exc}. "
+                            f"Retentando em ~10s (rate limit costuma dissipar).",
+                        )
+                        time.sleep(10 + random.uniform(0, 3))
+
+            if last_exc is not None:
+                self.log(jid, "error", f"Alterar producao falhou em {city_id} apos retry: {last_exc}")
+                failed.append({"city_id": city_id, "error": str(last_exc)})
+
+        if ga_id:
+            self.save_game_client(ga_id, client)
+
+        if not updated:
+            return RunnerResult(
+                success=False,
+                data={"error": "Nenhuma cidade teve a producao ajustada.", "cities": updated, "failed_cities": failed},
+            )
+        if failed:
+            self.log(
+                jid, "warn",
+                f"Producao ajustada parcialmente: {len(updated)} ok, {len(failed)} falharam "
+                f"({', '.join(str(f['city_id']) for f in failed)}).",
+            )
+        return RunnerResult(success=True, data={"cities": updated, "failed_cities": failed})
+
+    def _apply_one_city(
+        self,
+        jid: str,
+        client,
+        city_id: str,
+        *,
+        sawmill_raw: str,
+        luxury_raw: str,
+        snapshot_city_map: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Adjust sawmill + luxury workers for a single city. Raises on verification
+        failure — the caller (execute()) owns retry/partial-result policy (N-42)."""
+        change_current_city(client, city_id)
+        # fetch_city_context for island_id and tradegood_type only
+        context = fetch_city_context(client, int(city_id))
+        island_id = context["island_id"]
+        tradegood_type = context.get("tradegood_type") or "1"
+        snapshot_city = snapshot_city_map.get(str(city_id).strip()) or {}
+        snapshot_free_citizens = _to_int(snapshot_city.get("free_citizens"), 0, 0)
+
+        # --- Serraria (resource) ---
+        # Replicates ikabot: open the island resource view, read slider,
+        # then immediately set workers while that view is still "active".
+        resource_slider = self._open_view(
+            client,
+            city_id=city_id,
+            island_id=island_id,
+            resource_type="resource",
+            page_type="resource",
+        )
+        resource_percent = self._resolve_target_percent(
+            sawmill_raw,
+            resource_slider["current_workers"],
+            resource_slider["max_workers"],
+        )
+        requested_resource_workers = self._target_workers(
+            resource_slider["max_workers"], resource_percent
+        )
+        resource_cap_workers = resource_slider["current_workers"] + resource_slider["citizens"]
+        resource_workers = min(requested_resource_workers, resource_cap_workers)
+        resource_feedback = self._set_workers(
+            client,
+            city_id=city_id,
+            island_id=island_id,
+            resource_type="resource",
+            page_type="resource",
+            workers=resource_workers,
+        )
+        resource_after = self._open_view(
+            client,
+            city_id=city_id,
+            island_id=island_id,
+            resource_type="resource",
+            page_type="resource",
+        )
+        resource_applied_workers = resource_after["current_workers"]
+        resource_partial = (
+            resource_applied_workers != resource_workers
+            and self._is_population_limited_feedback(resource_feedback)
+            and resource_applied_workers < resource_workers
+        )
+        if resource_applied_workers != resource_workers and not resource_partial:
+            raise RuntimeError(
+                f"serraria nao aplicada em {context['city_name']}: "
+                f"esperado={resource_workers} atual={resource_applied_workers} "
+                f"feedback={resource_feedback.get('feedback') or []} "
+                f"errors={resource_feedback.get('errors') or []}"
+            )
+
+        # --- Bem de luxo (tradegood) ---
+        tradegood_slider = self._open_view(
+            client,
+            city_id=city_id,
+            island_id=island_id,
+            resource_type="tradegood",
+            page_type=tradegood_type,
+        )
+        luxury_percent = self._resolve_target_percent(
+            luxury_raw,
+            tradegood_slider["current_workers"],
+            tradegood_slider["max_workers"],
+        )
+        requested_luxury_workers = self._target_workers(
+            tradegood_slider["max_workers"], luxury_percent
+        )
+        luxury_cap_workers = tradegood_slider["current_workers"] + tradegood_slider["citizens"]
+        luxury_workers = min(requested_luxury_workers, luxury_cap_workers)
+        luxury_feedback = self._set_workers(
+            client,
+            city_id=city_id,
+            island_id=island_id,
+            resource_type="tradegood",
+            page_type=tradegood_type,
+            workers=luxury_workers,
+        )
+        luxury_after = self._open_view(
+            client,
+            city_id=city_id,
+            island_id=island_id,
+            resource_type="tradegood",
+            page_type=tradegood_type,
+        )
+        luxury_applied_workers = luxury_after["current_workers"]
+        luxury_partial = (
+            luxury_applied_workers != luxury_workers
+            and self._is_population_limited_feedback(luxury_feedback)
+            and luxury_applied_workers < luxury_workers
+        )
+        if luxury_applied_workers != luxury_workers and not luxury_partial:
+            raise RuntimeError(
+                f"luxo nao aplicado em {context['city_name']}: "
+                f"esperado={luxury_workers} atual={luxury_applied_workers} "
+                f"feedback={luxury_feedback.get('feedback') or []} "
+                f"errors={luxury_feedback.get('errors') or []}"
+            )
+
+        if resource_partial:
+            self.log(
+                jid,
+                "warn",
+                (
+                    f"Serraria limitada pelo jogo em {context['city_name']}: "
+                    f"solicitado={resource_percent}% ({resource_workers}) | "
+                    f"aplicado={self._workers_to_percent(resource_applied_workers, resource_slider['max_workers'])}% "
+                    f"({resource_applied_workers}/{resource_slider['max_workers']})"
+                ),
+            )
+        elif resource_workers < requested_resource_workers:
+            self.log(
+                jid,
+                "warn",
+                (
+                    f"Serraria limitada antes do envio em {context['city_name']}: "
+                    f"solicitado={resource_percent}% ({requested_resource_workers}) | "
+                    f"max_viavel={resource_workers} "
+                    f"(atuais={resource_slider['current_workers']} + livres={resource_slider['citizens']})"
+                ),
+            )
+        if luxury_partial:
+            self.log(
+                jid,
+                "warn",
+                (
+                    f"Luxo limitado pelo jogo em {context['city_name']}: "
+                    f"solicitado={luxury_percent}% ({luxury_workers}) | "
+                    f"aplicado={self._workers_to_percent(luxury_applied_workers, tradegood_slider['max_workers'])}% "
+                    f"({luxury_applied_workers}/{tradegood_slider['max_workers']})"
+                ),
+            )
+        elif luxury_workers < requested_luxury_workers:
+            self.log(
+                jid,
+                "warn",
+                (
+                    f"Luxo limitado antes do envio em {context['city_name']}: "
+                    f"solicitado={luxury_percent}% ({requested_luxury_workers}) | "
+                    f"max_viavel={luxury_workers} "
+                    f"(atuais={tradegood_slider['current_workers']} + livres={tradegood_slider['citizens']})"
+                ),
+            )
+
+        self.log(
+            jid,
+            "info",
+            (
+                f"Producao ajustada: {context['city_name']} | serraria={resource_percent}% "
+                f"({resource_applied_workers}/{resource_slider['max_workers']}) | "
+                f"luxo={luxury_percent}% ({luxury_applied_workers}/{tradegood_slider['max_workers']}) | "
+                f"cidadaos={{resource:header={resource_slider['header_citizens']},template={resource_slider['template_citizens']},usado={resource_slider['citizens']}; "
+                f"luxo:header={tradegood_slider['header_citizens']},template={tradegood_slider['template_citizens']},usado={tradegood_slider['citizens']}}} | "
+                f"snapshot={snapshot_free_citizens}"
+            ),
+        )
+        return {
+            "city_id": city_id,
+            "city_name": context["city_name"],
+            "resource_percent": resource_percent,
+            "resource_requested_workers": requested_resource_workers,
+            "resource_workers": resource_applied_workers,
+            "resource_applied_percent": self._workers_to_percent(
+                resource_applied_workers, resource_slider["max_workers"]
+            ),
+            "resource_partial": resource_partial,
+            "luxury_percent": luxury_percent,
+            "luxury_requested_workers": requested_luxury_workers,
+            "luxury_workers": luxury_applied_workers,
+            "luxury_applied_percent": self._workers_to_percent(
+                luxury_applied_workers, tradegood_slider["max_workers"]
+            ),
+            "luxury_partial": luxury_partial,
+        }
 
     @staticmethod
     def _resolve_city_ids(inputs: dict[str, Any]) -> list[str]:
