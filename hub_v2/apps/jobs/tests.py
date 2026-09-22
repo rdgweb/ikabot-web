@@ -132,17 +132,25 @@ class JobChainHistoryPartialTests(TestCase):
             source_job_id=self.child_1.pk,
         )
 
-    def test_job_list_does_not_render_chain_history_rows_initially(self):
+    def test_tech_view_shows_the_root_job_alone_without_chain_linking(self):
+        """N-59: the tech view must show only the job itself — no aggregating
+        or linking to other jobs in its reschedule chain. It must not surface
+        a 'ciclos anteriores' link, must not swap in a descendant job's status,
+        and must not link to any job other than the row's own."""
         self.client.force_login(self.user)
 
         response = self.client.get(reverse("jobs:job-list"), {"view": "tech"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "2 ciclo(s) anteriores")
-        self.assertContains(response, f"job-chain-history-body-{self.root.pk}")
-        self.assertContains(response, f'href="{reverse("jobs:job-detail", args=[self.child_2.pk])}"')
+        self.assertNotContains(response, "ciclo(s) anteriores")
+        self.assertNotContains(response, f"job-chain-history-body-{self.root.pk}")
         self.assertNotContains(response, f'href="{reverse("jobs:job-detail", args=[self.child_1.pk])}"')
-        self.assertNotContains(response, "Historico da cadeia")
+        self.assertNotContains(response, f'href="{reverse("jobs:job-detail", args=[self.child_2.pk])}"')
+        # The row is the root job itself, showing the root's own status
+        # (finished) — not child_2's ("queued"), which the old "active
+        # descendant" substitution used to show instead.
+        self.assertContains(response, f'href="{reverse("jobs:job-detail", args=[self.root.pk])}"')
+        self.assertContains(response, "Concluido")
 
     def test_chain_history_partial_returns_child_jobs_on_demand(self):
         self.client.force_login(self.user)
@@ -747,8 +755,14 @@ class ConstructionReservationLifecycleTests(TestCase):
             status="active",
         )
 
-    def test_workflow_delete_cancels_active_construction_reservations(self):
+    def test_workflow_delete_removes_its_jobs_and_reservations(self):
+        """N-59: deleting a workflow must actually delete its jobs too — they
+        used to only get cancelled (if active) and orphaned (workflow set to
+        NULL), which left them behind forever in the tech view. The
+        reservation is cascaded away with its job, not merely cancelled."""
         self.client.force_login(self.user)
+        root_job_id = self.root_job.pk
+        reservation_id = self.reservation.pk
 
         response = self.client.post(
             reverse("jobs:workflow-action", args=[self.workflow.pk]),
@@ -756,9 +770,10 @@ class ConstructionReservationLifecycleTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.reservation.refresh_from_db()
-        self.assertEqual(self.reservation.status, "cancelled")
         self.assertFalse(Workflow.objects.filter(pk=self.workflow.pk).exists())
+        self.assertFalse(Job.objects.filter(workflow_id=self.workflow.pk).exists())
+        self.assertFalse(Job.objects.filter(pk=root_job_id).exists())
+        self.assertFalse(ConstructionResourceReservation.objects.filter(pk=reservation_id).exists())
 
     def test_workflow_cancel_cancels_active_construction_reservations(self):
         self.client.force_login(self.user)

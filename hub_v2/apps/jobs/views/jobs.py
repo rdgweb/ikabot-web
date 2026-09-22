@@ -235,8 +235,12 @@ class JobListView(FilterSortListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         page_jobs = list(context.get("page_obj").object_list if context.get("page_obj") else context.get("object_list", []))
-        active_descendants = self._load_active_descendants(page_jobs)
-        chain_history_counts = self._load_chain_history_counts(page_jobs)
+        # N-59: the tech view shows only the job itself — no substituting a
+        # descendant job's live status, no "ciclos anteriores" link to other
+        # jobs. Both lookups are skipped here (their outputs are keyed by
+        # root_job_id, which is meaningless once every row is its own group).
+        active_descendants = {}
+        chain_history_counts = {}
         recent_log_messages = self._load_recent_log_messages(page_jobs)
         grouped_rows = self._build_grouped_rows(page_jobs, active_descendants, chain_history_counts, recent_log_messages)
         context["grouped_rows"] = grouped_rows
@@ -455,14 +459,10 @@ class JobListView(FilterSortListView):
         return job
 
     def _group_key(self, job, root_job):
-        group_type = self._group_type(job)
-        if group_type in {"construction", "transport"}:
-            return (group_type, str(root_job.pk))
-        return (
-            str(job.game_account_id or job.account_id),
-            int(job.action_code),
-            job.created_at.date().isoformat(),
-        )
+        # JobListView is the "tech" (raw) view — N-59: it must never aggregate
+        # jobs together (no grouping by account/action/day, no linking to a
+        # different job's status). Every job is its own, unjoined row here.
+        return str(job.pk)
 
     @staticmethod
     def _action_name(action_code, inputs=None):
@@ -3507,13 +3507,16 @@ class WorkflowActionView(LoginRequiredMixin, View):
         workflow_jobs = Job.objects.filter(workflow=workflow)
 
         if action == "delete":
-            workflow_jobs.filter(
-                status__in=("queued", "running", "scheduled"),
-            ).update(status="cancelled", finished_at=now, updated_at=now, lease_expires_at=None)
-            _cancel_active_construction_reservations_for_jobs(workflow_jobs)
+            # N-59: "excluir workflow" must actually remove its jobs too — they
+            # used to only get cancelled (if still active) and then orphaned
+            # (workflow set to NULL), which left them behind forever in the
+            # tech view. Deleting the jobs cascades their logs and construction
+            # reservations (Job -> JobLog/ConstructionResourceReservation are
+            # on_delete=CASCADE).
+            workflow_jobs.delete()
             workflow.delete()
             resp = HttpResponse(status=200)
-            resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": "Workflow excluído."}})
+            resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": "Workflow e seus jobs excluídos."}})
             resp["HX-Redirect"] = "/jobs/"
             return resp
 
@@ -3672,21 +3675,19 @@ class WorkflowBulkDeleteView(LoginRequiredMixin, View):
             resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": "Nenhum workflow selecionado."}})
             return resp
 
-        now = timezone.now()
-
         if delete_all:
             qs = _filtered_workflow_queryset_from_querystring(request.POST.get("querystring", ""))
         else:
             qs = Workflow.objects.filter(pk__in=pks)
 
-        workflow_jobs = Job.objects.filter(workflow__in=qs)
-        workflow_jobs.filter(
-            status__in=("queued", "running", "scheduled"),
-        ).update(status="cancelled", finished_at=now, updated_at=now, lease_expires_at=None)
-        _cancel_active_construction_reservations_for_jobs(workflow_jobs)
+        # N-59: delete the jobs (and their cascaded logs/reservations) before
+        # the workflows — Job.workflow is on_delete=SET_NULL, so deleting the
+        # workflows first would orphan the jobs instead of removing them, and
+        # they'd keep showing up forever in the tech view.
+        Job.objects.filter(workflow__in=qs).delete()
 
         deleted_count, _ = qs.delete()
-        msg = f"{deleted_count} workflow(s) excluído(s)."
+        msg = f"{deleted_count} workflow(s) e seus jobs excluídos."
 
         resp = HttpResponse(status=200)
         resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": msg}})
