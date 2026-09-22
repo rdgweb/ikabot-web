@@ -473,6 +473,7 @@ class BuyAction(BaseAction):
             r'&type=(\d+)'                        # group 6 = offer type
             r'&resource=(\w+)"'                   # group 7 = resource string
         )
+        seen: list[tuple[str, str]] = []
         for m in re.finditer(pattern, html, re.DOTALL):
             city_name, player_name, dest_city_id, city_id, position, offer_type, resource = (
                 m.groups()
@@ -488,6 +489,18 @@ class BuyAction(BaseAction):
                     "type": int(offer_type),
                     "resource": resource,
                 }
+            seen.append((dest_city_id, resource))
+        # N-70: this diagnostic is the only difference from a plain miss — it does not
+        # affect matching. It distinguishes "listing had no offers at all" (likely a
+        # stale/blank page) from "listing had offers, just not from this seller/resource"
+        # (likely the offer expired/was taken, or a resource_str/city_id mismatch), which
+        # is the information needed to actually pin down why some purchases fail with
+        # "Offer preview not found" after all retries.
+        logger.warning(
+            "No matching offer for seller_city_id=%s resource=%s in branch office listing "
+            "(html_len=%s, offers_seen=%s)",
+            seller_city_id, resource_str, len(html), seen[:10],
+        )
         return None
 
     def _get_take_offer_html(
