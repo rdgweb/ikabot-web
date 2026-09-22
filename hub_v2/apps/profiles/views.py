@@ -18,6 +18,7 @@ from apps.jobs.models import Job
 from apps.jobs.forms import JobCreateForm
 from apps.jobs.views.create import (
     _construction_city_data,
+    _custom_field_names,
     _get_cities,
     _job_form_context,
 )
@@ -382,7 +383,7 @@ class PresetConfigureActionView(LoginRequiredMixin, View):
                     cities = matched
                     if len(matched) == 1:
                         auto_city_id = str(matched[0]["id"])
-            result.append({"ga": ga, "cities": cities, "auto_city_id": auto_city_id})
+            result.append({"ga": ga, "key": str(ga.pk), "cities": cities, "auto_city_id": auto_city_id})
         return result
 
     def _build_ctx(self, preset, pa, action_meta, form, ga, construction_cities, action_order):
@@ -399,7 +400,7 @@ class PresetConfigureActionView(LoginRequiredMixin, View):
 
         base = _job_form_context(form, action_meta, pa.action_code, ga, construction_cities) if ga else {
             "form": form, "action_meta": action_meta, "action_code": pa.action_code,
-            "game_account": None, "cities": [], "custom_field_names": [],
+            "game_account": None, "cities": [], "custom_field_names": _custom_field_names(pa.action_code),
             "construction_buildings": {}, "shrine_ui": {}, "daily_login_ui": {},
             "research_ui": {}, "miracle_ui": {}, "experiment_ui": {},
             "scientists_ui": {}, "upgrade_units_ui": {}, "market_ui": {}, "training_ui": {},
@@ -479,7 +480,9 @@ class PresetConfigureActionView(LoginRequiredMixin, View):
                 ga_key = str(pga.game_account.pk)
                 if city_type == "multi":
                     selected = request.POST.getlist(f"cities__{ga_key}")
-                    per_account[ga_key] = {city_field_name: selected or "__all__"}
+                    per_account[ga_key] = {city_field_name: selected}
+                    if not selected:
+                        form.add_error(None, f"Selecione ao menos uma cidade para {pga.game_account}.")
                 elif city_type == "single":
                     selected = request.POST.get(f"city__{ga_key}", "")
                     per_account[ga_key] = {city_field_name: selected}
@@ -504,7 +507,6 @@ class PresetConfigureActionView(LoginRequiredMixin, View):
                 return redirect("profiles:preset-configure-action", pk=preset.pk, action_order=next_pa.order)
             return redirect("profiles:preset-detail", pk=preset.pk)
 
-        pa.save(update_fields=["per_account_json", "updated_at"])
         ctx = self._build_ctx(preset, pa, action_meta, form, ga, construction_cities, action_order)
         return render(request, "profiles/preset_configure_action.html", ctx)
 

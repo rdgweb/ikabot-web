@@ -61,13 +61,16 @@
       <input type="hidden" name="game_account" value="{{ game_account.pk|default:'' }}">
       <input type="hidden" name="action_code" value="{{ action_code }}">
 
-      {% if form.non_field_errors %}
+      {% if form.errors %}
       <div class="mb-4 p-3 rounded-lg" style="background: #fde8e5; border: 1px solid #e8b4af;">
         {% for error in form.non_field_errors %}
         <p class="text-sm flex items-center gap-2" style="color: #8c3028;">
           <i class="bi bi-exclamation-triangle-fill"></i> {{ error }}
         </p>
         {% endfor %}
+        {% for field in form %}{% for error in field.errors %}
+        <p class="text-sm" style="color: #8c3028;">{{ field.label }}: {{ error }}</p>
+        {% endfor %}{% endfor %}
       </div>
       {% endif %}
 
@@ -156,11 +159,11 @@
             {% if city_type == "multi" %}
             <div class="flex flex-wrap gap-1.5">
               {% for city in ac_data.cities %}
-              {% with ga_cfg=per_account_city|get_item:ac_data.ga.pk %}
+              {% with ga_cfg=per_account_city|get_item:ac_data.key %}
               <label class="flex items-center gap-1.5 px-2 py-1 rounded-lg border cursor-pointer text-[11px] transition-all hover:border-[var(--ik-sea)]/50"
                      style="border-color: var(--ik-line);">
                 <input type="checkbox" name="cities__{{ ac_data.ga.pk }}" value="{{ city.id }}"
-                       {% if ga_cfg %}{% if city.id|stringformat:"s" in ga_cfg.cities %}checked{% endif %}{% else %}checked{% endif %}
+                       {% if ga_cfg %}{% with selected_cities=ga_cfg|get_item:city_field_name %}{% if city.id|stringformat:"s" in selected_cities %}checked{% endif %}{% endwith %}{% else %}checked{% endif %}
                        class="rounded border-[var(--ik-line)]">
                 {{ city.name }}
               </label>
@@ -172,7 +175,7 @@
             {% elif city_type == "single" %}
             <div class="flex flex-wrap gap-1.5">
               {% for city in ac_data.cities %}
-              {% with ga_cfg=per_account_city|get_item:ac_data.ga.pk city_str=city.id|stringformat:"s" %}
+              {% with ga_cfg=per_account_city|get_item:ac_data.key city_str=city.id|stringformat:"s" %}
               {% with saved_val=ga_cfg|get_item:city_field_name|default:"" %}
               <label class="flex items-center gap-1.5 px-2 py-1 rounded-lg border cursor-pointer text-[11px] transition-all hover:border-[var(--ik-sea)]/50"
                      style="border-color: var(--ik-line);">
