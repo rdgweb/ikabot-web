@@ -18,8 +18,10 @@
            fromCityId: '{{ form.from_city_id.value|default:''|escapejs }}',
            toCityId: '{{ form.to_city_id.value|default:''|escapejs }}',
            multiOrigin: false,
+           multiDestination: false,
            unitIdByName: {},
            selectedCities: [],
+           selectedDestCities: [],
            units: {},
            customTargets: {},
            trainQuery: '',
@@ -76,39 +78,82 @@
              if (scope === 'both') return troopsTotal + fleetTotal;
              return troopsTotal;
            },
-           // N-81: multi-origin move — always moves EVERYTHING of the selected
-           // scope out of each selected origin city (no per-unit picker across
-           // N cities, keeps the UI simple). Builds {cityId: {unitId: qty}}
-           // straight from each city's own troops/fleet snapshot.
+           // N-81: move from several origins and/or to several destinations at
+           // once. Always moves EVERYTHING of the selected scope out of each
+           // origin (no per-unit picker across N cities, keeps the UI simple);
+           // when there is more than one destination, each origin's units are
+           // split EQUALLY across the selected destinations (remainder handed
+           // out one-by-one so no unit is lost).
            toggleMultiOrigin() {
              this.multiOrigin = !this.multiOrigin;
              this.selectedCities = [];
              this.fromCityId = '';
            },
-           multiMoveUnitsJson() {
+           toggleMultiDestination() {
+             this.multiDestination = !this.multiDestination;
+             this.selectedDestCities = [];
+             this.toCityId = '';
+           },
+           isDestSelected(cityId) {
+             return this.selectedDestCities.includes(String(cityId));
+           },
+           toggleDestCity(cityId) {
+             const key = String(cityId);
+             if (this.isDestSelected(key)) {
+               this.selectedDestCities = this.selectedDestCities.filter(id => id !== key);
+               return;
+             }
+             this.selectedDestCities = [...this.selectedDestCities, key];
+           },
+           originsList() {
+             return this.multiOrigin ? this.selectedCities : (this.fromCityId ? [String(this.fromCityId)] : []);
+           },
+           destsList() {
+             return this.multiDestination ? this.selectedDestCities : (this.toCityId ? [String(this.toCityId)] : []);
+           },
+           isMultiMove() {
+             return this.multiOrigin || this.multiDestination;
+           },
+           cityUnitsForScope(city) {
              const result = {};
-             for (const cityId of this.selectedCities) {
-               const city = this.cityById(cityId);
-               if (!city) continue;
-               const cityUnits = {};
-               if (this.buildingType === 'troops' || this.buildingType === 'both') {
-                 for (const [name, qty] of Object.entries(city.troops || {})) {
-                   const uid = this.unitIdByName[name];
-                   if (uid && parseInt(qty) > 0) cityUnits[uid] = parseInt(qty);
-                 }
+             if (!city) return result;
+             if (this.buildingType === 'troops' || this.buildingType === 'both') {
+               for (const [name, qty] of Object.entries(city.troops || {})) {
+                 const uid = this.unitIdByName[name];
+                 if (uid && parseInt(qty) > 0) result[uid] = (result[uid] || 0) + parseInt(qty);
                }
-               if (this.buildingType === 'fleet' || this.buildingType === 'both') {
-                 for (const [name, qty] of Object.entries(city.fleet || {})) {
-                   const uid = this.unitIdByName[name];
-                   if (uid && parseInt(qty) > 0) cityUnits[uid] = parseInt(qty);
-                 }
+             }
+             if (this.buildingType === 'fleet' || this.buildingType === 'both') {
+               for (const [name, qty] of Object.entries(city.fleet || {})) {
+                 const uid = this.unitIdByName[name];
+                 if (uid && parseInt(qty) > 0) result[uid] = (result[uid] || 0) + parseInt(qty);
                }
-               if (Object.keys(cityUnits).length) result[String(cityId)] = cityUnits;
+             }
+             return result;
+           },
+           multiMovePairsJson() {
+             const origins = this.originsList();
+             const dests = this.destsList();
+             const result = {};
+             if (!origins.length || !dests.length) return JSON.stringify(result);
+             for (const originId of origins) {
+               const units = this.cityUnitsForScope(this.cityById(originId));
+               const pairs = {};
+               const n = dests.length;
+               dests.forEach((destId, idx) => {
+                 const destUnits = {};
+                 for (const [uid, qty] of Object.entries(units)) {
+                   const share = Math.floor(qty / n) + (idx < (qty % n) ? 1 : 0);
+                   if (share > 0) destUnits[uid] = share;
+                 }
+                 if (Object.keys(destUnits).length) pairs[String(destId)] = destUnits;
+               });
+               if (Object.keys(pairs).length) result[String(originId)] = pairs;
              }
              return JSON.stringify(result);
            },
-           multiMoveTotal() {
-             return this.selectedCities.reduce((sum, cid) => sum + this.unitsTotalForCity(this.cityById(cid) || {}, this.buildingType), 0);
+           multiMoveGrandTotal() {
+             return this.originsList().reduce((sum, cid) => sum + this.unitsTotalForCity(this.cityById(cid) || {}, this.buildingType), 0);
            },
            visibleSourceCities() {
              // maintain: any city can be a garrison target (training happens where barracks exist, then moves)
@@ -635,54 +680,31 @@
               <span class="mb-1 block text-[10px] uppercase tracking-[0.14em] text-muted">Filtrar cidades</span>
               <input type="text" x-model="fromQuery" class="form-input" placeholder="Nome, luxo ou coordenada">
             </label>
-            <input type="hidden" name="{{ form.from_city_id.html_name }}" :value="multiOrigin ? (selectedCities[0] || '') : fromCityId">
-            <input type="hidden" name="multi_move_units_json" :value="multiOrigin ? multiMoveUnitsJson() : '{}'">
+            <input type="hidden" name="{{ form.from_city_id.html_name }}" :value="originsList()[0] || ''">
+            <input type="hidden" name="multi_move_pairs_json" :value="isMultiMove() ? multiMovePairsJson() : '{}'">
+            <template x-if="isMultiMove()">
+              <template x-for="cid in originsList()" :key="'from-city-id-' + cid">
+                <input type="hidden" name="from_city_ids" :value="cid">
+              </template>
+            </template>
 
             <template x-if="multiOrigin">
-              <div>
-                <div class="flex gap-3 text-[10px] mb-1.5">
-                  <button type="button" class="link-sea" @click="selectedCities = originCitiesWithUnits(buildingType, fromQuery).map(c => String(c.id))">Selecionar visiveis</button>
-                  <button type="button" class="text-muted hover:text-ink" @click="selectedCities = []">Limpar</button>
-                  <span class="text-muted ml-auto" x-show="selectedCities.length">
-                    <span x-text="selectedCities.length"></span> cidade(s) — <span x-text="new Intl.NumberFormat('pt-BR').format(multiMoveTotal())"></span> unidade(s)
-                  </span>
-                </div>
-                <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[14rem] overflow-y-auto p-0.5">
-                  <template x-for="city in originCitiesWithUnits(buildingType, fromQuery)" :key="'from-multi-' + city.id">
-                    <label class="relative rounded-[16px] border p-3 text-left transition-all cursor-pointer"
-                      :class="isSourceSelected(city.id) ? 'ring-2 ring-[var(--ik-bad)] shadow-sm' : 'hover:border-[rgba(187,81,67,0.4)]'"
-                      :style="isSourceSelected(city.id)
-                        ? 'border-color: var(--ik-bad); background: rgba(187,81,67,0.08);'
-                        : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
-                      <input type="checkbox" :value="String(city.id)" x-model="selectedCities" class="sr-only">
-                      <div class="flex items-center justify-between gap-2">
-                        <div class="min-w-0">
-                          <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
-                          <div class="mt-1 text-[11px] text-muted" x-text="new Intl.NumberFormat('pt-BR').format(unitsTotalForCity(city, buildingType)) + ' unidades'"></div>
-                        </div>
-                        <span class="inline-flex h-6 w-6 items-center justify-center rounded-full border shrink-0"
-                              :style="isSourceSelected(city.id)
-                                ? 'border-color: var(--ik-bad); color: white; background: var(--ik-bad);'
-                                : 'border-color: rgba(187,81,67,0.24); color: var(--ik-bad); background: rgba(187,81,67,0.06);'">
-                          <i class="bi" :class="isSourceSelected(city.id) ? 'bi-check-lg' : 'bi-box-arrow-up-right'"></i>
-                        </span>
-                      </div>
-                    </label>
-                  </template>
-                </div>
-                <template x-for="cid in selectedCities" :key="'from-city-id-' + cid">
-                  <input type="hidden" name="from_city_ids" :value="cid">
-                </template>
+              <div class="flex gap-3 text-[10px] mb-1.5">
+                <button type="button" class="link-sea" @click="selectedCities = originCitiesWithUnits(buildingType, fromQuery).map(c => String(c.id))">Selecionar visiveis</button>
+                <button type="button" class="text-muted hover:text-ink" @click="selectedCities = []">Limpar</button>
+                <span class="text-muted ml-auto" x-show="selectedCities.length">
+                  <span x-text="selectedCities.length"></span> cidade(s)
+                </span>
               </div>
             </template>
 
-            <template x-if="!multiOrigin">
             <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[14rem] overflow-y-auto p-0.5">
               <template x-for="city in originCitiesWithUnits(buildingType, fromQuery)" :key="'from-' + city.id">
-                <button type="button" @click="fromCityId = String(city.id)"
+                <button type="button"
+                  @click="multiOrigin ? toggleSourceCity(city.id) : (fromCityId = String(city.id))"
                   class="relative rounded-[16px] border p-3 text-left transition-all"
-                  :class="String(fromCityId) === String(city.id) ? 'ring-2 ring-[var(--ik-bad)] shadow-sm' : 'hover:border-[rgba(187,81,67,0.4)]'"
-                  :style="String(fromCityId) === String(city.id)
+                  :class="(multiOrigin ? isSourceSelected(city.id) : String(fromCityId) === String(city.id)) ? 'ring-2 ring-[var(--ik-bad)] shadow-sm' : 'hover:border-[rgba(187,81,67,0.4)]'"
+                  :style="(multiOrigin ? isSourceSelected(city.id) : String(fromCityId) === String(city.id))
                     ? 'border-color: var(--ik-bad); background: rgba(187,81,67,0.08);'
                     : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
                   <div class="absolute inset-x-0 top-0 h-14"
@@ -707,10 +729,10 @@
                           </div>
                         </div>
                         <span class="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border"
-                              :style="String(fromCityId) === String(city.id)
+                              :style="(multiOrigin ? isSourceSelected(city.id) : String(fromCityId) === String(city.id))
                                 ? 'border-color: var(--ik-bad); color: white; background: var(--ik-bad);'
                                 : 'border-color: rgba(187,81,67,0.24); color: var(--ik-bad); background: rgba(187,81,67,0.06);'">
-                          <i class="bi" :class="String(fromCityId) === String(city.id) ? 'bi-check-lg' : 'bi-box-arrow-up-right'"></i>
+                          <i class="bi" :class="(multiOrigin ? isSourceSelected(city.id) : String(fromCityId) === String(city.id)) ? 'bi-check-lg' : 'bi-box-arrow-up-right'"></i>
                         </span>
                       </div>
                       <div class="mt-2 flex flex-wrap gap-1.5">
@@ -725,22 +747,46 @@
                 </button>
               </template>
             </div>
-            </template>
           </div>
           {# Destination #}
           <div>
-            <div class="text-[11px] font-semibold uppercase tracking-[0.16em] mb-2" style="color: var(--ik-sea);">Destino</div>
+            <div class="flex items-center justify-between gap-2 mb-2">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Destino</div>
+              <button type="button" @click="toggleMultiDestination()"
+                      class="text-[10px] font-semibold px-2 py-1 rounded-lg border transition-colors"
+                      :class="multiDestination ? 'bg-[rgba(79,134,185,0.12)] text-[var(--ik-sea)] border-[rgba(79,134,185,0.4)]' : 'text-muted border-[var(--ik-line)] hover:text-ink'">
+                <i class="bi" :class="multiDestination ? 'bi-check-square' : 'bi-collection'"></i>
+                <span x-text="multiDestination ? 'Varias cidades' : 'Mover para varias cidades'"></span>
+              </button>
+            </div>
             <label class="mb-2 block">
               <span class="mb-1 block text-[10px] uppercase tracking-[0.14em] text-muted">Filtrar cidades</span>
               <input type="text" x-model="toQuery" class="form-input" placeholder="Nome, luxo ou coordenada">
             </label>
-            <input type="hidden" name="{{ form.to_city_id.html_name }}" x-model="toCityId">
+            <input type="hidden" name="{{ form.to_city_id.html_name }}" :value="destsList()[0] || ''">
+            <template x-if="isMultiMove()">
+              <template x-for="cid in destsList()" :key="'to-city-id-' + cid">
+                <input type="hidden" name="to_city_ids" :value="cid">
+              </template>
+            </template>
+
+            <template x-if="multiDestination">
+              <div class="flex gap-3 text-[10px] mb-1.5">
+                <button type="button" class="link-sea" @click="selectedDestCities = destinationCities(toQuery).filter(c => !originsList().includes(String(c.id))).map(c => String(c.id))">Selecionar visiveis</button>
+                <button type="button" class="text-muted hover:text-ink" @click="selectedDestCities = []">Limpar</button>
+                <span class="text-muted ml-auto" x-show="selectedDestCities.length">
+                  <span x-text="selectedDestCities.length"></span> cidade(s)
+                </span>
+              </div>
+            </template>
+
             <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[14rem] overflow-y-auto p-0.5">
-              <template x-for="city in destinationCities(toQuery).filter(c => multiOrigin ? !selectedCities.includes(String(c.id)) : String(c.id) !== String(fromCityId))" :key="'to-' + city.id">
-                <button type="button" @click="toCityId = String(city.id)"
+              <template x-for="city in destinationCities(toQuery).filter(c => !originsList().includes(String(c.id)))" :key="'to-' + city.id">
+                <button type="button"
+                  @click="multiDestination ? toggleDestCity(city.id) : (toCityId = String(city.id))"
                   class="relative rounded-[16px] border p-3 text-left transition-all"
-                  :class="String(toCityId) === String(city.id) ? 'ring-2 ring-[var(--ik-sea)] shadow-sm' : 'hover:border-[rgba(79,134,185,0.4)]'"
-                  :style="String(toCityId) === String(city.id)
+                  :class="(multiDestination ? isDestSelected(city.id) : String(toCityId) === String(city.id)) ? 'ring-2 ring-[var(--ik-sea)] shadow-sm' : 'hover:border-[rgba(79,134,185,0.4)]'"
+                  :style="(multiDestination ? isDestSelected(city.id) : String(toCityId) === String(city.id))
                     ? 'border-color: var(--ik-sea); background: rgba(79,134,185,0.08);'
                     : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
                   <div class="absolute inset-x-0 top-0 h-14"
@@ -765,10 +811,10 @@
                           </div>
                         </div>
                         <span class="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border"
-                              :style="String(toCityId) === String(city.id)
+                              :style="(multiDestination ? isDestSelected(city.id) : String(toCityId) === String(city.id))
                                 ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
                                 : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
-                          <i class="bi" :class="String(toCityId) === String(city.id) ? 'bi-check-lg' : 'bi-box-arrow-in-down-left'"></i>
+                          <i class="bi" :class="(multiDestination ? isDestSelected(city.id) : String(toCityId) === String(city.id)) ? 'bi-check-lg' : 'bi-box-arrow-in-down-left'"></i>
                         </span>
                       </div>
                     </div>
@@ -779,19 +825,20 @@
           </div>
         </div>
 
-        {# N-81: multi-origin summary — always moves everything of the selected scope, no per-unit picker #}
-        <template x-if="multiOrigin && selectedCities.length">
+        {# N-81: multi-origin/multi-destination summary — always moves everything of the selected scope, split equally when there is more than one destination #}
+        <template x-if="isMultiMove() && originsList().length && destsList().length">
           <div class="rounded-[16px] border border-[rgba(187,81,67,0.3)] bg-[rgba(187,81,67,0.06)] p-4 text-sm text-muted">
             <i class="bi bi-info-circle text-[var(--ik-bad)]"></i>
             Vai mover <strong>todas as unidades</strong> do escopo selecionado de
-            <strong x-text="selectedCities.length"></strong> cidade(s) —
-            <span x-text="new Intl.NumberFormat('pt-BR').format(multiMoveTotal())"></span> unidade(s) no total —
-            para <strong x-text="cityById(toCityId)?.name || 'a cidade de destino'"></strong>.
+            <strong x-text="originsList().length"></strong> cidade(s) de origem para
+            <strong x-text="destsList().length"></strong> cidade(s) de destino —
+            <span x-text="new Intl.NumberFormat('pt-BR').format(multiMoveGrandTotal())"></span> unidade(s) no total
+            <span x-show="destsList().length > 1"> — dividido igualmente entre os destinos</span>.
           </div>
         </template>
 
         {# Units to move — per type, shown when a single FROM city is selected #}
-        <template x-if="!multiOrigin && fromCityId">
+        <template x-if="!isMultiMove() && fromCityId">
           <div>
             <div class="text-[11px] font-semibold uppercase tracking-[0.16em] mb-2" style="color: var(--ik-bad);">
               Unidades a mover de <span x-text="cityById(fromCityId)?.name || ''"></span>

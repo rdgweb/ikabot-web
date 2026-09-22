@@ -895,7 +895,7 @@ class MoveForcesFormTests(TestCase):
         self.assertNotIn("has_barracks", fn_body)
         self.assertNotIn("has_shipyard", fn_body)
         self.assertIn(
-            "destinationCities(toQuery).filter(c => multiOrigin ? !selectedCities.includes(String(c.id)) : String(c.id) !== String(fromCityId))",
+            "destinationCities(toQuery).filter(c => !originsList().includes(String(c.id)))",
             html,
         )
 
@@ -926,11 +926,12 @@ class MoveForcesFormTests(TestCase):
 
 
 class MultiOriginMoveForcesTests(TestCase):
-    """N-81: move forces from several origin cities to one destination in a
-    single submission. Each origin moves everything it has of the selected
-    scope (multi_move_units_json, built client-side from the snapshot) --
-    no agent/runner changes needed, StationUnitsRunner already processes
-    each job's from_city_id independently."""
+    """N-81: move forces from several origin cities and/or to several
+    destination cities in a single submission. Each origin moves everything
+    it has of the selected scope, split equally across destinations when
+    there is more than one (multi_move_pairs_json, built client-side from
+    the snapshot) -- no agent/runner changes needed, StationUnitsRunner
+    already processes each job's from_city_id/to_city_id independently."""
 
     def setUp(self):
         self.user = get_user_model().objects.create_user(
@@ -950,7 +951,7 @@ class MultiOriginMoveForcesTests(TestCase):
             {"id": "13", "name": "Gamma", "buildings": []},
         ]
 
-    def test_fan_out_creates_one_job_per_city_and_skips_cities_with_no_units(self):
+    def test_fan_out_creates_one_job_per_origin_destination_pair(self):
         import json as _json
 
         count = JobSubmitView()._create_jobs(
@@ -959,9 +960,10 @@ class MultiOriginMoveForcesTests(TestCase):
             {},
             {
                 "scope": "troops",
-                "to_city_id": "13",
-                "from_city_ids": ["11", "12", "13"],
-                "_multi_move_units": {"11": {"301": 5}, "12": {"301": 3}},
+                "_multi_move_pairs": {
+                    "11": {"13": {"301": 5}},
+                    "12": {"13": {"301": 3}, "": {}},
+                },
             },
             self.cities,
         )
@@ -979,31 +981,58 @@ class MultiOriginMoveForcesTests(TestCase):
         self.assertEqual(by_from_city["11"]["to_city_id"], "13")
         self.assertEqual(by_from_city["11"]["scope"], "troops")
         self.assertEqual(by_from_city["12"]["units"], {"301": 3})
+        self.assertEqual(by_from_city["12"]["to_city_id"], "13")
 
-    def test_normalize_parses_from_city_ids_and_units_json_from_post(self):
+    def test_fan_out_splits_one_origin_across_several_destinations(self):
+        """1 origin -> 3 destinations: the frontend is responsible for the
+        equal split (remainder handed out unit-by-unit); the backend just
+        fans out whatever pairs it receives, one job each."""
+        import json as _json
+
+        count = JobSubmitView()._create_jobs(
+            self.ga, 1202, {},
+            {
+                "scope": "troops",
+                "_multi_move_pairs": {"11": {"12": {"301": 4}, "13": {"301": 3}}},
+            },
+            self.cities,
+        )
+
+        self.assertEqual(count, 2)
+        jobs = Job.objects.filter(account=self.account, action_code=1202).order_by("created_at")
+        units_by_dest = {}
+        for job in jobs:
+            job_inputs = _json.loads(job.inputs_json)
+            self.assertEqual(job_inputs["from_city_id"], "11")
+            units_by_dest[job_inputs["to_city_id"]] = job_inputs["units"]
+        self.assertEqual(units_by_dest, {"12": {"301": 4}, "13": {"301": 3}})
+
+    def test_normalize_parses_city_id_lists_and_pairs_json_from_post(self):
         from django.test import RequestFactory
 
         rf = RequestFactory()
         request = rf.post("/jobs/new/submit/", data={
             "from_city_ids": ["11", "12"],
-            "multi_move_units_json": '{"11": {"301": 5}, "12": {"301": 3}}',
+            "to_city_ids": ["13"],
+            "multi_move_pairs_json": '{"11": {"13": {"301": 5}}, "12": {"13": {"301": 3}}}',
             "scope": "troops",
         })
         normalized = JobSubmitView._normalize_station_units_inputs({}, request)
-        self.assertEqual(normalized["from_city_ids"], ["11", "12"])
-        self.assertEqual(normalized["_multi_move_units"], {"11": {"301": 5}, "12": {"301": 3}})
+        self.assertEqual(normalized["_multi_move_pairs"], {"11": {"13": {"301": 5}}, "12": {"13": {"301": 3}}})
 
-    def test_normalize_ignores_from_city_ids_when_only_one_city_selected(self):
-        """Single-origin submissions must not accidentally trigger the fan-out path."""
+    def test_normalize_ignores_single_city_on_both_sides(self):
+        """Plain single-origin/single-destination submissions must not
+        accidentally trigger the fan-out path."""
         from django.test import RequestFactory
 
         rf = RequestFactory()
-        request = rf.post("/jobs/new/submit/", data={"from_city_ids": ["11"], "scope": "troops"})
+        request = rf.post("/jobs/new/submit/", data={
+            "from_city_ids": ["11"], "to_city_ids": ["13"], "scope": "troops",
+        })
         normalized = JobSubmitView._normalize_station_units_inputs({}, request)
-        self.assertNotIn("from_city_ids", normalized)
-        self.assertNotIn("_multi_move_units", normalized)
+        self.assertNotIn("_multi_move_pairs", normalized)
 
-    def test_multi_origin_toggle_and_hidden_fields_render_for_move_forces(self):
+    def test_multi_origin_and_multi_destination_toggles_render_for_move_forces(self):
         self.client.force_login(self.user)
         with patch("apps.jobs.views.create._get_cities", return_value=self.cities):
             response = self.client.get(
@@ -1011,5 +1040,7 @@ class MultiOriginMoveForcesTests(TestCase):
             )
         html = response.content.decode()
         self.assertIn("toggleMultiOrigin()", html)
-        self.assertIn('name="multi_move_units_json"', html)
+        self.assertIn("toggleMultiDestination()", html)
+        self.assertIn('name="multi_move_pairs_json"', html)
         self.assertIn('name="from_city_ids"', html)
+        self.assertIn('name="to_city_ids"', html)

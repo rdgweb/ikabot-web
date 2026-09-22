@@ -3562,20 +3562,29 @@ class JobSubmitView(LoginRequiredMixin, View):
             if city.get("id") is not None
         }
 
-        if int(action_code) == 1202 and inputs.get("from_city_ids"):
-            # N-81: multi-origin Mover Forcas -- one StationUnits job per
-            # selected origin city, each moving only what that city actually
-            # has (per _multi_move_units, built client-side from the snapshot).
-            from_city_ids = inputs.pop("from_city_ids")
-            per_city_units = inputs.pop("_multi_move_units", {}) or {}
+        if int(action_code) == 1202 and inputs.get("_multi_move_pairs"):
+            # N-81: move from several origins and/or to several destinations
+            # at once -- one StationUnits job per (origin, destination) pair
+            # that actually has units in it. _multi_move_pairs is built
+            # client-side from the snapshot: {from_city_id: {to_city_id:
+            # {unit_id: qty}}}, already split equally across destinations
+            # when there is more than one.
+            pairs = inputs.pop("_multi_move_pairs")
+            inputs.pop("from_city_ids", None)
+            inputs.pop("to_city_ids", None)
             base_inputs = dict(inputs)
             count = 0
-            for city_id in from_city_ids:
-                city_units = per_city_units.get(str(city_id)) or {}
-                if not city_units:
-                    continue
-                job_inputs = {**base_inputs, "from_city_id": city_id, "units": city_units}
-                count += self._create_single_job(ga, action_code, job_inputs)
+            for from_city_id, by_dest in pairs.items():
+                for to_city_id, city_units in by_dest.items():
+                    if not city_units:
+                        continue
+                    job_inputs = {
+                        **base_inputs,
+                        "from_city_id": from_city_id,
+                        "to_city_id": to_city_id,
+                        "units": city_units,
+                    }
+                    count += self._create_single_job(ga, action_code, job_inputs)
             return count
 
         multi_city_key = None
@@ -3902,11 +3911,12 @@ class JobSubmitView(LoginRequiredMixin, View):
     def _normalize_station_units_inputs(inputs, request):
         """Collect units_XXX POST fields into inputs['units'] dict for station.
 
-        N-81: when the origin is multiple cities (from_city_ids has more than
-        one entry), also pulls the per-city breakdown out of
-        multi_move_units_json -- built client-side from each city's own
-        troops/fleet snapshot -- so each origin moves exactly what it has,
-        not a single shared quantity.
+        N-81: when the origin and/or destination is multiple cities
+        (from_city_ids / to_city_ids has more than one entry), also pulls
+        the per-(origin, destination) breakdown out of multi_move_pairs_json
+        -- built client-side from each origin's own troops/fleet snapshot,
+        split equally across the selected destinations -- so the single
+        units_XXX-based `units` dict below is ignored in that case.
         """
         normalized = dict(inputs)
         normalized["scope"] = str(normalized.get("scope") or request.POST.get("scope") or "troops")
@@ -3922,14 +3932,17 @@ class JobSubmitView(LoginRequiredMixin, View):
                     pass
         normalized["units"] = units
 
-        from_city_ids = [str(v).strip() for v in request.POST.getlist("from_city_ids") if str(v).strip()]
-        from_city_ids = list(dict.fromkeys(from_city_ids))
-        if len(from_city_ids) > 1:
-            normalized["from_city_ids"] = from_city_ids
+        from_city_ids = list(dict.fromkeys(
+            str(v).strip() for v in request.POST.getlist("from_city_ids") if str(v).strip()
+        ))
+        to_city_ids = list(dict.fromkeys(
+            str(v).strip() for v in request.POST.getlist("to_city_ids") if str(v).strip()
+        ))
+        if len(from_city_ids) > 1 or len(to_city_ids) > 1:
             try:
-                normalized["_multi_move_units"] = json.loads(request.POST.get("multi_move_units_json") or "{}")
+                normalized["_multi_move_pairs"] = json.loads(request.POST.get("multi_move_pairs_json") or "{}")
             except (TypeError, ValueError):
-                normalized["_multi_move_units"] = {}
+                normalized["_multi_move_pairs"] = {}
 
         return normalized
 
