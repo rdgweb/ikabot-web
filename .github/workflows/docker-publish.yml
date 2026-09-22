@@ -106,3 +106,38 @@ jobs:
             EXPECTED_AGENT_VERSION=${{ needs.validate.outputs.agent_version }}
           cache-from: type=gha,scope=${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+
+  dockerhub-description:
+    # N-79: keep each Docker Hub repository's description/readme in sync with
+    # the repo automatically — a published image with no description is what
+    # this note is about, and a stale one manually edited on Docker Hub would
+    # just drift again.
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: blackoneal/ikabot-web-hub
+            readme: hub_v2/DOCKERHUB.md
+            short: "Web panel & job queue for automating Ikariam multi-account play. Needs ikabot-web-agent."
+          - image: blackoneal/ikabot-web-agent
+            readme: agent_v2/DOCKERHUB.md
+            short: "Worker that executes queued Ikariam actions for ikabot-web-hub. Scale out with extra agents."
+          - image: blackoneal/ikabot-web-supervisor
+            readme: supervisor_v1/DOCKERHUB.md
+            short: "Outbound-only sidecar applying ikabot-web-agent updates requested from the Hub."
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Push description to Docker Hub
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ matrix.image }}
+          readme-filepath: ${{ matrix.readme }}
+          short-description: ${{ matrix.short }}
+          enable-url-completion: true
