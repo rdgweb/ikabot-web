@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import random
 import re
+import time
 from typing import TYPE_CHECKING
 
 import requests
@@ -273,15 +274,43 @@ class LobbyAuthenticator:
         headers.setdefault("User-Agent", self.user_agent)
         self.session.headers.update(headers)
 
+    _BLACKBOX_MAX_ATTEMPTS = 3
+    _BLACKBOX_RETRY_SECONDS = 3
+
     def _get_blackbox(self) -> str:
-        """Get blackbox token from hub (ikabotapi). Non-critical."""
-        try:
-            token = self.hub.get_blackbox_token(self.user_agent)
-            logger.info("Blackbox token obtained (%d chars)", len(token))
-            return token
-        except Exception as e:
-            logger.warning("Blackbox token failed: %s", e)
-            return ""
+        """Get blackbox token from hub (ikabotapi), retrying a few times first.
+
+        N-39: this used to swallow any failure and return "", letting login continue
+        without a blackbox token — Gameforge then either rejects it or demands a
+        captcha, and the resulting error told the user nothing about the real cause.
+        Now it retries a few times (ikabotapi hiccups are often transient) and, if
+        still failing, raises LoginError with an explicit cause instead of limping
+        into a login attempt that's effectively already doomed.
+        """
+        last_exc: Exception | None = None
+        for attempt in range(1, self._BLACKBOX_MAX_ATTEMPTS + 1):
+            try:
+                token = self.hub.get_blackbox_token(self.user_agent)
+                if not token:
+                    raise LoginError("ikabotapi retornou um blackbox vazio")
+                logger.info(
+                    "Blackbox token obtained (%d chars, tentativa %d/%d)",
+                    len(token), attempt, self._BLACKBOX_MAX_ATTEMPTS,
+                )
+                return token
+            except Exception as e:  # noqa: BLE001 - any failure mode retries the same way
+                last_exc = e
+                logger.warning(
+                    "Blackbox token failed (tentativa %d/%d): %s",
+                    attempt, self._BLACKBOX_MAX_ATTEMPTS, e,
+                )
+                if attempt < self._BLACKBOX_MAX_ATTEMPTS:
+                    time.sleep(self._BLACKBOX_RETRY_SECONDS)
+
+        raise LoginError(
+            f"Blackbox indisponivel apos {self._BLACKBOX_MAX_ATTEMPTS} tentativas — "
+            f"verifique o container ikabotapi. Ultimo erro: {last_exc}"
+        )
 
     def _fetch_game_ids(self) -> tuple[str, str]:
         """Fetch gameEnvironmentId and platformGameId from configuration.js.
