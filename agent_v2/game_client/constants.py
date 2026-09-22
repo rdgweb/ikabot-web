@@ -144,9 +144,17 @@ GAME_AJAX_HEADERS: dict[str, str] = {
 # Max retries for transient failures before raising
 MAX_RETRIES = 3
 
-# Delay range (seconds) between consecutive game requests to avoid detection
-REQUEST_DELAY_MIN = 0.8
-REQUEST_DELAY_MAX = 2.5
+# Delay between consecutive game requests, sampled from a log-normal distribution
+# (N-43): a uniform draw has a flat, bounded signature (never below MIN, never above
+# MAX, equal frequency everywhere) that's easy for anti-bot request-timing analysis
+# to spot. A real person's think time is skewed — usually quick, occasionally slow —
+# which log-normal reproduces. MEDIAN/SIGMA shape the draw; MIN/MAX are the hard
+# clamp applied after sampling (SIGMA=0.5 keeps ~94% of draws above MIN and well
+# under 1% above MAX, so the clamp mostly leaves the tail shape intact).
+REQUEST_DELAY_MEDIAN = 1.3
+REQUEST_DELAY_SIGMA = 0.5
+REQUEST_DELAY_MIN = 0.6
+REQUEST_DELAY_MAX = 8.0
 
 # Session validity check: if last request was more than N seconds ago, revalidate
 SESSION_REVALIDATE_AFTER = 300

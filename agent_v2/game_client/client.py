@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import math
 import random
 import time
 from typing import TYPE_CHECKING, Any
@@ -60,7 +61,9 @@ from .constants import (
     GAME_URL_TEMPLATE,
     MAX_RETRIES,
     REQUEST_DELAY_MAX,
+    REQUEST_DELAY_MEDIAN,
     REQUEST_DELAY_MIN,
+    REQUEST_DELAY_SIGMA,
     USER_AGENTS,
 )
 from .exceptions import (
@@ -1476,10 +1479,18 @@ class GameClient(IslandActions):
         })
 
     def _enforce_delay(self) -> None:
-        """Enforce minimum delay between consecutive game requests."""
+        """Enforce a human-shaped minimum delay between consecutive game requests.
+
+        N-43: a uniform draw is flat and bounded — real think time is skewed (usually
+        quick, occasionally slow), which a log-normal draw reproduces. Clamped to
+        [REQUEST_DELAY_MIN, REQUEST_DELAY_MAX] so a rare extreme tail sample can't
+        stall a job for an unreasonable amount of time.
+        """
         if self._last_request_time > 0:
             elapsed = time.time() - self._last_request_time
-            min_delay = random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX)
+            mu = math.log(REQUEST_DELAY_MEDIAN)
+            sampled = random.lognormvariate(mu, REQUEST_DELAY_SIGMA)
+            min_delay = max(REQUEST_DELAY_MIN, min(REQUEST_DELAY_MAX, sampled))
             if elapsed < min_delay:
                 sleep_time = min_delay - elapsed
                 logger.debug(f"Delaying {sleep_time:.1f}s between requests")
