@@ -40,6 +40,39 @@
                return true;
              });
            },
+           cityHasTroops(c) { return Object.values(c.troops || {}).some(v => parseInt(v) > 0); },
+           cityHasFleet(c) { return Object.values(c.fleet || {}).some(v => parseInt(v) > 0); },
+           matchesQuery(c, query) {
+             if (!query) return true;
+             const h = (c.name + ' ' + (c.tradegood_name||'') + ' ' + c.x + ':' + c.y).toLowerCase();
+             return h.includes(String(query).toLowerCase());
+           },
+           // ac=1202 origin: must actually HAVE the units being moved (not just
+           // the building) — a barracks with zero troops stationed is not a
+           // valid place to move troops FROM (N-80).
+           originCitiesWithUnits(scope, query = '') {
+             return this.cities.filter(c => {
+               const hasTroops = this.cityHasTroops(c);
+               const hasFleet = this.cityHasFleet(c);
+               if (scope === 'troops' && !hasTroops) return false;
+               if (scope === 'fleet' && !hasFleet) return false;
+               if (scope === 'both' && !hasTroops && !hasFleet) return false;
+               return this.matchesQuery(c, query);
+             });
+           },
+           // ac=1202 destination: any city can garrison troops/fleet, it does
+           // not need its own barracks/shipyard — only filter by search text
+           // (the from-city itself is excluded separately in the template).
+           destinationCities(query = '') {
+             return this.cities.filter(c => this.matchesQuery(c, query));
+           },
+           unitsTotalForCity(city, scope) {
+             const troopsTotal = Object.values(city.troops || {}).reduce((s, v) => s + (parseInt(v) || 0), 0);
+             const fleetTotal = Object.values(city.fleet || {}).reduce((s, v) => s + (parseInt(v) || 0), 0);
+             if (scope === 'fleet') return fleetTotal;
+             if (scope === 'both') return troopsTotal + fleetTotal;
+             return troopsTotal;
+           },
            visibleSourceCities() {
              // maintain: any city can be a garrison target (training happens where barracks exist, then moves)
              // distribute/once: only cities with barracks/shipyard can train
@@ -130,6 +163,13 @@
                 class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all">
                 <i class="bi bi-water"></i> Frotas
               </button>
+              {% if action_code == 1202 %}
+              <button type="button" @click="buildingType='both'"
+                :class="buildingType==='both' ? 'bg-[rgba(95,140,78,0.12)] text-[var(--ik-good)] ring-1 ring-[rgba(95,140,78,0.4)]' : 'text-muted'"
+                class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all">
+                <i class="bi bi-collection"></i> Ambos
+              </button>
+              {% endif %}
             </div>
             {% if action_code == 1005 %}
             <div class="flex gap-1 rounded-xl border border-[var(--ik-line)] p-1 bg-white">
@@ -551,9 +591,9 @@
             </label>
             <input type="hidden" name="{{ form.from_city_id.html_name }}" x-model="fromCityId">
             <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[14rem] overflow-y-auto">
-              <template x-for="city in filteredCities(buildingType, fromQuery)" :key="'from-' + city.id">
+              <template x-for="city in originCitiesWithUnits(buildingType, fromQuery)" :key="'from-' + city.id">
                 <button type="button" @click="fromCityId = String(city.id)"
-                  class="relative overflow-hidden rounded-[16px] border p-3 text-left transition-all"
+                  class="relative rounded-[16px] border p-3 text-left transition-all"
                   :class="String(fromCityId) === String(city.id) ? 'ring-2 ring-[var(--ik-bad)] shadow-sm' : 'hover:border-[rgba(187,81,67,0.4)]'"
                   :style="String(fromCityId) === String(city.id)
                     ? 'border-color: var(--ik-bad); background: rgba(187,81,67,0.08);'
@@ -589,8 +629,8 @@
                       <div class="mt-2 flex flex-wrap gap-1.5">
                         <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]"
                               style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">
-                          <i class="bi" :class="buildingType === 'troops' ? 'bi-people-fill' : 'bi-water'"></i>
-                          <span x-text="new Intl.NumberFormat('pt-BR').format(Object.values((buildingType === 'fleet' ? city.fleet : city.troops) || {}).reduce((s,v)=>s+(parseInt(v)||0),0))"></span>
+                          <i class="bi" :class="buildingType === 'troops' ? 'bi-people-fill' : (buildingType === 'fleet' ? 'bi-water' : 'bi-collection')"></i>
+                          <span x-text="new Intl.NumberFormat('pt-BR').format(unitsTotalForCity(city, buildingType))"></span>
                         </span>
                       </div>
                     </div>
@@ -608,9 +648,9 @@
             </label>
             <input type="hidden" name="{{ form.to_city_id.html_name }}" x-model="toCityId">
             <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[14rem] overflow-y-auto">
-              <template x-for="city in filteredCities(buildingType, toQuery).filter(c => String(c.id) !== String(fromCityId))" :key="'to-' + city.id">
+              <template x-for="city in destinationCities(toQuery).filter(c => String(c.id) !== String(fromCityId))" :key="'to-' + city.id">
                 <button type="button" @click="toCityId = String(city.id)"
-                  class="relative overflow-hidden rounded-[16px] border p-3 text-left transition-all"
+                  class="relative rounded-[16px] border p-3 text-left transition-all"
                   :class="String(toCityId) === String(city.id) ? 'ring-2 ring-[var(--ik-sea)] shadow-sm' : 'hover:border-[rgba(79,134,185,0.4)]'"
                   :style="String(toCityId) === String(city.id)
                     ? 'border-color: var(--ik-sea); background: rgba(79,134,185,0.08);'
@@ -658,12 +698,14 @@
               Unidades a mover de <span x-text="cityById(fromCityId)?.name || ''"></span>
             </div>
 
-            {# Troops #}
-            <template x-if="Object.keys(cityById(fromCityId)?.troops || {}).length > 0">
+            {# Troops — only when the selected scope actually includes troops (N-80:
+               used to always show both troops and fleet regardless of the
+               Tropas/Frotas toggle whenever the city had both) #}
+            <template x-if="(buildingType === 'troops' || buildingType === 'both') && Object.keys(cityById(fromCityId)?.troops || {}).length > 0">
               <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 mb-3">
                 {% for unit in training_ui.troops_units %}
                 <template x-if="(cityById(fromCityId)?.troops || {})['{{ unit.name }}'] > 0">
-                  <div class="relative overflow-hidden rounded-[16px] border p-2.5"
+                  <div class="relative rounded-[16px] border p-2.5"
                        :class="total('{{ unit.id }}') > 0 ? 'ring-2 ring-[rgba(187,81,67,0.5)]' : ''"
                        style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);">
                     <input type="hidden" name="units_{{ unit.id }}" :value="total('{{ unit.id }}')">
@@ -701,13 +743,13 @@
               </div>
             </template>
 
-            <template x-if="fromCityId">
+            <template x-if="fromCityId && (buildingType === 'fleet' || buildingType === 'both')">
               <div>
                 <div class="text-[11px] font-semibold uppercase tracking-[0.14em] mb-2 mt-3 text-muted"><i class="bi bi-water text-[var(--ik-sea)]"></i> Frotas</div>
                 <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
                   {% for unit in training_ui.fleet_units %}
                   <template x-if="(cityById(fromCityId)?.fleet || {})['{{ unit.name }}'] > 0">
-                    <div class="relative overflow-hidden rounded-[16px] border p-2.5"
+                    <div class="relative rounded-[16px] border p-2.5"
                          :class="total('{{ unit.id }}') > 0 ? 'ring-2 ring-[rgba(79,134,185,0.5)]' : ''"
                          style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);">
                       <input type="hidden" name="units_{{ unit.id }}" :value="total('{{ unit.id }}')">

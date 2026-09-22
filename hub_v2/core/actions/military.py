@@ -215,7 +215,7 @@ ACTIONS = {
         "description": "Move tropas terrestres de uma cidade para guarnecer outra.",
         "inputs": [
             {"key": "scope", "type": FIELD_CHOICE, "label": "Tipo", "required": True,
-             "default": "troops", "choices": [("troops", "Tropas"), ("fleet", "Frotas")]},
+             "default": "troops", "choices": [("troops", "Tropas"), ("fleet", "Frotas"), ("both", "Ambos")]},
             {"key": "from_city_id", "type": FIELD_CITY_SELECT, "label": "Cidade de origem", "multiple": False, "required": True},
             {"key": "to_city_id", "type": FIELD_CITY_SELECT, "label": "Cidade de destino", "multiple": False, "required": True},
         ],

@@ -833,3 +833,70 @@ class JobFormNormalFlowNestingTests(TestCase):
         submit_pos = html.index('<button type="submit"')
 
         self.assertTrue(form_start < submit_pos < form_end)
+
+
+class MoveForcesFormTests(TestCase):
+    """N-80: ac=1202 (Mover Forcas) — adds an 'Ambos' scope option, filters the
+    origin city list by actual troop/fleet presence instead of just barracks/
+    shipyard presence, and keeps the destination list showing every city."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="move-forces-user", email="move-forces@example.com", password="secret123",
+        )
+        self.node = Node.objects.create(name="node-move-forces")
+        self.account = Account.objects.create(
+            node=self.node, label="Conta MF", email="mf@example.com", password_enc="x",
+        )
+        self.ga = GameAccount.objects.create(
+            account=self.account, lobby_account_id=1, server_id="s1-br",
+            server_language="br", server_number=1, name="Test",
+        )
+        self.cities = [
+            {"id": "11", "name": "Alpha", "buildings": [
+                {"building": "barracks", "position": 8},
+                {"building": "shipyard", "position": 1},
+            ]},
+        ]
+
+    def _render(self, action_code):
+        self.client.force_login(self.user)
+        with patch("apps.jobs.views.create._get_cities", return_value=self.cities):
+            response = self.client.get(
+                reverse("jobs:job-form"), {"ga": str(self.ga.pk), "action": str(action_code)},
+            )
+        return response.content.decode()
+
+    def test_scope_field_offers_ambos_option_for_move_forces(self):
+        from apps.jobs.forms import JobCreateForm
+
+        form = JobCreateForm(action_code=1202, game_account=self.ga, cities=self.cities)
+        self.assertIn(("both", "Ambos"), list(form.fields["scope"].choices))
+
+    def test_ambos_toggle_renders_only_for_move_forces_not_training(self):
+        html_1202 = self._render(1202)
+        self.assertIn("buildingType='both'", html_1202)
+
+        html_1005 = self._render(1005)
+        self.assertNotIn("buildingType='both'", html_1005)
+
+    def test_origin_cities_filtered_by_unit_presence_helper_is_wired_up(self):
+        html = self._render(1202)
+        self.assertIn("originCitiesWithUnits(buildingType, fromQuery)", html)
+        self.assertIn("cityHasTroops(c)", html)
+        self.assertIn("cityHasFleet(c)", html)
+
+    def test_destination_helper_does_not_filter_by_buildings(self):
+        html = self._render(1202)
+        fn_start = html.index("destinationCities(query")
+        fn_body_start = html.index("{", fn_start)
+        fn_body_end = html.index("}", fn_body_start)
+        fn_body = html[fn_body_start:fn_body_end]
+        self.assertNotIn("has_barracks", fn_body)
+        self.assertNotIn("has_shipyard", fn_body)
+        self.assertIn("destinationCities(toQuery).filter(c => String(c.id) !== String(fromCityId))", html)
+
+    def test_units_panel_shows_troops_and_fleet_together_when_scope_is_ambos(self):
+        html = self._render(1202)
+        self.assertIn("(buildingType === 'troops' || buildingType === 'both')", html)
+        self.assertIn("(buildingType === 'fleet' || buildingType === 'both')", html)
