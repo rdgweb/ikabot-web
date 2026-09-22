@@ -834,6 +834,11 @@ class DistributeResourcesRunner(BaseRunner):
         confirm_arrival_enabled = _to_bool(inputs.get("confirm_arrival"), True)
         confirmation_margin_minutes = _to_int(inputs.get("confirmation_margin_minutes", 2), 2, 0)
         loop_enabled = _to_bool(inputs.get("loop_enabled"), True)
+        # N-44: with staggering on (default), consecutive fleet dispatches in this
+        # cycle get a widening random delay instead of firing back-to-back — a
+        # metronome-even cadence dispatching several fleets inside one minute is a
+        # recognizable bot pattern. Job input "dispatch_stagger": 0 turns it off.
+        dispatch_stagger_enabled = _to_bool(inputs.get("dispatch_stagger"), True)
         min_recheck_seconds = _to_int(inputs.get("min_recheck_minutes", 30), 30, 1) * 60
         max_recheck_seconds = _to_int(inputs.get("max_recheck_minutes", 720), 720, 5) * 60
         min_recheck_seconds = max(MIN_DISTRIBUTE_RECHECK, min_recheck_seconds)
@@ -914,6 +919,11 @@ class DistributeResourcesRunner(BaseRunner):
 
         actions_spawned = 0
         skipped_full = 0
+        # N-44: cumulative stagger applied to each fleet dispatch below — the first
+        # one goes out immediately, each subsequent one waits a bit longer than the
+        # last (widening window), so the batch as a whole loses its metronome cadence.
+        dispatch_delay = 0.0
+        dispatches_made = 0
         for route in route_entries:
             if actions_spawned >= max_routes_per_cycle:
                 break
@@ -1008,7 +1018,14 @@ class DistributeResourcesRunner(BaseRunner):
                     "confirmation_margin_minutes": confirmation_margin_minutes,
                     **remaining_chunk,
                 }
-                self.hub.spawn_job(jid, action_code=2, inputs=child_inputs)
+                dispatch_delay = self._next_dispatch_delay(
+                    dispatch_delay, dispatches_made, dispatch_stagger_enabled,
+                )
+                self.hub.spawn_job(
+                    jid, action_code=2, inputs=child_inputs,
+                    delay_seconds=int(round(dispatch_delay)) if dispatch_stagger_enabled else 0,
+                )
+                dispatches_made += 1
                 route_spawned = True
                 for key, value in remaining_chunk.items():
                     route_spawned_resources[key] = route_spawned_resources.get(key, 0) + int(value)
@@ -1257,6 +1274,21 @@ class DistributeResourcesRunner(BaseRunner):
                 }
             )
         return route_entries
+
+    @staticmethod
+    def _next_dispatch_delay(cumulative: float, dispatches_made: int, enabled: bool) -> float:
+        """N-44: cumulative delay (seconds) to use before the NEXT fleet dispatch.
+
+        The first dispatch in a cycle (``dispatches_made == 0``) always goes out
+        immediately. Each one after that adds a random amount on top of the running
+        total, drawn from a window that widens with how many dispatches already went
+        out this cycle (``random.uniform(5*n, 40*n)``) — e.g. dispatch #2 adds
+        5-40s, #3 adds another 10-80s on top of that, and so on. Disabled (or the
+        first dispatch) returns ``cumulative`` unchanged.
+        """
+        if not enabled or dispatches_made == 0:
+            return cumulative
+        return cumulative + random.uniform(5 * dispatches_made, 40 * dispatches_made)
 
     def _choose_next_distribution_check(
         self,
