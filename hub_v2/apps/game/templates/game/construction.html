@@ -366,7 +366,11 @@
             {% for row in acc.rows %}
             <tr class="border-t" style="border-color: var(--ik-line);">
               <td class="sticky left-0 z-10 whitespace-nowrap bg-paper p-1.5 font-semibold text-ink">
-                <span class="inline-flex items-center gap-1"><img src="{{ row.tradegood_icon }}" class="h-4 w-4 object-contain" alt="">{{ row.city_name }}</span>
+                <span class="inline-flex items-center gap-1"><img src="{{ row.tradegood_icon }}" class="h-4 w-4 object-contain" alt="">{{ row.city_name }}
+                  <button type="button" class="ml-1 rounded-md px-1 text-[12px] text-muted transition-colors hover:bg-[rgba(79,134,185,0.12)] hover:text-[var(--ik-sea)]"
+                          title="Reorganizar edificios (arrastar e soltar)"
+                          @click="$dispatch('open-reorder', {key: '{{ row.reorder_key }}'})"><i class="bi bi-arrows-move"></i></button>
+                </span>
               </td>
               {% for cell in row.cells %}
               <td class="p-1 text-center">
@@ -414,9 +418,91 @@
     </div>
     {% endfor %}
   </section>
+
+  {# ===== N-50: reorganizar edificios (arrastar e soltar / copiar layout) ===== #}
+  <div x-data="reorderModal()" @open-reorder.window="open($event.detail.key)" @keydown.escape.window="close()">
+    <template x-if="key">
+      <div class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4" @click.self="close()">
+        <div class="mt-6 w-full max-w-4xl rounded-[22px] border bg-paper p-5 shadow-2xl" style="border-color: var(--ik-line);">
+          <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Reorganizar edificios</div>
+              <h3 class="text-lg font-bold text-ink"><span x-text="meta.city_name"></span> <span class="text-sm font-normal text-muted" x-text="'· ' + meta.ga_name"></span></h3>
+              <p class="mt-1 text-[11px] text-muted">Arraste um edificio para outra posicao (ou clique em um e depois no destino). Se o destino tiver edificio, os dois trocam de lugar. So valem as trocas que o proprio jogo aceita.</p>
+            </div>
+            <button type="button" class="text-xl text-muted hover:text-ink" @click="close()" title="Fechar"><i class="bi bi-x-lg"></i></button>
+          </div>
+
+          <template x-if="!meta.ready">
+            <div class="rounded-[14px] border border-dashed p-4 text-sm text-muted" style="border-color: var(--ik-line);">
+              <i class="bi bi-info-circle"></i> Ainda nao sei quais edificios cada posicao aceita nesta cidade. Rode o <strong>Check Status</strong> desta conta e recarregue a pagina para habilitar a reorganizacao.
+            </div>
+          </template>
+
+          <template x-if="meta.ready">
+            <div>
+              <div class="mb-3 flex flex-wrap items-end gap-2">
+                <label class="block min-w-[16rem] flex-1">
+                  <span class="mb-1 block text-[10px] uppercase tracking-[0.14em] text-muted">Copiar layout de outra cidade</span>
+                  <select class="form-input" x-model="copySource">
+                    <option value="">Escolha a cidade modelo...</option>
+                    <template x-for="opt in copyOptions" :key="opt.key">
+                      <option :value="opt.key" x-text="opt.label"></option>
+                    </template>
+                  </select>
+                </label>
+                <button type="button" class="btn btn-secondary btn-sm" :disabled="!copySource" @click="copyFrom(copySource)"><i class="bi bi-copy"></i> Igualar a ela</button>
+                <button type="button" class="btn btn-secondary btn-sm" :disabled="!swaps.length" @click="reset()"><i class="bi bi-arrow-counterclockwise"></i> Desfazer tudo</button>
+              </div>
+              <p class="mb-3 text-[11px]" :class="notice.type === 'warn' ? 'text-[var(--ik-bad)]' : 'text-muted'" x-show="notice.text" x-text="notice.text"></p>
+
+              <div class="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                <template x-for="(slot, idx) in slots" :key="'slot-' + idx">
+                  <div class="relative flex min-h-[6.5rem] flex-col items-center justify-center rounded-[14px] border-2 p-1.5 text-center transition-all"
+                       :class="slotClass(idx)"
+                       :style="'border-color:' + groundColor(slot) + ';'"
+                       :draggable="isMovable(idx) ? 'true' : 'false'"
+                       @dragstart="dragFrom = idx"
+                       @dragend="dragFrom = null"
+                       @dragover.prevent
+                       @drop.prevent="dropOn(idx)"
+                       @click="clickSlot(idx)"
+                       :title="slotTitle(slot, idx)">
+                    <span class="absolute left-1.5 top-1 text-[9px] font-bold text-muted" x-text="'#' + idx"></span>
+                    <template x-if="slot.b !== 'empty'">
+                      <div class="flex flex-col items-center">
+                        <img :src="slot.i" class="h-12 w-14 object-contain" alt="">
+                        <span class="mt-0.5 line-clamp-1 text-[10px] font-semibold text-ink" x-text="slot.n"></span>
+                        <span class="text-[10px] font-mono text-muted" x-text="'Nv ' + slot.l"></span>
+                        <i x-show="slot.u" class="bi bi-arrow-up-circle-fill absolute right-1.5 top-1 text-amber-500" title="Em obra (nao pode mover)"></i>
+                      </div>
+                    </template>
+                    <template x-if="slot.b === 'empty'">
+                      <span class="text-[10px] italic text-muted">livre</span>
+                    </template>
+                  </div>
+                </template>
+              </div>
+
+              <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <span class="text-[11px] text-muted"><span x-text="swaps.length"></span> troca(s) pendente(s)</span>
+                <div class="flex gap-2">
+                  <button type="button" class="btn btn-secondary btn-sm" @click="close()">Cancelar</button>
+                  <button type="button" class="btn btn-primary btn-sm" :disabled="!swaps.length || saving" @click="save()">
+                    <i class="bi bi-check2-circle"></i> <span x-text="saving ? 'Enviando...' : 'Salvar no jogo'"></span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
+  </div>
 </div>
 
 {% csrf_token %}
+{{ reorder_layouts|json_script:"cs-reorder-layouts" }}
 {{ res_icons|json_script:"cs-res-icons" }}
 <script>
 function _csrfToken() {
@@ -480,6 +566,112 @@ function planCard(jobId, strategy) {
       this.sending = false;
       if (res.ok) { this.amounts = {wood:0,wine:0,marble:0,crystal:0,sulfur:0}; this.tab = null; }
       _toast(res.ok ? 'success' : 'error', res.message);
+    },
+  };
+}
+// N-50: same rules as the game's swapPositionsIfPossible (the agent re-checks
+// them against fresh game data before saving).
+function reorderModal() {
+  const layouts = JSON.parse(document.getElementById('cs-reorder-layouts')?.textContent || '{}');
+  const clone = (slots) => slots.map(s => ({...s, a: [...(s.a || [])]}));
+  return {
+    key: '', meta: {}, slots: [], original: [], swaps: [], dragFrom: null, picked: null,
+    copySource: '', saving: false, notice: {text: '', type: ''},
+    get copyOptions() {
+      return Object.entries(layouts)
+        .filter(([k, v]) => k !== this.key && v.ready)
+        .map(([k, v]) => ({key: k, label: `${v.ga_name} — ${v.city_name}`}))
+        .sort((x, y) => x.label.localeCompare(y.label));
+    },
+    open(key) {
+      const data = layouts[key];
+      if (!data) return;
+      this.key = key; this.meta = data;
+      this.original = clone(data.slots); this.slots = clone(data.slots);
+      this.swaps = []; this.dragFrom = null; this.picked = null; this.copySource = '';
+      this.notice = {text: '', type: ''};
+    },
+    close() { this.key = ''; },
+    reset() { this.slots = clone(this.original); this.swaps = []; this.picked = null; this.notice = {text: '', type: ''}; },
+    hasBuilding(slot) { return slot && slot.b !== 'empty' && slot.id !== null && slot.id !== undefined; },
+    isMovable(idx) { const s = this.slots[idx]; return this.meta.ready && this.hasBuilding(s) && !s.u; },
+    rejection(from, to) {
+      if (from === null || from === to) return 'mesma posicao';
+      const a = this.slots[from], b = this.slots[to];
+      if (!this.hasBuilding(a)) return 'nao ha edificio na origem';
+      if (a.u || b.u) return 'edificio em obra';
+      if (!(b.a || []).includes(a.id)) return `a posicao #${to} nao aceita ${a.n}`;
+      if (this.hasBuilding(b) && !(a.a || []).includes(b.id)) return `a posicao #${from} nao aceita ${b.n}`;
+      return '';
+    },
+    applySwap(from, to) {
+      const s = this.slots;
+      [s[from], s[to]] = [s[to], s[from]];
+      s[from].p = from; s[to].p = to;
+      this.swaps.push([from, to]);
+    },
+    tryMove(from, to) {
+      const why = this.rejection(from, to);
+      if (why) { this.notice = {text: `Troca nao permitida: ${why}.`, type: 'warn'}; return false; }
+      this.applySwap(from, to);
+      this.notice = {text: '', type: ''};
+      return true;
+    },
+    dropOn(idx) { if (this.dragFrom !== null) this.tryMove(this.dragFrom, idx); this.dragFrom = null; },
+    clickSlot(idx) {
+      if (this.picked === null) { if (this.isMovable(idx)) this.picked = idx; return; }
+      if (this.picked !== idx) this.tryMove(this.picked, idx);
+      this.picked = null;
+    },
+    slotClass(idx) {
+      const origin = this.dragFrom !== null ? this.dragFrom : this.picked;
+      const cls = [this.isMovable(idx) ? 'cursor-grab bg-white' : 'bg-[rgba(219,201,167,0.18)]'];
+      if (origin === idx) cls.push('ring-2 ring-[var(--ik-sea)]');
+      else if (origin !== null && !this.rejection(origin, idx)) cls.push('ring-2 ring-[var(--ik-good)] bg-[rgba(95,140,78,0.08)]');
+      else if (origin !== null) cls.push('opacity-50');
+      return cls.join(' ');
+    },
+    groundColor(slot) {
+      return {0: '#c99c4e', 1: '#4f86b9', 3: '#8a7a5c', 5: '#35648f'}[slot.g] || 'rgba(219,201,167,0.9)';
+    },
+    slotTitle(slot, idx) {
+      return slot.b === 'empty' ? `#${idx} livre` : `#${idx} ${slot.n} (nivel ${slot.l})${slot.u ? ' — em obra' : ''}`;
+    },
+    // Greedy copy: walk the model city's positions and bring the same building
+    // type into each one with game-valid swaps; what can't be matched stays.
+    copyFrom(sourceKey) {
+      const model = (layouts[sourceKey] || {}).slots || [];
+      this.reset();
+      const want = (p) => (model[p] && model[p].b !== 'empty') ? model[p].b : null;
+      const fixed = new Set();
+      let missing = 0;
+      for (let p = 0; p < this.slots.length; p++) {
+        const w = want(p);
+        if (!w) continue;
+        if (this.slots[p].b === w) { fixed.add(p); continue; }
+        const candidates = this.slots
+          .map((s, q) => q)
+          .filter(q => q !== p && !fixed.has(q) && this.slots[q].b === w)
+          .sort((x, y) => (want(x) === w) - (want(y) === w));
+        const q = candidates.find(c => !this.rejection(c, p));
+        if (q === undefined) { missing += 1; continue; }
+        this.applySwap(q, p);
+        fixed.add(p);
+      }
+      const label = (layouts[sourceKey] || {}).city_name || 'modelo';
+      this.notice = missing
+        ? {text: `Layout de ${label}: ${this.swaps.length} troca(s). ${missing} posicao(oes) nao puderam ser igualadas (edificio que nao existe aqui, em obra ou terreno diferente).`, type: 'warn'}
+        : {text: `Layout de ${label}: ${this.swaps.length} troca(s) para igualar.`, type: ''};
+    },
+    async save() {
+      if (!this.swaps.length) return;
+      this.saving = true;
+      const res = await _ikPost('{% url "game:reorder-buildings" %}', {
+        game_account_id: this.meta.ga_id, city_id: this.meta.city_id, swaps: JSON.stringify(this.swaps),
+      });
+      this.saving = false;
+      _toast(res.ok ? 'success' : 'error', res.message);
+      if (res.ok) this.close();
     },
   };
 }

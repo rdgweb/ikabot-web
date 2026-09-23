@@ -845,6 +845,10 @@ class CheckStatusRunner(BaseRunner):
                     "type": slot_type,
                     "level": level,
                     "is_upgrading": is_busy,
+                    # N-50: what the game lets each slot hold (reorder buildings)
+                    "building_id": pos.get("buildingId"),
+                    "ground_id": pos.get("groundId"),
+                    "allowed": [int(b) for b in (pos.get("allowedBuildings") or []) if str(b).lstrip("-").isdigit()],
                 }
                 if construction_end_at:
                     entry["construction_end_at"] = construction_end_at

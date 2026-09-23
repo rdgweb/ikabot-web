@@ -469,6 +469,16 @@ class GameClient(IslandActions):
         from .actions.rename_city import RenameCityAction
         return RenameCityAction(self).execute(city_id=city_id, name=name)
 
+    def get_building_positions(self, city_id: int) -> list[dict[str, Any]]:
+        """As 25 posicoes da cidade (buildingId, allowedBuildings, isBusy...) direto do jogo."""
+        from .actions.building_positions import BuildingPositionsAction
+        return BuildingPositionsAction(self).fetch_positions(city_id)
+
+    def save_building_positions(self, city_id: int, moves: list[dict[str, int]]) -> list[dict[str, Any]]:
+        """Salva a reorganizacao de edificios (moves no formato do jogo)."""
+        from .actions.building_positions import BuildingPositionsAction
+        return BuildingPositionsAction(self).save(city_id, moves)
+
     def get_port_state(self, city_id: int) -> dict[str, Any]:
         """Estado do porto: barcos, custos, ouro."""
         return PortAction(self).get_state(city_id=city_id)

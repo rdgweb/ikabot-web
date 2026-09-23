@@ -83,6 +83,38 @@ def _city_list(snapshot):
     return []
 
 
+def _reorder_layout(city: dict) -> tuple[list[dict], bool]:
+    """The city's 25 slots for the drag-and-drop reorder (N-50).
+
+    `ready` is False until a Check Status stored what each slot accepts
+    (`allowed`); without it the UI can't apply the game's own rules.
+    """
+    slots: list[dict] = []
+    ready = True
+    for b in sorted(
+        (b for b in city.get("buildings") or [] if isinstance(b, dict)),
+        key=lambda b: _si(b.get("position"), 99),
+    ):
+        bid = str(b.get("building") or "empty")
+        empty = bid == "empty"
+        allowed = b.get("allowed")
+        if not isinstance(allowed, list) or (not empty and b.get("building_id") is None):
+            ready = False
+        slots.append({
+            "p": _si(b.get("position")),
+            "b": bid,
+            "n": "Espaco livre" if empty else _building_name(bid),
+            "i": "" if empty else _building_icon(bid),
+            "l": 0 if empty else _si(b.get("level")),
+            "u": bool(b.get("is_upgrading")),
+            "id": None if empty else b.get("building_id"),
+            "a": allowed if isinstance(allowed, list) else [],
+            "t": str(b.get("type") or ""),
+            "g": b.get("ground_id"),
+        })
+    return slots, ready and bool(slots)
+
+
 def _fmt_eta(seconds: int) -> str:
     seconds = max(0, int(seconds))
     h, rem = divmod(seconds, 3600)
@@ -155,6 +187,7 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
         level_lookup_cities: dict[str, list[dict]] = {}  # ga -> [{id, name}]
         ga_meta: dict[str, dict] = {}
         level_map: list[dict] = []
+        reorder_layouts: dict[str, dict] = {}  # "ga:city" -> layout for drag-and-drop (N-50)
 
         for acct in accounts:
             for ga in getattr(acct, "active_game_accounts", []):
@@ -205,10 +238,21 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                     # ordena instancias por nivel desc para exibir badges consistentes
                     for insts in bid_instances.values():
                         insts.sort(key=lambda r: -r["level"])
+                    reorder_key = f"{ga.pk}:{cid}"
+                    slots, ready = _reorder_layout(city)
+                    reorder_layouts[reorder_key] = {
+                        "ga_id": str(ga.pk),
+                        "ga_name": ga.name or ga.server_id,
+                        "city_id": cid,
+                        "city_name": city.get("name") or cid,
+                        "ready": ready,
+                        "slots": slots,
+                    }
                     lm_rows.append({
                         "city_name": city.get("name") or cid,
                         "tradegood_icon": static(TRADEGOOD_ICON.get(tg, TRADEGOOD_ICON[0])),
                         "bid_instances": bid_instances,
+                        "reorder_key": reorder_key,
                     })
                 level_lookup[str(ga.pk)] = city_pos_lvl
                 level_lookup_cities[str(ga.pk)] = ga_city_list
@@ -352,6 +396,7 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
             "bottlenecks": bottleneck_rows,
             "level_map": level_map,
             "level_columns": level_columns,
+            "reorder_layouts": reorder_layouts,
             "res_icons": {k: static(RESOURCE_META[k]["icon"]) for k in RESOURCE_KEYS},
         })
         return ctx

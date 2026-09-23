@@ -403,3 +403,85 @@ class DashboardPlayerScoreTests(TestCase):
         html = self._render().content.decode()
 
         self.assertNotIn("bi-trophy-fill", html)
+
+
+class ReorderBuildingsTests(TestCase):
+    """N-50: reorganizar edificios -- the construction panel exposes each
+    city's 25 slots (with what each slot accepts) and posting the swaps
+    creates an ac=1302 job for the agent."""
+
+    def setUp(self):
+        cache.clear()
+        self.user = get_user_model().objects.create_user(
+            username="reorder-tester", email="reorder@example.com", password="secret123",
+        )
+        self.account = Account.objects.create(
+            node=Node.objects.create(name="agent-reorder"),
+            label="Lobby Reorder", email="reorder-lobby@example.com", password_enc="enc",
+        )
+        self.ga = GameAccount.objects.create(
+            account=self.account, lobby_account_id=555, server_id="s9-br",
+            server_language="br", server_number=9, name="ReorderPlayer",
+        )
+        land = [4, 7, 9, 11]
+        self.snapshot = AccountSnapshot.objects.create(
+            account=self.account, game_account=self.ga, base_snapshot={},
+            cities=[{"id": "501", "name": "Alfa", "buildings": [
+                {"position": 0, "building": "townHall", "level": 10, "is_upgrading": False, "building_id": 0, "ground_id": 0, "allowed": [0]},
+                {"position": 1, "building": "warehouse", "level": 5, "is_upgrading": False, "building_id": 7, "ground_id": 2, "allowed": land},
+                {"position": 2, "building": "empty", "type": "land", "level": 0, "is_upgrading": False, "building_id": None, "ground_id": 2, "allowed": land},
+            ]}],
+            military={},
+        )
+
+    def test_parse_swaps_accepts_pairs_and_rejects_garbage(self):
+        from apps.game.views.reorder_buildings import parse_swaps
+
+        self.assertEqual(parse_swaps("[[1, 2], [2, 1]]"), [[1, 2], [2, 1]])
+        for bad in ("", "x", "[]", "[[1, 1]]", "[[1, 25]]", "[[1]]", '{"a": 1}', "[[1, \"a\"]]"):
+            self.assertIsNone(parse_swaps(bad), bad)
+
+    def test_posting_swaps_creates_a_reorder_job(self):
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("game:reorder-buildings"), {
+            "game_account_id": str(self.ga.pk), "city_id": "501", "swaps": "[[1, 2]]",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        job = Job.objects.get(game_account=self.ga, action_code=1302)
+        self.assertEqual(json.loads(job.inputs_json), {"city_id": "501", "city_name": "Alfa", "swaps": [[1, 2]]})
+
+    def test_city_from_another_account_or_bad_swaps_are_refused(self):
+        self.client.force_login(self.user)
+        url = reverse("game:reorder-buildings")
+
+        other_city = self.client.post(url, {"game_account_id": str(self.ga.pk), "city_id": "999", "swaps": "[[1, 2]]"})
+        bad_swaps = self.client.post(url, {"game_account_id": str(self.ga.pk), "city_id": "501", "swaps": "[[1, 99]]"})
+
+        self.assertEqual(other_city.status_code, 400)
+        self.assertEqual(bad_swaps.status_code, 400)
+        self.assertFalse(Job.objects.filter(action_code=1302).exists())
+
+    def test_panel_exposes_the_layout_and_readiness(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("game:construction"))
+
+        layout = response.context["reorder_layouts"][f"{self.ga.pk}:501"]
+        self.assertTrue(layout["ready"])
+        self.assertEqual([s["b"] for s in layout["slots"]], ["townHall", "warehouse", "empty"])
+        self.assertEqual(layout["slots"][1]["a"], [4, 7, 9, 11])
+        self.assertContains(response, 'id="cs-reorder-layouts"')
+        self.assertContains(response, "open-reorder")
+
+    def test_layout_is_not_ready_before_check_status_stored_allowed(self):
+        cities = self.snapshot.cities
+        for b in cities[0]["buildings"]:
+            b.pop("allowed")
+        self.snapshot.cities = cities
+        self.snapshot.save()
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("game:construction"))
+
+        self.assertFalse(response.context["reorder_layouts"][f"{self.ga.pk}:501"]["ready"])

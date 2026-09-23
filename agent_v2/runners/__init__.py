@@ -34,5 +34,6 @@ from runners import (  # noqa: F401
     premium,
     port,
     rename_city,
+    building_positions,
     combat_monitor,
 )
