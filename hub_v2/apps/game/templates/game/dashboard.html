@@ -209,11 +209,13 @@
           <span class="relative group flex items-center gap-1 cursor-help">
             <i class="bi bi-trophy-fill" style="color: var(--ik-gold);"></i> {{ card.player_score.total|intcomma }}
             <div class="pointer-events-none absolute right-0 top-full z-20 mt-1 hidden w-48 rounded-lg border border-[var(--ik-line)] bg-paper p-2.5 text-left shadow-xl group-hover:block">
-              <div class="text-[10px] font-bold text-ink mb-1.5">Pontuacao total</div>
+              <div class="text-[10px] font-bold text-ink mb-1.5">Pontos: {{ card.player_score.total|intcomma }}</div>
               <div class="space-y-1">
-                <div class="flex justify-between text-[10px]"><span class="text-muted">Construcao</span><span class="font-mono">{{ card.player_score.building|intcomma }}</span></div>
-                <div class="flex justify-between text-[10px]"><span class="text-muted">Pesquisa</span><span class="font-mono">{{ card.player_score.research|intcomma }}</span></div>
-                <div class="flex justify-between text-[10px]"><span class="text-muted">Exercito</span><span class="font-mono">{{ card.player_score.army|intcomma }}</span></div>
+                {% if card.player_score.building or card.player_score.research or card.player_score.army %}
+                <div class="flex justify-between text-[10px]"><span class="text-muted">Mestres de Alvenaria</span><span class="font-mono">{{ card.player_score.building|intcomma }}</span></div>
+                <div class="flex justify-between text-[10px]"><span class="text-muted">Cientistas</span><span class="font-mono">{{ card.player_score.research|intcomma }}</span></div>
+                <div class="flex justify-between text-[10px]"><span class="text-muted">Generais</span><span class="font-mono">{{ card.player_score.army|intcomma }}</span></div>
+                {% endif %}
                 {% if card.player_score.place %}
                 <div class="flex justify-between text-[10px] pt-1" style="border-top: 1px solid var(--ik-line);">
                   <span class="font-semibold text-ink">Ranking</span><span class="font-mono font-bold">#{{ card.player_score.place|intcomma }}</span>

@@ -362,7 +362,7 @@ class DashboardPlayerScoreTests(TestCase):
             account=account, game_account=self.game_account,
             base_snapshot={
                 "gold": 1000,
-                "player_score": {"total": 388907, "building": 267381, "research": 120559, "army": 967, "place": 3057},
+                "player_score": {"total": 135555, "building": 116472, "research": 11694, "army": 117, "place": 3692},
             },
             cities=[], military={},
         )
@@ -379,10 +379,21 @@ class DashboardPlayerScoreTests(TestCase):
         html = response.content.decode()
 
         card = response.context_data["account_cards"][0]
-        self.assertEqual(card["player_score"]["total"], 388907)
+        self.assertEqual(card["player_score"]["total"], 135555)
         self.assertIn("bi-trophy-fill", html)
-        self.assertRegex(html, r"388[.,]907")
-        self.assertRegex(html, r"#3[.,]057")
+        self.assertRegex(html, r"135[.,]555")
+        self.assertRegex(html, r"#3[.,]692")
+        self.assertIn("Mestres de Alvenaria", html)
+
+    def test_breakdown_rows_are_hidden_when_only_the_official_total_is_known(self):
+        self.snapshot.base_snapshot = {"gold": 1000, "player_score": {"total": 135555, "place": 3692}}
+        self.snapshot.save()
+        cache.clear()
+
+        html = self._render().content.decode()
+
+        self.assertRegex(html, r"135[.,]555")
+        self.assertNotIn("Mestres de Alvenaria", html)
 
     def test_nothing_is_shown_before_check_status_collected_the_score(self):
         self.snapshot.base_snapshot = {"gold": 1000}

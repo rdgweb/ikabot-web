@@ -78,12 +78,46 @@ def _write_wine_debug(city_id: int, city_name: str, html: str) -> None:
     (debug_dir / f"city-{city_id}.txt").write_text("\n".join(payload), encoding="utf-8")
 
 
-def _own_player_score(island: dict[str, Any], own_city_id: int | str) -> dict[str, Any] | None:
-    """Pick the account's own score out of an island view (avatarScores).
+_OWN_HIGHSCORE_ROW = re.compile(r'<tr[^>]*class="[^"]*\bown\b[^"]*"[^>]*>(.*?)</tr>', re.S)
+_HIGHSCORE_PLACE = re.compile(r'<td[^>]*class="[^"]*\bplace\b[^"]*"[^>]*>\s*([\d.,]+)', re.S)
+_HIGHSCORE_SCORE = re.compile(r'<td[^>]*class="[^"]*\bscore\b[^"]*"[^>]*>\s*([\d.,]+)', re.S)
 
-    Total follows the convention used elsewhere in the system (worldintel,
-    piracy): building + research + army. `place` is the game's own ranking.
+
+def _parse_own_highscore(ajax_text: str) -> dict[str, int] | None:
+    """Official total score + rank of the logged-in player.
+
+    Source: GET view=highscore&showMe=1&ajax=1 (default highscoreType=score,
+    "Pontuacao total"). The own row is <tr class="... own">. The total is NOT
+    building + research + army (the game adds more), so it must come from here.
     """
+    try:
+        data = json.loads(ajax_text, strict=False)
+    except (TypeError, ValueError):
+        return None
+    html = next(
+        (
+            entry[1][1]
+            for entry in (data if isinstance(data, list) else [])
+            if isinstance(entry, list) and len(entry) > 1 and entry[0] == "changeView"
+            and isinstance(entry[1], list) and len(entry[1]) > 1 and isinstance(entry[1][1], str)
+        ),
+        "",
+    )
+    row = _OWN_HIGHSCORE_ROW.search(html)
+    if not row:
+        return None
+    place = _HIGHSCORE_PLACE.search(row.group(1))
+    score = _HIGHSCORE_SCORE.search(row.group(1))
+    if not score:
+        return None
+    return {
+        "total": _safe_num_like(score.group(1)),
+        "place": _safe_num_like(place.group(1)) if place else 0,
+    }
+
+
+def _own_score_breakdown(island: dict[str, Any], own_city_id: int | str) -> dict[str, int] | None:
+    """Building/research/army scores of the account, from an island view (avatarScores)."""
     owner_id = next(
         (
             str(city.get("owner_id") or "")
@@ -95,15 +129,10 @@ def _own_player_score(island: dict[str, Any], own_city_id: int | str) -> dict[st
     score = (island.get("avatar_scores") or {}).get(owner_id) if owner_id else None
     if not isinstance(score, dict):
         return None
-    building = int(score.get("building_score") or 0)
-    research = int(score.get("research_score") or 0)
-    army = int(score.get("army_score") or 0)
     return {
-        "total": building + research + army,
-        "building": building,
-        "research": research,
-        "army": army,
-        "place": int(score.get("place") or 0),
+        "building": int(score.get("building_score") or 0),
+        "research": int(score.get("research_score") or 0),
+        "army": int(score.get("army_score") or 0),
     }
 
 
@@ -334,19 +363,29 @@ class CheckStatusRunner(BaseRunner):
             except Exception as _poe:
                 self.log(jid, "info", f"Leitura do porto ignorada: {_poe}")
 
-            # ── Pontuacao do jogador: 1 request (visao da ilha da 1a cidade) ──
+            # ── Pontuacao do jogador: total oficial + posicao (tela de Pontuacao)
+            #    e detalhamento construcao/pesquisa/exercito (visao da ilha) ──
             player_score = existing_base.get("player_score") or {}
             try:
-                ref_city_id3 = next(
-                    (str(_c.get("id")).strip() for _c in cities_data
-                     if isinstance(_c, dict) and str(_c.get("id") or "").strip()),
-                    None,
+                own = _parse_own_highscore(
+                    session.get(f"{url_base}view=highscore&showMe=1&ajax=1", timeout=30).text
                 )
-                if ref_city_id3:
-                    own_score = _own_player_score(client.fetch_island_by_city_id(ref_city_id3), ref_city_id3)
-                    if own_score:
-                        player_score = {**own_score, "updated_at": datetime.now(timezone.utc).isoformat()}
-                        self.log(jid, "info", f"Pontuacao total: {own_score['total']:,} (ranking #{own_score['place']:,})")
+                if own:
+                    breakdown = {}
+                    ref_city_id3 = next(
+                        (str(_c.get("id")).strip() for _c in cities_data
+                         if isinstance(_c, dict) and str(_c.get("id") or "").strip()),
+                        None,
+                    )
+                    if ref_city_id3:
+                        try:
+                            breakdown = _own_score_breakdown(
+                                client.fetch_island_by_city_id(ref_city_id3), ref_city_id3
+                            ) or {}
+                        except Exception as _be:
+                            self.log(jid, "info", f"Detalhamento da pontuacao ignorado: {_be}")
+                    player_score = {**breakdown, **own, "updated_at": datetime.now(timezone.utc).isoformat()}
+                    self.log(jid, "info", f"Pontuacao total: {own['total']:,} (ranking #{own['place']:,})")
             except Exception as _se:
                 self.log(jid, "info", f"Leitura da pontuacao ignorada: {_se}")
 
