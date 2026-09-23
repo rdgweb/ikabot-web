@@ -14,6 +14,9 @@ from django.templatetags.static import static
 MAP_WIDTH = 1920
 MAP_HEIGHT = 1200
 ANCHOR = (86, 43)
+# Part of the map the panel shows (x, y, width, height): the city itself, without
+# the forest/sea border, so the buildings are drawn bigger on any screen size.
+VIEW = (340, 100, 1340, 1000)
 
 # .positionN{left;top}
 POSITIONS = {
@@ -101,6 +104,7 @@ def building_sprite(building: str, position: int, ground_type: str = "") -> dict
 def sprite_table() -> dict:
     """Everything the page needs to redraw a slot after a swap (same data as building_sprite)."""
     return {
+        "view": list(VIEW),
         "anchors": {str(p): list(xy) for p, xy in POSITIONS.items()},
         "buildings": {name: building_sprite(name, -1) for name in SPRITES},
         "shore": {f"{name}|{pos}": building_sprite(name, pos) for name, pos in SHORE_SPRITES},

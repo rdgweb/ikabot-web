@@ -424,7 +424,7 @@
   <div x-data="reorderModal()" @open-reorder.window="open($event.detail.key)" @keydown.escape.window="close()">
     <template x-if="key">
       <div class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4" @click.self="close()">
-        <div class="mt-6 w-full max-w-6xl rounded-[22px] border bg-paper p-5 shadow-2xl" style="border-color: var(--ik-line);">
+        <div class="mt-2 w-full max-w-[1400px] rounded-[22px] border bg-paper p-3 shadow-2xl sm:p-5" style="border-color: var(--ik-line);">
           <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
             <div>
               <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Reorganizar edificios</div>
@@ -455,37 +455,43 @@
                 <button type="button" class="btn btn-secondary btn-sm" :disabled="!copySource" @click="copyFrom(copySource)"><i class="bi bi-copy"></i> Igualar a ela</button>
                 <button type="button" class="btn btn-secondary btn-sm" :disabled="!swaps.length" @click="reset()"><i class="bi bi-arrow-counterclockwise"></i> Desfazer tudo</button>
               </div>
-              <p class="mb-3 text-[11px]" :class="notice.type === 'warn' ? 'text-[var(--ik-bad)]' : 'text-muted'" x-show="notice.text" x-text="notice.text"></p>
+              <p class="mb-2 min-h-[16px] text-[11px]" :class="notice.type === 'warn' ? 'text-[var(--ik-bad)]' : 'text-muted'" x-text="notice.text"></p>
 
-              {# Mapa da cidade como no jogo: area 1920x1200 reduzida em escala #}
-              <div x-ref="mapWrap" class="relative w-full overflow-hidden rounded-[14px] border" style="aspect-ratio: 16 / 10; border-color: var(--ik-line); background: #6b9ec0;">
-                <div class="absolute left-0 top-0 origin-top-left" :style="`width:1920px;height:1200px;transform:scale(${scale});`">
+              {# Mapa da cidade como no jogo: recorte da area 1920x1200 na escala da tela #}
+              <div x-ref="mapWrap" class="relative w-full overflow-hidden rounded-[14px] border select-none" :style="`height:${view[3] * scale}px;border-color:var(--ik-line);background:#5d8f3a;`">
+                <div class="absolute top-0 origin-top-left" :style="`left:${offsetX}px;width:1920px;height:1200px;transform:scale(${scale}) translate(${-view[0]}px, ${-view[1]}px);`">
                   <template x-for="tile in (meta.bg || [])" :key="tile.src">
-                    <img :src="tile.src" alt="" class="pointer-events-none absolute select-none" draggable="false" :style="`left:${tile.x}px;top:${tile.y}px;width:960px;height:600px;`">
+                    <img :src="tile.src" alt="" class="pointer-events-none absolute max-w-none select-none" draggable="false" :style="`left:${tile.x}px;top:${tile.y}px;width:960px;height:600px;`">
                   </template>
                   <template x-for="(slot, idx) in slots" :key="'slot-' + idx">
                     <div class="absolute" :style="`left:${slot.ax}px;top:${slot.ay}px;width:86px;height:43px;z-index:${10 + slot.ay};`"
+                         :class="isMovable(idx) ? 'cursor-grab' : (slot.b === 'empty' ? '' : 'cursor-not-allowed')"
                          :draggable="isMovable(idx) ? 'true' : 'false'"
                          @dragstart="dragFrom = idx"
                          @dragend="dragFrom = null"
                          @dragover.prevent
                          @drop.prevent="dropOn(idx)"
                          @click="clickSlot(idx)"
-                         :title="slotTitle(slot, idx)">
+                         @mouseenter="hovered = idx"
+                         @mouseleave="if (hovered === idx) hovered = null">
                       {# marca da posicao (origem escolhida / destino valido) #}
-                      <div class="pointer-events-none absolute inset-0 rounded-[50%] transition-all" :style="markerStyle(idx)"></div>
-                      <template x-if="slot.sp">
-                        <img :src="slot.sp.src" alt="" draggable="false" class="absolute max-w-none select-none transition-all"
-                             :class="isMovable(idx) ? 'cursor-grab' : ''"
-                             :style="`left:${slot.sp.x}px;top:${slot.sp.y}px;width:${slot.sp.w}px;height:${slot.sp.h}px;${spriteFilter(idx)}`">
-                      </template>
+                      <div class="pointer-events-none absolute inset-0 rounded-[50%]" :style="markerStyle(idx)"></div>
+                      {# desenho do jogo: recorte da imagem na caixa do jogo, sem esticar #}
+                      <div x-show="slot.sp" class="pointer-events-none absolute" :style="spriteStyle(slot, idx)"></div>
+                      <div x-show="slot.sp" class="absolute" :style="hitStyle(slot)"></div>
                       <template x-if="!slot.sp && slot.b !== 'empty'">
                         <img :src="slot.i" alt="" draggable="false" class="absolute max-w-none select-none" style="left:-20px;top:-80px;width:126px;height:110px;">
                       </template>
+                    </div>
+                  </template>
+                  {# selos de nivel e nome por cima de todos os desenhos, sempre do mesmo tamanho na tela #}
+                  <template x-for="(slot, idx) in slots" :key="'tag-' + idx">
+                    <div class="pointer-events-none absolute" :style="`left:${slot.ax + 43}px;top:${slot.ay + 16}px;z-index:5000;`">
                       <template x-if="slot.b !== 'empty'">
-                        <div class="pointer-events-none absolute left-1/2 top-[46px] -translate-x-1/2 whitespace-nowrap rounded-[6px] border px-2 py-0.5 text-[20px] font-semibold leading-tight shadow"
-                             style="border-color:#c9a86a;background:rgba(253,240,206,0.92);color:#3a2a12;"
-                             x-text="`${slot.n} (${slot.l})${slot.u ? ' ⚒' : ''}`"></div>
+                        <div class="absolute flex items-center justify-center rounded-full font-bold leading-none" :style="badgeStyle(slot)" x-text="slot.l"></div>
+                      </template>
+                      <template x-if="showName(idx)">
+                        <div class="absolute whitespace-nowrap rounded-[6px] border font-semibold leading-tight shadow" :style="nameStyle()" x-text="slotTitle(slot, idx)"></div>
                       </template>
                     </div>
                   </template>
@@ -586,7 +592,8 @@ function reorderModal() {
   const clone = (slots) => slots.map(s => ({...s, a: [...(s.a || [])]}));
   return {
     key: '', meta: {}, slots: [], original: [], swaps: [], dragFrom: null, picked: null,
-    copySource: '', saving: false, notice: {text: '', type: ''}, scale: 0.5,
+    copySource: '', saving: false, notice: {text: '', type: ''}, scale: 0.5, offsetX: 0, hovered: null,
+    view: art.view || [0, 0, 1920, 1200],
     init() {
       window.addEventListener('resize', () => { if (this.key) this.fitMap(); });
       // Links from the game panel open the reorder straight away (?reorder=<ga>:<city>).
@@ -655,10 +662,15 @@ function reorderModal() {
       if (this.picked !== idx) this.tryMove(this.picked, idx);
       this.picked = null;
     },
+    // Fit the city window to the modal width and to the screen height.
     fitMap() {
       this.$nextTick(() => {
         const wrap = this.$refs.mapWrap;
-        if (wrap) this.scale = wrap.clientWidth / 1920;
+        if (!wrap) return;
+        const [, , w, h] = this.view;
+        const room = Math.max(260, window.innerHeight - 250);
+        this.scale = Math.min(wrap.clientWidth / w, room / h, 1);
+        this.offsetX = Math.max(0, (wrap.clientWidth - w * this.scale) / 2);
       });
     },
     origin() { return this.dragFrom !== null ? this.dragFrom : this.picked; },
@@ -668,10 +680,40 @@ function reorderModal() {
       if (origin !== null && !this.rejection(origin, idx)) return 'box-shadow:0 0 0 5px #5f8c4e, 0 0 36px 16px rgba(95,140,78,0.7);background:rgba(95,140,78,0.35);';
       return '';
     },
-    spriteFilter(idx) {
+    spriteStyle(slot, idx) {
+      const sp = slot.sp;
+      if (!sp) return '';
+      let look = '';
       const origin = this.origin();
-      if (origin === null || origin === idx) return '';
-      return this.rejection(origin, idx) ? 'opacity:0.45;filter:grayscale(0.6);' : 'filter:drop-shadow(0 0 10px rgba(95,140,78,0.95));';
+      if (origin !== null && origin !== idx) {
+        look = this.rejection(origin, idx) ? 'opacity:0.5;filter:grayscale(0.7);' : 'filter:drop-shadow(0 0 10px rgba(140,220,110,1)) brightness(1.1);';
+      } else if (this.hovered === idx && slot.b !== 'empty') {
+        look = 'filter:brightness(1.15) drop-shadow(0 0 6px rgba(255,248,220,0.9));';
+      }
+      return `left:${sp.x}px;top:${sp.y}px;width:${sp.w}px;height:${sp.h}px;background:url('${sp.src}') 0 0 no-repeat;${look}`;
+    },
+    // Clickable part of the drawing: its middle, not the transparent corners
+    // that overlap the neighbour buildings.
+    hitStyle(slot) {
+      const sp = slot.sp;
+      return `left:${sp.x + sp.w * 0.2}px;top:${sp.y + sp.h * 0.15}px;width:${sp.w * 0.6}px;height:${sp.h * 0.75}px;`;
+    },
+    // Labels keep the same size on screen whatever the map scale is.
+    px(n) { return `${(n / this.scale).toFixed(1)}px`; },
+    badgeStyle(slot) {
+      const small = this.scale < 0.4;
+      const d = small ? 13 : 20;
+      const edge = slot.u ? '#e08a1e' : '#5b3a12';
+      return `width:${this.px(d)};height:${this.px(d)};left:${this.px(-d / 2)};top:${this.px(-d / 2)};font-size:${this.px(small ? 8 : 11)};`
+        + `border:${this.px(1.5)} solid ${edge};color:#fff8e6;background:radial-gradient(circle at 35% 30%, #c9964a, #7a4f1c);`
+        + `box-shadow:0 ${this.px(1)} ${this.px(3)} rgba(0,0,0,0.45);`;
+    },
+    showName(idx) {
+      return this.hovered === idx || this.origin() === idx;
+    },
+    nameStyle() {
+      return `left:0;top:${this.px(14)};transform:translateX(-50%);font-size:${this.px(12)};padding:${this.px(2)} ${this.px(8)};`
+        + `border-width:${this.px(1)};border-color:#c9a86a;background:rgba(253,240,206,0.95);color:#3a2a12;`;
     },
     slotTitle(slot, idx) {
       return slot.b === 'empty' ? `#${idx} livre` : `#${idx} ${slot.n} (nivel ${slot.l})${slot.u ? ' — em obra' : ''}`;

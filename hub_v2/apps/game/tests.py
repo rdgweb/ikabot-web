@@ -563,3 +563,11 @@ class CityMapTests(TestCase):
             if not any((root / src.split("/static/", 1)[-1]).exists() for root in roots)
         ]
         self.assertEqual(missing, [])
+
+    def test_view_window_shows_every_position(self):
+        from apps.game import city_map
+
+        x, y, width, height = city_map.sprite_table()["view"]
+        for pos, (ax, ay) in city_map.POSITIONS.items():
+            self.assertTrue(x <= ax and ax + city_map.ANCHOR[0] <= x + width, pos)
+            self.assertTrue(y <= ay and ay + city_map.ANCHOR[1] <= y + height, pos)
