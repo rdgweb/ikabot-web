@@ -464,20 +464,11 @@
                     <img :src="tile.src" alt="" class="pointer-events-none absolute select-none" draggable="false" :style="`max-width:none;left:${tile.x}px;top:${tile.y}px;width:960px;height:600px;`">
                   </template>
                   <template x-for="(slot, idx) in slots" :key="'slot-' + idx">
-                    <div class="absolute" :style="`left:${slot.ax}px;top:${slot.ay}px;width:86px;height:43px;z-index:${10 + slot.ay};cursor:${isMovable(idx) ? 'grab' : (slot.b === 'empty' ? 'pointer' : 'not-allowed')};`"
-                         :draggable="isMovable(idx) ? 'true' : 'false'"
-                         @dragstart="dragFrom = idx"
-                         @dragend="dragFrom = null"
-                         @dragover.prevent
-                         @drop.prevent="dropOn(idx)"
-                         @click="clickSlot(idx)"
-                         @mouseenter="hovered = idx"
-                         @mouseleave="if (hovered === idx) hovered = null">
+                    <div class="pointer-events-none absolute" :style="`left:${slot.ax}px;top:${slot.ay}px;width:86px;height:43px;z-index:${10 + slot.ay};`">
                       {# marca da posicao (origem escolhida / destino valido) #}
-                      <div class="pointer-events-none absolute inset-0" :style="`border-radius:50%;${markerStyle(idx)}`"></div>
+                      <div class="absolute inset-0" :style="`border-radius:50%;${markerStyle(idx)}`"></div>
                       {# desenho do jogo: recorte da imagem na caixa do jogo, sem esticar #}
-                      <div x-show="slot.sp" class="pointer-events-none absolute" :style="spriteStyle(slot, idx)"></div>
-                      <div x-show="slot.sp" class="absolute" :style="hitStyle(slot)"></div>
+                      <div x-show="slot.sp" class="absolute" :style="spriteStyle(slot, idx)"></div>
                       <template x-if="!slot.sp && slot.b !== 'empty'">
                         <img :src="slot.i" alt="" draggable="false" class="absolute select-none" style="max-width:none;left:-20px;top:-80px;width:126px;height:110px;">
                       </template>
@@ -495,6 +486,15 @@
                     </div>
                   </template>
                 </div>
+                {# uma camada so recebe mouse/arrasto e acha o edificio pelo pixel visivel do desenho (como no jogo) #}
+                <div class="absolute inset-0" draggable="true" :style="`cursor:${cursor()};`"
+                     @mousemove="hovered = hitTest($event)"
+                     @mouseleave="hovered = null"
+                     @click="clickSlot(hitTest($event))"
+                     @dragstart="startDrag($event)"
+                     @dragend="dragFrom = null; hovered = null"
+                     @dragover.prevent="hovered = hitTest($event)"
+                     @drop.prevent="dropOn(hitTest($event))"></div>
               </div>
 
               <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
@@ -589,6 +589,25 @@ function reorderModal() {
   const layouts = JSON.parse(document.getElementById('cs-reorder-layouts')?.textContent || '{}');
   const art = JSON.parse(document.getElementById('cs-city-sprites')?.textContent || '{}');
   const clone = (slots) => slots.map(s => ({...s, a: [...(s.a || [])]}));
+  // What moves in a swap is the building; ground, anchor and accepted list stay with the position.
+  const BUILDING_FIELDS = ['b', 'n', 'i', 'l', 'u', 'id'];
+  // Alpha of each sprite, to pick the building under the mouse by its visible pixels.
+  const masks = {};
+  const loadMask = (src) => {
+    if (!src || masks[src]) return;
+    masks[src] = {ready: false};
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const cv = document.createElement('canvas');
+        cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+        const ctx = cv.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        masks[src] = {ready: true, img, w: cv.width, h: cv.height, data: ctx.getImageData(0, 0, cv.width, cv.height).data};
+      } catch (e) { masks[src] = {ready: false, img}; }
+    };
+    img.src = src;
+  };
   return {
     key: '', meta: {}, slots: [], original: [], swaps: [], dragFrom: null, picked: null,
     copySource: '', saving: false, notice: {text: '', type: ''}, scale: 0.5, offsetX: 0, hovered: null,
@@ -612,6 +631,9 @@ function reorderModal() {
       this.original = clone(data.slots); this.slots = clone(data.slots);
       this.swaps = []; this.dragFrom = null; this.picked = null; this.copySource = '';
       this.notice = {text: '', type: ''};
+      this.slots.forEach(slot => loadMask(slot.sp && slot.sp.src));
+      Object.values(art.buildings || {}).concat(Object.values(art.shore || {}), Object.values(art.empty || {}))
+        .forEach(sp => loadMask(sp && sp.src));
       this.fitMap();
     },
     close() { this.key = ''; },
@@ -623,30 +645,26 @@ function reorderModal() {
       const a = this.slots[from], b = this.slots[to];
       if (!this.hasBuilding(a)) return 'nao ha edificio na origem';
       if (a.u || b.u) return 'edificio em obra';
-      if (!(b.a || []).includes(a.id)) return `a posicao #${to} nao aceita ${a.n}`;
-      if (this.hasBuilding(b) && !(a.a || []).includes(b.id)) return `a posicao #${from} nao aceita ${b.n}`;
+      if (!(b.a || []).includes(a.id)) return `a posicao #${b.p} nao aceita ${a.n}`;
+      if (this.hasBuilding(b) && !(a.a || []).includes(b.id)) return `a posicao #${a.p} nao aceita ${b.n}`;
       return '';
     },
-    // Ground and anchor belong to the position, not to the building that moves.
+    // Ground belongs to the position, not to the building that moves.
     groundOf(idx) {
       const o = this.original[idx] || {};
       return (o.b === 'empty' && o.t) ? o.t : ((art.grounds || {})[String(o.g)] || 'land');
     },
     spriteFor(building, idx) {
       if (building === 'empty') return (art.empty || {})[this.groundOf(idx)] || null;
-      return (art.shore || {})[`${building}|${idx}`] || (art.buildings || {})[building] || null;
-    },
-    placeAt(idx) {
-      const slot = this.slots[idx];
-      const anchor = (art.anchors || {})[String(idx)] || [slot.ax, slot.ay];
-      slot.p = idx; slot.ax = anchor[0]; slot.ay = anchor[1];
-      slot.sp = this.spriteFor(slot.b, idx);
+      const pos = this.slots[idx].p;
+      return (art.shore || {})[`${building}|${pos}`] || (art.buildings || {})[building] || null;
     },
     applySwap(from, to) {
-      const s = this.slots;
-      [s[from], s[to]] = [s[to], s[from]];
-      this.placeAt(from); this.placeAt(to);
-      this.swaps.push([from, to]);
+      const a = this.slots[from], b = this.slots[to];
+      for (const f of BUILDING_FIELDS) [a[f], b[f]] = [b[f], a[f]];
+      a.sp = this.spriteFor(a.b, from);
+      b.sp = this.spriteFor(b.b, to);
+      this.swaps.push([a.p, b.p]);
     },
     tryMove(from, to) {
       const why = this.rejection(from, to);
@@ -655,8 +673,9 @@ function reorderModal() {
       this.notice = {text: '', type: ''};
       return true;
     },
-    dropOn(idx) { if (this.dragFrom !== null) this.tryMove(this.dragFrom, idx); this.dragFrom = null; },
+    dropOn(idx) { if (this.dragFrom !== null && idx !== null) this.tryMove(this.dragFrom, idx); this.dragFrom = null; },
     clickSlot(idx) {
+      if (idx === null) { this.picked = null; return; }
       if (this.picked === null) { if (this.isMovable(idx)) this.picked = idx; return; }
       if (this.picked !== idx) this.tryMove(this.picked, idx);
       this.picked = null;
@@ -673,29 +692,84 @@ function reorderModal() {
       });
     },
     origin() { return this.dragFrom !== null ? this.dragFrom : this.picked; },
+    // Light feedback: blue ring on the building being moved, green ring on the
+    // ground of each valid destination; the drawings themselves stay as in the game.
     markerStyle(idx) {
       const origin = this.origin();
-      if (origin === idx) return 'box-shadow:0 0 0 6px #4f86b9, 0 0 40px 18px rgba(79,134,185,0.75);background:rgba(79,134,185,0.35);';
-      if (origin !== null && !this.rejection(origin, idx)) return 'box-shadow:0 0 0 5px #5f8c4e, 0 0 36px 16px rgba(95,140,78,0.7);background:rgba(95,140,78,0.35);';
-      return '';
+      if (origin === null) return '';
+      if (origin === idx) return 'background:rgba(79,134,185,0.35);box-shadow:0 0 0 3px rgba(79,134,185,0.9);';
+      if (this.rejection(origin, idx)) return '';
+      return this.hovered === idx
+        ? 'background:rgba(120,200,90,0.5);box-shadow:0 0 0 4px rgba(120,200,90,1);'
+        : 'background:rgba(120,200,90,0.28);box-shadow:0 0 0 2px rgba(120,200,90,0.8);';
     },
     spriteStyle(slot, idx) {
       const sp = slot.sp;
       if (!sp) return '';
       let look = '';
       const origin = this.origin();
-      if (origin !== null && origin !== idx) {
-        look = this.rejection(origin, idx) ? 'opacity:0.5;filter:grayscale(0.7);' : 'filter:drop-shadow(0 0 10px rgba(140,220,110,1)) brightness(1.1);';
+      if (this.dragFrom === idx) {
+        look = 'opacity:0.45;';
+      } else if (origin === idx) {
+        look = 'filter:brightness(1.12) drop-shadow(0 0 6px rgba(79,134,185,0.95));';
       } else if (this.hovered === idx && slot.b !== 'empty') {
-        look = 'filter:brightness(1.15) drop-shadow(0 0 6px rgba(255,248,220,0.9));';
+        if (origin === null) look = 'filter:brightness(1.12);';
+        else if (!this.rejection(origin, idx)) look = 'filter:brightness(1.12) drop-shadow(0 0 6px rgba(120,200,90,1));';
       }
       return `left:${sp.x}px;top:${sp.y}px;width:${sp.w}px;height:${sp.h}px;background:url('${sp.src}') 0 0 no-repeat;${look}`;
     },
-    // Clickable part of the drawing: its middle, not the transparent corners
-    // that overlap the neighbour buildings.
-    hitStyle(slot) {
-      const sp = slot.sp;
-      return `left:${sp.x + sp.w * 0.2}px;top:${sp.y + sp.h * 0.15}px;width:${sp.w * 0.6}px;height:${sp.h * 0.75}px;`;
+    // Map point under the mouse -> slot index: topmost drawing with a visible
+    // pixel there; otherwise the position's ground diamond (empty spots).
+    hitTest(ev) {
+      const wrap = this.$refs.mapWrap;
+      if (!wrap || !this.slots.length) return null;
+      const r = wrap.getBoundingClientRect();
+      const mx = (ev.clientX - r.left - this.offsetX) / this.scale + this.view[0];
+      const my = (ev.clientY - r.top) / this.scale + this.view[1];
+      const order = this.slots.map((s, i) => i).sort((i, j) => this.slots[j].ay - this.slots[i].ay);
+      for (const i of order) {
+        const s = this.slots[i], sp = s.sp;
+        if (!sp) continue;
+        const x = Math.floor(mx - s.ax - sp.x), y = Math.floor(my - s.ay - sp.y);
+        if (x < 0 || y < 0 || x >= sp.w || y >= sp.h) continue;
+        const m = masks[sp.src];
+        if (!m || !m.ready) {
+          if (x > sp.w * 0.2 && x < sp.w * 0.8 && y > sp.h * 0.15 && y < sp.h * 0.9) return i;
+          continue;
+        }
+        if (x < m.w && y < m.h && m.data[(y * m.w + x) * 4 + 3] > 60) return i;
+      }
+      for (const i of order) {
+        const s = this.slots[i];
+        const dx = (mx - s.ax - 43) / 43, dy = (my - s.ay - 21.5) / 21.5;
+        if (dx * dx + dy * dy <= 1) return i;
+      }
+      return null;
+    },
+    startDrag(ev) {
+      const idx = this.hitTest(ev);
+      if (idx === null || !this.isMovable(idx)) { ev.preventDefault(); return; }
+      this.dragFrom = idx; this.picked = null;
+      ev.dataTransfer.effectAllowed = 'move';
+      ev.dataTransfer.setData('text/plain', String(idx));
+      // Ghost = just this building, at the map's scale.
+      const sp = this.slots[idx].sp, m = sp && masks[sp.src];
+      if (m && m.img) {
+        const cv = document.createElement('canvas');
+        cv.width = Math.max(1, Math.round(sp.w * this.scale)); cv.height = Math.max(1, Math.round(sp.h * this.scale));
+        cv.getContext('2d').drawImage(m.img, 0, 0, sp.w, sp.h, 0, 0, cv.width, cv.height);
+        cv.style.cssText = 'position:fixed;left:-10000px;top:0;';
+        document.body.appendChild(cv);
+        ev.dataTransfer.setDragImage(cv, cv.width / 2, cv.height / 2);
+        setTimeout(() => cv.remove(), 0);
+      }
+    },
+    cursor() {
+      const h = this.hovered;
+      if (this.dragFrom !== null) return 'grabbing';
+      if (h === null) return 'default';
+      if (this.origin() !== null) return this.rejection(this.origin(), h) ? 'not-allowed' : 'pointer';
+      return this.isMovable(h) ? 'grab' : 'default';
     },
     // Labels keep the same size on screen whatever the map scale is.
     px(n) { return `${(n / this.scale).toFixed(1)}px`; },
