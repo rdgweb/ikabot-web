@@ -395,6 +395,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                     "under_attack": _under_attack,
                     "attack_hostile_count": int(_attack_state.get("hostile_count") or 0),
                     "gold": acct_gold,
+                    "player_score": base.get("player_score") or {},
                     "income": acct_income,
                     "gross_income": gross_income,
                     "upkeep": upkeep,

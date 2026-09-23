@@ -78,6 +78,35 @@ def _write_wine_debug(city_id: int, city_name: str, html: str) -> None:
     (debug_dir / f"city-{city_id}.txt").write_text("\n".join(payload), encoding="utf-8")
 
 
+def _own_player_score(island: dict[str, Any], own_city_id: int | str) -> dict[str, Any] | None:
+    """Pick the account's own score out of an island view (avatarScores).
+
+    Total follows the convention used elsewhere in the system (worldintel,
+    piracy): building + research + army. `place` is the game's own ranking.
+    """
+    owner_id = next(
+        (
+            str(city.get("owner_id") or "")
+            for city in (island.get("cities") or [])
+            if isinstance(city, dict) and str(city.get("id") or "") == str(own_city_id)
+        ),
+        "",
+    )
+    score = (island.get("avatar_scores") or {}).get(owner_id) if owner_id else None
+    if not isinstance(score, dict):
+        return None
+    building = int(score.get("building_score") or 0)
+    research = int(score.get("research_score") or 0)
+    army = int(score.get("army_score") or 0)
+    return {
+        "total": building + research + army,
+        "building": building,
+        "research": research,
+        "army": army,
+        "place": int(score.get("place") or 0),
+    }
+
+
 def _merge_existing_building_progress(city_data: dict[str, Any], existing_city: dict[str, Any] | None) -> dict[str, Any]:
     """Preserve useful construction metadata from the previous snapshot.
 
@@ -305,6 +334,22 @@ class CheckStatusRunner(BaseRunner):
             except Exception as _poe:
                 self.log(jid, "info", f"Leitura do porto ignorada: {_poe}")
 
+            # ── Pontuacao do jogador: 1 request (visao da ilha da 1a cidade) ──
+            player_score = existing_base.get("player_score") or {}
+            try:
+                ref_city_id3 = next(
+                    (str(_c.get("id")).strip() for _c in cities_data
+                     if isinstance(_c, dict) and str(_c.get("id") or "").strip()),
+                    None,
+                )
+                if ref_city_id3:
+                    own_score = _own_player_score(client.fetch_island_by_city_id(ref_city_id3), ref_city_id3)
+                    if own_score:
+                        player_score = {**own_score, "updated_at": datetime.now(timezone.utc).isoformat()}
+                        self.log(jid, "info", f"Pontuacao total: {own_score['total']:,} (ranking #{own_score['place']:,})")
+            except Exception as _se:
+                self.log(jid, "info", f"Leitura da pontuacao ignorada: {_se}")
+
             snapshot = {
                 "base_snapshot": {
                     "player_name": player_name,
@@ -342,6 +387,7 @@ class CheckStatusRunner(BaseRunner):
                     "shrine_updated_at": existing_base.get("shrine_updated_at", ""),
                     "premium_state": premium_state,
                     "port_state": port_state,
+                    "player_score": player_score,
                 },
                 "cities": cities_data,
                 "military": military_data,

@@ -338,3 +338,57 @@ class DashboardConstructionReservationTests(TestCase):
 
         self.assertEqual(marble["construction_reserved_local"], 1234)
         self.assertEqual(marble["construction_reserved_shortfall"], 567)
+
+
+class DashboardPlayerScoreTests(TestCase):
+    """N-53: the game panel shows each account's total score (collected by
+    Check Status into base_snapshot.player_score) next to the gold."""
+
+    def setUp(self):
+        cache.clear()
+        self.factory = RequestFactory()
+        self.user = get_user_model().objects.create_user(
+            username="score-tester", email="score@example.com", password="secret123",
+        )
+        account = Account.objects.create(
+            node=Node.objects.create(name="agent-score"),
+            label="Lobby Score", email="score-lobby@example.com", password_enc="enc",
+        )
+        self.game_account = GameAccount.objects.create(
+            account=account, lobby_account_id=987, server_id="s7-br",
+            server_language="br", server_number=7, name="ScorePlayer",
+        )
+        self.snapshot = AccountSnapshot.objects.create(
+            account=account, game_account=self.game_account,
+            base_snapshot={
+                "gold": 1000,
+                "player_score": {"total": 388907, "building": 267381, "research": 120559, "army": 967, "place": 3057},
+            },
+            cities=[], military={},
+        )
+
+    def _render(self):
+        request = self.factory.get("/game/")
+        request.user = self.user
+        response = DashboardView.as_view()(request)
+        response.render()
+        return response
+
+    def test_total_score_rank_and_breakdown_are_shown_next_to_the_gold(self):
+        response = self._render()
+        html = response.content.decode()
+
+        card = response.context_data["account_cards"][0]
+        self.assertEqual(card["player_score"]["total"], 388907)
+        self.assertIn("bi-trophy-fill", html)
+        self.assertRegex(html, r"388[.,]907")
+        self.assertRegex(html, r"#3[.,]057")
+
+    def test_nothing_is_shown_before_check_status_collected_the_score(self):
+        self.snapshot.base_snapshot = {"gold": 1000}
+        self.snapshot.save()
+        cache.clear()
+
+        html = self._render().content.decode()
+
+        self.assertNotIn("bi-trophy-fill", html)
