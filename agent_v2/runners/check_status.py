@@ -913,6 +913,9 @@ class CheckStatusRunner(BaseRunner):
                 "action_points_current": action_points_current,
                 "action_points_max": action_points_max,
                 "buildings": buildings,
+                # N-50: city map background (the game art changes with the phase)
+                "phase": safe_int(city.get("phase")),
+                "is_capital": bool(city.get("isCapital")),
                 # Occupation fields (present when city/port is occupied by an enemy)
                 "city_occupied": city.get("cityOccupied") or None,
                 "harbour_occupied": city.get("harbourOccupied") or None,

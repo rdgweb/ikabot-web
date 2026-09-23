@@ -424,7 +424,7 @@
   <div x-data="reorderModal()" @open-reorder.window="open($event.detail.key)" @keydown.escape.window="close()">
     <template x-if="key">
       <div class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4" @click.self="close()">
-        <div class="mt-6 w-full max-w-4xl rounded-[22px] border bg-paper p-5 shadow-2xl" style="border-color: var(--ik-line);">
+        <div class="mt-6 w-full max-w-6xl rounded-[22px] border bg-paper p-5 shadow-2xl" style="border-color: var(--ik-line);">
           <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
             <div>
               <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Reorganizar edificios</div>
@@ -457,32 +457,39 @@
               </div>
               <p class="mb-3 text-[11px]" :class="notice.type === 'warn' ? 'text-[var(--ik-bad)]' : 'text-muted'" x-show="notice.text" x-text="notice.text"></p>
 
-              <div class="grid grid-cols-3 gap-2 sm:grid-cols-5">
-                <template x-for="(slot, idx) in slots" :key="'slot-' + idx">
-                  <div class="relative flex min-h-[6.5rem] flex-col items-center justify-center rounded-[14px] border-2 p-1.5 text-center transition-all"
-                       :class="slotClass(idx)"
-                       :style="'border-color:' + groundColor(slot) + ';'"
-                       :draggable="isMovable(idx) ? 'true' : 'false'"
-                       @dragstart="dragFrom = idx"
-                       @dragend="dragFrom = null"
-                       @dragover.prevent
-                       @drop.prevent="dropOn(idx)"
-                       @click="clickSlot(idx)"
-                       :title="slotTitle(slot, idx)">
-                    <span class="absolute left-1.5 top-1 text-[9px] font-bold text-muted" x-text="'#' + idx"></span>
-                    <template x-if="slot.b !== 'empty'">
-                      <div class="flex flex-col items-center">
-                        <img :src="slot.i" class="h-12 w-14 object-contain" alt="">
-                        <span class="mt-0.5 line-clamp-1 text-[10px] font-semibold text-ink" x-text="slot.n"></span>
-                        <span class="text-[10px] font-mono text-muted" x-text="'Nv ' + slot.l"></span>
-                        <i x-show="slot.u" class="bi bi-arrow-up-circle-fill absolute right-1.5 top-1 text-amber-500" title="Em obra (nao pode mover)"></i>
-                      </div>
-                    </template>
-                    <template x-if="slot.b === 'empty'">
-                      <span class="text-[10px] italic text-muted">livre</span>
-                    </template>
-                  </div>
-                </template>
+              {# Mapa da cidade como no jogo: area 1920x1200 reduzida em escala #}
+              <div x-ref="mapWrap" class="relative w-full overflow-hidden rounded-[14px] border" style="aspect-ratio: 16 / 10; border-color: var(--ik-line); background: #6b9ec0;">
+                <div class="absolute left-0 top-0 origin-top-left" :style="`width:1920px;height:1200px;transform:scale(${scale});`">
+                  <template x-for="tile in (meta.bg || [])" :key="tile.src">
+                    <img :src="tile.src" alt="" class="pointer-events-none absolute select-none" draggable="false" :style="`left:${tile.x}px;top:${tile.y}px;width:960px;height:600px;`">
+                  </template>
+                  <template x-for="(slot, idx) in slots" :key="'slot-' + idx">
+                    <div class="absolute" :style="`left:${slot.ax}px;top:${slot.ay}px;width:86px;height:43px;z-index:${10 + slot.ay};`"
+                         :draggable="isMovable(idx) ? 'true' : 'false'"
+                         @dragstart="dragFrom = idx"
+                         @dragend="dragFrom = null"
+                         @dragover.prevent
+                         @drop.prevent="dropOn(idx)"
+                         @click="clickSlot(idx)"
+                         :title="slotTitle(slot, idx)">
+                      {# marca da posicao (origem escolhida / destino valido) #}
+                      <div class="pointer-events-none absolute inset-0 rounded-[50%] transition-all" :style="markerStyle(idx)"></div>
+                      <template x-if="slot.sp">
+                        <img :src="slot.sp.src" alt="" draggable="false" class="absolute max-w-none select-none transition-all"
+                             :class="isMovable(idx) ? 'cursor-grab' : ''"
+                             :style="`left:${slot.sp.x}px;top:${slot.sp.y}px;width:${slot.sp.w}px;height:${slot.sp.h}px;${spriteFilter(idx)}`">
+                      </template>
+                      <template x-if="!slot.sp && slot.b !== 'empty'">
+                        <img :src="slot.i" alt="" draggable="false" class="absolute max-w-none select-none" style="left:-20px;top:-80px;width:126px;height:110px;">
+                      </template>
+                      <template x-if="slot.b !== 'empty'">
+                        <div class="pointer-events-none absolute left-1/2 top-[46px] -translate-x-1/2 whitespace-nowrap rounded-[6px] border px-2 py-0.5 text-[20px] font-semibold leading-tight shadow"
+                             style="border-color:#c9a86a;background:rgba(253,240,206,0.92);color:#3a2a12;"
+                             x-text="`${slot.n} (${slot.l})${slot.u ? ' ⚒' : ''}`"></div>
+                      </template>
+                    </div>
+                  </template>
+                </div>
               </div>
 
               <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
@@ -504,6 +511,7 @@
 
 {% csrf_token %}
 {{ reorder_layouts|json_script:"cs-reorder-layouts" }}
+{{ city_sprites|json_script:"cs-city-sprites" }}
 {{ res_icons|json_script:"cs-res-icons" }}
 <script>
 function _csrfToken() {
@@ -574,11 +582,13 @@ function planCard(jobId, strategy) {
 // them against fresh game data before saving).
 function reorderModal() {
   const layouts = JSON.parse(document.getElementById('cs-reorder-layouts')?.textContent || '{}');
+  const art = JSON.parse(document.getElementById('cs-city-sprites')?.textContent || '{}');
   const clone = (slots) => slots.map(s => ({...s, a: [...(s.a || [])]}));
   return {
     key: '', meta: {}, slots: [], original: [], swaps: [], dragFrom: null, picked: null,
-    copySource: '', saving: false, notice: {text: '', type: ''},
+    copySource: '', saving: false, notice: {text: '', type: ''}, scale: 0.5,
     init() {
+      window.addEventListener('resize', () => { if (this.key) this.fitMap(); });
       // Links from the game panel open the reorder straight away (?reorder=<ga>:<city>).
       const key = new URLSearchParams(window.location.search).get('reorder');
       if (key && layouts[key]) this.open(key);
@@ -596,6 +606,7 @@ function reorderModal() {
       this.original = clone(data.slots); this.slots = clone(data.slots);
       this.swaps = []; this.dragFrom = null; this.picked = null; this.copySource = '';
       this.notice = {text: '', type: ''};
+      this.fitMap();
     },
     close() { this.key = ''; },
     reset() { this.slots = clone(this.original); this.swaps = []; this.picked = null; this.notice = {text: '', type: ''}; },
@@ -610,10 +621,25 @@ function reorderModal() {
       if (this.hasBuilding(b) && !(a.a || []).includes(b.id)) return `a posicao #${from} nao aceita ${b.n}`;
       return '';
     },
+    // Ground and anchor belong to the position, not to the building that moves.
+    groundOf(idx) {
+      const o = this.original[idx] || {};
+      return (o.b === 'empty' && o.t) ? o.t : ((art.grounds || {})[String(o.g)] || 'land');
+    },
+    spriteFor(building, idx) {
+      if (building === 'empty') return (art.empty || {})[this.groundOf(idx)] || null;
+      return (art.shore || {})[`${building}|${idx}`] || (art.buildings || {})[building] || null;
+    },
+    placeAt(idx) {
+      const slot = this.slots[idx];
+      const anchor = (art.anchors || {})[String(idx)] || [slot.ax, slot.ay];
+      slot.p = idx; slot.ax = anchor[0]; slot.ay = anchor[1];
+      slot.sp = this.spriteFor(slot.b, idx);
+    },
     applySwap(from, to) {
       const s = this.slots;
       [s[from], s[to]] = [s[to], s[from]];
-      s[from].p = from; s[to].p = to;
+      this.placeAt(from); this.placeAt(to);
       this.swaps.push([from, to]);
     },
     tryMove(from, to) {
@@ -629,16 +655,23 @@ function reorderModal() {
       if (this.picked !== idx) this.tryMove(this.picked, idx);
       this.picked = null;
     },
-    slotClass(idx) {
-      const origin = this.dragFrom !== null ? this.dragFrom : this.picked;
-      const cls = [this.isMovable(idx) ? 'cursor-grab bg-white' : 'bg-[rgba(219,201,167,0.18)]'];
-      if (origin === idx) cls.push('ring-2 ring-[var(--ik-sea)]');
-      else if (origin !== null && !this.rejection(origin, idx)) cls.push('ring-2 ring-[var(--ik-good)] bg-[rgba(95,140,78,0.08)]');
-      else if (origin !== null) cls.push('opacity-50');
-      return cls.join(' ');
+    fitMap() {
+      this.$nextTick(() => {
+        const wrap = this.$refs.mapWrap;
+        if (wrap) this.scale = wrap.clientWidth / 1920;
+      });
     },
-    groundColor(slot) {
-      return {0: '#c99c4e', 1: '#4f86b9', 3: '#8a7a5c', 5: '#35648f'}[slot.g] || 'rgba(219,201,167,0.9)';
+    origin() { return this.dragFrom !== null ? this.dragFrom : this.picked; },
+    markerStyle(idx) {
+      const origin = this.origin();
+      if (origin === idx) return 'box-shadow:0 0 0 6px #4f86b9, 0 0 40px 18px rgba(79,134,185,0.75);background:rgba(79,134,185,0.35);';
+      if (origin !== null && !this.rejection(origin, idx)) return 'box-shadow:0 0 0 5px #5f8c4e, 0 0 36px 16px rgba(95,140,78,0.7);background:rgba(95,140,78,0.35);';
+      return '';
+    },
+    spriteFilter(idx) {
+      const origin = this.origin();
+      if (origin === null || origin === idx) return '';
+      return this.rejection(origin, idx) ? 'opacity:0.45;filter:grayscale(0.6);' : 'filter:drop-shadow(0 0 10px rgba(95,140,78,0.95));';
     },
     slotTitle(slot, idx) {
       return slot.b === 'empty' ? `#${idx} livre` : `#${idx} ${slot.n} (nivel ${slot.l})${slot.u ? ' — em obra' : ''}`;

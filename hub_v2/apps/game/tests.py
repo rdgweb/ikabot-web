@@ -498,3 +498,68 @@ class ReorderBuildingsTests(TestCase):
 
         self.assertContains(response, "Reorganizar</button>")
         self.assertContains(response, "URLSearchParams(window.location.search).get('reorder')")
+
+    def test_layout_carries_the_game_map_geometry(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("game:construction"))
+
+        layout = response.context["reorder_layouts"][f"{self.ga.pk}:501"]
+        warehouse = layout["slots"][1]
+        self.assertEqual((warehouse["ax"], warehouse["ay"]), (730, 738))
+        self.assertTrue(warehouse["sp"]["src"].endswith("game/city/b/warehouse_l.png"))
+        self.assertEqual([t["src"].rsplit("/", 1)[1] for t in layout["bg"]],
+                         ["phase4_nw.jpg", "phase4_ne.jpg", "phase4_sw.jpg", "phase4_se.jpg"])
+        self.assertContains(response, 'id="cs-city-sprites"')
+
+
+class CityMapTests(TestCase):
+    """N-50: the in-game city map (art and geometry copied from the game CSS)."""
+
+    def test_shore_buildings_face_the_water_on_each_side(self):
+        from apps.game import city_map
+
+        self.assertTrue(city_map.building_sprite("port", 1)["src"].endswith("port_r.png"))
+        self.assertTrue(city_map.building_sprite("port", 2)["src"].endswith("port_l.png"))
+        self.assertEqual(city_map.building_sprite("port", 1)["w"], 209)
+
+    def test_empty_slots_use_the_flag_of_their_ground(self):
+        from apps.game import city_map
+
+        self.assertTrue(city_map.building_sprite("empty", 21, "land")["src"].endswith("flag_red.png"))
+        self.assertTrue(city_map.building_sprite("empty", 24, "dockyard")["src"].endswith("flag_blue.png"))
+        wall = city_map.building_sprite("empty", 14, "wall")
+        self.assertTrue(wall["src"].endswith("flag_yellow.png"))
+        self.assertEqual((wall["w"], wall["h"]), (196, 99))
+
+    def test_default_and_custom_sprite_sizes(self):
+        from apps.game import city_map
+
+        self.assertEqual(city_map.building_sprite("warehouse", 5), {
+            "src": city_map.building_sprite("warehouse", 5)["src"], "x": -59, "y": -68, "w": 172, "h": 140,
+        })
+        self.assertEqual(city_map.building_sprite("pirateFortress", 17)["w"], 340)
+        self.assertIsNone(city_map.building_sprite("somethingNew", 3))
+
+    def test_background_follows_phase_and_capital(self):
+        from apps.game import city_map
+
+        self.assertTrue(city_map.background_tiles(2, True)[0]["src"].endswith("phase2_capital_nw.jpg"))
+        self.assertTrue(city_map.background_tiles(0, False)[3]["src"].endswith("phase4_se.jpg"))
+        self.assertTrue(city_map.background_tiles(9, False)[0]["src"].endswith("phase5_nw.jpg"))
+
+    def test_all_referenced_art_exists_in_static(self):
+        from pathlib import Path
+
+        from django.conf import settings
+        from apps.game import city_map
+
+        table = city_map.sprite_table()
+        files = [s["src"] for s in table["buildings"].values()] + [s["src"] for s in table["shore"].values()] \
+            + [s["src"] for s in table["empty"].values()]
+        files += [t["src"] for p in range(1, 6) for cap in (False, True) for t in city_map.background_tiles(p, cap)]
+        roots = [Path(d) for d in getattr(settings, "STATICFILES_DIRS", [])] + [Path(settings.BASE_DIR) / "static"]
+        missing = [
+            src for src in files
+            if not any((root / src.split("/static/", 1)[-1]).exists() for root in roots)
+        ]
+        self.assertEqual(missing, [])

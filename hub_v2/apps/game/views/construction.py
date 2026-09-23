@@ -16,6 +16,7 @@ from django.templatetags.static import static
 from django.views.generic import TemplateView
 
 from apps.accounts.models import Account, GameAccount
+from apps.game import city_map
 from apps.jobs.models import ConstructionResourceReservation, Job
 from core.catalogs import get_building_info
 
@@ -100,8 +101,14 @@ def _reorder_layout(city: dict) -> tuple[list[dict], bool]:
         allowed = b.get("allowed")
         if not isinstance(allowed, list) or (not empty and b.get("building_id") is None):
             ready = False
+        position = _si(b.get("position"))
+        ground_type = str(b.get("type") or "") or city_map.GROUND_TYPES.get(b.get("ground_id"), "")
+        anchor = city_map.POSITIONS.get(position, (0, 0))
         slots.append({
-            "p": _si(b.get("position")),
+            "ax": anchor[0],
+            "ay": anchor[1],
+            "sp": city_map.building_sprite(bid, position, ground_type),
+            "p": position,
             "b": bid,
             "n": "Espaco livre" if empty else _building_name(bid),
             "i": "" if empty else _building_icon(bid),
@@ -247,6 +254,7 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                         "city_name": city.get("name") or cid,
                         "ready": ready,
                         "slots": slots,
+                        "bg": city_map.background_tiles(_si(city.get("phase"), 4), bool(city.get("is_capital"))),
                     }
                     lm_rows.append({
                         "city_name": city.get("name") or cid,
@@ -397,6 +405,7 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
             "level_map": level_map,
             "level_columns": level_columns,
             "reorder_layouts": reorder_layouts,
+            "city_sprites": city_map.sprite_table(),
             "res_icons": {k: static(RESOURCE_META[k]["icon"]) for k in RESOURCE_KEYS},
         })
         return ctx
