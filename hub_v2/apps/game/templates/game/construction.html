@@ -367,9 +367,10 @@
             <tr class="border-t" style="border-color: var(--ik-line);">
               <td class="sticky left-0 z-10 whitespace-nowrap bg-paper p-1.5 font-semibold text-ink">
                 <span class="inline-flex items-center gap-1"><img src="{{ row.tradegood_icon }}" class="h-4 w-4 object-contain" alt="">{{ row.city_name }}
-                  <button type="button" class="ml-1 rounded-md px-1 text-[12px] text-muted transition-colors hover:bg-[rgba(79,134,185,0.12)] hover:text-[var(--ik-sea)]"
+                  <button type="button" class="ml-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors hover:bg-[rgba(79,134,185,0.12)]"
+                          style="border-color: rgba(79,134,185,0.4); color: var(--ik-sea);"
                           title="Reorganizar edificios (arrastar e soltar)"
-                          @click="$dispatch('open-reorder', {key: '{{ row.reorder_key }}'})"><i class="bi bi-arrows-move"></i></button>
+                          @click="$dispatch('open-reorder', {key: '{{ row.reorder_key }}'})"><i class="bi bi-arrows-move"></i> Reorganizar</button>
                 </span>
               </td>
               {% for cell in row.cells %}
@@ -577,6 +578,11 @@ function reorderModal() {
   return {
     key: '', meta: {}, slots: [], original: [], swaps: [], dragFrom: null, picked: null,
     copySource: '', saving: false, notice: {text: '', type: ''},
+    init() {
+      // Links from the game panel open the reorder straight away (?reorder=<ga>:<city>).
+      const key = new URLSearchParams(window.location.search).get('reorder');
+      if (key && layouts[key]) this.open(key);
+    },
     get copyOptions() {
       return Object.entries(layouts)
         .filter(([k, v]) => k !== this.key && v.ready)

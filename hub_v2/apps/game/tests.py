@@ -426,7 +426,7 @@ class ReorderBuildingsTests(TestCase):
         land = [4, 7, 9, 11]
         self.snapshot = AccountSnapshot.objects.create(
             account=self.account, game_account=self.ga, base_snapshot={},
-            cities=[{"id": "501", "name": "Alfa", "buildings": [
+            cities=[{"id": "501", "name": "Alfa", "tradegood": 1, "buildings": [
                 {"position": 0, "building": "townHall", "level": 10, "is_upgrading": False, "building_id": 0, "ground_id": 0, "allowed": [0]},
                 {"position": 1, "building": "warehouse", "level": 5, "is_upgrading": False, "building_id": 7, "ground_id": 2, "allowed": land},
                 {"position": 2, "building": "empty", "type": "land", "level": 0, "is_upgrading": False, "building_id": None, "ground_id": 2, "allowed": land},
@@ -485,3 +485,16 @@ class ReorderBuildingsTests(TestCase):
         response = self.client.get(reverse("game:construction"))
 
         self.assertFalse(response.context["reorder_layouts"][f"{self.ga.pk}:501"]["ready"])
+
+    def test_game_panel_buildings_tab_links_to_the_reorder_of_each_city(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("game:dashboard"))
+
+        self.assertContains(response, f'{reverse("game:construction")}?reorder={self.ga.pk}:501')
+
+    def test_construction_panel_has_a_visible_reorganizar_button_and_deep_link(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("game:construction"), {"reorder": f"{self.ga.pk}:501"})
+
+        self.assertContains(response, "Reorganizar</button>")
+        self.assertContains(response, "URLSearchParams(window.location.search).get('reorder')")
