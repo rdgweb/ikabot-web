@@ -1969,7 +1969,7 @@ def _custom_field_names(action_code: int) -> list[str]:
     if int(action_code) == 25:
         return ["enable"]
     if int(action_code) == 6:
-        return ["city", "collect_favor", "collect_fountain", "fallback_interval_hours", "reschedule_margin_minutes"]
+        return ["city", "collect_favor", "collect_fountain", "fallback_interval_hours", "reschedule_margin_minutes", "sweep_interval_hours", "sweep_before_reset_minutes"]
     if int(action_code) == 18:
         return ["branch_seafaring", "branch_economy", "branch_knowledge", "branch_military", "branch_mythology", "fallback_interval_minutes", "ready_margin_minutes"]
     if int(action_code) == 26:

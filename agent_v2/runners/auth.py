@@ -12,6 +12,35 @@ from runners.base import BaseRunner, RunnerResult
 logger = logging.getLogger(__name__)
 
 DAILY_LOGIN_INTERVAL = 24 * 3600
+DAILY_MIN_DELAY = 10 * 60
+
+
+def _next_daily_delay(
+    reset_in: int,
+    *,
+    sweep_interval_hours: int,
+    sweep_before_reset_minutes: int,
+    reschedule_margin_minutes: int,
+    fallback_interval_hours: int,
+) -> tuple[int, str]:
+    """Seconds until the next daily-login run and its kind.
+
+    "sweep": mid-day pass that only collects task favor (every
+    sweep_interval_hours, the last one sweep_before_reset_minutes before the
+    reset) -- tasks finished during the day are lost at the reset otherwise.
+    "reset": first run of the next cycle (sends the daily bonus).
+    "fallback": the game gave no countdown.
+    """
+    if reset_in <= 0:
+        delay = fallback_interval_hours * 3600
+        if sweep_interval_hours > 0:
+            delay = min(delay, sweep_interval_hours * 3600)
+        return max(DAILY_MIN_DELAY, delay), "fallback"
+    if sweep_interval_hours > 0:
+        last_sweep_in = reset_in - sweep_before_reset_minutes * 60
+        if last_sweep_in >= DAILY_MIN_DELAY:
+            return min(sweep_interval_hours * 3600, last_sweep_in), "sweep"
+    return max(DAILY_MIN_DELAY, reset_in + reschedule_margin_minutes * 60), "reset"
 
 
 @register_runner(1)
@@ -154,6 +183,8 @@ class DailyLoginRunner(BaseRunner):
             collect_fountain = bool(inputs.get("collect_fountain", True))
             fallback_interval_hours = max(1, int(inputs.get("fallback_interval_hours") or 24))
             reschedule_margin_minutes = max(0, int(inputs.get("reschedule_margin_minutes") or 15))
+            sweep_interval_hours = max(0, int(inputs.get("sweep_interval_hours", 4) or 0))
+            sweep_before_reset_minutes = max(0, int(inputs.get("sweep_before_reset_minutes", 30) or 0))
 
             snapshot = self._get_snapshot(ga_id)
             bonus_city_name = self._city_name_from_snapshot(snapshot, bonus_city_id)
@@ -176,8 +207,16 @@ class DailyLoginRunner(BaseRunner):
                 ),
             )
 
-            client.collect_daily_login_bonus(bonus_city_id)
-            self.log(jid, "info", f"Bonus diario enviado para {before_state.get('city_name') or bonus_city_name}")
+            # The game's enddate identifies the current daily cycle; the bonus is
+            # sent once per cycle, the later passes only collect task favor.
+            cycle_key = str(before_state.get("countdown_end_at") or "")
+            if cycle_key and str(inputs.get("bonus_cycle_end_at") or "") == cycle_key:
+                self.log(jid, "info", "Passada de coleta: bonus diario ja enviado neste ciclo")
+            else:
+                client.collect_daily_login_bonus(bonus_city_id)
+                self.log(jid, "info", f"Bonus diario enviado para {before_state.get('city_name') or bonus_city_name}")
+                if cycle_key:
+                    inputs["bonus_cycle_end_at"] = cycle_key
 
             collected_task_ids: list[int] = []
             state = before_state
@@ -187,7 +226,10 @@ class DailyLoginRunner(BaseRunner):
                     if not collectible:
                         break
                     if int(state.get("current_favor") or 0) >= int(state.get("favor_limit") or 2500):
-                        self.log(jid, "info", "Favor cheio; tarefas restantes nao foram recolhidas")
+                        self.log(
+                            jid, "info",
+                            f"Favor cheio; {len(collectible)} tarefa(s) pendente(s) -- nova tentativa na proxima passada",
+                        )
                         break
                     task = collectible[0]
                     task_id = int(task.get("task_id") or 0)
@@ -234,9 +276,13 @@ class DailyLoginRunner(BaseRunner):
                         self.log(jid, "warn", f"Falha ao notificar cineteatro: {exc}")
 
             final_state = client.get_daily_tasks_state(bonus_city_id)
-            next_delay = int(final_state.get("countdown_seconds") or 0) + (reschedule_margin_minutes * 60)
-            if next_delay <= 0:
-                next_delay = fallback_interval_hours * 3600
+            next_delay, next_kind = _next_daily_delay(
+                int(final_state.get("countdown_seconds") or 0),
+                sweep_interval_hours=sweep_interval_hours,
+                sweep_before_reset_minutes=sweep_before_reset_minutes,
+                reschedule_margin_minutes=reschedule_margin_minutes,
+                fallback_interval_hours=fallback_interval_hours,
+            )
 
             self._persist_daily_state(
                 job_id=jid,
@@ -260,13 +306,14 @@ class DailyLoginRunner(BaseRunner):
                 (
                     f"Login diario concluido: favor={final_state.get('current_favor', 0)}/{final_state.get('favor_limit', 2500)} "
                     f"| tarefas={final_state.get('tasks_done', 0)}/{final_state.get('tasks_count', 0)} "
-                    f"| coletadas={len(collected_task_ids)} | proximo_em={next_delay}s"
+                    f"| coletadas={len(collected_task_ids)} | pendentes={int(final_state.get('collectible_tasks_count') or 0)} "
+                    f"| proxima={'passada de coleta' if next_kind == 'sweep' else 'apos o reset'} em {next_delay}s"
                 ),
             )
 
             return RunnerResult(
                 success=True,
-                reschedule_seconds=max(3600, next_delay),
+                reschedule_seconds=next_delay,
                 reschedule_inputs=inputs,
                 data={
                     "city_id": bonus_city_id,
@@ -278,7 +325,8 @@ class DailyLoginRunner(BaseRunner):
                     "collectible_tasks_count": int(final_state.get("collectible_tasks_count") or 0),
                     "collected_task_ids": collected_task_ids,
                     "fountain_collected": fountain_collected,
-                    "next_delay_seconds": max(3600, next_delay),
+                    "next_delay_seconds": next_delay,
+                    "next_run_kind": next_kind,
                 },
             )
 

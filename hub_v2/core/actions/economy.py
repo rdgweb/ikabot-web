@@ -30,6 +30,8 @@ ACTIONS = {
             {"key": "collect_fountain", "type": FIELD_BOOL, "label": "Coletar fonte de ambrosia", "required": False, "default": True, "help": "Tenta coletar a fonte se ela estiver ativa na cidade escolhida."},
             {"key": "fallback_interval_hours", "type": FIELD_INT, "label": "Intervalo fallback (h)", "required": True, "min": 1, "default": 24, "help": "Usado quando o jogo nao informar o countdown real ate o proximo reset."},
             {"key": "reschedule_margin_minutes", "type": FIELD_INT, "label": "Margem apos reset (min)", "required": True, "min": 0, "default": 15, "help": "Tempo extra somado ao countdown real para o proximo ciclo."},
+            {"key": "sweep_interval_hours", "type": FIELD_INT, "label": "Passadas de coleta (h)", "required": False, "min": 0, "default": 4, "help": "Ao longo do dia, volta a cada N horas so para recolher o favor das tarefas concluidas (0 = so uma vez por dia)."},
+            {"key": "sweep_before_reset_minutes", "type": FIELD_INT, "label": "Ultima passada antes do reset (min)", "required": False, "min": 0, "default": 30, "help": "Ultima coleta do dia, quantos minutos antes do reset."},
         ],
     },
     901: {

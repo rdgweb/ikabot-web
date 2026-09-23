@@ -215,7 +215,18 @@
                   {{ form.reschedule_margin_minutes }}
                   {% for error in form.reschedule_margin_minutes.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
                 </div>
+                <div>
+                  <label for="{{ form.sweep_interval_hours.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">{{ form.sweep_interval_hours.label }}</label>
+                  {{ form.sweep_interval_hours }}
+                  {% for error in form.sweep_interval_hours.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+                </div>
+                <div>
+                  <label for="{{ form.sweep_before_reset_minutes.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">{{ form.sweep_before_reset_minutes.label }}</label>
+                  {{ form.sweep_before_reset_minutes }}
+                  {% for error in form.sweep_before_reset_minutes.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+                </div>
               </div>
+              <p class="mt-2 text-[11px] text-muted">O bonus diario e enviado uma vez por ciclo; as passadas so recolhem o favor das tarefas concluidas ao longo do dia (se o favor estiver cheio, tenta de novo na proxima).</p>
             </div>
 
             <div class="rounded-[22px] border p-4"

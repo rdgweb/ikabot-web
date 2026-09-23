@@ -1087,3 +1087,32 @@ class MultiOriginMoveForcesTests(TestCase):
         self.assertIn("setMultiQty(originId,", html)
         self.assertIn("fillAllOrigins()", html)
         self.assertIn("const units = this.chosenUnitsFor(originId);", html)
+
+
+class DailyLoginSweepFormTests(TestCase):
+    """N-82: the daily-login form (ac=6) exposes the mid-day sweep settings
+    exactly once, inside its custom 'Cadencia' section."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="daily-sweep-user", email="daily-sweep@example.com", password="secret123",
+        )
+        account = Account.objects.create(
+            node=Node.objects.create(name="node-daily-sweep"),
+            label="Conta DS", email="ds@example.com", password_enc="x",
+        )
+        self.ga = GameAccount.objects.create(
+            account=account, lobby_account_id=1, server_id="s1-br",
+            server_language="br", server_number=1, name="Test",
+        )
+
+    def test_sweep_fields_render_once_with_their_defaults(self):
+        self.client.force_login(self.user)
+        with patch("apps.jobs.views.create._get_cities", return_value=[{"id": "11", "name": "Alpha", "buildings": []}]):
+            html = self.client.get(
+                reverse("jobs:job-form"), {"ga": str(self.ga.pk), "action": "6"},
+            ).content.decode()
+
+        self.assertEqual(html.count('name="sweep_interval_hours"'), 1)
+        self.assertEqual(html.count('name="sweep_before_reset_minutes"'), 1)
+        self.assertIn("Passadas de coleta", html)
