@@ -80,7 +80,8 @@ def _write_wine_debug(city_id: int, city_name: str, html: str) -> None:
 
 _OWN_HIGHSCORE_ROW = re.compile(r'<tr[^>]*class="[^"]*\bown\b[^"]*"[^>]*>(.*?)</tr>', re.S)
 _HIGHSCORE_PLACE = re.compile(r'<td[^>]*class="[^"]*\bplace\b[^"]*"[^>]*>\s*([\d.,]+)', re.S)
-_HIGHSCORE_SCORE = re.compile(r'<td[^>]*class="[^"]*\bscore\b[^"]*"[^>]*>\s*([\d.,]+)', re.S)
+_HIGHSCORE_SCORE_TD = re.compile(r'<td([^>]*\bclass="[^"]*\bscore\b[^"]*"[^>]*)>([^<]*)', re.S)
+_TITLE_ATTR = re.compile(r'\btitle="([^"]*)"')
 
 
 def _parse_own_highscore(ajax_text: str) -> dict[str, int] | None:
@@ -107,11 +108,20 @@ def _parse_own_highscore(ajax_text: str) -> dict[str, int] | None:
     if not row:
         return None
     place = _HIGHSCORE_PLACE.search(row.group(1))
-    score = _HIGHSCORE_SCORE.search(row.group(1))
-    if not score:
+    score_td = _HIGHSCORE_SCORE_TD.search(row.group(1))
+    if not score_td:
+        return None
+    # Large scores are abbreviated in the cell text (e.g. "3,43 Mi"); the exact
+    # value is in the title attribute. Never store an abbreviated number.
+    title = _TITLE_ATTR.search(score_td.group(1))
+    raw = title.group(1).strip() if title and re.search(r"\d", title.group(1)) else score_td.group(2).strip()
+    if not re.fullmatch(r"[\d.,\s  ]+", raw):
+        return None
+    total = _safe_num_like(raw)
+    if total <= 0:
         return None
     return {
-        "total": _safe_num_like(score.group(1)),
+        "total": total,
         "place": _safe_num_like(place.group(1)) if place else 0,
     }
 

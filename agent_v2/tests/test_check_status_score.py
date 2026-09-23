@@ -36,6 +36,27 @@ class ParseOwnHighscoreTests(unittest.TestCase):
 
         self.assertEqual(own, {"total": 135555, "place": 3692})
 
+    def test_large_scores_use_the_exact_title_not_the_abbreviated_text(self):
+        # BlackShadow701 on s78-br, captured 2026-09-23: text "2,11M", exact value in title.
+        row = (
+            '<tr class="alt own"> <td class="place bold">2.298 </td> <td class="name"> <div> '
+            '<a href="?view=avatarProfile&avatarId=104403" title="BlackShadow701"> <i> Rei do Negocio de Armas </i>'
+            '<span class=\'avatarName\'>BlackShadow701</span> </a> </div> </td> <td class="allytag"> </td> '
+            '<td class="score" title="2.106.190" >2,11M </td> <td class="action"></td> </tr>'
+        )
+
+        self.assertEqual(_parse_own_highscore(_highscore_ajax(row)), {"total": 2106190, "place": 2298})
+
+    def test_gray_score_cell_class_is_also_recognised(self):
+        row = '<tr class="own"> <td class="place">10</td> <td class="score gray" title="2.243.208" >2,24M </td> </tr>'
+
+        self.assertEqual(_parse_own_highscore(_highscore_ajax(row)), {"total": 2243208, "place": 10})
+
+    def test_abbreviated_score_without_exact_value_is_not_stored(self):
+        row = '<tr class="own"> <td class="place">2.298</td> <td class="score">2,11M</td> </tr>'
+
+        self.assertIsNone(_parse_own_highscore(_highscore_ajax(row)))
+
     def test_returns_none_without_an_own_row(self):
         self.assertIsNone(_parse_own_highscore(_highscore_ajax(_OTHER_ROW)))
 
