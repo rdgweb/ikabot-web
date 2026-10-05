@@ -1,8 +1,9 @@
 """N-84 phase 2: finding a seller's offer across ranges and pages of the market listing.
 
 Behaviour captured on 2026-10-05 (HAVIT, Branch Office level 18): the game saves the
-last range and the last page used; a range above the maximum is clamped to it; the
-listing has 10 offers per page, cheapest first.
+last range and the last page used; a range above the maximum is IGNORED (the saved one
+stays), so the maximum is read from the range selector; the listing has 10 offers per
+page, cheapest first.
 """
 
 import sys
@@ -106,38 +107,85 @@ class FindOfferTests(unittest.TestCase):
 
 
 class _Resp:
+    def __init__(self, html):
+        self._html = html
+
     def json(self):
-        return [["changeView", ["branchOffice", "<div>" + "x" * 200 + "</div>"]]]
+        return [["changeView", ["branchOffice", self._html]]]
 
 
 class _Client:
+    """A Branch Office that keeps the last valid range and ignores one above its maximum."""
+
     _server_url = "https://s1-br.example/index.php"
     _action_request = "abc"
 
-    def __init__(self):
+    def __init__(self, maximum=10, saved=8):
+        self.maximum = maximum
+        self.saved = saved
         self.posts = []
 
     def _request(self, method, url, data=None, headers=None, **kwargs):
         self.posts.append(dict(data or {}))
-        return _Resp()
+        if "range" in data and 1 <= int(data["range"]) <= self.maximum:
+            self.saved = int(data["range"])
+        options = "".join(
+            "<option " + ('selected="selected"' if n == self.saved else "") + f">{n}</option>"
+            for n in range(1, self.maximum + 1)
+        )
+        return _Resp("<div>" + "x" * 200 + f'<select id="rangeSelect" name="range">{options}</select></div>')
 
 
 class SearchRequestTests(unittest.TestCase):
-    def test_every_search_states_its_range_and_page(self):
+    def test_maximum_range_is_read_from_the_selector_and_asked_exactly(self):
+        client = _Client(maximum=10, saved=8)       # market upgraded, range left behind
+        action = market_actions.BuyAction(client)
+
+        html = action._get_branch_office_html(37428, 16, "2")
+
+        self.assertEqual([p.get("range") for p in client.posts], [None, 10])
+        self.assertEqual(client.saved, 10)
+        self.assertEqual(market_actions.parse_range_state(html), {"max": 10, "selected": 10})
+        action._get_branch_office_html(37428, 16, "2")
+        self.assertEqual([p.get("range") for p in client.posts], [None, 10, 10])    # known from then on
+
+    def test_range_already_at_the_maximum_costs_one_request(self):
+        client = _Client(maximum=9, saved=9)
+        market_actions.BuyAction(client)._get_branch_office_html(37428, 16, "2")
+
+        self.assertEqual(len(client.posts), 1)
+
+    def test_market_upgraded_between_searches(self):
+        client = _Client(maximum=9, saved=9)
+        action = market_actions.BuyAction(client)
+        action._get_branch_office_html(37428, 16, "2")
+        client.maximum = 10
+
+        action._get_branch_office_html(37428, 16, "2")
+
+        self.assertEqual(client.saved, 10)
+
+    def test_every_search_states_its_page_and_a_narrow_range_is_sent_as_is(self):
         client = _Client()
         action = market_actions.BuyAction(client)
 
-        action._get_branch_office_html(37428, 16, "2")
         action._get_branch_office_html(37428, 16, "2", search_range=3, offset=10)
 
-        self.assertEqual((client.posts[0]["range"], client.posts[0]["offset"]), (MAX, 0))
-        self.assertEqual((client.posts[1]["range"], client.posts[1]["offset"]), (3, 10))
+        self.assertEqual((client.posts[0]["range"], client.posts[0]["offset"]), (3, 10))
 
-    def test_public_offer_listing_resets_the_saved_page(self):
-        client = _Client()
+    def test_narrow_range_that_does_not_fit_the_market_is_skipped(self):
+        client = _Client(maximum=5, saved=5)
+        action = market_actions.BuyAction(client)
+        action._find_offer_in_listing = lambda html, seller, resource: None
+
+        self.assertIsNone(action.find_offer(37428, 16, SELLER, "2", search_range=7))    # seller beyond the reach
+        self.assertNotIn(7, [p.get("range") for p in client.posts])
+
+    def test_public_offer_listing_resets_the_saved_page_and_uses_the_maximum(self):
+        client = _Client(maximum=10, saved=8)
         market_actions.GetOffersAction(client)._get_branch_office_html(37428, 16, "2")
 
-        self.assertEqual((client.posts[0]["range"], client.posts[0]["offset"]), (MAX, 0))
+        self.assertEqual([(p.get("range"), p["offset"]) for p in client.posts], [(None, 0), (10, 0)])
 
 
 if __name__ == "__main__":

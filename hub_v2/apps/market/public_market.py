@@ -11,6 +11,7 @@ from .models import PublicMarketOffer, PublicMarketScan
 
 MAX_OFFERS_PER_SCAN = 2000
 _KIND_BY_TYPE = {444: "sell", 333: "buy"}
+_INT_MAX = 2_147_483_647
 
 
 def _int(value, default=0) -> int:
@@ -18,6 +19,11 @@ def _int(value, default=0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _amount(value) -> int:
+    """A non-negative number that fits the column, whatever the scan sent."""
+    return min(_INT_MAX, max(0, _int(value)))
 
 
 def managed_city_ids() -> set[int]:
@@ -45,9 +51,9 @@ def save_public_market_scans(game_account, scans: list, *, job=None) -> dict[str
             existing = PublicMarketScan.objects.filter(game_account=game_account, city_id=city_id).first()
             if kind == "range_sync" and existing is not None and existing.kind == "full":
                 # keep the offers of the last full scan; only the range information is new
-                existing.bo_level = _int(entry.get("bo_level"))
-                existing.max_range = _int(entry.get("max_range"))
-                existing.range_before = _int(entry.get("range_before"))
+                existing.bo_level = _amount(entry.get("bo_level"))
+                existing.max_range = _amount(entry.get("max_range"))
+                existing.range_before = _amount(entry.get("range_before"))
                 existing.city_name = str(entry.get("city_name") or existing.city_name)[:128]
                 existing.save(update_fields=["bo_level", "max_range", "range_before", "city_name", "updated_at"])
                 saved_scans += 1
@@ -60,9 +66,9 @@ def save_public_market_scans(game_account, scans: list, *, job=None) -> dict[str
                 city_id=city_id,
                 city_name=str(entry.get("city_name") or city_id)[:128],
                 kind=kind,
-                bo_level=_int(entry.get("bo_level")),
-                max_range=_int(entry.get("max_range")),
-                range_before=_int(entry.get("range_before")),
+                bo_level=_amount(entry.get("bo_level")),
+                max_range=_amount(entry.get("max_range")),
+                range_before=_amount(entry.get("range_before")),
                 offers_count=len(offers),
                 scanned_at=now,
                 job=job,
@@ -72,13 +78,13 @@ def save_public_market_scans(game_account, scans: list, *, job=None) -> dict[str
                     scan=scan,
                     kind=_KIND_BY_TYPE.get(_int(o.get("offer_type"), 444), "sell"),
                     resource_idx=min(4, max(0, _int(o.get("resource_idx")))),
-                    city_id=_int(o.get("city_id")),
+                    city_id=_amount(o.get("city_id")),
                     city_name=str(o.get("city_name") or "")[:128],
                     player_name=str(o.get("player_name") or "")[:128],
-                    amount=max(0, _int(o.get("amount"))),
-                    unit_price=max(0, _int(o.get("unit_price"))),
-                    distance=max(0, _int(o.get("distance"))),
-                    goods_per_minute=max(0, _int(o.get("goods_per_minute"))),
+                    amount=_amount(o.get("amount")),
+                    unit_price=_amount(o.get("unit_price")),
+                    distance=_amount(o.get("distance")),
+                    goods_per_minute=_amount(o.get("goods_per_minute")),
                     is_internal=_int(o.get("city_id")) in internal,
                 )
                 for o in offers

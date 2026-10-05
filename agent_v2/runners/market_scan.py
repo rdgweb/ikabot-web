@@ -126,6 +126,12 @@ class MarketScanRunner(BaseRunner):
                         f"{market['name']} (mercado nv {market['level']}): alcance salvo era {state['before']}, "
                         f"o nivel permite {state['max']} -> ajustado para {state['max']}.",
                     )
+                elif state["max"] and state["before"] != state["max"]:
+                    self.log(
+                        jid, "warn",
+                        f"{market['name']} (mercado nv {market['level']}): alcance salvo e {state['before']} e o nivel "
+                        f"permite {state['max']}, mas o jogo nao confirmou o ajuste.",
+                    )
                 if market["id"] not in scan_ids:
                     scans.append({
                         "city_id": market["id"], "city_name": market["name"], "kind": "range_sync",

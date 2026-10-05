@@ -291,11 +291,46 @@ class CreateOfferAction(BaseAction):
         return normalized
 
 
-# Above any Branch Office limit (level / 2): the game clamps it to the building's
-# maximum and saves that, which is what keeps the saved range following the level.
-MAX_SEARCH_RANGE = 24
+# Means "the biggest range this Branch Office allows" (level / 2). The real number is
+# read from the range selector of the screen: the game IGNORES a range above the
+# maximum and keeps the saved one (captured 2026-10-05: level 20, saved 8, asking
+# for 11 or 24 kept 8; asking for 10 was accepted and saved).
+MAX_SEARCH_RANGE = 0
 OFFERS_PER_PAGE = 10
 MAX_OFFER_PAGES = 6
+
+_RANGE_SELECT = re.compile(r"<select[^>]*name=\"range\"[^>]*>(.*?)</select>", re.S)
+_RANGE_OPTION = re.compile(r"<option([^>]*)>\s*(\d+)\s*</option>")
+
+
+def parse_range_state(html: str) -> dict[str, int]:
+    """{"max": biggest range the building allows, "selected": the one the game has saved}."""
+    select = _RANGE_SELECT.search(html or "")
+    if not select:
+        return {"max": 0, "selected": 0}
+    options = _RANGE_OPTION.findall(select.group(1))
+    values = [int(value) for _attrs, value in options]
+    selected = [int(value) for attrs, value in options if "selected" in attrs]
+    return {"max": max(values) if values else 0, "selected": selected[0] if selected else 0}
+
+
+def fetch_at_max_range(action: Any, city_id: int, fetch: Any) -> str:
+    """Listing of a Branch Office at the biggest range its level allows.
+
+    fetch(range_or_None) does the request; None sends no range, so the game answers
+    with the saved one. The saved range does not follow the building when it is
+    upgraded, so the maximum is read from the selector and asked for explicitly --
+    which also leaves it saved. Costs a second request only when the saved range
+    was behind the level.
+    """
+    known = action.__dict__.setdefault("_max_ranges", {})
+    html = fetch(known.get(int(city_id)))
+    state = parse_range_state(html)
+    if state["max"]:
+        known[int(city_id)] = state["max"]
+        if state["selected"] != state["max"]:
+            html = fetch(state["max"])
+    return html
 
 
 class BuyAction(BaseAction):
@@ -452,13 +487,18 @@ class BuyAction(BaseAction):
             narrow = int(search_range or 0)
         except (TypeError, ValueError):
             narrow = 0
-        searches: list[tuple[int, int]] = [(MAX_SEARCH_RANGE, 0)]
-        if 0 < narrow < MAX_SEARCH_RANGE:
-            searches += [(narrow, page) for page in range(MAX_OFFER_PAGES)]
-        searches += [(MAX_SEARCH_RANGE, page) for page in range(1, MAX_OFFER_PAGES)]
+        def searches():
+            yield MAX_SEARCH_RANGE, 0
+            # known after the first search; a range above it would be ignored by the game
+            maximum = getattr(self, "_max_ranges", {}).get(int(buyer_city_id), 0)
+            if narrow > 0 and (not maximum or narrow < maximum):
+                for page in range(MAX_OFFER_PAGES):
+                    yield narrow, page
+            for page in range(1, MAX_OFFER_PAGES):
+                yield MAX_SEARCH_RANGE, page
 
         exhausted: set[int] = set()
-        for current_range, page in searches:
+        for current_range, page in searches():
             if current_range in exhausted:
                 continue
             html = self._get_branch_office_html(
@@ -490,32 +530,43 @@ class BuyAction(BaseAction):
         self, city_id: int, bo_pos: int, resource_str: str,
         search_range: int = MAX_SEARCH_RANGE, offset: int = 0,
     ) -> str:
-        """POST to the Branch Office AJAX endpoint; return the HTML fragment."""
+        """POST to the Branch Office AJAX endpoint; return the HTML fragment.
+
+        search_range=MAX_SEARCH_RANGE asks for the biggest range the building allows.
+        """
         self._last_search = (int(search_range), int(offset))
-        params = {
-            "view": "branchOffice",
-            "cityId": city_id,
-            "position": bo_pos,
-            "currentCityId": city_id,
-            "activeTab": "bargain",
-            "type": "444",
-            "searchResource": resource_str,
-            "range": int(search_range),
-            # always sent: the game remembers the last page and would answer page 2
-            "offset": int(offset),
-            "backgroundView": "city",
-            "templateView": "branchOffice",
-            "currentTab": "bargain",
-            "actionRequest": self.client._action_request,
-            "ajax": "1",
-        }
-        resp = self.client._request(
-            "POST",
-            self.client._server_url,
-            data=params,
-            headers=GAME_AJAX_HEADERS,
-        )
-        html = self._extract_html_from_response(resp)
+
+        def fetch(range_value: int | None) -> str:
+            params = {
+                "view": "branchOffice",
+                "cityId": city_id,
+                "position": bo_pos,
+                "currentCityId": city_id,
+                "activeTab": "bargain",
+                "type": "444",
+                "searchResource": resource_str,
+                # always sent: the game remembers the last page and would answer page 2
+                "offset": int(offset),
+                "backgroundView": "city",
+                "templateView": "branchOffice",
+                "currentTab": "bargain",
+                "actionRequest": self.client._action_request,
+                "ajax": "1",
+            }
+            if range_value:
+                params["range"] = int(range_value)
+            resp = self.client._request(
+                "POST",
+                self.client._server_url,
+                data=params,
+                headers=GAME_AJAX_HEADERS,
+            )
+            return self._extract_html_from_response(resp)
+
+        if int(search_range) > 0:
+            html = fetch(int(search_range))
+        else:
+            html = fetch_at_max_range(self, city_id, fetch)
         if not html:
             logger.warning("Could not parse branchOffice HTML from response")
         return html
@@ -649,24 +700,28 @@ class GetOffersAction(BaseAction):
         return self._parse_all_offers(html, resource_str)
 
     def _get_branch_office_html(self, city_id: int, bo_pos: int, resource_str: str) -> str:
-        params = {
-            "view": "branchOffice",
-            "cityId": city_id,
-            "position": bo_pos,
-            "currentCityId": city_id,
-            "activeTab": "bargain",
-            "type": "444",
-            "searchResource": resource_str,
-            "range": MAX_SEARCH_RANGE,
-            "offset": 0,  # the game remembers the last page looked at
-            "backgroundView": "city",
-            "templateView": "branchOffice",
-            "currentTab": "bargain",
-            "actionRequest": self.client._action_request,
-            "ajax": "1",
-        }
-        resp = self.client._request("POST", self.client._server_url, data=params, headers=GAME_AJAX_HEADERS)
-        html = self._extract_html_from_response(resp)
+        def fetch(range_value: int | None) -> str:
+            params = {
+                "view": "branchOffice",
+                "cityId": city_id,
+                "position": bo_pos,
+                "currentCityId": city_id,
+                "activeTab": "bargain",
+                "type": "444",
+                "searchResource": resource_str,
+                "offset": 0,  # the game remembers the last page looked at
+                "backgroundView": "city",
+                "templateView": "branchOffice",
+                "currentTab": "bargain",
+                "actionRequest": self.client._action_request,
+                "ajax": "1",
+            }
+            if range_value:
+                params["range"] = int(range_value)
+            resp = self.client._request("POST", self.client._server_url, data=params, headers=GAME_AJAX_HEADERS)
+            return self._extract_html_from_response(resp)
+
+        html = fetch_at_max_range(self, city_id, fetch)
         if not html:
             logger.warning("GetOffers: could not parse branchOffice HTML")
         return html

@@ -8,10 +8,10 @@ Tela do jogo (capturada 2026-10-05 na HAVIT s78, Branch Office nivel 18, somente
   type=444 lista quem VENDE (ofertas para comprar); type=333 lista quem quer COMPRAR.
   A lista vem 10 por pagina, da mais barata para a mais cara; offset escolhe a pagina.
   O jogo grava o ultimo range e a ultima pagina. O range vai de 1 a nivel/2 e NAO sobe
-  sozinho quando o mercado evolui; um valor acima do maximo e cortado para o maximo
-  (e gravado assim) -- por isso toda busca daqui usa MAX_SEARCH_RANGE.
+  sozinho quando o mercado evolui; um valor acima do maximo e IGNORADO (fica o salvo),
+  entao o maximo e lido do seletor da tela e pedido exatamente (fetch_at_max_range).
 
-  Linha de oferta:
+  Linha de oferta (a lista de quem quer comprar, type=333, nao tem a 2a coluna):
     <td class="short_text80">Cidade <br/>(Jogador)</td>
     <td>bens por minuto</td>
     <td>quantidade <div class="tooltip">quantidade</div></td>
@@ -29,7 +29,7 @@ from typing import Any
 
 from ..constants import GAME_AJAX_HEADERS
 from ..parsers.numbers import parse_game_int
-from .market import MAX_SEARCH_RANGE, OFFERS_PER_PAGE, GetOffersAction
+from .market import OFFERS_PER_PAGE, GetOffersAction, fetch_at_max_range, parse_range_state  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +44,7 @@ _LINK = re.compile(r"view=takeOffer(?:&amp;|&)destinationCityId=(\d+).*?(?:&amp;
 _NAME = re.compile(r"^\s*(.*?)\s*<br\s*/?>\s*\((.*)\)\s*$", re.S)
 _TOOLTIP = re.compile(r"<div[^>]*class=\"tooltip\"[^>]*>.*?</div>", re.S)
 _TAG = re.compile(r"<[^>]+>")
-_NUMBER = re.compile(r"\d[\d.,\s]*")
-_RANGE_SELECT = re.compile(r"<select[^>]*name=\"range\"[^>]*>(.*?)</select>", re.S)
-_RANGE_OPTION = re.compile(r"<option([^>]*)>\s*(\d+)\s*</option>")
+_NUMBER = re.compile(r"\d[\d.,]*")   # never across spaces: "33.000 33.000" is two numbers
 
 
 def _text(fragment: str) -> str:
@@ -54,7 +52,7 @@ def _text(fragment: str) -> str:
 
 
 def _first_int(fragment: str) -> int:
-    match = _NUMBER.search(_text(fragment))
+    match = _NUMBER.search(_text(_TOOLTIP.sub("", fragment or "")))
     return parse_game_int(match.group(0), 0) if match else 0
 
 
@@ -68,54 +66,48 @@ def parse_offer_rows(html: str) -> list[dict[str, Any]]:
         cells = _CELL.findall(row)
         if len(cells) < 6:
             continue
+        # counted from the end: buy requests have no "goods per minute" column
         name = _NAME.match(cells[0])
         offers.append({
             "city_id": int(link.group(1)),
             "city_name": _text(name.group(1)) if name else _text(cells[0]),
             "player_name": _text(name.group(2)) if name else "",
-            "goods_per_minute": _first_int(cells[1]),
-            "amount": _first_int(_TOOLTIP.sub("", cells[2])),
-            "unit_price": _first_int(cells[4]),
-            "distance": _first_int(cells[5]),
+            "goods_per_minute": _first_int(cells[-6]) if len(cells) >= 7 else 0,
+            "amount": _first_int(cells[-5]),
+            "unit_price": _first_int(cells[-3]),
+            "distance": _first_int(cells[-2]),
             "offer_type": int(link.group(2)),
             "resource_idx": RESOURCE_IDX.get(link.group(3), 0),
         })
     return offers
 
 
-def parse_range_state(html: str) -> dict[str, int]:
-    """{"max": biggest range the building allows, "selected": the one the game has saved}."""
-    select = _RANGE_SELECT.search(html or "")
-    if not select:
-        return {"max": 0, "selected": 0}
-    options = _RANGE_OPTION.findall(select.group(1))
-    values = [int(value) for _attrs, value in options]
-    selected = [int(value) for attrs, value in options if "selected" in attrs]
-    return {"max": max(values) if values else 0, "selected": selected[0] if selected else 0}
-
-
 class MarketScanAction(GetOffersAction):
     """Read what is on offer within reach of a Branch Office. Never buys or sells."""
 
     def _listing(self, city_id: int, bo_pos: int, resource_str: str, offer_type: int, offset: int) -> str:
-        params = {
-            "view": "branchOffice",
-            "cityId": city_id,
-            "position": bo_pos,
-            "currentCityId": city_id,
-            "activeTab": "bargain",
-            "type": str(offer_type),
-            "searchResource": resource_str,
-            "range": MAX_SEARCH_RANGE,
-            "offset": int(offset),
-            "backgroundView": "city",
-            "templateView": "branchOffice",
-            "currentTab": "bargain",
-            "actionRequest": self.client._action_request,
-            "ajax": "1",
-        }
-        resp = self.client._request("POST", self.client._server_url, data=params, headers=GAME_AJAX_HEADERS)
-        return self._extract_html_from_response(resp)
+        def fetch(range_value: int | None) -> str:
+            params = {
+                "view": "branchOffice",
+                "cityId": city_id,
+                "position": bo_pos,
+                "currentCityId": city_id,
+                "activeTab": "bargain",
+                "type": str(offer_type),
+                "searchResource": resource_str,
+                "offset": int(offset),
+                "backgroundView": "city",
+                "templateView": "branchOffice",
+                "currentTab": "bargain",
+                "actionRequest": self.client._action_request,
+                "ajax": "1",
+            }
+            if range_value:
+                params["range"] = int(range_value)
+            resp = self.client._request("POST", self.client._server_url, data=params, headers=GAME_AJAX_HEADERS)
+            return self._extract_html_from_response(resp)
+
+        return fetch_at_max_range(self, city_id, fetch)
 
     def search(
         self,
@@ -140,7 +132,7 @@ class MarketScanAction(GetOffersAction):
             html = self._listing(city_id, bo_pos, resource_str, offer_type, page * OFFERS_PER_PAGE)
             pages += 1
             if page == 0:
-                max_range = parse_range_state(html)["max"]
+                max_range = parse_range_state(html)["selected"]   # the range actually searched
             offers.extend(parse_offer_rows(html))
             has_next = f"offset={(page + 1) * OFFERS_PER_PAGE}" in html
             if not has_next:
@@ -172,12 +164,15 @@ class MarketScanAction(GetOffersAction):
         """Make the saved range follow the building level.
 
         The game keeps the range chosen when the market was smaller. Reads the saved
-        one and, when it is below the maximum, runs one search at the maximum (which
-        the game then saves). Returns {"before", "max", "changed"}.
+        one and, when it is below the maximum, runs one search at exactly the maximum
+        (which the game then saves). Returns {"before", "max", "changed"}; changed
+        is only set when the game confirmed the new range.
         """
         state = self._saved_state(city_id, bo_pos)
         before, maximum = state["selected"], state["max"]
-        changed = bool(maximum and before != maximum)
-        if changed:
-            self._listing(city_id, bo_pos, "resource", OFFER_TYPE_SELL, 0)
+        changed = False
+        if maximum and before != maximum:
+            self.__dict__.setdefault("_max_ranges", {})[int(city_id)] = maximum
+            html = self._listing(city_id, bo_pos, "resource", OFFER_TYPE_SELL, 0)
+            changed = parse_range_state(html)["selected"] == maximum
         return {"before": before, "max": maximum, "changed": int(changed)}

@@ -100,6 +100,14 @@ class PublicMarketTests(TestCase):
         self.assertIn("Pequena", page)
         self.assertIn("so alcance", page)
 
+    def test_odd_numbers_from_a_scan_never_break_the_save(self):
+        offer = _offer(900, 21)
+        offer.update({"goods_per_minute": 3_300_033_000, "amount": -5, "distance": "x"})
+
+        self.assertEqual(self._save([_scan(501, [offer])]).status_code, 201)
+        saved = PublicMarketOffer.objects.get()
+        self.assertEqual((saved.goods_per_minute, saved.amount, saved.distance), (2_147_483_647, 0, 0))
+
     def test_api_rejects_bad_requests(self):
         self.assertEqual(self._save("nope").status_code, 400)
         self.assertEqual(

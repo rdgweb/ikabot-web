@@ -1,9 +1,9 @@
 """N-84 phase 3: reading the general market (action 810) -- parser, paging, range sync.
 
 The "game" here is a minimal simulator of what was captured on 2026-10-05 (HAVIT,
-Branch Office level 18): 10 offers per page, the last range and the last page are
-saved, a range above the maximum is clamped to it, and the saved range does not
-follow the building when it is upgraded.
+Branch Office levels 18 and 20): 10 offers per page, the last range and the last page
+are saved, a range above the maximum is IGNORED (the saved one stays), and the saved
+range does not follow the building when it is upgraded.
 """
 
 import json
@@ -33,8 +33,10 @@ ROW = (
 
 
 def _row(city_id, price, *, amount=1000, distance=3, offer_type=444, resource="2", name="Cidade", player="Jogador"):
+    # the list of buy requests (333) has no "goods per minute" column
+    per_minute = "<td>10</td> " if offer_type == 444 else ""
     return (
-        f'<tr> <td class="short_text80">{name} {city_id} <br/>({player}) </td> <td>10</td> '
+        f'<tr> <td class="short_text80">{name} {city_id} <br/>({player}) </td> {per_minute}'
         f'<td>{amount:,} <div class="tooltip">{amount:,}</div> </td> <td><img alt="x"/></td> '
         f'<td>{price} <img class="icon_gold"/> por peca</td> <td>{distance}</td> '
         f'<td><a href="?view=takeOffer&amp;destinationCityId={city_id}&amp;oldView=branchOffice'
@@ -44,7 +46,7 @@ def _row(city_id, price, *, amount=1000, distance=3, offer_type=444, resource="2
 
 def _range_select(maximum, selected):
     options = "".join(
-        f'<option value="{n}"{" selected=\"selected\"" if n == selected else ""}>{n}</option>'
+        "<option " + ('selected="selected"' if n == selected else "") + f">{n}</option>"   # as the game sends it
         for n in range(1, maximum + 1)
     )
     return f'<select id="rangeSelect" name="range" class="dropdown">{options}</select>'
@@ -63,6 +65,7 @@ class _Game:
 
     def __init__(self, markets):
         self.markets = markets
+        self.frozen = False                 # the game refuses to change the saved range
         self.requests = []
         self._action_request = "token"
         self._server_url = "https://s1-br.example/index.php"
@@ -72,8 +75,9 @@ class _Game:
         self.requests.append(dict(data))
         rows = []
         offset = 0
-        if "range" in data:
-            market["saved"] = min(int(data["range"]), market["max"])
+        if "range" in data and 1 <= int(data["range"]) <= market["max"] and not self.frozen:
+            market["saved"] = int(data["range"])       # anything above the maximum is ignored
+        if "type" in data:
             offset = int(data.get("offset", 0))
             market["page"] = offset
             rows = market["offers"].get((int(data["type"]), str(data["searchResource"])), [])
@@ -106,6 +110,24 @@ class ParserTests(unittest.TestCase):
         offers = scan_actions.parse_offer_rows(_row(5, 12, offer_type=333, resource="resource"))
         self.assertEqual((offers[0]["offer_type"], offers[0]["resource_idx"]), (333, 0))
 
+    def test_buy_request_row_has_one_column_less(self):
+        # as captured: no "goods per minute" cell, and the amount repeated in its tooltip
+        row = (
+            '<tr> <td class="short_text80">Cidade <br/>(Jogador) </td> '
+            '<td>33.000 <div class="tooltip">33.000</div> </td> <td><img alt="Marmore" title="Marmore"/></td> '
+            '<td>9 <img class="icon_gold"/> por peca</td> <td>6</td> '
+            '<td><a href="?view=takeOffer&destinationCityId=20230&oldView=branchOffice&type=333&resource=2"></a></td> </tr>'
+        )
+        offer = scan_actions.parse_offer_rows(row)[0]
+        self.assertEqual(
+            (offer["amount"], offer["unit_price"], offer["distance"], offer["goods_per_minute"], offer["offer_type"]),
+            (33000, 9, 6, 0, 333),
+        )
+
+    def test_two_numbers_in_a_cell_are_never_glued_together(self):
+        row = _row(5, 12).replace("<td>10</td>", "<td>3.306 3.306</td>")
+        self.assertEqual(scan_actions.parse_offer_rows(row)[0]["goods_per_minute"], 3306)
+
     def test_range_state(self):
         self.assertEqual(scan_actions.parse_range_state(_range_select(9, 3)), {"max": 9, "selected": 3})
         self.assertEqual(scan_actions.parse_range_state("<div>sem formulario</div>"), {"max": 0, "selected": 0})
@@ -123,6 +145,19 @@ class SearchTests(unittest.TestCase):
         self.assertEqual([r["offset"] for r in game.requests], [0, 10, 20, 0])
         self.assertEqual(game.markets[7]["page"], 0)       # the game keeps the last page
         self.assertEqual(game.markets[7]["saved"], 9)
+
+    def test_saved_range_behind_the_level_is_raised_by_the_search_itself(self):
+        game = _Game({7: _market(10, 8, {(444, "2"): [_row(1, 10, distance=2), _row(2, 11, distance=9)]})})
+        action = scan_actions.MarketScanAction(game)
+
+        result = action.search(7, 8, 2)
+
+        self.assertEqual(result["max_range"], 10)
+        self.assertEqual(game.markets[7]["saved"], 10)
+        # asks with the saved range, sees the selector goes further, asks again with exactly that
+        self.assertEqual([r.get("range") for r in game.requests], [None, 10])
+        action.search(7, 8, 2)
+        self.assertEqual([r.get("range") for r in game.requests], [None, 10, 10])
 
     def test_single_page_needs_no_extra_request(self):
         game = _Game({7: _market(9, 9, {(444, "2"): [_row(1, 10)]})})
@@ -156,6 +191,17 @@ class SyncRangeTests(unittest.TestCase):
         self.assertEqual(state, {"before": 1, "max": 5, "changed": 1})
         self.assertEqual(game.markets[7]["saved"], 5)
         self.assertNotIn("range", game.requests[0])       # the first request only reads
+        # exactly the maximum: the game ignores anything above it
+        self.assertEqual([r.get("range") for r in game.requests], [None, 5])
+
+    def test_does_not_claim_a_change_the_game_did_not_confirm(self):
+        game = _Game({7: _market(5, 1)})
+        game.frozen = True
+
+        state = scan_actions.MarketScanAction(game).sync_range(7, 8)
+
+        self.assertEqual(state, {"before": 1, "max": 5, "changed": 0})
+        self.assertEqual(game.markets[7]["saved"], 1)
 
     def test_leaves_a_range_already_at_the_maximum_alone(self):
         game = _Game({7: _market(9, 9)})
