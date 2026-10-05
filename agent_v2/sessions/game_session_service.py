@@ -88,6 +88,22 @@ class GameSessionService:
         return candidates[:MAX_LOBBY_PROXY_ATTEMPTS]
 
     @staticmethod
+    def _is_vacation_block(exc: Exception) -> bool:
+        """The game's answer to a login on an account in vacation mode (nologin_umod)."""
+        text = str(exc or "").lower()
+        return "nologin_umod" in text or "modo férias" in text or "modo ferias" in text or "vacation" in text
+
+    def _record_login_vacation(self, *, game_account_id: str, log=None) -> None:
+        try:
+            self.hub.record_login_vacation(game_account_id=game_account_id)
+        except Exception as exc:
+            if log:
+                log("warn", f"Falha ao avisar o hub que a conta esta de ferias: {exc}")
+            return
+        if log:
+            log("warn", "Conta em modo ferias: o jogo bloqueia o login. Marcada como de ferias no painel.")
+
+    @staticmethod
     def _is_proxy_failover_error(exc: Exception) -> bool:
         message = str(exc or "").lower()
         if isinstance(exc, requests.exceptions.RequestException):
@@ -312,6 +328,9 @@ class GameSessionService:
                 last_exc = exc
                 if game_account_id and "loginlink falhou: status=400" in str(exc).lower():
                     self._record_login_400(game_account_id=game_account_id, exc=exc, log=log)
+                if game_account_id and self._is_vacation_block(exc):
+                    self._record_login_vacation(game_account_id=game_account_id, log=log)
+                    raise
                 if self._is_proxy_failover_error(exc) and attempt_no < max_attempts:
                     if log:
                         log(

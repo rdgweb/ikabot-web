@@ -183,6 +183,13 @@ class HubClient:
             {"mode": "clear"},
         )
 
+    def record_login_vacation(self, *, game_account_id: str) -> dict:
+        """The game refused the login because the account is on vacation (N-68)."""
+        return self._post(
+            f"/api/agent/game-accounts/{game_account_id}/login-cooldown",
+            {"mode": "vacation"},
+        )
+
     def record_login_proxy_failure(self, *, game_account_id: str, reason: str = "") -> dict:
         return self._post(
             f"/api/agent/game-accounts/{game_account_id}/login-cooldown",

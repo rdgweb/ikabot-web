@@ -424,6 +424,7 @@ class CheckStatusRunner(BaseRunner):
                     "academy_cities": existing_base.get("academy_cities") or {},
                     "academy_updated_at": existing_base.get("academy_updated_at", ""),
                     "attack_alert_state": existing_base.get("attack_alert_state") or {},
+                    "vacation_state": existing_base.get("vacation_state") or {},
                     "research_city_id": existing_base.get("research_city_id"),
                     "research_city_name": existing_base.get("research_city_name", ""),
                     "research_current_type": existing_base.get("research_current_type", ""),

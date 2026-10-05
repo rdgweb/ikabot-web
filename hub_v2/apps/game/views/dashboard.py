@@ -19,6 +19,7 @@ from django.views.generic import TemplateView
 from apps.accounts.models import Account, GameAccount, Node
 from apps.game.models import AccountSnapshotHistory
 from apps.game.services.dashboard_cache import get_dashboard_cache_key
+from apps.game.services.vacation import read_vacation_state
 from apps.jobs.models import ConstructionResourceReservation
 
 _DASHBOARD_CACHE_TTL = 60  # seconds
@@ -386,6 +387,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
 
                 _attack_state = base.get("attack_alert_state") or {}
                 _under_attack = int(_attack_state.get("hostile_count") or 0) > 0
+                _vacation = read_vacation_state(base)
                 account_cards.append({
                     "account": acct,
                     "game_account": ga,
@@ -394,6 +396,9 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                     "base": base,
                     "under_attack": _under_attack,
                     "attack_hostile_count": int(_attack_state.get("hostile_count") or 0),
+                    "on_vacation": _vacation["active"],
+                    "vacation_since": _vacation["since"],
+                    "vacation_checked_at": _vacation["checked_at"],
                     "gold": acct_gold,
                     "player_score": base.get("player_score") or {},
                     "income": acct_income,

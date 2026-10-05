@@ -165,8 +165,20 @@ class GameAccountLoginCooldownView(APIView):
     def post(self, request, game_account_id):
         mode = str(request.data.get("mode") or "").strip().lower()
         reason = str(request.data.get("reason") or "").strip()
-        if mode not in {"record_400", "record_proxy", "clear"}:
+        if mode not in {"record_400", "record_proxy", "clear", "vacation"}:
             return Response({"error": "invalid_mode"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if mode == "vacation":
+            # The game refused the login because the account is on vacation (N-68):
+            # not a failure to back off from, just a state to show on the panel.
+            from apps.game.services.vacation import set_vacation_state
+
+            try:
+                ga = GameAccount.objects.select_related("account", "account__node").get(pk=game_account_id)
+            except GameAccount.DoesNotExist:
+                return Response({"error": "GameAccount not found."}, status=status.HTTP_404_NOT_FOUND)
+            changed = set_vacation_state(ga, True, source="login_blocked")
+            return Response({"ok": True, "vacation": True, "changed": changed}, status=status.HTTP_200_OK)
 
         with transaction.atomic():
             try:
@@ -184,6 +196,10 @@ class GameAccountLoginCooldownView(APIView):
                     "login_block_reason",
                     "updated_at",
                 ])
+                # A login that worked means the account is not (or no longer) on vacation.
+                from apps.game.services.vacation import set_vacation_state
+
+                set_vacation_state(ga, False)
                 return Response({"ok": True, **_serialize_login_block_state(ga)}, status=status.HTTP_200_OK)
 
             prev_hours = int(ga.login_block_backoff_hours or 0)

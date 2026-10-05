@@ -142,7 +142,7 @@
 <div class="space-y-6">
   {% for card in account_cards %}
   <div class="card game-card {% if card.under_attack %}under-attack{% endif %}" x-data="{ tab: 'cities', open: true }"
-       {% if card.under_attack %}style="border-color: var(--ik-bad); box-shadow: 0 0 0 2px rgba(187,81,67,0.35), 0 10px 30px rgba(187,81,67,0.18); background: linear-gradient(180deg, rgba(187,81,67,0.06), transparent 40%);"{% endif %}
+       {% if card.under_attack %}style="border-color: var(--ik-bad); box-shadow: 0 0 0 2px rgba(187,81,67,0.35), 0 10px 30px rgba(187,81,67,0.18); background: linear-gradient(180deg, rgba(187,81,67,0.06), transparent 40%);"{% elif card.on_vacation %}style="border-color: var(--ik-sea); box-shadow: 0 0 0 2px rgba(79,134,185,0.30), 0 10px 30px rgba(79,134,185,0.14); background: linear-gradient(180deg, rgba(79,134,185,0.07), transparent 40%);"{% endif %}
        data-node="{{ card.account.node_id }}"
        data-account="{{ card.account.pk }}"
        data-game-account="{{ card.game_account_id }}"
@@ -192,6 +192,13 @@
             <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold text-white animate-pulse"
                   style="background: var(--ik-bad);" title="{{ card.attack_hostile_count }} movimento(s) hostil(is)">
               <i class="bi bi-exclamation-triangle-fill"></i> SOB ATAQUE
+            </span>
+            {% endif %}
+            {% if card.on_vacation %}
+            <span class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
+                  style="background: var(--ik-sea);"
+                  title="Conta em modo ferias{% if card.vacation_since %} desde {{ card.vacation_since|date:'d/m/Y H:i' }}{% endif %}{% if card.vacation_checked_at %} (ultima verificacao {{ card.vacation_checked_at|date:'d/m H:i' }}){% endif %}. O jogo bloqueia o login; os jobs desta conta falham ate as ferias acabarem.">
+              <i class="bi bi-umbrella-fill"></i> DE FERIAS{% if card.vacation_since %} &middot; desde {{ card.vacation_since|date:"d/m H:i" }}{% endif %}
             </span>
             {% endif %}
           </div>

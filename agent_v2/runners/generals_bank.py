@@ -607,6 +607,10 @@ class GeneralsBankBuyRunner(BaseRunner):
                     if first_city_id:
                         client.activate_vacation_mode(city_id=first_city_id)
                         self.log(jid, "info", "Banco voltou ao modo ferias")
+                        try:
+                            self.hub.record_login_vacation(game_account_id=ga_id)
+                        except Exception:
+                            logger.debug("Could not flag the bank account as on vacation", exc_info=True)
                     else:
                         self.log(jid, "warn", "Nao foi possivel determinar city_id para entrar em ferias")
                 except Exception as vac_exc:
