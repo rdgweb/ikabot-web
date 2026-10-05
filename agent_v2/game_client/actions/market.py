@@ -395,7 +395,11 @@ class BuyAction(BaseAction):
         if max_unit_price > 0 and (unit_price <= 0 or unit_price > max_unit_price):
             self.restore_max_range(buyer_city_id, buyer_branchoffice_pos, resource_str)
             raise ActionError(
-                f"Offer price is {unit_price or 'unknown'} per unit, above the accepted maximum of {max_unit_price}",
+                (
+                    f"a oferta esta a {unit_price} de ouro por unidade, acima do preco maximo aceito ({max_unit_price})"
+                    if unit_price > 0
+                    else f"nao foi possivel ler o preco da oferta para conferir o preco maximo ({max_unit_price})"
+                ),
                 action="buyGoodsAtAnotherBranchOffice",
             )
         available = int(offer.get("amount_available") or 0)

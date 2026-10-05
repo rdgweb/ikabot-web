@@ -119,19 +119,19 @@
             <td class="py-2 px-3 text-right font-mono font-semibold text-ink">{{ offer.unit_price }}</td>
             <td class="py-2 px-3">
               <div class="flex flex-wrap items-center gap-1">
-                {% for trade in offer.trades|slice:":4" %}
+                {% for trade in offer.trades|slice:":5" %}
                 <button type="button" class="btn btn-sm {% if forloop.first %}btn-primary{% else %}btn-secondary{% endif %}"
                         title="{% if selected_kind == 'sell' %}Comprar{% else %}Vender{% endif %} com {{ trade.account }} a partir de {{ trade.city }} (distancia {{ trade.distance }})"
                         hx-get="{{ trade.url }}"
                         hx-target="#job-modal-body" hx-swap="innerHTML" hx-push-url="false"
                         onclick="this.dispatchEvent(new CustomEvent('open-modal-jobcreate', {bubbles: true}));">
                   {% if forloop.first %}<i class="bi {% if selected_kind == 'sell' %}bi-cart-plus{% else %}bi-cash-coin{% endif %}"></i>{% endif %}
-                  {{ trade.account }} <span style="opacity: 0.7;">&middot; {{ trade.distance }}</span>
+                  {{ trade.account }} <span style="opacity: 0.75;">/ {{ trade.city }} &middot; {{ trade.distance }}</span>
                 </button>
                 {% empty %}
                 <span class="text-muted" title="So as proprias cidades desta conta enxergam esta oferta">-</span>
                 {% endfor %}
-                {% if offer.trades|length > 4 %}<span class="text-muted" title="Filtre por conta para negociar com as outras">+{{ offer.trades|length|add:"-4" }}</span>{% endif %}
+                {% if offer.trades|length > 5 %}<span class="text-muted" title="Mais cidades alcancam esta oferta; filtre por conta para ver as de uma conta so">+{{ offer.trades|length|add:"-5" }}</span>{% endif %}
               </div>
             </td>
             <td class="py-2 px-3 text-muted whitespace-nowrap" title="{{ offer.seen_at|date:'d/m/Y H:i' }}">ha {{ offer.seen_at|timesince }}</td>
@@ -141,7 +141,8 @@
       </table>
     </div>
     <div class="px-4 py-3 text-[11px] text-muted" style="border-top: 1px solid var(--ik-line);">
-      O numero ao lado da conta e a distancia ate a oferta. O botao abre
+      Cada botao e uma cidade sua que alcanca a oferta (conta / cidade &middot; distancia); a mais perto vem primeiro.
+      {% if selected_kind == "sell" %}A carga comprada chega nessa cidade.{% else %}A carga sai do estoque dessa cidade.{% endif %} O botao abre
       {% if selected_kind == "sell" %}"Comprar do Mercado" com o preco visto como preco maximo{% else %}"Vender para Pedido de Compra" com o preco visto como preco minimo{% endif %}:
       se a oferta mudou desde a varredura, o job nao negocia.
     </div>

@@ -136,7 +136,7 @@ class SellToRequestAction(BuyAction):
         request = self.find_request(city_id, branchoffice_pos, buyer_city_id, resource_idx)
         if request is None:
             raise ActionError(
-                f"Buy request of city {buyer_city_id} (res={resource_str}) not found in the Branch Office listing",
+                f"o pedido de compra da cidade {buyer_city_id} nao esta mais na lista do mercado (atendido, retirado ou fora do alcance)",
                 action=_ACTION,
             )
 
@@ -151,7 +151,7 @@ class SellToRequestAction(BuyAction):
             prices["cargo_resource"] = 0
         if _price_field(resource_idx) not in prices:
             raise ActionError(
-                f"The sell screen of city {buyer_city_id} has no field for res={resource_str} (request gone?)",
+                f"a tela de venda para a cidade {buyer_city_id} nao pede mais este recurso",
                 action=_ACTION,
             )
 
@@ -159,7 +159,7 @@ class SellToRequestAction(BuyAction):
         min_unit_price = max(0, int(min_unit_price or 0))
         if min_unit_price and unit_price < min_unit_price:
             raise ActionError(
-                f"Buyer pays {unit_price} per unit, below the accepted minimum of {min_unit_price}",
+                f"o comprador paga {unit_price} de ouro por unidade, abaixo do preco minimo aceito ({min_unit_price})",
                 action=_ACTION,
             )
 
@@ -175,8 +175,8 @@ class SellToRequestAction(BuyAction):
         sell = min(sell, ships_available * ship_capacity)
         if sell <= 0:
             raise ActionError(
-                f"Nothing to sell: asked {amount}, buyer wants {wanted}, stock {in_stock}, "
-                f"free transporters {ships_available} x {ship_capacity}",
+                f"nada a vender: pedido {amount}, o comprador quer {wanted}, estoque na cidade {in_stock}, "
+                f"barcos livres {ships_available} x {ship_capacity}",
                 action=_ACTION,
             )
         ships = max(1, math.ceil(sell / ship_capacity))
