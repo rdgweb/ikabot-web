@@ -38,6 +38,11 @@ def _load_piracy_runner_module():
     base_mod.RunnerResult = RunnerResult
     runners_pkg.base = base_mod
 
+    misc_mod = types.ModuleType("runners.misc")
+    for _helper in ("detect_founded_city", "fetch_city_payload", "fetch_owned_cities"):
+        setattr(misc_mod, _helper, lambda *args, **kwargs: None)
+    runners_pkg.misc = misc_mod
+
     sys.modules.update(
         {
             "core": core_pkg,
@@ -46,6 +51,7 @@ def _load_piracy_runner_module():
             "game_client.exceptions": exceptions_mod,
             "runners": runners_pkg,
             "runners.base": base_mod,
+            "runners.misc": misc_mod,
         }
     )
 
@@ -101,3 +107,13 @@ class PiracyMissionRunnerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CaptchaBackoffTests(unittest.TestCase):
+    def test_backoff_grows_and_is_capped(self):
+        delays = [PIRACY_MODULE._captcha_backoff_seconds(streak) for streak in (1, 2, 3, 4, 5, 6, 50)]
+        self.assertEqual(delays, [300, 600, 1200, 2400, 3600, 3600, 3600])
+
+    def test_backoff_tolerates_bad_streak_values(self):
+        self.assertEqual(PIRACY_MODULE._captcha_backoff_seconds(0), 300)
+        self.assertEqual(PIRACY_MODULE._captcha_backoff_seconds(None), 300)

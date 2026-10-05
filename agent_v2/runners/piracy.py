@@ -47,11 +47,18 @@ _MISSION_CAPTURE_POINTS: dict[int, int] = {
 }
 
 CAPTCHA_RESCHEDULE = 5 * 60       # 5 min — best-effort captcha handling
+CAPTCHA_MAX_RESCHEDULE = 60 * 60  # 1 h — ceiling of the back-off when captchas keep failing
 ERROR_RESCHEDULE = 10 * 60        # 10 min — generic error back-off
 MISSION_BUFFER = 60               # seconds of extra buffer after mission completes
 COLLECT_INTERVAL = 8 * 3600       # 8 h — legacy collect runner interval
 TARGETED_RECHECK = 60
 TARGETED_TZ = ZoneInfo("America/Cuiaba")
+
+
+def _captcha_backoff_seconds(streak: int) -> int:
+    """5, 10, 20, 40, 60 min...: a solver that is down must not be hammered (N-83)."""
+    steps = max(0, min(int(streak or 1) - 1, 10))
+    return min(CAPTCHA_RESCHEDULE * (2 ** steps), CAPTCHA_MAX_RESCHEDULE)
 
 
 def _to_int(value: Any, default: int = 0) -> int:
@@ -1091,44 +1098,29 @@ class PiracyMissionRunner(BaseRunner):
                     "last_time_remaining": new_time_remaining,
                     "total_missions_started": _total_missions,
                     "total_crew_converted": _total_crew_converted,
+                    "captcha_fail_streak": 0,
                 },
             )
 
         except CaptchaRequiredError as exc:
-            # CaptchaRequiredError from state GET or other non-mission request.
-            # Try to fetch and solve the captcha before rescheduling.
-            self.log(jid, "warn", f"Captcha detectado fora do flow da missão: {exc}. Tentando resolver via hub.")
-            try:
-                import base64 as _b64
-                from game_client.constants import GAME_AJAX_HEADERS
-                img_resp = client.session.get(
-                    client._server_url,
-                    params={
-                        "action": "Options",
-                        "function": "createCaptcha",
-                        "actionRequest": client._action_request,
-                        "ajax": "1",
-                    },
-                    headers=dict(GAME_AJAX_HEADERS),
-                    timeout=20,
-                )
-                if img_resp.content and len(img_resp.content) > 10:
-                    img_b64 = _b64.b64encode(img_resp.content).decode("ascii")
-                    result = self.hub.create_captcha_challenge("pirate", img_b64, game_account_id=game_account_id)
-                    solution = str(result.get("solution") or "").strip().upper()
-                    if not solution and result.get("challenge_id"):
-                        solution = self.hub.poll_captcha_solution(result["challenge_id"], timeout_sec=120, interval=10).strip().upper()
-                    if solution:
-                        self.log(jid, "info", f"Captcha resolvido via hub: {solution}. Reagendando imediatamente.")
-                        self.save_game_client(game_account_id, client)
-                        return RunnerResult(success=False, reschedule_seconds=30, data={"error": "captcha_solved_retry"})
-                    self.log(jid, "warn", "Captcha não resolvido (sem solução). Reagendando em 5 min.")
-                else:
-                    self.log(jid, "warn", "Imagem do captcha vazia. Reagendando em 5 min.")
-            except Exception as cap_exc:
-                self.log(jid, "warn", f"Erro ao resolver captcha externo: {cap_exc}. Reagendando em 5 min.")
+            # The mission flow already asked for fresh captchas and tried to solve
+            # them. A captcha solved outside that flow is useless (the answer goes
+            # with the capture request), so just back off — longer each time (N-83).
+            streak = _to_int(inputs.get("captcha_fail_streak"), 0) + 1
+            delay = _captcha_backoff_seconds(streak)
+            self.log(
+                jid,
+                "warn",
+                f"Captcha da pirataria não resolvido ({exc}). "
+                f"Falha seguida nº {streak}; reagendando em {delay // 60} min.",
+            )
             self.save_game_client(game_account_id, client)
-            return RunnerResult(success=False, reschedule_seconds=CAPTCHA_RESCHEDULE, data={"error": "captcha_unexpected"})
+            return RunnerResult(
+                success=False,
+                reschedule_seconds=delay,
+                reschedule_inputs={"captcha_fail_streak": streak},
+                data={"error": "captcha_unsolved", "captcha_fail_streak": streak},
+            )
         except Exception as exc:
             self.log(jid, "error", f"Missão pirata falhou: {exc}")
             return RunnerResult(

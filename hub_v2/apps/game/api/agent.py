@@ -32,6 +32,14 @@ logger = logging.getLogger(__name__)
 # Timeout for proxied requests to the ikabotapi container
 _IKABOTAPI_TIMEOUT = 90  # Blackbox token via Playwright can take 30-60s
 
+_IMAGE_MAGICS = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a", b"GIF89a")
+
+
+def _is_image_bytes(raw: bytes) -> bool:
+    """A captcha must be a real image: an agent once sent the game's JSON answer
+    as the picture, and thousands of those broke the solver and Telegram (N-83)."""
+    return bool(raw) and any(raw.startswith(magic) for magic in _IMAGE_MAGICS)
+
 # Helper: resolve Telegram chat_id for a game_account (or global fallback)
 
 
@@ -686,7 +694,13 @@ class SolveCaptchaView(APIView):
             img_b64 = images.get("image", "")
             if not img_b64:
                 return Response({"error": "image base64 required for pirate captcha"}, status=400)
-            files = {"image": ("captcha.png", _b64.b64decode(img_b64), "image/png")}
+            try:
+                img_bytes = _b64.b64decode(img_b64)
+            except Exception:
+                img_bytes = b""
+            if not _is_image_bytes(img_bytes):
+                return Response({"error": "image is not a PNG/JPEG/GIF picture"}, status=400)
+            files = {"image": ("captcha.png", img_bytes, "image/png")}
         elif captcha_type == "lobby":
             for field in ("text_image", "icons_image"):
                 b64 = images.get(field, "")
@@ -777,6 +791,15 @@ class CaptchaChallengeCreateView(APIView):
             img_bytes = _b64.b64decode(image_b64)
         except Exception:
             return Response({"error": "image_b64 invalido."}, status=status.HTTP_400_BAD_REQUEST)
+        if not _is_image_bytes(img_bytes):
+            logger.warning(
+                "CaptchaChallenge: payload recusado, nao e imagem (type=%s, %d bytes)",
+                captcha_type, len(img_bytes),
+            )
+            return Response(
+                {"error": "image_b64 nao e uma imagem (PNG/JPEG/GIF)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # 1. Attempt auto-solve via ikabotapi
         solution = ""
