@@ -139,6 +139,16 @@ class DemolishActionFlowTests(TestCase):
         )
         self.assertEqual((jobs["502"]["items"][0]["levels"], jobs["502"]["items"][0]["complete"]), (3, True))
 
+    def test_complete_on_a_level_one_building_is_sent_as_its_last_level(self):
+        snapshot = AccountSnapshot.objects.get(game_account=self.ga)
+        snapshot.cities[1]["buildings"].append(_building(6, "academy", 1))
+        snapshot.save()
+
+        self._submit([self._item("502", 6, "academy", 1, mode="complete")])
+
+        item = json.loads(self._jobs().get().inputs_json)["items"][0]
+        self.assertEqual((item["level"], item["levels"], item["complete"]), (1, 1, False))
+
     def test_needs_both_confirmations_and_gives_the_form_back(self):
         items = [self._item("501", 1, "warehouse", 5, levels=2)]
         for extra in (

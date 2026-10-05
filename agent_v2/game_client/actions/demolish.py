@@ -17,6 +17,10 @@ telas de confirmacao; nada foi demolido na captura):
 
   level = nivel atual do edificio.
 
+  Um edificio de nivel 1 nao tem demolicao completa com captcha (a tela vem
+  sem a imagem; visto em producao em 05/10/2026): tirar o ultimo nivel ja o
+  remove, entao "completo" no nivel 1 e feito com demolishBuilding.
+
 demolish_refusal() e a trava: so se demole o edificio que o usuario viu, no
 nivel que ele viu. Qualquer diferenca no jogo cancela o item.
 """
@@ -124,7 +128,7 @@ class DemolishBuildingAction(BaseAction):
     def confirmation(self, city_id: int | str, position: int, level: int, *, complete: bool = False) -> dict[str, Any]:
         """Open the game's confirmation window (read-only). Never demolishes."""
         view = "completeBuildingDemolition" if complete else "buildings_demolition"
-        text, _ = self._send("GET", params={
+        text, feedbacks = self._send("GET", params={
             "view": view,
             "cityId": str(city_id),
             "position": str(position),
@@ -136,6 +140,7 @@ class DemolishBuildingAction(BaseAction):
         return {
             "window": function in text,
             "captcha_image": extract_captcha_png(text) if complete else None,
+            "feedback": [str(fb.get("text") or "").strip() for fb in feedbacks if str(fb.get("text") or "").strip()],
         }
 
     def one_level(self, city_id: int | str, position: int, level: int) -> list[dict[str, Any]]:

@@ -75,9 +75,11 @@ def parse_items(raw: Any) -> list[dict[str, Any]]:
         if position < 0 or position in seen or not building or level < 1 or not (1 <= levels <= level):
             continue
         seen.add(position)
+        # A level-1 building has no "complete" window with captcha in the game:
+        # taking its last level already removes it.
         items.append({
             "position": position, "building": building, "level": level,
-            "levels": levels, "complete": complete,
+            "levels": levels, "complete": complete and level > 1,
             "name": str(entry.get("name") or building),
         })
     return items[:MAX_ITEMS]
@@ -155,6 +157,10 @@ class DemolishBuildingsRunner(BaseRunner):
                 self.log(jid, "info", f"{item['name']} (posicao {position}): edificio removido, posicao livre.")
                 return "done", positions
             self.log(jid, "info", f"{item['name']} (posicao {position}): agora no nivel {current}.")
+        if target <= 0:
+            # every level was taken but the game kept the building on the map
+            self.log(jid, "warn", f"{item['name']} (posicao {position}): ficou no nivel 0 e continua na posicao; confira no jogo.")
+            return "level_zero", positions
         return "done", positions
 
     def _demolish_complete(self, jid, client, action, ga_id: str, city_id: str, item: dict[str, Any], positions: list) -> tuple[str, list]:
@@ -163,7 +169,8 @@ class DemolishBuildingsRunner(BaseRunner):
             view = action.confirmation(city_id, position, level, complete=True)
             image = view.get("captcha_image")
             if not image:
-                self.log(jid, "warn", f"{item['name']}: a tela de demolicao completa veio sem a imagem do captcha (tentativa {attempt}).")
+                said = "; ".join(view.get("feedback") or []) or ("tela aberta sem captcha" if view.get("window") else "o jogo nao abriu a tela")
+                self.log(jid, "warn", f"{item['name']}: a tela de demolicao completa veio sem a imagem do captcha (tentativa {attempt}). Jogo: {said}.")
                 continue
             try:
                 solution = self._solve_captcha(jid, ga_id, city_id, item, image)
@@ -249,7 +256,7 @@ class DemolishBuildingsRunner(BaseRunner):
 
             done = sum(1 for r in results if r["status"] == "done")
             skipped = sum(1 for r in results if r["status"] == "skipped")
-            failed = sum(1 for r in results if r["status"] in ("unexpected", "captcha_failed"))
+            failed = sum(1 for r in results if r["status"] in ("unexpected", "captcha_failed", "level_zero"))
             if dry_run:
                 self.log(jid, "info", f"Simulacao concluida: {len(results) - skipped} item(ns) passariam, {skipped} seriam pulados. Nada foi demolido.")
                 return RunnerResult(success=True, data={"status": "dry_run", "city_id": city_id, "results": results})

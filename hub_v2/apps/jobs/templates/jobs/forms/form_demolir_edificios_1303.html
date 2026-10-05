@@ -94,7 +94,7 @@
                       <button type="button" class="rounded-full border px-2 py-0.5 font-semibold" :style="modeStyle(pick(city, b), 'levels')"
                               @click="pick(city, b).mode = 'levels'">Tirar niveis</button>
                       <button type="button" class="rounded-full border px-2 py-0.5 font-semibold" :style="modeStyle(pick(city, b), 'complete')"
-                              @click="pick(city, b).mode = 'complete'" title="De uma vez, com captcha">Completa (captcha)</button>
+                              x-show="b.level > 1" @click="pick(city, b).mode = 'complete'" title="De uma vez, com captcha">Completa (captcha)</button>
                     </div>
                     <div class="mt-2 flex items-center gap-1" x-show="pick(city, b).mode === 'levels'">
                       Tirar
@@ -104,6 +104,7 @@
                       <button type="button" class="rounded border px-1" style="border-color: var(--ik-line);" @click="setLevels(pick(city, b), pick(city, b).levels + 1)">+</button>
                       <span x-text="'de ' + b.level + ' nivel(is)'"></span>
                     </div>
+                    <div class="mt-1 text-muted" x-show="b.level === 1">Nivel 1: tirar o nivel ja remove o edificio, sem captcha.</div>
                     <div class="mt-1 font-semibold" style="color: #b4553f;" x-text="'nivel ' + b.level + ' → ' + after(pick(city, b))"></div>
                   </div>
                 </template>
@@ -137,7 +138,7 @@
               <span><strong x-text="p.name"></strong> <span class="text-muted" x-text="'(posicao ' + p.position + ')'"></span></span>
               <span class="flex items-center gap-2">
                 <span class="font-semibold" style="color: #b4553f;"
-                      x-text="'nivel ' + p.level + ' → ' + after(p) + (p.mode === 'complete' ? ' · completa, com captcha' : ' · ' + p.levels + ' nivel(is)')"></span>
+                      x-text="'nivel ' + p.level + ' → ' + after(p) + (p.mode === 'complete' && p.level > 1 ? ' · completa, com captcha' : ' · ' + (p.mode === 'complete' ? p.level : p.levels) + ' nivel(is)')"></span>
                 <button type="button" class="text-muted" title="Tirar da lista" @click="remove(p)"><i class="bi bi-x-circle"></i></button>
               </span>
             </div>

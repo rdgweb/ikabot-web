@@ -179,6 +179,10 @@ class ParseItemsTests(unittest.TestCase):
         items = demolish_runner.parse_items(json.dumps([_item(4, "academy", 7, 1, complete=True)]))
         self.assertEqual((items[0]["levels"], items[0]["complete"]), (7, True))
 
+    def test_complete_on_level_one_becomes_a_plain_last_level(self):
+        items = demolish_runner.parse_items([_item(2, "tavern", 1, complete=True)])
+        self.assertEqual((items[0]["levels"], items[0]["complete"]), (1, False))
+
 
 class DemolishRunnerTests(unittest.TestCase):
     def test_takes_exactly_the_requested_levels_one_by_one(self):
@@ -264,6 +268,37 @@ class DemolishRunnerTests(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual([p["captcha"] for p in game.posts], ["WRONG", GOOD_CAPTCHA])
         self.assertEqual(len(game.gets), 2)
+
+    def test_complete_on_a_level_one_building_just_takes_the_last_level(self):
+        # the game has no captcha window for level 1 (seen in production): no captcha flow at all
+        city = _city()
+        city[2] = _pos("tavern", 1, 9)
+        game = _Game(city, captcha_image=False)
+        hub = _Hub([])
+        _, result = _run(game, [_item(2, "tavern", 1, complete=True)], hub=hub)
+
+        self.assertTrue(result.success)
+        self.assertEqual([(p["function"], p["level"]) for p in game.posts], [("demolishBuilding", "1")])
+        self.assertEqual(game.gets, [])
+        self.assertEqual(hub.images, [])
+        self.assertIsNone(game.positions[2]["buildingId"])
+
+    def test_building_left_at_level_zero_is_reported_not_called_done(self):
+        class _KeepsLevelZero(_Game):
+            def request(self, method, url, headers=None, timeout=None, params=None, data=None):
+                if method == "POST":
+                    self.posts.append(dict(data))
+                    self.positions[int(data["position"])]["level"] -= 1
+                    return _Resp([["provideFeedback", [{"text": "ok", "type": 10}]]])
+                return super().request(method, url, headers, timeout, params, data)
+
+        city = _city()
+        city[2] = _pos("tavern", 1, 9)
+        game = _KeepsLevelZero(city)
+        _, result = _run(game, [_item(2, "tavern", 1, 1)])
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.data["results"][0]["status"], "level_zero")
 
     def test_complete_without_captcha_image_or_solution_sends_nothing(self):
         game = _Game(_city(), captcha_image=False)

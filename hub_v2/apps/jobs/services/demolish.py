@@ -97,6 +97,8 @@ def validate_items(raw: str, cities: list) -> tuple[dict[str, list[dict]], str]:
         level = _int(entry.get("level"))
         complete = entry.get("mode") == "complete"
         levels = level if complete else _int(entry.get("levels"))
+        # the game has no captcha window for a level-1 building: its last level removes it
+        complete = complete and level > 1
 
         city = by_city.get(city_id)
         if city is None:
