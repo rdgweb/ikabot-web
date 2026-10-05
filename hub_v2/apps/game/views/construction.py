@@ -261,6 +261,7 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                         "tradegood_icon": static(TRADEGOOD_ICON.get(tg, TRADEGOOD_ICON[0])),
                         "bid_instances": bid_instances,
                         "reorder_key": reorder_key,
+                        "game_account_id": str(ga.pk),
                     })
                 level_lookup[str(ga.pk)] = city_pos_lvl
                 level_lookup_cities[str(ga.pk)] = ga_city_list

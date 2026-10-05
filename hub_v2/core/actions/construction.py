@@ -122,8 +122,8 @@ ACTIONS = {
         "recurring": False,
         "long_running": False,
         "ready": True,
-        "ui_hidden": True,
-        "description": "Reduz niveis ou demole completamente edificios de uma cidade. Criado pelo painel de Construcoes (com confirmacoes); o agent confere edificio e nivel no jogo antes de cada passo e nunca repete sozinho.",
+        "ui_hidden": False,
+        "description": "Reduz niveis ou demole completamente edificios de varias cidades, com confirmacoes. O agent confere edificio e nivel no jogo antes de cada passo e nunca repete sozinho.",
         "inputs": [],
     },
     1004: {

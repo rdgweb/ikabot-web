@@ -899,10 +899,13 @@
                class="ml-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors hover:bg-[rgba(79,134,185,0.12)]"
                style="border-color: rgba(79,134,185,0.4); color: var(--ik-sea);"
                title="Reorganizar edificios desta cidade (arrastar e soltar)"><i class="bi bi-arrows-move"></i> Reorganizar</a>
-            <a href="{% url 'game:construction' %}?demolish={{ card.game_account_id }}:{{ city.id }}"
+            <button type="button"
                class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold"
                style="border-color: rgba(187,81,67,0.45); color: var(--ik-bad);"
-               title="Demolir edificios (reduzir niveis ou remover), com confirmacoes"><i class="bi bi-trash3"></i> Demolir</a>
+               title="Demolir edificios desta conta (Acoes do Jogo, com confirmacoes)"
+               hx-get="{% url 'jobs:job-form' %}?ga={{ card.game_account_id }}&action=1303"
+               hx-target="#job-modal-body" hx-swap="innerHTML" hx-push-url="false"
+               onclick="this.dispatchEvent(new CustomEvent('open-modal-jobcreate', {bubbles: true}));"><i class="bi bi-trash3"></i> Demolir</button>
           </div>
           <div class="flex flex-wrap gap-1">
             {% for bld in city.buildings %}

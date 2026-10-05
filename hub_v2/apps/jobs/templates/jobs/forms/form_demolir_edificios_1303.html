@@ -1,0 +1,253 @@
+{% load static %}
+{# N-57: Demolir Edificios (ac=1303). Varias cidades, com confirmacoes fortes. #}
+{# Recebe demolish_ui = {cities, confirm_word, initial_items?, error?} #}
+
+{{ demolish_ui.cities|json_script:"demolish-cities-data" }}
+{{ demolish_ui.initial_items|default_if_none:""|json_script:"demolish-initial-data" }}
+
+<div class="space-y-4" x-data="demolishForm('{{ demolish_ui.confirm_word|escapejs }}')" x-init="init()">
+  <input type="hidden" name="demolish_items_json" :value="itemsJson">
+
+  {# ── Cabecalho: acao irreversivel ── #}
+  <div class="overflow-hidden rounded-[24px] border"
+       style="border-color: rgba(199,120,102,0.44); box-shadow: 0 16px 42px rgba(147,52,52,0.12); background:
+         radial-gradient(680px 280px at 0% 0%, rgba(198,87,63,0.14), transparent 60%),
+         linear-gradient(180deg, rgba(255,251,247,0.98), rgba(249,239,232,0.95));">
+    <div class="border-b px-5 py-4" style="border-color: rgba(199,120,102,0.34);">
+      <div class="flex items-start gap-4">
+        <div class="flex h-12 w-12 items-center justify-center rounded-[18px] border"
+             style="flex: none; border-color: rgba(199,120,102,0.34); background: linear-gradient(180deg, #fff8f4, #f6e4dc);">
+          <i class="bi bi-trash3-fill text-lg" style="color: #b4553f;"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-[11px] font-semibold uppercase" style="letter-spacing: 0.18em; color: #b4553f;">Acao irreversivel</div>
+          <div class="mt-1 text-base font-semibold text-ink">Demolir edificios</div>
+          <p class="mt-1 text-xs leading-relaxed text-muted">
+            Escolha edificios em quantas cidades quiser: tire niveis (um a um, sem captcha) ou demola completamente
+            (de uma vez, com captcha resolvido pelo sistema central). O jogo devolve so uma parte dos recursos gastos.
+            Antes de cada passo o agente confere no jogo se o edificio e o nivel sao os desta lista; se algo mudou, o item e pulado.
+          </p>
+        </div>
+      </div>
+    </div>
+    <div class="grid gap-3 px-5 py-4 sm:grid-cols-3">
+      <div class="rounded-[18px] border px-4 py-3" style="border-color: rgba(199,120,102,0.24); background: rgba(255,255,255,0.76);">
+        <div class="text-[10px] uppercase text-muted" style="letter-spacing: 0.16em;">Edificios escolhidos</div>
+        <div class="mt-1 text-xl font-semibold text-ink" x-text="list.length"></div>
+      </div>
+      <div class="rounded-[18px] border px-4 py-3" style="border-color: rgba(199,120,102,0.24); background: rgba(255,255,255,0.76);">
+        <div class="text-[10px] uppercase text-muted" style="letter-spacing: 0.16em;">Cidades / jobs</div>
+        <div class="mt-1 text-xl font-semibold text-ink" x-text="grouped.length"></div>
+      </div>
+      <div class="rounded-[18px] border px-4 py-3" :style="ready ? 'border-color: rgba(95,140,78,0.32); background: rgba(255,255,255,0.76);' : 'border-color: rgba(199,120,102,0.24); background: rgba(255,255,255,0.76);'">
+        <div class="text-[10px] uppercase text-muted" style="letter-spacing: 0.16em;">Liberacao</div>
+        <div class="mt-1 text-sm font-semibold" :style="ready ? 'color: var(--ik-good);' : 'color: #b4553f;'"
+             x-text="ready ? 'Pronto para demolir' : (list.length ? 'Aguardando confirmacoes' : 'Escolha os edificios')"></div>
+      </div>
+    </div>
+  </div>
+
+  {% if demolish_ui.error %}
+  <div class="rounded-[18px] border px-4 py-3 text-sm"
+       style="border-color: rgba(199,120,102,0.30); background: rgba(180,85,63,0.06); color: #8b3a2c;">
+    <i class="bi bi-exclamation-circle"></i> {{ demolish_ui.error }}
+  </div>
+  {% endif %}
+
+  {# ── 1. Escolher edificios por cidade ── #}
+  <div class="overflow-hidden rounded-[24px] border"
+       style="border-color: rgba(219,201,167,0.86); background: rgba(255,255,255,0.88); box-shadow: 0 10px 28px rgba(87,66,24,0.08);">
+    <div class="border-b px-4 py-3" style="border-color: rgba(219,201,167,0.82);">
+      <div class="text-sm font-semibold text-ink">1. Escolha os edificios</div>
+      <p class="mt-1 text-xs text-muted">Clique para marcar. A Prefeitura e edificios em obra nao podem ser demolidos.</p>
+    </div>
+    <div class="space-y-3 px-4 py-4">
+      <template x-for="city in cities" :key="city.id">
+        <section class="rounded-[18px] border p-3" style="border-color: rgba(219,201,167,0.9); background: rgba(255,253,247,0.7);">
+          <button type="button" class="flex w-full items-center justify-between gap-2 text-left" @click="city.open = !city.open">
+            <span class="flex items-center gap-2">
+              <i class="bi" :class="city.open ? 'bi-chevron-down' : 'bi-chevron-right'" style="color: var(--ik-muted);"></i>
+              <span class="text-sm font-semibold text-ink" x-text="city.name"></span>
+              <span class="text-[11px] text-muted" x-text="city.buildings.length + ' edificios'"></span>
+            </span>
+            <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold" x-show="countIn(city)"
+                  style="background: rgba(180,85,63,0.12); color: #b4553f;" x-text="countIn(city) + ' escolhido(s)'"></span>
+          </button>
+          {# x-show clears the inline display, so the grid lives one level below #}
+          <div x-show="city.open" class="mt-3">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;align-items:start;">
+            <template x-for="b in city.buildings" :key="city.id + ':' + b.position">
+              <div class="rounded-[14px] border p-2" :style="cardStyle(city, b)">
+                <button type="button" class="flex w-full items-center gap-2 text-left" :disabled="!!b.blocked"
+                        :style="b.blocked ? 'cursor:not-allowed;' : 'cursor:pointer;'" :title="b.blocked || 'Clique para escolher'" @click="toggle(city, b)">
+                  <img :src="b.icon" alt="" style="width:34px;height:30px;object-fit:contain;flex:none;">
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate text-xs font-semibold text-ink" x-text="b.name"></span>
+                    <span class="block text-[10px] text-muted" x-text="b.blocked || ('nivel ' + b.level + ' · posicao ' + b.position)"></span>
+                  </span>
+                  <i class="bi" :class="isPicked(city, b) ? 'bi-check-circle-fill' : 'bi-circle'" :style="isPicked(city, b) ? 'color:#b4553f;' : 'color:var(--ik-line);'"></i>
+                </button>
+                <template x-if="isPicked(city, b)">
+                  <div class="mt-2 border-t pt-2 text-[11px] text-ink" style="border-color: rgba(219,201,167,0.9);">
+                    {# buttons, not radios: unnamed radios of every card would form one single group #}
+                    <div class="flex flex-wrap items-center gap-1">
+                      <button type="button" class="rounded-full border px-2 py-0.5 font-semibold" :style="modeStyle(pick(city, b), 'levels')"
+                              @click="pick(city, b).mode = 'levels'">Tirar niveis</button>
+                      <button type="button" class="rounded-full border px-2 py-0.5 font-semibold" :style="modeStyle(pick(city, b), 'complete')"
+                              @click="pick(city, b).mode = 'complete'" title="De uma vez, com captcha">Completa (captcha)</button>
+                    </div>
+                    <div class="mt-2 flex items-center gap-1" x-show="pick(city, b).mode === 'levels'">
+                      Tirar
+                      <button type="button" class="rounded border px-1" style="border-color: var(--ik-line);" @click="setLevels(pick(city, b), pick(city, b).levels - 1)">−</button>
+                      <input type="number" min="1" :max="b.level" class="rounded border text-center" style="width:46px;border-color: var(--ik-line);padding:1px 2px;"
+                             :value="pick(city, b).levels" @change="setLevels(pick(city, b), $event.target.value)" @keydown.enter.prevent>
+                      <button type="button" class="rounded border px-1" style="border-color: var(--ik-line);" @click="setLevels(pick(city, b), pick(city, b).levels + 1)">+</button>
+                      <span x-text="'de ' + b.level + ' nivel(is)'"></span>
+                    </div>
+                    <div class="mt-1 font-semibold" style="color: #b4553f;" x-text="'nivel ' + b.level + ' → ' + after(pick(city, b))"></div>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+          </div>
+        </section>
+      </template>
+      {% if not demolish_ui.cities %}
+      <div class="rounded-[18px] border px-4 py-4 text-sm text-muted" style="border-color: rgba(199,120,102,0.24); background: rgba(255,250,247,0.72);">
+        Nenhuma cidade no snapshot desta conta. Rode o Check Status e abra o formulario de novo.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── 2. Resumo ── #}
+  <div class="overflow-hidden rounded-[24px] border" x-show="list.length"
+       style="border-color: rgba(199,120,102,0.32); background: rgba(255,250,247,0.86); box-shadow: 0 10px 28px rgba(87,66,24,0.08);">
+    <div class="border-b px-4 py-3" style="border-color: rgba(199,120,102,0.24);">
+      <div class="text-sm font-semibold text-ink">2. Confira o que sera demolido</div>
+      <p class="mt-1 text-xs text-muted">Um job por cidade. Tirar niveis nao usa captcha; a demolicao completa usa.</p>
+    </div>
+    <div class="space-y-3 px-4 py-4">
+      <template x-for="group in grouped" :key="group.id">
+        <div>
+          <div class="text-xs font-bold text-ink" x-text="group.name"></div>
+          <template x-for="p in group.items" :key="p.city_id + ':' + p.position">
+            <div class="flex flex-wrap items-center justify-between gap-2 border-t py-1 text-xs text-ink" style="border-color: rgba(219,201,167,0.7);">
+              <span><strong x-text="p.name"></strong> <span class="text-muted" x-text="'(posicao ' + p.position + ')'"></span></span>
+              <span class="flex items-center gap-2">
+                <span class="font-semibold" style="color: #b4553f;"
+                      x-text="'nivel ' + p.level + ' → ' + after(p) + (p.mode === 'complete' ? ' · completa, com captcha' : ' · ' + p.levels + ' nivel(is)')"></span>
+                <button type="button" class="text-muted" title="Tirar da lista" @click="remove(p)"><i class="bi bi-x-circle"></i></button>
+              </span>
+            </div>
+          </template>
+        </div>
+      </template>
+      <div class="flex flex-wrap items-center justify-between gap-2 rounded-[14px] border px-3 py-2" style="border-color: rgba(79,134,185,0.3); background: rgba(79,134,185,0.07);">
+        <span class="text-[11px] text-ink"><i class="bi bi-eye" style="color: var(--ik-sea);"></i>
+          <strong>Simular</strong> cria jobs que so conferem as travas e abrem a tela de confirmacao do jogo. Nada e demolido e nao precisa das confirmacoes abaixo.</span>
+        <button type="submit" name="dry_run" value="1" class="btn btn-secondary btn-sm"><i class="bi bi-eye"></i> Simular (nao demole)</button>
+      </div>
+    </div>
+  </div>
+
+  {# ── 3. Confirmacoes ── #}
+  <div class="grid gap-4 lg:grid-cols-2" x-show="list.length">
+    <div class="rounded-[24px] border p-4" style="border-color: rgba(199,120,102,0.32); background: rgba(255,250,247,0.86); box-shadow: 0 10px 28px rgba(87,66,24,0.08);">
+      <div class="flex items-start gap-3">
+        <div class="flex h-9 w-9 items-center justify-center rounded-full" style="flex: none; background: rgba(180,85,63,0.12); color: #b4553f;">
+          <i class="bi bi-shield-exclamation"></i>
+        </div>
+        <div>
+          <div class="text-sm font-semibold text-ink">3. Checklist de seguranca</div>
+          <p class="mt-1 text-xs text-muted">Estas etapas existem para evitar demolicao por engano.</p>
+        </div>
+      </div>
+      <label class="mt-4 flex items-start gap-3 rounded-[18px] border px-4 py-3" style="cursor:pointer;"
+             :style="acknowledged ? 'border-color: rgba(95,140,78,0.30); background: rgba(95,140,78,0.07);' : 'border-color: rgba(199,120,102,0.24); background: rgba(255,255,255,0.86);'">
+        <input type="checkbox" name="demolish_acknowledge" class="h-4 w-4 rounded" style="margin-top: 2px;" x-model="acknowledged">
+        <span class="text-sm text-ink">Conferi a lista (<strong x-text="list.length"></strong> edificio(s) em <strong x-text="grouped.length"></strong> cidade(s)) e entendo que a demolicao nao pode ser desfeita.</span>
+      </label>
+    </div>
+
+    <div class="rounded-[24px] border p-4" style="border-color: rgba(219,201,167,0.86); background: rgba(255,255,255,0.88); box-shadow: 0 10px 28px rgba(87,66,24,0.08);">
+      <div class="text-sm font-semibold text-ink">Confirmacao textual</div>
+      <p class="mt-1 text-xs text-muted">Digite a palavra de seguranca para liberar a demolicao.</p>
+      <div class="mt-4">
+        <label class="form-label text-xs mb-1 block">Palavra obrigatoria</label>
+        <input type="text" name="demolish_confirm_word" class="form-input uppercase" style="letter-spacing: 0.16em;"
+               autocomplete="off" spellcheck="false" placeholder="{{ demolish_ui.confirm_word }}" x-model="typed" @keydown.enter.prevent>
+      </div>
+      <div class="mt-4 rounded-[18px] border px-4 py-3"
+           :style="ready ? 'border-color: rgba(95,140,78,0.30); background: rgba(95,140,78,0.08);' : 'border-color: rgba(199,120,102,0.24); background: rgba(180,85,63,0.05);'">
+        <div class="text-[11px] uppercase text-muted" style="letter-spacing: 0.16em;">Demolicao armada</div>
+        <div class="mt-1 text-xs" :style="ready ? 'color: var(--ik-good);' : 'color: #b4553f;'"
+             x-text="ready ? 'Confirmacoes concluidas. Use o botao Demolir abaixo.' : 'Faltam confirmacoes: sem elas o servidor recusa o job.'"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function demolishForm(confirmWord) {
+  return {
+    cities: [], picks: {}, acknowledged: false, typed: '',
+    init() {
+      const raw = JSON.parse(document.getElementById('demolish-cities-data')?.textContent || '[]');
+      this.cities = raw.map((c, i) => ({...c, open: i === 0}));
+      // After a refused submit the form comes back with what had been chosen.
+      let initial = JSON.parse(document.getElementById('demolish-initial-data')?.textContent || '""');
+      for (const it of Array.isArray(initial) ? initial : []) {
+        const city = this.cities.find(c => String(c.id) === String(it.city_id));
+        const b = city && city.buildings.find(x => x.position === it.position && x.building === it.building && !x.blocked);
+        if (!b) continue;
+        this.toggle(city, b);
+        const p = this.pick(city, b);
+        if (it.mode === 'complete') p.mode = 'complete'; else this.setLevels(p, it.levels);
+        city.open = true;
+      }
+    },
+    keyOf(city, b) { return `${city.id}:${b.position}`; },
+    isPicked(city, b) { return !!this.picks[this.keyOf(city, b)]; },
+    pick(city, b) { return this.picks[this.keyOf(city, b)]; },
+    toggle(city, b) {
+      if (b.blocked) return;
+      const k = this.keyOf(city, b);
+      if (this.picks[k]) { delete this.picks[k]; return; }
+      this.picks[k] = {city_id: city.id, city_name: city.name, position: b.position, building: b.building, name: b.name, level: b.level, mode: 'levels', levels: 1};
+    },
+    remove(p) { delete this.picks[`${p.city_id}:${p.position}`]; },
+    setLevels(p, value) {
+      p.mode = 'levels';
+      p.levels = Math.max(1, Math.min(p.level, parseInt(value, 10) || 1));
+    },
+    countIn(city) { return this.list.filter(p => p.city_id === city.id).length; },
+    after(p) {
+      const left = p.mode === 'complete' ? 0 : p.level - p.levels;
+      return left > 0 ? `nivel ${left}` : 'removido (posicao livre)';
+    },
+    modeStyle(p, mode) {
+      return p.mode === mode
+        ? 'border-color: #b4553f; background: #b4553f; color: #fff;'
+        : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.9); color: var(--ik-ink);';
+    },
+    cardStyle(city, b) {
+      if (b.blocked) return 'border-color: rgba(219,201,167,0.9); opacity: 0.5;';
+      return this.isPicked(city, b) ? 'border-color: #b4553f; background: rgba(180,85,63,0.07);' : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.85);';
+    },
+    get list() { return Object.values(this.picks); },
+    get grouped() {
+      const groups = {};
+      for (const p of this.list) (groups[p.city_id] ||= {id: p.city_id, name: p.city_name, items: []}).items.push(p);
+      return Object.values(groups).sort((x, y) => x.name.localeCompare(y.name));
+    },
+    get itemsJson() {
+      return JSON.stringify(this.list.map(p => ({
+        city_id: p.city_id, position: p.position, building: p.building, level: p.level, mode: p.mode, levels: p.levels,
+      })));
+    },
+    get ready() { return this.list.length > 0 && this.acknowledged && this.typed.trim().toUpperCase() === confirmWord; },
+  };
+}
+</script>

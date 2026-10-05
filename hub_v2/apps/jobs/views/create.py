@@ -2132,6 +2132,11 @@ def _job_form_context(form, action_meta, action_code, ga, cities, request=None, 
         if isinstance(source, dict):
             selected_city_id = str(source.get("city_id") or source.get("city") or "").strip()
         ctx.update(_abandon_colony_context(cities, selected_city_id=selected_city_id))
+    if int(action_code) == 1303:
+        from apps.jobs.services.demolish import demolish_form_context
+
+        # raw snapshot cities: the building keys must be the game's own names
+        ctx.update(demolish_form_context(_get_cities(ga)))
     return ctx
 
 
@@ -2867,6 +2872,9 @@ class JobSubmitView(LoginRequiredMixin, View):
         if int(action_code) == 1301:
             return self._submit_clone_city(request, ga, action_meta, construction_cities)
 
+        if int(action_code) == 1303:
+            return self._submit_demolish(request, ga, action_meta, cities)
+
         form = JobCreateForm(
             request.POST,
             action_code=action_code,
@@ -3079,6 +3087,52 @@ class JobSubmitView(LoginRequiredMixin, View):
         )
         resp["HX-Trigger"] = json.dumps({
             "toast": {"type": "success", "message": "Job Recursos Premium criado!"},
+            "jobsCreated": True,
+        })
+        return resp
+
+    def _submit_demolish(self, request, ga, action_meta, cities):
+        """Cria um job de Demolir Edificios (ac=1303) por cidade, depois das confirmacoes."""
+        from apps.jobs.services.demolish import confirmation_error, validate_items
+
+        if not ga.account.node:
+            return self._error("Conta sem no atribuido.")
+        dry_run = request.POST.get("dry_run") == "1"
+        grouped, error = validate_items(request.POST.get("demolish_items_json"), cities)
+        if not error and not dry_run:
+            error = confirmation_error(request.POST)
+        if error:
+            # Back to the form with the message and what had been chosen (nothing was created).
+            construction_cities = _construction_city_data(cities)
+            form = JobCreateForm(request.POST, action_code=1303, game_account=ga, cities=construction_cities)
+            ctx = _job_form_context(form, action_meta, 1303, ga, construction_cities, request=request)
+            try:
+                chosen = json.loads(request.POST.get("demolish_items_json") or "[]")
+            except ValueError:
+                chosen = []
+            ctx["demolish_ui"]["error"] = error
+            ctx["demolish_ui"]["initial_items"] = chosen if isinstance(chosen, list) else []
+            resp = HttpResponse(render_to_string("jobs/partials/create_step_form.html", ctx, request=request))
+            resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": error}})
+            return resp
+
+        names = {str(c.get("id") or ""): str(c.get("name") or c.get("id")) for c in cities if isinstance(c, dict)}
+        for city_id, items in grouped.items():
+            create_job_with_workflow(
+                account=ga.account, game_account=ga, node=ga.account.node,
+                action_code=1303,
+                inputs={"city_id": city_id, "city_name": names.get(city_id, city_id), "items": items, "dry_run": dry_run},
+                status="queued",
+            )
+
+        total = sum(len(items) for items in grouped.values())
+        what = "Simulacao criada (nada sera demolido)" if dry_run else "Demolicao criada"
+        resp = HttpResponse(
+            render_to_string("jobs/partials/create_step_success.html",
+                             {"jobs_created": len(grouped), "action_name": action_meta["name"]}, request=request)
+        )
+        resp["HX-Trigger"] = json.dumps({
+            "toast": {"type": "success", "message": f"{what}: {total} edificio(s) em {len(grouped)} cidade(s)."},
             "jobsCreated": True,
         })
         return resp

@@ -373,8 +373,10 @@
                           @click="$dispatch('open-reorder', {key: '{{ row.reorder_key }}'})"><i class="bi bi-arrows-move"></i> Reorganizar</button>
                   <button type="button" class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold"
                           style="border-color: rgba(187,81,67,0.45); color: var(--ik-bad);"
-                          title="Demolir edificios (reduzir niveis ou remover)"
-                          @click="$dispatch('open-demolish', {key: '{{ row.reorder_key }}'})"><i class="bi bi-trash3"></i> Demolir</button>
+                          title="Demolir edificios desta conta (Acoes do Jogo, com confirmacoes)"
+                          hx-get="{% url 'jobs:job-form' %}?ga={{ row.game_account_id }}&action=1303"
+                          hx-target="#job-modal-body" hx-swap="innerHTML" hx-push-url="false"
+                          onclick="this.dispatchEvent(new CustomEvent('open-modal-jobcreate', {bubbles: true}));"><i class="bi bi-trash3"></i> Demolir</button>
                 </span>
               </td>
               {% for cell in row.cells %}
@@ -512,114 +514,6 @@
               </div>
             </div>
           </template>
-        </div>
-      </div>
-    </template>
-  </div>
-
-  {# ===== N-57: demolir edificios (varias cidades, com confirmacoes) ===== #}
-  <div x-data="demolishModal()" @open-demolish.window="open($event.detail.key)" @keydown.escape.window="close()">
-    <template x-if="gaId">
-      <div class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4" @click.self="close()">
-        <div class="mt-2 w-full rounded-[22px] border bg-paper p-4 shadow-2xl" style="max-width: 1100px; border-color: var(--ik-line);">
-          <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div class="text-[11px] font-semibold uppercase" style="letter-spacing: 0.16em; color: var(--ik-bad);">Demolir edificios</div>
-              <h3 class="text-lg font-bold text-ink"><span x-text="gaName"></span> <span class="text-sm font-normal text-muted" x-text="'· passo ' + step + ' de 3'"></span></h3>
-            </div>
-            <button type="button" class="text-xl text-muted" @click="close()" title="Fechar"><i class="bi bi-x-lg"></i></button>
-          </div>
-
-          {# ---- passo 1: escolher ---- #}
-          <div x-show="step === 1">
-            <p class="mb-3 text-[11px] text-muted">Clique nos edificios que quer demolir, em quantas cidades quiser. Em cada um escolha quantos niveis tirar ou a demolicao completa (feita de uma vez, pede captcha). Nada e enviado ao jogo neste passo.</p>
-            <template x-for="city in cities" :key="city.id">
-              <div class="mb-3 rounded-[14px] border p-3" style="border-color: var(--ik-line);">
-                <div class="mb-2 flex items-center justify-between gap-2">
-                  <span class="text-sm font-bold text-ink" x-text="city.name"></span>
-                  <span class="text-[11px] text-muted" x-text="countIn(city) ? countIn(city) + ' escolhido(s)' : ''"></span>
-                </div>
-                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;align-items:start;">
-                  <template x-for="b in city.buildings" :key="city.id + ':' + b.p">
-                    <div class="rounded-[10px] border p-2" :style="cardStyle(city, b)">
-                      <button type="button" class="flex w-full items-center gap-2 text-left" :disabled="!!blocked(b)" :style="blocked(b) ? 'cursor:not-allowed;' : 'cursor:pointer;'"
-                              :title="blocked(b) || 'Clique para escolher'" @click="toggle(city, b)">
-                        <img :src="b.i" alt="" style="width:34px;height:30px;object-fit:contain;flex:none;">
-                        <span class="flex-1" style="min-width:0;">
-                          <span class="block text-xs font-semibold text-ink" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" x-text="b.n"></span>
-                          <span class="block text-[10px] text-muted" x-text="blocked(b) || ('nivel ' + b.l + ' · posicao ' + b.p)"></span>
-                        </span>
-                        <i class="bi" :class="isPicked(city, b) ? 'bi-check-circle-fill' : 'bi-circle'" :style="isPicked(city, b) ? 'color:var(--ik-bad);' : 'color:var(--ik-line);'"></i>
-                      </button>
-                      <template x-if="isPicked(city, b)">
-                        <div class="mt-2 border-t pt-2 text-[11px] text-ink" style="border-color: var(--ik-line);">
-                          <label class="flex items-center gap-1" style="cursor:pointer;">
-                            <input type="radio" value="levels" x-model="pick(city, b).mode"> Tirar
-                            <button type="button" class="rounded border px-1" style="border-color: var(--ik-line);" @click="setLevels(pick(city, b), pick(city, b).levels - 1)">−</button>
-                            <input type="number" min="1" :max="b.l" class="rounded border text-center" style="width:46px;border-color: var(--ik-line);padding:1px 2px;"
-                                   :value="pick(city, b).levels" @change="setLevels(pick(city, b), $event.target.value)" @focus="pick(city, b).mode = 'levels'">
-                            <button type="button" class="rounded border px-1" style="border-color: var(--ik-line);" @click="setLevels(pick(city, b), pick(city, b).levels + 1)">+</button>
-                            nivel(is)
-                          </label>
-                          <label class="mt-1 flex items-center gap-1" style="cursor:pointer;">
-                            <input type="radio" value="complete" x-model="pick(city, b).mode"> Demolir completamente <span class="text-muted">(captcha)</span>
-                          </label>
-                          <div class="mt-1 font-semibold" style="color: var(--ik-bad);" x-text="'nivel ' + b.l + ' → ' + after(pick(city, b))"></div>
-                        </div>
-                      </template>
-                    </div>
-                  </template>
-                </div>
-              </div>
-            </template>
-          </div>
-
-          {# ---- passo 2: revisar ---- #}
-          <div x-show="step === 2">
-            <div class="mb-3 rounded-[12px] border p-3 text-sm" style="border-color: rgba(187,81,67,0.5); background: rgba(187,81,67,0.08); color: var(--ik-bad);">
-              <i class="bi bi-exclamation-triangle-fill"></i> <strong>Demolir nao pode ser desfeito.</strong> O jogo devolve so uma parte dos recursos gastos. Confira a lista com calma.
-            </div>
-            <template x-for="group in grouped" :key="group.id">
-              <div class="mb-3 rounded-[14px] border p-3" style="border-color: var(--ik-line);">
-                <div class="mb-1 text-sm font-bold text-ink" x-text="group.name"></div>
-                <template x-for="p in group.items" :key="p.city_id + ':' + p.position">
-                  <div class="flex flex-wrap items-center justify-between gap-2 border-t py-1 text-xs text-ink" style="border-color: var(--ik-line);">
-                    <span><strong x-text="p.name"></strong> <span class="text-muted" x-text="'(posicao ' + p.position + ')'"></span></span>
-                    <span class="font-semibold" style="color: var(--ik-bad);" x-text="'nivel ' + p.level + ' → ' + after(p) + (p.mode === 'complete' ? ' · completa, com captcha' : ' · ' + p.levels + ' nivel(is)')"></span>
-                  </div>
-                </template>
-              </div>
-            </template>
-            <label class="flex items-start gap-2 text-sm text-ink" style="cursor:pointer;">
-              <input type="checkbox" x-model="understood" class="mt-1">
-              <span>Conferi a lista: sao <strong x-text="list.length"></strong> edificio(s) em <strong x-text="grouped.length"></strong> cidade(s), e entendo que a demolicao nao tem volta.</span>
-            </label>
-            <p class="mt-2 text-[11px] text-muted">"Simular" cria jobs que so conferem as travas e abrem a tela de confirmacao do jogo: nada e demolido. Antes de cada passo o agente confere no jogo se o edificio e o nivel sao os desta lista; se algo mudou, aquele item e pulado.</p>
-          </div>
-
-          {# ---- passo 3: confirmar ---- #}
-          <div x-show="step === 3">
-            <div class="rounded-[12px] border p-3" style="border-color: rgba(187,81,67,0.5); background: rgba(187,81,67,0.08);">
-              <p class="text-sm text-ink">Ultima confirmacao: vou demolir <strong x-text="list.length"></strong> edificio(s) em <strong x-text="grouped.length"></strong> cidade(s) da conta <strong x-text="gaName"></strong>.</p>
-              <label class="mt-3 block text-[11px] font-semibold uppercase text-muted" style="letter-spacing: 0.14em;">Digite DEMOLIR para liberar o botao</label>
-              <input type="text" class="form-input mt-1" style="max-width: 260px;" x-model="typed" autocomplete="off" placeholder="DEMOLIR">
-            </div>
-          </div>
-
-          <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <span class="text-[11px] text-muted"><span x-text="list.length"></span> edificio(s) escolhido(s)</span>
-            <div class="flex flex-wrap gap-2">
-              <button type="button" class="btn btn-secondary btn-sm" @click="close()">Cancelar</button>
-              <button type="button" class="btn btn-secondary btn-sm" x-show="step > 1" @click="step -= 1; typed = ''">Voltar</button>
-              <button type="button" class="btn btn-primary btn-sm" x-show="step === 1" :disabled="!list.length" @click="step = 2; understood = false">Revisar</button>
-              <button type="button" class="btn btn-secondary btn-sm" x-show="step === 2" :disabled="sending" @click="send(true)"><i class="bi bi-eye"></i> Simular (nao demole)</button>
-              <button type="button" class="btn btn-primary btn-sm" x-show="step === 2" :disabled="!understood" @click="step = 3; typed = ''">Continuar</button>
-              <button type="button" class="btn btn-sm" x-show="step === 3" :disabled="!canConfirm || sending" @click="send(false)"
-                      :style="`color:#fff;background:var(--ik-bad);border-color:var(--ik-bad);opacity:${canConfirm && !sending ? 1 : 0.45};`">
-                <i class="bi bi-trash3"></i> <span x-text="sending ? 'Enviando...' : 'Demolir agora'"></span>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </template>
@@ -938,85 +832,6 @@ function reorderModal() {
       this.saving = false;
       _toast(res.ok ? 'success' : 'error', res.message);
       if (res.ok) this.close();
-    },
-  };
-}
-// N-57: demolish buildings in several cities. Nothing is sent before the three steps
-// (pick, review + acknowledge, type the word); the server and the agent re-check everything.
-function demolishModal() {
-  const layouts = JSON.parse(document.getElementById('cs-reorder-layouts')?.textContent || '{}');
-  const WORD = 'DEMOLIR';
-  return {
-    gaId: '', gaName: '', cities: [], picks: {}, step: 1, understood: false, typed: '', sending: false,
-    init() {
-      // Links from the game panel open the modal straight away (?demolish=<ga>:<city>).
-      const key = new URLSearchParams(window.location.search).get('demolish');
-      if (key && layouts[key]) this.open(key);
-    },
-    open(key) {
-      const data = layouts[key];
-      if (!data) return;
-      this.gaId = String(data.ga_id); this.gaName = data.ga_name;
-      const first = String(data.city_id);
-      this.cities = Object.values(layouts)
-        .filter(v => String(v.ga_id) === this.gaId)
-        .map(v => ({
-          id: String(v.city_id), name: v.city_name,
-          buildings: (v.slots || []).filter(s => s.b !== 'empty').map(s => ({p: s.p, b: s.b, n: s.n, i: s.i, l: s.l, u: s.u})),
-        }))
-        .sort((x, y) => (y.id === first) - (x.id === first) || x.name.localeCompare(y.name));
-      this.picks = {}; this.step = 1; this.understood = false; this.typed = ''; this.sending = false;
-    },
-    close() { this.gaId = ''; },
-    keyOf(city, b) { return `${city.id}:${b.p}`; },
-    blocked(b) {
-      if (b.b === 'townHall') return 'A Prefeitura nao pode ser demolida';
-      if (b.u) return 'Em obra';
-      if (b.l < 1) return 'Sem nivel para tirar';
-      return '';
-    },
-    isPicked(city, b) { return !!this.picks[this.keyOf(city, b)]; },
-    pick(city, b) { return this.picks[this.keyOf(city, b)]; },
-    toggle(city, b) {
-      if (this.blocked(b)) return;
-      const k = this.keyOf(city, b);
-      if (this.picks[k]) { delete this.picks[k]; return; }
-      this.picks[k] = {city_id: city.id, city_name: city.name, position: b.p, building: b.b, name: b.n, level: b.l, mode: 'levels', levels: 1};
-    },
-    setLevels(p, value) {
-      p.mode = 'levels';
-      p.levels = Math.max(1, Math.min(p.level, parseInt(value, 10) || 1));
-    },
-    countIn(city) { return this.list.filter(p => p.city_id === city.id).length; },
-    after(p) {
-      const left = p.mode === 'complete' ? 0 : p.level - p.levels;
-      return left > 0 ? `nivel ${left}` : 'removido (posicao livre)';
-    },
-    cardStyle(city, b) {
-      if (this.blocked(b)) return 'border-color:var(--ik-line);opacity:0.5;';
-      return this.isPicked(city, b) ? 'border-color:var(--ik-bad);background:rgba(187,81,67,0.07);' : 'border-color:var(--ik-line);';
-    },
-    get list() { return Object.values(this.picks); },
-    get grouped() {
-      const groups = {};
-      for (const p of this.list) (groups[p.city_id] ||= {id: p.city_id, name: p.city_name, items: []}).items.push(p);
-      return Object.values(groups).sort((x, y) => x.name.localeCompare(y.name));
-    },
-    get canConfirm() { return this.understood && this.list.length > 0 && this.typed.trim() === WORD; },
-    async send(dryRun) {
-      if (!this.list.length || (!dryRun && !this.canConfirm)) return;
-      this.sending = true;
-      const res = await _ikPost('{% url "game:demolish-buildings" %}', {
-        game_account_id: this.gaId,
-        items: JSON.stringify(this.list.map(p => ({
-          city_id: p.city_id, position: p.position, building: p.building, level: p.level, mode: p.mode, levels: p.levels,
-        }))),
-        confirm: dryRun ? '' : this.typed.trim(),
-        dry_run: dryRun ? '1' : '',
-      });
-      this.sending = false;
-      _toast(res.ok ? 'success' : 'error', res.message);
-      if (res.ok && !dryRun) this.close();
     },
   };
 }
