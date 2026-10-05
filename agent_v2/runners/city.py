@@ -2572,6 +2572,19 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
 
             # No donor city available — try buying from the public market
             if bool(inputs.get("auto_market_buy", True)):
+                # Never pay based on the snapshot alone: it may predate a delivery (N-84).
+                live_missing = self._live_missing_before_market(job=job, city=city, pending=pending, missing=missing)
+                if live_missing is not None:
+                    if not any(amount > 0 for amount in live_missing.values()):
+                        self.log(
+                            jid,
+                            "info",
+                            f"Estoque real de {pending['city_name']} ja cobre {pending['building_name']}; "
+                            "o snapshot estava desatualizado. Nenhuma compra feita; reavaliando.",
+                        )
+                        self._last_missing_skip_reason = None
+                        return MIN_RECHECK_SECONDS, False, {"resource_wait_reason": "live_stock_covers"}, False
+                    missing = live_missing
                 try:
                     ga_id = job.get("game_account_id")
                     if ga_id:
@@ -2715,6 +2728,67 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
     # Resource index mapping matching game_client constants
     _RESOURCE_KEY_TO_IDX = {"wood": 0, "wine": 1, "marble": 2, "glas": 3, "sulfur": 4}
 
+    def _live_missing_before_market(
+        self,
+        *,
+        job: dict[str, Any],
+        city: dict[str, Any],
+        pending: dict[str, Any],
+        missing: dict[str, int],
+    ) -> dict[str, int] | None:
+        """What is really missing, from the city's stock in the game (None = could not read).
+
+        `missing` came from the snapshot stock; the difference between the snapshot
+        and the game is applied to it. The real stock also goes to the snapshot, so
+        the next cycle and the panels stop working with the old numbers.
+        """
+        jid = job["job_id"]
+        ga_id = job.get("game_account_id")
+        city_id = _to_int(city.get("id"), 0)
+        if not ga_id or city_id <= 0:
+            return None
+        try:
+            creds = self.resolve_credentials(job["account_id"], {}, game_account_id=ga_id)
+            if not creds:
+                return None
+            client = self.get_or_login_game_client(jid, job["account_id"], ga_id, creds)
+            live_stock = _live_city_stock_from_game(client, city_id)
+            self.save_game_client(ga_id, client)
+        except Exception as exc:
+            self.log(jid, "warn", f"Nao foi possivel conferir o estoque real de {pending['city_name']} antes do mercado: {exc}")
+            return None
+        if not live_stock:
+            return None
+
+        snapshot_stock = _city_stock(city)
+        live_missing = {
+            key: max(0, _to_int(missing.get(key), 0) + _to_int(snapshot_stock.get(key), 0) - _to_int(live_stock.get(key), 0))
+            if _to_int(missing.get(key), 0) > 0 else 0
+            for key in RESOURCE_KEYS
+        }
+        changed = [
+            f"{key}: snapshot {_to_int(snapshot_stock.get(key), 0)} -> jogo {_to_int(live_stock.get(key), 0)}"
+            for key in RESOURCE_KEYS
+            if _to_int(missing.get(key), 0) > 0 and _to_int(snapshot_stock.get(key), 0) != _to_int(live_stock.get(key), 0)
+        ]
+        if changed:
+            self.log(jid, "info", f"Estoque real de {pending['city_name']} difere do snapshot | {' | '.join(changed)}")
+        try:
+            self.hub.patch_snapshot_resources(
+                str(ga_id),
+                city_id,
+                resources={
+                    "wood": _to_int(live_stock.get("wood"), 0),
+                    "wine": _to_int(live_stock.get("wine"), 0),
+                    "marble": _to_int(live_stock.get("marble"), 0),
+                    "crystal": _to_int(live_stock.get("glas", live_stock.get("crystal")), 0),
+                    "sulfur": _to_int(live_stock.get("sulfur"), 0),
+                },
+            )
+        except Exception as exc:
+            self.log(jid, "warn", f"Nao foi possivel gravar o estoque real de {pending['city_name']} no snapshot: {exc}")
+        return live_missing
+
     def _try_cover_with_internal_market(
         self,
         *,
@@ -2750,8 +2824,10 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
 
             extra = costs_after.get(resource_key, 0)
             buy_amount = needed + extra if extra > 0 else math.ceil(needed * 1.20)
-            if extra > 0:
-                buy_amount = max(buy_amount, INTERNAL_MARKET_MIN_BATCH)
+            # one minimum for every order: a purchase of a few dozen units costs a
+            # whole market round trip for nothing (N-84)
+            min_batch = max(1, self.get_system_setting_int("internal_market_min_batch", INTERNAL_MARKET_MIN_BATCH))
+            buy_amount = max(buy_amount, min_batch)
             try:
                 order = self.hub.create_market_order(
                     game_account_id=ga_id,
@@ -2773,6 +2849,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 self.log(jid, "warn", f"Nao foi possivel criar ordem interna para {resource_key}: {exc}")
                 continue
 
+            granted = _to_int((order or {}).get("amount"), buy_amount) if order and order.get("ok") else 0
             if not order or not order.get("ok"):
                 error_code = str((order or {}).get("error") or "").strip()
                 detail = str((order or {}).get("detail") or "").strip()
@@ -2802,7 +2879,9 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 jid,
                 "info",
                 f"Mercado interno: ordem {order.get('order_id')} criada para {resource_key} "
-                f"x{buy_amount} em {pending['city_name']} (faltando {needed})",
+                f"x{granted} em {pending['city_name']} (faltando {needed}"
+                + (f"; pedido {buy_amount}, o vendedor so comporta {granted} agora" if granted < buy_amount else "")
+                + ")",
             )
 
         if not created_any:

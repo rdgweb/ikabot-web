@@ -263,6 +263,9 @@ class MarketOrderCreateView(APIView):
                 "status": order.status,
                 "buyer_city_id": order.buyer_city_id,
                 "target_city_id": order.target_city_id,
+                # may be less than what was asked: what the chosen seller can deliver now
+                "amount": order.amount,
+                "requested_amount": int(amount),
             },
             status=status.HTTP_201_CREATED,
         )

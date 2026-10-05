@@ -197,7 +197,30 @@ class InternalMarketSellRunner(BaseRunner):
                 target_field = "resource" if resource_idx == 0 else f"tradegood{resource_idx}"
                 current_total = int(current_offer_state.get(target_field, 0) or 0)
                 expected_current_total = int(inputs.get("expected_current_total", -1))
-                if expected_current_total >= 0 and current_total != expected_current_total:
+                if "cleanup_leftover_amount" in inputs:
+                    # Take only this order's leftover out of the live total and never
+                    # go below what other open internal orders still need here (N-84).
+                    leftover = max(0, int(inputs.get("cleanup_leftover_amount") or 0))
+                    keep_total = max(0, int(inputs.get("cleanup_keep_total") or 0))
+                    new_total = max(keep_total, current_total - leftover)
+                    if new_total >= current_total:
+                        self.log(
+                            jid,
+                            "info",
+                            f"[Order {order_id}] Cleanup sem nada a retirar: em oferta {current_total}, "
+                            f"sobra desta ordem {leftover}, reservado para outras ordens {keep_total}.",
+                        )
+                        self.save_game_client(ga_id or aid, client)
+                        return RunnerResult(success=True, data={"cleanup_skipped": "nothing_to_remove", "current_total": current_total})
+                    self.log(
+                        jid,
+                        "info",
+                        f"[Order {order_id}] Cleanup: em oferta {current_total} -> {new_total} "
+                        f"(retirando {current_total - new_total} que sobrou desta ordem).",
+                    )
+                    amount = new_total
+                    offer_mode = "replace" if new_total > 0 else "clear"
+                elif expected_current_total >= 0 and current_total != expected_current_total:
                     self.log(
                         jid,
                         "warn",
@@ -727,20 +750,45 @@ class InternalMarketBuyRunner(BaseRunner):
         total_amount: int,
     ) -> dict[str, Any]:
         retry_inputs = dict(inputs)
-        for key in (
-            "purchase_monitor_mode",
-            "purchase_started_at",
-            "purchase_expected_outbound_seconds",
-            "purchase_expected_total_seconds",
-            "purchase_baseline_amount",
-            "order_remaining_after_leg",
-        ):
-            retry_inputs.pop(key, None)
+        # The hub MERGES reschedule inputs into the job's inputs, so a key that is
+        # only removed here survives. The next leg then started in "await_arrival"
+        # mode, never bought the rest and timed out (N-84). Overwrite them instead.
+        retry_inputs.update({
+            "purchase_monitor_mode": "",
+            "purchase_started_at": 0,
+            "purchase_expected_outbound_seconds": 0,
+            "purchase_expected_total_seconds": 0,
+            "purchase_baseline_amount": 0,
+            "order_remaining_after_leg": 0,
+        })
         retry_inputs["amount"] = int(remaining_amount)
         retry_inputs["order_total_amount"] = int(total_amount)
         retry_inputs["order_completed_amount"] = int(completed_amount)
         retry_inputs["partial_purchase_retry_count"] = int(inputs.get("partial_purchase_retry_count", 0)) + 1
         return retry_inputs
+
+    def _patch_buyer_city_stock(self, *, jid: str, client, ga_id: str | None, buyer_city_id: int) -> None:
+        """Goods arrived: put the buyer city's real stock in the snapshot right away.
+
+        The construction plan decides what is missing from the snapshot; without
+        this it kept buying the same resource until the next Check Status (N-84).
+        """
+        if not ga_id:
+            return
+        try:
+            state = fetch_city_state(client, int(buyer_city_id))
+            available = state.available_resources or {}
+            resources = {
+                key: max(0, int(available.get(key, 0)))
+                for key in ("wood", "wine", "marble", "crystal", "sulfur")
+                if key in available
+            }
+            if not resources:
+                return
+            self.hub.patch_snapshot_resources(str(ga_id), int(buyer_city_id), resources=resources)
+            self.log(jid, "info", f"Estoque da cidade compradora atualizado no snapshot: {resources}")
+        except Exception as exc:
+            self.log(jid, "warn", f"Nao foi possivel atualizar o estoque da cidade compradora no snapshot: {exc}")
 
     def _finish_arrived_purchase_leg(
         self,
@@ -789,6 +837,8 @@ class InternalMarketBuyRunner(BaseRunner):
                 op_key=f"order:{order_id}:leg:{order_completed_amount}:buyer",
                 label="comprador",
             )
+        if not is_raise_gold_mode:
+            self._patch_buyer_city_stock(jid=jid, client=client, ga_id=ga_id, buyer_city_id=int(buyer_city_id))
         next_completed_amount = min(int(order_total_amount), int(order_completed_amount) + int(leg_amount))
         remaining_amount = max(0, int(order_total_amount) - next_completed_amount)
         if remaining_amount > 0:

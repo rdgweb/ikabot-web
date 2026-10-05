@@ -624,6 +624,7 @@ class ConstructionRunnerExecutionTests(unittest.TestCase):
         runner.resolve_credentials = lambda *_args, **_kwargs: None
         runner.get_or_login_game_client = lambda *_args, **_kwargs: None
         runner.save_game_client = lambda *_args, **_kwargs: None
+        runner.get_system_setting_int = lambda _key, default: default
         runner._estimate_local_wait_seconds = lambda *_args, **_kwargs: 0
         runner._spawn_transport_cover = lambda **_kwargs: False
 

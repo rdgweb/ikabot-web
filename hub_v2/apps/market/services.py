@@ -38,6 +38,8 @@ _IDX_TO_KEY = {0: "wood", 1: "wine", 2: "marble", 3: "crystal", 4: "sulfur"}
 _IDX_TO_RESOURCE_STR = {0: "resource", 1: "1", 2: "2", 3: "3", 4: "4"}
 _RESOURCE_IDX_TO_INPUT_KEY = {0: "wood", 1: "wine", 2: "marble", 3: "crystal", 4: "sulfur"}
 _MARKET_VISIBILITY_SAFETY_MARGIN = 1
+# Smallest amount worth an order when no seller can deliver everything that was asked.
+INTERNAL_MARKET_MIN_PARTIAL = 5_000
 _INTERVENTION_ACTIVE_STATUSES = ("pending", "approved", "sell_queued")
 
 
@@ -375,11 +377,16 @@ def _has_active_cleanup_job(order: InternalMarketOrder) -> bool:
     ).exists()
 
 
-def schedule_internal_offer_cleanup(order: InternalMarketOrder, *, note: str = "") -> Job | None:
+def schedule_internal_offer_cleanup(
+    order: InternalMarketOrder, *, note: str = "", delivered_amount: int = 0,
+) -> Job | None:
     """Schedule a safe live-checked cleanup for a bot-managed offer.
 
-    Branch Office offers are per city/resource totals. The agent will read the live
-    current offer total and only mutate it when it matches expected_current_total.
+    Branch Office offers are per city/resource totals. The agent reads the live
+    total and takes this order's leftover out of it (what was published and not
+    bought: amount - delivered_amount), never going below what other open
+    internal orders still need there. Demanding an exact expected total skipped
+    every cleanup of an order with a leg already delivered (N-84).
     """
     if order.seller_game_account is None or order.seller_city_id is None or order.seller_branchoffice_pos is None:
         return None
@@ -394,6 +401,12 @@ def schedule_internal_offer_cleanup(order: InternalMarketOrder, *, note: str = "
         max(0, int(item.amount or 0))
         for item in published_orders
         if item.pk != order.pk
+    )
+    leftover_amount = max(0, int(order.amount or 0) - max(0, int(delivered_amount or 0)))
+    keep_total = sum(
+        max(0, int(item.amount or 0))
+        for item in published_orders
+        if item.pk != order.pk and item.status in ("matched", "jobs_created", "jobs_running")
     )
     offer_mode = "replace" if remaining_total > 0 else "clear"
     seller_snap = _load_snapshot(order.seller_game_account)
@@ -415,6 +428,8 @@ def schedule_internal_offer_cleanup(order: InternalMarketOrder, *, note: str = "
             "cleanup_only": True,
             "cleanup_for_order_id": str(order.pk),
             "expected_current_total": int(expected_total),
+            "cleanup_leftover_amount": int(leftover_amount),
+            "cleanup_keep_total": int(keep_total),
             "internal_order_id": str(order.pk),
         },
         status="queued",
@@ -423,7 +438,8 @@ def schedule_internal_offer_cleanup(order: InternalMarketOrder, *, note: str = "
     )
     order.result_note = _result_note(
         order.result_note,
-        f"cleanup_job_id={cleanup_job.pk} remaining_total={remaining_total}{(' | ' + note) if note else ''}",
+f"cleanup_job_id={cleanup_job.pk} entregue={max(0, int(delivered_amount or 0))} sobra={leftover_amount}"
+        f"{(' | ' + note) if note else ''}",
     )
     order.save(update_fields=["result_note", "updated_at"])
     logger.info("cleanup_job %s created for internal order %s", cleanup_job.pk, order.pk)
@@ -587,11 +603,14 @@ def reconcile_internal_order_for_job(job: Job, *, terminal_status: str, note: st
                 return order
             complete_internal_order(order)
         elif terminal_status == "error":
+            # legs already delivered stay delivered; only the rest is still on offer
+            delivered = max(0, int(inputs.get("order_completed_amount") or 0))
             _set_order_terminal_state(order, status="failed", note=_result_note("Falha na compra interna.", note_text))
-            schedule_internal_offer_cleanup(order, note="buy_failed")
+            schedule_internal_offer_cleanup(order, note="buy_failed", delivered_amount=delivered)
         elif terminal_status == "cancelled":
+            delivered = max(0, int(inputs.get("order_completed_amount") or 0))
             _set_order_terminal_state(order, status="canceled", note=_result_note("Compra interna cancelada.", note_text))
-            schedule_internal_offer_cleanup(order, note="buy_cancelled")
+            schedule_internal_offer_cleanup(order, note="buy_cancelled", delivered_amount=delivered)
         return order
 
     if job.pk == order.redistribution_job_id:
@@ -673,10 +692,11 @@ def create_internal_order_result(
     seller_city = None
     seller_bo_pos = -1
     visibility_blocked = False
-    for candidate_seller_ga, candidate_seller_city, candidate_seller_bo_pos in iter_eligible_sellers(
+    requested_amount = int(amount)
+    for candidate_seller_ga, candidate_seller_city, candidate_seller_bo_pos, candidate_amount in iter_seller_candidates(
         buyer_ga,
         resource_idx,
-        amount,
+        requested_amount,
     ):
         candidate_buyer_city_id, candidate_buyer_bo_pos = find_buyer_branchoffice(
             buyer_ga,
@@ -692,6 +712,8 @@ def create_internal_order_result(
         seller_bo_pos = candidate_seller_bo_pos
         buyer_city_id = candidate_buyer_city_id
         buyer_bo_pos = candidate_buyer_bo_pos
+        # what this seller can deliver now; the buyer asks again for the rest
+        amount = min(requested_amount, int(candidate_amount))
         break
 
     if seller_ga is None or seller_city is None:
@@ -731,7 +753,11 @@ def create_internal_order_result(
         status="matched",
         source_action_code=source_action_code,
         source_reason=source_reason,
-        reason_detail=reason_detail,
+        reason_detail=(
+            reason_detail
+            if amount >= requested_amount
+            else f"{reason_detail} | pedido {requested_amount}, atendido {amount} (limite do vendedor)".strip(" |")
+        ),
         production_eta_seconds=production_eta_seconds,
         missing_resource_keys=missing_resource_keys,
     )
@@ -1004,6 +1030,50 @@ def iter_eligible_sellers(
                 matches.append((seller_ga, city, bo_pos))
 
     return matches
+
+
+def iter_seller_candidates(
+    buyer_ga: GameAccount,
+    resource_idx: int,
+    amount: int,
+    *,
+    min_partial: int = INTERNAL_MARKET_MIN_PARTIAL,
+) -> list[tuple[GameAccount, dict, int, int]]:
+    """Seller cities with how much each can really deliver now: (ga, city, bo_pos, sellable).
+
+    sellable = stock - construction reservations - the seller's minimum stock, capped
+    by the free capacity of its market. Cities that cover the whole amount come first
+    (random order, to spread the load); then the ones that cover only part of it,
+    biggest first -- a buyer that needs 100k while the markets hold 30k gets 30k
+    now instead of nothing (N-84).
+    """
+    full: list[tuple[GameAccount, dict, int, int]] = []
+    partial: list[tuple[GameAccount, dict, int, int]] = []
+    candidates = (
+        GameAccount.objects.filter(open_for_market=True, active=True, blocked=False)
+        .exclude(account__node=buyer_ga.node)
+        .select_related("account", "account__node")
+        .order_by("?")
+    )
+    for seller_ga in candidates:
+        snap = AccountSnapshot.objects.filter(game_account=seller_ga).first()
+        if snap is None:
+            continue
+        min_stock = int(getattr(seller_ga, "market_min_stock", 0) or 0)
+        for city in _cities_from_snapshot(snap):
+            bo_pos = _find_branchoffice(city)
+            city_id = city.get("id")
+            if bo_pos < 0 or city_id is None:
+                continue
+            free_stock = _city_stock(city, resource_idx) - _active_reservation(seller_ga, int(city_id), resource_idx) - min_stock
+            free_capacity = _seller_market_free_capacity(city)
+            sellable = free_stock if free_capacity is None else min(free_stock, free_capacity)
+            if sellable >= amount:
+                full.append((seller_ga, city, bo_pos, int(amount)))
+            elif sellable >= max(1, int(min_partial)):
+                partial.append((seller_ga, city, bo_pos, int(sellable)))
+    partial.sort(key=lambda item: -item[3])
+    return full + partial
 
 
 def find_eligible_seller(
