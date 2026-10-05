@@ -1172,6 +1172,9 @@ def create_buy_job(order: InternalMarketOrder) -> Job | None:
         logger.error("Order %s has no buyer_game_account; cannot create buy_job", order.pk)
         return None
 
+    buyer_city = _find_city_in_snapshot(_load_snapshot(buyer_ga), order.buyer_city_id)
+    seller_city = _find_city_in_snapshot(_load_snapshot(order.seller_game_account), order.seller_city_id)
+    distance = _city_axis_distance(buyer_city, seller_city)
     buy_job = create_job_with_workflow(
         account=buyer_ga.account,
         game_account=buyer_ga,
@@ -1180,10 +1183,13 @@ def create_buy_job(order: InternalMarketOrder) -> Job | None:
         source_job=order.sell_job,
         inputs={
             "buyer_city_id": order.buyer_city_id,
-            "buyer_city_name": _city_name(None, order.buyer_city_id),
+            "buyer_city_name": _city_name(buyer_city, order.buyer_city_id),
             "buyer_branchoffice_pos": order.buyer_branchoffice_pos,
             "seller_city_id": order.seller_city_id,
-            "seller_city_name": _city_name(None, order.seller_city_id),
+            "seller_city_name": _city_name(seller_city, order.seller_city_id),
+            # Search range that is just enough to reach the seller (one step of margin),
+            # used only when foreign offers hide it behind the first page (N-84).
+            "market_range": max(1, int(distance) + 1) if distance is not None else 0,
             "seller_branchoffice_pos": order.seller_branchoffice_pos,
             "seller_game_account_id": str(order.seller_game_account_id or ""),
             "resource_idx": order.resource_idx,

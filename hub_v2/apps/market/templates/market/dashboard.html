@@ -16,9 +16,14 @@
       </h1>
       <p class="mt-0.5 text-sm text-muted">Ordens, participantes e cadeia de compra/venda entre contas.</p>
     </div>
-    <button type="button" @click="open()" class="btn btn-primary btn-sm flex-shrink-0">
-      <i class="bi bi-plus-lg"></i> Nova ordem
-    </button>
+    <div class="flex flex-shrink-0 items-center gap-2">
+      <a href="{% url 'market:public-market' %}" class="btn btn-secondary btn-sm" title="O que as varreduras viram em oferta no mercado geral">
+        <i class="bi bi-binoculars"></i> Mercado geral
+      </a>
+      <button type="button" @click="open()" class="btn btn-primary btn-sm">
+        <i class="bi bi-plus-lg"></i> Nova ordem
+      </button>
+    </div>
   </div>
 
   <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">

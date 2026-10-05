@@ -885,6 +885,14 @@ class HubClient:
         resp = self._get("/api/agent/market/bm-offers/prices")
         return resp.get("prices", [])
 
+    def save_public_market_scan(self, *, game_account_id: str, job_id: str, scans: list[dict]) -> dict:
+        """POST /api/agent/market/public-scan/ — replace what each scanned market sees (N-84)."""
+        return self._post("/api/agent/market/public-scan", {
+            "game_account_id": game_account_id,
+            "job_id": job_id,
+            "scans": scans,
+        })
+
     def save_bm_available_offers(
         self,
         *,

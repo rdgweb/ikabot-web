@@ -323,6 +323,8 @@ class InternalMarketBuyRunner(BaseRunner):
         seller_game_account_id = str(inputs.get("seller_game_account_id") or "").strip()
         order_total_amount = int(inputs.get("order_total_amount") or amount)
         order_completed_amount = int(inputs.get("order_completed_amount") or 0)
+        # range that reaches the seller (hub: city distance + 1); 0 = unknown, only the maximum is tried
+        market_range = int(inputs.get("market_range") or 0) or None
 
         if not all([
             buyer_city_id, buyer_bo is not None,
@@ -436,6 +438,7 @@ class InternalMarketBuyRunner(BaseRunner):
                 seller_city_id=int(seller_city_id),
                 resource_idx=resource_idx,
                 amount=amount,
+                search_range=market_range,
             )
             purchase_amount = self._available_purchase_amount(amount=amount, preview=preview)
             if purchase_amount <= 0:
@@ -463,6 +466,7 @@ class InternalMarketBuyRunner(BaseRunner):
                     seller_city_id=int(seller_city_id),
                     resource_idx=resource_idx,
                     amount=purchase_amount,
+                    search_range=market_range,
                 )
             # Guard de ouro: nao deixa a compra automatica gastar alem do saldo
             # disponivel (menos o minimo configurado da conta). Ajusta a
@@ -514,6 +518,7 @@ class InternalMarketBuyRunner(BaseRunner):
                 seller_branchoffice_pos=int(seller_bo),
                 resource_idx=resource_idx,
                 amount=purchase_amount,
+                search_range=market_range,
             )
             self.save_game_client(ga_id or aid, client)
             self.log(
@@ -1007,11 +1012,14 @@ class InternalMarketBuyRunner(BaseRunner):
         seller_city_id: int,
         resource_idx: int,
         amount: int,
+        search_range: int | None = None,
     ) -> dict[str, int]:
         resource_str = "resource" if resource_idx == 0 else str(resource_idx)
         action = BuyAction(client)
-        branch_html = action._get_branch_office_html(buyer_city_id, buyer_branchoffice_pos, resource_str)
-        offer = action._find_offer_in_listing(branch_html, seller_city_id, resource_str)
+        offer = action.find_offer(
+            buyer_city_id, buyer_branchoffice_pos, seller_city_id, resource_str, search_range=search_range,
+        )
+        action.restore_max_range(buyer_city_id, buyer_branchoffice_pos, resource_str)
         if offer is None:
             raise RuntimeError(f"Offer preview not found for seller_city_id={seller_city_id}")
         take_html = action._get_take_offer_html(

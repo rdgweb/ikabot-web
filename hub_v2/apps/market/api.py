@@ -546,6 +546,29 @@ class BlackMarketAvailableOfferSaveView(APIView):
         return Response({"ok": True, "created": created}, status=status.HTTP_201_CREATED)
 
 
+class PublicMarketScanSaveView(APIView):
+    """POST /api/agent/market/public-scan/ — replace what each scanned market sees (runner 810)."""
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request):
+        from .public_market import save_public_market_scans
+
+        ga_id = request.data.get("game_account_id")
+        scans = request.data.get("scans")
+        if not ga_id or not isinstance(scans, list):
+            return Response({"error": "game_account_id and scans required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            ga = GameAccount.objects.get(pk=ga_id)
+        except (GameAccount.DoesNotExist, ValueError):
+            return Response({"error": "GameAccount not found"}, status=status.HTTP_404_NOT_FOUND)
+        job_id = request.data.get("job_id")
+        job = Job.objects.filter(pk=job_id).first() if job_id else None
+        counters = save_public_market_scans(ga, scans, job=job)
+        return Response({"ok": True, **counters}, status=status.HTTP_201_CREATED)
+
+
 class ConstructionMarketInterventionRequestView(APIView):
     authentication_classes = [AgentTokenAuthentication]
     permission_classes = [IsAgent]

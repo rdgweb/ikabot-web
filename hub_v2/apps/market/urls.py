@@ -13,12 +13,14 @@ from .views import (
     MarketOrderDetailView,
     MarketOrdersPartialView,
     MarketParticipantsPartialView,
+    PublicMarketView,
 )
 
 app_name = "market"
 
 urlpatterns = [
     path("", MarketDashboardView.as_view(), name="dashboard"),
+    path("general/", PublicMarketView.as_view(), name="public-market"),
     path("black-market/", BlackMarketDashboardView.as_view(), name="black-market"),
     path("black-market/offers/<uuid:pk>/archive/", BlackMarketOfferArchiveView.as_view(), name="bm-offer-archive"),
     path("black-market/offers/<uuid:pk>/close/", BlackMarketOfferCloseView.as_view(), name="bm-offer-close"),

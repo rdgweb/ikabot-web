@@ -291,6 +291,13 @@ class CreateOfferAction(BaseAction):
         return normalized
 
 
+# Above any Branch Office limit (level / 2): the game clamps it to the building's
+# maximum and saves that, which is what keeps the saved range following the level.
+MAX_SEARCH_RANGE = 24
+OFFERS_PER_PAGE = 10
+MAX_OFFER_PAGES = 6
+
+
 class BuyAction(BaseAction):
     """Buy a resource from another player's Branch Office offer.
 
@@ -334,11 +341,12 @@ class BuyAction(BaseAction):
         )
 
         # Step 1: Scrape buyer's Branch Office listing to find the seller's offer
-        branch_html = self._get_branch_office_html(
-            buyer_city_id, buyer_branchoffice_pos, resource_str
+        offer = self.find_offer(
+            buyer_city_id, buyer_branchoffice_pos, seller_city_id, resource_str,
+            search_range=kwargs.get("search_range"),
         )
-        offer = self._find_offer_in_listing(branch_html, seller_city_id, resource_str)
         if offer is None:
+            self.restore_max_range(buyer_city_id, buyer_branchoffice_pos, resource_str)
             raise ActionError(
                 f"Offer from seller city {seller_city_id} (res={resource_str}) "
                 f"not found in Branch Office listing",
@@ -415,14 +423,75 @@ class BuyAction(BaseAction):
         }
         params.update(prices)
 
-        return self._ajax_request(ActionID.MARKETPLACE_BUY, params)
+        try:
+            return self._ajax_request(ActionID.MARKETPLACE_BUY, params)
+        finally:
+            self.restore_max_range(buyer_city_id, buyer_branchoffice_pos, resource_str)
 
     # ── HTML scraping helpers ───────────────────────────────────────────────
 
+    def find_offer(
+        self,
+        buyer_city_id: int,
+        buyer_branchoffice_pos: int,
+        seller_city_id: int,
+        resource_str: str,
+        *,
+        search_range: int | None = None,
+    ) -> dict | None:
+        """The seller city's offer in the buyer's listing, looking past the first page.
+
+        1. maximum range, first page: the usual case (internal offers are the
+           cheapest) and it leaves the saved range at the building's maximum;
+        2. the range that is just enough to reach the seller, page by page: fewer
+           foreign offers in the way;
+        3. the remaining pages of the maximum range.
+        Call restore_max_range() when done so a narrowed range/page is not left saved.
+        """
+        try:
+            narrow = int(search_range or 0)
+        except (TypeError, ValueError):
+            narrow = 0
+        searches: list[tuple[int, int]] = [(MAX_SEARCH_RANGE, 0)]
+        if 0 < narrow < MAX_SEARCH_RANGE:
+            searches += [(narrow, page) for page in range(MAX_OFFER_PAGES)]
+        searches += [(MAX_SEARCH_RANGE, page) for page in range(1, MAX_OFFER_PAGES)]
+
+        exhausted: set[int] = set()
+        for current_range, page in searches:
+            if current_range in exhausted:
+                continue
+            html = self._get_branch_office_html(
+                buyer_city_id, buyer_branchoffice_pos, resource_str,
+                search_range=current_range, offset=page * OFFERS_PER_PAGE,
+            )
+            offer = self._find_offer_in_listing(html, seller_city_id, resource_str)
+            if offer is not None:
+                if page or current_range != MAX_SEARCH_RANGE:
+                    logger.info(
+                        "Offer of city %s found with range=%s on page %s",
+                        seller_city_id, current_range, page + 1,
+                    )
+                return offer
+            if f"offset={(page + 1) * OFFERS_PER_PAGE}" not in html:
+                exhausted.add(current_range)  # no next page for this range
+        return None
+
+    def restore_max_range(self, city_id: int, bo_pos: int, resource_str: str) -> None:
+        """Leave the saved search at the maximum range, first page (no-op if it already is)."""
+        if getattr(self, "_last_search", (MAX_SEARCH_RANGE, 0)) == (MAX_SEARCH_RANGE, 0):
+            return
+        try:
+            self._get_branch_office_html(city_id, bo_pos, resource_str)
+        except Exception as exc:  # cosmetic: never fail a purchase over it
+            logger.warning("Could not restore the market range of city %s: %s", city_id, exc)
+
     def _get_branch_office_html(
-        self, city_id: int, bo_pos: int, resource_str: str
+        self, city_id: int, bo_pos: int, resource_str: str,
+        search_range: int = MAX_SEARCH_RANGE, offset: int = 0,
     ) -> str:
         """POST to the Branch Office AJAX endpoint; return the HTML fragment."""
+        self._last_search = (int(search_range), int(offset))
         params = {
             "view": "branchOffice",
             "cityId": city_id,
@@ -431,7 +500,9 @@ class BuyAction(BaseAction):
             "activeTab": "bargain",
             "type": "444",
             "searchResource": resource_str,
-            "range": 24,
+            "range": int(search_range),
+            # always sent: the game remembers the last page and would answer page 2
+            "offset": int(offset),
             "backgroundView": "city",
             "templateView": "branchOffice",
             "currentTab": "bargain",
@@ -586,7 +657,8 @@ class GetOffersAction(BaseAction):
             "activeTab": "bargain",
             "type": "444",
             "searchResource": resource_str,
-            "range": 24,
+            "range": MAX_SEARCH_RANGE,
+            "offset": 0,  # the game remembers the last page looked at
             "backgroundView": "city",
             "templateView": "branchOffice",
             "currentTab": "bargain",

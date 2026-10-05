@@ -17,6 +17,7 @@ from .services import (
     INTERNAL_MARKET_MIN_PARTIAL,
     create_internal_order_result,
     iter_seller_candidates,
+    create_buy_job,
     reconcile_internal_order_for_job,
 )
 
@@ -136,6 +137,29 @@ class PartialFillTests(TestCase):
         self.assertTrue(body["ok"])
         self.assertEqual((body["amount"], body["requested_amount"]), (30_000, 100_000))
 
+
+    def test_buy_job_carries_the_range_that_reaches_the_seller(self):
+        # buyer city at [10:10]; seller cities one and four steps away
+        self._seller("near", [_seller_city(303, 50_000, x=11, y=11)])
+        near = create_buy_job(self._order(10_000).order)
+        self.assertEqual(json.loads(near.inputs_json)["market_range"], 2)          # distance 1 + one step of margin
+        self.assertEqual(json.loads(near.inputs_json)["buyer_city_name"], "Capital")
+        self.assertEqual(json.loads(near.inputs_json)["seller_city_name"], "Seller 303")
+
+        InternalMarketOrder.objects.all().delete()
+        GameAccount.objects.filter(name="near").update(open_for_market=False)
+        self._seller("far", [_seller_city(404, 50_000, x=14, y=9)])
+        far = create_buy_job(self._order(10_000).order)
+        self.assertEqual(json.loads(far.inputs_json)["market_range"], 5)
+
+    def test_unknown_coordinates_leave_the_range_to_the_agent(self):
+        city = _seller_city(303, 50_000)
+        city.pop("x"); city.pop("y")
+        self._seller("nocoords", [city])
+
+        job = create_buy_job(self._order(10_000).order)
+
+        self.assertEqual(json.loads(job.inputs_json)["market_range"], 0)
 
     def _failed_buy(self, order, *, delivered):
         Job.objects.filter(pk=order.sell_job_id).update(status="finished")

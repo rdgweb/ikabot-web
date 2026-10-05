@@ -1,0 +1,163 @@
+{% extends base_template|default:"base.html" %}
+{% load static hub_tags humanize %}
+
+{% block title %}Mercado geral{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'market:dashboard' %}" class="text-muted">Mercado Interno</a>
+  <span class="mx-1">/</span> <span class="text-ink">Mercado geral</span>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <div class="flex items-center justify-between gap-4">
+    <div>
+      <h1 class="text-xl font-bold text-ink flex items-center gap-2">
+        <i class="bi bi-binoculars text-sea"></i> Mercado geral
+      </h1>
+      <p class="mt-0.5 text-sm text-muted">O que estava em oferta ao alcance dos mercados das contas na ultima varredura (acao "Varrer Mercado"). So leitura: nada e comprado ou vendido por aqui.</p>
+    </div>
+    <a href="{% url 'market:dashboard' %}" class="btn btn-secondary btn-sm flex-shrink-0"><i class="bi bi-shop"></i> Mercado Interno</a>
+  </div>
+
+  {# ── resumo por recurso ── #}
+  <div class="grid gap-4" style="grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));">
+    {% for item in summary %}
+    <a href="?resource={{ item.idx }}&kind={{ selected_kind }}{% if hide_internal %}&hide_internal=1{% endif %}"
+       class="rounded-2xl border bg-paper px-4 py-4 shadow-sm"
+       style="border-color: {% if selected_resource == item.idx %}var(--ik-sea){% else %}var(--ik-line){% endif %};">
+      <div class="flex items-center gap-2 text-[11px] uppercase text-muted" style="letter-spacing: 0.06em;">
+        <img src="{% static item.idx|resource_icon %}" alt="" class="inline w-3.5 h-3.5"> {{ item.label }}
+      </div>
+      <div class="mt-2 text-2xl font-bold text-ink">
+        {% if item.best_price %}{{ item.best_price }} <span class="text-xs font-normal text-muted">ouro</span>{% else %}<span class="text-sm font-normal text-muted">sem oferta externa</span>{% endif %}
+      </div>
+      <div class="mt-1 text-[11px] text-muted">
+        {% if selected_kind == "sell" %}menor preco de fora{% else %}maior preco de fora{% endif %} &middot;
+        {{ item.external_count }} de fora ({{ item.external_amount|intcomma }}) &middot; {{ item.count }} no total
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+  {# ── filtros ── #}
+  <div class="flex flex-wrap items-center gap-2 text-xs">
+    <span class="text-muted">Mostrar:</span>
+    <a href="?kind=sell{% if selected_resource != None %}&resource={{ selected_resource }}{% endif %}{% if hide_internal %}&hide_internal=1{% endif %}"
+       class="btn btn-sm {% if selected_kind == 'sell' %}btn-primary{% else %}btn-secondary{% endif %}">Quem esta vendendo</a>
+    <a href="?kind=buy{% if selected_resource != None %}&resource={{ selected_resource }}{% endif %}{% if hide_internal %}&hide_internal=1{% endif %}"
+       class="btn btn-sm {% if selected_kind == 'buy' %}btn-primary{% else %}btn-secondary{% endif %}">Quem quer comprar</a>
+    <a href="?kind={{ selected_kind }}{% if selected_resource != None %}&resource={{ selected_resource }}{% endif %}{% if not hide_internal %}&hide_internal=1{% endif %}"
+       class="btn btn-sm {% if hide_internal %}btn-primary{% else %}btn-secondary{% endif %}">
+      <i class="bi {% if hide_internal %}bi-check-square{% else %}bi-square{% endif %}"></i> Esconder ofertas das minhas contas</a>
+    {% if selected_resource != None %}
+    <a href="?kind={{ selected_kind }}{% if hide_internal %}&hide_internal=1{% endif %}" class="btn btn-sm btn-secondary"><i class="bi bi-x-lg"></i> Todos os recursos</a>
+    {% endif %}
+  </div>
+
+  {# ── ofertas ── #}
+  <div class="rounded-2xl border bg-paper shadow-sm" style="border-color: var(--ik-line);">
+    <div class="flex items-center justify-between px-4 py-4" style="border-bottom: 1px solid var(--ik-line);">
+      <h3 class="text-sm font-semibold text-ink flex items-center gap-2">
+        <i class="bi bi-list-ul text-sea"></i>
+        {% if selected_kind == "sell" %}Ofertas de venda{% else %}Pedidos de compra{% endif %}
+        <span class="badge badge-secondary">{{ offers|length }}</span>
+      </h3>
+      <span class="text-xs text-muted">Da mais {% if selected_kind == "sell" %}barata{% else %}cara{% endif %} para a mais {% if selected_kind == "sell" %}cara{% else %}barata{% endif %}, por recurso</span>
+    </div>
+    {% if offers %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--ik-line);">
+            <th class="text-left py-2.5 px-3 text-muted font-semibold">Recurso</th>
+            <th class="text-left py-2.5 px-3 text-muted font-semibold">Cidade</th>
+            <th class="text-left py-2.5 px-3 text-muted font-semibold">Jogador</th>
+            <th class="text-right py-2.5 px-3 text-muted font-semibold">Quantidade</th>
+            <th class="text-right py-2.5 px-3 text-muted font-semibold whitespace-nowrap">Preco / un.</th>
+            <th class="text-right py-2.5 px-3 text-muted font-semibold">Distancia</th>
+            <th class="text-left py-2.5 px-3 text-muted font-semibold whitespace-nowrap">Visto de</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for offer in offers %}
+          <tr style="border-bottom: 1px solid var(--ik-line);{% if offer.is_internal %} background: rgba(79,134,185,0.06);{% endif %}">
+            <td class="py-2 px-3 whitespace-nowrap"><img src="{% static offer.resource_idx|resource_icon %}" alt="" class="inline w-3.5 h-3.5"> {{ offer.get_resource_idx_display }}</td>
+            <td class="py-2 px-3 text-ink font-semibold">{{ offer.city_name }}</td>
+            <td class="py-2 px-3">
+              {{ offer.player_name }}
+              {% if offer.is_internal %}<span class="badge badge-secondary" title="Cidade de uma conta gerenciada por este hub">minha conta</span>{% endif %}
+            </td>
+            <td class="py-2 px-3 text-right font-mono">{{ offer.amount|intcomma }}</td>
+            <td class="py-2 px-3 text-right font-mono font-semibold text-ink">{{ offer.unit_price }}</td>
+            <td class="py-2 px-3 text-right font-mono">{{ offer.distance }}</td>
+            <td class="py-2 px-3 text-muted whitespace-nowrap" title="{{ offer.scan.scanned_at|date:'d/m/Y H:i' }}">{{ offer.scan.game_account.name }} &middot; {{ offer.scan.city_name }} &middot; {{ offer.scan.scanned_at|timesince }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="p-8 text-center text-sm text-muted">
+      <i class="bi bi-binoculars mb-2 block text-2xl"></i>
+      Nenhuma oferta para mostrar. Rode a acao <strong>Varrer Mercado</strong> numa conta (botoes abaixo ou em Acoes do Jogo).
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── varreduras e alcance dos mercados ── #}
+  <div class="rounded-2xl border bg-paper shadow-sm" style="border-color: var(--ik-line);">
+    <div class="flex items-center justify-between px-4 py-4" style="border-bottom: 1px solid var(--ik-line);">
+      <h3 class="text-sm font-semibold text-ink flex items-center gap-2"><i class="bi bi-broadcast text-sea"></i> Mercados e alcance</h3>
+      <span class="text-xs text-muted">O jogo nao aumenta o alcance sozinho quando o mercado evolui; a varredura ajusta para o maximo</span>
+    </div>
+    {% if scans %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--ik-line);">
+            <th class="text-left py-2.5 px-3 text-muted font-semibold">Conta</th>
+            <th class="text-left py-2.5 px-3 text-muted font-semibold">Cidade</th>
+            <th class="text-right py-2.5 px-3 text-muted font-semibold whitespace-nowrap">Nivel do mercado</th>
+            <th class="text-right py-2.5 px-3 text-muted font-semibold whitespace-nowrap">Alcance maximo</th>
+            <th class="text-left py-2.5 px-3 text-muted font-semibold whitespace-nowrap">Alcance salvo antes</th>
+            <th class="text-right py-2.5 px-3 text-muted font-semibold">Ofertas vistas</th>
+            <th class="text-left py-2.5 px-3 text-muted font-semibold">Quando</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for scan in scans %}
+          <tr style="border-bottom: 1px solid var(--ik-line);">
+            <td class="py-2 px-3 text-ink font-semibold">{{ scan.game_account.name }}</td>
+            <td class="py-2 px-3">{{ scan.city_name }}</td>
+            <td class="py-2 px-3 text-right font-mono">{{ scan.bo_level }}</td>
+            <td class="py-2 px-3 text-right font-mono">{{ scan.max_range|default:"-" }}</td>
+            <td class="py-2 px-3">
+              {% if scan.range_before and scan.max_range and scan.range_before != scan.max_range %}
+              <span style="color: var(--ik-bad);">{{ scan.range_before }}</span> <i class="bi bi-arrow-right"></i> <span style="color: var(--ik-good);">{{ scan.max_range }}</span>
+              {% elif scan.range_before %}{{ scan.range_before }} <span class="text-muted">(ja no maximo)</span>{% else %}-{% endif %}
+            </td>
+            <td class="py-2 px-3 text-right font-mono">{% if scan.kind == "full" %}{{ scan.offers_count }}{% else %}<span class="text-muted">so alcance</span>{% endif %}</td>
+            <td class="py-2 px-3 text-muted whitespace-nowrap" title="{{ scan.scanned_at|date:'d/m/Y H:i' }}">ha {{ scan.scanned_at|timesince }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="p-6 text-center text-sm text-muted">Nenhuma varredura feita ainda.</div>
+    {% endif %}
+    <div class="flex flex-wrap items-center gap-2 px-4 py-4" style="border-top: 1px solid var(--ik-line);">
+      <span class="text-xs text-muted">Varrer agora (abre a acao no assistente de jobs):</span>
+      {% for ga in scan_accounts %}
+      <button type="button" class="btn btn-secondary btn-sm"
+              hx-get="{% url 'jobs:job-form' %}?ga={{ ga.pk }}&action=810"
+              hx-target="#job-modal-body" hx-swap="innerHTML" hx-push-url="false"
+              onclick="this.dispatchEvent(new CustomEvent('open-modal-jobcreate', {bubbles: true}));">
+        <i class="bi bi-binoculars"></i> {{ ga.name|default:ga.server_id }}
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

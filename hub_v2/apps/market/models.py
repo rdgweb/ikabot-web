@@ -246,6 +246,67 @@ class BlackMarketAvailableOffer(UUIDTimestampModel):
         )
 
 
+class PublicMarketScan(UUIDTimestampModel):
+    """What one Branch Office of an account saw in the public market (runner 810, N-84).
+
+    One row per account + city, replaced on every scan. kind="range_sync" rows only
+    record the market range check (no offers were listed from that city).
+    """
+
+    KIND_CHOICES = [("full", "Varredura"), ("range_sync", "So alcance")]
+
+    game_account = models.ForeignKey(
+        "accounts.GameAccount", on_delete=models.CASCADE, related_name="public_market_scans",
+    )
+    city_id = models.IntegerField()
+    city_name = models.CharField(max_length=128, blank=True, default="")
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, default="full")
+    bo_level = models.IntegerField(default=0)
+    max_range = models.IntegerField(default=0)
+    range_before = models.IntegerField(default=0)
+    offers_count = models.IntegerField(default=0)
+    scanned_at = models.DateTimeField()
+    job = models.ForeignKey("jobs.Job", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+
+    class Meta:
+        ordering = ["-scanned_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["game_account", "city_id"], name="uq_public_market_scan_ga_city"),
+        ]
+
+    def __str__(self):
+        return f"PublicMarketScan {self.city_name} ({self.kind}) {self.scanned_at:%Y-%m-%d %H:%M}"
+
+
+class PublicMarketOffer(UUIDTimestampModel):
+    """One offer listed in the public market, as seen by a PublicMarketScan."""
+
+    RESOURCE_CHOICES = [(0, "Madeira"), (1, "Vinho"), (2, "Marmore"), (3, "Cristal"), (4, "Enxofre")]
+    KIND_CHOICES = [("sell", "Vendendo"), ("buy", "Comprando")]
+
+    scan = models.ForeignKey(PublicMarketScan, on_delete=models.CASCADE, related_name="offers")
+    kind = models.CharField(max_length=8, choices=KIND_CHOICES, default="sell")
+    resource_idx = models.IntegerField(choices=RESOURCE_CHOICES)
+    city_id = models.IntegerField()
+    city_name = models.CharField(max_length=128, blank=True, default="")
+    player_name = models.CharField(max_length=128, blank=True, default="")
+    amount = models.IntegerField(default=0)
+    unit_price = models.IntegerField(default=0)
+    distance = models.IntegerField(default=0)
+    goods_per_minute = models.IntegerField(default=0)
+    # the offering city belongs to one of the accounts managed by this hub
+    is_internal = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["resource_idx", "unit_price", "distance"]
+        indexes = [
+            models.Index(fields=["resource_idx", "kind", "unit_price"]),
+        ]
+
+    def __str__(self):
+        return f"PublicMarketOffer {self.city_name} res={self.resource_idx} {self.amount}@{self.unit_price}"
+
+
 class ConstructionMarketIntervention(UUIDTimestampModel):
     STATUS_CHOICES = [
         ("pending", "Pendente"),

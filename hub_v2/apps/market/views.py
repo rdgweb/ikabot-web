@@ -156,6 +156,35 @@ class MarketDashboardView(LoginRequiredMixin, TemplateView):
         return ctx
 
 
+class PublicMarketView(LoginRequiredMixin, TemplateView):
+    """Mercado geral: o que as varreduras (acao 810) viram em oferta (N-84)."""
+
+    template_name = "market/public_market.html"
+
+    def get_context_data(self, **kwargs):
+        from .models import PublicMarketOffer
+        from .public_market import public_market_overview
+
+        ctx = super().get_context_data(**kwargs)
+        params = self.request.GET
+        try:
+            resource_idx = int(params.get("resource")) if params.get("resource") not in (None, "") else None
+        except (TypeError, ValueError):
+            resource_idx = None
+        kind = "buy" if params.get("kind") == "buy" else "sell"
+        hide_internal = params.get("hide_internal") == "1"
+        overview = public_market_overview(resource_idx=resource_idx, kind=kind, hide_internal=hide_internal)
+        ctx.update(overview)
+        ctx["resource_choices"] = PublicMarketOffer.RESOURCE_CHOICES
+        ctx["selected_resource"] = resource_idx
+        ctx["selected_kind"] = kind
+        ctx["hide_internal"] = hide_internal
+        ctx["scan_accounts"] = list(
+            GameAccount.objects.filter(active=True).select_related("account").order_by("name")
+        )
+        return ctx
+
+
 class MarketParticipantsPartialView(LoginRequiredMixin, TemplateView):
     template_name = "market/partials/participants_table.html"
 

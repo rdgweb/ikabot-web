@@ -1080,6 +1080,7 @@ class GameClient(IslandActions):
         seller_branchoffice_pos: int,
         resource_idx: int,
         amount: int,
+        search_range: int | None = None,
     ) -> dict[str, Any]:
         """Buy resources from a specific seller's Branch Office.
 
@@ -1105,6 +1106,7 @@ class GameClient(IslandActions):
             seller_branchoffice_pos=seller_branchoffice_pos,
             resource_idx=resource_idx,
             amount=amount,
+            search_range=search_range,
         )
 
     def sell_to_offer(
