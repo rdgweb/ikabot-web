@@ -31,7 +31,7 @@ from core.proxy import StrictProxySession
 from .actions.academy import AcademyAction
 from .actions.barbarians import AttackBarbarianVillageAction, ATTACK_SCHEMATICS, LOOT_SCHEMATICS, get_schematic, calculate_transporters
 from .actions.island import IslandActions
-from .actions.city import BuildAction, DemolishAction, UpgradeAction
+from .actions.city import BuildAction, UpgradeAction
 from .actions.cinema import CinemaAction
 from .actions.daily import DailyTasksAction
 from .actions.port import PortAction
@@ -297,23 +297,6 @@ class GameClient(IslandActions):
             city_id=city_id,
             building_position=building_position,
             current_level=current_level,
-            template_view=template_view,
-        )
-
-    def demolish(self, city_id: int, building_position: int, *, template_view: str = "city") -> dict[str, Any]:
-        """Demolish (downgrade) a building by one level.
-
-        Args:
-            city_id: Target city ID.
-            building_position: Building position slot.
-
-        Returns:
-            Parsed AJAX response.
-        """
-        action = DemolishAction(self)
-        return action.execute(
-            city_id=city_id,
-            building_position=building_position,
             template_view=template_view,
         )
 

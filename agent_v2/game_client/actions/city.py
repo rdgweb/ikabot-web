@@ -1,4 +1,4 @@
-"""City and building actions — build, upgrade, demolish."""
+"""City and building actions — build, upgrade (demolish lives in demolish.py)."""
 
 from __future__ import annotations
 
@@ -261,39 +261,3 @@ class UpgradeAction(BaseAction):
             return self._ajax_request(action_name, upgrade_params)
         finally:
             self.client._action_request = old_ar
-
-
-class DemolishAction(BaseAction):
-    """Demolish (downgrade) an existing building by one level."""
-
-    def execute(
-        self,
-        city_id: int,
-        building_position: int,
-        template_view: str = "city",
-        **kwargs: Any,
-    ) -> dict[str, Any]:
-        """Demolish a building level.
-
-        Args:
-            city_id: Target city ID.
-            building_position: Position of the building to demolish.
-
-        Returns:
-            Parsed AJAX response.
-
-        Raises:
-            ActionError: If the demolish action fails.
-        """
-        logger.info(f"Demolishing building at position {building_position} in city {city_id}")
-
-        params = {
-            "cityId": city_id,
-            "position": building_position,
-            "backgroundView": "city",
-            "currentCityId": city_id,
-            "templateView": template_view,
-            "building": template_view,
-        }
-
-        return self._ajax_request(ActionID.DEMOLISH, params)

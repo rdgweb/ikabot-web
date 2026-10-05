@@ -5,6 +5,7 @@ from .views import (
     ConstructionPanelView,
     DashboardHistoryView,
     DashboardView,
+    DemolishBuildingsView,
     RenameCityView,
     ReorderBuildingsView,
     RunActionView,
@@ -18,6 +19,7 @@ urlpatterns = [
     path("run-action/", RunActionView.as_view(), name="run-action"),
     path("rename-city/", RenameCityView.as_view(), name="rename-city"),
     path("reorder-buildings/", ReorderBuildingsView.as_view(), name="reorder-buildings"),
+    path("demolish-buildings/", DemolishBuildingsView.as_view(), name="demolish-buildings"),
     path("actions/", ActionCatalogView.as_view(), name="action-catalog"),
     path("construction/", ConstructionPanelView.as_view(), name="construction"),
 ]

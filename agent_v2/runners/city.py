@@ -920,31 +920,6 @@ class UpgradeBuildingRunner(_CityActionMixin, BaseRunner):
             return RunnerResult(success=False, data={"error": str(exc)})
 
 
-@register_runner(19)
-class DemolishBuildingRunner(_CityActionMixin, BaseRunner):
-    def execute(self, job: dict[str, Any]) -> RunnerResult:
-        jid = job["job_id"]
-        inputs = job.get("inputs") or {}
-        city_id = _to_int(inputs.get("city_id"))
-        building_position = _to_int(inputs.get("building_position", inputs.get("building_id")), -1)
-        if city_id <= 0 or building_position < 0:
-            return RunnerResult(success=False, data={"error": "missing_demolish_inputs"})
-        try:
-            client, ga_id = self._get_client(job)
-            client.demolish(
-                city_id=city_id,
-                building_position=building_position,
-                template_view=_normalize_building_id(str(inputs.get("building_type") or "city")),
-            )
-            if ga_id:
-                self.save_game_client(ga_id, client)
-            self.log(jid, "info", f"Demolicao iniciada na posicao {building_position}")
-            return RunnerResult(success=True)
-        except Exception as exc:
-            self.log(jid, "error", f"Demolish failed: {exc}")
-            return RunnerResult(success=False, data={"error": str(exc)})
-
-
 @register_runner(1002)
 class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
     """Execute a multi-step construction plan one level at a time."""

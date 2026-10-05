@@ -96,7 +96,6 @@ class ActionID:
     # Verified from live game button hrefs on 2026-04-17 (HAVIT / s78-br)
     BUILD = "BuildNewBuilding"
     UPGRADE_BUILDING = "UpgradeExistingBuilding"
-    DEMOLISH = "CityBuilding&function=demolish"
     CHANGE_PRODUCTION = "CityScreen&function=changeProduction"
 
     # Military
