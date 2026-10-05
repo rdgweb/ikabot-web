@@ -56,14 +56,23 @@ def _normalize_json_object(raw) -> dict:
 
 
 def _serialize_login_block_state(ga: GameAccount) -> dict:
+    from apps.game.models import AccountSnapshot
+    from apps.game.services.vacation import read_vacation_state
+
     blocked_until = ga.login_blocked_until
     active = bool(blocked_until and blocked_until > timezone.now())
+    base = AccountSnapshot.objects.filter(game_account=ga).values_list("base_snapshot", flat=True).first()
+    vacation = read_vacation_state(base)
     return {
         "game_account_id": str(ga.pk),
         "active": active,
         "blocked_until": blocked_until.isoformat() if blocked_until else "",
         "backoff_hours": int(ga.login_block_backoff_hours or 0),
         "reason": ga.login_block_reason or "",
+        # N-68: any login after the mandatory period ends the vacation, so the
+        # agent keeps ordinary jobs waiting while this is true.
+        "vacation": vacation["active"],
+        "vacation_since": vacation["since"].isoformat() if vacation["since"] else "",
     }
 
 

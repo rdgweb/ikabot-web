@@ -488,7 +488,7 @@ class GeneralsBankBuyRunner(BaseRunner):
             return RunnerResult(success=False, data={"error": "missing_credentials"})
 
         try:
-            client = self.get_or_login_game_client(jid, aid, ga_id, creds, allow_cached=False)
+            client = self.get_or_login_game_client(jid, aid, ga_id, creds, allow_cached=False, allow_vacation_exit=True)
             self.log(jid, "info", "Banco acordou — login ativo sai de ferias automaticamente apos 48h")
 
             # Fetch bank config for buyer_city_id

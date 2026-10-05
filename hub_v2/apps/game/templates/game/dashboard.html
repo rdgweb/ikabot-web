@@ -197,9 +197,18 @@
             {% if card.on_vacation %}
             <span class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
                   style="background: var(--ik-sea);"
-                  title="Conta em modo ferias{% if card.vacation_since %} desde {{ card.vacation_since|date:'d/m/Y H:i' }}{% endif %}{% if card.vacation_checked_at %} (ultima verificacao {{ card.vacation_checked_at|date:'d/m H:i' }}){% endif %}. O jogo bloqueia o login; os jobs desta conta falham ate as ferias acabarem.">
+                  title="Conta em modo ferias{% if card.vacation_since %} desde {{ card.vacation_since|date:'d/m/Y H:i' }}{% endif %}. {% if card.vacation_mandatory_over %}O periodo obrigatorio de 2 dias ja passou: qualquer login tira a conta das ferias.{% elif card.vacation_mandatory_until %}Periodo obrigatorio ate {{ card.vacation_mandatory_until|date:'d/m H:i' }} (no maximo); ate la o jogo bloqueia o login.{% endif %} Os jobs desta conta ficam em espera para nao tira-la das ferias. Para sair, use o botao ao lado (Modo Ferias - desativar).">
               <i class="bi bi-umbrella-fill"></i> DE FERIAS{% if card.vacation_since %} &middot; desde {{ card.vacation_since|date:"d/m H:i" }}{% endif %}
             </span>
+            <button type="button"
+                    class="inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                    style="border-color: rgba(79,134,185,0.45); color: var(--ik-sea);"
+                    title="Abrir a acao Modo Ferias para tirar esta conta das ferias (os jobs em espera voltam a rodar)"
+                    hx-get="{% url 'jobs:job-form' %}?ga={{ card.game_account_id }}&action=25&input_enable=False"
+                    hx-target="#job-modal-body" hx-swap="innerHTML" hx-push-url="false"
+                    onclick="event.stopPropagation(); this.dispatchEvent(new CustomEvent('open-modal-jobcreate', {bubbles: true}));">
+              <i class="bi bi-box-arrow-right"></i> Sair das ferias
+            </button>
             {% endif %}
           </div>
           <p class="text-xs text-muted">{{ card.server_id }} &middot; {{ card.city_count }} cidades</p>

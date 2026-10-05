@@ -45,6 +45,24 @@ class LoginCooldownActive(BaseException):
         return " | ".join(parts)
 
 
+# How long an ordinary job waits before asking again while the account is on vacation.
+VACATION_HOLD_SECONDS = 60 * 60
+
+
+class VacationHold(LoginCooldownActive):
+    """The account is on vacation: the job waits instead of logging in (N-68).
+
+    After the game's mandatory period any login ends the vacation, so only the
+    jobs that are meant to wake the account may log in.
+    """
+
+    def __str__(self) -> str:
+        return (
+            "Conta em modo ferias: job em espera, sem logar, para nao tirar a conta das ferias. "
+            f"Nova tentativa em {self.delay_seconds // 60} min. Para sair, use Modo Ferias > desativar."
+        )
+
+
 class GameSessionService:
     """Owns the policy for acquiring valid lobby and game sessions."""
 
@@ -237,13 +255,15 @@ class GameSessionService:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt
 
-    def _check_login_cooldown(self, *, game_account_id: str, log=None) -> None:
+    def _check_login_cooldown(self, *, game_account_id: str, log=None, allow_vacation_exit: bool = False) -> None:
         try:
             cooldown = self.hub.get_login_cooldown(game_account_id=game_account_id)
         except Exception:
             if log:
                 log("warn", "Falha ao consultar cooldown de login; seguindo com tentativa normal.")
             return
+        if cooldown.get("vacation") and not allow_vacation_exit:
+            raise VacationHold(delay_seconds=VACATION_HOLD_SECONDS + random.randint(0, 10 * 60))
         blocked_until = self._parse_hub_dt(cooldown.get("blocked_until") or "")
         if not blocked_until:
             return
@@ -302,9 +322,12 @@ class GameSessionService:
         creds: dict,
         log=None,
         allow_cached: bool = True,
+        allow_vacation_exit: bool = False,
     ):
         if game_account_id:
-            self._check_login_cooldown(game_account_id=game_account_id, log=log)
+            self._check_login_cooldown(
+                game_account_id=game_account_id, log=log, allow_vacation_exit=allow_vacation_exit,
+            )
 
         proxy_candidates = self._candidate_proxy_urls(account_id=account_id, log=log)
         if not proxy_candidates:

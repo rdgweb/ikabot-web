@@ -493,6 +493,12 @@ class VacationModeRunner(BaseRunner):
             or "umod" in text
         )
 
+    def _already_on_vacation(self, ga_id: str) -> bool:
+        try:
+            return bool(self.hub.get_login_cooldown(game_account_id=ga_id).get("vacation"))
+        except Exception:
+            return False
+
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid = job["job_id"]
         aid = job["account_id"]
@@ -514,10 +520,16 @@ class VacationModeRunner(BaseRunner):
                     ga_id,
                     creds,
                     allow_cached=False,
+                    allow_vacation_exit=True,
                 )
                 self.log(jid, "info", "Login fresco confirmou conta fora do modo ferias")
                 self.save_game_client(ga_id, fresh_client)
                 return RunnerResult(success=True, data={"enabled": False, "confirmed": True})
+
+            if ga_id and self._already_on_vacation(ga_id):
+                # logging in again would only risk ending the vacation it asks for
+                self.log(jid, "info", "A conta ja esta marcada como de ferias; nada a fazer.")
+                return RunnerResult(success=True, data={"enabled": True, "confirmed": True, "confirmation": "already_on_vacation"})
 
             client = self.get_or_login_game_client(jid, aid, ga_id, creds)
 
@@ -547,6 +559,7 @@ class VacationModeRunner(BaseRunner):
                     ga_id,
                     creds,
                     allow_cached=False,
+                    allow_vacation_exit=True,
                 )
             except Exception as confirm_exc:
                 if self._looks_like_vacation_block(confirm_exc):

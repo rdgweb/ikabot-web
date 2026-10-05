@@ -399,6 +399,8 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                     "on_vacation": _vacation["active"],
                     "vacation_since": _vacation["since"],
                     "vacation_checked_at": _vacation["checked_at"],
+                    "vacation_mandatory_until": _vacation["mandatory_until"],
+                    "vacation_mandatory_over": _vacation["mandatory_over"],
                     "gold": acct_gold,
                     "player_score": base.get("player_score") or {},
                     "income": acct_income,

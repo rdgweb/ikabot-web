@@ -9,12 +9,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 # Other test modules leave bare stub packages behind; this one needs the real ones.
-for _name in [n for n in sys.modules if n.split(".")[0] in ("game_client", "sessions", "core")]:
+for _name in [n for n in sys.modules if n.split(".")[0] in ("game_client", "sessions", "core", "runners")]:
     if not getattr(sys.modules[_name], "__file__", None):
         del sys.modules[_name]
 
 from game_client.exceptions import LoginError  # noqa: E402
-from sessions.game_session_service import GameSessionService  # noqa: E402
+from sessions.game_session_service import GameSessionService, LoginCooldownActive, VacationHold  # noqa: E402
 
 
 class _Hub:
@@ -92,6 +92,94 @@ class VacationLoginTests(unittest.TestCase):
             self.assertTrue(GameSessionService._is_vacation_block(LoginError(text)), text)
         for text in ("loginLink falhou: status=400", "Proxy connection failed", ""):
             self.assertFalse(GameSessionService._is_vacation_block(LoginError(text)), text)
+
+
+class _CooldownHub(_Hub):
+    def __init__(self, state):
+        super().__init__()
+        self.state = state
+
+    def get_login_cooldown(self, *, game_account_id):
+        return dict(self.state)
+
+
+def _guarded_service(state):
+    """Real _check_login_cooldown; the login itself just records that it happened."""
+    service = object.__new__(GameSessionService)
+    service.hub = _CooldownHub(state)
+    service.logins = []
+    service._candidate_proxy_urls = lambda **kwargs: ["http://p1"]
+
+    def _login(**kwargs):
+        service.logins.append(kwargs["proxy_url"])
+        return "client"
+
+    service._get_or_login_game_client_with_proxy = _login
+    return service
+
+
+class VacationProtectionTests(unittest.TestCase):
+    """After the mandatory period any login ends the vacation: ordinary jobs must wait."""
+
+    def test_ordinary_job_waits_and_never_touches_the_game(self):
+        service = _guarded_service({"vacation": True, "blocked_until": ""})
+
+        with self.assertRaises(VacationHold) as ctx:
+            service.get_or_login_game_client(account_id="acc-1", game_account_id="ga-1", creds={})
+
+        self.assertEqual(service.logins, [])
+        self.assertIsInstance(ctx.exception, LoginCooldownActive)   # the executor reschedules these
+        self.assertGreaterEqual(ctx.exception.delay_seconds, 3600)
+        self.assertIn("ferias", str(ctx.exception))
+
+    def test_job_meant_to_wake_the_account_may_log_in(self):
+        service = _guarded_service({"vacation": True, "blocked_until": ""})
+
+        client = service.get_or_login_game_client(
+            account_id="acc-1", game_account_id="ga-1", creds={}, allow_vacation_exit=True,
+        )
+
+        self.assertEqual((client, service.logins), ("client", ["http://p1"]))
+
+    def test_account_not_on_vacation_logs_in_as_always(self):
+        for state in ({"vacation": False, "blocked_until": ""}, {"blocked_until": ""}):   # old hub: no field
+            service = _guarded_service(state)
+            service.get_or_login_game_client(account_id="acc-1", game_account_id="ga-1", creds={})
+            self.assertEqual(service.logins, ["http://p1"])
+
+
+class VacationModeRunnerTests(unittest.TestCase):
+    def _runner(self, on_vacation):
+        from runners.misc import VacationModeRunner
+
+        runner = object.__new__(VacationModeRunner)
+        runner.hub = _CooldownHub({"vacation": on_vacation})
+        runner.logs = []
+        runner.login_calls = []
+        runner.log = lambda jid, level, msg: runner.logs.append((level, msg))
+        runner.resolve_credentials = lambda *a, **k: {"email": "x"}
+        runner.save_game_client = lambda *a, **k: None
+
+        def _login(jid, aid, ga_id, creds, **kwargs):
+            runner.login_calls.append(kwargs)
+            return object()
+
+        runner.get_or_login_game_client = _login
+        return runner
+
+    def test_activating_an_account_already_on_vacation_does_not_log_in(self):
+        runner = self._runner(on_vacation=True)
+        result = runner.execute({"job_id": "j", "account_id": "a", "game_account_id": "ga-1", "inputs": {"enable": True}})
+
+        self.assertTrue(result.success)
+        self.assertEqual(runner.login_calls, [])
+
+    def test_deactivating_is_allowed_to_wake_the_account(self):
+        runner = self._runner(on_vacation=True)
+        result = runner.execute({"job_id": "j", "account_id": "a", "game_account_id": "ga-1", "inputs": {"enable": False}})
+
+        self.assertTrue(result.success)
+        self.assertEqual(runner.login_calls, [{"allow_cached": False, "allow_vacation_exit": True}])
 
 
 if __name__ == "__main__":

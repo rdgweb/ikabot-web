@@ -24,15 +24,24 @@ from apps.game.services.dashboard_cache import bump_dashboard_cache_version
 # refreshing checked_at more often than this is noise.
 RECHECK_WRITE_INTERVAL = timedelta(minutes=10)
 
+# The game refuses logins for this long after vacation starts; after it, the
+# first login (any action) ends the vacation.
+MANDATORY_PERIOD = timedelta(hours=48)
+
 
 def read_vacation_state(base_snapshot) -> dict:
-    """{"active": bool, "since": datetime|None, "checked_at": datetime|None} for display."""
+    """{"active", "since", "checked_at", "mandatory_until", "mandatory_over"} for display."""
     raw = (base_snapshot or {}).get("vacation_state") if isinstance(base_snapshot, dict) else None
     raw = raw if isinstance(raw, dict) else {}
+    since = parse_datetime(str(raw.get("since") or "")) if raw.get("since") else None
+    mandatory_until = since + MANDATORY_PERIOD if since else None
     return {
         "active": bool(raw.get("active")),
-        "since": parse_datetime(str(raw.get("since") or "")) if raw.get("since") else None,
+        "since": since,
         "checked_at": parse_datetime(str(raw.get("checked_at") or "")) if raw.get("checked_at") else None,
+        # latest possible end: "since" is when the hub first saw the vacation
+        "mandatory_until": mandatory_until,
+        "mandatory_over": bool(mandatory_until and timezone.now() >= mandatory_until),
     }
 
 

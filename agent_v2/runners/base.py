@@ -108,13 +108,16 @@ class BaseRunner:
         creds: dict[str, Any],
         *,
         allow_cached: bool = True,
+        allow_vacation_exit: bool = False,
     ):
+        """allow_vacation_exit: only for jobs meant to wake an account that is on vacation."""
         return self.game_sessions.get_or_login_game_client(
             account_id=account_id,
             game_account_id=game_account_id,
             creds=creds,
             log=lambda level, message: self.log(job_id, level, message),
             allow_cached=allow_cached,
+            allow_vacation_exit=allow_vacation_exit,
         )
 
     def get_game_session(self, account_id: str):

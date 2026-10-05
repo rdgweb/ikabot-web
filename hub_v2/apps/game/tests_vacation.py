@@ -96,6 +96,49 @@ class VacationMarkerTests(TestCase):
         self.assertTrue(state["active"])
         self.assertIsNotNone(state["since"])
 
+    def test_agent_is_told_the_account_is_on_vacation_before_it_logs_in(self):
+        url = f"/api/agent/game-accounts/{self.ga.pk}/login-cooldown/"
+
+        def state():
+            return self.client.get(url, HTTP_X_AGENT_TOKEN="test-agent-token").json()
+
+        self.assertFalse(state()["vacation"])
+        self._report("vacation")
+        marked = state()
+        self.assertTrue(marked["vacation"])
+        self.assertTrue(marked["vacation_since"])
+        self.assertFalse(marked["active"])            # not a login backoff: only ordinary jobs wait
+        self._report("clear")
+        self.assertFalse(state()["vacation"])
+
+    def test_mandatory_period_is_two_days_from_when_it_was_seen(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        since = timezone.now() - timedelta(hours=47)
+        fresh = read_vacation_state({"vacation_state": {"active": True, "since": since.isoformat()}})
+        self.assertFalse(fresh["mandatory_over"])
+        self.assertEqual(fresh["mandatory_until"], since + timedelta(hours=48))
+        older = (since - timedelta(hours=2)).isoformat()
+        self.assertTrue(read_vacation_state({"vacation_state": {"active": True, "since": older}})["mandatory_over"])
+
+    def test_panel_offers_the_standard_vacation_action_to_leave(self):
+        self.client.force_login(self.user)
+        self._report("vacation")
+
+        page = self.client.get(reverse("game:dashboard")).content.decode()
+        self.assertIn("Sair das ferias", page)
+        self.assertIn(f"{reverse('jobs:job-form')}?ga={self.ga.pk}&action=25&input_enable=False", page)
+        self.assertIn("ficam em espera", page)
+
+        leave = self.client.get(
+            reverse("jobs:job-form"), {"ga": str(self.ga.pk), "action": "25", "input_enable": "False"},
+        ).content.decode()
+        self.assertIn("mode: 'deactivate'", leave)
+        default = self.client.get(reverse("jobs:job-form"), {"ga": str(self.ga.pk), "action": "25"}).content.decode()
+        self.assertIn("mode: 'activate'", default)
+
     def test_panel_shows_the_marker_only_while_on_vacation(self):
         self.client.force_login(self.user)
         self.assertNotIn("DE FERIAS", self.client.get(reverse("game:dashboard")).content.decode())

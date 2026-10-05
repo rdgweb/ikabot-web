@@ -7,7 +7,7 @@
        radial-gradient(700px 240px at 100% 100%, rgba(201,156,78,0.10), transparent 60%),
        linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
      x-data="{
-       mode: 'activate',
+       mode: '{% if form.enable.value|stringformat:"s" == "False" %}deactivate{% else %}activate{% endif %}',
        get isActivate() { return this.mode === 'activate'; }
      }">
 
