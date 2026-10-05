@@ -7,6 +7,9 @@ from __future__ import annotations
 import json
 import logging
 
+from urllib.parse import urlencode
+
+from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
@@ -162,7 +165,6 @@ class PublicMarketView(LoginRequiredMixin, TemplateView):
     template_name = "market/public_market.html"
 
     def get_context_data(self, **kwargs):
-        from .models import PublicMarketOffer
         from .public_market import public_market_overview
 
         ctx = super().get_context_data(**kwargs)
@@ -171,18 +173,70 @@ class PublicMarketView(LoginRequiredMixin, TemplateView):
             resource_idx = int(params.get("resource")) if params.get("resource") not in (None, "") else None
         except (TypeError, ValueError):
             resource_idx = None
+        if resource_idx not in (0, 1, 2, 3, 4):
+            resource_idx = None
         kind = "buy" if params.get("kind") == "buy" else "sell"
         hide_internal = params.get("hide_internal") == "1"
-        overview = public_market_overview(resource_idx=resource_idx, kind=kind, hide_internal=hide_internal)
+        scan_accounts = list(
+            GameAccount.objects.filter(public_market_scans__isnull=False).distinct().order_by("name")
+        )
+        account = next((ga for ga in scan_accounts if str(ga.pk) == params.get("account")), None)
+        overview = public_market_overview(
+            resource_idx=resource_idx, kind=kind, hide_internal=hide_internal,
+            game_account_id=account.pk if account else None,
+        )
         ctx.update(overview)
-        ctx["resource_choices"] = PublicMarketOffer.RESOURCE_CHOICES
+
+        current = {
+            "kind": kind,
+            "resource": resource_idx,
+            "hide_internal": "1" if hide_internal else None,
+            "account": str(account.pk) if account else None,
+        }
+
+        def url(**changes) -> str:
+            query = {key: value for key, value in {**current, **changes}.items() if value not in (None, "")}
+            return "?" + urlencode(query)
+
+        for item in overview["summary"]:
+            item["url"] = url(resource=item["idx"])
+            item["active"] = item["idx"] == resource_idx
         ctx["selected_resource"] = resource_idx
         ctx["selected_kind"] = kind
         ctx["hide_internal"] = hide_internal
-        ctx["scan_accounts"] = list(
-            GameAccount.objects.filter(active=True).select_related("account").order_by("name")
-        )
+        ctx["selected_account"] = account
+        ctx["kind_filters"] = [
+            {"label": "Quem esta vendendo (comprar)", "url": url(kind="sell"), "active": kind == "sell"},
+            {"label": "Quem quer comprar (vender)", "url": url(kind="buy"), "active": kind == "buy"},
+        ]
+        ctx["hide_internal_url"] = url(hide_internal=None if hide_internal else "1")
+        ctx["all_resources_url"] = url(resource=None)
+        ctx["account_filters"] = [{"label": "Todas", "url": url(account=None), "active": account is None}] + [
+            {"label": ga.name or ga.server_id, "url": url(account=str(ga.pk)), "active": account is not None and ga.pk == account.pk}
+            for ga in scan_accounts
+        ]
+        ctx["current_url"] = url()
+        ctx["all_accounts"] = list(GameAccount.objects.filter(active=True).order_by("name"))
         return ctx
+
+
+class PublicMarketRefreshView(LoginRequiredMixin, View):
+    """POST: uma varredura (acao 810) por conta ativa com mercado, em todas as cidades com mercado."""
+
+    def post(self, request):
+        from .public_market import request_public_market_refresh
+
+        counters = request_public_market_refresh(created_by=request.user)
+        skipped = []
+        if counters["busy"]:
+            skipped.append(f"{counters['busy']} ja com varredura em andamento")
+        if counters["vacation"]:
+            skipped.append(f"{counters['vacation']} de ferias")
+        if counters["no_market"]:
+            skipped.append(f"{counters['no_market']} sem mercado")
+        text = f"{counters['created']} varredura(s) criada(s)" + (f"; puladas: {', '.join(skipped)}" if skipped else "") + "."
+        (messages.success if counters["created"] else messages.warning)(request, text)
+        return redirect("market:public-market")
 
 
 class MarketParticipantsPartialView(LoginRequiredMixin, TemplateView):

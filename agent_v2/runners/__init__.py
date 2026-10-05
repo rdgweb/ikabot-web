@@ -37,5 +37,6 @@ from runners import (  # noqa: F401
     building_positions,
     demolish,
     market_scan,
+    market_sell,
     combat_monitor,
 )

@@ -5,6 +5,7 @@ Mostra o que existe no mercado geral: le as ofertas ao alcance dos mercados
 
 Inputs:
     city_ids              cidades para varrer; vazio = a de maior mercado da conta
+    all_cities            varrer todas as cidades com mercado (o botao Atualizar usa isto)
     include_buy_requests  tambem listar quem quer comprar (type=333)
     max_pages             paginas por busca (10 ofertas cada), padrao 5
 
@@ -69,8 +70,12 @@ def parse_city_ids(raw: Any) -> list[int]:
     return ids
 
 
-def choose_scan_cities(markets: list[dict[str, Any]], wanted: list[int]) -> list[dict[str, Any]]:
+def choose_scan_cities(
+    markets: list[dict[str, Any]], wanted: list[int], *, all_cities: bool = False,
+) -> list[dict[str, Any]]:
     """The requested cities that have a market; by default the one with the biggest market."""
+    if all_cities:
+        return list(markets)
     if wanted:
         chosen = [m for m in markets if m["id"] in wanted]
         if chosen:
@@ -103,7 +108,7 @@ class MarketScanRunner(BaseRunner):
             if not markets:
                 self.log(jid, "error", "Nenhuma cidade com mercado (Branch Office) no snapshot desta conta.")
                 return RunnerResult(success=False, data={"error": "no_market_city"})
-            scan_cities = choose_scan_cities(markets, wanted)
+            scan_cities = choose_scan_cities(markets, wanted, all_cities=bool(inputs.get("all_cities")))
             scan_ids = {m["id"] for m in scan_cities}
 
             client = self.get_or_login_game_client(jid, aid, ga_id, creds)

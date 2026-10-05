@@ -252,6 +252,18 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual([m["id"] for m in scan_runner.choose_scan_cities(markets, [1])], [1])
         self.assertEqual([m["id"] for m in scan_runner.choose_scan_cities(markets, [3])], [2])   # no market there
         self.assertEqual(scan_runner.parse_city_ids("1, 2;2"), [1, 2])
+        self.assertEqual([m["id"] for m in scan_runner.choose_scan_cities(markets, [1], all_cities=True)], [1, 2])
+
+    def test_all_cities_scans_every_market(self):
+        game = _Game({
+            1: _market(2, 2, {(444, "2"): [_row(50, 21)]}),
+            2: _market(9, 9, {(444, "2"): [_row(50, 21), _row(51, 25)]}),
+        })
+
+        runner, result = _run(game, [_city(1, "Pequena", 4), _city(2, "Grande", 18)], all_cities=True)
+
+        self.assertEqual((result.data["offers"], sorted(result.data["cities"])), (3, [1, 2]))
+        self.assertEqual({s["city_id"]: s["kind"] for s in runner.hub.saved[0]}, {1: "full", 2: "full"})
 
     def test_scans_the_biggest_market_and_fixes_the_range_of_all(self):
         game = _Game({

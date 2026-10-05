@@ -3654,9 +3654,10 @@ class JobSubmitView(LoginRequiredMixin, View):
             donation_types = [donation_types]
 
         if multi_city_key and multi_city_key in inputs:
-            if int(action_code) in {3, 27, 601, 602}:
+            if int(action_code) in {3, 27, 601, 602, 810}:
                 # ac=3 (distribute): single job with full cities list so runner can plan routes
                 # ac=27, ac=601, ac=602: single job by design
+                # ac=810 (market scan): one job reads every chosen city; none chosen = biggest market
                 return self._create_single_job(ga, action_code, dict(inputs))
             selected_city_ids = inputs.pop(multi_city_key)
             if not isinstance(selected_city_ids, list):
@@ -3675,9 +3676,9 @@ class JobSubmitView(LoginRequiredMixin, View):
             return count
         else:
             single_inputs = dict(inputs)
-            if int(action_code) in {2, 6, 8, 9, 11, 821, 9002} and city_choices:
+            if int(action_code) in {2, 6, 8, 9, 11, 811, 821, 9002} and city_choices:
                 single_inputs["_city_choices"] = city_choices
-            if int(action_code) in {8, 9} and cities:
+            if int(action_code) in {8, 9, 811} and cities:
                 single_inputs["_city_objects"] = {
                     str(city.get("id")): city
                     for city in (cities or [])
@@ -3727,7 +3728,7 @@ class JobSubmitView(LoginRequiredMixin, View):
             if city_id and city_map.get(city_id):
                 enriched_inputs["city_name"] = city_map[city_id]
             enriched_inputs.pop("_city_choices", None)
-        elif int(action_code) in {8, 9}:
+        elif int(action_code) in {8, 9, 811}:
             selected_city_key = "buyer_city_id" if int(action_code) == 8 else "city_id"
             city_map = inputs.get("_city_choices") if isinstance(inputs.get("_city_choices"), dict) else {}
             city_id = str(enriched_inputs.get(selected_city_key) or "").strip()

@@ -9,6 +9,8 @@ from django.urls import reverse
 
 from apps.accounts.models import Account, GameAccount, Node
 from apps.game.models import AccountSnapshot
+from apps.jobs.models import Job
+from apps.jobs.services.recovery import SAFE_REQUEUE_ACTIONS
 from core.actions import ACTION_CATALOG
 
 from .models import PublicMarketOffer, PublicMarketScan
@@ -154,6 +156,137 @@ class PublicMarketTests(TestCase):
         self.assertIn("Nenhuma oferta para mostrar", page)
         self.assertIn(f"{reverse('jobs:job-form')}?ga={self.ga.pk}&action=810", page)
         self.assertIn(reverse("market:public-market"), self.client.get(reverse("market:dashboard")).content.decode())
+
+    # ── N-87: atualizar, comprar e vender pela pagina ──
+
+    def _other_account(self, name, *, cities, base_snapshot=None, active=True):
+        account = Account.objects.create(
+            node=Node.objects.create(name=f"node-{name}"), label=name, email=f"{name}@example.com", password_enc="enc",
+        )
+        ga = GameAccount.objects.create(
+            account=account, lobby_account_id=GameAccount.objects.count() + 100, server_id="s9-br",
+            server_language="br", server_number=9, name=name, active=active,
+        )
+        AccountSnapshot.objects.create(
+            account=account, game_account=ga, base_snapshot=base_snapshot or {}, military={}, cities=cities,
+        )
+        return ga
+
+    def _market_city(self, city_id):
+        return {"id": str(city_id), "name": f"C{city_id}", "buildings": [{"building": "branchOffice", "position": 3, "level": 10}]}
+
+    def test_refresh_creates_one_scan_per_account_with_a_market(self):
+        second = self._other_account("Segunda", cities=[self._market_city(601)])
+        self._other_account("SemMercado", cities=[{"id": "701", "name": "Vila", "buildings": []}])
+        self._other_account("DeFerias", cities=[self._market_city(801)], base_snapshot={"vacation_state": {"active": True}})
+        self._other_account("Inativa", cities=[self._market_city(901)], active=False)
+
+        response = self.client.post(reverse("market:public-market-refresh"))
+
+        self.assertEqual(response.status_code, 302)
+        jobs = Job.objects.filter(action_code=810)
+        self.assertEqual({j.game_account_id for j in jobs}, {self.ga.pk, second.pk})
+        inputs = json.loads(jobs.first().inputs_json)
+        self.assertEqual((inputs["all_cities"], inputs["include_buy_requests"]), (True, True))
+        # a second click does not pile up scans on accounts that are still scanning
+        self.client.post(reverse("market:public-market-refresh"))
+        self.assertEqual(Job.objects.filter(action_code=810).count(), 2)
+        page = self._page()
+        self.assertEqual(page.context["pending_scans"], 2)
+        self.assertIn("varredura(s) em andamento", page.content.decode())
+
+    def test_refresh_needs_a_post(self):
+        self.assertEqual(self.client.get(reverse("market:public-market-refresh")).status_code, 405)
+        self.assertEqual(Job.objects.filter(action_code=810).count(), 0)
+
+    def test_sell_offer_opens_the_buy_action_filled_in(self):
+        self._save([_scan(501, [_offer(900, 21, amount=129_600, distance=6)])])
+
+        offer = self._page().context["offers"][0]
+        url = offer.trades[0]["url"]
+        self.assertEqual(offer.trades[0]["account"], "Varredor")
+        for part in (
+            f"ga={self.ga.pk}", "action=8", "input_buyer_city_id=501", "input_seller_city_id=900",
+            "input_resource_idx=2", "input_amount=129600", "input_max_unit_price=21",
+        ):
+            self.assertIn(part, url)
+        form = self.client.get(url).content.decode()
+        self.assertIn("Comprar do Mercado", form)
+        self.assertIn('value="129600"', form)
+        self.assertIn('value="21"', form)
+
+    def test_buy_request_opens_the_sell_action_filled_in(self):
+        self._save([_scan(501, [_offer(920, 9, amount=33_000, offer_type=333)])])
+
+        offer = self._page(kind="buy").context["offers"][0]
+        url = offer.trades[0]["url"]
+        for part in ("action=811", "input_city_id=501", "input_buyer_city_id=920", "input_amount=33000", "input_min_unit_price=9"):
+            self.assertIn(part, url)
+        form = self.client.get(url).content.decode()
+        self.assertIn("Vender para Pedido de Compra", form)
+        self.assertIn('value="33000"', form)
+
+    def test_every_account_that_reaches_an_offer_can_trade_it_nearest_first(self):
+        second = self._other_account("Segunda", cities=[self._market_city(601)])
+        self._save([_scan(501, [_offer(900, 21, distance=8)])])
+        self.client.post(
+            "/api/agent/market/public-scan/",
+            data=json.dumps({"game_account_id": str(second.pk), "scans": [_scan(601, [_offer(900, 21, distance=2)], name="C601")]}),
+            content_type="application/json", HTTP_X_AGENT_TOKEN="test-agent-token",
+        )
+
+        offers = self._page().context["offers"]
+        self.assertEqual(len(offers), 1)
+        self.assertEqual([(t["account"], t["distance"]) for t in offers[0].trades], [("Segunda", 2), ("Varredor", 8)])
+        only_mine = self._page(account=str(self.ga.pk)).context["offers"]
+        self.assertEqual([t["account"] for t in only_mine[0].trades], ["Varredor"])
+
+    def test_an_account_is_not_offered_its_own_city(self):
+        self._save([_scan(501, [_offer(502, 5, player="Varredor")])])
+
+        offer = self._page().context["offers"][0]
+        self.assertTrue(offer.is_internal)
+        self.assertEqual(offer.trades, [])
+
+    def test_resource_filter_keeps_the_summary_of_the_other_resources(self):
+        self._save([_scan(501, [_offer(900, 30), _offer(910, 40, resource=SULFUR)])])
+
+        response = self._page(resource=SULFUR)
+        self.assertEqual([o.city_id for o in response.context["offers"]], [910])
+        self.assertEqual(response.context["summary"][MARBLE]["best_price"], 30)
+
+    def _submit(self, action_code, **fields):
+        data = {"game_account": str(self.ga.pk), "action_code": str(action_code)}
+        data.update(fields)
+        return self.client.post(reverse("jobs:job-submit"), data)
+
+    def test_sell_job_gets_the_market_position_of_the_chosen_city(self):
+        self._submit(811, city_id="501", buyer_city_id="920", resource_idx="2", amount="5000", min_unit_price="9", dry_run="on")
+
+        job = Job.objects.get(action_code=811)
+        inputs = json.loads(job.inputs_json)
+        self.assertEqual((inputs["branchoffice_pos"], str(inputs["city_id"]), str(inputs["buyer_city_id"])), (8, "501", "920"))
+        self.assertEqual((int(inputs["amount"]), int(inputs["min_unit_price"]), inputs["dry_run"]), (5000, 9, True))
+
+    def test_buy_job_carries_the_price_limit(self):
+        self._submit(8, buyer_city_id="501", seller_city_id="900", resource_idx="2", amount="2000", max_unit_price="21")
+
+        inputs = json.loads(Job.objects.get(action_code=8).inputs_json)
+        self.assertEqual((inputs["buyer_branchoffice_pos"], int(inputs["max_unit_price"]), int(inputs["amount"])), (8, 21, 2000))
+
+    def test_scan_form_makes_a_single_job_whatever_the_city_choice(self):
+        self._submit(810)
+        self._submit(810, city_ids=["501", "502"])
+
+        jobs = [json.loads(j.inputs_json) for j in Job.objects.filter(action_code=810).order_by("created_at")]
+        self.assertEqual(len(jobs), 2)
+        self.assertEqual([str(c) for c in jobs[1]["city_ids"]], ["501", "502"])
+
+    def test_sell_action_is_in_the_catalog(self):
+        action = ACTION_CATALOG[811]
+        self.assertEqual((action["runner"], action["ready"]), ("market_sell_to_request", True))
+        self.assertNotIn(811, SAFE_REQUEUE_ACTIONS)     # recovery must never repeat a sale
+        self.assertNotIn(8, SAFE_REQUEUE_ACTIONS)
 
     def test_action_is_in_the_catalog_with_its_form(self):
         action = ACTION_CATALOG[810]

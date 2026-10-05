@@ -388,6 +388,21 @@ class BuyAction(BaseAction):
                 action="buyGoodsAtAnotherBranchOffice",
             )
 
+        # Purchases asked for by a person over a scan that may be old (N-87): the
+        # internal market passes none of these and keeps its exact behaviour.
+        unit_price = int(offer.get("unit_price") or 0)
+        max_unit_price = int(kwargs.get("max_unit_price") or 0)
+        if max_unit_price > 0 and (unit_price <= 0 or unit_price > max_unit_price):
+            self.restore_max_range(buyer_city_id, buyer_branchoffice_pos, resource_str)
+            raise ActionError(
+                f"Offer price is {unit_price or 'unknown'} per unit, above the accepted maximum of {max_unit_price}",
+                action="buyGoodsAtAnotherBranchOffice",
+            )
+        available = int(offer.get("amount_available") or 0)
+        if kwargs.get("cap_to_available") and 0 < available < amount:
+            logger.info("Offer has %s, less than the %s asked for: buying what is there", available, amount)
+            amount = available
+
         # Step 2: Load the takeOffer page to get transport price inputs
         take_html = self._get_take_offer_html(
             seller_city_id=offer["city_id"],
@@ -407,12 +422,6 @@ class BuyAction(BaseAction):
             prices["resourcePrice"] = int(m.group(1))
             prices["cargo_resource"] = 0
 
-        # Set the cargo being purchased
-        if resource_idx == 0:
-            prices["cargo_resource"] = amount
-        else:
-            prices[f"cargo_tradegood{resource_idx}"] = amount
-
         ships_available = _parse_free_transporters(take_html, use_freighters=False)
         ship_capacity = _parse_ship_capacity(
             take_html,
@@ -421,7 +430,12 @@ class BuyAction(BaseAction):
         )
         capacity_step = _capacity_step_from_percent(100)
         ships = max(1, math.ceil(amount / max(1, ship_capacity)))
+        if ships > ships_available and kwargs.get("cap_to_ships") and ships_available > 0:
+            logger.info("Only %s free transporters: buying %s instead of %s", ships_available, ships_available * ship_capacity, amount)
+            ships = ships_available
+            amount = ships_available * max(1, ship_capacity)
         if ships > ships_available:
+            self.restore_max_range(buyer_city_id, buyer_branchoffice_pos, resource_str)
             raise ActionError(
                 (
                     "Not enough free transporters for market purchase: "
@@ -431,6 +445,16 @@ class BuyAction(BaseAction):
                 action="buyGoodsAtAnotherBranchOffice",
                 server_errors=["Os seus barcos de comércio não têm espaço suficiente!"],
             )
+
+        # Set the cargo being purchased
+        if resource_idx == 0:
+            prices["cargo_resource"] = amount
+        else:
+            prices[f"cargo_tradegood{resource_idx}"] = amount
+        self.last_purchase = {
+            "amount": int(amount), "unit_price": unit_price, "ships": int(ships),
+            "seller_city": offer.get("city_name", ""), "seller_player": offer.get("player_name", ""),
+        }
 
         # Step 4: POST the purchase
         params: dict[str, Any] = {
@@ -507,6 +531,7 @@ class BuyAction(BaseAction):
             )
             offer = self._find_offer_in_listing(html, seller_city_id, resource_str)
             if offer is not None:
+                offer.update(self._offer_listing_details(html, seller_city_id, resource_str))
                 if page or current_range != MAX_SEARCH_RANGE:
                     logger.info(
                         "Offer of city %s found with range=%s on page %s",
@@ -516,6 +541,20 @@ class BuyAction(BaseAction):
             if f"offset={(page + 1) * OFFERS_PER_PAGE}" not in html:
                 exhausted.add(current_range)  # no next page for this range
         return None
+
+    @staticmethod
+    def _offer_listing_details(html: str, seller_city_id: int, resource_str: str) -> dict[str, int]:
+        """Price and amount of the seller's row, as listed: {"unit_price", "amount_available"}."""
+        from .market_scan import parse_offer_rows  # market_scan imports this module
+
+        for row in parse_offer_rows(html):
+            if (
+                row["city_id"] == int(seller_city_id)
+                and row["offer_type"] == 444
+                and _IDX_TO_RESOURCE_STR.get(row["resource_idx"]) == resource_str
+            ):
+                return {"unit_price": row["unit_price"], "amount_available": row["amount"]}
+        return {}
 
     def restore_max_range(self, city_id: int, bo_pos: int, resource_str: str) -> None:
         """Leave the saved search at the maximum range, first page (no-op if it already is)."""

@@ -120,7 +120,18 @@ class BuyMarketRunner(BaseRunner):
             self.log(jid, "error", "Missing required inputs")
             return RunnerResult(success=False, data={"error": "missing inputs"})
 
-        self.log(jid, "info", f"Buying res={resource_idx} x{amount} from city={seller_city_id}")
+        resource_label = RESOURCE_LABELS.get(resource_idx, f"res={resource_idx}")
+        try:
+            max_unit_price = max(0, int(inputs.get("max_unit_price") or 0))
+        except (TypeError, ValueError):
+            max_unit_price = 0
+        seller_label = str(inputs.get("seller_label") or seller_city_id).strip()
+        buyer_label = str(inputs.get("buyer_city_name") or buyer_city_id).strip()
+        self.log(
+            jid, "info",
+            f"Compra no mercado: {amount} de {resource_label} de {seller_label} para {buyer_label}"
+            + (f", pagando no maximo {max_unit_price} de ouro por unidade." if max_unit_price else " (sem preco maximo)."),
+        )
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
         if not creds:
@@ -129,19 +140,33 @@ class BuyMarketRunner(BaseRunner):
 
         try:
             client = self.get_or_login_game_client(jid, aid, ga_id, creds)
-            client.buy_market_offer(
+            action = BuyAction(client)
+            action.execute(
                 buyer_city_id=int(buyer_city_id),
                 buyer_branchoffice_pos=int(buyer_bo),
                 seller_city_id=int(seller_city_id),
                 seller_branchoffice_pos=int(seller_bo),
                 resource_idx=resource_idx,
                 amount=amount,
+                max_unit_price=max_unit_price,
+                cap_to_available=True,
+                cap_to_ships=True,
             )
             self.save_game_client(ga_id or aid, client)
-            self.log(jid, "info", "Market purchase complete")
-            return RunnerResult(success=True)
+            bought = getattr(action, "last_purchase", None) or {"amount": amount, "unit_price": 0, "ships": 0}
+            if bought["amount"] < amount:
+                self.log(
+                    jid, "warn",
+                    f"Pedido de {amount}, comprado {bought['amount']}: a oferta ou os barcos livres nao davam para tudo.",
+                )
+            self.log(
+                jid, "info",
+                f"Compra enviada: {bought['amount']} de {resource_label} a {bought['unit_price']} de ouro "
+                f"({bought['amount'] * bought['unit_price']} no total) em {bought['ships']} barco(s).",
+            )
+            return RunnerResult(success=True, data={"status": "bought", **bought})
         except Exception as exc:
-            self.log(jid, "error", f"Market buy failed: {exc}")
+            self.log(jid, "error", f"Compra no mercado falhou: {exc}")
             return RunnerResult(success=False, data={"error": str(exc)})
 
 
