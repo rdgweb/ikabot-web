@@ -241,6 +241,28 @@ class PublicMarketTests(TestCase):
         only_mine = self._page(account=str(self.ga.pk)).context["offers"]
         self.assertEqual([t["account"] for t in only_mine[0].trades], ["Varredor"])
 
+    def test_one_picker_and_one_button_per_offer(self):
+        second = self._other_account("Segunda", cities=[self._market_city(601)])
+        self._save([_scan(501, [_offer(900, 21, distance=8), _offer(901, 30, distance=4)]),
+                    _scan(502, [_offer(900, 21, distance=5)], name="Pequena")])
+        self.client.post(
+            "/api/agent/market/public-scan/",
+            data=json.dumps({"game_account_id": str(second.pk), "scans": [_scan(601, [_offer(900, 21, distance=2)], name="C601")]}),
+            content_type="application/json", HTTP_X_AGENT_TOKEN="test-agent-token",
+        )
+
+        response = self._page()
+        shared = next(o for o in response.context["offers"] if o.city_id == 900)
+        # listed by account, with the nearest city (Segunda, distance 2) as the default
+        self.assertEqual(
+            [(t["account"], t["city"], t["nearest"]) for t in shared.trade_options],
+            [("Segunda", "C601", True), ("Varredor", "Pequena", False), ("Varredor", "Grande", False)],
+        )
+        page = response.content.decode()
+        self.assertEqual(page.count("<select"), 1)                       # only the offer more than one city reaches
+        self.assertEqual(page.count("bi-cart-plus"), 2)                  # one button per offer
+        self.assertIn(f'hx-get="{shared.trades[0]["url"]}"'.replace("&", "&amp;"), page)
+
     def test_an_account_is_not_offered_its_own_city(self):
         self._save([_scan(501, [_offer(502, 5, player="Varredor")])])
 

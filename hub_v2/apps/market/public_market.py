@@ -194,8 +194,9 @@ def _trade_url(offer: PublicMarketOffer, sighting: PublicMarketOffer) -> str:
 def public_market_overview(*, resource_idx=None, kind="sell", hide_internal=False, game_account_id=None) -> dict:
     """Offers of the latest scans, each one once however many markets see it.
 
-    Every row carries `trades`: the accounts that reach it (nearest first), each with the
-    link that opens the buy/sell action already filled in.
+    Every row carries `trades`: the cities of ours that reach it (nearest first), each with
+    the link that opens the buy/sell action already filled in; `trade_options` is the same
+    list ordered by account for the picker, with the nearest one flagged.
     """
     scans = PublicMarketScan.objects.select_related("game_account").order_by("game_account__name", "city_name")
     offers = PublicMarketOffer.objects.select_related("scan", "scan__game_account").filter(kind=kind)
@@ -227,6 +228,13 @@ def public_market_overview(*, resource_idx=None, kind="sell", hide_internal=Fals
             for s in sightings
             # an account does not trade with its own city
             if row.city_id not in own_cities.get(s.scan.game_account_id, set())
+        ]
+        # for the picker: grouped by account so one is easy to find; the nearest stays the default
+        row.trade_options = [
+            {**trade, "nearest": position == 0}
+            for position, trade in sorted(
+                enumerate(row.trades), key=lambda item: (item[1]["account"].lower(), item[1]["distance"], item[1]["city"].lower()),
+            )
         ]
         rows.append(row)
     rows.sort(key=lambda o: (o.resource_idx, o.unit_price if kind == "sell" else -o.unit_price, o.distance))
