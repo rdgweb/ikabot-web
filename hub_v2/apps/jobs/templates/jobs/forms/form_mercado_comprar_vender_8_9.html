@@ -1,6 +1,11 @@
 {% load static hub_tags %}
 
-    {% if action_code == 8 or action_code == 9 %}
+    {% comment %}
+    Mercado: comprar de um vendedor (8), publicar oferta (9) e vender para um pedido
+    de compra (811). Mesmo padrao de selecao do transporte: cartoes de cidade com arte,
+    recurso de luxo e estoque; recurso em pills com icone; resumo ao vivo no topo.
+    {% endcomment %}
+    {% if action_code == 8 or action_code == 9 or action_code == 811 %}
     {{ market_ui.cities|json_script:"market-job-cities-data" }}
     <div class="mb-5 rounded-[24px] border shadow-[0_12px_40px_rgba(87,66,24,0.10)]"
          style="border-color: var(--ik-line); background:
@@ -9,9 +14,28 @@
            linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.92));"
          x-data="{
            cities: JSON.parse(document.getElementById('market-job-cities-data')?.textContent || '[]'),
-           selectedCityId: '{{ form.buyer_city_id.value|default:''|escapejs }}',
+           selectedCityId: '{% if action_code == 8 %}{{ form.buyer_city_id.value|default:''|escapejs }}{% else %}{{ form.city_id.value|default:''|escapejs }}{% endif %}',
            selectedResource: '{{ form.resource_idx.value|default:'0'|escapejs }}',
-           selectedCity() { return this.cities.find(city => String(city.id) === String(this.selectedCityId)); }
+           amount: '{{ form.amount.value|default:''|escapejs }}',
+           price: '{% if action_code == 8 %}{{ form.max_unit_price.value|default:''|escapejs }}{% elif action_code == 811 %}{{ form.min_unit_price.value|default:''|escapejs }}{% else %}{{ form.unit_price.value|default:'12'|escapejs }}{% endif %}',
+           dryRun: {% if action_code == 811 and form.dry_run.value %}true{% else %}false{% endif %},
+           cityQuery: '',
+           resourceKeys: ['wood', 'wine', 'marble', 'crystal', 'sulfur'],
+           resourceNames: ['Madeira', 'Vinho', 'Marmore', 'Cristal', 'Enxofre'],
+           selectedCity() { return this.cities.find(city => String(city.id) === String(this.selectedCityId)); },
+           resourceKey() { return this.resourceKeys[Number(this.selectedResource)] || 'wood'; },
+           resourceName() { return this.resourceNames[Number(this.selectedResource)] || ''; },
+           stockOf(city) {
+             const item = ((city && city.resources) || []).find(resource => resource.key === this.resourceKey());
+             return item ? Number(item.amount || 0) : null;
+           },
+           filteredCities() {
+             const query = String(this.cityQuery).toLowerCase().trim();
+             if (!query) return this.cities;
+             return this.cities.filter(city => [city.name || '', city.tradegood_name || '', city.x || '', city.y || ''].join(' ').toLowerCase().includes(query));
+           },
+           fmt(value) { return new Intl.NumberFormat('pt-BR').format(Number(value || 0)); },
+           total() { return Number(this.amount || 0) * Number(this.price || 0); }
          }">
       {% if action_code == 8 %}
       <input type="hidden" name="{{ form.buyer_city_id.html_name }}" x-model="selectedCityId">
@@ -20,49 +44,134 @@
       {% endif %}
       <input type="hidden" name="{{ form.resource_idx.html_name }}" x-model="selectedResource">
 
+      {# ── cabecalho + resumo ao vivo ── #}
       <div class="border-b px-5 py-5 md:px-6"
            style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
         <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div class="max-w-2xl">
-            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Mercado</div>
-            <h3 class="mt-2 text-xl font-bold text-ink">{% if action_code == 8 %}Comprar de um vendedor especifico{% else %}Publicar oferta de venda{% endif %}</h3>
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">
+              {% if action_code == 8 %}Mercado &middot; Compra{% elif action_code == 811 %}Mercado &middot; Venda{% else %}Mercado &middot; Oferta{% endif %}
+            </div>
+            <h3 class="mt-2 text-xl font-bold text-ink">
+              {% if action_code == 8 %}Comprar de um vendedor{% elif action_code == 811 %}Vender para um pedido de compra{% else %}Publicar oferta de venda{% endif %}
+            </h3>
             <p class="mt-2 text-sm leading-relaxed text-muted">
               {% if action_code == 8 %}
-              Escolha sua cidade com Branch Office, informe a cidade do vendedor e defina a carga. O slot do seu mercado eh resolvido automaticamente.
+              Escolha a cidade que recebe a carga, confira a oferta e defina quanto comprar. Se a oferta estiver acima do preco maximo na hora, nada e comprado.
+              {% elif action_code == 811 %}
+              Escolha a cidade de onde a carga sai, confira o pedido e defina quanto vender. O ouro entra quando os barcos chegam; se o comprador estiver pagando menos que o minimo, nada e enviado.
               {% else %}
-              Escolha a cidade com Branch Office, o recurso e a quantidade. O slot do mercado eh resolvido automaticamente a partir do snapshot.
+              Escolha a cidade com mercado, o recurso e a quantidade. A posicao do mercado e resolvida automaticamente.
               {% endif %}
             </p>
           </div>
           <div class="rounded-2xl border px-4 py-3 md:min-w-[18rem]"
                style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.76);">
-            <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Cidade selecionada</div>
-            <div class="mt-2 text-sm font-semibold text-ink" x-text="selectedCity() ? selectedCity().name : 'Selecione uma cidade'"></div>
-            <div class="mt-1 text-[11px] text-muted" x-text="selectedCity() ? `Branch Office pos ${selectedCity().branch_office_pos}` : 'Somente cidades com mercado aparecem aqui'"></div>
+            <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Resumo</div>
+            <div class="mt-2 flex items-center gap-2">
+              <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
+                    style="background: linear-gradient(135deg, var(--ik-sea), var(--ik-sea-dark)); color: #fff;">
+                <i class="bi {% if action_code == 8 %}bi-cart-plus{% elif action_code == 811 %}bi-cash-coin{% else %}bi-cart-dash{% endif %} text-base"></i>
+              </span>
+              <div class="min-w-0">
+                <div class="text-sm font-semibold text-ink"
+                     x-text="selectedCity() ? `${fmt(amount)} de ${resourceName()} • ${selectedCity().name}` : 'Selecione uma cidade'"></div>
+                <div class="text-[11px] text-muted">
+                  <span x-show="Number(price) > 0 && Number(amount) > 0">
+                    {% if action_code == 8 %}Custo de ate{% elif action_code == 811 %}Receita minima de{% else %}Valor total de{% endif %}
+                    <strong class="text-ink" x-text="fmt(total())"></strong> de ouro
+                  </span>
+                  <span x-show="!(Number(price) > 0 && Number(amount) > 0)">
+                    {% if action_code == 8 %}Sem preco maximo: compra ao preco que estiver{% elif action_code == 811 %}Sem preco minimo: vende ao preco atual{% else %}Informe quantidade e preco{% endif %}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       <div class="px-5 py-5 md:px-6">
-        <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div class="grid grid-cols-1 gap-4">
+
+          {# ── cidade ── #}
           <section class="rounded-[22px] border p-4"
                    style="border-color: rgba(79,134,185,0.25); background: linear-gradient(180deg, rgba(79,134,185,0.08), rgba(255,255,255,0.78));">
-            <div class="mb-3">
-              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">{% if action_code == 8 %}Cidade compradora{% else %}Cidade da oferta{% endif %}</div>
-              <div class="mt-1 text-sm font-semibold text-ink">Selecione uma cidade com Branch Office</div>
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
+                  {% if action_code == 8 %}Cidade compradora{% elif action_code == 811 %}Cidade que vende{% else %}Cidade da oferta{% endif %}
+                </div>
+                <div class="mt-1 text-sm font-semibold text-ink">
+                  {% if action_code == 8 %}Onde a carga comprada chega{% elif action_code == 811 %}De onde a carga sai{% else %}Onde a oferta fica publicada{% endif %}
+                  <span class="font-normal text-muted">&middot; so cidades com mercado</span>
+                </div>
+              </div>
+              <div class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
+                   style="background: rgba(79,134,185,0.14); color: var(--ik-sea);">
+                <i class="bi {% if action_code == 8 %}bi-box-arrow-in-down-left{% else %}bi-box-arrow-up-right{% endif %} text-base"></i>
+              </div>
             </div>
-            <div class="grid grid-cols-2 gap-2">
-              <template x-for="city in cities" :key="`market-city-${city.id}`">
+            <label class="mb-3 block" x-show="cities.length > 8">
+              <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Filtrar cidades</span>
+              <input type="text" x-model="cityQuery" class="form-input" placeholder="Buscar por nome, luxo ou coordenada">
+            </label>
+            <div class="grid max-h-[18rem] grid-cols-2 gap-2 overflow-y-auto p-1 xl:grid-cols-4">
+              <template x-for="city in filteredCities()" :key="`market-city-${city.id}`">
                 <button type="button"
-                        class="rounded-[16px] border px-3 py-3 text-left transition-all"
-                        :class="String(selectedCityId) === String(city.id) ? 'ring-2 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.08)]' : 'hover:border-[var(--ik-sea)]/45'"
-                        style="border-color: var(--ik-line); background: rgba(247,241,229,0.68);"
+                        class="group relative rounded-[18px] border text-left transition-all duration-150"
+                        :class="String(selectedCityId) === String(city.id)
+                          ? 'translate-y-[-1px] ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]'
+                          : 'hover:translate-y-[-1px] hover:border-[var(--ik-sea)]/45 hover:shadow-[0_10px_24px_rgba(79,134,185,0.12)]'"
+                        style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);"
                         @click="selectedCityId = String(city.id)">
-                  <div class="text-sm font-semibold text-ink" x-text="city.name"></div>
-                  <div class="mt-1 text-[11px] text-muted" x-text="`Branch Office pos ${city.branch_office_pos}`"></div>
+                  <div class="absolute inset-x-0 top-0 h-14"
+                       style="background: linear-gradient(135deg, rgba(79,134,185,0.16), rgba(79,134,185,0.02));"></div>
+                  <div class="relative p-3">
+                    <div class="flex items-start gap-3">
+                      <div class="relative shrink-0">
+                        <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border"
+                             style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                          <img :src="city.city_art" alt="" class="h-8 w-8 object-contain">
+                        </div>
+                        <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                          <img :src="city.tradegood_icon" :alt="city.tradegood_name" class="h-4 w-4 object-contain">
+                        </div>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-start justify-between gap-2">
+                          <div class="min-w-0">
+                            <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
+                            <div class="mt-1 text-[11px] text-muted">
+                              <span x-text="city.tradegood_name"></span>
+                              <span x-show="city.x && city.y" x-text="` • [${city.x}:${city.y}]`"></span>
+                            </div>
+                          </div>
+                          <span class="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border"
+                                :style="String(selectedCityId) === String(city.id)
+                                  ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);'
+                                  : 'border-color: rgba(79,134,185,0.24); color: var(--ik-sea); background: rgba(79,134,185,0.06);'">
+                            <i class="bi" :class="String(selectedCityId) === String(city.id) ? 'bi-check-lg' : 'bi-shop'"></i>
+                          </span>
+                        </div>
+                        <div class="mt-2 flex flex-wrap gap-1.5">
+                          <template x-for="resource in city.resources" :key="`market-city-${city.id}-${resource.key}`">
+                            <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]"
+                                  :style="resource.key === resourceKey()
+                                    ? 'border-color: var(--ik-sea); background: rgba(79,134,185,0.12); font-weight: 600;'
+                                    : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);'">
+                              <img :src="resource.icon" :alt="resource.label" class="h-3.5 w-3.5 object-contain">
+                              <span x-text="fmt(resource.amount)"></span>
+                            </span>
+                          </template>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </button>
               </template>
             </div>
+            <p class="mt-2 text-xs text-muted" x-show="!cities.length">Nenhuma cidade desta conta tem mercado no snapshot.</p>
             {% if action_code == 8 %}
             {% for error in form.buyer_city_id.errors %}<p class="form-error mt-2"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
             {% else %}
@@ -70,46 +179,158 @@
             {% endif %}
           </section>
 
+          {# ── oferta / pedido ── #}
           <section class="rounded-[22px] border p-4"
-                   style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);">
-            <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Parametros</div>
+                   style="border-color: rgba(201,156,78,0.28); background: linear-gradient(180deg, rgba(201,156,78,0.10), rgba(255,255,255,0.82));">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">
+                  {% if action_code == 8 %}Oferta do vendedor{% elif action_code == 811 %}Pedido do comprador{% else %}Sua oferta{% endif %}
+                </div>
+                <div class="mt-1 text-sm font-semibold text-ink">
+                  {% if action_code == 8 %}O que comprar e ate quanto pagar{% elif action_code == 811 %}O que vender e por quanto no minimo{% else %}O que oferecer e a que preco{% endif %}
+                </div>
+              </div>
+              <div class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
+                   style="background: rgba(201,156,78,0.16); color: var(--ik-gold-dark);">
+                <i class="bi bi-coin text-base"></i>
+              </div>
+            </div>
+
+            {% if action_code == 8 or action_code == 811 %}
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <label class="block md:col-span-2">
+                <span class="mb-1 block text-[11px] uppercase tracking-[0.12em] text-muted">{% if action_code == 8 %}Vendedor{% else %}Comprador{% endif %} <span style="text-transform: none; letter-spacing: 0;">(informativo)</span></span>
+                {% if action_code == 8 %}
+                <input type="text" name="{{ form.seller_label.html_name }}" value="{{ form.seller_label.value|default:'' }}" class="form-input" placeholder="Cidade (Jogador)">
+                {% else %}
+                <input type="text" name="{{ form.buyer_label.html_name }}" value="{{ form.buyer_label.value|default:'' }}" class="form-input" placeholder="Cidade (Jogador)">
+                {% endif %}
+              </label>
+              <label class="block">
+                <span class="mb-1 block text-[11px] uppercase tracking-[0.12em] text-muted">ID da cidade <span style="color: var(--ik-bad);">*</span></span>
+                {% if action_code == 8 %}
+                <input type="text" name="{{ form.seller_city_id.html_name }}" value="{{ form.seller_city_id.value|default:'' }}" class="form-input" placeholder="ID da cidade do vendedor">
+                {% else %}
+                <input type="text" name="{{ form.buyer_city_id.html_name }}" value="{{ form.buyer_city_id.value|default:'' }}" class="form-input" placeholder="ID da cidade de quem pede">
+                {% endif %}
+              </label>
+            </div>
             {% if action_code == 8 %}
-            <label class="mt-3 block">
-              <span class="mb-1 block text-[11px] uppercase tracking-[0.12em] text-muted">Cidade vendedora (ID)</span>
-              <input type="text" name="{{ form.seller_city_id.html_name }}" value="{{ form.seller_city_id.value|default:'' }}" class="form-input" placeholder="ID da cidade do vendedor">
-            </label>
             {% for error in form.seller_city_id.errors %}<p class="form-error mt-2"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+            {% else %}
+            {% for error in form.buyer_city_id.errors %}<p class="form-error mt-2"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
             {% endif %}
+            {% endif %}
+
+            <div class="{% if action_code != 9 %}mt-3{% endif %}">
+              <span class="mb-1 block text-[11px] uppercase tracking-[0.12em] text-muted">Recurso <span style="color: var(--ik-bad);">*</span></span>
+              <div class="flex flex-wrap gap-1.5">
+                {% for choice in form.resource_idx.field.choices %}
+                <button type="button"
+                        class="flex items-center gap-1.5 rounded-lg border px-3 py-2 transition-all"
+                        :class="String(selectedResource) === '{{ choice.0|escapejs }}' ? 'border-[var(--ik-sea)] bg-[var(--ik-sea)]/10' : 'border-[var(--ik-line)] hover:border-[var(--ik-sea)]/60'"
+                        :style="String(selectedResource) === '{{ choice.0|escapejs }}' ? '' : 'background: rgba(255,255,255,0.72);'"
+                        @click="selectedResource = '{{ choice.0|escapejs }}'">
+                  <img src="{% static choice.0|resource_icon %}" alt="" class="h-4 w-4 object-contain">
+                  <span class="text-xs font-medium"
+                        :class="String(selectedResource) === '{{ choice.0|escapejs }}' ? 'text-[var(--ik-sea)] font-semibold' : 'text-muted'">{{ choice.1 }}</span>
+                </button>
+                {% endfor %}
+              </div>
+              {% for error in form.resource_idx.errors %}<p class="form-error mt-2"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+            </div>
+
             <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label class="block">
-                <span class="mb-1 block text-[11px] uppercase tracking-[0.12em] text-muted">Quantidade</span>
-                <input type="number" name="{{ form.amount.html_name }}" value="{{ form.amount.value|default:'' }}" min="1" class="form-input" placeholder="10000">
-              </label>
-              {% if action_code == 9 %}
-              <label class="block">
-                <span class="mb-1 block text-[11px] uppercase tracking-[0.12em] text-muted">Preco por unidade</span>
-                <input type="number" name="{{ form.unit_price.html_name }}" value="{{ form.unit_price.value|default:'12' }}" min="1" class="form-input" placeholder="12">
-              </label>
-              {% endif %}
+              <div>
+                <span class="mb-1 block text-[11px] uppercase tracking-[0.12em] text-muted">Quantidade <span style="color: var(--ik-bad);">*</span></span>
+                <div class="flex items-center gap-3 rounded-lg border px-3 py-2"
+                     style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+                  {% for choice in form.resource_idx.field.choices %}
+                  <img src="{% static choice.0|resource_icon %}" alt="" class="h-5 w-5 object-contain" x-show="String(selectedResource) === '{{ choice.0|escapejs }}'">
+                  {% endfor %}
+                  <div class="min-w-0 flex-1">
+                    <div class="text-[11px] font-medium text-ink" x-text="resourceName()"></div>
+                    <div class="text-[10px] text-muted">
+                      <span x-show="selectedCity() && stockOf(selectedCity()) !== null">Na cidade: <span x-text="fmt(stockOf(selectedCity()))"></span></span>
+                      <span x-show="!(selectedCity() && stockOf(selectedCity()) !== null)">Selecione a cidade</span>
+                    </div>
+                  </div>
+                  <div class="w-28 sm:w-32">
+                    <input type="number" name="{{ form.amount.html_name }}" value="{{ form.amount.value|default:'' }}" x-model="amount" min="1" class="form-input" placeholder="10000">
+                  </div>
+                </div>
+                <p class="form-help">
+                  {% if action_code == 8 %}Se a oferta ou os barcos livres nao derem para tudo, compra o que der.
+                  {% elif action_code == 811 %}Limitada ao que o comprador pede, ao estoque da cidade e aos barcos livres.
+                  {% else %}Quanto fica em oferta no mercado da cidade.{% endif %}
+                </p>
+                {% for error in form.amount.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+              </div>
+              <div>
+                <span class="mb-1 block text-[11px] uppercase tracking-[0.12em] text-muted">
+                  {% if action_code == 8 %}Preco maximo por unidade{% elif action_code == 811 %}Preco minimo por unidade{% else %}Preco por unidade <span style="color: var(--ik-bad);">*</span>{% endif %}
+                </span>
+                <div class="flex items-center gap-3 rounded-lg border px-3 py-2"
+                     style="border-color: var(--ik-line); background: var(--ik-sand-light);">
+                  <img src="{% static 'game/resources/icon_gold.png' %}" alt="" class="h-5 w-5 object-contain">
+                  <div class="min-w-0 flex-1">
+                    <div class="text-[11px] font-medium text-ink">Ouro</div>
+                    <div class="text-[10px] text-muted">
+                      <span x-show="Number(price) > 0 && Number(amount) > 0">Total: <span x-text="fmt(total())"></span></span>
+                      <span x-show="!(Number(price) > 0 && Number(amount) > 0)">por unidade</span>
+                    </div>
+                  </div>
+                  <div class="w-28 sm:w-32">
+                    {% if action_code == 8 %}
+                    <input type="number" name="{{ form.max_unit_price.html_name }}" value="{{ form.max_unit_price.value|default:'' }}" x-model="price" min="0" class="form-input" placeholder="sem limite">
+                    {% elif action_code == 811 %}
+                    <input type="number" name="{{ form.min_unit_price.html_name }}" value="{{ form.min_unit_price.value|default:'' }}" x-model="price" min="0" class="form-input" placeholder="preco atual">
+                    {% else %}
+                    <input type="number" name="{{ form.unit_price.html_name }}" value="{{ form.unit_price.value|default:'12' }}" x-model="price" min="1" class="form-input" placeholder="12">
+                    {% endif %}
+                  </div>
+                </div>
+                <p class="form-help">
+                  {% if action_code == 8 %}Nao compra se a oferta estiver mais cara que isso na hora. Vazio ou 0 = aceita o preco que estiver.
+                  {% elif action_code == 811 %}Nao vende se o comprador estiver pagando menos que isso. Vazio ou 0 = aceita o preco atual.
+                  {% else %}Preco pedido por unidade na oferta publicada.{% endif %}
+                </p>
+                {% if action_code == 8 %}
+                {% for error in form.max_unit_price.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+                {% elif action_code == 811 %}
+                {% for error in form.min_unit_price.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+                {% else %}
+                {% for error in form.unit_price.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
+                {% endif %}
+              </div>
             </div>
-            <div class="mt-3 grid grid-cols-2 gap-2">
-              {% for choice in form.resource_idx.field.choices %}
-              <button type="button"
-                      class="rounded-[16px] border px-3 py-3 text-left transition-all"
-                      :class="String(selectedResource) === '{{ choice.0|escapejs }}' ? 'ring-2 ring-[var(--ik-sea)] border-[var(--ik-sea)] bg-[rgba(79,134,185,0.08)]' : 'hover:border-[var(--ik-sea)]/45'"
-                      style="border-color: var(--ik-line); background: rgba(247,241,229,0.68);"
-                      @click="selectedResource='{{ choice.0|escapejs }}'">
-                <div class="text-sm font-semibold text-ink">{{ choice.1 }}</div>
-              </button>
-              {% endfor %}
+
+            {% if action_code == 811 %}
+            {# simulacao: mesmo padrao de pills #}
+            <div class="mt-3">
+              <span class="mb-1 block text-[11px] uppercase tracking-[0.12em] text-muted">Modo</span>
+              <input type="checkbox" name="{{ form.dry_run.html_name }}" x-model="dryRun" class="sr-only" tabindex="-1" aria-hidden="true">
+              <div class="flex flex-wrap gap-1.5">
+                <button type="button" class="flex items-center gap-1.5 rounded-lg border px-3 py-2 transition-all"
+                        :class="!dryRun ? 'border-[var(--ik-sea)] bg-[var(--ik-sea)]/10' : 'border-[var(--ik-line)] hover:border-[var(--ik-sea)]/60'"
+                        :style="!dryRun ? '' : 'background: rgba(255,255,255,0.72);'"
+                        @click="dryRun = false">
+                  <i class="bi bi-send text-xs" :class="!dryRun ? 'text-[var(--ik-sea)]' : 'text-muted'"></i>
+                  <span class="text-xs font-medium" :class="!dryRun ? 'text-[var(--ik-sea)] font-semibold' : 'text-muted'">Vender de verdade</span>
+                </button>
+                <button type="button" class="flex items-center gap-1.5 rounded-lg border px-3 py-2 transition-all"
+                        :class="dryRun ? 'border-[var(--ik-sea)] bg-[var(--ik-sea)]/10' : 'border-[var(--ik-line)] hover:border-[var(--ik-sea)]/60'"
+                        :style="dryRun ? '' : 'background: rgba(255,255,255,0.72);'"
+                        @click="dryRun = true">
+                  <i class="bi bi-eye text-xs" :class="dryRun ? 'text-[var(--ik-sea)]' : 'text-muted'"></i>
+                  <span class="text-xs font-medium" :class="dryRun ? 'text-[var(--ik-sea)] font-semibold' : 'text-muted'">Simulacao</span>
+                </button>
+              </div>
+              <p class="form-help" x-show="dryRun">So confere o pedido, o preco, o estoque e os barcos e mostra no log o que seria enviado. Nada sai da cidade.</p>
+              <p class="form-help" x-show="!dryRun">Os barcos saem com a carga assim que o job rodar.</p>
             </div>
-            <div class="mt-3 rounded-xl border border-[var(--ik-line)] bg-[var(--ik-sand-light)] px-3 py-3 text-xs text-muted">
-              {% if action_code == 8 %}
-              O slot do vendedor nao e mais digitado no modal. A compra localiza a oferta pelo listing do Branch Office.
-              {% else %}
-              O slot do seu Branch Office eh inferido automaticamente a partir do snapshot da cidade escolhida.
-              {% endif %}
-            </div>
+            {% endif %}
           </section>
         </div>
       </div>

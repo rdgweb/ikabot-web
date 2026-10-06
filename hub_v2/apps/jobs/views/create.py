@@ -1987,7 +1987,9 @@ def _custom_field_names(action_code: int) -> list[str]:
             "wood", "wine", "marble", "crystal", "sulfur",
         ]
     if int(action_code) == 8:
-        return ["buyer_city_id", "seller_city_id", "resource_idx", "amount"]
+        return ["buyer_city_id", "seller_city_id", "resource_idx", "amount", "max_unit_price", "seller_label"]
+    if int(action_code) == 811:
+        return ["city_id", "buyer_city_id", "resource_idx", "amount", "min_unit_price", "buyer_label", "dry_run"]
     if int(action_code) == 9:
         return ["city_id", "resource_idx", "amount", "unit_price"]
     if int(action_code) == 803:

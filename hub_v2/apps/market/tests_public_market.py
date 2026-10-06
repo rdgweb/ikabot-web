@@ -226,6 +226,24 @@ class PublicMarketTests(TestCase):
         self.assertIn("Vender para Pedido de Compra", form)
         self.assertIn('value="33000"', form)
 
+    def test_trade_forms_use_the_styled_market_form_with_nothing_left_in_the_generic_grid(self):
+        self._save([_scan(501, [_offer(900, 21, amount=129_600), _offer(920, 9, amount=33_000, offer_type=333)])])
+        buy = self.client.get(self._page().context["offers"][0].trades[0]["url"]).content.decode()
+        sell = self.client.get(self._page(kind="buy").context["offers"][0].trades[0]["url"]).content.decode()
+
+        for html, title, fields in (
+            (buy, "Comprar de um vendedor", ("buyer_city_id", "seller_city_id", "resource_idx", "amount", "max_unit_price", "seller_label")),
+            (sell, "Vender para um pedido de compra", ("city_id", "buyer_city_id", "resource_idx", "amount", "min_unit_price", "buyer_label", "dry_run")),
+        ):
+            self.assertIn(title, html)
+            self.assertIn("market-job-cities-data", html)       # city cards, not a plain select
+            self.assertNotIn("<select", html)
+            for name in fields:
+                self.assertEqual(html.count(f'name="{name}"'), 1, name)
+        # the chosen city and resource arrive selected
+        self.assertIn("selectedCityId: '501'", buy)
+        self.assertIn("selectedResource: '2'", sell)
+
     def test_every_account_that_reaches_an_offer_can_trade_it_nearest_first(self):
         second = self._other_account("Segunda", cities=[self._market_city(601)])
         self._save([_scan(501, [_offer(900, 21, distance=8)])])
