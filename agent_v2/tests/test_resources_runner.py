@@ -48,6 +48,9 @@ def _load_resources_runner_module():
     resource_transport.estimate_next_ship_availability_seconds = lambda *_args, **_kwargs: 0
     resource_transport.prepare_transport = lambda *_args, **_kwargs: None
     resource_transport.submit_transport = lambda *_args, **_kwargs: {"ok": True, "feedbacks": []}
+    # N-75: names the runner imports for the blockaded-port checks
+    resource_transport.PortBlockedError = type("PortBlockedError", (RuntimeError,), {})
+    resource_transport.is_game_flag_set = lambda value: bool(value) and str(value).strip().lower() not in ("0", "false")
     services_pkg.island_donation = island_donation
     services_pkg.resource_transport = resource_transport
 

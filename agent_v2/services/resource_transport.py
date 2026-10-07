@@ -395,6 +395,13 @@ def _resource_vector(city_state: dict[str, Any]) -> dict[str, int]:
     return {name: int(available.get(name, 0)) for name in RESOURCE_ORDER}
 
 
+def is_game_flag_set(value: Any) -> bool:
+    """A flag of the game's JSON: absent, 0, "0", "" and false all mean "no"."""
+    if isinstance(value, str):
+        return value.strip().lower() not in ("", "0", "false", "null", "none")
+    return bool(value)
+
+
 @dataclass
 class CityState:
     city_id: str
@@ -403,6 +410,24 @@ class CityState:
     available_resources: dict[str, int]
     free_space: dict[str, int]
     port_positions: list[int]
+    # N-75: the port is under an enemy blockade right now (no trade ship gets in or out)
+    harbour_occupied: bool = False
+    port_controller: str = ""
+
+
+class PortBlockedError(RuntimeError):
+    """A transport cannot start: the port of the origin and/or the destination is blockaded.
+
+    Raised before anything is submitted, so no ship or resource is committed.
+    """
+
+    def __init__(self, blocked: list[CityState]):
+        self.blocked = list(blocked)
+        names = ", ".join(
+            f"{state.city_name}" + (f" (bloqueado por {state.port_controller})" if state.port_controller else "")
+            for state in self.blocked
+        )
+        super().__init__(f"porto bloqueado em {names}")
 
 
 @dataclass
@@ -474,6 +499,8 @@ def fetch_city_state(client, city_id: int | str) -> CityState:
         available_resources=available,
         free_space=free_space,
         port_positions=ports or [1],
+        harbour_occupied=is_game_flag_set(background.get("harbourOccupied")),
+        port_controller=str(background.get("portControllerName") or "").strip(),
     )
 
 
@@ -523,6 +550,10 @@ def prepare_transport(
 
     origin = fetch_city_state(client, from_city_id)
     destination = fetch_city_state(client, to_city_id)
+    # N-75: the snapshot a plan was made from can be old; this is the state right now
+    blocked = [state for state in (origin, destination) if state.harbour_occupied]
+    if blocked:
+        raise PortBlockedError(blocked)
     port_position = origin.port_positions[0]
     query = {
         "view": "transport",

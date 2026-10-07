@@ -25,6 +25,8 @@ from runners.base import BaseRunner, RunnerResult
 from sessions.game_session_service import LoginCooldownActive
 from services.island_donation import fetch_city_context
 from services.resource_transport import (
+    PortBlockedError,
+    is_game_flag_set,
     split_shipment,
     RESOURCE_ORDER,
     change_current_city,
@@ -106,6 +108,11 @@ def _resource_net_per_hour(city: dict[str, Any], resource: str) -> int:
     if resource == "wine":
         return production - _to_int(city.get("wine_consumption", 0), 0, 0)
     return production
+
+
+def _port_blocked(city: dict[str, Any]) -> bool:
+    """The snapshot says this city's port is under blockade (N-75)."""
+    return is_game_flag_set((city or {}).get("harbour_occupied"))
 
 
 def _city_name(city: dict[str, Any]) -> str:
@@ -233,14 +240,32 @@ class SendResourcesRunner(BaseRunner):
             return RunnerResult(success=False, data={"error": "missing_credentials"})
 
         client = self.get_or_login_game_client(jid, aid, ga_id, creds)
-        plan = prepare_transport(
-            client,
-            from_city_id=from_city,
-            to_city_id=to_city,
-            requested=requested,
-            use_freighters=use_freighters,
-            capacity_percent=transport_load_percent,
-        )
+        try:
+            plan = prepare_transport(
+                client,
+                from_city_id=from_city,
+                to_city_id=to_city,
+                requested=requested,
+                use_freighters=use_freighters,
+                capacity_percent=transport_load_percent,
+            )
+        except PortBlockedError as exc:
+            # N-75: nothing was submitted, so no ship and no resource left the city
+            self.log(jid, "warn", f"Envio nao realizado: {exc}. Nenhum barco ou recurso foi comprometido.")
+            if ga_id:
+                self.save_game_client(ga_id, client)
+            try:
+                # the snapshot did not know about the blockade: have it refreshed
+                self.ensure_status_refresh(jid, game_account_id=ga_id)
+            except LoginCooldownActive:
+                raise
+            except Exception as refresh_exc:
+                self.log(jid, "warn", f"Nao foi possivel solicitar check_status: {refresh_exc}")
+            blocked_cities = [{"city_id": state.city_id, "city_name": state.city_name, "port_controller": state.port_controller} for state in exc.blocked]
+            if inputs.get("distribution_route"):
+                # a route planned by the distribution: the next cycle plans again without these cities
+                return RunnerResult(success=True, data={"status": "port_blocked", "blocked_cities": blocked_cities})
+            return RunnerResult(success=False, data={"error": "port_blocked", "blocked_cities": blocked_cities})
 
         ship_kind = "cargueiro" if use_freighters else "mercante"
         self.log(
@@ -863,6 +888,40 @@ class DistributeResourcesRunner(BaseRunner):
             self._ensure_status_refresh(jid, ga_id)
             return RunnerResult(success=True, reschedule_seconds=refresh_wait_seconds, data={"status": "insufficient_cities"})
 
+        # N-75: a city whose port is blockaded can neither send nor receive by sea (the
+        # same island included: goods always travel by ship), so it takes no part in the
+        # plan: not as donor, not as destination, and not in the averages.
+        blocked_cities = [city for city in planned_cities if _port_blocked(city)]
+        if blocked_cities:
+            planned_cities = [city for city in planned_cities if not _port_blocked(city)]
+            blocked_text = ", ".join(
+                _city_name(city) + (f" (por {city.get('port_controller_name')})" if city.get("port_controller_name") else "")
+                for city in blocked_cities
+            )
+            self.log(
+                jid, "warn",
+                f"Porto bloqueado em {len(blocked_cities)} cidade(s): {blocked_text}. "
+                f"Fora da distribuicao ate o bloqueio acabar; {len(planned_cities)} cidade(s) seguem no plano.",
+            )
+            if len(planned_cities) < 2:
+                self.log(
+                    jid, "warn",
+                    "Distribuicao sem rotas neste ciclo: com os portos bloqueados restam menos de duas cidades "
+                    "que podem enviar ou receber.",
+                )
+                # a fresh status is how the end of the blockade gets noticed
+                self._ensure_status_refresh(jid, ga_id)
+                return RunnerResult(
+                    success=True,
+                    reschedule_seconds=min_recheck_seconds if loop_enabled else 0,
+                    reschedule_inputs=inputs if loop_enabled else None,
+                    data={
+                        "status": "ports_blocked",
+                        "blocked_cities": [str(city.get("id")) for city in blocked_cities],
+                        "eligible_cities": len(planned_cities),
+                    },
+                )
+
         reserved_by_city = self._get_construction_reservations(
             jid,
             ga_id,
@@ -1008,6 +1067,9 @@ class DistributeResourcesRunner(BaseRunner):
                         ),
                     )
                 child_inputs = {
+                    # tells the dispatch that a blockade found at the last minute is
+                    # something the next cycle deals with, not a failure (N-75)
+                    "distribution_route": True,
                     "from_city": route["from_city"],
                     "from_city_name": route["from_city_name"],
                     "to_city": route["to_city"],
