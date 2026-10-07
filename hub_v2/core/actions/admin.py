@@ -1,11 +1,13 @@
-from .constants import CAT_ADMIN
+from .constants import (
+    CAT_ACCOUNT,
+)
 
 
 ACTIONS = {
     100: {
         "name": "Verificar Status",
         "name_en": "Check account status",
-        "category": CAT_ADMIN,
+        "category": CAT_ACCOUNT,
         "icon": "bi-clipboard-check",
         "runner": "check_status",
         "requires_game_session": True,
@@ -18,7 +20,7 @@ ACTIONS = {
     101: {
         "name": "Descobrir Personagens",
         "name_en": "Discover characters",
-        "category": CAT_ADMIN,
+        "category": CAT_ACCOUNT,
         "icon": "bi-search",
         "runner": "discover_characters",
         "requires_game_session": False,
@@ -31,7 +33,7 @@ ACTIONS = {
     4: {
         "name": "Status da Conta",
         "name_en": "Account status",
-        "category": CAT_ADMIN,
+        "category": CAT_ACCOUNT,
         "icon": "bi-info-circle",
         "runner": "status",
         "requires_game_session": True,
@@ -44,7 +46,7 @@ ACTIONS = {
     33: {
         "name": "Renomear Cidade",
         "name_en": "Rename city",
-        "category": CAT_ADMIN,
+        "category": CAT_ACCOUNT,
         "icon": "bi-pencil-square",
         "runner": "rename_city",
         "requires_game_session": True,

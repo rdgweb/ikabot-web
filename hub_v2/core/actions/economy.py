@@ -1,6 +1,8 @@
 from .constants import (
-    CAT_AUTOMATION,
-    CAT_ECONOMY,
+    CAT_ACCOUNT,
+    CAT_RESEARCH,
+    CAT_RESOURCES,
+    CAT_TEMPLE,
     DISTRIBUTION_STRATEGY_CHOICES,
     DONATION_METHOD_CHOICES,
     FIELD_BOOL,
@@ -16,7 +18,7 @@ ACTIONS = {
     6: {
         "name": "Login Diario",
         "name_en": "Daily login",
-        "category": CAT_ECONOMY,
+        "category": CAT_ACCOUNT,
         "icon": "bi-box-arrow-in-right",
         "runner": "login_daily",
         "requires_game_session": True,
@@ -37,7 +39,7 @@ ACTIONS = {
     901: {
         "name": "Doacao",
         "name_en": "Single donation",
-        "category": CAT_ECONOMY,
+        "category": CAT_RESOURCES,
         "icon": "bi-gift",
         "runner": "donate",
         "requires_game_session": True,
@@ -54,7 +56,7 @@ ACTIONS = {
     902: {
         "name": "Doacao Automatica",
         "name_en": "Auto donation",
-        "category": CAT_AUTOMATION,
+        "category": CAT_RESOURCES,
         "icon": "bi-gift",
         "runner": "donate_loop",
         "requires_game_session": True,
@@ -79,7 +81,7 @@ ACTIONS = {
     2: {
         "name": "Enviar Recursos",
         "name_en": "Send resources",
-        "category": CAT_ECONOMY,
+        "category": CAT_RESOURCES,
         "icon": "bi-truck",
         "runner": "send_resources",
         "requires_game_session": True,
@@ -104,7 +106,7 @@ ACTIONS = {
     3: {
         "name": "Distribuir Recursos",
         "name_en": "Distribute resources",
-        "category": CAT_ECONOMY,
+        "category": CAT_RESOURCES,
         "icon": "bi-arrows-expand",
         "runner": "distribute",
         "requires_game_session": True,
@@ -138,7 +140,7 @@ ACTIONS = {
     22: {
         "name": "Consolidar Recursos",
         "name_en": "Consolidate resources",
-        "category": CAT_ECONOMY,
+        "category": CAT_RESOURCES,
         "icon": "bi-arrows-collapse",
         "runner": "consolidate",
         "requires_game_session": True,
@@ -153,7 +155,7 @@ ACTIONS = {
     23: {
         "name": "Alterar Producao",
         "name_en": "Modify production",
-        "category": CAT_ECONOMY,
+        "category": CAT_RESOURCES,
         "icon": "bi-sliders2",
         "runner": "modify_production",
         "requires_game_session": True,
@@ -170,7 +172,7 @@ ACTIONS = {
     5: {
         "name": "Ativar Santuario",
         "name_en": "Activate shrine",
-        "category": CAT_ECONOMY,
+        "category": CAT_TEMPLE,
         "icon": "bi-stars",
         "runner": "activate_shrine",
         "requires_game_session": True,
@@ -191,7 +193,7 @@ ACTIONS = {
     11: {
         "name": "Ativar Milagre",
         "name_en": "Activate miracle",
-        "category": CAT_ECONOMY,
+        "category": CAT_TEMPLE,
         "icon": "bi-lightning-charge",
         "runner": "activate_miracle",
         "requires_game_session": True,
@@ -206,7 +208,7 @@ ACTIONS = {
     18: {
         "name": "Pesquisar",
         "name_en": "Research",
-        "category": CAT_ECONOMY,
+        "category": CAT_RESEARCH,
         "icon": "bi-mortarboard",
         "runner": "research",
         "requires_game_session": True,
@@ -227,7 +229,7 @@ ACTIONS = {
     28: {
         "name": "Recursos Premium",
         "name_en": "Premium resources",
-        "category": CAT_ECONOMY,
+        "category": CAT_RESOURCES,
         "icon": "bi-gem",
         "runner": "premium_resources",
         "requires_game_session": True,
@@ -240,7 +242,7 @@ ACTIONS = {
     29: {
         "name": "Comprar Barcos",
         "name_en": "Buy ships",
-        "category": CAT_ECONOMY,
+        "category": CAT_RESOURCES,
         "icon": "bi-water",
         "runner": "buy_ships",
         "requires_game_session": True,
@@ -253,7 +255,7 @@ ACTIONS = {
     26: {
         "name": "Conduzir Ensaio",
         "name_en": "Conduct experiment",
-        "category": CAT_ECONOMY,
+        "category": CAT_RESEARCH,
         "icon": "bi-gem",
         "runner": "buy_research",
         "requires_game_session": True,
@@ -270,7 +272,7 @@ ACTIONS = {
     27: {
         "name": "Ajustar Cientistas",
         "name_en": "Adjust scientists",
-        "category": CAT_ECONOMY,
+        "category": CAT_RESEARCH,
         "icon": "bi-people",
         "runner": "adjust_scientists",
         "requires_game_session": True,
@@ -288,7 +290,7 @@ ACTIONS = {
     25: {
         "name": "Modo Ferias",
         "name_en": "Vacation Mode",
-        "category": CAT_ECONOMY,
+        "category": CAT_ACCOUNT,
         "icon": "bi-umbrella-fill",
         "runner": "vacation_mode",
         "requires_game_session": True,

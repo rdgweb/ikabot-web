@@ -2,13 +2,16 @@ from .admin import ACTIONS as ADMIN_ACTIONS
 from .automation import ACTIONS as AUTOMATION_ACTIONS
 from .constants import (
     CATEGORY_META,
-    CAT_ADMIN,
-    CAT_AUTOMATION,
+    CATEGORY_ORDER,
+    CAT_ACCOUNT,
     CAT_CONSTRUCTION,
-    CAT_ECONOMY,
+    CAT_DIPLOMACY,
     CAT_MARKET,
     CAT_MILITARY,
     CAT_MONITORING,
+    CAT_RESEARCH,
+    CAT_RESOURCES,
+    CAT_TEMPLE,
 )
 from .construction import ACTIONS as CONSTRUCTION_ACTIONS
 from .economy import ACTIONS as ECONOMY_ACTIONS
@@ -32,7 +35,7 @@ for action_group in (
 
 ACTIONS_BY_CATEGORY: dict[str, list[int]] = {}
 for code, meta in sorted(ACTION_CATALOG.items()):
-    category = meta.get("category", CAT_ADMIN)
+    category = meta.get("category", CAT_ACCOUNT)
     ACTIONS_BY_CATEGORY.setdefault(category, []).append(code)
 
 
@@ -55,15 +58,7 @@ def get_action_contract(code: int) -> dict:
 
 def get_actions_for_ui() -> list[dict]:
     groups = []
-    ordered_categories = [
-        CAT_ECONOMY,
-        CAT_CONSTRUCTION,
-        CAT_MILITARY,
-        CAT_MARKET,
-        CAT_MONITORING,
-        CAT_AUTOMATION,
-        CAT_ADMIN,
-    ]
+    ordered_categories = CATEGORY_ORDER
     for category_key in ordered_categories:
         codes = ACTIONS_BY_CATEGORY.get(category_key, [])
         if not codes:

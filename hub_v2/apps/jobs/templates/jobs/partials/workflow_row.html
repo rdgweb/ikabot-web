@@ -1,0 +1,121 @@
+{% load humanize hub_tags %}
+{# Uma linha da Fila de Jobs. Contexto: row, group_mode. #}
+<article class="card !p-0 overflow-hidden border-l-[3px]"
+         style="border-left-color: {{ row.status_border_color }};">
+  <div class="flex items-start justify-between gap-4 px-5 py-4">
+
+    <div class="flex items-start gap-3 min-w-0 flex-1">
+      <input type="checkbox"
+             value="{{ row.workflow.pk }}"
+             x-model="selected"
+             class="wf-bulk-check mt-1 h-4 w-4 flex-shrink-0 rounded border-[var(--ik-line)]">
+      <div class="min-w-0 flex-1">
+        <div class="flex flex-wrap items-center gap-2">
+          <i class="bi {{ row.category_icon }} text-muted text-sm flex-shrink-0"></i>
+          <a href="{% url 'jobs:workflow-detail' row.workflow.pk %}"
+             class="text-sm font-semibold link-sea truncate">{% if group_mode == "menu" %}{{ row.scope_label }}{% else %}{{ row.title }}{% endif %}</a>
+          {% if group_mode == "none" %}
+          <a href="?category={{ row.workflow.category }}"
+             hx-get="?category={{ row.workflow.category }}"
+             hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+             class="badge badge-secondary hover:opacity-80 cursor-pointer">{{ row.category_label }}</a>
+          {% endif %}
+          {% if row.recurring %}
+          <span class="badge badge-info" title="Acao recorrente: se repete sozinha ate ser pausada"><i class="bi bi-arrow-repeat"></i> recorrente</span>
+          {% endif %}
+          <span class="badge {{ row.status|status_badge_class }}">{{ row.status_label }}</span>
+        </div>
+
+        {# no agrupamento por menu a acao ja esta no cabecalho: a conta vira o titulo da linha #}
+        {% if group_mode != "menu" %}
+        <div class="mt-0.5 text-xs text-muted">{{ row.scope_label }}</div>
+        {% elif row.title != row.type_label %}
+        <div class="mt-0.5 text-xs text-muted">{{ row.title }}</div>
+        {% endif %}
+
+        <div class="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
+          {% if row.active_run %}
+          <span>
+            <i class="bi bi-arrow-repeat"></i>
+            Ciclo {{ row.active_run.sequence }} · {{ row.active_run.get_status_display }}
+          </span>
+          {% endif %}
+          {% if row.workflow.next_scheduled_for %}
+          <span>
+            <i class="bi bi-clock"></i>
+            Próxima {{ row.workflow.next_scheduled_for|date:"d/m H:i" }}
+          </span>
+          {% endif %}
+          {% if row.workflow.last_event_at %}
+          <span>
+            <i class="bi bi-activity"></i>
+            {{ row.workflow.last_event_at|timesince }} atrás
+          </span>
+          {% endif %}
+          {% if row.workflow.last_error_at and row.status == "problem" %}
+          <span class="text-[var(--ik-bad)]">
+            <i class="bi bi-exclamation-circle"></i>
+            Erro {{ row.workflow.last_error_at|timesince }} atrás
+          </span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-shrink-0 items-center gap-1.5">
+      {% if row.can_pause %}
+      <form hx-post="{% url 'jobs:workflow-action' row.workflow.pk %}"
+            hx-swap="none" hx-push-url="false" class="inline">
+        {% csrf_token %}
+        <button name="workflow_action" value="pause"
+                class="btn btn-secondary btn-sm" title="Pausar">
+          <i class="bi bi-pause-fill"></i>
+        </button>
+      </form>
+      {% elif row.can_resume %}
+      <form hx-post="{% url 'jobs:workflow-action' row.workflow.pk %}"
+            hx-swap="none" hx-push-url="false" class="inline">
+        {% csrf_token %}
+        <button name="workflow_action" value="resume"
+                class="btn btn-secondary btn-sm" title="Retomar">
+          <i class="bi bi-play-fill"></i>
+        </button>
+      </form>
+      {% endif %}
+
+      {% if row.can_cancel %}
+      <form hx-post="{% url 'jobs:workflow-action' row.workflow.pk %}"
+            hx-swap="none" hx-push-url="false" class="inline"
+            onsubmit="return confirm('Cancelar este workflow?')">
+        {% csrf_token %}
+        <button name="workflow_action" value="cancel"
+                class="btn btn-secondary btn-sm text-[var(--ik-bad)]" title="Cancelar">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </form>
+      {% endif %}
+
+      <a href="{% url 'jobs:workflow-detail' row.workflow.pk %}"
+         class="btn btn-secondary btn-sm" title="Abrir detalhes">
+        <i class="bi bi-box-arrow-up-right"></i>
+      </a>
+
+      <button type="button"
+              class="btn btn-secondary btn-sm text-muted" title="Arquivar"
+              @click="$dispatch('confirm', {
+                title: 'Arquivar workflow',
+                message: 'Arquivar {{ row.title|escapejs }}? Ficará oculto da lista principal. Pode restaurar depois.',
+                style: 'primary',
+                confirmLabel: 'Arquivar',
+                onConfirm: () => {
+                  const csrf = JSON.parse(document.body.getAttribute('hx-headers')||'{}')['X-CSRFToken']||'';
+                  fetch('{% url 'jobs:workflow-archive' row.workflow.pk %}', {method:'POST',body:new URLSearchParams({csrfmiddlewaretoken:csrf}),headers:{'X-CSRFToken':csrf}})
+                    .then(r => { try{const d=JSON.parse(r.headers.get('HX-Trigger')||'{}');if(d.toast)window.dispatchEvent(new CustomEvent('toast',{detail:d.toast}));}catch{} location.reload(); });
+                }
+              })">
+        <i class="bi bi-archive"></i>
+      </button>
+    </div>
+
+  </div>
+</article>

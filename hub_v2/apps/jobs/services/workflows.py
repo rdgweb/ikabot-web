@@ -55,6 +55,53 @@ def _workflow_category(action_code: int) -> str:
     return str(ACTION_CATALOG.get(int(action_code), {}).get("category") or "").strip()
 
 
+# workflow types that are not simply the runner name of one action (see _workflow_type)
+_WORKFLOW_TYPE_ACTION = {
+    "construction_plan": 1002,
+    "transport_route": 2,
+    "arrival_monitor": 2,
+    "diplomacy": 30,
+    "internal_market_order": 801,
+}
+_WORKFLOW_TYPE_LABEL = {
+    "arrival_monitor": "Monitor de chegada",
+    "diplomacy": "Diplomacia",
+    "internal_market_order": "Ordem do mercado interno",
+}
+_workflow_type_info_cache: dict[str, dict] = {}
+
+
+def workflow_type_info(workflow_type: str) -> dict:
+    """What a workflow type is, read from the catalog (N-88).
+
+    Returns {"action_code", "label", "category", "recurring"}. The job queue groups by
+    this, so every workflow of the same kind lands in the same sub-group whatever the
+    name its first job was given.
+    """
+    wtype = str(workflow_type or "").strip()
+    cached = _workflow_type_info_cache.get(wtype)
+    if cached is not None:
+        return cached
+    code = _WORKFLOW_TYPE_ACTION.get(wtype)
+    if code is None:
+        # the action whose runner has this name; a visible one wins over a hidden one
+        candidates = sorted(
+            (bool(meta.get("ui_hidden")), action_code)
+            for action_code, meta in ACTION_CATALOG.items()
+            if str(meta.get("runner") or "").strip() == wtype
+        )
+        code = candidates[0][1] if candidates else None
+    meta = ACTION_CATALOG.get(code, {}) if code is not None else {}
+    info = {
+        "action_code": code,
+        "label": _WORKFLOW_TYPE_LABEL.get(wtype) or meta.get("name") or wtype.replace("_", " ").title() or "Workflow",
+        "category": str(meta.get("category") or "").strip(),
+        "recurring": bool(meta.get("recurring")),
+    }
+    _workflow_type_info_cache[wtype] = info
+    return info
+
+
 def _workflow_scope(action_code: int, account, game_account, node, inputs: dict) -> dict:
     scope = {
         "account_id": str(account.pk),

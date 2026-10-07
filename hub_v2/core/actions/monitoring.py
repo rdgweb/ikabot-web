@@ -1,4 +1,13 @@
-from .constants import CAT_MONITORING, FIELD_BOOL, FIELD_CHOICE, FIELD_CITY_SELECT, FIELD_INT, FIELD_STR, TRANSPORT_LOAD_CHOICES
+from .constants import (
+    CAT_DIPLOMACY,
+    CAT_MONITORING,
+    FIELD_BOOL,
+    FIELD_CHOICE,
+    FIELD_CITY_SELECT,
+    FIELD_INT,
+    FIELD_STR,
+    TRANSPORT_LOAD_CHOICES,
+)
 
 
 ACTIONS = {
@@ -64,7 +73,7 @@ ACTIONS = {
     30: {
         "name": "Verificar Diplomacia",
         "name_en": "Check Diplomacy",
-        "category": CAT_MONITORING,
+        "category": CAT_DIPLOMACY,
         "icon": "bi-envelope",
         "runner": "diplomacy_check",
         "requires_game_session": True,
@@ -81,7 +90,7 @@ ACTIONS = {
     31: {
         "name": "Enviar Mensagem",
         "name_en": "Send Message",
-        "category": CAT_MONITORING,
+        "category": CAT_DIPLOMACY,
         "icon": "bi-send",
         "runner": "diplomacy_send",
         "requires_game_session": True,

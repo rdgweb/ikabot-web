@@ -8,8 +8,8 @@ from collections import Counter
 from datetime import timedelta
 
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.db.models import Count, F, Max, Window
-from django.db.models.functions import RowNumber
+from django.db.models import Case, Count, F, IntegerField, Max, Value, When, Window
+from django.db.models.functions import Lower, RowNumber
 from django.http import HttpResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.db import models, transaction
@@ -17,14 +17,14 @@ from django.utils import timezone
 from django.views import View
 from django.views.generic import DetailView
 
-from core.actions.constants import CATEGORY_META
+from core.actions.constants import CATEGORY_META, CATEGORY_ORDER
 from core.catalogs import get_building_info
 from core.contracts import ACTION_CATALOG, RESOURCE_CHOICES
 from core.mixins.views import FilterSortListView
 from ..filters import JobFilter, WorkflowFilter
 from ..models import ConstructionResourceReservation, Job, JobLog, Workflow, WorkflowRun
 from ..services.dispatch import dispatch_job
-from ..services.workflows import create_job_with_workflow, ensure_workflow_for_job
+from ..services.workflows import create_job_with_workflow, ensure_workflow_for_job, workflow_type_info
 
 
 RESOURCE_ICON_MAP = {
@@ -2929,17 +2929,69 @@ class WorkflowListView(FilterSortListView):
     filterset_class = WorkflowFilter
     template_name = "jobs/workflow_list.html"
     partial_template_name = "jobs/partials/workflow_table.html"
-    paginate_by = 50
+    paginate_by = 100
     ordering_fields = ["status", "updated_at", "last_event_at", "next_scheduled_for", "created_at"]
     default_ordering = ["-updated_at"]
 
+    # N-88: how the queue is organised. Both choices are remembered per user session.
+    PER_PAGE_OPTIONS = (50, 100, 200)
+    PER_PAGE_ALL = 1000          # what "Todos" means; a hard ceiling for one page
+    GROUP_MODES = (
+        ("menu", "Menu > Acao"),
+        ("account", "Conta > Menu"),
+        ("none", "Sem agrupar"),
+    )
+    PREFS_SESSION_KEY = "workflow_queue_prefs"
+
+    def _queue_prefs(self) -> dict:
+        """{"group", "per_page"} from the request, falling back to what the user chose last."""
+        cached = getattr(self, "_queue_prefs_cache", None)
+        if cached is not None:
+            return cached
+        session = getattr(self.request, "session", None)
+        saved = (session.get(self.PREFS_SESSION_KEY) if session is not None else None) or {}
+        group = self.request.GET.get("group") or saved.get("group") or "menu"
+        if group not in dict(self.GROUP_MODES):
+            group = "menu"
+        raw = self.request.GET.get("per_page") or saved.get("per_page") or self.paginate_by
+        if str(raw) == "all":
+            per_page = "all"
+        else:
+            try:
+                per_page = max(5, min(self.PER_PAGE_ALL, int(raw)))
+            except (ValueError, TypeError):
+                per_page = self.paginate_by
+        prefs = {"group": group, "per_page": per_page}
+        if session is not None and prefs != saved:
+            session[self.PREFS_SESSION_KEY] = prefs
+        self._queue_prefs_cache = prefs
+        return prefs
+
     def get_paginate_by(self, queryset):
-        """Allow user to control page size via ?per_page= query param."""
-        try:
-            per_page = int(self.request.GET.get("per_page") or self.paginate_by)
-            return max(5, min(200, per_page))
-        except (ValueError, TypeError):
-            return self.paginate_by
+        """Page size chosen by the user (?per_page=N or "all")."""
+        per_page = self._queue_prefs()["per_page"]
+        return self.PER_PAGE_ALL if per_page == "all" else per_page
+
+    def get_ordering(self):
+        """Group first, then the usual order inside each group.
+
+        Sorting happens before pagination, so a menu is never scattered over the pages
+        (with 80 workflows and 50 per page, a 3-item menu used to show 2 on one page).
+        """
+        inner = super().get_ordering()
+        inner = [inner] if isinstance(inner, str) else list(inner or [])
+        group = self._queue_prefs()["group"]
+        if group == "none":
+            return inner
+        menu_rank = Case(
+            *[When(category=key, then=Value(position)) for position, key in enumerate(CATEGORY_ORDER)],
+            default=Value(len(CATEGORY_ORDER)),
+            output_field=IntegerField(),
+        )
+        by_account = [Lower("game_account__name"), Lower("account__label"), "game_account_id"]
+        if group == "account":
+            return [*by_account, menu_rank, "category", "workflow_type", *inner]
+        return [menu_rank, "category", "workflow_type", *by_account, *inner]
     queryset = Workflow.objects.select_related("account", "game_account", "node", "active_run")
 
     def get_queryset(self):
@@ -3043,35 +3095,114 @@ class WorkflowListView(FilterSortListView):
         context["_global_qs"] = Workflow.objects.filter(
             archived_at__isnull=not archived_view
         )
+        prefs = self._queue_prefs()
         context["workflow_rows"] = workflow_rows
         context["workflow_summary"] = self._global_workflow_summary(context)  # also syncs all stale statuses
-        context["workflow_groups"] = self._group_by_category(workflow_rows)
+        context["workflow_groups"] = self._group_rows(workflow_rows, prefs["group"], self._group_totals(prefs["group"]))
+        context["group_mode"] = prefs["group"]
+        context["group_options"] = [
+            {"key": key, "label": label, "url": self._prefs_url(group=key), "active": key == prefs["group"]}
+            for key, label in self.GROUP_MODES
+        ]
+        context["per_page_options"] = [
+            {"label": str(size), "url": self._prefs_url(per_page=size), "active": prefs["per_page"] == size}
+            for size in self.PER_PAGE_OPTIONS
+        ] + [{"label": "Todos", "url": self._prefs_url(per_page="all"), "active": prefs["per_page"] == "all"}]
         context["job_view_mode"] = "ops"
         return context
 
+    def _prefs_url(self, **changes) -> str:
+        """Current filters with one preference changed (back to the first page)."""
+        query = self.request.GET.copy()
+        query.pop("page", None)
+        for key, value in changes.items():
+            query[key] = str(value)
+        return "?" + query.urlencode()
+
+    def _group_totals(self, mode: str) -> dict:
+        """How many workflows each group has in the whole filtered list, not only on this page."""
+        if mode == "none":
+            return {}
+        totals: Counter = Counter()
+        counted = (
+            self.object_list.order_by()
+            .values("category", "workflow_type", "game_account_id", "account_id")
+            .annotate(total=Count("pk"))
+        )
+        for item in counted:
+            category = item["category"] or "other"
+            owner = str(item["game_account_id"] or item["account_id"])
+            if mode == "account":
+                totals[owner] += item["total"]
+                totals[(owner, category)] += item["total"]
+            else:
+                totals[category] += item["total"]
+                totals[(category, item["workflow_type"])] += item["total"]
+        return totals
+
     @staticmethod
-    def _group_by_category(workflow_rows: list) -> list:
-        from collections import defaultdict
-        from core.actions.constants import CATEGORY_META
-        _ORDER = ["construction", "economy", "automation", "military", "market", "monitoring", "admin"]
-        buckets: dict = defaultdict(list)
+    def _menu_meta(category: str) -> dict:
+        meta = CATEGORY_META.get(category, {})
+        return {
+            "label": meta.get("label", (category or "Outros").replace("_", " ").title()),
+            "icon": meta.get("icon", "bi-grid"),
+            "color": meta.get("color", "var(--ik-muted)"),
+        }
+
+    @classmethod
+    def _group_rows(cls, workflow_rows: list, mode: str = "menu", totals: dict | None = None) -> list:
+        """Rows of the page as groups with sub-groups, in the order they arrive.
+
+        menu:    menu (category) > action (workflow type)
+        account: account > menu
+        none:    one unnamed group
+
+        Each group / sub-group carries `shown` (rows on this page) and `total` (whole
+        filtered list), so a group cut by the page break says so.
+        """
+        totals = totals or {}
+        if mode == "none":
+            return [{
+                "key": "all", "label": "", "icon": "", "color": "", "filter_url": "",
+                "shown": len(workflow_rows), "total": len(workflow_rows),
+                "subgroups": [{"key": "all", "label": "", "rows": list(workflow_rows), "shown": len(workflow_rows), "total": len(workflow_rows)}],
+            }]
+
+        groups: list = []
+        index: dict = {}
         for row in workflow_rows:
-            cat = row["workflow"].category or "other"
-            buckets[cat].append(row)
-        groups = []
-        for cat in _ORDER:
-            if cat in buckets:
-                meta = CATEGORY_META.get(cat, {})
-                groups.append({
-                    "category": cat,
-                    "label": meta.get("label", cat.title()),
-                    "icon": meta.get("icon", "bi-grid"),
-                    "color": meta.get("color", "var(--ik-muted)"),
-                    "rows": buckets[cat],
-                })
-        for cat, rows in buckets.items():
-            if cat not in _ORDER:
-                groups.append({"category": cat, "label": cat.title(), "icon": "bi-grid", "color": "var(--ik-muted)", "rows": rows})
+            workflow = row["workflow"]
+            category = workflow.category or "other"
+            if mode == "account":
+                owner = str(workflow.game_account_id or workflow.account_id)
+                name = (workflow.game_account.name or workflow.game_account.server_id) if workflow.game_account else workflow.account.label
+                group_key, group_view = owner, {"label": name, "icon": "bi-person-circle", "color": "var(--ik-sea)"}
+                filter_url = f"?game_account={workflow.game_account_id}" if workflow.game_account_id else f"?account={workflow.account_id}"
+                sub_key, sub_label = category, cls._menu_meta(category)["label"]
+            else:
+                group_key, group_view = category, cls._menu_meta(category)
+                filter_url = f"?category={category}" if category in CATEGORY_META else ""
+                sub_key, sub_label = workflow.workflow_type, row["type_label"]
+
+            group = index.get(group_key)
+            if group is None:
+                group = {"key": group_key, **group_view, "filter_url": filter_url, "subgroups": [], "_subs": {}, "shown": 0}
+                group["total"] = totals.get(group_key, 0)
+                index[group_key] = group
+                groups.append(group)
+            sub = group["_subs"].get(sub_key)
+            if sub is None:
+                sub = {"key": f"{group_key}/{sub_key}", "label": sub_label, "rows": [], "shown": 0, "total": totals.get((group_key, sub_key), 0)}
+                group["_subs"][sub_key] = sub
+                group["subgroups"].append(sub)
+            sub["rows"].append(row)
+            sub["shown"] += 1
+            group["shown"] += 1
+        for group in groups:
+            group.pop("_subs")
+            group["total"] = max(group["total"], group["shown"])
+            for sub in group["subgroups"]:
+                sub["total"] = max(sub["total"], sub["shown"])
         return groups
 
     @staticmethod
@@ -3297,6 +3428,8 @@ class WorkflowListView(FilterSortListView):
         return {
             "workflow": workflow,
             "title": cls._workflow_title(workflow, config),
+            "type_label": workflow_type_info(workflow.workflow_type)["label"],
+            "recurring": workflow_type_info(workflow.workflow_type)["recurring"],
             "category_label": CATEGORY_META.get(workflow.category, {}).get("label", workflow.category or "Operacional"),
             "category_icon": CATEGORY_META.get(workflow.category, {}).get("icon", "bi-diagram-3"),
             "scope_label": " / ".join(scope_parts),

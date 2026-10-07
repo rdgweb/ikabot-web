@@ -1,5 +1,7 @@
 from .constants import (
-    CAT_AUTOMATION,
+    CAT_ACCOUNT,
+    CAT_RESOURCES,
+    CAT_TEMPLE,
     DONATION_METHOD_CHOICES,
     FIELD_BOOL,
     FIELD_CHOICE,
@@ -13,7 +15,7 @@ ACTIONS = {
     1003: {
         "name": "Distribuir em Loop",
         "name_en": "Distribution loop",
-        "category": CAT_AUTOMATION,
+        "category": CAT_RESOURCES,
         "icon": "bi-arrows-expand",
         "runner": "distribute",
         "requires_game_session": True,
@@ -27,7 +29,7 @@ ACTIONS = {
     1006: {
         "name": "Doacao em Loop",
         "name_en": "Donation loop",
-        "category": CAT_AUTOMATION,
+        "category": CAT_RESOURCES,
         "icon": "bi-gift",
         "runner": "donate_loop",
         "requires_game_session": True,
@@ -51,7 +53,7 @@ ACTIONS = {
     1007: {
         "name": "Santuario em Loop",
         "name_en": "Shrine loop",
-        "category": CAT_AUTOMATION,
+        "category": CAT_TEMPLE,
         "icon": "bi-stars",
         "runner": "activate_shrine_loop",
         "requires_game_session": True,
@@ -73,7 +75,7 @@ ACTIONS = {
     1902: {
         "name": "Rotina Automatica",
         "name_en": "Auto routine",
-        "category": CAT_AUTOMATION,
+        "category": CAT_ACCOUNT,
         "icon": "bi-robot",
         "runner": "auto_routine",
         "requires_game_session": True,

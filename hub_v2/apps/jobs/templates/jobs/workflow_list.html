@@ -138,7 +138,19 @@ x-data="{
   clearSelection() { this.selected = []; this.selectAllFiltered = false; },
   selectCurrentPage() {
     this.selectAllFiltered = false;
-    this.selected = Array.from(this.$el.querySelectorAll('.wf-bulk-check')).map(el => el.value);
+    this.selected = Array.from(this.$root.querySelectorAll('.wf-bulk-check')).map(el => el.value);
+  },
+  collapsed: (() => { try { return JSON.parse(localStorage.getItem('wfQueueCollapsed') || '{}'); } catch { return {}; } })(),
+  isCollapsed(key) { return !!this.collapsed[key]; },
+  saveCollapsed() { try { localStorage.setItem('wfQueueCollapsed', JSON.stringify(this.collapsed)); } catch {} },
+  toggleCollapsed(key) {
+    if (this.collapsed[key]) delete this.collapsed[key]; else this.collapsed[key] = true;
+    this.saveCollapsed();
+  },
+  setAllCollapsed(value) {
+    const keys = Array.from(this.$root.querySelectorAll('[data-wf-collapse]')).map(el => el.dataset.wfCollapse);
+    keys.forEach(key => { if (value) this.collapsed[key] = true; else delete this.collapsed[key]; });
+    this.saveCollapsed();
   },
   groupIds(el) {
     const group = el.closest('[data-wf-group]');
@@ -159,7 +171,7 @@ x-data="{
       : Array.from(new Set([...this.selected, ...ids]));
   },
   syncFilteredCount() {
-    const marker = this.$el.querySelector('[data-filtered-count]');
+    const marker = this.$root.querySelector('[data-filtered-count]');
     if (!marker) return;
     const n = parseInt(marker.dataset.filteredCount || '0', 10);
     if (!Number.isNaN(n)) this.filteredCount = n;

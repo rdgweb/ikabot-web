@@ -1,4 +1,12 @@
-from .constants import CAT_AUTOMATION, CAT_MILITARY, FIELD_BOOL, FIELD_CHOICE, FIELD_CITY_SELECT, FIELD_INT, FIELD_JSON_ARRAY, FIELD_STR
+from .constants import (
+    CAT_MILITARY,
+    FIELD_BOOL,
+    FIELD_CHOICE,
+    FIELD_CITY_SELECT,
+    FIELD_INT,
+    FIELD_JSON_ARRAY,
+    FIELD_STR,
+)
 
 
 ACTIONS = {
@@ -223,7 +231,7 @@ ACTIONS = {
     1203: {
         "name": "Melhorar Unidades",
         "name_en": "Upgrade units",
-        "category": CAT_AUTOMATION,
+        "category": CAT_MILITARY,
         "icon": "bi-arrow-up-square",
         "runner": "upgrade_units",
         "requires_game_session": True,
