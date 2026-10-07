@@ -407,6 +407,8 @@ class CheckStatusRunner(BaseRunner):
                     "income": global_data.get("income", 0),
                     "upkeep": global_data.get("upkeep", 0),
                     "scientists_upkeep": global_data.get("scientistsUpkeep", 0),
+                    "god_gold_result": global_data.get("godGoldResult", 0),
+                    "bad_tax_accountant": global_data.get("badTaxAccountant", 0),
                     "free_transporters": global_data.get("freeTransporters", 0),
                     "max_transporters": global_data.get("maxTransporters", 0),
                     "free_freighters": global_data.get("freeFreighters", 0),
@@ -611,6 +613,10 @@ class CheckStatusRunner(BaseRunner):
                 "income": _safe_num_like(header_data.get("income")),
                 "upkeep": _safe_num_like(header_data.get("upkeep")),
                 "scientistsUpkeep": _safe_num_like(header_data.get("scientistsUpkeep")),
+                # N-76: the two bonuses the game adds to the income in its own gold tooltip
+                # ("Deuses (Pluto)" and "Recibos de Ouro Aumentados"); zero when not active
+                "godGoldResult": _safe_num_like(header_data.get("godGoldResult")),
+                "badTaxAccountant": _safe_num_like(header_data.get("badTaxAccountant")),
                 "freeTransporters": _safe_num_like(header_data.get("freeTransporters")),
                 "maxTransporters": _safe_num_like(header_data.get("maxTransporters")),
                 "freeFreighters": _safe_num_like(header_data.get("freeFreighters")),

@@ -256,8 +256,20 @@
               <div class="space-y-1">
                 <div class="flex justify-between text-[10px]">
                   <span class="text-muted">Rendimento</span>
-                  <span class="font-mono text-green-600">+{{ card.gross_income|intcomma }}/h</span>
+                  <span class="font-mono text-green-600">+{{ card.city_income|intcomma }}/h</span>
                 </div>
+                {% if card.accountant_bonus %}
+                <div class="flex justify-between text-[10px]">
+                  <span class="text-muted">Recibos de ouro aumentados</span>
+                  <span class="font-mono {% if card.accountant_bonus > 0 %}text-green-600{% else %}text-red-500{% endif %}">{% if card.accountant_bonus > 0 %}+{% endif %}{{ card.accountant_bonus|intcomma }}/h</span>
+                </div>
+                {% endif %}
+                {% if card.god_bonus %}
+                <div class="flex justify-between text-[10px]">
+                  <span class="text-muted">Deuses (Pluto)</span>
+                  <span class="font-mono {% if card.god_bonus > 0 %}text-green-600{% else %}text-red-500{% endif %}">{% if card.god_bonus > 0 %}+{% endif %}{{ card.god_bonus|intcomma }}/h</span>
+                </div>
+                {% endif %}
                 {% if card.upkeep %}
                 <div class="flex justify-between text-[10px]">
                   <span class="text-muted">Manutencao</span>

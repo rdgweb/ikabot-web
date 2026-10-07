@@ -56,6 +56,12 @@ def _load_city_runner_module():
     island_donation.extract_city_data = lambda _html: {}
     services_pkg.resource_transport = resource_transport
     services_pkg.island_donation = island_donation
+    # N-76: pure arithmetic with no dependencies: the real module, not a stand-in
+    gold_spec = importlib.util.spec_from_file_location("services.gold_income", ROOT / "services" / "gold_income.py")
+    gold_income = importlib.util.module_from_spec(gold_spec)
+    assert gold_spec and gold_spec.loader
+    gold_spec.loader.exec_module(gold_income)
+    services_pkg.gold_income = gold_income
 
     sys.modules.update(
         {
@@ -70,6 +76,7 @@ def _load_city_runner_module():
             "services": services_pkg,
             "services.resource_transport": resource_transport,
             "services.island_donation": island_donation,
+            "services.gold_income": gold_income,
         }
     )
 

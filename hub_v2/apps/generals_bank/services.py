@@ -14,6 +14,7 @@ from django.utils import timezone
 
 from apps.accounts.models import GameAccount
 from apps.game.models import AccountSnapshot
+from apps.game.services.gold import net_gold_income
 from apps.jobs.services.workflows import create_job_with_workflow
 from core.catalogs import TRAINING_UNITS
 
@@ -156,11 +157,8 @@ def _estimate_city_capacity(
 def _project_net_gold_after_upkeep(ga: GameAccount, extra_upkeep: int) -> int:
     snap = AccountSnapshot.objects.filter(game_account=ga).first()
     base = (snap.base_snapshot or {}) if snap else {}
-    income = int(base.get("income") or 0)
-    upkeep = int(base.get("upkeep") or 0)
-    scientists_upkeep = int(base.get("scientists_upkeep") or 0)
-    current_net = income + upkeep + scientists_upkeep
-    return current_net - extra_upkeep
+    # N-76: the same net income the dashboard shows (bonuses included)
+    return net_gold_income(base) - extra_upkeep
 
 
 def _city_name(city: dict | None, fallback=None) -> str:

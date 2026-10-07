@@ -400,7 +400,7 @@ class PatchSnapshotBaseView(APIView):
 
         normalized_patch: dict[str, object] = {}
         for key, value in patch.items():
-            if key in {"gold", "income", "upkeep", "scientists_upkeep"}:
+            if key in {"gold", "income", "upkeep", "scientists_upkeep", "god_gold_result", "bad_tax_accountant"}:
                 try:
                     normalized_patch[key] = int(float(value or 0))
                 except (TypeError, ValueError):

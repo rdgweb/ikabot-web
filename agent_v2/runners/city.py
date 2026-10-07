@@ -16,6 +16,7 @@ from runners.base import BaseRunner, RunnerResult
 from sessions.game_session_service import LoginCooldownActive
 from services.resource_transport import estimate_incoming_transport_wait_seconds, change_current_city, split_shipment
 from services.island_donation import extract_city_data
+from services.gold_income import net_gold_income
 
 logger = logging.getLogger(__name__)
 
@@ -3259,10 +3260,8 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         deficit = max(0, min_gold - available_gold)
         if deficit <= 0:
             return 0
-        gross_income = _to_int(base_snapshot.get("income"), 0)
-        upkeep = _to_int(base_snapshot.get("upkeep"), 0)
-        scientists_upkeep = _to_int(base_snapshot.get("scientists_upkeep"), 0)
-        net_income = gross_income + upkeep + scientists_upkeep
+        # N-76: the whole sum of the game's gold tooltip, bonuses included
+        net_income = net_gold_income(base_snapshot)
         if net_income <= 0:
             return None
         return int((deficit / net_income) * 3600)

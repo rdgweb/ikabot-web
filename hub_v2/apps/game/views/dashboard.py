@@ -20,6 +20,7 @@ from apps.accounts.avatars import avatar_url, initials
 from apps.accounts.models import Account, GameAccount, Node
 from apps.game.models import AccountSnapshotHistory
 from apps.game.services.dashboard_cache import get_dashboard_cache_key
+from apps.game.services.gold import gold_income, net_gold_income
 from apps.game.services.vacation import read_vacation_state
 from apps.jobs.models import ConstructionResourceReservation
 
@@ -371,12 +372,12 @@ class DashboardView(LoginRequiredMixin, TemplateView):
 
                 # --- KPIs ---
                 acct_gold = _si(base.get("gold"))
-                gross_income = _si(base.get("income"))
-                upkeep = _si(base.get("upkeep"))
-                scientists_upkeep = _si(base.get("scientists_upkeep"))
-                # upkeep and scientists_upkeep are already negative in the Ikariam API
-                # Net income = sum of all signed values
-                acct_income = gross_income + upkeep + scientists_upkeep
+                # N-76: one rule for the net income (see apps.game.services.gold)
+                gold_parts = gold_income(base)
+                gross_income = gold_parts["receipts"]       # everything that comes in, bonuses included
+                upkeep = gold_parts["upkeep"]
+                scientists_upkeep = gold_parts["scientists_upkeep"]
+                acct_income = gold_parts["net"]
                 acct_city_count = len(enriched_cities)
 
                 total_gold += acct_gold
@@ -406,6 +407,9 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                     "player_score": base.get("player_score") or {},
                     "income": acct_income,
                     "gross_income": gross_income,
+                    "city_income": gold_parts["income"],
+                    "accountant_bonus": gold_parts["accountant_bonus"],
+                    "god_bonus": gold_parts["god_bonus"],
                     "upkeep": upkeep,
                     "scientists_upkeep": scientists_upkeep,
                     "free_transporters": _si(base.get("free_transporters")),
@@ -826,9 +830,6 @@ def _build_history_map(game_account_ids: list) -> dict[str, dict]:
             base = row.base_snapshot or {}
             cities = row.cities if isinstance(row.cities, list) else []
             military = row.military if isinstance(row.military, dict) else {}
-            gross_income = _si(base.get("income"))
-            upkeep = _si(base.get("upkeep"))
-            scientists_upkeep = _si(base.get("scientists_upkeep"))
             wood = sum(_si(city.get("wood")) for city in cities if isinstance(city, dict))
             wine = sum(_si(city.get("wine")) for city in cities if isinstance(city, dict))
             marble = sum(_si(city.get("marble")) for city in cities if isinstance(city, dict))
@@ -839,7 +840,7 @@ def _build_history_map(game_account_ids: list) -> dict[str, dict]:
             bucket.append({
                 "captured_at": row.captured_at.isoformat(),
                 "gold": _si(base.get("gold")),
-                "income": gross_income + upkeep + scientists_upkeep,
+                "income": net_gold_income(base),
                 "cities": len(cities),
                 "resources": wood + wine + marble + crystal + sulfur,
                 "troops": troop_total,
