@@ -10,6 +10,7 @@ from .jobs import (
     WorkflowAutoArchiveView,
     WorkflowBulkArchiveView,
     WorkflowBulkDeleteView,
+    WorkflowLiveStatusView,
     JobLogsPartialView,
     JobChainHistoryPartialView,
     JobCancelView,

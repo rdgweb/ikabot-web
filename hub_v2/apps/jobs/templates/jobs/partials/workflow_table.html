@@ -17,32 +17,32 @@ data-filtered-count is read by the ancestor's syncFilteredCount() after each swa
     <a href="?" hx-get="?" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
        class="{{ base }}" {% if not cur %}style="background: var(--ik-sand-light);"{% endif %}>
       <div class="text-[11px] uppercase tracking-wide text-muted">Total</div>
-      <div class="mt-1 text-xl font-bold text-ink">{{ workflow_summary.total }}</div>
+      <div class="mt-1 text-xl font-bold text-ink" data-wf-summary="total">{{ workflow_summary.total }}</div>
     </a>
     <a href="?status=active" hx-get="?status=active" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
        class="{{ base }}" {% if cur == 'active' %}style="background: rgba(79,134,185,0.10);"{% endif %}>
       <div class="text-[11px] uppercase tracking-wide text-muted">Ativos</div>
-      <div class="mt-1 text-xl font-bold" style="color: var(--ik-sea);">{{ workflow_summary.active }}</div>
+      <div class="mt-1 text-xl font-bold" style="color: var(--ik-sea);" data-wf-summary="active">{{ workflow_summary.active }}</div>
     </a>
     <a href="?status=waiting" hx-get="?status=waiting" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
        class="{{ base }}" {% if cur == 'waiting' %}style="background: rgba(245,158,11,0.10);"{% endif %}>
       <div class="text-[11px] uppercase tracking-wide text-muted">Aguardando</div>
-      <div class="mt-1 text-xl font-bold text-amber-500">{{ workflow_summary.waiting }}</div>
+      <div class="mt-1 text-xl font-bold text-amber-500" data-wf-summary="waiting">{{ workflow_summary.waiting }}</div>
     </a>
     <a href="?status=problem" hx-get="?status=problem" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
        class="{{ base }}" {% if cur == 'problem' %}style="background: rgba(193,91,79,0.10);"{% endif %}>
       <div class="text-[11px] uppercase tracking-wide text-muted">Problema</div>
-      <div class="mt-1 text-xl font-bold" style="color: var(--ik-bad);">{{ workflow_summary.problem }}</div>
+      <div class="mt-1 text-xl font-bold" style="color: var(--ik-bad);" data-wf-summary="problem">{{ workflow_summary.problem }}</div>
     </a>
     <a href="?status=paused" hx-get="?status=paused" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
        class="{{ base }}" {% if cur == 'paused' %}style="background: var(--ik-sand-light);"{% endif %}>
       <div class="text-[11px] uppercase tracking-wide text-muted">Pausados</div>
-      <div class="mt-1 text-xl font-bold text-muted">{{ workflow_summary.paused }}</div>
+      <div class="mt-1 text-xl font-bold text-muted" data-wf-summary="paused">{{ workflow_summary.paused }}</div>
     </a>
     <a href="?status=finished" hx-get="?status=finished" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
        class="{{ base }}" {% if cur == 'finished' %}style="background: rgba(95,140,78,0.10);"{% endif %}>
       <div class="text-[11px] uppercase tracking-wide text-muted">Finalizados</div>
-      <div class="mt-1 text-xl font-bold" style="color: var(--ik-good);">{{ workflow_summary.finished }}</div>
+      <div class="mt-1 text-xl font-bold" style="color: var(--ik-good);" data-wf-summary="finished">{{ workflow_summary.finished }}</div>
     </a>
     {% endwith %}
     {% endwith %}
@@ -95,7 +95,7 @@ data-filtered-count is read by the ancestor's syncFilteredCount() after each swa
             {% if group.detail %}&middot; {{ group.detail }}{% endif %}
           </div>
         </div>
-        <div class="flex flex-wrap items-center justify-end gap-1.5">
+        <div class="flex flex-wrap items-center justify-end gap-1.5" data-wf-chips="group">
           {% for item in group.statuses %}
           <span class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs"
                 style="border-color: var(--ik-line); background: rgba(255,255,255,0.75);">
@@ -139,11 +139,13 @@ data-filtered-count is read by the ancestor's syncFilteredCount() after each swa
           </span>
           <span class="text-sm font-semibold text-ink">{{ sub.label }}</span>
           <span class="badge badge-secondary">{% if sub.shown != sub.total %}{{ sub.shown }} de {{ sub.total }}{% else %}{{ sub.total }}{% endif %}</span>
+          <span class="inline-flex items-center gap-2" data-wf-chips="sub">
           {% for item in sub.statuses %}
           <span class="inline-flex items-center gap-1 text-xs text-muted" title="{{ item.label }}">
             <span style="width: 7px; height: 7px; border-radius: 9999px; background: {{ item.color }};"></span>{{ item.count }}
           </span>
           {% endfor %}
+          </span>
           <div class="flex-1 h-px" style="background: var(--ik-line);"></div>
           <span class="text-xs font-semibold flex-shrink-0" style="color: var(--ik-sea);" x-show="groupState($el) !== 'none'" x-cloak x-text="groupCount($el)"></span>
           <button type="button" class="wf-group-select flex flex-shrink-0 items-center justify-center transition-all"

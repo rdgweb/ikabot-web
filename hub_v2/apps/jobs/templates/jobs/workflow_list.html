@@ -186,6 +186,83 @@ x-data="{
       ? this.selected.filter(id => !ids.includes(id))
       : Array.from(new Set([...this.selected, ...ids]));
   },
+  // N-89: o status e atualizado no lugar, sem recarregar a pagina
+  liveUrl: '{% url 'jobs:workflow-live' %}{% if request.GET.archived == '1' %}?archived=1{% endif %}',
+  liveTimer: null,
+  startLive() {
+    if (this.liveTimer) return;
+    const root = this.$root;
+    this.liveTimer = setInterval(() => {
+      // a fila saiu da tela (navegacao): para de consultar
+      if (!document.body.contains(root)) { clearInterval(this.liveTimer); this.liveTimer = null; return; }
+      if (!document.hidden) this.refreshLive();
+    }, 10000);
+  },
+  refreshLive() {
+    return fetch(this.liveUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => { if (data && data.workflows) this.applyLive(data); })
+      .catch(() => {});
+  },
+  applyLive(data) {
+    const root = this.$root;
+    Object.entries(data.summary || {}).forEach(([key, value]) => {
+      const card = root.querySelector(`[data-wf-summary='${key}']`);
+      if (card) card.textContent = value;
+    });
+    root.querySelectorAll('[data-wf-row]').forEach(row => {
+      const live = data.workflows[row.dataset.wfRow];
+      if (!live) return;
+      row.dataset.wfStatus = live.status;
+      row.dataset.wfLabel = live.label;
+      row.dataset.wfColor = live.color;
+      row.style.borderLeftColor = live.color;
+      const badge = row.querySelector('[data-wf-badge]');
+      if (badge) { badge.className = 'badge ' + live.badge; badge.textContent = live.label; }
+      [['cycle', 'wfCycle'], ['next', 'wfNext'], ['last', 'wfLast']].forEach(([field]) => {
+        const spot = row.querySelector(`[data-wf-${field}]`);
+        if (spot && live[field]) spot.textContent = live[field];
+      });
+    });
+    root.querySelectorAll('[data-wf-chips]').forEach(box => this.renderChips(box));
+  },
+  renderChips(box) {
+    const group = box.closest('[data-wf-group]');
+    if (!group) return;
+    const counts = new Map();
+    group.querySelectorAll('[data-wf-row]').forEach(row => {
+      const entry = counts.get(row.dataset.wfStatus) || { label: row.dataset.wfLabel, color: row.dataset.wfColor, count: 0 };
+      entry.count += 1;
+      counts.set(row.dataset.wfStatus, entry);
+    });
+    const big = box.dataset.wfChips === 'group';
+    const order = ['problem', 'active', 'waiting', 'paused', 'finished', 'cancelled', 'draft'];
+    const chips = order.filter(status => counts.has(status)).map(status => {
+      const entry = counts.get(status);
+      const chip = document.createElement('span');
+      const dot = document.createElement('span');
+      const size = big ? 8 : 7;
+      dot.style.cssText = `width: ${size}px; height: ${size}px; border-radius: 9999px; background: ${entry.color};`;
+      chip.appendChild(dot);
+      if (big) {
+        chip.className = 'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs';
+        chip.style.cssText = 'border-color: var(--ik-line); background: rgba(255,255,255,0.75);';
+        const count = document.createElement('span');
+        count.className = 'font-semibold text-ink';
+        count.textContent = entry.count;
+        const label = document.createElement('span');
+        label.className = 'text-muted';
+        label.textContent = entry.label;
+        chip.append(count, label);
+      } else {
+        chip.className = 'inline-flex items-center gap-1 text-xs text-muted';
+        chip.title = entry.label;
+        chip.append(String(entry.count));
+      }
+      return chip;
+    });
+    box.replaceChildren(...chips);
+  },
   syncFilteredCount() {
     const marker = this.$root.querySelector('[data-filtered-count]');
     if (!marker) return;
@@ -245,7 +322,7 @@ x-data="{
       });
   }
 }"
-x-init="syncFilteredCount()"
+x-init="syncFilteredCount(); startLive()"
 @htmx:after-swap="syncFilteredCount()"
 {% endblock %}
 

@@ -223,7 +223,9 @@ class JobWorkflowViewTests(TestCase):
         self.client.force_login(self.user)
         ensure_workflow_for_job(self.root_finished)
 
-        response = self.client.get(reverse("jobs:job-list"), {"status": "finished"}, HTTP_HX_REQUEST="true")
+        # a filter click; the status filter now follows the status shown (N-89), so the
+        # category is used here to keep this test about the partial's structure
+        response = self.client.get(reverse("jobs:job-list"), {"category": "construction"}, HTTP_HX_REQUEST="true")
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "data-filtered-count=")

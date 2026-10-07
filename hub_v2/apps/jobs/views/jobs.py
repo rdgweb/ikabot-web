@@ -10,11 +10,12 @@ from datetime import timedelta
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Case, Count, F, IntegerField, Max, Value, When, Window
 from django.db.models.functions import Lower, RowNumber
-from django.http import HttpResponse, QueryDict
+from django.http import HttpResponse, JsonResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
 from django.db import models, transaction
 from django.utils import timezone
+from django.utils.timesince import timesince
 from django.views import View
 from django.views.generic import DetailView
 
@@ -23,8 +24,10 @@ from core.actions.constants import CATEGORY_META, CATEGORY_ORDER
 from core.catalogs import get_building_info
 from core.contracts import ACTION_CATALOG, RESOURCE_CHOICES
 from core.mixins.views import FilterSortListView
+from core.templatetags.hub_tags import status_badge_class
 from ..filters import JobFilter, WorkflowFilter
 from ..models import ConstructionResourceReservation, Job, JobLog, Workflow, WorkflowRun
+from ..services import workflow_status
 from ..services.dispatch import dispatch_job
 from ..services.workflows import create_job_with_workflow, ensure_workflow_for_job, workflow_type_info
 
@@ -3039,44 +3042,8 @@ class WorkflowListView(FilterSortListView):
         # for long-running workflows that accumulate many history entries.
         recent_job_map: dict = {}
 
-        status_times = {}
-        if workflow_ids:
-            now_ts = timezone.now()
-            for row in (
-                Job.objects.filter(
-                    workflow_id__in=workflow_ids,
-                    archived_at__isnull=True,
-                )
-                .exclude(status="running", lease_expires_at__lte=now_ts)
-                .values("workflow_id", "status")
-                .annotate(max_t=Max("created_at"))
-            ):
-                status_times.setdefault(row["workflow_id"], {})[row["status"]] = row["max_t"]
-
-        running_workflow_ids = {
-            wf_id for wf_id, statuses in status_times.items()
-            if statuses.get("running")
-        }
-        active_workflow_ids = {
-            wf_id for wf_id, statuses in status_times.items()
-            if statuses.get("running") or statuses.get("queued") or statuses.get("scheduled")
-        }
-        _error_times = {
-            wf_id: statuses["error"]
-            for wf_id, statuses in status_times.items()
-            if statuses.get("error")
-        }
-        error_workflow_ids = set(_error_times.keys())
-        # Errors superseded by any newer job (not just active) — compare vs most recent job overall
-        _latest_times = {
-            wf_id: max(t for t in statuses.values() if t)
-            for wf_id, statuses in status_times.items()
-            if statuses
-        }
-        superseded_error_ids = {
-            wf_id for wf_id, err_t in _error_times.items()
-            if _latest_times.get(wf_id) and _latest_times[wf_id] > err_t
-        }
+        # N-89: what the jobs say about each workflow, by the one shared rule
+        facts = workflow_status.job_facts(workflow_ids) if workflow_ids else {}
 
         workflow_rows = [
             self._build_workflow_row(
@@ -3084,10 +3051,7 @@ class WorkflowListView(FilterSortListView):
                 run_map.get(workflow.pk, []),
                 {},
                 recent_job_map.get(workflow.pk, []),
-                recent_statuses=set(status_times.get(workflow.pk, {})),
-                has_active_job=workflow.pk in active_workflow_ids,
-                has_running_job=workflow.pk in running_workflow_ids,
-                has_error_job=workflow.pk in error_workflow_ids and workflow.pk not in superseded_error_ids,
+                facts=facts.get(workflow.pk),
             )
             for workflow in workflows
         ]
@@ -3099,7 +3063,8 @@ class WorkflowListView(FilterSortListView):
         )
         prefs = self._queue_prefs()
         context["workflow_rows"] = workflow_rows
-        context["workflow_summary"] = self._global_workflow_summary(context)  # also syncs all stale statuses
+        # same rule as the rows, over every workflow of the list (not only this page)
+        context["workflow_summary"] = workflow_status.status_summary(archived=archived_view)
         context["workflow_groups"] = self._group_rows(workflow_rows, prefs["group"], self._group_totals(prefs["group"]))
         context["group_mode"] = prefs["group"]
         context["group_options"] = [
@@ -3372,30 +3337,6 @@ class WorkflowListView(FilterSortListView):
                 summary[key] += 1
         return summary
 
-    def _global_workflow_summary(self, context) -> dict:
-        """Count effective_status across ALL workflows (ignoring status filter) so stats bar is always global."""
-        # Use the full queryset without status filter — stats are always total picture
-        base_qs = context.get("_global_qs") or Workflow.objects.filter(archived_at__isnull=True)
-        summary = {"total": 0, "active": 0, "waiting": 0, "problem": 0, "paused": 0, "finished": 0, "cancelled": 0}
-        for row in base_qs.values("status").annotate(total=Count("id")):
-            status = row["status"]
-            if status in summary:
-                summary[status] = int(row["total"])
-        summary["total"] = sum(amount for key, amount in summary.items() if key != "total")
-        return summary
-    @staticmethod
-    def _effective_status(workflow, recent_job_statuses: set) -> str:
-        """Derive display status from actual job reality, not stale workflow.status."""
-        if "running" in recent_job_statuses:
-            return "active"
-        if recent_job_statuses & {"queued", "scheduled"}:
-            return "waiting"
-        if "error" in recent_job_statuses:
-            return "problem"
-        if recent_job_statuses and recent_job_statuses <= {"finished", "cancelled"}:
-            return "finished"
-        return workflow.status
-
     @staticmethod
     def _parse_workflow_json(raw):
         try:
@@ -3412,7 +3353,7 @@ class WorkflowListView(FilterSortListView):
         return workflow.workflow_type.replace("_", " ").title()
 
     @classmethod
-    def _build_workflow_row(cls, workflow, runs, job_map, recent_jobs=None, recent_statuses=None, has_active_job=False, has_running_job=False, has_error_job=False):
+    def _build_workflow_row(cls, workflow, runs, job_map, recent_jobs=None, facts=None):
         scope = cls._parse_workflow_json(workflow.scope_json)
         config = cls._parse_workflow_json(workflow.config_json)
         active_run = workflow.active_run or (runs[0] if runs else None)
@@ -3424,37 +3365,8 @@ class WorkflowListView(FilterSortListView):
         if city_label:
             scope_parts.append(str(city_label))
 
-        # has_active_job checks ALL jobs in the chain — prevents false "finished" when
-        # a rescheduled job was created before newer finished jobs (e.g. vinho monitor flow).
-        if has_active_job:
-            # Error jobs flag as problem even when also active
-            if has_error_job:
-                effective_status = "problem"
-            elif has_running_job:
-                effective_status = "active"
-            else:
-                effective_status = "waiting"
-        elif workflow.status == "paused":
-            # Pausa e acao explicita do usuario — sem jobs ativos, mostra pausado
-            # (jobs finished/cancelled do historico nao viram "Concluido" na lista).
-            effective_status = "paused"
-        elif has_error_job:
-            effective_status = "problem"
-        else:
-            recent_statuses = set(recent_statuses or {j.status for j in (recent_jobs or [])})
-            # has_error_job=False means any error is superseded — don't let stale error status leak
-            recent_statuses.discard("error")
-            effective_status = cls._effective_status(workflow, recent_statuses)
-            # Recurring workflows with no active jobs = loop stopped = problem
-            # Excecoes: paused/cancelled sao acoes explicitas do usuario; finished
-            # significa que a derivacao autoritativa (workflow.status via reconcile)
-            # ja marcou o workflow como concluido de verdade (ex.: plano de construcao
-            # que atingiu todos os steps do plano - nao e loop parado, e loop terminado
-            # com sucesso).
-            if (effective_status == "finished"
-                    and config.get("recurring")
-                    and workflow.status not in ("paused", "cancelled", "finished")):
-                effective_status = "problem"
+        # the status shown is the reality of the jobs, by the rule everything else uses (N-89)
+        effective_status = workflow_status.effective_status(workflow, facts, recurring=bool(config.get("recurring")))
         status_choices = dict(Workflow.STATUS_CHOICES)
         recent_active_job = next((j for j in (recent_jobs or []) if j.status in ("running", "queued", "scheduled")), None)
 
@@ -3483,6 +3395,44 @@ class WorkflowListView(FilterSortListView):
             "can_cancel": effective_status in _WORKFLOW_CANCELABLE,
             "can_delete": workflow.status in _WORKFLOW_DELETABLE,
         }
+
+
+class WorkflowLiveStatusView(LoginRequiredMixin, View):
+    """GET: status de cada workflow da fila e o resumo, em JSON (N-89).
+
+    A pagina consulta isto a cada poucos segundos e atualiza a tela no lugar, em vez de
+    recarregar ~500 KB de HTML. Somente leitura: nao poda ciclos nem cria workflows.
+    """
+
+    def get(self, request):
+        archived = request.GET.get("archived") == "1"
+        workflows = list(
+            Workflow.objects.filter(archived_at__isnull=not archived)
+            .select_related("active_run")
+            .only("id", "status", "config_json", "next_scheduled_for", "last_event_at", "active_run__sequence", "active_run__status")
+        )
+        facts = workflow_status.job_facts(archived=archived)
+        labels = dict(Workflow.STATUS_CHOICES)
+        summary = dict.fromkeys(workflow_status.SUMMARY_KEYS, 0)
+        rows = {}
+        for workflow in workflows:
+            status = workflow_status.effective_status(workflow, facts.get(workflow.pk))
+            if status in summary:
+                summary[status] += 1
+            run = workflow.active_run
+            rows[str(workflow.pk)] = {
+                "status": status,
+                "label": labels.get(status, status),
+                "badge": status_badge_class(status),
+                "color": workflow_status.STATUS_COLORS.get(status, "var(--ik-line)"),
+                "cycle": f"Ciclo {run.sequence} \u00b7 {run.get_status_display()}" if run else "",
+                "next": timezone.localtime(workflow.next_scheduled_for).strftime("%d/%m %H:%M") if workflow.next_scheduled_for else "",
+                "last": f"{timesince(workflow.last_event_at)} atr\u00e1s" if workflow.last_event_at else "",
+            }
+        summary["total"] = sum(summary.values())
+        response = JsonResponse({"summary": summary, "workflows": rows})
+        response["Cache-Control"] = "no-store"
+        return response
 
 
 class WorkflowDetailView(LoginRequiredMixin, DetailView):

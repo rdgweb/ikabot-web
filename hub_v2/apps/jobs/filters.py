@@ -150,7 +150,8 @@ class JobFilter(django_filters.FilterSet):
 
 
 class WorkflowFilter(django_filters.FilterSet):
-    status = django_filters.ChoiceFilter(choices=Workflow.STATUS_CHOICES, label="Status")
+    # N-89: the status the list shows (reality of the jobs), not the stored field
+    status = django_filters.ChoiceFilter(choices=Workflow.STATUS_CHOICES, label="Status", method="filter_status")
     account = django_filters.ModelChoiceFilter(queryset=Account.objects.all(), label="Conta")
     game_account = django_filters.ModelChoiceFilter(queryset=GameAccount.objects.filter(active=True), label="Subconta")
     node = django_filters.ModelChoiceFilter(queryset=Node.objects.all(), label="No")
@@ -164,6 +165,12 @@ class WorkflowFilter(django_filters.FilterSet):
         form = super().form
         form.fields["category"].choices = [("", "Todas"), *JobFilter.category_choices()]
         return form
+
+    def filter_status(self, queryset, name, value):
+        from .services.workflow_status import filter_by_effective_status
+
+        status = (value or "").strip()
+        return filter_by_effective_status(queryset, status) if status else queryset
 
     def filter_search(self, queryset, name, value):
         token = (value or "").strip()
