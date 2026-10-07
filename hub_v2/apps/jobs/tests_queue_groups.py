@@ -99,12 +99,49 @@ class QueueGroupingTests(TestCase):
         self.assertEqual((groups[0]["shown"], groups[0]["total"]), (4, 4))
         self.assertIn(f"?game_account={self.gas['Alfa'].pk}", groups[0]["filter_url"])
 
-    def test_without_grouping_there_are_no_headers(self):
+    def test_simple_mode_keeps_a_light_divider_per_menu(self):
+        # N-92: "sem agrupar" lost every divider; it is back to what the queue was before N-88
         response = self._page(group="none")
 
         groups = response.context["workflow_groups"]
-        self.assertEqual((len(groups), groups[0]["label"], groups[0]["shown"]), (1, "", 12))
-        self.assertNotIn("wf-group-select", response.content.decode())
+        self.assertEqual([(g["key"], g["shown"], g["total"], g["light"]) for g in groups], [
+            ("construction", 3, 3, True), ("resources", 3, 3, True), ("monitoring", 3, 3, True), ("account", 3, 3, True),
+        ])
+        self.assertEqual([[sub["label"] for sub in g["subgroups"]] for g in groups], [[""]] * 4)      # no sub-groups
+        self.assertEqual([o["label"] for o in response.context["group_options"]], ["Menu > Acao", "Conta > Menu", "Simples"])
+        html = response.content.decode()
+        self.assertNotIn("{#", html)
+        self.assertEqual(html.count("uppercase tracking-wide text-muted\">Construcao<"), 1)       # the old thin divider
+        self.assertEqual(html.count("data-wf-collapse="), 0)        # nothing to collapse, no header bars
+        self.assertNotIn("Recolher tudo", html)
+        self.assertNotIn("game/buildings/architectsoffice.png", html)
+        self.assertEqual(html.count("wf-group-select"), 4)          # the discreet "select this menu" circle
+        self.assertEqual(html.count('groupSelectStyle($el, 22)'), 4)
+        self.assertEqual(html.count('data-wf-chips="sub"'), 4)      # live status summary per menu
+        # rows as before: full title with the account under it and the menu badge
+        self.assertEqual(html.count("badge badge-secondary hover:opacity-80"), 12)
+
+    def test_simple_mode_orders_by_menu_then_most_recent(self):
+        self._workflow("Meio", 2)       # Enviar Recursos: same menu as Distribuir Recursos
+        groups = self._page(group="none").context["workflow_groups"]
+
+        resources = groups[1]["subgroups"][0]["rows"]
+        self.assertEqual(len(resources), 4)
+        self.assertEqual(len({row["workflow"].workflow_type for row in resources}), 2)      # both actions under one divider
+        # most recent first, whatever the action or the account
+        stamps = [row["workflow"].updated_at for row in resources]
+        self.assertEqual(stamps, sorted(stamps, reverse=True))
+
+    def test_simple_mode_does_not_split_a_menu_without_saying_so(self):
+        response = self._page(group="none", per_page=5)
+
+        groups = response.context["workflow_groups"]
+        self.assertEqual([(g["key"], g["shown"], g["total"]) for g in groups], [("construction", 3, 3), ("resources", 2, 3)])
+        html = response.content.decode()
+        self.assertIn("(2 de 3 nesta pagina)", html)
+        self.assertIn("ver so este", html)
+        second = self._page(group="none", per_page=5, page=2).context["workflow_groups"]
+        self.assertEqual([(g["key"], g["shown"], g["total"]) for g in second], [("resources", 1, 3), ("monitoring", 3, 3), ("account", 1, 3)])
 
     def test_the_choice_is_remembered(self):
         self._page(group="account", per_page=200)

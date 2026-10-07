@@ -67,7 +67,33 @@ data-filtered-count is read by the ancestor's syncFilteredCount() after each swa
 
   {% for group in workflow_groups %}
   <div data-wf-group="{{ group.key }}">
-    {% if group.label %}
+    {% if group.light %}
+    {# N-92: modo simples, como a fila era antes: um separador leve por menu, sem barra nem subgrupos #}
+    <div class="flex items-center gap-2 mb-2 mt-1">
+      <i class="bi {{ group.icon }} text-sm flex-shrink-0" style="color: {{ group.color }};"></i>
+      <span class="text-[11px] font-semibold uppercase tracking-wide text-muted">{{ group.label }}</span>
+      <span class="text-[10px] text-muted">({% if group.shown != group.total %}{{ group.shown }} de {{ group.total }} nesta pagina{% else %}{{ group.total }}{% endif %})</span>
+      <span class="inline-flex items-center gap-2" data-wf-chips="sub">
+      {% for item in group.statuses %}
+      <span class="inline-flex items-center gap-1 text-xs text-muted" title="{{ item.label }}">
+        <span style="width: 7px; height: 7px; border-radius: 9999px; background: {{ item.color }};"></span>{{ item.count }}
+      </span>
+      {% endfor %}
+      </span>
+      <div class="flex-1 h-px" style="background: var(--ik-line);"></div>
+      {% if group.shown != group.total and group.filter_url %}
+      <a href="{{ group.filter_url }}" hx-get="{{ group.filter_url }}"
+         hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+         class="text-xs link-sea flex-shrink-0" title="Mostrar so {{ group.label }}">ver so este</a>
+      {% endif %}
+      <span class="text-xs font-semibold flex-shrink-0" style="color: var(--ik-sea);" x-show="groupState($el) !== 'none'" x-cloak x-text="groupCount($el)"></span>
+      <button type="button" class="wf-group-select flex flex-shrink-0 items-center justify-center transition-all"
+              :style="groupSelectStyle($el, 22)" :title="groupLabel($el) + ' de {{ group.label|escapejs }} nesta pagina'"
+              @click.stop="toggleGroup($el)">
+        <i class="bi text-xs" :class="groupState($el) === 'some' ? 'bi-dash-lg' : 'bi-check-lg'"></i>
+      </button>
+    </div>
+    {% elif group.label %}
     {# cabecalho do grupo: uma barra com imagem, resumo e a acao de selecionar (clicar recolhe) #}
     <div class="card !p-0 overflow-hidden cursor-pointer" style="user-select: none;"
          data-wf-collapse="{{ group.key }}" @click="toggleCollapsed('{{ group.key|escapejs }}')"
@@ -125,7 +151,7 @@ data-filtered-count is read by the ancestor's syncFilteredCount() after each swa
       </div>
     </div>
     {% endif %}
-    <div class="space-y-4" {% if group.label %}x-show="!isCollapsed('{{ group.key|escapejs }}')" style="margin: 12px 0 8px 21px; padding-left: 20px; border-left: 2px solid var(--ik-line);"{% endif %}>
+    <div class="space-y-4" {% if group.label and not group.light %}x-show="!isCollapsed('{{ group.key|escapejs }}')" style="margin: 12px 0 8px 21px; padding-left: 20px; border-left: 2px solid var(--ik-line);"{% endif %}>
       {% for sub in group.subgroups %}
       <div data-wf-group="{{ sub.key }}">
         {% if sub.label %}

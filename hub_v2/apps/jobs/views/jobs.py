@@ -3034,7 +3034,9 @@ class WorkflowListView(FilterSortListView):
     GROUP_MODES = (
         ("menu", "Menu > Acao"),
         ("account", "Conta > Menu"),
-        ("none", "Sem agrupar"),
+        # N-92: no headers or sub-groups, but still a light divider per menu (as the queue was
+        # before N-88). The key stays "none" so a saved preference keeps working.
+        ("none", "Simples"),
     )
     PREFS_SESSION_KEY = "workflow_queue_prefs"
 
@@ -3076,13 +3078,13 @@ class WorkflowListView(FilterSortListView):
         inner = super().get_ordering()
         inner = [inner] if isinstance(inner, str) else list(inner or [])
         group = self._queue_prefs()["group"]
-        if group == "none":
-            return inner
         menu_rank = Case(
             *[When(category=key, then=Value(position)) for position, key in enumerate(CATEGORY_ORDER)],
             default=Value(len(CATEGORY_ORDER)),
             output_field=IntegerField(),
         )
+        if group == "none":
+            return [menu_rank, "category", *inner]      # menu, then simply the most recent first
         by_account = [Lower("game_account__name"), Lower("account__label"), "game_account_id"]
         if group == "account":
             return [*by_account, menu_rank, "category", "workflow_type", *inner]
@@ -3178,8 +3180,6 @@ class WorkflowListView(FilterSortListView):
 
     def _group_totals(self, mode: str) -> dict:
         """How many workflows each group has in the whole filtered list, not only on this page."""
-        if mode == "none":
-            return {}
         totals: Counter = Counter()
         counted = (
             self.object_list.order_by()
@@ -3229,22 +3229,12 @@ class WorkflowListView(FilterSortListView):
 
         menu:    menu (category) > action (workflow type)
         account: account > menu
-        none:    one unnamed group
+        none:    menu only, marked `light` (a thin divider instead of a header bar), no sub-groups
 
         Each group / sub-group carries `shown` (rows on this page) and `total` (whole
         filtered list), so a group cut by the page break says so.
         """
         totals = totals or {}
-        if mode == "none":
-            return [{
-                "key": "all", "label": "", "icon": "", "color": "", "filter_url": "",
-                "shown": len(workflow_rows), "total": len(workflow_rows), "statuses": [],
-                "subgroups": [{
-                    "key": "all", "label": "", "rows": list(workflow_rows), "statuses": [],
-                    "shown": len(workflow_rows), "total": len(workflow_rows),
-                }],
-            }]
-
         groups: list = []
         index: dict = {}
         for row in workflow_rows:
@@ -3269,10 +3259,13 @@ class WorkflowListView(FilterSortListView):
                 filter_url = f"?category={category}" if category in CATEGORY_META else ""
                 sub_key = workflow.workflow_type
                 sub_view = {"label": row["type_label"], "icon": row["type_icon"], "color": group_view["color"]}
+                if mode == "none":
+                    sub_key, sub_view = "all", {"label": "", "icon": "", "color": ""}
 
             group = index.get(group_key)
             if group is None:
                 group = {"key": group_key, **group_view, "filter_url": filter_url, "subgroups": [], "_subs": {}, "shown": 0}
+                group["light"] = mode == "none"
                 group["total"] = totals.get(group_key, 0)
                 index[group_key] = group
                 groups.append(group)
