@@ -149,3 +149,14 @@ class SnapshotPolicyForm(forms.Form):
         }),
         help_text="Cada worker renova esse lease enquanto o job esta vivo. Se o lease expirar, o job entra no recovery.",
     )
+    blackbox_timeout_seconds = forms.IntegerField(
+        label="Limite para gerar o blackbox (segundos)",
+        min_value=3,
+        max_value=100,
+        required=False,
+        widget=forms.NumberInput(attrs={
+            "class": "form-input",
+            "placeholder": "45",
+        }),
+        help_text="Quanto o ikabotapi tem para gerar o token de login (normalmente leva uns 3s). O agente espera um pouco mais que isso; passou do limite, o login falha com erro claro em vez de ficar pendurado.",
+    )

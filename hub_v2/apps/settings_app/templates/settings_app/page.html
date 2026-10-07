@@ -298,6 +298,13 @@
           <p class="form-help">{{ snapshot_policy_form.running_job_lease_seconds.help_text }}</p>
           {% endif %}
         </div>
+        <div>
+          <label class="form-label text-xs">{{ snapshot_policy_form.blackbox_timeout_seconds.label }}</label>
+          {{ snapshot_policy_form.blackbox_timeout_seconds }}
+          {% if snapshot_policy_form.blackbox_timeout_seconds.help_text %}
+          <p class="form-help">{{ snapshot_policy_form.blackbox_timeout_seconds.help_text }}</p>
+          {% endif %}
+        </div>
       </div>
 
       <div class="mt-4">

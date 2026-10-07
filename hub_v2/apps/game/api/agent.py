@@ -29,8 +29,34 @@ from .serializers import (
 
 logger = logging.getLogger(__name__)
 
-# Timeout for proxied requests to the ikabotapi container
-_IKABOTAPI_TIMEOUT = 90  # Blackbox token via Playwright can take 30-60s
+# Timeout for proxied requests to the ikabotapi container (captcha solving)
+_IKABOTAPI_TIMEOUT = 90
+
+# Blackbox token (N-73): one time budget shared by agent, hub and ikabotapi.
+BLACKBOX_CONNECT_TIMEOUT = 5      # ikabotapi down or unreachable must fail fast
+BLACKBOX_DEFAULT_BUDGET = 45      # seconds ikabotapi gets to produce the token (usually ~3s)
+BLACKBOX_MAX_BUDGET = 100         # must stay below the HTTP server worker timeout (gunicorn --timeout 120)
+BLACKBOX_MIN_BUDGET = 3
+BLACKBOX_ANSWER_MARGIN = 8        # the hub answers this long before the agent stops waiting
+
+
+def blackbox_budget(agent_wait=None) -> int:
+    """Seconds ikabotapi gets to produce a token for this request.
+
+    The system setting `blackbox_timeout_seconds` is the hub's own limit. An agent
+    that says how long it will wait (`wait`) gets an answer a little before that,
+    so it never abandons a generation that is still running.
+    """
+    from apps.settings_app.utils import get_int_setting
+
+    budget = max(BLACKBOX_MIN_BUDGET, min(BLACKBOX_MAX_BUDGET, get_int_setting("blackbox_timeout_seconds", BLACKBOX_DEFAULT_BUDGET)))
+    try:
+        wait = int(agent_wait)
+    except (TypeError, ValueError):
+        wait = 0
+    if wait > 0:
+        budget = max(BLACKBOX_MIN_BUDGET, min(budget, wait - BLACKBOX_ANSWER_MARGIN))
+    return budget
 
 _IMAGE_MAGICS = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a", b"GIF89a")
 
@@ -578,10 +604,15 @@ class CurrentSnapshotView(APIView):
 
 class BlackboxTokenView(APIView):
     """
-    GET /api/agent/blackbox/token/?user_agent=<string>
+    GET /api/agent/blackbox/token/?user_agent=<string>&wait=<seconds>
 
     Proxies the request to the internal ikabotapi container to obtain
     a blackbox token for browser fingerprint simulation.
+
+    `wait` (optional) is how long the agent will wait for this answer; see
+    blackbox_budget(). Answers 502 when ikabotapi cannot be reached (fast) and 504
+    when the token was not ready within the budget; both say which in `reason`.
+    The token is never written to the log.
     """
 
     authentication_classes = [AgentTokenAuthentication]
@@ -596,7 +627,14 @@ class BlackboxTokenView(APIView):
                 required=True,
                 type=str,
                 description="User-Agent utilizado para solicitar o token blackbox.",
-            )
+            ),
+            OpenApiParameter(
+                name="wait",
+                location=OpenApiParameter.QUERY,
+                required=False,
+                type=int,
+                description="Quantos segundos o agente vai esperar por esta resposta.",
+            ),
         ],
         responses={
             200: inline_serializer(
@@ -615,11 +653,12 @@ class BlackboxTokenView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        budget = blackbox_budget(request.query_params.get("wait"))
         try:
             resp = http_requests.get(
                 f"{settings.IKABOTAPI_URL}/v1/token",
                 params={"user_agent": user_agent},
-                timeout=_IKABOTAPI_TIMEOUT,
+                timeout=(BLACKBOX_CONNECT_TIMEOUT, budget),
             )
             resp.raise_for_status()
             token_data = resp.json()
@@ -627,22 +666,34 @@ class BlackboxTokenView(APIView):
             if isinstance(token_data, str):
                 return Response({"token": token_data})
             return Response(token_data)
-        except http_requests.ConnectionError:
+        except http_requests.ConnectionError:       # includes ConnectTimeout: not reachable
             logger.error("ikabotapi unreachable for blackbox token request")
             return Response(
-                {"error": "ikabotapi service is unreachable."},
+                {"error": "ikabotapi inacessivel (container parado ou sem rede).", "reason": "unavailable"},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
         except http_requests.Timeout:
-            logger.error("ikabotapi timed out for blackbox token request")
+            logger.error("ikabotapi did not produce a blackbox token within %ss", budget)
             return Response(
-                {"error": "ikabotapi request timed out."},
+                {
+                    "error": f"ikabotapi nao gerou o blackbox em {budget}s.",
+                    "reason": "timeout",
+                    "budget_seconds": budget,
+                },
                 status=status.HTTP_504_GATEWAY_TIMEOUT,
             )
-        except http_requests.RequestException as exc:
-            logger.error("ikabotapi error (blackbox): %s", exc)
+        except http_requests.HTTPError as exc:
+            # only the status: the body of an error answer is not ours to copy into a log
+            code = getattr(getattr(exc, "response", None), "status_code", "?")
+            logger.error("ikabotapi answered HTTP %s to a blackbox token request", code)
             return Response(
-                {"error": f"ikabotapi error: {exc}"},
+                {"error": f"ikabotapi respondeu HTTP {code}.", "reason": "unavailable"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except (http_requests.RequestException, ValueError) as exc:
+            logger.error("ikabotapi error (blackbox): %s", type(exc).__name__)
+            return Response(
+                {"error": f"ikabotapi devolveu uma resposta invalida ({type(exc).__name__}).", "reason": "unavailable"},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 

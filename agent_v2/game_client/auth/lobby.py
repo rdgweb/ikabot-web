@@ -275,7 +275,8 @@ class LobbyAuthenticator:
         self.session.headers.update(headers)
 
     _BLACKBOX_MAX_ATTEMPTS = 3
-    _BLACKBOX_RETRY_SECONDS = 3
+    _BLACKBOX_MAX_TIMEOUTS = 2       # a token that did not come within the budget gets one more try
+    _BLACKBOX_RETRY_SECONDS = 3      # wait 3s, then 6s: short and bounded
 
     def _get_blackbox(self) -> str:
         """Get blackbox token from hub (ikabotapi), retrying a few times first.
@@ -286,8 +287,15 @@ class LobbyAuthenticator:
         Now it retries a few times (ikabotapi hiccups are often transient) and, if
         still failing, raises LoginError with an explicit cause instead of limping
         into a login attempt that's effectively already doomed.
+
+        N-73: the two ways of failing are told apart. "Could not reach it" fails fast
+        and is retried with a short growing pause. "Not ready within the time budget"
+        already cost a whole budget, so it is tried once more and no further; the hub
+        answers before the agent stops waiting, so a retry never overlaps a generation
+        still running.
         """
         last_exc: Exception | None = None
+        timeouts = 0
         for attempt in range(1, self._BLACKBOX_MAX_ATTEMPTS + 1):
             try:
                 token = self.hub.get_blackbox_token(self.user_agent)
@@ -298,14 +306,21 @@ class LobbyAuthenticator:
                     len(token), attempt, self._BLACKBOX_MAX_ATTEMPTS,
                 )
                 return token
-            except Exception as e:  # noqa: BLE001 - any failure mode retries the same way
+            except Exception as e:  # noqa: BLE001 - every failure mode ends in a retry or a LoginError
                 last_exc = e
+                timed_out = bool(getattr(e, "is_timeout", False))
+                timeouts += int(timed_out)
                 logger.warning(
-                    "Blackbox token failed (tentativa %d/%d): %s",
-                    attempt, self._BLACKBOX_MAX_ATTEMPTS, e,
+                    "Blackbox token failed (tentativa %d/%d, %s): %s",
+                    attempt, self._BLACKBOX_MAX_ATTEMPTS, "tempo esgotado" if timed_out else "indisponivel", e,
                 )
+                if timeouts >= self._BLACKBOX_MAX_TIMEOUTS:
+                    raise LoginError(
+                        f"Blackbox nao ficou pronto dentro do limite de tempo ({timeouts} tentativas) — "
+                        f"o ikabotapi esta lento ou travado. Ultimo erro: {e}"
+                    ) from None
                 if attempt < self._BLACKBOX_MAX_ATTEMPTS:
-                    time.sleep(self._BLACKBOX_RETRY_SECONDS)
+                    time.sleep(self._BLACKBOX_RETRY_SECONDS * attempt)
 
         raise LoginError(
             f"Blackbox indisponivel apos {self._BLACKBOX_MAX_ATTEMPTS} tentativas — "

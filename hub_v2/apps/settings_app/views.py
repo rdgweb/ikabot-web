@@ -74,6 +74,7 @@ class SettingsPageView(LoginRequiredMixin, TemplateView):
             "building_options_stale_seconds": _get_setting("building_options_stale_seconds", "21600"),
             "running_job_recovery_grace_seconds": _get_setting("running_job_recovery_grace_seconds", "300"),
             "running_job_lease_seconds": _get_setting("running_job_lease_seconds", "180"),
+            "blackbox_timeout_seconds": _get_setting("blackbox_timeout_seconds", "45"),
         })
 
         from .utils import get_int_setting as _get_int_setting
@@ -103,6 +104,7 @@ class SettingsPageView(LoginRequiredMixin, TemplateView):
                 "building_options_stale_seconds",
                 "running_job_recovery_grace_seconds",
                 "running_job_lease_seconds",
+                "blackbox_timeout_seconds",
                 "spy_report_expiry_hours",
                 *TELEMETRY_KEYS,
             ]
@@ -216,6 +218,8 @@ class SnapshotPolicySaveView(LoginRequiredMixin, View):
             _set_setting("building_options_stale_seconds", str(form.cleaned_data["building_options_stale_seconds"]))
             _set_setting("running_job_recovery_grace_seconds", str(form.cleaned_data["running_job_recovery_grace_seconds"]))
             _set_setting("running_job_lease_seconds", str(form.cleaned_data["running_job_lease_seconds"]))
+            if form.cleaned_data.get("blackbox_timeout_seconds"):
+                _set_setting("blackbox_timeout_seconds", str(form.cleaned_data["blackbox_timeout_seconds"]))
             messages.success(request, "Politica de snapshot salva.")
         return redirect("settings_app:list")
 

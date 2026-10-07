@@ -28,6 +28,12 @@ class AgentSettings(BaseSettings):
     max_parallel: int = 12
     heartbeat_interval: int = 60
     log_level: str = "INFO"
+    # Blackbox (N-73): how long the agent waits for the hub to answer with the login
+    # token, and how long it waits just to reach the hub. Every other hub call keeps
+    # the short limit. Must stay below any reverse proxy in front of the hub (the
+    # usual default there is 60s).
+    blackbox_timeout: int = 55
+    blackbox_connect_timeout: int = 5
 
     class Config:
         env_prefix = ""
