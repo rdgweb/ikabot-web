@@ -123,6 +123,8 @@ ACCENTS = {
     "orcamento": "orçamento", "cabecalho": "cabeçalho", "preco": "preço", "precos": "preços", "forca": "força",
     "forcas": "forças", "comeca": "começa", "comecar": "começar", "alcancado": "alcançado", "alcancada": "alcançada",
     "barbaros": "bárbaros", "colonia": "colônia", "colonias": "colônias", "botao": "botão", "servico": "serviço",
+    "escritorio": "escritório", "palacio": "palácio", "deposito": "depósito", "logistico": "logístico",
+    "logistica": "logística", "tecnicos": "técnicos",
     "horario": "horário", "calculo": "cálculo", "ambrosia": "ambrósia", "pirotecnico": "pirotécnico",
     "nautica": "náutica", "nauticas": "náuticas", "tecnico": "técnico", "tecnica": "técnica", "basico": "básico",
     "proprias": "próprias", "proprios": "próprios", "propria": "própria", "proprio": "próprio", "multiplo": "múltiplo",
@@ -188,6 +190,9 @@ PHRASES = tuple((re.compile(pattern), replacement) for pattern, replacement in (
     (r"\bOffer not found in listing\b", "Oferta não encontrada na listagem"),
     (r"^Daily tasks\b", "Tarefas diárias"),
     (r"^Retry manual solicitado\b", "Nova tentativa manual solicitada"),
+    (r"^Evolu[cç][aã]o: ", "Obra iniciada em "),
+    (r"\bproximo check\b", "próxima verificação"),
+    (r"^Check status solicitado\b", "Verificação de status solicitada"),
     (r"\bGuard de ouro\b", "Reserva de ouro"),
     (r"\b(" + "|".join(sorted(map(re.escape, _FAILED), key=len, reverse=True)) + r") failed: ", lambda match: _FAILED[match.group(1)] + ": "),
     (r"HTTPS?ConnectionPool\(host='([^']+)', port=\d+\): Read timed out\. \(read timeout=([\d.]+)\)", r"sem resposta de \1 em \2s"),
@@ -214,6 +219,56 @@ _ENGLISH_NUMBER = re.compile(r"(?<![\w.])(\d{1,3}(?:,\d{3})+)(?![\w,]*\d)")
 _BARE_NUMBER = re.compile(r"(?<![\w.,])(\d{5,})(?![\w.,])")
 _INLINE_SECONDS = re.compile(r"(?<![\w.,])(\d{2,7})s\b")
 _CODE = re.compile(r"\b[a-z]+(?:_[a-z]+)+\b")
+_BUILDING_STEP = re.compile(r"^(?P<name>.{2,40}?) Lv\.? ?(?P<now>\d+) ?(?:→|->) ?(?P<next>\d+)$")
+_SHORT_DURATION = r"(?:\d+h(?: \d+m)?|\d+m(?: \d+s)?|\d+s)"
+_LOOSE_DURATION = re.compile(rf"^{_SHORT_DURATION}$")
+_LOOSE_IN_DURATION = re.compile(rf"^(?P<what>.{{3,40}}?) em (?P<time>{_SHORT_DURATION})$")
+_LOOSE_STEP = re.compile(r"^#(\d+) de (\d+)$")
+
+# Linhas que o agente grava como "info" mas sao encanamento (sessao, reagendamento em cadeia,
+# passos de leitura, contas intermediarias). Na tela valem como Debug: so aparecem com o
+# filtro Debug ligado. Avisos e erros nunca sao rebaixados.
+DEBUG_LINES = re.compile("|".join((
+    r"^Reutilizando sessao cached",
+    r"^Login OK$",
+    r"^Proximo \d+ reagendado pela cadeia raiz",
+    r"^Reagendado por job relacionado na mesma cadeia raiz",
+    r"^\[ShipAvail",
+    r"^[ ]*↳ ",
+    r"^Monitor de chegada agendado",
+    r"^Buscando (?:cidade \d+/\d+|dados globais|dados militares|lista de cidades)",
+    r"^Encontradas \d+ cidades$",
+    r"^Iniciando verifica[cç][aã]o de status",
+    r"^Enviando snapshot ao hub",
+    r"^Snapshot enviado com sucesso",
+    r"^Servidor: \S+ \| Email:",
+    r"^Conta: .* \| s",
+    r"^Premium: \d+ itens",
+    r"^Check status solicitado",
+    r"^Verificando inbox",
+    r"^Inbox: \d+ mensagens",
+    r"^Mensagens salvas no hub",
+    r"^Escaneando cidade \d+/\d+",
+    r"^.{1,40}: avaliacao de vinho \|",
+    r"^.{1,40}: sem envio novo;",
+    r"^Proxima avaliacao de \w+ em \d+s",
+    r"^Edificios sincronizados",
+    r"^Executando etapa \|",
+    r"^Suporte em aberto para .* abatido do calculo",
+    r"ainda com suporte parcial em aberto",
+    r"^Lendo estado da fortaleza pirata",
+    r"^Posicao \S+ detectada",
+    r"^BM (?:state|flags)\b",
+    r"^game_offer_id capturado",
+    r"^Garrison ",
+    r"^Fonte de ambrosia nao estava ativa",
+)))
+# campos que so interessam a quem esta depurando: ficam na linha, escondidos junto com o Debug
+DEBUG_FIELD_KEYS = (
+    "pos", "building_id", "botao_upgrade", "estoque_real", "bo", "modo", "header", "fallback", "capacidade/navio",
+    "countdown", "snapshot",
+)
+
 _RESOURCE_AMOUNT = re.compile(r"^(madeira|vinho|m[aá]rmore|cristal|enxofre|wood|wine|marble|crystal|glass|sulfur)\s+x\s?([\d.,]+)$", re.IGNORECASE)
 
 # o que a linha conta, para escolher o icone (o primeiro que casar): (regex, icone, familia, imagem do jogo)
@@ -354,7 +409,38 @@ def _cities_in_text(text: str, context: LogContext) -> str:
 
 
 def _field(label: str, value: str, *, kind: str = "text", icon_url: str = "", href: str = "", title: str = "") -> dict:
-    return {"label": label, "value": value, "kind": kind, "icon_url": icon_url, "href": href, "title": title}
+    return {"label": label, "value": value, "kind": kind, "icon_url": icon_url, "href": href, "title": title, "debug": False}
+
+
+def _static(path: str) -> str:
+    try:
+        return static(path) if path else ""
+    except Exception:       # arquivo fora do manifesto: a linha fica sem imagem, nao sem pagina
+        return ""
+
+
+_BUILDINGS_CACHE: dict = {}
+
+
+def _building(name: str) -> tuple[str, str]:
+    """(nome como se escreve, imagem) de um predio citado pelo nome ou pelo codigo do jogo ("safehouse")."""
+    if not _BUILDINGS_CACHE:
+        from core.catalogs import BUILDING_CATALOG
+
+        for code, info in BUILDING_CATALOG.items():
+            shown = _accent(str(info.get("name") or code))
+            entry = (shown, f"game/buildings/{info['icon']}" if info.get("icon") else "")
+            _BUILDINGS_CACHE.setdefault(code.lower(), entry)
+            _BUILDINGS_CACHE.setdefault(str(info.get("name") or "").lower(), entry)
+            _BUILDINGS_CACHE.setdefault(shown.lower(), entry)
+    key = str(name or "").strip().lower()
+    return _BUILDINGS_CACHE.get(key) or (_accent(str(name or "").strip()), "")
+
+
+def _short_duration(text: str) -> str:
+    """"1h 03m", "4m 18s" (como o plano de construcao escreve) no mesmo formato do resto: "1h 3min"."""
+    parts = dict((unit, int(amount)) for amount, unit in re.findall(r"(\d+)([hms])", text))
+    return human_duration(parts.get("h", 0) * 3600 + parts.get("m", 0) * 60 + parts.get("s", 0))
 
 
 def _label(key: str) -> str:
@@ -422,6 +508,19 @@ def _loose_value(value: str, context: LogContext) -> dict:
         name, icon = RESOURCES[amount.group(1).lower()]
         digits = amount.group(2).replace(",", "").replace(".", "")
         return _field(name, _dots(digits) if digits.isdigit() else amount.group(2), kind="resource", icon_url=static(icon))
+    step = _BUILDING_STEP.match(value)
+    if step:        # "Porto Lv 1 → 2"
+        name, icon = _building(step.group("name"))
+        return _field("", f"{name} {step.group('now')} → {step.group('next')}", kind="building", icon_url=_static(icon), title="nível atual → próximo nível")
+    if _LOOSE_DURATION.match(value):
+        return _field("Duração", _short_duration(value), kind="duration", title=value)
+    timed = _LOOSE_IN_DURATION.match(value)
+    if timed:       # "próxima verificação em 1h 03m"
+        what = _clean_text(timed.group("what"))
+        return _field(what[:1].upper() + what[1:], _short_duration(timed.group("time")), kind="duration", title=timed.group("time"))
+    numbered = _LOOSE_STEP.match(value)
+    if numbered:    # "#3 de 28"
+        return _field("Etapa", f"{numbered.group(1)} de {numbered.group(2)}")
     return _field("", _clean_text(_cities_in_text(value, context)))
 
 
@@ -519,7 +618,11 @@ def _split(message: str) -> tuple[str, list[tuple], list[str]]:
         before, after = head.split(": ", 1)
         items = _top_level_split(after)
         named = [_NAMED_ITEM.match(item) for item in items]
-        if items and all(named) and (len(items) > 1 or "=" in named[0].group(2)):
+        if _BUILDING_STEP.match(after.strip()):
+            # "Tribunal em obra: Templo Lv 29 → 30"
+            head = before
+            pairs.append((None, after.strip(), False))
+        elif items and all(named) and (len(items) > 1 or "=" in named[0].group(2)):
             # "Cidades em risco: TheTower (1366.9h, felicidade=23), Reflexo (...)"
             head = before
             pairs.extend((match.group(1).strip(), re.sub(r"(\w)=(\S)", r"\1 \2", match.group(2)), True) for match in named)
@@ -591,6 +694,8 @@ def format_log(level: str, message: str, *, context: LogContext | None = None, m
     if level not in LEVELS:
         level = "info"
     raw = str(message or "")
+    if level == "info" and DEBUG_LINES.search(raw):
+        level = "debug"         # encanamento gravado como info: so com o filtro Debug ligado
 
     system = _system_line(raw, moment)
     if system:
@@ -614,6 +719,7 @@ def format_log(level: str, message: str, *, context: LogContext | None = None, m
                 fields.append(_field(key, _clean_text(value)))
             else:
                 fields.append(_format_value(key, value, context, moment))
+                fields[-1]["debug"] = key.strip().lower() in DEBUG_FIELD_KEYS
                 nested = _NESTED_KV.match(value.strip())
                 if nested and nested.group(1).lower() in RESOURCES and key.strip().lower() not in RESOURCES:
                     group = fields[-1]
@@ -629,17 +735,28 @@ def format_log(level: str, message: str, *, context: LogContext | None = None, m
             family, icon, image = family_name, family_icon, family_image
             break
     # a linha fala de um recurso so: o icone dele diz mais que o do assunto
-    mentioned = {RESOURCES[name.lower().replace("á", "a")][1] for name in _TITLE_RESOURCE.findall(title or "")}
+    # (menos quando a palavra e o nome de uma cidade da conta: ha contas com cidades "Vinho", "Mármore 3")
+    city_words = {name.split()[0].lower() for name in context.city_names.values() if name.split()}
+    mentioned = {
+        RESOURCES[name.lower().replace("á", "a")][1]
+        for name in _TITLE_RESOURCE.findall(title or "") if name.lower() not in city_words
+    }
+    # o agente escreve o recurso pelo codigo ("Planejamento wine"): ai e recurso, nao cidade
+    mentioned |= {RESOURCES[name.lower()][1] for name in re.findall(r"\b(wood|wine|marble|crystal|glass|sulfur)\b", raw.split(" | ")[0])}
     if len(mentioned) == 1:
         image = mentioned.pop()
+    image_url = _static(image)
+    built = [field["icon_url"] for field in fields if field["kind"] == "building" and field["icon_url"]]
+    if len(built) == 1:
+        image_url = built[0]        # a obra de um predio: a imagem do predio
     if level in ("error", "warn"):
-        icon, image = LEVELS[level]["icon"], ""   # um problema e um problema, qualquer que seja o assunto
+        icon, image_url = LEVELS[level]["icon"], ""   # um problema e um problema, qualquer que seja o assunto
     return {
         "level": level,
         "level_label": LEVELS[level]["label"],
         "color": LEVELS[level]["color"],
         "icon": icon,
-        "image_url": static(image) if image else "",
+        "image_url": image_url,
         "family": family,
         "title": title or raw,
         "fields": fields,

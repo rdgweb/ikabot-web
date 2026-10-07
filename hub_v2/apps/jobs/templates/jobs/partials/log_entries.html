@@ -11,7 +11,7 @@
       {% if entry.fmt.fields %}
       <div class="ikl-fields">
         {% for field in entry.fmt.fields %}
-        <span class="ikl-f"{% if field.title %} title="{{ field.title }}"{% endif %}>{% if field.label %}<span>{{ field.label }}</span>{% endif %}{% if field.icon_url %}<img src="{{ field.icon_url }}" alt="">{% elif field.kind == "city" %}<i class="bi bi-geo-alt-fill"></i>{% elif field.kind == "duration" %}<i class="bi bi-clock"></i>{% endif %}{% if field.href %}<a href="{{ field.href }}"><b>{{ field.value }}</b></a>{% else %}<b>{{ field.value }}</b>{% endif %}</span>
+        <span class="ikl-f"{% if field.debug %} data-debug{% endif %}{% if field.title %} title="{{ field.title }}"{% endif %}>{% if field.icon_url %}<img src="{{ field.icon_url }}" alt="">{% endif %}{% if field.label %}<span>{{ field.label }}</span>{% endif %}{% if field.icon_url %}{% elif field.kind == "city" %}<i class="bi bi-geo-alt-fill"></i>{% elif field.kind == "duration" %}<i class="bi bi-clock"></i>{% endif %}{% if field.href %}<a href="{{ field.href }}"><b>{{ field.value }}</b></a>{% else %}<b>{{ field.value }}</b>{% endif %}</span>
         {% endfor %}
       </div>
       {% endif %}

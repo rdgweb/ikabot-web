@@ -189,7 +189,98 @@ class LogFormatTests(TestCase):
                 ],
             )
         # recurso que nao vem depois de um grupo continua sendo um campo proprio
-        self.assertEqual(_fields(self._format("Evolução: Veredito | 5h 10m | madeira=29.975 | mármore=20.953")), {"": "5h 10m", "Madeira": "29.975", "Mármore": "20.953"})
+        self.assertEqual(_fields(self._format("Evolução: Veredito | 5h 10m | madeira=29.975 | mármore=20.953")), {"Duração": "5h 10min", "Madeira": "29.975", "Mármore": "20.953"})
+
+    def test_construction_lines_say_what_was_built(self):
+        started = self._format("Evolução: Alexa Trops | Porto Lv 1 → 2 | 4m 18s | madeira=75 | #1 de 28")
+        self.assertEqual(started["title"], "Obra iniciada em Alexa Trops")
+        self.assertEqual(
+            [(field["label"], field["value"], field["kind"]) for field in started["fields"]],
+            [("", "Porto 1 → 2", "building"), ("Duração", "4min 18s", "duration"), ("Madeira", "75", "resource"), ("Etapa", "1 de 28", "text")],
+        )
+        self.assertTrue(started["image_url"].endswith("game/buildings/port.png"))       # a imagem do predio na linha
+        self.assertEqual((started["level"], started["family"]), ("info", "construction"))
+
+        running = self._format("Tribunal em obra: safehouse Lv 28 → 29 | próxima verificação em 1h 03m")
+        self.assertEqual(running["title"], "Tribunal em obra")
+        self.assertEqual(
+            [(field["label"], field["value"]) for field in running["fields"]],
+            [("", "Esconderijo 28 → 29"), ("Próxima verificação", "1h 3min")],      # codigo do jogo vira o nome do predio
+        )
+        self.assertTrue(running["image_url"].endswith("safehouse.png"))
+
+        done = self._format("[Veredito] Obra concluída: Arquivo de Cartas Nauticas Lv 20 → 21")
+        self.assertEqual((done["title"], done["tags"][0]["text"], done["fields"][0]["value"]), ("Obra concluída", "Veredito", "Arquivo de Cartas Náuticas 20 → 21"))
+        self.assertEqual(
+            self._format("5 obra(s) iniciada(s) neste ciclo; proximo check em 346s")["title"],
+            "5 obra(s) iniciada(s) neste ciclo; próxima verificação em 5min 46s",
+        )
+        self.assertEqual(self._format("Suporte logistico criado para Vinho | aguardando transporte antes da proxima obra")["title"], "Suporte logístico criado para Vinho")
+
+    def test_a_city_named_after_a_resource_does_not_get_the_resource_icon(self):
+        named = LogContext({"1": "Vinho", "2": "Mármore 3"})
+        line = "Suporte logistico criado para Vinho | aguardando transporte antes da proxima obra"
+        self.assertEqual(format_log("info", line, context=named)["image_url"].split("/")[-1], "barco_mercante.png")     # assunto: transporte
+        self.assertEqual(format_log("info", line, context=self.context)["image_url"].split("/")[-1], "icon_wine.png")    # sem cidade com esse nome
+        # quando o agente escreve o recurso pelo codigo, e o recurso mesmo que exista uma cidade "Vinho"
+        self.assertEqual(format_log("info", "Planejamento wine: cidades=9", context=named)["image_url"].split("/")[-1], "icon_wine.png")
+
+    def test_plumbing_recorded_as_info_counts_as_debug(self):
+        plumbing = (
+            "Reutilizando sessao cached via proxy 1/3",
+            "Login OK",
+            "Proximo 3 reagendado pela cadeia raiz em 1332s.",
+            "Reagendado por job relacionado na mesma cadeia raiz; novo ETA em 1332s.",
+            f"[ShipAvail:mercante] usando ETA conhecido da cadeia = 694s | origem=Reflexo -> destino=LandLumis | job={JOB_UUID}",
+            "↳ 1 mercante(s) reservado(s) no snapshot",
+            "  ↳ mercante × 40 (20,000)",
+            "Monitor de chegada agendado: queue=0s | loading=12s | travel=1200s | check_em=1332s",
+            "Buscando cidade 9/9 (id=76901)...",
+            "Buscando dados globais...",
+            "Encontradas 9 cidades",
+            "Enviando snapshot ao hub...",
+            "Servidor: s78-br | Email: rdg***",
+            "Verificando inbox de diplomacia (city_id=66593)",
+            "Escaneando cidade 10/10: MM5",
+            "MM3: avaliacao de vinho | estoque=263,557 | net=-277/h | cobertura=951.5h | necessidade_bruta=0 | planejado_cadeia=0",
+            "MM3: sem envio novo; necessidade final zerada apos descontos e regras de cobertura",
+            "Proxima avaliacao de distribuicao em 1800s",
+            "Edificios sincronizados: Mármore 3 | 8 opcoes",
+            "Executando etapa | cidade=LandLumis | city_id=66593 | predio=Armazem | building_id=warehouse | pos=10 | nivel=18->19",
+            "Suporte em aberto para Vinho abatido do calculo: marble=9300",
+            "Vinho ainda com suporte parcial em aberto; faltante descoberto atual: marble=9238",
+            "Check status solicitado para atualizar snapshot",
+        )
+        self.assertEqual({message: self._format(message)["level"] for message in plumbing}, dict.fromkeys(plumbing, "debug"))
+        # o que conta o que a acao fez continua como info
+        told = (
+            "Job started on ikabot-agent-rdg",
+            "Login: s78-br | rdg*** | proxy 1/3",
+            "Rescheduled in 1200s",
+            "Evolução: Alexa Trops | Porto Lv 1 → 2 | 4m 18s | madeira=75 | #1 de 28",
+            "Tribunal em obra: Templo Lv 29 → 30 | próxima verificação em 3h 33m",
+            "5 obra(s) iniciada(s) neste ciclo; proximo check em 346s",
+            "Plano de transporte (mercante): Hell -> Midgard | solicitado=20,000 | despachavel=20,000 | navios_livres=78",
+            "ETA transporte: fila=0s | carregamento=12s | viagem=1200s | total=1212s",
+            "Transporte enviado (mercante): Hell -> Midgard | despachado=20,000",
+            "Chegada confirmada: Hell -> Midgard | modo=exact_stock | entregue_detectado=1,339/1,339",
+            "Planejamento wood: cidades=9 | estoque_total=11,645,461 | necessidade_total=33,035 | disponivel_total=32,728",
+            "Job de remessa criado: Hell -> Midgard | total=11,344 | crystal=11,344",
+            "Advisor militar: movimentos=0 | hostis=0 | alertaveis=0 | novos=0",
+            "Cidade avaliada: MM5 | vinho=263,330 | cobertura_atual=647.0h | cobertura_alvo=711.7h | felicidade=8 | taverna=34",
+            "Nenhuma mensagem nova não lida",
+            "Status concluído: 9 cidades, ouro=63,292,384",
+        )
+        self.assertEqual({message: self._format(message)["level"] for message in told}, dict.fromkeys(told, "info"))
+        # um aviso ou erro nunca e rebaixado, mesmo com o texto de uma linha tecnica
+        self.assertEqual(self._format("Executando etapa | cidade=LandLumis", level="warn")["level"], "warn")
+        self.assertEqual(self._format("Login OK", level="error")["level"], "error")
+
+    def test_technical_fields_are_marked_so_they_hide_with_debug(self):
+        arrival = self._format("Chegada confirmada: Hell -> Midgard | modo=exact_stock | entregue_detectado=1,339/1,339")
+        self.assertEqual({field["label"]: field["debug"] for field in arrival["fields"]}, {"Modo": True, "Entregue": False})
+        plan = self._format("Plano de transporte (mercante): Hell -> Midgard | solicitado=20,000 | navios_livres=78 | capacidade/navio=500 (100% de 500)")
+        self.assertEqual([field["label"] for field in plan["fields"] if field["debug"]], ["Capacidade por navio"])
 
     def test_job_created_by_a_line_becomes_a_link(self):
         fmt = self._format(f"Retry manual solicitado; novo job imediato criado: {JOB_UUID}")
@@ -294,6 +385,27 @@ class JobLogsPageTests(TestCase):
         self._assert_log_block(html)
         self.assertIn('id="job-logs" class="ikl" data-ik-logs', html)
         self.assertIn('hx-trigger="every 3s"', html)
+
+    def test_technical_lines_and_fields_follow_the_debug_filter(self):
+        build = self.fx.job(1002, "finished", started_at=timezone.now() - timedelta(minutes=2))
+        for offset, message in enumerate([
+            "Job started on ikabot-agent-rdg",
+            "Reutilizando sessao cached via proxy 1/3",
+            "Executando etapa | cidade=Alexa Trops | predio=Porto | pos=2 | nivel=1->2 | botao_upgrade=found:True/enabled:True",
+            "Evolução: Alexa Trops | Porto Lv 1 → 2 | 4m 18s | madeira=75 | #1 de 28",
+            "Chegada confirmada: Hell -> Midgard | modo=exact_stock | entregue_detectado=75/75",
+        ]):
+            _log(build, "info", message, build.started_at + timedelta(seconds=offset))
+        html = self.client.get(reverse("jobs:job-logs", args=[build.pk])).content.decode()
+
+        # tudo foi gravado como info pelo agente; na tela, sessao e passo tecnico sao Debug
+        self.assertEqual(re.findall(r'class="ikl-row" data-level="(\w+)"', html), ["info", "debug", "debug", "info", "info"])
+        chips = dict(re.findall(r'data-ik-log-chip="(error|warn|info|debug)"[^>]*>\s*<i[^>]*></i>[^<]+<b>(\d+)</b>', html))
+        self.assertEqual(chips, {"info": "3", "debug": "2"})
+        self.assertIn("Obra iniciada em Alexa Trops", html)
+        self.assertIn("game/buildings/port.png", html)
+        self.assertEqual(html.count('class="ikl-f" data-debug'), 3)      # pos, botao de ampliar, modo
+        self.assertIn('<span class="ikl-f" data-debug><span>Modo</span>', html)
 
     def test_job_without_logs(self):
         waiting = self.fx.job(1006, "scheduled")
