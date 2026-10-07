@@ -1,52 +1,67 @@
 {% load hub_tags %}
 
-{% if logs %}
-<div class="divide-y divide-[var(--ik-line)]">
-  {% for log in logs %}
-  <div class="flex items-start gap-3 px-5 py-2.5
-    {% if log.level == 'error' %}bg-red-50/50
-    {% elif log.level == 'warn' %}bg-amber-50/50
-    {% endif %}">
-    <span class="mt-0.5 shrink-0 text-[11px] font-semibold uppercase
-      {% if log.level == 'error' %}text-[var(--ik-bad)]
-      {% elif log.level == 'warn' %}text-amber-600
-      {% elif log.level == 'debug' %}text-muted
-      {% else %}text-sea{% endif %}">
-      {{ log.level }}
-    </span>
-    <div class="min-w-0 flex-1">
-      <div class="text-sm text-ink">{{ log.message }}</div>
-      <div class="mt-0.5 text-[11px] text-muted">
-        {{ log.created_at|date:"d/m/Y H:i:s" }} ·
-        <a href="{% url 'jobs:job-detail' log.job.pk %}" class="link-sea">
-          Job {{ log.job.pk|truncatechars:8 }}
-        </a>
-      </div>
-    </div>
+{% if cycles %}
+<div class="ikl" data-ik-logs>
+  <div style="padding:12px 16px 2px">
+    {% include "jobs/partials/log_toolbar.html" %}
   </div>
+
+  {% for cycle in cycles %}
+  <details class="ikl-cycle" style="--c:{{ cycle.color }}" open>
+    <summary title="Clique para recolher ou abrir este ciclo">
+      <i class="bi bi-chevron-right ikl-cycle-caret"></i>
+      <span class="ikl-cycle-art">{% if cycle.image_url %}<img src="{{ cycle.image_url }}" alt="">{% else %}<i class="bi {{ cycle.icon }}"></i>{% endif %}</span>
+      <span class="ikl-cycle-num">Ciclo #{{ cycle.sequence }}</span>
+      <span class="ikl-cycle-name">{{ cycle.title }}{% if cycle.more_jobs %} <span style="font-weight:500;color:var(--ik-muted)">+ {{ cycle.more_jobs }} job{{ cycle.more_jobs|pluralize }}</span>{% endif %}</span>
+      <span class="ikl-pill" style="--c:{{ cycle.color }}">{{ cycle.status_label }}</span>
+      {% if cycle.errors %}<span class="ikl-pill ikl-soft" style="--c:var(--ik-bad)"><i class="bi bi-x-circle-fill"></i>{{ cycle.errors }} erro{{ cycle.errors|pluralize }}</span>{% endif %}
+      {% if cycle.warnings %}<span class="ikl-pill ikl-soft" style="--c:#d97706"><i class="bi bi-exclamation-triangle-fill"></i>{{ cycle.warnings }} aviso{{ cycle.warnings|pluralize }}</span>{% endif %}
+      <span class="ikl-cycle-meta">
+        <span title="Primeira e última linha deste ciclo"><i class="bi bi-calendar3"></i> {{ cycle.first_at|localtime_format:"%d/%m %H:%M:%S" }} → {% if cycle.same_day %}{{ cycle.last_at|localtime_format:"%H:%M:%S" }}{% else %}{{ cycle.last_at|localtime_format:"%d/%m %H:%M:%S" }}{% endif %}</span>
+        <span title="Tempo entre a primeira e a última linha"><i class="bi bi-stopwatch"></i> {{ cycle.duration }}</span>
+        <span>{{ cycle.lines }} linha{{ cycle.lines|pluralize }}</span>
+      </span>
+    </summary>
+    <div class="ikl-cycle-body">
+      {% for block in cycle.blocks %}
+      <div class="ikl-job">
+        <span class="badge {{ block.job.status|status_badge_class }}">{{ block.job.get_status_display }}</span>
+        <span class="ikl-job-name">{{ block.name }}{% if block.city %} — {{ block.city }}{% endif %}</span>
+        <span class="ikl-job-meta">
+          <span>{{ block.first_at|localtime_format:"%d/%m %H:%M" }}</span>
+          <a href="{% url 'jobs:job-detail' block.job.pk %}" class="link-sea"
+             hx-target="#page-content" hx-swap="innerHTML" hx-push-url="true">Abrir job <i class="bi bi-arrow-right"></i></a>
+        </span>
+      </div>
+      {% if block.hidden %}<div class="ikl-empty"><i class="bi bi-three-dots"></i> {{ block.hidden }} linha{{ block.hidden|pluralize }} anterior{{ block.hidden|pluralize:"es" }} não aparece{{ block.hidden|pluralize:"m" }} aqui — abra o job para ver tudo.</div>{% endif %}
+      {% include "jobs/partials/log_entries.html" with entries=block.entries %}
+      {% endfor %}
+      <div class="ikl-gap">fim do ciclo #{{ cycle.sequence }}</div>
+    </div>
+  </details>
   {% endfor %}
 </div>
 
 {% if total_pages > 1 %}
 <div class="flex items-center justify-between border-t border-[var(--ik-line)] px-5 py-3">
   <span class="text-xs text-muted">
-    {{ total }} log{{ total|pluralize:"s" }} · página {{ page }} de {{ total_pages }}
+    {{ total }} ciclo{{ total|pluralize }} com log · página {{ page }} de {{ total_pages }} (mais recentes primeiro)
   </span>
   <div class="flex gap-2">
     {% if has_prev %}
-    <button class="btn btn-secondary btn-sm"
+    <button class="btn btn-secondary btn-sm" title="Ciclos mais recentes"
             hx-get="{% url 'jobs:workflow-logs' workflow.pk %}?page={{ page|add:'-1' }}"
             hx-target="#workflow-logs"
-            hx-swap="innerHTML"
+            hx-swap="innerHTML show:#workflow-logs:top"
             hx-push-url="false">
       <i class="bi bi-chevron-left"></i>
     </button>
     {% endif %}
     {% if has_next %}
-    <button class="btn btn-secondary btn-sm"
+    <button class="btn btn-secondary btn-sm" title="Ciclos mais antigos"
             hx-get="{% url 'jobs:workflow-logs' workflow.pk %}?page={{ page|add:'1' }}"
             hx-target="#workflow-logs"
-            hx-swap="innerHTML"
+            hx-swap="innerHTML show:#workflow-logs:top"
             hx-push-url="false">
       <i class="bi bi-chevron-right"></i>
     </button>

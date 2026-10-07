@@ -8,7 +8,7 @@ from collections import Counter
 from datetime import timedelta
 
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.db.models import Case, Count, F, IntegerField, Max, Value, When, Window
+from django.db.models import Case, Count, Exists, F, IntegerField, Max, Min, OuterRef, Value, When, Window
 from django.db.models.functions import Lower, RowNumber
 from django.http import HttpResponse, JsonResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
@@ -28,6 +28,7 @@ from core.templatetags.hub_tags import status_badge_class
 from ..filters import JobFilter, WorkflowFilter
 from ..models import ConstructionResourceReservation, Job, JobLog, Workflow, WorkflowRun
 from ..services import workflow_status
+from ..services.log_format import LogContext, build_entries, human_duration, level_counts
 from ..services.dispatch import dispatch_job
 from ..services.workflows import create_job_with_workflow, ensure_workflow_for_job, workflow_type_info
 
@@ -151,27 +152,116 @@ def _parse_json_object(raw, default=None):
     return data if isinstance(data, dict) else fallback
 
 
-def _build_log_rows(job: Job, logs) -> list[dict]:
-    rows = []
-    previous_at = None
-    started_at = job.started_at or job.created_at
-    for log in logs:
-        created_at = log.created_at
-        delta_prev = ""
-        elapsed_total = ""
-        if previous_at is not None:
-            delta_prev = _duration_human(int(max(0.0, (created_at - previous_at).total_seconds())))
-        if started_at is not None:
-            elapsed_total = _duration_human(int(max(0.0, (created_at - started_at).total_seconds())))
-        rows.append(
-            {
-                "log": log,
-                "delta_prev": delta_prev,
-                "elapsed_total": elapsed_total,
-            }
-        )
-        previous_at = created_at
-    return rows
+def _job_log_context(job: Job) -> dict:
+    """What the execution-log block of a job needs (N-91): lines ready to read and the level filters."""
+    entries = build_entries(list(job.logs.order_by("created_at", "id")), context=LogContext.for_game_accounts([job.game_account_id]))
+    note = ""
+    if entries:
+        first, last = entries[0]["log"].created_at, entries[-1]["log"].created_at
+        lines = f"{len(entries)} linha{'s' if len(entries) != 1 else ''}"
+        note = f"{lines} em {human_duration((last - first).total_seconds())}" if (last - first).total_seconds() >= 1 else lines
+    return {"log_entries": entries, "log_levels": level_counts(entries), "log_note": note}
+
+
+_DONATION_TYPE_LABELS = {
+    "wood": "Madeira", "tradegood": "Bem de Luxo", "wine": "Vinho",
+    "marble": "Mármore", "crystal": "Cristal", "sulfur": "Enxofre",
+}
+
+
+def _job_display(job: Job) -> tuple[str, str]:
+    """(action name, what it is about) for a job listed inside a workflow."""
+    try:
+        inputs = json.loads(job.inputs_json or "{}")
+    except Exception:
+        inputs = {}
+    if not isinstance(inputs, dict):
+        inputs = {}
+    display_name = ACTION_CATALOG.get(job.action_code, {}).get("name", f"Ação {job.action_code}")
+    if job.action_code == 2 and inputs.get("monitor_mode") == "arrival_check":
+        display_name = "Monitor de Chegada"
+    city = inputs.get("city_name") or inputs.get("from_city_name") or inputs.get("to_city_name") or ""
+    if job.action_code in {901, 902, 1006}:
+        dtype_label = _DONATION_TYPE_LABELS.get(str(inputs.get("donation_type") or ""), "")
+        if dtype_label:
+            city = f"{city} — {dtype_label}" if city else dtype_label
+    return display_name, city
+
+
+# a cycle is as bad as its worst job: (job statuses that decide, label, color)
+_CYCLE_STATUS = (
+    ({"error"}, "Com erro", "var(--ik-bad)"),
+    ({"running", "queued"}, "Em execução", "var(--ik-sea)"),
+    ({"scheduled"}, "Aguardando", "#d97706"),
+    ({"finished"}, "Concluído", "var(--ik-good)"),
+    ({"cancelled"}, "Cancelado", "var(--ik-muted)"),
+)
+_CYCLE_JOB_LOG_LIMIT = 150
+
+
+def _workflow_log_cycles(runs, context_for) -> list[dict]:
+    """Logs of a workflow split by cycle (N-91): each run, its jobs, and each job's lines in order.
+
+    `context_for(game_account_ids)` gives the LogContext (city names) once the jobs are known.
+    """
+    jobs = list(Job.objects.filter(workflow_run__in=runs).order_by("created_at"))
+    logs_by_job: dict = {}
+    for log in JobLog.objects.filter(job__in=jobs).order_by("created_at", "id"):
+        logs_by_job.setdefault(log.job_id, []).append(log)
+    context = context_for([job.game_account_id for job in jobs])
+    jobs_by_run: dict = {}
+    for job in jobs:
+        jobs_by_run.setdefault(job.workflow_run_id, []).append(job)
+
+    cycles = []
+    for run in runs:
+        run_jobs = jobs_by_run.get(run.pk, [])
+        blocks = []
+        for job in run_jobs:
+            logs = logs_by_job.get(job.pk)
+            if not logs:
+                continue
+            hidden = max(0, len(logs) - _CYCLE_JOB_LOG_LIMIT)
+            name, city = _job_display(job)
+            blocks.append({
+                "job": job, "name": name, "city": city, "hidden": hidden,
+                "entries": build_entries(logs[hidden:], context=context),
+                "first_at": logs[0].created_at, "last_at": logs[-1].created_at,
+            })
+        if not blocks:
+            continue
+        blocks.sort(key=lambda block: block["first_at"])
+        statuses = {job.status for job in run_jobs}
+        status_label, color = "Concluído", "var(--ik-good)"
+        for deciding, label, status_color in _CYCLE_STATUS:
+            if statuses & deciding:
+                status_label, color = label, status_color
+                break
+        entries = [entry for block in blocks for entry in block["entries"]]
+        first_at = min(block["first_at"] for block in blocks)
+        last_at = max(block["last_at"] for block in blocks)
+        main = blocks[0]
+        meta = CATEGORY_META.get(ACTION_CATALOG.get(main["job"].action_code, {}).get("category"), {})
+        cycles.append({
+            "run": run,
+            "sequence": run.sequence,
+            "title": f"{main['name']} — {main['city']}" if main["city"] else main["name"],
+            "more_jobs": len(blocks) - 1,
+            "status_label": status_label,
+            "color": color,
+            "image_url": static(meta["image"]) if meta.get("image") else "",
+            "icon": meta.get("icon", "bi-gear"),
+            "first_at": first_at,
+            "last_at": last_at,
+            "same_day": timezone.localtime(first_at).date() == timezone.localtime(last_at).date(),
+            "duration": human_duration((last_at - first_at).total_seconds()),
+            "errors": sum(1 for entry in entries if entry["fmt"]["level"] == "error"),
+            "warnings": sum(1 for entry in entries if entry["fmt"]["level"] == "warn"),
+            "lines": len(entries),
+            "entries": entries,
+            "blocks": blocks,
+        })
+    return cycles
 
 
 def _action_meta(action_code: int) -> dict:
@@ -2547,7 +2637,7 @@ class JobDetailView(LoginRequiredMixin, DetailView):
         logs_qs = self.object.logs.all()
         child_jobs = list(Job.objects.filter(source_job_id=self.object.pk).order_by("-created_at"))
         context["logs"] = logs_qs
-        context["log_rows"] = _build_log_rows(self.object, list(logs_qs))
+        context.update(_job_log_context(self.object))
         action_info = ACTION_CATALOG.get(self.object.action_code)
         context["action_name"] = action_info["name"] if action_info else None
         # N-13: pode editar parametros se acao recorrente e existe um job ativo na
@@ -2662,10 +2752,9 @@ class JobLogsPartialView(LoginRequiredMixin, View):
         from django.template.loader import render_to_string
 
         job = get_object_or_404(Job, pk=pk)
-        logs = job.logs.all()
         html = render_to_string(
             "jobs/partials/job_logs.html",
-            {"object": job, "logs": logs, "log_rows": _build_log_rows(job, list(logs))},
+            {"object": job, **_job_log_context(job)},
             request=request,
         )
         return HttpResponse(html)
@@ -3535,20 +3624,7 @@ class WorkflowRunsPartialView(LoginRequiredMixin, View):
         raw_jobs = all_jobs[(page - 1) * per_page: page * per_page]
         job_rows = []
         for job in raw_jobs:
-            try:
-                inputs = json.loads(job.inputs_json or "{}")
-            except Exception:
-                inputs = {}
-            display_name = ACTION_CATALOG.get(job.action_code, {}).get("name", f"Ação {job.action_code}")
-            if job.action_code == 2 and inputs.get("monitor_mode") == "arrival_check":
-                display_name = "Monitor de Chegada"
-            city = inputs.get("city_name") or inputs.get("from_city_name") or inputs.get("to_city_name") or ""
-            if job.action_code in {901, 902, 1006}:
-                _dtype_map = {"wood": "Madeira", "tradegood": "Bem de Luxo", "wine": "Vinho",
-                              "marble": "Mármore", "crystal": "Cristal", "sulfur": "Enxofre"}
-                dtype_label = _dtype_map.get(str(inputs.get("donation_type") or ""), "")
-                if dtype_label:
-                    city = f"{city} — {dtype_label}" if city else dtype_label
+            display_name, city = _job_display(job)
             job_rows.append({
                 "job": job,
                 "display_name": display_name,
@@ -3589,18 +3665,33 @@ class WorkflowRunJobsPartialView(LoginRequiredMixin, View):
 
 
 class WorkflowLogsPartialView(LoginRequiredMixin, View):
+    """Logs of a workflow, one block per cycle (N-91): newest cycle first, lines in order inside it."""
+
+    CYCLES_PER_PAGE = 10
+
     def get(self, request, pk):
         workflow = get_object_or_404(Workflow, pk=pk)
-        page = max(1, int(request.GET.get("page", 1) or 1))
-        per_page = 50
-        logs_qs = JobLog.objects.filter(job__workflow=workflow).select_related("job").order_by("-created_at")
-        total = logs_qs.count()
+        page = max(1, _to_int(request.GET.get("page"), 1))
+        per_page = self.CYCLES_PER_PAGE
+        with_logs = WorkflowRun.objects.filter(workflow=workflow).filter(
+            Exists(JobLog.objects.filter(job__workflow_run=OuterRef("pk")))
+        )
+        total = with_logs.count()
         total_pages = max(1, (total + per_page - 1) // per_page)
         page = min(page, total_pages)
-        logs = list(logs_qs[(page - 1) * per_page: page * per_page])
+        runs = list(
+            with_logs.annotate(first_start=Min("jobs__started_at"))
+            .order_by(F("first_start").desc(nulls_last=True), "-sequence")[(page - 1) * per_page: page * per_page]
+        )
+        cycles = _workflow_log_cycles(
+            runs, lambda ids: LogContext.for_game_accounts([workflow.game_account_id, *ids])
+        )
+        entries = [entry for cycle in cycles for entry in cycle["entries"]]
         return render(request, "jobs/partials/workflow_logs.html", {
             "workflow": workflow,
-            "logs": logs,
+            "cycles": cycles,
+            "log_levels": level_counts(entries),
+            "log_note": f"{len(cycles)} ciclo{'s' if len(cycles) != 1 else ''} nesta página",
             "page": page,
             "per_page": per_page,
             "total": total,

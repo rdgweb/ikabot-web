@@ -1,6 +1,6 @@
 {% load hub_tags %}
 
-<div id="job-logs"
+<div id="job-logs" class="ikl" data-ik-logs
      {% if object.status == "running" or object.status == "queued" or object.status == "scheduled" %}
      hx-get="{% url 'jobs:job-logs' object.pk %}"
      hx-trigger="every 3s"
@@ -8,46 +8,16 @@
      hx-swap="outerHTML"
      hx-push-url="false"
      {% endif %}>
-  {% if log_rows %}
-  <div class="space-y-1">
-    {% for row in log_rows %}
-    <div class="flex items-start gap-2 rounded-lg px-2 py-1.5
-      {% if row.log.level == 'error' %}bg-red-50{% elif row.log.level == 'warn' or row.log.level == 'warning' %}bg-yellow-50{% elif row.log.level == 'debug' %}opacity-60{% endif %}">
-
-      {# Level icon #}
-      <span class="mt-px shrink-0 text-[13px]
-        {% if row.log.level == 'info' %}text-[var(--ik-sea)]
-        {% elif row.log.level == 'debug' %}text-muted
-        {% elif row.log.level == 'warn' or row.log.level == 'warning' %}text-[var(--ik-gold)]
-        {% elif row.log.level == 'error' %}text-[var(--ik-bad)]
-        {% endif %}">
-        {% if row.log.level == 'info' %}<i class="bi bi-info-circle-fill"></i>
-        {% elif row.log.level == 'debug' %}<i class="bi bi-bug"></i>
-        {% elif row.log.level == 'warn' or row.log.level == 'warning' %}<i class="bi bi-exclamation-triangle-fill"></i>
-        {% elif row.log.level == 'error' %}<i class="bi bi-x-circle-fill"></i>
-        {% else %}<i class="bi bi-circle"></i>
-        {% endif %}
-      </span>
-
-      {# Message #}
-      <p class="flex-1 min-w-0 font-mono text-[11px] text-ink leading-relaxed" style="white-space: pre-wrap; word-break: break-word;">{{ row.log.message }}</p>
-
-      {# Timestamps #}
-      <div class="shrink-0 text-right leading-tight">
-        <div class="text-[10px] text-muted whitespace-nowrap">{{ row.log.created_at|localtime_format:"%H:%M:%S" }}</div>
-        <div class="text-[10px] text-muted whitespace-nowrap">
-          {% if row.delta_prev %}+{{ row.delta_prev }}{% else %}&mdash;{% endif %}
-          {% if row.elapsed_total %}<span class="ml-1 opacity-60">({{ row.elapsed_total }})</span>{% endif %}
-        </div>
-      </div>
-    </div>
-    {% endfor %}
+  {% if log_entries %}
+  {% include "jobs/partials/log_toolbar.html" %}
+  <div>
+    {% include "jobs/partials/log_entries.html" with entries=log_entries %}
   </div>
   {% else %}
   <p class="text-sm text-muted text-center py-4">
     {% if object.status == "queued" or object.status == "scheduled" %}
     <i class="bi bi-hourglass-split text-lg block mb-1"></i>
-    Aguardando execucao...
+    Aguardando execução...
     {% else %}
     Nenhum log registrado.
     {% endif %}

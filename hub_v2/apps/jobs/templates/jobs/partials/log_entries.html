@@ -1,0 +1,26 @@
+{# N-91: as linhas de uma execucao. Espera `entries` (apps.jobs.services.log_format.build_entries). #}
+{% load hub_tags %}
+{% for entry in entries %}
+{% if entry.restart %}<div class="ikl-gap ikl-restart"><i class="bi bi-arrow-repeat"></i> executado de novo{% if entry.gap %}, {{ entry.gap }} depois{% endif %}</div>
+{% elif entry.gap %}<div class="ikl-gap"><i class="bi bi-hourglass-split"></i> {{ entry.gap }} depois</div>{% endif %}
+<div class="ikl-row" data-level="{{ entry.fmt.level }}">
+  <span class="ikl-ico" style="--c:{{ entry.fmt.color }}" title="{{ entry.fmt.level_label }}">{% if entry.fmt.image_url %}<img src="{{ entry.fmt.image_url }}" alt="">{% else %}<i class="bi {{ entry.fmt.icon }}"></i>{% endif %}</span>
+  <div class="ikl-body">
+    <div class="ikl-fmt">
+      <div class="ikl-title">{% if entry.fmt.level != "info" %}<span class="ikl-level" style="--c:{{ entry.fmt.color }}">{{ entry.fmt.level_label }}</span>{% endif %}{% for tag in entry.fmt.tags %}{% if tag.href %}<a class="ikl-tag" href="{{ tag.href }}">{{ tag.text }}</a>{% else %}<span class="ikl-tag">{{ tag.text }}</span>{% endif %}{% endfor %}{{ entry.fmt.title }}</div>
+      {% if entry.fmt.fields %}
+      <div class="ikl-fields">
+        {% for field in entry.fmt.fields %}
+        <span class="ikl-f"{% if field.title %} title="{{ field.title }}"{% endif %}>{% if field.label %}<span>{{ field.label }}</span>{% endif %}{% if field.icon_url %}<img src="{{ field.icon_url }}" alt="">{% elif field.kind == "city" %}<i class="bi bi-geo-alt-fill"></i>{% elif field.kind == "duration" %}<i class="bi bi-clock"></i>{% endif %}{% if field.href %}<a href="{{ field.href }}"><b>{{ field.value }}</b></a>{% else %}<b>{{ field.value }}</b>{% endif %}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    <div class="ikl-raw">{{ entry.log.message }}</div>
+  </div>
+  <div class="ikl-time" title="{{ entry.log.created_at|localtime_format:'%d/%m/%Y %H:%M:%S' }}">
+    <div>{{ entry.log.created_at|localtime_format:"%H:%M:%S" }}</div>
+    {% if entry.delta %}<div>+{{ entry.delta }}</div>{% endif %}
+  </div>
+</div>
+{% endfor %}

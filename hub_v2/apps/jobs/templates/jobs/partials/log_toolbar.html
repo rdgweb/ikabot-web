@@ -1,0 +1,12 @@
+{# N-91: filtros por nivel (clicar liga/desliga; a escolha fica guardada no navegador). Espera `log_levels` e `log_total`. #}
+<div class="ikl-bar">
+  {% for item in log_levels %}
+  <button type="button" class="ikl-chip" data-ik-log-chip="{{ item.level }}" style="--c:{{ item.color }}" title="Mostrar ou esconder: {{ item.label }}">
+    <i class="bi {{ item.icon }}"></i>{{ item.label }} <b>{{ item.count }}</b>
+  </button>
+  {% endfor %}
+  <button type="button" class="ikl-chip ikl-raw-toggle" data-ik-log-chip="raw" title="Alternar entre o log organizado e o texto exatamente como o agente gravou">
+    <i class="bi bi-code-slash" style="color:inherit"></i>Texto original
+  </button>
+  {% if log_note %}<span class="ikl-bar-note">{{ log_note }}</span>{% endif %}
+</div>
