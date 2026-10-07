@@ -163,10 +163,20 @@ x-data="{
     return marked === ids.length ? 'all' : 'some';
   },
   groupLabel(el) {
+    return this.groupState(el) === 'all' ? 'Desmarcar todos' : 'Selecionar todos';
+  },
+  groupCount(el) {
     const ids = this.groupIds(el);
-    const marked = ids.filter(id => this.selected.includes(id)).length;
-    if (ids.length && marked === ids.length) return 'Desmarcar';
-    return marked ? `Selecionar todos (${marked}/${ids.length})` : 'Selecionar todos';
+    return `${ids.filter(id => this.selected.includes(id)).length}/${ids.length}`;
+  },
+  groupSelectStyle(el, size) {
+    const state = this.groupState(el);
+    const look = state === 'all'
+      ? 'background: var(--ik-sea); border-color: var(--ik-sea); color: #fff;'
+      : (state === 'some'
+        ? 'background: rgba(79,134,185,0.12); border-color: var(--ik-sea); color: var(--ik-sea);'
+        : 'background: rgba(255,255,255,0.8); border-color: var(--ik-line); color: rgba(122,106,82,0.55);');
+    return `width: ${size}px; height: ${size}px; border-radius: 9999px; border-width: 1px; border-style: solid; padding: 0; ${look}`;
   },
   toggleGroup(el) {
     const ids = this.groupIds(el);

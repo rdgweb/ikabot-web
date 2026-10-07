@@ -242,7 +242,7 @@ class JobWorkflowViewTests(TestCase):
         self.assertEqual(partial.count("data-wf-group="), partial.count("wf-group-select"))
         self.assertGreaterEqual(partial.count("wf-group-select"), 1)
         self.assertIn("toggleGroup($el)", partial)
-        for method in ("groupIds(el)", "groupState(el)", "groupLabel(el)", "toggleGroup(el)"):
+        for method in ("groupIds(el)", "groupState(el)", "groupLabel(el)", "groupCount(el)", "groupSelectStyle(el, size)", "toggleGroup(el)"):
             self.assertIn(method, page)
 
     def test_default_jobs_page_renders_operational_workflow_view(self):

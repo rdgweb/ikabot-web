@@ -140,6 +140,11 @@ class QueueGroupingTests(TestCase):
         self.assertIn("toggleCollapsed(key)", html)
         # ...and no checkbox on the headers: boxes belong to the workflow rows only
         self.assertEqual(html.count('type="checkbox"'), 12)
+        # the select control is an icon toggle, not a "Selecionar todos" text button
+        self.assertNotIn(">Selecionar todos<", html)
+        self.assertNotIn("{#", html)        # a template comment split over two lines is printed as text
+        self.assertEqual(html.count('groupSelectStyle($el, 30)'), 4)      # menus
+        self.assertEqual(html.count('groupSelectStyle($el, 24)'), 4)      # actions
         # distribute, login and the wine alert repeat by themselves; a construction plan is marked too
         self.assertEqual(html.count("<span>recorrente</span>"), 12)
         self.assertNotIn("badge badge-secondary hover:opacity-80", html)      # menu badge is redundant here

@@ -113,12 +113,15 @@ data-filtered-count is read by the ancestor's syncFilteredCount() after each swa
           <i class="bi bi-funnel"></i> Ver so este
         </a>
         {% endif %}
-        {# N-69: seleciona/desmarca todas as linhas do grupo nesta pagina #}
-        <button type="button" class="wf-group-select btn btn-secondary btn-sm flex-shrink-0"
-                @click.stop="toggleGroup($el)" title="Selecionar ou desmarcar todos de {{ group.label }} nesta pagina">
-          <i class="bi" :class="groupState($el) === 'all' ? 'bi-check2-square' : (groupState($el) === 'some' ? 'bi-dash-square' : 'bi-square')"></i>
-          <span x-text="groupLabel($el)">Selecionar todos</span>
-        </button>
+        {# N-69: marca/desmarca as linhas do grupo nesta pagina; circulo vazio = nada, traco = parte, azul = tudo #}
+        <span class="flex flex-shrink-0 items-center gap-2">
+          <span class="text-xs font-semibold" style="color: var(--ik-sea);" x-show="groupState($el) !== 'none'" x-cloak x-text="groupCount($el)"></span>
+          <button type="button" class="wf-group-select flex flex-shrink-0 items-center justify-center transition-all"
+                  :style="groupSelectStyle($el, 30)" :title="groupLabel($el) + ' de {{ group.label|escapejs }} nesta pagina'"
+                  @click.stop="toggleGroup($el)">
+            <i class="bi text-sm" :class="groupState($el) === 'some' ? 'bi-dash-lg' : 'bi-check-lg'"></i>
+          </button>
+        </span>
       </div>
     </div>
     {% endif %}
@@ -142,10 +145,11 @@ data-filtered-count is read by the ancestor's syncFilteredCount() after each swa
           </span>
           {% endfor %}
           <div class="flex-1 h-px" style="background: var(--ik-line);"></div>
-          <button type="button" class="wf-group-select text-xs link-sea flex-shrink-0"
-                  @click.stop="toggleGroup($el)" title="Selecionar ou desmarcar todos de {{ sub.label }} nesta pagina">
-            <i class="bi" :class="groupState($el) === 'all' ? 'bi-check2-square' : (groupState($el) === 'some' ? 'bi-dash-square' : 'bi-square')"></i>
-            <span x-text="groupLabel($el)">Selecionar todos</span>
+          <span class="text-xs font-semibold flex-shrink-0" style="color: var(--ik-sea);" x-show="groupState($el) !== 'none'" x-cloak x-text="groupCount($el)"></span>
+          <button type="button" class="wf-group-select flex flex-shrink-0 items-center justify-center transition-all"
+                  :style="groupSelectStyle($el, 24)" :title="groupLabel($el) + ' de {{ sub.label|escapejs }} nesta pagina'"
+                  @click.stop="toggleGroup($el)">
+            <i class="bi text-xs" :class="groupState($el) === 'some' ? 'bi-dash-lg' : 'bi-check-lg'"></i>
           </button>
         </div>
         {% endif %}
