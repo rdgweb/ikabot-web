@@ -28,7 +28,7 @@ from core.templatetags.hub_tags import status_badge_class
 from ..filters import JobFilter, WorkflowFilter
 from ..models import ConstructionResourceReservation, Job, JobLog, Workflow, WorkflowRun
 from ..services import workflow_status
-from ..services.log_format import LogContext, build_entries, human_duration, level_counts
+from ..services.log_format import LogContext, build_entries, fix_accents, human_duration, level_counts
 from ..services.dispatch import dispatch_job
 from ..services.workflows import create_job_with_workflow, ensure_workflow_for_job, workflow_type_info
 
@@ -223,6 +223,7 @@ def _workflow_log_cycles(runs, context_for) -> list[dict]:
                 continue
             hidden = max(0, len(logs) - _CYCLE_JOB_LOG_LIMIT)
             name, city = _job_display(job)
+            name = fix_accents(name)      # the catalog writes "Doacao em Loop"
             blocks.append({
                 "job": job, "name": name, "city": city, "hidden": hidden,
                 "entries": build_entries(logs[hidden:], context=context),

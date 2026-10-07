@@ -288,6 +288,11 @@ def _accent(text: str) -> str:
     return _SUFFIX_RE.sub(by_suffix, text)
 
 
+def fix_accents(text: str) -> str:
+    """Nomes do catalogo gravados sem acento ("Doacao em Loop") do jeito que se escreve."""
+    return _accent(str(text or ""))
+
+
 def _clean_text(text: str) -> str:
     text = _UUID_RE.sub(lambda match: match.group(0)[:8], str(text or ""))
     text = _thousands(text).replace(" -> ", " → ").replace("->", "→")
@@ -554,7 +559,10 @@ def _title(head: str, context: LogContext) -> str:
 def _without_repeats(fields: list[dict]) -> list[dict]:
     """"cidade=Hell | city_id=39272" diz a mesma coisa duas vezes: fica a primeira."""
     kept: list[dict] = []
+    named_building = any(field["label"] in ("Prédio", "Edifício") for field in fields)
     for field in fields:
+        if named_building and field["label"] == "Edifício (id)":
+            continue        # o codigo interno do predio cujo nome ja esta ali
         same_label = [other for other in kept if other["label"] == field["label"] and field["label"]]
         if any(other["value"] == field["value"] for other in same_label):
             continue
@@ -594,13 +602,21 @@ def format_log(level: str, message: str, *, context: LogContext | None = None, m
         if tags and title[:1].islower():
             title = title[:1].upper() + title[1:]      # a frase comecava depois da etiqueta
         fields = []
+        group = None    # "estimado=madeira=47.643 | mármore=42.948": os recursos seguintes pertencem ao mesmo campo
         for key, value, literal in pairs:
+            if group is not None and key is not None and not literal and key.strip().lower() in RESOURCES:
+                group["value"] += f" · {RESOURCES[key.strip().lower()][0].lower()} {_clean_text(value)}"
+                continue
+            group = None
             if key is None:
                 fields.append(_loose_value(value, context))
             elif literal:
                 fields.append(_field(key, _clean_text(value)))
             else:
                 fields.append(_format_value(key, value, context, moment))
+                nested = _NESTED_KV.match(value.strip())
+                if nested and nested.group(1).lower() in RESOURCES and key.strip().lower() not in RESOURCES:
+                    group = fields[-1]
         fields = _without_repeats(fields)
         if not title and fields:
             first = fields.pop(0)

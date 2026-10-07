@@ -176,11 +176,20 @@ class LogFormatTests(TestCase):
         self.assertEqual((inbox["title"], _fields(inbox)), ("Verificando a caixa de entrada de diplomacia", {"Cidade": "Hell"}))
         # nome e codigo da mesma cidade na mesma linha: aparece uma vez so
         for line in ("cidade=Hell | city_id=39272", "cidade=Polis | city_id=99999"):
-            step = self._format(f"Executando etapa | {line} | predio=Pirotecnico | nivel=24->25 | estimado=madeira=47.643 | mármore=42.948")
+            step = self._format(
+                f"Executando etapa | {line} | predio=Pirotecnico | building_id=fireworker | nivel=24->25 | "
+                "estimado=madeira=47.643 | mármore=42.948 | custo_real=madeira=47.642 | vidro=53 | faltando=nada"
+            )
             self.assertEqual(
                 [(field["label"], field["value"]) for field in step["fields"]],
-                [("Cidade", line.split(" | ")[0].split("=")[1]), ("Prédio", "Pirotécnico"), ("Nível", "24→25"), ("Estimado", "madeira 47.643"), ("Mármore", "42.948")],
+                [
+                    ("Cidade", line.split(" | ")[0].split("=")[1]), ("Prédio", "Pirotécnico"), ("Nível", "24→25"),
+                    # os recursos de cada grupo ficam juntos, e nao como campos soltos repetidos
+                    ("Estimado", "madeira 47.643 · mármore 42.948"), ("Custo real", "madeira 47.642 · cristal 53"), ("Faltando", "nada"),
+                ],
             )
+        # recurso que nao vem depois de um grupo continua sendo um campo proprio
+        self.assertEqual(_fields(self._format("Evolução: Veredito | 5h 10m | madeira=29.975 | mármore=20.953")), {"": "5h 10m", "Madeira": "29.975", "Mármore": "20.953"})
 
     def test_job_created_by_a_line_becomes_a_link(self):
         fmt = self._format(f"Retry manual solicitado; novo job imediato criado: {JOB_UUID}")
@@ -356,6 +365,12 @@ class WorkflowLogsByCycleTests(TestCase):
         # os filtros contam a pagina inteira
         chips = dict(re.findall(r'data-ik-log-chip="(error|warn|info|debug)"[^>]*>\s*<i[^>]*></i>[^<]+<b>(\d+)</b>', html))
         self.assertEqual(chips, {"error": "1", "warn": "1", "info": "5"})
+
+    def test_cycle_header_writes_catalog_names_with_accents(self):
+        self._cycle(1, [(1006, "finished", [("info", "Job started on agent-a")], '{"city_name": "Hell", "donation_type": "wood"}')])
+        html = self._html()
+        self.assertIn("Doação em Loop — Hell — Madeira", html)     # o catalogo grava "Doacao em Loop"
+        self.assertNotIn("Doacao", html)
 
     def test_pages_are_made_of_whole_cycles(self):
         for sequence in range(1, 13):
