@@ -49,11 +49,29 @@ data-filtered-count is read by the ancestor's syncFilteredCount() after each swa
   </div>
 
   {% for group in workflow_groups %}
-  <div class="mb-1">
+  <div class="mb-1" data-wf-group="{{ group.category }}">
     <div class="flex items-center gap-2 mb-2 mt-1">
-      <i class="bi {{ group.icon }} text-sm flex-shrink-0" style="color: {{ group.color }};"></i>
-      <span class="text-[11px] font-semibold uppercase tracking-wide text-muted">{{ group.label }}</span>
-      <span class="text-[10px] text-muted">({{ group.rows|length }})</span>
+      {# N-69: o cabecalho do menu marca/desmarca todas as linhas dele nesta pagina #}
+      <label class="flex items-center gap-2 cursor-pointer" style="user-select: none;"
+             title="Selecionar todos de {{ group.label }} nesta pagina">
+        <input type="checkbox"
+               class="wf-group-check h-4 w-4 flex-shrink-0 rounded border-[var(--ik-line)]"
+               aria-label="Selecionar todos de {{ group.label }}"
+               :checked="groupState($el) === 'all'"
+               x-effect="$el.indeterminate = groupState($el) === 'some'"
+               @change="toggleGroup($el)">
+        <i class="bi {{ group.icon }} text-sm flex-shrink-0" style="color: {{ group.color }};"></i>
+        <span class="text-[11px] font-semibold uppercase tracking-wide text-muted">{{ group.label }}</span>
+        <span class="text-[10px] text-muted">({{ group.rows|length }})</span>
+      </label>
+      {% if page_obj.has_other_pages and request.GET.category != group.category %}
+      <a href="?category={{ group.category }}" hx-get="?category={{ group.category }}"
+         hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
+         class="text-[10px] text-muted hover:text-ink"
+         title="Mostrar so {{ group.label }}; depois use Selecionar todos para pegar todas as paginas">
+        <i class="bi bi-funnel"></i> so este menu
+      </a>
+      {% endif %}
       <div class="flex-1 h-px" style="background: var(--ik-line);"></div>
     </div>
     <div class="space-y-2">

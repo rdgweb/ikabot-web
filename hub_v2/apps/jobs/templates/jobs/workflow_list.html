@@ -140,6 +140,24 @@ x-data="{
     this.selectAllFiltered = false;
     this.selected = Array.from(this.$el.querySelectorAll('.wf-bulk-check')).map(el => el.value);
   },
+  groupIds(el) {
+    const group = el.closest('[data-wf-group]');
+    return group ? Array.from(group.querySelectorAll('.wf-bulk-check')).map(box => box.value) : [];
+  },
+  groupState(el) {
+    const ids = this.groupIds(el);
+    const marked = ids.filter(id => this.selected.includes(id)).length;
+    if (!ids.length || !marked) return 'none';
+    return marked === ids.length ? 'all' : 'some';
+  },
+  toggleGroup(el) {
+    const ids = this.groupIds(el);
+    const all = this.groupState(el) === 'all';
+    this.selectAllFiltered = false;
+    this.selected = all
+      ? this.selected.filter(id => !ids.includes(id))
+      : Array.from(new Set([...this.selected, ...ids]));
+  },
   syncFilteredCount() {
     const marker = this.$el.querySelector('[data-filtered-count]');
     if (!marker) return;
