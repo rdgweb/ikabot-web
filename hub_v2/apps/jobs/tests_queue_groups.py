@@ -66,7 +66,7 @@ class QueueGroupingTests(TestCase):
 
         groups = response.context["workflow_groups"]
         self.assertEqual([(g["key"], g["shown"], g["total"]) for g in groups], [("construction", 3, 3), ("resources", 2, 3)])
-        self.assertIn("2 de 3 nesta pagina", response.content.decode())
+        self.assertIn("2 de 3 workflows nesta pagina", response.content.decode())
         second = self._page(per_page=5, page=2).context["workflow_groups"]
         self.assertEqual([(g["key"], g["shown"], g["total"]) for g in second], [("resources", 1, 3), ("monitoring", 3, 3), ("account", 1, 3)])
 
@@ -104,7 +104,7 @@ class QueueGroupingTests(TestCase):
 
         groups = response.context["workflow_groups"]
         self.assertEqual((len(groups), groups[0]["label"], groups[0]["shown"]), (1, "", 12))
-        self.assertNotIn("wf-group-check", response.content.decode())
+        self.assertNotIn("wf-group-select", response.content.decode())
 
     def test_the_choice_is_remembered(self):
         self._page(group="account", per_page=200)
@@ -133,13 +133,15 @@ class QueueGroupingTests(TestCase):
     def test_headers_select_and_collapse_and_recurring_actions_are_marked(self):
         html = self._page().content.decode()
 
-        # one selection box and one collapse button per menu and per action
-        self.assertEqual(html.count("wf-group-check"), 8)
+        # one select button and one collapsible header per menu and per action...
+        self.assertEqual(html.count("wf-group-select"), 8)
         self.assertEqual(html.count("data-wf-collapse="), 8)
         self.assertEqual(html.count("data-wf-group="), 8)
         self.assertIn("toggleCollapsed(key)", html)
+        # ...and no checkbox on the headers: boxes belong to the workflow rows only
+        self.assertEqual(html.count('type="checkbox"'), 12)
         # distribute, login and the wine alert repeat by themselves; a construction plan is marked too
-        self.assertEqual(html.count("> recorrente</span>"), 12)
+        self.assertEqual(html.count("<span>recorrente</span>"), 12)
         self.assertNotIn("badge badge-secondary hover:opacity-80", html)      # menu badge is redundant here
         # queue-wide lookups go through the component root: with $el (the clicked button)
         # "Selecionar pagina" and "Recolher tudo" found nothing
@@ -151,11 +153,40 @@ class QueueGroupingTests(TestCase):
         self.assertNotIn(badge, self._page(group="account").content.decode())
         self.assertEqual(self._page(group="none").content.decode().count(badge), 12)
 
+    def test_headers_carry_art_and_a_status_summary(self):
+        response = self._page()
+        construction = response.context["workflow_groups"][0]
+
+        self.assertIn("game/buildings/architectsoffice.png", construction["image_url"])
+        self.assertFalse(construction["is_account"])
+        self.assertEqual(sum(item["count"] for item in construction["statuses"]), construction["shown"])
+        self.assertEqual(construction["subgroups"][0]["statuses"], construction["statuses"])      # single action in the menu
+        self.assertTrue(construction["subgroups"][0]["icon"].startswith("bi-"))
+        html = response.content.decode()
+        self.assertIn("game/buildings/architectsoffice.png", html)
+        self.assertIn("3 workflows &middot; 1 acao", " ".join(html.split()))
+
+    def test_account_headers_use_the_account_image_or_its_initials(self):
+        alfa = self.gas["Alfa"]
+        alfa.avatar = "game/units/hoplita.png"
+        alfa.save(update_fields=["avatar"])
+
+        response = self._page(group="account")
+        groups = {group["label"]: group for group in response.context["workflow_groups"]}
+
+        self.assertTrue(groups["Alfa"]["is_account"])
+        self.assertIn("game/units/hoplita.png", groups["Alfa"]["image_url"])
+        self.assertEqual((groups["Meio"]["image_url"], groups["Meio"]["initials"]), ("", "ME"))
+        self.assertEqual(groups["Alfa"]["detail"], "Lobby Alfa / s1-br")
+        html = response.content.decode()
+        self.assertIn("game/units/hoplita.png", html)
+        self.assertIn(">ME</span>", html)
+
     def test_htmx_swap_carries_the_same_structure(self):
         partial = self.client.get(reverse("jobs:job-list"), HTTP_HX_REQUEST="true").content.decode()
 
         self.assertNotIn("<html", partial)
-        self.assertIn("Agrupar por:", partial)
+        self.assertIn("Agrupar por", partial)
         self.assertEqual(partial.count("wf-bulk-check mt-1"), 12)
 
 
@@ -182,10 +213,12 @@ class CategoryTaxonomyTests(TestCase):
         })
 
     def test_workflow_type_info(self):
+        info = workflow_type_info("distribute")
         self.assertEqual(
-            workflow_type_info("distribute"),
-            {"action_code": 3, "label": "Distribuir Recursos", "category": "resources", "recurring": True},
+            (info["action_code"], info["label"], info["category"], info["recurring"]),
+            (3, "Distribuir Recursos", "resources", True),
         )
+        self.assertTrue(info["icon"].startswith("bi-"))
         self.assertEqual((workflow_type_info("diplomacy")["label"], workflow_type_info("diplomacy")["category"]), ("Diplomacia", "diplomacy"))
         self.assertEqual(workflow_type_info("transport_route")["label"], "Enviar Recursos")
         unknown = workflow_type_info("some_old_type")

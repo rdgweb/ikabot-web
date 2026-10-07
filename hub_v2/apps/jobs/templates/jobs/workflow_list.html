@@ -162,6 +162,12 @@ x-data="{
     if (!ids.length || !marked) return 'none';
     return marked === ids.length ? 'all' : 'some';
   },
+  groupLabel(el) {
+    const ids = this.groupIds(el);
+    const marked = ids.filter(id => this.selected.includes(id)).length;
+    if (ids.length && marked === ids.length) return 'Desmarcar';
+    return marked ? `Selecionar todos (${marked}/${ids.length})` : 'Selecionar todos';
+  },
   toggleGroup(el) {
     const ids = this.groupIds(el);
     const all = this.groupState(el) === 'all';

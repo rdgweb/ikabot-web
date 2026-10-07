@@ -12,11 +12,13 @@ from django.db.models import Case, Count, F, IntegerField, Max, Value, When, Win
 from django.db.models.functions import Lower, RowNumber
 from django.http import HttpResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
+from django.templatetags.static import static
 from django.db import models, transaction
 from django.utils import timezone
 from django.views import View
 from django.views.generic import DetailView
 
+from apps.accounts.avatars import avatar_url, initials
 from core.actions.constants import CATEGORY_META, CATEGORY_ORDER
 from core.catalogs import get_building_info
 from core.contracts import ACTION_CATALOG, RESOURCE_CHOICES
@@ -3147,7 +3149,24 @@ class WorkflowListView(FilterSortListView):
             "label": meta.get("label", (category or "Outros").replace("_", " ").title()),
             "icon": meta.get("icon", "bi-grid"),
             "color": meta.get("color", "var(--ik-muted)"),
+            "image_url": static(meta["image"]) if meta.get("image") else "",
         }
+
+    # order in which a header sums up what is inside it: what needs attention first
+    _STATUS_ORDER = ("problem", "active", "waiting", "paused", "finished", "cancelled", "draft")
+
+    @classmethod
+    def _status_summary(cls, rows: list) -> list:
+        """[{"status", "label", "color", "count"}] of the rows, most urgent first."""
+        counts: dict = {}
+        for row in rows:
+            entry = counts.setdefault(row["status"], {
+                "status": row["status"], "label": row["status_label"],
+                "color": _WORKFLOW_BORDER_COLOR.get(row["status"], "var(--ik-line)"), "count": 0,
+            })
+            entry["count"] += 1
+        rank = {status: position for position, status in enumerate(cls._STATUS_ORDER)}
+        return sorted(counts.values(), key=lambda entry: rank.get(entry["status"], len(rank)))
 
     @classmethod
     def _group_rows(cls, workflow_rows: list, mode: str = "menu", totals: dict | None = None) -> list:
@@ -3164,8 +3183,11 @@ class WorkflowListView(FilterSortListView):
         if mode == "none":
             return [{
                 "key": "all", "label": "", "icon": "", "color": "", "filter_url": "",
-                "shown": len(workflow_rows), "total": len(workflow_rows),
-                "subgroups": [{"key": "all", "label": "", "rows": list(workflow_rows), "shown": len(workflow_rows), "total": len(workflow_rows)}],
+                "shown": len(workflow_rows), "total": len(workflow_rows), "statuses": [],
+                "subgroups": [{
+                    "key": "all", "label": "", "rows": list(workflow_rows), "statuses": [],
+                    "shown": len(workflow_rows), "total": len(workflow_rows),
+                }],
             }]
 
         groups: list = []
@@ -3175,14 +3197,23 @@ class WorkflowListView(FilterSortListView):
             category = workflow.category or "other"
             if mode == "account":
                 owner = str(workflow.game_account_id or workflow.account_id)
-                name = (workflow.game_account.name or workflow.game_account.server_id) if workflow.game_account else workflow.account.label
-                group_key, group_view = owner, {"label": name, "icon": "bi-person-circle", "color": "var(--ik-sea)"}
+                game_account = workflow.game_account
+                name = (game_account.name or game_account.server_id) if game_account else workflow.account.label
+                group_key = owner
+                group_view = {
+                    "label": name, "icon": "bi-person-circle", "color": "var(--ik-sea)", "is_account": True,
+                    "image_url": avatar_url(game_account) if game_account else "",
+                    "initials": initials(name),
+                    "detail": " / ".join(part for part in (workflow.account.label, game_account.server_id if game_account else "") if part),
+                }
                 filter_url = f"?game_account={workflow.game_account_id}" if workflow.game_account_id else f"?account={workflow.account_id}"
-                sub_key, sub_label = category, cls._menu_meta(category)["label"]
+                menu = cls._menu_meta(category)
+                sub_key, sub_view = category, {"label": menu["label"], "icon": menu["icon"], "color": menu["color"]}
             else:
-                group_key, group_view = category, cls._menu_meta(category)
+                group_key, group_view = category, {**cls._menu_meta(category), "is_account": False, "initials": "", "detail": ""}
                 filter_url = f"?category={category}" if category in CATEGORY_META else ""
-                sub_key, sub_label = workflow.workflow_type, row["type_label"]
+                sub_key = workflow.workflow_type
+                sub_view = {"label": row["type_label"], "icon": row["type_icon"], "color": group_view["color"]}
 
             group = index.get(group_key)
             if group is None:
@@ -3192,7 +3223,7 @@ class WorkflowListView(FilterSortListView):
                 groups.append(group)
             sub = group["_subs"].get(sub_key)
             if sub is None:
-                sub = {"key": f"{group_key}/{sub_key}", "label": sub_label, "rows": [], "shown": 0, "total": totals.get((group_key, sub_key), 0)}
+                sub = {"key": f"{group_key}/{sub_key}", **sub_view, "rows": [], "shown": 0, "total": totals.get((group_key, sub_key), 0)}
                 group["_subs"][sub_key] = sub
                 group["subgroups"].append(sub)
             sub["rows"].append(row)
@@ -3201,8 +3232,10 @@ class WorkflowListView(FilterSortListView):
         for group in groups:
             group.pop("_subs")
             group["total"] = max(group["total"], group["shown"])
+            group["statuses"] = cls._status_summary([row for sub in group["subgroups"] for row in sub["rows"]])
             for sub in group["subgroups"]:
                 sub["total"] = max(sub["total"], sub["shown"])
+                sub["statuses"] = cls._status_summary(sub["rows"])
         return groups
 
     @staticmethod
@@ -3429,6 +3462,7 @@ class WorkflowListView(FilterSortListView):
             "workflow": workflow,
             "title": cls._workflow_title(workflow, config),
             "type_label": workflow_type_info(workflow.workflow_type)["label"],
+            "type_icon": workflow_type_info(workflow.workflow_type)["icon"],
             "recurring": workflow_type_info(workflow.workflow_type)["recurring"],
             "category_label": CATEGORY_META.get(workflow.category, {}).get("label", workflow.category or "Operacional"),
             "category_icon": CATEGORY_META.get(workflow.category, {}).get("icon", "bi-diagram-3"),

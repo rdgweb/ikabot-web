@@ -49,77 +49,107 @@ data-filtered-count is read by the ancestor's syncFilteredCount() after each swa
   </div>
 
   {# N-88: como a fila e organizada (a escolha fica guardada na sessao) #}
-  <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
-    <div class="flex flex-wrap items-center gap-1.5">
-      <span class="text-muted">Agrupar por:</span>
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-sm text-muted">Agrupar por</span>
       {% for option in group_options %}
       <a href="{{ option.url }}" hx-get="{{ option.url }}" hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
-         class="px-2 py-1 rounded {% if option.active %}bg-[var(--ik-sea)]/10 text-[var(--ik-sea)] font-semibold{% else %}text-muted hover:text-ink{% endif %}">{{ option.label }}</a>
+         class="btn btn-sm {% if option.active %}btn-primary{% else %}btn-secondary{% endif %}">{{ option.label }}</a>
       {% endfor %}
     </div>
     {% if group_mode != "none" and workflow_groups %}
-    <div class="flex items-center gap-3 text-muted">
-      <button type="button" class="hover:text-ink" @click="setAllCollapsed(true)"><i class="bi bi-arrows-collapse"></i> Recolher tudo</button>
-      <button type="button" class="hover:text-ink" @click="setAllCollapsed(false)"><i class="bi bi-arrows-expand"></i> Expandir tudo</button>
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-secondary btn-sm" @click="setAllCollapsed(true)"><i class="bi bi-arrows-collapse"></i> Recolher tudo</button>
+      <button type="button" class="btn btn-secondary btn-sm" @click="setAllCollapsed(false)"><i class="bi bi-arrows-expand"></i> Expandir tudo</button>
     </div>
     {% endif %}
   </div>
 
   {% for group in workflow_groups %}
-  <div class="mb-1" data-wf-group="{{ group.key }}">
+  <div data-wf-group="{{ group.key }}">
     {% if group.label %}
-    <div class="flex items-center gap-2 mb-2 mt-1">
-      <button type="button" class="text-muted hover:text-ink" data-wf-collapse="{{ group.key }}"
-              @click="toggleCollapsed('{{ group.key|escapejs }}')" title="Recolher ou expandir {{ group.label }}">
-        <i class="bi" :class="isCollapsed('{{ group.key|escapejs }}') ? 'bi-chevron-right' : 'bi-chevron-down'"></i>
-      </button>
-      {# N-69: o cabecalho marca/desmarca todas as linhas do grupo nesta pagina #}
-      <label class="flex items-center gap-2 cursor-pointer" style="user-select: none;"
-             title="Selecionar todos de {{ group.label }} nesta pagina">
-        <input type="checkbox"
-               class="wf-group-check h-4 w-4 flex-shrink-0 rounded border-[var(--ik-line)]"
-               aria-label="Selecionar todos de {{ group.label }}"
-               :checked="groupState($el) === 'all'"
-               x-effect="$el.indeterminate = groupState($el) === 'some'"
-               @change="toggleGroup($el)">
-        <i class="bi {{ group.icon }} text-sm flex-shrink-0" style="color: {{ group.color }};"></i>
-        <span class="text-[11px] font-semibold uppercase tracking-wide text-muted">{{ group.label }}</span>
-        <span class="text-[10px] text-muted">({% if group.shown != group.total %}{{ group.shown }} de {{ group.total }} nesta pagina{% else %}{{ group.total }}{% endif %})</span>
-      </label>
-      {% if group.shown != group.total and group.filter_url %}
-      <a href="{{ group.filter_url }}" hx-get="{{ group.filter_url }}"
-         hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
-         class="text-[10px] text-muted hover:text-ink"
-         title="Mostrar so {{ group.label }}; depois use Selecionar todos para pegar todas as paginas">
-        <i class="bi bi-funnel"></i> so {{ group.label }}
-      </a>
-      {% endif %}
-      <div class="flex-1 h-px" style="background: var(--ik-line);"></div>
+    {# cabecalho do grupo: uma barra com imagem, resumo e a acao de selecionar (clicar recolhe) #}
+    <div class="card !p-0 overflow-hidden cursor-pointer" style="user-select: none;"
+         data-wf-collapse="{{ group.key }}" @click="toggleCollapsed('{{ group.key|escapejs }}')"
+         title="Clique para recolher ou expandir">
+      <div class="flex items-center gap-3 px-4 py-3"
+           style="background: linear-gradient(180deg, rgba(255,255,255,0.65), rgba(247,241,229,0.35));">
+        <i class="bi text-muted flex-shrink-0" :class="isCollapsed('{{ group.key|escapejs }}') ? 'bi-chevron-right' : 'bi-chevron-down'"></i>
+        <span class="flex flex-shrink-0 items-center justify-center overflow-hidden"
+              style="width: 44px; height: 44px; border: 1px solid rgba(79,134,185,0.20); background: linear-gradient(180deg, #fffdf8, #f4ecda); border-radius: {% if group.is_account %}9999px{% else %}14px{% endif %};">
+          {% if group.image_url and group.is_account %}
+          <img src="{{ group.image_url }}" alt="" style="width: 100%; height: 100%; object-fit: {% if '/avatar/' in group.image_url %}cover{% else %}contain{% endif %};">
+          {% elif group.image_url %}
+          <img src="{{ group.image_url }}" alt="" style="width: 38px; height: 38px; object-fit: contain;">
+          {% elif group.is_account %}
+          <span class="text-sm font-bold" style="color: var(--ik-sea);">{{ group.initials }}</span>
+          {% else %}
+          <i class="bi {{ group.icon }} text-lg" style="color: {{ group.color }};"></i>
+          {% endif %}
+        </span>
+        <div class="min-w-0 flex-1">
+          <div class="text-sm font-semibold text-ink truncate">{{ group.label }}</div>
+          <div class="text-xs text-muted truncate">
+            {% if group.shown != group.total %}{{ group.shown }} de {{ group.total }} workflows nesta pagina{% else %}{{ group.total }} workflow{{ group.total|pluralize }}{% endif %}
+            &middot; {{ group.subgroups|length }} {% if group.is_account %}menu{{ group.subgroups|length|pluralize }}{% else %}{{ group.subgroups|length|pluralize:"acao,acoes" }}{% endif %}
+            {% if group.detail %}&middot; {{ group.detail }}{% endif %}
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center justify-end gap-1.5">
+          {% for item in group.statuses %}
+          <span class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs"
+                style="border-color: var(--ik-line); background: rgba(255,255,255,0.75);">
+            <span style="width: 8px; height: 8px; border-radius: 9999px; background: {{ item.color }};"></span>
+            <span class="font-semibold text-ink">{{ item.count }}</span>
+            <span class="text-muted">{{ item.label }}</span>
+          </span>
+          {% endfor %}
+        </div>
+        {% if group.shown != group.total and group.filter_url %}
+        <a href="{{ group.filter_url }}" hx-get="{{ group.filter_url }}"
+           hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true" @click.stop
+           class="btn btn-secondary btn-sm flex-shrink-0"
+           title="Mostrar so {{ group.label }}; depois use Selecionar todos para pegar todas as paginas">
+          <i class="bi bi-funnel"></i> Ver so este
+        </a>
+        {% endif %}
+        {# N-69: seleciona/desmarca todas as linhas do grupo nesta pagina #}
+        <button type="button" class="wf-group-select btn btn-secondary btn-sm flex-shrink-0"
+                @click.stop="toggleGroup($el)" title="Selecionar ou desmarcar todos de {{ group.label }} nesta pagina">
+          <i class="bi" :class="groupState($el) === 'all' ? 'bi-check2-square' : (groupState($el) === 'some' ? 'bi-dash-square' : 'bi-square')"></i>
+          <span x-text="groupLabel($el)">Selecionar todos</span>
+        </button>
+      </div>
     </div>
     {% endif %}
-    <div class="space-y-3" {% if group.label %}x-show="!isCollapsed('{{ group.key|escapejs }}')"{% endif %}>
+    <div class="space-y-4" {% if group.label %}x-show="!isCollapsed('{{ group.key|escapejs }}')" style="margin: 12px 0 8px 21px; padding-left: 20px; border-left: 2px solid var(--ik-line);"{% endif %}>
       {% for sub in group.subgroups %}
       <div data-wf-group="{{ sub.key }}">
         {% if sub.label %}
-        <div class="flex items-center gap-2 mb-1.5" style="padding-left: 22px;">
-          <button type="button" class="text-muted hover:text-ink" data-wf-collapse="{{ sub.key }}"
-                  @click="toggleCollapsed('{{ sub.key|escapejs }}')" title="Recolher ou expandir {{ sub.label }}">
-            <i class="bi text-[10px]" :class="isCollapsed('{{ sub.key|escapejs }}') ? 'bi-chevron-right' : 'bi-chevron-down'"></i>
+        <div class="flex items-center gap-2 mb-2 cursor-pointer" style="user-select: none;"
+             data-wf-collapse="{{ sub.key }}" @click="toggleCollapsed('{{ sub.key|escapejs }}')"
+             title="Clique para recolher ou expandir">
+          <i class="bi text-xs text-muted flex-shrink-0" :class="isCollapsed('{{ sub.key|escapejs }}') ? 'bi-chevron-right' : 'bi-chevron-down'"></i>
+          <span class="flex flex-shrink-0 items-center justify-center"
+                style="width: 28px; height: 28px; border-radius: 9px; border: 1px solid var(--ik-line); background: rgba(255,255,255,0.75);">
+            <i class="bi {{ sub.icon }} text-sm" style="color: {{ sub.color }};"></i>
+          </span>
+          <span class="text-sm font-semibold text-ink">{{ sub.label }}</span>
+          <span class="badge badge-secondary">{% if sub.shown != sub.total %}{{ sub.shown }} de {{ sub.total }}{% else %}{{ sub.total }}{% endif %}</span>
+          {% for item in sub.statuses %}
+          <span class="inline-flex items-center gap-1 text-xs text-muted" title="{{ item.label }}">
+            <span style="width: 7px; height: 7px; border-radius: 9999px; background: {{ item.color }};"></span>{{ item.count }}
+          </span>
+          {% endfor %}
+          <div class="flex-1 h-px" style="background: var(--ik-line);"></div>
+          <button type="button" class="wf-group-select text-xs link-sea flex-shrink-0"
+                  @click.stop="toggleGroup($el)" title="Selecionar ou desmarcar todos de {{ sub.label }} nesta pagina">
+            <i class="bi" :class="groupState($el) === 'all' ? 'bi-check2-square' : (groupState($el) === 'some' ? 'bi-dash-square' : 'bi-square')"></i>
+            <span x-text="groupLabel($el)">Selecionar todos</span>
           </button>
-          <label class="flex items-center gap-2 cursor-pointer" style="user-select: none;"
-                 title="Selecionar todos de {{ sub.label }} nesta pagina">
-            <input type="checkbox"
-                   class="wf-group-check h-3.5 w-3.5 flex-shrink-0 rounded border-[var(--ik-line)]"
-                   aria-label="Selecionar todos de {{ sub.label }}"
-                   :checked="groupState($el) === 'all'"
-                   x-effect="$el.indeterminate = groupState($el) === 'some'"
-                   @change="toggleGroup($el)">
-            <span class="text-xs font-semibold text-ink">{{ sub.label }}</span>
-            <span class="text-[10px] text-muted">({% if sub.shown != sub.total %}{{ sub.shown }} de {{ sub.total }}{% else %}{{ sub.total }}{% endif %})</span>
-          </label>
         </div>
         {% endif %}
-        <div class="space-y-2" {% if sub.label %}style="padding-left: 22px;" x-show="!isCollapsed('{{ sub.key|escapejs }}')"{% endif %}>
+        <div class="space-y-2" {% if sub.label %}x-show="!isCollapsed('{{ sub.key|escapejs }}')"{% endif %}>
           {% for row in sub.rows %}
           {% include "jobs/partials/workflow_row.html" %}
           {% endfor %}

@@ -181,10 +181,17 @@
          :style="open ? 'border-bottom: 2px solid var(--ik-line)' : ''"
          @click="open = !open">
       <div class="flex items-center gap-3">
-        <div class="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold"
-             style="background: linear-gradient(135deg, var(--ik-sea), var(--ik-sea-dark)); color: #fff;">
-          {{ card.player_name|truncatechars:2|upper }}
-        </div>
+        {# imagem da conta (N-88): clicar abre o seletor; sem imagem mostra as iniciais #}
+        <button type="button" class="flex flex-shrink-0 items-center justify-center overflow-hidden text-sm font-bold"
+                style="width: 44px; height: 44px; border-radius: 9999px; padding: 0; {% if card.avatar_url %}border: 1px solid rgba(79,134,185,0.25); background: linear-gradient(180deg, #fffdf8, #f4ecda);{% else %}border: 0; background: linear-gradient(135deg, var(--ik-sea), var(--ik-sea-dark)); color: #fff;{% endif %}"
+                title="Trocar a imagem de {{ card.player_name|default:card.account.label }}"
+                @click.stop="window.dispatchEvent(new CustomEvent('open-avatar-picker', {detail: {id: '{{ card.game_account_id }}', name: '{{ card.player_name|default:card.account.label|escapejs }}', url: '{{ card.avatar_url|escapejs }}'}}))">
+          {% if card.avatar_url %}
+          <img src="{{ card.avatar_url }}" alt="" style="width: 100%; height: 100%; object-fit: {% if '/avatar/' in card.avatar_url %}cover{% else %}contain{% endif %};">
+          {% else %}
+          {{ card.avatar_initials }}
+          {% endif %}
+        </button>
         <div>
           <div class="flex items-center gap-2">
             <h3 class="text-sm font-semibold text-ink">{{ card.player_name|default:card.account.label }}</h3>
@@ -974,6 +981,8 @@
 {% endif %}
 
 </div>{# end x-data gameDashboard #}
+
+{% include "accounts/partials/avatar_picker.html" %}
 
 {{ kpi_history|json_script:"game-dashboard-history" }}
 {{ resource_modal_data|json_script:"game-dashboard-resource-data" }}

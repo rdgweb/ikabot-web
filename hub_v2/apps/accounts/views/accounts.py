@@ -12,6 +12,7 @@ from django.views import View
 from django.views.generic import DetailView, CreateView, UpdateView, DeleteView
 
 from core.mixins.views import FilterSortListView
+from ..avatars import avatar_bytes, avatar_url, clean_avatar
 from ..models import Account, GameAccount
 from ..filters import AccountFilter
 from ..forms import AccountCreateForm, AccountEditForm
@@ -179,6 +180,45 @@ class GameAccountBuildTimeView(LoginRequiredMixin, View):
         resp = HttpResponse(status=204)
         resp["HX-Trigger"] = trigger
         return resp
+
+
+class GameAccountAvatarView(LoginRequiredMixin, View):
+    """Imagem da conta (N-88).
+
+    GET  devolve a imagem enviada pelo usuario (as da galeria sao arquivos estaticos).
+    POST grava: avatar = caminho da galeria, data URI de imagem pequena, ou vazio para tirar.
+    """
+
+    def get(self, request, pk):
+        ga = get_object_or_404(GameAccount.objects.only("avatar"), pk=pk)
+        image = avatar_bytes(ga.avatar)
+        if image is None:
+            return HttpResponse(status=404)
+        content_type, raw = image
+        response = HttpResponse(raw, content_type=content_type)
+        # o endereco muda (?v=) quando a imagem muda, entao pode ficar guardada
+        response["Cache-Control"] = "private, max-age=31536000, immutable"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
+
+    def post(self, request, pk):
+        ga = get_object_or_404(GameAccount, pk=pk)
+        try:
+            ga.avatar = clean_avatar(request.POST.get("avatar", ""))
+        except ValueError as exc:
+            response = HttpResponse(json.dumps({"ok": False, "error": str(exc)}), status=400, content_type="application/json")
+            response["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": str(exc)}})
+            return response
+        ga.save(update_fields=["avatar", "updated_at"])
+        # o Painel do Jogo guarda os cartoes em cache
+        from apps.game.services.dashboard_cache import bump_dashboard_cache_version
+
+        bump_dashboard_cache_version()
+        name = ga.name or ga.server_id
+        message = f"Imagem de {name} atualizada." if ga.avatar else f"Imagem de {name} removida."
+        response = HttpResponse(json.dumps({"ok": True, "url": avatar_url(ga)}), content_type="application/json")
+        response["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": message}})
+        return response
 
 
 class GameAccountGovernmentTimeView(LoginRequiredMixin, View):

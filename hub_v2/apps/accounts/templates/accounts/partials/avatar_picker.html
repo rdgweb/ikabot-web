@@ -1,0 +1,121 @@
+{% load account_tags %}
+{% comment %}
+Seletor da imagem de uma conta do jogo (N-88). Incluir uma vez na pagina e abrir com:
+  window.dispatchEvent(new CustomEvent('open-avatar-picker', {detail: {id, name, url}}))
+A imagem pode ser uma arte do jogo (galeria) ou um arquivo do usuario, reduzido aqui
+no navegador para 128px antes de enviar.
+{% endcomment %}
+{% avatar_gallery as avatar_groups %}
+<div x-data="avatarPicker('{% url 'accounts:game-account-avatar' '00000000-0000-0000-0000-000000000000' %}')"
+     x-show="open" x-cloak
+     @open-avatar-picker.window="show($event.detail)"
+     @keydown.escape.window="open = false"
+     class="fixed inset-0 z-50 flex items-center justify-center">
+  <div class="fixed inset-0 bg-black/50" @click="open = false"></div>
+  <div class="relative z-10 rounded-xl shadow-2xl w-full mx-4 flex flex-col"
+       style="background: var(--ik-paper); border: 1px solid var(--ik-line); max-width: 46rem; max-height: 85vh;">
+
+    <div class="flex items-center justify-between gap-3 px-5 py-4" style="border-bottom: 1px solid var(--ik-line);">
+      <div class="flex items-center gap-3 min-w-0">
+        <span class="flex flex-shrink-0 items-center justify-center overflow-hidden"
+              style="width: 56px; height: 56px; border-radius: 9999px; border: 1px solid rgba(79,134,185,0.25); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+          <img x-show="preview" :src="preview" alt="" style="width: 100%; height: 100%;" :style="'object-fit:' + (previewCover ? 'cover' : 'contain')">
+          <i x-show="!preview" class="bi bi-person text-2xl text-muted"></i>
+        </span>
+        <div class="min-w-0">
+          <h3 class="text-sm font-bold text-ink truncate">Imagem de <span x-text="name"></span></h3>
+          <p class="text-xs text-muted">Aparece no Painel do Jogo e na Fila de Jobs.</p>
+        </div>
+      </div>
+      <button type="button" @click="open = false" class="text-muted hover:text-ink p-1"><i class="bi bi-x-lg text-base"></i></button>
+    </div>
+
+    <div class="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
+      <div class="flex flex-wrap items-center gap-2">
+        <label class="btn btn-secondary btn-sm cursor-pointer">
+          <i class="bi bi-upload"></i> Enviar uma imagem
+          <input type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" @change="upload($event)">
+        </label>
+        <button type="button" class="btn btn-secondary btn-sm" @click="clear()"><i class="bi bi-person-x"></i> Sem imagem (iniciais)</button>
+        <span class="text-xs text-muted">ou escolha uma arte do jogo abaixo</span>
+      </div>
+      <p class="form-error" x-show="error" x-text="error"></p>
+
+      {% for group in avatar_groups %}
+      <div>
+        <div class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">{{ group.group }}</div>
+        <div class="flex flex-wrap gap-2">
+          {% for item in group.items %}
+          <button type="button" title="{{ item.label }}"
+                  class="flex items-center justify-center rounded-xl border transition-all"
+                  :class="choice === '{{ item.path|escapejs }}' ? 'ring-2 ring-[var(--ik-sea)] border-[var(--ik-sea)]' : 'hover:border-[var(--ik-sea)]/60'"
+                  style="width: 60px; height: 60px; border-color: var(--ik-line); background: linear-gradient(180deg, #fffdf8, #f4ecda);"
+                  @click="pick('{{ item.path|escapejs }}', '{{ item.url|escapejs }}')">
+            <img src="{{ item.url }}" alt="{{ item.label }}" loading="lazy" style="width: 50px; height: 50px; object-fit: contain;">
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="flex items-center justify-end gap-2 px-5 py-3" style="border-top: 1px solid var(--ik-line);">
+      <button type="button" class="btn btn-secondary btn-sm" @click="open = false">Cancelar</button>
+      <button type="button" class="btn btn-primary btn-sm" :disabled="saving || choice === null" @click="save()">
+        <i class="bi bi-check-lg"></i> <span x-text="saving ? 'Salvando...' : 'Salvar'"></span>
+      </button>
+    </div>
+  </div>
+</div>
+<script>
+function avatarPicker(urlTemplate) {
+  return {
+    open: false, id: '', name: '', preview: '', previewCover: false, choice: null, saving: false, error: '',
+    show(detail) {
+      this.id = detail.id; this.name = detail.name || '';
+      this.preview = detail.url || ''; this.previewCover = (detail.url || '').includes('/avatar/');
+      this.choice = null; this.error = ''; this.saving = false; this.open = true;
+    },
+    pick(path, url) { this.choice = path; this.preview = url; this.previewCover = false; this.error = ''; },
+    clear() { this.choice = ''; this.preview = ''; this.error = ''; },
+    upload(event) {
+      const file = event.target.files[0];
+      event.target.value = '';
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const image = new Image();
+        image.onload = () => {
+          // recorta um quadrado do centro e reduz: a imagem viaja e fica guardada pequena
+          const size = 128;
+          const canvas = document.createElement('canvas');
+          canvas.width = canvas.height = size;
+          const context = canvas.getContext('2d');
+          context.fillStyle = '#f4ecda';
+          context.fillRect(0, 0, size, size);
+          const side = Math.min(image.width, image.height);
+          context.drawImage(image, (image.width - side) / 2, (image.height - side) / 2, side, side, 0, 0, size, size);
+          this.choice = canvas.toDataURL('image/jpeg', 0.85);
+          this.preview = this.choice; this.previewCover = true; this.error = '';
+        };
+        image.onerror = () => { this.error = 'Nao foi possivel ler essa imagem.'; };
+        image.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    },
+    save() {
+      if (this.choice === null) { this.open = false; return; }
+      const csrf = JSON.parse(document.body.getAttribute('hx-headers') || '{}')['X-CSRFToken'] || '';
+      const url = urlTemplate.replace('00000000-0000-0000-0000-000000000000', this.id);
+      this.saving = true;
+      fetch(url, { method: 'POST', headers: { 'X-CSRFToken': csrf }, body: new URLSearchParams({ avatar: this.choice, csrfmiddlewaretoken: csrf }) })
+        .then(response => response.json().then(data => ({ ok: response.ok, data })))
+        .then(({ ok, data }) => {
+          if (!ok) { this.error = data.error || 'Falha ao salvar a imagem.'; this.saving = false; return; }
+          location.reload();
+        })
+        .catch(() => { this.error = 'Falha ao salvar a imagem.'; this.saving = false; });
+    },
+  };
+}
+</script>

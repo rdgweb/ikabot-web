@@ -21,6 +21,7 @@ from .accounts import (
     AccountDeleteView,
     AccountToggleView,
     GameAccountToggleView,
+    GameAccountAvatarView,
     GameAccountBuildTimeView,
     GameAccountGovernmentTimeView,
     GameAccountMarketToggleView,

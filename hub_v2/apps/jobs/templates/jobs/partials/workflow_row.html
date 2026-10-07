@@ -21,7 +21,7 @@
              class="badge badge-secondary hover:opacity-80 cursor-pointer">{{ row.category_label }}</a>
           {% endif %}
           {% if row.recurring %}
-          <span class="badge badge-info" title="Acao recorrente: se repete sozinha ate ser pausada"><i class="bi bi-arrow-repeat"></i> recorrente</span>
+          <span class="badge badge-info" style="gap: 5px;" title="Acao recorrente: se repete sozinha ate ser pausada"><i class="bi bi-arrow-repeat"></i><span>recorrente</span></span>
           {% endif %}
           <span class="badge {{ row.status|status_badge_class }}">{{ row.status_label }}</span>
         </div>

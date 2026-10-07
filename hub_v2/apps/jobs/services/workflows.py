@@ -74,7 +74,7 @@ _workflow_type_info_cache: dict[str, dict] = {}
 def workflow_type_info(workflow_type: str) -> dict:
     """What a workflow type is, read from the catalog (N-88).
 
-    Returns {"action_code", "label", "category", "recurring"}. The job queue groups by
+    Returns {"action_code", "label", "category", "recurring", "icon"}. The job queue groups by
     this, so every workflow of the same kind lands in the same sub-group whatever the
     name its first job was given.
     """
@@ -97,6 +97,7 @@ def workflow_type_info(workflow_type: str) -> dict:
         "label": _WORKFLOW_TYPE_LABEL.get(wtype) or meta.get("name") or wtype.replace("_", " ").title() or "Workflow",
         "category": str(meta.get("category") or "").strip(),
         "recurring": bool(meta.get("recurring")),
+        "icon": str(meta.get("icon") or "bi-diagram-3"),
     }
     _workflow_type_info_cache[wtype] = info
     return info

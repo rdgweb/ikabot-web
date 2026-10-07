@@ -16,6 +16,7 @@ from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
 
+from apps.accounts.avatars import avatar_url, initials
 from apps.accounts.models import Account, GameAccount, Node
 from apps.game.models import AccountSnapshotHistory
 from apps.game.services.dashboard_cache import get_dashboard_cache_key
@@ -417,6 +418,8 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                     "net_wine_rate": net_wine_rate,
                     "total_wine_hours": total_wine_hours,
                     "player_name": ga.name or base.get("player_name", ""),
+                    "avatar_url": avatar_url(ga),
+                    "avatar_initials": initials(ga.name or base.get("player_name", "") or acct.label),
                     "server_id": ga.server_id,
                     "city_count": acct_city_count,
                     "resources": acct_resources,

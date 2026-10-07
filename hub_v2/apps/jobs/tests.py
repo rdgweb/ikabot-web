@@ -231,18 +231,18 @@ class JobWorkflowViewTests(TestCase):
         self.assertNotContains(response, "<html")  # standalone partial, not the full page
 
     def test_menu_header_selects_every_row_of_its_group(self):
-        """N-69: each menu (category) header has a checkbox that marks all rows of that
-        group; the state lives on the persistent x-data root, like the row selection."""
+        """N-69: each menu (category) header can mark all rows of that group (a button
+        since N-88); the state lives on the persistent x-data root, like the row selection."""
         self.client.force_login(self.user)
         ensure_workflow_for_job(self.root_finished)
 
         partial = self.client.get(reverse("jobs:job-list"), HTTP_HX_REQUEST="true").content.decode()
         page = self.client.get(reverse("jobs:job-list")).content.decode()
 
-        self.assertEqual(partial.count("data-wf-group="), partial.count("wf-group-check"))
-        self.assertGreaterEqual(partial.count("wf-group-check"), 1)
+        self.assertEqual(partial.count("data-wf-group="), partial.count("wf-group-select"))
+        self.assertGreaterEqual(partial.count("wf-group-select"), 1)
         self.assertIn("toggleGroup($el)", partial)
-        for method in ("groupIds(el)", "groupState(el)", "toggleGroup(el)"):
+        for method in ("groupIds(el)", "groupState(el)", "groupLabel(el)", "toggleGroup(el)"):
             self.assertIn(method, page)
 
     def test_default_jobs_page_renders_operational_workflow_view(self):

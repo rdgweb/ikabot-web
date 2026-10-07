@@ -244,6 +244,13 @@ class GameAccount(UUIDTimestampModel):
         help_text="User can enable/disable individual game accounts",
     )
 
+    # Imagem da conta (N-88): ver apps/accounts/avatars.py
+    avatar = models.TextField(
+        blank=True,
+        default="",
+        help_text="Imagem da conta: caminho de uma arte do jogo (static) ou data URI pequeno enviado pelo usuario.",
+    )
+
     # World/server construction time modifier (set by game server, e.g. 10 for 10%)
     build_time_reduction = models.PositiveSmallIntegerField(
         default=0,

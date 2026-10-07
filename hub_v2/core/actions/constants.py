@@ -35,15 +35,15 @@ CATEGORY_ORDER = [
 ]
 
 CATEGORY_META = {
-    CAT_CONSTRUCTION: {"label": "Construcao", "icon": "bi-building", "color": "var(--ik-sea)"},
-    CAT_RESOURCES: {"label": "Recursos e logistica", "icon": "bi-box-seam", "color": "var(--ik-gold)"},
-    CAT_RESEARCH: {"label": "Pesquisa", "icon": "bi-lightbulb", "color": "var(--ik-sea)"},
-    CAT_TEMPLE: {"label": "Templo", "icon": "bi-stars", "color": "var(--ik-gold)"},
-    CAT_MILITARY: {"label": "Militar", "icon": "bi-shield-fill", "color": "var(--ik-bad)"},
-    CAT_MARKET: {"label": "Mercado", "icon": "bi-shop", "color": "var(--ik-warn)"},
-    CAT_MONITORING: {"label": "Alertas e monitoramento", "icon": "bi-bell", "color": "var(--ik-sea)"},
-    CAT_DIPLOMACY: {"label": "Diplomacia", "icon": "bi-envelope", "color": "var(--ik-good)"},
-    CAT_ACCOUNT: {"label": "Conta", "icon": "bi-person-gear", "color": "var(--ik-muted)"},
+    CAT_CONSTRUCTION: {"label": "Construcao", "icon": "bi-building", "color": "var(--ik-sea)", "image": "game/buildings/architectsoffice.png"},
+    CAT_RESOURCES: {"label": "Recursos e logistica", "icon": "bi-box-seam", "color": "var(--ik-gold)", "image": "game/buildings/warehouse.png"},
+    CAT_RESEARCH: {"label": "Pesquisa", "icon": "bi-lightbulb", "color": "var(--ik-sea)", "image": "game/buildings/academy.png"},
+    CAT_TEMPLE: {"label": "Templo", "icon": "bi-stars", "color": "var(--ik-gold)", "image": "game/buildings/temple.png"},
+    CAT_MILITARY: {"label": "Militar", "icon": "bi-shield-fill", "color": "var(--ik-bad)", "image": "game/buildings/barracks.png"},
+    CAT_MARKET: {"label": "Mercado", "icon": "bi-shop", "color": "var(--ik-warn)", "image": "game/buildings/tradingpost.png"},
+    CAT_MONITORING: {"label": "Alertas e monitoramento", "icon": "bi-bell", "color": "var(--ik-sea)", "image": "game/buildings/safehouse.png"},
+    CAT_DIPLOMACY: {"label": "Diplomacia", "icon": "bi-envelope", "color": "var(--ik-good)", "image": "game/buildings/embassy.png"},
+    CAT_ACCOUNT: {"label": "Conta", "icon": "bi-person-gear", "color": "var(--ik-muted)", "image": "game/buildings/palace.png"},
 }
 
 # categories stored before N-88 (workflows, saved filters) -> where they went, when the
