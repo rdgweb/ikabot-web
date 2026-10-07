@@ -108,6 +108,13 @@ class IkariamAuth:
         """Expose the underlying LobbyAuthenticator for token management."""
         return self._lobby
 
+    def accept_language(self) -> str:
+        """The Accept-Language of this session's browser (N-74), for the in-game requests too."""
+        try:
+            return self._lobby._accept_language()
+        except Exception:  # noqa: BLE001 - a header never breaks a session
+            return "en-US,en;q=0.5"
+
     @property
     def lobby_token(self) -> str:
         """Return the lobby bearer token obtained during login."""

@@ -36,6 +36,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# What this module always sent, for a hub without a regional context (N-74).
+_LEGACY_CONTEXT = {
+    "locale_configured": False,
+    "locale": "en-GB",
+    "gf_lang": "en",
+    "accept_language": "en-US,en;q=0.5",
+    "timezone_id": "",
+}
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _gen_rand() -> str:
@@ -70,10 +80,40 @@ class LobbyAuthenticator:
         login_url = auth.get_login_link(token, account)
     """
 
-    def __init__(self, session: requests.Session, hub: HubClient, user_agent: str):
+    def __init__(self, session: requests.Session, hub: HubClient, user_agent: str, context: dict | None = None):
         self.session = session
         self.hub = hub
         self.user_agent = user_agent
+        self._context = dict(context) if context else None
+
+    # ── Regional context (N-74) ──────────────────────────────────────────
+
+    @property
+    def context(self) -> dict:
+        """Locale, language and timezone this login presents, the same everywhere.
+
+        Comes from the hub (system settings). Not configured there means "what was
+        always sent": every header and field below keeps its historical value.
+        """
+        if self._context is None:
+            fetch = getattr(self.hub, "get_login_context", None)
+            try:
+                loaded = fetch() if callable(fetch) else None
+            except Exception:  # noqa: BLE001 - never a reason to fail a login
+                loaded = None
+            self._context = dict(loaded) if isinstance(loaded, dict) and loaded.get("locale") else dict(_LEGACY_CONTEXT)
+        return self._context
+
+    def _accept_language(self, legacy: str = "en-US,en;q=0.5") -> str:
+        """`legacy` is what this request always sent; it only changes once a locale is configured."""
+        context = self.context
+        return str(context.get("accept_language") or legacy) if context.get("locale_configured") else legacy
+
+    def _lobby_page(self, page: str, legacy_locale: str) -> str:
+        """Lobby URL a browser in this locale would be on: https://lobby.../pt_BR/hub."""
+        context = self.context
+        locale = str(context.get("locale") or "").replace("-", "_") if context.get("locale_configured") else legacy_locale
+        return f"https://lobby.ikariam.gameforge.com/{locale}/{page}"
 
     # ── Public API ───────────────────────────────────────────────────────
 
@@ -124,7 +164,7 @@ class LobbyAuthenticator:
         self._set_headers({
             "Host": "lobby.ikariam.gameforge.com",
             "Accept": "*/*",
-            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Language": self._accept_language(),
             "Accept-Encoding": "gzip, deflate",
             "DNT": "1",
             "Connection": "close",
@@ -150,9 +190,9 @@ class LobbyAuthenticator:
         self._set_headers({
             "Host": "lobby.ikariam.gameforge.com",
             "Accept": "application/json",
-            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Language": self._accept_language(),
             "Accept-Encoding": "gzip, deflate",
-            "Referer": "https://lobby.ikariam.gameforge.com/es_AR/hub",
+            "Referer": self._lobby_page("hub", "es_AR"),
             "Authorization": f"Bearer {lobby_token}",
             "DNT": "1",
             "Connection": "close",
@@ -187,11 +227,11 @@ class LobbyAuthenticator:
             "scheme": "https",
             "accept": "application/json",
             "accept-encoding": "gzip, deflate, br",
-            "accept-language": "en-US,en;q=0.9",
+            "accept-language": self._accept_language("en-US,en;q=0.9"),
             "authorization": f"Bearer {lobby_token}",
             "content-type": "application/json",
             "origin": "https://lobby.ikariam.gameforge.com",
-            "referer": "https://lobby.ikariam.gameforge.com/en_GB/accounts",
+            "referer": self._lobby_page("accounts", "en_GB"),
         })
 
         data = {
@@ -246,7 +286,7 @@ class LobbyAuthenticator:
         self._set_headers({
             "Host": host,
             "Accept": "*/*",
-            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Language": self._accept_language(),
             "Accept-Encoding": "gzip, deflate, br",
             "Referer": f"https://{host}",
             "X-Requested-With": "XMLHttpRequest",
@@ -298,7 +338,7 @@ class LobbyAuthenticator:
         timeouts = 0
         for attempt in range(1, self._BLACKBOX_MAX_ATTEMPTS + 1):
             try:
-                token = self.hub.get_blackbox_token(self.user_agent)
+                token = self._request_blackbox()
                 if not token:
                     raise LoginError("ikabotapi retornou um blackbox vazio")
                 logger.info(
@@ -308,6 +348,9 @@ class LobbyAuthenticator:
                 return token
             except Exception as e:  # noqa: BLE001 - every failure mode ends in a retry or a LoginError
                 last_exc = e
+                if getattr(e, "is_final", False):
+                    # the request itself was refused (invalid locale/timezone): trying again changes nothing
+                    raise LoginError(f"Blackbox recusado pelo hub: {e}") from None
                 timed_out = bool(getattr(e, "is_timeout", False))
                 timeouts += int(timed_out)
                 logger.warning(
@@ -327,6 +370,15 @@ class LobbyAuthenticator:
             f"verifique o container ikabotapi. Ultimo erro: {last_exc}"
         )
 
+    def _request_blackbox(self) -> str:
+        """Ask for the token in the same locale and timezone this login presents (N-74)."""
+        context = self.context
+        locale = str(context.get("locale") or "") if context.get("locale_configured") else ""
+        timezone_id = str(context.get("timezone_id") or "")
+        if locale or timezone_id:
+            return self.hub.get_blackbox_token(self.user_agent, locale=locale, timezone_id=timezone_id)
+        return self.hub.get_blackbox_token(self.user_agent)
+
     def _fetch_game_ids(self) -> tuple[str, str]:
         """Fetch gameEnvironmentId and platformGameId from configuration.js.
 
@@ -339,7 +391,7 @@ class LobbyAuthenticator:
         self._set_headers({
             "Host": "lobby.ikariam.gameforge.com",
             "Accept": "*/*",
-            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Language": self._accept_language(),
             "Accept-Encoding": "gzip, deflate",
             "DNT": "1",
             "Connection": "close",
@@ -364,7 +416,7 @@ class LobbyAuthenticator:
         # connect.js
         self._set_headers({
             "Accept": "*/*",
-            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Language": self._accept_language(),
             "Accept-Encoding": "gzip, deflate",
             "DNT": "1",
             "Connection": "close",
@@ -381,7 +433,7 @@ class LobbyAuthenticator:
         # gameforge.com/config
         self._set_headers({
             "Accept": "*/*",
-            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Language": self._accept_language(),
             "Accept-Encoding": "gzip, deflate",
             "Referer": "https://lobby.ikariam.gameforge.com/",
             "Origin": "https://lobby.ikariam.gameforge.com",
@@ -402,7 +454,7 @@ class LobbyAuthenticator:
             self._set_headers({
                 "Host": "pixelzirkus.gameforge.com",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.5",
+                "Accept-Language": self._accept_language(),
                 "Accept-Encoding": "gzip, deflate",
                 "Content-Type": "application/x-www-form-urlencoded",
                 "Origin": "https://lobby.ikariam.gameforge.com",
@@ -415,7 +467,7 @@ class LobbyAuthenticator:
             self.session.post(
                 "https://pixelzirkus.gameforge.com/do/simple",
                 data={
-                    "product": "ikariam", "server_id": "1", "language": "en",
+                    "product": "ikariam", "server_id": "1", "language": self.context.get("gf_lang") or "en",
                     "location": "VISIT", "replacement_kid": "",
                     "fp_eval_id": fid1,
                     "page": "https%3A%2F%2Flobby.ikariam.gameforge.com%2F",
@@ -427,7 +479,7 @@ class LobbyAuthenticator:
             self.session.post(
                 "https://pixelzirkus.gameforge.com/do/simple",
                 data={
-                    "product": "ikariam", "server_id": "1", "language": "en",
+                    "product": "ikariam", "server_id": "1", "language": self.context.get("gf_lang") or "en",
                     "location": "fp_eval", "fp_eval_id": fid2,
                     "fingerprint": "2175408712", "fp2_config_id": "1",
                     "page": "https%3A%2F%2Flobby.ikariam.gameforge.com%2F",
@@ -443,7 +495,7 @@ class LobbyAuthenticator:
         # OPTIONS preflight (as ikabot does)
         self._set_headers({
             "Accept": "*/*",
-            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Language": self._accept_language(),
             "Accept-Encoding": "gzip, deflate, br",
             "Access-Control-Request-Headers": "content-type,tnt-installation-id",
             "Access-Control-Request-Method": "POST",
@@ -477,7 +529,7 @@ class LobbyAuthenticator:
         """
         self._set_headers({
             "Accept": "*/*",
-            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Language": self._accept_language(),
             "Accept-Encoding": "gzip, deflate, br",
             "Origin": "https://lobby.ikariam.gameforge.com",
             "Referer": "https://lobby.ikariam.gameforge.com/",
@@ -487,8 +539,8 @@ class LobbyAuthenticator:
         payload = {
             "identity": email,
             "password": password,
-            "locale": "en-GB",
-            "gfLang": "en",
+            "locale": self.context.get("locale") or "en-GB",
+            "gfLang": self.context.get("gf_lang") or "en",
             "gameId": platform_game_id,
             "gameEnvironmentId": game_environment_id,
             "blackbox": blackbox,

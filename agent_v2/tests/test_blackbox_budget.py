@@ -28,7 +28,7 @@ for _name in [n for n in sys.modules if n.split(".")[0] in ("game_client", "core
 import requests  # noqa: E402
 
 from core import hub_client as hub_client_module  # noqa: E402
-from core.hub_client import BlackboxTimeout, BlackboxUnavailable, HubClient  # noqa: E402
+from core.hub_client import BlackboxRejected, BlackboxTimeout, BlackboxUnavailable, HubClient  # noqa: E402
 from game_client.auth.lobby import LobbyAuthenticator  # noqa: E402
 from game_client.exceptions import LoginError  # noqa: E402
 
@@ -149,11 +149,17 @@ class BlackboxBudgetTests(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 2.5)    # connect limit, not the whole budget
 
     def test_other_errors_still_surface(self):
+        # a request the hub refuses (N-74) says why, and is not worth repeating
         _SlowHub.status = 400
         _SlowHub.body = {"error": "user_agent query parameter is required."}
 
-        with self.assertRaises(requests.exceptions.HTTPError):
+        with self.assertRaises(BlackboxRejected) as ctx:
             self.client.get_blackbox_token("")
+        self.assertEqual(str(ctx.exception), "user_agent query parameter is required.")
+
+        _SlowHub.status, _SlowHub.body = 403, {"detail": "forbidden"}
+        with self.assertRaises(requests.exceptions.HTTPError):
+            self.client.get_blackbox_token("UA/1.0")
 
     def test_the_token_never_reaches_the_log(self):
         auth = LobbyAuthenticator(session=MagicMock(), hub=self.client, user_agent="UA/1.0")

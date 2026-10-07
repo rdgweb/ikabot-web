@@ -1445,6 +1445,15 @@ class GameClient(IslandActions):
         # The new token may appear in the "updates" or "background" sections
         pass
 
+    def _accept_language(self) -> str:
+        """Accept-Language of this session's browser; the historical value when nothing says otherwise."""
+        getter = getattr(self.auth, "accept_language", None)
+        try:
+            value = getter() if callable(getter) else ""
+        except Exception:  # noqa: BLE001 - a header never breaks a session
+            value = ""
+        return value if isinstance(value, str) and value else "en-US,en;q=0.5"
+
     def _setup_game_headers(self) -> None:
         """Set game-specific headers on the session after login/connect.
 
@@ -1462,7 +1471,8 @@ class GameClient(IslandActions):
             "Host": host,
             "User-Agent": ua,
             "Accept": "*/*",
-            "Accept-Language": "en-US,en;q=0.5",
+            # N-74: same language the login presented (unchanged unless a locale is configured)
+            "Accept-Language": self._accept_language(),
             "Accept-Encoding": "gzip, deflate, br",
             "Referer": f"https://{host}",
             "X-Requested-With": "XMLHttpRequest",

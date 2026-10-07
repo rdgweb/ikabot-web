@@ -118,7 +118,12 @@ services:
     # meant a plain `docker compose up -d` produced a hub that could never
     # actually log in. No profile here on purpose — it always starts.
     build:
-      context: https://github.com/Ikabot-Collective/IkabotAPI.git
+      # Pinned on purpose (N-74): a third-party service that every login depends on is
+      # not rebuilt from whatever the branch happens to be that day. fb87efee is the
+      # revision tested here: GET /v1/token accepts locale and timezone_id (#41).
+      # To move it: read the upstream changes, test a login, then change the hash.
+      # See ikabotapi_overrides/README.md.
+      context: https://github.com/Ikabot-Collective/IkabotAPI.git#fb87efee84e476c74829a7a5a91cea5f3beeb93e
     restart: unless-stopped
     ports:
       - "5005:5005"

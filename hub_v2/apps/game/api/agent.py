@@ -19,6 +19,7 @@ from core.auth.permissions import IsAgent
 from apps.accounts.models import Account, GameAccount
 from apps.game.models import AccountSnapshot, AccountSnapshotHistory
 from apps.game.services.dashboard_cache import bump_dashboard_cache_version
+from apps.game.services.login_context import InvalidLoginContext, clean_locale, clean_timezone, login_context
 
 from .serializers import (
     CaptchaSolveSerializer,
@@ -602,9 +603,36 @@ class CurrentSnapshotView(APIView):
         )
 
 
+class LoginContextView(APIView):
+    """
+    GET /api/agent/login-context/
+
+    The regional context every login must present (N-74): locale, language and
+    timezone, from the system settings. The agent uses it for its lobby headers and
+    payload and sends the same values back when it asks for the blackbox token.
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+    serializer_class = None
+
+    @extend_schema(responses={200: inline_serializer(
+        name="LoginContextResponse",
+        fields={
+            "locale_configured": drf_serializers.BooleanField(),
+            "locale": drf_serializers.CharField(),
+            "gf_lang": drf_serializers.CharField(),
+            "accept_language": drf_serializers.CharField(),
+            "timezone_id": drf_serializers.CharField(allow_blank=True),
+        },
+    )})
+    def get(self, request):
+        return Response(login_context())
+
+
 class BlackboxTokenView(APIView):
     """
-    GET /api/agent/blackbox/token/?user_agent=<string>&wait=<seconds>
+    GET /api/agent/blackbox/token/?user_agent=<string>&wait=<seconds>[&locale=..][&timezone_id=..]
 
     Proxies the request to the internal ikabotapi container to obtain
     a blackbox token for browser fingerprint simulation.
@@ -613,6 +641,13 @@ class BlackboxTokenView(APIView):
     blackbox_budget(). Answers 502 when ikabotapi cannot be reached (fast) and 504
     when the token was not ready within the budget; both say which in `reason`.
     The token is never written to the log.
+
+    `locale` / `timezone_id` (optional, N-74) are the browser context the token must
+    be generated in, the same one the agent presents to the lobby. Absent means
+    ikabotapi's own defaults. A value that is not a locale / an existing timezone is
+    refused with 400 (`reason: invalid_context`) before ikabotapi is called. An
+    ikabotapi too old to know these parameters answers 400/422: the token is then
+    asked again without them, and the answer says so (`context_applied: false`).
     """
 
     authentication_classes = [AgentTokenAuthentication]
@@ -635,6 +670,20 @@ class BlackboxTokenView(APIView):
                 type=int,
                 description="Quantos segundos o agente vai esperar por esta resposta.",
             ),
+            OpenApiParameter(
+                name="locale",
+                location=OpenApiParameter.QUERY,
+                required=False,
+                type=str,
+                description="Idioma do navegador em que o token deve ser gerado (ex.: pt-BR).",
+            ),
+            OpenApiParameter(
+                name="timezone_id",
+                location=OpenApiParameter.QUERY,
+                required=False,
+                type=str,
+                description="Fuso horario IANA em que o token deve ser gerado (ex.: America/Sao_Paulo).",
+            ),
         ],
         responses={
             200: inline_serializer(
@@ -653,18 +702,42 @@ class BlackboxTokenView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        try:
+            context = {
+                "locale": clean_locale(request.query_params.get("locale")),
+                "timezone_id": clean_timezone(request.query_params.get("timezone_id")),
+            }
+        except InvalidLoginContext as exc:
+            return Response({"error": str(exc), "reason": "invalid_context"}, status=status.HTTP_400_BAD_REQUEST)
+        context = {name: value for name, value in context.items() if value}
+
         budget = blackbox_budget(request.query_params.get("wait"))
         try:
             resp = http_requests.get(
                 f"{settings.IKABOTAPI_URL}/v1/token",
-                params={"user_agent": user_agent},
+                params={"user_agent": user_agent, **context},
                 timeout=(BLACKBOX_CONNECT_TIMEOUT, budget),
             )
+            context_applied = bool(context)
+            if context and resp.status_code in (400, 422):
+                # an ikabotapi from before locale/timezone existed: same token as always
+                logger.warning(
+                    "ikabotapi answered HTTP %s to locale/timezone_id; asking again without them (old ikabotapi?)",
+                    resp.status_code,
+                )
+                context_applied = False
+                resp = http_requests.get(
+                    f"{settings.IKABOTAPI_URL}/v1/token",
+                    params={"user_agent": user_agent},
+                    timeout=(BLACKBOX_CONNECT_TIMEOUT, budget),
+                )
             resp.raise_for_status()
             token_data = resp.json()
             # ikabotapi returns a raw string, normalize to {"token": "..."}
             if isinstance(token_data, str):
-                return Response({"token": token_data})
+                token_data = {"token": token_data}
+            if context and isinstance(token_data, dict):
+                token_data = {**token_data, "context_applied": context_applied}
             return Response(token_data)
         except http_requests.ConnectionError:       # includes ConnectTimeout: not reachable
             logger.error("ikabotapi unreachable for blackbox token request")

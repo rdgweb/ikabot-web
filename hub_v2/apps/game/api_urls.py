@@ -2,6 +2,7 @@ from django.urls import path
 
 from .api.agent import (
     BlackboxTokenView,
+    LoginContextView,
     CaptchaChallengeCreateView,
     CaptchaChallengePollView,
     CurrentSnapshotView,
@@ -26,6 +27,7 @@ urlpatterns = [
     path("snapshots/patch-ships/", PatchSnapshotShipsView.as_view(), name="snapshots-patch-ships"),
     path("snapshots/patch-gold/", PatchSnapshotGoldView.as_view(), name="snapshots-patch-gold"),
     path("blackbox/token/", BlackboxTokenView.as_view(), name="blackbox-token"),
+    path("login-context/", LoginContextView.as_view(), name="login-context"),
     path("captcha/solve/", SolveCaptchaView.as_view(), name="captcha-solve"),
     path("captcha/challenge/", CaptchaChallengeCreateView.as_view(), name="captcha-challenge-create"),
     path("captcha/challenge/<int:pk>/", CaptchaChallengePollView.as_view(), name="captcha-challenge-poll"),

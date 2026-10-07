@@ -160,3 +160,34 @@ class SnapshotPolicyForm(forms.Form):
         }),
         help_text="Quanto o ikabotapi tem para gerar o token de login (normalmente leva uns 3s). O agente espera um pouco mais que isso; passou do limite, o login falha com erro claro em vez de ficar pendurado.",
     )
+    # N-74: o mesmo idioma e fuso no login (cabecalhos e credenciais) e na geracao do token
+    login_locale = forms.CharField(
+        label="Idioma do navegador no login",
+        required=False,
+        max_length=35,
+        widget=forms.TextInput(attrs={"class": "form-input", "placeholder": "vazio = en-GB (como sempre foi)"}),
+        help_text="Ex.: pt-BR. Vale para os cabecalhos e as credenciais enviadas ao lobby e para a geracao do token blackbox. Vazio mantem o comportamento de sempre (en-GB).",
+    )
+    login_timezone_id = forms.CharField(
+        label="Fuso horario do navegador no login",
+        required=False,
+        max_length=64,
+        widget=forms.TextInput(attrs={"class": "form-input", "placeholder": "vazio = Europe/London (padrao do ikabotapi)"}),
+        help_text="Ex.: America/Sao_Paulo. Usado na geracao do token blackbox. Vazio deixa o padrao do ikabotapi (Europe/London). O ideal e combinar com o idioma e com a regiao de saida dos proxies.",
+    )
+
+    def clean_login_locale(self):
+        from apps.game.services.login_context import InvalidLoginContext, clean_locale
+
+        try:
+            return clean_locale(self.cleaned_data.get("login_locale"))
+        except InvalidLoginContext as exc:
+            raise forms.ValidationError(str(exc))
+
+    def clean_login_timezone_id(self):
+        from apps.game.services.login_context import InvalidLoginContext, clean_timezone
+
+        try:
+            return clean_timezone(self.cleaned_data.get("login_timezone_id"))
+        except InvalidLoginContext as exc:
+            raise forms.ValidationError(str(exc))

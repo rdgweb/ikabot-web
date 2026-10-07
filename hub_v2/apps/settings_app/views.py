@@ -75,6 +75,8 @@ class SettingsPageView(LoginRequiredMixin, TemplateView):
             "running_job_recovery_grace_seconds": _get_setting("running_job_recovery_grace_seconds", "300"),
             "running_job_lease_seconds": _get_setting("running_job_lease_seconds", "180"),
             "blackbox_timeout_seconds": _get_setting("blackbox_timeout_seconds", "45"),
+            "login_locale": _get_setting("login_locale", ""),
+            "login_timezone_id": _get_setting("login_timezone_id", ""),
         })
 
         from .utils import get_int_setting as _get_int_setting
@@ -105,6 +107,8 @@ class SettingsPageView(LoginRequiredMixin, TemplateView):
                 "running_job_recovery_grace_seconds",
                 "running_job_lease_seconds",
                 "blackbox_timeout_seconds",
+                "login_locale",
+                "login_timezone_id",
                 "spy_report_expiry_hours",
                 *TELEMETRY_KEYS,
             ]
@@ -220,7 +224,15 @@ class SnapshotPolicySaveView(LoginRequiredMixin, View):
             _set_setting("running_job_lease_seconds", str(form.cleaned_data["running_job_lease_seconds"]))
             if form.cleaned_data.get("blackbox_timeout_seconds"):
                 _set_setting("blackbox_timeout_seconds", str(form.cleaned_data["blackbox_timeout_seconds"]))
+            # N-74: so quando o formulario traz os campos (um post antigo nao apaga a escolha)
+            for key in ("login_locale", "login_timezone_id"):
+                if key in request.POST:
+                    _set_setting(key, form.cleaned_data.get(key) or "")
             messages.success(request, "Politica de snapshot salva.")
+        else:
+            for errors in form.errors.values():
+                for error in errors:
+                    messages.error(request, error)
         return redirect("settings_app:list")
 
 

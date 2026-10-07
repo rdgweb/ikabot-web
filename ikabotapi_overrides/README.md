@@ -40,3 +40,36 @@ ikabotapi:
 `agent_v2/game_client/constants.py::USER_AGENTS` together, keep the entries
 identical, then restart the `ikabotapi` container (`docker compose up -d --no-deps
 --force-recreate ikabotapi`) — no rebuild needed, it's a bind mount.
+
+## Pinned revision and what the hub expects from it (N-74)
+
+`docker-compose.yml` builds `ikabotapi` from a **fixed commit**, not from the
+branch: `fb87efee84e476c74829a7a5a91cea5f3beeb93e` (upstream #41, 2026-07-08).
+Every login depends on this service, so it only changes when someone decides to.
+
+What the hub relies on at this revision:
+
+| Call | Used for | Notes |
+| --- | --- | --- |
+| `GET /v1/token?user_agent=` | blackbox token | `user_agent` must be in `SupportedUserAgents.json` (override above), otherwise HTTP 400 |
+| `GET /v1/token?...&locale=&timezone_id=` | same token, generated in a browser context with that locale and timezone | both optional; defaults `en-GB` / `Europe/London`; a value that does not look like a locale / IANA timezone is HTTP 400 |
+| captcha routes | pirate and lobby captchas | unchanged by N-74 |
+
+The hub sends `locale` / `timezone_id` only when the agent asks for them, which it
+does when the system settings "Idioma do navegador no login" / "Fuso horario do
+navegador no login" are filled in (Configuracoes > politica de snapshot). Empty
+settings mean the request is exactly what it was before N-74.
+
+Compatibility both ways:
+
+- **Older ikabotapi** (before #41, e.g. `34a070c`): it rejects the unknown
+  parameters with 400/422. The hub then asks again with `user_agent` only, logs a
+  warning and answers `context_applied: false`; the login goes on with the token
+  the old service knows how to make.
+- **Newer ikabotapi**: `75fee72` (#42, 2026-10-07) only changes the pirate captcha
+  upload validation; not adopted yet because it was not tested here.
+
+To move the pin: read the upstream diff since the pinned commit, rebuild
+(`docker compose build ikabotapi`), check one token with and without
+`locale`/`timezone_id` and one real login, then change the hash in
+`docker-compose.yml` and this section.
