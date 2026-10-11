@@ -156,6 +156,25 @@ class AgentHeartbeatView(APIView):
 
         updated = Node.objects.filter(pk=node_id).update(**update_fields)
 
+        # N-96: the heartbeat is what keeps the proxy list true. A heartbeat without an
+        # exit IP comes from an agent paused because its proxy stopped answering: check
+        # now. Any other heartbeat only starts a run when the last one is old.
+        if updated:
+            try:
+                from apps.proxy.maintenance import trigger_if_stale, trigger_proxy_maintenance
+                from apps.proxy.models import ProxyProfile
+
+                uses_proxy = (
+                    Node.objects.filter(pk=node_id).exclude(proxy="").exists()
+                    or ProxyProfile.objects.filter(assigned_node_id=node_id).exists()
+                )
+                if not external_ip and uses_proxy:
+                    trigger_proxy_maintenance(reason="agente pausado: proxy do no sem resposta")
+                else:
+                    trigger_if_stale()
+            except Exception:
+                logger.warning("Could not start proxy maintenance from heartbeat", exc_info=True)
+
         if not updated:
             return Response(
                 {"error": "Node not found."},

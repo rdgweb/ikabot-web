@@ -69,7 +69,7 @@ class AccountLobbyProxiesViewTests(TestCase):
         )
         self.assertEqual(second.status_code, 200)
         self.assertEqual(
-            {item["id"] for item in second.json()["proxies"]},
+            {str(item["id"]) for item in second.json()["proxies"]},
             {str(p1.pk), str(p2.pk), str(p3.pk)},
         )
 

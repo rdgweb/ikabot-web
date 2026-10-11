@@ -80,6 +80,17 @@ class ProxyListView(LoginRequiredMixin, HtmxPartialMixin, ListView):
         query = self.request.GET.copy()
         query.pop("page", None)
         ctx["querystring_without_page"] = query.urlencode()
+        # N-96: what the automatic check last found (see apps.proxy.maintenance)
+        from .maintenance import last_result, last_run
+
+        result = last_result()
+        ctx["proxy_maintenance"] = {
+            "at": last_run(),
+            "tested": result.get("tested", 0),
+            "passed": result.get("passed", 0),
+            "replaced": len(result.get("nodes_replaced") or []) + len(result.get("accounts_replaced") or []),
+            "without": result.get("without_proxy") or [],
+        }
         return ctx
 
 

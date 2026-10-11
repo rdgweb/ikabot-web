@@ -7,7 +7,7 @@
 {% endblock %}
 
 {% block page_title %}Proxies{% endblock %}
-{% block page_subtitle %}Gerenciar proxies manuais e sincronizados com Webshare.io{% endblock %}
+{% block page_subtitle %}Gerenciar proxies manuais e sincronizados com Webshare.io &middot; {% if proxy_maintenance.at %}Verificação automática: {{ proxy_maintenance.at|date:"d/m H:i" }} ({{ proxy_maintenance.passed }} de {{ proxy_maintenance.tested }} ok{% if proxy_maintenance.replaced %}, {{ proxy_maintenance.replaced }} troca{{ proxy_maintenance.replaced|pluralize }}{% endif %}){% if proxy_maintenance.without %} &middot; <span style="color: var(--ik-bad);">sem proxy livre para: {{ proxy_maintenance.without|join:", " }}</span>{% endif %}{% else %}a verificação automática ainda não rodou{% endif %}{% endblock %}
 
 {% block page_actions %}
 <a href="{% url 'proxy:create' %}" class="btn btn-primary btn-sm">

@@ -16,6 +16,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.models import GameAccount
+from apps.proxy.maintenance import is_proxy_side_failure, trigger_proxy_maintenance
 from apps.jobs.models import ConstructionResourceReservation, Job, JobLog
 from apps.jobs.services.workflows import create_job_with_workflow, reconcile_workflow_for_job
 from apps.market.services import reconcile_internal_order_for_job
@@ -53,6 +54,23 @@ def _normalize_json_object(raw) -> dict:
     if not isinstance(parsed, dict):
         return {}
     return parsed
+
+
+# Login block after a proxy failure (N-96). The proxy is our infrastructure, not the
+# game punishing the account: while the hub repairs the proxies the account waits a
+# few minutes, and a proxy problem that persists never grows past a short ceiling
+# (it used to add one hour per failure with no limit: 11h and counting).
+PROXY_REPAIR_WAIT = timedelta(minutes=3)
+PROXY_REPAIR_ATTEMPTS = 3            # consecutive proxy failures answered with the short wait
+PROXY_BACKOFF_MAX_HOURS = 2
+
+
+def _proxy_block_duration(level: int, *, proxy_side: bool) -> timedelta:
+    """How long a proxy failure blocks logins, given how many came in a row."""
+    if proxy_side and level <= PROXY_REPAIR_ATTEMPTS:
+        return PROXY_REPAIR_WAIT
+    hours = level - PROXY_REPAIR_ATTEMPTS if proxy_side else level
+    return timedelta(hours=max(1, min(PROXY_BACKOFF_MAX_HOURS, hours)))
 
 
 def _serialize_login_block_state(ga: GameAccount) -> dict:
@@ -215,7 +233,12 @@ class GameAccountLoginCooldownView(APIView):
             next_hours = max(1, prev_hours + 1)
             now = timezone.now()
             ga.login_block_backoff_hours = next_hours
-            ga.login_blocked_until = now + timedelta(hours=next_hours)
+            if mode == "record_proxy":
+                proxy_side = is_proxy_side_failure(reason)
+                ga.login_blocked_until = now + _proxy_block_duration(next_hours, proxy_side=proxy_side)
+            else:
+                proxy_side = False
+                ga.login_blocked_until = now + timedelta(hours=next_hours)
             ga.login_block_reason = reason[:4000]
             ga.save(update_fields=[
                 "login_blocked_until",
@@ -224,7 +247,16 @@ class GameAccountLoginCooldownView(APIView):
                 "updated_at",
             ])
 
-        if prev_hours < 8 <= next_hours:
+        if proxy_side:
+            # the proxy refused us: have the hub check the list and replace what is gone
+            try:
+                trigger_proxy_maintenance(reason=f"falha de proxy no login de {ga.name or ga.server_id}")
+            except Exception:
+                logger.warning("Could not start proxy maintenance", exc_info=True)
+
+        # told once: when the game keeps refusing (8th hour), or when the proxies did not repair themselves
+        repair_failed = mode == "record_proxy" and proxy_side and next_hours == PROXY_REPAIR_ATTEMPTS + 1
+        if prev_hours < 8 <= next_hours or repair_failed:
             try:
                 notify(
                     event_key="job_failed",
@@ -233,7 +265,7 @@ class GameAccountLoginCooldownView(APIView):
                     node=ga.account.node,
                     title="Login temporariamente bloqueado",
                     body=(
-                        f"{ga.name or ga.server_id} entrou em backoff de login por {next_hours}h.\n"
+                        f"{ga.name or ga.server_id}: login bloqueado apos {next_hours} falha(s) seguida(s).\n"
                         f"Bloqueado até: {ga.login_blocked_until:%d/%m/%Y %H:%M:%S}\n"
                         f"Motivo: {reason or ('loginLink 400' if mode == 'record_400' else 'Falha de proxy no lobby')}"
                     ),
