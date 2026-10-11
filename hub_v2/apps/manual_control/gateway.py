@@ -237,7 +237,9 @@ def _game_response(answer: dict, *, origin: str) -> HttpResponse:
 
     if body and game_host and any(kind in content_type.lower() for kind in REWRITTEN_TYPES):
         body = _rewrite(body, game_host=game_host, origin=origin)
-        if status == 200 and "text/html" in content_type.lower():
+        # only whole pages: the game answers its ajax calls as text/html too
+        whole_page = body.lstrip()[:15].lower().startswith((b"<!doctype", b"<html"))
+        if status == 200 and "text/html" in content_type.lower() and whole_page:
             marker = body.rfind(b"</body>")
             if marker != -1:
                 body = body[:marker] + PAGE_SCRIPT.encode() + body[marker:]

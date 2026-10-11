@@ -59,7 +59,7 @@ class FakeHttpSession:
 class FakeClient:
     def __init__(self, replies=None, name="c1"):
         self.name = name
-        self._server_url = GAME
+        self._server_url = GAME + "/index.php"      # as the real client has it
         self._cookies = {"ikariam": "velho", "outro": "x"}
         self.session = FakeHttpSession(list(replies or []))
 
@@ -193,6 +193,11 @@ class RequestTests(_Base):
         self.assertEqual(answer["origin"], GAME)
         self.assertEqual(answer["headers"], {"content-type": "text/html; charset=utf-8", "cache-control": "no-cache"})
         self.assertNotIn("SEGREDO", json.dumps(answer))      # the game's cookie never leaves the agent
+
+    def test_static_files_are_asked_at_the_server_root_not_under_the_entry_page(self):
+        answer = self._ask(target="/skin/compiled-ltr-common_0.css?rev=1")
+        self.assertEqual(self.clients[0].session.calls[0][1], f"{GAME}/skin/compiled-ltr-common_0.css?rev=1")
+        self.assertEqual(answer["origin"], GAME)
 
     def test_an_ajax_call_stays_an_ajax_call_and_a_plain_get_sends_no_origin(self):
         self._ask(target="/index.php?ajax=1", headers={"X-Requested-With": "XMLHttpRequest"})

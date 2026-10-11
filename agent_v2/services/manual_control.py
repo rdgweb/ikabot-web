@@ -210,12 +210,14 @@ class ManualControlService(threading.Thread):
             client = self.open_client(entry.account_id, entry.game_account_id, allow_cached=allow_cached)
         finally:
             lock.release()
-        origin = str(getattr(client, "_server_url", "") or "").rstrip("/")
-        if not origin:
+        # the client's address is the game's entry page (.../index.php); the browser's
+        # paths are relative to the server itself
+        server = urlparse(str(getattr(client, "_server_url", "") or ""))
+        if not server.scheme or not server.hostname:
             raise Refused("A sessao do jogo abriu sem endereco de servidor.")
         entry.client = client
-        entry.origin = origin
-        entry.host = urlparse(origin).hostname or ""
+        entry.origin = f"{server.scheme}://{server.netloc}"
+        entry.host = server.hostname
         logger.info("Manual control: session %s open for game account %s", entry.session_id, entry.game_account_id)
 
     def _close(self, session_id: str) -> None:

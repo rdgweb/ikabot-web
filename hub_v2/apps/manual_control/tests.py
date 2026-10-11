@@ -408,7 +408,8 @@ class GatewayTests(_Base):
         self._game(b"\x89PNG\x00https://s9-br.ikariam.gameforge.com", headers={"content-type": "image/png"})
         image = self.client.get("/cdn/a.png", HTTP_HOST=self.host)
         self.assertEqual(image.content, b"\x89PNG\x00https://s9-br.ikariam.gameforge.com")
-        self._game(b'[["updateGlobalData",{}]]', headers={"content-type": "application/json"})
+        # the game answers ajax as text/html, sometimes carrying pieces of a page
+        self._game(b'[["changeView",["city","<div>x</div></body>"]]]')
         self.assertNotIn(b"__ikabot", self.client.get("/index.php?ajax=1", HTTP_HOST=self.host).content)
 
         self._game(b"", status=302, headers={"location": f"{GAME}/index.php?view=city"})
