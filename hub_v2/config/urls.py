@@ -26,6 +26,7 @@ urlpatterns = [
     # --- Operational ---
     path("", include("apps.dashboard.urls")),
     path("jobs/", include("apps.jobs.urls")),
+    path("game/control/", include("apps.manual_control.urls")),
     path("game/", include("apps.game.urls")),
     path("intel/", include("apps.worldintel.urls")),
     path("market/", include("apps.market.urls")),

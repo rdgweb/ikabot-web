@@ -54,6 +54,13 @@ def main():
     heartbeat = HeartbeatThread(hub, proxy_url=_proxy_url)
     heartbeat.start()
 
+    # N-72: answers the hub's manual-control requests with the same sessions the jobs use
+    # (the worker pool is threads, so this process holds them).
+    import tasks
+    from services.manual_control import start_manual_control
+
+    start_manual_control(sessions=tasks._sessions, hub=hub, proxy_url=lambda: heartbeat.proxy_url or _proxy_url)
+
     def shutdown(sig, frame):
         logger.info("Shutting down...")
         heartbeat.stop()

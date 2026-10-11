@@ -124,6 +124,19 @@ class JobStatusView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        # N-72: a job does not start while its account is not in automation (manual
+        # control, or being handed over). It stays as it is; the hub hands it back to
+        # the agent when the control ends. 409 is what the agent already takes as
+        # "do not run this".
+        if data["status"] == "running" and job.status in ("queued", "scheduled"):
+            from apps.manual_control.services import hold_job
+
+            if hold_job(job):
+                return Response(
+                    {"error": "Account is under manual control.", "reason": "manual_control"},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
         update_fields = ["status", "updated_at"]
         job.status = data["status"]
 

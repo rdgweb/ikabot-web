@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     "apps.generals_bank",
     "apps.notes",
     "apps.telemetry",
+    "apps.manual_control",
 ]
 
 MIDDLEWARE = [
@@ -241,6 +242,12 @@ TELEMETRY_DISABLED = os.environ.get("TELEMETRY_DISABLED", "false").lower() in ("
 WEBSHARE_API_KEY = os.environ.get("WEBSHARE_API_KEY", "")
 
 # --- Celery ---
+
+# N-72: manual control. Each session of the game is served at <token>.<this domain>
+# by the gateway process; empty = the feature is off (no button, nothing changes).
+MANUAL_GATEWAY_DOMAIN = os.environ.get("MANUAL_GATEWAY_DOMAIN", "").strip().strip(".").lower()
+MANUAL_GATEWAY_SCHEME = os.environ.get("MANUAL_GATEWAY_SCHEME", "https").strip() or "https"
+MANUAL_GATEWAY_PORT = os.environ.get("MANUAL_GATEWAY_PORT", "").strip()
 
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL

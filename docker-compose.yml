@@ -81,12 +81,55 @@ services:
       AGENT_TOKEN: ${AGENT_TOKEN:-change-me-agent-token}
       WEBSHARE_API_KEY: ${WEBSHARE_API_KEY:-}
       IKABOTAPI_URL: ${IKABOTAPI_URL:-http://ikabotapi:5005}
+      # N-72 manual control: sessions of the game are served at <token>.<this domain> by the
+      # gateway service below. Empty = feature off (no button in the hub).
+      MANUAL_GATEWAY_DOMAIN: ${MANUAL_GATEWAY_DOMAIN:-}
+      MANUAL_GATEWAY_SCHEME: ${MANUAL_GATEWAY_SCHEME:-https}
+      MANUAL_GATEWAY_PORT: ${MANUAL_GATEWAY_PORT:-}
       TZ: America/Cuiaba
     ports:
       - "${HUB_PORT:-8000}:8000"
     command: ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "4", "--access-logfile", "-", "--timeout", "120"]
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/agent/heartbeat/ || curl -fsS http://127.0.0.1:8000/ || exit 1"]
+      interval: 15s
+      timeout: 6s
+      retries: 10
+
+  # N-72: game session gateway (manual control). Same image, code and database as the
+  # hub, its own process with threads: a request here waits for the game through the
+  # agent, and the hub's workers must not be the ones waiting. Point the wildcard host
+  # (*.MANUAL_GATEWAY_DOMAIN) of the reverse proxy at this port. Answers nothing but
+  # its health check while MANUAL_GATEWAY_DOMAIN is empty.
+  gateway:
+    image: ${HUB_IMAGE:-blackoneal/ikabot-web-hub:latest}
+    restart: unless-stopped
+    depends_on:
+      hub:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # the hub's entrypoint runs the migrations; this one only serves
+    entrypoint: []
+    command: ["gunicorn", "config.gateway_wsgi:application", "--bind", "0.0.0.0:8001", "--worker-class", "gthread", "--workers", "2", "--threads", "24", "--timeout", "120"]
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-to-a-long-random-string}
+      DJANGO_DEBUG: "false"
+      DB_NAME: ${DB_NAME:-ikabot_hub}
+      DB_USER: ${DB_USER:-ikabot}
+      DB_PASSWORD: ${DB_PASSWORD:-change-me-db-password}
+      DB_HOST: mariadb
+      DB_PORT: "3306"
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379/0}
+      APP_SECRET: ${APP_SECRET:-change-me-app-secret}
+      MANUAL_GATEWAY_DOMAIN: ${MANUAL_GATEWAY_DOMAIN:-}
+      MANUAL_GATEWAY_SCHEME: ${MANUAL_GATEWAY_SCHEME:-https}
+      MANUAL_GATEWAY_PORT: ${MANUAL_GATEWAY_PORT:-}
+      TZ: America/Cuiaba
+    ports:
+      - "${GATEWAY_PORT:-8001}:8001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8001/__ikabot/health || exit 1"]
       interval: 15s
       timeout: 6s
       retries: 10

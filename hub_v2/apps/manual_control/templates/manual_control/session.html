@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex,nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Controle manual &middot; {{ account_label }}</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #f4ecda;
+         font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #3b2f1e; }
+  main { width: 100%; max-width: 30rem; margin: 1rem; padding: 1.5rem 1.75rem; background: #fffdf8; border: 1px solid #e0d2b4;
+         border-radius: .75rem; box-shadow: 0 10px 30px rgba(59, 47, 30, .12); }
+  h1 { font-size: 1.05rem; margin: 0 0 .15rem; }
+  .account { font-size: .8rem; color: #8a7a60; margin: 0 0 1rem; }
+  .line { font-size: .92rem; line-height: 1.45; margin: .35rem 0; }
+  .detail { font-size: .82rem; line-height: 1.45; color: #5f5240; margin: .35rem 0; }
+  .spinner { display: inline-block; width: .85rem; height: .85rem; margin-right: .45rem; vertical-align: -.1rem; border-radius: 50%;
+             border: 2px solid #d8c8a4; border-top-color: #4f86b9; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .actions { margin-top: 1.1rem; display: flex; gap: .5rem; }
+  button, a.button { font: inherit; font-size: .82rem; font-weight: 600; padding: .4rem .9rem; border-radius: 999px; cursor: pointer;
+                     border: 1px solid #c9b88f; background: #fffdf8; color: #3b2f1e; text-decoration: none; }
+  .bad { color: #a23b2a; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Controle manual</h1>
+  <p class="account">{{ account_label }}</p>
+  {% if refused %}
+  <p class="line bad">{{ refused }}</p>
+  <p class="detail">A automacao da conta continua normalmente.</p>
+  <div class="actions"><button type="button" onclick="window.close()">Fechar</button></div>
+  {% else %}
+  <p class="line" id="line"><span class="spinner" id="spinner"></span><span id="text">Preparando controle manual...</span></p>
+  <p class="detail" id="detail">Finalizando a automacao em execucao.</p>
+  <div class="actions">
+    <button type="button" id="cancel">Cancelar</button>
+  </div>
+  <script>
+  (function () {
+    var statusUrl = "{% url 'manual_control:status' session.pk %}";
+    var endUrl = "{% url 'manual_control:end' session.pk %}";
+    var csrf = "{{ csrf_token }}";
+    var text = document.getElementById("text"), detail = document.getElementById("detail");
+    var spinner = document.getElementById("spinner"), cancel = document.getElementById("cancel");
+    var stopped = false;
+
+    function finish(message, extra, bad) {
+      stopped = true;
+      spinner.style.display = "none";
+      text.textContent = message;
+      text.className = bad ? "bad" : "";
+      detail.textContent = extra || "";
+      cancel.textContent = "Fechar";
+      cancel.onclick = function () { window.close(); };
+    }
+
+    function show(state) {
+      if (state.state === "active") {
+        if (state.url) { stopped = true; text.textContent = "Abrindo o jogo..."; detail.textContent = ""; window.location.replace(state.url); }
+        else { finish("Controle manual ativo em outro navegador.", ""); }
+      } else if (state.state === "pausing") {
+        if (state.step === "waiting_job" && state.jobs && state.jobs.length) {
+          var job = state.jobs[0];
+          text.textContent = "Preparando controle manual...";
+          detail.textContent = "Finalizando a automacao em execucao: " + job.name + " (ha " + job.seconds + "s). Nenhum job novo desta conta comeca.";
+        } else {
+          text.textContent = "Abrindo a sessao do jogo...";
+          detail.textContent = "O agente esta entrando no jogo com a sessao e o proxy da conta.";
+        }
+      } else if (state.state === "resuming") {
+        text.textContent = "Devolvendo a conta para a automacao...";
+        detail.textContent = "";
+      } else {
+        finish(state.message || "Controle manual encerrado.", state.error || "", state.reason === "error");
+      }
+    }
+
+    function poll() {
+      if (stopped) { return; }
+      fetch(statusUrl, { credentials: "same-origin", headers: { "Accept": "application/json" } })
+        .then(function (response) { return response.json(); })
+        .then(show)
+        .catch(function () { detail.textContent = "Sem resposta do hub; tentando de novo..."; })
+        .then(function () { if (!stopped) { setTimeout(poll, 2000); } });
+    }
+
+    cancel.onclick = function () {
+      stopped = true;
+      fetch(endUrl, { method: "POST", credentials: "same-origin", headers: { "X-CSRFToken": csrf } })
+        .then(function () { finish("Controle manual encerrado.", "A automacao da conta continua."); });
+    };
+    poll();
+  })();
+  </script>
+  {% endif %}
+</main>
+</body>
+</html>

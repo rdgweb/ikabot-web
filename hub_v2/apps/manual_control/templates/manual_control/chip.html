@@ -1,0 +1,48 @@
+{% if control_enabled or control_session %}<span id="control-chip-{{ game_account_id }}" class="inline-flex items-center gap-1"
+      hx-get="{% url 'manual_control:chip' game_account_id %}" hx-trigger="refresh{% if control_session %}, every 20s{% endif %}" hx-swap="outerHTML" hx-push-url="false"
+      onclick="event.stopPropagation();">
+{% if control_state == "manual" %}
+  <span class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
+        style="background: var(--ik-gold);"
+        title="Voce esta jogando esta conta pelo navegador. Os jobs dela ficam em espera e voltam sozinhos quando a aba do jogo fechar.">
+    <i class="bi bi-controller"></i> CONTROLE MANUAL &middot; automacao pausada
+  </span>
+  <a href="{% url 'manual_control:session' control_session.pk %}" target="_blank" rel="noopener"
+     class="inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+     style="border-color: rgba(79,134,185,0.45); color: var(--ik-sea);"
+     title="Abrir de novo a aba do jogo desta sessao">
+    <i class="bi bi-box-arrow-up-right"></i> Abrir sessao
+  </a>
+  <button type="button"
+          class="inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+          style="border-color: rgba(79,134,185,0.45); color: var(--ik-sea);"
+          title="Encerrar o controle manual agora e devolver a conta para a automacao"
+          hx-post="{% url 'manual_control:end' control_session.pk %}" hx-target="#control-chip-{{ game_account_id }}" hx-swap="outerHTML" hx-push-url="false"
+          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+    <i class="bi bi-stop-circle"></i> Encerrar controle
+  </button>
+{% elif control_state == "pausing" %}
+  <a href="{% url 'manual_control:session' control_session.pk %}" target="_blank" rel="noopener"
+     class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
+     style="background: var(--ik-sea);"
+     title="Preparando o controle manual: a automacao em execucao esta terminando e a sessao do jogo esta sendo aberta. Clique para acompanhar.">
+    <i class="bi bi-hourglass-split"></i> Preparando controle manual...
+  </a>
+{% elif control_state == "resuming" %}
+  <span class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
+        style="background: var(--ik-sea);" title="Devolvendo a conta para a automacao">
+    <i class="bi bi-arrow-repeat"></i> Retomando automacao...
+  </span>
+{% elif control_enabled %}
+  <form method="post" action="{% url 'manual_control:start' game_account_id %}" target="_blank" style="display: inline;"
+        onsubmit="var chip = this.closest('[id^=control-chip-]'); setTimeout(function () { htmx.trigger(chip, 'refresh'); }, 2500);">
+    {% csrf_token %}
+    <button type="submit"
+            class="inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+            style="border-color: rgba(79,134,185,0.45); color: var(--ik-sea);"
+            title="Jogar esta conta pelo navegador, com a sessao e o proxy do agente. A automacao da conta pausa sozinha e volta quando a aba do jogo fechar.">
+      <i class="bi bi-controller"></i> Assumir controle
+    </button>
+  </form>
+{% endif %}
+</span>{% endif %}

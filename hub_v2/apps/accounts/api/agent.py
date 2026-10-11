@@ -181,6 +181,15 @@ class AgentHeartbeatView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        # N-72: a manual-control session whose tab is gone gives the account back here
+        # at the latest (the next job that tries to start notices it too).
+        try:
+            from apps.manual_control.services import sweep_expired
+
+            sweep_expired()
+        except Exception:
+            logger.warning("Could not sweep manual-control sessions from heartbeat", exc_info=True)
+
         if _should_run_stale_recovery(previous_last_seen, now=now):
             try:
                 node = Node.objects.get(pk=node_id)
