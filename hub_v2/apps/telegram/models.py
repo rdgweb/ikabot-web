@@ -53,6 +53,7 @@ class TelegramBotConfig(TimestampModel):
     notify_raid_alert = models.BooleanField(default=True)
     notify_cinema_available = models.BooleanField(default=False)
     notify_combat_report = models.BooleanField(default=False)
+    notify_proxy_change = models.BooleanField(default=True)
 
     class Meta:
         verbose_name = "Configuração do Bot Telegram"
@@ -118,6 +119,7 @@ class TelegramAccountConfig(TimestampModel):
     notify_raid_alert = models.BooleanField(default=True)
     notify_cinema_available = models.BooleanField(default=False)
     notify_combat_report = models.BooleanField(default=False)
+    notify_proxy_change = models.BooleanField(default=False)
 
     @property
     def has_custom_chat(self):

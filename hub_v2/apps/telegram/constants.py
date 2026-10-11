@@ -91,6 +91,14 @@ EVENT_TYPES = [
         "icon": "bi-shield-shaded",
         "field": "notify_combat_report",
     },
+    {
+        "key": "proxy_change",
+        "label": "Troca de proxy",
+        "description": "Avisa quando a verificacao automatica troca o proxy de uma conta ou de um no, libera um bloqueio de login causado por proxy, ou nao acha proxy livre.",
+        "category": "system",
+        "icon": "bi-hdd-network",
+        "field": "notify_proxy_change",
+    },
 ]
 
 # Lookup by field name -> event info

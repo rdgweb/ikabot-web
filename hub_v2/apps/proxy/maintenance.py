@@ -198,6 +198,43 @@ def _clear_proxy_login_blocks(accounts, report: dict, now) -> None:
         report["blocks_cleared"].append(game_account.name or str(game_account.pk))
 
 
+def announcement(report: dict) -> str:
+    """What changed, in the operator's words; "" when nothing did. Never an address or a credential."""
+    lines = []
+    for item in report.get("accounts_replaced") or []:
+        removed, added = len(item.get("removed") or []), len(item.get("added") or [])
+        lines.append(f"Conta {item.get('account')}: {removed} proxy(s) fora de uso, {added} novo(s) reservado(s).")
+    for item in report.get("nodes_replaced") or []:
+        lines.append(f"No {item.get('node')}: proxy trocado.")
+    if report.get("blocks_cleared"):
+        lines.append("Bloqueio de login liberado: " + ", ".join(report["blocks_cleared"]) + ".")
+    if report.get("without_proxy"):
+        lines.append("SEM proxy livre para: " + ", ".join(report["without_proxy"]) + ".")
+    if not lines:
+        return ""
+    sync = report.get("sync") or {}
+    if sync.get("success"):
+        lines.append(f"Lista do provedor: {sync.get('created') or 0} novo(s), {sync.get('deactivated') or 0} retirado(s).")
+    else:
+        lines.append("Nao foi possivel consultar o provedor nesta execucao.")
+    lines.append(f"Teste: {report.get('passed', 0)} de {report.get('tested', 0)} proxies ok.")
+    if report.get("reason"):
+        lines.append(f"Motivo da verificacao: {report['reason']}.")
+    return "\n".join(lines)
+
+
+def _announce(report: dict) -> None:
+    body = announcement(report)
+    if not body:
+        return
+    try:
+        from apps.telegram.services.notifications import notify
+
+        notify(event_key="proxy_change", title="Proxies: verificacao automatica", body=body)
+    except Exception:  # noqa: BLE001 - telling about it must not undo the repair
+        logger.warning("Could not announce the proxy maintenance", exc_info=True)
+
+
 def run_proxy_maintenance(*, reason: str = "") -> dict:
     """Sync, test, replace what is gone, lift proxy-caused login blocks. Returns (and stores) a summary."""
     from apps.settings_app.utils import set_setting
@@ -232,6 +269,7 @@ def run_proxy_maintenance(*, reason: str = "") -> dict:
 
     set_setting(LAST_RUN_SETTING, now.isoformat())
     set_setting(LAST_RESULT_SETTING, json.dumps(report))
+    _announce(report)
     logger.info(
         "Proxy maintenance (%s): sync=%s tested=%d passed=%d nodes=%d accounts=%d blocks=%d without=%s",
         reason or "-", report["sync"].get("success"), report["tested"], report["passed"],

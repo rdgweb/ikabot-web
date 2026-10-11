@@ -335,3 +335,80 @@ class ProxyPageShowsTheLastCheckTests(_Base):
         self.assertIn("(1 de 1 ok, 1 troca)", page)
         self.assertIn("sem proxy livre para: conta Lobby PX", page)
         self.assertNotIn("{#", page)
+
+
+class ProxyMaintenanceAnnouncementTests(_Base):
+    """A change made by the automatic check is told on Telegram (N-96)."""
+
+    def _scenario(self):
+        gone = [self._proxy(active=False, ok=None, reserve=self.account) for _ in range(3)]
+        fresh = [self._proxy() for _ in range(4)]
+        self._proxy(active=False, ok=None, node=self.node)
+        self.ga.login_blocked_until = timezone.now() + timedelta(hours=11)
+        self.ga.login_block_backoff_hours = 11
+        self.ga.login_block_reason = REFUSED
+        self.ga.save()
+        return gone + fresh
+
+    def test_a_change_is_told_once_in_plain_words_without_addresses(self):
+        proxies = self._scenario()
+        with patch("apps.telegram.services.notifications.notify") as notify:
+            self._run(sync={**SYNC_OK, "total": 100, "created": 47, "deactivated": 47})
+
+        notify.assert_called_once()
+        sent = notify.call_args.kwargs
+        self.assertEqual((sent["event_key"], sent["title"]), ("proxy_change", "Proxies: verificacao automatica"))
+        self.assertEqual(sent["body"].split("\n"), [
+            "Conta Lobby PX: 3 proxy(s) fora de uso, 3 novo(s) reservado(s).",
+            "No node-px: proxy trocado.",
+            "Bloqueio de login liberado: Conta PX.",
+            "Lista do provedor: 47 novo(s), 47 retirado(s).",
+            "Teste: 4 de 4 proxies ok.",
+            "Motivo da verificacao: teste.",
+        ])
+        for proxy in proxies:
+            self.assertNotIn(proxy.address, sent["body"])
+
+    def test_no_free_proxy_is_said_clearly(self):
+        self._proxy(active=False, ok=None, reserve=self.account)
+        with patch("apps.telegram.services.notifications.notify") as notify:
+            self._run()
+        self.assertIn("SEM proxy livre para: conta Lobby PX.", notify.call_args.kwargs["body"])
+
+    def test_a_check_that_changed_nothing_says_nothing(self):
+        self._proxy(reserve=self.account)
+        with patch("apps.telegram.services.notifications.notify") as notify:
+            self._run()
+        notify.assert_not_called()
+
+    def test_telegram_being_down_does_not_undo_the_repair(self):
+        self._scenario()
+        with patch("apps.telegram.services.notifications.notify", side_effect=RuntimeError("telegram fora")):
+            with self.assertLogs("apps.proxy.maintenance", level="WARNING"):
+                report = self._run()
+        self.assertEqual(len(self._reserved()), 3)
+        self.assertEqual(report["blocks_cleared"], ["Conta PX"])
+
+    def test_message_goes_out_through_the_bot_and_can_be_switched_off(self):
+        from apps.telegram.models import TelegramBotConfig
+
+        bot = TelegramBotConfig.objects.create(pk=1, bot_token="123:abc", enabled=True, chat_id="555")
+        self.assertTrue(bot.notify_proxy_change)            # on unless the operator turns it off
+        self._scenario()
+        with patch("apps.telegram.services.notifications.send_message", return_value={"ok": True, "result": {"message_id": 1}}) as send:
+            self._run()
+        chat, text = send.call_args.args[:2]
+        self.assertEqual(chat, "555")
+        self.assertIn("<b>Proxies: verificacao automatica</b>", text)
+        self.assertIn("Conta Lobby PX: 3 proxy(s) fora de uso, 3 novo(s) reservado(s).", text)
+
+        bot.notify_proxy_change = False
+        bot.save()
+        self.ga.login_blocked_until = None
+        self.ga.save()
+        AccountProxyReservation.objects.filter(account=self.account).first().proxy_profile.delete()      # one more proxy gone
+        ProxyProfile.objects.filter(account_reservation__isnull=True, assigned_node__isnull=True).update(active=True)
+        self._proxy(active=False, ok=None, reserve=self.account)
+        with patch("apps.telegram.services.notifications.send_message") as send:
+            self._run()
+        send.assert_not_called()

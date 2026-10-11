@@ -51,6 +51,7 @@ class TelegramGlobalNotificationForm(forms.ModelForm):
             "notify_island_monitor",
             "notify_cinema_available",
             "notify_combat_report",
+            "notify_proxy_change",
         ]
         labels = {
             "notify_attack_alert": "Alerta de ataque",
@@ -64,6 +65,7 @@ class TelegramGlobalNotificationForm(forms.ModelForm):
             "notify_island_monitor": "Monitor de ilha",
             "notify_cinema_available": "Cineteatro disponivel",
             "notify_combat_report": "Relatorio de combate",
+            "notify_proxy_change": "Troca de proxy",
         }
 
 
@@ -86,6 +88,7 @@ class TelegramAccountConfigForm(forms.ModelForm):
             "notify_island_monitor",
             "notify_cinema_available",
             "notify_combat_report",
+            "notify_proxy_change",
         ]
         widgets = {
             "chat_id": forms.TextInput(attrs={
@@ -107,6 +110,7 @@ class TelegramAccountConfigForm(forms.ModelForm):
             "notify_island_monitor": "Monitor de ilha",
             "notify_cinema_available": "Cineteatro disponivel",
             "notify_combat_report": "Relatorio de combate",
+            "notify_proxy_change": "Troca de proxy",
         }
 
 
@@ -133,6 +137,7 @@ class TelegramNotificationForm(forms.ModelForm):
             "notify_island_monitor",
             "notify_cinema_available",
             "notify_combat_report",
+            "notify_proxy_change",
         ]
         labels = {
             "enabled": "Notificacoes ativadas",
@@ -147,6 +152,7 @@ class TelegramNotificationForm(forms.ModelForm):
             "notify_island_monitor": "Monitor de ilha",
             "notify_cinema_available": "Cineteatro disponivel",
             "notify_combat_report": "Relatorio de combate",
+            "notify_proxy_change": "Troca de proxy",
         }
 
 
