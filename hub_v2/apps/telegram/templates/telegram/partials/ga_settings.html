@@ -8,7 +8,7 @@
     <div class="mb-3">
       <div class="px-2 py-1.5 bg-green-50 border border-green-200 rounded text-xs text-green-700 mb-2">
         <i class="bi bi-check-circle mr-1"></i>
-        Chat proprio vinculado
+        Chat próprio vinculado
       </div>
       <dl class="flex gap-4 text-xs">
         <div>
@@ -41,7 +41,7 @@
     <div class="text-center py-2 mb-3">
       <p class="text-xs text-muted mb-2">
         {% if global_linked %}
-          Usando chat global. Vincule um chat proprio para override.
+          Usando chat global. Vincule um chat próprio para override.
         {% else %}
           Nenhum chat vinculado (nem global, nem individual).
         {% endif %}
@@ -52,7 +52,7 @@
                 hx-swap="outerHTML"
                 hx-push-url="false"
                 class="btn btn-primary btn-sm text-xs">
-          <i class="bi bi-link-45deg"></i> Vincular Chat Proprio
+          <i class="bi bi-link-45deg"></i> Vincular Chat Próprio
         </button>
       {% else %}
         <button disabled
@@ -98,7 +98,7 @@
       {# Toggles de evento #}
       <div class="mt-2 pt-2 border-t border-line">
         <p class="text-[10px] font-semibold text-muted uppercase tracking-wide mb-1.5">
-          Notificacoes
+          Notificações
         </p>
       </div>
 
@@ -137,10 +137,10 @@
                     hx-target="#tg-ga-inner-{{ ga.pk }}"
                     hx-swap="outerHTML"
                     hx-push-url="false"
-                    hx-confirm="Remover chat proprio? A subconta voltara a usar o chat global."
+                    hx-confirm="Remover chat próprio? A subconta voltará a usar o chat global."
                     class="text-[10px] text-red-500 hover:text-red-700 transition-colors"
                     type="button">
-              <i class="bi bi-unlink"></i> Remover chat proprio
+              <i class="bi bi-unlink"></i> Remover chat próprio
             </button>
           {% elif uses_global and bot_active %}
             <button hx-post="{% url 'telegram:ga-start-link' ga.pk %}"
@@ -149,7 +149,7 @@
                     hx-push-url="false"
                     class="text-[10px] text-sea hover:text-ink transition-colors"
                     type="button">
-              <i class="bi bi-link-45deg"></i> Vincular chat proprio
+              <i class="bi bi-link-45deg"></i> Vincular chat próprio
             </button>
           {% endif %}
         </div>

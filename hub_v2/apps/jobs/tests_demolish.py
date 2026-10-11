@@ -84,7 +84,7 @@ class DemolishActionFlowTests(TestCase):
         self.assertTrue(listed[1303]["ready"])
 
         page = self.client.get(reverse("game:action-catalog")).content.decode()
-        self.assertIn("Demolir Edificios", page)
+        self.assertIn("Demolir Edifícios", page)
         self.assertIn("?action=1303", page)
 
     def test_form_shows_every_city_with_the_games_own_building_names(self):
@@ -96,7 +96,7 @@ class DemolishActionFlowTests(TestCase):
         self.assertIn('name="demolish_items_json"', html)
         self.assertIn('name="demolish_confirm_word"', html)
         self.assertIn('name="dry_run"', html)
-        self.assertNotIn("Nenhuma configuracao necessaria", html)
+        self.assertNotIn("Nenhuma configuração necessária", html)
         cities = response.context["demolish_ui"]["cities"] if response.context else None
         if cities is None:
             from apps.jobs.services.demolish import demolish_form_context

@@ -273,7 +273,7 @@
               {% elif choice.0|stringformat:"s" == "wine" %}
               <img src="{% static 'game/resources/icon_wine.png' %}" alt="Vinho" class="h-4 w-4">
               {% elif choice.0|stringformat:"s" == "marble" %}
-              <img src="{% static 'game/resources/icon_marble.png' %}" alt="Marmore" class="h-4 w-4">
+              <img src="{% static 'game/resources/icon_marble.png' %}" alt="Mármore" class="h-4 w-4">
               {% elif choice.0|stringformat:"s" == "crystal" %}
               <img src="{% static 'game/resources/icon_glass.png' %}" alt="Cristal" class="h-4 w-4">
               {% elif choice.0|stringformat:"s" == "sulfur" %}
@@ -373,7 +373,7 @@
             {% elif field.name == "wine" %}
             <img src="{% static 'game/resources/icon_wine.png' %}" alt="Vinho" class="h-5 w-5">
             {% elif field.name == "marble" %}
-            <img src="{% static 'game/resources/icon_marble.png' %}" alt="Marmore" class="h-5 w-5">
+            <img src="{% static 'game/resources/icon_marble.png' %}" alt="Mármore" class="h-5 w-5">
             {% elif field.name == "crystal" %}
             <img src="{% static 'game/resources/icon_glass.png' %}" alt="Cristal" class="h-5 w-5">
             {% elif field.name == "sulfur" %}
@@ -406,7 +406,7 @@
             {% elif field.name == "wine" %}
             <img src="{% static 'game/resources/icon_wine.png' %}" alt="Vinho" class="h-5 w-5">
             {% elif field.name == "marble" %}
-            <img src="{% static 'game/resources/icon_marble.png' %}" alt="Marmore" class="h-5 w-5">
+            <img src="{% static 'game/resources/icon_marble.png' %}" alt="Mármore" class="h-5 w-5">
             {% elif field.name == "crystal" %}
             <img src="{% static 'game/resources/icon_glass.png' %}" alt="Cristal" class="h-5 w-5">
             {% elif field.name == "sulfur" %}
@@ -473,8 +473,8 @@
     {% if not action_meta.inputs and action_code != 1303 %}
     <div class="text-center py-6 rounded-lg" style="background: var(--ik-sand-light);">
       <i class="bi bi-check-circle text-[var(--ik-good)] text-xl"></i>
-      <p class="text-xs text-muted mt-1.5">Nenhuma configuracao necessaria.</p>
-      <p class="text-[10px] text-muted mt-0.5">O job sera executado com as configuracoes padrao.</p>
+      <p class="text-xs text-muted mt-1.5">Nenhuma configuração necessária.</p>
+      <p class="text-[10px] text-muted mt-0.5">O job será executado com as configurações padrão.</p>
     </div>
     {% endif %}
 
@@ -495,7 +495,7 @@
       </button>
       {% else %}
       <button type="submit" class="btn btn-primary btn-sm">
-        <i class="bi bi-plus-circle"></i> {% if action_code == 31 %}Enviar Mensagem{% elif action_code == 2 %}Criar Transporte{% elif action_code == 3 or action_code == 1003 %}Criar Distribuição{% elif action_code == 601 %}Iniciar Monitor{% elif action_code == 820 %}Fundar Colonia{% elif action_code == 1005 %}Criar Treino Militar{% elif action_code == 1202 %}Criar Movimentação{% else %}Criar Job{% endif %}
+        <i class="bi bi-plus-circle"></i> {% if action_code == 31 %}Enviar Mensagem{% elif action_code == 2 %}Criar Transporte{% elif action_code == 3 or action_code == 1003 %}Criar Distribuição{% elif action_code == 601 %}Iniciar Monitor{% elif action_code == 820 %}Fundar Colônia{% elif action_code == 1005 %}Criar Treino Militar{% elif action_code == 1202 %}Criar Movimentação{% else %}Criar Job{% endif %}
       </button>
       {% endif %}
     </div>

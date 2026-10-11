@@ -48,7 +48,7 @@ class IkabotApiSettingsForm(forms.Form):
             "class": "form-input",
             "placeholder": "http://ikabotapi:5005",
         }),
-        help_text="Endereco do servico de captcha solver.",
+        help_text="Endereço do serviço de captcha solver.",
     )
 
 
@@ -60,7 +60,7 @@ class AgentSecurityForm(forms.Form):
             "class": "form-input",
             "placeholder": "ex: 192.168.1.0/24, 10.0.0.5",
         }),
-        help_text="IPs ou CIDRs separados por virgula. Vazio = aceitar qualquer IP.",
+        help_text="IPs ou CIDRs separados por vírgula. Vazio = aceitar qualquer IP.",
     )
 
 
@@ -110,7 +110,7 @@ class SpyIntelSettingsForm(forms.Form):
 
 class SnapshotPolicyForm(forms.Form):
     snapshot_stale_seconds = forms.IntegerField(
-        label="Snapshot geral vencido apos (segundos)",
+        label="Snapshot geral vencido após (segundos)",
         min_value=60,
         required=True,
         widget=forms.NumberInput(attrs={
@@ -120,14 +120,14 @@ class SnapshotPolicyForm(forms.Form):
         help_text="Usado por runners que dependem do snapshot geral da conta/cidades.",
     )
     building_options_stale_seconds = forms.IntegerField(
-        label="Opcoes de edificios vencidas apos (segundos)",
+        label="Opções de edifícios vencidas após (segundos)",
         min_value=60,
         required=True,
         widget=forms.NumberInput(attrs={
             "class": "form-input",
             "placeholder": "21600",
         }),
-        help_text="Quando vencer, o Check Status agenda o sync 1001 para atualizar os predios construiveis.",
+        help_text="Quando vencer, o Check Status agenda o sync 1001 para atualizar os prédios construíveis.",
     )
     running_job_recovery_grace_seconds = forms.IntegerField(
         label="Buffer para recuperar job travado (segundos)",
@@ -137,17 +137,17 @@ class SnapshotPolicyForm(forms.Form):
             "class": "form-input",
             "placeholder": "300",
         }),
-        help_text="Se um job ficar running por mais que timeout + este buffer, o hub encerra a execucao orfa e tenta requeue nas acoes seguras.",
+        help_text="Se um job ficar running por mais que timeout + este buffer, o hub encerra a execução órfã e tenta requeue nas ações seguras.",
     )
     running_job_lease_seconds = forms.IntegerField(
-        label="Lease do job em execucao (segundos)",
+        label="Lease do job em execução (segundos)",
         min_value=30,
         required=True,
         widget=forms.NumberInput(attrs={
             "class": "form-input",
             "placeholder": "180",
         }),
-        help_text="Cada worker renova esse lease enquanto o job esta vivo. Se o lease expirar, o job entra no recovery.",
+        help_text="Cada worker renova esse lease enquanto o job está vivo. Se o lease expirar, o job entra no recovery.",
     )
     blackbox_timeout_seconds = forms.IntegerField(
         label="Limite para gerar o blackbox (segundos)",
@@ -166,14 +166,14 @@ class SnapshotPolicyForm(forms.Form):
         required=False,
         max_length=35,
         widget=forms.TextInput(attrs={"class": "form-input", "placeholder": "vazio = en-GB (como sempre foi)"}),
-        help_text="Ex.: pt-BR. Vale para os cabecalhos e as credenciais enviadas ao lobby e para a geracao do token blackbox. Vazio mantem o comportamento de sempre (en-GB).",
+        help_text="Ex.: pt-BR. Vale para os cabeçalhos e as credenciais enviadas ao lobby e para a geração do token blackbox. Vazio mantém o comportamento de sempre (en-GB).",
     )
     login_timezone_id = forms.CharField(
-        label="Fuso horario do navegador no login",
+        label="Fuso horário do navegador no login",
         required=False,
         max_length=64,
-        widget=forms.TextInput(attrs={"class": "form-input", "placeholder": "vazio = Europe/London (padrao do ikabotapi)"}),
-        help_text="Ex.: America/Sao_Paulo. Usado na geracao do token blackbox. Vazio deixa o padrao do ikabotapi (Europe/London). O ideal e combinar com o idioma e com a regiao de saida dos proxies.",
+        widget=forms.TextInput(attrs={"class": "form-input", "placeholder": "vazio = Europe/London (padrão do ikabotapi)"}),
+        help_text="Ex.: America/Sao_Paulo. Usado na geração do token blackbox. Vazio deixa o padrão do ikabotapi (Europe/London). O ideal e combinar com o idioma e com a região de saída dos proxies.",
     )
 
     def clean_login_locale(self):

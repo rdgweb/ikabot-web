@@ -154,7 +154,7 @@ class NoteDoneView(LoginRequiredMixin, View):
     def post(self, request, pk):
         note = get_object_or_404(Note, pk=pk)
         if note.status == "done":
-            messages.info(request, "Nota ja concluida.")
+            messages.info(request, "Nota já concluída.")
             return redirect("notes:detail", pk=note.pk)
         note.status = "pending_approval"
         note.completed_at = None
@@ -162,10 +162,10 @@ class NoteDoneView(LoginRequiredMixin, View):
         _record_note_event(
             note,
             "approval_requested",
-            "Entrega enviada para aprovacao. Revise as informacoes, validacoes e pendencias registradas antes de concluir.",
+            "Entrega enviada para aprovação. Revise as informações, validações e pendências registradas antes de concluir.",
             _actor_label(request),
         )
-        messages.success(request, "Nota enviada para aprovacao.")
+        messages.success(request, "Nota enviada para aprovação.")
         return redirect("notes:detail", pk=note.pk)
 
 
@@ -177,8 +177,8 @@ class NoteApproveView(LoginRequiredMixin, View):
         note.status = "done"
         note.completed_at = timezone.now()
         note.save(update_fields=["status", "completed_at", "updated_at"])
-        _record_note_event(note, "completed", "Nota concluida apos aprovacao.", actor)
-        messages.success(request, "Nota concluida.")
+        _record_note_event(note, "completed", "Nota concluída após aprovação.", actor)
+        messages.success(request, "Nota concluída.")
         return redirect("notes:detail", pk=note.pk)
 
 
@@ -191,9 +191,9 @@ class NoteEventCreateView(LoginRequiredMixin, View):
             event.note = note
             event.actor_label = _actor_label(request)
             event.save()
-            messages.success(request, "Historico registrado.")
+            messages.success(request, "Histórico registrado.")
         else:
-            messages.error(request, "Nao foi possivel registrar o historico.")
+            messages.error(request, "Não foi possível registrar o histórico.")
         return redirect("notes:detail", pk=note.pk)
 
 

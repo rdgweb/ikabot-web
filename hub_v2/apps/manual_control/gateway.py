@@ -91,7 +91,7 @@ def _page(title: str, *lines: str, status: int = 200) -> HttpResponse:
 def _ended_page(status: int = 410) -> HttpResponse:
     return _page(
         "Controle manual encerrado",
-        "Esta sessao do jogo foi encerrada e a automacao da conta voltou.",
+        "Esta sessão do jogo foi encerrada e a automação da conta voltou.",
         "Para jogar de novo por aqui, use Assumir controle no painel da conta.",
         status=status,
     )
@@ -120,7 +120,7 @@ def serve(request, path: str = ""):
     token = session_token(request)
     session = services.find_by_token(token) if token else None
     if session is None:
-        return _page("Sessao nao encontrada", "Este endereco nao corresponde a uma sessao de controle manual.", status=404)
+        return _page("Sessão não encontrada", "Este endereço não corresponde a uma sessão de controle manual.", status=404)
 
     if full_path.startswith(RESERVED):
         return _reserved(request, session, full_path[len(RESERVED):])
@@ -132,8 +132,8 @@ def serve(request, path: str = ""):
         return _ended_page()
     if not services.cookie_ok(session, request.COOKIES.get(COOKIE_NAME, "")):
         return _page(
-            "Entrada nao autorizada",
-            "Esta sessao so abre no navegador que a iniciou. Abra de novo pelo painel da conta (Assumir controle).",
+            "Entrada não autorizada",
+            "Esta sessão só abre no navegador que a iniciou. Abra de novo pelo painel da conta (Assumir controle).",
             status=403,
         )
     return _forward(request, session)
@@ -144,8 +144,8 @@ def _reserved(request, session: ManualControlSession, name: str):
         cookie = services.consume_start_key(session, name[len("start/"):])
         if cookie is None:
             return _page(
-                "Link de entrada invalido",
-                "Este link ja foi usado ou a sessao terminou. Abra de novo pelo painel da conta (Assumir controle).",
+                "Link de entrada inválido",
+                "Este link já foi usado ou a sessão terminou. Abra de novo pelo painel da conta (Assumir controle).",
                 status=403,
             )
         response = HttpResponseRedirect("/")
@@ -159,7 +159,7 @@ def _reserved(request, session: ManualControlSession, name: str):
     authorized = services.cookie_ok(session, request.COOKIES.get(COOKIE_NAME, ""))
     active = session.status == ManualControlSession.ACTIVE
     if request.method != "POST" or name not in ("heartbeat", "bye", "end"):
-        return _page("Nao encontrado", "Endereco desconhecido.", status=404)
+        return _page("Não encontrado", "Endereço desconhecido.", status=404)
     if not active:
         return HttpResponse(status=410)
     if not authorized:
@@ -188,7 +188,7 @@ def _request_target(request) -> str:
 def _forward(request, session: ManualControlSession):
     body = request.body
     if len(body) > MAX_REQUEST_BODY:
-        return _page("Requisicao grande demais", "O envio excede o limite desta sessao.", status=413)
+        return _page("Requisição grande demais", "O envio excede o limite desta sessão.", status=413)
 
     origin = services.session_origin(session)
     headers = {name: request.headers[name] for name in FORWARDED_REQUEST_HEADERS if name in request.headers}
@@ -208,9 +208,9 @@ def _forward(request, session: ManualControlSession):
     services.touch(session, game_request=True)
     if answer is None:
         return _page(
-            "O agente nao respondeu",
-            "A requisicao ao jogo passa pelo agente da conta, que nao respondeu a tempo. Tente recarregar.",
-            "Se continuar, encerre o controle pelo painel: a automacao so volta quando esta sessao terminar.",
+            "O agente não respondeu",
+            "A requisição ao jogo passa pelo agente da conta, que não respondeu a tempo. Tente recarregar.",
+            "Se continuar, encerre o controle pelo painel: a automação só volta quando esta sessão terminar.",
             status=504,
         )
     if not answer.get("ok"):
@@ -240,8 +240,8 @@ def _game_response(answer: dict, *, origin: str) -> HttpResponse:
         elif "://" in location or location.startswith("//"):
             # the game is sending the browser somewhere else (the lobby): the session is gone
             return _page(
-                "A sessao do jogo terminou",
-                "O jogo encerrou esta sessao (logout ou expiracao). Encerre o controle e abra de novo pelo painel.",
+                "A sessão do jogo terminou",
+                "O jogo encerrou esta sessão (logout ou expiração). Encerre o controle e abra de novo pelo painel.",
                 status=502,
             )
 

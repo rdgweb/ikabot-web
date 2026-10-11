@@ -36,10 +36,10 @@
            style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div class="max-w-2xl">
-            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Login Diario</div>
-            <h3 class="mt-2 text-xl font-bold text-ink">Escolha a cidade do bonus e o que recolher em cada reset</h3>
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Login Diário</div>
+            <h3 class="mt-2 text-xl font-bold text-ink">Escolha a cidade do bônus e o que recolher em cada reset</h3>
             <p class="mt-2 text-sm leading-relaxed text-muted">
-              O runner entra na tela real de tarefas diarias, aplica o bonus de vinho, recolhe favor das tasks concluidas e tenta coletar a fonte de ambrosia se estiver ativa.
+              O runner entra na tela real de tarefas diárias, aplica o bônus de vinho, recolhe favor das tasks concluídas e tenta coletar a fonte de ambrosia se estiver ativa.
             </p>
           </div>
           <div class="grid grid-cols-2 gap-3 lg:min-w-[21rem]">
@@ -61,9 +61,9 @@
                   </div>
                   <div class="text-[11px] text-muted">
                     {% if daily_login_ui.summary.has_state %}
-                    tasks {{ daily_login_ui.summary.tasks_done }}/{{ daily_login_ui.summary.tasks_count }} • coletaveis {{ daily_login_ui.summary.collectible_tasks_count }}
+                    tasks {{ daily_login_ui.summary.tasks_done }}/{{ daily_login_ui.summary.tasks_count }} • coletáveis {{ daily_login_ui.summary.collectible_tasks_count }}
                     {% else %}
-                    Rode o job uma vez para preencher a leitura diaria
+                    Rode o job uma vez para preencher a leitura diária
                     {% endif %}
                   </div>
                 </div>
@@ -71,7 +71,7 @@
             </div>
             <div class="rounded-2xl border px-4 py-3"
                  style="border-color: rgba(95,140,78,0.18); background: rgba(255,255,255,0.76);">
-              <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Proximo reset</div>
+              <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Próximo reset</div>
               <div class="mt-2 flex items-center gap-3">
                 <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
                       style="background: rgba(95,140,78,0.12);">
@@ -82,7 +82,7 @@
                     {% if daily_login_ui.summary.countdown_seconds %}{{ daily_login_ui.summary.countdown_seconds }}s{% else %}Usa fallback{% endif %}
                   </div>
                   <div class="text-[11px] text-muted">
-                    {% if daily_login_ui.summary.updated_at %}snapshot da leitura diaria disponivel{% else %}a primeira execucao vai calibrar o countdown real{% endif %}
+                    {% if daily_login_ui.summary.updated_at %}snapshot da leitura diária disponível{% else %}a primeira execução vai calibrar o countdown real{% endif %}
                   </div>
                 </div>
               </div>
@@ -97,10 +97,10 @@
                    style="border-color: rgba(79,134,185,0.22); background: linear-gradient(180deg, rgba(79,134,185,0.08), rgba(255,255,255,0.8));">
             <div class="mb-3 flex items-center justify-between gap-3">
               <div>
-                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Cidade do bonus</div>
-                <div class="mt-1 text-sm font-semibold text-ink">Uma cidade recebe o vinho diario por ciclo</div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Cidade do bônus</div>
+                <div class="mt-1 text-sm font-semibold text-ink">Uma cidade recebe o vinho diário por ciclo</div>
               </div>
-              <div class="text-[11px] text-muted">Cards seguem o padrao novo do hub</div>
+              <div class="text-[11px] text-muted">Cards seguem o padrão novo do hub</div>
             </div>
             <label class="mb-3 block">
               <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Filtrar cidades</span>
@@ -154,12 +154,12 @@
                           </span>
                           <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1"
                                 style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">
-                            <img src="{{ daily_login_ui.summary.population_icon }}" alt="Populacao" class="h-3.5 w-3.5 object-contain">
+                            <img src="{{ daily_login_ui.summary.population_icon }}" alt="População" class="h-3.5 w-3.5 object-contain">
                             <span x-text="new Intl.NumberFormat('pt-BR').format(Number(city.population || 0))"></span>
                           </span>
                         </div>
                         <div x-show="city.is_bonus_city" class="mt-2 text-[11px] font-medium" style="color: var(--ik-good);">
-                          Ultima cidade usada no login diario
+                          Última cidade usada no login diário
                         </div>
                       </div>
                     </div>
@@ -184,7 +184,7 @@
                          class="rounded border-gray-300 text-[var(--ik-good)] focus:ring-[var(--ik-good)]">
                   <span class="min-w-0 flex-1">
                     <span class="block text-xs font-semibold text-ink">Coletar favor das tasks prontas</span>
-                    <span class="block text-[11px] text-muted">Usa a tela real de tarefas diarias e recolhe so o que estiver concluido.</span>
+                    <span class="block text-[11px] text-muted">Usa a tela real de tarefas diárias e recolhe só o que estiver concluído.</span>
                   </span>
                 </label>
                 <label class="flex items-center gap-2 rounded-lg border px-2.5 py-2 transition-all"
@@ -194,7 +194,7 @@
                          class="rounded border-gray-300 text-[var(--ik-good)] focus:ring-[var(--ik-good)]">
                   <span class="min-w-0 flex-1">
                     <span class="block text-xs font-semibold text-ink">Coletar fonte de ambrosia</span>
-                    <span class="block text-[11px] text-muted">Primeiro confirma na cidade se a fonte esta ativa antes de tentar coletar.</span>
+                    <span class="block text-[11px] text-muted">Primeiro confirma na cidade se a fonte está ativa antes de tentar coletar.</span>
                   </span>
                 </label>
               </div>
@@ -202,7 +202,7 @@
 
             <div class="rounded-[22px] border p-4"
                  style="border-color: rgba(95,140,78,0.24); background: linear-gradient(180deg, rgba(95,140,78,0.10), rgba(255,255,255,0.84));">
-              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">Cadencia</div>
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">Cadência</div>
               <div class="mt-1 text-sm font-semibold text-ink">Reagendamento pelo countdown real com fallback</div>
               <div class="mt-3 grid grid-cols-2 gap-3">
                 <div>
@@ -226,7 +226,7 @@
                   {% for error in form.sweep_before_reset_minutes.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
                 </div>
               </div>
-              <p class="mt-2 text-[11px] text-muted">O bonus diario e enviado uma vez por ciclo; as passadas so recolhem o favor das tarefas concluidas ao longo do dia (se o favor estiver cheio, tenta de novo na proxima).</p>
+              <p class="mt-2 text-[11px] text-muted">O bônus diário é enviado uma vez por ciclo; as passadas só recolhem o favor das tarefas concluídas ao longo do dia (se o favor estiver cheio, tenta de novo na próxima).</p>
             </div>
 
             <div class="rounded-[22px] border p-4"
@@ -239,19 +239,19 @@
                      style="border-color: var(--ik-line); background: {% if task.collectible %}rgba(95,140,78,0.08){% elif task.claimed %}rgba(219,201,167,0.28){% else %}var(--ik-sand-light){% endif %};">
                   <div class="flex items-start justify-between gap-2">
                     <div class="min-w-0">
-                      <div class="truncate text-sm font-medium text-ink">{{ task.name|default:"Task diaria" }}</div>
+                      <div class="truncate text-sm font-medium text-ink">{{ task.name|default:"Task diária" }}</div>
                       <div class="mt-1 text-[11px] text-muted">{{ task.progress_label|default:"Sem progresso lido" }}</div>
                     </div>
                     <div class="text-right text-[11px]">
                       <div class="font-semibold text-ink">+{{ task.reward_favor|default:0 }} favor</div>
-                      <div class="text-muted">{% if task.collectible %}Pronta{% elif task.claimed %}Ja recolhida{% else %}Em progresso{% endif %}</div>
+                      <div class="text-muted">{% if task.collectible %}Pronta{% elif task.claimed %}Já recolhida{% else %}Em progresso{% endif %}</div>
                     </div>
                   </div>
                 </div>
                 {% endfor %}
               </div>
               {% else %}
-              <div class="mt-2 text-sm text-muted">Ainda sem leitura de tasks. A primeira execucao real do job vai preencher esse bloco.</div>
+              <div class="mt-2 text-sm text-muted">Ainda sem leitura de tasks. A primeira execução real do job vai preencher esse bloco.</div>
               {% endif %}
             </div>
           </section>

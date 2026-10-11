@@ -260,12 +260,12 @@ def _format_gold_position_detail(position: dict[str, int]) -> str:
     parts = [
         f"ouro atual {_fmt_market_gold(position.get('current', 0))}",
         f"reservado {_fmt_market_gold(position.get('reserved', 0))}",
-        f"disponivel {_fmt_market_gold(position.get('available', 0))}",
+        f"disponível {_fmt_market_gold(position.get('available', 0))}",
     ]
     required = int(position.get("required", 0) or 0)
     if required > 0:
         parts.append(f"compra {_fmt_market_gold(required)}")
-    parts.append(f"minimo {_fmt_market_gold(position.get('minimum', 0))}")
+    parts.append(f"mínimo {_fmt_market_gold(position.get('minimum', 0))}")
     return "; ".join(parts)
 
 
@@ -485,7 +485,7 @@ def _create_redistribution_job(order: InternalMarketOrder) -> Job | None:
     order.redistribution_job = redistribution_job
     order.status = "jobs_running"
     order.result_note = _result_note(
-        "Compra concluida; redistribuicao em andamento.",
+        "Compra concluida; redistribuição em andamento.",
         f"{payload['from_city_name']} -> {payload['to_city_name']}",
     )
     order.save(update_fields=["redistribution_job", "status", "result_note", "updated_at"])
@@ -518,7 +518,7 @@ def complete_internal_order(order: InternalMarketOrder) -> dict[str, object]:
             _set_order_terminal_state(
                 order,
                 status="failed",
-                note="Compra concluida, mas nao foi possivel criar a redistribuicao interna.",
+                note="Compra concluída, mas não foi possível criar a redistribuição interna.",
             )
             return {"ok": False, "status": "failed", "completed": False, "created_redistribution": False}
         return {
@@ -529,7 +529,7 @@ def complete_internal_order(order: InternalMarketOrder) -> dict[str, object]:
             "redistribution_job_id": str(redistribution_job.pk),
         }
 
-    _set_order_terminal_state(order, status="completed", note="Compra interna concluida.")
+    _set_order_terminal_state(order, status="completed", note="Compra interna concluída.")
     logger.info("InternalMarketOrder %s marked as completed", order.pk)
     return {"ok": True, "status": "completed", "completed": True, "created_redistribution": False}
 
@@ -572,7 +572,7 @@ def reconcile_internal_order_for_job(job: Job, *, terminal_status: str, note: st
         )
     if job.pk == order.sell_job_id:
         if terminal_status == "error":
-            _set_order_terminal_state(order, status="failed", note=_result_note("Falha na publicacao da oferta interna.", note_text))
+            _set_order_terminal_state(order, status="failed", note=_result_note("Falha na publicação da oferta interna.", note_text))
         elif terminal_status == "cancelled":
             _set_order_terminal_state(order, status="canceled", note=_result_note("Oferta interna cancelada.", note_text))
         return order
@@ -615,20 +615,20 @@ def reconcile_internal_order_for_job(job: Job, *, terminal_status: str, note: st
 
     if job.pk == order.redistribution_job_id:
         if terminal_status == "error":
-            _set_order_terminal_state(order, status="failed", note=_result_note("Falha na redistribuicao apos compra interna.", note_text))
+            _set_order_terminal_state(order, status="failed", note=_result_note("Falha na redistribuição após compra interna.", note_text))
         elif terminal_status == "cancelled":
-            _set_order_terminal_state(order, status="canceled", note=_result_note("Redistribuicao apos compra interna cancelada.", note_text))
+            _set_order_terminal_state(order, status="canceled", note=_result_note("Redistribuição após compra interna cancelada.", note_text))
         return order
 
     if int(job.action_code) != 2 or str(inputs.get("monitor_mode") or "").strip().lower() != "arrival_check":
         return order
 
     if terminal_status == "finished":
-        _set_order_terminal_state(order, status="completed", note="Compra interna concluida com redistribuicao confirmada.")
+        _set_order_terminal_state(order, status="completed", note="Compra interna concluída com redistribuição confirmada.")
     elif terminal_status == "error":
-        _set_order_terminal_state(order, status="failed", note=_result_note("Falha ao confirmar chegada da redistribuicao.", note_text))
+        _set_order_terminal_state(order, status="failed", note=_result_note("Falha ao confirmar chegada da redistribuição.", note_text))
     elif terminal_status == "cancelled":
-        _set_order_terminal_state(order, status="canceled", note=_result_note("Confirmacao de chegada da redistribuicao cancelada.", note_text))
+        _set_order_terminal_state(order, status="canceled", note=_result_note("Confirmação de chegada da redistribuição cancelada.", note_text))
     return order
 
 
@@ -1445,7 +1445,7 @@ def approve_construction_market_intervention(
             if request.sell_job_id != existing_order.sell_job_id:
                 request.sell_job = existing_order.sell_job
                 request.save(update_fields=["sell_job", "updated_at"])
-            return True, f"Ordem interna ja existe: {existing_order.pk}."
+            return True, f"Ordem interna já existe: {existing_order.pk}."
 
     if request.status == "sell_queued" and request.sell_job_id:
         sell_job = Job.objects.filter(pk=request.sell_job_id).only("status", "action_code").first()

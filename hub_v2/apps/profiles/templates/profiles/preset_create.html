@@ -15,7 +15,7 @@
       <span class="text-ink">Novo</span>
     </nav>
     <h1 class="text-2xl font-bold text-ink mt-2">Criar Preset</h1>
-    <p class="text-sm text-muted mt-1">Defina um nome e descricao para o seu preset de automacao.</p>
+    <p class="text-sm text-muted mt-1">Defina um nome e descrição para o seu preset de automação.</p>
   </div>
 
   <div class="card">
@@ -37,15 +37,15 @@
           <input type="text" name="name" id="id_name"
                  value="{{ name|default:'' }}"
                  class="form-input"
-                 placeholder="Ex: Gestao Diaria, Monitoramento Completo..."
+                 placeholder="Ex: Gestão Diária, Monitoramento Completo..."
                  required autofocus>
         </div>
 
         <div>
-          <label for="id_description" class="form-label">Descricao</label>
+          <label for="id_description" class="form-label">Descrição</label>
           <textarea name="description" id="id_description"
                     class="form-input" rows="3"
-                    placeholder="Descricao opcional do que este preset faz...">{{ description|default:'' }}</textarea>
+                    placeholder="Descrição opcional do que este preset faz...">{{ description|default:'' }}</textarea>
         </div>
       </div>
 

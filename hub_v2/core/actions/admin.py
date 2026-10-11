@@ -14,7 +14,7 @@ ACTIONS = {
         "recurring": False,
         "long_running": False,
         "ready": True,
-        "description": "Coleta dados atuais da conta: recursos, edificios, tropas.",
+        "description": "Coleta dados atuais da conta: recursos, edifícios, tropas.",
         "inputs": [],
     },
     101: {
@@ -53,7 +53,7 @@ ACTIONS = {
         "recurring": False,
         "long_running": False,
         "ui_hidden": True,
-        "description": "Renomeia uma cidade no jogo (usado pela edicao inline do painel).",
+        "description": "Renomeia uma cidade no jogo (usado pela edição inline do painel).",
         "inputs": [],
     },
 }

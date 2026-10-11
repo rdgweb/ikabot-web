@@ -35,4 +35,4 @@ class PresetAdmin(admin.ModelAdmin):
 
     def action_count(self, obj):
         return obj.actions.count()
-    action_count.short_description = "Acoes"
+    action_count.short_description = "Ações"

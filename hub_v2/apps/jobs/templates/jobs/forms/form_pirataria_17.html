@@ -341,7 +341,7 @@
         <div class="flex items-center justify-between gap-3">
           <div>
             <label class="form-label text-xs block"><i class="bi bi-bullseye text-sea mr-1"></i>Ciclo especial por ranking</label>
-            <p class="text-[10px] text-muted mt-1">Prepara o fluxo de colonizar perto do alvo, atacar e abandonar a colonia depois.</p>
+            <p class="text-[10px] text-muted mt-1">Prepara o fluxo de colonizar perto do alvo, atacar e abandonar a colônia depois.</p>
           </div>
           <button type="button" role="switch" :aria-checked="enableTargetedCycle"
                   class="flex items-center gap-2 select-none text-xs text-muted"
@@ -365,11 +365,11 @@
             <input type="number" min="0" max="23" x-model.number="targetedAfterHour" class="form-input !py-1.5 !text-xs w-full">
           </div>
           <div>
-            <label class="form-label text-[11px] mb-1 block">Distancia no ranking</label>
+            <label class="form-label text-[11px] mb-1 block">Distância no ranking</label>
             <input type="number" min="1" max="25" x-model.number="targetMaxScoreGap" class="form-input !py-1.5 !text-xs w-full">
           </div>
           <div>
-            <label class="form-label text-[11px] mb-1 block">Fundacoes simultaneas</label>
+            <label class="form-label text-[11px] mb-1 block">Fundações simultâneas</label>
             <input type="number" min="1" max="5" x-model.number="targetedMaxActiveFoundations" class="form-input !py-1.5 !text-xs w-full">
           </div>
           <div>
@@ -460,7 +460,7 @@
             {% endfor %}
           </div>
           {% else %}
-          <div class="mt-2 text-[11px] text-muted">O runner vai registrar o ranking ao vivo na proxima leitura da fortaleza.</div>
+          <div class="mt-2 text-[11px] text-muted">O runner vai registrar o ranking ao vivo na próxima leitura da fortaleza.</div>
           {% endif %}
         </div>
       </div>

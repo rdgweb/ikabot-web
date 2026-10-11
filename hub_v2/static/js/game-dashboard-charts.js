@@ -32,7 +32,7 @@ function gameDashboardCharts() {
       if (!visibleCards.length) {
         return {
           available: false,
-          reason: 'Nenhuma conta visivel no filtro atual.',
+          reason: 'Nenhuma conta visível no filtro atual.',
           scopeLabel: 'Sem dados',
         };
       }
@@ -76,7 +76,7 @@ function gameDashboardCharts() {
       if (!points.length) {
         return {
           available: false,
-          reason: 'Nao ha historico salvo para o filtro atual.',
+          reason: 'Não há histórico salvo para o filtro atual.',
           scopeLabel: this.historyScopeLabel(visibleCards),
         };
       }

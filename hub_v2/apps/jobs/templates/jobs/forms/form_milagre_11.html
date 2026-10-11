@@ -68,10 +68,10 @@
               <template x-if="selectedCity() && selectedCity().miracle_state && selectedCity().miracle_state.wonder_name">
                 <div class="mt-2">
                   <div class="text-sm font-semibold text-ink" x-text="selectedCity().miracle_state.wonder_name"></div>
-                  <div class="mt-1 text-[11px] text-muted" x-text="selectedCity().miracle_state.activate_state === 'enabled' ? 'Ultima leitura: ativavel' : 'Ultima leitura: indisponivel'"></div>
+                  <div class="mt-1 text-[11px] text-muted" x-text="selectedCity().miracle_state.activate_state === 'enabled' ? 'Última leitura: ativável' : 'Última leitura: indisponível'"></div>
                   <div class="mt-2 rounded-xl border px-2.5 py-2 text-[11px]"
                        style="border-color: rgba(219,201,167,0.9); background: rgba(247,241,229,0.72);"
-                       x-text="selectedCity().miracle_state.cooldown_text || selectedCity().miracle_state.wonder_effect || 'Sem detalhe extra na ultima leitura'"></div>
+                       x-text="selectedCity().miracle_state.cooldown_text || selectedCity().miracle_state.wonder_effect || 'Sem detalhe extra na última leitura'"></div>
                 </div>
               </template>
               <template x-if="!(selectedCity() && selectedCity().miracle_state && selectedCity().miracle_state.wonder_name)">
@@ -136,7 +136,7 @@
                         </div>
                         <div class="mt-2">
                           <div class="truncate text-xs font-semibold" style="color: var(--ik-sea);"
-                               x-text="city.miracle_state?.wonder_name || 'Milagre sera lido na execucao'"></div>
+                               x-text="city.miracle_state?.wonder_name || 'Milagre será lido na execução'"></div>
                           <div class="mt-1 text-[11px] text-muted"
                                x-text="city.miracle_state?.wonder_effect || city.miracle_state?.cooldown_text || 'O runner abre o templo para descobrir o milagre real da ilha.'"></div>
                         </div>
@@ -172,7 +172,7 @@
                   </div>
                   <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.78);">
                     <div class="text-[11px] uppercase tracking-[0.12em] text-muted">Efeito</div>
-                    <div class="mt-1 text-sm font-medium text-ink" x-text="selectedCity().miracle_state.wonder_effect || 'Sem descricao de efeito na ultima leitura'"></div>
+                    <div class="mt-1 text-sm font-medium text-ink" x-text="selectedCity().miracle_state.wonder_effect || 'Sem descrição de efeito na última leitura'"></div>
                   </div>
                   <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.78);">
                     <div class="text-[11px] uppercase tracking-[0.12em] text-muted">Estado conhecido</div>

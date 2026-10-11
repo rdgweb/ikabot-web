@@ -17,6 +17,7 @@ A mensagem original nunca e alterada no banco e fica disponivel em `raw`.
 from __future__ import annotations
 
 import re
+import unicodedata
 from datetime import timedelta
 
 from django.templatetags.static import static
@@ -422,6 +423,11 @@ def _static(path: str) -> str:
 _BUILDINGS_CACHE: dict = {}
 
 
+def _plain(text: str) -> str:
+    """Without accents: the agent writes "Armazem", the catalog "Armazém" (N-98)."""
+    return "".join(ch for ch in unicodedata.normalize("NFD", text) if unicodedata.category(ch) != "Mn")
+
+
 def _building(name: str) -> tuple[str, str]:
     """(nome como se escreve, imagem) de um predio citado pelo nome ou pelo codigo do jogo ("safehouse")."""
     if not _BUILDINGS_CACHE:
@@ -433,8 +439,9 @@ def _building(name: str) -> tuple[str, str]:
             _BUILDINGS_CACHE.setdefault(code.lower(), entry)
             _BUILDINGS_CACHE.setdefault(str(info.get("name") or "").lower(), entry)
             _BUILDINGS_CACHE.setdefault(shown.lower(), entry)
+            _BUILDINGS_CACHE.setdefault(_plain(shown).lower(), entry)
     key = str(name or "").strip().lower()
-    return _BUILDINGS_CACHE.get(key) or (_accent(str(name or "").strip()), "")
+    return _BUILDINGS_CACHE.get(key) or _BUILDINGS_CACHE.get(_plain(key)) or (_accent(str(name or "").strip()), "")
 
 
 def _short_duration(text: str) -> str:

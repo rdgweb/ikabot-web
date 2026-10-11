@@ -1,9 +1,9 @@
 {% extends base_template|default:"base.html" %}
 
-{% block title %}Configuracao Telegram{% endblock %}
+{% block title %}Configuração Telegram{% endblock %}
 
 {% block breadcrumb_items %}
-  <span class="mx-1">/</span> <span class="text-ink">Configuracao Telegram</span>
+  <span class="mx-1">/</span> <span class="text-ink">Configuração Telegram</span>
 {% endblock %}
 
 {% block content %}
@@ -12,8 +12,8 @@
   {# ── Header ── #}
   <div class="flex items-center justify-between">
     <div>
-      <h1 class="text-2xl font-bold text-ink">Configuracao Telegram</h1>
-      <p class="text-sm text-muted mt-1">Bot, chat global e preferencias de notificacao</p>
+      <h1 class="text-2xl font-bold text-ink">Configuração Telegram</h1>
+      <p class="text-sm text-muted mt-1">Bot, chat global e preferências de notificação</p>
     </div>
     <div class="flex gap-2">
       <a href="{% url 'telegram:audit' %}" class="btn btn-secondary btn-sm">
@@ -30,7 +30,7 @@
     {# ── Card: Bot Token ── #}
     <div class="card">
       <h2 class="text-lg font-semibold text-ink mb-4">
-        <i class="bi bi-robot"></i> Configuracao do Bot
+        <i class="bi bi-robot"></i> Configuração do Bot
       </h2>
       <form method="post">
         {% csrf_token %}
@@ -63,7 +63,7 @@
         <i class="bi bi-telegram"></i> Chat Global
       </h2>
       <p class="text-xs text-muted mb-4">
-        Todas as notificacoes vao para este chat. Subcontas podem ter override individual.
+        Todas as notificações vão para este chat. Subcontas podem ter override individual.
       </p>
 
       <div id="global-link-area">

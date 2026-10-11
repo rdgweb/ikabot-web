@@ -54,7 +54,7 @@
       <button type="submit"
               class="btn btn-primary btn-sm"
               {% if not preset.account_count or not preset.action_count %}
-              onclick="return confirm('Preset sem contas ou acoes configuradas. Continuar?')"
+              onclick="return confirm('Preset sem contas ou ações configuradas. Continuar?')"
               {% endif %}>
         <i class="bi bi-play-fill"></i> Executar Preset
       </button>
@@ -62,7 +62,7 @@
     <button type="button"
             onclick="return openConfirm({
               title: 'Excluir Preset',
-              message: 'Excluir o preset {{ preset.name|escapejs }}? Esta acao nao pode ser desfeita.',
+              message: 'Excluir o preset {{ preset.name|escapejs }}? Esta ação não pode ser desfeita.',
               action: '{% url 'profiles:preset-delete' preset.pk %}',
               method: 'post',
               style: 'danger',
@@ -106,7 +106,7 @@
         </div>
         <div class="flex justify-between items-center">
           <dt class="text-muted flex items-center gap-1.5">
-            <i class="bi bi-play-circle text-xs"></i> Acoes
+            <i class="bi bi-play-circle text-xs"></i> Ações
           </dt>
           <dd class="font-semibold text-ink">{{ preset.action_count }}</dd>
         </div>
@@ -124,7 +124,7 @@
       <div class="mt-4 p-3 rounded-lg text-xs" style="background: rgba(95,140,78,0.08); border: 1px solid rgba(95,140,78,0.2);">
         <p style="color: var(--ik-good);">
           <i class="bi bi-check-circle-fill mr-1"></i>
-          Pronto para executar: {{ preset.account_count }} conta{{ preset.account_count|pluralize:"s" }} × {{ preset.action_count }} acao{{ preset.action_count|pluralize:"es" }} = <strong>{{ preset.job_count }} jobs</strong>
+          Pronto para executar: {{ preset.account_count }} conta{{ preset.account_count|pluralize:"s" }} × {{ preset.action_count }} ação{{ preset.action_count|pluralize:"es" }} = <strong>{{ preset.job_count }} jobs</strong>
         </p>
       </div>
       {% else %}
@@ -132,7 +132,7 @@
         <p style="color: var(--ik-gold);">
           <i class="bi bi-info-circle-fill mr-1"></i>
           {% if not preset.account_count %}Selecione pelo menos uma conta.{% endif %}
-          {% if not preset.action_count %}Adicione pelo menos uma acao.{% endif %}
+          {% if not preset.action_count %}Adicione pelo menos uma ação.{% endif %}
         </p>
       </div>
       {% endif %}

@@ -130,7 +130,7 @@ def _workflow_scope(action_code: int, account, game_account, node, inputs: dict)
 
 def _workflow_config(action_code: int, inputs: dict) -> dict:
     meta = ACTION_CATALOG.get(int(action_code), {})
-    action_name = meta.get("name", f"Acao #{action_code}")
+    action_name = meta.get("name", f"Ação #{action_code}")
     if int(action_code) == 2 and inputs.get("monitor_mode") == "arrival_check":
         action_name = "Monitor de Chegada"
     return {
@@ -489,7 +489,7 @@ def create_job_with_workflow(
                     trigger_type=trigger_type,
                     summary={
                         "action_code": action_code,
-                        "action_name": ACTION_CATALOG.get(action_code, {}).get("name", f"Acao #{action_code}"),
+                        "action_name": ACTION_CATALOG.get(action_code, {}).get("name", f"Ação #{action_code}"),
                     },
                 )
 

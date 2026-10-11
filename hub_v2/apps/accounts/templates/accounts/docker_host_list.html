@@ -7,10 +7,10 @@
     <a href="{% url 'accounts:docker-host-create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> Novo Host</a>
   </div>
   <div class="overflow-hidden rounded-lg" style="border:1px solid var(--ik-line); background:var(--ik-paper);">
-    <table class="data-table"><thead><tr><th>Host</th><th>Supervisor</th><th>Versao</th><th>Agents</th><th class="text-right">Acao</th></tr></thead>
+    <table class="data-table"><thead><tr><th>Host</th><th>Supervisor</th><th>Versão</th><th>Agents</th><th class="text-right">Ação</th></tr></thead>
       <tbody>{% for host in hosts %}<tr>
         <td class="font-medium">{{ host.name }}</td>
-        <td>{% if host.is_online %}<span class="badge badge-success">Online</span>{% else %}<span class="badge badge-warning">Offline / nao instalado</span>{% endif %}</td>
+        <td>{% if host.is_online %}<span class="badge badge-success">Online</span>{% else %}<span class="badge badge-warning">Offline / não instalado</span>{% endif %}</td>
         <td class="font-mono text-xs">{{ host.supervisor_version|default:"—" }}</td>
         <td>{{ host.nodes.count }}</td>
         <td class="text-right"><a href="{% url 'accounts:docker-host-edit' host.pk %}" class="btn btn-secondary btn-sm">Editar</a></td>

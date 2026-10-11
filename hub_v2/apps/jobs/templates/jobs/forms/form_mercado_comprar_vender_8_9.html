@@ -21,7 +21,7 @@
            dryRun: {% if action_code == 811 and form.dry_run.value %}true{% else %}false{% endif %},
            cityQuery: '',
            resourceKeys: ['wood', 'wine', 'marble', 'crystal', 'sulfur'],
-           resourceNames: ['Madeira', 'Vinho', 'Marmore', 'Cristal', 'Enxofre'],
+           resourceNames: ['Madeira', 'Vinho', 'Mármore', 'Cristal', 'Enxofre'],
            selectedCity() { return this.cities.find(city => String(city.id) === String(this.selectedCityId)); },
            resourceKey() { return this.resourceKeys[Number(this.selectedResource)] || 'wood'; },
            resourceName() { return this.resourceNames[Number(this.selectedResource)] || ''; },
@@ -57,11 +57,11 @@
             </h3>
             <p class="mt-2 text-sm leading-relaxed text-muted">
               {% if action_code == 8 %}
-              Escolha a cidade que recebe a carga, confira a oferta e defina quanto comprar. Se a oferta estiver acima do preco maximo na hora, nada e comprado.
+              Escolha a cidade que recebe a carga, confira a oferta e defina quanto comprar. Se a oferta estiver acima do preço máximo na hora, nada é comprado.
               {% elif action_code == 811 %}
-              Escolha a cidade de onde a carga sai, confira o pedido e defina quanto vender. O ouro entra quando os barcos chegam; se o comprador estiver pagando menos que o minimo, nada e enviado.
+              Escolha a cidade de onde a carga sai, confira o pedido e defina quanto vender. O ouro entra quando os barcos chegam; se o comprador estiver pagando menos que o mínimo, nada é enviado.
               {% else %}
-              Escolha a cidade com mercado, o recurso e a quantidade. A posicao do mercado e resolvida automaticamente.
+              Escolha a cidade com mercado, o recurso e a quantidade. A posição do mercado é resolvida automaticamente.
               {% endif %}
             </p>
           </div>
@@ -78,11 +78,11 @@
                      x-text="selectedCity() ? `${fmt(amount)} de ${resourceName()} • ${selectedCity().name}` : 'Selecione uma cidade'"></div>
                 <div class="text-[11px] text-muted">
                   <span x-show="Number(price) > 0 && Number(amount) > 0">
-                    {% if action_code == 8 %}Custo de ate{% elif action_code == 811 %}Receita minima de{% else %}Valor total de{% endif %}
+                    {% if action_code == 8 %}Custo de até{% elif action_code == 811 %}Receita mínima de{% else %}Valor total de{% endif %}
                     <strong class="text-ink" x-text="fmt(total())"></strong> de ouro
                   </span>
                   <span x-show="!(Number(price) > 0 && Number(amount) > 0)">
-                    {% if action_code == 8 %}Sem preco maximo: compra ao preco que estiver{% elif action_code == 811 %}Sem preco minimo: vende ao preco atual{% else %}Informe quantidade e preco{% endif %}
+                    {% if action_code == 8 %}Sem preço máximo: compra ao preço que estiver{% elif action_code == 811 %}Sem preço mínimo: vende ao preço atual{% else %}Informe quantidade e preço{% endif %}
                   </span>
                 </div>
               </div>
@@ -104,7 +104,7 @@
                 </div>
                 <div class="mt-1 text-sm font-semibold text-ink">
                   {% if action_code == 8 %}Onde a carga comprada chega{% elif action_code == 811 %}De onde a carga sai{% else %}Onde a oferta fica publicada{% endif %}
-                  <span class="font-normal text-muted">&middot; so cidades com mercado</span>
+                  <span class="font-normal text-muted">&middot; só cidades com mercado</span>
                 </div>
               </div>
               <div class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
@@ -188,7 +188,7 @@
                   {% if action_code == 8 %}Oferta do vendedor{% elif action_code == 811 %}Pedido do comprador{% else %}Sua oferta{% endif %}
                 </div>
                 <div class="mt-1 text-sm font-semibold text-ink">
-                  {% if action_code == 8 %}O que comprar e ate quanto pagar{% elif action_code == 811 %}O que vender e por quanto no minimo{% else %}O que oferecer e a que preco{% endif %}
+                  {% if action_code == 8 %}O que comprar e até quanto pagar{% elif action_code == 811 %}O que vender e por quanto no mínimo{% else %}O que oferecer e a que preço{% endif %}
                 </div>
               </div>
               <div class="inline-flex h-10 w-10 items-center justify-center rounded-2xl"
@@ -261,7 +261,7 @@
                   </div>
                 </div>
                 <p class="form-help">
-                  {% if action_code == 8 %}Se a oferta ou os barcos livres nao derem para tudo, compra o que der.
+                  {% if action_code == 8 %}Se a oferta ou os barcos livres não derem para tudo, compra o que der.
                   {% elif action_code == 811 %}Limitada ao que o comprador pede, ao estoque da cidade e aos barcos livres.
                   {% else %}Quanto fica em oferta no mercado da cidade.{% endif %}
                 </p>
@@ -269,7 +269,7 @@
               </div>
               <div>
                 <span class="mb-1 block text-[11px] uppercase tracking-[0.12em] text-muted">
-                  {% if action_code == 8 %}Preco maximo por unidade{% elif action_code == 811 %}Preco minimo por unidade{% else %}Preco por unidade <span style="color: var(--ik-bad);">*</span>{% endif %}
+                  {% if action_code == 8 %}Preço máximo por unidade{% elif action_code == 811 %}Preço mínimo por unidade{% else %}Preço por unidade <span style="color: var(--ik-bad);">*</span>{% endif %}
                 </span>
                 <div class="flex items-center gap-3 rounded-lg border px-3 py-2"
                      style="border-color: var(--ik-line); background: var(--ik-sand-light);">
@@ -285,16 +285,16 @@
                     {% if action_code == 8 %}
                     <input type="number" name="{{ form.max_unit_price.html_name }}" value="{{ form.max_unit_price.value|default:'' }}" x-model="price" min="0" class="form-input" placeholder="sem limite">
                     {% elif action_code == 811 %}
-                    <input type="number" name="{{ form.min_unit_price.html_name }}" value="{{ form.min_unit_price.value|default:'' }}" x-model="price" min="0" class="form-input" placeholder="preco atual">
+                    <input type="number" name="{{ form.min_unit_price.html_name }}" value="{{ form.min_unit_price.value|default:'' }}" x-model="price" min="0" class="form-input" placeholder="preço atual">
                     {% else %}
                     <input type="number" name="{{ form.unit_price.html_name }}" value="{{ form.unit_price.value|default:'12' }}" x-model="price" min="1" class="form-input" placeholder="12">
                     {% endif %}
                   </div>
                 </div>
                 <p class="form-help">
-                  {% if action_code == 8 %}Nao compra se a oferta estiver mais cara que isso na hora. Vazio ou 0 = aceita o preco que estiver.
-                  {% elif action_code == 811 %}Nao vende se o comprador estiver pagando menos que isso. Vazio ou 0 = aceita o preco atual.
-                  {% else %}Preco pedido por unidade na oferta publicada.{% endif %}
+                  {% if action_code == 8 %}Não compra se a oferta estiver mais cara que isso na hora. Vazio ou 0 = aceita o preço que estiver.
+                  {% elif action_code == 811 %}Não vende se o comprador estiver pagando menos que isso. Vazio ou 0 = aceita o preço atual.
+                  {% else %}Preço pedido por unidade na oferta publicada.{% endif %}
                 </p>
                 {% if action_code == 8 %}
                 {% for error in form.max_unit_price.errors %}<p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>{% endfor %}
@@ -324,10 +324,10 @@
                         :style="dryRun ? '' : 'background: rgba(255,255,255,0.72);'"
                         @click="dryRun = true">
                   <i class="bi bi-eye text-xs" :class="dryRun ? 'text-[var(--ik-sea)]' : 'text-muted'"></i>
-                  <span class="text-xs font-medium" :class="dryRun ? 'text-[var(--ik-sea)] font-semibold' : 'text-muted'">Simulacao</span>
+                  <span class="text-xs font-medium" :class="dryRun ? 'text-[var(--ik-sea)] font-semibold' : 'text-muted'">Simulação</span>
                 </button>
               </div>
-              <p class="form-help" x-show="dryRun">So confere o pedido, o preco, o estoque e os barcos e mostra no log o que seria enviado. Nada sai da cidade.</p>
+              <p class="form-help" x-show="dryRun">Só confere o pedido, o preço, o estoque e os barcos e mostra no log o que seria enviado. Nada sai da cidade.</p>
               <p class="form-help" x-show="!dryRun">Os barcos saem com a carga assim que o job rodar.</p>
             </div>
             {% endif %}

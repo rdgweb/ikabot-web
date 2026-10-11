@@ -14,7 +14,7 @@
           <th>Conta</th>
           <th>Subconta</th>
           <th>Canal</th>
-          <th>Titulo</th>
+          <th>Título</th>
           <th>Status</th>
         </tr>
       </thead>
@@ -178,7 +178,7 @@ function telegramAuditBulk(config) {
       window.dispatchEvent(new CustomEvent('confirm', {
         detail: {
           title: 'Excluir mensagens',
-          message: `Excluir ${count} mensagem(ns) selecionada(s)? Esta acao nao pode ser desfeita.`,
+          message: `Excluir ${count} mensagem(ns) selecionada(s)? Esta ação não pode ser desfeita.`,
           style: 'danger',
           confirmLabel: 'Excluir',
           onConfirm: () => self._doDelete(),

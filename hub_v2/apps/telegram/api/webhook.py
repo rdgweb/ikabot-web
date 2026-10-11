@@ -52,11 +52,18 @@ def _create_defense_job(target_city_id: str, ga_id: str, kind: str = "troops") -
     if not ga.account.node:
         return False, "Conta sem no."
 
-    # mapa nome -> unit_id a partir do UNIT_CATALOG (chaves sXXX)
+    # mapa nome -> unit_id a partir do UNIT_CATALOG (chaves sXXX). Sem acento e sem caixa:
+    # o snapshot grava "Ariete", o catalogo mostra "Aríete" (N-98).
+    def _fold(text) -> str:
+        import unicodedata
+
+        plain = unicodedata.normalize("NFD", str(text or "").strip())
+        return "".join(ch for ch in plain if unicodedata.category(ch) != "Mn").lower()
+
     name_to_id: dict[str, int] = {}
     for key, info in UNIT_CATALOG.items():
         if isinstance(key, str) and key.startswith("s") and key[1:].isdigit():
-            name_to_id[str(info.get("name") or "").strip()] = int(key[1:])
+            name_to_id[_fold(info.get("name"))] = int(key[1:])
 
     try:
         snap = AccountSnapshot.objects.get(game_account=ga)
@@ -83,7 +90,7 @@ def _create_defense_job(target_city_id: str, ga_id: str, kind: str = "troops") -
 
     units = {}
     for name, qty in (best.get(bucket) or {}).items():
-        uid = name_to_id.get(str(name).strip())
+        uid = name_to_id.get(_fold(name))
         if uid and int(qty or 0) > 0:
             units[str(uid)] = int(qty)
     if not units:

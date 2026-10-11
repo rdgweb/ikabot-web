@@ -27,7 +27,7 @@ class ProxyForm(forms.ModelForm):
         widgets = {
             "address": forms.TextInput(attrs={"class": "form-input", "placeholder": "ex: p.webshare.io"}),
             "port": forms.NumberInput(attrs={"class": "form-input", "placeholder": "ex: 9090"}),
-            "username": forms.TextInput(attrs={"class": "form-input", "placeholder": "usuario (opcional)"}),
+            "username": forms.TextInput(attrs={"class": "form-input", "placeholder": "usuário (opcional)"}),
             "country_code": forms.TextInput(attrs={"class": "form-input", "placeholder": "ex: BR"}),
             "provider": forms.Select(attrs={"class": "form-input"}),
             "assigned_node": forms.Select(attrs={"class": "form-input"}),

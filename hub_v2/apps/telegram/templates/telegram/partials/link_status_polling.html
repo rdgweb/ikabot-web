@@ -5,7 +5,7 @@
   <div class="text-center py-2">
     {% if tg_config.link_code %}
     <div class="my-2 p-3 bg-white border border-line rounded-lg inline-block">
-      <p class="text-[10px] text-muted uppercase tracking-wide mb-1">Seu codigo</p>
+      <p class="text-[10px] text-muted uppercase tracking-wide mb-1">Seu código</p>
       <p class="font-mono text-2xl font-bold text-ink tracking-widest select-all">
         {{ tg_config.link_code }}
       </p>
@@ -22,7 +22,7 @@
          hx-push-url="false"
          class="flex items-center justify-center gap-2 text-xs text-amber-600 mb-3">
       <span class="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-      Aguardando vinculacao...
+      Aguardando vinculação...
     </div>
 
     <button hx-get="{% url 'telegram:ga-settings' ga.pk %}"

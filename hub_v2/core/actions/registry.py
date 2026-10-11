@@ -44,7 +44,7 @@ def get_action_info(code: int) -> dict | None:
 
 
 def get_action_contract(code: int) -> dict:
-    meta = ACTION_CATALOG.get(code, {"name": f"Acao #{code}", "name_en": f"Action #{code}"})
+    meta = ACTION_CATALOG.get(code, {"name": f"Ação #{code}", "name_en": f"Action #{code}"})
     return {
         "code": code,
         "name": meta["name"],

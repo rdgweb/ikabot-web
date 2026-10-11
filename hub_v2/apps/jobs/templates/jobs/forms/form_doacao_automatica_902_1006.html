@@ -196,7 +196,7 @@
             </div>
             <label for="{{ form.target_level.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">{{ form.target_level.label }}</label>
             {{ form.target_level }}
-            <p class="mt-1 text-[11px] text-muted">Se informar um nivel, o loop para quando esse upgrade entrar ou ja estiver concluido.</p>
+            <p class="mt-1 text-[11px] text-muted">Se informar um nível, o loop para quando esse upgrade entrar ou já estiver concluído.</p>
             {% for error in form.target_level.errors %}
             <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
             {% endfor %}
@@ -211,7 +211,7 @@
               </span>
               <div>
                 <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Pos-doacao</div>
-                <div class="text-xs text-muted">Qual ajuste de producao entra quando a obra comecar.</div>
+                <div class="text-xs text-muted">Qual ajuste de produção entra quando a obra começar.</div>
               </div>
             </div>
             <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -228,9 +228,9 @@
                      :style="postProductionMode === '{{ choice.0|escapejs }}' ? 'color: var(--ik-sea);' : ''">{{ choice.1 }}</div>
                 <div class="mt-1 text-[11px] text-muted">
                   {% if choice.0|stringformat:"s" == "preserve" %}
-                  Agenda o job 23 com o mesmo percentual atual da cidade antes da doacao.
+                  Agenda o job 23 com o mesmo percentual atual da cidade antes da doação.
                   {% else %}
-                  Permite forcar um percentual especifico, inclusive 150%.
+                  Permite forçar um percentual específico, inclusive 150%.
                   {% endif %}
                 </div>
               </label>

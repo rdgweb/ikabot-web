@@ -128,7 +128,7 @@ class VacationMarkerTests(TestCase):
         self._report("vacation")
 
         page = self.client.get(reverse("game:dashboard")).content.decode()
-        self.assertIn("Sair das ferias", page)
+        self.assertIn("Sair das férias", page)
         self.assertIn(f"{reverse('jobs:job-form')}?ga={self.ga.pk}&action=25&input_enable=False", page)
         self.assertIn("ficam em espera", page)
 
@@ -141,12 +141,12 @@ class VacationMarkerTests(TestCase):
 
     def test_panel_shows_the_marker_only_while_on_vacation(self):
         self.client.force_login(self.user)
-        self.assertNotIn("DE FERIAS", self.client.get(reverse("game:dashboard")).content.decode())
+        self.assertNotIn("DE FÉRIAS", self.client.get(reverse("game:dashboard")).content.decode())
 
         self._report("vacation")
         page = self.client.get(reverse("game:dashboard")).content.decode()
-        self.assertIn("DE FERIAS", page)
+        self.assertIn("DE FÉRIAS", page)
         self.assertIn("bi-umbrella-fill", page)
 
         self._report("clear")
-        self.assertNotIn("DE FERIAS", self.client.get(reverse("game:dashboard")).content.decode())
+        self.assertNotIn("DE FÉRIAS", self.client.get(reverse("game:dashboard")).content.decode())

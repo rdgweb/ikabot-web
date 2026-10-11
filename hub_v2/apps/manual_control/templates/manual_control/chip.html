@@ -4,19 +4,19 @@
 {% if control_state == "manual" %}
   <span class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
         style="background: var(--ik-gold);"
-        title="Voce esta jogando esta conta pelo navegador. Os jobs dela ficam em espera e voltam sozinhos quando a aba do jogo fechar.">
-    <i class="bi bi-controller"></i> CONTROLE MANUAL &middot; automacao pausada
+        title="Você está jogando esta conta pelo navegador. Os jobs dela ficam em espera e voltam sozinhos quando a aba do jogo fechar.">
+    <i class="bi bi-controller"></i> CONTROLE MANUAL &middot; automação pausada
   </span>
   <a href="{% url 'manual_control:session' control_session.pk %}" target="_blank" rel="noopener"
      class="inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold"
      style="border-color: rgba(79,134,185,0.45); color: var(--ik-sea);"
-     title="Abrir de novo a aba do jogo desta sessao">
-    <i class="bi bi-box-arrow-up-right"></i> Abrir sessao
+     title="Abrir de novo a aba do jogo desta sessão">
+    <i class="bi bi-box-arrow-up-right"></i> Abrir sessão
   </a>
   <button type="button"
           class="inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold"
           style="border-color: rgba(79,134,185,0.45); color: var(--ik-sea);"
-          title="Encerrar o controle manual agora e devolver a conta para a automacao"
+          title="Encerrar o controle manual agora e devolver a conta para a automação"
           hx-post="{% url 'manual_control:end' control_session.pk %}" hx-target="#control-chip-{{ game_account_id }}" hx-swap="outerHTML" hx-push-url="false"
           hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
     <i class="bi bi-stop-circle"></i> Encerrar controle
@@ -25,13 +25,13 @@
   <a href="{% url 'manual_control:session' control_session.pk %}" target="_blank" rel="noopener"
      class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
      style="background: var(--ik-sea);"
-     title="Preparando o controle manual: a automacao em execucao esta terminando e a sessao do jogo esta sendo aberta. Clique para acompanhar.">
+     title="Preparando o controle manual: a automação em execução está terminando e a sessão do jogo está sendo aberta. Clique para acompanhar.">
     <i class="bi bi-hourglass-split"></i> Preparando controle manual...
   </a>
 {% elif control_state == "resuming" %}
   <span class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
-        style="background: var(--ik-sea);" title="Devolvendo a conta para a automacao">
-    <i class="bi bi-arrow-repeat"></i> Retomando automacao...
+        style="background: var(--ik-sea);" title="Devolvendo a conta para a automação">
+    <i class="bi bi-arrow-repeat"></i> Retomando automação...
   </span>
 {% elif control_enabled %}
   <form method="post" action="{% url 'manual_control:start' game_account_id %}" target="_blank" style="display: inline;"
@@ -40,7 +40,7 @@
     <button type="submit"
             class="inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold"
             style="border-color: rgba(79,134,185,0.45); color: var(--ik-sea);"
-            title="Jogar esta conta pelo navegador, com a sessao e o proxy do agente. A automacao da conta pausa sozinha e volta quando a aba do jogo fechar.">
+            title="Jogar esta conta pelo navegador, com a sessão e o proxy do agente. A automação da conta pausa sozinha e volta quando a aba do jogo fechar.">
       <i class="bi bi-controller"></i> Assumir controle
     </button>
   </form>

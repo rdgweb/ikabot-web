@@ -80,13 +80,13 @@ class ProfileRunActiveView(LoginRequiredMixin, View):
     def post(self, request, pk):
         profile = get_object_or_404(Profile, pk=pk)
         if not profile.enabled:
-            messages.error(request, "Perfil inativo nao pode ser executado.")
+            messages.error(request, "Perfil inativo não pode ser executado.")
             return redirect("profiles:profile-detail", pk=profile.pk)
 
         try:
             inputs = json.loads(profile.inputs_json or "{}")
         except Exception:
-            messages.error(request, "Inputs JSON do perfil esta invalido.")
+            messages.error(request, "Inputs JSON do perfil está inválido.")
             return redirect("profiles:profile-detail", pk=profile.pk)
 
         if isinstance(inputs, list):
@@ -168,7 +168,7 @@ class PresetCreateView(LoginRequiredMixin, View):
         if not name:
             from django.shortcuts import render
             return render(request, "profiles/preset_create.html", {
-                "error": "O nome do preset e obrigatorio.",
+                "error": "O nome do preset é obrigatório.",
                 "name": name,
                 "description": description,
             })
@@ -176,7 +176,7 @@ class PresetCreateView(LoginRequiredMixin, View):
         if Preset.objects.filter(name=name).exists():
             from django.shortcuts import render
             return render(request, "profiles/preset_create.html", {
-                "error": f"Ja existe um preset com o nome '{name}'.",
+                "error": f"Já existe um preset com o nome '{name}'.",
                 "name": name,
                 "description": description,
             })
@@ -257,7 +257,7 @@ class PresetSaveActionsView(LoginRequiredMixin, View):
             try:
                 action_code = int(action_code_str)
                 meta = ACTION_CATALOG.get(action_code, {})
-                action_name = meta.get("name", f"Acao #{action_code}")
+                action_name = meta.get("name", f"Ação #{action_code}")
                 # Determine next order
                 max_order = preset.actions.order_by("-order").values_list("order", flat=True).first()
                 next_order = (max_order or 0) + 1
@@ -286,7 +286,7 @@ class PresetSaveActionsView(LoginRequiredMixin, View):
             request=request,
         )
         resp = HttpResponse(html)
-        resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": "Acao adicionada."}})
+        resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": "Ação adicionada."}})
         return resp
 
 
@@ -501,7 +501,7 @@ class PresetConfigureActionView(LoginRequiredMixin, View):
                 inputs.pop(f, None)
             pa.inputs_json = json.dumps(inputs)
             pa.save(update_fields=["inputs_json", "per_account_json", "updated_at"])
-            messages.success(request, f"Configuracao da acao '{pa.action_name}' salva.")
+            messages.success(request, f"Configuração da ação '{pa.action_name}' salva.")
             next_pa = preset.actions.filter(order__gt=action_order).first()
             if next_pa:
                 return redirect("profiles:preset-configure-action", pk=preset.pk, action_order=next_pa.order)
@@ -524,7 +524,7 @@ class PresetExecuteView(LoginRequiredMixin, View):
             for err in errors[:5]:
                 messages.warning(request, err)
         if not jobs_created and not errors:
-            messages.warning(request, "Nenhum job criado. Verifique se o preset tem contas e acoes configuradas.")
+            messages.warning(request, "Nenhum job criado. Verifique se o preset tem contas e ações configuradas.")
 
         return redirect("profiles:preset-detail", pk=preset.pk)
 
@@ -539,13 +539,13 @@ class PresetUpdateView(LoginRequiredMixin, View):
         description = request.POST.get("description", "").strip()
 
         if not name:
-            resp = HttpResponse("Nome obrigatorio.", status=400)
-            resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": "Nome obrigatorio."}})
+            resp = HttpResponse("Nome obrigatório.", status=400)
+            resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": "Nome obrigatório."}})
             return resp
 
         if Preset.objects.filter(name=name).exclude(pk=pk).exists():
-            resp = HttpResponse(f"Ja existe um preset com o nome '{name}'.", status=400)
-            resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": f"Nome '{name}' ja existe."}})
+            resp = HttpResponse(f"Já existe um preset com o nome '{name}'.", status=400)
+            resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": f"Nome '{name}' já existe."}})
             return resp
 
         preset.name = name
@@ -564,5 +564,5 @@ class PresetDeleteView(LoginRequiredMixin, View):
         preset = get_object_or_404(Preset, pk=pk)
         name = preset.name
         preset.delete()
-        messages.success(request, f"Preset '{name}' excluido.")
+        messages.success(request, f"Preset '{name}' excluído.")
         return redirect("profiles:preset-list")

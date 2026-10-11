@@ -21,14 +21,14 @@
       <h1 class="text-3xl font-bold" style="font-family: Rajdhani, 'Segoe UI', sans-serif; color: #654b1f; text-transform: uppercase; letter-spacing: 1px;">
         <i class="bi bi-controller" style="color: #c99c4e;"></i> ikabot hub
       </h1>
-      <p class="text-sm mt-1" style="color: #6f6b63;">Faca login para continuar</p>
+      <p class="text-sm mt-1" style="color: #6f6b63;">Faça login para continuar</p>
     </div>
 
     <div class="rounded-xl p-6" style="background: #fffdf7; border: 1px solid #dbc9a7; box-shadow: 0 4px 16px rgba(87,66,24,0.12);">
       {% if form.errors %}
       <div class="mb-4 p-3 rounded-lg text-sm" style="background: #fde8e5; border: 1px solid #e8b4af; color: #8c3028;">
         <i class="bi bi-exclamation-circle"></i>
-        Usuario ou senha invalidos.
+        Usuário ou senha inválidos.
       </div>
       {% endif %}
 
@@ -37,7 +37,7 @@
         <input type="hidden" name="next" value="{{ next }}">
 
         <div class="mb-4">
-          <label for="id_username" class="block text-sm font-semibold mb-1.5" style="color: #4a4639;">Usuario</label>
+          <label for="id_username" class="block text-sm font-semibold mb-1.5" style="color: #4a4639;">Usuário</label>
           <input type="text" name="username" id="id_username" autofocus
                  class="form-input w-full" placeholder="seu.usuario">
         </div>

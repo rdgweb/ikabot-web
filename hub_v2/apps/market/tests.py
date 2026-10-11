@@ -134,7 +134,7 @@ class MarketServiceTests(TestCase):
         self.assertEqual(result.code, "buyer_below_min_gold")
         self.assertEqual(
             result.detail,
-            "ouro atual 999.999; reservado 0; disponivel 999.999; minimo 2.000.000",
+            "ouro atual 999.999; reservado 0; disponível 999.999; mínimo 2.000.000",
         )
         self.assertIsNone(result.order)
 

@@ -23,21 +23,21 @@
            style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div class="max-w-2xl">
-            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Santuario dos Deuses</div>
-            <h3 class="mt-2 text-xl font-bold text-ink">{% if action_code == 1007 %}Monte o loop de ativacao com os deuses certos{% else %}Escolha quais deuses devem receber favor agora{% endif %}</h3>
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Santuário dos Deuses</div>
+            <h3 class="mt-2 text-xl font-bold text-ink">{% if action_code == 1007 %}Monte o loop de ativação com os deuses certos{% else %}Escolha quais deuses devem receber favor agora{% endif %}</h3>
             <p class="mt-2 text-sm leading-relaxed text-muted">
-              Cada ativacao consome <strong>100 favor</strong> por deus. O runner usa a pagina real do jogo para validar pesquisa, favor disponivel e estado atual do santuario.
+              Cada ativação consome <strong>100 favor</strong> por deus. O runner usa a página real do jogo para validar pesquisa, favor disponível e estado atual do santuário.
             </p>
           </div>
           <div class="grid grid-cols-2 gap-3 lg:min-w-[20rem]">
             <div class="rounded-2xl border px-4 py-3"
                  style="border-color: rgba(79,134,185,0.18); background: rgba(255,255,255,0.76);">
-              <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Santuario</div>
+              <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Santuário</div>
               {% if shrine_ui.summary.shrine_city %}
               <div class="mt-2 flex items-center gap-3">
                 <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border"
                       style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
-                  <img src="{{ shrine_ui.summary.building_icon }}" alt="Santuario" class="h-7 w-7 object-contain">
+                  <img src="{{ shrine_ui.summary.building_icon }}" alt="Santuário" class="h-7 w-7 object-contain">
                 </span>
                 <div class="min-w-0">
                   <div class="truncate text-sm font-semibold text-ink">{{ shrine_ui.summary.shrine_city.city_name }}</div>
@@ -45,8 +45,8 @@
                 </div>
               </div>
               {% else %}
-              <div class="mt-2 text-sm text-[var(--ik-bad)]">Snapshot sem santuario detectado</div>
-              <div class="mt-1 text-[11px] text-muted">O job ainda pode ser criado, mas a execucao vai depender do proximo check status.</div>
+              <div class="mt-2 text-sm text-[var(--ik-bad)]">Snapshot sem santuário detectado</div>
+              <div class="mt-1 text-[11px] text-muted">O job ainda pode ser criado, mas a execução vai depender do próximo check status.</div>
               {% endif %}
             </div>
             <div class="rounded-2xl border px-4 py-3"
@@ -59,7 +59,7 @@
                 </span>
                 <div class="min-w-0">
                   {% if shrine_ui.summary.shrine_city.has_current_favor %}
-                  <div class="text-sm font-semibold text-ink">{{ shrine_ui.summary.shrine_city.current_favor }} disponivel</div>
+                  <div class="text-sm font-semibold text-ink">{{ shrine_ui.summary.shrine_city.current_favor }} disponível</div>
                   <div class="text-[11px] text-muted">
                     custo da rodada: <span x-text="selectedCount() * {{ shrine_ui.summary.favor_cost_each }}"></span>
                     {% if shrine_ui.summary.shrine_city.shrine_updated_at %} • snapshot recente{% endif %}
@@ -82,7 +82,7 @@
             <div class="mb-3 flex items-center justify-between gap-3">
               <div>
                 <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Divindades</div>
-                <div class="mt-1 text-sm font-semibold text-ink">Selecione os deuses que vao receber favor</div>
+                <div class="mt-1 text-sm font-semibold text-ink">Selecione os deuses que vão receber favor</div>
               </div>
               <div class="text-[11px] text-muted">Clique nos cards para alternar</div>
             </div>
@@ -130,7 +130,7 @@
                       {% if god.progress_visible or god.researched %}
                       <div class="mt-3">
                         <div class="mb-1 flex items-center justify-between gap-2 text-[11px]">
-                          <span class="text-muted">{% if god.researched %}Pesquisa liberada{% else %}Ainda nao pesquisado{% endif %}</span>
+                          <span class="text-muted">{% if god.researched %}Pesquisa liberada{% else %}Ainda não pesquisado{% endif %}</span>
                           {% if god.progress_visible %}
                           <span class="font-medium text-ink">{{ god.progress }}/1000</span>
                           {% endif %}
@@ -152,7 +152,7 @@
           <section class="space-y-4">
             <div class="rounded-[22px] border p-4"
                  style="border-color: rgba(201,156,78,0.24); background: linear-gradient(180deg, rgba(201,156,78,0.10), rgba(255,255,255,0.84));">
-              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">Cadencia</div>
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">Cadência</div>
               <div class="mt-1 text-sm font-semibold text-ink">{% if action_code == 1007 %}Controle o recheck e o loop{% else %}Defina quando tentar de novo se faltar favor{% endif %}</div>
               <div class="mt-3 grid grid-cols-1 gap-3 {% if action_code == 1007 %}md:grid-cols-2{% endif %}">
                 <div>
@@ -180,7 +180,7 @@
               <div class="mt-2 space-y-2 text-sm text-muted">
                 <div class="flex items-start gap-2">
                   <i class="bi bi-check2-circle mt-0.5 text-[var(--ik-good)]"></i>
-                  <span>O runner valida no jogo quais deuses estao pesquisados antes de doar.</span>
+                  <span>O runner valida no jogo quais deuses estão pesquisados antes de doar.</span>
                 </div>
                 <div class="flex items-start gap-2">
                   <i class="bi bi-check2-circle mt-0.5 text-[var(--ik-good)]"></i>
@@ -189,7 +189,7 @@
                 {% if action_code == 1007 %}
                 <div class="flex items-start gap-2">
                   <i class="bi bi-check2-circle mt-0.5 text-[var(--ik-good)]"></i>
-                  <span>No loop, depois da ativacao o proximo ciclo respeita o intervalo configurado.</span>
+                  <span>No loop, depois da ativação o próximo ciclo respeita o intervalo configurado.</span>
                 </div>
                 {% endif %}
               </div>

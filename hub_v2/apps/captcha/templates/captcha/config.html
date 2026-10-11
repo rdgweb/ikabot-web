@@ -12,8 +12,8 @@
   {# ── Header ── #}
   <div class="flex items-center justify-between">
     <div>
-      <h1 class="text-2xl font-bold text-ink">Resolucao de Captcha</h1>
-      <p class="text-sm text-muted mt-1">Estrategia, resolucao manual e historico</p>
+      <h1 class="text-2xl font-bold text-ink">Resolução de Captcha</h1>
+      <p class="text-sm text-muted mt-1">Estratégia, resolução manual e histórico</p>
     </div>
     <div class="flex items-center gap-3">
       {% if config.is_active %}
@@ -37,7 +37,7 @@
     {# ── Stats Card ── #}
     <div class="card">
       <h2 class="text-lg font-semibold text-ink mb-4">
-        <i class="bi bi-bar-chart"></i> Ultimas 24h
+        <i class="bi bi-bar-chart"></i> Últimas 24h
       </h2>
       <div class="grid grid-cols-2 gap-3">
         <div class="text-center p-3 bg-[var(--ik-sand-light)] rounded-lg">
@@ -61,7 +61,7 @@
       {% if stats.pending_now > 0 %}
       <div class="mt-4 p-3 border border-[var(--ik-warn)] bg-[var(--ik-warn)]/10 rounded-lg text-center">
         <p class="text-lg font-bold text-[var(--ik-warn)]">{{ stats.pending_now }}</p>
-        <p class="text-xs text-[var(--ik-warn)]">aguardando resolucao</p>
+        <p class="text-xs text-[var(--ik-warn)]">aguardando resolução</p>
       </div>
       {% endif %}
     </div>
@@ -94,7 +94,7 @@
   {# ══════════════════════════════════════════════════════════════════ #}
   <div class="card">
     <h2 class="text-lg font-semibold text-ink mb-4">
-      <i class="bi bi-diagram-3"></i> Estrategias de Resolucao
+      <i class="bi bi-diagram-3"></i> Estratégias de Resolução
     </h2>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
       {% for key, info in method_info.items %}
@@ -114,10 +114,10 @@
     <div class="mt-4 p-3 bg-[var(--ik-sand-light)] rounded-lg border border-[var(--ik-line)]">
       <p class="text-xs text-muted">
         <i class="bi bi-info-circle"></i>
-        <strong>Fluxo:</strong> Agent detecta captcha no jogo → envia ao hub → hub tenta o metodo principal →
-        se falhar, tenta o fallback → agent recebe a solucao e submete ao jogo.
+        <strong>Fluxo:</strong> Agent detecta captcha no jogo → envia ao hub → hub tenta o método principal →
+        se falhar, tenta o fallback → agent recebe a solução e submete ao jogo.
         {% if config.solve_method == "manual" or config.fallback_method == "manual" %}
-        <br><strong>Modo manual:</strong> Captchas pendentes aparecem acima. Voce tem <strong>{{ config.timeout_sec }}s</strong> para resolver antes de expirar.
+        <br><strong>Modo manual:</strong> Captchas pendentes aparecem acima. Você tem <strong>{{ config.timeout_sec }}s</strong> para resolver antes de expirar.
         {% endif %}
       </p>
     </div>
@@ -135,7 +135,7 @@
        hx-swap="outerHTML"
        hx-push-url="false">
     <h2 class="text-lg font-semibold text-ink mb-4">
-      <i class="bi bi-clock-history"></i> Historico Recente
+      <i class="bi bi-clock-history"></i> Histórico Recente
     </h2>
   {% if history %}
     <div class="overflow-x-auto">
@@ -145,7 +145,7 @@
             <th>Data</th>
             <th>Tipo</th>
             <th>Conta</th>
-            <th>Metodo</th>
+            <th>Método</th>
             <th>Status</th>
             <th>Tempo</th>
           </tr>

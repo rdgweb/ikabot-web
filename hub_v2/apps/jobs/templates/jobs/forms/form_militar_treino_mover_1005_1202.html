@@ -247,10 +247,10 @@
         <div class="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-bad);">
-              {% if action_code == 1202 %}Mover Forcas{% else %}Gerenciar Treino Militar{% endif %}
+              {% if action_code == 1202 %}Mover Forças{% else %}Gerenciar Treino Militar{% endif %}
             </div>
             <h3 class="mt-1 text-lg font-bold text-ink">
-              {% if action_code == 1202 %}Mova tropas ou frotas entre cidades{% else %}Treine em uma cidade, distribua em varias ou mantenha efetivo por cidade{% endif %}
+              {% if action_code == 1202 %}Mova tropas ou frotas entre cidades{% else %}Treine em uma cidade, distribua em várias ou mantenha efetivo por cidade{% endif %}
             </h3>
           </div>
           {% if action_code == 1005 or action_code == 1202 %}
@@ -442,7 +442,7 @@
             </label>
           </div>
           <div class="flex gap-3 text-[10px]">
-            <button type="button" class="link-sea" @click="selectedCities = visibleSourceCities().map(city => String(city.id))">Selecionar visiveis</button>
+            <button type="button" class="link-sea" @click="selectedCities = visibleSourceCities().map(city => String(city.id))">Selecionar visíveis</button>
             <button type="button" class="text-muted hover:text-ink" @click="selectedCities = []">Limpar</button>
           </div>
           <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[16rem] overflow-y-auto p-0.5">
@@ -701,7 +701,7 @@
                       class="text-[10px] font-semibold px-2 py-1 rounded-lg border transition-colors"
                       :class="multiOrigin ? 'bg-[rgba(187,81,67,0.12)] text-[var(--ik-bad)] border-[rgba(187,81,67,0.4)]' : 'text-muted border-[var(--ik-line)] hover:text-ink'">
                 <i class="bi" :class="multiOrigin ? 'bi-check-square' : 'bi-collection'"></i>
-                <span x-text="multiOrigin ? 'Varias cidades' : 'Mover de varias cidades'"></span>
+                <span x-text="multiOrigin ? 'Várias cidades' : 'Mover de várias cidades'"></span>
               </button>
             </div>
             <label class="mb-2 block">
@@ -718,7 +718,7 @@
 
             <template x-if="multiOrigin">
               <div class="flex gap-3 text-[10px] mb-1.5">
-                <button type="button" class="link-sea" @click="selectedCities = originCitiesWithUnits(buildingType, fromQuery).map(c => String(c.id))">Selecionar visiveis</button>
+                <button type="button" class="link-sea" @click="selectedCities = originCitiesWithUnits(buildingType, fromQuery).map(c => String(c.id))">Selecionar visíveis</button>
                 <button type="button" class="text-muted hover:text-ink" @click="selectedCities = []">Limpar</button>
                 <span class="text-muted ml-auto" x-show="selectedCities.length">
                   <span x-text="selectedCities.length"></span> cidade(s)
@@ -784,7 +784,7 @@
                       class="text-[10px] font-semibold px-2 py-1 rounded-lg border transition-colors"
                       :class="multiDestination ? 'bg-[rgba(79,134,185,0.12)] text-[var(--ik-sea)] border-[rgba(79,134,185,0.4)]' : 'text-muted border-[var(--ik-line)] hover:text-ink'">
                 <i class="bi" :class="multiDestination ? 'bi-check-square' : 'bi-collection'"></i>
-                <span x-text="multiDestination ? 'Varias cidades' : 'Mover para varias cidades'"></span>
+                <span x-text="multiDestination ? 'Várias cidades' : 'Mover para várias cidades'"></span>
               </button>
             </div>
             <label class="mb-2 block">
@@ -800,7 +800,7 @@
 
             <template x-if="multiDestination">
               <div class="flex gap-3 text-[10px] mb-1.5">
-                <button type="button" class="link-sea" @click="selectedDestCities = destinationCities(toQuery).filter(c => !originsList().includes(String(c.id))).map(c => String(c.id))">Selecionar visiveis</button>
+                <button type="button" class="link-sea" @click="selectedDestCities = destinationCities(toQuery).filter(c => !originsList().includes(String(c.id))).map(c => String(c.id))">Selecionar visíveis</button>
                 <button type="button" class="text-muted hover:text-ink" @click="selectedDestCities = []">Limpar</button>
                 <span class="text-muted ml-auto" x-show="selectedDestCities.length">
                   <span x-text="selectedDestCities.length"></span> cidade(s)

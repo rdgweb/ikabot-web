@@ -1,13 +1,13 @@
 <div class="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
   <div>
     <h1 class="text-2xl font-bold text-ink">Painel do Jogo</h1>
-    <p class="text-sm text-muted mt-1">Visao geral de todas as contas com dados em tempo real</p>
+    <p class="text-sm text-muted mt-1">Visão geral de todas as contas com dados em tempo real</p>
   </div>
 
   <div class="flex flex-wrap gap-2 items-center">
     {% if nodes.count > 1 %}
     <select x-model="filterNode" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto">
-      <option value="">Todos os nos</option>
+      <option value="">Todos os nós</option>
       {% for node in nodes %}
       <option value="{{ node.pk }}">{{ node.name }}</option>
       {% endfor %}

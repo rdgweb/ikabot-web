@@ -16,7 +16,7 @@ class CaptchaConfig(TimestampModel):
     """
 
     SOLVE_METHODS = [
-        ("auto", "Automatico (ikabotapi)"),
+        ("auto", "Automático (ikabotapi)"),
         ("manual", "Manual (resolver na interface)"),
         ("telegram", "Assistido (via Telegram)"),
     ]
@@ -26,13 +26,13 @@ class CaptchaConfig(TimestampModel):
         max_length=16,
         choices=SOLVE_METHODS,
         default="auto",
-        help_text="Metodo principal de resolucao.",
+        help_text="Método principal de resolução.",
     )
     fallback_method = models.CharField(
         max_length=16,
         choices=[("none", "Nenhum")] + SOLVE_METHODS,
         default="manual",
-        help_text="Metodo alternativo se o principal falhar.",
+        help_text="Método alternativo se o principal falhar.",
     )
     ikabotapi_url = models.CharField(
         max_length=512,
@@ -42,11 +42,11 @@ class CaptchaConfig(TimestampModel):
     )
     timeout_sec = models.IntegerField(
         default=120,
-        help_text="Tempo maximo (em segundos) para resolver antes de expirar.",
+        help_text="Tempo máximo (em segundos) para resolver antes de expirar.",
     )
 
     class Meta:
-        verbose_name = "Configuracao de Captcha"
+        verbose_name = "Configuração de Captcha"
 
     def __str__(self):
         return f"Captcha ({self.get_solve_method_display()})"
@@ -110,7 +110,7 @@ class CaptchaChallenge(models.Model):
         max_length=16,
         blank=True,
         default="",
-        help_text="Metodo que resolveu: auto, manual, telegram.",
+        help_text="Método que resolveu: auto, manual, telegram.",
     )
     error = models.TextField(blank=True, default="")
 

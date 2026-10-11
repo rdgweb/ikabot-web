@@ -7,7 +7,7 @@
 {% endblock %}
 
 {% block page_title %}Fila de Jobs{% endblock %}
-{% block page_subtitle %}Visao operacional por workflow, ciclos e execucoes tecnicas{% endblock %}
+{% block page_subtitle %}Visão operacional por workflow, ciclos e execuções técnicas{% endblock %}
 
 {% block page_actions %}
 <div class="flex items-center gap-2">
@@ -17,7 +17,7 @@
   </a>
   <a href="?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}view=tech"
      class="btn btn-sm {% if job_view_mode == 'tech' %}btn-primary{% else %}btn-secondary{% endif %}">
-    <i class="bi bi-braces"></i> Tecnica
+    <i class="bi bi-braces"></i> Técnica
   </a>
 </div>
 {% endblock %}
@@ -46,7 +46,7 @@
         <label class="filter-panel-label">Busca geral</label>
         <input type="text" name="search"
                value="{{ request.GET.search|default:'' }}"
-               class="filter-input" placeholder="Conta, cidade, no, texto..."
+               class="filter-input" placeholder="Conta, cidade, nó, texto..."
                hx-get="{{ request.path }}" hx-target="#table-content"
                hx-swap="innerHTML" hx-trigger="keyup changed delay:300ms"
                hx-include=".filter-panel [name]" hx-push-url="true">
@@ -127,7 +127,7 @@
                hx-include=".filter-panel [name]" hx-push-url="true">
       </div>
       <div>
-        <label class="filter-panel-label">Acao</label>
+        <label class="filter-panel-label">Ação</label>
         <select name="action_code" class="filter-select"
                 hx-get="{{ request.path }}" hx-target="#table-content"
                 hx-swap="innerHTML" hx-trigger="change"
@@ -141,7 +141,7 @@
         </select>
       </div>
       <div>
-        <label class="filter-panel-label">Status tecnico</label>
+        <label class="filter-panel-label">Status técnico</label>
         <select name="status" class="filter-select"
                 hx-get="{{ request.path }}" hx-target="#table-content"
                 hx-swap="innerHTML" hx-trigger="change"
@@ -155,7 +155,7 @@
         </select>
       </div>
       <div>
-        <label class="filter-panel-label">No</label>
+        <label class="filter-panel-label">Nó</label>
         <select name="node" class="filter-select"
                 hx-get="{{ request.path }}" hx-target="#table-content"
                 hx-swap="innerHTML" hx-trigger="change"

@@ -16,8 +16,8 @@ class Note(UUIDTimestampModel):
         ("open", "Aberta"),
         ("authorized", "Autorizada"),
         ("doing", "Em andamento"),
-        ("pending_approval", "Aguardando aprovacao"),
-        ("done", "Concluida"),
+        ("pending_approval", "Aguardando aprovação"),
+        ("done", "Concluída"),
         ("archived", "Arquivada"),
     ]
     PRIORITY_CHOICES = [
@@ -70,11 +70,11 @@ class NoteEvent(UUIDTimestampModel):
         ("claimed", "Assumida"),
         ("progress", "Progresso"),
         ("blocked", "Bloqueio"),
-        ("decision", "Decisao"),
+        ("decision", "Decisão"),
         ("validated", "Validada"),
-        ("approval_requested", "Aguardando aprovacao"),
+        ("approval_requested", "Aguardando aprovação"),
         ("approved", "Aprovada"),
-        ("completed", "Concluida"),
+        ("completed", "Concluída"),
         ("changelog", "Changelog"),
         ("status_change", "Status alterado"),
     ]

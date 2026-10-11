@@ -31,7 +31,7 @@
           <form method="get" class="grid grid-cols-1 gap-3">
             <div>
               <label class="filter-panel-label">Busca</label>
-              <input type="text" name="q" value="{{ q }}" class="filter-input" placeholder="Titulo, texto ou tag">
+              <input type="text" name="q" value="{{ q }}" class="filter-input" placeholder="Título, texto ou tag">
             </div>
             <div>
               <label class="filter-panel-label">Status</label>
@@ -69,7 +69,7 @@
         </div>
       </div>
       <a href="{% url 'notes:changelog' %}" class="btn btn-secondary btn-sm">
-        <i class="bi bi-journal-code"></i> Atualizacoes
+        <i class="bi bi-journal-code"></i> Atualizações
       </a>
       <a href="{% url 'notes:create' %}" class="btn btn-primary btn-sm">
         <i class="bi bi-plus-lg"></i> Nova nota
@@ -105,7 +105,7 @@
     <a href="?status=pending_approval" class="rounded px-3 py-2 hover:bg-[var(--ik-sand-light)]/50"
        style="border:1px solid var(--ik-line); background:var(--ik-paper);">
       <div class="flex items-center justify-between">
-        <span class="text-[11px] font-semibold uppercase text-muted">Aguardando aprovacao</span>
+        <span class="text-[11px] font-semibold uppercase text-muted">Aguardando aprovação</span>
         <i class="bi bi-hourglass-split text-amber-700"></i>
       </div>
       <div class="mt-0.5 text-xl font-bold text-amber-700 tabular-nums">{{ pending_approval_count|intcomma }}</div>
@@ -121,7 +121,7 @@
     <a href="?status=done" class="rounded px-3 py-2 hover:bg-[var(--ik-sand-light)]/50"
        style="border:1px solid var(--ik-line); background:var(--ik-paper);">
       <div class="flex items-center justify-between">
-        <span class="text-[11px] font-semibold uppercase text-muted">Concluidas</span>
+        <span class="text-[11px] font-semibold uppercase text-muted">Concluídas</span>
         <i class="bi bi-check2-circle text-emerald-700"></i>
       </div>
       <div class="mt-0.5 text-xl font-bold text-emerald-700 tabular-nums">{{ done_count|intcomma }}</div>
@@ -151,7 +151,7 @@
               <i class="bi bi-check2-circle"></i>
             </button>
           {% elif note.status != "done" %}
-            <button type="submit" class="h-6 w-6 rounded-full border text-muted hover:text-amber-700 hover:border-amber-700" title="Enviar para aprovacao">
+            <button type="submit" class="h-6 w-6 rounded-full border text-muted hover:text-amber-700 hover:border-amber-700" title="Enviar para aprovação">
               <i class="bi bi-check2"></i>
             </button>
           {% else %}

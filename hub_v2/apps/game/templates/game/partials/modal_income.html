@@ -5,7 +5,7 @@
       <i class="bi bi-graph-up-arrow" :class="kpi.income>=0?'gm-text-positive':'gm-text-negative'"></i>
       <div>
         <span class="gm-title gm-text-title font-bold text-sm tracking-wide block">RENDA / HORA</span>
-        <span class="gm-subtitle gm-text-label text-[11px]">Quem sustenta, quem drena e qual o impacto nas proximas 24h</span>
+        <span class="gm-subtitle gm-text-label text-[11px]">Quem sustenta, quem drena e qual o impacto nas próximas 24h</span>
       </div>
     </div>
     <div class="flex items-center gap-4">
@@ -19,11 +19,11 @@
     {# ── 4 KPI cards ── #}
     <div class="grid grid-cols-2 xl:grid-cols-4 gap-2">
       <div class="gm-card rounded-lg p-2.5">
-        <div class="gm-card-label">Liquido global</div>
+        <div class="gm-card-label">Líquido global</div>
         <div class="text-lg font-bold font-mono mt-1" :class="kpi.income>=0?'gm-text-positive':'gm-text-negative'" x-text="signedFmt(kpi.income)"></div>
       </div>
       <div class="gm-card rounded-lg p-2.5">
-        <div class="gm-card-label">Projecao 24h</div>
+        <div class="gm-card-label">Projeção 24h</div>
         <div class="text-lg font-bold font-mono mt-1" :class="incomeInsights().delta24>=0?'gm-text-positive':'gm-text-negative'" x-text="signedFmt(incomeInsights().delta24)"></div>
       </div>
       <div class="gm-card rounded-lg p-2.5">
@@ -39,7 +39,7 @@
     {# ── History chart ── #}
     <div class="gm-section rounded-lg p-3">
       <div class="flex items-center justify-between mb-2">
-        <h4 class="gm-section-title">Historico de renda</h4>
+        <h4 class="gm-section-title">Histórico de renda</h4>
         <span class="gm-section-hint" x-text="historyState('income').scopeLabel"></span>
       </div>
       <template x-if="historyState('income').available">
@@ -83,7 +83,7 @@
             </div>
           </template>
           <div x-show="!topIncomeAccounts().length" class="gm-empty">
-            Nenhum dado disponivel para o ranking atual.
+            Nenhum dado disponível para o ranking atual.
           </div>
         </div>
       </div>
@@ -109,7 +109,7 @@
           </template>
         </div>
         <div x-show="!negativeIncomeAccounts().length" class="gm-empty-ok">
-          Todas as contas filtradas estao com liquido positivo.
+          Todas as contas filtradas estão com líquido positivo.
         </div>
       </div>
     </div>
@@ -117,8 +117,8 @@
     {# ── Composicao financeira table ── #}
     <div class="gm-section rounded-lg p-3">
       <div class="flex items-center justify-between mb-3">
-        <h4 class="gm-section-title">Composicao financeira</h4>
-        <span class="gm-section-hint">visao compacta por conta</span>
+        <h4 class="gm-section-title">Composição financeira</h4>
+        <span class="gm-section-hint">visão compacta por conta</span>
       </div>
       <div class="overflow-x-auto gm-item rounded-lg">
         <table class="gm-table">
@@ -149,7 +149,7 @@
           </tbody>
         </table>
         <div x-show="!incomeRanking('asc').length" class="p-3 text-sm text-center gm-text-label">
-          Nenhum dado disponivel para a composicao atual.
+          Nenhum dado disponível para a composição atual.
         </div>
       </div>
     </div>

@@ -91,8 +91,8 @@
             <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Oficina do Inventor</div>
             <h3 class="mt-2 text-xl font-bold text-ink">Configure quais unidades evoluir</h3>
             <p class="mt-2 text-sm leading-relaxed text-muted">
-              Defina separadamente os ramos de <strong>ataque</strong> e <strong>defesa</strong> por unidade, alem da prioridade global do job.
-              Se deixar tudo desmarcado, o runner evolui <strong>qualquer melhoria disponivel</strong>.
+              Defina separadamente os ramos de <strong>ataque</strong> e <strong>defesa</strong> por unidade, além da prioridade global do job.
+              Se deixar tudo desmarcado, o runner evolui <strong>qualquer melhoria disponível</strong>.
             </p>
           </div>
           <div class="grid grid-cols-2 gap-3 lg:min-w-[20rem]">
@@ -132,7 +132,7 @@
                   <div class="text-sm font-semibold text-ink">
                     <span x-text="branchCount() === 0 ? 'Todas' : branchCount() + ' selecionado' + (branchCount() === 1 ? '' : 's')"></span>
                   </div>
-                  <div class="text-[11px] text-muted" x-text="branchCount() === 0 ? 'Evolui qualquer disponivel' : 'Ataque e defesa filtrados'"></div>
+                  <div class="text-[11px] text-muted" x-text="branchCount() === 0 ? 'Evolui qualquer disponível' : 'Ataque e defesa filtrados'"></div>
                 </div>
               </div>
             </div>
@@ -248,7 +248,7 @@
                                placeholder="max"
                                class="w-16 rounded-lg border px-2 py-0.5 text-center text-xs font-semibold text-ink focus:outline-none"
                                style="border-color: {{ unit.accent }}; background: rgba(255,255,255,0.9);">
-                        <span class="text-[10px] text-muted">nivel ou 0=max</span>
+                        <span class="text-[10px] text-muted">nível ou 0=max</span>
                       </div>
                       <div class="flex items-center gap-2" x-show="units.{{ unit.key }}.defense" x-cloak>
                         <span class="min-w-[3.75rem] text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Defesa</span>
@@ -259,7 +259,7 @@
                                placeholder="max"
                                class="w-16 rounded-lg border px-2 py-0.5 text-center text-xs font-semibold text-ink focus:outline-none"
                                style="border-color: {{ unit.accent }}; background: rgba(255,255,255,0.9);">
-                        <span class="text-[10px] text-muted">nivel ou 0=max</span>
+                        <span class="text-[10px] text-muted">nível ou 0=max</span>
                       </div>
                     </div>
                   </div>
@@ -344,7 +344,7 @@
                                placeholder="max"
                                class="w-16 rounded-lg border px-2 py-0.5 text-center text-xs font-semibold text-ink focus:outline-none"
                                style="border-color: {{ unit.accent }}; background: rgba(255,255,255,0.9);">
-                        <span class="text-[10px] text-muted">nivel ou 0=max</span>
+                        <span class="text-[10px] text-muted">nível ou 0=max</span>
                       </div>
                       <div class="flex items-center gap-2" x-show="units.{{ unit.key }}.defense" x-cloak>
                         <span class="min-w-[3.75rem] text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Defesa</span>
@@ -355,7 +355,7 @@
                                placeholder="max"
                                class="w-16 rounded-lg border px-2 py-0.5 text-center text-xs font-semibold text-ink focus:outline-none"
                                style="border-color: {{ unit.accent }}; background: rgba(255,255,255,0.9);">
-                        <span class="text-[10px] text-muted">nivel ou 0=max</span>
+                        <span class="text-[10px] text-muted">nível ou 0=max</span>
                       </div>
                     </div>
                   </div>
@@ -373,7 +373,7 @@
                 <div class="flex items-start justify-between gap-3">
                   <div>
                     <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Cidade</div>
-                    <div class="mt-1 text-sm font-semibold text-ink">Selecione uma Oficina especifica</div>
+                    <div class="mt-1 text-sm font-semibold text-ink">Selecione uma Oficina específica</div>
                   </div>
                   <button type="button"
                           class="rounded-full border px-3 py-1 text-[11px] font-medium text-ink transition hover:border-[var(--ik-sea)]/45"
@@ -462,8 +462,8 @@
 
               <div class="rounded-[22px] border p-4"
                    style="border-color: rgba(201,156,78,0.24); background: linear-gradient(180deg, rgba(201,156,78,0.08), rgba(255,255,255,0.84));">
-                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">Reservas minimas</div>
-                <div class="mt-1 text-sm font-semibold text-ink">Nao gastar abaixo desses valores</div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">Reservas mínimas</div>
+                <div class="mt-1 text-sm font-semibold text-ink">Não gastar abaixo desses valores</div>
                 <div class="mt-3 space-y-3">
                   <div>
                     <label class="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">
@@ -473,7 +473,7 @@
                     <input type="number" min="0" x-model="minCrystal" placeholder="0"
                            class="w-full rounded-xl border px-3 py-2 text-sm text-ink focus:outline-none"
                            style="border-color: rgba(50,145,210,0.25); background: rgba(255,255,255,0.88);">
-                    <p class="mt-1 text-[10px] text-muted">Se o estoque de cristal for menor que este valor, a melhoria nao e iniciada nessa rodada.</p>
+                    <p class="mt-1 text-[10px] text-muted">Se o estoque de cristal for menor que este valor, a melhoria não é iniciada nessa rodada.</p>
                   </div>
                   <div>
                     <label class="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">
@@ -483,7 +483,7 @@
                     <input type="number" min="0" x-model="minGold" placeholder="0"
                            class="w-full rounded-xl border px-3 py-2 text-sm text-ink focus:outline-none"
                            style="border-color: rgba(201,156,78,0.25); background: rgba(255,255,255,0.88);">
-                    <p class="mt-1 text-[10px] text-muted">Se o ouro disponivel for menor que este valor, a melhoria nao e iniciada.</p>
+                    <p class="mt-1 text-[10px] text-muted">Se o ouro disponível for menor que este valor, a melhoria não é iniciada.</p>
                   </div>
                 </div>
               </div>
@@ -496,11 +496,11 @@
               <div class="mt-2 space-y-2 text-sm text-muted">
                 <div class="flex items-start gap-2">
                   <i class="bi bi-check2-circle mt-0.5 shrink-0 text-[var(--ik-good)]"></i>
-                  <span>O runner acessa a Oficina do Inventor em cada cidade e inicia a proxima melhoria disponivel.</span>
+                  <span>O runner acessa a Oficina do Inventor em cada cidade e inicia a próxima melhoria disponível.</span>
                 </div>
                 <div class="flex items-start gap-2">
                   <i class="bi bi-check2-circle mt-0.5 shrink-0 text-[var(--ik-good)]"></i>
-                  <span>Apos iniciar, reprograma automaticamente para quando o timer terminar.</span>
+                  <span>Após iniciar, reprograma automaticamente para quando o timer terminar.</span>
                 </div>
                 <div class="flex items-start gap-2">
                   <i class="bi bi-check2-circle mt-0.5 shrink-0 text-[var(--ik-good)]"></i>
@@ -508,7 +508,7 @@
                 </div>
                 <div class="flex items-start gap-2">
                   <i class="bi bi-info-circle mt-0.5 shrink-0" style="color: var(--ik-sea);"></i>
-                  <span>Ramo desmarcado = ignorar. Campo vazio ou valor 0 = evoluir ate o maximo daquele ramo.</span>
+                  <span>Ramo desmarcado = ignorar. Campo vazio ou valor 0 = evoluir até o máximo daquele ramo.</span>
                 </div>
                 <div class="flex items-start gap-2">
                   <i class="bi bi-info-circle mt-0.5 shrink-0" style="color: var(--ik-sea);"></i>

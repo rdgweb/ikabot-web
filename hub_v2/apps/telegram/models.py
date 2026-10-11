@@ -34,8 +34,8 @@ class TelegramBotConfig(TimestampModel):
         max_length=16,
         default="unlinked",
         choices=[
-            ("unlinked", "Nao vinculado"),
-            ("pending", "Aguardando confirmacao"),
+            ("unlinked", "Não vinculado"),
+            ("pending", "Aguardando confirmação"),
             ("linked", "Vinculado"),
         ],
     )
@@ -99,8 +99,8 @@ class TelegramAccountConfig(TimestampModel):
         max_length=16,
         default="unlinked",
         choices=[
-            ("unlinked", "Nao vinculado"),
-            ("pending", "Aguardando confirmacao"),
+            ("unlinked", "Não vinculado"),
+            ("pending", "Aguardando confirmação"),
             ("linked", "Vinculado"),
         ],
     )
@@ -157,11 +157,11 @@ class TelegramIncomingCommand(TimestampModel):
     DEFAULTS = {
         COMMAND_LINK: {
             "command": "/start",
-            "description": "Vincula um chat usando o codigo gerado no painel.",
+            "description": "Vincula um chat usando o código gerado no painel.",
         },
         COMMAND_DIPLOMACY_REPLY: {
             "command": "/replyto",
-            "description": "Cria job de resposta ou acao para mensagem de diplomacia.",
+            "description": "Cria job de resposta ou ação para mensagem de diplomacia.",
         },
     }
 
@@ -253,12 +253,12 @@ class NotificationTemplate(TimestampModel):
         },
         "build_complete": {
             "icon": "🏗️",
-            "title_template": "Construcao concluida",
+            "title_template": "Construção concluída",
             "body_template": "{ga_name} — {server_id}",
         },
         "research_complete": {
             "icon": "💡",
-            "title_template": "Pesquisa concluida",
+            "title_template": "Pesquisa concluída",
             "body_template": "{ga_name} — {server_id}",
         },
         "low_wine": {
@@ -268,7 +268,7 @@ class NotificationTemplate(TimestampModel):
         },
         "daily_summary": {
             "icon": "📊",
-            "title_template": "Resumo diario",
+            "title_template": "Resumo diário",
             "body_template": "{account_name}",
         },
         "island_monitor": {
@@ -280,13 +280,13 @@ class NotificationTemplate(TimestampModel):
 
     # All available variables with descriptions (for UI reference)
     AVAILABLE_VARS = [
-        ("{action_name}", "Nome da acao (ex: Check Status)"),
+        ("{action_name}", "Nome da ação (ex: Check Status)"),
         ("{ga_name}", "Nome da subconta"),
         ("{server_id}", "ID do servidor (ex: s61-br)"),
         ("{account_name}", "Nome da conta lobby"),
         ("{node_name}", "Nome do node"),
         ("{agent_name}", "Nome do agent"),
-        ("{exit_code}", "Codigo de saida (jobs)"),
+        ("{exit_code}", "Código de saída (jobs)"),
         ("{job_id}", "ID do job"),
         ("{status}", "Status (finished, error)"),
         ("{error}", "Mensagem de erro"),
@@ -303,18 +303,18 @@ class NotificationTemplate(TimestampModel):
     title_template = models.CharField(
         max_length=255,
         default="{action_name}",
-        help_text="Titulo da mensagem. Aceita variaveis como {action_name}, {ga_name}, etc.",
+        help_text="Título da mensagem. Aceita variáveis como {action_name}, {ga_name}, etc.",
     )
     body_template = models.TextField(
         blank=True,
         default="",
-        help_text="Corpo da mensagem. Aceita variaveis e quebras de linha.",
+        help_text="Corpo da mensagem. Aceita variáveis e quebras de linha.",
     )
 
     class Meta:
         ordering = ["event_key"]
-        verbose_name = "Template de Notificacao"
-        verbose_name_plural = "Templates de Notificacao"
+        verbose_name = "Template de Notificação"
+        verbose_name_plural = "Templates de Notificação"
 
     def __str__(self):
         return f"{self.icon} {self.event_key}"

@@ -149,7 +149,7 @@ def action_name(action_code):
     except (TypeError, ValueError):
         return str(action_code)
     info = ACTION_CATALOG.get(code)
-    return info["name"] if info else f"Acao #{code}"
+    return info["name"] if info else f"Ação #{code}"
 
 
 @register.filter

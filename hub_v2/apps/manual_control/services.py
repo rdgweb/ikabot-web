@@ -53,7 +53,7 @@ RESUME_SPACING = 4
 RESUMING_TIMEOUT = timedelta(minutes=2)
 
 HELD_MESSAGE = (
-    "Conta em controle manual: job em espera, sem comecar. Volta sozinho quando o controle manual terminar."
+    "Conta em controle manual: job em espera, sem começar. Volta sozinho quando o controle manual terminar."
 )
 
 
@@ -168,25 +168,25 @@ class ControlRefused(Exception):
 
 def request_control(game_account: GameAccount, user) -> ManualControlSession:
     if not gateway_enabled():
-        raise ControlRefused("O controle manual ainda nao esta configurado neste hub (dominio do gateway).")
+        raise ControlRefused("O controle manual ainda não está configurado neste hub (domínio do gateway).")
     if not game_account.active:
-        raise ControlRefused("Esta conta de jogo esta inativa.")
+        raise ControlRefused("Esta conta de jogo está inativa.")
     node = game_account.account.node
     if node is None:
-        raise ControlRefused("A conta nao esta ligada a nenhum no.")
+        raise ControlRefused("A conta não está ligada a nenhum nó.")
 
     sweep_expired(game_account_id=game_account.pk)
     existing = open_session_for(game_account.pk)
     if existing is not None:
         if existing.user_id and user is not None and existing.user_id != user.pk:
-            raise ControlRefused("Esta conta ja esta em controle manual por outro usuario.")
+            raise ControlRefused("Esta conta já está em controle manual por outro usuário.")
         return existing
 
     if not node.is_online:
-        raise ControlRefused(f"O agente do no {node.name} esta offline; sem ele nao ha como abrir o jogo.")
+        raise ControlRefused(f"O agente do nó {node.name} está offline; sem ele não há como abrir o jogo.")
     if not agent_supports(node):
         raise ControlRefused(
-            f"O agente do no {node.name} (versao {node.agent_version or '?'}) ainda nao atende controle manual; "
+            f"O agente do nó {node.name} (versão {node.agent_version or '?'}) ainda não atende controle manual; "
             "atualize o agente."
         )
 
@@ -207,7 +207,7 @@ def request_control(game_account: GameAccount, user) -> ManualControlSession:
         # two clicks at once: the unique open_key let only one in
         existing = open_session_for(game_account.pk)
         if existing is None:
-            raise ControlRefused("Nao foi possivel iniciar o controle manual; tente de novo.") from None
+            raise ControlRefused("Não foi possível iniciar o controle manual; tente de novo.") from None
         return existing
 
 
@@ -222,7 +222,7 @@ def advance(session_id) -> dict:
 
         now = _now()
         if now - session.created_at > PAUSE_TIMEOUT:
-            outcome = ("error", "A automacao em execucao nao terminou a tempo; o controle manual nao foi aberto.")
+            outcome = ("error", "A automação em execução não terminou a tempo; o controle manual não foi aberto.")
         else:
             outcome = None
             session.expires_at = now + PAUSE_LEASE
@@ -243,7 +243,7 @@ def advance(session_id) -> dict:
             answer = rpc.poll(session.open_request_id)
             if answer is None:
                 if now - (session.open_requested_at or now) > OPEN_TIMEOUT:
-                    outcome = ("error", "O agente nao respondeu ao pedido de abrir a sessao do jogo.")
+                    outcome = ("error", "O agente não respondeu ao pedido de abrir a sessão do jogo.")
                 else:
                     session.save(update_fields=["expires_at", "last_seen_at", "updated_at"])
                     return {"state": "pausing", "step": "opening"}
@@ -287,7 +287,7 @@ def _job_brief(job: Job, now) -> dict:
     started = job.started_at or now
     return {
         "id": str(job.pk),
-        "name": str(info.get("name") or info.get("label") or f"acao {job.action_code}"),
+        "name": str(info.get("name") or info.get("label") or f"ação {job.action_code}"),
         "seconds": max(0, int((now - started).total_seconds())),
     }
 

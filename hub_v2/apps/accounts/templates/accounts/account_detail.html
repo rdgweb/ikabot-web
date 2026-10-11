@@ -35,7 +35,7 @@
 <button type="button"
         onclick="return openConfirm({
           title: 'Excluir conta',
-          message: 'Excluir a conta {{ account.label|escapejs }}? Todos os jobs e dados associados serao removidos.',
+          message: 'Excluir a conta {{ account.label|escapejs }}? Todos os jobs e dados associados serão removidos.',
           action: '{% url 'accounts:account-delete' account.pk %}',
           method: 'post',
           style: 'danger',
@@ -48,14 +48,14 @@
 
 {% block detail_main %}
 <div class="card mb-4">
-  <h3 class="text-sm font-semibold text-ink mb-3">Informacoes do Lobby</h3>
+  <h3 class="text-sm font-semibold text-ink mb-3">Informações do Lobby</h3>
   <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
     <div>
       <dt class="text-muted">Email</dt>
       <dd class="mt-0.5">{{ account.email }}</dd>
     </div>
     <div>
-      <dt class="text-muted">No</dt>
+      <dt class="text-muted">Nó</dt>
       <dd class="mt-0.5">
         <a href="{% url 'accounts:node-detail' account.node.pk %}" class="link-sea">
           {{ account.node.name }}
@@ -73,7 +73,7 @@
         {% if account.gf_token_enc %}
           <span class="text-green-600">Configurado</span>
         {% else %}
-          <span class="text-amber-500">Nao configurado</span>
+          <span class="text-amber-500">Não configurado</span>
         {% endif %}
       </dd>
     </div>
@@ -116,7 +116,7 @@
           <th class="text-center py-2 px-2 text-muted font-semibold">Mod. Mundo</th>
           <th class="text-center py-2 px-2 text-muted font-semibold">Governo</th>
           <th class="text-center py-2 px-2 text-muted font-semibold">Status</th>
-          <th class="text-center py-2 px-2 text-muted font-semibold">Acoes</th>
+          <th class="text-center py-2 px-2 text-muted font-semibold">Ações</th>
         </tr>
       </thead>
       <tbody>

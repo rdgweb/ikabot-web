@@ -1292,7 +1292,7 @@ def recommend_attack_force(
             "can_win": False,
             "recommended": {},
             "simulation": full_sim,
-            "note": "Mesmo enviando tudo, nao vence.",
+            "note": "Mesmo enviando tudo, não vence.",
         }
 
     def build_scaled_force(factor: float) -> dict[int, int]:

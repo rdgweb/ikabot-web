@@ -32,8 +32,8 @@
 </button>
 <button type="button"
         onclick="return openConfirm({
-          title: 'Excluir no',
-          message: 'Excluir o no {{ node.name|escapejs }}? As contas vinculadas e jobs associados tambem serao removidos.',
+          title: 'Excluir nó',
+          message: 'Excluir o nó {{ node.name|escapejs }}? As contas vinculadas e jobs associados também serão removidos.',
           action: '{% url 'accounts:node-delete' node.pk %}',
           method: 'post',
           style: 'danger',

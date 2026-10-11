@@ -15,13 +15,13 @@
       <h1 class="text-xl font-bold text-ink flex items-center gap-2">
         <i class="bi bi-binoculars text-sea"></i> Mercado geral
       </h1>
-      <p class="mt-0.5 text-sm text-muted">O que estava em oferta ao alcance dos mercados das contas na ultima varredura. Comprar e vender abrem a acao ja preenchida; nada e enviado sem voce confirmar o job.</p>
+      <p class="mt-0.5 text-sm text-muted">O que estava em oferta ao alcance dos mercados das contas na última varredura. Comprar e vender abrem a ação já preenchida; nada é enviado sem você confirmar o job.</p>
     </div>
     <div class="flex items-center gap-2 flex-shrink-0">
       <form method="post" action="{% url 'market:public-market-refresh' %}">
         {% csrf_token %}
         <button type="submit" class="btn btn-primary btn-sm"
-                title="Cria uma varredura para cada conta ativa que tem cidade com mercado, em todas as cidades com mercado. Contas de ferias ou ja com varredura em andamento sao puladas.">
+                title="Cria uma varredura para cada conta ativa que tem cidade com mercado, em todas as cidades com mercado. Contas de férias ou já com varredura em andamento são puladas.">
           <i class="bi bi-arrow-repeat"></i> Atualizar
         </button>
       </form>
@@ -52,7 +52,7 @@
         {% if item.best_price %}{{ item.best_price }} <span class="text-xs font-normal text-muted">ouro</span>{% else %}<span class="text-sm font-normal text-muted">sem oferta externa</span>{% endif %}
       </div>
       <div class="mt-1 text-[11px] text-muted">
-        {% if selected_kind == "sell" %}menor preco de fora{% else %}maior preco de fora{% endif %} &middot;
+        {% if selected_kind == "sell" %}menor preço de fora{% else %}maior preço de fora{% endif %} &middot;
         {{ item.external_count }} de fora ({{ item.external_amount|intcomma }}) &middot; {{ item.count }} no total
       </div>
     </a>
@@ -90,7 +90,7 @@
         {% if selected_kind == "sell" %}Ofertas de venda{% else %}Pedidos de compra{% endif %}
         <span class="badge badge-secondary">{{ offers|length }}</span>
       </h3>
-      <span class="text-xs text-muted">Da mais {% if selected_kind == "sell" %}barata{% else %}cara{% endif %} para a mais {% if selected_kind == "sell" %}cara{% else %}barata{% endif %}, por recurso. Oferta vista por varias contas aparece uma vez.</span>
+      <span class="text-xs text-muted">Da mais {% if selected_kind == "sell" %}barata{% else %}cara{% endif %} para a mais {% if selected_kind == "sell" %}cara{% else %}barata{% endif %}, por recurso. Oferta vista por várias contas aparece uma vez.</span>
     </div>
     {% if offers %}
     <div class="overflow-x-auto">
@@ -101,7 +101,7 @@
             <th class="text-left py-2.5 px-3 text-muted font-semibold">Cidade</th>
             <th class="text-left py-2.5 px-3 text-muted font-semibold">Jogador</th>
             <th class="text-right py-2.5 px-3 text-muted font-semibold">Quantidade</th>
-            <th class="text-right py-2.5 px-3 text-muted font-semibold whitespace-nowrap">Preco / un.</th>
+            <th class="text-right py-2.5 px-3 text-muted font-semibold whitespace-nowrap">Preço / un.</th>
             <th class="text-left py-2.5 px-3 text-muted font-semibold whitespace-nowrap">{% if selected_kind == "sell" %}Comprar com{% else %}Vender com{% endif %}</th>
             <th class="text-left py-2.5 px-3 text-muted font-semibold">Visto</th>
           </tr>
@@ -123,7 +123,7 @@
                 {% if offer.trades|length > 1 %}
                 {# a lista troca o destino do botao; a cidade mais perto ja vem escolhida #}
                 <select class="form-input" aria-label="Conta e cidade"
-                        title="{{ offer.trades|length }} cidades suas alcancam esta oferta"
+                        title="{{ offer.trades|length }} cidades suas alcançam esta oferta"
                         style="width: 230px; padding: 3px 8px; font-size: 12px; height: auto;"
                         onchange="var b = this.parentElement.querySelector('button'); b.setAttribute('hx-get', this.value); htmx.process(b);">
                   {% for trade in offer.trade_options %}
@@ -132,7 +132,7 @@
                 </select>
                 {% else %}
                 <span class="text-ink" style="width: 230px; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
-                      title="So esta cidade alcanca a oferta">{{ offer.trades.0.account }} / {{ offer.trades.0.city }} &middot; dist. {{ offer.trades.0.distance }}</span>
+                      title="Só esta cidade alcança a oferta">{{ offer.trades.0.account }} / {{ offer.trades.0.city }} &middot; dist. {{ offer.trades.0.distance }}</span>
                 {% endif %}
                 <button type="button" class="btn btn-primary btn-sm" style="flex-shrink: 0;"
                         hx-get="{{ offer.trades.0.url }}"
@@ -143,20 +143,20 @@
                 </button>
               </div>
               {% else %}
-              <span class="text-muted" title="So as proprias cidades desta conta enxergam esta oferta">-</span>
+              <span class="text-muted" title="Só as próprias cidades desta conta enxergam esta oferta">-</span>
               {% endif %}
             </td>
-            <td class="py-2 px-3 text-muted whitespace-nowrap" title="{{ offer.seen_at|date:'d/m/Y H:i' }}">ha {{ offer.seen_at|timesince }}</td>
+            <td class="py-2 px-3 text-muted whitespace-nowrap" title="{{ offer.seen_at|date:'d/m/Y H:i' }}">há {{ offer.seen_at|timesince }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
     <div class="px-4 py-3 text-[11px] text-muted" style="border-top: 1px solid var(--ik-line);">
-      A lista mostra as cidades suas que alcancam a oferta (conta / cidade &middot; distancia), com a mais perto ja escolhida.
-      {% if selected_kind == "sell" %}A carga comprada chega nessa cidade.{% else %}A carga sai do estoque dessa cidade.{% endif %} O botao abre
-      {% if selected_kind == "sell" %}"Comprar do Mercado" com o preco visto como preco maximo{% else %}"Vender para Pedido de Compra" com o preco visto como preco minimo{% endif %}:
-      se a oferta mudou desde a varredura, o job nao negocia.
+      A lista mostra as cidades suas que alcançam a oferta (conta / cidade &middot; distância), com a mais perto já escolhida.
+      {% if selected_kind == "sell" %}A carga comprada chega nessa cidade.{% else %}A carga sai do estoque dessa cidade.{% endif %} O botão abre
+      {% if selected_kind == "sell" %}"Comprar do Mercado" com o preço visto como preço máximo{% else %}"Vender para Pedido de Compra" com o preço visto como preço mínimo{% endif %}:
+      se a oferta mudou desde a varredura, o job não negocia.
     </div>
     {% else %}
     <div class="p-8 text-center text-sm text-muted">
@@ -170,7 +170,7 @@
   <div class="rounded-2xl border bg-paper shadow-sm" style="border-color: var(--ik-line);">
     <div class="flex items-center justify-between px-4 py-4" style="border-bottom: 1px solid var(--ik-line);">
       <h3 class="text-sm font-semibold text-ink flex items-center gap-2"><i class="bi bi-broadcast text-sea"></i> Mercados e alcance</h3>
-      <span class="text-xs text-muted">O jogo nao aumenta o alcance sozinho quando o mercado evolui; a varredura ajusta para o maximo</span>
+      <span class="text-xs text-muted">O jogo não aumenta o alcance sozinho quando o mercado evolui; a varredura ajusta para o máximo</span>
     </div>
     {% if scans %}
     <div class="overflow-x-auto">
@@ -179,7 +179,7 @@
           <tr style="border-bottom: 1px solid var(--ik-line);">
             <th class="text-left py-2.5 px-3 text-muted font-semibold">Conta</th>
             <th class="text-left py-2.5 px-3 text-muted font-semibold">Cidade</th>
-            <th class="text-right py-2.5 px-3 text-muted font-semibold whitespace-nowrap">Nivel do mercado</th>
+            <th class="text-right py-2.5 px-3 text-muted font-semibold whitespace-nowrap">Nível do mercado</th>
             <th class="text-right py-2.5 px-3 text-muted font-semibold whitespace-nowrap">Alcance</th>
             <th class="text-left py-2.5 px-3 text-muted font-semibold whitespace-nowrap">Alcance salvo antes</th>
             <th class="text-right py-2.5 px-3 text-muted font-semibold">Ofertas vistas</th>
@@ -196,10 +196,10 @@
             <td class="py-2 px-3">
               {% if scan.range_before and scan.max_range and scan.range_before != scan.max_range %}
               <span style="color: var(--ik-bad);">{{ scan.range_before }}</span> <i class="bi bi-arrow-right"></i> <span style="color: var(--ik-good);">{{ scan.max_range }}</span>
-              {% elif scan.range_before %}{{ scan.range_before }} <span class="text-muted">(ja no maximo)</span>{% else %}-{% endif %}
+              {% elif scan.range_before %}{{ scan.range_before }} <span class="text-muted">(já no máximo)</span>{% else %}-{% endif %}
             </td>
-            <td class="py-2 px-3 text-right font-mono">{% if scan.kind == "full" %}{{ scan.offers_count }}{% else %}<span class="text-muted">so alcance</span>{% endif %}</td>
-            <td class="py-2 px-3 text-muted whitespace-nowrap" title="{{ scan.scanned_at|date:'d/m/Y H:i' }}">ha {{ scan.scanned_at|timesince }}</td>
+            <td class="py-2 px-3 text-right font-mono">{% if scan.kind == "full" %}{{ scan.offers_count }}{% else %}<span class="text-muted">só alcance</span>{% endif %}</td>
+            <td class="py-2 px-3 text-muted whitespace-nowrap" title="{{ scan.scanned_at|date:'d/m/Y H:i' }}">há {{ scan.scanned_at|timesince }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -209,7 +209,7 @@
     <div class="p-6 text-center text-sm text-muted">Nenhuma varredura feita ainda.</div>
     {% endif %}
     <div class="flex flex-wrap items-center gap-2 px-4 py-4" style="border-top: 1px solid var(--ik-line);">
-      <span class="text-xs text-muted">Varrer so uma conta (abre a acao no assistente de jobs):</span>
+      <span class="text-xs text-muted">Varrer só uma conta (abre a ação no assistente de jobs):</span>
       {% for ga in all_accounts %}
       <button type="button" class="btn btn-secondary btn-sm"
               hx-get="{% url 'jobs:job-form' %}?ga={{ ga.pk }}&action=810"

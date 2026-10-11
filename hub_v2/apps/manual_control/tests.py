@@ -180,7 +180,7 @@ class PreparationTests(_Base):
         )
         state = services.advance(session.pk)
         self.assertEqual((state["state"], state["reason"]), ("ended", "error"))
-        self.assertIn("agente nao respondeu", state["error"])
+        self.assertIn("agente não respondeu", state["error"])
 
     def test_a_request_nobody_follows_is_dropped(self):
         session = services.request_control(self.ga, self.user)

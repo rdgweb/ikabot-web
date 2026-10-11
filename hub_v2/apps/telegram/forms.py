@@ -56,15 +56,15 @@ class TelegramGlobalNotificationForm(forms.ModelForm):
         labels = {
             "notify_attack_alert": "Alerta de ataque",
             "notify_job_failed": "Job falhou",
-            "notify_job_done": "Job concluido",
-            "notify_build_complete": "Construcao concluida",
-            "notify_research_complete": "Pesquisa concluida",
+            "notify_job_done": "Job concluído",
+            "notify_build_complete": "Construção concluída",
+            "notify_research_complete": "Pesquisa concluída",
             "notify_low_wine": "Vinho baixo",
-            "notify_daily_summary": "Resumo diario",
+            "notify_daily_summary": "Resumo diário",
             "notify_diplomacy_message": "Mensagem de diplomacia",
             "notify_island_monitor": "Monitor de ilha",
-            "notify_cinema_available": "Cineteatro disponivel",
-            "notify_combat_report": "Relatorio de combate",
+            "notify_cinema_available": "Cineteatro disponível",
+            "notify_combat_report": "Relatório de combate",
             "notify_proxy_change": "Troca de proxy",
         }
 
@@ -101,15 +101,15 @@ class TelegramAccountConfigForm(forms.ModelForm):
             "enabled": "Habilitado",
             "notify_attack_alert": "Alerta de ataque",
             "notify_job_failed": "Job falhou",
-            "notify_job_done": "Job concluido",
-            "notify_build_complete": "Construcao concluida",
-            "notify_research_complete": "Pesquisa concluida",
+            "notify_job_done": "Job concluído",
+            "notify_build_complete": "Construção concluída",
+            "notify_research_complete": "Pesquisa concluída",
             "notify_low_wine": "Vinho baixo",
-            "notify_daily_summary": "Resumo diario",
+            "notify_daily_summary": "Resumo diário",
             "notify_diplomacy_message": "Mensagem de diplomacia",
             "notify_island_monitor": "Monitor de ilha",
-            "notify_cinema_available": "Cineteatro disponivel",
-            "notify_combat_report": "Relatorio de combate",
+            "notify_cinema_available": "Cineteatro disponível",
+            "notify_combat_report": "Relatório de combate",
             "notify_proxy_change": "Troca de proxy",
         }
 
@@ -140,18 +140,18 @@ class TelegramNotificationForm(forms.ModelForm):
             "notify_proxy_change",
         ]
         labels = {
-            "enabled": "Notificacoes ativadas",
+            "enabled": "Notificações ativadas",
             "notify_attack_alert": "Alerta de ataque",
             "notify_job_failed": "Job falhou",
-            "notify_job_done": "Job concluido",
-            "notify_build_complete": "Construcao concluida",
-            "notify_research_complete": "Pesquisa concluida",
+            "notify_job_done": "Job concluído",
+            "notify_build_complete": "Construção concluída",
+            "notify_research_complete": "Pesquisa concluída",
             "notify_low_wine": "Vinho baixo",
-            "notify_daily_summary": "Resumo diario",
+            "notify_daily_summary": "Resumo diário",
             "notify_diplomacy_message": "Mensagem de diplomacia",
             "notify_island_monitor": "Monitor de ilha",
-            "notify_cinema_available": "Cineteatro disponivel",
-            "notify_combat_report": "Relatorio de combate",
+            "notify_cinema_available": "Cineteatro disponível",
+            "notify_combat_report": "Relatório de combate",
             "notify_proxy_change": "Troca de proxy",
         }
 
@@ -178,8 +178,8 @@ class NotificationTemplateForm(forms.ModelForm):
             }),
         }
         labels = {
-            "icon": "Icone",
-            "title_template": "Titulo",
+            "icon": "Ícone",
+            "title_template": "Título",
             "body_template": "Corpo",
         }
 
@@ -192,7 +192,7 @@ class TelegramIncomingCommandForm(forms.ModelForm):
         if command and not command.startswith("/"):
             command = f"/{command}"
         if " " in command:
-            raise forms.ValidationError("Use apenas o comando base, sem espacos.")
+            raise forms.ValidationError("Use apenas o comando base, sem espaços.")
         return command
 
     class Meta:
@@ -211,5 +211,5 @@ class TelegramIncomingCommandForm(forms.ModelForm):
         labels = {
             "command": "Comando",
             "enabled": "Ativo",
-            "description": "Descricao",
+            "description": "Descrição",
         }

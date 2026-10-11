@@ -110,7 +110,7 @@ function gameDashboard() {
           return this.historyMap;
         })
         .catch((error) => {
-          console.error('Falha ao carregar historico do dashboard', error);
+          console.error('Falha ao carregar histórico do dashboard', error);
           return {};
         })
         .finally(() => {

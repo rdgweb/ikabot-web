@@ -11,7 +11,7 @@
     {% elif global_linked %}
       <span class="badge badge-success">Global</span>
     {% else %}
-      <span class="badge badge-secondary">Nao configurado</span>
+      <span class="badge badge-secondary">Não configurado</span>
     {% endif %}
   </div>
 
@@ -25,7 +25,7 @@
     {% else %}
       <div class="px-3 py-2 rounded text-xs mb-4 bg-amber-50 text-amber-700 border border-amber-200">
         <i class="bi bi-exclamation-triangle mr-1"></i>
-        Chat global nao vinculado —
+        Chat global não vinculado —
         <a href="{% url 'telegram:config' %}" class="underline font-medium">Configurar</a>
       </div>
     {% endif %}
@@ -54,13 +54,13 @@
             </div>
             <div class="flex items-center gap-2">
               {% if item.is_linked %}
-                <span class="inline-block w-2 h-2 rounded-full bg-green-500" title="Chat proprio vinculado"></span>
+                <span class="inline-block w-2 h-2 rounded-full bg-green-500" title="Chat próprio vinculado"></span>
               {% elif item.uses_global %}
                 <span class="inline-block w-2 h-2 rounded-full bg-blue-400" title="Usando chat global"></span>
               {% elif item.tg.link_status == "pending" %}
-                <span class="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="Aguardando confirmacao"></span>
+                <span class="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="Aguardando confirmação"></span>
               {% else %}
-                <span class="inline-block w-2 h-2 rounded-full bg-gray-300" title="Nao vinculado"></span>
+                <span class="inline-block w-2 h-2 rounded-full bg-gray-300" title="Não vinculado"></span>
               {% endif %}
               <i class="bi bi-chevron-down text-muted text-xs"></i>
             </div>
@@ -73,7 +73,7 @@
 
     {# ── Legenda ── #}
     <div class="flex gap-4 mt-3 text-[10px] text-muted">
-      <span><span class="inline-block w-2 h-2 rounded-full bg-green-500"></span> Chat proprio</span>
+      <span><span class="inline-block w-2 h-2 rounded-full bg-green-500"></span> Chat próprio</span>
       <span><span class="inline-block w-2 h-2 rounded-full bg-blue-400"></span> Chat global</span>
       <span><span class="inline-block w-2 h-2 rounded-full bg-gray-300"></span> Sem chat</span>
     </div>

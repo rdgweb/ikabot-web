@@ -9,7 +9,7 @@
 {% endblock %}
 
 {% block page_title %}Presets{% endblock %}
-{% block page_subtitle %}Templates multi-acao × multi-conta para criacao rapida de jobs em lote{% endblock %}
+{% block page_subtitle %}Templates multi-acao × multi-conta para criação rápida de jobs em lote{% endblock %}
 
 {% block page_actions %}
 <a href="{% url 'profiles:preset-create' %}" class="btn btn-primary btn-sm">
@@ -41,7 +41,7 @@
       </span>
       <span class="flex items-center gap-1">
         <i class="bi bi-play-circle text-[10px]"></i>
-        {{ preset.action_count }} acao{{ preset.action_count|pluralize:"es" }}
+        {{ preset.action_count }} ação{{ preset.action_count|pluralize:"es" }}
       </span>
       <span class="flex items-center gap-1 font-medium" style="color: var(--ik-sea);">
         <i class="bi bi-lightning text-[10px]"></i>
@@ -64,7 +64,7 @@
       <form method="post" action="{% url 'profiles:preset-execute' preset.pk %}" class="contents">
         {% csrf_token %}
         <button type="submit" class="btn btn-primary btn-sm flex-1"
-                {% if not preset.account_count or not preset.action_count %}disabled title="Configure contas e acoes primeiro"{% endif %}>
+                {% if not preset.account_count or not preset.action_count %}disabled title="Configure contas e ações primeiro"{% endif %}>
           <i class="bi bi-play-fill"></i> Executar
         </button>
       </form>
@@ -76,7 +76,7 @@
 <div class="card text-center py-12">
   <i class="bi bi-collection text-3xl text-muted"></i>
   <p class="text-ink font-semibold mt-3">Nenhum preset criado ainda</p>
-  <p class="text-sm text-muted mt-1">Crie um preset para agendar multiplas acoes em multiplas contas de uma vez.</p>
+  <p class="text-sm text-muted mt-1">Crie um preset para agendar múltiplas ações em múltiplas contas de uma vez.</p>
   <a href="{% url 'profiles:preset-create' %}" class="btn btn-primary btn-sm mt-4">
     <i class="bi bi-plus-lg"></i> Criar primeiro preset
   </a>

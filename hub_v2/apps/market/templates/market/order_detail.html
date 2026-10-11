@@ -43,7 +43,7 @@
       <div class="mt-1 text-base font-semibold text-ink">{{ order.amount|intcomma }}</div>
     </div>
     <div class="rounded-xl border border-[var(--ik-line)] px-3 py-3">
-      <div class="text-[11px] uppercase tracking-wide text-muted">Preco/un.</div>
+      <div class="text-[11px] uppercase tracking-wide text-muted">Preço/un.</div>
       <div class="mt-1 text-base font-semibold text-ink">{{ order.unit_price|intcomma }}</div>
       <div class="mt-1 text-xs text-muted">Min {{ order.price_min|intcomma }} / Max {{ order.price_max|intcomma }}</div>
     </div>
@@ -115,7 +115,7 @@
       </div>
     </dl>
     {% else %}
-    <p class="text-sm text-muted">Vendedor ainda nao pareado.</p>
+    <p class="text-sm text-muted">Vendedor ainda não pareado.</p>
     {% endif %}
   </div>
 </div>
@@ -140,7 +140,7 @@
       </div>
     </div>
     <div class="rounded-xl border border-[var(--ik-line)] px-3 py-3">
-      <div class="text-[11px] uppercase tracking-wide text-muted">Redistribuicao</div>
+      <div class="text-[11px] uppercase tracking-wide text-muted">Redistribuição</div>
       <div class="mt-2">
         {% if order.redistribution_job %}
         <a href="{% url 'jobs:job-detail' order.redistribution_job.pk %}" class="link-sea font-mono text-xs">{{ order.redistribution_job.pk }}</a>
@@ -165,7 +165,7 @@
     </div>
     {% if order.source_action_code %}
     <div>
-      <dt class="text-muted">Acao de origem</dt>
+      <dt class="text-muted">Ação de origem</dt>
       <dd class="mt-0.5 font-mono text-xs">{{ order.source_action_code }}</dd>
     </div>
     {% endif %}

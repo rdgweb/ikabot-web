@@ -59,7 +59,7 @@ def _release_from_payload(component: str, repository: str, payload: dict) -> Reg
         return RegistryRelease(
             component=component,
             repository=repository,
-            error="Nenhuma tag de versao publicada foi encontrada.",
+            error="Nenhuma tag de versão publicada foi encontrada.",
         )
 
     _, version, item = max(candidates, key=lambda candidate: candidate[0])
@@ -93,7 +93,7 @@ def get_registry_release(component: str, *, force: bool = False) -> RegistryRele
         release = RegistryRelease(
             component=component,
             repository=repository,
-            error=f"Docker Hub indisponivel: {exc}",
+            error=f"Docker Hub indisponível: {exc}",
         )
 
     cache.set(key, release, RELEASE_CACHE_SECONDS)

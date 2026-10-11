@@ -150,7 +150,7 @@ class JobChainHistoryPartialTests(TestCase):
         # (finished) — not child_2's ("queued"), which the old "active
         # descendant" substitution used to show instead.
         self.assertContains(response, f'href="{reverse("jobs:job-detail", args=[self.root.pk])}"')
-        self.assertContains(response, "Concluido")
+        self.assertContains(response, "Concluído")
 
     def test_chain_history_partial_returns_child_jobs_on_demand(self):
         self.client.force_login(self.user)
@@ -158,7 +158,7 @@ class JobChainHistoryPartialTests(TestCase):
         response = self.client.get(reverse("jobs:job-chain-history", args=[self.root.pk]))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Historico da cadeia")
+        self.assertContains(response, "Histórico da cadeia")
         self.assertContains(response, str(self.child_1.pk)[:8], html=False)
         self.assertContains(response, str(self.child_2.pk)[:8], html=False)
 
@@ -256,7 +256,7 @@ class JobWorkflowViewTests(TestCase):
         response = self.client.get(reverse("jobs:job-list"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Operacao por workflow persistido")
+        self.assertContains(response, "Operação por workflow persistido")
         self.assertContains(response, "bi-box-arrow-up-right")
 
     def test_workflow_table_has_no_leaked_template_comment(self):
@@ -318,8 +318,8 @@ class JobWorkflowViewTests(TestCase):
         response = self.client.get(reverse("jobs:job-list"), {"view": "tech"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Status tecnico")
-        self.assertContains(response, "Acao")
+        self.assertContains(response, "Status técnico")
+        self.assertContains(response, "Ação")
         self.assertContains(response, "Cidade")
 
     def test_workflow_detail_page_renders_runs_and_jobs(self):

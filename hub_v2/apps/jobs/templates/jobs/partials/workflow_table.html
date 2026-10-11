@@ -72,7 +72,7 @@ data-filtered-count is read by the ancestor's syncFilteredCount() after each swa
     <div class="flex items-center gap-2 mb-2 mt-1">
       <i class="bi {{ group.icon }} text-sm flex-shrink-0" style="color: {{ group.color }};"></i>
       <span class="text-[11px] font-semibold uppercase tracking-wide text-muted">{{ group.label }}</span>
-      <span class="text-[10px] text-muted">({% if group.shown != group.total %}{{ group.shown }} de {{ group.total }} nesta pagina{% else %}{{ group.total }}{% endif %})</span>
+      <span class="text-[10px] text-muted">({% if group.shown != group.total %}{{ group.shown }} de {{ group.total }} nesta página{% else %}{{ group.total }}{% endif %})</span>
       <span class="inline-flex items-center gap-2" data-wf-chips="sub">
       {% for item in group.statuses %}
       <span class="inline-flex items-center gap-1 text-xs text-muted" title="{{ item.label }}">
@@ -84,11 +84,11 @@ data-filtered-count is read by the ancestor's syncFilteredCount() after each swa
       {% if group.shown != group.total and group.filter_url %}
       <a href="{{ group.filter_url }}" hx-get="{{ group.filter_url }}"
          hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true"
-         class="text-xs link-sea flex-shrink-0" title="Mostrar so {{ group.label }}">ver so este</a>
+         class="text-xs link-sea flex-shrink-0" title="Mostrar só {{ group.label }}">ver só este</a>
       {% endif %}
       <span class="text-xs font-semibold flex-shrink-0" style="color: var(--ik-sea);" x-show="groupState($el) !== 'none'" x-cloak x-text="groupCount($el)"></span>
       <button type="button" class="wf-group-select flex flex-shrink-0 items-center justify-center transition-all"
-              :style="groupSelectStyle($el, 22)" :title="groupLabel($el) + ' de {{ group.label|escapejs }} nesta pagina'"
+              :style="groupSelectStyle($el, 22)" :title="groupLabel($el) + ' de {{ group.label|escapejs }} nesta página'"
               @click.stop="toggleGroup($el)">
         <i class="bi text-xs" :class="groupState($el) === 'some' ? 'bi-dash-lg' : 'bi-check-lg'"></i>
       </button>
@@ -116,8 +116,8 @@ data-filtered-count is read by the ancestor's syncFilteredCount() after each swa
         <div class="min-w-0 flex-1">
           <div class="text-sm font-semibold text-ink truncate">{{ group.label }}</div>
           <div class="text-xs text-muted truncate">
-            {% if group.shown != group.total %}{{ group.shown }} de {{ group.total }} workflows nesta pagina{% else %}{{ group.total }} workflow{{ group.total|pluralize }}{% endif %}
-            &middot; {{ group.subgroups|length }} {% if group.is_account %}menu{{ group.subgroups|length|pluralize }}{% else %}{{ group.subgroups|length|pluralize:"acao,acoes" }}{% endif %}
+            {% if group.shown != group.total %}{{ group.shown }} de {{ group.total }} workflows nesta página{% else %}{{ group.total }} workflow{{ group.total|pluralize }}{% endif %}
+            &middot; {{ group.subgroups|length }} {% if group.is_account %}menu{{ group.subgroups|length|pluralize }}{% else %}{{ group.subgroups|length|pluralize:"ação,ações" }}{% endif %}
             {% if group.detail %}&middot; {{ group.detail }}{% endif %}
           </div>
         </div>
@@ -135,15 +135,15 @@ data-filtered-count is read by the ancestor's syncFilteredCount() after each swa
         <a href="{{ group.filter_url }}" hx-get="{{ group.filter_url }}"
            hx-target="#table-content" hx-swap="innerHTML" hx-push-url="true" @click.stop
            class="btn btn-secondary btn-sm flex-shrink-0"
-           title="Mostrar so {{ group.label }}; depois use Selecionar todos para pegar todas as paginas">
-          <i class="bi bi-funnel"></i> Ver so este
+           title="Mostrar só {{ group.label }}; depois use Selecionar todos para pegar todas as páginas">
+          <i class="bi bi-funnel"></i> Ver só este
         </a>
         {% endif %}
         {# N-69: marca/desmarca as linhas do grupo nesta pagina; circulo vazio = nada, traco = parte, azul = tudo #}
         <span class="flex flex-shrink-0 items-center gap-2">
           <span class="text-xs font-semibold" style="color: var(--ik-sea);" x-show="groupState($el) !== 'none'" x-cloak x-text="groupCount($el)"></span>
           <button type="button" class="wf-group-select flex flex-shrink-0 items-center justify-center transition-all"
-                  :style="groupSelectStyle($el, 30)" :title="groupLabel($el) + ' de {{ group.label|escapejs }} nesta pagina'"
+                  :style="groupSelectStyle($el, 30)" :title="groupLabel($el) + ' de {{ group.label|escapejs }} nesta página'"
                   @click.stop="toggleGroup($el)">
             <i class="bi text-sm" :class="groupState($el) === 'some' ? 'bi-dash-lg' : 'bi-check-lg'"></i>
           </button>
@@ -175,7 +175,7 @@ data-filtered-count is read by the ancestor's syncFilteredCount() after each swa
           <div class="flex-1 h-px" style="background: var(--ik-line);"></div>
           <span class="text-xs font-semibold flex-shrink-0" style="color: var(--ik-sea);" x-show="groupState($el) !== 'none'" x-cloak x-text="groupCount($el)"></span>
           <button type="button" class="wf-group-select flex flex-shrink-0 items-center justify-center transition-all"
-                  :style="groupSelectStyle($el, 24)" :title="groupLabel($el) + ' de {{ sub.label|escapejs }} nesta pagina'"
+                  :style="groupSelectStyle($el, 24)" :title="groupLabel($el) + ' de {{ sub.label|escapejs }} nesta página'"
                   @click.stop="toggleGroup($el)">
             <i class="bi text-xs" :class="groupState($el) === 'some' ? 'bi-dash-lg' : 'bi-check-lg'"></i>
           </button>

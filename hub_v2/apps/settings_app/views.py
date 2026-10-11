@@ -126,7 +126,7 @@ class WebshareSaveView(LoginRequiredMixin, View):
                 _set_encrypted_setting("webshare_api_key", api_key)
                 messages.success(request, "Chave API Webshare salva.")
             else:
-                messages.info(request, "Nenhuma alteracao (campo vazio).")
+                messages.info(request, "Nenhuma alteração (campo vazio).")
         return redirect("settings_app:list")
 
 
@@ -165,7 +165,7 @@ class IkabotApiSaveView(LoginRequiredMixin, View):
                 _set_setting("ikabotapi_url", url)
                 messages.success(request, "URL do ikabotapi salva.")
             else:
-                messages.info(request, "Nenhuma alteracao (campo vazio).")
+                messages.info(request, "Nenhuma alteração (campo vazio).")
         return redirect("settings_app:list")
 
 
@@ -197,7 +197,7 @@ class AgentSecuritySaveView(LoginRequiredMixin, View):
         form = AgentSecurityForm(request.POST)
         if form.is_valid():
             _set_setting("agent_allowed_ips", form.cleaned_data["allowed_ips"])
-            messages.success(request, "Configuracao de seguranca do agent salva.")
+            messages.success(request, "Configuração de segurança do agent salva.")
         return redirect("settings_app:list")
 
 
@@ -208,9 +208,9 @@ class AgentDeploySettingsSaveView(LoginRequiredMixin, View):
             _set_setting("agent_deploy_hub_url", form.cleaned_data["hub_url"].strip())
             _set_setting("agent_deploy_redis_url", form.cleaned_data["redis_url"].strip())
             _set_setting("agent_deploy_image", form.cleaned_data["agent_image"].strip())
-            messages.success(request, "Configuracao de deploy do agent salva.")
+            messages.success(request, "Configuração de deploy do agent salva.")
         else:
-            messages.error(request, "Nao foi possivel salvar a configuracao de deploy do agent.")
+            messages.error(request, "Não foi possível salvar a configuração de deploy do agent.")
         return redirect("settings_app:list")
 
 
@@ -228,7 +228,7 @@ class SnapshotPolicySaveView(LoginRequiredMixin, View):
             for key in ("login_locale", "login_timezone_id"):
                 if key in request.POST:
                     _set_setting(key, form.cleaned_data.get(key) or "")
-            messages.success(request, "Politica de snapshot salva.")
+            messages.success(request, "Política de snapshot salva.")
         else:
             for errors in form.errors.values():
                 for error in errors:

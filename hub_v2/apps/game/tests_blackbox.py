@@ -240,7 +240,7 @@ class LoginContextTests(TestCase):
 
     @patch("apps.game.api.agent.http_requests.get")
     def test_invalid_context_is_refused_before_ikabotapi_is_called(self, ikabotapi):
-        for params, word in (({"locale": "pt_BR"}, "Idioma invalido"), ({"timezone_id": "America/Nowhere"}, "Fuso horario invalido")):
+        for params, word in (({"locale": "pt_BR"}, "Idioma inválido"), ({"timezone_id": "America/Nowhere"}, "Fuso horário inválido")):
             response = self._token(**params)
             self.assertEqual((response.status_code, response.json()["reason"]), (400, "invalid_context"), params)
             self.assertIn(word, response.json()["error"])
@@ -286,7 +286,7 @@ class LoginContextTests(TestCase):
 
         # an invalid value is refused with its reason and nothing changes
         response = self.client.post(save, {**self.BASE, "login_locale": "pt-BR", "login_timezone_id": "Brasil/Aqui"}, follow=True)
-        self.assertIn("Fuso horario invalido", response.content.decode())
+        self.assertIn("Fuso horário inválido", response.content.decode())
         self.assertEqual(login_context()["timezone_id"], "America/Sao_Paulo")
 
         page = self.client.get(reverse("settings_app:list")).content.decode()

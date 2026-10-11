@@ -36,7 +36,7 @@ from ..services.workflows import create_job_with_workflow, ensure_workflow_for_j
 RESOURCE_ICON_MAP = {
     "wood": ("Madeira", "game/resources/icon_wood.png"),
     "wine": ("Vinho", "game/resources/icon_wine.png"),
-    "marble": ("Marmore", "game/resources/icon_marble.png"),
+    "marble": ("Mármore", "game/resources/icon_marble.png"),
     "crystal": ("Cristal", "game/resources/icon_glass.png"),
     "sulfur": ("Enxofre", "game/resources/icon_sulfur.png"),
 }
@@ -48,8 +48,8 @@ DONATION_TYPE_META = {
 }
 
 DONATION_METHOD_META = {
-    "1": "Excedente do armazem",
-    "2": "% da producao no intervalo",
+    "1": "Excedente do armazém",
+    "2": "% da produção no intervalo",
     "3": "Quantidade fixa",
 }
 DONATION_POST_PRODUCTION_META = {
@@ -58,8 +58,8 @@ DONATION_POST_PRODUCTION_META = {
 }
 SHRINE_GOD_META = {
     "god_pan": {"id": 1, "key": "pan", "label": "Pan", "subtitle": "Madeira", "icon": "game/gods/pan.png", "effect_icon": "game/resources/icon_wood.png"},
-    "god_dionysus": {"id": 2, "key": "dionysus", "label": "Dionisio", "subtitle": "Vinho", "icon": "game/gods/dionysus.png", "effect_icon": "game/resources/icon_wine.png"},
-    "god_tyche": {"id": 3, "key": "tyche", "label": "Tique", "subtitle": "Marmore", "icon": "game/gods/tyche.png", "effect_icon": "game/resources/icon_marble.png"},
+    "god_dionysus": {"id": 2, "key": "dionysus", "label": "Dionísio", "subtitle": "Vinho", "icon": "game/gods/dionysus.png", "effect_icon": "game/resources/icon_wine.png"},
+    "god_tyche": {"id": 3, "key": "tyche", "label": "Tique", "subtitle": "Mármore", "icon": "game/gods/tyche.png", "effect_icon": "game/resources/icon_marble.png"},
     "god_plutus": {"id": 4, "key": "plutus", "label": "Pluto", "subtitle": "Ouro", "icon": "game/gods/plutus.png", "effect_icon": "game/gods/favor.png"},
     "god_theia": {"id": 5, "key": "theia", "label": "Teia", "subtitle": "Cristal", "icon": "game/gods/theia.png", "effect_icon": "game/resources/icon_glass.png"},
     "god_hephaestus": {"id": 6, "key": "hephaestus", "label": "Hefesto", "subtitle": "Enxofre", "icon": "game/gods/hephaestus.png", "effect_icon": "game/resources/icon_sulfur.png"},
@@ -71,15 +71,15 @@ CONSTRUCTION_QUEUE_STRATEGY_META = {
     "smart": "Balanceado (tempo + recursos)",
 }
 RESEARCH_BRANCH_META = {
-    "seafaring": {"label": "Navegacao Maritima", "subtitle": "Navios, porto e mar", "icon": "bi-water", "resource_icon": "game/resources/icon_wood.png"},
+    "seafaring": {"label": "Navegação Marítima", "subtitle": "Navios, porto e mar", "icon": "bi-water", "resource_icon": "game/resources/icon_wood.png"},
     "economy": {"label": "Economia", "subtitle": "Crescimento e recursos", "icon": "bi-coin", "resource_icon": "game/resources/icon_population.png"},
-    "knowledge": {"label": "Ciencia", "subtitle": "Academias e pesquisa", "icon": "bi-lightbulb", "resource_icon": "game/resources/icon_glass.png"},
-    "military": {"label": "Militar", "subtitle": "Exercito e defesa", "icon": "bi-shield-check", "resource_icon": "game/resources/icon_sulfur.png"},
+    "knowledge": {"label": "Ciência", "subtitle": "Academias e pesquisa", "icon": "bi-lightbulb", "resource_icon": "game/resources/icon_glass.png"},
+    "military": {"label": "Militar", "subtitle": "Exército e defesa", "icon": "bi-shield-check", "resource_icon": "game/resources/icon_sulfur.png"},
     "mythology": {"label": "Mitologia", "subtitle": "Deuses e milagres", "icon": "bi-stars", "resource_icon": "game/gods/favor.png"},
 }
 SCIENTIST_TARGET_MODE_META = {
     "absolute": "Quantidade fixa",
-    "percent_max": "% do maximo",
+    "percent_max": "% do máximo",
 }
 
 
@@ -563,7 +563,7 @@ class JobListView(FilterSortListView):
     @staticmethod
     def _action_name(action_code, inputs=None):
         action_info = ACTION_CATALOG.get(int(action_code))
-        base = action_info["name"] if action_info else f"Acao #{action_code}"
+        base = action_info["name"] if action_info else f"Ação #{action_code}"
         if not inputs:
             return base
         # Enrich label for donation loop actions
@@ -600,7 +600,7 @@ class JobListView(FilterSortListView):
 
     @staticmethod
     def _bool_label(value):
-        return "Sim" if bool(value) else "Nao"
+        return "Sim" if bool(value) else "Não"
 
     @staticmethod
     def _category_filter_options(jobs):
@@ -633,7 +633,7 @@ class JobListView(FilterSortListView):
         return {
             "active": "Ativo",
             "problem": "Com problema",
-            "done": "Concluido",
+            "done": "Concluído",
             "stopped": "Cancelado",
         }.get(state, "Desconhecido")
 
@@ -653,7 +653,7 @@ class JobListView(FilterSortListView):
             return "Rota"
         if entry["is_group"]:
             return "Workflow agregado"
-        return "Execucao pontual"
+        return "Execução pontual"
 
     def _workflow_label(self, entry):
         root = entry["root_job"]
@@ -678,7 +678,7 @@ class JobListView(FilterSortListView):
         if entry["chain_active_job"]:
             return f"Ciclo ativo #{str(job.pk)[:8]}"
         if entry["cycle_count"] > 1:
-            return f"Ultimo ciclo #{str(job.pk)[:8]}"
+            return f"Último ciclo #{str(job.pk)[:8]}"
         return f"Job #{str(job.pk)[:8]}"
 
     @staticmethod
@@ -691,7 +691,7 @@ class JobListView(FilterSortListView):
             return f"{entry['cycle_count']} ciclo(s) registrados"
         if entry["is_group"]:
             return f"{entry['total_jobs']} job(s) agregados nesta pagina"
-        return "Execucao unica"
+        return "Execução única"
 
     @staticmethod
     def _workflow_summary(rows):
@@ -716,7 +716,7 @@ class JobListView(FilterSortListView):
         if str(inputs.get("monitor_mode") or "").strip().lower() == "arrival_check":
             return "Monitor de chegada"
         if any(_to_int(inputs.get(key), 0) > 0 for key in ("eta_queue_seconds", "eta_loading_seconds", "eta_travel_seconds", "eta_total_seconds")):
-            return "Confirmacao de chegada"
+            return "Confirmação de chegada"
         return "Envio"
 
     @classmethod
@@ -962,7 +962,7 @@ class JobListView(FilterSortListView):
 
         return {
             "is_loop": action_code == 1007,
-            "mode_label": "Loop" if action_code == 1007 else "Execucao unica",
+            "mode_label": "Loop" if action_code == 1007 else "Execução única",
             "selected_gods": selected_gods,
             "selected_summary": ", ".join(selected_names) if selected_names else "Nenhum deus selecionado",
             "activated_names": activated_names,
@@ -1208,15 +1208,15 @@ class JobListView(FilterSortListView):
                     branch_name = match.group("branch").strip()
                     discovered_name = match.group("done").strip()
                     next_name = match.group("next").strip()
-                    state_label = "Concluida"
+                    state_label = "Concluída"
             elif message.startswith("Pesquisa encerrada: "):
                 if "todos os ramos selecionados" in message.lower():
-                    state_label = "Maximo atingido"
+                    state_label = "Máximo atingido"
                     reason = "Todos os ramos marcados chegaram ao máximo."
                 else:
                     branch_name = re.search(r"ramo=(.+?)\s*\|", message).group(1).strip() if re.search(r"ramo=(.+?)\s*\|", message) else branch_name
-                    state_label = "Maximo atingido"
-                    reason = "Esse ramo nao possui mais tecnologias para descobrir."
+                    state_label = "Máximo atingido"
+                    reason = "Esse ramo não possui mais tecnologias para descobrir."
             elif "retry_em=" in message:
                 match = re.search(r"retry_em=(\d+)s", message)
                 if match:
@@ -1346,7 +1346,7 @@ class JobListView(FilterSortListView):
             "changed": changed,
             "skipped": skipped,
             "failed": failed,
-            "state_label": "Ajustado" if changed and not failed else ("Parcial" if changed and failed else ("Erro" if failed else "Sem mudancas")),
+            "state_label": "Ajustado" if changed and not failed else ("Parcial" if changed and failed else ("Erro" if failed else "Sem mudanças")),
         }
 
     @classmethod
@@ -1365,7 +1365,7 @@ class JobListView(FilterSortListView):
             if len(city_names) == 1:
                 return city_names[0]
             if city_names:
-                return "Multiplas"
+                return "Múltiplas"
         if city_name:
             return city_name
         if city_id:
@@ -1382,7 +1382,7 @@ class JobListView(FilterSortListView):
 
         cities = inputs.get("cities")
         if isinstance(cities, list) and cities:
-            return "Multiplas"
+            return "Múltiplas"
         return ""
 
     @classmethod
@@ -1422,7 +1422,7 @@ class JobListView(FilterSortListView):
             return "-"
         if len(city_labels) == 1:
             return city_labels[0]
-        return f"Multiplas ({len(city_labels)})"
+        return f"Múltiplas ({len(city_labels)})"
 
     @staticmethod
     def _status_summary(counter):
@@ -1501,7 +1501,7 @@ class JobListView(FilterSortListView):
             if total_eta:
                 lines.append(f"ETA: {total_eta['human']}")
         if transport.get("next_check_human"):
-            lines.append(f"Proximo check: {transport['next_check_human']}")
+            lines.append(f"Próximo check: {transport['next_check_human']}")
         if inputs.get("monitor_mode") == "arrival_check":
             lines.append("Monitor de chegada")
         else:
@@ -3032,7 +3032,7 @@ class WorkflowListView(FilterSortListView):
     PER_PAGE_OPTIONS = (50, 100, 200)
     PER_PAGE_ALL = 1000          # what "Todos" means; a hard ceiling for one page
     GROUP_MODES = (
-        ("menu", "Menu > Acao"),
+        ("menu", "Menu > Ação"),
         ("account", "Conta > Menu"),
         # N-92: no headers or sub-groups, but still a light divider per menu (as the queue was
         # before N-88). The key stays "none" so a saved preference keeps working.

@@ -18,7 +18,7 @@ RESOURCE_KEYS = ("wood", "wine", "marble", "glas", "sulfur")
 RESOURCE_LABELS = {
     "wood": "Madeira",
     "wine": "Vinho",
-    "marble": "Marmore",
+    "marble": "Mármore",
     "glas": "Cristal",
     "sulfur": "Enxofre",
 }
@@ -527,9 +527,9 @@ def build_construction_preview(
     }
     notes: list[str] = []
     if building_id in REDUCER_BUILDINGS.values() or building_id == "chronos_forge":
-        notes.append("Simulacao encadeada aplicada: niveis futuros usam os redutores e o Chronos resultantes das etapas anteriores.")
+        notes.append("Simulação encadeada aplicada: níveis futuros usam os redutores e o Chronos resultantes das etapas anteriores.")
     if desired_level > (normalized_rows[-1]["level"] if normalized_rows else current_level):
-        notes.append("A tabela externa nao cobriu todos os niveis pedidos.")
+        notes.append("A tabela externa não cobriu todos os níveis pedidos.")
 
     info = get_building_info(building_id)
     return ConstructionPreview(
@@ -604,7 +604,7 @@ def build_construction_plan_preview(
             if step.get("building_position") not in (None, ""):
                 building_id, _ = _building_key_from_position(city, step.get("building_position"))
         if not building_id:
-            notes.append(f"Etapa {idx}: edificio indefinido.")
+            notes.append(f"Etapa {idx}: edifício indefinido.")
             continue
 
         ika_key = BUILDING_TO_IKA_TOOLS.get(building_id)
@@ -628,7 +628,7 @@ def build_construction_plan_preview(
         target_level = max(current_level + 1 if current_level > 0 else 1, _parse_int(step.get("target_level"), 1))
         level_rows = [row for row in rows if current_level < _parse_int(row.get("level")) <= target_level]
         if not level_rows:
-            notes.append(f"Etapa {idx}: nenhuma etapa calculada para {building_id} ate {target_level}.")
+            notes.append(f"Etapa {idx}: nenhuma etapa calculada para {building_id} até {target_level}.")
             continue
 
         step_totals = {key: 0 for key in RESOURCE_KEYS}

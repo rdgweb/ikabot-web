@@ -21,7 +21,7 @@
         <div class="gm-card-value gm-text-sea mt-1" x-text="fmt(kpi.ships)"></div>
       </div>
       <div class="gm-card rounded-lg p-3">
-        <div class="gm-card-label">Media por conta</div>
+        <div class="gm-card-label">Média por conta</div>
         <div class="gm-card-value gm-text-title mt-1" x-text="fmt(shipInsights().avg)"></div>
       </div>
       <div class="gm-card rounded-lg p-3">
@@ -30,7 +30,7 @@
         <div class="text-[11px] font-mono mt-1 gm-text-sea" x-text="fmt(shipInsights().topCount)"></div>
       </div>
       <div class="gm-card rounded-lg p-3">
-        <div class="gm-card-label">Gargalo logistico</div>
+        <div class="gm-card-label">Gargalo logístico</div>
         <div class="gm-card-value mt-1" :class="shipInsights().bottleneckSeverity==='ok'?'gm-text-positive':'gm-text-warning'" x-text="shipInsights().bottleneckLabel"></div>
       </div>
     </div>
@@ -38,7 +38,7 @@
     {# -- History chart -- #}
     <div class="gm-section rounded-lg p-3">
       <div class="flex items-center justify-between mb-2">
-        <h4 class="gm-section-title">Historico de navios</h4>
+        <h4 class="gm-section-title">Histórico de navios</h4>
         <span class="gm-section-hint" x-text="historyState('ships').scopeLabel"></span>
       </div>
       <template x-if="historyState('ships').available">
@@ -63,7 +63,7 @@
       <div class="gm-section rounded-lg p-3">
         <div class="flex items-center justify-between mb-2">
           <h4 class="gm-section-title">Ranking por conta</h4>
-          <span class="gm-section-hint">participacao na frota total</span>
+          <span class="gm-section-hint">participação na frota total</span>
         </div>
         <div class="space-y-2">
           <template x-for="account in shipAccountRanking().slice(0, 5)" :key="'ship-rank-'+account.uid">
@@ -85,15 +85,15 @@
             </div>
           </template>
           <div x-show="!shipAccountRanking().length" class="gm-empty">
-            Nenhum dado disponivel para o ranking atual.
+            Nenhum dado disponível para o ranking atual.
           </div>
         </div>
       </div>
 
       <div class="gm-section rounded-lg p-3">
         <div class="flex items-center justify-between mb-2">
-          <h4 class="gm-section-title">Composicao</h4>
-          <span class="gm-section-hint">tipos de embarcacao</span>
+          <h4 class="gm-section-title">Composição</h4>
+          <span class="gm-section-hint">tipos de embarcação</span>
         </div>
         <div class="space-y-2">
           <template x-for="unit in shipComposition()" :key="'ship-comp-'+unit.name">
@@ -109,7 +109,7 @@
             </div>
           </template>
           <div x-show="!shipComposition().length" class="gm-empty">
-            Nenhum dado de composicao disponivel.
+            Nenhum dado de composição disponível.
           </div>
         </div>
       </div>
@@ -128,7 +128,7 @@
               <th class="text-left">Cidade</th>
               <th class="text-right">Frota</th>
               <th class="text-right">Recursos</th>
-              <th class="text-right">Logistica</th>
+              <th class="text-right">Logística</th>
             </tr>
           </thead>
           <tbody>

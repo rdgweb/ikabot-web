@@ -64,20 +64,20 @@ class CaptchaConfigView(LoginRequiredMixin, TemplateView):
         ctx["method_info"] = {
             "auto": {
                 "icon": "bi-cpu",
-                "title": "Automatico (ikabotapi)",
-                "desc": "O servico ikabotapi resolve automaticamente usando IA. Mais rapido, sem intervencao humana.",
+                "title": "Automático (ikabotapi)",
+                "desc": "O serviço ikabotapi resolve automaticamente usando IA. Mais rápido, sem intervenção humana.",
                 "color": "var(--ik-sea)",
             },
             "manual": {
                 "icon": "bi-person",
                 "title": "Manual (interface web)",
-                "desc": "Voce resolve na interface quando o agent encontra captcha. Mais confiavel, requer atencao.",
+                "desc": "Você resolve na interface quando o agent encontra captcha. Mais confiável, requer atenção.",
                 "color": "var(--ik-gold)",
             },
             "telegram": {
                 "icon": "bi-telegram",
                 "title": "Assistido (Telegram)",
-                "desc": "Imagem enviada no Telegram, voce responde pelo chat. Pratico para quem esta no celular.",
+                "desc": "Imagem enviada no Telegram, você responde pelo chat. Prático para quem está no celular.",
                 "color": "var(--ik-good)",
             },
         }
@@ -156,7 +156,7 @@ class CaptchaSkipView(LoginRequiredMixin, View):
 
     def post(self, request, pk):
         challenge = get_object_or_404(CaptchaChallenge, pk=pk)
-        challenge.mark_failed(error="Ignorado pelo usuario")
+        challenge.mark_failed(error="Ignorado pelo usuário")
         response = HttpResponse("")
         response["HX-Trigger"] = "captchaSolved"
         return response

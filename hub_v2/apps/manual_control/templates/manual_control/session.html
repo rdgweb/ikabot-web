@@ -29,11 +29,11 @@
   <p class="account">{{ account_label }}</p>
   {% if refused %}
   <p class="line bad">{{ refused }}</p>
-  <p class="detail">A automacao da conta continua normalmente.</p>
+  <p class="detail">A automação da conta continua normalmente.</p>
   <div class="actions"><button type="button" onclick="window.close()">Fechar</button></div>
   {% else %}
   <p class="line" id="line"><span class="spinner" id="spinner"></span><span id="text">Preparando controle manual...</span></p>
-  <p class="detail" id="detail">Finalizando a automacao em execucao.</p>
+  <p class="detail" id="detail">Finalizando a automação em execução.</p>
   <div class="actions">
     <button type="button" id="cancel">Cancelar</button>
   </div>
@@ -64,13 +64,13 @@
         if (state.step === "waiting_job" && state.jobs && state.jobs.length) {
           var job = state.jobs[0];
           text.textContent = "Preparando controle manual...";
-          detail.textContent = "Finalizando a automacao em execucao: " + job.name + " (ha " + job.seconds + "s). Nenhum job novo desta conta comeca.";
+          detail.textContent = "Finalizando a automação em execução: " + job.name + " (ha " + job.seconds + "s). Nenhum job novo desta conta começa.";
         } else {
-          text.textContent = "Abrindo a sessao do jogo...";
-          detail.textContent = "O agente esta entrando no jogo com a sessao e o proxy da conta.";
+          text.textContent = "Abrindo a sessão do jogo...";
+          detail.textContent = "O agente está entrando no jogo com a sessão e o proxy da conta.";
         }
       } else if (state.state === "resuming") {
-        text.textContent = "Devolvendo a conta para a automacao...";
+        text.textContent = "Devolvendo a conta para a automação...";
         detail.textContent = "";
       } else {
         finish(state.message || "Controle manual encerrado.", state.error || "", state.reason === "error");
@@ -89,7 +89,7 @@
     cancel.onclick = function () {
       stopped = true;
       fetch(endUrl, { method: "POST", credentials: "same-origin", headers: { "X-CSRFToken": csrf } })
-        .then(function () { finish("Controle manual encerrado.", "A automacao da conta continua."); });
+        .then(function () { finish("Controle manual encerrado.", "A automação da conta continua."); });
     };
     poll();
   })();

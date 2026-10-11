@@ -24,5 +24,5 @@ class NoteEventForm(forms.ModelForm):
         fields = ["event_type", "message"]
         widgets = {
             "event_type": forms.Select(attrs={"class": "form-input"}),
-            "message": forms.Textarea(attrs={"class": "form-input", "rows": 3, "placeholder": "Atualizacao curta do andamento"}),
+            "message": forms.Textarea(attrs={"class": "form-input", "rows": 3, "placeholder": "Atualização curta do andamento"}),
         }

@@ -38,7 +38,7 @@ def clean_locale(value) -> str:
     if not text:
         return ""
     if not LOCALE_PATTERN.fullmatch(text):
-        raise InvalidLoginContext(f"Idioma invalido: {text!r}. Use o formato do navegador, como pt-BR ou en-GB.")
+        raise InvalidLoginContext(f"Idioma inválido: {text!r}. Use o formato do navegador, como pt-BR ou en-GB.")
     language, *rest = text.split("-")
     return "-".join([language.lower(), *[part.upper() if len(part) == 2 else part for part in rest]])
 
@@ -49,7 +49,7 @@ def clean_timezone(value) -> str:
     if not text:
         return ""
     if not TIMEZONE_PATTERN.fullmatch(text) or text not in available_timezones():
-        raise InvalidLoginContext(f"Fuso horario invalido: {text!r}. Use um nome IANA, como America/Sao_Paulo ou Europe/London.")
+        raise InvalidLoginContext(f"Fuso horário inválido: {text!r}. Use um nome IANA, como America/Sao_Paulo ou Europe/London.")
     return text
 
 

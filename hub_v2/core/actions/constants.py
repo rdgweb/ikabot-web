@@ -35,8 +35,8 @@ CATEGORY_ORDER = [
 ]
 
 CATEGORY_META = {
-    CAT_CONSTRUCTION: {"label": "Construcao", "icon": "bi-building", "color": "var(--ik-sea)", "image": "game/buildings/architectsoffice.png"},
-    CAT_RESOURCES: {"label": "Recursos e logistica", "icon": "bi-box-seam", "color": "var(--ik-gold)", "image": "game/buildings/warehouse.png"},
+    CAT_CONSTRUCTION: {"label": "Construção", "icon": "bi-building", "color": "var(--ik-sea)", "image": "game/buildings/architectsoffice.png"},
+    CAT_RESOURCES: {"label": "Recursos e logística", "icon": "bi-box-seam", "color": "var(--ik-gold)", "image": "game/buildings/warehouse.png"},
     CAT_RESEARCH: {"label": "Pesquisa", "icon": "bi-lightbulb", "color": "var(--ik-sea)", "image": "game/buildings/academy.png"},
     CAT_TEMPLE: {"label": "Templo", "icon": "bi-stars", "color": "var(--ik-gold)", "image": "game/buildings/temple.png"},
     CAT_MILITARY: {"label": "Militar", "icon": "bi-shield-fill", "color": "var(--ik-bad)", "image": "game/buildings/barracks.png"},
@@ -57,7 +57,7 @@ LEGACY_CATEGORY_MAP = {
 RESOURCE_CHOICES = [
     (0, "Madeira", "game/resources/icon_wood.png"),
     (1, "Vinho", "game/resources/icon_wine.png"),
-    (2, "Marmore", "game/resources/icon_marble.png"),
+    (2, "Mármore", "game/resources/icon_marble.png"),
     (3, "Cristal", "game/resources/icon_glass.png"),
     (4, "Enxofre", "game/resources/icon_sulfur.png"),
 ]
@@ -68,8 +68,8 @@ DONATION_CHOICES = [
 ]
 
 DONATION_METHOD_CHOICES = [
-    ("1", "Excedente do armazem"),
-    ("2", "% da producao no intervalo"),
+    ("1", "Excedente do armazém"),
+    ("2", "% da produção no intervalo"),
     ("3", "Quantidade fixa"),
 ]
 
@@ -95,11 +95,11 @@ TRANSPORT_LOAD_CHOICES = [
     ("80", "80%"),
     ("60", "60%"),
     ("40", "40%"),
-    ("20", "20% (mais rapido)"),
+    ("20", "20% (mais rápido)"),
 ]
 
 DISTRIBUTION_STRATEGY_CHOICES = [
-    ("targets", "Manter minimos e alvos"),
-    ("producer_to_non_producer", "Produtor -> nao produtor"),
+    ("targets", "Manter mínimos e alvos"),
+    ("producer_to_non_producer", "Produtor -> não produtor"),
     ("evenly", "Equilibrar estoques"),
 ]

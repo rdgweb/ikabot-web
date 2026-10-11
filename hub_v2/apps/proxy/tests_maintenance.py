@@ -360,11 +360,11 @@ class ProxyMaintenanceAnnouncementTests(_Base):
         self.assertEqual((sent["event_key"], sent["title"]), ("proxy_change", "Proxies: verificacao automatica"))
         self.assertEqual(sent["body"].split("\n"), [
             "Conta Lobby PX: 3 proxy(s) fora de uso, 3 novo(s) reservado(s).",
-            "No node-px: proxy trocado.",
+            "Nó node-px: proxy trocado.",
             "Bloqueio de login liberado: Conta PX.",
             "Lista do provedor: 47 novo(s), 47 retirado(s).",
             "Teste: 4 de 4 proxies ok.",
-            "Motivo da verificacao: teste.",
+            "Motivo da verificação: teste.",
         ])
         for proxy in proxies:
             self.assertNotIn(proxy.address, sent["body"])

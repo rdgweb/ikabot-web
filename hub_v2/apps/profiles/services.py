@@ -80,7 +80,7 @@ def execute_preset(preset: Preset, created_by=None) -> tuple[int, list[str]]:
     if not preset_accounts:
         return 0, ["Nenhuma conta selecionada no preset."]
     if not preset_actions:
-        return 0, ["Nenhuma acao configurada no preset."]
+        return 0, ["Nenhuma ação configurada no preset."]
 
     jobs_created = 0
     errors: list[str] = []

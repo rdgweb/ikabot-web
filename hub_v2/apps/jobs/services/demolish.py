@@ -52,11 +52,11 @@ def demolish_form_context(cities: list) -> dict:
                 continue
             blocked = ""
             if building in NOT_DEMOLISHABLE:
-                blocked = "A Prefeitura nao pode ser demolida"
+                blocked = "A Prefeitura não pode ser demolida"
             elif item.get("is_upgrading"):
                 blocked = "Em obra"
             elif level < 1:
-                blocked = "Sem nivel para tirar"
+                blocked = "Sem nível para tirar"
             buildings.append({
                 "position": _int(item.get("position"), 0),
                 "building": building,
@@ -79,18 +79,18 @@ def validate_items(raw: str, cities: list) -> tuple[dict[str, list[dict]], str]:
     try:
         data = json.loads(raw or "")
     except (TypeError, ValueError):
-        return {}, "Lista de edificios invalida."
+        return {}, "Lista de edifícios inválida."
     if not isinstance(data, list) or not data:
-        return {}, "Escolha ao menos um edificio para demolir."
+        return {}, "Escolha ao menos um edifício para demolir."
     if len(data) > MAX_ITEMS:
-        return {}, f"No maximo {MAX_ITEMS} edificios por vez."
+        return {}, f"No máximo {MAX_ITEMS} edifícios por vez."
 
     by_city = {str(c.get("id") or ""): c for c in cities or [] if isinstance(c, dict)}
     grouped: dict[str, list[dict]] = {}
     seen: set[tuple[str, int]] = set()
     for entry in data:
         if not isinstance(entry, dict):
-            return {}, "Lista de edificios invalida."
+            return {}, "Lista de edifícios inválida."
         city_id = str(entry.get("city_id") or "").strip()
         position = _int(entry.get("position"))
         building = str(entry.get("building") or "").strip()
@@ -102,7 +102,7 @@ def validate_items(raw: str, cities: list) -> tuple[dict[str, list[dict]], str]:
 
         city = by_city.get(city_id)
         if city is None:
-            return {}, "Cidade nao pertence a esta conta."
+            return {}, "Cidade não pertence a esta conta."
         city_name = str(city.get("name") or city_id)
         current = next(
             (b for b in city.get("buildings") or [] if isinstance(b, dict) and _int(b.get("position")) == position),
@@ -137,7 +137,7 @@ def validate_items(raw: str, cities: list) -> tuple[dict[str, list[dict]], str]:
 def confirmation_error(post) -> str:
     """What is still missing from the form's confirmations ("" = all given)."""
     if str(post.get("demolish_acknowledge") or "").strip().lower() not in ("on", "1", "true"):
-        return "Marque que entende que a demolicao nao tem volta."
+        return "Marque que entende que a demolição não tem volta."
     # the field shows upper case whatever is typed, so compare the same way
     if str(post.get("demolish_confirm_word") or "").strip().upper() != CONFIRM_WORD:
         return f"Digite {CONFIRM_WORD} para confirmar."

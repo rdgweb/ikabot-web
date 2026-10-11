@@ -25,12 +25,12 @@
   <div class="mb-3 rounded-lg px-3 py-2" style="background: rgba(201,156,78,0.12);">
     <div class="flex items-center gap-2">
       <i class="bi bi-pencil-square" style="color: var(--ik-gold-dark);"></i>
-      <span class="text-[11px] font-semibold" style="color: var(--ik-gold-dark);">Editando parametros — aplicam no proximo ciclo do loop</span>
+      <span class="text-[11px] font-semibold" style="color: var(--ik-gold-dark);">Editando parâmetros — aplicam no próximo ciclo do loop</span>
     </div>
     {% if edit_per_city %}
     <div class="mt-1 text-[11px] text-muted">
-      <i class="bi bi-info-circle"></i> Este loop roda <b>um job por cidade</b>. Aqui voce edita so os parametros
-      {% if edit_city_name %}da cidade <b>{{ edit_city_name }}</b>{% endif %} — a cidade nao muda (sem risco de duplicar).
+      <i class="bi bi-info-circle"></i> Este loop roda <b>um job por cidade</b>. Aqui você edita só os parâmetros
+      {% if edit_city_name %}da cidade <b>{{ edit_city_name }}</b>{% endif %} — a cidade não muda (sem risco de duplicar).
       Para incluir novas cidades, crie um novo loop para elas.
     </div>
     {% endif %}

@@ -2,7 +2,7 @@
 
 <div class="card">
   <h2 class="text-lg font-semibold text-ink mb-4">
-    <i class="bi bi-gear"></i> Configuracao
+    <i class="bi bi-gear"></i> Configuração
   </h2>
 
   <form hx-post="{% url 'captcha:save-config' %}"
@@ -43,7 +43,7 @@
       <div>
         <label class="form-label">{{ config_form.ikabotapi_url.label }}</label>
         {{ config_form.ikabotapi_url }}
-        <p class="text-[10px] text-muted mt-0.5">Apenas para metodo automatico.</p>
+        <p class="text-[10px] text-muted mt-0.5">Apenas para método automático.</p>
       </div>
 
       {# Timeout #}

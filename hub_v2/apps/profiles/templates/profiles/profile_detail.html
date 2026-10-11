@@ -29,7 +29,7 @@
 <button type="button"
         onclick="return openConfirm({
           title: 'Excluir perfil',
-          message: 'Excluir o perfil {{ profile.name|escapejs }}? Esta acao nao pode ser desfeita.',
+          message: 'Excluir o perfil {{ profile.name|escapejs }}? Esta ação não pode ser desfeita.',
           action: '{% url 'profiles:profile-delete' profile.pk %}',
           method: 'post',
           style: 'danger',

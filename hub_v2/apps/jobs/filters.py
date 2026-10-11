@@ -16,11 +16,11 @@ class JobFilter(django_filters.FilterSet):
     WORKFLOW_STATE_CHOICES = [
         ("active", "Ativos"),
         ("problem", "Com problema"),
-        ("done", "Concluidos"),
+        ("done", "Concluídos"),
         ("stopped", "Cancelados"),
     ]
     WORKFLOW_TYPE_CHOICES = [
-        ("construction", "Construcao"),
+        ("construction", "Construção"),
         ("transport", "Transporte"),
         ("grouped", "Agrupados"),
         ("single", "Pontuais"),
@@ -29,8 +29,8 @@ class JobFilter(django_filters.FilterSet):
     status = django_filters.ChoiceFilter(choices=Job.STATUS_CHOICES, label="Status")
     account = django_filters.ModelChoiceFilter(queryset=Account.objects.all(), label="Conta")
     game_account = django_filters.ModelChoiceFilter(queryset=GameAccount.objects.filter(active=True), label="Subconta")
-    node = django_filters.ModelChoiceFilter(queryset=Node.objects.all(), label="No")
-    action_code = django_filters.NumberFilter(label="Codigo da Acao")
+    node = django_filters.ModelChoiceFilter(queryset=Node.objects.all(), label="Nó")
+    action_code = django_filters.NumberFilter(label="Código da Ação")
     city = django_filters.CharFilter(label="Cidade", method="filter_city")
     category = django_filters.ChoiceFilter(label="Categoria", method="filter_category")
     workflow_state = django_filters.ChoiceFilter(
@@ -154,7 +154,7 @@ class WorkflowFilter(django_filters.FilterSet):
     status = django_filters.ChoiceFilter(choices=Workflow.STATUS_CHOICES, label="Status", method="filter_status")
     account = django_filters.ModelChoiceFilter(queryset=Account.objects.all(), label="Conta")
     game_account = django_filters.ModelChoiceFilter(queryset=GameAccount.objects.filter(active=True), label="Subconta")
-    node = django_filters.ModelChoiceFilter(queryset=Node.objects.all(), label="No")
+    node = django_filters.ModelChoiceFilter(queryset=Node.objects.all(), label="Nó")
     category = django_filters.ChoiceFilter(label="Categoria")
     workflow_type = django_filters.CharFilter(label="Tipo", lookup_expr="icontains")
     search = django_filters.CharFilter(label="Busca", method="filter_search")

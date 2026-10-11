@@ -160,7 +160,7 @@
             {% endif %}
             <div class="text-[10px] leading-tight {% if row.gold_position.available < row.gold_position.minimum %}text-red-700{% else %}text-muted{% endif %}"
                  title="Ouro atual menos reservado por compras internas pendentes">
-              Disponivel: {{ row.gold_position.available|intcomma }}
+              Disponível: {{ row.gold_position.available|intcomma }}
             </div>
           {% else %}
             <span class="text-muted" title="Sem snapshot">—</span>

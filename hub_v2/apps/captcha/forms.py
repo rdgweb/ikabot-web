@@ -28,8 +28,8 @@ class CaptchaConfigForm(forms.ModelForm):
         }
         labels = {
             "enabled": "Captcha ativo",
-            "solve_method": "Metodo principal",
-            "fallback_method": "Metodo alternativo",
+            "solve_method": "Método principal",
+            "fallback_method": "Método alternativo",
             "ikabotapi_url": "URL do ikabotapi",
             "timeout_sec": "Timeout (seg)",
         }

@@ -11,11 +11,11 @@ from . import services
 from .models import ManualControlSession
 
 END_REASONS = {
-    "closed": "Controle manual encerrado. A automacao da conta voltou.",
-    "expired": "A aba do jogo deixou de responder e o controle manual foi encerrado. A automacao da conta voltou.",
-    "idle": "O controle manual ficou sem uso e foi encerrado. A automacao da conta voltou.",
-    "cancelled": "Pedido de controle manual cancelado. A automacao da conta continua.",
-    "error": "Nao foi possivel abrir o controle manual. A automacao da conta continua.",
+    "closed": "Controle manual encerrado. A automação da conta voltou.",
+    "expired": "A aba do jogo deixou de responder e o controle manual foi encerrado. A automação da conta voltou.",
+    "idle": "O controle manual ficou sem uso e foi encerrado. A automação da conta voltou.",
+    "cancelled": "Pedido de controle manual cancelado. A automação da conta continua.",
+    "error": "Não foi possível abrir o controle manual. A automação da conta continua.",
 }
 
 
@@ -58,7 +58,7 @@ class SessionStatusView(LoginRequiredMixin, View):
     def get(self, request, session_id):
         session = get_object_or_404(ManualControlSession, pk=session_id)
         if not _owns(session, request.user):
-            return JsonResponse({"state": "ended", "message": "Esta sessao pertence a outro usuario."}, status=403)
+            return JsonResponse({"state": "ended", "message": "Esta sessão pertence a outro usuário."}, status=403)
         state = services.advance(session.pk)
         if state["state"] == "active":
             session.refresh_from_db()

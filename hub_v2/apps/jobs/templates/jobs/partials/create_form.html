@@ -95,7 +95,7 @@
             {% elif choice.0|stringformat:"s" == "wine" %}
             <img src="{% static 'game/resources/icon_wine.png' %}" alt="Vinho" class="h-4 w-4">
             {% elif choice.0|stringformat:"s" == "marble" %}
-            <img src="{% static 'game/resources/icon_marble.png' %}" alt="Marmore" class="h-4 w-4">
+            <img src="{% static 'game/resources/icon_marble.png' %}" alt="Mármore" class="h-4 w-4">
             {% elif choice.0|stringformat:"s" == "crystal" %}
             <img src="{% static 'game/resources/icon_glass.png' %}" alt="Cristal" class="h-4 w-4">
             {% elif choice.0|stringformat:"s" == "sulfur" %}
@@ -142,7 +142,7 @@
           {% elif field.name == "wine" %}
           <img src="{% static 'game/resources/icon_wine.png' %}" alt="Vinho" class="h-5 w-5">
           {% elif field.name == "marble" %}
-          <img src="{% static 'game/resources/icon_marble.png' %}" alt="Marmore" class="h-5 w-5">
+          <img src="{% static 'game/resources/icon_marble.png' %}" alt="Mármore" class="h-5 w-5">
           {% elif field.name == "crystal" %}
           <img src="{% static 'game/resources/icon_glass.png' %}" alt="Cristal" class="h-5 w-5">
           {% elif field.name == "sulfur" %}
@@ -165,7 +165,7 @@
           {% elif field.name == "wine" %}
           <img src="{% static 'game/resources/icon_wine.png' %}" alt="Vinho" class="h-5 w-5">
           {% elif field.name == "marble" %}
-          <img src="{% static 'game/resources/icon_marble.png' %}" alt="Marmore" class="h-5 w-5">
+          <img src="{% static 'game/resources/icon_marble.png' %}" alt="Mármore" class="h-5 w-5">
           {% elif field.name == "crystal" %}
           <img src="{% static 'game/resources/icon_glass.png' %}" alt="Cristal" class="h-5 w-5">
           {% elif field.name == "sulfur" %}
@@ -210,8 +210,8 @@
     {% if not action_meta.inputs %}
     <div class="mb-4 rounded-lg py-6 text-center" style="background: var(--ik-sand-light);">
       <i class="bi bi-check-circle text-xl text-[var(--ik-good)]"></i>
-      <p class="mt-1.5 text-xs text-muted">Nenhuma configuracao necessaria.</p>
-      <p class="mt-0.5 text-[10px] text-muted">O job sera executado com as configuracoes padrao.</p>
+      <p class="mt-1.5 text-xs text-muted">Nenhuma configuração necessária.</p>
+      <p class="mt-0.5 text-[10px] text-muted">O job será executado com as configurações padrão.</p>
     </div>
     {% endif %}
 
@@ -226,7 +226,7 @@
       {% if action_meta.long_running %}
       <span class="rounded-full px-2 py-0.5 text-[9px] font-medium"
             style="background: rgba(79,134,185,0.12); color: var(--ik-sea);">
-        <i class="bi bi-clock"></i> Longa duracao
+        <i class="bi bi-clock"></i> Longa duração
       </span>
       {% endif %}
     </div>

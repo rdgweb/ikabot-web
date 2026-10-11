@@ -25,7 +25,7 @@ RESOURCE_KEYS = ("wood", "wine", "marble", "crystal", "sulfur")
 RESOURCE_META = {
     "wood": {"label": "Madeira", "icon": "game/resources/icon_wood.png"},
     "wine": {"label": "Vinho", "icon": "game/resources/icon_wine.png"},
-    "marble": {"label": "Marmore", "icon": "game/resources/icon_marble.png"},
+    "marble": {"label": "Mármore", "icon": "game/resources/icon_marble.png"},
     "crystal": {"label": "Cristal", "icon": "game/resources/icon_glass.png"},
     "sulfur": {"label": "Enxofre", "icon": "game/resources/icon_sulfur.png"},
 }
@@ -110,7 +110,7 @@ def _reorder_layout(city: dict) -> tuple[list[dict], bool]:
             "sp": city_map.building_sprite(bid, position, ground_type),
             "p": position,
             "b": bid,
-            "n": "Espaco livre" if empty else _building_name(bid),
+            "n": "Espaço livre" if empty else _building_name(bid),
             "i": "" if empty else _building_icon(bid),
             "l": 0 if empty else _si(b.get("level")),
             "u": bool(b.get("is_upgrading")),

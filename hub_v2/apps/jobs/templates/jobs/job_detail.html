@@ -550,14 +550,14 @@
 <div class="card">
   <div class="flex items-start justify-between gap-4">
     <div>
-      <h3 class="text-sm font-semibold text-ink">Login Diario</h3>
-      <p class="mt-1 text-xs text-muted">Bonus, tasks e fonte de ambrosia no mesmo ciclo</p>
+      <h3 class="text-sm font-semibold text-ink">Login Diário</h3>
+      <p class="mt-1 text-xs text-muted">Bônus, tasks e fonte de ambrosia no mesmo ciclo</p>
     </div>
     <div class="flex flex-wrap justify-end gap-2">
       <span class="badge badge-secondary">Favor: {{ daily_login_display.collect_favor }}</span>
       <span class="badge badge-secondary">Fonte: {{ daily_login_display.collect_fountain }}</span>
       {% if daily_login_display.next_check_human %}
-      <span class="badge badge-info">Proximo check: {{ daily_login_display.next_check_human }}</span>
+      <span class="badge badge-info">Próximo check: {{ daily_login_display.next_check_human }}</span>
       {% endif %}
     </div>
   </div>
@@ -565,13 +565,13 @@
   <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.9fr)]">
     <div>
       <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: var(--ik-sand-light);">
-        <div class="text-xs text-muted">Cidade do bonus</div>
+        <div class="text-xs text-muted">Cidade do bônus</div>
         <div class="mt-1 text-base font-semibold text-ink">{{ daily_login_display.city_name|default:"—" }}</div>
         <div class="mt-1 text-xs text-muted">Fallback: {{ daily_login_display.fallback_interval_hours }} h • margem: {{ daily_login_display.reschedule_margin_minutes }} min</div>
       </div>
 
       <div class="mt-4">
-        <div class="text-xs text-muted">Tasks recolhidas nesta execucao</div>
+        <div class="text-xs text-muted">Tasks recolhidas nesta execução</div>
         {% if daily_login_display.collected_tasks %}
         <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
           {% for task in daily_login_display.collected_tasks %}
@@ -600,7 +600,7 @@
         <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
           <div class="text-[11px] uppercase tracking-wide text-muted">Tasks</div>
           <div class="mt-1 text-base font-semibold text-ink">{{ daily_login_display.tasks_done }}/{{ daily_login_display.tasks_count }}</div>
-          <div class="mt-1 text-xs text-muted">Coletaveis no inicio: {{ daily_login_display.collectible_tasks }}</div>
+          <div class="mt-1 text-xs text-muted">Coletáveis no início: {{ daily_login_display.collectible_tasks }}</div>
         </div>
         <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
           <div class="text-[11px] uppercase tracking-wide text-muted">Fonte</div>
@@ -618,7 +618,7 @@
   <div class="flex items-start justify-between gap-4">
     <div>
       <h3 class="text-sm font-semibold text-ink">Alerta de Ataques</h3>
-      <p class="mt-1 text-xs text-muted">Leitura do advisor militar com deduplicacao por evento hostil</p>
+      <p class="mt-1 text-xs text-muted">Leitura do advisor militar com deduplicação por evento hostil</p>
     </div>
     <div class="flex flex-wrap justify-end gap-2">
       <span class="badge badge-secondary">Intervalo: {{ attack_alert_display.interval_minutes }} min</span>
@@ -668,7 +668,7 @@
 
   {% if attack_alert_display.last_error %}
   <div class="mt-4 rounded-xl border px-3 py-3" style="border-color: rgba(187,81,67,0.35); background: rgba(187,81,67,0.06);">
-    <div class="text-[11px] uppercase tracking-wide text-muted">Ultimo erro</div>
+    <div class="text-[11px] uppercase tracking-wide text-muted">Último erro</div>
     <div class="mt-1 text-sm font-medium text-ink">{{ attack_alert_display.last_error }}</div>
   </div>
   {% endif %}
@@ -705,10 +705,10 @@
 
       {% if research_display.discovered_name %}
       <div class="mt-4 rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(95,140,78,0.08);">
-        <div class="text-[11px] uppercase tracking-wide text-muted">Descoberta nesta execucao</div>
+        <div class="text-[11px] uppercase tracking-wide text-muted">Descoberta nesta execução</div>
         <div class="mt-1 text-sm font-medium text-ink">{{ research_display.discovered_name }}</div>
         {% if research_display.next_name %}
-        <div class="mt-1 text-[11px] text-muted">Proxima da fila: {{ research_display.next_name }}</div>
+        <div class="mt-1 text-[11px] text-muted">Próxima da fila: {{ research_display.next_name }}</div>
         {% endif %}
       </div>
       {% else %}
@@ -749,13 +749,13 @@
       </div>
       {% if research_display.next_check_human %}
       <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(201,156,78,0.08);">
-        <div class="text-[11px] uppercase tracking-wide text-muted">Proximo check</div>
+        <div class="text-[11px] uppercase tracking-wide text-muted">Próximo check</div>
         <div class="mt-1 text-sm font-medium text-ink">{{ research_display.next_check_human }}</div>
       </div>
       {% endif %}
       {% if research_display.reason %}
       <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(201,156,78,0.08);">
-        <div class="text-[11px] uppercase tracking-wide text-muted">Observacao</div>
+        <div class="text-[11px] uppercase tracking-wide text-muted">Observação</div>
         <div class="mt-1 text-sm font-medium text-ink">{{ research_display.reason }}</div>
       </div>
       {% endif %}
@@ -815,7 +815,7 @@
   <div class="flex items-start justify-between gap-4">
     <div>
       <h3 class="text-sm font-semibold text-ink">Ajustar Cientistas</h3>
-      <p class="mt-1 text-xs text-muted">Aplicacao do alvo nas academias selecionadas</p>
+      <p class="mt-1 text-xs text-muted">Aplicação do alvo nas academias selecionadas</p>
     </div>
     <span class="badge badge-secondary">{{ scientists_display.state_label }}</span>
   </div>
@@ -866,7 +866,7 @@
         <div class="mt-1 text-base font-semibold text-ink">{{ scientists_display.changed|length }}</div>
       </div>
       <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
-        <div class="text-[11px] uppercase tracking-wide text-muted">Sem mudanca</div>
+        <div class="text-[11px] uppercase tracking-wide text-muted">Sem mudança</div>
         <div class="mt-1 text-base font-semibold text-ink">{{ scientists_display.skipped|length }}</div>
       </div>
       <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
@@ -926,13 +926,13 @@
 <div class="card">
   <div class="flex items-start justify-between gap-4">
     <div>
-      <h3 class="text-sm font-semibold text-ink">Santuario</h3>
+      <h3 class="text-sm font-semibold text-ink">Santuário</h3>
       <p class="mt-1 text-xs text-muted">{{ shrine_display.mode_label }}</p>
     </div>
     <div class="flex flex-wrap justify-end gap-2">
       <span class="badge badge-secondary">{{ shrine_display.selected_gods|length }} deus(es)</span>
       {% if shrine_display.next_check_human %}
-      <span class="badge badge-info">Proximo check: {{ shrine_display.next_check_human }}</span>
+      <span class="badge badge-info">Próximo check: {{ shrine_display.next_check_human }}</span>
       {% endif %}
     </div>
   </div>
@@ -965,7 +965,7 @@
 
       {% if shrine_display.activated_names %}
       <div class="mt-4 rounded-xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(95,140,78,0.08);">
-        <div class="text-[11px] uppercase tracking-wide text-muted">Ativados nesta execucao</div>
+        <div class="text-[11px] uppercase tracking-wide text-muted">Ativados nesta execução</div>
         <div class="mt-2 flex flex-wrap gap-2">
           {% for name in shrine_display.activated_names %}
           <span class="badge badge-secondary">{{ name }}</span>
@@ -977,9 +977,9 @@
 
     <div class="space-y-3">
       <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
-        <div class="text-[11px] uppercase tracking-wide text-muted">Santuario detectado</div>
+        <div class="text-[11px] uppercase tracking-wide text-muted">Santuário detectado</div>
         <div class="mt-1 text-base font-semibold text-ink">{{ shrine_display.city_name|default:"—" }}</div>
-        <div class="mt-1 text-xs text-muted">Nivel {{ shrine_display.building_level|default:"—" }}{% if shrine_display.additional_cities %} • cidades extras: {{ shrine_display.additional_cities }}{% endif %}</div>
+        <div class="mt-1 text-xs text-muted">Nível {{ shrine_display.building_level|default:"—" }}{% if shrine_display.additional_cities %} • cidades extras: {{ shrine_display.additional_cities }}{% endif %}</div>
       </div>
       <div class="grid grid-cols-2 gap-3">
         <div class="rounded-xl border px-3 py-3" style="border-color: var(--ik-line);">
@@ -1351,7 +1351,7 @@
 <div class="card">
   <div class="flex items-start justify-between gap-4 mb-4">
     <div>
-      <h3 class="text-sm font-semibold text-ink">Abandono de Colonia</h3>
+      <h3 class="text-sm font-semibold text-ink">Abandono de Colônia</h3>
       <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
         <span><i class="bi bi-house-dash text-[10px]"></i> {{ abandon_colony_display.city_name|default:"Cidade" }}</span>
         {% if abandon_colony_display.city_id %}

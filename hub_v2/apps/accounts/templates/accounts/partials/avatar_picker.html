@@ -98,7 +98,7 @@ function avatarPicker(urlTemplate) {
           this.choice = canvas.toDataURL('image/jpeg', 0.85);
           this.preview = this.choice; this.previewCover = true; this.error = '';
         };
-        image.onerror = () => { this.error = 'Nao foi possivel ler essa imagem.'; };
+        image.onerror = () => { this.error = 'Não foi possível ler essa imagem.'; };
         image.src = reader.result;
       };
       reader.readAsDataURL(file);

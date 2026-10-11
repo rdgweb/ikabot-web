@@ -50,20 +50,20 @@ class ReorderBuildingsView(LoginRequiredMixin, View):
         if not ga_id or not city_id:
             return JsonResponse({"ok": False, "error": "Dados incompletos."}, status=400)
         if swaps is None:
-            return JsonResponse({"ok": False, "error": "Lista de trocas invalida."}, status=400)
+            return JsonResponse({"ok": False, "error": "Lista de trocas inválida."}, status=400)
 
         try:
             ga = GameAccount.objects.select_related("account__node").get(pk=ga_id)
         except (GameAccount.DoesNotExist, ValueError):
-            return JsonResponse({"ok": False, "error": "Conta nao encontrada."}, status=404)
+            return JsonResponse({"ok": False, "error": "Conta não encontrada."}, status=404)
         if not ga.account.node:
-            return JsonResponse({"ok": False, "error": "Conta sem no atribuido."}, status=400)
+            return JsonResponse({"ok": False, "error": "Conta sem nó atribuído."}, status=400)
 
         snapshot = AccountSnapshot.objects.filter(game_account=ga).first()
         cities = snapshot.cities if snapshot and isinstance(snapshot.cities, list) else []
         city = next((c for c in cities if isinstance(c, dict) and str(c.get("id") or "") == city_id), None)
         if city is None:
-            return JsonResponse({"ok": False, "error": "Cidade nao pertence a esta conta."}, status=400)
+            return JsonResponse({"ok": False, "error": "Cidade não pertence a esta conta."}, status=400)
 
         create_job_with_workflow(
             account=ga.account,
@@ -75,5 +75,5 @@ class ReorderBuildingsView(LoginRequiredMixin, View):
         )
         return JsonResponse({
             "ok": True,
-            "message": f"Reorganizacao de {city.get('name') or city_id} enviada ({len(swaps)} troca(s)).",
+            "message": f"Reorganização de {city.get('name') or city_id} enviada ({len(swaps)} troca(s)).",
         })

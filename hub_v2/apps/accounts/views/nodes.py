@@ -146,7 +146,7 @@ class NodeQueuePurgeView(LoginRequiredMixin, View):
             messages.success(
                 request,
                 f"Fila limpa: {res['queue_len']} imediata(s) + {res['unacked']} reservada(s). "
-                f"Reinicie o worker deste no para soltar o que ele tem em memoria.",
+                f"Reinicie o worker deste nó para soltar o que ele tem em memória.",
             )
         except Exception as exc:
             messages.error(request, f"Falha ao limpar fila: {exc}")
@@ -324,17 +324,17 @@ class NodeRequestUpdateView(LoginRequiredMixin, View):
         node = get_object_or_404(Node, pk=pk, active=True)
         release = get_registry_release("agent", force=True)
         if release.error or not release.version:
-            messages.error(request, release.error or "Nao foi possivel determinar a versao publicada.")
+            messages.error(request, release.error or "Não foi possível determinar a versão publicada.")
         elif not node.is_online:
-            messages.error(request, "O agente precisa estar online para receber a atualizacao.")
+            messages.error(request, "O agente precisa estar online para receber a atualização.")
         elif not node.docker_host:
             messages.error(request, "Vincule o agente a um Host Docker antes de atualizar.")
         elif not node.supervisor_is_online:
-            messages.error(request, "Instale ou reconecte o supervisor deste no antes de atualizar.")
+            messages.error(request, "Instale ou reconecte o supervisor deste nó antes de atualizar.")
         elif node.agent_version == release.version:
             messages.info(request, f"{node.name} ja esta na versao {release.version}.")
         elif Job.objects.filter(node=node, status__in=["queued", "running"]).exists():
-            messages.error(request, "A atualizacao foi bloqueada porque existem jobs em fila ou execucao.")
+            messages.error(request, "A atualização foi bloqueada porque existem jobs em fila ou execução.")
         else:
             with transaction.atomic():
                 Node.objects.select_for_update().get(pk=node.pk)
@@ -342,10 +342,10 @@ class NodeRequestUpdateView(LoginRequiredMixin, View):
                     node=node, status__in=["queued", "running"]
                 ).exists()
                 if active_update:
-                    messages.warning(request, "Ja existe uma atualizacao pendente para este no.")
+                    messages.warning(request, "Já existe uma atualização pendente para este nó.")
                 else:
                     if not release.digest.startswith("sha256:"):
-                        messages.error(request, "A versao publicada nao possui digest verificavel.")
+                        messages.error(request, "A versão publicada não possui digest verificável.")
                         return redirect("notes:changelog")
                     AgentUpdateRequest.objects.create(
                         node=node,
@@ -353,5 +353,5 @@ class NodeRequestUpdateView(LoginRequiredMixin, View):
                         target_version=release.version,
                         target_image=f"{release.repository}@{release.digest}",
                     )
-                    messages.success(request, f"Atualizacao de {node.name} para v{release.version} solicitada.")
+                    messages.success(request, f"Atualização de {node.name} para v{release.version} solicitada.")
         return redirect("notes:changelog")

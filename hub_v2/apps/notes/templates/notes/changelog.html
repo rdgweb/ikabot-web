@@ -1,13 +1,13 @@
 {% extends base_template|default:"base.html" %}
 
-{% block title %}Atualizacoes{% endblock %}
+{% block title %}Atualizações{% endblock %}
 
 {% block content %}
 <div class="mx-auto w-full max-w-6xl">
   <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
     <div>
-      <h1 class="text-2xl font-bold text-ink">Atualizacoes do sistema</h1>
-      <p class="text-sm text-muted mt-1">Compare o que esta rodando com as versoes publicadas e acompanhe o rollout.</p>
+      <h1 class="text-2xl font-bold text-ink">Atualizações do sistema</h1>
+      <p class="text-sm text-muted mt-1">Compare o que está rodando com as versões publicadas e acompanhe o rollout.</p>
     </div>
     <div class="flex items-center gap-2">
       <a href="{% url 'notes:list' %}" class="btn btn-secondary btn-sm"><i class="bi bi-card-checklist"></i> Notas</a>
@@ -26,7 +26,7 @@
       </div>
       <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div class="rounded p-3" style="background:var(--ik-sand-light);">
-          <dt class="text-xs uppercase text-muted">Em execucao</dt>
+          <dt class="text-xs uppercase text-muted">Em execução</dt>
           <dd class="mt-1 font-mono text-lg font-bold">v{{ hub_version|default:"—" }}</dd>
         </div>
         <div class="rounded p-3" style="background:var(--ik-sand-light);">
@@ -42,7 +42,7 @@
       <details class="mt-4 rounded" style="border:1px solid var(--ik-line);">
         <summary class="cursor-pointer px-3 py-2 text-sm font-semibold text-sea">Atualizar o Hub</summary>
         <div class="px-3 pb-3">
-          <p class="mb-2 text-xs text-muted">Execute no host Docker do Hub. O comando atualiza apenas o servico <code>hub</code>.</p>
+          <p class="mb-2 text-xs text-muted">Execute no host Docker do Hub. O comando atualiza apenas o serviço <code>hub</code>.</p>
           <div class="relative">
             <pre class="overflow-x-auto rounded bg-gray-900 p-3 pr-20 text-xs text-green-400"><code x-ref="hubCommand">{{ hub_update_command }}</code></pre>
             <button type="button" class="absolute right-2 top-2 rounded bg-gray-700 px-2 py-1 text-xs text-white" @click="navigator.clipboard.writeText($refs.hubCommand.textContent); copied = true; setTimeout(() => copied = false, 2000)">
@@ -94,14 +94,14 @@
   <section id="agents-rollout" class="mb-5 overflow-hidden rounded-lg" style="border:1px solid var(--ik-line); background:var(--ik-paper);">
     <div class="flex flex-wrap items-center justify-between gap-3 p-4" style="border-bottom:1px solid var(--ik-line);">
       <div>
-        <h2 class="font-semibold text-ink">Atualizacao dos agentes</h2>
-        <p class="mt-0.5 text-xs text-muted">Atualize um no pelo Hub. Cada host precisa instalar o supervisor uma unica vez.</p>
+        <h2 class="font-semibold text-ink">Atualização dos agentes</h2>
+        <p class="mt-0.5 text-xs text-muted">Atualize um nó pelo Hub. Cada host precisa instalar o supervisor uma única vez.</p>
       </div>
-      <a href="{% url 'accounts:node-list' %}" class="btn btn-secondary btn-sm">Gerenciar nos</a>
+      <a href="{% url 'accounts:node-list' %}" class="btn btn-secondary btn-sm">Gerenciar nós</a>
     </div>
     <div class="overflow-x-auto">
       <table class="data-table">
-        <thead><tr><th>No</th><th>Instalada</th><th>Destino</th><th>Estado</th><th>Supervisor</th><th class="text-right">Acao</th></tr></thead>
+        <thead><tr><th>Nó</th><th>Instalada</th><th>Destino</th><th>Estado</th><th>Supervisor</th><th class="text-right">Ação</th></tr></thead>
         <tbody>
           {% for node in agent_nodes %}
             <tr>
@@ -110,8 +110,8 @@
               <td class="font-mono text-xs">{% if agent_release.version %}v{{ agent_release.version }}{% else %}—{% endif %}</td>
               <td><span class="badge {{ node.release_state.badge_class }}">{{ node.release_state.label }}</span></td>
               <td>
-                {% if node.supervisor_is_online %}<span class="badge badge-success">{{ node.docker_host.name }}</span>{% else %}<span class="badge badge-warning">Nao instalado</span>{% endif %}
-                {% if node.latest_update %}<div class="mt-1 text-[11px] text-muted">Ultima: {{ node.latest_update.get_status_display }}</div>{% endif %}
+                {% if node.supervisor_is_online %}<span class="badge badge-success">{{ node.docker_host.name }}</span>{% else %}<span class="badge badge-warning">Não instalado</span>{% endif %}
+                {% if node.latest_update %}<div class="mt-1 text-[11px] text-muted">Última: {{ node.latest_update.get_status_display }}</div>{% endif %}
               </td>
               <td class="text-right">
                 {% if node.release_state.code == 'outdated' and node.is_online and node.supervisor_is_online %}
@@ -120,7 +120,7 @@
                         class="inline"
                         @submit.prevent="$dispatch('confirm', {
                           title: 'Atualizar agente',
-                          message: 'O agente {{ node.name|escapejs }} sera atualizado da versao v{{ node.agent_version|escapejs }} para v{{ agent_release.version|escapejs }}. O supervisor validara o novo container e fara rollback se ele nao iniciar.',
+                          message: 'O agente {{ node.name|escapejs }} será atualizado da versão v{{ node.agent_version|escapejs }} para v{{ agent_release.version|escapejs }}. O supervisor validará o novo container e fará rollback se ele não iniciar.',
                           confirmLabel: 'Atualizar agente',
                           style: 'primary',
                           onConfirm: () => $el.submit()
@@ -134,13 +134,13 @@
               </td>
             </tr>
           {% empty %}
-            <tr><td colspan="6" class="py-8 text-center text-muted">Nenhum no ativo cadastrado.</td></tr>
+            <tr><td colspan="6" class="py-8 text-center text-muted">Nenhum nó ativo cadastrado.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
     <div class="p-4 text-xs text-muted" style="border-top:1px solid var(--ik-line);">
-      O supervisor usa uma imagem versionada, valida o ID do no e restaura o conteiner anterior se a nova versao nao iniciar.
+      O supervisor usa uma imagem versionada, valida o ID do nó e restaura o contêiner anterior se a nova versão não iniciar.
     </div>
   </section>
 
@@ -158,7 +158,7 @@
   <div class="mb-4 rounded-lg p-3" style="border:1px solid var(--ik-line); background:var(--ik-paper);">
     <form method="get" class="flex flex-wrap items-center gap-2">
       <select name="visibility" class="form-input max-w-xs">
-        <option value="">Todo o historico</option>
+        <option value="">Todo o histórico</option>
         {% for value,label in visibility_choices %}
           <option value="{{ value }}" {% if visibility_filter == value %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
@@ -204,7 +204,7 @@
         <div class="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-[var(--ik-sand-light)] text-muted">
           <i class="bi bi-journal-code text-lg"></i>
         </div>
-        <div class="font-semibold text-ink">Nenhuma mudanca encontrada</div>
+        <div class="font-semibold text-ink">Nenhuma mudança encontrada</div>
         <div class="mt-1 text-sm text-muted">Ajuste os filtros para consultar outro recorte.</div>
       </div>
     {% endfor %}

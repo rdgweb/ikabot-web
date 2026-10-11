@@ -34,13 +34,13 @@
       <div class="mb-3">
         <label class="form-label text-xs mb-1">{{ form.body_template.label }}</label>
         {{ form.body_template }}
-        <p class="text-[10px] text-[var(--ik-muted)] mt-0.5">Cada linha = uma linha na mensagem. Linhas vazias apos substituicao sao removidas.</p>
+        <p class="text-[10px] text-[var(--ik-muted)] mt-0.5">Cada linha = uma linha na mensagem. Linhas vazias após substituição são removidas.</p>
       </div>
 
       {# Variables reference — compact pills #}
       <div class="mb-4 p-2.5 bg-[var(--ik-paper)] rounded border border-[var(--ik-line)]">
         <p class="text-[10px] font-semibold text-[var(--ik-muted)] uppercase tracking-wide mb-1.5">
-          Variaveis disponiveis
+          Variáveis disponíveis
         </p>
         <div class="grid grid-cols-2 gap-x-4 gap-y-0.5">
           {% for var, desc in available_vars %}
@@ -66,9 +66,9 @@
                 hx-post="{% url 'telegram:template-reset' tpl.pk %}"
                 hx-target="#tpl-row-{{ tpl.pk }}"
                 hx-swap="outerHTML"
-                hx-confirm="Restaurar o template padrao?"
+                hx-confirm="Restaurar o template padrão?"
                 class="text-xs text-[var(--ik-bad)] hover:underline cursor-pointer">
-          <i class="bi bi-arrow-counterclockwise"></i> Restaurar padrao
+          <i class="bi bi-arrow-counterclockwise"></i> Restaurar padrão
         </button>
         <div class="flex gap-2">
           <button type="button"

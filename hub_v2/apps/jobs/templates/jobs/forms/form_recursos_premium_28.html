@@ -21,16 +21,16 @@
   <div class="border-b px-5 py-5 md:px-6"
        style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
     <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: #8c5ab4;">Recursos Premium</div>
-    <h3 class="mt-2 text-xl font-bold text-ink">Use um item do inventario ou troque recursos no negociante</h3>
+    <h3 class="mt-2 text-xl font-bold text-ink">Use um item do inventário ou troque recursos no negociante</h3>
     <p class="mt-2 text-sm leading-relaxed text-muted">
-      Os itens vem do inventario lido no Verificar Status. Por ora aparecem apenas os
-      <b>usaveis direto</b> (nao pedem cidade nem deus). Nada e usado sem voce escolher e confirmar a criacao do job.
+      Os itens vem do inventário lido no Verificar Status. Por ora aparecem apenas os
+      <b>usáveis direto</b> (não pedem cidade nem deus). Nada é usado sem você escolher e confirmar a criação do job.
     </p>
 
     {% if not premium_ui.has_data %}
     <div class="mt-4 rounded-xl border px-3 py-2.5 text-sm"
          style="background: rgba(201,156,78,0.08); border-color: rgba(201,156,78,0.25); color: var(--ik-gold);">
-      <i class="bi bi-info-circle"></i> Sem dados de inventario ainda. Rode um <b>Verificar Status</b> nesta conta primeiro.
+      <i class="bi bi-info-circle"></i> Sem dados de inventário ainda. Rode um <b>Verificar Status</b> nesta conta primeiro.
     </div>
     {% endif %}
 
@@ -54,12 +54,12 @@
   {# ── Usar item ── #}
   <div x-show="mode === 'use_item'" class="px-5 py-5 md:px-6">
     <div class="mb-3 flex items-center justify-between">
-      <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: #8c5ab4;">Itens usaveis direto</div>
+      <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: #8c5ab4;">Itens usáveis direto</div>
       <div class="text-[11px] text-muted"><span x-text="items.length"></span> item(ns)</div>
     </div>
     <div x-show="items.length === 0" class="rounded-xl border px-3 py-4 text-sm text-muted"
          style="border-color: var(--ik-line); background: rgba(255,255,255,0.7);">
-      Nenhum item usavel direto no inventario desta conta.
+      Nenhum item usável direto no inventário desta conta.
     </div>
     <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
       <template x-for="it in items" :key="it.item_id">
@@ -114,16 +114,16 @@
               style="border-color: rgba(140,90,180,0.25); background: rgba(255,255,255,0.8);">
           <i class="bi" :class="trader.payment_method === 'item' ? 'bi-box' : 'bi-gem'"></i>
           <span x-text="trader.payment_method === 'item'
-            ? `Paga ${trader.payment_price} item (voce tem ${trader.payment_available})`
-            : `Paga ${trader.payment_price || trader.trade_price_ambrosia} ambrosia (voce tem ${trader.ambrosia_available})`"></span>
+            ? `Paga ${trader.payment_price} item (você tem ${trader.payment_available})`
+            : `Paga ${trader.payment_price || trader.trade_price_ambrosia} ambrosia (você tem ${trader.ambrosia_available})`"></span>
         </span>
       </template>
-      <span class="text-[11px] text-muted"><i class="bi bi-info-circle"></i> Troca 1:1 — o total enviado e igual ao recebido</span>
+      <span class="text-[11px] text-muted"><i class="bi bi-info-circle"></i> Troca 1:1 — o total enviado é igual ao recebido</span>
     </div>
 
     {# Cidade #}
     <label class="mb-4 block max-w-sm">
-      <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Cidade (armazem)</span>
+      <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Cidade (armazém)</span>
       <select x-model="cityId" @change="onCityChange()" class="form-input">
         <template x-for="c in cities" :key="c.id">
           <option :value="c.id" x-text="c.name"></option>
@@ -139,7 +139,7 @@
          style="border-color: rgba(140,90,180,0.22); background: rgba(255,255,255,0.7);">
       <span class="text-[11px] text-muted">Liberado para receber (o que tirei do enviar):</span>
       <span class="text-sm font-bold" style="color: #8c5ab4;" x-text="fmt(pool())"></span>
-      <span class="text-[11px] text-muted">· ja alocado <b class="text-ink" x-text="fmt(totalReceive())"></b></span>
+      <span class="text-[11px] text-muted">· já alocado <b class="text-ink" x-text="fmt(totalReceive())"></b></span>
       <span class="text-[11px]" :class="poolFree() === 0 ? 'text-[var(--ik-good)]' : 'text-muted'">· restante <b x-text="fmt(poolFree())"></b></span>
     </div>
 
@@ -181,7 +181,7 @@
       <section class="rounded-[20px] border p-4" style="border-color: rgba(95,140,78,0.22); background: linear-gradient(180deg, rgba(95,140,78,0.08), rgba(255,255,255,0.82));">
         <div class="mb-1 flex items-center justify-between">
           <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);"><i class="bi bi-box-arrow-in-down"></i> Receber</div>
-          <div class="text-[11px] text-muted">Limite: pool e espaco do armazem</div>
+          <div class="text-[11px] text-muted">Limite: pool e espaço do armazém</div>
         </div>
         <template x-for="r in resources" :key="'r-'+r.key">
           <div class="mb-3">
@@ -190,7 +190,7 @@
                 <img :src="r.icon" :alt="r.label" class="h-4 w-4 object-contain"> <span x-text="r.label"></span>
               </span>
               <span class="text-[11px] text-muted">
-                livre armazem <b class="text-ink" x-text="fmt(freeSpace(r.key))"></b>
+                livre armazém <b class="text-ink" x-text="fmt(freeSpace(r.key))"></b>
               </span>
             </div>
             <div class="flex items-center gap-2">
@@ -216,10 +216,10 @@
            : 'border-color: rgba(201,156,78,0.3); background: rgba(201,156,78,0.06); color: var(--ik-gold);'">
       <template x-if="pool() === 0"><span><i class="bi bi-info-circle"></i> Reduza o envio de algum recurso para liberar quanto pode receber.</span></template>
       <template x-if="pool() > 0 && totalReceive() < pool()">
-        <span><i class="bi bi-exclamation-triangle"></i> Sobrou <b x-text="fmt(poolFree())"></b> do pool para alocar no recebimento (troca e 1:1). O runner recalcula pelos valores reais na hora.</span>
+        <span><i class="bi bi-exclamation-triangle"></i> Sobrou <b x-text="fmt(poolFree())"></b> do pool para alocar no recebimento (troca é 1:1). O runner recalcula pelos valores reais na hora.</span>
       </template>
       <template x-if="pool() > 0 && totalReceive() === pool()">
-        <span><i class="bi bi-check-circle"></i> Troca 1:1 fechada. Como o snapshot atrasa, o envio e enviado por % do estoque real na hora; o recebimento respeita o espaco do armazem.</span>
+        <span><i class="bi bi-check-circle"></i> Troca 1:1 fechada. Como o snapshot atrasa, o envio é enviado por % do estoque real na hora; o recebimento respeita o espaço do armazém.</span>
       </template>
     </div>
   </div>

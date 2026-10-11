@@ -76,7 +76,7 @@ def probe_proxy(proxy_url: str, timeout: int = PROBE_TIMEOUT) -> dict:
         except requests.exceptions.ProxyError as exc:
             # the proxy itself said no: another IP-check service will hear the same
             code = re.search(r"Tunnel connection failed: (\d+)", str(exc))
-            result["error"] = f"proxy recusou ({code.group(1)})" if code else "proxy inacessivel"
+            result["error"] = f"proxy recusou ({code.group(1)})" if code else "proxy inacessível"
             return result
         except requests.exceptions.RequestException as exc:
             result["error"] = type(exc).__name__
@@ -205,7 +205,7 @@ def announcement(report: dict) -> str:
         removed, added = len(item.get("removed") or []), len(item.get("added") or [])
         lines.append(f"Conta {item.get('account')}: {removed} proxy(s) fora de uso, {added} novo(s) reservado(s).")
     for item in report.get("nodes_replaced") or []:
-        lines.append(f"No {item.get('node')}: proxy trocado.")
+        lines.append(f"Nó {item.get('node')}: proxy trocado.")
     if report.get("blocks_cleared"):
         lines.append("Bloqueio de login liberado: " + ", ".join(report["blocks_cleared"]) + ".")
     if report.get("without_proxy"):
@@ -216,10 +216,10 @@ def announcement(report: dict) -> str:
     if sync.get("success"):
         lines.append(f"Lista do provedor: {sync.get('created') or 0} novo(s), {sync.get('deactivated') or 0} retirado(s).")
     else:
-        lines.append("Nao foi possivel consultar o provedor nesta execucao.")
+        lines.append("Não foi possível consultar o provedor nesta execução.")
     lines.append(f"Teste: {report.get('passed', 0)} de {report.get('tested', 0)} proxies ok.")
     if report.get("reason"):
-        lines.append(f"Motivo da verificacao: {report['reason']}.")
+        lines.append(f"Motivo da verificação: {report['reason']}.")
     return "\n".join(lines)
 
 

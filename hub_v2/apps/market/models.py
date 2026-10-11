@@ -253,7 +253,7 @@ class PublicMarketScan(UUIDTimestampModel):
     record the market range check (no offers were listed from that city).
     """
 
-    KIND_CHOICES = [("full", "Varredura"), ("range_sync", "So alcance")]
+    KIND_CHOICES = [("full", "Varredura"), ("range_sync", "Só alcance")]
 
     game_account = models.ForeignKey(
         "accounts.GameAccount", on_delete=models.CASCADE, related_name="public_market_scans",
@@ -281,7 +281,7 @@ class PublicMarketScan(UUIDTimestampModel):
 class PublicMarketOffer(UUIDTimestampModel):
     """One offer listed in the public market, as seen by a PublicMarketScan."""
 
-    RESOURCE_CHOICES = [(0, "Madeira"), (1, "Vinho"), (2, "Marmore"), (3, "Cristal"), (4, "Enxofre")]
+    RESOURCE_CHOICES = [(0, "Madeira"), (1, "Vinho"), (2, "Mármore"), (3, "Cristal"), (4, "Enxofre")]
     KIND_CHOICES = [("sell", "Vendendo"), ("buy", "Comprando")]
 
     scan = models.ForeignKey(PublicMarketScan, on_delete=models.CASCADE, related_name="offers")

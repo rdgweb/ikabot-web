@@ -27,7 +27,7 @@ from .models import BlackMarketOffer, BlackMarketUnitQuote, InternalMarketOrder
 
 logger = logging.getLogger(__name__)
 
-RESOURCE_LABELS = {0: "Madeira", 1: "Vinho", 2: "Marmore", 3: "Cristal", 4: "Enxofre"}
+RESOURCE_LABELS = {0: "Madeira", 1: "Vinho", 2: "Mármore", 3: "Cristal", 4: "Enxofre"}
 
 
 def _snapshot_cities(game_account: GameAccount | None) -> list[dict]:
@@ -206,7 +206,7 @@ class PublicMarketView(LoginRequiredMixin, TemplateView):
         ctx["hide_internal"] = hide_internal
         ctx["selected_account"] = account
         ctx["kind_filters"] = [
-            {"label": "Quem esta vendendo (comprar)", "url": url(kind="sell"), "active": kind == "sell"},
+            {"label": "Quem está vendendo (comprar)", "url": url(kind="sell"), "active": kind == "sell"},
             {"label": "Quem quer comprar (vender)", "url": url(kind="buy"), "active": kind == "buy"},
         ]
         ctx["hide_internal_url"] = url(hide_internal=None if hide_internal else "1")
@@ -325,7 +325,7 @@ class MarketOrderCreateView(LoginRequiredMixin, View):
             buyer_ga = GameAccount.objects.get(pk=ga_id)
             buyer_city_id_value = int(buyer_city_id) if str(buyer_city_id or "").strip() else None
         except Exception as exc:
-            trigger = json.dumps({"toast": {"type": "error", "message": f"Dados invalidos: {exc}"}})
+            trigger = json.dumps({"toast": {"type": "error", "message": f"Dados inválidos: {exc}"}})
             resp = HttpResponse(status=400)
             resp["HX-Trigger"] = trigger
             return resp
@@ -337,7 +337,7 @@ class MarketOrderCreateView(LoginRequiredMixin, View):
                 amount = int(request.POST.get(f"amount_{resource_idx}") or 0)
                 unit_price = int(request.POST.get(f"unit_price_{resource_idx}") or 0)
             except Exception as exc:
-                trigger = json.dumps({"toast": {"type": "error", "message": f"Dados invalidos: {exc}"}})
+                trigger = json.dumps({"toast": {"type": "error", "message": f"Dados inválidos: {exc}"}})
                 resp = HttpResponse(status=400)
                 resp["HX-Trigger"] = trigger
                 return resp
@@ -358,7 +358,7 @@ class MarketOrderCreateView(LoginRequiredMixin, View):
             trigger = json.dumps({
                 "toast": {
                     "type": "warning",
-                    "message": f"A subconta {buyer_ga.name} nao tem Branch Office (Filial de Mercado) em nenhuma cidade. Construa o edificio primeiro.",
+                    "message": f"A subconta {buyer_ga.name} não tem Branch Office (Filial de Mercado) em nenhuma cidade. Construa o edifício primeiro.",
                 }
             })
             resp = HttpResponse(status=200)
@@ -383,10 +383,10 @@ class MarketOrderCreateView(LoginRequiredMixin, View):
                 continue
             if not result.ok or result.order is None:
                 failure_reason = {
-                    "buyer_below_min_gold": "ouro abaixo do limite minimo configurado",
+                    "buyer_below_min_gold": "ouro abaixo do limite mínimo configurado",
                     "buyer_without_branch_office": "sem Branch Office",
                     "no_visible_market_city": "sem cidade compradora com alcance de mercado para o vendedor",
-                    "no_seller": "sem vendedor elegivel",
+                    "no_seller": "sem vendedor elegível",
                 }.get(result.error, result.error or "falha ao criar ordem")
                 if result.detail:
                     failure_reason = f"{failure_reason} ({result.detail})"
@@ -397,7 +397,7 @@ class MarketOrderCreateView(LoginRequiredMixin, View):
 
         if not created_orders:
             trigger = json.dumps(
-                {"toast": {"type": "warning", "message": "Nenhuma ordem criada. " + (" | ".join(failures) if failures else "Nenhum vendedor elegivel encontrado.")}}
+                {"toast": {"type": "warning", "message": "Nenhuma ordem criada. " + (" | ".join(failures) if failures else "Nenhum vendedor elegível encontrado.")}}
             )
             resp = HttpResponse(status=200)
             resp["HX-Trigger"] = trigger
@@ -427,7 +427,7 @@ class MarketOrderCancelView(LoginRequiredMixin, View):
     def post(self, request, pk):
         order = get_object_or_404(InternalMarketOrder, pk=pk)
         if order.status not in ("created", "matched", "jobs_created", "jobs_running"):
-            trigger = json.dumps({"toast": {"type": "error", "message": "Ordem nao pode ser cancelada neste estado."}})
+            trigger = json.dumps({"toast": {"type": "error", "message": "Ordem não pode ser cancelada neste estado."}})
             resp = HttpResponse(status=400)
             resp["HX-Trigger"] = trigger
             return resp
@@ -458,7 +458,7 @@ class MarketOrderDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk):
         order = get_object_or_404(InternalMarketOrder, pk=pk)
         if order.status not in ("completed", "failed", "canceled"):
-            trigger = json.dumps({"toast": {"type": "error", "message": "So e possivel excluir ordens concluidas, falhas ou canceladas."}})
+            trigger = json.dumps({"toast": {"type": "error", "message": "Só é possível excluir ordens concluídas, falhas ou canceladas."}})
             resp = HttpResponse(status=400)
             resp["HX-Trigger"] = trigger
             return resp
@@ -468,7 +468,7 @@ class MarketOrderDeleteView(LoginRequiredMixin, View):
         order.delete()
         trigger = json.dumps(
             {
-                "toast": {"type": "success", "message": f"Ordem excluida: {amount}x {resource_label}."},
+                "toast": {"type": "success", "message": f"Ordem excluída: {amount}x {resource_label}."},
                 "market-order-deleted": True,
             }
         )
@@ -501,7 +501,7 @@ class MarketOrderBulkCancelView(LoginRequiredMixin, View):
 
         if not cancelable:
             trigger = json.dumps(
-                {"toast": {"type": "error", "message": "So e possivel cancelar ordens criadas, pareadas, com jobs criados ou em execucao."}}
+                {"toast": {"type": "error", "message": "Só é possível cancelar ordens criadas, pareadas, com jobs criados ou em execução."}}
             )
             resp = HttpResponse(status=400)
             resp["HX-Trigger"] = trigger
@@ -648,7 +648,7 @@ class MarketOrderBulkDeleteView(LoginRequiredMixin, View):
 
         orders = list(InternalMarketOrder.objects.filter(pk__in=order_ids))
         if not orders:
-            trigger = json.dumps({"toast": {"type": "error", "message": "Nenhuma ordem valida encontrada para exclusao."}})
+            trigger = json.dumps({"toast": {"type": "error", "message": "Nenhuma ordem valida encontrada para exclusão."}})
             resp = HttpResponse(status=404)
             resp["HX-Trigger"] = trigger
             return resp
@@ -659,7 +659,7 @@ class MarketOrderBulkDeleteView(LoginRequiredMixin, View):
 
         if not deletable:
             trigger = json.dumps(
-                {"toast": {"type": "error", "message": "So e possivel excluir ordens concluidas, falhas ou canceladas."}}
+                {"toast": {"type": "error", "message": "Só é possível excluir ordens concluídas, falhas ou canceladas."}}
             )
             resp = HttpResponse(status=400)
             resp["HX-Trigger"] = trigger

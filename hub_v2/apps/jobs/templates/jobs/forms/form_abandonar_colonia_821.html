@@ -35,11 +35,11 @@
           <i class="bi bi-exclamation-octagon-fill text-lg" style="color: #b4553f;"></i>
         </div>
         <div class="min-w-0 flex-1">
-          <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: #b4553f;">Acao irreversivel</div>
-          <div class="mt-1 text-base font-semibold text-ink">Abandonar colonia manualmente</div>
+          <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: #b4553f;">Ação irreversível</div>
+          <div class="mt-1 text-base font-semibold text-ink">Abandonar colônia manualmente</div>
           <p class="mt-1 text-xs leading-relaxed text-muted">
-            Use esta acao apenas para colonias descartaveis. O hub ainda resolve o captcha via sistema central,
-            mas o job so sera criado depois de passar por confirmacoes fortes.
+            Use esta ação apenas para colônias descartáveis. O hub ainda resolve o captcha via sistema central,
+            mas o job só será criado depois de passar por confirmações fortes.
           </p>
         </div>
       </div>
@@ -47,17 +47,17 @@
 
     <div class="grid gap-3 px-5 py-4 sm:grid-cols-3">
       <div class="rounded-[18px] border px-4 py-3" style="border-color: rgba(199,120,102,0.24); background: rgba(255,255,255,0.76);">
-        <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Colonias elegiveis</div>
+        <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Colônias elegíveis</div>
         <div class="mt-1 text-xl font-semibold text-ink">{{ abandon_ui.colony_count }}</div>
       </div>
       <div class="rounded-[18px] border px-4 py-3" style="border-color: rgba(199,120,102,0.24); background: rgba(255,255,255,0.76);">
         <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Captcha no jogo</div>
-        <div class="mt-1 text-sm font-semibold" style="color: #b4553f;">Obrigatorio</div>
+        <div class="mt-1 text-sm font-semibold" style="color: #b4553f;">Obrigatório</div>
       </div>
       <div class="rounded-[18px] border px-4 py-3" :style="ready ? 'border-color: rgba(95,140,78,0.32); background: rgba(255,255,255,0.76);' : 'border-color: rgba(199,120,102,0.24); background: rgba(255,255,255,0.76);'">
-        <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Liberacao</div>
+        <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Liberação</div>
         <div class="mt-1 text-sm font-semibold" :style="ready ? 'color: var(--ik-good);' : 'color: #b4553f;'">
-          <span x-text="ready ? 'Pronto para criar job' : 'Aguardando confirmacoes'"></span>
+          <span x-text="ready ? 'Pronto para criar job' : 'Aguardando confirmações'"></span>
         </div>
       </div>
     </div>
@@ -66,8 +66,8 @@
   <div class="overflow-hidden rounded-[24px] border shadow-[0_10px_28px_rgba(87,66,24,0.08)]"
        style="border-color: rgba(219,201,167,0.86); background: rgba(255,255,255,0.88);">
     <div class="border-b px-4 py-3" style="border-color: rgba(219,201,167,0.82);">
-      <div class="text-sm font-semibold text-ink">Escolha a colonia alvo</div>
-      <p class="mt-1 text-xs text-muted">A capital e filtrada desta lista. O runner ainda valida isso de novo no backend.</p>
+      <div class="text-sm font-semibold text-ink">Escolha a colônia alvo</div>
+      <p class="mt-1 text-xs text-muted">A capital é filtrada desta lista. O runner ainda valida isso de novo nó backend.</p>
     </div>
     <input type="hidden" name="{{ form.city_id.html_name }}" x-model="selectedCity">
     <div class="grid gap-3 px-4 py-4 lg:grid-cols-2">
@@ -129,7 +129,7 @@
       {% empty %}
       <div class="rounded-[18px] border px-4 py-4 text-sm text-muted lg:col-span-2"
            style="border-color: rgba(199,120,102,0.24); background: rgba(255,250,247,0.72);">
-        Nenhuma colonia elegivel foi detectada nesta conta.
+        Nenhuma colônia elegível foi detectada nesta conta.
       </div>
       {% endfor %}
     </div>
@@ -146,9 +146,9 @@
           <i class="bi bi-shield-exclamation"></i>
         </div>
         <div>
-          <div class="text-sm font-semibold text-ink">Checklist de seguranca</div>
+          <div class="text-sm font-semibold text-ink">Checklist de segurança</div>
           <p class="mt-1 text-xs text-muted">
-            O job continua pedindo captcha em execucao. Estas etapas servem para reduzir risco de abandono acidental.
+            O job continua pedindo captcha em execução. Estas etapas servem para reduzir risco de abandono acidental.
           </p>
         </div>
       </div>
@@ -157,25 +157,25 @@
         <label class="flex items-start gap-3 rounded-[18px] border px-4 py-3"
                :style="acknowledged ? 'border-color: rgba(95,140,78,0.30); background: rgba(95,140,78,0.07);' : 'border-color: rgba(199,120,102,0.24); background: rgba(255,255,255,0.86);'">
           <input type="checkbox" name="acknowledge_irreversible" class="mt-0.5 h-4 w-4 rounded border-[#b4553f]" x-model="acknowledged">
-          <span class="text-sm text-ink">Entendo que a cidade selecionada sera perdida e nao sera recuperada depois.</span>
+          <span class="text-sm text-ink">Entendo que a cidade selecionada será perdida e não será recuperada depois.</span>
         </label>
 
         <label class="flex items-start gap-3 rounded-[18px] border px-4 py-3"
                :style="confirmColony ? 'border-color: rgba(95,140,78,0.30); background: rgba(95,140,78,0.07);' : 'border-color: rgba(199,120,102,0.24); background: rgba(255,255,255,0.86);'">
           <input type="checkbox" name="confirm_colony_only" class="mt-0.5 h-4 w-4 rounded border-[#b4553f]" x-model="confirmColony">
-          <span class="text-sm text-ink">Confirmei que esta cidade e uma colonia descartavel e nao uma cidade principal da conta.</span>
+          <span class="text-sm text-ink">Confirmei que esta cidade é uma colônia descartável e não uma cidade principal da conta.</span>
         </label>
       </div>
     </div>
 
     <div class="rounded-[24px] border p-4 shadow-[0_10px_28px_rgba(87,66,24,0.08)]"
          style="border-color: rgba(219,201,167,0.86); background: rgba(255,255,255,0.88);">
-      <div class="text-sm font-semibold text-ink">Confirmacao textual</div>
-      <p class="mt-1 text-xs text-muted">Digite a frase de seguranca e repita o nome exato da cidade selecionada.</p>
+      <div class="text-sm font-semibold text-ink">Confirmação textual</div>
+      <p class="mt-1 text-xs text-muted">Digite a frase de segurança e repita o nome exato da cidade selecionada.</p>
 
       <div class="mt-4 space-y-3">
         <div>
-          <label class="form-label text-xs mb-1 block">Frase obrigatoria</label>
+          <label class="form-label text-xs mb-1 block">Frase obrigatória</label>
           <input type="text"
                  name="confirm_phrase_input"
                  class="form-input uppercase tracking-[0.16em]"
@@ -201,7 +201,7 @@
         <div class="text-[11px] uppercase tracking-[0.16em] text-muted">Alvo armado</div>
         <div class="mt-1 text-sm font-semibold text-ink" x-text="selectedCityName || 'Nenhuma cidade selecionada'"></div>
         <div class="mt-1 text-xs" :style="ready ? 'color: var(--ik-good);' : 'color: #b4553f;'">
-          <span x-text="ready ? 'Confirmacoes concluidas.' : 'Faltam confirmacoes para liberar o job.'"></span>
+          <span x-text="ready ? 'Confirmações concluídas.' : 'Faltam confirmações para liberar o job.'"></span>
         </div>
       </div>
     </div>

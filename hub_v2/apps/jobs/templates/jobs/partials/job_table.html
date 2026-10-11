@@ -17,7 +17,7 @@
       <div class="mt-1 text-2xl font-semibold text-[var(--ik-bad)]">{{ workflow_summary.problem }}</div>
     </div>
     <div class="card !p-4">
-      <div class="text-[11px] uppercase tracking-wide text-muted">Concluidos</div>
+      <div class="text-[11px] uppercase tracking-wide text-muted">Concluídos</div>
       <div class="mt-1 text-2xl font-semibold text-[var(--ik-good)]">{{ workflow_summary.done }}</div>
     </div>
     <div class="card !p-4">
@@ -35,10 +35,10 @@
           <th>Status</th>
           <th>Conta</th>
           <th>Subconta</th>
-          <th>Acao</th>
+          <th>Ação</th>
           <th>Cidade</th>
           <th>Itens</th>
-          <th>No</th>
+          <th>Nó</th>
           <th>Agendado</th>
           <th>Criado em</th>
           <th>Iniciado em</th>
@@ -81,7 +81,7 @@
           <td class="align-top">
             <div class="text-sm text-ink">{{ row.subaccount_label }}</div>
             {% if row.is_group %}
-            <div class="text-[11px] text-muted">{{ row.total_jobs }} job(s) nesta pagina</div>
+            <div class="text-[11px] text-muted">{{ row.total_jobs }} job(s) nesta página</div>
             {% endif %}
             {% if row.chain_history_count %}
             <div class="mt-1">
@@ -164,7 +164,7 @@
           </td>
           <td class="align-top">
             <div class="text-sm text-ink">{{ row.workflow_scope }}</div>
-            <div class="mt-1 text-[11px] text-muted">No {{ row.node_name }}</div>
+            <div class="mt-1 text-[11px] text-muted">Nó {{ row.node_name }}</div>
           </td>
           <td class="align-top">
             <div class="text-sm text-ink">{{ row.progress_label }}</div>
@@ -179,7 +179,7 @@
           <td class="align-top">
             <div class="text-sm text-ink">{{ row.active_job_label }}</div>
             <div class="mt-1 text-[11px] text-muted">{{ row.cycle_count }} ciclo(s) conhecidos</div>
-            <div class="mt-1 text-[11px] text-muted">{{ row.total_jobs }} job(s) nesta pagina</div>
+            <div class="mt-1 text-[11px] text-muted">{{ row.total_jobs }} job(s) nesta página</div>
           </td>
           <td class="align-top">
             {% include "jobs/partials/job_table_resource_chips.html" with resource_items=row.resource_items %}
@@ -193,7 +193,7 @@
           </td>
           <td class="align-top text-sm text-muted">
             <div>{{ row.created_at|localtime_format }}</div>
-            {% if row.started_at %}<div class="text-[11px]">Inicio {{ row.started_at|localtime_format }}</div>{% endif %}
+            {% if row.started_at %}<div class="text-[11px]">Início {{ row.started_at|localtime_format }}</div>{% endif %}
           </td>
         </tr>
         {% endif %}
@@ -205,8 +205,8 @@
               <div class="rounded-2xl border p-4" style="border-color: var(--ik-line); background: rgba(255,255,255,0.86);">
                 <div class="flex items-center justify-between gap-3">
                   <div>
-                    <div class="text-sm font-semibold text-ink">Execucoes desta pagina</div>
-                    <div class="text-[11px] text-muted">Workflow, jobs agregados e proximos detalhes tecnicos</div>
+                    <div class="text-sm font-semibold text-ink">Execuções desta página</div>
+                    <div class="text-[11px] text-muted">Workflow, jobs agregados e próximos detalhes técnicos</div>
                   </div>
                   <a href="{% url 'jobs:job-detail' row.detail_job.pk %}" class="btn btn-secondary btn-sm">
                     <i class="bi bi-box-arrow-up-right"></i> Abrir detalhe
@@ -232,7 +232,7 @@
                     <div class="mt-2 flex flex-wrap gap-2 text-[11px] text-muted">
                       <span>Criado {{ item.object.created_at|localtime_format }}</span>
                       {% if item.object.scheduled_for %}<span>Agenda {{ item.object.scheduled_for|date:"d/m H:i" }}</span>{% endif %}
-                      {% if item.object.started_at %}<span>Inicio {{ item.object.started_at|localtime_format }}</span>{% endif %}
+                      {% if item.object.started_at %}<span>Início {{ item.object.started_at|localtime_format }}</span>{% endif %}
                     </div>
                   </div>
                   {% endfor %}
@@ -296,7 +296,7 @@
         <i class="bi bi-funnel-fill"></i> Selecionar filtrados
       </button>
       <button x-show="!selectAllFiltered" @click="selectCurrentPage()" class="btn btn-secondary btn-sm" type="button">
-        <i class="bi bi-check2"></i> Selecionar pagina
+        <i class="bi bi-check2"></i> Selecionar página
       </button>
       <button @click="bulkDelete()" class="btn btn-danger btn-sm" type="button">
         <i class="bi bi-trash"></i> Excluir selecionados
@@ -380,7 +380,7 @@ function jobBulk(config) {
     bulkDelete() {
       const self = this;
       const count = this.selectAllFiltered ? this.filteredCount : this.selected.length;
-      const msg = `Excluir ${count} job(s) selecionado(s)? Esta acao nao pode ser desfeita.`;
+      const msg = `Excluir ${count} job(s) selecionado(s)? Esta ação não pode ser desfeita.`;
       window.dispatchEvent(new CustomEvent('confirm', {
         detail: {
           title: 'Excluir jobs',

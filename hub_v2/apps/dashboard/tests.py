@@ -69,7 +69,7 @@ class DashboardViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.context["telemetry"])
-        self.assertContains(response, "Servico de telemetria indispon")
+        self.assertContains(response, "Serviço de telemetria indispon")
 
     def test_telemetry_panel_renders_the_fetched_summary(self):
         self.client.force_login(self.user)

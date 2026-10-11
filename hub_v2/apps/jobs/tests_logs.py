@@ -515,3 +515,18 @@ class WorkflowLogsByCycleTests(TestCase):
         self.assertIn("Logs por ciclo", html)
         self.assertIn("window.ikLogs", html)
         self.assertNotIn("{#", html)
+
+
+class BuildingNamesTests(TestCase):
+    """N-98: the agent writes "Armazem"; the catalog now shows "Armazém". Same building, same image."""
+
+    def test_a_building_is_found_with_or_without_accents(self):
+        from apps.jobs.services.log_format import _building
+
+        plain, accented, code = _building("Armazem"), _building("Armazém"), _building("warehouse")
+        self.assertEqual(plain, accented)
+        self.assertEqual(plain, code)
+        self.assertEqual(plain[0], "Armazém")
+        self.assertTrue(plain[1].endswith("warehouse.png"))
+        self.assertEqual(_building("Palacio")[0], "Palácio")
+        self.assertTrue(_building("Escritorio do Arquiteto")[1])

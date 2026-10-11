@@ -314,7 +314,7 @@ function gameDashboard() {
       return [
         { key: 'wood', label: 'Madeira', short: 'Madeira', icon: '/static/game/resources/icon_wood.png', color: '#8c6335', value: totals.wood },
         { key: 'wine', label: 'Vinho', short: 'Vinho', icon: '/static/game/resources/icon_wine.png', color: '#8f3c44', value: totals.wine },
-        { key: 'marble', label: 'Marmore', short: 'Marmore', icon: '/static/game/resources/icon_marble.png', color: '#7e7e86', value: totals.marble },
+        { key: 'marble', label: 'Mármore', short: 'Mármore', icon: '/static/game/resources/icon_marble.png', color: '#7e7e86', value: totals.marble },
         { key: 'crystal', label: 'Cristal', short: 'Cristal', icon: '/static/game/resources/icon_glass.png', color: '#3e84a8', value: totals.crystal },
         { key: 'sulfur', label: 'Enxofre', short: 'Enxofre', icon: '/static/game/resources/icon_sulfur.png', color: '#b78c2a', value: totals.sulfur },
       ].map((item) => ({
@@ -568,7 +568,7 @@ function gameDashboard() {
       if (!visibleCards.length) {
         return {
           available: false,
-          reason: 'Nenhuma conta visivel no filtro atual.',
+          reason: 'Nenhuma conta visível no filtro atual.',
           scopeLabel: 'Sem dados',
         };
       }
@@ -612,7 +612,7 @@ function gameDashboard() {
       if (!points.length) {
         return {
           available: false,
-          reason: 'Nao ha historico salvo para o filtro atual.',
+          reason: 'Não há histórico salvo para o filtro atual.',
           scopeLabel: this.historyScopeLabel(visibleCards),
         };
       }

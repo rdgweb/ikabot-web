@@ -8,7 +8,7 @@
 {% endblock %}
 
 {% block page_title %}Central de Mensagens{% endblock %}
-{% block page_subtitle %}Historico de notificacoes enviadas via Telegram{% endblock %}
+{% block page_subtitle %}Histórico de notificações enviadas via Telegram{% endblock %}
 
 {% block filter_dropdown %}
 <div x-data="{ filterOpen: false }" class="relative">
@@ -74,7 +74,7 @@
                 hx-swap="innerHTML" hx-trigger="change"
                 hx-include=".filter-panel [name]" hx-push-url="true">
           <option value="">Todos</option>
-          <option value="notification" {% if request.GET.channel == "notification" %}selected{% endif %}>Notificacao</option>
+          <option value="notification" {% if request.GET.channel == "notification" %}selected{% endif %}>Notificação</option>
           <option value="alert" {% if request.GET.channel == "alert" %}selected{% endif %}>Alerta</option>
           <option value="summary" {% if request.GET.channel == "summary" %}selected{% endif %}>Resumo</option>
         </select>

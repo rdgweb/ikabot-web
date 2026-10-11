@@ -13,7 +13,7 @@
       <span class="mx-1">/</span>
       <a href="{% url 'profiles:preset-detail' preset.pk %}" class="hover:text-ink">{{ preset.name }}</a>
       <span class="mx-1">/</span>
-      <span class="text-ink">Configurar acao {{ preset_action.order }}</span>
+      <span class="text-ink">Configurar ação {{ preset_action.order }}</span>
     </nav>
     <div class="flex items-center gap-3">
       <span class="flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold text-white shrink-0"
@@ -22,7 +22,7 @@
       </span>
       <div>
         <h1 class="text-2xl font-bold text-ink">{{ preset_action.action_name }}</h1>
-        <p class="text-sm text-muted">Configuracao padrao aplicada a todas as contas do preset</p>
+        <p class="text-sm text-muted">Configuração padrão aplicada a todas as contas do preset</p>
       </div>
     </div>
   </div>
@@ -82,8 +82,8 @@
       {% else %}
       <div class="text-center py-8 rounded-lg" style="background: var(--ik-sand-light);">
         <i class="bi bi-check-circle text-[var(--ik-good)] text-2xl"></i>
-        <p class="text-sm text-muted mt-2">Nenhuma configuracao necessaria para esta acao.</p>
-        <p class="text-xs text-muted mt-0.5">O job sera executado com as configuracoes padrao do agente.</p>
+        <p class="text-sm text-muted mt-2">Nenhuma configuração necessária para esta ação.</p>
+        <p class="text-xs text-muted mt-0.5">O job será executado com as configurações padrão do agente.</p>
       </div>
       {% endif %}
 
@@ -227,10 +227,10 @@
         </a>
         <div class="flex items-center gap-2">
           <button type="submit" class="btn btn-primary">
-            <i class="bi bi-floppy"></i> Salvar configuracao
+            <i class="bi bi-floppy"></i> Salvar configuração
           </button>
           {% if next_order %}
-          <span class="text-xs text-muted">e ir para acao {{ next_order }}</span>
+          <span class="text-xs text-muted">e ir para ação {{ next_order }}</span>
           {% endif %}
         </div>
       </div>

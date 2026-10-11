@@ -393,7 +393,7 @@ class BankStartCycleView(LoginRequiredMixin, View):
             })
 
         if not effective_target_units:
-            return JsonResponse({"error": "Nenhuma composicao configurada nas produtoras."}, status=400)
+            return JsonResponse({"error": "Nenhuma composição configurada nas produtoras."}, status=400)
 
         ga = bank.bank_game_account
         job = create_job_with_workflow(

@@ -369,11 +369,11 @@
                 <span class="inline-flex items-center gap-1"><img src="{{ row.tradegood_icon }}" class="h-4 w-4 object-contain" alt="">{{ row.city_name }}
                   <button type="button" class="ml-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors hover:bg-[rgba(79,134,185,0.12)]"
                           style="border-color: rgba(79,134,185,0.4); color: var(--ik-sea);"
-                          title="Reorganizar edificios (arrastar e soltar)"
+                          title="Reorganizar edifícios (arrastar e soltar)"
                           @click="$dispatch('open-reorder', {key: '{{ row.reorder_key }}'})"><i class="bi bi-arrows-move"></i> Reorganizar</button>
                   <button type="button" class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold"
                           style="border-color: rgba(187,81,67,0.45); color: var(--ik-bad);"
-                          title="Demolir edificios desta conta (Acoes do Jogo, com confirmacoes)"
+                          title="Demolir edifícios desta conta (Ações do Jogo, com confirmações)"
                           hx-get="{% url 'jobs:job-form' %}?ga={{ row.game_account_id }}&action=1303"
                           hx-target="#job-modal-body" hx-swap="innerHTML" hx-push-url="false"
                           onclick="this.dispatchEvent(new CustomEvent('open-modal-jobcreate', {bubbles: true}));"><i class="bi bi-trash3"></i> Demolir</button>
@@ -433,16 +433,16 @@
         <div class="mt-2 w-full rounded-[22px] border bg-paper p-4 shadow-2xl" style="max-width: 1400px; border-color: var(--ik-line);">
           <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div class="text-[11px] font-semibold uppercase" style="letter-spacing: 0.16em; color: var(--ik-sea);">Reorganizar edificios</div>
+              <div class="text-[11px] font-semibold uppercase" style="letter-spacing: 0.16em; color: var(--ik-sea);">Reorganizar edifícios</div>
               <h3 class="text-lg font-bold text-ink"><span x-text="meta.city_name"></span> <span class="text-sm font-normal text-muted" x-text="'· ' + meta.ga_name"></span></h3>
-              <p class="mt-1 text-[11px] text-muted">Arraste um edificio para outra posicao (ou clique em um e depois no destino). Se o destino tiver edificio, os dois trocam de lugar. So valem as trocas que o proprio jogo aceita.</p>
+              <p class="mt-1 text-[11px] text-muted">Arraste um edifício para outra posição (ou clique em um e depois no destino). Se o destino tiver edifício, os dois trocam de lugar. Só valem as trocas que o próprio jogo aceita.</p>
             </div>
             <button type="button" class="text-xl text-muted hover:text-ink" @click="close()" title="Fechar"><i class="bi bi-x-lg"></i></button>
           </div>
 
           <template x-if="!meta.ready">
             <div class="rounded-[14px] border border-dashed p-4 text-sm text-muted" style="border-color: var(--ik-line);">
-              <i class="bi bi-info-circle"></i> Ainda nao sei quais edificios cada posicao aceita nesta cidade. Rode o <strong>Check Status</strong> desta conta e recarregue a pagina para habilitar a reorganizacao.
+              <i class="bi bi-info-circle"></i> Ainda não sei quais edifícios cada posição aceita nesta cidade. Rode o <strong>Check Status</strong> desta conta e recarregue a página para habilitar a reorganização.
             </div>
           </template>
 
@@ -555,7 +555,7 @@ function planCard(jobId, strategy) {
       return [
         {k:'wood', label:'Madeira', icon:this.resIcons.wood},
         {k:'wine', label:'Vinho', icon:this.resIcons.wine},
-        {k:'marble', label:'Marmore', icon:this.resIcons.marble},
+        {k:'marble', label:'Mármore', icon:this.resIcons.marble},
         {k:'crystal', label:'Cristal', icon:this.resIcons.crystal},
         {k:'sulfur', label:'Enxofre', icon:this.resIcons.sulfur},
       ];
@@ -647,12 +647,12 @@ function reorderModal() {
     hasBuilding(slot) { return slot && slot.b !== 'empty' && slot.id !== null && slot.id !== undefined; },
     isMovable(idx) { const s = this.slots[idx]; return this.meta.ready && this.hasBuilding(s) && !s.u; },
     rejection(from, to) {
-      if (from === null || from === to) return 'mesma posicao';
+      if (from === null || from === to) return 'mesma posição';
       const a = this.slots[from], b = this.slots[to];
-      if (!this.hasBuilding(a)) return 'nao ha edificio na origem';
-      if (a.u || b.u) return 'edificio em obra';
-      if (!(b.a || []).includes(a.id)) return `a posicao #${b.p} nao aceita ${a.n}`;
-      if (this.hasBuilding(b) && !(a.a || []).includes(b.id)) return `a posicao #${a.p} nao aceita ${b.n}`;
+      if (!this.hasBuilding(a)) return 'não há edifício na origem';
+      if (a.u || b.u) return 'edifício em obra';
+      if (!(b.a || []).includes(a.id)) return `a posição #${b.p} não aceita ${a.n}`;
+      if (this.hasBuilding(b) && !(a.a || []).includes(b.id)) return `a posição #${a.p} não aceita ${b.n}`;
       return '';
     },
     // Ground belongs to the position, not to the building that moves.
@@ -674,7 +674,7 @@ function reorderModal() {
     },
     tryMove(from, to) {
       const why = this.rejection(from, to);
-      if (why) { this.notice = {text: `Troca nao permitida: ${why}.`, type: 'warn'}; return false; }
+      if (why) { this.notice = {text: `Troca não permitida: ${why}.`, type: 'warn'}; return false; }
       this.applySwap(from, to);
       this.notice = {text: '', type: ''};
       return true;
@@ -820,7 +820,7 @@ function reorderModal() {
       }
       const label = (layouts[sourceKey] || {}).city_name || 'modelo';
       this.notice = missing
-        ? {text: `Layout de ${label}: ${this.swaps.length} troca(s). ${missing} posicao(oes) nao puderam ser igualadas (edificio que nao existe aqui, em obra ou terreno diferente).`, type: 'warn'}
+        ? {text: `Layout de ${label}: ${this.swaps.length} troca(s). ${missing} posição(ões) não puderam ser igualadas (edifício que não existe aqui, em obra ou terreno diferente).`, type: 'warn'}
         : {text: `Layout de ${label}: ${this.swaps.length} troca(s) para igualar.`, type: ''};
     },
     async save() {

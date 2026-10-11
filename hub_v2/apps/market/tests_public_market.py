@@ -100,7 +100,7 @@ class PublicMarketTests(TestCase):
         page = self._page().content.decode()
         self.assertEqual(PublicMarketScan.objects.get().kind, "range_sync")
         self.assertIn("Pequena", page)
-        self.assertIn("so alcance", page)
+        self.assertIn("só alcance", page)
 
     def test_odd_numbers_from_a_scan_never_break_the_save(self):
         offer = _offer(900, 21)

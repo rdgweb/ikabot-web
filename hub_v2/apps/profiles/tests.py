@@ -207,7 +207,7 @@ class PresetConfigureActionFormNestingTests(TestCase):
 
         form_start = html.index('<form method="post">')
         form_end = html.index('</form>', form_start)
-        salvar_pos = html.index('Salvar configuracao')
+        salvar_pos = html.index('Salvar configuração')
         cidades_pos = html.index('Cidades</span>')
 
         self.assertTrue(

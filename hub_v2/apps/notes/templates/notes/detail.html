@@ -42,7 +42,7 @@
     {% elif note.status != "done" %}
     <form method="post" action="{% url 'notes:done' note.pk %}">
       {% csrf_token %}
-      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-hourglass-split"></i> Enviar para aprovacao</button>
+      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-hourglass-split"></i> Enviar para aprovação</button>
     </form>
     {% endif %}
   </div>
@@ -64,7 +64,7 @@
       <dl class="space-y-2">
         <div class="flex justify-between gap-3"><dt class="text-muted">Criada</dt><dd>{{ note.created_at|date:"d/m/Y H:i" }}</dd></div>
         <div class="flex justify-between gap-3"><dt class="text-muted">Atualizada</dt><dd>{{ note.updated_at|date:"d/m/Y H:i" }}</dd></div>
-        {% if note.completed_at %}<div class="flex justify-between gap-3"><dt class="text-muted">Concluida</dt><dd>{{ note.completed_at|date:"d/m/Y H:i" }}</dd></div>{% endif %}
+        {% if note.completed_at %}<div class="flex justify-between gap-3"><dt class="text-muted">Concluída</dt><dd>{{ note.completed_at|date:"d/m/Y H:i" }}</dd></div>{% endif %}
         {% if note.claimed_by_label %}<div class="flex justify-between gap-3"><dt class="text-muted">Assumida por</dt><dd>{{ note.claimed_by_label }}</dd></div>{% endif %}
         {% if note.claimed_at %}<div class="flex justify-between gap-3"><dt class="text-muted">Assumida em</dt><dd>{{ note.claimed_at|date:"d/m/Y H:i" }}</dd></div>{% endif %}
         {% if note.created_by %}<div class="flex justify-between gap-3"><dt class="text-muted">Autor</dt><dd>{{ note.created_by.username }}</dd></div>{% endif %}
@@ -74,7 +74,7 @@
     </div>
     <div class="rounded-lg p-4" style="border:1px solid var(--ik-line); background:var(--ik-paper);">
       <div class="flex items-center justify-between mb-3">
-        <h2 class="text-sm font-semibold uppercase text-muted">Historico</h2>
+        <h2 class="text-sm font-semibold uppercase text-muted">Histórico</h2>
       </div>
       <form method="post" action="{% url 'notes:event-create' note.pk %}" class="mb-4 space-y-2">
         {% csrf_token %}
@@ -101,7 +101,7 @@
     </div>
     <div class="rounded-lg p-4" style="border:1px solid var(--ik-line); background:var(--ik-paper);">
       <div class="flex items-center justify-between mb-3">
-        <h2 class="text-sm font-semibold uppercase text-muted">Atualizacoes ligadas</h2>
+        <h2 class="text-sm font-semibold uppercase text-muted">Atualizações ligadas</h2>
       </div>
       <div class="space-y-3 text-sm">
         {% for change in note.changes.all %}
@@ -110,7 +110,7 @@
             <div class="text-xs text-muted">{{ change.get_visibility_display }} · {{ change.get_component_display }}{% if change.version %} · v{{ change.version }}{% endif %}{% if change.published_version %} · publicado {{ change.published_version }}{% endif %} · {{ change.created_at|date:"d/m/Y H:i" }}</div>
           </div>
         {% empty %}
-          <p class="text-muted">Nenhuma atualizacao registrada.</p>
+          <p class="text-muted">Nenhuma atualização registrada.</p>
         {% endfor %}
       </div>
     </div>

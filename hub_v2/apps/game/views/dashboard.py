@@ -630,7 +630,7 @@ def _build_city_military_rows(city: dict[str, Any], key: str) -> list[dict[str, 
     if own_total > 0 or not enemy_forces:
         rows.append({
             "kind": "own",
-            "label": "Proprias",
+            "label": "Próprias",
             "owner_name": "",
             "unit_map": own_map,
             "total": own_total,
@@ -700,7 +700,7 @@ def _annotate_building_remaining(city: dict[str, Any]) -> dict[str, Any]:
 RESOURCE_PROJECTION_META = {
     "wood": {"label": "Madeira", "icon": "game/resources/icon_wood.png", "tradegood": 0, "res_key": "resource"},
     "wine": {"label": "Vinho", "icon": "game/resources/icon_wine.png", "tradegood": 1, "res_key": "1"},
-    "marble": {"label": "Marmore", "icon": "game/resources/icon_marble.png", "tradegood": 2, "res_key": "2"},
+    "marble": {"label": "Mármore", "icon": "game/resources/icon_marble.png", "tradegood": 2, "res_key": "2"},
     "crystal": {"label": "Cristal", "icon": "game/resources/icon_glass.png", "tradegood": 3, "res_key": "3"},
     "sulfur": {"label": "Enxofre", "icon": "game/resources/icon_sulfur.png", "tradegood": 4, "res_key": "4"},
 }

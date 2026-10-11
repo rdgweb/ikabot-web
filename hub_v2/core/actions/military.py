@@ -167,7 +167,7 @@ ACTIONS = {
         "recurring": False,
         "long_running": True,
         "ui_hidden": True,
-        "description": "Executa uma tarefa de producao do banco de generais: treina unidades na produtora e lista no Mercado Negro.",
+        "description": "Executa uma tarefa de produção do banco de generais: treina unidades na produtora e lista no Mercado Negro.",
         "inputs": [],
     },
     807: {
@@ -201,8 +201,8 @@ ACTIONS = {
              "default": "troops", "choices": [("troops", "Tropas (Quartel)"), ("fleet", "Frotas (Estaleiro)")]},
             {"key": "mode", "type": FIELD_CHOICE, "label": "Modo", "required": True,
              "default": "once", "choices": [("once", "Treinar agora"), ("distribute", "Distribuir treino"), ("maintain", "Manter efetivo")]},
-            {"key": "maintain_scope", "type": FIELD_CHOICE, "label": "Escopo da manutencao", "required": False,
-             "default": "local", "choices": [("local", "Cidade unica"), ("selected_uniform", "Mesmo alvo em cidades selecionadas"), ("selected_custom", "Alvo customizado por cidade")]},
+            {"key": "maintain_scope", "type": FIELD_CHOICE, "label": "Escopo da manutenção", "required": False,
+             "default": "local", "choices": [("local", "Cidade única"), ("selected_uniform", "Mesmo alvo em cidades selecionadas"), ("selected_custom", "Alvo customizado por cidade")]},
             {"key": "consolidate_city_id", "type": FIELD_CITY_SELECT, "label": "Consolidar em", "multiple": False, "required": False},
             {"key": "position", "type": FIELD_INT, "label": "Posição do edifício", "required": False, "default": 0,
              "help": "Posição do Quartel/Estaleiro no mapa da cidade (0 = detectar automaticamente)."},
@@ -211,7 +211,7 @@ ACTIONS = {
         ],
     },
     1202: {
-        "name": "Mover Forcas",
+        "name": "Mover Forças",
         "name_en": "Move forces",
         "category": CAT_MILITARY,
         "icon": "bi-geo-alt-fill",
@@ -238,7 +238,7 @@ ACTIONS = {
         "recurring": True,
         "long_running": False,
         "ready": True,
-        "description": "Pesquisa melhorias de unidades na Oficina do Inventor automaticamente. Selecione quais unidades evoluir, nivel maximo e reservas de recursos.",
+        "description": "Pesquisa melhorias de unidades na Oficina do Inventor automaticamente. Selecione quais unidades evoluir, nível máximo e reservas de recursos.",
         "inputs": [
             {
                 "key": "city_id",
@@ -251,7 +251,7 @@ ACTIONS = {
             {
                 "key": "target_all",
                 "type": FIELD_BOOL,
-                "label": "Melhorar todas as unidades disponiveis",
+                "label": "Melhorar todas as unidades disponíveis",
                 "required": False,
                 "default": True,
                 "help": "Se marcado, ignora a lista unit_targets e melhora todas as unidades desbloqueadas.",
@@ -266,20 +266,20 @@ ACTIONS = {
             {
                 "key": "min_crystal_reserve",
                 "type": FIELD_INT,
-                "label": "Reserva minima de cristal",
+                "label": "Reserva mínima de cristal",
                 "required": False,
                 "default": 0,
                 "min": 0,
-                "help": "Nao gasta se o estoque de cristal ficaria abaixo desse valor.",
+                "help": "Não gasta se o estoque de cristal ficaria abaixo desse valor.",
             },
             {
                 "key": "min_gold_reserve",
                 "type": FIELD_INT,
-                "label": "Reserva minima de ouro",
+                "label": "Reserva mínima de ouro",
                 "required": False,
                 "default": 0,
                 "min": 0,
-                "help": "Nao gasta se o saldo de ouro ficaria abaixo desse valor.",
+                "help": "Não gasta se o saldo de ouro ficaria abaixo desse valor.",
             },
             {
                 "key": "priority_mode",
@@ -290,14 +290,14 @@ ACTIONS = {
                 "choices": [
                     ("offensive_first", "Ofensivo primeiro"),
                     ("defensive_first", "Defensivo primeiro"),
-                    ("shortest_first", "Mais rapida primeiro"),
+                    ("shortest_first", "Mais rápida primeiro"),
                     ("cheapest_first", "Mais barata primeiro"),
                 ],
             },
         ],
     },
     17: {
-        "name": "Pirata Automatico",
+        "name": "Pirata Automático",
         "name_en": "Auto Pirate",
         "category": CAT_MILITARY,
         "icon": "bi-flag-fill",
@@ -306,7 +306,7 @@ ACTIONS = {
         "recurring": True,
         "long_running": True,
         "ready": True,
-        "description": "Envia a tripulacao em missoes piratas automaticamente e converte pontos de captura em forca da tripulacao.",
+        "description": "Envia a tripulação em missões piratas automaticamente e converte pontos de captura em força da tripulação.",
         "inputs": [
             {"key": "city_id", "type": FIELD_CITY_SELECT, "label": "Cidade (com Fortaleza Pirata)", "multiple": False, "required": True, "city_building": "pirateFortress"},
             # Missão simples (sem agendamento por horário)
@@ -596,7 +596,7 @@ ACTIONS = {
                 "label": "Cidade",
                 "multiple": False,
                 "required": True,
-                "help": "Selecione a cidade com ocupacao terrestre ou bloqueio naval.",
+                "help": "Selecione a cidade com ocupação terrestre ou bloqueio naval.",
             },
             {
                 "key": "revolt_type",
@@ -605,7 +605,7 @@ ACTIONS = {
                 "required": True,
                 "default": "troops",
                 "choices": [
-                    ("troops", "Forcas de ocupacao (tropas)"),
+                    ("troops", "Forças de ocupação (tropas)"),
                     ("ships", "Bloqueio do porto (frotas)"),
                 ],
                 "help": "Escolha se a revolta deve mirar tropas em terra ou a frota que bloqueia o porto.",

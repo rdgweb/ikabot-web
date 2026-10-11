@@ -29,15 +29,15 @@ def classify_agent_version(reported: str | None, expected: str | None) -> AgentV
     reported_text = str(reported or "").strip()
     expected_parsed = parse_version(expected)
     if not reported_text:
-        return AgentVersionState("missing", "nao registrada", "badge-secondary")
+        return AgentVersionState("missing", "não registrada", "badge-secondary")
 
     reported_parsed = parse_version(reported_text)
     if reported_parsed is None:
-        return AgentVersionState("invalid", "formato invalido", "badge-danger")
+        return AgentVersionState("invalid", "formato inválido", "badge-danger")
     if expected_parsed is None:
         return AgentVersionState("unverified", "sem alvo", "badge-secondary")
     if reported_parsed < expected_parsed:
-        return AgentVersionState("outdated", "atualizacao disponivel", "badge-warning")
+        return AgentVersionState("outdated", "atualização disponível", "badge-warning")
     if reported_parsed > expected_parsed:
         return AgentVersionState("ahead", "a frente do hub", "badge-warning")
     return AgentVersionState("current", "atual", "badge-success")

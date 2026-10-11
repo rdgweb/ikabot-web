@@ -66,14 +66,14 @@ CONSTRUCTION_LUXURY_BUILDINGS = {
 TRADEGOOD_UI = {
     0: {"name": "Madeira", "icon": "game/resources/icon_wood.png"},
     1: {"name": "Vinho", "icon": "game/resources/icon_wine.png"},
-    2: {"name": "Marmore", "icon": "game/resources/icon_marble.png"},
+    2: {"name": "Mármore", "icon": "game/resources/icon_marble.png"},
     3: {"name": "Cristal", "icon": "game/resources/icon_glass.png"},
     4: {"name": "Enxofre", "icon": "game/resources/icon_sulfur.png"},
 }
 CITY_RESOURCE_FIELDS = (
     ("wood", "Madeira", "game/resources/icon_wood.png"),
     ("wine", "Vinho", "game/resources/icon_wine.png"),
-    ("marble", "Marmore", "game/resources/icon_marble.png"),
+    ("marble", "Mármore", "game/resources/icon_marble.png"),
     ("crystal", "Cristal", "game/resources/icon_glass.png"),
     ("sulfur", "Enxofre", "game/resources/icon_sulfur.png"),
 )
@@ -86,7 +86,7 @@ WORKSHOP_UNITS_UI = (
     {"key": "fundeiro",     "game_id": 301, "name": "Fundeiro",          "tab": "land", "icon": "game/units/fundeiro.png",          "bi": "bi-person-fill",        "accent": "rgba(95,130,60,0.85)",   "surface": "rgba(95,130,60,0.08)"},
     {"key": "arqueiro",     "game_id": 313, "name": "Arqueiro",          "tab": "land", "icon": "game/units/arqueiro.png",          "bi": "bi-person-fill",        "accent": "rgba(85,135,90,0.85)",   "surface": "rgba(85,135,90,0.08)"},
     {"key": "atirador",     "game_id": 304, "name": "Carabineiro",       "tab": "land", "icon": "game/units/atirador.png",          "bi": "bi-person-fill",        "accent": "rgba(90,140,80,0.85)",   "surface": "rgba(90,140,80,0.08)"},
-    {"key": "ariete",       "game_id": 307, "name": "Ariete",            "tab": "land", "icon": "game/units/ariete.png",            "bi": "bi-arrow-right-square", "accent": "rgba(100,65,40,0.85)",   "surface": "rgba(100,65,40,0.08)"},
+    {"key": "ariete",       "game_id": 307, "name": "Aríete",            "tab": "land", "icon": "game/units/ariete.png",            "bi": "bi-arrow-right-square", "accent": "rgba(100,65,40,0.85)",   "surface": "rgba(100,65,40,0.08)"},
     {"key": "catapulta",    "game_id": 306, "name": "Catapulta",         "tab": "land", "icon": "game/units/catapulta.png",         "bi": "bi-bullseye",           "accent": "rgba(140,105,60,0.85)",  "surface": "rgba(140,105,60,0.08)"},
     {"key": "morteiro",     "game_id": 305, "name": "Morteiro",          "tab": "land", "icon": "game/units/morteiro.png",          "bi": "bi-bullseye",           "accent": "rgba(90,80,80,0.85)",    "surface": "rgba(90,80,80,0.08)"},
     {"key": "girocoptero",  "game_id": 312, "name": "Girocóptero",       "tab": "land", "icon": "game/units/girocoptero.png",       "bi": "bi-wind",               "accent": "rgba(150,120,70,0.85)",  "surface": "rgba(150,120,70,0.08)"},
@@ -155,7 +155,7 @@ SHRINE_GOD_UI = (
         "id": 1,
         "name": "Pan",
         "subtitle": "Lorde da Floresta",
-        "effect": "Bencao de madeira",
+        "effect": "Bênção de madeira",
         "effect_icon": "game/resources/icon_wood.png",
         "icon": "game/gods/pan.png",
         "accent": "#4f86b9",
@@ -165,9 +165,9 @@ SHRINE_GOD_UI = (
         "field": "god_dionysus",
         "key": "dionysus",
         "id": 2,
-        "name": "Dionisio",
+        "name": "Dionísio",
         "subtitle": "Hora da Festa!",
-        "effect": "Bencao de vinho",
+        "effect": "Bênção de vinho",
         "effect_icon": "game/resources/icon_wine.png",
         "icon": "game/gods/dionysus.png",
         "accent": "#8e5476",
@@ -178,8 +178,8 @@ SHRINE_GOD_UI = (
         "key": "tyche",
         "id": 3,
         "name": "Tique",
-        "subtitle": "Uma Feliz Coincidencia",
-        "effect": "Bencao de marmore",
+        "subtitle": "Uma Feliz Coincidência",
+        "effect": "Bênção de mármore",
         "effect_icon": "game/resources/icon_marble.png",
         "icon": "game/gods/tyche.png",
         "accent": "#3f8c7d",
@@ -191,7 +191,7 @@ SHRINE_GOD_UI = (
         "id": 4,
         "name": "Pluto",
         "subtitle": "Riquezas das Profundezas",
-        "effect": "Bencao de ouro",
+        "effect": "Bênção de ouro",
         "effect_icon": "game/gods/favor.png",
         "icon": "game/gods/plutus.png",
         "accent": "#c99c4e",
@@ -203,7 +203,7 @@ SHRINE_GOD_UI = (
         "id": 5,
         "name": "Teia",
         "subtitle": "O Esplendor da Deusa",
-        "effect": "Bencao de cristal",
+        "effect": "Bênção de cristal",
         "effect_icon": "game/resources/icon_glass.png",
         "icon": "game/gods/theia.png",
         "accent": "#8f6cc2",
@@ -215,7 +215,7 @@ SHRINE_GOD_UI = (
         "id": 6,
         "name": "Hefesto",
         "subtitle": "Forjado em Lava",
-        "effect": "Bencao de enxofre",
+        "effect": "Bênção de enxofre",
         "effect_icon": "game/resources/icon_sulfur.png",
         "icon": "game/gods/hephaestus.png",
         "accent": "#cc6b4a",
@@ -226,9 +226,9 @@ RESEARCH_BRANCH_UI = (
     {
         "id": "seafaring",
         "field": "branch_seafaring",
-        "name": "Navegacao Maritima",
+        "name": "Navegação Marítima",
         "subtitle": "Navios, porto e mar",
-        "description": "Rotas, manutencao naval e tecnologias de porto.",
+        "description": "Rotas, manutenção naval e tecnologias de porto.",
         "icon": "bi-water",
         "accent": "#4f86b9",
         "surface": "rgba(79,134,185,0.14)",
@@ -239,7 +239,7 @@ RESEARCH_BRANCH_UI = (
         "field": "branch_economy",
         "name": "Economia",
         "subtitle": "Crescimento e recursos",
-        "description": "Habitantes, armazens e eficiencia economica.",
+        "description": "Habitantes, armazéns e eficiência econômica.",
         "icon": "bi-coin",
         "accent": "#c99c4e",
         "surface": "rgba(201,156,78,0.16)",
@@ -248,9 +248,9 @@ RESEARCH_BRANCH_UI = (
     {
         "id": "knowledge",
         "field": "branch_knowledge",
-        "name": "Ciencia",
+        "name": "Ciência",
         "subtitle": "Academias e pesquisa",
-        "description": "Pontos de pesquisa, cultura e ciencia aplicada.",
+        "description": "Pontos de pesquisa, cultura e ciência aplicada.",
         "icon": "bi-lightbulb",
         "accent": "#8f6cc2",
         "surface": "rgba(143,108,194,0.16)",
@@ -260,8 +260,8 @@ RESEARCH_BRANCH_UI = (
         "id": "military",
         "field": "branch_military",
         "name": "Militar",
-        "subtitle": "Exercito e defesa",
-        "description": "Unidades, cercos e manutencao militar.",
+        "subtitle": "Exército e defesa",
+        "description": "Unidades, cercos e manutenção militar.",
         "icon": "bi-shield-check",
         "accent": "#cc6b4a",
         "surface": "rgba(204,107,74,0.16)",
@@ -272,7 +272,7 @@ RESEARCH_BRANCH_UI = (
         "field": "branch_mythology",
         "name": "Mitologia",
         "subtitle": "Deuses e milagres",
-        "description": "Linha mitologica e desbloqueios divinos.",
+        "description": "Linha mitológica e desbloqueios divinos.",
         "icon": "bi-stars",
         "accent": "#5f8c4e",
         "surface": "rgba(95,140,78,0.14)",
@@ -799,7 +799,7 @@ _PREMIUM_ITEM_ICONS = {
 _PREMIUM_TRADE_RESOURCES = [
     ("resource", "Madeira", "game/resources/icon_wood.png"),
     ("wine", "Vinho", "game/resources/icon_wine.png"),
-    ("marble", "Marmore", "game/resources/icon_marble.png"),
+    ("marble", "Mármore", "game/resources/icon_marble.png"),
     ("crystal", "Cristal", "game/resources/icon_glass.png"),
     ("sulfur", "Enxofre", "game/resources/icon_sulfur.png"),
 ]
@@ -1811,7 +1811,7 @@ def _academy_city_cards(cities, snapshot=None, *, crystal_only: bool = False):
             "experiment_available": bool(experiment.get("available")),
             "experiment_reason": str(experiment.get("reason") or ""),
             "experiment_short_status": (
-                "Disponivel"
+                "Disponível"
                 if bool(experiment.get("available"))
                 else (str(experiment.get("reason") or "").strip() or "Sem leitura ainda")
             ),
@@ -2515,13 +2515,13 @@ class JobPlanQuickPatchView(LoginRequiredMixin, View):
         try:
             job = Job.objects.select_related("game_account").get(pk=pk)
         except (Job.DoesNotExist, ValueError, ValidationError):
-            return JsonResponse({"ok": False, "error": "Job nao encontrado."}, status=404)
+            return JsonResponse({"ok": False, "error": "Job não encontrado."}, status=404)
         if int(job.action_code) != 1002:
-            return JsonResponse({"ok": False, "error": "Nao e um plano de construcao."}, status=400)
+            return JsonResponse({"ok": False, "error": "Não é um plano de construção."}, status=400)
 
         target = JobSubmitView._find_active_chain_job(job)
         if target is None:
-            return JsonResponse({"ok": False, "error": "Plano nao esta mais ativo."}, status=409)
+            return JsonResponse({"ok": False, "error": "Plano não está mais ativo."}, status=409)
 
         patch = {}
         message = "Plano atualizado."
@@ -2557,7 +2557,7 @@ class JobPlanQuickPatchView(LoginRequiredMixin, View):
                             if str(s.get("city_id") or "") == tgt_city:
                                 s.pop("priority", None)
                         steps[i]["priority"] = True
-                        message = "Etapa priorizada — sera a proxima nesta cidade."
+                        message = "Etapa priorizada — será a próxima nesta cidade."
                 except (TypeError, ValueError):
                     pass
             patch["construction_plan_json"] = steps
@@ -2577,10 +2577,10 @@ class JobSendResourcesView(LoginRequiredMixin, View):
         try:
             job = Job.objects.select_related("game_account", "game_account__account").get(pk=pk)
         except (Job.DoesNotExist, ValueError, ValidationError):
-            return JsonResponse({"ok": False, "error": "Job nao encontrado."}, status=404)
+            return JsonResponse({"ok": False, "error": "Job não encontrado."}, status=404)
         ga = job.game_account
         if ga is None:
-            return JsonResponse({"ok": False, "error": "Conta invalida."}, status=400)
+            return JsonResponse({"ok": False, "error": "Conta inválida."}, status=400)
 
         from_city = str(request.POST.get("from_city") or "").strip()
         to_city = str(request.POST.get("to_city") or "").strip()
@@ -2655,12 +2655,12 @@ class ColonizeIslandRefreshView(LoginRequiredMixin, View):
         coord_x = _coerce_coord(request.POST.get("coord_x") or request.GET.get("coord_x"))
         coord_y = _coerce_coord(request.POST.get("coord_y") or request.GET.get("coord_y"))
         if not ga_id or coord_x is None or coord_y is None:
-            return self._status_partial(request, "", ga_id, coord_x, coord_y, state="error", message="Coordenadas invalidas.")
+            return self._status_partial(request, "", ga_id, coord_x, coord_y, state="error", message="Coordenadas inválidas.")
 
         try:
             ga = GameAccount.objects.select_related("account").get(pk=ga_id, active=True)
         except GameAccount.DoesNotExist:
-            return self._status_partial(request, "", ga_id, coord_x, coord_y, state="error", message="Conta nao encontrada.")
+            return self._status_partial(request, "", ga_id, coord_x, coord_y, state="error", message="Conta não encontrada.")
 
         current_dump, _dump_scope = _latest_world_dump_for_ga(ga)
         inputs = {
@@ -2709,22 +2709,22 @@ class ColonizeIslandRefreshStatusView(LoginRequiredMixin, View):
         coord_x = request.GET.get("coord_x")
         coord_y = request.GET.get("coord_y")
         if not job_id or not ga_id:
-            return ColonizeIslandRefreshView._status_partial(request, job_id, ga_id, coord_x, coord_y, state="error", message="Parametros ausentes.")
+            return ColonizeIslandRefreshView._status_partial(request, job_id, ga_id, coord_x, coord_y, state="error", message="Parâmetros ausentes.")
 
         try:
             job = Job.objects.select_related("game_account").get(pk=job_id)
         except Job.DoesNotExist:
-            return ColonizeIslandRefreshView._status_partial(request, job_id, ga_id, coord_x, coord_y, state="error", message="Job de refresh nao encontrado.")
+            return ColonizeIslandRefreshView._status_partial(request, job_id, ga_id, coord_x, coord_y, state="error", message="Job de refresh não encontrado.")
 
         if job.status in {"queued", "running", "scheduled"}:
             return ColonizeIslandRefreshView._status_partial(request, job_id, ga_id, coord_x, coord_y, state="running")
         if job.status in {"error", "cancelled"}:
-            return ColonizeIslandRefreshView._status_partial(request, job_id, ga_id, coord_x, coord_y, state="error", message="O refresh da ilha nao concluiu.")
+            return ColonizeIslandRefreshView._status_partial(request, job_id, ga_id, coord_x, coord_y, state="error", message="O refresh da ilha não concluiu.")
 
         try:
             ga = GameAccount.objects.select_related("account").get(pk=ga_id, active=True)
         except GameAccount.DoesNotExist:
-            return ColonizeIslandRefreshView._status_partial(request, job_id, ga_id, coord_x, coord_y, state="error", message="Conta nao encontrada.")
+            return ColonizeIslandRefreshView._status_partial(request, job_id, ga_id, coord_x, coord_y, state="error", message="Conta não encontrada.")
 
         cities = _construction_city_data(_get_cities(ga))
         initial = {
@@ -2850,11 +2850,11 @@ class JobSubmitView(LoginRequiredMixin, View):
             action_code = int(action_code_str)
             ga = GameAccount.objects.select_related("account").get(pk=ga_id)
         except (ValueError, GameAccount.DoesNotExist):
-            return self._error("Conta ou acao invalida.")
+            return self._error("Conta ou ação inválida.")
 
         action_meta = ACTION_CATALOG.get(action_code)
         if not action_meta:
-            return self._error("Acao nao encontrada.")
+            return self._error("Ação não encontrada.")
 
         cities = _get_cities(ga)
         construction_cities = _construction_city_data(cities)
@@ -3005,15 +3005,15 @@ class JobSubmitView(LoginRequiredMixin, View):
         aplica por ultimo no proximo ciclo (vencendo o reenvio de inputs do agente).
         """
         if not action_meta.get("recurring"):
-            return self._error("So e possivel editar parametros de jobs recorrentes.")
+            return self._error("Só é possível editar parâmetros de jobs recorrentes.")
         try:
             job = Job.objects.get(pk=edit_job_id, game_account=ga)
         except (Job.DoesNotExist, ValueError, ValidationError):
-            return self._error("Job nao encontrado.")
+            return self._error("Job não encontrado.")
 
         target = self._find_active_chain_job(job)
         if target is None:
-            return self._error("Este job nao esta mais em andamento.")
+            return self._error("Este job não está mais em andamento.")
 
         # remove chaves internas do patch do usuario
         patch = {k: v for k, v in (inputs or {}).items() if k not in self._EDIT_PROTECTED_KEYS}
@@ -3022,7 +3022,7 @@ class JobSubmitView(LoginRequiredMixin, View):
         if int(action_code) in _PER_CITY_SPLIT_ACTIONS:
             patch = {k: v for k, v in patch.items() if k not in _CITY_KEYS_IN_PATCH}
             if not patch:
-                return self._error("Nada para atualizar nos parametros.")
+                return self._error("Nada para atualizar nos parâmetros.")
         self._write_pending_patch(target, patch)
 
         resp = HttpResponse(
@@ -3033,7 +3033,7 @@ class JobSubmitView(LoginRequiredMixin, View):
             )
         )
         resp["HX-Trigger"] = json.dumps({
-            "toast": {"type": "success", "message": "Parametros atualizados — aplicam no proximo ciclo."},
+            "toast": {"type": "success", "message": "Parâmetros atualizados — aplicam no próximo ciclo."},
             "jobsCreated": True,
         })
         return resp
@@ -3058,7 +3058,7 @@ class JobSubmitView(LoginRequiredMixin, View):
                 reduce_pct = json.loads(request.POST.get("premium_reduce_pct_json") or "{}")
                 receive = json.loads(request.POST.get("premium_receive_json") or "{}")
             except Exception:
-                return self._error("Dados da troca invalidos.")
+                return self._error("Dados da troca inválidos.")
             valid_keys = {"resource", "wine", "marble", "crystal", "sulfur"}
             # reduce_pct[r] = quanto FOI TIRADO do envio (0-100) -> vira o envio real
             reduce_pct = {k: max(0, min(100, int(v or 0))) for k, v in reduce_pct.items() if k in valid_keys}
@@ -3098,7 +3098,7 @@ class JobSubmitView(LoginRequiredMixin, View):
         from apps.jobs.services.demolish import confirmation_error, validate_items
 
         if not ga.account.node:
-            return self._error("Conta sem no atribuido.")
+            return self._error("Conta sem nó atribuído.")
         dry_run = request.POST.get("dry_run") == "1"
         grouped, error = validate_items(request.POST.get("demolish_items_json"), cities)
         if not error and not dry_run:
@@ -3128,7 +3128,7 @@ class JobSubmitView(LoginRequiredMixin, View):
             )
 
         total = sum(len(items) for items in grouped.values())
-        what = "Simulacao criada (nada sera demolido)" if dry_run else "Demolicao criada"
+        what = "Simulação criada (nada será demolido)" if dry_run else "Demolição criada"
         resp = HttpResponse(
             render_to_string("jobs/partials/create_step_success.html",
                              {"jobs_created": len(grouped), "action_name": action_meta["name"]}, request=request)
@@ -3170,7 +3170,7 @@ class JobSubmitView(LoginRequiredMixin, View):
         by_id = {str(c.get("id")): c for c in construction_cities}
         model = by_id.get(model_id)
         if not model:
-            return self._error("Cidade modelo nao encontrada.")
+            return self._error("Cidade modelo não encontrada.")
 
         # edificios da modelo por chave canonica -> maior nivel
         model_blds: dict[str, int] = {}
@@ -3229,7 +3229,7 @@ class JobSubmitView(LoginRequiredMixin, View):
                 })
 
         if not all_steps:
-            return self._error("As cidades alvo ja estao iguais ou acima da modelo (nada a construir).")
+            return self._error("As cidades alvo já estão iguais ou acima da modelo (nada a construir).")
 
         all_steps = _resolve_construction_new_slots(all_steps, construction_cities)
 
@@ -3430,7 +3430,7 @@ class JobSubmitView(LoginRequiredMixin, View):
         except Exception:
             steps = []
         if not isinstance(steps, list) or not steps:
-            return self._error("Selecione pelo menos uma cidade, um predio e o nivel alvo do plano.")
+            return self._error("Selecione pelo menos uma cidade, um prédio e o nível alvo do plano.")
 
         clean_steps = []
         city_lookup = {str(city.get("id")): city.get("name", "") for city in cities if city.get("id") is not None}
@@ -3439,7 +3439,7 @@ class JobSubmitView(LoginRequiredMixin, View):
             building_id = str(step.get("building_id") or step.get("building_type") or "").strip()
             target_level = int(step.get("target_level") or 0)
             if not city_id or not building_id or target_level <= 0:
-                return self._error(f"Etapa {idx} do plano esta incompleta.")
+                return self._error(f"Etapa {idx} do plano está incompleta.")
             clean_steps.append({
                 "city_id": city_id,
                 "city_name": city_lookup.get(city_id, str(step.get("city_name") or city_id)),
@@ -3508,7 +3508,7 @@ class JobSubmitView(LoginRequiredMixin, View):
         trigger_data = json.dumps({
             "toast": {
                 "type": "success",
-                "message": "Plano de construcao criado com reservas de recursos.",
+                "message": "Plano de construção criado com reservas de recursos.",
             },
             "jobsCreated": True,
         })
@@ -3830,7 +3830,7 @@ class JobSubmitView(LoginRequiredMixin, View):
     def _validate_abandon_colony_inputs(form, request, cities):
         city_id = str(form.cleaned_data.get("city_id") or "").strip()
         if not city_id:
-            return "Selecione a colonia que sera abandonada."
+            return "Selecione a colônia que será abandonada."
 
         city_lookup = {
             str(city.get("id") or ""): city
@@ -3839,11 +3839,11 @@ class JobSubmitView(LoginRequiredMixin, View):
         }
         city = city_lookup.get(city_id)
         if not city:
-            return "A cidade selecionada nao foi encontrada na conta."
+            return "A cidade selecionada não foi encontrada na conta."
 
         buildings = city.get("buildings") or []
         if any(str(item.get("building") or "").strip() == "palace" for item in buildings if isinstance(item, dict)):
-            return "A cidade escolhida parece ser a capital. O abandono manual permite apenas colonias."
+            return "A cidade escolhida parece ser a capital. O abandono manual permite apenas colônias."
 
         acknowledge = str(request.POST.get("acknowledge_irreversible") or "").strip().lower()
         confirm_colony = str(request.POST.get("confirm_colony_only") or "").strip().lower()
@@ -3852,11 +3852,11 @@ class JobSubmitView(LoginRequiredMixin, View):
         expected_city_name = str(city.get("name") or "").strip()
 
         if acknowledge not in {"on", "true", "1", "yes"}:
-            return "Marque que entendeu que o abandono e irreversivel."
+            return "Marque que entendeu que o abandono é irreversível."
         if confirm_colony not in {"on", "true", "1", "yes"}:
-            return "Confirme explicitamente que a cidade alvo e uma colonia descartavel."
+            return "Confirme explicitamente que a cidade alvo é uma colônia descartável."
         if typed_phrase != "ABANDONAR":
-            return 'Digite exatamente "ABANDONAR" para liberar esta acao.'
+            return 'Digite exatamente "ABANDONAR" para liberar esta ação.'
         if expected_city_name and typed_city_name != expected_city_name:
             return f'Digite o nome exato da cidade: "{expected_city_name}".'
         return None
@@ -4043,12 +4043,12 @@ class BmScanCreateView(LoginRequiredMixin, View):
         city_id = request.POST.get("city_id", "").strip()
 
         if not ga_id or not city_id:
-            return JsonResponse({"error": "ga e city_id obrigatorios"}, status=400)
+            return JsonResponse({"error": "ga e city_id obrigatórios"}, status=400)
 
         try:
             ga = GameAccount.objects.select_related("account").get(pk=ga_id, active=True)
         except GameAccount.DoesNotExist:
-            return JsonResponse({"error": "GA nao encontrado"}, status=404)
+            return JsonResponse({"error": "GA não encontrado"}, status=404)
 
         job = create_job_with_workflow(
             account=ga.account,
@@ -4072,12 +4072,12 @@ class BmScanStatusView(LoginRequiredMixin, View):
 
         job_id = request.GET.get("job_id", "").strip()
         if not job_id:
-            return JsonResponse({"error": "job_id obrigatorio"}, status=400)
+            return JsonResponse({"error": "job_id obrigatório"}, status=400)
 
         try:
             job = Job.objects.select_related("game_account").get(pk=job_id)
         except Job.DoesNotExist:
-            return JsonResponse({"error": "Job nao encontrado"}, status=404)
+            return JsonResponse({"error": "Job não encontrado"}, status=404)
 
         if job.status in ("queued", "running", "scheduled"):
             return JsonResponse({"status": "running"})

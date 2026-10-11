@@ -27,9 +27,9 @@ class RenameCityView(LoginRequiredMixin, View):
         try:
             ga = GameAccount.objects.select_related("account__node").get(pk=ga_id)
         except GameAccount.DoesNotExist:
-            return self._toast("Conta nao encontrada.", "error")
+            return self._toast("Conta não encontrada.", "error")
         if not ga.account.node:
-            return self._toast("Conta sem no atribuido.", "error")
+            return self._toast("Conta sem nó atribuído.", "error")
 
         create_job_with_workflow(
             account=ga.account,

@@ -47,7 +47,7 @@
            style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
         <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div class="max-w-2xl">
-            <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-700">Acao imediata</div>
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-700">Ação imediata</div>
             <h3 class="mt-2 text-xl font-bold text-ink">Libere a cidade certa e confirme o alvo da revolta</h3>
             <p class="mt-2 text-sm leading-relaxed text-muted">
               Selecione a cidade afetada e diga se a revolta mira tropas em terra ou a frota que bloqueia o porto.
@@ -59,7 +59,7 @@
             <template x-if="selectedCity()">
               <div class="mt-2 space-y-1.5">
                 <div class="text-sm font-semibold text-ink" x-text="selectedCity().name || 'Cidade selecionada'"></div>
-                <div class="text-[11px] text-muted" x-text="selectedType === 'ships' ? 'Revolta contra bloqueio naval' : 'Revolta contra ocupacao terrestre'"></div>
+                <div class="text-[11px] text-muted" x-text="selectedType === 'ships' ? 'Revolta contra bloqueio naval' : 'Revolta contra ocupação terrestre'"></div>
               </div>
             </template>
             <template x-if="!selectedCity()">
@@ -120,7 +120,7 @@
                         {% if city.city_occupied %}
                         <span class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium"
                               style="background: rgba(185,79,79,0.12); color: #9f2f2f;">
-                          <i class="bi bi-flag-fill"></i> Ocupacao terrestre
+                          <i class="bi bi-flag-fill"></i> Ocupação terrestre
                         </span>
                         {% endif %}
                         {% if city.harbour_occupied %}
@@ -187,11 +187,11 @@
                   </span>
                   <div class="min-w-0 flex-1">
                     <div class="flex items-center justify-between gap-2">
-                      <div class="text-sm font-semibold text-ink">Forcas de ocupacao</div>
+                      <div class="text-sm font-semibold text-ink">Forças de ocupação</div>
                       <span class="text-[10px] font-medium text-red-700">Tropas</span>
                     </div>
                     <div class="mt-1 text-[11px] leading-relaxed text-muted">
-                      Use quando a cidade estiver ocupada por exercito inimigo em terra.
+                      Use quando a cidade estiver ocupada por exército inimigo em terra.
                     </div>
                   </div>
                 </div>

@@ -133,7 +133,7 @@ class AgentUpdateRequest(UUIDTimestampModel):
     STATUS_CHOICES = [
         ("queued", "Na fila"),
         ("running", "Atualizando"),
-        ("succeeded", "Concluida"),
+        ("succeeded", "Concluída"),
         ("failed", "Falhou"),
         ("cancelled", "Cancelada"),
     ]
@@ -248,7 +248,7 @@ class GameAccount(UUIDTimestampModel):
     avatar = models.TextField(
         blank=True,
         default="",
-        help_text="Imagem da conta: caminho de uma arte do jogo (static) ou data URI pequeno enviado pelo usuario.",
+        help_text="Imagem da conta: caminho de uma arte do jogo (static) ou data URI pequeno enviado pelo usuário.",
     )
 
     # World/server construction time modifier (set by game server, e.g. 10 for 10%)

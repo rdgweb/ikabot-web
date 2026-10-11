@@ -34,7 +34,7 @@ class RunActionView(LoginRequiredMixin, View):
         action_code = request.POST.get("action_code")
 
         if not action_code:
-            return self._toast("Codigo de acao ausente.", "error")
+            return self._toast("Código de ação ausente.", "error")
 
         action_code = int(action_code)
         action_name = ACTION_NAMES.get(action_code, f"Action {action_code}")
@@ -50,12 +50,12 @@ class RunActionView(LoginRequiredMixin, View):
             try:
                 ga = GameAccount.objects.select_related("account__node").get(pk=ga_id)
             except GameAccount.DoesNotExist:
-                return self._toast("Conta de jogo nao encontrada.", "error")
+                return self._toast("Conta de jogo não encontrada.", "error")
 
             account = ga.account
             node = account.node
             if not node:
-                return self._toast("Conta sem no atribuido.", "error")
+                return self._toast("Conta sem nó atribuído.", "error")
 
             create_job_with_workflow(
                 account=account,
@@ -75,11 +75,11 @@ class RunActionView(LoginRequiredMixin, View):
             try:
                 account = Account.objects.select_related("node").get(pk=acct_id)
             except Account.DoesNotExist:
-                return self._toast("Conta lobby nao encontrada.", "error")
+                return self._toast("Conta lobby não encontrada.", "error")
 
             node = account.node
             if not node:
-                return self._toast("Conta sem no atribuido.", "error")
+                return self._toast("Conta sem nó atribuído.", "error")
 
             create_job_with_workflow(
                 account=account,
@@ -93,7 +93,7 @@ class RunActionView(LoginRequiredMixin, View):
                 "success",
             )
 
-        return self._toast("Parametros invalidos.", "error")
+        return self._toast("Parâmetros inválidos.", "error")
 
     @staticmethod
     def _toast(message: str, toast_type: str = "info") -> HttpResponse:

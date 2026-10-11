@@ -23,11 +23,11 @@
           <i class="bi bi-signpost-split-fill text-lg" style="color: var(--ik-sea);"></i>
         </div>
         <div class="min-w-0 flex-1">
-          <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Expansao e reserva</div>
-          <div class="mt-1 text-base font-semibold text-ink">Fundar colonia manualmente</div>
+          <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Expansão e reserva</div>
+          <div class="mt-1 text-base font-semibold text-ink">Fundar colônia manualmente</div>
           <p class="mt-1 text-xs leading-relaxed text-muted">
-            Serve tanto para expansao direta quanto para abrir espaco estrategico em ilhas que voce quer preservar.
-            O runner automatico de verificacao de ilhas pode reutilizar esta mesma acao depois.
+            Serve tanto para expansão direta quanto para abrir espaço estratégico em ilhas que você quer preservar.
+            O runner automático de verificação de ilhas pode reutilizar esta mesma ação depois.
           </p>
         </div>
       </div>
@@ -39,7 +39,7 @@
         <div class="mt-1 text-xl font-semibold text-ink">{{ colonize_ui.city_count }}</div>
       </div>
       <div class="rounded-[18px] border px-4 py-3" style="border-color: rgba(201,156,78,0.22); background: rgba(255,255,255,0.72);">
-        <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Maior palacio</div>
+        <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Maior palácio</div>
         <div class="mt-1 text-xl font-semibold text-ink">Lv {{ colonize_ui.palace_level|default:0 }}</div>
       </div>
       <div class="rounded-[18px] border px-4 py-3" style="border-color: {% if colonize_ui.can_found_now %}rgba(95,140,78,0.30){% else %}rgba(204,107,74,0.24){% endif %}; background: rgba(255,255,255,0.72);">
@@ -48,7 +48,7 @@
           {% if colonize_ui.can_found_now %}
           Pode fundar agora
           {% else %}
-          Exige palacio {{ colonize_ui.next_required_palace_level }}
+          Exige palácio {{ colonize_ui.next_required_palace_level }}
           {% endif %}
         </div>
       </div>
@@ -61,7 +61,7 @@
        style="border-color: rgba(219,201,167,0.86); background: rgba(255,255,255,0.84);">
     <div class="border-b px-4 py-3" style="border-color: rgba(219,201,167,0.82);">
       <div class="text-sm font-semibold text-ink">Cidade de origem</div>
-      <p class="mt-1 text-xs text-muted">Escolha a cidade que vai enviar os recursos iniciais e o navio de colonia.</p>
+      <p class="mt-1 text-xs text-muted">Escolha a cidade que vai enviar os recursos iniciais e o navio de colônia.</p>
     </div>
     <div class="grid gap-3 px-4 py-4 lg:grid-cols-2">
       {% for city in colonize_ui.source_cities %}
@@ -136,11 +136,11 @@
       <div class="flex items-center justify-between gap-3">
         <div>
           <div class="text-sm font-semibold text-ink">Carga extra inicial</div>
-          <p class="mt-1 text-xs text-muted">Preencha se quiser mandar recursos adicionais junto da fundacao.</p>
+          <p class="mt-1 text-xs text-muted">Preencha se quiser mandar recursos adicionais junto da fundação.</p>
         </div>
         <span class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
               style="border-color: rgba(201,156,78,0.24); color: var(--ik-gold); background: rgba(201,156,78,0.08);">
-          Cidade: <span x-text="selectedCityLabel || 'nao selecionada'"></span>
+          Cidade: <span x-text="selectedCityLabel || 'não selecionada'"></span>
         </span>
       </div>
       <div class="mt-4 grid gap-3 sm:grid-cols-2">
@@ -157,7 +157,7 @@
             {% elif field.name == "wine" %}
             <img src="{% static 'game/resources/icon_wine.png' %}" alt="Vinho" class="h-5 w-5">
             {% elif field.name == "marble" %}
-            <img src="{% static 'game/resources/icon_marble.png' %}" alt="Marmore" class="h-5 w-5">
+            <img src="{% static 'game/resources/icon_marble.png' %}" alt="Mármore" class="h-5 w-5">
             {% elif field.name == "crystal" %}
             <img src="{% static 'game/resources/icon_glass.png' %}" alt="Cristal" class="h-5 w-5">
             {% elif field.name == "sulfur" %}

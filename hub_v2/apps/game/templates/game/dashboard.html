@@ -204,17 +204,17 @@
             {% if card.on_vacation %}
             <span class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
                   style="background: var(--ik-sea);"
-                  title="Conta em modo ferias{% if card.vacation_since %} desde {{ card.vacation_since|date:'d/m/Y H:i' }}{% endif %}. {% if card.vacation_mandatory_over %}O periodo obrigatorio de 2 dias ja passou: qualquer login tira a conta das ferias.{% elif card.vacation_mandatory_until %}Periodo obrigatorio ate {{ card.vacation_mandatory_until|date:'d/m H:i' }} (no maximo); ate la o jogo bloqueia o login.{% endif %} Os jobs desta conta ficam em espera para nao tira-la das ferias. Para sair, use o botao ao lado (Modo Ferias - desativar).">
-              <i class="bi bi-umbrella-fill"></i> DE FERIAS{% if card.vacation_since %} &middot; desde {{ card.vacation_since|date:"d/m H:i" }}{% endif %}
+                  title="Conta em modo férias{% if card.vacation_since %} desde {{ card.vacation_since|date:'d/m/Y H:i' }}{% endif %}. {% if card.vacation_mandatory_over %}O período obrigatório de 2 dias já passou: qualquer login tira a conta das férias.{% elif card.vacation_mandatory_until %}Período obrigatório até {{ card.vacation_mandatory_until|date:'d/m H:i' }} (no máximo); até lá o jogo bloqueia o login.{% endif %} Os jobs desta conta ficam em espera para não tira-la das férias. Para sair, use o botão ao lado (Modo Férias - desativar).">
+              <i class="bi bi-umbrella-fill"></i> DE FÉRIAS{% if card.vacation_since %} &middot; desde {{ card.vacation_since|date:"d/m H:i" }}{% endif %}
             </span>
             <button type="button"
                     class="inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold"
                     style="border-color: rgba(79,134,185,0.45); color: var(--ik-sea);"
-                    title="Abrir a acao Modo Ferias para tirar esta conta das ferias (os jobs em espera voltam a rodar)"
+                    title="Abrir a ação Modo Férias para tirar esta conta das férias (os jobs em espera voltam a rodar)"
                     hx-get="{% url 'jobs:job-form' %}?ga={{ card.game_account_id }}&action=25&input_enable=False"
                     hx-target="#job-modal-body" hx-swap="innerHTML" hx-push-url="false"
                     onclick="event.stopPropagation(); this.dispatchEvent(new CustomEvent('open-modal-jobcreate', {bubbles: true}));">
-              <i class="bi bi-box-arrow-right"></i> Sair das ferias
+              <i class="bi bi-box-arrow-right"></i> Sair das férias
             </button>
             {% endif %}
             {% control_chip card.game_account_id %}
@@ -273,7 +273,7 @@
                 {% endif %}
                 {% if card.upkeep %}
                 <div class="flex justify-between text-[10px]">
-                  <span class="text-muted">Manutencao</span>
+                  <span class="text-muted">Manutenção</span>
                   <span class="font-mono text-red-500">{{ card.upkeep|intcomma }}/h</span>
                 </div>
                 {% endif %}
@@ -306,7 +306,7 @@
             {% if card.net_wine_rate > 0 %}+{% endif %}{{ card.net_wine_rate|floatformat:0 }}/h
             {# Wine balance tooltip #}
             <div class="pointer-events-none absolute right-0 top-full z-20 mt-1 hidden w-48 rounded-lg border border-[var(--ik-line)] bg-paper p-2.5 text-left shadow-xl group-hover:block">
-              <div class="text-[10px] font-bold text-ink mb-1.5">Balanco de Vinho</div>
+              <div class="text-[10px] font-bold text-ink mb-1.5">Balanço de Vinho</div>
               <div class="space-y-1">
                 <div class="flex justify-between text-[10px]">
                   <span class="text-muted">Estoque</span>
@@ -323,13 +323,13 @@
                   </span>
                 </div>
                 <div class="flex justify-between text-[10px] pt-1" style="border-top: 1px solid var(--ik-line);">
-                  <span class="font-semibold text-ink">Duracao</span>
+                  <span class="font-semibold text-ink">Duração</span>
                   {% if card.total_wine_hours is not None %}
                   <span class="font-mono font-bold {% if card.total_wine_hours < 24 %}text-red-500{% elif card.total_wine_hours < 72 %}text-amber-500{% else %}text-green-600{% endif %}">
                     {{ card.total_wine_hours|hours_display }}
                   </span>
                   {% elif card.net_wine_rate >= 0 %}
-                  <span class="font-bold text-green-600">Superavit</span>
+                  <span class="font-bold text-green-600">Superávit</span>
                   {% else %}
                   <span class="text-muted">-</span>
                   {% endif %}
@@ -341,7 +341,7 @@
         </div>
 
         {% if card.snapshot %}
-        <span class="text-[10px] text-muted" title="Ultima atualizacao">
+        <span class="text-[10px] text-muted" title="Última atualização">
           <i class="bi bi-clock"></i> {{ card.snapshot.updated_at|timesince }}
         </span>
         {% endif %}
@@ -376,7 +376,7 @@
       </button>
       <button @click="tab='buildings'" :class="tab==='buildings' ? 'bg-[var(--ik-sea)] text-white' : 'text-muted hover:text-ink'"
               class="px-3 py-1 rounded text-xs font-semibold transition-colors">
-        <i class="bi bi-building"></i> Construcoes
+        <i class="bi bi-building"></i> Construções
       </button>
     </div>
 
@@ -406,7 +406,7 @@
                 <img src="{% static 'game/resources/icon_wine.png' %}" class="w-4 h-4 inline" title="Vinho">
               </th>
               <th class="text-right py-2 px-1 text-muted font-semibold">
-                <img src="{% static 'game/resources/icon_marble.png' %}" class="w-4 h-4 inline" title="Marmore">
+                <img src="{% static 'game/resources/icon_marble.png' %}" class="w-4 h-4 inline" title="Mármore">
               </th>
               <th class="text-right py-2 px-1 text-muted font-semibold">
                 <img src="{% static 'game/resources/icon_glass.png' %}" class="w-4 h-4 inline" title="Cristal">
@@ -415,7 +415,7 @@
                 <img src="{% static 'game/resources/icon_sulfur.png' %}" class="w-4 h-4 inline" title="Enxofre">
               </th>
               <th class="text-right py-2 px-1 text-muted font-semibold">Total</th>
-              <th class="text-center py-2 px-1 text-muted font-semibold" title="Populacao">
+              <th class="text-center py-2 px-1 text-muted font-semibold" title="População">
                 <i class="bi bi-people-fill"></i>
               </th>
             </tr>
@@ -456,7 +456,7 @@
                   <span class="inline-flex items-center gap-0.5 text-amber-500"
                         x-data="cityCountdown({{ city.construction_end_at|default:0 }})"
                         x-init="start()"
-                        title="{{ city.upgrading_count }} construcao em andamento">
+                        title="{{ city.upgrading_count }} construção em andamento">
                     <i class="bi bi-arrow-up-circle-fill text-[10px]"></i>
                     <span x-show="label" x-text="label" class="text-[9px] font-mono font-semibold leading-none tabular-nums"></span>
                   </span>
@@ -545,20 +545,20 @@
              style="font-family: Arial, sans-serif;">
           <table class="w-full" style="border-collapse: collapse;">
             <tr>
-              <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">No armazem:</td>
+              <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">No armazém:</td>
               <td class="py-0.5 text-right font-mono font-bold" style="color:#3a2a0a;" x-text="new Intl.NumberFormat('pt-BR').format(tt.current)"></td>
             </tr>
             <template x-if="!tt.is_wine && tt.production_hour > 0">
               <tr>
                 <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">
-                  <span x-text="'Producao por hora ' + tt.label + ':'"></span>
+                  <span x-text="'Produção por hora ' + tt.label + ':'"></span>
                 </td>
                 <td class="py-0.5 text-right font-mono font-bold" style="color:#2d6e2d;" x-text="new Intl.NumberFormat('pt-BR').format(Math.round(tt.production_hour))"></td>
               </tr>
             </template>
             <template x-if="tt.is_wine && tt.production_hour > 0">
               <tr>
-                <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">Producao por hora:</td>
+                <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">Produção por hora:</td>
                 <td class="py-0.5 text-right font-mono font-bold" style="color:#2d6e2d;" x-text="new Intl.NumberFormat('pt-BR').format(Math.round(tt.production_hour))"></td>
               </tr>
             </template>
@@ -587,7 +587,7 @@
               </tr>
             </template>
             <tr>
-              <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">Capacidade do Armazem:</td>
+              <td class="py-0.5 pr-2 text-left whitespace-nowrap" style="color:#5a4a2a;">Capacidade do Armazém:</td>
               <td class="py-0.5 text-right font-mono font-bold" style="color:#3a2a0a;" x-text="new Intl.NumberFormat('pt-BR').format(tt.capacity)"></td>
             </tr>
             <template x-if="tt.market > 0">
@@ -659,7 +659,7 @@
       {% else %}
       <div class="text-center py-6 text-sm text-muted">
         <i class="bi bi-info-circle text-lg block mb-2"></i>
-        Nenhum dado de cidade disponivel.
+        Nenhum dado de cidade disponível.
         <button hx-post="{% url 'game:run-action' %}"
                 hx-vals='{"game_account_id": "{{ card.game_account.pk }}", "action_code": "100"}'
                 hx-swap="none"
@@ -909,8 +909,8 @@
       {% else %}
       <div class="text-center py-6 text-sm text-muted">
         <i class="bi bi-shield text-lg block mb-2"></i>
-        Nenhum dado militar disponivel.
-        <p class="text-xs mt-1">Os dados militares serao coletados junto com o Check Status.</p>
+        Nenhum dado militar disponível.
+        <p class="text-xs mt-1">Os dados militares serão coletados junto com o Check Status.</p>
       </div>
       {% endif %}
     </div>
@@ -934,11 +934,11 @@
             <a href="{% url 'game:construction' %}?reorder={{ card.game_account_id }}:{{ city.id }}"
                class="ml-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors hover:bg-[rgba(79,134,185,0.12)]"
                style="border-color: rgba(79,134,185,0.4); color: var(--ik-sea);"
-               title="Reorganizar edificios desta cidade (arrastar e soltar)"><i class="bi bi-arrows-move"></i> Reorganizar</a>
+               title="Reorganizar edifícios desta cidade (arrastar e soltar)"><i class="bi bi-arrows-move"></i> Reorganizar</a>
             <button type="button"
                class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold"
                style="border-color: rgba(187,81,67,0.45); color: var(--ik-bad);"
-               title="Demolir edificios desta conta (Acoes do Jogo, com confirmacoes)"
+               title="Demolir edifícios desta conta (Ações do Jogo, com confirmações)"
                hx-get="{% url 'jobs:job-form' %}?ga={{ card.game_account_id }}&action=1303"
                hx-target="#job-modal-body" hx-swap="innerHTML" hx-push-url="false"
                onclick="this.dispatchEvent(new CustomEvent('open-modal-jobcreate', {bubbles: true}));"><i class="bi bi-trash3"></i> Demolir</button>
@@ -948,7 +948,7 @@
             {% if bld.building and bld.building != "empty" %}
             <div class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded
                          {% if bld.is_upgrading %}bg-amber-50 text-amber-700 ring-1 ring-amber-200{% else %}bg-gray-50 text-gray-500{% endif %}"
-                 title="{{ bld.building|building_name }} Lv.{{ bld.level }}{% if bld.is_upgrading %} (em construcao{% if bld.construction_remaining_human %} · {{ bld.construction_remaining_human }}{% endif %}){% endif %}">
+                 title="{{ bld.building|building_name }} Lv.{{ bld.level }}{% if bld.is_upgrading %} (em construção{% if bld.construction_remaining_human %} · {{ bld.construction_remaining_human }}{% endif %}){% endif %}">
               {% with bld.building|building_icon as icon_path %}
               {% if icon_path %}
               <img src="{% static icon_path %}" class="w-10 h-9">
@@ -973,7 +973,7 @@
       </div>
       {% else %}
       <div class="text-center py-6 text-sm text-muted">
-        Nenhum dado de construcao disponivel.
+        Nenhum dado de construção disponível.
       </div>
       {% endif %}
     </div>

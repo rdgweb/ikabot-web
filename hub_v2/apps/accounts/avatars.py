@@ -26,7 +26,7 @@ GALLERY_GROUPS = (
     ("game/units", "Unidades"),
     ("game/gods", "Deuses"),
     ("game/pirate", "Piratas"),
-    ("game/buildings", "Edificios"),
+    ("game/buildings", "Edifícios"),
 )
 MAX_UPLOAD_CHARS = 90_000          # data URI de uma imagem ~128px; o navegador reduz antes de enviar
 _DATA_URI = re.compile(r"^data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$")
@@ -66,13 +66,13 @@ def clean_avatar(value) -> str:
             raise ValueError("Imagem grande demais. Use uma imagem menor.")
         match = _DATA_URI.match(value)
         if not match:
-            raise ValueError("Formato de imagem nao aceito. Use PNG, JPG ou WEBP.")
+            raise ValueError("Formato de imagem não aceito. Use PNG, JPG ou WEBP.")
         try:
             raw = base64.b64decode(match.group(2), validate=True)
         except Exception as exc:
             raise ValueError("Imagem corrompida.") from exc
         if not raw.startswith(_MAGIC[match.group(1)]):
-            raise ValueError("O arquivo enviado nao e uma imagem valida.")
+            raise ValueError("O arquivo enviado não é uma imagem valida.")
         return value
     if value in {item["path"] for item in gallery()}:
         return value

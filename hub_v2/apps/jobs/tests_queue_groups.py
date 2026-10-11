@@ -66,7 +66,7 @@ class QueueGroupingTests(TestCase):
 
         groups = response.context["workflow_groups"]
         self.assertEqual([(g["key"], g["shown"], g["total"]) for g in groups], [("construction", 3, 3), ("resources", 2, 3)])
-        self.assertIn("2 de 3 workflows nesta pagina", response.content.decode())
+        self.assertIn("2 de 3 workflows nesta página", response.content.decode())
         second = self._page(per_page=5, page=2).context["workflow_groups"]
         self.assertEqual([(g["key"], g["shown"], g["total"]) for g in second], [("resources", 1, 3), ("monitoring", 3, 3), ("account", 1, 3)])
 
@@ -74,7 +74,7 @@ class QueueGroupingTests(TestCase):
         groups = self._page().context["workflow_groups"]
 
         self.assertEqual([g["key"] for g in groups], ["construction", "resources", "monitoring", "account"])
-        self.assertEqual([g["label"] for g in groups], ["Construcao", "Recursos e logistica", "Alertas e monitoramento", "Conta"])
+        self.assertEqual([g["label"] for g in groups], ["Construção", "Recursos e logística", "Alertas e monitoramento", "Conta"])
         resources = groups[1]
         self.assertEqual([(s["label"], s["shown"], s["total"]) for s in resources["subgroups"]], [("Distribuir Recursos", 3, 3)])
         self.assertEqual(self._accounts(resources["subgroups"][0]), ["Alfa", "Meio", "Zeta"])
@@ -94,7 +94,7 @@ class QueueGroupingTests(TestCase):
         self.assertEqual([g["label"] for g in groups], ["Alfa", "Meio", "Zeta"])
         self.assertEqual(
             [s["label"] for s in groups[0]["subgroups"]],
-            ["Construcao", "Recursos e logistica", "Alertas e monitoramento", "Conta"],
+            ["Construção", "Recursos e logística", "Alertas e monitoramento", "Conta"],
         )
         self.assertEqual((groups[0]["shown"], groups[0]["total"]), (4, 4))
         self.assertIn(f"?game_account={self.gas['Alfa'].pk}", groups[0]["filter_url"])
@@ -108,10 +108,10 @@ class QueueGroupingTests(TestCase):
             ("construction", 3, 3, True), ("resources", 3, 3, True), ("monitoring", 3, 3, True), ("account", 3, 3, True),
         ])
         self.assertEqual([[sub["label"] for sub in g["subgroups"]] for g in groups], [[""]] * 4)      # no sub-groups
-        self.assertEqual([o["label"] for o in response.context["group_options"]], ["Menu > Acao", "Conta > Menu", "Simples"])
+        self.assertEqual([o["label"] for o in response.context["group_options"]], ["Menu > Ação", "Conta > Menu", "Simples"])
         html = response.content.decode()
         self.assertNotIn("{#", html)
-        self.assertEqual(html.count("uppercase tracking-wide text-muted\">Construcao<"), 1)       # the old thin divider
+        self.assertEqual(html.count("uppercase tracking-wide text-muted\">Construção<"), 1)       # the old thin divider
         self.assertEqual(html.count("data-wf-collapse="), 0)        # nothing to collapse, no header bars
         self.assertNotIn("Recolher tudo", html)
         self.assertNotIn("game/buildings/architectsoffice.png", html)
@@ -138,8 +138,8 @@ class QueueGroupingTests(TestCase):
         groups = response.context["workflow_groups"]
         self.assertEqual([(g["key"], g["shown"], g["total"]) for g in groups], [("construction", 3, 3), ("resources", 2, 3)])
         html = response.content.decode()
-        self.assertIn("(2 de 3 nesta pagina)", html)
-        self.assertIn("ver so este", html)
+        self.assertIn("(2 de 3 nesta página)", html)
+        self.assertIn("ver só este", html)
         second = self._page(group="none", per_page=5, page=2).context["workflow_groups"]
         self.assertEqual([(g["key"], g["shown"], g["total"]) for g in second], [("resources", 1, 3), ("monitoring", 3, 3), ("account", 1, 3)])
 
@@ -206,7 +206,7 @@ class QueueGroupingTests(TestCase):
         self.assertTrue(construction["subgroups"][0]["icon"].startswith("bi-"))
         html = response.content.decode()
         self.assertIn("game/buildings/architectsoffice.png", html)
-        self.assertIn("3 workflows &middot; 1 acao", " ".join(html.split()))
+        self.assertIn("3 workflows &middot; 1 ação", " ".join(html.split()))
 
     def test_account_headers_use_the_account_image_or_its_initials(self):
         alfa = self.gas["Alfa"]

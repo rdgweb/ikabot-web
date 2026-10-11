@@ -7,7 +7,7 @@
 {% endblock %}
 
 {% block page_title %}Workflows{% endblock %}
-{% block page_subtitle %}Operacao por workflow persistido, runs e jobs tecnicos{% endblock %}
+{% block page_subtitle %}Operação por workflow persistido, runs e jobs técnicos{% endblock %}
 
 {% block page_actions %}
 <div class="flex items-center gap-2">
@@ -15,7 +15,7 @@
     <i class="bi bi-kanban"></i> Operacional
   </a>
   <a href="?{% if querystring_without_page %}{{ querystring_without_page }}&{% endif %}view=tech" class="btn btn-sm btn-secondary">
-    <i class="bi bi-braces"></i> Tecnica
+    <i class="bi bi-braces"></i> Técnica
   </a>
 </div>
 {% endblock %}
@@ -110,7 +110,7 @@
                hx-include=".filter-panel [name]" hx-push-url="true">
       </div>
       <div>
-        <label class="filter-panel-label">No</label>
+        <label class="filter-panel-label">Nó</label>
         <select name="node" class="filter-select"
                 hx-get="{{ request.path }}" hx-target="#table-content"
                 hx-swap="innerHTML" hx-trigger="change"
@@ -186,14 +186,14 @@ x-data="{
       ? this.selected.filter(id => !ids.includes(id))
       : Array.from(new Set([...this.selected, ...ids]));
   },
-  // N-89: o status e atualizado no lugar, sem recarregar a pagina
+  // N-89: o status e atualizado no lugar, sem recarregar a página
   liveUrl: '{% url 'jobs:workflow-live' %}{% if request.GET.archived == '1' %}?archived=1{% endif %}',
   liveTimer: null,
   startLive() {
     if (this.liveTimer) return;
     const root = this.$root;
     this.liveTimer = setInterval(() => {
-      // a fila saiu da tela (navegacao): para de consultar
+      // a fila saiu da tela (navegação): para de consultar
       if (!document.body.contains(root)) { clearInterval(this.liveTimer); this.liveTimer = null; return; }
       if (!document.hidden) this.refreshLive();
     }, 10000);

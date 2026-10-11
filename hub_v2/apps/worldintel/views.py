@@ -265,12 +265,12 @@ class WorldPlayerDetailView(WorldIntelBaseView):
         ctx.update(base)
         current_dump = base["selected_dump"]
         if not current_dump:
-            raise Http404("Nenhum dump disponivel.")
+            raise Http404("Nenhum dump disponível.")
 
         owner_id = str(self.request.GET.get("owner_id") or "").strip()
         owner_name = str(self.request.GET.get("owner_name") or "").strip()
         if not owner_id and not owner_name:
-            raise Http404("Player nao informado.")
+            raise Http404("Player não informado.")
 
         cities = WorldDumpCity.objects.filter(dump=current_dump, type="city").select_related("island")
         if owner_id:
@@ -280,7 +280,7 @@ class WorldPlayerDetailView(WorldIntelBaseView):
         cities = cities.order_by("island__x", "island__y", "name")
         city_list = list(cities)
         if not city_list:
-            raise Http404("Player nao encontrado neste dump.")
+            raise Http404("Player não encontrado neste dump.")
 
         first = city_list[0]
         island_ids = []

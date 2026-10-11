@@ -68,13 +68,13 @@ class NotesViewsTests(TestCase):
         response = self.client.get(reverse("notes:changelog"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Atualizacoes do sistema")
+        self.assertContains(response, "Atualizações do sistema")
         self.assertContains(response, "v0.2.76")
         self.assertContains(response, "blackshadow-node")
-        self.assertContains(response, "atualizacao disponivel")
+        self.assertContains(response, "atualização disponível")
         self.assertContains(response, "Atualizar pelo Hub")
         self.assertContains(response, "Atualizar agente")
-        self.assertContains(response, "fara rollback se ele nao iniciar")
+        self.assertContains(response, "fará rollback se ele não iniciar")
         self.assertNotContains(response, "return confirm(")
         self.assertNotContains(response, "Registrar")
 

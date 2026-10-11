@@ -43,7 +43,7 @@
     <i class="bi bi-terminal"></i> Comando de Deploy
   </h3>
   <p class="text-sm text-muted mb-3">
-    Comando pronto para copiar no servidor do agent. A versao do agent e reportada pelo proprio container; nao e necessario informar <code>AGENT_VERSION</code>.
+    Comando pronto para copiar no servidor do agent. A versão do agent é reportada pelo próprio container; não é necessário informar <code>AGENT_VERSION</code>.
   </p>
   <div class="mb-4">
     <div class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-muted">
@@ -79,7 +79,7 @@
 
 <div class="card">
   <h3 class="text-sm font-semibold text-ink mb-3">
-    <i class="bi bi-sliders"></i> Variaveis usadas
+    <i class="bi bi-sliders"></i> Variáveis usadas
   </h3>
   <dl class="grid gap-2 text-sm">
     <div>
@@ -113,7 +113,7 @@
     <i class="bi bi-cookie"></i> Como pegar o gf-token-production
   </h3>
   <ol class="space-y-2 text-sm text-muted list-decimal list-inside">
-    <li>Entre normalmente na conta da Gameforge ate chegar no lobby.</li>
+    <li>Entre normalmente na conta da Gameforge até chegar no lobby.</li>
     <li>Abra as ferramentas de desenvolvedor do navegador com F12.</li>
     <li>Abra a aba Console.</li>
     <li>Cole o comando abaixo e pressione Enter.</li>
@@ -123,9 +123,9 @@
 </div>
 
 <div class="card" x-data="{ copiedUpdater: false }">
-  <h3 class="text-sm font-semibold text-ink mb-2"><i class="bi bi-shield-check"></i> Supervisor de atualizacoes</h3>
+  <h3 class="text-sm font-semibold text-ink mb-2"><i class="bi bi-shield-check"></i> Supervisor de atualizações</h3>
   {% if docker_host %}
-  <p class="text-sm text-muted mb-3">Um unico supervisor atende todos os agents do host <strong>{{ docker_host.name }}</strong>. O comando e idempotente: se ele ja existir, nao cria outro.</p>
+  <p class="text-sm text-muted mb-3">Um único supervisor atende todos os agents do host <strong>{{ docker_host.name }}</strong>. O comando é idempotente: se ele já existir, não cria outro.</p>
   <div class="relative">
     <pre class="bg-gray-900 text-green-400 rounded-lg p-4 pr-24 text-sm font-mono overflow-x-auto"><code x-ref="updaterCommand">{{ supervisor_command }}</code></pre>
     <button type="button" class="absolute right-3 top-3 rounded bg-gray-700 px-2 py-1 text-xs text-white" @click="navigator.clipboard.writeText($refs.updaterCommand.textContent); copiedUpdater = true; setTimeout(() => copiedUpdater = false, 2000)">
@@ -134,10 +134,10 @@
     </button>
   </div>
   <div class="mt-3 text-sm">
-    Estado: {% if docker_host.is_online %}<span class="badge badge-success">Supervisor online</span>{% else %}<span class="badge badge-warning">Aguardando instalacao</span>{% endif %}
+    Estado: {% if docker_host.is_online %}<span class="badge badge-success">Supervisor online</span>{% else %}<span class="badge badge-warning">Aguardando instalação</span>{% endif %}
   </div>
   {% else %}
-    <p class="text-sm text-[var(--ik-bad)]">Este agent ainda nao foi vinculado a um Host Docker. Edite o no antes de gerar o deploy.</p>
+    <p class="text-sm text-[var(--ik-bad)]">Este agent ainda não foi vinculado a um Host Docker. Edite o nó antes de gerar o deploy.</p>
     <a href="{% url 'accounts:node-edit' node.pk %}" class="btn btn-secondary btn-sm mt-3">Vincular host</a>
   {% endif %}
 </div>

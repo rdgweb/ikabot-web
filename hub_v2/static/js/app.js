@@ -127,7 +127,7 @@ function confirmDialog() {
     confirmStyle: "danger",
     _onConfirm: null,
     open(detail) {
-      this.title = detail.title || "Confirmar acao";
+      this.title = detail.title || "Confirmar ação";
       this.message = detail.message || "Tem certeza?";
       this.action = detail.action || "";
       this.method = detail.method || "post";

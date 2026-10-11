@@ -5,7 +5,7 @@
       <img src="{% static 'game/resources/icon_gold.png' %}" class="w-5 h-5">
       <div>
         <span class="gm-title gm-text-title font-bold text-sm tracking-wide block">OURO</span>
-        <span class="gm-subtitle gm-text-label text-[11px]">Caixa atual, projecao e risco por conta</span>
+        <span class="gm-subtitle gm-text-label text-[11px]">Caixa atual, projeção e risco por conta</span>
       </div>
     </div>
     <div class="flex items-center gap-4">
@@ -38,7 +38,7 @@
     {# ── History chart ── #}
     <div class="gm-section rounded-lg p-3">
       <div class="flex items-center justify-between mb-2">
-        <h4 class="gm-section-title">Historico de ouro</h4>
+        <h4 class="gm-section-title">Histórico de ouro</h4>
         <span class="gm-section-hint" x-text="historyLoading ? 'Carregando...' : historyState('gold').scopeLabel"></span>
       </div>
       <template x-if="historyLoading">
@@ -47,7 +47,7 @@
             <svg class="animate-spin w-6 h-6 opacity-60" viewBox="0 0 24 24" fill="none">
               <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" stroke-dasharray="31.4 62.8" stroke-linecap="round"/>
             </svg>
-            Carregando historico...
+            Carregando histórico...
           </div>
         </div>
       </template>
@@ -73,7 +73,7 @@
       <div class="gm-section rounded-lg p-3">
         <div class="flex items-center justify-between mb-2">
           <h4 class="gm-section-title">Ranking de caixa</h4>
-          <span class="gm-section-hint">participacao no ouro total</span>
+          <span class="gm-section-hint">participação no ouro total</span>
         </div>
         <div class="space-y-2">
           <template x-for="c in topGoldAccounts().slice(0, 5)" :key="'gold-rank-'+c.uid">
@@ -92,7 +92,7 @@
             </div>
           </template>
           <div x-show="!topGoldAccounts().length" class="gm-empty">
-            Nenhum dado disponivel para o ranking atual.
+            Nenhum dado disponível para o ranking atual.
           </div>
         </div>
       </div>
@@ -117,7 +117,7 @@
           </template>
         </div>
         <div x-show="!goldRiskAccounts().length" class="gm-empty-ok">
-          Nenhuma conta com liquido negativo no filtro atual.
+          Nenhuma conta com líquido negativo no filtro atual.
         </div>
       </div>
     </div>

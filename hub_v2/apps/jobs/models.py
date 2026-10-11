@@ -15,7 +15,7 @@ class Workflow(UUIDTimestampModel):
         ("paused", "Pausado"),
         ("waiting", "Aguardando"),
         ("problem", "Com problema"),
-        ("finished", "Concluido"),
+        ("finished", "Concluído"),
         ("cancelled", "Cancelado"),
     ]
 
@@ -84,7 +84,7 @@ class WorkflowRun(UUIDTimestampModel):
         ("running", "Executando"),
         ("waiting", "Aguardando"),
         ("problem", "Com problema"),
-        ("finished", "Concluido"),
+        ("finished", "Concluído"),
         ("cancelled", "Cancelado"),
     ]
 
@@ -129,7 +129,7 @@ class Job(UUIDTimestampModel):
         ("queued", "Na fila"),
         ("running", "Executando"),
         ("scheduled", "Agendado"),
-        ("finished", "Concluido"),
+        ("finished", "Concluído"),
         ("error", "Erro"),
         ("cancelled", "Cancelado"),
     ]

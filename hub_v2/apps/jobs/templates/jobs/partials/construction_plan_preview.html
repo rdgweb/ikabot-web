@@ -131,10 +131,10 @@
 <div class="sm:col-span-2 mt-2 rounded-xl border p-4" style="border-color: var(--ik-line); background: linear-gradient(180deg, rgba(244,236,218,0.72), rgba(255,255,255,0.92));">
   <div class="flex items-start justify-between gap-3 mb-3">
     <div class="min-w-0">
-      <div class="text-[11px] uppercase tracking-[0.12em] text-muted">Plano de Construcao</div>
+      <div class="text-[11px] uppercase tracking-[0.12em] text-muted">Plano de Construção</div>
       <div class="text-sm font-semibold text-ink mt-1">{{ preview.city_name }} · {{ preview.building_name }}</div>
       <div class="text-[11px] text-muted mt-0.5">
-        Nivel {{ preview.current_level }} → {{ preview.target_level }}
+        Nível {{ preview.current_level }} → {{ preview.target_level }}
       </div>
     </div>
     <a href="{{ ika_tools_url }}" target="_blank" rel="noopener noreferrer" class="text-[11px] link-sea shrink-0">
@@ -159,7 +159,7 @@
     </div>
 
     <div class="rounded-lg border p-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.75);">
-      <div class="text-[10px] uppercase tracking-[0.12em] text-muted mb-1">Disponivel / Faltando</div>
+      <div class="text-[10px] uppercase tracking-[0.12em] text-muted mb-1">Disponível / Faltando</div>
       <div class="space-y-1.5">
         {% for key, amount in preview.missing.items %}
           <div class="flex items-center justify-between gap-2">
@@ -193,7 +193,7 @@
       {% for row in preview.level_rows %}
         <div class="rounded-lg px-3 py-2" style="background: var(--ik-sand-light);">
           <div class="flex items-center justify-between gap-2">
-            <div class="text-xs font-semibold text-ink">Nivel {{ row.level }}</div>
+            <div class="text-xs font-semibold text-ink">Nível {{ row.level }}</div>
             <div class="text-[11px] text-muted">{{ row.adjusted_duration }}</div>
           </div>
           <div class="flex flex-wrap gap-2 mt-1">
@@ -208,7 +208,7 @@
           </div>
         </div>
       {% empty %}
-        <p class="text-xs text-muted">Selecione cidade, edificio e nivel alvo para gerar a previa.</p>
+        <p class="text-xs text-muted">Selecione cidade, edifício e nível alvo para gerar a prévia.</p>
       {% endfor %}
     </div>
   </div>
@@ -224,11 +224,11 @@
 </div>
 {% elif action_code == 1 or action_code == 14 or action_code == 1002 %}
 <div class="sm:col-span-2 mt-2 rounded-xl border border-dashed p-4 text-center" style="border-color: var(--ik-line); background: rgba(244,236,218,0.45);">
-  <div class="text-[11px] uppercase tracking-[0.12em] text-muted mb-1">Plano de Construcao</div>
+  <div class="text-[11px] uppercase tracking-[0.12em] text-muted mb-1">Plano de Construção</div>
   {% if action_code == 1002 %}
   <p class="text-xs text-muted">Adicione etapas ao plano para carregar custos, faltas e reservas locais.</p>
   {% else %}
-  <p class="text-xs text-muted">Selecione cidade, edificio e nivel alvo para carregar a previa de custos.</p>
+  <p class="text-xs text-muted">Selecione cidade, edifício e nível alvo para carregar a prévia de custos.</p>
   {% endif %}
 </div>
 {% endif %}

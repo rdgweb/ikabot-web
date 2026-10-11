@@ -8,15 +8,15 @@
       <thead>
         <tr>
           <th class="w-8 text-center"></th>
-          <th>Endereco</th>
+          <th>Endereço</th>
           <th>Porta</th>
-          <th>Pais</th>
-          <th>No Atribuido</th>
-          <th>Ultimo Teste</th>
+          <th>País</th>
+          <th>Nó Atribuído</th>
+          <th>Último Teste</th>
           <th>IP Testado</th>
-          <th>Latencia</th>
+          <th>Latência</th>
           <th>Status</th>
-          <th class="text-right">Acoes</th>
+          <th class="text-right">Ações</th>
         </tr>
       </thead>
       <tbody>
@@ -36,7 +36,7 @@
     </span>
     <div class="flex gap-2">
       <button @click="selectCurrentPage()" class="btn btn-secondary btn-sm" type="button">
-        <i class="bi bi-check2"></i> Selecionar pagina
+        <i class="bi bi-check2"></i> Selecionar página
       </button>
       <button @click="bulkDelete()" class="btn btn-danger btn-sm" type="button">
         <i class="bi bi-trash"></i> Excluir selecionados
@@ -90,7 +90,7 @@ function proxyBulk() {
       window.dispatchEvent(new CustomEvent('confirm', {
         detail: {
           title: 'Excluir proxies',
-          message: `Excluir ${count} proxy(s) selecionado(s)? Esta acao nao pode ser desfeita.`,
+          message: `Excluir ${count} proxy(s) selecionado(s)? Esta ação não pode ser desfeita.`,
           style: 'danger',
           confirmLabel: 'Excluir',
           onConfirm: () => self._doDelete(),
