@@ -401,6 +401,13 @@ class GatewayTests(_Base):
         self.assertNotIn("SESSAO", repr(response.serialize_headers()))
         self.assertNotIn("X-Interno", response)
         self.assertEqual(response["Cache-Control"], "no-cache")
+        # the page may only load from this session and from the static CDN: Gameforge's
+        # tracking/consent scripts do not run from the operator's own address
+        policy = response["Content-Security-Policy"]
+        self.assertIn("default-src 'self'", policy)
+        self.assertIn("https://*.geo.gfsrv.net", policy)
+        self.assertIn("connect-src 'self'", policy)
+        self.assertNotIn("gameforge.com", policy)
         self.assertEqual(response["Content-Type"], "text/html; charset=utf-8")
 
     def test_assets_and_ajax_pass_untouched_and_redirects_stay_in_the_session(self):
@@ -410,7 +417,9 @@ class GatewayTests(_Base):
         self.assertEqual(image.content, b"\x89PNG\x00https://s9-br.ikariam.gameforge.com")
         # the game answers ajax as text/html, sometimes carrying pieces of a page
         self._game(b'[["changeView",["city","<div>x</div></body>"]]]')
-        self.assertNotIn(b"__ikabot", self.client.get("/index.php?ajax=1", HTTP_HOST=self.host).content)
+        fragment = self.client.get("/index.php?ajax=1", HTTP_HOST=self.host)
+        self.assertNotIn(b"__ikabot", fragment.content)
+        self.assertNotIn("Content-Security-Policy", fragment)
 
         self._game(b"", status=302, headers={"location": f"{GAME}/index.php?view=city"})
         moved = self.client.get("/", HTTP_HOST=self.host)

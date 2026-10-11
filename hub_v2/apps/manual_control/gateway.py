@@ -43,6 +43,15 @@ FORWARDED_RESPONSE_HEADERS = (
     "Content-Range", "Accept-Ranges",
 )
 REWRITTEN_TYPES = ("text/html", "javascript", "json", "text/css", "text/plain", "xml")
+# What a page of the game may load. Everything of the game itself comes through this
+# session (and so through the account's proxy); the static image/script CDN is the one
+# outside host allowed. Gameforge's tracking and consent scripts would otherwise run
+# from the operator's own address, next to a session that lives on the proxy's.
+STATIC_CDN = "https://*.geo.gfsrv.net"
+PAGE_POLICY = (
+    f"default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: {STATIC_CDN}; "
+    "connect-src 'self'; form-action 'self'; frame-ancestors 'self'"
+)
 STATIC_PATH = re.compile(r"\.(css|js|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|mp3|ogg|wav|map)$", re.IGNORECASE)
 
 PAGE = """<!doctype html>
@@ -216,6 +225,7 @@ def _forward(request, session: ManualControlSession):
 def _game_response(answer: dict, *, origin: str) -> HttpResponse:
     game_origin = str(answer.get("origin") or "")
     game_host = game_origin.split("://", 1)[-1]
+    policy = ""
     headers = {str(k).lower(): str(v) for k, v in (answer.get("headers") or {}).items()}
     body = base64.b64decode(answer.get("body") or "")
     status = int(answer.get("status") or 502)
@@ -240,6 +250,7 @@ def _game_response(answer: dict, *, origin: str) -> HttpResponse:
         # only whole pages: the game answers its ajax calls as text/html too
         whole_page = body.lstrip()[:15].lower().startswith((b"<!doctype", b"<html"))
         if status == 200 and "text/html" in content_type.lower() and whole_page:
+            policy = PAGE_POLICY
             marker = body.rfind(b"</body>")
             if marker != -1:
                 body = body[:marker] + PAGE_SCRIPT.encode() + body[marker:]
@@ -252,6 +263,8 @@ def _game_response(answer: dict, *, origin: str) -> HttpResponse:
             response[name] = value
     if location:
         response["Location"] = location
+    if policy:
+        response["Content-Security-Policy"] = policy
     response["X-Robots-Tag"] = "noindex, nofollow"
     # other sites the page loads from (the game's CDN) do not learn the session's address
     response["Referrer-Policy"] = "same-origin"
