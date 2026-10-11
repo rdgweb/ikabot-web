@@ -1,6 +1,6 @@
 {% if control_enabled or control_session %}<span id="control-chip-{{ game_account_id }}" class="inline-flex items-center gap-1"
-      hx-get="{% url 'manual_control:chip' game_account_id %}" hx-trigger="refresh{% if control_session %}, every 20s{% endif %}" hx-swap="outerHTML" hx-push-url="false"
-      onclick="event.stopPropagation();">
+      hx-get="{% url 'manual_control:chip' game_account_id %}" hx-trigger="refresh{% if control_session %}, every 20s{% endif %}" hx-target="this" hx-swap="outerHTML" hx-push-url="false"
+      hx-boost="false" onclick="event.stopPropagation();">
 {% if control_state == "manual" %}
   <span class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
         style="background: var(--ik-gold);"

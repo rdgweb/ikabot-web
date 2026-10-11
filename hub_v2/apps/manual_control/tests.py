@@ -536,9 +536,15 @@ class HubPagesTests(_Base):
         self.assertIn("Assumir controle", chip)
         self.assertIn(f"/game/control/start/{self.ga.pk}/", chip)
         self.assertNotIn("every 20s", chip)                                  # nothing to watch while in automation
+        # the hub's layout boosts every form and aims every request at the page content:
+        # the chip must update only itself, and its form must really open a new tab
+        self.assertIn('hx-target="this"', chip)
+        self.assertIn('hx-boost="false"', chip)
+        self.assertIn('target="_blank"', chip)
         session = self._active()
         chip = self.client.get(f"/game/control/chip/{self.ga.pk}/").content.decode()
         self.assertIn("CONTROLE MANUAL", chip)
+        self.assertIn('hx-target="this"', chip)
         self.assertIn(f"/game/control/{session.pk}/end/", chip)
         self.assertIn("every 20s", chip)
         services.end(session, "closed")
