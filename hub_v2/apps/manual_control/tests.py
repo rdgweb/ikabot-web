@@ -555,3 +555,97 @@ class HubPagesTests(_Base):
         self.client.logout()
         self.assertEqual(self.client.post(f"/game/control/start/{self.ga.pk}/").status_code, 302)
         self.assertFalse(ManualControlSession.objects.exists())
+
+
+class ProxyIndicatorTests(_Base):
+    """N-99: the operator is told which proxy the session leaves through."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.proxy.models import AccountProxyReservation, ProxyProfile
+
+        self.reserved = ProxyProfile.objects.create(address="10.9.0.1", port=8001, active=True)
+        AccountProxyReservation.objects.create(account=self.account, proxy_profile=self.reserved)
+        self.of_node = ProxyProfile.objects.create(address="10.9.0.2", port=8002, active=True, assigned_node=self.node)
+        self.someone_else = ProxyProfile.objects.create(address="10.9.0.3", port=8003, active=True)
+
+    def _open(self, proxy="absent"):
+        session = services.request_control(self.ga, self.user)
+        services.advance(session.pk)
+        answer = {"ok": True, "host": "s9-br.ikariam.gameforge.com"}
+        if proxy != "absent":
+            answer["proxy"] = proxy
+        self.agent.answers[self.agent.ops("open")[-1]["id"]] = answer
+        state = services.advance(session.pk)
+        session.refresh_from_db()
+        return session, state
+
+    def _facts(self, proxy, **check):
+        facts = {"used": True, "fingerprint": services.proxy_fingerprint(proxy.address, proxy.port), "checked": True,
+                 "matches_proxy": True, "is_direct": False}
+        facts.update(check)
+        return facts
+
+    def test_the_reserved_proxy_with_a_confirmed_exit_address(self):
+        session, state = self._open(self._facts(self.reserved))
+        self.assertEqual((session.proxy_label, session.proxy_scope, session.exit_check), (f"P{self.reserved.pk}", "account", "ok"))
+        self.assertEqual(state["proxy"]["level"], "ok")
+        self.assertIn(f"proxy P{self.reserved.pk}, reservado para esta conta", state["proxy"]["text"])
+        self.assertIn("conferido", state["proxy"]["text"])
+        self.assertEqual(state["proxy"]["short"], f"proxy P{self.reserved.pk} ✓")
+        # nothing about the address is kept or told
+        stored = " ".join(str(getattr(session, field.name)) for field in session._meta.fields)
+        self.assertNotIn("10.9.0.1", stored + repr(state))
+
+    def test_the_node_proxy_or_someone_else_proxy_is_a_warning(self):
+        session, state = self._open(self._facts(self.of_node))
+        self.assertEqual((session.proxy_scope, state["proxy"]["level"]), ("node", "warn"))
+        self.assertIn("proxy do nó", state["proxy"]["text"])
+        self.assertNotIn("✓", state["proxy"]["short"])
+        services.end(session, "closed")
+        session, state = self._open(self._facts(self.someone_else))
+        self.assertEqual((session.proxy_scope, state["proxy"]["level"]), ("other", "warn"))
+        self.assertIn("não é um dos reservados", state["proxy"]["text"])
+        services.end(session, "closed")
+        session, state = self._open({"used": True, "fingerprint": "f" * 64, "checked": True, "matches_proxy": True, "is_direct": False})
+        self.assertEqual((session.proxy_scope, session.proxy_label, state["proxy"]["level"]), ("unknown", "", "warn"))
+        self.assertIn("não reconhece", state["proxy"]["text"])
+
+    def test_no_proxy_or_a_proxy_without_effect_is_an_alarm(self):
+        session, state = self._open({"used": False})
+        self.assertEqual((session.proxy_scope, state["proxy"]["level"], state["proxy"]["short"]), ("none", "bad", "SEM PROXY"))
+        services.end(session, "closed")
+        session, state = self._open(self._facts(self.reserved, matches_proxy=False, is_direct=True))
+        self.assertEqual((session.exit_check, state["proxy"]["level"]), ("direct", "bad"))
+        self.assertIn("o proxy não está valendo", state["proxy"]["text"])
+
+    def test_exit_address_of_its_own_or_not_checked_is_said_plainly(self):
+        session, state = self._open(self._facts(self.reserved, matches_proxy=False))
+        self.assertEqual((session.exit_check, state["proxy"]["level"]), ("differs", "ok"))
+        self.assertIn("diferente do endereço do proxy", state["proxy"]["text"])
+        services.end(session, "closed")
+        session, state = self._open({"used": True, "fingerprint": services.proxy_fingerprint("10.9.0.1", 8001), "checked": False})
+        self.assertEqual(session.exit_check, "unchecked")
+        self.assertIn("não conferido", state["proxy"]["text"])
+
+    def test_an_agent_that_does_not_say_is_reported_as_such(self):
+        session, state = self._open()
+        self.assertEqual((session.proxy_scope, state["proxy"]["level"], state["proxy"]["short"]), ("", "info", ""))
+
+    def test_the_panel_and_the_tag_inside_the_game_show_it(self):
+        session, _state = self._open(self._facts(self.reserved))
+        self.client.force_login(self.user)
+        chip = self.client.get(f"/game/control/chip/{self.ga.pk}/").content.decode()
+        self.assertIn(f"proxy P{self.reserved.pk} ✓", chip)
+        self.assertIn("reservado para esta conta", chip)
+        status = self.client.get(f"/game/control/{session.pk}/status/").json()
+        self.assertEqual(status["proxy"]["level"], "ok")
+        script = gateway.page_script(session)
+        self.assertIn(f"proxy P{self.reserved.pk}", script)
+        self.assertIn("rgba(40,30,15,.82)", script)
+        self.assertNotIn("__PILL", script)
+        services.end(session, "closed")
+        session, _state = self._open({"used": False})
+        script = gateway.page_script(session)
+        self.assertIn("SEM PROXY", script)
+        self.assertIn("rgba(170,35,25,.92)", script)             # red when it is not going through a proxy

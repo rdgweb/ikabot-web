@@ -62,6 +62,13 @@ class ManualControlSession(UUIDTimestampModel):
     end_reason = models.CharField(max_length=32, blank=True, default="")
     error = models.TextField(blank=True, default="")
     request_count = models.PositiveIntegerField(default=0)
+    # N-99: which proxy the agent said this session leaves through. A label of the hub's
+    # own proxy list ("P218"), never an address.
+    proxy_label = models.CharField(max_length=24, blank=True, default="")
+    # account (reserved for the account) | node | other | unknown | none | "" (agent did not say)
+    proxy_scope = models.CharField(max_length=16, blank=True, default="")
+    # ok (exit address is the proxy's) | differs | direct (the agent's own address!) | unchecked | ""
+    exit_check = models.CharField(max_length=16, blank=True, default="")
 
     class Meta:
         ordering = ["-created_at"]

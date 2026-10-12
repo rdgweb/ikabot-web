@@ -25,5 +25,6 @@ def control_chip(context, game_account_id):
         "control_enabled": services.gateway_enabled(),
         "control_session": session,
         "control_state": state or "automation",
+        "control_proxy": services.proxy_summary(session) if session and session.status == ManualControlSession.ACTIVE else None,
         "csrf_token": context.get("csrf_token", ""),
     }

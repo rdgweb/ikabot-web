@@ -13,6 +13,7 @@ for the game, and the hub's own workers must not be the ones waiting.
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import re
 
@@ -72,12 +73,20 @@ setInterval(beat,15000);beat();
 window.addEventListener('pagehide',function(){try{navigator.sendBeacon(u+'bye');}catch(e){}});
 function pill(){if(!document.body||document.getElementById('ikabot-control-pill'))return;var d=document.createElement('div');
 d.id='ikabot-control-pill';d.style.cssText='position:fixed;left:8px;bottom:8px;z-index:2147483647;display:flex;gap:8px;align-items:center;'
-+'padding:4px 10px;border-radius:999px;background:rgba(40,30,15,.82);color:#fff;font:600 11px system-ui,sans-serif;opacity:.85';
-d.appendChild(document.createTextNode('Controle manual \\u00b7 automa\\u00e7\\u00e3o pausada'));var b=document.createElement('button');
++'padding:4px 10px;border-radius:999px;background:__PILL_BG__;color:#fff;font:600 11px system-ui,sans-serif;opacity:.85';
+d.appendChild(document.createTextNode(__PILL_TEXT__));var b=document.createElement('button');
 b.type='button';b.textContent='Encerrar';b.style.cssText='border:0;border-radius:999px;padding:2px 8px;font:inherit;cursor:pointer;background:#e8d9b5;color:#3b2f1e';
 b.onclick=function(){fetch(u+'end',{method:'POST',credentials:'same-origin'}).then(function(){location.replace(u+'ended');});};
 d.appendChild(b);document.body.appendChild(d);}
 if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',pill);}else{pill();}})();</script>"""
+
+
+def page_script(session: ManualControlSession) -> str:
+    """The script added to the game's pages, with the tag that says the control is on and through which proxy."""
+    summary = services.proxy_summary(session)
+    text = "Controle manual · automação pausada" + (f" · {summary['short']}" if summary["short"] else "")
+    background = "rgba(170,35,25,.92)" if summary["level"] == "bad" else "rgba(40,30,15,.82)"
+    return PAGE_SCRIPT.replace("__PILL_TEXT__", json.dumps(text)).replace("__PILL_BG__", background)
 
 
 def _page(title: str, *lines: str, status: int = 200) -> HttpResponse:
@@ -219,10 +228,10 @@ def _forward(request, session: ManualControlSession):
 
     if not STATIC_PATH.search(request.path):
         services.count_request(session)
-    return _game_response(answer, origin=origin)
+    return _game_response(answer, origin=origin, script=page_script(session))
 
 
-def _game_response(answer: dict, *, origin: str) -> HttpResponse:
+def _game_response(answer: dict, *, origin: str, script: str = "") -> HttpResponse:
     game_origin = str(answer.get("origin") or "")
     game_host = game_origin.split("://", 1)[-1]
     policy = ""
@@ -253,7 +262,7 @@ def _game_response(answer: dict, *, origin: str) -> HttpResponse:
             policy = PAGE_POLICY
             marker = body.rfind(b"</body>")
             if marker != -1:
-                body = body[:marker] + PAGE_SCRIPT.encode() + body[marker:]
+                body = body[:marker] + script.encode() + body[marker:]
 
     response = HttpResponse(body, status=status)
     del response["Content-Type"]

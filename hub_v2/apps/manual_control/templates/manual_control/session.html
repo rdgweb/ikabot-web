@@ -58,7 +58,27 @@
 
     function show(state) {
       if (state.state === "active") {
-        if (state.url) { stopped = true; text.textContent = "Abrindo o jogo..."; detail.textContent = ""; window.location.replace(state.url); }
+        if (state.url) {
+          stopped = true;
+          var proxy = state.proxy || {};
+          if (proxy.level === "bad") {
+            // not through a proxy: say so and let the operator decide, instead of opening the game
+            spinner.style.display = "none";
+            text.textContent = "Atenção antes de abrir o jogo";
+            text.className = "bad";
+            detail.textContent = proxy.text;
+            cancel.textContent = "Encerrar controle";
+            var go = document.createElement("a");
+            go.className = "button";
+            go.href = state.url;
+            go.textContent = "Abrir mesmo assim";
+            cancel.parentNode.appendChild(go);
+          } else {
+            text.textContent = "Abrindo o jogo...";
+            detail.textContent = proxy.text || "";
+            setTimeout(function () { window.location.replace(state.url); }, proxy.text ? 1800 : 0);
+          }
+        }
         else { finish("Controle manual ativo em outro navegador.", ""); }
       } else if (state.state === "pausing") {
         if (state.step === "waiting_job" && state.jobs && state.jobs.length) {

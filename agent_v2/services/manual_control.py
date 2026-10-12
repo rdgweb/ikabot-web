@@ -19,6 +19,7 @@ of that account is running or will start while a session is open here.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 import threading
@@ -57,8 +58,17 @@ class Refused(Exception):
     """The session cannot be opened; the message is for the operator."""
 
 
+# How long the agent's own (proxy-less) address is remembered between checks.
+DIRECT_IP_TTL_SECONDS = 600
+
+
+def proxy_fingerprint(host: str, port) -> str:
+    """Names a proxy without saying its address: the hub computes the same for the proxies it knows."""
+    return hashlib.sha256(f"{str(host).strip().lower()}:{port}".encode()).hexdigest()
+
+
 class _Entry:
-    __slots__ = ("session_id", "account_id", "game_account_id", "client", "origin", "host", "last_used", "lock")
+    __slots__ = ("session_id", "account_id", "game_account_id", "client", "origin", "host", "last_used", "lock", "proxy")
 
     def __init__(self, session_id: str, account_id: str, game_account_id: str):
         self.session_id = session_id
@@ -69,6 +79,7 @@ class _Entry:
         self.host = ""
         self.last_used = time.monotonic()
         self.lock = threading.Lock()
+        self.proxy = {}
 
 
 def default_client_factory(sessions, hub, proxy_url):
@@ -113,8 +124,11 @@ def default_client_factory(sessions, hub, proxy_url):
 class ManualControlService(threading.Thread):
     """Answers the hub's manual-control requests for the accounts of this node."""
 
-    def __init__(self, *, node_id: str, sessions, redis_client, open_client, save_client):
+    def __init__(self, *, node_id: str, sessions, redis_client, open_client, save_client, fetch_ip=None):
         super().__init__(daemon=True, name="manual-control")
+        # fetch_ip(proxy_url) -> the address the outside world sees through that proxy ("" = no proxy)
+        self.fetch_ip = fetch_ip
+        self._direct_ip = ("", 0.0)
         self.node_id = str(node_id)
         self.sessions = sessions
         self.redis = redis_client
@@ -175,7 +189,7 @@ class ManualControlService(threading.Thread):
         op = message.get("op")
         if op == "open":
             entry = self._entry(message)
-            return {"ok": True, "host": entry.host}
+            return {"ok": True, "host": entry.host, "proxy": entry.proxy}
         if op == "request":
             return self._request(message)
         if op == "close":
@@ -218,7 +232,42 @@ class ManualControlService(threading.Thread):
         entry.client = client
         entry.origin = f"{server.scheme}://{server.netloc}"
         entry.host = server.hostname
+        entry.proxy = self._proxy_facts(client)
         logger.info("Manual control: session %s open for game account %s", entry.session_id, entry.game_account_id)
+
+    def _proxy_facts(self, client) -> dict:
+        """Which proxy this session's requests leave through, and whether the exit address confirms it.
+
+        Never the address or the credentials: a fingerprint the hub can match, and the outcome of the check.
+        """
+        proxy_url = str(getattr(getattr(client, "session", None), "_proxy_url", "") or "").strip()
+        if not proxy_url:
+            return {"used": False}
+        parsed = urlparse(proxy_url if "://" in proxy_url else "http://" + proxy_url)
+        host = (parsed.hostname or "").lower()
+        facts = {"used": True, "fingerprint": proxy_fingerprint(host, parsed.port or 0), "checked": False}
+        if self.fetch_ip is None:
+            return facts
+        try:
+            exit_ip = str(self.fetch_ip(proxy_url) or "").strip()
+            direct_ip = self._own_address()
+        except Exception:  # noqa: BLE001 - the check is information; it never stops a session
+            logger.warning("Manual control: could not check the exit address", exc_info=True)
+            return facts
+        if exit_ip:
+            facts["checked"] = True
+            facts["matches_proxy"] = exit_ip == host
+            facts["is_direct"] = bool(direct_ip) and exit_ip == direct_ip
+        return facts
+
+    def _own_address(self) -> str:
+        """The agent's address without any proxy (to notice a proxy that is not being used)."""
+        value, at = self._direct_ip
+        if value and time.monotonic() - at < DIRECT_IP_TTL_SECONDS:
+            return value
+        value = str(self.fetch_ip("") or "").strip()
+        self._direct_ip = (value, time.monotonic())
+        return value
 
     def _close(self, session_id: str) -> None:
         with self._entries_lock:
@@ -323,10 +372,12 @@ def start_manual_control(*, sessions, hub, proxy_url) -> ManualControlService | 
         from core.config import settings
 
         client = redis.Redis.from_url(settings.redis_url, socket_keepalive=True, health_check_interval=25)
+        from core.heartbeat import _fetch_external_ip
+
         open_client, save_client = default_client_factory(sessions, hub, proxy_url)
         service = ManualControlService(
             node_id=settings.agent_node_id, sessions=sessions, redis_client=client,
-            open_client=open_client, save_client=save_client,
+            open_client=open_client, save_client=save_client, fetch_ip=_fetch_external_ip,
         )
         service.start()
         return service

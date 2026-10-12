@@ -47,6 +47,7 @@ class FakeHttpSession:
         self.replies = replies
         self.calls = []
         self.cookies = []
+        self._proxy_url = ""
 
     def request(self, method, url, **kwargs):
         self.calls.append((method, url, kwargs))
@@ -110,7 +111,7 @@ class _Base(unittest.TestCase):
 class OpenCloseTests(_Base):
     def test_open_uses_the_account_session_and_says_which_server_it_is(self):
         answer = self._ask("open")
-        self.assertEqual(answer, {"ok": True, "host": "s9-br.ikariam.gameforge.com"})
+        self.assertEqual(answer, {"ok": True, "host": "s9-br.ikariam.gameforge.com", "proxy": {"used": False}})
         self.assertEqual(self.opened, [("acc", "ga", True)])
         self._ask("open")
         self.assertEqual(len(self.opened), 1)                 # one session, opened once
@@ -166,6 +167,67 @@ class OpenCloseTests(_Base):
         self.service.answer(message)
         self.assertEqual(self.opened, [])
         self.assertIsNone(self.redis.answer(message["id"]))
+
+
+class ProxyFactsTests(_Base):
+    """N-99: the hub is told which proxy the session leaves through, never its address."""
+
+    PROXY = "http://usuario:senha-secreta@203.0.113.7:8080"
+
+    def _open_with(self, exit_ip, own_ip="198.51.100.1"):
+        self.clients[0].session._proxy_url = self.PROXY
+        self.asked = []
+
+        def fetch_ip(proxy_url=""):
+            self.asked.append(proxy_url)
+            return exit_ip if proxy_url else own_ip
+
+        self.service.fetch_ip = fetch_ip
+        answer = self._ask("open")
+        self.assertTrue(answer["ok"])
+        flat = json.dumps(answer)
+        for secret in ("203.0.113.7", "8080", "usuario", "senha-secreta", "198.51.100.1"):
+            self.assertNotIn(secret, flat)
+        return answer["proxy"]
+
+    def test_the_proxy_is_named_by_a_fingerprint_and_the_exit_address_confirms_it(self):
+        facts = self._open_with("203.0.113.7")
+        self.assertEqual(facts, {
+            "used": True, "fingerprint": manual_control.proxy_fingerprint("203.0.113.7", 8080),
+            "checked": True, "matches_proxy": True, "is_direct": False,
+        })
+        self.assertEqual(self.asked, [self.PROXY, ""])        # through the session's proxy, then without any
+
+    def test_a_proxy_that_is_not_being_used_is_noticed(self):
+        facts = self._open_with("198.51.100.1")               # the world sees the agent's own address
+        self.assertEqual((facts["checked"], facts["matches_proxy"], facts["is_direct"]), (True, False, True))
+
+    def test_a_proxy_with_its_own_exit_address_is_not_called_direct(self):
+        facts = self._open_with("192.0.2.55")
+        self.assertEqual((facts["checked"], facts["matches_proxy"], facts["is_direct"]), (True, False, False))
+
+    def test_no_answer_from_the_address_services_is_said_as_unchecked_and_never_stops_the_session(self):
+        self.assertEqual(self._open_with("")["checked"], False)
+        self.clients[0].session._proxy_url = self.PROXY
+        self.service._entries.clear()
+
+        def broken(proxy_url=""):
+            raise OSError("sem rede")
+
+        self.service.fetch_ip = broken
+        answer = self._ask("open")
+        self.assertTrue(answer["ok"])
+        self.assertEqual(answer["proxy"]["checked"], False)
+
+    def test_a_session_without_proxy_says_so(self):
+        self.service.fetch_ip = lambda proxy_url="": "198.51.100.1"
+        self.assertEqual(self._ask("open")["proxy"], {"used": False})
+
+    def test_the_agent_own_address_is_asked_once_for_several_sessions(self):
+        self._open_with("203.0.113.7")
+        self.service._entries.clear()
+        self._ask("open")
+        self.assertEqual(self.asked.count(""), 1)
 
 
 class RequestTests(_Base):
@@ -266,7 +328,7 @@ class LoopTests(_Base):
         self.service.run()
         self.service._pool.shutdown(wait=True)
         self.assertEqual(seen[0], "ikabot:manual:req:node-1")
-        self.assertEqual(self.redis.answer("loop1"), {"ok": True, "host": "s9-br.ikariam.gameforge.com"})
+        self.assertEqual(self.redis.answer("loop1"), {"ok": True, "host": "s9-br.ikariam.gameforge.com", "proxy": {"used": False}})
         self.assertEqual(self.redis.expiry["ikabot:manual:resp:loop1"], manual_control.RESPONSE_TTL_SECONDS)
 
 

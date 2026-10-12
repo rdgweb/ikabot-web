@@ -250,6 +250,7 @@ def advance(session_id) -> dict:
             elif answer.get("ok"):
                 session.status = ManualControlSession.ACTIVE
                 session.server_host = str(answer.get("host") or "")[:120]
+                _record_proxy(session, answer.get("proxy"))
                 session.activated_at = now
                 session.last_request_at = now
                 session.expires_at = now + _lease()
@@ -296,10 +297,89 @@ def describe(session: ManualControlSession) -> dict:
     if session.status == ManualControlSession.PAUSING:
         return {"state": "pausing", "step": "opening" if session.open_request_id else "waiting_job"}
     if session.status == ManualControlSession.ACTIVE:
-        return {"state": "active"}
+        return {"state": "active", "proxy": proxy_summary(session)}
     if session.status == ManualControlSession.RESUMING:
         return {"state": "resuming"}
     return {"state": "ended", "reason": session.end_reason, "error": session.error}
+
+
+# -- which proxy the session leaves through (N-99) ------------------------------------
+
+def proxy_fingerprint(host: str, port) -> str:
+    """Same as the agent computes: names a proxy without its address travelling anywhere."""
+    return hashlib.sha256(f"{str(host).strip().lower()}:{port}".encode()).hexdigest()
+
+
+def _record_proxy(session: ManualControlSession, facts) -> None:
+    """Turn what the agent said about the session's proxy into the hub's own terms."""
+    from urllib.parse import urlparse
+
+    from apps.proxy.models import AccountProxyReservation, ProxyProfile
+
+    session.proxy_label, session.proxy_scope, session.exit_check = "", "", ""
+    if not isinstance(facts, dict):
+        return                                   # an agent that does not say (older version)
+    if not facts.get("used"):
+        session.proxy_scope = "none"
+        return
+    fingerprint = str(facts.get("fingerprint") or "")
+    reserved = set(
+        AccountProxyReservation.objects.filter(account_id=session.game_account.account_id).values_list("proxy_profile_id", flat=True)
+    )
+    session.proxy_scope = "unknown"
+    for proxy in ProxyProfile.objects.only("id", "address", "port", "assigned_node_id"):
+        if proxy_fingerprint(proxy.address, proxy.port) != fingerprint:
+            continue
+        session.proxy_label = f"P{proxy.pk}"
+        if proxy.pk in reserved:
+            session.proxy_scope = "account"
+        elif proxy.assigned_node_id == session.node_id:
+            session.proxy_scope = "node"
+        else:
+            session.proxy_scope = "other"
+        break
+    else:
+        # a proxy typed by hand on the node, outside the proxy list
+        raw = str(getattr(session.node, "proxy", "") or "").strip()
+        if raw:
+            parsed = urlparse(raw if "://" in raw else "http://" + raw)
+            if proxy_fingerprint(parsed.hostname or "", parsed.port or 0) == fingerprint:
+                session.proxy_scope = "node"
+    if not facts.get("checked"):
+        session.exit_check = "unchecked"
+    elif facts.get("is_direct"):
+        session.exit_check = "direct"
+    elif facts.get("matches_proxy"):
+        session.exit_check = "ok"
+    else:
+        session.exit_check = "differs"
+
+
+def proxy_summary(session: ManualControlSession) -> dict:
+    """{"level": ok|warn|bad|info, "text": for the operator, "short": for the tag inside the game}."""
+    scope, label, check = session.proxy_scope, session.proxy_label, session.exit_check
+    if not scope:
+        return {"level": "info", "short": "", "text": "O agente não informou por qual proxy a sessão sai (versão antiga do agente)."}
+    if scope == "none":
+        return {"level": "bad", "short": "SEM PROXY",
+                "text": "SEM PROXY: esta sessão está saindo pelo endereço do próprio agente, não por um proxy."}
+    where = {
+        "account": f"Saindo pelo proxy {label}, reservado para esta conta.",
+        "node": f"Saindo pelo proxy do nó{' (' + label + ')' if label else ''}, não por um proxy reservado para esta conta.",
+        "other": f"Saindo pelo proxy {label}, que não é um dos reservados para esta conta.",
+        "unknown": "Saindo por um proxy que o hub não reconhece na lista de proxies.",
+    }[scope]
+    short = f"proxy {label}" if label else "proxy do nó" if scope == "node" else "proxy desconhecido"
+    level = "ok" if scope == "account" else "warn"
+    if check == "direct":
+        return {"level": "bad", "short": short + " SEM EFEITO",
+                "text": where + " Mas o endereço de saída conferido é o do próprio agente: o proxy não está valendo."}
+    if check == "ok":
+        return {"level": level, "short": short + (" ✓" if level == "ok" else ""), "text": where + " Endereço de saída conferido."}
+    if check == "differs":
+        return {"level": level, "short": short,
+                "text": where + " O endereço de saída é diferente do endereço do proxy (proxy com saída própria), e não é o do agente."}
+    return {"level": level, "short": short, "text": where + " Endereço de saída não conferido (serviço de consulta sem resposta)."}
 
 
 # -- the browser side --------------------------------------------------------------

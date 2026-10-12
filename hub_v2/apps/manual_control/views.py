@@ -95,4 +95,5 @@ def _chip(request, game_account_id):
         "control_enabled": services.gateway_enabled(),
         "control_session": session,
         "control_state": services.control_state(game_account_id) if session else "automation",
+        "control_proxy": services.proxy_summary(session) if session and session.status == ManualControlSession.ACTIVE else None,
     })
