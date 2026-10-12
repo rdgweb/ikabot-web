@@ -1,0 +1,263 @@
+{% load static %}
+{# N-102: everything the dashboard shows. Replaced as a whole every minute by the element below. #}
+<div id="dash-live">
+  {# a leaf of its own, so the links of the page do not inherit its target #}
+  <span style="display: none;" hx-get="{% url 'dashboard:live' %}" hx-trigger="every 60s [document.visibilityState === 'visible']"
+        hx-target="#dash-live" hx-swap="outerHTML" hx-push-url="false"></span>
+
+  {# 1. does anything need me now? #}
+  <section class="dash-block" id="dash-attention">
+    <h2 class="dash-title">
+      <i class="bi bi-bell-fill"></i> Precisa de atenção
+      <span class="dash-aside">Atualizado às {{ dash.now|date:"H:i:s" }} · atualiza sozinho a cada minuto</span>
+    </h2>
+    {% if dash.alerts %}
+    <div class="dash-alerts">
+      {% for alert in dash.alerts %}
+      <a class="dash-alert {{ alert.level }}" href="{{ alert.href }}">
+        <i class="bi {{ alert.icon }}"></i>
+        <span style="min-width: 0;">
+          <strong>{{ alert.text }}</strong>
+          {% if alert.detail %}<small>{{ alert.detail }}</small>{% endif %}
+        </span>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="dash-allgood">
+      <i class="bi bi-check-circle-fill"></i>
+      <span><b>Tudo em ordem.</b> Nenhuma conta sob ataque, bloqueada ou sem leitura; agentes online e automação sem problemas.</span>
+    </div>
+    {% endif %}
+  </section>
+
+  {# 2. the empire in numbers #}
+  <section class="dash-block" id="dash-empire">
+    <h2 class="dash-title"><i class="bi bi-globe-americas"></i> Império em números
+      <a class="dash-aside link-sea" href="{% url 'game:dashboard' %}">Abrir o Painel do Jogo</a>
+    </h2>
+    <div class="dash-cards">
+      {% for card in dash.cards %}
+      <a class="dash-card" href="{% url 'game:dashboard' %}" title="{{ card.label }}: {{ card.full }}" style="border-left: 4px solid {{ card.color }};">
+        <span class="dash-card-head">
+          <span class="dash-card-icon" style="background: {{ card.soft }};">
+            {% if card.image %}<img src="{% static card.image %}" alt="">{% else %}<i class="bi {{ card.icon }}" style="color: {{ card.color }};"></i>{% endif %}
+          </span>
+          <span style="min-width: 0;">
+            <span class="dash-card-label">{{ card.label }}</span>
+            <span class="dash-card-value" style="display: block; color: {{ card.value_color }};">{{ card.value }}</span>
+          </span>
+        </span>
+        <span class="dash-card-delta" style="color: {{ card.delta_color }};">{{ card.delta_text }}</span>
+        {% if card.points %}
+        <svg viewBox="0 0 120 30" preserveAspectRatio="none" aria-hidden="true">
+          <polyline points="{{ card.points }}" fill="none" stroke="{{ card.color }}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+        </svg>
+        {% endif %}
+        <span class="dash-card-note"{% if card.note_bad %} style="color: #b3402f; font-weight: 600;"{% endif %}>{{ card.note }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+
+  {# 3. what is happening and what comes next #}
+  <section class="dash-block" id="dash-coming">
+    <h2 class="dash-title"><i class="bi bi-hourglass-split"></i> Agora e a seguir</h2>
+    <div class="dash-cols">
+      <div class="dash-panel">
+        <h3><i class="bi bi-hammer"></i> Obras em andamento <span class="dash-count">{{ dash.coming.works_total }}</span></h3>
+        {% if dash.coming.works %}
+        <ul class="dash-list">
+          {% for work in dash.coming.works %}
+          <li>
+            <span class="dash-main"><b>{{ work.building }} → nível {{ work.level }}</b><span>{{ work.city }} · {{ work.account }}</span></span>
+            <span class="dash-when"{% if work.soon %} style="color: #2d7a2d;"{% endif %}>{{ work.ends_in }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% if dash.coming.works_total > dash.coming.works|length %}<p class="dash-empty">e mais {{ dash.coming.works_total|add:"-8" }} depois destas.</p>{% endif %}
+        {% else %}
+        <p class="dash-empty">Nenhuma obra em andamento.</p>
+        {% endif %}
+        {% if dash.coming.idle_accounts %}
+        <p class="dash-empty" style="border-top: 1px solid var(--ik-line); margin-top: .3rem;"><i class="bi bi-pause-circle"></i> Sem obra: {{ dash.coming.idle_accounts|join:", " }}</p>
+        {% endif %}
+      </div>
+
+      <div class="dash-panel">
+        <h3><i class="bi bi-calendar-event"></i> Próximos jobs <span class="dash-count">{{ dash.coming.scheduled_total }} agendado{{ dash.coming.scheduled_total|pluralize }}</span></h3>
+        {% if dash.coming.scheduled %}
+        <ul class="dash-list">
+          {% for job in dash.coming.scheduled %}
+          <li>
+            <a class="dash-main" href="{% url 'jobs:job-detail' job.id %}"><b>{{ job.name }}</b><span>{{ job.account|default:"—" }}</span></a>
+            <span class="dash-when">{{ job.eta }}<small>{{ job.at|date:"H:i" }}</small></span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="dash-empty">Nenhum job agendado.</p>
+        {% endif %}
+      </div>
+
+      <div class="dash-panel">
+        <h3><i class="bi bi-play-circle"></i> Em execução <span class="dash-count">{{ dash.coming.running_total }}</span></h3>
+        {% if dash.coming.running %}
+        <ul class="dash-list">
+          {% for job in dash.coming.running %}
+          <li>
+            <a class="dash-main" href="{% url 'jobs:job-detail' job.id %}"><b>{{ job.name }}</b><span>{{ job.account|default:"—" }}</span></a>
+            <span class="dash-when">{% if job.since %}há {{ job.since }}{% endif %}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="dash-empty">Nenhum job rodando neste instante.</p>
+        {% endif %}
+        <h3 style="margin-top: .9rem;"><i class="bi bi-diagram-3"></i> Workflows
+          <span class="dash-count">{{ dash.workflows.active }} ativo{{ dash.workflows.active|pluralize }}{% if dash.workflows.problem_total %} · {{ dash.workflows.problem_total }} com problema{% endif %}</span>
+        </h3>
+        {% if dash.workflows.problems %}
+        <ul class="dash-list">
+          {% for workflow in dash.workflows.problems %}
+          <li>
+            <a class="dash-main" href="{% url 'jobs:workflow-detail' workflow.id %}">
+              <b>{{ workflow.title }}{% if workflow.account %} · {{ workflow.account }}{% endif %}</b>
+              <span style="color: #b3402f;">{{ workflow.error|default:"Parado por erro." }}</span>
+            </a>
+            <span class="dash-when">{% if workflow.ago %}<small>há {{ workflow.ago }}</small>{% endif %}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="dash-empty">Nenhum workflow com problema.</p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  {# 4. is the automation healthy? #}
+  <section class="dash-block" id="dash-automation">
+    <h2 class="dash-title"><i class="bi bi-robot"></i> Automação nas últimas 24 horas
+      <a class="dash-aside link-sea" href="{% url 'jobs:job-list' %}">Abrir a Fila de Jobs</a>
+    </h2>
+    <div class="dash-cols">
+      <div class="dash-panel">
+        <div class="dash-figures">
+          <div class="dash-figure"><b>{{ dash.automation.total_text }}</b><span>jobs concluídos</span></div>
+          <div class="dash-figure"><b style="color: #2d7a2d;">{% if dash.automation.success_pct %}{{ dash.automation.success_pct }}%{% else %}—{% endif %}</b><span>taxa de sucesso</span></div>
+          <div class="dash-figure"><b{% if dash.automation.errors %} style="color: #b3402f;"{% endif %}>{{ dash.automation.errors }}</b><span>com erro</span></div>
+          <div class="dash-figure"><b>{{ dash.automation.average|default:"—" }}</b><span>tempo médio</span></div>
+        </div>
+        <div class="dash-bars">
+          {% for hour in dash.automation.hours %}
+          <div class="dash-bar" title="{{ hour.label }}: {{ hour.ok }} ok, {{ hour.error }} com erro">
+            {% if hour.error %}<i class="err" style="height: {{ hour.error_pct }}%;"></i>{% endif %}
+            <i class="ok" style="height: {{ hour.ok_pct }}%;"></i>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="dash-hours">
+          {% for hour in dash.automation.hours %}<span>{% if hour.show_label %}{{ hour.label }}{% endif %}</span>{% endfor %}
+        </div>
+        <div class="dash-legend">
+          <span><i style="background: #5f9a56;"></i>concluídos</span>
+          <span><i style="background: #b3402f;"></i>com erro</span>
+          <span style="margin-left: auto;">pico de {{ dash.automation.peak }} por hora</span>
+        </div>
+      </div>
+
+      <div class="dash-panel">
+        <h3><i class="bi bi-bar-chart-steps"></i> Ações mais executadas</h3>
+        {% if dash.automation.top_actions %}
+        <ul class="dash-list">
+          {% for action in dash.automation.top_actions %}
+          <li style="display: block;">
+            <span style="display: flex; align-items: baseline; gap: .6rem;">
+              <span class="dash-main"><b>{{ action.name }}</b></span>
+              <span class="dash-when">{{ action.total_text }}<small>{{ action.ok_pct }}% ok{% if action.average %} · {{ action.average }}{% endif %}</small></span>
+            </span>
+            <span class="dash-meter"><i style="width: {{ action.share_pct }}%;"></i></span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="dash-empty">Nenhum job concluído nas últimas 24 horas.</p>
+        {% endif %}
+        {% if dash.automation.failing_actions %}
+        <h3 style="margin-top: .9rem;"><i class="bi bi-x-octagon" style="color: #b3402f;"></i> Onde houve erro</h3>
+        <ul class="dash-list">
+          {% for action in dash.automation.failing_actions %}
+          <li>
+            <a class="dash-main" href="{% url 'jobs:job-list' %}?status=error&action_code={{ action.code }}"><b>{{ action.name }}</b></a>
+            <span class="dash-when" style="color: #b3402f;">{{ action.errors }} de {{ action.total_text }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  {# 5. one line per account #}
+  <section class="dash-block" id="dash-accounts">
+    <h2 class="dash-title"><i class="bi bi-people-fill"></i> Contas <span class="dash-aside">{{ dash.rows|length }} ativa{{ dash.rows|length|pluralize }}</span></h2>
+    <div class="dash-panel" style="padding: .3rem .4rem;">
+      {% if dash.rows %}
+      <div class="dash-table-wrap">
+        <table class="dash-table">
+          <thead>
+            <tr>
+              <th>Conta</th><th>Estado</th><th class="num">Ouro</th><th class="num">Renda/h</th><th class="num">Cidades</th>
+              <th class="num">Recursos</th><th>Obra atual</th><th>Última leitura</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in dash.rows %}
+            <tr>
+              <td><b>{{ row.name }}</b><small>{{ row.server }} · {{ row.node }}</small></td>
+              <td><span class="dash-pill {{ row.state }}">{{ row.state_label }}</span></td>
+              {% if row.has_snapshot %}
+              <td class="num" title="{{ row.gold }}">{{ row.gold_text }}</td>
+              <td class="num" style="font-weight: 600; color: {% if row.income < 0 %}#b3402f{% else %}#2d7a2d{% endif %};">{{ row.income_text }}</td>
+              <td class="num">{{ row.cities }}{% if row.full_cities %}<small style="color: #a06f14;">{{ row.full_cities }} cheia{{ row.full_cities|pluralize }}</small>{% endif %}</td>
+              <td class="num">{{ row.resources_text }}</td>
+              <td>{% if row.work %}{{ row.work.building }} → {{ row.work.level }}<small>{{ row.work.city }} · {{ row.work.ends_in }}{% if row.works|length > 1 %} · +{{ row.works|length|add:"-1" }}{% endif %}</small>{% else %}<span class="dash-muted">—</span>{% endif %}</td>
+              <td{% if row.stale %} style="color: #a06f14; font-weight: 600;"{% endif %}>há {{ row.snapshot_age }}</td>
+              {% else %}
+              <td colspan="6" class="dash-muted">Ainda sem leitura do jogo.</td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="dash-empty" style="padding: .6rem;">Nenhuma conta ativa. <a class="link-sea" href="{% url 'accounts:account-list' %}">Cadastrar uma conta</a></p>
+      {% endif %}
+    </div>
+  </section>
+
+  {# 6. the system, compact #}
+  <section class="dash-block" id="dash-system" style="margin-bottom: 0;">
+    <h2 class="dash-title"><i class="bi bi-hdd-rack-fill"></i> Sistema</h2>
+    <div class="dash-system">
+      {% for node in dash.nodes %}
+      <a class="dash-chip" href="{% url 'accounts:node-detail' node.id %}" title="{% if node.online %}Online{% elif node.seen_ago %}Sem contato há {{ node.seen_ago }}{% else %}Nunca se conectou{% endif %}">
+        <span class="dot{% if not node.online %}{% if node.accounts %} off{% else %} idle{% endif %}{% endif %}"></span>
+        <b>{{ node.name }}</b>
+        <small>{% if node.version %}v{{ node.version }}{% else %}sem versão{% endif %} · {{ node.accounts }} conta{{ node.accounts|pluralize }}{% if node.outdated %} · atualização disponível{% endif %}</small>
+      </a>
+      {% empty %}
+      <span class="dash-chip"><span class="dot idle"></span> Nenhum nó cadastrado</span>
+      {% endfor %}
+      {% if dash.proxy %}
+      <a class="dash-chip" href="{% url 'proxy:list' %}">
+        <span class="dot{% if dash.proxy.passed < dash.proxy.tested %} idle{% endif %}"></span>
+        <b>Proxies</b><small>{{ dash.proxy.passed }} de {{ dash.proxy.tested }} ok · verificados há {{ dash.proxy.ago }}</small>
+      </a>
+      {% endif %}
+      <span class="dash-chip"><i class="bi bi-box-seam"></i> <b>Hub</b><small>v{{ HUB_VERSION }}{% if dash.expected_agent_version %} · agente esperado v{{ dash.expected_agent_version }}{% endif %}</small></span>
+    </div>
+  </section>
+</div>
