@@ -42,6 +42,10 @@ def _load_resources_runner_module():
     resource_transport = types.ModuleType("services.resource_transport")
     resource_transport.split_shipment = lambda *_args, **_kwargs: []
     resource_transport.RESOURCE_ORDER = ("wood", "wine", "marble", "crystal", "sulfur")
+    # N-93: names the runner imports to plan within the port and the fleet
+    resource_transport.TRANSPORT_CAPACITY = 500
+    resource_transport.estimate_port_loading_per_minute = lambda _levels: 1000
+    resource_transport.fetch_free_ships = lambda *_args, **_kwargs: None
     resource_transport.change_current_city = lambda *_args, **_kwargs: None
     resource_transport.confirm_arrival = lambda *_args, **_kwargs: {}
     resource_transport.estimate_next_ship_availability = lambda *_args, **_kwargs: {"wait_seconds": 0, "chosen": None, "entries": [], "fallback_used": False}

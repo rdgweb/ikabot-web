@@ -16,7 +16,7 @@ import random
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
-from math import floor
+from math import ceil, floor
 from typing import Any
 
 from game_client.constants import GAME_AJAX_HEADERS
@@ -29,9 +29,12 @@ from services.resource_transport import (
     is_game_flag_set,
     split_shipment,
     RESOURCE_ORDER,
+    TRANSPORT_CAPACITY,
     change_current_city,
     confirm_arrival,
     estimate_next_ship_availability,
+    estimate_port_loading_per_minute,
+    fetch_free_ships,
     prepare_transport,
     submit_transport,
 )
@@ -41,6 +44,10 @@ logger = logging.getLogger(__name__)
 COLLECT_INTERVAL = 15 * 60
 MIN_DISTRIBUTE_RECHECK = 30 * 60
 MAX_DISTRIBUTE_RECHECK = 12 * 3600
+# N-93: a donor whose port would need longer than this to load what the cycle asks of it
+# stays out of the plan (a city without a port loads about 600 an hour: 33h for 20,000)
+DEFAULT_MAX_LOADING_MINUTES = 120
+ACTION_POINTS_FEEDBACK = ("pontos de a", "action point", "aktionspunkt", "puntos de acci")
 RESOURCE_KEYS = tuple(RESOURCE_ORDER)
 RESOURCE_PRODUCED_MAP = {
     "wood": 0,
@@ -113,6 +120,49 @@ def _resource_net_per_hour(city: dict[str, Any], resource: str) -> int:
 def _port_blocked(city: dict[str, Any]) -> bool:
     """The snapshot says this city's port is under blockade (N-75)."""
     return is_game_flag_set((city or {}).get("harbour_occupied"))
+
+
+def _port_levels(city: dict[str, Any]) -> list[int] | None:
+    """Levels of the city's trading ports; None when the snapshot has no buildings for it."""
+    buildings = city.get("buildings")
+    if not isinstance(buildings, list) or not buildings:
+        return None
+    return [
+        _to_int(building.get("level"), 0, 0)
+        for building in buildings
+        if isinstance(building, dict) and str(building.get("building") or "").strip().lower() == "port"
+    ]
+
+
+def _loading_per_hour(city: dict[str, Any]) -> int | None:
+    """What the city's ports load in an hour (estimate from their levels); None when unknown."""
+    levels = _port_levels(city)
+    return None if levels is None else estimate_port_loading_per_minute(levels) * 60
+
+
+def _ships_needed(total: int, ship_capacity: int) -> int:
+    return int(ceil(max(0, int(total)) / max(1, int(ship_capacity))))
+
+
+def _scale_resources(resources: dict[str, int], limit: int) -> dict[str, int]:
+    """The same mix of resources, cut down to at most ``limit`` in total."""
+    clean = {name: max(0, int(amount or 0)) for name, amount in resources.items()}
+    total = sum(clean.values())
+    if limit <= 0 or total <= 0:
+        return {}
+    if total <= limit:
+        return {name: amount for name, amount in clean.items() if amount > 0}
+    scaled = {name: amount * limit // total for name, amount in clean.items()}
+    return {name: amount for name, amount in scaled.items() if amount > 0}
+
+
+def _is_action_points_feedback(feedbacks: list[dict[str, Any]]) -> bool:
+    """The game refused the transport because the city has no action point left."""
+    for entry in feedbacks or []:
+        haystack = f"{entry.get('text') or ''} {entry.get('locakey') or ''}".lower().replace("_", " ")
+        if any(token in haystack for token in ACTION_POINTS_FEEDBACK):
+            return True
+    return False
 
 
 def _city_name(city: dict[str, Any]) -> str:
@@ -290,6 +340,31 @@ class SendResourcesRunner(BaseRunner):
             ),
         )
 
+        # N-93: a route planned by the distribution is not retried by itself. Whatever could
+        # not go now (no ship, slow port, no action point, a leftover) goes back to the plan of
+        # the next cycle, which sees the stock and the fleet as they are then. Before, each
+        # route kept re-running every few minutes only to find there was still no ship.
+        distribution_route = bool(inputs.get("distribution_route"))
+        max_loading_seconds = _to_int(inputs.get("max_loading_seconds"), 0, 0)
+        port_seconds = int(plan.eta["queue_seconds"]) + int(plan.eta["loading_seconds"])
+        if distribution_route and max_loading_seconds > 0 and plan.total_dispatched > 0 and port_seconds > max_loading_seconds:
+            self.log(
+                jid,
+                "warn",
+                (
+                    f"Envio não realizado: o porto de {plan.origin.city_name} levaria {port_seconds // 60} min "
+                    f"(fila {int(plan.eta['queue_seconds']) // 60} min + carga {int(plan.eta['loading_seconds']) // 60} min) "
+                    f"para despachar {plan.total_dispatched:,}; o limite é {max_loading_seconds // 60} min. "
+                    "Nenhum barco ou recurso foi comprometido."
+                ),
+            )
+            if ga_id:
+                self.save_game_client(ga_id, client)
+            return RunnerResult(
+                success=True,
+                data={"status": "port_too_slow", "port_seconds": port_seconds, "limit_seconds": max_loading_seconds},
+            )
+
         if min_dispatch_total > 0 and 0 < plan.total_dispatched < min_dispatch_total:
             self.log(
                 jid,
@@ -310,6 +385,25 @@ class SendResourcesRunner(BaseRunner):
                     "remaining": plan.requested,
                     "minimum": min_dispatch_total,
                 },
+            )
+
+        if plan.total_dispatched <= 0 and distribution_route:
+            if plan.free_transporters <= 0:
+                reason = f"nenhum {ship_kind} livre agora"
+            elif not any(plan.origin.available_resources.get(name, 0) for name in RESOURCE_ORDER if requested[name] > 0):
+                reason = f"{plan.origin.city_name} não tem mais o recurso pedido"
+            else:
+                reason = f"{plan.destination.city_name} não tem espaço no armazém"
+            self.log(
+                jid,
+                "warn",
+                f"Envio não realizado: {reason}. A rota volta ao planejamento no próximo ciclo da distribuição.",
+            )
+            if ga_id:
+                self.save_game_client(ga_id, client)
+            return RunnerResult(
+                success=True,
+                data={"status": "nothing_dispatchable", "free_ships": plan.free_transporters, "requested": plan.requested},
             )
 
         if plan.total_dispatched <= 0:
@@ -334,6 +428,34 @@ class SendResourcesRunner(BaseRunner):
         response = submit_transport(client, plan, use_freighters=use_freighters)
         if not response["ok"]:
             feedback_text = " | ".join(str(entry.get("text") or entry.get("locakey") or "") for entry in response["feedbacks"])
+            if distribution_route and _is_action_points_feedback(response["feedbacks"]):
+                # the snapshot the plan was made from did not know: have it refreshed
+                self.log(
+                    jid,
+                    "warn",
+                    (
+                        f"Envio não realizado: {plan.origin.city_name} está sem pontos de ação. "
+                        "Nenhum barco ou recurso foi comprometido; a rota volta ao planejamento no próximo ciclo."
+                    ),
+                )
+                if ga_id:
+                    self.save_game_client(ga_id, client)
+                try:
+                    self.ensure_status_refresh(jid, game_account_id=ga_id)
+                except LoginCooldownActive:
+                    raise
+                except Exception as refresh_exc:
+                    self.log(jid, "warn", f"Nao foi possivel solicitar check_status: {refresh_exc}")
+                return RunnerResult(success=True, data={"status": "no_action_points", "from_city": from_city})
+            if distribution_route and not feedback_text:
+                self.log(
+                    jid,
+                    "warn",
+                    "O jogo não confirmou o envio; a rota volta ao planejamento no próximo ciclo da distribuição.",
+                )
+                if ga_id:
+                    self.save_game_client(ga_id, client)
+                return RunnerResult(success=True, data={"status": "submit_unconfirmed", "requested": plan.requested})
             if not feedback_text and plan.total_dispatched > 0 and plan.total_requested > plan.total_dispatched:
                 wait_seconds = self._estimate_ship_wait_seconds(
                     jid=jid,
@@ -478,6 +600,23 @@ class SendResourcesRunner(BaseRunner):
             )
 
         remaining_total = sum(plan.remaining.values())
+        if remaining_total > 0 and distribution_route:
+            self.log(
+                jid,
+                "info",
+                f"Restante de {remaining_total:,} não coube agora; fica para o próximo ciclo da distribuição.",
+            )
+            if ga_id:
+                self.save_game_client(ga_id, client)
+            return RunnerResult(
+                success=True,
+                data={
+                    "status": "partial_dispatch",
+                    "dispatched": plan.dispatched,
+                    "remaining": plan.remaining,
+                    "eta": plan.eta,
+                },
+            )
         if remaining_total > 0:
             wait_seconds = 0
             if monitor_delay > 0:
@@ -864,6 +1003,9 @@ class DistributeResourcesRunner(BaseRunner):
         # metronome-even cadence dispatching several fleets inside one minute is a
         # recognizable bot pattern. Job input "dispatch_stagger": 0 turns it off.
         dispatch_stagger_enabled = _to_bool(inputs.get("dispatch_stagger"), True)
+        max_loading_seconds = 60 * _to_int(
+            inputs.get("max_loading_minutes", DEFAULT_MAX_LOADING_MINUTES), DEFAULT_MAX_LOADING_MINUTES, 0,
+        )
         min_recheck_seconds = _to_int(inputs.get("min_recheck_minutes", 30), 30, 1) * 60
         max_recheck_seconds = _to_int(inputs.get("max_recheck_minutes", 720), 720, 5) * 60
         min_recheck_seconds = max(MIN_DISTRIBUTE_RECHECK, min_recheck_seconds)
@@ -931,6 +1073,18 @@ class DistributeResourcesRunner(BaseRunner):
             touched = sum(1 for bucket in reserved_by_city.values() if any(int(v or 0) > 0 for v in bucket.values()))
             self.log(jid, "info", f"Reservas ativas de construcao detectadas em {touched} cidade(s); estoque reservado sera preservado")
 
+        active_transport_entries = self._get_active_transport_entries(jid)
+        # N-93: what each donor can take this cycle (port speed, action points)
+        donor_cargo_limit, donor_missions, donor_logs = self._donor_limits(
+            planned_cities,
+            active_transport_entries,
+            max_loading_seconds=max_loading_seconds,
+            useful_transfer_min=useful_transfer_min,
+            shipment_cap=shipment_cap,
+        )
+        for line in donor_logs:
+            self.log(jid, "warn", line)
+
         allocations, planning = self._build_distribution_plan(
             planned_cities,
             selected_resources=selected_resources,
@@ -941,6 +1095,7 @@ class DistributeResourcesRunner(BaseRunner):
             useful_transfer_min=useful_transfer_min,
             shipment_cap=shipment_cap,
             reserved_by_city=reserved_by_city,
+            donor_cargo_limit=donor_cargo_limit,
         )
 
         for line in planning["logs"]:
@@ -952,9 +1107,45 @@ class DistributeResourcesRunner(BaseRunner):
             useful_transfer_min=useful_transfer_min,
         )
         route_entries.sort(key=lambda item: (item["critical"], item["total"]), reverse=True)
-        active_transport_entries = self._get_active_transport_entries(jid)
         base_snap = (snapshot.get("base_snapshot") or {}) if isinstance(snapshot, dict) else {}
         free_freighters = int(base_snap.get("free_freighters") or 0)
+
+        # N-93: the routes of the cycle have to fit the merchant ships that are free. The
+        # count comes from the game when there is something to send (one light request);
+        # the snapshot's can be up to two hours old and counts as free the ships that are
+        # still sailing back.
+        load_percent = _to_int(transport_load_percent, 100, 0)
+        merchant_capacity = max(1, TRANSPORT_CAPACITY * (load_percent if load_percent in (20, 40, 60, 80, 100) else 100) // 100)
+        merchant_budget: int | None = None
+        if base_snap.get("free_transporters") is not None:
+            merchant_budget = _to_int(base_snap.get("free_transporters"), 0, 0)
+        fleet_source = "snapshot"
+        if route_entries:
+            live_fleet = self._read_free_ships(job)
+            if live_fleet is not None:
+                self._sync_snapshot_ships(jid, ga_id, base_snap, live_fleet)
+                merchant_budget = live_fleet["transporters"]
+                free_freighters = live_fleet["freighters"]
+                fleet_source = "jogo"
+        if merchant_budget is not None and route_entries:
+            # sends of this chain that are lined up but have not left yet already count on ships
+            committed = sum(
+                _ships_needed(sum(entry["resources"].values()), merchant_capacity)
+                for entry in active_transport_entries
+                if not entry.get("monitor_mode") and not entry.get("use_freighters")
+            )
+            self.log(
+                jid,
+                "info",
+                (
+                    f"Frota ({fleet_source}): {merchant_budget} mercante(s) livre(s)"
+                    + (f", {committed} já contado(s) para envios pendentes" if committed else "")
+                    + f" | capacidade/navio={merchant_capacity}"
+                ),
+            )
+            merchant_budget = max(0, merchant_budget - committed)
+        fleet_short = 0
+        below_minimum = 0
 
         total_routes = len(route_entries)
         if total_routes > max_routes_per_cycle:
@@ -1019,6 +1210,26 @@ class DistributeResourcesRunner(BaseRunner):
             if not viable_resources:
                 continue
 
+            donor_id = str(route["from_city"])
+            # a critical route (destination below its minimum stock) may go smaller, never below a ship load
+            route_min = min(useful_transfer_min, TRANSPORT_CAPACITY) if route["critical"] else useful_transfer_min
+            if sum(viable_resources.values()) < route_min:
+                below_minimum += 1
+                self.log(
+                    jid, "info",
+                    (
+                        f"Rota {route['from_city_name']} -> {route['to_city_name']} ficaria com "
+                        f"{sum(viable_resources.values()):,}, abaixo do mínimo útil de {route_min:,}; não enviada"
+                    ),
+                )
+                continue
+            if donor_missions.get(donor_id, 1) <= 0:
+                self.log(
+                    jid, "info",
+                    f"Rota {route['from_city_name']} -> {route['to_city_name']} adiada: {route['from_city_name']} sem ponto de ação livre",
+                )
+                continue
+
             # Cargueiros globais: split em N spawns (cargueiros + sobra mercantes)
             freighter_threshold = _to_int(inputs.get("freighter_threshold", 30000), 30000, 0)
 
@@ -1066,6 +1277,44 @@ class DistributeResourcesRunner(BaseRunner):
                             f"restante={_format_resource_amounts(remaining_chunk)}"
                         ),
                     )
+                if donor_missions.get(donor_id, 1) <= 0:
+                    break
+                chunk_total = sum(remaining_chunk.values())
+                if chunk_total < route_min:
+                    # what is left after the transport already on its way is not worth a trip
+                    below_minimum += 1
+                    self.log(
+                        jid, "info",
+                        (
+                            f"Resto de {chunk_total:,} em {route['from_city_name']} -> {route['to_city_name']} "
+                            f"abaixo do mínimo útil de {route_min:,}; não enviado"
+                        ),
+                    )
+                    continue
+                if not use_freighters and merchant_budget is not None:
+                    ships = _ships_needed(chunk_total, merchant_capacity)
+                    if ships > merchant_budget:
+                        fitted = _scale_resources(remaining_chunk, merchant_budget * merchant_capacity)
+                        if sum(fitted.values()) < route_min:
+                            fleet_short += 1
+                            self.log(
+                                jid, "warn",
+                                (
+                                    f"Frota insuficiente para {route['from_city_name']} -> {route['to_city_name']}: "
+                                    f"{chunk_total:,} pede {ships} mercante(s) e há {merchant_budget} livre(s); "
+                                    "a rota espera a volta dos navios"
+                                ),
+                            )
+                            continue
+                        self.log(
+                            jid, "info",
+                            (
+                                f"Rota {route['from_city_name']} -> {route['to_city_name']} reduzida de {chunk_total:,} "
+                                f"para {sum(fitted.values()):,}: é o que {merchant_budget} mercante(s) livre(s) levam"
+                            ),
+                        )
+                        remaining_chunk = fitted
+                    merchant_budget -= _ships_needed(sum(remaining_chunk.values()), merchant_capacity)
                 child_inputs = {
                     # tells the dispatch that a blockade found at the last minute is
                     # something the next cycle deals with, not a failure (N-75)
@@ -1078,6 +1327,9 @@ class DistributeResourcesRunner(BaseRunner):
                     "use_freighters": use_freighters,
                     "confirm_arrival": confirm_arrival_enabled,
                     "confirmation_margin_minutes": confirmation_margin_minutes,
+                    # N-93: what the fleet cannot take now is not sent in crumbs
+                    "min_dispatch_total": min(route_min, sum(remaining_chunk.values())),
+                    "max_loading_seconds": max_loading_seconds,
                     **remaining_chunk,
                 }
                 dispatch_delay = self._next_dispatch_delay(
@@ -1089,6 +1341,8 @@ class DistributeResourcesRunner(BaseRunner):
                 )
                 dispatches_made += 1
                 route_spawned = True
+                if donor_id in donor_missions:
+                    donor_missions[donor_id] -= 1
                 for key, value in remaining_chunk.items():
                     route_spawned_resources[key] = route_spawned_resources.get(key, 0) + int(value)
                 active_transport_entries.append(
@@ -1135,15 +1389,23 @@ class DistributeResourcesRunner(BaseRunner):
             concrete_delay = self._choose_next_transport_followup_delay(active_transport_entries)
             if concrete_delay is not None:
                 next_seconds = max(min_recheck_seconds, concrete_delay)
-            elif total_routes > max_routes_per_cycle:
+            elif total_routes > max_routes_per_cycle or fleet_short:
+                # routes left over (too many for one cycle, or no ship for them): look again soon
                 next_seconds = min(next_seconds, min_recheck_seconds)
             self.log(jid, "info", f"Proxima avaliacao de distribuicao em {next_seconds}s")
 
+        if fleet_short:
+            self.log(
+                jid, "info",
+                f"{fleet_short} rota(s) ficaram para depois por falta de navio livre; serão planejadas de novo no próximo ciclo",
+            )
         data = {
             "status": "ok",
             "actions_spawned": actions_spawned,
             "planned_routes": total_routes,
             "selected_resources": selected_resources,
+            "fleet_short_routes": fleet_short,
+            "below_minimum_routes": below_minimum,
         }
         return RunnerResult(
             success=True,
@@ -1164,10 +1426,17 @@ class DistributeResourcesRunner(BaseRunner):
         useful_transfer_min: int,
         shipment_cap: int,
         reserved_by_city: dict[str, dict[str, int]] | None = None,
+        donor_cargo_limit: dict[str, int] | None = None,
     ) -> tuple[dict[tuple[str, str], dict[str, Any]], dict[str, Any]]:
         allocations: dict[tuple[str, str], dict[str, Any]] = {}
         logs: list[str] = []
         reserved_by_city = reserved_by_city or {}
+        # N-93: how much each limited donor may still give in this cycle, over all resources
+        # (cities that are not here have no limit; 0 means "not a donor now")
+        donor_budget = {str(city_id): max(0, int(limit)) for city_id, limit in (donor_cargo_limit or {}).items()}
+
+        def can_donate(city_id: str) -> bool:
+            return city_id not in donor_budget or donor_budget[city_id] >= useful_transfer_min
 
         for resource in selected_resources:
             deficits: dict[str, dict[str, Any]] = {}
@@ -1202,7 +1471,7 @@ class DistributeResourcesRunner(BaseRunner):
                             "is_producer": is_producer,
                         }
                         total_need += need
-                    if available >= useful_transfer_min:
+                    if available >= useful_transfer_min and can_donate(city_id):
                         donors[city_id] = {
                             "city": city,
                             "available": available,
@@ -1230,7 +1499,7 @@ class DistributeResourcesRunner(BaseRunner):
                             "is_producer": _resource_production_per_hour(city, resource) > 0,
                         }
                         total_need += need
-                    if available >= useful_transfer_min:
+                    if available >= useful_transfer_min and can_donate(city_id):
                         donors[city_id] = {
                             "city": city,
                             "available": available,
@@ -1298,6 +1567,9 @@ class DistributeResourcesRunner(BaseRunner):
                         continue
 
                     send_amount = min(remaining, available, route_remaining)
+                    donor_id = str(donor["city"]["id"])
+                    if donor_id in donor_budget:
+                        send_amount = min(send_amount, donor_budget[donor_id])
                     if send_amount <= 0:
                         continue
 
@@ -1305,12 +1577,121 @@ class DistributeResourcesRunner(BaseRunner):
                     route_entry["total"] += int(send_amount)
                     route_entry["critical"] = bool(route_entry["critical"] or recipient["critical_gap"] > 0)
                     donor["available"] -= int(send_amount)
+                    if donor_id in donor_budget:
+                        donor_budget[donor_id] -= int(send_amount)
                     remaining -= int(send_amount)
 
                     if remaining <= 0:
                         break
 
         return allocations, {"logs": logs}
+
+    def _donor_limits(
+        self,
+        cities: list[dict[str, Any]],
+        active_entries: list[dict[str, Any]],
+        *,
+        max_loading_seconds: int,
+        useful_transfer_min: int,
+        shipment_cap: int,
+    ) -> tuple[dict[str, int], dict[str, int], list[str]]:
+        """What each city can give in this cycle: ({city: cargo limit}, {city: missions left}, logs).
+
+        A city missing from the first map has no cargo limit; one with 0 is not a donor now.
+        A city missing from the second has an unknown number of action points (no limit).
+        """
+        cargo_limit: dict[str, int] = {}
+        missions: dict[str, int] = {}
+        logs: list[str] = []
+        pending_cargo: dict[str, int] = defaultdict(int)
+        active_missions: dict[str, int] = defaultdict(int)
+        for entry in active_entries:
+            origin = str(entry.get("from_city") or "")
+            if not origin:
+                continue
+            active_missions[origin] += 1
+            if not entry.get("monitor_mode"):          # lined up, not loaded yet
+                pending_cargo[origin] += sum(max(0, _to_int(value, 0)) for value in (entry.get("resources") or {}).values())
+
+        for city in cities:
+            city_id = str(city.get("id"))
+            name = _city_name(city)
+            if city.get("action_points_current") is not None:
+                left = _to_int(city.get("action_points_current"), 0, 0)
+                maximum = _to_int(city.get("action_points_max"), 0, 0)
+                if maximum > 0:
+                    # the snapshot can be older than the transports that are out right now
+                    left = min(left, max(0, maximum - active_missions[city_id]))
+                missions[city_id] = left
+                if left <= 0:
+                    cargo_limit[city_id] = 0
+                    logs.append(f"{name} fica de fora como doadora neste ciclo: sem ponto de ação livre")
+                    continue
+            per_hour = _loading_per_hour(city)
+            if max_loading_seconds <= 0 or per_hour is None:
+                continue
+            budget = int(per_hour * max_loading_seconds / 3600) - pending_cargo[city_id]
+            if budget >= useful_transfer_min:
+                cargo_limit[city_id] = budget
+                continue
+            cargo_limit[city_id] = 0
+            levels = [level for level in (_port_levels(city) or []) if level > 0]
+            port_text = "sem porto" if not levels else "porto nível " + "+".join(str(level) for level in levels)
+            if pending_cargo[city_id] and int(per_hour * max_loading_seconds / 3600) >= useful_transfer_min:
+                logs.append(
+                    f"{name} fica de fora como doadora neste ciclo: já tem {pending_cargo[city_id]:,} na fila do porto "
+                    f"({port_text}, ~{per_hour:,}/h; limite de {max_loading_seconds // 60} min de carga)"
+                )
+            else:
+                logs.append(
+                    f"{name} fica de fora como doadora: {port_text}, carrega ~{per_hour:,}/h "
+                    f"(uma rota de {shipment_cap:,} levaria {shipment_cap / max(1, per_hour):.1f}h; "
+                    f"limite de {max_loading_seconds // 60} min)"
+                )
+        return cargo_limit, missions, logs
+
+    def _read_free_ships(self, job: dict[str, Any]) -> dict[str, int] | None:
+        """Trade ships free right now, from the game; None when it cannot be read (the snapshot's count is used)."""
+        jid = job["job_id"]
+        ga_id = job.get("game_account_id")
+        try:
+            creds = self.resolve_credentials(job["account_id"], {}, game_account_id=ga_id)
+            if not creds:
+                return None
+            client = self.get_or_login_game_client(jid, job["account_id"], ga_id, creds)
+            fleet = fetch_free_ships(client)
+            if ga_id:
+                self.save_game_client(ga_id, client)
+        except LoginCooldownActive:
+            raise
+        except Exception as exc:
+            self.log(jid, "warn", f"Não foi possível ler os navios livres no jogo ({exc}); usando a contagem do snapshot")
+            return None
+        if not isinstance(fleet, dict):
+            return None
+        try:
+            return {"transporters": max(0, int(fleet["transporters"])), "freighters": max(0, int(fleet["freighters"]))}
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    def _sync_snapshot_ships(
+        self,
+        job_id: str,
+        game_account_id: str,
+        base_snapshot: dict[str, Any],
+        fleet: dict[str, int],
+    ) -> None:
+        """Bring the snapshot's free-ship counters to what the game has just said."""
+        delta_transporters = fleet["transporters"] - _to_int(base_snapshot.get("free_transporters"), 0)
+        delta_freighters = fleet["freighters"] - _to_int(base_snapshot.get("free_freighters"), 0)
+        if not delta_transporters and not delta_freighters:
+            return
+        try:
+            self.hub.patch_snapshot_ships(
+                game_account_id, delta_transporters=delta_transporters, delta_freighters=delta_freighters,
+            )
+        except Exception as exc:
+            self.log(job_id, "warn", f"Não foi possível corrigir a contagem de navios no snapshot: {exc}")
 
     def _route_entries_from_allocations(
         self,
