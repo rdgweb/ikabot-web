@@ -46,14 +46,15 @@ def _pending(from_city, to_city, wood, *, monitor=False):
     }
 
 
-def _distribute(cities, *, base=None, live=None, entries=None, **inputs):
-    """Run one distribution cycle. ``live``: what the game says is free right now (None = cannot be read)."""
+def _distribute(cities, *, base=None, live=None, entries=None, reserved=None, **inputs):
+    """Run one distribution cycle. ``live``: what the game says is free right now (None = cannot be read).
+    ``reserved``: {city id: {resource: amount}} held by construction plans."""
     runner = object.__new__(DistributeResourcesRunner)
     runner.hub = MagicMock()
     runner.hub.get_snapshot.return_value = {
         "cities": cities, "base_snapshot": dict(base or {}), "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    runner.hub.get_construction_reservations.return_value = {"reservations": {}}
+    runner.hub.get_construction_reservations.return_value = {"reservations": dict(reserved or {})}
     runner.logs = []
     runner.log = lambda jid, level, msg: runner.logs.append((level, msg))
     runner.is_snapshot_stale = lambda snapshot: False
@@ -340,6 +341,51 @@ class EvenlyToleranceTests(unittest.TestCase):
             cities, strategy="targets", minimum_stock=20_000, target_stock=60_000, origin_reserve_stock=50_000, useful_transfer_min=5000,
         )
         self.assertEqual([_route(r) for r in routes], [("1", "2", 30_000)])
+
+
+class ReservedStockTests(unittest.TestCase):
+    """N-95: the stock a construction plan reserved is levelled too; the reservation is only the donor's floor."""
+
+    def test_reserved_stock_no_longer_hides_the_imbalance(self):
+        # the real case: every city of the account has a plan, so everything was "reserved" and nothing moved
+        cities = [_city(1, "A", 600_000), _city(2, "B", 200_000), _city(3, "C", 100_000)]
+        reserved = {"1": {"wood": 250_000}, "2": {"wood": 200_000}, "3": {"wood": 100_000}}
+        runner, _result, routes = _distribute(cities, reserved=reserved, shipment_cap=500_000)
+
+        # average 300,000: A gives down to it (its reservation is lower), B and C are filled
+        self.assertEqual(sorted(_route(r) for r in routes), [("1", "2", 100_000), ("1", "3", 200_000)])
+        self.assertTrue(_said(runner, "Reservado para obras em wood: 550,000 de 900,000"))
+
+    def test_a_city_never_gives_what_it_reserved(self):
+        cities = [_city(1, "A", 600_000), _city(2, "B", 0)]
+        _runner, _result, routes = _distribute(cities, reserved={"1": {"wood": 450_000}}, shipment_cap=500_000)
+        self.assertEqual([_route(r) for r in routes], [("1", "2", 150_000)])        # down to 450,000, not to the 300,000 average
+
+        _runner, _result, routes = _distribute(cities, reserved={"1": {"wood": 600_000}}, shipment_cap=500_000)
+        self.assertEqual(routes, [])                                                # all of it is reserved: nothing leaves
+
+    def test_a_city_below_the_average_receives_even_with_its_stock_reserved(self):
+        cities = [_city(1, "A", 500_000), _city(2, "B", 100_000)]
+        _runner, _result, routes = _distribute(cities, reserved={"2": {"wood": 100_000}}, shipment_cap=500_000)
+        self.assertEqual([_route(r) for r in routes], [("1", "2", 200_000)])
+
+    def test_the_tolerance_looks_at_the_real_stock(self):
+        # A is 100% above the average; its reservation leaves only 30,000 free to give: still worth acting
+        cities = [_city(1, "A", 400_000), _city(2, "B", 0)]
+        _runner, _result, routes = _distribute(cities, reserved={"1": {"wood": 370_000}}, useful_transfer_min=5000, shipment_cap=500_000)
+        self.assertEqual([_route(r) for r in routes], [("1", "2", 30_000)])
+
+    def test_without_reservations_nothing_changes(self):
+        _runner, _result, routes = _distribute([_city(1, "A", 90_000), _city(2, "B", 30_000), _city(3, "C", 0)])
+        self.assertEqual(sorted(_route(r) for r in routes), [("1", "2", 10_000), ("1", "3", 40_000)])
+
+    def test_the_other_strategies_keep_discounting_the_reservation(self):
+        cities = [_city(1, "A", 200_000), _city(2, "B", 0)]
+        _runner, _result, routes = _distribute(
+            cities, reserved={"1": {"wood": 190_000}}, strategy="targets",
+            minimum_stock=20_000, target_stock=60_000, origin_reserve_stock=0, useful_transfer_min=5000,
+        )
+        self.assertEqual([_route(r) for r in routes], [("1", "2", 10_000)])         # only the 10,000 that are not reserved
 
 
 def _plan(*, requested, dispatched, free=40, queue=0, loading=60, travel=1200):

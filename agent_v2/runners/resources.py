@@ -1456,15 +1456,14 @@ class DistributeResourcesRunner(BaseRunner):
 
             # Pre-compute totals for evenly
             if strategy == "evenly":
-                total_amount = sum(
-                    max(
-                        0,
-                        _resource_amount(c, resource)
-                        - _to_int((reserved_by_city.get(str(c.get("id")) or {}) or {}).get(resource), 0, 0),
-                    )
-                    for c in cities
-                )
+                # N-95 (decided by Rodrigo, 12/10/2026): level the REAL stock. What a city reserved
+                # for its own buildings is only the floor of what it gives: it never leaves.
+                # Before, the reservation took the resource out of the distribution altogether
+                # (it saw 0 of 3.77 million of wood in an account with a plan in every city) and
+                # the cities stayed 2 to 5 times apart.
+                total_amount = sum(_resource_amount(c, resource) for c in cities)
                 avg_stock = floor(total_amount / max(1, len(cities)))
+                reserved_total = 0
                 # N-94: a city inside the band is left alone. A route needs one end outside it:
                 # a pile is spread to the cities below the average, a hole is filled from the
                 # ones above, and cities that are all about level trade nothing.
@@ -1475,11 +1474,14 @@ class DistributeResourcesRunner(BaseRunner):
                 for city in cities:
                     city_id = str(city.get("id"))
                     reserved_amount = _to_int((reserved_by_city.get(city_id) or {}).get(resource), 0, 0)
-                    amount = max(0, _resource_amount(city, resource) - reserved_amount)
+                    amount = _resource_amount(city, resource)
+                    reserved_total += min(amount, reserved_amount)
                     is_producer = _resource_production_per_hour(city, resource) > 0
                     need = max(0, avg_stock - amount)
-                    available = max(0, amount - avg_stock)
-                    outside = max(need, available) >= band
+                    # it gives down to the average, or down to what it reserved, whichever is higher
+                    available = max(0, amount - max(avg_stock, reserved_amount))
+                    surplus = max(0, amount - avg_stock)
+                    outside = max(need, surplus) >= band
                     outside_count += int(outside and band > 0)
                     if need > 0:
                         deficits[city_id] = {
@@ -1497,9 +1499,14 @@ class DistributeResourcesRunner(BaseRunner):
                             "available": available,
                             "is_producer": is_producer,
                             "outside": outside,
-                            "deviation": available,
+                            "deviation": surplus,
                         }
                         total_available += available
+                if reserved_total:
+                    logs.append(
+                        f"Reservado para obras em {resource}: {reserved_total:,} de {total_amount:,}; "
+                        "fica na cidade que reservou, o resto e nivelado"
+                    )
                 if band > 0:
                     logs.append(
                         f"Tolerancia {resource}: {evenly_tolerance_percent}% da media ({avg_stock:,}) = {band:,} | "
