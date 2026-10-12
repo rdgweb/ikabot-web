@@ -11,7 +11,10 @@ function gameDashboardCharts() {
 
     formatHistoryLabel(date) {
       // N-101: hours for a day, day and hour for a week, days for a month
-      if (this.historyPeriod === '30d') {
+      if (this.historyPeriod === 'all') {
+        return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+      }
+      if (['30d', '60d', '90d'].includes(this.historyPeriod)) {
         return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
       }
       if (this.historyPeriod === '7d') {
@@ -135,8 +138,11 @@ function gameDashboardCharts() {
             backgroundColor: gradient,
             borderWidth: 3,
             pointRadius: 0,
-            pointHoverRadius: 4,
-            tension: 0.35,
+            pointHoverRadius: 5,
+            pointHitRadius: 12,
+            // N-101: a smooth line that never goes above or below its own points
+            cubicInterpolationMode: 'monotone',
+            tension: 0,
             fill: true,
           }],
         },
@@ -144,12 +150,17 @@ function gameDashboardCharts() {
           responsive: true,
           maintainAspectRatio: false,
           animation: false,
+          interaction: { mode: 'index', intersect: false },
           plugins: {
             legend: { display: false },
             tooltip: {
               displayColors: false,
               callbacks: {
                 label: (context) => (metric === 'income' ? this.signedFmt(context.parsed.y) : this.fmt(context.parsed.y)),
+                afterLabel: (context) => {
+                  const change = context.parsed.y - state.values[0];
+                  return change ? `${this.signedFmt(Math.round(change))} desde o início` : '';
+                },
               },
             },
           },
@@ -165,12 +176,105 @@ function gameDashboardCharts() {
             },
             y: {
               beginAtZero: false,
+              // N-101: a change of a fraction of a percent must not look like a cliff
+              ...this.historyAxisRange(state.values),
               grid: { color: palette.grid },
               ticks: {
                 color: palette.axis,
-                callback: (value) => (metric === 'income' ? this.signedFmt(value) : this.fmt(value)),
+                maxTicksLimit: 6,
+                callback: (value) => (metric === 'income' && value > 0 ? '+' : '') + this.compactFmt(value),
               },
             },
+          },
+        },
+      });
+    },
+
+    // Room around the series: at least 4% of its size, so tiny changes stay tiny
+    historyAxisRange(values) {
+      if (!values || !values.length) return {};
+      const low = Math.min(...values);
+      const high = Math.max(...values);
+      const size = Math.max(Math.abs(high), Math.abs(low), 1);
+      const pad = Math.max((high - low) * 0.35, size * 0.02);
+      const min = low - pad;
+      return { suggestedMin: low >= 0 ? Math.max(min, 0) : min, suggestedMax: high + pad };
+    },
+
+    // N-101: resources over time, one band per resource in its own colour
+    resourceHistorySeries() {
+      const total = this.historyState('resources');
+      if (!total.available) return null;
+      const series = this.resourceTheme.map((resource) => ({ ...resource, state: this.historyState(resource.key) }));
+      if (series.some((item) => !item.state.available)) return null;
+      return { labels: total.labels, series };
+    },
+
+    renderResourceHistoryChart(canvasId) {
+      const canvas = document.getElementById(canvasId);
+      const chartName = `resources-${canvasId}`;
+      this.destroyChart(chartName);
+      if (!canvas || !window.Chart) return;
+      const data = this.resourceHistorySeries();
+      if (!data) return;
+      this._charts[chartName] = new window.Chart(canvas.getContext('2d'), {
+        type: 'line',
+        data: {
+          labels: data.labels,
+          datasets: data.series.map((item) => ({
+            label: item.label,
+            data: item.state.values,
+            borderColor: item.color,
+            backgroundColor: item.color + 'cc',
+            borderWidth: 1.5,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            pointHitRadius: 12,
+            cubicInterpolationMode: 'monotone',
+            tension: 0,
+            fill: true,
+          })),
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: true, position: 'bottom', labels: { usePointStyle: true, pointStyle: 'rectRounded', boxWidth: 10, boxHeight: 10, color: '#6b5a3f', font: { size: 11 } } },
+            tooltip: {
+              callbacks: {
+                label: (context) => ` ${context.dataset.label}: ${this.fmt(context.parsed.y)}`,
+                footer: (items) => `Total: ${this.fmt(items.reduce((sum, item) => sum + item.parsed.y, 0))}`,
+              },
+            },
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: '#8a7a60', maxRotation: 0, autoSkip: true, maxTicksLimit: 7 } },
+            y: { stacked: true, beginAtZero: true, grid: { color: 'rgba(140,99,53,0.10)' }, ticks: { color: '#8a7a60', maxTicksLimit: 6, callback: (value) => this.compactFmt(value) } },
+          },
+        },
+      });
+    },
+
+    renderResourceCompositionChart(canvasId) {
+      const canvas = document.getElementById(canvasId);
+      const chartName = `composition-${canvasId}`;
+      this.destroyChart(chartName);
+      if (!canvas || !window.Chart) return;
+      const parts = this.resourceTypeBreakdown();
+      if (!parts.some((part) => part.value > 0)) return;
+      this._charts[chartName] = new window.Chart(canvas.getContext('2d'), {
+        type: 'doughnut',
+        data: { labels: parts.map((part) => part.label), datasets: [{ data: parts.map((part) => part.value), backgroundColor: parts.map((part) => part.color), borderColor: '#fffdf8', borderWidth: 2 }] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          cutout: '62%',
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: (context) => ` ${context.label}: ${this.fmt(context.parsed)} (${parts[context.dataIndex].share}%)` } },
           },
         },
       });
@@ -192,11 +296,20 @@ function gameDashboardCharts() {
         if (this.kpiModal === key) {
           this.$nextTick(() => {
             window.setTimeout(() => {
-              this.renderHistoryChart(config.metric, config.canvasId, config.palette);
+              if (key === 'resources') {
+                this.renderResourceHistoryChart(config.canvasId);
+                this.renderResourceCompositionChart('resources-composition-chart');
+              } else {
+                this.renderHistoryChart(config.metric, config.canvasId, config.palette);
+              }
             }, 30);
           });
         } else {
           this.destroyChart(`${config.metric}-${config.canvasId}`);
+          if (key === 'resources') {
+            this.destroyChart(`resources-${config.canvasId}`);
+            this.destroyChart('composition-resources-composition-chart');
+          }
         }
       }
     },

@@ -4,6 +4,7 @@
  */
 function gameDashboard() {
   const numberFormatter = new Intl.NumberFormat('pt-BR');
+  const compactFormatter = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
 
   const base = {
     filterNode: '',
@@ -14,7 +15,24 @@ function gameDashboard() {
     historyMap: {},
     historyLoaded: false,
     historyPeriod: '24h',
-    historyPeriods: [['24h', '24 horas'], ['7d', '7 dias'], ['30d', '30 dias']],
+    historyPeriods: [['24h', '24 horas', '24h'], ['7d', '7 dias', '7d'], ['30d', '30 dias', '30d'], ['60d', '60 dias', '60d'], ['90d', '90 dias', '90d'], ['all', 'todo o período guardado', 'Tudo']],
+    // N-101: one colour and one image per KPI, used by the top cards, the modal headers and the charts
+    kpiTheme: {
+      gold: { label: 'Ouro', color: '#b8860b', soft: 'rgba(184,134,11,0.12)', icon: '/static/game/resources/icon_gold.png' },
+      income: { label: 'Renda/h', color: '#2d7a2d', soft: 'rgba(45,122,45,0.12)', icon: '/static/game/resources/icon_gold.png' },
+      cities: { label: 'Cidades', color: '#4f86b9', soft: 'rgba(79,134,185,0.14)', icon: '/static/game/buildings/townhall.png' },
+      resources: { label: 'Recursos', color: '#8c6335', soft: 'rgba(140,99,53,0.13)', icon: '/static/game/resources/icon_wood.png' },
+      troops: { label: 'Tropas', color: '#bb5143', soft: 'rgba(187,81,67,0.12)', icon: '/static/game/units/hoplita.png' },
+      ships: { label: 'Navios', color: '#3f7397', soft: 'rgba(63,115,151,0.13)', icon: '/static/game/units/trieme.png' },
+    },
+    resourceTheme: [
+      { key: 'wood', label: 'Madeira', color: '#8c6335', icon: '/static/game/resources/icon_wood.png' },
+      { key: 'wine', label: 'Vinho', color: '#8f3c44', icon: '/static/game/resources/icon_wine.png' },
+      { key: 'marble', label: 'Mármore', color: '#8a8a93', icon: '/static/game/resources/icon_marble.png' },
+      { key: 'crystal', label: 'Cristal', color: '#3e84a8', icon: '/static/game/resources/icon_glass.png' },
+      { key: 'sulfur', label: 'Enxofre', color: '#c29a2e', icon: '/static/game/resources/icon_sulfur.png' },
+    ],
+    _dayHistory: null,
     _historyByPeriod: {},
     _historyPromise: null,
     resourceModalData: [],
@@ -44,6 +62,46 @@ function gameDashboard() {
       this.syncModalScrollLock(Boolean(this.kpiModal));
       this.applyFilter();
       this.initProjectionValues();
+      this.loadDayHistory();
+    },
+
+    // N-101: the last 24 hours, fetched quietly after the page is up, for the small
+    // "24h" variation under each top number (and so the first modal opens with data).
+    loadDayHistory() {
+      window.setTimeout(() => {
+        fetch('/game/history/?period=24h', { headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' })
+          .then((response) => (response.ok ? response.json() : null))
+          .then((payload) => {
+            if (!payload) return;
+            this._historyByPeriod['24h'] = payload.history || {};
+            this._dayHistory = this._historyByPeriod['24h'];
+          })
+          .catch(() => {});
+      }, 400);
+    },
+
+    compactFmt(n) {
+      return compactFormatter.format(Number(n || 0));
+    },
+
+    // {text, color}: how the number changed in 24 hours, for the accounts in the filter
+    kpiTrend(metric) {
+      const history = this._dayHistory;
+      if (!history) return { text: '', color: 'transparent' };
+      let before = 0;
+      let known = 0;
+      this.kpiCards().forEach((card) => {
+        const points = history[String(card.gameAccountId)] || [];
+        if (points.length) {
+          before += Number(points[0][metric] || 0);
+          known += 1;
+        }
+      });
+      if (!known) return { text: '', color: 'transparent' };
+      const delta = Math.round(Number(this.kpi[metric] || 0) - before);
+      if (!delta) return { text: '24h  =', color: '#8a7a60' };
+      const good = delta > 0;
+      return { text: `24h  ${good ? '▲' : '▼'} ${this.compactFmt(Math.abs(delta))}`, color: good ? '#2d7a2d' : '#b3402f' };
     },
 
     syncModalScrollLock(locked) {

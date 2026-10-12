@@ -9,7 +9,7 @@ from django.utils import timezone
 from apps.accounts.models import Account, GameAccount, Node
 from apps.game.models import AccountSnapshot, AccountSnapshotHistory
 from apps.game.services.dashboard_cache import bump_dashboard_cache_version
-from apps.game.services.kpi_history import PERIODS, build_history_map, clean_period, instants
+from apps.game.services.kpi_history import PERIODS, build_history_map, clean_period, instants, repair_partial_readings
 
 
 class KpiHistoryTests(TestCase):
@@ -75,12 +75,54 @@ class KpiHistoryTests(TestCase):
         self.assertEqual(last["income"], 600)                            # net income, as the top number (N-76)
 
     def test_periods(self):
-        self.assertEqual({period: len(instants(period, self.now)) for period in PERIODS}, {"24h": 25, "7d": 29, "30d": 31})
+        counts = {period: len(instants(period, self.now, first=self.now - timedelta(days=200))) for period in PERIODS}
+        self.assertEqual(counts, {"24h": 25, "7d": 29, "30d": 31, "60d": 31, "90d": 31, "all": 46})
         self.assertEqual((clean_period("7d"), clean_period("30D"), clean_period("x"), clean_period(None)), ("7d", "30d", "24h", "24h"))
         self._snap(self.accounts[0], 24 * 20, 10)
         self._snap(self.accounts[0], 24 * 3, 30)
         series = build_history_map([str(self.accounts[0].pk)], "30d", now=self.now)[str(self.accounts[0].pk)]
         self.assertEqual((series[0]["gold"], series[-1]["gold"]), (10, 30))
+
+    def test_everything_there_is_starts_at_the_first_snapshot(self):
+        self._snap(self.accounts[0], 24 * 100, 5)
+        self._snap(self.accounts[0], 24 * 50, 7)
+        series = build_history_map([str(self.accounts[0].pk)], "all", now=self.now)[str(self.accounts[0].pk)]
+        self.assertEqual(len(series), 46)
+        self.assertEqual((series[0]["gold"], series[-1]["gold"]), (5, 7))
+
+    def _point(self, cities, troops, ships, resources=100):
+        return {"captured_at": "x", "gold": 1, "income": 1, "cities": cities, "resources": resources, "troops": troops, "ships": ships,
+                "wood": 0, "wine": 0, "marble": 0, "crystal": 0, "sulfur": 0}
+
+    def test_a_reading_failure_is_not_shown_as_a_loss(self):
+        # the real case: 9 cities / 229 troops / 141 ships, then 7 / 0 / 0 for four days, then back
+        good = self._point(9, 229, 141, resources=900)
+        bad = self._point(7, 0, 0, resources=700)
+        series = repair_partial_readings([dict(good), dict(bad), dict(bad), dict(good)])
+        self.assertEqual([(p["cities"], p["troops"], p["ships"], p["resources"]) for p in series], [(9, 229, 141, 900)] * 4)
+        self.assertEqual([p.get("repaired", False) for p in series], [False, True, True, False])
+
+    def test_a_chart_that_begins_inside_the_failure_takes_the_first_good_values(self):
+        bad, good = self._point(7, 0, 0, resources=700), self._point(9, 229, 141, resources=900)
+        series = repair_partial_readings([dict(bad), dict(bad), dict(good), dict(good)])
+        self.assertEqual([(p["cities"], p["troops"], p["resources"]) for p in series], [(9, 229, 900)] * 4)
+        # an account that simply has no army yet is not "repaired"
+        calm = [self._point(3, 0, 0), self._point(3, 0, 0), self._point(3, 10, 0)]
+        self.assertEqual([p["troops"] for p in repair_partial_readings([dict(p) for p in calm])], [0, 0, 10])
+
+    def test_only_the_army_unread_is_repaired_too(self):
+        series = repair_partial_readings([self._point(5, 50, 3), self._point(5, 0, 0), self._point(5, 50, 3)])
+        self.assertEqual([p["troops"] for p in series], [50, 50, 50])
+
+    def test_a_loss_that_does_not_come_back_is_left_alone(self):
+        series = repair_partial_readings([self._point(9, 229, 141), self._point(8, 100, 141), self._point(8, 100, 141)])
+        self.assertEqual([(p["cities"], p["troops"]) for p in series], [(9, 229), (8, 100), (8, 100)])
+        series = repair_partial_readings([self._point(3, 40, 2), self._point(3, 0, 0), self._point(3, 0, 0)])
+        self.assertEqual([p["troops"] for p in series], [40, 0, 0])            # an army really wiped out
+
+    def test_ordinary_changes_are_never_touched(self):
+        series = [self._point(9, 229, 141, resources=900), self._point(9, 180, 141, resources=400), self._point(10, 229, 150, resources=950)]
+        self.assertEqual(repair_partial_readings([dict(p) for p in series]), series)
 
     def test_the_page_does_not_carry_the_history_and_the_endpoint_serves_it_by_period(self):
         AccountSnapshot.objects.create(account=self.account, game_account=self.accounts[0], base_snapshot={"gold": 70})
@@ -88,7 +130,7 @@ class KpiHistoryTests(TestCase):
         self.client.force_login(get_user_model().objects.create_user("kpi", password="x"))
         page = self.client.get("/game/")
         self.assertEqual(page.context_data["kpi_history"], {})          # built only when a KPI modal opens
-        for period, points in (("24h", 25), ("7d", 29), ("30d", 31), ("bogus", 25)):
+        for period, points in (("24h", 25), ("7d", 29), ("30d", 31), ("60d", 31), ("90d", 31), ("all", 46), ("bogus", 25)):
             answer = self.client.get("/game/history/", {"period": period}).json()
             self.assertEqual(answer["period"], period if period != "bogus" else "24h")
             self.assertEqual(len(answer["history"][str(self.accounts[0].pk)]), points)

@@ -22,8 +22,13 @@ PERIODS = {
     "24h": (timedelta(hours=24), timedelta(hours=1)),
     "7d": (timedelta(days=7), timedelta(hours=6)),
     "30d": (timedelta(days=30), timedelta(days=1)),
+    "60d": (timedelta(days=60), timedelta(days=2)),
+    "90d": (timedelta(days=90), timedelta(days=3)),
+    # everything there is: from the first snapshot of these accounts, in ALL_POINTS steps
+    "all": (None, None),
 }
 DEFAULT_PERIOD = "24h"
+ALL_POINTS = 45
 
 
 def clean_period(raw) -> str:
@@ -51,12 +56,61 @@ def _unit_total(units) -> int:
     return 0
 
 
-def instants(period: str, now=None) -> list:
-    """The instants of the chart, oldest first, ending now."""
+def instants(period: str, now=None, first=None) -> list:
+    """The instants of the chart, oldest first, ending now. ``first``: oldest snapshot, for "all"."""
     span, step = PERIODS[clean_period(period)]
     now = now or timezone.now()
-    count = int(span / step)
+    if span is None:
+        span = max(now - (first or now), timedelta(days=1))
+        step = span / ALL_POINTS
+        count = ALL_POINTS
+    else:
+        count = int(span / step)
     return [now - step * index for index in range(count, -1, -1)]
+
+
+def _units(point: dict) -> int:
+    return point["troops"] + point["ships"]
+
+
+def _partial_against(point: dict, reference: dict) -> bool:
+    """Does ``point`` look like a snapshot taken while part of the account could not be read?"""
+    return point["cities"] < reference["cities"] or (_units(point) == 0 and _units(reference) > 0)
+
+
+def repair_partial_readings(series: list[dict]) -> list[dict]:
+    """Drop the dips that are reading failures, not events in the game.
+
+    When a city page or the military view fails to load, the snapshot is saved with fewer
+    cities and/or no army at all, and stays like that until the next good reading (four days
+    for one account in October 2026, while its logins were blocked). In the chart that is a
+    cliff in cities, resources, troops and ships that comes back exactly where it was.
+    A stretch that loses cities or the whole army and later has them again is taken as such a
+    failure and shown with the last good values. A loss that does not come back is left alone.
+    """
+    # a chart that begins inside such a stretch: no cities and no army at all, then both appear
+    # together. The points before take the first good values.
+    if series and _units(series[0]) == 0:
+        for position in range(1, len(series)):
+            if _units(series[position]) > 0:
+                if series[position]["cities"] > series[0]["cities"]:
+                    for before in range(position):
+                        series[before] = {**series[position], "captured_at": series[before]["captured_at"], "repaired": True}
+                break
+    index = 1
+    while index < len(series):
+        reference = series[index - 1]
+        if _partial_against(series[index], reference):
+            end = index
+            while end < len(series) and _partial_against(series[end], reference):
+                end += 1
+            if end < len(series):                       # it came back: the stretch was not real
+                for position in range(index, end):
+                    series[position] = {**reference, "captured_at": series[position]["captured_at"], "repaired": True}
+                index = end
+                continue
+        index += 1
+    return series
 
 
 def _metrics(row) -> dict:
@@ -79,7 +133,13 @@ def build_history_map(game_account_ids: list, period: str = DEFAULT_PERIOD, now=
     """{game_account_id: [{"captured_at", "gold", "income", ...} for each instant]}, same instants for every account."""
     if not game_account_ids:
         return {}
-    points = instants(period, now)
+    oldest = None
+    if clean_period(period) == "all":
+        oldest = (
+            AccountSnapshotHistory.objects.filter(game_account_id__in=game_account_ids)
+            .order_by("captured_at").values_list("captured_at", flat=True).first()
+        )
+    points = instants(period, now, first=oldest)
     first, last = points[0], points[-1]
     grouped: dict[str, list[dict]] = {}
     for game_account_id in game_account_ids:
@@ -110,5 +170,5 @@ def build_history_map(game_account_ids: list, period: str = DEFAULT_PERIOD, now=
                 cache[row_id] = _metrics(row)
             bucket.append({"captured_at": point.isoformat(), **cache[row_id]})
         if bucket:
-            grouped[str(game_account_id)] = bucket
+            grouped[str(game_account_id)] = repair_partial_readings(bucket)
     return grouped

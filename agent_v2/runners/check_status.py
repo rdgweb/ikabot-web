@@ -84,6 +84,66 @@ _HIGHSCORE_SCORE_TD = re.compile(r'<td([^>]*\bclass="[^"]*\bscore\b[^"]*"[^>]*)>
 _TITLE_ATTR = re.compile(r'\btitle="([^"]*)"')
 
 
+def keep_unread_cities(cities_data, city_ids, existing_city_map) -> tuple[list, list]:
+    """Cities the game lists but whose page could not be read keep their last known data (N-101).
+
+    A city that failed to load used to be left out of the snapshot: the account "lost" the city
+    and everything in it (9 cities became 7 on 07/10/2026, for four days). A city that is really
+    gone is no longer in the game's own list, so it is not kept.
+    Returns (cities in the game's order, ids that were kept from the previous snapshot).
+    """
+    fresh = {str(city.get("id") or "").strip(): city for city in cities_data if isinstance(city, dict)}
+    ordered, kept = [], []
+    for info in city_ids or []:
+        cid = str((info or {}).get("id") or "").strip()
+        if not cid:
+            continue
+        if cid in fresh:
+            ordered.append(fresh.pop(cid))
+            continue
+        previous = (existing_city_map or {}).get(cid)
+        if isinstance(previous, dict):
+            ordered.append({**previous, "stale": True})
+            kept.append(cid)
+    ordered.extend(fresh.values())          # anything read that the list did not name stays
+    return ordered, kept
+
+
+def merge_unread_military(current, previous) -> dict:
+    """Fill the cities whose military page could not be read with what the last snapshot had (N-101).
+
+    On 07/10/2026 the military view came back empty for every city of one account and the
+    snapshot was saved as "0 troops, 0 ships". It stayed like that for four days and every
+    chart and total showed an army that had vanished. Unread is not zero: those cities keep
+    their last known numbers, marked ``stale``, until a page is read again.
+    """
+    current = dict(current) if isinstance(current, dict) else {}
+    unread = [cid for cid in (current.get("unread_city_ids") or [])]
+    if not unread:
+        current.pop("unread_city_ids", None)
+        return current
+    known = {}
+    if isinstance(previous, dict):
+        for entry in previous.get("by_city") or []:
+            if isinstance(entry, dict) and entry.get("city_id") is not None:
+                known[str(entry.get("city_id"))] = entry
+    by_city = [entry for entry in (current.get("by_city") or []) if isinstance(entry, dict)]
+    for cid in unread:
+        entry = known.get(str(cid))
+        if entry is not None:
+            by_city.append({**entry, "stale": True})
+    troops: dict[str, int] = {}
+    fleet: dict[str, int] = {}
+    for entry in by_city:
+        for bucket, key in ((troops, "troops"), (fleet, "fleet")):
+            for name, count in (entry.get(key) or {}).items():
+                try:
+                    bucket[name] = bucket.get(name, 0) + int(count or 0)
+                except (TypeError, ValueError):
+                    continue
+    return {**current, "troops": troops, "fleet": fleet, "by_city": by_city, "unread_city_ids": unread}
+
+
 def _parse_own_highscore(ajax_text: str) -> dict[str, int] | None:
     """Official total score + rank of the logged-in player.
 
@@ -302,6 +362,13 @@ class CheckStatusRunner(BaseRunner):
             except Exception:
                 existing_snapshot = None
             existing_base = existing_snapshot.get("base_snapshot") if isinstance(existing_snapshot, dict) else {}
+            # N-101: cities whose military page could not be read keep what the last snapshot had
+            military_data = merge_unread_military(
+                military_data, existing_snapshot.get("military") if isinstance(existing_snapshot, dict) else None,
+            )
+            if military_data.get("unread_city_ids"):
+                self.log(jid, "warn", "Militar: pagina de {} cidade(s) nao pode ser lida; mantidos os numeros do snapshot anterior.".format(
+                    len(military_data["unread_city_ids"])))
             existing_cities = existing_snapshot.get("cities") if isinstance(existing_snapshot, dict) else []
             existing_city_map = {
                 str(city.get("id") or "").strip(): city
@@ -317,6 +384,10 @@ class CheckStatusRunner(BaseRunner):
                 if isinstance(city, dict)
             ]
             cities_data = self._merge_city_building_sync_data(cities_data, existing_cities)
+            # N-101: a city whose page could not be read keeps what the last snapshot had
+            cities_data, unread_cities = keep_unread_cities(cities_data, city_ids, existing_city_map)
+            if unread_cities:
+                self.log(jid, "warn", "Cidades: {} cidade(s) nao puderam ser lidas; mantidos os dados do snapshot anterior.".format(len(unread_cities)))
 
             # ── Recursos premium: le inventario + negociante e guarda no snapshot ──
             # Leitura barata (2 requests); nao ativa nem troca nada.
@@ -990,12 +1061,14 @@ class CheckStatusRunner(BaseRunner):
         ar_match = re.search(r'actionRequest"?\s*:\s*"(.*?)"', homepage_html)
         if not ar_match:
             logger.warning("Could not find actionRequest token — skipping military")
-            return {}
+            # nothing was read: every city is "unread", not "empty" (N-101)
+            return {"troops": {}, "fleet": {}, "by_city": [], "unread_city_ids": [cid_info["id"] for cid_info in city_ids]}
 
         action_request = ar_match.group(1)
         all_troops: dict[str, int] = {}
         all_fleet: dict[str, int] = {}
         by_city: list[dict[str, Any]] = []
+        unread: list[int] = []
 
         # Build set of occupied/blockaded city IDs so we fetch extra data
         occupied_ids: set[int] = set()
@@ -1017,6 +1090,10 @@ class CheckStatusRunner(BaseRunner):
                 city_fleet = self._fetch_military_tab(
                     session, url_base, cid, action_request, active_tab="tabShips"
                 )
+                if city_troops is None or city_fleet is None:
+                    # the game answered without the military view: unknown, not zero
+                    unread.append(cid)
+                    continue
                 for name, count in city_troops.items():
                     all_troops[name] = all_troops.get(name, 0) + count
                 for name, count in city_fleet.items():
@@ -1043,11 +1120,15 @@ class CheckStatusRunner(BaseRunner):
 
             except Exception as e:
                 logger.warning("Military fetch failed for city %d: %s", cid, e)
+                unread.append(cid)
 
         if all_troops or all_fleet:
             logger.info("Military data: %d troop types, %d fleet types", len(all_troops), len(all_fleet))
 
-        return {"troops": all_troops, "fleet": all_fleet, "by_city": by_city}
+        result: dict[str, Any] = {"troops": all_troops, "fleet": all_fleet, "by_city": by_city}
+        if unread:
+            result["unread_city_ids"] = unread
+        return result
 
     def _fetch_occupation_forces(
         self,
@@ -1208,7 +1289,9 @@ class CheckStatusRunner(BaseRunner):
         data = json.loads(resp.text, strict=False)
         full_html = data[1][1][1] if len(data) > 1 and len(data[1]) > 1 else ""
         if not full_html:
-            return {}
+            # N-101: no military view in the answer. A city with no units still gets the view
+            # (an empty table), so this is "could not read", never "zero units".
+            return None
 
         troops, fleet = self._parse_military_html(full_html)
         if active_tab == "tabShips":
