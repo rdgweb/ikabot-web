@@ -10,12 +10,14 @@ function gameDashboardCharts() {
     },
 
     formatHistoryLabel(date) {
-      return date.toLocaleString('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
+      // N-101: hours for a day, day and hour for a week, days for a month
+      if (this.historyPeriod === '30d') {
+        return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+      }
+      if (this.historyPeriod === '7d') {
+        return date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit' }) + 'h';
+      }
+      return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     },
 
     historyScopeLabel(visibleCards) {
@@ -37,6 +39,16 @@ function gameDashboardCharts() {
         };
       }
 
+      if (!this.historyLoaded) {
+        return {
+          available: false,
+          reason: 'Carregando histórico...',
+          scopeLabel: this.historyScopeLabel(visibleCards),
+        };
+      }
+
+      // N-101: the server gives every account a value at the same instants (an account
+      // counts with the last snapshot it had up to then), so each point is a full sum.
       const grouped = new Map();
       visibleCards.forEach((card) => {
         const points = this.historyMap[String(card.gameAccountId)] || [];
@@ -44,7 +56,7 @@ function gameDashboardCharts() {
         points.forEach((point) => {
           const parsed = new Date(point.captured_at);
           if (Number.isNaN(parsed.getTime())) return;
-          const bucketKey = this.historyBucketKey(parsed);
+          const bucketKey = String(point.captured_at);
           const existing = perCardBuckets.get(bucketKey);
           const candidate = {
             ts: parsed.getTime(),
@@ -70,8 +82,7 @@ function gameDashboardCharts() {
       });
 
       const points = Array.from(grouped.values())
-        .sort((a, b) => a.ts - b.ts)
-        .slice(-12);
+        .sort((a, b) => a.ts - b.ts);
 
       if (!points.length) {
         return {

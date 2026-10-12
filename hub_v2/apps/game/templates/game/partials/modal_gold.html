@@ -39,6 +39,7 @@
     <div class="gm-section rounded-lg p-3">
       <div class="flex items-center justify-between mb-2">
         <h4 class="gm-section-title">Histórico de ouro</h4>
+        {% include "game/partials/kpi_history_period.html" %}
         <span class="gm-section-hint" x-text="historyLoading ? 'Carregando...' : historyState('gold').scopeLabel"></span>
       </div>
       <template x-if="historyLoading">

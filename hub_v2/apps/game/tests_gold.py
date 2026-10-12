@@ -96,8 +96,10 @@ class GoldIncomeConsumersTests(TestCase):
 
         payload = self.client.get(reverse("game:dashboard-history")).json()
 
+        # N-101: one value per instant of the chart; each is the snapshot the account had up to then
         points = payload["history"][str(self.ga.pk)]
-        self.assertEqual(sorted(point["income"] for point in points), [3124, 5631])
+        self.assertEqual(sorted({point["income"] for point in points}), [3124, 5631])
+        self.assertEqual(points[-1]["income"], 5631)
 
     def test_generals_bank_budget_uses_the_same_rule(self):
         self.assertEqual(_project_net_gold_after_upkeep(self.ga, 0), 5631)

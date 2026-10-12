@@ -13,6 +13,9 @@ function gameDashboard() {
     kpiModal: null,
     historyMap: {},
     historyLoaded: false,
+    historyPeriod: '24h',
+    historyPeriods: [['24h', '24 horas'], ['7d', '7 dias'], ['30d', '30 dias']],
+    _historyByPeriod: {},
     _historyPromise: null,
     resourceModalData: [],
     accountDetailData: [],
@@ -95,7 +98,15 @@ function gameDashboard() {
       if (this.historyLoaded) return this.historyMap;
       if (this._historyPromise) return this._historyPromise;
 
-      this._historyPromise = fetch('/game/history/', {
+      const period = this.historyPeriod;
+      if (this._historyByPeriod[period]) {
+        this.historyMap = this._historyByPeriod[period];
+        this.historyLoaded = true;
+        this.$nextTick(() => this.renderKpiCharts());
+        return this.historyMap;
+      }
+
+      this._historyPromise = fetch(`/game/history/?period=${encodeURIComponent(period)}`, {
         headers: { 'X-Requested-With': 'XMLHttpRequest' },
         credentials: 'same-origin',
       })
@@ -104,7 +115,9 @@ function gameDashboard() {
           return response.json();
         })
         .then((payload) => {
-          this.historyMap = payload?.history || {};
+          this._historyByPeriod[period] = payload?.history || {};
+          if (period !== this.historyPeriod) return this.historyMap;   // the period changed while this one loaded
+          this.historyMap = this._historyByPeriod[period];
           this.historyLoaded = true;
           this.$nextTick(() => this.renderKpiCharts());
           return this.historyMap;
@@ -118,6 +131,16 @@ function gameDashboard() {
         });
 
       return this._historyPromise;
+    },
+
+    // N-101: the chart of a KPI modal over 24 hours, 7 days or 30 days
+    async setHistoryPeriod(period) {
+      if (period === this.historyPeriod) return;
+      this.historyPeriod = period;
+      this.historyLoaded = false;
+      this._historyPromise = null;
+      await this.ensureHistoryLoaded();
+      this.$nextTick(() => this.renderKpiCharts());
     },
 
     loadJsonScript(id) {

@@ -20,6 +20,7 @@ from apps.accounts.avatars import avatar_url, initials
 from apps.accounts.models import Account, GameAccount, Node
 from apps.game.models import AccountSnapshotHistory
 from apps.game.services.dashboard_cache import get_dashboard_cache_key
+from apps.game.services.kpi_history import build_history_map, clean_period
 from apps.game.services.gold import gold_income, net_gold_income
 from apps.game.services.vacation import read_vacation_state
 from apps.jobs.models import ConstructionResourceReservation
@@ -526,7 +527,9 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                 ],
             })
 
-        history_map = _build_history_map(game_account_ids)
+        # N-101: the history behind the KPI charts is fetched when a modal opens
+        # (DashboardHistoryView). Building it costs over a second and most visits never open one.
+        history_map = {}
 
         ctx["account_cards"] = account_cards
         ctx["city_options"] = sorted(city_options, key=str.lower)
@@ -566,19 +569,24 @@ class DashboardView(LoginRequiredMixin, TemplateView):
 
 
 class DashboardHistoryView(LoginRequiredMixin, View):
+    """GET /game/history/?period=24h|7d|30d — the series behind the KPI charts (N-101)."""
+
+    CACHE_SECONDS = 300
+
     def get(self, request, *args, **kwargs):
-        cache_key = f"{get_dashboard_cache_key(request.user.pk)}:history"
+        period = clean_period(request.GET.get("period"))
+        cache_key = f"{get_dashboard_cache_key(request.user.pk)}:history:{period}"
         cached = cache.get(cache_key)
         if cached is not None:
-            return JsonResponse({"history": cached})
+            return JsonResponse({"history": cached, "period": period})
 
         game_account_ids = list(
             GameAccount.objects.filter(active=True, account__active=True, snapshot__isnull=False)
             .values_list("pk", flat=True)
         )
-        history_map = _build_history_map(game_account_ids)
-        cache.set(cache_key, history_map, _DASHBOARD_CACHE_TTL)
-        return JsonResponse({"history": history_map})
+        history_map = build_history_map(game_account_ids, period)
+        cache.set(cache_key, history_map, self.CACHE_SECONDS)
+        return JsonResponse({"history": history_map, "period": period})
 
 
 def _si(value, default=0) -> int:
@@ -810,48 +818,3 @@ def _build_city_resource_projections(
         }
 
     return projections
-
-
-def _build_history_map(game_account_ids: list) -> dict[str, dict]:
-    if not game_account_ids:
-        return {}
-
-    grouped: dict[str, list[dict]] = {}
-    for game_account_id in game_account_ids:
-        rows = list(
-            AccountSnapshotHistory.objects
-            .filter(game_account_id=game_account_id)
-            .only("game_account_id", "captured_at", "base_snapshot", "cities", "military")
-            .order_by("-captured_at")[:12]
-        )
-
-        bucket: list[dict] = []
-        for row in reversed(rows):
-            base = row.base_snapshot or {}
-            cities = row.cities if isinstance(row.cities, list) else []
-            military = row.military if isinstance(row.military, dict) else {}
-            wood = sum(_si(city.get("wood")) for city in cities if isinstance(city, dict))
-            wine = sum(_si(city.get("wine")) for city in cities if isinstance(city, dict))
-            marble = sum(_si(city.get("marble")) for city in cities if isinstance(city, dict))
-            crystal = sum(_si(city.get("crystal")) for city in cities if isinstance(city, dict))
-            sulfur = sum(_si(city.get("sulfur")) for city in cities if isinstance(city, dict))
-            troop_total = sum(_si(unit.get("count")) for unit in (military.get("troops") or []) if isinstance(unit, dict))
-            ship_total = sum(_si(unit.get("count")) for unit in (military.get("fleet") or []) if isinstance(unit, dict))
-            bucket.append({
-                "captured_at": row.captured_at.isoformat(),
-                "gold": _si(base.get("gold")),
-                "income": net_gold_income(base),
-                "cities": len(cities),
-                "resources": wood + wine + marble + crystal + sulfur,
-                "troops": troop_total,
-                "ships": ship_total,
-                "wood": wood,
-                "wine": wine,
-                "marble": marble,
-                "crystal": crystal,
-                "sulfur": sulfur,
-            })
-        if bucket:
-            grouped[str(game_account_id)] = bucket
-
-    return grouped
