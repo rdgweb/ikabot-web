@@ -10,11 +10,78 @@
 {% block content %}
 <div x-data="constructionPanel({{ now_ts }})" x-init="init()">
 
+  {# N-103: the hub CSS is precompiled, so the layout of the new blocks lives here #}
+  <style>
+    .cb-section { margin-bottom: 2rem; }
+    .cb-h2 { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 0 0 .25rem; font-size: 1.1rem; font-weight: 700; color: var(--ik-ink); }
+    .cb-h2 small { font-size: .72rem; font-weight: 500; color: var(--ik-muted); }
+    .cb-lead { margin: 0 0 .8rem; font-size: .8rem; color: var(--ik-muted); }
+    .cb-num { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; font-size: .75rem; font-weight: 700; color: #fff; background: var(--ik-sea); }
+    .cb-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: .75rem; margin-bottom: .9rem; }
+    .cb-tile { border: 1px solid var(--ik-line); border-radius: 18px; padding: .8rem .9rem; background: var(--ik-paper); border-left-width: 4px; min-width: 0; }
+    .cb-tile b { display: block; font-size: 1.6rem; font-weight: 700; line-height: 1.15; color: var(--ik-ink); white-space: nowrap; }
+    .cb-tile b small { font-size: .8rem; font-weight: 500; color: var(--ik-muted); }
+    .cb-tile > span { display: block; font-size: .66rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+    .cb-tile em { display: block; margin-top: .15rem; font-size: .72rem; font-style: normal; color: var(--ik-muted); }
+    .cb-split { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: var(--ik-line); }
+    .cb-split i { display: block; height: 100%; }
+    .cb-legend { display: flex; flex-wrap: wrap; gap: .3rem 1rem; margin-top: .45rem; font-size: .74rem; color: var(--ik-muted); }
+    .cb-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: .3rem; vertical-align: -1px; }
+    .cb-working { background: #4f86b9; } .cb-waiting { background: #c9662e; } .cb-queued { background: #c9a23e; } .cb-idle { background: #a9a294; }
+    .cb-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: .9rem; }
+    .cb-card { border: 1px solid var(--ik-line); border-radius: 18px; background: var(--ik-paper); min-width: 0; overflow: hidden; }
+    .cb-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; padding: .7rem .9rem; border-bottom: 1px solid var(--ik-line); }
+    .cb-card-head h3 { margin: 0; font-size: .95rem; font-weight: 700; color: var(--ik-ink); }
+    .cb-card-head h3 small { font-size: .74rem; font-weight: 400; color: var(--ik-muted); }
+    .cb-card-head .cb-right { margin-left: auto; display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+    .cb-pill { display: inline-flex; align-items: center; gap: .3rem; padding: .12rem .55rem; border-radius: 999px; font-size: .7rem; font-weight: 600; white-space: nowrap; }
+    .cb-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .cb-pill.working { color: #3d74a6; background: rgba(79, 134, 185, .13); }
+    .cb-pill.waiting { color: #b3521f; background: rgba(201, 102, 46, .14); }
+    .cb-pill.queued { color: #8f7016; background: rgba(201, 162, 62, .18); }
+    .cb-pill.idle { color: #6f6a5f; background: rgba(120, 113, 100, .14); }
+    .cb-pill.plain::before { display: none; }
+    .cb-city { display: grid; grid-template-columns: minmax(130px, 210px) 150px minmax(0, 1fr) auto; gap: .3rem .7rem; align-items: center; padding: .5rem .9rem; border-top: 1px solid var(--ik-line); font-size: .8rem; }
+    .cb-city:first-child { border-top: 0; }
+    .cb-city > .cb-pill { justify-self: start; }
+    .cb-city-name { display: flex; align-items: center; gap: .4rem; min-width: 0; font-weight: 600; color: var(--ik-ink); }
+    .cb-city-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cb-city-name img, .cb-chip img, .cb-res img { width: 16px; height: 16px; object-fit: contain; flex-shrink: 0; }
+    .cb-what { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .45rem; color: var(--ik-muted); }
+    .cb-what strong { color: var(--ik-ink); font-weight: 600; }
+    .cb-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .5rem; border: 1px solid var(--ik-line); border-radius: 999px; font-size: .72rem; color: var(--ik-ink); background: rgba(255, 255, 255, .6); white-space: nowrap; }
+    .cb-chip code { font-family: ui-monospace, monospace; font-size: .7rem; color: var(--ik-muted); background: none; padding: 0; }
+    .cb-res { display: inline-flex; align-items: center; gap: .25rem; font-size: .74rem; font-weight: 600; color: var(--ik-ink); white-space: nowrap; }
+    .cb-res.miss { color: #b3402f; }
+    .cb-when { text-align: right; font-family: ui-monospace, monospace; font-size: .8rem; font-weight: 700; color: var(--ik-ink); white-space: nowrap; }
+    .cb-when small { display: block; font-family: inherit; font-size: .66rem; font-weight: 400; color: var(--ik-muted); }
+    .cb-empty { border: 1px dashed var(--ik-line); border-radius: 18px; padding: 1.4rem; text-align: center; font-size: .85rem; color: var(--ik-muted); }
+    .cb-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: .7rem; }
+    .cb-note { border: 1px solid var(--ik-line); border-left-width: 4px; border-radius: 14px; padding: .65rem .8rem; background: var(--ik-paper); min-width: 0; }
+    .cb-note h4 { margin: 0 0 .3rem; display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; font-size: .86rem; font-weight: 700; color: var(--ik-ink); }
+    .cb-note h4 small { font-size: .72rem; font-weight: 400; color: var(--ik-muted); }
+    .cb-note p { margin: 0; font-size: .76rem; color: var(--ik-muted); }
+    .cb-row { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem; }
+    .cb-btn { display: inline-flex; align-items: center; gap: .3rem; padding: .25rem .7rem; border-radius: 999px; border: 1px solid var(--ik-sea); font-size: .74rem; font-weight: 600; color: #fff; background: var(--ik-sea); cursor: pointer; white-space: nowrap; }
+    .cb-btn.ghost { color: var(--ik-sea); background: transparent; }
+    .cb-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .5rem .9rem; margin-top: .75rem; }
+    .cb-fact > span { display: block; font-size: .62rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ik-muted); }
+    .cb-fact b { display: block; font-size: .9rem; font-weight: 700; color: var(--ik-ink); }
+    .cb-fact em { font-size: .72rem; font-style: normal; font-weight: 400; color: var(--ik-muted); }
+    .cb-issue { margin-top: .7rem; display: flex; gap: .5rem; padding: .5rem .65rem; border-radius: 12px; font-size: .76rem; color: var(--ik-ink); background: rgba(201, 102, 46, .09); border: 1px solid rgba(201, 102, 46, .3); }
+    .cb-issue i { color: #b3521f; }
+    @media (max-width: 700px) {
+      .cb-cards { grid-template-columns: 1fr; }
+      .cb-city { grid-template-columns: 1fr auto; }
+      .cb-city .cb-what { grid-column: 1 / -1; }
+    }
+  </style>
+
   {# ===== Cabeçalho ===== #}
   <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
     <div>
       <h1 class="text-2xl font-bold text-ink">Construções</h1>
-      <p class="mt-1 text-sm text-muted">Visão geral de obras, planos e gargalos de todas as contas</p>
+      <p class="mt-1 text-sm text-muted">O que está em obra, o que está parado e por quê, e o que vem depois — em todas as contas</p>
     </div>
     <a href="{% url 'jobs:job-create' %}?action=1002"
        class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90"
@@ -23,117 +90,184 @@
     </a>
   </div>
 
-  {# ===== KPIs ===== #}
-  <div class="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-    <div class="rounded-[20px] border p-4" style="border-color: var(--ik-line); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.82));">
-      <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Em obra agora</div>
-      <div class="mt-1 flex items-center gap-2">
-        <i class="bi bi-hammer text-xl" style="color: var(--ik-sea);"></i>
-        <span class="text-3xl font-bold text-ink">{{ kpi_building_now }}</span>
+  {# ===== Resumo: as cidades, num relance ===== #}
+  <section class="cb-section" id="cb-summary">
+    <div class="cb-tiles">
+      <div class="cb-tile" style="border-left-color: #4f86b9;">
+        <span style="color: #3d74a6;">Em obra agora</span>
+        <b>{{ kpi_cities.working }} <small>de {{ kpi_cities.total }} cidades</small></b>
+        <em>{% if kpi_next_eta %}próxima conclusão em <strong class="font-mono" x-text="countdown({{ kpi_next_eta }})"></strong>{% else %}nenhuma obra em andamento{% endif %}</em>
+      </div>
+      <div class="cb-tile" style="border-left-color: #c9662e;">
+        <span style="color: #b3521f;">Esperando recurso</span>
+        <b>{{ kpi_cities.waiting }} <small>cidade{{ kpi_cities.waiting|pluralize }}</small></b>
+        <em>{% if kpi_shortfall_total %}faltam {{ kpi_shortfall_text }} para os planos{% else %}nenhum recurso em falta{% endif %}</em>
+      </div>
+      <div class="cb-tile" style="border-left-color: #c9a23e;">
+        <span style="color: #8f7016;">Na fila do plano</span>
+        <b>{{ kpi_cities.queued }} <small>cidade{{ kpi_cities.queued|pluralize }}</small></b>
+        <em>começam no próximo ciclo do plano</em>
+      </div>
+      <div class="cb-tile" style="border-left-color: #a9a294;{% if kpi_cities.idle %} background: rgba(120, 113, 100, .08);{% endif %}">
+        <span style="color: #6f6a5f;">Ociosas</span>
+        <b>{{ kpi_cities.idle }} <small>cidade{{ kpi_cities.idle|pluralize }}</small></b>
+        <em>{% if kpi_cities.idle %}sem obra e sem plano{% else %}toda cidade tem obra ou plano{% endif %}</em>
+      </div>
+      <div class="cb-tile" style="border-left-color: #5f8c4e;">
+        <span style="color: var(--ik-good);">Planos ativos</span>
+        <b>{{ kpi_active_plans }}</b>
+        <em>{% if kpi_plans_waiting %}{{ kpi_plans_waiting }} com recurso em falta{% else %}nenhum com recurso em falta{% endif %}</em>
       </div>
     </div>
-    <div class="rounded-[20px] border p-4" style="border-color: var(--ik-line); background: linear-gradient(180deg, rgba(95,140,78,0.10), rgba(255,255,255,0.82));">
-      <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">Planos ativos</div>
-      <div class="mt-1 flex items-center gap-2">
-        <i class="bi bi-list-check text-xl" style="color: var(--ik-good);"></i>
-        <span class="text-3xl font-bold text-ink">{{ kpi_active_plans }}</span>
-      </div>
+    {% if kpi_cities.total %}
+    <div class="cb-split" title="Como estão as {{ kpi_cities.total }} cidades">
+      <i class="cb-working" style="flex: {{ kpi_cities.working }};"></i>
+      <i class="cb-waiting" style="flex: {{ kpi_cities.waiting }};"></i>
+      <i class="cb-queued" style="flex: {{ kpi_cities.queued }};"></i>
+      <i class="cb-idle" style="flex: {{ kpi_cities.idle }};"></i>
     </div>
-    <div class="rounded-[20px] border p-4" style="border-color: var(--ik-line); background: linear-gradient(180deg, rgba(201,156,78,0.12), rgba(255,255,255,0.82));">
-      <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold-dark);">Próxima conclusão</div>
-      <div class="mt-1 flex items-center gap-2">
-        <i class="bi bi-alarm text-xl" style="color: var(--ik-gold-dark);"></i>
-        {% if kpi_next_eta %}
-          <span class="text-2xl font-bold text-ink font-mono" x-text="countdown({{ kpi_next_eta }})"></span>
-        {% else %}
-          <span class="text-lg font-semibold text-muted">—</span>
-        {% endif %}
-      </div>
-    </div>
-    <div class="rounded-[20px] border p-4" style="border-color: var(--ik-line); background: linear-gradient(180deg, rgba(185,79,79,0.10), rgba(255,255,255,0.82));">
-      <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: #b94f4f;">Recursos em falta</div>
-      <div class="mt-1 flex items-center gap-2">
-        <i class="bi bi-exclamation-triangle text-xl" style="color: #b94f4f;"></i>
-        <span class="text-3xl font-bold text-ink">{{ kpi_shortfall_total|floatformat:"0" }}</span>
-      </div>
-    </div>
-  </div>
-
-  {# ===== A. Em obra agora ===== #}
-  <section class="mb-8">
-    <div class="mb-3 flex items-center gap-2">
-      <i class="bi bi-hammer" style="color: var(--ik-sea);"></i>
-      <h2 class="text-lg font-bold text-ink">Em obra agora</h2>
-      <span class="rounded-full border px-2 py-0.5 text-[11px] text-muted" style="border-color: var(--ik-line);">{{ building_now|length }}</span>
-    </div>
-    {% if building_now %}
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      {% for b in building_now %}
-      <div class="relative overflow-hidden rounded-[18px] border p-4 shadow-sm" style="border-color: var(--ik-line); background: rgba(255,255,255,0.85);">
-        <div class="flex items-start gap-3">
-          <div class="relative shrink-0">
-            <div class="flex h-14 w-14 items-center justify-center rounded-[16px] border" style="border-color: rgba(79,134,185,0.2); background: linear-gradient(180deg,#fffdf8,#f4ecda);">
-              {% with b.building|building_icon as bi %}
-              {% if bi %}<img src="{% static bi %}" alt="" class="h-10 w-10 object-contain">
-              {% else %}<i class="bi {{ b.building|building_bi_icon }} text-2xl" style="color: var(--ik-sea);"></i>{% endif %}
-              {% endwith %}
-            </div>
-            <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
-              <img src="{{ b.tradegood_icon }}" alt="" class="h-4 w-4 object-contain">
-            </div>
-          </div>
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-sm font-bold text-ink">{{ b.building|building_name }}</div>
-            <div class="truncate text-[12px] text-muted">{{ b.city_name }} · {{ b.ga_name }}</div>
-            <div class="mt-1 inline-flex items-center gap-1 text-[12px]">
-              <span class="rounded-md bg-black/5 px-1.5 py-0.5 font-mono text-ink">Lv {{ b.from_level }}</span>
-              <i class="bi bi-arrow-right text-[10px] text-muted"></i>
-              <span class="rounded-md px-1.5 py-0.5 font-mono font-bold text-white" style="background: var(--ik-sea);">Lv {{ b.to_level }}</span>
-            </div>
-          </div>
-        </div>
-        {% if b.end_at %}
-        <div class="mt-3 flex items-center justify-between rounded-lg px-2.5 py-1.5" style="background: rgba(79,134,185,0.08);">
-          <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold" style="color: var(--ik-sea);">
-            <span class="relative flex h-2 w-2">
-              <span class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-70" style="background: var(--ik-sea);"></span>
-              <span class="relative inline-flex h-2 w-2 rounded-full" style="background: var(--ik-sea);"></span>
-            </span>
-            Conclui em
-          </span>
-          <span class="font-mono text-sm font-bold text-ink" x-text="countdown({{ b.end_at }})"></span>
-        </div>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="rounded-[18px] border border-dashed p-8 text-center text-muted" style="border-color: var(--ik-line);">
-      <i class="bi bi-moon-stars mb-2 block text-2xl"></i> Nenhuma obra em andamento agora.
+    <div class="cb-legend">
+      <span><i class="cb-working"></i>{{ kpi_cities.working }} em obra</span>
+      <span><i class="cb-waiting"></i>{{ kpi_cities.waiting }} esperando recurso</span>
+      <span><i class="cb-queued"></i>{{ kpi_cities.queued }} na fila do plano</span>
+      <span><i class="cb-idle"></i>{{ kpi_cities.idle }} ociosas</span>
     </div>
     {% endif %}
   </section>
 
-  {# ===== B. Planos ativos ===== #}
-  <section class="mb-8">
-    <div class="mb-3 flex items-center gap-2">
-      <i class="bi bi-list-check" style="color: var(--ik-good);"></i>
-      <h2 class="text-lg font-bold text-ink">Planos ativos</h2>
-      <span class="rounded-full border px-2 py-0.5 text-[11px] text-muted" style="border-color: var(--ik-line);">{{ plans|length }}</span>
+  {# ===== 1. O que está acontecendo: cada cidade, por conta ===== #}
+  <section class="cb-section" id="cb-now">
+    <h2 class="cb-h2"><span class="cb-num">1</span> O que está acontecendo</h2>
+    <p class="cb-lead">Cada cidade das contas que têm obra ou plano: o que está construindo, o que vem depois e o que a segura.</p>
+    {% if board_accounts %}
+    <div class="cb-cards" style="grid-template-columns: 1fr;">
+      {% for acc in board_accounts %}
+      <div class="cb-card">
+        <div class="cb-card-head">
+          <h3>{{ acc.name }} <small>· {{ acc.account }}</small></h3>
+          <div class="cb-right">
+            {% if acc.counts.working %}<span class="cb-pill working">{{ acc.counts.working }} em obra</span>{% endif %}
+            {% if acc.counts.waiting %}<span class="cb-pill waiting">{{ acc.counts.waiting }} esperando recurso</span>{% endif %}
+            {% if acc.counts.queued %}<span class="cb-pill queued">{{ acc.counts.queued }} na fila</span>{% endif %}
+            {% if acc.counts.idle %}<span class="cb-pill idle">{{ acc.counts.idle }} ociosa{{ acc.counts.idle|pluralize }}</span>{% endif %}
+            {% if acc.job_id %}<a class="cb-btn ghost" href="{% url 'jobs:job-detail' acc.job_id %}">Ver plano <i class="bi bi-arrow-right"></i></a>{% endif %}
+          </div>
+        </div>
+        {% for city in acc.cities %}
+        <div class="cb-city">
+          <div class="cb-city-name"><img src="{{ city.tradegood_icon }}" alt=""><span title="{{ city.name }}">{{ city.name }}</span></div>
+          <span class="cb-pill {{ city.state }}">{{ city.state_label }}</span>
+          <div class="cb-what">
+            {% if city.work %}
+              <img src="{{ city.work.icon }}" alt="" style="width: 22px; height: 22px; object-fit: contain;">
+              <strong>{{ city.work.name }}</strong> <code style="background: none; padding: 0;">{{ city.work.from_level }}→{{ city.work.to_level }}</code>
+              {% if city.queue %}<span>· no plano:</span>{% endif %}
+            {% elif city.queue %}
+              <span>Próxima:</span>
+            {% else %}
+              <span>Sem obra e sem plano{% if city.free_slots %} · {{ city.free_slots }} espaço{{ city.free_slots|pluralize }} livre{{ city.free_slots|pluralize }}{% endif %}</span>
+            {% endif %}
+            {% for step in city.queue %}
+              <span class="cb-chip" title="{{ step.name }}{% if step.new %} (construir){% endif %}"><img src="{{ step.icon }}" alt="">{{ step.name }} <code>{{ step.cur }}→{{ step.target }}</code></span>
+            {% endfor %}
+            {% if city.queue_more %}<span>+{{ city.queue_more }}</span>{% endif %}
+            {% for item in city.missing %}
+              <span class="cb-res{% if city.state == 'waiting' %} miss{% endif %}" title="Falta {{ item.amount }} de {{ item.label }} para as etapas do plano nesta cidade"{% if city.state != 'waiting' %} style="color: var(--ik-muted); font-weight: 500;"{% endif %}><img src="{{ item.icon }}" alt="{{ item.label }}">falta {{ item.text }}</span>
+            {% endfor %}
+          </div>
+          <div class="cb-when">
+            {% if city.work and city.work.end_at %}<span x-text="countdown({{ city.work.end_at }})"></span><small>para concluir</small>{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
     </div>
+    {% else %}
+    <div class="cb-empty"><i class="bi bi-moon-stars mb-2 block text-2xl"></i> Nenhuma conta com obra ou plano de construção agora.</div>
+    {% endif %}
+  </section>
+
+  {# ===== 2. O que está parado e por quê ===== #}
+  <section class="cb-section" id="cb-stopped">
+    <h2 class="cb-h2"><span class="cb-num">2</span> O que está parado e por quê</h2>
+    <p class="cb-lead">Cidades sem obra e sem plano, e cidades cujo plano espera um recurso.</p>
+
+    {% if idle_groups or idle_strays %}
+    <div class="cb-list" style="margin-bottom: .9rem;">
+      {% for acc in idle_groups %}
+      <div class="cb-note" style="border-left-color: #a9a294;">
+        <h4>{{ acc.name }} <small>· {{ acc.account }}</small></h4>
+        <p><strong style="color: var(--ik-ink);">{{ acc.counts.total }} cidade{{ acc.counts.total|pluralize }} ociosa{{ acc.counts.total|pluralize }}</strong>: nenhuma obra em andamento e nenhum plano de construção{% if acc.counts.free_slots %} · {{ acc.counts.free_slots }} espaço{{ acc.counts.free_slots|pluralize }} livre{{ acc.counts.free_slots|pluralize }}{% endif %}.</p>
+        <div class="cb-row" style="margin-top: .45rem;">
+          {% for city in acc.cities %}<span class="cb-chip"><img src="{{ city.tradegood_icon }}" alt="">{{ city.name }}</span>{% endfor %}
+        </div>
+        <div class="cb-row" style="margin-top: .55rem;">
+          <button type="button" class="cb-btn"
+                  hx-get="{% url 'jobs:job-form' %}?ga={{ acc.ga_id }}&action=1002"
+                  hx-target="#job-modal-body" hx-swap="innerHTML" hx-push-url="false"
+                  onclick="this.dispatchEvent(new CustomEvent('open-modal-jobcreate', {bubbles: true}));"><i class="bi bi-building-gear"></i> Criar plano de construção</button>
+        </div>
+      </div>
+      {% endfor %}
+      {% if idle_strays %}
+      <div class="cb-note" style="border-left-color: #a9a294;">
+        <h4>Ociosas em contas com plano <small>· {{ idle_strays|length }} cidade{{ idle_strays|length|pluralize }}</small></h4>
+        <p>A conta tem plano, mas estas cidades não estão nele nem em obra.</p>
+        <div class="cb-row" style="margin-top: .45rem;">
+          {% for city in idle_strays %}<span class="cb-chip" title="{{ city.ga_name }}"><img src="{{ city.tradegood_icon }}" alt="">{{ city.name }} <code>{{ city.ga_name }}</code></span>{% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="cb-empty" style="margin-bottom: .9rem;"><i class="bi bi-check-circle mb-1 block text-2xl" style="color: var(--ik-good);"></i> Nenhuma cidade ociosa: todas têm obra ou plano.</div>
+    {% endif %}
+
+    <div class="cb-card">
+      <div class="cb-card-head">
+        <h3><i class="bi bi-sign-stop" style="color: #b3521f;"></i> Esperando recurso <small>· {{ bottlenecks|length }} cidade{{ bottlenecks|length|pluralize }}</small></h3>
+        <div class="cb-right">
+          {% for r in reserved_total %}
+          <span class="cb-res{% if r.shortfall %} miss{% endif %}" title="{{ r.label }}: {{ r.reserved_text }} reservado{% if r.shortfall %}, falta {{ r.shortfall_text }}{% endif %}">
+            <img src="{{ r.icon }}" alt="{{ r.label }}">{% if r.shortfall %}falta {{ r.shortfall_text }}{% else %}<span style="color: var(--ik-good);">coberto</span>{% endif %}
+          </span>
+          {% endfor %}
+        </div>
+      </div>
+      {% for b in bottlenecks %}
+      <div class="cb-city" style="grid-template-columns: minmax(140px, 1.2fr) minmax(0, 3fr) auto;">
+        <div class="cb-city-name"><span title="{{ b.city_name }}">{{ b.city_name }}</span></div>
+        <div class="cb-what">
+          <span>{{ b.ga_name }}</span>
+          {% for item in b.items %}<span class="cb-res miss" title="{{ item.amount }} de {{ item.label }}"><img src="{{ item.icon }}" alt="{{ item.label }}">falta {{ item.text }}</span>{% endfor %}
+        </div>
+        <div class="cb-when">{% if b.job_id %}<a class="cb-btn ghost" href="{% url 'jobs:job-detail' b.job_id %}">Ver plano</a>{% endif %}</div>
+      </div>
+      {% empty %}
+      <div class="cb-city" style="grid-template-columns: 1fr;"><span class="cb-what"><i class="bi bi-check-circle" style="color: var(--ik-good);"></i> Nenhuma cidade esperando recurso: o estoque cobre o que os planos pedem agora.</span></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {# ===== 3. O que vem depois: os planos ===== #}
+  <section class="cb-section" id="cb-plans">
+    <h2 class="cb-h2"><span class="cb-num">3</span> O que vem depois <small>{{ plans|length }} plano{{ plans|length|pluralize }} ativo{{ plans|length|pluralize }}</small></h2>
+    <p class="cb-lead">Cada plano com o que falta construir, quanto ainda custa e quanto tempo de obra resta (sem contar a espera por recurso).</p>
     {% if plans %}
-    <div class="grid grid-cols-1 gap-3 xl:grid-cols-2">
+    <div class="cb-cards">
       {% for p in plans %}
       {{ p.pending_steps|json_script:p.steps_id }}
       {{ p.ga_cities|json_script:p.cities_id }}
-      <div class="rounded-[18px] border p-4 shadow-sm" style="border-color: var(--ik-line); background: rgba(255,255,255,0.85);"
-           x-data="planCard('{{ p.job_id }}', '{{ p.strategy }}')">
-        <div class="mb-2 flex items-start justify-between gap-2">
-          <div class="min-w-0">
-            <div class="truncate text-sm font-bold text-ink">{{ p.city_names|join:", "|default:"—" }}</div>
-            <div class="truncate text-[12px] text-muted">{{ p.ga_name }} · {{ p.account }}</div>
+      <div class="cb-card" style="padding: .9rem;" x-data="planCard('{{ p.job_id }}', '{{ p.strategy }}')">
+        <div class="cb-row" style="justify-content: space-between; align-items: flex-start;">
+          <div style="min-width: 0;">
+            <div class="text-sm font-bold text-ink">{{ p.ga_name }} <span class="font-normal text-muted">· {{ p.account }}</span></div>
+            <div class="text-[12px] text-muted">{{ p.cities_pending }} de {{ p.cities_total }} cidade{{ p.cities_total|pluralize }} com obra a fazer{% if p.cities_waiting %} · <span style="color: #b3521f; font-weight: 600;">{{ p.cities_waiting }} esperando recurso</span>{% endif %}</div>
           </div>
-          <div class="flex shrink-0 items-center gap-1">
+          <div class="cb-row">
+            {% if p.running %}<span class="cb-pill working">Rodando agora</span>
+            {% elif p.next_run_in %}<span class="cb-pill queued plain"><i class="bi bi-clock"></i> próximo ciclo em {{ p.next_run_in }}</span>{% endif %}
             <select x-model="strategy" @change="setStrategy()"
                     class="rounded-full border px-2 py-0.5 text-[10px] font-semibold"
                     style="border-color: rgba(95,140,78,0.35); color: var(--ik-good); background: rgba(95,140,78,0.08);"
@@ -145,49 +279,40 @@
           </div>
         </div>
 
-        <div class="mb-1 flex items-center justify-between text-[12px]">
-          <span class="text-muted">{{ p.done }}/{{ p.total }} etapas</span>
+        <div class="mt-3 mb-1 flex items-center justify-between text-[12px]">
+          <span class="text-muted">{{ p.done }} de {{ p.total }} etapas concluídas</span>
           <span class="font-mono font-semibold text-ink">{{ p.pct }}%</span>
         </div>
         <div class="h-2 overflow-hidden rounded-full bg-black/10">
           <div class="h-full rounded-full" style="background: var(--ik-good); width: {{ p.pct }}%;"></div>
         </div>
 
-        <div class="mt-3 flex flex-wrap items-center gap-1.5">
+        <div class="cb-row" style="margin-top: .7rem;">
+          <span class="text-[11px] text-muted">Próximas etapas:</span>
           {% for ns in p.next_steps %}
-          <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px]" style="border-color: var(--ik-line); background: rgba(255,255,255,0.7);">
-            <img src="{{ ns.icon }}" class="h-3.5 w-3.5 object-contain" alt="">
-            <span class="text-ink">{{ ns.name }}</span>
-            <span class="font-mono text-muted">{{ ns.cur }}→{{ ns.target }}</span>
-          </span>
+          <span class="cb-chip"><img src="{{ ns.icon }}" alt="">{{ ns.name }} <code>{{ ns.cur }}→{{ ns.target }}</code></span>
           {% empty %}
-          <span class="text-[12px] text-muted">Plano concluído aguardando snapshot.</span>
+          <span class="text-[12px] text-muted">Plano concluído, aguardando a próxima leitura.</span>
           {% endfor %}
         </div>
 
-        <div class="mt-3 flex flex-wrap items-center justify-between gap-2 text-[12px]">
-          <div class="flex items-center gap-3 text-muted">
-            <span><i class="bi bi-alarm"></i> ETA {{ p.eta_label }}</span>
-            <span><i class="bi bi-bricks"></i> {{ p.remaining_levels }} níveis restantes</span>
+        <div class="cb-facts">
+          <div class="cb-fact"><span>Tempo de obra restante</span><b>{{ p.eta_label|default:"—" }}{% if p.finish_at %} <em>até ~{{ p.finish_at|date:"d/m" }}</em>{% endif %}</b></div>
+          <div class="cb-fact"><span>Níveis a construir</span><b>{{ p.remaining_levels }}</b></div>
+          <div class="cb-fact" style="grid-column: 1 / -1;"><span>Custo do que falta construir</span>
+            <div class="cb-row" style="margin-top: .15rem;">{% for item in p.remaining_cost %}<span class="cb-res" title="{{ item.amount }} de {{ item.label }}"><img src="{{ item.icon }}" alt="{{ item.label }}">{{ item.text }}</span>{% empty %}<span class="text-[12px] text-muted">sem dado de custo</span>{% endfor %}</div>
           </div>
-          <a href="{% url 'jobs:job-detail' p.job_id %}" class="inline-flex items-center gap-1 font-semibold" style="color: var(--ik-sea);">
-            Ver job <i class="bi bi-arrow-right"></i>
-          </a>
+          <div class="cb-fact" style="grid-column: 1 / -1;"><span>Em falta agora</span>
+            <div class="cb-row" style="margin-top: .15rem;">{% for item in p.missing %}<span class="cb-res miss" title="{{ item.amount }} de {{ item.label }}"><img src="{{ item.icon }}" alt="{{ item.label }}">{{ item.text }}</span>{% empty %}<span class="text-[12px]" style="color: var(--ik-good); font-weight: 600;"><i class="bi bi-check-circle-fill"></i> o estoque cobre a etapa atual</span>{% endfor %}</div>
+          </div>
         </div>
 
-        {% if p.missing %}
-        <div class="mt-2 flex flex-wrap items-center gap-1.5 rounded-lg p-2" style="background: rgba(185,79,79,0.08);">
-          <span class="text-[11px] font-semibold" style="color: #b94f4f;">Falta:</span>
-          {% for m in p.missing %}
-          <span class="inline-flex items-center gap-1 text-[11px] text-ink">
-            <img src="{{ m.icon }}" class="h-3.5 w-3.5 object-contain" alt="">{{ m.amount|floatformat:"0" }}
-          </span>
-          {% endfor %}
-        </div>
+        {% if p.issue %}
+        <div class="cb-issue"><i class="bi bi-exclamation-triangle-fill"></i><span><strong>Último aviso do plano</strong> (há {{ p.issue.ago }}): {{ p.issue.text }}</span></div>
         {% endif %}
 
         {# Ações inline #}
-        <div class="mt-3 flex items-center gap-2 border-t pt-3" style="border-color: var(--ik-line);">
+        <div class="mt-3 flex flex-wrap items-center gap-2 border-t pt-3" style="border-color: var(--ik-line);">
           <button type="button" @click="tab = tab==='steps' ? null : 'steps'"
                   class="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition"
                   :style="tab==='steps' ? 'border-color: var(--ik-sea); color: white; background: var(--ik-sea);' : 'border-color: var(--ik-line); color: var(--ik-sea);'">
@@ -198,6 +323,9 @@
                   :style="tab==='send' ? 'border-color: var(--ik-gold-dark); color: white; background: var(--ik-gold-dark);' : 'border-color: var(--ik-line); color: var(--ik-gold-dark);'">
             <i class="bi bi-truck"></i> Enviar recursos
           </button>
+          <a href="{% url 'jobs:job-detail' p.job_id %}" class="ml-auto inline-flex items-center gap-1 text-[12px] font-semibold" style="color: var(--ik-sea);">
+            Ver job <i class="bi bi-arrow-right"></i>
+          </a>
         </div>
 
         {# Editor de etapas: priorizar / remover #}
@@ -263,82 +391,14 @@
       {% endfor %}
     </div>
     {% else %}
-    <div class="rounded-[18px] border border-dashed p-8 text-center text-muted" style="border-color: var(--ik-line);">
-      <i class="bi bi-clipboard-check mb-2 block text-2xl"></i> Nenhum plano de construção ativo.
-    </div>
+    <div class="cb-empty"><i class="bi bi-clipboard-check mb-2 block text-2xl"></i> Nenhum plano de construção ativo.</div>
     {% endif %}
-  </section>
-
-  {# ===== C. Reservas & faltas ===== #}
-  <section class="mb-8">
-    <div class="mb-3 flex items-center gap-2">
-      <i class="bi bi-box-seam" style="color: var(--ik-gold-dark);"></i>
-      <h2 class="text-lg font-bold text-ink">Reservas & gargalos</h2>
-    </div>
-
-    {# Tiles por recurso — reservado + falta #}
-    <div class="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
-      {% for r in reserved_total %}
-      <div class="relative overflow-hidden rounded-[16px] border p-3 shadow-sm"
-           style="border-color: var(--ik-line); background: {% if r.shortfall %}linear-gradient(180deg, rgba(185,79,79,0.08), rgba(255,255,255,0.85)){% else %}linear-gradient(180deg, rgba(201,156,78,0.10), rgba(255,255,255,0.85)){% endif %};">
-        <div class="flex items-center gap-2">
-          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border" style="border-color: var(--ik-line); background: rgba(255,255,255,0.7);">
-            <img src="{{ r.icon }}" class="h-5 w-5 object-contain" alt="">
-          </div>
-          <div class="min-w-0">
-            <div class="truncate text-[11px] font-semibold uppercase tracking-wide text-muted">{{ r.label }}</div>
-            <div class="truncate font-mono text-sm font-bold text-ink">{{ r.reserved|intcomma }}</div>
-          </div>
-        </div>
-        <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-black/10">
-          <div class="h-full rounded-full" style="background: var(--ik-gold); width: {{ r.pct }}%;"></div>
-        </div>
-        {% if r.shortfall %}
-        <div class="mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold" style="background: rgba(185,79,79,0.12); color:#b94f4f;">
-          <i class="bi bi-exclamation-triangle-fill"></i> falta {{ r.shortfall|intcomma }}
-        </div>
-        {% else %}
-        <div class="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold" style="color: var(--ik-good);">
-          <i class="bi bi-check-circle-fill"></i> coberto
-        </div>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </div>
-
-    {# Gargalos — onde travou #}
-    <div class="rounded-[18px] border p-4" style="border-color: var(--ik-line); background: rgba(255,255,255,0.85);">
-      <div class="mb-3 flex items-center gap-2 text-[12px] font-semibold text-ink">
-        <i class="bi bi-sign-stop text-[13px]" style="color:#b94f4f;"></i> Onde travou por falta de recurso
-      </div>
-      {% if bottlenecks %}
-      <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        {% for b in bottlenecks %}
-        <div class="flex items-center gap-3 rounded-[14px] border p-3" style="border-color: rgba(185,79,79,0.25); background: rgba(185,79,79,0.05);">
-          <div class="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border" style="border-color: rgba(185,79,79,0.25); background: rgba(255,255,255,0.8);">
-            <img src="{{ b.resource_icon }}" class="h-6 w-6 object-contain" alt="{{ b.resource_label }}">
-          </div>
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-[13px] font-bold text-ink">{{ b.city_name }}</div>
-            <div class="truncate text-[11px] text-muted">{{ b.ga_name }} · {{ b.account }}</div>
-          </div>
-          <div class="shrink-0 text-right">
-            <div class="font-mono text-[13px] font-bold" style="color:#b94f4f;">−{{ b.shortfall|intcomma }}</div>
-            <div class="text-[10px] uppercase tracking-wide text-muted">{{ b.resource_label }}</div>
-          </div>
-        </div>
-        {% endfor %}
-      </div>
-      {% else %}
-      <div class="py-6 text-center text-[12px] text-muted"><i class="bi bi-check-circle mb-1 block text-2xl" style="color: var(--ik-good);"></i> Nenhum gargalo — recursos cobrem todos os planos.</div>
-      {% endif %}
-    </div>
   </section>
 
   {# ===== D. Mapa de níveis ===== #}
   <section class="mb-4">
     <div class="mb-3 flex items-center gap-2">
-      <i class="bi bi-grid-3x3-gap" style="color: var(--ik-sea);"></i>
+      <span class="cb-num">4</span>
       <h2 class="text-lg font-bold text-ink">Mapa de níveis</h2>
       <span class="text-[11px] text-muted">todos os edifícios de cada cidade · <i class="bi bi-arrow-up-circle-fill text-amber-500"></i> em obra</span>
     </div>

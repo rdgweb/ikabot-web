@@ -4,20 +4,29 @@ Junta tres fontes:
   - Snapshot das cidades (edificios em obra agora + niveis atuais)
   - Jobs de Plano de Construcao (ac=1002) ativos + progresso derivado do snapshot
   - ConstructionResourceReservation (reservas locais e faltas por cidade/recurso)
+
+N-103: the page answers three questions, in this order: what is happening (every city,
+by account, with its state), what is stopped and why (idle cities, cities waiting for a
+resource), and what comes next (each plan with the cost and the building time left).
 """
 from __future__ import annotations
 
 import json
 import time
+from collections import Counter
+from datetime import timedelta
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Prefetch
 from django.templatetags.static import static
+from django.utils import timezone
 from django.views.generic import TemplateView
 
 from apps.accounts.models import Account, GameAccount
+from apps.dashboard.services.overview import compact, human_span
 from apps.game import city_map
-from apps.jobs.models import ConstructionResourceReservation, Job
+from apps.game.services import construction_board as board
+from apps.jobs.models import ConstructionResourceReservation, Job, JobLog
 from core.catalogs import get_building_info
 
 
@@ -122,6 +131,22 @@ def _reorder_layout(city: dict) -> tuple[list[dict], bool]:
     return slots, ready and bool(slots)
 
 
+def _resource_chips(amounts: dict) -> list[dict]:
+    """[{key, label, icon, amount, text}] for the resources that have an amount, in the usual order."""
+    return [
+        {"key": key, "label": RESOURCE_META[key]["label"], "icon": static(RESOURCE_META[key]["icon"]),
+         "amount": _si(amounts.get(key)), "text": compact(amounts.get(key))}
+        for key in RESOURCE_KEYS if _si(amounts.get(key)) > 0
+    ]
+
+
+def _step_chip(entry: dict) -> dict:
+    return {
+        "icon": _building_icon(entry["building"]), "name": _building_name(entry["building"]),
+        "cur": entry["cur"], "target": entry["target"], "new": entry.get("new", False),
+    }
+
+
 def _fmt_eta(seconds: int) -> str:
     seconds = max(0, int(seconds))
     h, rem = divmod(seconds, 3600)
@@ -158,35 +183,19 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
 
         ga_ids = [ga.pk for acct in accounts for ga in getattr(acct, "active_game_accounts", [])]
 
-        # --- Reservas agregadas por ga -> city -> resource ---
-        reservations: dict[str, dict[str, dict[str, dict[str, int]]]] = {}
+        # --- Reservas: totais por recurso e o que falta em cada cidade / em cada plano ---
         reserved_total = {k: 0 for k in RESOURCE_KEYS}
         shortfall_total = {k: 0 for k in RESOURCE_KEYS}
-        bottleneck_rows: list[dict] = []
-        if ga_ids:
-            for r in ConstructionResourceReservation.objects.filter(
-                game_account_id__in=ga_ids, status="active"
-            ):
-                res = str(r.resource)
-                bucket = (
-                    reservations.setdefault(str(r.game_account_id), {})
-                    .setdefault(str(r.city_id), {})
-                    .setdefault(res, {"reserved_local": 0, "shortfall": 0})
-                )
-                bucket["reserved_local"] += _si(r.reserved_local_amount)
-                bucket["shortfall"] += _si(r.shortfall_amount)
-                if res in reserved_total:
-                    reserved_total[res] += _si(r.reserved_local_amount)
-                    shortfall_total[res] += _si(r.shortfall_amount)
-                if _si(r.shortfall_amount) > 0:
-                    bottleneck_rows.append({
-                        "ga_id": str(r.game_account_id),
-                        "city_name": r.city_name or r.city_id,
-                        "resource": res,
-                        "resource_label": RESOURCE_META.get(res, {}).get("label", res),
-                        "resource_icon": static(RESOURCE_META.get(res, {}).get("icon", "game/resources/icon_wood.png")),
-                        "shortfall": _si(r.shortfall_amount),
-                    })
+        reservations = list(
+            ConstructionResourceReservation.objects.filter(game_account_id__in=ga_ids, status="active")
+        ) if ga_ids else []
+        for r in reservations:
+            res = board.resource_key(r.resource)      # the plan calls crystal "glas"
+            if res not in reserved_total:
+                continue
+            reserved_total[res] += _si(r.reserved_local_amount)
+            shortfall_total[res] += _si(r.shortfall_amount)
+        city_shortfalls = board.shortfalls_by_city(reservations)
 
         # --- Snapshot: em obra agora + lookup de niveis ---
         building_now: list[dict] = []
@@ -195,6 +204,7 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
         ga_meta: dict[str, dict] = {}
         level_map: list[dict] = []
         reorder_layouts: dict[str, dict] = {}  # "ga:city" -> layout for drag-and-drop (N-50)
+        city_facts: dict[str, list[dict]] = {}  # ga -> what the board needs of each city
 
         for acct in accounts:
             for ga in getattr(acct, "active_game_accounts", []):
@@ -216,11 +226,14 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                     pos_lvl = {"_pos": {}, "_bid": {}}
                     # cada bid pode ter varias instancias (ex: multiplos armazens)
                     bid_instances: dict[str, list[dict]] = {}
+                    works: list[dict] = []
+                    free_slots = 0
                     for b in city.get("buildings") or []:
                         if not isinstance(b, dict):
                             continue
                         bid = str(b.get("building") or "")
                         if not bid or bid == "empty":
+                            free_slots += 1
                             continue
                         lvl = _si(b.get("level"))
                         pos = str(b.get("position"))
@@ -231,17 +244,29 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                             pos_lvl["_bid"][bid] = lvl
                         bid_instances.setdefault(bid, []).append({"level": lvl, "is_upgrading": upg})
                         if b.get("is_upgrading"):
-                            building_now.append({
+                            work = {
                                 "ga_name": ga.name or ga.server_id,
                                 "account": acct.label,
                                 "city_name": city.get("name") or cid,
                                 "tradegood_icon": static(TRADEGOOD_ICON.get(tg, TRADEGOOD_ICON[0])),
                                 "building": bid,
+                                "icon": _building_icon(bid),
+                                "name": _building_name(bid),
                                 "from_level": lvl,
                                 "to_level": lvl + 1,
                                 "end_at": _si(b.get("construction_end_at")),
-                            })
+                            }
+                            building_now.append(work)
+                            works.append(work)
                     city_pos_lvl[cid] = pos_lvl
+                    works.sort(key=lambda w: (w["end_at"] == 0, w["end_at"]))
+                    city_facts.setdefault(str(ga.pk), []).append({
+                        "id": cid,
+                        "name": str(city.get("name") or cid),
+                        "tradegood_icon": static(TRADEGOOD_ICON.get(tg, TRADEGOOD_ICON[0])),
+                        "works": works,
+                        "free_slots": free_slots,
+                    })
                     # ordena instancias por nivel desc para exibir badges consistentes
                     for insts in bid_instances.values():
                         insts.sort(key=lambda r: -r["level"])
@@ -302,90 +327,150 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
 
         # --- Planos ativos (jobs 1002) ---
         plans: list[dict] = []
-        jobs = (
+        pending_by_city: dict[tuple[str, str], list[dict]] = {}   # (ga, city) -> what the plans still build there
+        plan_of_city: dict[tuple[str, str], str] = {}
+        plan_of_ga: dict[str, str] = {}
+        jobs = list(
             Job.objects.filter(action_code=1002, status__in=ACTIVE_PLAN_STATUSES)
             .select_related("game_account", "account")
             .order_by("-created_at")
         )
+        # the last thing each plan complained about, as the "why" of a plan that is not moving
+        issues: dict[str, dict] = {}
+        if jobs:
+            recent = JobLog.objects.filter(
+                job__in=jobs, level__in=("warn", "warning", "error"), created_at__gte=timezone.now() - timedelta(hours=24),
+            ).order_by("job_id", "-created_at").values_list("job_id", "message", "created_at")
+            for job_id, message, created_at in recent:
+                issues.setdefault(str(job_id), {
+                    "text": str(message)[:220],
+                    "ago": human_span((timezone.now() - created_at).total_seconds()),
+                })
         for job in jobs:
             try:
                 inp = json.loads(job.inputs_json or "{}")
             except (ValueError, TypeError):
                 inp = {}
-            steps = inp.get("construction_plan_json") or []
-            if not steps:
+            if not inp.get("construction_plan_json"):
                 continue
             ga_id = str(job.game_account_id or "")
-            city_lookup = level_lookup.get(ga_id, {})
-            total = len(steps)
-            done = 0
-            remaining_levels = 0
-            next_steps: list[dict] = []
+            overview = board.plan_overview(inp, level_lookup.get(ga_id, {}))
+            plan_of_ga.setdefault(ga_id, str(job.pk))
             pending_steps: list[dict] = []
-            city_names: set[str] = set()
-            for idx, s in enumerate(steps):
-                cid = str(s.get("city_id") or "")
-                pos = str(s.get("building_position") or "")
-                bid = str(s.get("building_id") or s.get("building_type") or "")
-                target = _si(s.get("target_level"))
-                cname = str(s.get("city_name") or "")
-                if cname:
-                    city_names.add(cname)
-                cl = city_lookup.get(cid, {})
-                cur = _si((cl.get("_pos") or {}).get(pos)) if pos and pos in (cl.get("_pos") or {}) else _si((cl.get("_bid") or {}).get(bid))
-                if target and cur >= target:
-                    done += 1
-                else:
-                    remaining_levels += max(0, target - cur)
-                    if len(next_steps) < 4:
-                        next_steps.append({
-                            "icon": _building_icon(bid),
-                            "name": _building_name(bid),
-                            "cur": cur,
-                            "target": target,
-                        })
-                    pending_steps.append({
-                        "idx": idx,
-                        "city_name": cname or cid,
-                        "icon": _building_icon(bid),
-                        "name": _building_name(bid),
-                        "cur": cur,
-                        "target": target,
-                        "priority": bool(s.get("priority")),
-                    })
-            summary = inp.get("construction_summary") or {}
-            eta_seconds = _si(summary.get("adjusted_seconds"))
-            missing = {k: _si(v) for k, v in (summary.get("missing") or {}).items() if _si(v) > 0}
-            pct = round(done / total * 100) if total else 0
+            for entry in overview["pending"]:
+                key = (ga_id, entry["city_id"])
+                pending_by_city.setdefault(key, []).append(entry)
+                plan_of_city.setdefault(key, str(job.pk))
+                pending_steps.append({
+                    "idx": entry["idx"],
+                    "city_name": entry["city_name"],
+                    "icon": _building_icon(entry["building"]),
+                    "name": _building_name(entry["building"]),
+                    "cur": entry["cur"],
+                    "target": entry["target"],
+                    "priority": entry["priority"],
+                })
+            # what the cities of the plan are short of (the reservations follow the city, not this job of the chain)
+            missing: Counter = Counter()
+            for city_id, city in overview["cities"].items():
+                if city["pending"]:
+                    missing.update(city_shortfalls.get((ga_id, city_id), {}))
+            build_seconds = overview["build_seconds"]
+            strategy = inp.get("queue_strategy") or "eta_first"
+            next_run = job.scheduled_for
             plans.append({
                 "job_id": str(job.pk),
                 "ga_name": (job.game_account.name if job.game_account else "") or "",
                 "account": job.account.label if job.account_id else "",
-                "city_names": sorted(city_names),
-                "total": total, "done": done, "pct": pct,
-                "remaining_levels": remaining_levels,
-                "next_steps": next_steps,
+                "city_names": sorted({city["city_name"] for city in overview["cities"].values()}),
+                "cities_total": len(overview["cities"]),
+                "cities_pending": sum(1 for city in overview["cities"].values() if city["pending"]),
+                "cities_waiting": 0,        # set below, once every city has its state
+                "total": overview["total"], "done": overview["done"], "pct": overview["pct"],
+                "remaining_levels": overview["remaining_levels"],
+                "next_steps": [_step_chip(entry) for entry in overview["pending"][:4]],
                 "pending_steps": pending_steps,
                 "steps_id": f"cs-{job.pk}-steps",
                 "cities_id": f"cs-{job.pk}-cities",
                 "ga_cities": [{"id": str(c.get("id")), "name": str(c.get("name") or c.get("id"))}
                               for c in (level_lookup_cities.get(ga_id) or [])],
-                "eta_seconds": eta_seconds,
-                "eta_label": _fmt_eta(eta_seconds),
-                "strategy": inp.get("queue_strategy") or "eta_first",
-                "strategy_label": {"smart": "Balanceado", "eta_first": "Menor ETA", "fifo": "Ordem do plano"}.get(
-                    inp.get("queue_strategy") or "eta_first", inp.get("queue_strategy") or "eta_first"),
+                "eta_seconds": build_seconds,
+                "eta_label": _fmt_eta(build_seconds) if build_seconds else "",
+                "finish_at": timezone.localtime(timezone.now() + timedelta(seconds=build_seconds)) if build_seconds else None,
+                "remaining_cost": _resource_chips(overview["remaining_cost"]),
+                "strategy": strategy,
+                "strategy_label": {"smart": "Balanceado", "eta_first": "Menor ETA", "fifo": "Ordem do plano"}.get(strategy, strategy),
                 "status": job.status,
-                "missing": [{"key": k, "label": RESOURCE_META.get(k, {}).get("label", k),
-                             "icon": static(RESOURCE_META.get(k, {}).get("icon", "game/resources/icon_wood.png")),
-                             "amount": v} for k, v in missing.items()],
+                "running": job.status == "running",
+                "next_run_in": human_span((next_run - timezone.now()).total_seconds()) if next_run and next_run > timezone.now() else "",
+                "issue": issues.get(str(job.pk)),
+                "missing": _resource_chips(missing),
+                "missing_total": sum(missing.values()),
             })
 
-        for row in bottleneck_rows:
-            meta = ga_meta.get(row["ga_id"], {})
-            row["ga_name"] = meta.get("name", "")
-            row["account"] = meta.get("account", "")
-        bottleneck_rows.sort(key=lambda r: -r["shortfall"])
+        # --- Por conta: cada cidade com o seu estado (em obra, esperando recurso, na fila, ociosa) ---
+        board_accounts: list[dict] = []
+        idle_groups: list[dict] = []
+        totals = Counter()
+        for ga_id, cities in city_facts.items():
+            rows = []
+            for city in cities:
+                key = (ga_id, city["id"])
+                pending = sorted(pending_by_city.get(key, []), key=lambda entry: (not entry["priority"], entry["idx"]))
+                missing = city_shortfalls.get(key, {})
+                state = board.city_state(working=bool(city["works"]), has_pending=bool(pending), has_shortfall=bool(missing))
+                rows.append({
+                    "id": city["id"], "name": city["name"], "tradegood_icon": city["tradegood_icon"],
+                    "state": state, "state_label": board.CITY_STATE_LABELS[state],
+                    "work": city["works"][0] if city["works"] else None,
+                    "queue": [_step_chip(entry) for entry in pending[:3]],
+                    "queue_more": max(0, len(pending) - 3),
+                    "missing": _resource_chips(missing),
+                    "free_slots": city["free_slots"],
+                    "job_id": plan_of_city.get(key, ""),
+                })
+            counts = board.account_counts(rows)
+            totals.update({name: counts[name] for name in ("total", "working", "waiting", "queued", "idle")})
+            meta = ga_meta.get(ga_id, {})
+            entry = {
+                "ga_id": ga_id, "name": meta.get("name", ""), "account": meta.get("account", ""),
+                "cities": sorted(rows, key=lambda row: (board.CITY_STATE_ORDER[row["state"]], row["name"].lower())),
+                "counts": counts,
+                "job_id": plan_of_ga.get(ga_id, ""),
+                "all_idle": counts["total"] > 0 and counts["idle"] == counts["total"],
+            }
+            if entry["all_idle"]:
+                idle_groups.append(entry)
+            else:
+                board_accounts.append(entry)
+        waiting_by_job = Counter(
+            row["job_id"] for entry in board_accounts for row in entry["cities"]
+            if row["state"] == board.CITY_WAITING and row["job_id"]
+        )
+        for plan in plans:
+            plan["cities_waiting"] = waiting_by_job.get(plan["job_id"], 0)
+        board_accounts.sort(key=lambda entry: (-entry["counts"]["waiting"], entry["name"].lower()))
+        idle_groups.sort(key=lambda entry: (-entry["counts"]["total"], entry["name"].lower()))
+        # cities that are idle inside an account that does have something going on
+        idle_strays = [
+            {"ga_id": entry["ga_id"], "ga_name": entry["name"], "name": row["name"], "tradegood_icon": row["tradegood_icon"],
+             "free_slots": row["free_slots"]}
+            for entry in board_accounts for row in entry["cities"] if row["state"] == board.CITY_IDLE
+        ]
+
+        # --- Onde falta recurso: uma linha por cidade, com tudo o que falta nela ---
+        city_names = {(ga_id, city["id"]): city["name"] for ga_id, cities in city_facts.items() for city in cities}
+        bottleneck_rows = []
+        for (ga_id, city_id), missing in city_shortfalls.items():
+            meta = ga_meta.get(ga_id, {})
+            bottleneck_rows.append({
+                "ga_name": meta.get("name", ""), "account": meta.get("account", ""),
+                "city_name": city_names.get((ga_id, city_id), city_id),
+                "items": _resource_chips(missing),
+                "total": sum(missing.values()),
+                "job_id": plan_of_city.get((ga_id, city_id), ""),
+            })
+        bottleneck_rows.sort(key=lambda r: -r["total"])
 
         max_reserved = max([reserved_total[k] for k in RESOURCE_KEYS] + [1])
 
@@ -394,14 +479,21 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
             "kpi_building_now": len(building_now),
             "kpi_active_plans": len(plans),
             "kpi_next_eta": next((b["end_at"] for b in building_now if b["end_at"] > now), 0),
+            "kpi_cities": {name: totals[name] for name in ("total", "working", "waiting", "queued", "idle")},
+            "kpi_plans_waiting": sum(1 for plan in plans if plan["missing_total"]),
             "reserved_total": [{"key": k, "label": RESOURCE_META[k]["label"],
                                 "icon": static(RESOURCE_META[k]["icon"]),
                                 "reserved": reserved_total[k], "shortfall": shortfall_total[k],
+                                "reserved_text": compact(reserved_total[k]), "shortfall_text": compact(shortfall_total[k]),
                                 "pct": round(reserved_total[k] / max_reserved * 100)}
                                for k in RESOURCE_KEYS],
             "kpi_shortfall_total": sum(shortfall_total.values()),
+            "kpi_shortfall_text": compact(sum(shortfall_total.values())),
             "building_now": building_now,
             "plans": plans,
+            "board_accounts": board_accounts,
+            "idle_groups": idle_groups,
+            "idle_strays": idle_strays,
             "bottlenecks": bottleneck_rows,
             "level_map": level_map,
             "level_columns": level_columns,
