@@ -77,11 +77,14 @@
     .cb-step-city span { margin-left: auto; font-size: .64rem; color: var(--ik-muted); }
     .cb-step { display: flex; align-items: center; gap: .45rem; padding: .3rem .5rem; border: 1px solid var(--ik-line); border-radius: 10px; background: rgba(255, 255, 255, .8); }
     .cb-step.on { border-color: var(--ik-sea); box-shadow: 0 0 0 1px var(--ik-sea) inset; }
-    .cb-step-badge { display: inline-flex; align-items: center; gap: .2rem; padding: .05rem .15rem .05rem .45rem; border-radius: 999px; font-size: .66rem; color: #fff; background: var(--ik-sea); white-space: nowrap; }
-    .cb-step-badge button { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; color: #fff; background: rgba(255, 255, 255, .22); cursor: pointer; }
+    .cb-step-badge { display: inline-flex; align-items: center; gap: .2rem; padding: .1rem .5rem; border-radius: 999px; font-size: .66rem; color: #fff; background: var(--ik-sea); white-space: nowrap; }
     .cb-step-level { height: 24px; padding: 0 .3rem; border: 1px solid var(--ik-line); border-radius: 7px; font-size: .68rem; font-family: ui-monospace, monospace; color: var(--ik-ink); background: var(--ik-paper); }
     .cb-step-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex-shrink: 0; border-radius: 7px; border: 1px solid rgba(79, 134, 185, .45); font-size: .7rem; color: var(--ik-sea); background: transparent; cursor: pointer; }
     .cb-step-btn:hover { color: #fff; background: var(--ik-sea); }
+    .cb-step-btn.active { color: #fff; background: var(--ik-sea); border-color: var(--ik-sea); }
+    .cb-step-btn.off { position: relative; border-color: var(--ik-line); color: var(--ik-muted); }
+    .cb-step-btn.off .bi-slash-lg { position: absolute; font-size: .95rem; }
+    .cb-step-btn.off:hover { color: #fff; background: var(--ik-muted); border-color: var(--ik-muted); }
     .cb-step-btn.cut { border-color: rgba(185, 79, 79, .45); color: #b94f4f; }
     .cb-step-btn.cut:hover { color: #fff; background: #b94f4f; }
     .cb-step-btn:disabled { opacity: .45; cursor: default; }
@@ -377,14 +380,15 @@
                 <template x-if="st.p_order">
                   <span class="cb-step-badge" :title="'Nesta cidade só este prédio é construído até o nível ' + st.p_level">
                     <b x-text="st.p_order + 'ª'"></b> até <span x-text="st.p_level"></span>
-                    <button type="button" @click="unprioritize(st)" title="Tirar a prioridade"><i class="bi bi-x"></i></button>
                   </span>
                 </template>
                 <select class="cb-step-level" x-model.number="st.lv" title="Nível">
                   <template x-for="l in levels(st)" :key="l"><option :value="l" :selected="l === st.lv" x-text="'Nv ' + l"></option></template>
                 </select>
-                <button type="button" class="cb-step-btn" :disabled="busy" @click="prioritize(st)"
-                        :title="'Priorizar: nesta cidade, só ' + st.name + ' até o nível ' + st.lv"><i class="bi bi-star-fill"></i></button>
+                <button type="button" class="cb-step-btn" :class="st.p_order ? 'active' : ''" :disabled="busy" @click="prioritize(st)"
+                        :title="(st.p_order ? 'Mudar a prioridade: ' : 'Priorizar: nesta cidade, ') + 'só ' + st.name + ' até o nível ' + st.lv"><i class="bi bi-star-fill"></i></button>
+                <button type="button" class="cb-step-btn off" x-show="st.p_order" :disabled="busy" @click="unprioritize(st)"
+                        title="Tirar a prioridade desta etapa"><i class="bi bi-star"></i><i class="bi bi-slash-lg"></i></button>
                 <button type="button" class="cb-step-btn cut" :disabled="busy" @click="cut(st)"
                         :title="st.lv === st.target ? 'Tirar do plano o nível ' + st.lv : 'Tirar do plano do nível ' + st.lv + ' ao ' + st.target"><i class="bi bi-scissors"></i></button>
               </div>
@@ -393,7 +397,7 @@
               </div>
             </template>
           </div>
-          <p class="mt-2 text-[10px] text-muted"><i class="bi bi-star-fill"></i> prioriza até o nível escolhido (1ª, 2ª... é a ordem dentro da cidade) · <i class="bi bi-scissors"></i> tira do plano o nível escolhido e os acima · vale a partir do próximo ciclo</p>
+          <p class="mt-2 text-[10px] text-muted"><i class="bi bi-star-fill"></i> prioriza até o nível escolhido (1ª, 2ª... é a ordem dentro da cidade) · estrela riscada tira a prioridade · <i class="bi bi-scissors"></i> tira do plano o nível escolhido e os acima · vale a partir do próximo ciclo</p>
         </div>
 
         {# Enviar recursos #}
