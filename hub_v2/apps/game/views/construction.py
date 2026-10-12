@@ -195,7 +195,6 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                 continue
             reserved_total[res] += _si(r.reserved_local_amount)
             shortfall_total[res] += _si(r.shortfall_amount)
-        city_shortfalls = board.shortfalls_by_city(reservations)
 
         # --- Snapshot: em obra agora + lookup de niveis ---
         building_now: list[dict] = []
@@ -266,6 +265,7 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                         "tradegood_icon": static(TRADEGOOD_ICON.get(tg, TRADEGOOD_ICON[0])),
                         "works": works,
                         "free_slots": free_slots,
+                        "stock": {key: _si(city.get(key)) for key in RESOURCE_KEYS},
                     })
                     # ordena instancias por nivel desc para exibir badges consistentes
                     for insts in bid_instances.values():
@@ -329,6 +329,7 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
         plans: list[dict] = []
         pending_by_city: dict[tuple[str, str], list[dict]] = {}   # (ga, city) -> what the plans still build there
         plan_of_city: dict[tuple[str, str], str] = {}
+        in_plan_order: set[tuple[str, str]] = set()               # cities whose plan builds strictly in its own order
         plan_of_ga: dict[str, str] = {}
         jobs = list(
             Job.objects.filter(action_code=1002, status__in=ACTIVE_PLAN_STATUSES)
@@ -361,6 +362,8 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                 key = (ga_id, entry["city_id"])
                 pending_by_city.setdefault(key, []).append(entry)
                 plan_of_city.setdefault(key, str(job.pk))
+                if (inp.get("queue_strategy") or "eta_first") == "fifo":
+                    in_plan_order.add(key)
                 pending_steps.append({
                     "idx": entry["idx"],
                     "city_name": entry["city_name"],
@@ -370,11 +373,6 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                     "target": entry["target"],
                     "priority": entry["priority"],
                 })
-            # what the cities of the plan are short of (the reservations follow the city, not this job of the chain)
-            missing: Counter = Counter()
-            for city_id, city in overview["cities"].items():
-                if city["pending"]:
-                    missing.update(city_shortfalls.get((ga_id, city_id), {}))
             build_seconds = overview["build_seconds"]
             strategy = inp.get("queue_strategy") or "eta_first"
             next_run = job.scheduled_for
@@ -404,8 +402,8 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                 "running": job.status == "running",
                 "next_run_in": human_span((next_run - timezone.now()).total_seconds()) if next_run and next_run > timezone.now() else "",
                 "issue": issues.get(str(job.pk)),
-                "missing": _resource_chips(missing),
-                "missing_total": sum(missing.values()),
+                "missing": [],              # what its stopped cities need to start; set below
+                "missing_total": 0,
             })
 
         # --- Por conta: cada cidade com o seu estado (em obra, esperando recurso, na fila, ociosa) ---
@@ -417,15 +415,26 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
             for city in cities:
                 key = (ga_id, city["id"])
                 pending = sorted(pending_by_city.get(key, []), key=lambda entry: (not entry["priority"], entry["idx"]))
-                missing = city_shortfalls.get(key, {})
+                # N-103: "falta" is what the city needs to START its next building, and only when
+                # it is not building. (The reservations add up the next level of every pending
+                # building, each against the whole stock: a number that answers no question.)
+                # a plan in "ordem do plano" waits for its first step; the others start whatever fits first
+                candidates = pending[:1] if key in in_plan_order else pending
+                gap = board.cheapest_start(candidates, city["stock"]) if pending and not city["works"] else None
+                missing = gap["missing"] if gap else {}
                 state = board.city_state(working=bool(city["works"]), has_pending=bool(pending), has_shortfall=bool(missing))
+                next_step = None
+                if gap:
+                    next_step = {**_step_chip(gap["entry"]), "target": gap["entry"]["cur"] + 1}
                 rows.append({
                     "id": city["id"], "name": city["name"], "tradegood_icon": city["tradegood_icon"],
                     "state": state, "state_label": board.CITY_STATE_LABELS[state],
                     "work": city["works"][0] if city["works"] else None,
+                    "next": next_step,
                     "queue": [_step_chip(entry) for entry in pending[:3]],
                     "queue_more": max(0, len(pending) - 3),
                     "missing": _resource_chips(missing),
+                    "missing_raw": missing,
                     "free_slots": city["free_slots"],
                     "job_id": plan_of_city.get(key, ""),
                 })
@@ -443,12 +452,21 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                 idle_groups.append(entry)
             else:
                 board_accounts.append(entry)
-        waiting_by_job = Counter(
-            row["job_id"] for entry in board_accounts for row in entry["cities"]
-            if row["state"] == board.CITY_WAITING and row["job_id"]
-        )
+        waiting_rows = [
+            (entry, row) for entry in board_accounts for row in entry["cities"] if row["state"] == board.CITY_WAITING
+        ]
+        waiting_by_job = Counter(row["job_id"] for _entry, row in waiting_rows if row["job_id"])
+        missing_by_job: dict[str, Counter] = {}
+        missing_all: Counter = Counter()
+        for _entry, row in waiting_rows:
+            missing_all.update(row["missing_raw"])
+            if row["job_id"]:
+                missing_by_job.setdefault(row["job_id"], Counter()).update(row["missing_raw"])
         for plan in plans:
             plan["cities_waiting"] = waiting_by_job.get(plan["job_id"], 0)
+            plan_missing = missing_by_job.get(plan["job_id"], {})
+            plan["missing"] = _resource_chips(plan_missing)
+            plan["missing_total"] = sum(plan_missing.values())
         board_accounts.sort(key=lambda entry: (-entry["counts"]["waiting"], entry["name"].lower()))
         idle_groups.sort(key=lambda entry: (-entry["counts"]["total"], entry["name"].lower()))
         # cities that are idle inside an account that does have something going on
@@ -458,18 +476,15 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
             for entry in board_accounts for row in entry["cities"] if row["state"] == board.CITY_IDLE
         ]
 
-        # --- Onde falta recurso: uma linha por cidade, com tudo o que falta nela ---
-        city_names = {(ga_id, city["id"]): city["name"] for ga_id, cities in city_facts.items() for city in cities}
-        bottleneck_rows = []
-        for (ga_id, city_id), missing in city_shortfalls.items():
-            meta = ga_meta.get(ga_id, {})
-            bottleneck_rows.append({
-                "ga_name": meta.get("name", ""), "account": meta.get("account", ""),
-                "city_name": city_names.get((ga_id, city_id), city_id),
-                "items": _resource_chips(missing),
-                "total": sum(missing.values()),
-                "job_id": plan_of_city.get((ga_id, city_id), ""),
-            })
+        # --- Cidades paradas por recurso: o que cada uma precisa para comecar a proxima obra ---
+        bottleneck_rows = [
+            {
+                "ga_name": entry["name"], "account": entry["account"], "city_name": row["name"],
+                "next": row["next"], "items": row["missing"], "total": sum(row["missing_raw"].values()),
+                "job_id": row["job_id"],
+            }
+            for entry, row in waiting_rows
+        ]
         bottleneck_rows.sort(key=lambda r: -r["total"])
 
         max_reserved = max([reserved_total[k] for k in RESOURCE_KEYS] + [1])
@@ -487,8 +502,9 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                                 "reserved_text": compact(reserved_total[k]), "shortfall_text": compact(shortfall_total[k]),
                                 "pct": round(reserved_total[k] / max_reserved * 100)}
                                for k in RESOURCE_KEYS],
-            "kpi_shortfall_total": sum(shortfall_total.values()),
-            "kpi_shortfall_text": compact(sum(shortfall_total.values())),
+            "kpi_shortfall_total": sum(missing_all.values()),
+            "kpi_shortfall_text": compact(sum(missing_all.values())),
+            "kpi_missing": _resource_chips(missing_all),
             "building_now": building_now,
             "plans": plans,
             "board_accounts": board_accounts,

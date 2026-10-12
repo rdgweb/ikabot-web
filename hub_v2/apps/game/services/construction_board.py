@@ -16,7 +16,7 @@ RESOURCE_ALIASES = {"glas": "crystal", "glass": "crystal", "resource": "wood"}
 CITY_WORKING, CITY_WAITING, CITY_QUEUED, CITY_IDLE = "working", "waiting", "queued", "idle"
 CITY_STATE_LABELS = {
     CITY_WORKING: "Em obra",
-    CITY_WAITING: "Esperando recurso",
+    CITY_WAITING: "Parada por recurso",
     CITY_QUEUED: "Na fila do plano",
     CITY_IDLE: "Ociosa",
 }
@@ -58,6 +58,38 @@ def step_remaining(preview_step: dict | None, level_now: int) -> tuple[dict[str,
     return {name: cost[name] for name in RESOURCE_KEYS if cost[name] > 0}, seconds
 
 
+def next_level_cost(preview_step: dict | None, level_now: int) -> dict[str, int]:
+    """Cost of the one level a step builds next."""
+    for row in (preview_step or {}).get("level_rows") or []:
+        if isinstance(row, dict) and _si(row.get("level")) == level_now + 1:
+            costs = {resource_key(name): max(0, _si(amount)) for name, amount in (row.get("costs") or {}).items()}
+            return {name: costs[name] for name in RESOURCE_KEYS if costs.get(name, 0) > 0}
+    return {}
+
+
+def cheapest_start(pending: list[dict], stock: dict | None) -> dict | None:
+    """What a city needs to start its next building: the pending step closest to fitting the stock.
+
+    {"entry", "missing": {resource: amount}, "total"}; total 0 means it can start now. None
+    when no pending step has a known cost. A city builds one thing at a time, so this is
+    the number that says whether it is stopped by a resource; adding up the next level
+    of every pending building (what the reservations hold) says nothing.
+    """
+    stock = stock or {}
+    best = None
+    for entry in pending:
+        cost = entry.get("next_cost") or {}
+        if not cost:
+            continue
+        missing = {name: cost[name] - _si(stock.get(name)) for name in RESOURCE_KEYS if cost.get(name, 0) > _si(stock.get(name))}
+        total = sum(missing.values())
+        if best is None or total < best["total"]:
+            best = {"entry": entry, "missing": missing, "total": total}
+        if total == 0:
+            break
+    return best
+
+
 def plan_overview(inputs: dict, levels_by_city: dict | None) -> dict:
     """Where a construction plan stands, from its inputs and the levels in the snapshot.
 
@@ -97,6 +129,7 @@ def plan_overview(inputs: dict, levels_by_city: dict | None) -> dict:
             "cur": level, "target": target, "priority": bool(step.get("priority")),
             "new": str(step.get("mode") or "") == "new" and level == 0,
             "cost": cost, "seconds": seconds,
+            "next_cost": next_level_cost(preview, level),
         }
         pending.append(entry)
         remaining_levels += max(0, target - level)
@@ -126,18 +159,6 @@ def city_state(*, working: bool, has_pending: bool, has_shortfall: bool) -> str:
     if has_pending:
         return CITY_WAITING if has_shortfall else CITY_QUEUED
     return CITY_IDLE
-
-
-def shortfalls_by_city(reservations) -> dict[tuple[str, str], dict[str, int]]:
-    """{(game account id, city id): {resource: what is missing}} from the active reservations."""
-    missing: dict[tuple[str, str], Counter] = {}
-    for reservation in reservations:
-        amount = _si(reservation.shortfall_amount)
-        if amount <= 0:
-            continue
-        key = (str(reservation.game_account_id), str(reservation.city_id))
-        missing.setdefault(key, Counter())[resource_key(reservation.resource)] += amount
-    return {key: {name: bucket[name] for name in RESOURCE_KEYS if bucket[name] > 0} for key, bucket in missing.items()}
 
 
 def account_counts(cities: list[dict]) -> dict:

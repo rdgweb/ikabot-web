@@ -81,6 +81,24 @@ class PlanOverviewTests(TestCase):
         overview = board.plan_overview(self._inputs(), {})
         self.assertEqual((overview["done"], overview["remaining_levels"]), (0, 21))
 
+    def test_what_a_city_needs_to_start_is_the_step_closest_to_fitting_the_stock(self):
+        pending = [
+            {"building": "temple", "next_cost": {"wood": 900, "marble": 400}},
+            {"building": "academy", "next_cost": {"wood": 300, "crystal": 50}},
+            {"building": "unknown", "next_cost": {}},
+        ]
+        gap = board.cheapest_start(pending, {"wood": 250, "marble": 1000})
+        self.assertEqual((gap["entry"]["building"], gap["missing"], gap["total"]), ("academy", {"wood": 50, "crystal": 50}, 100))
+        # the reservations would add both up: 650 + 50 wood, as if the city built everything at once
+        ready = board.cheapest_start(pending, {"wood": 900, "marble": 400})
+        self.assertEqual((ready["entry"]["building"], ready["total"]), ("temple", 0))
+        self.assertIsNone(board.cheapest_start([{"building": "x", "next_cost": {}}], {"wood": 1}))
+        self.assertIsNone(board.cheapest_start([], {}))
+
+    def test_the_next_level_has_its_own_cost(self):
+        self.assertEqual(board.next_level_cost({"level_rows": _rows(5, 7)}, 5), {"wood": 600, "crystal": 60})
+        self.assertEqual(board.next_level_cost({"level_rows": _rows(5, 7)}, 7), {})
+
     def test_city_states(self):
         self.assertEqual(board.city_state(working=True, has_pending=True, has_shortfall=True), board.CITY_WORKING)
         self.assertEqual(board.city_state(working=False, has_pending=True, has_shortfall=True), board.CITY_WAITING)
@@ -105,7 +123,9 @@ class ConstructionPanelPageTests(TestCase):
                 {"position": 5, "building": "empty", "level": 0},
             ]},
             {"id": "2", "name": "Beta", "tradegood": 2, "buildings": [{"position": 3, "building": "academy", "level": 1, "is_upgrading": False}]},
-            {"id": "3", "name": "Gama", "tradegood": 3, "buildings": [{"position": 3, "building": "academy", "level": 1, "is_upgrading": False}]},
+            # Gama has what the next level asks for; Beta has nothing
+            {"id": "3", "name": "Gama", "tradegood": 3, "wood": 5000, "crystal": 500,
+             "buildings": [{"position": 3, "building": "academy", "level": 1, "is_upgrading": False}]},
             {"id": "4", "name": "Delta", "tradegood": 4, "buildings": [{"position": 0, "building": "townHall", "level": 3, "is_upgrading": False}]},
         ])
         AccountSnapshot.objects.create(account=self.account, game_account=self.lazy, base_snapshot={}, military={}, cities=[
@@ -153,7 +173,11 @@ class ConstructionPanelPageTests(TestCase):
         self.assertEqual([city["name"] for city in accounts[0]["cities"]], ["Beta", "Alfa", "Gama", "Delta"])   # what needs attention first
         self.assertEqual((cities["Alfa"]["work"]["name"], cities["Alfa"]["work"]["to_level"]), ("Academia", 6))
         self.assertEqual([step["name"] for step in cities["Alfa"]["queue"]], ["Academia", "Armazém"])
-        self.assertEqual([(item["key"], item["amount"], item["text"]) for item in cities["Beta"]["missing"]], [("crystal", 182527, "182,5 mil")])
+        # "falta" is what the city needs to start its next building, not the reservation of the whole plan
+        self.assertEqual([(item["key"], item["amount"]) for item in cities["Beta"]["missing"]], [("wood", 200), ("crystal", 20)])
+        self.assertEqual((cities["Beta"]["next"]["name"], cities["Beta"]["next"]["cur"], cities["Beta"]["next"]["target"]), ("Academia", 1, 2))
+        self.assertEqual((cities["Gama"]["missing"], cities["Gama"]["next"]["target"]), ([], 2))
+        self.assertEqual(cities["Alfa"]["missing"], [])                         # a city that is building is not short of anything
         self.assertEqual(cities["Alfa"]["free_slots"], 1)
         self.assertEqual(response.context["kpi_cities"], {"total": 5, "working": 1, "waiting": 1, "queued": 1, "idle": 2})
 
@@ -163,7 +187,7 @@ class ConstructionPanelPageTests(TestCase):
         groups = response.context["idle_groups"]
         self.assertEqual([(group["name"], group["counts"]["total"], group["counts"]["free_slots"]) for group in groups], [("Parado", 1, 1)])
         self.assertEqual([city["name"] for city in response.context["idle_strays"]], ["Delta"])
-        self.assertContains(response, "1 cidade ociosa")
+        self.assertContains(response, "1 cidade sem obra e sem plano")
         self.assertContains(response, f'{reverse("jobs:job-form")}?ga={self.lazy.pk}&action=1002')
         self.assertContains(response, "Criar plano de construção")
 
@@ -175,7 +199,7 @@ class ConstructionPanelPageTests(TestCase):
         self.assertEqual({item["key"]: item["amount"] for item in plan["remaining_cost"]},
                          {"wood": 100 * (6 + 7 + 3 + 4 + 2 + 3 + 2), "crystal": 10 * (6 + 7 + 3 + 4 + 2 + 3 + 2)})
         self.assertEqual(plan["eta_seconds"], 40000 * 5)                      # Beta is the slowest city
-        self.assertEqual([(item["key"], item["amount"]) for item in plan["missing"]], [("crystal", 182527)])
+        self.assertEqual([(item["key"], item["amount"]) for item in plan["missing"]], [("wood", 200), ("crystal", 20)])
         self.assertEqual(plan["issue"]["text"], "Nenhuma cidade doadora com sobra util para Beta")
         self.assertEqual(plan["next_run_in"], "19 min")
         self.assertContains(response, "Último aviso do plano")
@@ -189,7 +213,9 @@ class ConstructionPanelPageTests(TestCase):
 
         rows = response.context["bottlenecks"]
         self.assertEqual([(row["city_name"], row["ga_name"], row["total"], row["job_id"]) for row in rows],
-                         [("Beta", "Obreiro", 182527, str(self.plan.pk))])
+                         [("Beta", "Obreiro", 220, str(self.plan.pk))])
+        self.assertContains(response, "Falta para começar")
+        self.assertNotContains(response, "182")                                 # the reservation total is not what the page shows
         crystal = next(item for item in response.context["reserved_total"] if item["key"] == "crystal")
         self.assertEqual((crystal["reserved"], crystal["shortfall"]), (500, 182527))   # used to be dropped as "glas"
 

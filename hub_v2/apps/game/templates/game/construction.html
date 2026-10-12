@@ -13,10 +13,35 @@
   {# N-103: the hub CSS is precompiled, so the layout of the new blocks lives here #}
   <style>
     .cb-section { margin-bottom: 2rem; }
-    .cb-h2 { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 0 0 .25rem; font-size: 1.1rem; font-weight: 700; color: var(--ik-ink); }
+    .cb-h2 { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 0 0 .7rem; font-size: 1.1rem; font-weight: 700; color: var(--ik-ink); }
     .cb-h2 small { font-size: .72rem; font-weight: 500; color: var(--ik-muted); }
-    .cb-lead { margin: 0 0 .8rem; font-size: .8rem; color: var(--ik-muted); }
-    .cb-num { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; font-size: .75rem; font-weight: 700; color: #fff; background: var(--ik-sea); }
+    .cb-acc { margin-bottom: 1.1rem; }
+    .cb-acc-head { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; margin-bottom: .5rem; }
+    .cb-acc-head h3 { margin: 0; font-size: .95rem; font-weight: 700; color: var(--ik-ink); }
+    .cb-acc-head h3 small { font-size: .74rem; font-weight: 400; color: var(--ik-muted); }
+    .cb-acc-head .cb-right { margin-left: auto; display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+    .cb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(245px, 1fr)); gap: .7rem; }
+    .cb-cc { display: flex; flex-direction: column; gap: .55rem; padding: .7rem .8rem; border: 1px solid var(--ik-line); border-top-width: 4px; border-radius: 16px; background: var(--ik-paper); min-width: 0; }
+    .cb-cc.working { border-top-color: #4f86b9; }
+    .cb-cc.waiting { border-top-color: #c9662e; background: rgba(201, 102, 46, .05); }
+    .cb-cc.queued { border-top-color: #c9a23e; }
+    .cb-cc.idle { border-top-color: #a9a294; background: rgba(120, 113, 100, .06); }
+    .cb-cc-top { display: flex; align-items: center; gap: .4rem; min-width: 0; }
+    .cb-cc-top img { width: 16px; height: 16px; object-fit: contain; flex-shrink: 0; }
+    .cb-cc-top b { flex: 1; min-width: 0; font-size: .84rem; color: var(--ik-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cb-cc-main { display: flex; align-items: center; gap: .65rem; min-width: 0; }
+    .cb-cc-icon { width: 52px; height: 52px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 14px; border: 1px solid var(--ik-line); background: linear-gradient(180deg, #fffdf8, #f4ecda); }
+    .cb-cc-icon img { max-width: 40px; max-height: 40px; object-fit: contain; }
+    .cb-cc-main strong { display: block; font-size: .86rem; color: var(--ik-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cb-lv { display: inline-flex; align-items: center; gap: .3rem; margin-top: .2rem; font-family: ui-monospace, monospace; font-size: .74rem; }
+    .cb-lv span { padding: .05rem .4rem; border-radius: 6px; background: rgba(0, 0, 0, .06); color: var(--ik-ink); }
+    .cb-lv span.to { color: #fff; font-weight: 700; background: var(--ik-sea); }
+    .cb-cc-timer { display: flex; align-items: center; justify-content: space-between; padding: .35rem .6rem; border-radius: 10px; background: rgba(79, 134, 185, .09); font-size: .7rem; font-weight: 600; color: #3d74a6; }
+    .cb-cc-timer b { font-family: ui-monospace, monospace; font-size: .86rem; color: var(--ik-ink); }
+    .cb-cc-miss { padding: .4rem .6rem; border-radius: 10px; background: rgba(201, 102, 46, .1); }
+    .cb-cc-miss > span { display: block; margin-bottom: .2rem; font-size: .66rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #b3521f; }
+    .cb-cc-foot { font-size: .74rem; color: var(--ik-muted); }
+    .cb-cc-queue { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .35rem; font-size: .7rem; color: var(--ik-muted); }
     .cb-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: .75rem; margin-bottom: .9rem; }
     .cb-tile { border: 1px solid var(--ik-line); border-radius: 18px; padding: .8rem .9rem; background: var(--ik-paper); border-left-width: 4px; min-width: 0; }
     .cb-tile b { display: block; font-size: 1.6rem; font-weight: 700; line-height: 1.15; color: var(--ik-ink); white-space: nowrap; }
@@ -30,10 +55,6 @@
     .cb-working { background: #4f86b9; } .cb-waiting { background: #c9662e; } .cb-queued { background: #c9a23e; } .cb-idle { background: #a9a294; }
     .cb-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: .9rem; }
     .cb-card { border: 1px solid var(--ik-line); border-radius: 18px; background: var(--ik-paper); min-width: 0; overflow: hidden; }
-    .cb-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; padding: .7rem .9rem; border-bottom: 1px solid var(--ik-line); }
-    .cb-card-head h3 { margin: 0; font-size: .95rem; font-weight: 700; color: var(--ik-ink); }
-    .cb-card-head h3 small { font-size: .74rem; font-weight: 400; color: var(--ik-muted); }
-    .cb-card-head .cb-right { margin-left: auto; display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
     .cb-pill { display: inline-flex; align-items: center; gap: .3rem; padding: .12rem .55rem; border-radius: 999px; font-size: .7rem; font-weight: 600; white-space: nowrap; }
     .cb-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
     .cb-pill.working { color: #3d74a6; background: rgba(79, 134, 185, .13); }
@@ -41,20 +62,11 @@
     .cb-pill.queued { color: #8f7016; background: rgba(201, 162, 62, .18); }
     .cb-pill.idle { color: #6f6a5f; background: rgba(120, 113, 100, .14); }
     .cb-pill.plain::before { display: none; }
-    .cb-city { display: grid; grid-template-columns: minmax(130px, 210px) 150px minmax(0, 1fr) auto; gap: .3rem .7rem; align-items: center; padding: .5rem .9rem; border-top: 1px solid var(--ik-line); font-size: .8rem; }
-    .cb-city:first-child { border-top: 0; }
-    .cb-city > .cb-pill { justify-self: start; }
-    .cb-city-name { display: flex; align-items: center; gap: .4rem; min-width: 0; font-weight: 600; color: var(--ik-ink); }
-    .cb-city-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .cb-city-name img, .cb-chip img, .cb-res img { width: 16px; height: 16px; object-fit: contain; flex-shrink: 0; }
-    .cb-what { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .45rem; color: var(--ik-muted); }
-    .cb-what strong { color: var(--ik-ink); font-weight: 600; }
+    .cb-chip img, .cb-res img { width: 16px; height: 16px; object-fit: contain; flex-shrink: 0; }
     .cb-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .5rem; border: 1px solid var(--ik-line); border-radius: 999px; font-size: .72rem; color: var(--ik-ink); background: rgba(255, 255, 255, .6); white-space: nowrap; }
     .cb-chip code { font-family: ui-monospace, monospace; font-size: .7rem; color: var(--ik-muted); background: none; padding: 0; }
     .cb-res { display: inline-flex; align-items: center; gap: .25rem; font-size: .74rem; font-weight: 600; color: var(--ik-ink); white-space: nowrap; }
     .cb-res.miss { color: #b3402f; }
-    .cb-when { text-align: right; font-family: ui-monospace, monospace; font-size: .8rem; font-weight: 700; color: var(--ik-ink); white-space: nowrap; }
-    .cb-when small { display: block; font-family: inherit; font-size: .66rem; font-weight: 400; color: var(--ik-muted); }
     .cb-empty { border: 1px dashed var(--ik-line); border-radius: 18px; padding: 1.4rem; text-align: center; font-size: .85rem; color: var(--ik-muted); }
     .cb-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: .7rem; }
     .cb-note { border: 1px solid var(--ik-line); border-left-width: 4px; border-radius: 14px; padding: .65rem .8rem; background: var(--ik-paper); min-width: 0; }
@@ -72,8 +84,6 @@
     .cb-issue i { color: #b3521f; }
     @media (max-width: 700px) {
       .cb-cards { grid-template-columns: 1fr; }
-      .cb-city { grid-template-columns: 1fr auto; }
-      .cb-city .cb-what { grid-column: 1 / -1; }
     }
   </style>
 
@@ -81,7 +91,7 @@
   <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
     <div>
       <h1 class="text-2xl font-bold text-ink">Construções</h1>
-      <p class="mt-1 text-sm text-muted">O que está em obra, o que está parado e por quê, e o que vem depois — em todas as contas</p>
+      <p class="mt-1 text-sm text-muted">Obras, cidades paradas e planos de todas as contas</p>
     </div>
     <a href="{% url 'jobs:job-create' %}?action=1002"
        class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90"
@@ -99,14 +109,14 @@
         <em>{% if kpi_next_eta %}próxima conclusão em <strong class="font-mono" x-text="countdown({{ kpi_next_eta }})"></strong>{% else %}nenhuma obra em andamento{% endif %}</em>
       </div>
       <div class="cb-tile" style="border-left-color: #c9662e;">
-        <span style="color: #b3521f;">Esperando recurso</span>
+        <span style="color: #b3521f;">Paradas por recurso</span>
         <b>{{ kpi_cities.waiting }} <small>cidade{{ kpi_cities.waiting|pluralize }}</small></b>
-        <em>{% if kpi_shortfall_total %}faltam {{ kpi_shortfall_text }} para os planos{% else %}nenhum recurso em falta{% endif %}</em>
+        <em>{% if kpi_missing %}para começar faltam {% for item in kpi_missing %}<span class="cb-res miss" title="{{ item.label }}" style="display: inline-flex;"><img src="{{ item.icon }}" alt="{{ item.label }}">{{ item.text }}</span> {% endfor %}{% else %}nenhuma parada por recurso{% endif %}</em>
       </div>
       <div class="cb-tile" style="border-left-color: #c9a23e;">
         <span style="color: #8f7016;">Na fila do plano</span>
         <b>{{ kpi_cities.queued }} <small>cidade{{ kpi_cities.queued|pluralize }}</small></b>
-        <em>começam no próximo ciclo do plano</em>
+        <em>têm recurso, começam no próximo ciclo</em>
       </div>
       <div class="cb-tile" style="border-left-color: #a9a294;{% if kpi_cities.idle %} background: rgba(120, 113, 100, .08);{% endif %}">
         <span style="color: #6f6a5f;">Ociosas</span>
@@ -116,7 +126,7 @@
       <div class="cb-tile" style="border-left-color: #5f8c4e;">
         <span style="color: var(--ik-good);">Planos ativos</span>
         <b>{{ kpi_active_plans }}</b>
-        <em>{% if kpi_plans_waiting %}{{ kpi_plans_waiting }} com recurso em falta{% else %}nenhum com recurso em falta{% endif %}</em>
+        <em>{% if kpi_plans_waiting %}{{ kpi_plans_waiting }} com cidade parada por recurso{% else %}nenhum com cidade parada{% endif %}</em>
       </div>
     </div>
     {% if kpi_cities.total %}
@@ -128,78 +138,107 @@
     </div>
     <div class="cb-legend">
       <span><i class="cb-working"></i>{{ kpi_cities.working }} em obra</span>
-      <span><i class="cb-waiting"></i>{{ kpi_cities.waiting }} esperando recurso</span>
+      <span><i class="cb-waiting"></i>{{ kpi_cities.waiting }} paradas por recurso</span>
       <span><i class="cb-queued"></i>{{ kpi_cities.queued }} na fila do plano</span>
       <span><i class="cb-idle"></i>{{ kpi_cities.idle }} ociosas</span>
     </div>
     {% endif %}
   </section>
 
-  {# ===== 1. O que está acontecendo: cada cidade, por conta ===== #}
+  {# ===== Cidades: um cartão por cidade, por conta ===== #}
   <section class="cb-section" id="cb-now">
-    <h2 class="cb-h2"><span class="cb-num">1</span> O que está acontecendo</h2>
-    <p class="cb-lead">Cada cidade das contas que têm obra ou plano: o que está construindo, o que vem depois e o que a segura.</p>
-    {% if board_accounts %}
-    <div class="cb-cards" style="grid-template-columns: 1fr;">
-      {% for acc in board_accounts %}
-      <div class="cb-card">
-        <div class="cb-card-head">
-          <h3>{{ acc.name }} <small>· {{ acc.account }}</small></h3>
-          <div class="cb-right">
-            {% if acc.counts.working %}<span class="cb-pill working">{{ acc.counts.working }} em obra</span>{% endif %}
-            {% if acc.counts.waiting %}<span class="cb-pill waiting">{{ acc.counts.waiting }} esperando recurso</span>{% endif %}
-            {% if acc.counts.queued %}<span class="cb-pill queued">{{ acc.counts.queued }} na fila</span>{% endif %}
-            {% if acc.counts.idle %}<span class="cb-pill idle">{{ acc.counts.idle }} ociosa{{ acc.counts.idle|pluralize }}</span>{% endif %}
-            {% if acc.job_id %}<a class="cb-btn ghost" href="{% url 'jobs:job-detail' acc.job_id %}">Ver plano <i class="bi bi-arrow-right"></i></a>{% endif %}
-          </div>
+    <h2 class="cb-h2"><i class="bi bi-buildings" style="color: var(--ik-sea);"></i> Cidades</h2>
+    {% for acc in board_accounts %}
+    <div class="cb-acc">
+      <div class="cb-acc-head">
+        <h3>{{ acc.name }} <small>· {{ acc.account }}</small></h3>
+        <div class="cb-right">
+          {% if acc.counts.working %}<span class="cb-pill working">{{ acc.counts.working }} em obra</span>{% endif %}
+          {% if acc.counts.waiting %}<span class="cb-pill waiting">{{ acc.counts.waiting }} parada{{ acc.counts.waiting|pluralize }} por recurso</span>{% endif %}
+          {% if acc.counts.queued %}<span class="cb-pill queued">{{ acc.counts.queued }} na fila</span>{% endif %}
+          {% if acc.counts.idle %}<span class="cb-pill idle">{{ acc.counts.idle }} ociosa{{ acc.counts.idle|pluralize }}</span>{% endif %}
+          {% if acc.job_id %}<a class="cb-btn ghost" href="{% url 'jobs:job-detail' acc.job_id %}">Ver plano <i class="bi bi-arrow-right"></i></a>{% endif %}
         </div>
+      </div>
+      <div class="cb-grid">
         {% for city in acc.cities %}
-        <div class="cb-city">
-          <div class="cb-city-name"><img src="{{ city.tradegood_icon }}" alt=""><span title="{{ city.name }}">{{ city.name }}</span></div>
-          <span class="cb-pill {{ city.state }}">{{ city.state_label }}</span>
-          <div class="cb-what">
-            {% if city.work %}
-              <img src="{{ city.work.icon }}" alt="" style="width: 22px; height: 22px; object-fit: contain;">
-              <strong>{{ city.work.name }}</strong> <code style="background: none; padding: 0;">{{ city.work.from_level }}→{{ city.work.to_level }}</code>
-              {% if city.queue %}<span>· no plano:</span>{% endif %}
-            {% elif city.queue %}
-              <span>Próxima:</span>
-            {% else %}
-              <span>Sem obra e sem plano{% if city.free_slots %} · {{ city.free_slots }} espaço{{ city.free_slots|pluralize }} livre{{ city.free_slots|pluralize }}{% endif %}</span>
-            {% endif %}
-            {% for step in city.queue %}
-              <span class="cb-chip" title="{{ step.name }}{% if step.new %} (construir){% endif %}"><img src="{{ step.icon }}" alt="">{{ step.name }} <code>{{ step.cur }}→{{ step.target }}</code></span>
-            {% endfor %}
-            {% if city.queue_more %}<span>+{{ city.queue_more }}</span>{% endif %}
-            {% for item in city.missing %}
-              <span class="cb-res{% if city.state == 'waiting' %} miss{% endif %}" title="Falta {{ item.amount }} de {{ item.label }} para as etapas do plano nesta cidade"{% if city.state != 'waiting' %} style="color: var(--ik-muted); font-weight: 500;"{% endif %}><img src="{{ item.icon }}" alt="{{ item.label }}">falta {{ item.text }}</span>
-            {% endfor %}
+        <div class="cb-cc {{ city.state }}">
+          <div class="cb-cc-top">
+            <img src="{{ city.tradegood_icon }}" alt=""><b title="{{ city.name }}">{{ city.name }}</b>
+            <span class="cb-pill {{ city.state }}">{{ city.state_label }}</span>
           </div>
-          <div class="cb-when">
-            {% if city.work and city.work.end_at %}<span x-text="countdown({{ city.work.end_at }})"></span><small>para concluir</small>{% endif %}
+          {% if city.work %}
+          <div class="cb-cc-main">
+            <span class="cb-cc-icon"><img src="{{ city.work.icon }}" alt=""></span>
+            <div style="min-width: 0;">
+              <strong title="{{ city.work.name }}">{{ city.work.name }}</strong>
+              <div class="cb-lv"><span>Lv {{ city.work.from_level }}</span><i class="bi bi-arrow-right" style="font-size: .6rem;"></i><span class="to">Lv {{ city.work.to_level }}</span></div>
+            </div>
           </div>
+          {% if city.work.end_at %}<div class="cb-cc-timer"><span>Conclui em</span><b x-text="countdown({{ city.work.end_at }})"></b></div>{% endif %}
+          {% elif city.next %}
+          <div class="cb-cc-main">
+            <span class="cb-cc-icon"><img src="{{ city.next.icon }}" alt=""></span>
+            <div style="min-width: 0;">
+              <strong title="{{ city.next.name }}">{{ city.next.name }}</strong>
+              <div class="cb-lv"><span>Lv {{ city.next.cur }}</span><i class="bi bi-arrow-right" style="font-size: .6rem;"></i><span class="to" style="background: {% if city.missing %}#c9662e{% else %}#c9a23e{% endif %};">Lv {{ city.next.target }}</span></div>
+            </div>
+          </div>
+          {% if city.missing %}
+          <div class="cb-cc-miss">
+            <span>Falta para começar</span>
+            <div class="cb-row">{% for item in city.missing %}<span class="cb-res miss" title="{{ item.amount }} de {{ item.label }}"><img src="{{ item.icon }}" alt="{{ item.label }}">{{ item.text }}</span>{% endfor %}</div>
+          </div>
+          {% else %}
+          <div class="cb-cc-foot"><i class="bi bi-clock"></i> Começa no próximo ciclo do plano</div>
+          {% endif %}
+          {% elif city.queue %}
+          <div class="cb-cc-foot"><i class="bi bi-clock"></i> Na fila do plano</div>
+          {% else %}
+          <div class="cb-cc-foot">Sem obra e sem plano{% if city.free_slots %} · {{ city.free_slots }} espaço{{ city.free_slots|pluralize }} livre{{ city.free_slots|pluralize }}{% endif %}</div>
+          {% endif %}
+          {% if city.queue %}
+          <div class="cb-cc-queue">
+            <span>No plano:</span>
+            {% for step in city.queue|slice:":2" %}<span class="cb-chip" title="{{ step.name }}"><img src="{{ step.icon }}" alt="">{{ step.name }} <code>{{ step.cur }}→{{ step.target }}</code></span>{% endfor %}
+            {% if city.queue|length > 2 or city.queue_more %}<span>+{{ city.queue|length|add:city.queue_more|add:"-2" }}</span>{% endif %}
+          </div>
+          {% endif %}
         </div>
         {% endfor %}
       </div>
-      {% endfor %}
     </div>
-    {% else %}
+    {% empty %}
     <div class="cb-empty"><i class="bi bi-moon-stars mb-2 block text-2xl"></i> Nenhuma conta com obra ou plano de construção agora.</div>
-    {% endif %}
+    {% endfor %}
   </section>
 
-  {# ===== 2. O que está parado e por quê ===== #}
+  {# ===== Paradas: sem plano, ou sem recurso para a próxima obra ===== #}
   <section class="cb-section" id="cb-stopped">
-    <h2 class="cb-h2"><span class="cb-num">2</span> O que está parado e por quê</h2>
-    <p class="cb-lead">Cidades sem obra e sem plano, e cidades cujo plano espera um recurso.</p>
+    <h2 class="cb-h2"><i class="bi bi-sign-stop" style="color: #b3521f;"></i> Paradas
+      <small>{{ kpi_cities.idle }} sem obra e sem plano · {{ kpi_cities.waiting }} por recurso</small></h2>
+
+    {% if bottlenecks %}
+    <div class="cb-list" style="margin-bottom: .9rem;">
+      {% for b in bottlenecks %}
+      <div class="cb-note" style="border-left-color: #c9662e;">
+        <h4>{{ b.city_name }} <small>· {{ b.ga_name }}</small>
+          {% if b.job_id %}<a class="cb-btn ghost" style="margin-left: auto;" href="{% url 'jobs:job-detail' b.job_id %}">Ver plano</a>{% endif %}</h4>
+        <p>Para começar {% if b.next %}<strong style="color: var(--ik-ink);">{{ b.next.name }} {{ b.next.cur }}→{{ b.next.target }}</strong>{% else %}a próxima obra{% endif %} falta:</p>
+        <div class="cb-row" style="margin-top: .35rem;">
+          {% for item in b.items %}<span class="cb-res miss" title="{{ item.amount }} de {{ item.label }}"><img src="{{ item.icon }}" alt="{{ item.label }}">{{ item.text }}</span>{% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
 
     {% if idle_groups or idle_strays %}
-    <div class="cb-list" style="margin-bottom: .9rem;">
+    <div class="cb-list">
       {% for acc in idle_groups %}
       <div class="cb-note" style="border-left-color: #a9a294;">
-        <h4>{{ acc.name }} <small>· {{ acc.account }}</small></h4>
-        <p><strong style="color: var(--ik-ink);">{{ acc.counts.total }} cidade{{ acc.counts.total|pluralize }} ociosa{{ acc.counts.total|pluralize }}</strong>: nenhuma obra em andamento e nenhum plano de construção{% if acc.counts.free_slots %} · {{ acc.counts.free_slots }} espaço{{ acc.counts.free_slots|pluralize }} livre{{ acc.counts.free_slots|pluralize }}{% endif %}.</p>
-        <div class="cb-row" style="margin-top: .45rem;">
+        <h4>{{ acc.name }} <small>· {{ acc.counts.total }} cidade{{ acc.counts.total|pluralize }} sem obra e sem plano{% if acc.counts.free_slots %} · {{ acc.counts.free_slots }} espaço{{ acc.counts.free_slots|pluralize }} livre{{ acc.counts.free_slots|pluralize }}{% endif %}</small></h4>
+        <div class="cb-row">
           {% for city in acc.cities %}<span class="cb-chip"><img src="{{ city.tradegood_icon }}" alt="">{{ city.name }}</span>{% endfor %}
         </div>
         <div class="cb-row" style="margin-top: .55rem;">
@@ -212,48 +251,21 @@
       {% endfor %}
       {% if idle_strays %}
       <div class="cb-note" style="border-left-color: #a9a294;">
-        <h4>Ociosas em contas com plano <small>· {{ idle_strays|length }} cidade{{ idle_strays|length|pluralize }}</small></h4>
-        <p>A conta tem plano, mas estas cidades não estão nele nem em obra.</p>
-        <div class="cb-row" style="margin-top: .45rem;">
+        <h4>Fora do plano <small>· {{ idle_strays|length }} cidade{{ idle_strays|length|pluralize }} sem obra, em conta que tem plano</small></h4>
+        <div class="cb-row">
           {% for city in idle_strays %}<span class="cb-chip" title="{{ city.ga_name }}"><img src="{{ city.tradegood_icon }}" alt="">{{ city.name }} <code>{{ city.ga_name }}</code></span>{% endfor %}
         </div>
       </div>
       {% endif %}
     </div>
-    {% else %}
-    <div class="cb-empty" style="margin-bottom: .9rem;"><i class="bi bi-check-circle mb-1 block text-2xl" style="color: var(--ik-good);"></i> Nenhuma cidade ociosa: todas têm obra ou plano.</div>
+    {% elif not bottlenecks %}
+    <div class="cb-empty"><i class="bi bi-check-circle mb-1 block text-2xl" style="color: var(--ik-good);"></i> Nenhuma cidade parada: todas têm obra ou plano com recurso.</div>
     {% endif %}
-
-    <div class="cb-card">
-      <div class="cb-card-head">
-        <h3><i class="bi bi-sign-stop" style="color: #b3521f;"></i> Esperando recurso <small>· {{ bottlenecks|length }} cidade{{ bottlenecks|length|pluralize }}</small></h3>
-        <div class="cb-right">
-          {% for r in reserved_total %}
-          <span class="cb-res{% if r.shortfall %} miss{% endif %}" title="{{ r.label }}: {{ r.reserved_text }} reservado{% if r.shortfall %}, falta {{ r.shortfall_text }}{% endif %}">
-            <img src="{{ r.icon }}" alt="{{ r.label }}">{% if r.shortfall %}falta {{ r.shortfall_text }}{% else %}<span style="color: var(--ik-good);">coberto</span>{% endif %}
-          </span>
-          {% endfor %}
-        </div>
-      </div>
-      {% for b in bottlenecks %}
-      <div class="cb-city" style="grid-template-columns: minmax(140px, 1.2fr) minmax(0, 3fr) auto;">
-        <div class="cb-city-name"><span title="{{ b.city_name }}">{{ b.city_name }}</span></div>
-        <div class="cb-what">
-          <span>{{ b.ga_name }}</span>
-          {% for item in b.items %}<span class="cb-res miss" title="{{ item.amount }} de {{ item.label }}"><img src="{{ item.icon }}" alt="{{ item.label }}">falta {{ item.text }}</span>{% endfor %}
-        </div>
-        <div class="cb-when">{% if b.job_id %}<a class="cb-btn ghost" href="{% url 'jobs:job-detail' b.job_id %}">Ver plano</a>{% endif %}</div>
-      </div>
-      {% empty %}
-      <div class="cb-city" style="grid-template-columns: 1fr;"><span class="cb-what"><i class="bi bi-check-circle" style="color: var(--ik-good);"></i> Nenhuma cidade esperando recurso: o estoque cobre o que os planos pedem agora.</span></div>
-      {% endfor %}
-    </div>
   </section>
 
-  {# ===== 3. O que vem depois: os planos ===== #}
+  {# ===== Planos ===== #}
   <section class="cb-section" id="cb-plans">
-    <h2 class="cb-h2"><span class="cb-num">3</span> O que vem depois <small>{{ plans|length }} plano{{ plans|length|pluralize }} ativo{{ plans|length|pluralize }}</small></h2>
-    <p class="cb-lead">Cada plano com o que falta construir, quanto ainda custa e quanto tempo de obra resta (sem contar a espera por recurso).</p>
+    <h2 class="cb-h2"><i class="bi bi-list-check" style="color: var(--ik-good);"></i> Planos <small>{{ plans|length }} ativo{{ plans|length|pluralize }}</small></h2>
     {% if plans %}
     <div class="cb-cards">
       {% for p in plans %}
@@ -263,7 +275,7 @@
         <div class="cb-row" style="justify-content: space-between; align-items: flex-start;">
           <div style="min-width: 0;">
             <div class="text-sm font-bold text-ink">{{ p.ga_name }} <span class="font-normal text-muted">· {{ p.account }}</span></div>
-            <div class="text-[12px] text-muted">{{ p.cities_pending }} de {{ p.cities_total }} cidade{{ p.cities_total|pluralize }} com obra a fazer{% if p.cities_waiting %} · <span style="color: #b3521f; font-weight: 600;">{{ p.cities_waiting }} esperando recurso</span>{% endif %}</div>
+            <div class="text-[12px] text-muted">{{ p.cities_pending }} de {{ p.cities_total }} cidade{{ p.cities_total|pluralize }} com obra a fazer{% if p.cities_waiting %} · <span style="color: #b3521f; font-weight: 600;">{{ p.cities_waiting }} parada{{ p.cities_waiting|pluralize }} por recurso</span>{% endif %}</div>
           </div>
           <div class="cb-row">
             {% if p.running %}<span class="cb-pill working">Rodando agora</span>
@@ -297,13 +309,13 @@
         </div>
 
         <div class="cb-facts">
-          <div class="cb-fact"><span>Tempo de obra restante</span><b>{{ p.eta_label|default:"—" }}{% if p.finish_at %} <em>até ~{{ p.finish_at|date:"d/m" }}</em>{% endif %}</b></div>
+          <div class="cb-fact" title="Tempo de obra da cidade mais demorada do plano; não conta a espera por recurso"><span>Tempo de obra restante</span><b>{{ p.eta_label|default:"—" }}{% if p.finish_at %} <em>até ~{{ p.finish_at|date:"d/m" }}</em>{% endif %}</b></div>
           <div class="cb-fact"><span>Níveis a construir</span><b>{{ p.remaining_levels }}</b></div>
-          <div class="cb-fact" style="grid-column: 1 / -1;"><span>Custo do que falta construir</span>
+          <div class="cb-fact" style="grid-column: 1 / -1;"><span>Custo do plano inteiro (o que falta construir)</span>
             <div class="cb-row" style="margin-top: .15rem;">{% for item in p.remaining_cost %}<span class="cb-res" title="{{ item.amount }} de {{ item.label }}"><img src="{{ item.icon }}" alt="{{ item.label }}">{{ item.text }}</span>{% empty %}<span class="text-[12px] text-muted">sem dado de custo</span>{% endfor %}</div>
           </div>
-          <div class="cb-fact" style="grid-column: 1 / -1;"><span>Em falta agora</span>
-            <div class="cb-row" style="margin-top: .15rem;">{% for item in p.missing %}<span class="cb-res miss" title="{{ item.amount }} de {{ item.label }}"><img src="{{ item.icon }}" alt="{{ item.label }}">{{ item.text }}</span>{% empty %}<span class="text-[12px]" style="color: var(--ik-good); font-weight: 600;"><i class="bi bi-check-circle-fill"></i> o estoque cobre a etapa atual</span>{% endfor %}</div>
+          <div class="cb-fact" style="grid-column: 1 / -1;"><span>Falta para as cidades paradas começarem</span>
+            <div class="cb-row" style="margin-top: .15rem;">{% for item in p.missing %}<span class="cb-res miss" title="{{ item.amount }} de {{ item.label }}"><img src="{{ item.icon }}" alt="{{ item.label }}">{{ item.text }}</span>{% empty %}<span class="text-[12px]" style="color: var(--ik-good); font-weight: 600;"><i class="bi bi-check-circle-fill"></i> nenhuma cidade parada por recurso</span>{% endfor %}</div>
           </div>
         </div>
 
@@ -398,7 +410,7 @@
   {# ===== D. Mapa de níveis ===== #}
   <section class="mb-4">
     <div class="mb-3 flex items-center gap-2">
-      <span class="cb-num">4</span>
+      <i class="bi bi-grid-3x3-gap" style="color: var(--ik-sea);"></i>
       <h2 class="text-lg font-bold text-ink">Mapa de níveis</h2>
       <span class="text-[11px] text-muted">todos os edifícios de cada cidade · <i class="bi bi-arrow-up-circle-fill text-amber-500"></i> em obra</span>
     </div>
