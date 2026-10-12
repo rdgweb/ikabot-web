@@ -274,6 +274,74 @@ class LeftoverTests(unittest.TestCase):
         self.assertEqual([_route(r) for r in routes], [("1", "2", 15_000)])
 
 
+def _stock(city_id, name, **amounts):
+    """A city with several resources (the helper above only sets wood)."""
+    city = {"id": str(city_id), "name": name, "island_id": city_id, "max_resources": {"resource": 5_000_000, "1": 5_000_000, "2": 5_000_000, "3": 5_000_000, "4": 5_000_000}}
+    city.update(amounts)
+    return city
+
+
+class EvenlyToleranceTests(unittest.TestCase):
+    """N-94: accounts already level to a few percent kept shipping a million units every 60 hours."""
+
+    # the real shape: HAVIT's wine on 12/10, five cities within 4% of the average
+    LEVEL = [_city(1, "A", 251_500), _city(2, "B", 240_000), _city(3, "C", 243_000), _city(4, "D", 232_800), _city(5, "E", 243_700)]
+
+    def test_cities_that_are_about_level_trade_nothing(self):
+        runner, result, routes = _distribute(self.LEVEL, useful_transfer_min=5000, shipment_cap=20_000)
+        self.assertEqual(routes, [])
+        self.assertEqual(result.data["actions_spawned"], 0)
+        self.assertTrue(_said(runner, "Tolerancia wood: 10% da media (242,200) = 24,220 | 0 cidade(s) fora da faixa; nada a igualar"))
+        runner._read_free_ships.assert_not_called()                     # nothing to send: the game is not even asked
+
+    def test_without_tolerance_it_behaves_as_before(self):
+        _runner, _result, routes = _distribute(self.LEVEL, useful_transfer_min=5000, shipment_cap=20_000, evenly_tolerance_percent=0)
+        self.assertEqual([_route(r) for r in routes], [("1", "4", 9_300)])        # A is 9,300 above the average: a shipment for 4%
+
+    def test_a_city_far_from_the_average_is_still_levelled(self):
+        cities = [_city(1, "A", 400_000), _city(2, "B", 240_000), _city(3, "C", 243_000), _city(4, "D", 232_800), _city(5, "E", 243_700)]
+        runner, _result, routes = _distribute(cities, useful_transfer_min=5000, shipment_cap=50_000)
+        self.assertTrue(routes)
+        self.assertEqual({r["from_city"] for r in routes}, {"1"})
+        self.assertEqual(sum(r["wood"] for r in routes), 128_100)                # down to the average, not to the edge of the band
+        self.assertTrue(_said(runner, "5 cidade(s) fora da faixa"))            # the pile pulls the average up: the others fall below the band
+
+    def test_a_hole_is_filled_from_cities_that_are_inside_the_band(self):
+        cities = [_city(1, "A", 250_000), _city(2, "B", 250_000), _city(3, "C", 250_000), _city(4, "D", 100_000)]
+        _runner, _result, routes = _distribute(cities, useful_transfer_min=5000, shipment_cap=50_000)
+        self.assertEqual({r["to_city"] for r in routes}, {"4"})
+        self.assertEqual(sum(r["wood"] for r in routes), 112_500)
+
+    def test_the_band_is_never_smaller_than_the_useful_minimum(self):
+        # Carcereiro's crystal: about 3,000 per city; 10% would be 300
+        cities = [_city(1, "A", 7_000), _city(2, "B", 1_000), _city(3, "C", 1_000)]
+        runner, _result, routes = _distribute(cities, useful_transfer_min=5000)
+        self.assertEqual(routes, [])
+        self.assertTrue(_said(runner, "= 5,000 | 0 cidade(s) fora da faixa"))
+
+    def test_the_biggest_imbalance_goes_first(self):
+        # the real case: a pile of +87k of crystal waited four cycles behind 20,000-capped routes of other resources
+        cities = [
+            _stock(1, "A", wood=260_000, crystal=187_000),
+            _stock(2, "B", wood=200_000, crystal=100_000),
+            _stock(3, "C", wood=200_000, crystal=100_000),
+            _stock(4, "D", wood=140_000, crystal=100_000),
+        ]
+        _runner, _result, routes = _distribute(
+            cities, crystal=True, useful_transfer_min=5000, shipment_cap=20_000, max_routes_per_cycle=1,
+        )
+        self.assertEqual(len(routes), 1)
+        self.assertEqual(routes[0]["from_city"], "1")
+        self.assertGreater(routes[0].get("crystal", 0), 0)                       # the crystal pile, not the wood that comes first in the list
+
+    def test_other_strategies_ignore_the_tolerance(self):
+        cities = [_city(1, "A", 251_500), _city(2, "B", 30_000)]
+        _runner, _result, routes = _distribute(
+            cities, strategy="targets", minimum_stock=20_000, target_stock=60_000, origin_reserve_stock=50_000, useful_transfer_min=5000,
+        )
+        self.assertEqual([_route(r) for r in routes], [("1", "2", 30_000)])
+
+
 def _plan(*, requested, dispatched, free=40, queue=0, loading=60, travel=1200):
     amounts = lambda value: {name: (value if name == "wood" else 0) for name in RESOURCES}  # noqa: E731
     return SimpleNamespace(

@@ -47,6 +47,10 @@ MAX_DISTRIBUTE_RECHECK = 12 * 3600
 # N-93: a donor whose port would need longer than this to load what the cycle asks of it
 # stays out of the plan (a city without a port loads about 600 an hour: 33h for 20,000)
 DEFAULT_MAX_LOADING_MINUTES = 120
+# N-94: "igualar" leaves alone a city that is within this share of the average. Accounts that
+# were already level to a few percent kept shipping about a million units every 60 hours
+# without getting any more level.
+DEFAULT_EVENLY_TOLERANCE_PERCENT = 10
 ACTION_POINTS_FEEDBACK = ("pontos de a", "action point", "aktionspunkt", "puntos de acci")
 RESOURCE_KEYS = tuple(RESOURCE_ORDER)
 RESOURCE_PRODUCED_MAP = {
@@ -1006,6 +1010,9 @@ class DistributeResourcesRunner(BaseRunner):
         max_loading_seconds = 60 * _to_int(
             inputs.get("max_loading_minutes", DEFAULT_MAX_LOADING_MINUTES), DEFAULT_MAX_LOADING_MINUTES, 0,
         )
+        evenly_tolerance_percent = min(90, _to_int(
+            inputs.get("evenly_tolerance_percent", DEFAULT_EVENLY_TOLERANCE_PERCENT), DEFAULT_EVENLY_TOLERANCE_PERCENT, 0,
+        ))
         min_recheck_seconds = _to_int(inputs.get("min_recheck_minutes", 30), 30, 1) * 60
         max_recheck_seconds = _to_int(inputs.get("max_recheck_minutes", 720), 720, 5) * 60
         min_recheck_seconds = max(MIN_DISTRIBUTE_RECHECK, min_recheck_seconds)
@@ -1096,6 +1103,7 @@ class DistributeResourcesRunner(BaseRunner):
             shipment_cap=shipment_cap,
             reserved_by_city=reserved_by_city,
             donor_cargo_limit=donor_cargo_limit,
+            evenly_tolerance_percent=evenly_tolerance_percent,
         )
 
         for line in planning["logs"]:
@@ -1106,7 +1114,7 @@ class DistributeResourcesRunner(BaseRunner):
             planned_cities=planned_cities,
             useful_transfer_min=useful_transfer_min,
         )
-        route_entries.sort(key=lambda item: (item["critical"], item["total"]), reverse=True)
+        route_entries.sort(key=lambda item: (item["critical"], item.get("deviation", 0), item["total"]), reverse=True)
         base_snap = (snapshot.get("base_snapshot") or {}) if isinstance(snapshot, dict) else {}
         free_freighters = int(base_snap.get("free_freighters") or 0)
 
@@ -1427,6 +1435,7 @@ class DistributeResourcesRunner(BaseRunner):
         shipment_cap: int,
         reserved_by_city: dict[str, dict[str, int]] | None = None,
         donor_cargo_limit: dict[str, int] | None = None,
+        evenly_tolerance_percent: int = 0,
     ) -> tuple[dict[tuple[str, str], dict[str, Any]], dict[str, Any]]:
         allocations: dict[tuple[str, str], dict[str, Any]] = {}
         logs: list[str] = []
@@ -1456,6 +1465,13 @@ class DistributeResourcesRunner(BaseRunner):
                     for c in cities
                 )
                 avg_stock = floor(total_amount / max(1, len(cities)))
+                # N-94: a city inside the band is left alone. A route needs one end outside it:
+                # a pile is spread to the cities below the average, a hole is filled from the
+                # ones above, and cities that are all about level trade nothing.
+                band = 0
+                if evenly_tolerance_percent > 0:
+                    band = max(useful_transfer_min, floor(avg_stock * evenly_tolerance_percent / 100))
+                outside_count = 0
                 for city in cities:
                     city_id = str(city.get("id"))
                     reserved_amount = _to_int((reserved_by_city.get(city_id) or {}).get(resource), 0, 0)
@@ -1463,12 +1479,16 @@ class DistributeResourcesRunner(BaseRunner):
                     is_producer = _resource_production_per_hour(city, resource) > 0
                     need = max(0, avg_stock - amount)
                     available = max(0, amount - avg_stock)
+                    outside = max(need, available) >= band
+                    outside_count += int(outside and band > 0)
                     if need > 0:
                         deficits[city_id] = {
                             "city": city,
                             "need": need,
                             "critical_gap": 0,
                             "is_producer": is_producer,
+                            "outside": outside,
+                            "deviation": need,
                         }
                         total_need += need
                     if available >= useful_transfer_min and can_donate(city_id):
@@ -1476,8 +1496,16 @@ class DistributeResourcesRunner(BaseRunner):
                             "city": city,
                             "available": available,
                             "is_producer": is_producer,
+                            "outside": outside,
+                            "deviation": available,
                         }
                         total_available += available
+                if band > 0:
+                    logs.append(
+                        f"Tolerancia {resource}: {evenly_tolerance_percent}% da media ({avg_stock:,}) = {band:,} | "
+                        f"{outside_count} cidade(s) fora da faixa"
+                        + ("" if outside_count else "; nada a igualar")
+                    )
             else:
                 for city in cities:
                     city_id = str(city.get("id"))
@@ -1549,6 +1577,9 @@ class DistributeResourcesRunner(BaseRunner):
                     if available <= 0:
                         continue
 
+                    if not (donor.get("outside", True) or recipient.get("outside", True)):
+                        continue                    # both within the tolerance: not worth a trip
+
                     route_key = (str(donor["city"]["id"]), str(recipient["city"]["id"]), resource)
                     route_entry = allocations.setdefault(
                         route_key,
@@ -1560,6 +1591,7 @@ class DistributeResourcesRunner(BaseRunner):
                             "resources": defaultdict(int),
                             "total": 0,
                             "critical": False,
+                            "deviation": 0,
                         },
                     )
                     route_remaining = shipment_cap - int(route_entry["total"])
@@ -1576,6 +1608,12 @@ class DistributeResourcesRunner(BaseRunner):
                     route_entry["resources"][resource] += int(send_amount)
                     route_entry["total"] += int(send_amount)
                     route_entry["critical"] = bool(route_entry["critical"] or recipient["critical_gap"] > 0)
+                    # how far from level the worst end of the route was: what orders the cycle
+                    route_entry["deviation"] = max(
+                        int(route_entry["deviation"]),
+                        int(donor.get("deviation", donor["available"])),
+                        int(recipient.get("deviation", recipient["need"])),
+                    )
                     donor["available"] -= int(send_amount)
                     if donor_id in donor_budget:
                         donor_budget[donor_id] -= int(send_amount)

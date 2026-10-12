@@ -126,6 +126,7 @@ ACTIONS = {
             {"key": "target_stock", "type": FIELD_INT, "label": "Alvo por cidade", "required": True, "min": 0, "default": 60000, "help": "Objetivo de estoque por recurso nas cidades atendidas."},
             {"key": "origin_reserve_stock", "type": FIELD_INT, "label": "Reserva mínima na origem", "required": True, "min": 0, "default": 50000, "help": "Quantidade que a cidade doadora sempre deve preservar."},
             {"key": "useful_transfer_min", "type": FIELD_INT, "label": "Envio mínimo útil", "required": True, "min": 1, "default": 5000, "help": "Evita criar remessas pequenas demais."},
+            {"key": "evenly_tolerance_percent", "type": FIELD_INT, "label": "Tolerância ao igualar (%)", "required": True, "min": 0, "default": 10, "help": "No modo igualar, só mexe em cidade que esteja pelo menos este percentual acima ou abaixo da média do recurso. 0 = igualar sempre."},
             {"key": "shipment_cap", "type": FIELD_INT, "label": "Envio máximo por rota", "required": True, "min": 1, "default": 50000, "help": "Limite total por remessa consolidada."},
             {"key": "max_routes_per_cycle", "type": FIELD_INT, "label": "Máximo de rotas por ciclo", "required": True, "min": 1, "default": 5, "help": "Limita quantas remessas serão criadas em cada execução."},
             {"key": "transport_load_percent", "type": FIELD_CHOICE, "label": "Carga por barco", "required": True, "choices": TRANSPORT_LOAD_CHOICES, "default": "100", "help": "Ajusta capacidade x velocidade das remessas filhas."},
