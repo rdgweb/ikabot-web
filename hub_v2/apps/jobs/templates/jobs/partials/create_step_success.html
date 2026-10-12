@@ -50,14 +50,15 @@
             @click="$dispatch('close-modal')">
       Fechar
     </button>
+    {# N-100: straight to what was just created, not to the whole queue #}
     <button type="button"
             class="btn btn-secondary btn-sm"
             @click="$dispatch('close-modal')"
-            hx-get="{% url 'jobs:job-list' %}"
+            hx-get="{% if job_url %}{{ job_url }}{% elif jobs_url %}{{ jobs_url }}{% else %}{% url 'jobs:job-list' %}{% endif %}"
             hx-target="#page-content"
             hx-swap="innerHTML"
             hx-push-url="true">
-      Ver jobs
+      {% if job_url %}Ver job{% elif jobs_url %}Ver os {{ jobs_count }} jobs{% else %}Ver jobs{% endif %}
     </button>
     <button type="button"
             class="btn btn-primary btn-sm"

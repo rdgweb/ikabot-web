@@ -30,7 +30,7 @@ from core.catalogs import BUILDING_CATALOG
 from core.contracts import ACTION_CATALOG, get_actions_for_ui
 from ..forms import JobCreateForm
 from ..models import ConstructionResourceReservation, Job
-from ..services.workflows import create_job_with_workflow
+from ..services.workflows import collect_created_jobs, create_job_with_workflow
 from ..services.construction_preview import (
     IKA_TOOLS_URL,
     RESOURCE_ICON_MAP,
@@ -2840,6 +2840,37 @@ class JobSubmitView(LoginRequiredMixin, View):
     """POST: creates job(s) from the dynamic form submission."""
 
     def post(self, request):
+        with collect_created_jobs() as created:
+            self._created_jobs = created
+            return self._submit(request)
+
+    def _render_success(self, request, context, *, job=None):
+        """The last step of the modal, with "Ver job" pointing at what was just made (N-100).
+
+        One job: its own page. Several at once (one per city, per pair of cities...): the
+        queue filtered to them. ``job`` names it when nothing new was created (an edit, a merge).
+        """
+        from django.urls import reverse
+
+        jobs = [job] if job is not None else list(getattr(self, "_created_jobs", None) or [])
+        links = {}
+        if len(jobs) == 1:
+            links["job_url"] = reverse("jobs:job-detail", args=[jobs[0].pk])
+        elif jobs:
+            accounts = {str(item.game_account_id) for item in jobs if item.game_account_id}
+            types = {item.workflow.workflow_type for item in jobs if item.workflow_id}
+            params = []
+            if len(accounts) == 1:
+                params.append(f"game_account={accounts.pop()}")
+            if len(types) == 1:
+                params.append(f"workflow_type={types.pop()}")
+            links["jobs_url"] = reverse("jobs:job-list") + ("?" + "&".join(params) if params else "")
+            links["jobs_count"] = len(jobs)
+        success_context = dict(context)
+        success_context.update(links)
+        return render_to_string("jobs/partials/create_step_success.html", success_context, request=request)
+
+    def _submit(self, request):
         ga_id = request.POST.get("game_account")
         action_code_str = request.POST.get("action_code")
 
@@ -2941,11 +2972,7 @@ class JobSubmitView(LoginRequiredMixin, View):
         })
 
         resp = HttpResponse(
-            render_to_string(
-                "jobs/partials/create_step_success.html",
-                {"jobs_created": jobs_created, "action_name": action_meta["name"]},
-                request=request,
-            )
+            self._render_success(request, {"jobs_created": jobs_created, "action_name": action_meta["name"]})
         )
         resp["HX-Trigger"] = trigger_data
         return resp
@@ -3026,11 +3053,7 @@ class JobSubmitView(LoginRequiredMixin, View):
         self._write_pending_patch(target, patch)
 
         resp = HttpResponse(
-            render_to_string(
-                "jobs/partials/create_step_success.html",
-                {"jobs_created": 0, "edited": True, "action_name": action_meta["name"]},
-                request=request,
-            )
+            self._render_success(request, {"jobs_created": 0, "edited": True, "action_name": action_meta["name"]}, job=target)
         )
         resp["HX-Trigger"] = json.dumps({
             "toast": {"type": "success", "message": "Parâmetros atualizados — aplicam no próximo ciclo."},
@@ -3081,11 +3104,7 @@ class JobSubmitView(LoginRequiredMixin, View):
         )
 
         resp = HttpResponse(
-            render_to_string(
-                "jobs/partials/create_step_success.html",
-                {"jobs_created": 1, "action_name": action_meta["name"]},
-                request=request,
-            )
+            self._render_success(request, {"jobs_created": 1, "action_name": action_meta["name"]})
         )
         resp["HX-Trigger"] = json.dumps({
             "toast": {"type": "success", "message": "Job Recursos Premium criado!"},
@@ -3130,8 +3149,7 @@ class JobSubmitView(LoginRequiredMixin, View):
         total = sum(len(items) for items in grouped.values())
         what = "Simulação criada (nada será demolido)" if dry_run else "Demolição criada"
         resp = HttpResponse(
-            render_to_string("jobs/partials/create_step_success.html",
-                             {"jobs_created": len(grouped), "action_name": action_meta["name"]}, request=request)
+            self._render_success(request, {"jobs_created": len(grouped), "action_name": action_meta["name"]})
         )
         resp["HX-Trigger"] = json.dumps({
             "toast": {"type": "success", "message": f"{what}: {total} edificio(s) em {len(grouped)} cidade(s)."},
@@ -3267,8 +3285,7 @@ class JobSubmitView(LoginRequiredMixin, View):
         self._deactivate_stale_construction_reservations(job)
 
         resp = HttpResponse(
-            render_to_string("jobs/partials/create_step_success.html",
-                             {"jobs_created": 1, "action_name": action_meta["name"]}, request=request)
+            self._render_success(request, {"jobs_created": 1, "action_name": action_meta["name"]})
         )
         resp["HX-Trigger"] = json.dumps({
             "toast": {"type": "success", "message": "Plano de clonagem criado com reservas de recursos."},
@@ -3300,11 +3317,7 @@ class JobSubmitView(LoginRequiredMixin, View):
             status="queued",
         )
         resp = HttpResponse(
-            render_to_string(
-                "jobs/partials/create_step_success.html",
-                {"jobs_created": 1, "action_name": action_meta["name"]},
-                request=request,
-            )
+            self._render_success(request, {"jobs_created": 1, "action_name": action_meta["name"]})
         )
         resp["HX-Trigger"] = json.dumps({
             "toast": {"type": "success", "message": "Job Comprar Barcos criado!"},
@@ -3398,11 +3411,7 @@ class JobSubmitView(LoginRequiredMixin, View):
         )
 
         resp = HttpResponse(
-            render_to_string(
-                "jobs/partials/create_step_success.html",
-                {"jobs_created": 1, "action_name": action_meta["name"]},
-                request=request,
-            )
+            self._render_success(request, {"jobs_created": 1, "action_name": action_meta["name"]})
         )
         resp["HX-Trigger"] = json.dumps({
             "toast": {"type": "success", "message": "Job Melhorar Unidades criado!"},
@@ -3513,11 +3522,7 @@ class JobSubmitView(LoginRequiredMixin, View):
             "jobsCreated": True,
         })
         resp = HttpResponse(
-            render_to_string(
-                "jobs/partials/create_step_success.html",
-                {"jobs_created": 1, "action_name": action_meta["name"]},
-                request=request,
-            )
+            self._render_success(request, {"jobs_created": 1, "action_name": action_meta["name"]})
         )
         resp["HX-Trigger"] = trigger_data
         return resp
@@ -3566,11 +3571,7 @@ class JobSubmitView(LoginRequiredMixin, View):
 
         n = len(new_steps)
         resp = HttpResponse(
-            render_to_string(
-                "jobs/partials/create_step_success.html",
-                {"jobs_created": 0, "merged": True, "merged_count": n, "action_name": action_meta["name"]},
-                request=request,
-            )
+            self._render_success(request, {"jobs_created": 0, "merged": True, "merged_count": n, "action_name": action_meta["name"]}, job=existing_job)
         )
         resp["HX-Trigger"] = json.dumps({
             "toast": {

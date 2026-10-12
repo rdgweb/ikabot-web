@@ -4,6 +4,8 @@ Workflow domain helpers — one Workflow per root_job_id chain.
 
 import ast
 import json
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -13,6 +15,23 @@ from django.utils import timezone
 from core.contracts import ACTION_CATALOG
 
 from ..models import Job, Workflow, WorkflowRun
+
+
+_created_jobs: ContextVar[list | None] = ContextVar("created_jobs", default=None)
+
+
+@contextmanager
+def collect_created_jobs():
+    """The jobs create_job_with_workflow() makes inside the block, in order (N-100).
+
+    The job form creates through several paths (one job, one per city, a plan, a clone...);
+    this is how the screen that follows knows what to point to without each path reporting it.
+    """
+    token = _created_jobs.set([])
+    try:
+        yield _created_jobs.get()
+    finally:
+        _created_jobs.reset(token)
 
 
 def _normalize_inputs(inputs) -> tuple[dict, str]:
@@ -528,6 +547,9 @@ def create_job_with_workflow(
         workflow_run.scheduled_for = scheduled_for
         workflow_run.save(update_fields=["status", "scheduled_for", "updated_at"])
 
+        collected = _created_jobs.get()
+        if collected is not None:
+            collected.append(job)
         return job
 
 

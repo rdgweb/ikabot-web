@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -50,6 +50,8 @@ class FormattingTests(TestCase):
         self.assertEqual(sparkline([7, 7, 7], width=100, height=30), "0.0,15.0 50.0,15.0 100.0,15.0")
 
 
+# the image carries the agent version of its build; these tests must not depend on it
+@override_settings(EXPECTED_AGENT_VERSION="")
 class DashboardDataTests(TestCase):
     def setUp(self):
         cache.delete(services.CACHE_KEY)
@@ -315,6 +317,7 @@ class DashboardDataTests(TestCase):
         self.assertEqual((data["nodes_online"], data["expected_agent_version"]), (2, "0.1.95"))
 
 
+@override_settings(EXPECTED_AGENT_VERSION="")
 class DashboardPageTests(TestCase):
     def setUp(self):
         cache.delete(services.CACHE_KEY)
