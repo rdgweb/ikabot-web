@@ -52,6 +52,12 @@
   {% endif %}
 
   <script src="{% static 'js/app.js' %}"></script>
+  <!-- N-101: os componentes do Painel do Jogo ficam no layout. A navegacao pelo menu troca so o
+       miolo da pagina, e o Alpine inicia o conteudo novo antes de um script externo vindo junto
+       terminar de carregar ("gameDashboard is not defined" ate um F5). Aqui eles ja existem. -->
+  <script src="{% static 'js/game-dashboard-modals.js' %}"></script>
+  <script src="{% static 'js/game-dashboard-charts.js' %}"></script>
+  <script src="{% static 'js/game-dashboard-core.js' %}"></script>
   {% block extra_js %}{% endblock %}
 
   <script>

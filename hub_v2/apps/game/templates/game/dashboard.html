@@ -1001,9 +1001,6 @@
 {{ resource_modal_data|json_script:"game-dashboard-resource-data" }}
 {{ account_detail_data|json_script:"game-dashboard-account-detail-data" }}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-<script src="{% static 'js/game-dashboard-modals.js' %}"></script>
-<script src="{% static 'js/game-dashboard-charts.js' %}"></script>
-<script src="{% static 'js/game-dashboard-core.js' %}"></script>
 <script>
   // Edicao inline do nome da cidade (fetch direto — HTMX nao processa
   // elementos criados dentro de <template x-if>).
