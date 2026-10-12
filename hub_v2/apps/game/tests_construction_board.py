@@ -206,6 +206,9 @@ class ConstructionPanelPageTests(TestCase):
         self.assertContains(response, "próximo ciclo em 19 min")
         # the tools of the plan card are still there
         self.assertContains(response, f"planCard('{self.plan.pk}', 'smart')")
+        # the editor lists the steps by city, each step with what tells two same-named cities apart
+        self.assertContains(response, 'x-for="g in groups()"')
+        self.assertTrue(all(step["city_id"] and "city_icon" in step and step["id"] for step in plan["pending_steps"]))
         self.assertContains(response, "Editar etapas")
 
     def test_the_bottleneck_list_names_the_city_and_counts_crystal(self):

@@ -144,6 +144,9 @@ def _step_chip(entry: dict) -> dict:
     return {
         "icon": _building_icon(entry["building"]), "name": _building_name(entry["building"]),
         "cur": entry["cur"], "target": entry["target"], "new": entry.get("new", False),
+        # N-108: prioritized by the user (the city builds only this until that level)
+        "p_order": entry.get("p_order", 0) if entry.get("priority") else 0,
+        "p_level": entry.get("p_level", 0) if entry.get("priority") else 0,
     }
 
 
@@ -347,6 +350,7 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                     "text": str(message)[:220],
                     "ago": human_span((timezone.now() - created_at).total_seconds()),
                 })
+        city_icons = {(ga_id, city["id"]): city["tradegood_icon"] for ga_id, cities in city_facts.items() for city in cities}
         for job in jobs:
             try:
                 inp = json.loads(job.inputs_json or "{}")
@@ -370,6 +374,7 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                     "p_level": entry["p_level"] if entry["priority"] else 0,
                     "city_id": entry["city_id"],
                     "city_name": entry["city_name"],
+                    "city_icon": city_icons.get(key, ""),       # two cities can have the same name
                     "icon": _building_icon(entry["building"]),
                     "name": _building_name(entry["building"]),
                     "cur": entry["cur"],

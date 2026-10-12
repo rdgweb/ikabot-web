@@ -72,6 +72,9 @@
     .cb-lm-move { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex-shrink: 0; border-radius: 8px; border: 1px solid transparent; font-size: .8rem; color: var(--ik-muted); background: transparent; cursor: pointer; transition: all .15s; }
     tr:hover .cb-lm-move { color: var(--ik-sea); border-color: rgba(79, 134, 185, .45); background: rgba(79, 134, 185, .1); }
     .cb-lm-move:hover, .cb-lm-move:focus-visible { color: #fff !important; background: var(--ik-sea) !important; border-color: var(--ik-sea) !important; }
+    .cb-step-city { display: flex; align-items: center; gap: .35rem; margin: 0 0 .25rem; padding: .2rem .4rem; border-radius: 8px; font-size: .72rem; color: var(--ik-ink); background: rgba(79, 134, 185, .1); position: sticky; top: 0; z-index: 1; }
+    .cb-step-city img { width: 14px; height: 14px; object-fit: contain; }
+    .cb-step-city span { margin-left: auto; font-size: .64rem; color: var(--ik-muted); }
     .cb-step { display: flex; align-items: center; gap: .45rem; padding: .3rem .5rem; border: 1px solid var(--ik-line); border-radius: 10px; background: rgba(255, 255, 255, .8); }
     .cb-step.on { border-color: var(--ik-sea); box-shadow: 0 0 0 1px var(--ik-sea) inset; }
     .cb-step-badge { display: inline-flex; align-items: center; gap: .2rem; padding: .05rem .15rem .05rem .45rem; border-radius: 999px; font-size: .66rem; color: #fff; background: var(--ik-sea); white-space: nowrap; }
@@ -215,7 +218,7 @@
           {% if city.queue %}
           <div class="cb-cc-queue">
             <span>No plano:</span>
-            {% for step in city.queue|slice:":2" %}<span class="cb-chip" title="{{ step.name }}"><img src="{{ step.icon }}" alt="">{{ step.name }} <code>{{ step.cur }}→{{ step.target }}</code></span>{% endfor %}
+            {% for step in city.queue|slice:":2" %}<span class="cb-chip" title="{{ step.name }}{% if step.p_order %}: prioridade {{ step.p_order }}, só ele até o nível {{ step.p_level }}{% endif %}"{% if step.p_order %} style="border-color: var(--ik-sea);"{% endif %}>{% if step.p_order %}<i class="bi bi-star-fill" style="color: var(--ik-sea); font-size: .6rem;"></i>{% endif %}<img src="{{ step.icon }}" alt="">{{ step.name }} <code>{{ step.cur }}→{% if step.p_order %}{{ step.p_level }}{% else %}{{ step.target }}{% endif %}</code></span>{% endfor %}
             {% if city.queue|length > 2 or city.queue_more %}<span>+{{ city.queue|length|add:city.queue_more|add:"-2" }}</span>{% endif %}
           </div>
           {% endif %}
@@ -358,13 +361,18 @@
         {# Editor de etapas (N-108): prioridade até um nível, em ordem; tirar de um nível para cima #}
         <div x-show="tab==='steps'" x-transition class="mt-2 rounded-[14px] border p-2" style="border-color: rgba(79,134,185,0.25); background: rgba(79,134,185,0.04);">
           <template x-if="steps.length === 0"><div class="py-3 text-center text-[11px] text-muted">Nenhuma etapa pendente.</div></template>
-          <div class="max-h-72 space-y-1 overflow-y-auto">
-            <template x-for="st in steps" :key="st.id">
+          <div style="max-height: 24rem; overflow-y: auto; display: flex; flex-direction: column; gap: .55rem;">
+            {# by city: the order of the priorities (1ª, 2ª...) is the order inside that city #}
+            <template x-for="g in groups()" :key="g.city_id">
+              <div>
+              <div class="cb-step-city"><img :src="g.icon" alt="" x-show="g.icon"><b x-text="g.name"></b><span x-text="g.steps.length + (g.steps.length === 1 ? ' etapa' : ' etapas')"></span></div>
+              <div style="display: flex; flex-direction: column; gap: .25rem;">
+            <template x-for="st in g.steps" :key="st.id">
               <div class="cb-step" :class="st.p_order ? 'on' : ''">
                 <img :src="st.icon" class="h-6 w-6 shrink-0 object-contain" alt="">
                 <div class="min-w-0 flex-1">
                   <div class="truncate text-[11px] font-semibold text-ink" x-text="st.name"></div>
-                  <div class="truncate text-[10px] text-muted"><span x-text="st.city_name"></span> · <span class="font-mono" x-text="st.cur + '→' + st.target"></span></div>
+                  <div class="truncate text-[10px] text-muted">nível <span class="font-mono" x-text="st.cur + '→' + st.target"></span></div>
                 </div>
                 <template x-if="st.p_order">
                   <span class="cb-step-badge" :title="'Nesta cidade só este prédio é construído até o nível ' + st.p_level">
@@ -381,8 +389,11 @@
                         :title="st.lv === st.target ? 'Tirar do plano o nível ' + st.lv : 'Tirar do plano do nível ' + st.lv + ' ao ' + st.target"><i class="bi bi-scissors"></i></button>
               </div>
             </template>
+              </div>
+              </div>
+            </template>
           </div>
-          <p class="mt-2 text-[10px] text-muted"><i class="bi bi-star-fill"></i> prioriza até o nível escolhido · <i class="bi bi-scissors"></i> tira do plano o nível escolhido e os acima · vale a partir do próximo ciclo</p>
+          <p class="mt-2 text-[10px] text-muted"><i class="bi bi-star-fill"></i> prioriza até o nível escolhido (1ª, 2ª... é a ordem dentro da cidade) · <i class="bi bi-scissors"></i> tira do plano o nível escolhido e os acima · vale a partir do próximo ciclo</p>
         </div>
 
         {# Enviar recursos #}
@@ -647,6 +658,17 @@ function planCard(jobId, strategy) {
     async setStrategy() {
       const res = await _ikPost(`/jobs/${this.jobId}/plan-patch/`, {queue_strategy: this.strategy});
       _toast(res.ok ? 'success' : 'error', res.message);
+    },
+    // one group per city (two cities can share a name), its prioritized steps first and in their order
+    groups() {
+      const byCity = new Map();
+      for (const st of this.steps) {
+        if (!byCity.has(st.city_id)) byCity.set(st.city_id, {city_id: st.city_id, name: st.city_name, icon: st.city_icon, steps: []});
+        byCity.get(st.city_id).steps.push(st);
+      }
+      const groups = [...byCity.values()];
+      groups.forEach(g => g.steps.sort((a, b) => (a.p_order || 999) - (b.p_order || 999)));
+      return groups.sort((a, b) => Number(b.steps.some(s => s.p_order)) - Number(a.steps.some(s => s.p_order)));
     },
     levels(st) {
       const out = [];
