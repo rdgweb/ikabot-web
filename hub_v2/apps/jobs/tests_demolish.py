@@ -112,7 +112,7 @@ class DemolishActionFlowTests(TestCase):
     def test_panels_open_the_standard_form_and_the_old_modal_is_gone(self):
         link = f"{reverse('jobs:job-form')}?ga={self.ga.pk}&action=1303"
         panel = self.client.get(reverse("game:construction")).content.decode()
-        self.assertIn(link, panel)
+        self.assertNotIn(link, panel)                   # N-103: taken off the level map; it stays in the game panel
         self.assertNotIn("demolishModal", panel)
         dashboard = self.client.get(reverse("game:dashboard")).content.decode()
         self.assertIn(link, dashboard)

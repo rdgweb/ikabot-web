@@ -225,7 +225,10 @@ class ConstructionPanelPageTests(TestCase):
             self.assertContains(response, f'id="{block}"')
         self.assertContains(response, "Mapa de níveis")
         self.assertContains(response, 'id="cs-reorder-layouts"')
-        self.assertContains(response, "Reorganizar</button>")
+        self.assertContains(response, 'title="Reorganizar edifícios de Alfa"')
+        # demolishing is not offered next to every city of the level map
+        self.assertNotContains(response, "action=1303")
+        self.assertNotContains(response, "Demolir")
 
     def test_the_page_opens_with_nothing_to_show(self):
         Job.objects.all().delete()

@@ -496,7 +496,8 @@ class ReorderBuildingsTests(TestCase):
         self.client.force_login(self.user)
         response = self.client.get(reverse("game:construction"), {"reorder": f"{self.ga.pk}:501"})
 
-        self.assertContains(response, "Reorganizar</button>")
+        self.assertContains(response, 'title="Reorganizar edifícios de Alfa"')
+        self.assertContains(response, "open-reorder', {key: '%s:501'}" % self.ga.pk)
         self.assertContains(response, "URLSearchParams(window.location.search).get('reorder')")
 
     def test_layout_carries_the_game_map_geometry(self):

@@ -67,6 +67,11 @@
     .cb-chip code { font-family: ui-monospace, monospace; font-size: .7rem; color: var(--ik-muted); background: none; padding: 0; }
     .cb-res { display: inline-flex; align-items: center; gap: .25rem; font-size: .74rem; font-weight: 600; color: var(--ik-ink); white-space: nowrap; }
     .cb-res.miss { color: #b3402f; }
+    .cb-lm-city { display: flex; align-items: center; gap: .35rem; min-width: 9.5rem; }
+    .cb-lm-city > span { flex: 1; min-width: 0; }
+    .cb-lm-move { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex-shrink: 0; border-radius: 8px; border: 1px solid transparent; font-size: .8rem; color: var(--ik-muted); background: transparent; cursor: pointer; transition: all .15s; }
+    tr:hover .cb-lm-move { color: var(--ik-sea); border-color: rgba(79, 134, 185, .45); background: rgba(79, 134, 185, .1); }
+    .cb-lm-move:hover, .cb-lm-move:focus-visible { color: #fff !important; background: var(--ik-sea) !important; border-color: var(--ik-sea) !important; }
     .cb-empty { border: 1px dashed var(--ik-line); border-radius: 18px; padding: 1.4rem; text-align: center; font-size: .85rem; color: var(--ik-muted); }
     .cb-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: .7rem; }
     .cb-note { border: 1px solid var(--ik-line); border-left-width: 4px; border-radius: 14px; padding: .65rem .8rem; background: var(--ik-paper); min-width: 0; }
@@ -412,7 +417,7 @@
     <div class="mb-3 flex items-center gap-2">
       <i class="bi bi-grid-3x3-gap" style="color: var(--ik-sea);"></i>
       <h2 class="text-lg font-bold text-ink">Mapa de níveis</h2>
-      <span class="text-[11px] text-muted">todos os edifícios de cada cidade · <i class="bi bi-arrow-up-circle-fill text-amber-500"></i> em obra</span>
+      <span class="text-[11px] text-muted">todos os edifícios de cada cidade · <i class="bi bi-arrow-up-circle-fill text-amber-500"></i> em obra · <i class="bi bi-arrows-move"></i> reorganizar os edifícios da cidade</span>
     </div>
     {% for acc in level_map %}
     <div class="mb-4 rounded-[18px] border p-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.85);">
@@ -438,17 +443,10 @@
             {% for row in acc.rows %}
             <tr class="border-t" style="border-color: var(--ik-line);">
               <td class="sticky left-0 z-10 whitespace-nowrap bg-paper p-1.5 font-semibold text-ink">
-                <span class="inline-flex items-center gap-1"><img src="{{ row.tradegood_icon }}" class="h-4 w-4 object-contain" alt="">{{ row.city_name }}
-                  <button type="button" class="ml-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors hover:bg-[rgba(79,134,185,0.12)]"
-                          style="border-color: rgba(79,134,185,0.4); color: var(--ik-sea);"
-                          title="Reorganizar edifícios (arrastar e soltar)"
-                          @click="$dispatch('open-reorder', {key: '{{ row.reorder_key }}'})"><i class="bi bi-arrows-move"></i> Reorganizar</button>
-                  <button type="button" class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold"
-                          style="border-color: rgba(187,81,67,0.45); color: var(--ik-bad);"
-                          title="Demolir edifícios desta conta (Ações do Jogo, com confirmações)"
-                          hx-get="{% url 'jobs:job-form' %}?ga={{ row.game_account_id }}&action=1303"
-                          hx-target="#job-modal-body" hx-swap="innerHTML" hx-push-url="false"
-                          onclick="this.dispatchEvent(new CustomEvent('open-modal-jobcreate', {bubbles: true}));"><i class="bi bi-trash3"></i> Demolir</button>
+                {# the row is the levels; the one action here is a small button that keeps the names aligned #}
+                <span class="cb-lm-city"><img src="{{ row.tradegood_icon }}" class="h-4 w-4 object-contain" alt=""><span>{{ row.city_name }}</span>
+                  <button type="button" class="cb-lm-move" title="Reorganizar edifícios de {{ row.city_name }}" aria-label="Reorganizar edifícios de {{ row.city_name }}"
+                          @click="$dispatch('open-reorder', {key: '{{ row.reorder_key }}'})"><i class="bi bi-arrows-move"></i></button>
                 </span>
               </td>
               {% for cell in row.cells %}
