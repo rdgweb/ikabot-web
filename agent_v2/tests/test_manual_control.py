@@ -186,15 +186,17 @@ class ProxyFactsTests(_Base):
         answer = self._ask("open")
         self.assertTrue(answer["ok"])
         flat = json.dumps(answer)
-        for secret in ("203.0.113.7", "8080", "usuario", "senha-secreta", "198.51.100.1"):
-            self.assertNotIn(secret, flat)
+        # the exit address is shown to the operator; credentials, port and the agent's own address never travel
+        for secret in ("8080", "usuario", "senha-secreta", "198.51.100.1"):
+            if secret != exit_ip:
+                self.assertNotIn(secret, flat)
         return answer["proxy"]
 
     def test_the_proxy_is_named_by_a_fingerprint_and_the_exit_address_confirms_it(self):
         facts = self._open_with("203.0.113.7")
         self.assertEqual(facts, {
             "used": True, "fingerprint": manual_control.proxy_fingerprint("203.0.113.7", 8080),
-            "checked": True, "matches_proxy": True, "is_direct": False,
+            "checked": True, "exit_ip": "203.0.113.7", "matches_proxy": True, "is_direct": False,
         })
         self.assertEqual(self.asked, [self.PROXY, ""])        # through the session's proxy, then without any
 
@@ -205,6 +207,7 @@ class ProxyFactsTests(_Base):
     def test_a_proxy_with_its_own_exit_address_is_not_called_direct(self):
         facts = self._open_with("192.0.2.55")
         self.assertEqual((facts["checked"], facts["matches_proxy"], facts["is_direct"]), (True, False, False))
+        self.assertEqual(facts["exit_ip"], "192.0.2.55")
 
     def test_no_answer_from_the_address_services_is_said_as_unchecked_and_never_stops_the_session(self):
         self.assertEqual(self._open_with("")["checked"], False)

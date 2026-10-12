@@ -238,7 +238,8 @@ class ManualControlService(threading.Thread):
     def _proxy_facts(self, client) -> dict:
         """Which proxy this session's requests leave through, and whether the exit address confirms it.
 
-        Never the address or the credentials: a fingerprint the hub can match, and the outcome of the check.
+        The proxy itself is named by a fingerprint the hub can match (never its credentials). The exit
+        address the outside world sees is sent as it is: the operator asked to see it (N-99).
         """
         proxy_url = str(getattr(getattr(client, "session", None), "_proxy_url", "") or "").strip()
         if not proxy_url:
@@ -256,6 +257,7 @@ class ManualControlService(threading.Thread):
             return facts
         if exit_ip:
             facts["checked"] = True
+            facts["exit_ip"] = exit_ip
             facts["matches_proxy"] = exit_ip == host
             facts["is_direct"] = bool(direct_ip) and exit_ip == direct_ip
         return facts

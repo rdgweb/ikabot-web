@@ -69,6 +69,8 @@ class ManualControlSession(UUIDTimestampModel):
     proxy_scope = models.CharField(max_length=16, blank=True, default="")
     # ok (exit address is the proxy's) | differs | direct (the agent's own address!) | unchecked | ""
     exit_check = models.CharField(max_length=16, blank=True, default="")
+    # the address the outside world saw the session leave from, as the agent measured it
+    exit_ip = models.CharField(max_length=45, blank=True, default="")
 
     class Meta:
         ordering = ["-created_at"]

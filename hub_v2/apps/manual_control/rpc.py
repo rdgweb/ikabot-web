@@ -10,7 +10,8 @@ the broker, so the request travels there:
     agent  RPUSH ikabot:manual:resp:<id>       {"ok": ..., ...}   (expires by itself)
     hub    BLPOP the answer
 
-Nothing here carries cookies, credentials or proxy addresses.
+Nothing here carries cookies or credentials. The one address that travels is the exit
+address of a manual-control session, which the operator asked to see (N-99).
 """
 
 from __future__ import annotations

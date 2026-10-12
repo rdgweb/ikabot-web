@@ -316,7 +316,7 @@ def _record_proxy(session: ManualControlSession, facts) -> None:
 
     from apps.proxy.models import AccountProxyReservation, ProxyProfile
 
-    session.proxy_label, session.proxy_scope, session.exit_check = "", "", ""
+    session.proxy_label, session.proxy_scope, session.exit_check, session.exit_ip = "", "", "", ""
     if not isinstance(facts, dict):
         return                                   # an agent that does not say (older version)
     if not facts.get("used"):
@@ -345,6 +345,9 @@ def _record_proxy(session: ManualControlSession, facts) -> None:
             parsed = urlparse(raw if "://" in raw else "http://" + raw)
             if proxy_fingerprint(parsed.hostname or "", parsed.port or 0) == fingerprint:
                 session.proxy_scope = "node"
+    exit_ip = str(facts.get("exit_ip") or "").strip()
+    if exit_ip and len(exit_ip) <= 45 and all(ch.isalnum() or ch in ".:" for ch in exit_ip):
+        session.exit_ip = exit_ip
     if not facts.get("checked"):
         session.exit_check = "unchecked"
     elif facts.get("is_direct"):
@@ -358,6 +361,8 @@ def _record_proxy(session: ManualControlSession, facts) -> None:
 def proxy_summary(session: ManualControlSession) -> dict:
     """{"level": ok|warn|bad|info, "text": for the operator, "short": for the tag inside the game}."""
     scope, label, check = session.proxy_scope, session.proxy_label, session.exit_check
+    seen = f" Endereço de saída: {session.exit_ip}." if session.exit_ip else ""
+    tail = f" · {session.exit_ip}" if session.exit_ip else ""
     if not scope:
         return {"level": "info", "short": "", "text": "O agente não informou por qual proxy a sessão sai (versão antiga do agente)."}
     if scope == "none":
@@ -372,13 +377,14 @@ def proxy_summary(session: ManualControlSession) -> dict:
     short = f"proxy {label}" if label else "proxy do nó" if scope == "node" else "proxy desconhecido"
     level = "ok" if scope == "account" else "warn"
     if check == "direct":
-        return {"level": "bad", "short": short + " SEM EFEITO",
-                "text": where + " Mas o endereço de saída conferido é o do próprio agente: o proxy não está valendo."}
+        return {"level": "bad", "short": short + " SEM EFEITO" + tail,
+                "text": where + " Mas o endereço de saída conferido é o do próprio agente: o proxy não está valendo." + seen}
     if check == "ok":
-        return {"level": level, "short": short + (" ✓" if level == "ok" else ""), "text": where + " Endereço de saída conferido."}
+        return {"level": level, "short": short + (" ✓" if level == "ok" else "") + tail,
+                "text": where + " Endereço de saída conferido." + seen}
     if check == "differs":
-        return {"level": level, "short": short,
-                "text": where + " O endereço de saída é diferente do endereço do proxy (proxy com saída própria), e não é o do agente."}
+        return {"level": level, "short": short + tail,
+                "text": where + " O endereço de saída é diferente do endereço do proxy (proxy com saída própria), e não é o do agente." + seen}
     return {"level": level, "short": short, "text": where + " Endereço de saída não conferido (serviço de consulta sem resposta)."}
 
 

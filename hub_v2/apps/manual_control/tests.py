@@ -582,7 +582,7 @@ class ProxyIndicatorTests(_Base):
 
     def _facts(self, proxy, **check):
         facts = {"used": True, "fingerprint": services.proxy_fingerprint(proxy.address, proxy.port), "checked": True,
-                 "matches_proxy": True, "is_direct": False}
+                 "exit_ip": "203.0.113.50", "matches_proxy": True, "is_direct": False}
         facts.update(check)
         return facts
 
@@ -592,10 +592,18 @@ class ProxyIndicatorTests(_Base):
         self.assertEqual(state["proxy"]["level"], "ok")
         self.assertIn(f"proxy P{self.reserved.pk}, reservado para esta conta", state["proxy"]["text"])
         self.assertIn("conferido", state["proxy"]["text"])
-        self.assertEqual(state["proxy"]["short"], f"proxy P{self.reserved.pk} ✓")
-        # nothing about the address is kept or told
+        # the exit address the agent measured is shown to the operator (N-99)
+        self.assertEqual(session.exit_ip, "203.0.113.50")
+        self.assertEqual(state["proxy"]["short"], f"proxy P{self.reserved.pk} ✓ · 203.0.113.50")
+        self.assertIn("Endereço de saída: 203.0.113.50.", state["proxy"]["text"])
+        # the proxy's own address in the hub's list is not copied anywhere
         stored = " ".join(str(getattr(session, field.name)) for field in session._meta.fields)
         self.assertNotIn("10.9.0.1", stored + repr(state))
+
+    def test_an_exit_address_that_does_not_look_like_one_is_not_kept(self):
+        session, state = self._open(self._facts(self.reserved, exit_ip="<script>alert(1)</script>"))
+        self.assertEqual(session.exit_ip, "")
+        self.assertNotIn("script", repr(state))
 
     def test_the_node_proxy_or_someone_else_proxy_is_a_warning(self):
         session, state = self._open(self._facts(self.of_node))
@@ -636,7 +644,7 @@ class ProxyIndicatorTests(_Base):
         session, _state = self._open(self._facts(self.reserved))
         self.client.force_login(self.user)
         chip = self.client.get(f"/game/control/chip/{self.ga.pk}/").content.decode()
-        self.assertIn(f"proxy P{self.reserved.pk} ✓", chip)
+        self.assertIn(f"proxy P{self.reserved.pk} ✓ · 203.0.113.50", chip)
         self.assertIn("reservado para esta conta", chip)
         status = self.client.get(f"/game/control/{session.pk}/status/").json()
         self.assertEqual(status["proxy"]["level"], "ok")
