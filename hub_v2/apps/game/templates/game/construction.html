@@ -67,6 +67,9 @@
     .cb-chip code { font-family: ui-monospace, monospace; font-size: .7rem; color: var(--ik-muted); background: none; padding: 0; }
     .cb-res { display: inline-flex; align-items: center; gap: .25rem; font-size: .74rem; font-weight: 600; color: var(--ik-ink); white-space: nowrap; }
     .cb-res.miss { color: #b3402f; }
+    /* "em obra" on a level of the map: at the corner, never over the number */
+    .cb-up { position: absolute; top: -7px; right: -7px; z-index: 1; font-size: 13px; line-height: 1; color: #f59e0b; background: var(--ik-paper, #fffdf7); border-radius: 50%; box-shadow: 0 0 0 1px var(--ik-paper, #fffdf7); }
+    span:has(> .cb-up), button:has(> .cb-up) { position: relative; box-shadow: 0 0 0 2px #f5b301; }
     .cb-lm-city { display: flex; align-items: center; gap: .35rem; min-width: 9.5rem; }
     .cb-lm-city > span { flex: 1; min-width: 0; }
     .cb-lm-move { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex-shrink: 0; border-radius: 8px; border: 1px solid transparent; font-size: .8rem; color: var(--ik-muted); background: transparent; cursor: pointer; transition: all .15s; }
@@ -484,7 +487,7 @@
                 {% elif cell.count == 1 %}
                 {% with inst=cell.instances.0 %}
                 <span class="relative inline-flex h-7 w-8 items-center justify-center rounded-md font-mono font-bold text-white {% if inst.is_upgrading %}ring-2 ring-amber-400{% endif %}"
-                      style="background: {% if inst.level >= 30 %}#3d6a2f{% elif inst.level >= 20 %}#5f8c4e{% elif inst.level >= 10 %}#8ab06f{% else %}#c2d0a8{% endif %};">{{ inst.level }}{% if inst.is_upgrading %}<i class="bi bi-arrow-up-circle-fill absolute -right-1.5 -top-1.5 text-amber-500" style="font-size:12px;"></i>{% endif %}</span>
+                      style="background: {% if inst.level >= 30 %}#3d6a2f{% elif inst.level >= 20 %}#5f8c4e{% elif inst.level >= 10 %}#8ab06f{% else %}#c2d0a8{% endif %};">{{ inst.level }}{% if inst.is_upgrading %}<i class="bi bi-arrow-up-circle-fill cb-up" title="Em obra"></i>{% endif %}</span>
                 {% endwith %}
                 {% else %}
                 {# clique troca: soma <-> instancias lado a lado #}
@@ -496,7 +499,7 @@
                           style="background: {% if cell.total >= 30 %}#3d6a2f{% elif cell.total >= 20 %}#5f8c4e{% elif cell.total >= 10 %}#8ab06f{% else %}#c2d0a8{% endif %};"
                           title="{{ cell.count }} unidades · soma {{ cell.total }} — clique para detalhar">
                     {{ cell.total }}<sup class="ml-0.5 text-[9px] font-bold leading-none opacity-90">{{ cell.count }}</sup>
-                    {% if cell.any_upgrading %}<i class="bi bi-arrow-up-circle-fill absolute -right-1.5 -top-1.5 text-amber-500" style="font-size:12px;"></i>{% endif %}
+                    {% if cell.any_upgrading %}<i class="bi bi-arrow-up-circle-fill cb-up" title="Em obra"></i>{% endif %}
                   </button>
                   {# instancias lado a lado #}
                   <div x-show="open" @click="open=false"
@@ -504,7 +507,7 @@
                        class="flex cursor-pointer items-center gap-0.5" title="clique para recolher">
                     {% for inst in cell.instances %}
                     <span class="relative inline-flex h-7 w-8 items-center justify-center rounded-md font-mono font-bold text-white {% if inst.is_upgrading %}ring-2 ring-amber-400{% endif %}"
-                          style="background: {% if inst.level >= 30 %}#3d6a2f{% elif inst.level >= 20 %}#5f8c4e{% elif inst.level >= 10 %}#8ab06f{% else %}#c2d0a8{% endif %};">{{ inst.level }}{% if inst.is_upgrading %}<i class="bi bi-arrow-up-circle-fill absolute -right-1.5 -top-1.5 text-amber-500" style="font-size:11px;"></i>{% endif %}</span>
+                          style="background: {% if inst.level >= 30 %}#3d6a2f{% elif inst.level >= 20 %}#5f8c4e{% elif inst.level >= 10 %}#8ab06f{% else %}#c2d0a8{% endif %};">{{ inst.level }}{% if inst.is_upgrading %}<i class="bi bi-arrow-up-circle-fill cb-up" title="Em obra"></i>{% endif %}</span>
                     {% endfor %}
                   </div>
                 </div>
