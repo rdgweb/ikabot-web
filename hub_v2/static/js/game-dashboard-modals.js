@@ -277,12 +277,29 @@ function gameDashboardModals() {
       };
     },
 
+    // N-101: what the troop modal reads. The modal was written against these names
+    // (troopInsights, account.troops/share/uid, unit.count, city.id/troops/resources/wine)
+    // and the script only had the older ones, so the modal opened with errors and blanks.
+    troopInsights() {
+      const summary = this.troopSummary();
+      return {
+        avg: summary.avgPerAccount,
+        topName: summary.topAccount,
+        topCount: summary.topTroops,
+        visibleCount: summary.accounts,
+      };
+    },
+
     troopAccountRanking() {
       const accounts = this.detailAccounts();
       const maxTroops = Math.max(...accounts.map((account) => Number(account.troop_total || 0)), 1);
+      const total = accounts.reduce((sum, account) => sum + Number(account.troop_total || 0), 0);
       return accounts
         .map((account) => ({
           ...account,
+          uid: account.game_account_id || `${account.account_id}-${account.server_id}-${account.player}`,
+          troops: Number(account.troop_total || 0),
+          share: total > 0 ? Math.round((Number(account.troop_total || 0) / total) * 100) : 0,
           troopWidth: Math.round((Number(account.troop_total || 0) / maxTroops) * 100),
         }))
         .sort((a, b) => Number(b.troop_total || 0) - Number(a.troop_total || 0));
@@ -301,6 +318,7 @@ function gameDashboardModals() {
         .map(([name, total]) => ({
           name,
           total,
+          count: total,
           share: grand > 0 ? Math.round((total / grand) * 100) : 0,
         }))
         .sort((a, b) => b.total - a.total)
@@ -309,12 +327,18 @@ function gameDashboardModals() {
 
     strongestTroopCities() {
       return this.detailAccounts()
-        .flatMap((account) => (account.cities || []).map((city) => ({
+        .flatMap((account) => (account.cities || []).map((city, index) => ({
           ...city,
+          id: `${account.game_account_id}-${index}`,
+          name: `${city.name} (${account.player})`,
+          troops: Number(city.troop_total || 0),
+          resources: Number(city.resource_total || 0),
+          wine: city.wine_hours === null || city.wine_hours === undefined ? 0 : Math.round(Number(city.wine_hours)),
           player: account.player,
           serverLabel: account.server_label,
         })))
-        .sort((a, b) => Number(b.troop_total || 0) - Number(a.troop_total || 0))
+        .filter((city) => city.troops > 0)
+        .sort((a, b) => b.troops - a.troops)
         .slice(0, 8);
     },
 
@@ -336,12 +360,30 @@ function gameDashboardModals() {
       };
     },
 
+    // N-101: same story as the troop modal (shipInsights, account.ships/share/uid,
+    // unit.count, city.id/ships/resources/logistics).
+    shipInsights() {
+      const summary = this.shipSummary();
+      const stuck = summary.lowTransport;
+      return {
+        avg: summary.avgPerAccount,
+        topName: summary.topAccount,
+        topCount: summary.topShips,
+        bottleneckSeverity: stuck > 0 ? 'warn' : 'ok',
+        bottleneckLabel: stuck > 0 ? `${stuck} conta${stuck > 1 ? 's' : ''} sem barco livre` : 'Sem gargalo',
+      };
+    },
+
     shipAccountRanking() {
       const accounts = this.detailAccounts();
       const maxShips = Math.max(...accounts.map((account) => Number(account.ship_total || 0)), 1);
+      const total = accounts.reduce((sum, account) => sum + Number(account.ship_total || 0), 0);
       return accounts
         .map((account) => ({
           ...account,
+          uid: account.game_account_id || `${account.account_id}-${account.server_id}-${account.player}`,
+          ships: Number(account.ship_total || 0),
+          share: total > 0 ? Math.round((Number(account.ship_total || 0) / total) * 100) : 0,
           shipWidth: Math.round((Number(account.ship_total || 0) / maxShips) * 100),
         }))
         .sort((a, b) => Number(b.ship_total || 0) - Number(a.ship_total || 0));
@@ -360,6 +402,7 @@ function gameDashboardModals() {
         .map(([name, total]) => ({
           name,
           total,
+          count: total,
           share: grand > 0 ? Math.round((total / grand) * 100) : 0,
         }))
         .sort((a, b) => b.total - a.total)
@@ -368,14 +411,20 @@ function gameDashboardModals() {
 
     strongestFleetCities() {
       return this.detailAccounts()
-        .flatMap((account) => (account.cities || []).map((city) => ({
+        .flatMap((account) => (account.cities || []).map((city, index) => ({
           ...city,
+          id: `${account.game_account_id}-${index}`,
+          name: `${city.name} (${account.player})`,
+          ships: Number(city.fleet_total || 0),
+          resources: Number(city.resource_total || 0),
+          logistics: `${Number(account.free_transporters || 0)}/${Number(account.max_transporters || 0)} barcos livres`,
           player: account.player,
           serverLabel: account.server_label,
           freeTransporters: account.free_transporters,
           maxTransporters: account.max_transporters,
         })))
-        .sort((a, b) => Number(b.fleet_total || 0) - Number(a.fleet_total || 0))
+        .filter((city) => city.ships > 0)
+        .sort((a, b) => b.ships - a.ships)
         .slice(0, 8);
     },
   };

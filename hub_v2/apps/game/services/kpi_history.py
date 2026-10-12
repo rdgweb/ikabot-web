@@ -38,6 +38,19 @@ def _si(value) -> int:
         return 0
 
 
+def _unit_total(units) -> int:
+    """Units of a snapshot: {"Hoplita": 120, ...} as the agent writes it (a list of {"count"} is accepted too).
+
+    The old history read only the list form, which the snapshot never had: the troop and
+    ship charts were always zero.
+    """
+    if isinstance(units, dict):
+        return sum(max(_si(count), 0) for count in units.values())
+    if isinstance(units, list):
+        return sum(max(_si(unit.get("count")), 0) for unit in units if isinstance(unit, dict))
+    return 0
+
+
 def instants(period: str, now=None) -> list:
     """The instants of the chart, oldest first, ending now."""
     span, step = PERIODS[clean_period(period)]
@@ -56,8 +69,8 @@ def _metrics(row) -> dict:
         "income": net_gold_income(base),
         "cities": len(cities),
         "resources": sum(totals.values()),
-        "troops": sum(_si(unit.get("count")) for unit in (military.get("troops") or []) if isinstance(unit, dict)),
-        "ships": sum(_si(unit.get("count")) for unit in (military.get("fleet") or []) if isinstance(unit, dict)),
+        "troops": _unit_total(military.get("troops")),
+        "ships": _unit_total(military.get("fleet")),
         **totals,
     }
 

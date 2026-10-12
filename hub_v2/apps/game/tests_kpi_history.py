@@ -30,7 +30,7 @@ class KpiHistoryTests(TestCase):
         return AccountSnapshotHistory.objects.create(
             account=self.account, game_account=game_account, captured_at=self.now - timedelta(hours=hours_ago),
             base_snapshot={"gold": gold, **base}, cities=[{"wood": 10, "wine": 1, "marble": 2, "crystal": 3, "sulfur": 4}],
-            military={"troops": [{"count": 5}], "fleet": [{"count": 2}]},
+            military={"troops": {"Hoplita": 3, "Lanceiro": 2}, "fleet": {"Aríete a Vapor": 2}, "by_city": []},
         )
 
     def _sums(self, data, metric="gold"):
