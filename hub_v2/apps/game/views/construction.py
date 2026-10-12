@@ -365,13 +365,15 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
                 if (inp.get("queue_strategy") or "eta_first") == "fifo":
                     in_plan_order.add(key)
                 pending_steps.append({
-                    "idx": entry["idx"],
+                    "id": entry["index"],
+                    "p_order": entry["p_order"] if entry["priority"] else 0,
+                    "p_level": entry["p_level"] if entry["priority"] else 0,
+                    "city_id": entry["city_id"],
                     "city_name": entry["city_name"],
                     "icon": _building_icon(entry["building"]),
                     "name": _building_name(entry["building"]),
                     "cur": entry["cur"],
                     "target": entry["target"],
-                    "priority": entry["priority"],
                 })
             build_seconds = overview["build_seconds"]
             strategy = inp.get("queue_strategy") or "eta_first"
@@ -414,12 +416,16 @@ class ConstructionPanelView(LoginRequiredMixin, TemplateView):
             rows = []
             for city in cities:
                 key = (ga_id, city["id"])
-                pending = sorted(pending_by_city.get(key, []), key=lambda entry: (not entry["priority"], entry["idx"]))
+                pending = sorted(
+                    pending_by_city.get(key, []),
+                    key=lambda entry: (not entry["priority"], entry["p_order"] if entry["priority"] else 0, entry["idx"]),
+                )
                 # N-103: "falta" is what the city needs to START its next building, and only when
                 # it is not building. (The reservations add up the next level of every pending
                 # building, each against the whole stock: a number that answers no question.)
                 # a plan in "ordem do plano" waits for its first step; the others start whatever fits first
-                candidates = pending[:1] if key in in_plan_order else pending
+                # (N-108) a prioritized step is the only thing the city builds until it gets there
+                candidates = pending[:1] if (key in in_plan_order or (pending and pending[0]["priority"])) else pending
                 gap = board.cheapest_start(candidates, city["stock"]) if pending and not city["works"] else None
                 missing = gap["missing"] if gap else {}
                 state = board.city_state(working=bool(city["works"]), has_pending=bool(pending), has_shortfall=bool(missing))

@@ -2505,13 +2505,18 @@ class JobPlanQuickPatchView(LoginRequiredMixin, View):
 
     Aceita:
       - queue_strategy: muda a estrategia do plano (smart|eta_first|fifo)
-      - prioritize_index: marca a etapa como priority=True -> vira a PROXIMA
-        construida naquela cidade, independente da estrategia
-      - remove_index: remove uma etapa do construction_plan_json (indice)
-    Aplica via __pending_patch (proximo ciclo).
+      - action=prioritize, step, level: a cidade constroi so essa etapa ate o nivel dado,
+        na ordem das prioridades dela (1 primeiro, depois 2...)
+      - action=unprioritize, step: tira a prioridade
+      - action=cut, step, level[, current]: tira da etapa o nivel dado e os acima dele
+    `step` e o campo "index" da etapa (estavel), nao a posicao na lista. As mudancas vao para
+    as duas listas do plano (N-108: o agente executa a que tem custo e tempo por nivel).
+    Responde com o estado das etapas para a tela se redesenhar.
     """
 
     def post(self, request, pk):
+        from ..services import plan_edit
+
         try:
             job = Job.objects.select_related("game_account").get(pk=pk)
         except (Job.DoesNotExist, ValueError, ValidationError):
@@ -2529,44 +2534,47 @@ class JobPlanQuickPatchView(LoginRequiredMixin, View):
         strategy = str(request.POST.get("queue_strategy") or "").strip()
         if strategy in {"smart", "eta_first", "fifo"}:
             patch["queue_strategy"] = strategy
-            message = "Prioridade atualizada."
+            message = "Prioridade do plano atualizada."
 
-        remove_index = request.POST.get("remove_index")
-        prioritize_index = request.POST.get("prioritize_index")
-        if remove_index is not None or prioritize_index is not None:
+        try:
+            inputs = json.loads(target.inputs_json or "{}")
+        except (ValueError, TypeError):
+            inputs = {}
+        if not isinstance(inputs, dict):
+            inputs = {}
+
+        action = str(request.POST.get("action") or "").strip()
+        if action:
             try:
-                inp = json.loads(target.inputs_json or "{}")
-                steps = list(inp.get("construction_plan_json") or [])
-            except (ValueError, TypeError):
-                steps = []
-            if remove_index is not None:
-                try:
-                    i = int(remove_index)
-                    if 0 <= i < len(steps):
-                        steps.pop(i)
-                        message = "Etapa removida."
-                except (TypeError, ValueError):
-                    pass
-            if prioritize_index is not None:
-                try:
-                    i = int(prioritize_index)
-                    if 0 <= i < len(steps):
-                        tgt_city = str(steps[i].get("city_id") or "")
-                        # so um priorizado por cidade: limpa os outros da mesma cidade
-                        for idx, s in enumerate(steps):
-                            if str(s.get("city_id") or "") == tgt_city:
-                                s.pop("priority", None)
-                        steps[i]["priority"] = True
-                        message = "Etapa priorizada — será a próxima nesta cidade."
-                except (TypeError, ValueError):
-                    pass
-            patch["construction_plan_json"] = steps
+                step = int(request.POST.get("step") or 0)
+                level = int(request.POST.get("level") or 0)
+                current = int(request.POST.get("current") or 0)
+            except (TypeError, ValueError):
+                return JsonResponse({"ok": False, "error": "Etapa ou nível inválido."}, status=400)
+            try:
+                if action == "prioritize":
+                    message = plan_edit.set_priority(inputs, step, level)
+                elif action == "unprioritize":
+                    message = plan_edit.clear_priority(inputs, step)
+                elif action == "cut":
+                    message = plan_edit.cut_step(inputs, step, level, current_level=current)
+                else:
+                    return JsonResponse({"ok": False, "error": "Ação desconhecida."}, status=400)
+            except plan_edit.PlanEditError as exc:
+                return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+            for key in ("construction_plan_json", "construction_plan_steps", "construction_summary"):
+                if key in inputs:
+                    patch[key] = inputs[key]
 
         if not patch:
             return JsonResponse({"ok": False, "error": "Nada a alterar."}, status=400)
 
         JobSubmitView._write_pending_patch(target, patch)
-        return JsonResponse({"ok": True, "message": message})
+        return JsonResponse({
+            "ok": True,
+            "message": message + " Vale a partir do próximo ciclo do plano.",
+            "steps": plan_edit.editor_state(inputs),
+        })
 
 
 class JobSendResourcesView(LoginRequiredMixin, View):

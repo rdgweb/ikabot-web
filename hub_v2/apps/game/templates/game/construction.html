@@ -72,6 +72,16 @@
     .cb-lm-move { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex-shrink: 0; border-radius: 8px; border: 1px solid transparent; font-size: .8rem; color: var(--ik-muted); background: transparent; cursor: pointer; transition: all .15s; }
     tr:hover .cb-lm-move { color: var(--ik-sea); border-color: rgba(79, 134, 185, .45); background: rgba(79, 134, 185, .1); }
     .cb-lm-move:hover, .cb-lm-move:focus-visible { color: #fff !important; background: var(--ik-sea) !important; border-color: var(--ik-sea) !important; }
+    .cb-step { display: flex; align-items: center; gap: .45rem; padding: .3rem .5rem; border: 1px solid var(--ik-line); border-radius: 10px; background: rgba(255, 255, 255, .8); }
+    .cb-step.on { border-color: var(--ik-sea); box-shadow: 0 0 0 1px var(--ik-sea) inset; }
+    .cb-step-badge { display: inline-flex; align-items: center; gap: .2rem; padding: .05rem .15rem .05rem .45rem; border-radius: 999px; font-size: .66rem; color: #fff; background: var(--ik-sea); white-space: nowrap; }
+    .cb-step-badge button { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; color: #fff; background: rgba(255, 255, 255, .22); cursor: pointer; }
+    .cb-step-level { height: 24px; padding: 0 .3rem; border: 1px solid var(--ik-line); border-radius: 7px; font-size: .68rem; font-family: ui-monospace, monospace; color: var(--ik-ink); background: var(--ik-paper); }
+    .cb-step-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex-shrink: 0; border-radius: 7px; border: 1px solid rgba(79, 134, 185, .45); font-size: .7rem; color: var(--ik-sea); background: transparent; cursor: pointer; }
+    .cb-step-btn:hover { color: #fff; background: var(--ik-sea); }
+    .cb-step-btn.cut { border-color: rgba(185, 79, 79, .45); color: #b94f4f; }
+    .cb-step-btn.cut:hover { color: #fff; background: #b94f4f; }
+    .cb-step-btn:disabled { opacity: .45; cursor: default; }
     .cb-empty { border: 1px dashed var(--ik-line); border-radius: 18px; padding: 1.4rem; text-align: center; font-size: .85rem; color: var(--ik-muted); }
     .cb-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: .7rem; }
     .cb-note { border: 1px solid var(--ik-line); border-left-width: 4px; border-radius: 14px; padding: .65rem .8rem; background: var(--ik-paper); min-width: 0; }
@@ -345,31 +355,34 @@
           </a>
         </div>
 
-        {# Editor de etapas: priorizar / remover #}
+        {# Editor de etapas (N-108): prioridade até um nível, em ordem; tirar de um nível para cima #}
         <div x-show="tab==='steps'" x-transition class="mt-2 rounded-[14px] border p-2" style="border-color: rgba(79,134,185,0.25); background: rgba(79,134,185,0.04);">
           <template x-if="steps.length === 0"><div class="py-3 text-center text-[11px] text-muted">Nenhuma etapa pendente.</div></template>
-          <div class="max-h-56 space-y-1 overflow-y-auto">
-            <template x-for="st in steps" :key="st.idx">
-              <div class="flex items-center gap-2 rounded-lg border px-2 py-1" style="border-color: var(--ik-line); background: rgba(255,255,255,0.8);"
-                   :class="st.priority ? 'ring-1 ring-[var(--ik-sea)]' : ''">
-                <img :src="st.icon" class="h-5 w-5 shrink-0 object-contain" alt="">
+          <div class="max-h-72 space-y-1 overflow-y-auto">
+            <template x-for="st in steps" :key="st.id">
+              <div class="cb-step" :class="st.p_order ? 'on' : ''">
+                <img :src="st.icon" class="h-6 w-6 shrink-0 object-contain" alt="">
                 <div class="min-w-0 flex-1">
                   <div class="truncate text-[11px] font-semibold text-ink" x-text="st.name"></div>
                   <div class="truncate text-[10px] text-muted"><span x-text="st.city_name"></span> · <span class="font-mono" x-text="st.cur + '→' + st.target"></span></div>
                 </div>
-                <span x-show="st.priority" class="rounded-full px-1.5 py-0.5 text-[9px] font-bold text-white" style="background: var(--ik-sea);">próxima</span>
-                <button type="button" @click="prioritize(st.idx)" title="Priorizar — vira a próxima nesta cidade"
-                        class="inline-flex h-6 w-6 items-center justify-center rounded-md border text-[11px]" style="border-color: rgba(79,134,185,0.4); color: var(--ik-sea);">
-                  <i class="bi bi-star-fill"></i>
-                </button>
-                <button type="button" @click="removeStep(st.idx)" title="Remover etapa"
-                        class="inline-flex h-6 w-6 items-center justify-center rounded-md border text-[11px]" style="border-color: rgba(185,79,79,0.4); color:#b94f4f;">
-                  <i class="bi bi-x-lg"></i>
-                </button>
+                <template x-if="st.p_order">
+                  <span class="cb-step-badge" :title="'Nesta cidade só este prédio é construído até o nível ' + st.p_level">
+                    <b x-text="st.p_order + 'ª'"></b> até <span x-text="st.p_level"></span>
+                    <button type="button" @click="unprioritize(st)" title="Tirar a prioridade"><i class="bi bi-x"></i></button>
+                  </span>
+                </template>
+                <select class="cb-step-level" x-model.number="st.lv" title="Nível">
+                  <template x-for="l in levels(st)" :key="l"><option :value="l" :selected="l === st.lv" x-text="'Nv ' + l"></option></template>
+                </select>
+                <button type="button" class="cb-step-btn" :disabled="busy" @click="prioritize(st)"
+                        :title="'Priorizar: nesta cidade, só ' + st.name + ' até o nível ' + st.lv"><i class="bi bi-star-fill"></i></button>
+                <button type="button" class="cb-step-btn cut" :disabled="busy" @click="cut(st)"
+                        :title="st.lv === st.target ? 'Tirar do plano o nível ' + st.lv : 'Tirar do plano do nível ' + st.lv + ' ao ' + st.target"><i class="bi bi-scissors"></i></button>
               </div>
             </template>
           </div>
-          <p class="mt-2 text-[10px] text-muted"><i class="bi bi-info-circle"></i> Mudanças entram no próximo ciclo do plano.</p>
+          <p class="mt-2 text-[10px] text-muted"><i class="bi bi-star-fill"></i> prioriza até o nível escolhido · <i class="bi bi-scissors"></i> tira do plano o nível escolhido e os acima · vale a partir do próximo ciclo</p>
         </div>
 
         {# Enviar recursos #}
@@ -608,15 +621,16 @@ async function _ikPost(url, data) {
   });
   let j = {};
   try { j = await r.json(); } catch (e) {}
-  return {ok: r.ok && j.ok, message: j.message || j.error || (r.ok ? 'OK' : 'Erro')};
+  return {ok: r.ok && j.ok, message: j.message || j.error || (r.ok ? 'OK' : 'Erro'), data: j};
 }
 function _toast(type, message) {
   window.dispatchEvent(new CustomEvent('toast', {detail: {type, message}}));
 }
 function planCard(jobId, strategy) {
   return {
-    jobId, strategy, tab: null,
-    steps: JSON.parse(document.getElementById('cs-'+jobId+'-steps')?.textContent || '[]'),
+    jobId, strategy, tab: null, busy: false,
+    // lv: the level the two buttons of the row act on
+    steps: JSON.parse(document.getElementById('cs-'+jobId+'-steps')?.textContent || '[]').map(s => ({...s, lv: s.p_level || s.target})),
     cities: JSON.parse(document.getElementById('cs-'+jobId+'-cities')?.textContent || '[]'),
     resIcons: JSON.parse(document.getElementById('cs-res-icons')?.textContent || '{}'),
     fromCity: '', toCity: '', sending: false,
@@ -634,18 +648,35 @@ function planCard(jobId, strategy) {
       const res = await _ikPost(`/jobs/${this.jobId}/plan-patch/`, {queue_strategy: this.strategy});
       _toast(res.ok ? 'success' : 'error', res.message);
     },
-    async prioritize(idx) {
-      const res = await _ikPost(`/jobs/${this.jobId}/plan-patch/`, {prioritize_index: idx});
-      if (res.ok) {
-        this.steps.forEach(s => { if (s.city_name === (this.steps.find(x=>x.idx===idx)||{}).city_name) s.priority = false; });
-        const t = this.steps.find(s => s.idx === idx); if (t) t.priority = true;
-      }
+    levels(st) {
+      const out = [];
+      for (let l = st.cur + 1; l <= st.target; l++) out.push(l);
+      return out;
+    },
+    // N-108: the list is redrawn from what the server says the plan is now, step by step id
+    applyState(list) {
+      const byId = Object.fromEntries((list || []).map(s => [s.id, s]));
+      this.steps = this.steps
+        .filter(s => byId[s.id] && byId[s.id].target > s.cur)
+        .map(s => {
+          const now = byId[s.id];
+          const active = now.p_order > 0 && s.cur < now.p_level;
+          return {...s, target: now.target, p_order: active ? now.p_order : 0, p_level: active ? now.p_level : 0, lv: Math.min(s.lv, now.target)};
+        });
+    },
+    async planAction(data) {
+      this.busy = true;
+      const res = await _ikPost(`/jobs/${this.jobId}/plan-patch/`, data);
+      this.busy = false;
+      if (res.ok && res.data.steps) this.applyState(res.data.steps);
       _toast(res.ok ? 'success' : 'error', res.message);
     },
-    async removeStep(idx) {
-      const res = await _ikPost(`/jobs/${this.jobId}/plan-patch/`, {remove_index: idx});
-      if (res.ok) this.steps = this.steps.filter(s => s.idx !== idx);
-      _toast(res.ok ? 'success' : 'error', res.message);
+    prioritize(st) { return this.planAction({action: 'prioritize', step: st.id, level: st.lv}); },
+    unprioritize(st) { return this.planAction({action: 'unprioritize', step: st.id}); },
+    cut(st) {
+      const what = st.lv === st.target ? `o nível ${st.lv}` : `do nível ${st.lv} ao ${st.target}`;
+      if (!confirm(`Tirar do plano ${what} de ${st.name} em ${st.city_name}?`)) return;
+      return this.planAction({action: 'cut', step: st.id, level: st.lv, current: st.cur});
     },
     async sendResources() {
       if (!this.fromCity || !this.toCity) { _toast('error', 'Escolha origem e destino.'); return; }

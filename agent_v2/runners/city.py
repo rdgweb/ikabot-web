@@ -1919,8 +1919,16 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             building_id = str(step.get("building_id") or step.get("building_type") or "").strip()
             if not city_id or not building_id:
                 continue
+            # N-108: "build this first, until this level", in order inside the city. The mark is
+            # put on the step by the hub panel; it used to be dropped here.
+            priority_order = _to_int(step.get("priority_order"), 0)
+            if priority_order <= 0 and step.get("priority") is True:
+                priority_order = 1
+            priority_level = (_to_int(step.get("priority_level"), 0) or _to_int(step.get("target_level"), 0)) if priority_order > 0 else 0
             out.append({
                 "index": _to_int(step.get("index"), idx),
+                "priority_order": priority_order,
+                "priority_level": priority_level,
                 "city_id": city_id,
                 "city_name": str(step.get("city_name") or city_id),
                 "building_id": building_id,
@@ -2326,9 +2334,18 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             return None
 
         # Priorizado pelo usuario (painel): vem antes de qualquer estrategia.
-        priority_candidates = [c for c in city_candidates if c.get("priority")]
+        # Until a prioritized step reaches its level the city builds nothing else, even when
+        # another step could start sooner; with several, the lowest order goes first.
+        priority_candidates = [
+            c for c in city_candidates
+            if _to_int(c.get("priority_order"), 0) > 0
+            and _to_int(c.get("current_level"), 0) < (_to_int(c.get("priority_level"), 0) or _to_int(c.get("target_level"), 0))
+        ]
         if priority_candidates:
-            return sorted(priority_candidates, key=lambda step: _to_int(step.get("index"), 0))[0]
+            return sorted(
+                priority_candidates,
+                key=lambda step: (_to_int(step.get("priority_order"), 0), _to_int(step.get("index"), 0)),
+            )[0]
 
         strategy = str(queue_strategy or "fifo").strip().lower()
         if strategy in ("eta_first", "smart"):

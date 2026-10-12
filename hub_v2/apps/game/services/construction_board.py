@@ -124,9 +124,14 @@ def plan_overview(inputs: dict, levels_by_city: dict | None) -> dict:
             continue
         preview = previews[position] if aligned else by_index.get(_si(step.get("index"), -2))
         cost, seconds = step_remaining(preview, level)
+        # N-108: a priority is "this step first, until this level", in order inside the city
+        order = _si(step.get("priority_order")) or (1 if step.get("priority") is True else 0)
+        until = (_si(step.get("priority_level")) or target) if order else 0
         entry = {
-            "idx": position, "city_id": city_id, "city_name": city["city_name"], "building": building,
-            "cur": level, "target": target, "priority": bool(step.get("priority")),
+            "idx": position, "index": _si(step.get("index"), position + 1),
+            "city_id": city_id, "city_name": city["city_name"], "building": building,
+            "cur": level, "target": target,
+            "p_order": order, "p_level": until, "priority": bool(order and level < until),
             "new": str(step.get("mode") or "") == "new" and level == 0,
             "cost": cost, "seconds": seconds,
             "next_cost": next_level_cost(preview, level),
@@ -140,7 +145,7 @@ def plan_overview(inputs: dict, levels_by_city: dict | None) -> dict:
 
     for city in cities.values():
         # what the plan builds first in the city comes first: the prioritized step, then plan order
-        city["pending"].sort(key=lambda entry: (not entry["priority"], entry["idx"]))
+        city["pending"].sort(key=lambda entry: (not entry["priority"], entry["p_order"] if entry["priority"] else 0, entry["idx"]))
         city["cost"] = {name: city["cost"][name] for name in RESOURCE_KEYS if city["cost"][name] > 0}
     total = len(steps)
     return {
