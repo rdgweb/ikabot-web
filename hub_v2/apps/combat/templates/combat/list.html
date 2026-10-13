@@ -1,4 +1,5 @@
 {% extends base_template|default:"base.html" %}
+{% load static %}
 
 {% block title %}Combates{% endblock %}
 
@@ -7,49 +8,60 @@
 {% endblock %}
 
 {% block content %}
-{# N-109: the hub CSS is precompiled, so the layout of this page lives here #}
+{# N-109: the hub CSS is precompiled, so the layout of this page lives in combat/styles.html #}
 {% include "combat/styles.html" %}
 
-<div class="flex flex-wrap items-end justify-between gap-3 mb-4">
-  <div>
-    <h1 class="text-2xl font-bold text-ink">Combates</h1>
-    <p class="text-sm text-muted mt-1">{{ total }} relatório{{ total|pluralize }}{% if live_count %} · <span class="cbt-dot"></span> {{ live_count }} em andamento{% endif %}</p>
-  </div>
+<div class="mb-4">
+  <h1 class="text-2xl font-bold text-ink">Combates</h1>
 </div>
 
+<div class="cbt-tiles">
+  {% for tile in tiles %}
+  {% if tile.state is None %}
+  <div class="cbt-tile"><b>{{ tile.value }}</b><span>{{ tile.label }}</span></div>
+  {% else %}
+  <a class="cbt-tile {{ tile.tone }}{% if state == tile.state %} on{% endif %}" href="?{% if tile.state %}state={{ tile.state }}{% endif %}{% if account %}{% if tile.state %}&{% endif %}account={{ account }}{% endif %}"><b>{{ tile.value }}</b><span>{{ tile.label }}</span></a>
+  {% endif %}
+  {% endfor %}
+</div>
+
+{% if accounts %}
 <div class="cbt-filters">
-  <a href="?{% if account %}account={{ account }}{% endif %}" class="{% if not state %}on{% endif %}">Todos</a>
-  <a href="?state=live{% if account %}&account={{ account }}{% endif %}" class="{% if state == 'live' %}on{% endif %}">Em andamento</a>
-  <a href="?state=victory{% if account %}&account={{ account }}{% endif %}" class="{% if state == 'victory' %}on{% endif %}">Vitórias</a>
-  <a href="?state=defeat{% if account %}&account={{ account }}{% endif %}" class="{% if state == 'defeat' %}on{% endif %}">Derrotas</a>
-  {% if accounts %}
-  <span class="cbt-sep"></span>
   <a href="?{% if state %}state={{ state }}{% endif %}" class="{% if not account %}on{% endif %}">Todas as contas</a>
   {% for ga in accounts %}
   <a href="?account={{ ga.pk }}{% if state %}&state={{ state }}{% endif %}" class="{% if account == ga.pk|stringformat:'s' %}on{% endif %}">{{ ga.name|default:ga.server_id }}</a>
   {% endfor %}
-  {% endif %}
 </div>
+{% endif %}
 
 {% if cards %}
 <div class="cbt-grid">
   {% for item in cards %}
-  <a class="cbt-card {{ item.tone }}" href="{% url 'combat:detail' item.report.pk %}">
-    <div class="cbt-top">
+  <a class="cbt-card" href="{% url 'combat:detail' item.report.pk %}">
+    <div class="cbt-banner" style="background-image: url('{% if item.naval %}{% static 'game/combat/battlefield_sea_A_D.jpg' %}{% else %}{% static 'game/combat/battlefield_city_A_D.jpg' %}{% endif %}');">
+      <b>{{ item.title }}</b>
       <span class="cbt-state {{ item.tone }}">{{ item.label }}</span>
-      <span class="cbt-when">{{ item.when|date:"d/m H:i" }}</span>
     </div>
-    <b class="cbt-title">{{ item.title }}</b>
-    <div class="cbt-versus">
-      <span class="att">{{ item.attacker|default:"?" }}</span>
-      <i class="bi bi-x-lg"></i>
-      <span class="def">{{ item.defender|default:"?" }}</span>
+    <div class="cbt-sides">
+      <div class="cbt-side">
+        <small class="att">Atacante</small>
+        <b>{{ item.attacker|default:"?" }}</b>
+        <div class="cbt-lost">
+          {% for unit in item.attacker_losses %}<span>{% include "combat/tile.html" with small=True %}-{{ unit.amount }}</span>{% empty %}<em>sem perdas</em>{% endfor %}
+        </div>
+      </div>
+      <div class="cbt-side">
+        <small class="def">Defensor</small>
+        <b>{{ item.defender|default:"?" }}</b>
+        <div class="cbt-lost">
+          {% for unit in item.defender_losses %}<span>{% include "combat/tile.html" with small=True %}-{{ unit.amount }}</span>{% empty %}<em>sem perdas</em>{% endfor %}
+        </div>
+      </div>
     </div>
-    <div class="cbt-facts">
-      <span title="Rounds"><i class="bi bi-arrow-repeat"></i> {{ item.report.total_rounds }}</span>
-      <span title="Perdas do atacante" class="att"><i class="bi bi-heartbreak"></i> {{ item.attacker_lost }}</span>
-      <span title="Perdas do defensor" class="def"><i class="bi bi-heartbreak"></i> {{ item.defender_lost }}</span>
-      {% if item.loot %}<span title="Saque"><i class="bi bi-box-seam"></i> {{ item.loot }}</span>{% endif %}
+    <div class="cbt-foot">
+      <span><i class="bi bi-clock"></i> {{ item.when|date:"d/m H:i" }}</span>
+      <span><i class="bi bi-arrow-repeat"></i> {{ item.report.total_rounds }} round{{ item.report.total_rounds|pluralize }}</span>
+      {% if item.loot %}<span><i class="bi bi-box-seam"></i> {{ item.loot }}</span>{% endif %}
       {% if item.account %}<span class="cbt-account">{{ item.account }}</span>{% endif %}
     </div>
   </a>

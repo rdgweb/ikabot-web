@@ -328,6 +328,27 @@ class CombatPagesTests(CombatBase):
         self.assertEqual([item["report"].combat_id for item in mine.context["cards"]], [4242])
         self.assertEqual(self.client.get("/combat/", {"account": "lixo"}).status_code, 200)
 
+    def test_the_page_builds_the_field_with_the_pieces_of_the_game(self):
+        from apps.combat.services.board import round_board
+
+        board = round_board(report_parser.parse_rounds(DETAILED)[0], "Alpha")
+        slot = next(item for item in board["slots"] if item.get("label") == "45 (-5)")
+        self.assertEqual((slot["left"], slot["top"]), ("47.182", "34.005"))         # where the game puts the first front-line slot of three
+        self.assertEqual((slot["sprite"], slot["damage"], slot["ammo"]), ("7.635% 50%", "0.000", ""))
+        wall = next(item for item in board["slots"] if item.get("label") == "1 (-0)")
+        self.assertTrue(wall["sprite"].endswith("50%"))
+        self.assertEqual(sum(1 for item in board["slots"] if item.get("empty")), 33)
+        self.assertEqual([unit["amount"] for unit in board["reserves"][0]["units"]], ["37", "1"])
+        self.assertEqual((board["sides"]["attacker"]["own"], board["sides"]["attacker"]["armies"][0]["morale"]), (True, 87))
+        self.assertEqual(board["events"][0]["units"][0]["amount"], "57")
+        self.assertEqual(board["background"], "game/combat/battlefield_city_A_D.jpg")
+        fallen = round_board(report_parser.parse_rounds(DETAILED)[1])
+        self.assertTrue(next(item for item in fallen["slots"] if item.get("label") == "0 (-17)")["sprite"].endswith("100%"))
+        page = self.client.get(f"/combat/{self.over.pk}/").content.decode()
+        self.assertIn('class="cbf"', page)
+        self.assertIn("left: 47.182%; top: 34.005%;", page)
+        self.assertNotIn('<img class="cbt-field"', page)                           # no stretched picture on the page
+
     def test_a_combat_is_paged_by_round(self):
         response = self.client.get(f"/combat/{self.over.pk}/")
         self.assertEqual(response.status_code, 200)

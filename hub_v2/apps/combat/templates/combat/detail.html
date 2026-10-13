@@ -1,4 +1,5 @@
 {% extends base_template|default:"base.html" %}
+{% load static %}
 
 {% block title %}{{ card.title }} · Combates{% endblock %}
 
@@ -10,44 +11,105 @@
 {% block content %}
 {% include "combat/styles.html" %}
 
-<div class="cbt-head">
-  <h1>{{ card.title }}</h1>
-  <span class="cbt-state {{ card.tone }}">{{ card.label }}</span>
-  <span class="cbt-when">{{ card.when|date:"d/m/Y H:i" }}</span>
-  {% if card.account %}<span class="cbt-account" style="margin-left: 0;">{{ card.account }}</span>{% endif %}
-</div>
+<div x-data="{ round: {{ current }}, rounds: {{ numbers|safe }}, picture: '{% url 'combat:round-image' report.pk 0 %}'.replace('/0.jpg', '/'),
+               go(step) { const next = this.rounds[this.rounds.indexOf(this.round) + step]; if (next !== undefined) this.round = next; } }"
+     @keydown.left.window="go(-1)" @keydown.right.window="go(1)">
 
-{% if numbers %}
-{# the field of each round is a picture drawn by the hub; the last one carries the outcome #}
-<div x-data="{ round: {{ current }}, base: '{% url 'combat:round-image' report.pk 0 %}'.replace('/0.jpg', '/') }">
-  <div class="cbt-rounds">
+  <div class="cbd-head">
+    <div>
+      <h1>{{ card.title }} <span class="cbt-state {{ card.tone }}">{{ card.label }}</span></h1>
+      <p>{{ card.when|date:"d/m/Y H:i" }} · {{ report.total_rounds }} round{{ report.total_rounds|pluralize }}{% if card.account %} · {{ card.account }}{% endif %}</p>
+    </div>
+    <div class="cbd-versus"><span class="att">{{ card.attacker|default:"?" }}</span><i class="bi bi-x-lg"></i><span class="def">{{ card.defender|default:"?" }}</span></div>
+  </div>
+
+  {% if boards %}
+  <div class="cbd-pager">
     <span>Round</span>
+    <button type="button" @click="go(-1)" :disabled="round === rounds[0]" title="Round anterior"><i class="bi bi-chevron-left"></i></button>
     {% for number in numbers %}
     <button type="button" :class="round === {{ number }} ? 'on' : ''" @click="round = {{ number }}">{{ number }}</button>
     {% endfor %}
+    <button type="button" @click="go(1)" :disabled="round === rounds[rounds.length - 1]" title="Próximo round"><i class="bi bi-chevron-right"></i></button>
+    <a :href="picture + round + '.jpg'" href="{% url 'combat:round-image' report.pk current %}" target="_blank" rel="noopener" hx-boost="false" title="A imagem deste round, como vai no Telegram"><i class="bi bi-image"></i> Imagem</a>
   </div>
-  <img class="cbt-field" :src="base + round + '.jpg'" src="{% url 'combat:round-image' report.pk current %}" alt="Campo de batalha do round">
-</div>
-{% else %}
-<div class="card cbt-empty"><i class="bi bi-hourglass-split"></i> O jogo ainda não mostrou o campo deste combate.</div>
-{% endif %}
 
-{% if units %}
-<div class="cbt-units">
-  {% for unit in units %}
-  <div class="cbt-unit">
-    <b>{{ unit.name }}</b>
-    {% if unit.attacker %}<div class="att"><span>{{ unit.attacker.left }}</span>{% if unit.attacker.lost %}<small>-{{ unit.attacker.lost }}</small>{% endif %}</div>{% endif %}
-    {% if unit.defender %}<div class="def"><span>{{ unit.defender.left }}</span>{% if unit.defender.lost %}<small>-{{ unit.defender.lost }}</small>{% endif %}</div>{% endif %}
-  </div>
+  {% for board in boards %}
+  <section x-show="round === {{ board.number }}"{% if board.number != current %} x-cloak{% endif %}>
+    <div class="cbd-board">
+      {% include "combat/side.html" with side=board.sides.attacker tone="att" label="ATACANTE" %}
+      {# the field of the game: its background, and each piece where the game puts it #}
+      <div class="cbf-wrap">
+        <div class="cbf" style="background-image: url('{% static board.background %}');">
+          {% for reserve in board.reserves %}
+          <span class="cbf-res" style="left: {{ reserve.title.left }}%; top: {{ reserve.title.top }}%;">Reserva{% if reserve.hidden %} +{{ reserve.hidden }}{% endif %}</span>
+          {% for unit in reserve.units %}
+          <div class="cbf-slot" style="left: {{ unit.left }}%; top: {{ unit.top }}%;">{% include "combat/tile.html" %}<span class="cbf-num bare">{{ unit.amount }}</span></div>
+          {% endfor %}
+          {% endfor %}
+          {% for unit in board.slots %}
+          {% if unit.empty %}
+          <div class="cbf-slot cbf-empty" style="left: {{ unit.left }}%; top: {{ unit.top }}%;"></div>
+          {% else %}
+          <div class="cbf-slot" style="left: {{ unit.left }}%; top: {{ unit.top }}%;" title="{{ unit.title }}">
+            {% include "combat/tile.html" %}
+            <span class="cbf-hp"><i style="height: {{ unit.damage }}%;"></i></span>
+            {% if unit.ammo %}<span class="cbf-hp ammo"><i style="height: {{ unit.ammo }}%;"></i></span>{% endif %}
+            <span class="cbf-num">{{ unit.count }}{% if unit.lost %}<i>-{{ unit.lost }}</i>{% endif %}</span>
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% include "combat/side.html" with side=board.sides.defender tone="def" label="DEFENSOR" %}
+    </div>
+
+    {% if board.events %}
+    <div class="cbd-events">
+      {% for event in board.events %}
+      <div class="cbd-event">
+        <time>{{ event.time }}</time>
+        {{ event.text }}
+        {% if event.units %}
+        <div class="cbd-troops">
+          {% for unit in event.units %}<span>{% include "combat/tile.html" with small=True %}{{ unit.amount }}</span>{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
   {% endfor %}
-</div>
-{% endif %}
+  {% else %}
+  <div class="card cbt-empty"><i class="bi bi-hourglass-split"></i> O jogo ainda não mostrou o campo deste combate.</div>
+  {% endif %}
 
-{% if loot %}
-<div class="cbt-loot">
-  <span class="text-muted"><i class="bi bi-box-seam"></i> Saque</span>
-  {% for label, amount in loot %}<span>{{ label }}<b>{{ amount }}</b></span>{% endfor %}
+  {% if units %}
+  <h2 class="cbd-title">Saldo do combate</h2>
+  {% if summary.winners %}
+  <div class="cbd-result">
+    <span><i class="bi bi-trophy"></i> <span class="won">{{ summary.winners }}</span></span>
+    {% if summary.losers %}<span class="lostside"><i class="bi bi-flag"></i> {{ summary.losers }}</span>{% endif %}
+  </div>
+  {% endif %}
+  <div class="cbd-units">
+    {% for unit in units %}
+    <div class="cbd-unit">
+      {% include "combat/tile.html" %}
+      <div>
+        <b>{{ unit.name }}</b>
+        {% if unit.attacker %}<p class="att"><span>{{ unit.attacker.left }}</span>{% if unit.attacker.lost %}<small>-{{ unit.attacker.lost }}</small>{% endif %}</p>{% endif %}
+        {% if unit.defender %}<p class="def"><span>{{ unit.defender.left }}</span>{% if unit.defender.lost %}<small>-{{ unit.defender.lost }}</small>{% endif %}</p>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% if loot %}
+  <div class="cbd-loot">
+    {% for item in loot %}<span title="{{ item.label }}"><img src="{% static item.icon %}" alt="{{ item.label }}"> {{ item.amount }}</span>{% endfor %}
+  </div>
+  {% endif %}
+  {% endif %}
 </div>
-{% endif %}
 {% endblock %}

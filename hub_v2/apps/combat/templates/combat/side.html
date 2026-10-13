@@ -1,0 +1,13 @@
+{# one side of the round: who it is, what is left, what fell, and the morale of each army #}
+<div class="cbd-side">
+  <div class="who">
+    <small class="{{ tone }}">{{ label }}</small>
+    <b>{{ side.name }}</b>
+    {% if side.own %}<span class="cbd-own {{ tone }}">SUA CONTA</span>{% endif %}
+  </div>
+  <span class="cbd-stat"><b>{{ side.left }}</b> restantes</span>
+  {% if side.lost %}<span class="cbd-stat lost"><b>-{{ side.lost }}</b> no round</span>{% endif %}
+  {% for army in side.armies %}
+  <span class="cbd-morale" title="Moral de {{ army.name }}">{% if side.armies|length > 1 %}{{ army.name }} {% endif %}<u><i style="width: {{ army.morale }}%;"></i></u><b>{{ army.morale }}%</b></span>
+  {% endfor %}
+</div>
