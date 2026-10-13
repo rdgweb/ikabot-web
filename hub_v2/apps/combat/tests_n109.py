@@ -122,6 +122,7 @@ class ReportParserTests(SimpleTestCase):
         self.assertEqual(report_parser.unit_name(315), "Lanceiro")
         self.assertEqual(report_parser.unit_name(314), "Muralha")
         self.assertEqual(report_parser.unit_name(999), "Unidade 999")
+        self.assertEqual(report_parser.unit_name(320), "Membro do Clube de Bárbaros")
         self.assertTrue(report_parser.unit_icon(303).endswith("hoplita.png"))
         self.assertEqual(report_parser.unit_icon(314), "")              # the wall has no picture: it is drawn
 
@@ -166,6 +167,9 @@ class ReportParserTests(SimpleTestCase):
         self.assertEqual((summary["winners"], summary["losers"]), ("Alpha[TAG]", "Inimigo[XYZ]"))
         self.assertEqual(summary["loot"], {"wood": 80631, "sulfur": 2220})
         self.assertIsNone(report_parser.parse_summary("<div>nada</div>"))
+        # a unit the hub does not know keeps the name the game gives it in the summary
+        renamed = report_parser.parse_summary(SUMMARY.replace("army s305", "army s399").replace(" Morteiro ", " Unidade Nova "))
+        self.assertIn("Unidade Nova", [item["name"] for item in renamed["units"]])
 
 
 @unittest.skipUnless(HAS_PILLOW, "Pillow is not installed")

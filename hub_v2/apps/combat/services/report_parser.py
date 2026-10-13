@@ -31,7 +31,7 @@ RESOURCE_LABELS = {"wood": "Madeira", "wine": "Vinho", "marble": "Mármore", "gl
 
 # the game's numeric ids (css class "s<id>"); the wall fights as a unit of the defender
 _UNITS = {int(unit["id"]): unit["name"] for group in TRAINING_UNITS.values() for unit in group}
-_UNITS.update({314: "Muralha", 316: "Bárbaro"})
+_UNITS.update({314: "Muralha", 320: "Membro do Clube de Bárbaros"})      # 320: as the game names it in a barbarian village
 
 
 def unit_name(unit_id) -> str:
@@ -215,12 +215,14 @@ def parse_summary(html: str) -> dict | None:
     columns: list[int] = []
     table = re.search(r'<table class="[^"]*militaryList[^"]*">(.*?)</table>', html, re.S)
     for row in re.findall(r"<tr[^>]*>.*?</tr>", table.group(1) if table else "", re.S):
-        header = [int(unit) for unit in re.findall(r'<div class="(?:army|fleet|ship)[^"]*\bs(\d{3})\b', row)]
+        # the header of a block names its units: the game's own name is kept (it knows units the hub does not)
+        header = re.findall(r'<div class="(?:army|fleet|ship)[^"]*\bs(\d{3})\b[^"]*"\s*>(?:\s*<div class="tooltip">\s*([^<]*?)\s*</div>)?', row)
         if header:
-            columns = header
-            for unit in header:
+            columns = [int(unit) for unit, _name in header]
+            for unit, name in header:
+                unit = int(unit)
                 if unit not in units:
-                    units[unit] = {"unit": unit, "name": unit_name(unit), "attacker": None, "defender": None}
+                    units[unit] = {"unit": unit, "name": html_lib.unescape(name).strip() or unit_name(unit), "attacker": None, "defender": None}
                     order.append(unit)
             continue
         side = "attacker" if "attackerLine" in row else "defender" if "defenderLine" in row else ""

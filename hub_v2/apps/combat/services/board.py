@@ -92,7 +92,7 @@ def round_board(round_data: dict, own_name: str = "") -> dict:
     return {
         "number": round_data["round"],
         "date": round_data.get("date") or "",
-        "background": "game/combat/" + BACKGROUNDS["sea" if "sea" in kind else "land" if "land" in kind else "city"],
+        "background": "game/combat/" + BACKGROUNDS["sea" if "sea" in kind else "land" if "land" in kind or "barb" in kind else "city"],
         "slots": slots,
         "reserves": reserves,
         "sides": sides,

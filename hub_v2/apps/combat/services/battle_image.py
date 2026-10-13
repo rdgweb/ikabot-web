@@ -256,7 +256,8 @@ def _slot(pen: _Pen, x: float, y: float, slot) -> None:
 
 def _field(pen: _Pen, ox: float, oy: float, round_data: dict) -> None:
     kind = str(round_data.get("field") or "").lower()
-    name = BACKGROUNDS["sea" if "sea" in kind else "land" if "land" in kind else "city"]
+    # a barbarian village has no city walls: the open field is the closest background the hub has
+    name = BACKGROUNDS["sea" if "sea" in kind else "land" if "land" in kind or "barb" in kind else "city"]
     background = _scaled(name, *FIELD)
     if background is not None:
         pen.paste(background, ox, oy)
