@@ -3,9 +3,13 @@ Views para o app Telegram — configuracao do bot, auditoria e partials HTMX.
 """
 
 import json
+import re
+from datetime import timedelta
 
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db.models import Count
 from django.http import HttpResponse
+from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
 from django.urls import reverse_lazy
@@ -77,16 +81,19 @@ class TelegramConfigView(LoginRequiredMixin, UpdateView):
 
         # Notification templates (seed if first time)
         NotificationTemplate.seed_defaults()
-        templates = NotificationTemplate.objects.filter(game_account__isnull=True)
-        template_items = []
-        for tpl in templates:
-            meta = next((e for e in EVENT_TYPES if e["key"] == tpl.event_key), None)
-            template_items.append({
-                "template": tpl,
-                "label": meta["label"] if meta else tpl.event_key,
-                "description": meta["description"] if meta else "",
-            })
-        ctx["template_items"] = template_items
+        counts = sent_counts()
+        items = [template_item(tpl, counts) for tpl in NotificationTemplate.objects.filter(game_account__isnull=True)]
+        items.sort(key=lambda item: (-item["sent"], item["label"]))
+        ctx["template_items"] = items
+        # N-104: the notices whose whole text is written from variables, and the ones whose
+        # body still arrives ready-made (only the frame around it can be edited)
+        ctx["template_groups"] = [
+            {"title": "Texto inteiro editável", "items": [item for item in items if item["structured"]]},
+            {"title": "Só a moldura (o corpo chega pronto)", "items": [item for item in items if not item["structured"]]},
+        ]
+        with_template = {item["template"].event_key for item in items}
+        ctx["fixed_events"] = [e["label"] for e in EVENT_TYPES if e["key"] not in with_template]
+        ctx["sent_total"] = sum(counts.values())
 
         TelegramIncomingCommand.seed_defaults()
         ctx["command_items"] = [
@@ -190,83 +197,150 @@ class GlobalUnlinkView(LoginRequiredMixin, View):
 
 # ── Notification Templates ────────────────────────────────────────────
 
-class TemplateEditView(LoginRequiredMixin, View):
-    """GET: render edit form for a template. POST: save changes."""
+COUNT_DAYS = 14
 
-    # Sample data for preview rendering
-    SAMPLE_CONTEXT = {
-        "action_name": "Check Status",
-        "ga_name": "Cidade01",
-        "server_id": "s61-br",
-        "account_name": "player@email.com",
-        "node_name": "node-01",
-        "agent_name": "agent-1",
-        "exit_code": "1",
-        "job_id": "abc-123",
-        "status": "error",
-        "error": "Timeout ao conectar",
+# what a notice looks like when none of its kind was sent yet (the editor prefers the last real one)
+SAMPLE_CONTEXTS = {
+    "cinema_available": {
+        "count": 3, "accounts": "• BlackShadow701 — Midgard\n• HAVIT — lll1lll\n• ScorpiO — ScorpiO M",
+        "reset_time": "00:00", "reset_in": "1h",
+    },
+    "island_monitor": {
+        "ga_name": "BlackShadow701", "server_id": "s78-br", "title": "Mudança na ilha [83:90]",
+        "island": "Ilha [83:90] — Colosso", "coords": "[83:90]", "resource": "Vinho", "miracle": "Colosso",
+        "changes": "➕ Fulano [ABC] colonizou Nova Polis\n🔄 Velha: Ciclano → Beltrano", "changes_count": 2,
+    },
+    "diplomacy_message": {
+        "ga_name": "BlackShadow701", "server_id": "s78-br", "sender": "Fulano", "subject": "Tratado cultural",
+        "game_date": "12.10.2026 18:00", "message_body": "Olá, aceita um tratado cultural?",
+        "reply_command": "/responder 1234 <texto>", "accept_command": "/responder 1234 yes", "decline_command": "/responder 1234 no",
+    },
+}
+GENERIC_SAMPLE = {
+    "action_name": "Check Status", "ga_name": "Cidade01", "server_id": "s61-br", "account_name": "player@email.com",
+    "node_name": "node-01", "agent_name": "agent-1", "exit_code": "1", "job_id": "abc-123", "status": "error",
+    "error": "Timeout ao conectar", "title": "Aviso", "body": "Texto do aviso",
+}
+
+
+def event_meta(event_key: str) -> dict:
+    return next((e for e in EVENT_TYPES if e["key"] == event_key), None) or {"label": event_key, "description": ""}
+
+
+def sent_counts() -> dict:
+    """{event: messages sent in the last COUNT_DAYS days}."""
+    since = timezone.now() - timedelta(days=COUNT_DAYS)
+    rows = MessageAudit.objects.filter(created_at__gte=since, status="sent").values("channel").annotate(n=Count("id"))
+    return {row["channel"]: row["n"] for row in rows}
+
+
+def template_item(tpl, counts: dict | None = None) -> dict:
+    meta = event_meta(tpl.event_key)
+    global_pk = tpl.pk
+    if tpl.game_account_id:
+        base = NotificationTemplate.for_event(tpl.event_key)
+        global_pk = base.pk if base else tpl.pk
+    return {
+        "template": tpl,
+        "global_pk": global_pk,          # the row of the list an account text lives under
+        "label": meta["label"],
+        "description": meta["description"],
+        "structured": tpl.event_key in NotificationTemplate.EVENT_VARS,
+        "sent": (counts or {}).get(tpl.event_key, 0),
+        "account_name": (tpl.game_account.name or tpl.game_account.server_id) if tpl.game_account_id else "",
+        "overrides": NotificationTemplate.objects.filter(event_key=tpl.event_key, game_account__isnull=False).count()
+        if not tpl.game_account_id else 0,
     }
 
-    def get(self, request, pk):
-        tpl = get_object_or_404(NotificationTemplate, pk=pk)
-        meta = next((e for e in EVENT_TYPES if e["key"] == tpl.event_key), None)
-        form = NotificationTemplateForm(instance=tpl)
-        preview = tpl.render(**self.SAMPLE_CONTEXT)
 
-        ctx = {
-            "tpl": tpl,
-            "form": form,
-            "label": meta["label"] if meta else tpl.event_key,
-            "preview": preview,
-            "available_vars": NotificationTemplate.AVAILABLE_VARS,
-        }
-        html = render_to_string(
-            "telegram/partials/template_edit.html", ctx, request=request,
-        )
-        return HttpResponse(html)
+def preview_context(tpl) -> tuple[dict, object]:
+    """(what the last real notice of this kind carried, when it was sent) or (a made-up one, None)."""
+    sent = MessageAudit.objects.filter(channel=tpl.event_key, status="sent").exclude(context_json__in=("", "{}"))
+    last = (sent.filter(game_account_id=tpl.game_account_id).order_by("-created_at").first() if tpl.game_account_id else None) \
+        or sent.order_by("-created_at").first()
+    if last is not None:
+        try:
+            context = json.loads(last.context_json or "{}")
+        except ValueError:
+            context = {}
+        if isinstance(context, dict) and context:
+            context = _complete(tpl, context)
+            # a notice sent before the text had these variables would preview with holes in it
+            own = {name.strip("{}") for name, _label in NotificationTemplate.EVENT_VARS.get(tpl.event_key, [])}
+            used = set(re.findall(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", f"{tpl.title_template}\n{tpl.body_template}"))
+            if not (used & own) - set(context):
+                return context, last.created_at
+    return _complete(tpl, {**GENERIC_SAMPLE, **SAMPLE_CONTEXTS.get(tpl.event_key, {})}), None
+
+
+def _complete(tpl, context: dict) -> dict:
+    if tpl.event_key != "island_monitor":
+        return context
+    from .services.digests import island_context
+
+    return island_context(context)
+
+
+def render_preview(tpl) -> tuple[str, object]:
+    context, sent_at = preview_context(tpl)
+    return tpl.render(**context), sent_at
+
+
+def editor_response(request, tpl, *, form=None, saved=False, notice="", notice_ok=True):
+    preview, preview_at = render_preview(tpl)
+    taken = NotificationTemplate.objects.filter(event_key=tpl.event_key, game_account__isnull=False)
+    html = render_to_string("telegram/partials/template_edit.html", {
+        "tpl": tpl,
+        "item": template_item(tpl),
+        "form": form or NotificationTemplateForm(instance=tpl),
+        "preview": preview,
+        "preview_at": preview_at,
+        "available_vars": NotificationTemplate.variables_for(tpl.event_key),
+        "unknown_vars": tpl.unknown_variables(),
+        "account_templates": list(taken.select_related("game_account")) if not tpl.game_account_id else [],
+        "free_accounts": list(
+            GameAccount.objects.filter(active=True, account__active=True)
+            .exclude(pk__in=taken.values_list("game_account_id", flat=True)).order_by("name")
+        ) if not tpl.game_account_id else [],
+        "saved": saved,
+        "notice": notice,
+        "notice_ok": notice_ok,
+    }, request=request)
+    response = HttpResponse(html)
+    if saved:
+        response["HX-Trigger"] = "showToast"
+    return response
+
+
+def row_response(request, tpl, *, toast=False):
+    html = render_to_string("telegram/partials/template_row.html", {"item": template_item(tpl, sent_counts())}, request=request)
+    response = HttpResponse(html)
+    if toast:
+        response["HX-Trigger"] = "showToast"
+    return response
+
+
+class TemplateEditView(LoginRequiredMixin, View):
+    """GET: the editor of a notice text. POST: save it."""
+
+    def get(self, request, pk):
+        return editor_response(request, get_object_or_404(NotificationTemplate, pk=pk))
 
     def post(self, request, pk):
         tpl = get_object_or_404(NotificationTemplate, pk=pk)
-        meta = next((e for e in EVENT_TYPES if e["key"] == tpl.event_key), None)
         form = NotificationTemplateForm(request.POST, instance=tpl)
         if form.is_valid():
             form.save()
             tpl.refresh_from_db()
-
-        preview = tpl.render(**self.SAMPLE_CONTEXT)
-
-        ctx = {
-            "tpl": tpl,
-            "form": form,
-            "label": meta["label"] if meta else tpl.event_key,
-            "preview": preview,
-            "available_vars": NotificationTemplate.AVAILABLE_VARS,
-            "saved": True,
-        }
-        html = render_to_string(
-            "telegram/partials/template_edit.html", ctx, request=request,
-        )
-        response = HttpResponse(html)
-        response["HX-Trigger"] = "showToast"
-        return response
+            return editor_response(request, tpl, saved=True)
+        return editor_response(request, tpl, form=form)
 
 
 class TemplateRowView(LoginRequiredMixin, View):
     """GET: return collapsed row for a template (used by Cancel button)."""
 
     def get(self, request, pk):
-        tpl = get_object_or_404(NotificationTemplate, pk=pk)
-        meta = next((e for e in EVENT_TYPES if e["key"] == tpl.event_key), None)
-        html = render_to_string(
-            "telegram/partials/template_row.html",
-            {"item": {
-                "template": tpl,
-                "label": meta["label"] if meta else tpl.event_key,
-                "description": meta["description"] if meta else "",
-            }},
-            request=request,
-        )
-        return HttpResponse(html)
+        return row_response(request, get_object_or_404(NotificationTemplate, pk=pk))
 
 
 class TemplateResetView(LoginRequiredMixin, View):
@@ -275,20 +349,66 @@ class TemplateResetView(LoginRequiredMixin, View):
     def post(self, request, pk):
         tpl = get_object_or_404(NotificationTemplate, pk=pk)
         tpl.reset_to_default()
+        return editor_response(request, tpl, saved=True, notice="Texto padrão restaurado.")
 
-        meta = next((e for e in EVENT_TYPES if e["key"] == tpl.event_key), None)
-        html = render_to_string(
-            "telegram/partials/template_row.html",
-            {"item": {
-                "template": tpl,
-                "label": meta["label"] if meta else tpl.event_key,
-                "description": meta["description"] if meta else "",
-            }},
-            request=request,
+
+class TemplateTestView(LoginRequiredMixin, View):
+    """POST: send the notice as it is saved now to the global chat, filled like the preview (N-104)."""
+
+    def post(self, request, pk):
+        from .services.bot_api import send_message
+
+        tpl = get_object_or_404(NotificationTemplate, pk=pk)
+        bot = TelegramBotConfig.objects.filter(pk=1).first()
+        if bot is None or not bot.is_active or not bot.chat_id:
+            return editor_response(request, tpl, notice="Não há bot ativo com chat global vinculado para receber o teste.", notice_ok=False)
+        text, _sent_at = render_preview(tpl)
+        result = send_message(bot.chat_id, "🧪 <i>Teste do modelo</i>\n" + text)
+        if result.get("ok"):
+            return editor_response(request, tpl, notice="Teste enviado para o chat global.")
+        return editor_response(request, tpl, notice=f"O Telegram recusou o teste: {result.get('description', 'erro desconhecido')}", notice_ok=False)
+
+
+class AccountTemplateCreateView(LoginRequiredMixin, View):
+    """POST: give an account a text of its own for a notice, starting from the global one (N-104)."""
+
+    def post(self, request, pk):
+        base = get_object_or_404(NotificationTemplate, pk=pk, game_account__isnull=True)
+        game_account = GameAccount.objects.filter(pk=request.POST.get("game_account") or None).first() \
+            if _is_uuid(request.POST.get("game_account")) else None
+        if game_account is None:
+            return editor_response(request, base, notice="Escolha a conta.", notice_ok=False)
+        own, _created = NotificationTemplate.objects.get_or_create(
+            scope_key=NotificationTemplate.scope_for(base.event_key, game_account.pk),
+            defaults={
+                "event_key": base.event_key, "game_account": game_account, "icon": base.icon,
+                "title_template": base.title_template, "body_template": base.body_template,
+            },
         )
-        response = HttpResponse(html)
-        response["HX-Trigger"] = "showToast"
-        return response
+        return editor_response(request, base, notice=f"{game_account.name or game_account.server_id} agora tem um texto próprio; edite-o na lista abaixo.")
+
+
+class AccountTemplateDeleteView(LoginRequiredMixin, View):
+    """POST: drop the text an account has of its own; it goes back to the global one."""
+
+    def post(self, request, pk):
+        own = get_object_or_404(NotificationTemplate, pk=pk, game_account__isnull=False)
+        base = NotificationTemplate.for_event(own.event_key)
+        name = own.game_account.name or own.game_account.server_id
+        own.delete()
+        if base is None:
+            return HttpResponse("")
+        return editor_response(request, base, notice=f"{name} voltou a usar o texto global.")
+
+
+def _is_uuid(value) -> bool:
+    import uuid
+
+    try:
+        uuid.UUID(str(value))
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 # ── Audit ───────────────────────────────────────────────────────────
@@ -323,6 +443,14 @@ class IncomingCommandSaveView(LoginRequiredMixin, View):
 
 
 class TelegramAuditView(FilterSortListView):
+    # N-104: the history says which notice each message was, by name
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        labels = {event["key"]: event["label"] for event in EVENT_TYPES}
+        for message in ctx.get("object_list") or []:
+            message.channel_label = labels.get(message.channel, message.channel)
+        return ctx
+
     model = MessageAudit
     filterset_class = MessageAuditFilter
     template_name = "telegram/audit_list.html"

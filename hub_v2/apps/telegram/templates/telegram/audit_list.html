@@ -1,14 +1,14 @@
 {% extends "base_list.html" %}
 
-{% block title %}Central de Mensagens{% endblock %}
+{% block title %}Telegram · Histórico{% endblock %}
 
 {% block breadcrumb_items %}
   <span class="mx-1">/</span> <a href="{% url 'telegram:config' %}" class="hover:text-ink">Telegram</a>
-  <span class="mx-1">/</span> <span class="text-ink">Central de Mensagens</span>
+  <span class="mx-1">/</span> <span class="text-ink">Histórico</span>
 {% endblock %}
 
-{% block page_title %}Central de Mensagens{% endblock %}
-{% block page_subtitle %}Histórico de notificações enviadas via Telegram{% endblock %}
+{% block page_title %}Telegram · Histórico{% endblock %}
+{% block page_subtitle %}O que o bot enviou, por tipo de aviso e por conta · <a class="link-sea" href="{% url 'telegram:config' %}#avisos">Avisos</a> · <a class="link-sea" href="{% url 'telegram:config' %}#mensagens">Mensagens</a> · <a class="link-sea" href="{% url 'telegram:config' %}#conexao">Conexão</a>{% endblock %}
 
 {% block filter_dropdown %}
 <div x-data="{ filterOpen: false }" class="relative">
@@ -68,15 +68,15 @@
         </select>
       </div>
       <div>
-        <label class="filter-panel-label">Canal</label>
+        <label class="filter-panel-label">Tipo de aviso</label>
         <select name="channel" class="filter-select"
                 hx-get="{{ request.path }}" hx-target="#table-content"
                 hx-swap="innerHTML" hx-trigger="change"
                 hx-include=".filter-panel [name]" hx-push-url="true">
           <option value="">Todos</option>
-          <option value="notification" {% if request.GET.channel == "notification" %}selected{% endif %}>Notificação</option>
-          <option value="alert" {% if request.GET.channel == "alert" %}selected{% endif %}>Alerta</option>
-          <option value="summary" {% if request.GET.channel == "summary" %}selected{% endif %}>Resumo</option>
+          {% for value, label in filter.form.channel.field.choices %}
+            {% if value %}<option value="{{ value }}" {% if request.GET.channel == value %}selected{% endif %}>{{ label }}</option>{% endif %}
+          {% endfor %}
         </select>
       </div>
     </div>

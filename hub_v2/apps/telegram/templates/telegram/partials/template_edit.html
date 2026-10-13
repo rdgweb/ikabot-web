@@ -1,88 +1,83 @@
-{# ── Template edit (expanded) ── #}
+{# ── One notice text, open for editing (N-104): what to type on the left, how it arrives on the right ── #}
 
-<div id="tpl-row-{{ tpl.pk }}" class="border border-[var(--ik-sea)]/30 rounded-lg bg-[var(--ik-sand-light)]">
-  {# Header #}
-  <div class="px-4 py-3 border-b border-[var(--ik-line)]">
-    <div class="flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <span class="text-lg">{{ tpl.icon }}</span>
-        <span class="text-sm font-semibold text-[var(--ik-ink)]">{{ label }}</span>
+<div id="tpl-row-{{ tpl.pk }}" class="tg-row open">
+  <div class="tg-edit-head">
+    <span class="tg-row-icon">{{ tpl.icon }}</span>
+    <b>{{ item.label }}{% if item.account_name %} · {{ item.account_name }}{% endif %}</b>
+    {% if item.account_name %}<span class="tg-tag">texto só desta conta</span>{% else %}<span class="tg-tag muted">texto global</span>{% endif %}
+    {% if not item.structured %}<span class="tg-tag muted" title="O corpo deste aviso ainda chega pronto; aqui se edita o título e onde o corpo entra ({body})">só a moldura</span>{% endif %}
+  </div>
+
+  {% if notice %}
+  <div class="tg-notice{% if not notice_ok %} bad{% endif %}"><i class="bi {% if notice_ok %}bi-check-circle{% else %}bi-exclamation-triangle{% endif %}"></i> {{ notice }}</div>
+  {% endif %}
+  {% if unknown_vars %}
+  <div class="tg-notice bad"><i class="bi bi-exclamation-triangle"></i>
+    Variável que este aviso não preenche (sai em branco): {% for name in unknown_vars %}<code>{{ "{" }}{{ name }}{{ "}" }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}
+  </div>
+  {% endif %}
+
+  <form hx-post="{% url 'telegram:template-edit' tpl.pk %}" hx-target="#tpl-row-{{ tpl.pk }}" hx-swap="outerHTML" hx-push-url="false">
+    {% csrf_token %}
+    <div class="tg-edit">
+      <div style="min-width: 0;">
+        <div class="tg-fields">
+          <label style="width: 4.5rem;"><span>Ícone</span>{{ form.icon }}</label>
+          <label style="flex: 1; min-width: 0;"><span>Título</span>{{ form.title_template }}</label>
+        </div>
+        <label class="tg-body"><span>Texto</span>{{ form.body_template }}</label>
+        <div class="tg-vars">
+          {% for var, desc in available_vars %}<span title="{{ desc }}"><code>{{ var }}</code> {{ desc }}</span>{% endfor %}
+        </div>
       </div>
-      <span class="text-xs text-[var(--ik-muted)] font-mono">{{ tpl.event_key }}</span>
+      <div style="min-width: 0;">
+        <span class="tg-label">Como chega{% if preview_at %} · com o último aviso real, de {{ preview_at|date:"d/m H:i" }}{% else %} · com dados de exemplo{% endif %}</span>
+        <div class="tg-preview">{{ preview|safe }}</div>
+      </div>
     </div>
-  </div>
 
-  <div class="p-4">
-    <form hx-post="{% url 'telegram:template-edit' tpl.pk %}"
-          hx-target="#tpl-row-{{ tpl.pk }}"
-          hx-swap="outerHTML">
+    <div class="tg-actions">
+      <button type="button" class="tg-link bad" hx-post="{% url 'telegram:template-reset' tpl.pk %}" hx-target="#tpl-row-{{ tpl.pk }}"
+              hx-swap="outerHTML" hx-push-url="false" hx-confirm="Restaurar o texto padrão deste aviso?"><i class="bi bi-arrow-counterclockwise"></i> Restaurar padrão</button>
+      <button type="button" class="tg-link" hx-post="{% url 'telegram:template-test' tpl.pk %}" hx-target="#tpl-row-{{ tpl.pk }}"
+              hx-swap="outerHTML" hx-push-url="false" title="Envia para o chat global o texto como está salvo agora"><i class="bi bi-send"></i> Enviar teste</button>
+      <span style="flex: 1;"></span>
+      <button type="button" class="btn btn-secondary btn-sm" hx-get="{% url 'telegram:template-row' item.global_pk %}" hx-target="#tpl-row-{{ tpl.pk }}"
+              hx-swap="outerHTML" hx-push-url="false">Fechar</button>
+      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check-lg"></i> Salvar</button>
+    </div>
+  </form>
+
+  {% if not tpl.game_account_id %}
+  {# a text of its own for one account, instead of the global #}
+  <div class="tg-accounts">
+    <span class="tg-label">Texto próprio por conta</span>
+    {% for own in account_templates %}
+    <div class="tg-account">
+      <span>{{ own.icon }} <b>{{ own.game_account.name|default:own.game_account.server_id }}</b> <small>{{ own.title_template }}</small></span>
+      <span>
+        <button type="button" class="tg-link" hx-get="{% url 'telegram:template-edit' own.pk %}" hx-target="#tpl-row-{{ tpl.pk }}" hx-swap="outerHTML" hx-push-url="false"><i class="bi bi-pencil"></i> Editar</button>
+        <button type="button" class="tg-link bad" hx-post="{% url 'telegram:template-account-delete' own.pk %}" hx-target="#tpl-row-{{ tpl.pk }}" hx-swap="outerHTML" hx-push-url="false"
+                hx-confirm="Esta conta volta a usar o texto global. Continuar?" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'><i class="bi bi-x-lg"></i> Voltar ao global</button>
+      </span>
+    </div>
+    {% empty %}
+    <p class="tg-hint">Todas as contas usam o texto global.</p>
+    {% endfor %}
+    {% if free_accounts %}
+    <form class="tg-add" hx-post="{% url 'telegram:template-account-create' tpl.pk %}" hx-target="#tpl-row-{{ tpl.pk }}" hx-swap="outerHTML" hx-push-url="false">
       {% csrf_token %}
-
-      {# Icon + Title side by side #}
-      <div class="flex gap-3 items-end mb-3">
-        <div class="shrink-0">
-          <label class="form-label text-xs mb-1">{{ form.icon.label }}</label>
-          {{ form.icon }}
-        </div>
-        <div class="flex-1">
-          <label class="form-label text-xs mb-1">{{ form.title_template.label }}</label>
-          {{ form.title_template }}
-        </div>
-      </div>
-
-      {# Body #}
-      <div class="mb-3">
-        <label class="form-label text-xs mb-1">{{ form.body_template.label }}</label>
-        {{ form.body_template }}
-        <p class="text-[10px] text-[var(--ik-muted)] mt-0.5">Cada linha = uma linha na mensagem. Linhas vazias após substituição são removidas.</p>
-      </div>
-
-      {# Variables reference — compact pills #}
-      <div class="mb-4 p-2.5 bg-[var(--ik-paper)] rounded border border-[var(--ik-line)]">
-        <p class="text-[10px] font-semibold text-[var(--ik-muted)] uppercase tracking-wide mb-1.5">
-          Variáveis disponíveis
-        </p>
-        <div class="grid grid-cols-2 gap-x-4 gap-y-0.5">
-          {% for var, desc in available_vars %}
-          <div class="flex items-center gap-1.5">
-            <code class="text-[11px] text-[var(--ik-sea)] font-mono whitespace-nowrap">{{ var }}</code>
-            <span class="text-[10px] text-[var(--ik-muted)] truncate">{{ desc }}</span>
-          </div>
-          {% endfor %}
-        </div>
-      </div>
-
-      {# Live preview #}
-      <div class="mb-4">
-        <p class="text-[10px] font-semibold text-[var(--ik-muted)] uppercase tracking-wide mb-1.5">Preview</p>
-        <div class="p-3 bg-[#1e2c3a] text-[#e1e4e8] text-sm rounded-lg font-sans whitespace-pre-line leading-relaxed">
-          {{ preview|safe }}
-        </div>
-      </div>
-
-      {# Actions #}
-      <div class="flex items-center justify-between pt-3 border-t border-[var(--ik-line)]">
-        <button type="button"
-                hx-post="{% url 'telegram:template-reset' tpl.pk %}"
-                hx-target="#tpl-row-{{ tpl.pk }}"
-                hx-swap="outerHTML"
-                hx-confirm="Restaurar o template padrão?"
-                class="text-xs text-[var(--ik-bad)] hover:underline cursor-pointer">
-          <i class="bi bi-arrow-counterclockwise"></i> Restaurar padrão
-        </button>
-        <div class="flex gap-2">
-          <button type="button"
-                  hx-get="{% url 'telegram:template-row' tpl.pk %}"
-                  hx-target="#tpl-row-{{ tpl.pk }}"
-                  hx-swap="outerHTML"
-                  class="btn btn-secondary btn-sm">
-            Cancelar
-          </button>
-          <button type="submit" class="btn btn-primary btn-sm">
-            <i class="bi bi-check-lg"></i> Salvar
-          </button>
-        </div>
-      </div>
+      <select name="game_account" class="form-input text-sm">
+        <option value="">Escolha a conta…</option>
+        {% for ga in free_accounts %}<option value="{{ ga.pk }}">{{ ga.name|default:ga.server_id }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-plus-lg"></i> Criar texto próprio</button>
     </form>
+    {% endif %}
   </div>
+  {% else %}
+  <div class="tg-accounts">
+    <button type="button" class="tg-link" hx-get="{% url 'telegram:template-edit' item.global_pk %}" hx-target="#tpl-row-{{ tpl.pk }}" hx-swap="outerHTML" hx-push-url="false"><i class="bi bi-arrow-left"></i> Voltar ao texto global</button>
+  </div>
+  {% endif %}
 </div>

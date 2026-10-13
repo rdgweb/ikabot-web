@@ -15,6 +15,9 @@ from .views import (
     TemplateEditView,
     TemplateRowView,
     TemplateResetView,
+    TemplateTestView,
+    AccountTemplateCreateView,
+    AccountTemplateDeleteView,
     IncomingCommandSaveView,
     TelegramAuditBulkDeleteView,
     TelegramAuditRetryView,
@@ -34,6 +37,9 @@ urlpatterns = [
     path("template/<int:pk>/", TemplateRowView.as_view(), name="template-row"),
     path("template/<int:pk>/edit/", TemplateEditView.as_view(), name="template-edit"),
     path("template/<int:pk>/reset/", TemplateResetView.as_view(), name="template-reset"),
+    path("template/<int:pk>/test/", TemplateTestView.as_view(), name="template-test"),
+    path("template/<int:pk>/account/", AccountTemplateCreateView.as_view(), name="template-account-create"),
+    path("template/<int:pk>/account/delete/", AccountTemplateDeleteView.as_view(), name="template-account-delete"),
     path("commands/<int:pk>/save/", IncomingCommandSaveView.as_view(), name="command-save"),
 
     # Global linking

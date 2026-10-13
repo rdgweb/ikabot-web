@@ -231,6 +231,130 @@ class TemplateScopeTests(Base):
         self.assertEqual(NotificationTemplate.for_event("cinema_available").title_template, "Cineteatro disponível em {count} conta(s)")
 
 
+class TelegramPagesTests(Base):
+    """The second half of N-104: the menu, the editor of each text and the history."""
+
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth import get_user_model
+
+        self.client.force_login(get_user_model().objects.create_user(username="tg-user", email="tg-user@example.com", password="secret123"))
+        self.island = NotificationTemplate.for_event("island_monitor")
+        self.job_failed = NotificationTemplate.for_event("job_failed")
+
+    def _url(self, name, pk):
+        from django.urls import reverse
+
+        return reverse(f"telegram:{name}", args=[pk])
+
+    def test_the_page_has_the_four_sections_and_groups_the_texts(self):
+        MessageAudit.objects.create(channel="cinema_available", status="sent", title="x")
+        response = self.client.get("/telegram/")
+        self.assertEqual(response.status_code, 200)
+        for label in ("Avisos", "Mensagens", "Conexão", "Histórico"):
+            self.assertContains(response, label)
+        groups = {group["title"]: [item["template"].event_key for item in group["items"]] for group in response.context["template_groups"]}
+        self.assertEqual(sorted(groups["Texto inteiro editável"]), ["cinema_available", "diplomacy_message", "island_monitor"])
+        self.assertIn("job_failed", groups["Só a moldura (o corpo chega pronto)"])
+        self.assertEqual(groups["Texto inteiro editável"][0], "cinema_available")          # the most sent comes first
+        self.assertContains(response, "1 em 14 dias")
+        self.assertIn("Relatório de combate", response.context["fixed_events"])
+
+    def test_the_editor_lists_the_variables_of_that_notice_and_previews_the_last_real_one(self):
+        page = self.client.get(self._url("template-edit", self.island.pk)).content.decode()
+        self.assertIn("{changes}", page)
+        self.assertNotIn("{exit_code}", page)                                             # variables of jobs do not belong here
+        self.assertIn("com dados de exemplo", page)
+        self.assertIn("Fulano [ABC] colonizou Nova Polis", page)
+
+        MessageAudit.objects.create(
+            channel="island_monitor", status="sent", title="Mudança na ilha [10:20]", game_account=self.alpha,
+            context_json=json.dumps({"ga_name": "Alpha", "title": "Mudança na ilha [10:20]", "island": "Ilha [10:20]", "coords": "[10:20]",
+                                     "changes": "➖ Velha sumiu (era de Fulano)", "changes_count": 1}),
+        )
+        page = self.client.get(self._url("template-edit", self.island.pk)).content.decode()
+        self.assertIn("com o último aviso real", page)
+        self.assertIn("Velha sumiu (era de Fulano)", page)
+        self.assertIn("Mudança na ilha [10:20]", page)
+
+        # a notice from before the text had these variables is not a preview: it would show holes
+        cinema = NotificationTemplate.for_event("cinema_available")
+        MessageAudit.objects.create(channel="cinema_available", status="sent", title="Cineteatro", game_account=self.alpha,
+                                    context_json=json.dumps({"ga_name": "Alpha", "title": "Cineteatro", "body": "sessão disponível"}))
+        page = self.client.get(self._url("template-edit", cinema.pk)).content.decode()
+        self.assertIn("com dados de exemplo", page)
+        self.assertIn("O dia do jogo vira às 00:00", page)
+
+        frame = self.client.get(self._url("template-edit", self.job_failed.pk)).content.decode()
+        self.assertIn("só a moldura", frame)
+        self.assertIn("{exit_code}", frame)
+
+    def test_saving_a_text_with_a_variable_that_does_not_exist_says_so(self):
+        response = self.client.post(self._url("template-edit", self.island.pk), {
+            "icon": "🏝️", "title_template": "Ilha {coords}", "body_template": "{cordenadas}\n{changes}",
+        })
+        page = response.content.decode()
+        self.island.refresh_from_db()
+        self.assertEqual(self.island.title_template, "Ilha {coords}")
+        self.assertIn("não preenche", page)
+        self.assertIn("{cordenadas}", page)
+        self.assertEqual(response["HX-Trigger"], "showToast")
+
+        page = self.client.post(self._url("template-reset", self.island.pk)).content.decode()
+        self.island.refresh_from_db()
+        self.assertEqual(self.island.title_template, "Mudança na ilha {coords}")
+        self.assertIn("Texto padrão restaurado.", page)
+        self.assertNotIn("não preenche", page)
+
+    def test_the_test_button_sends_the_saved_text_to_the_global_chat(self):
+        with patch("apps.telegram.services.bot_api.send_message", return_value=SENT_OK) as send:
+            page = self.client.post(self._url("template-test", self.island.pk)).content.decode()
+        self.assertIn("Teste enviado para o chat global.", page)
+        chat_id, text = send.call_args.args[:2]
+        self.assertEqual(chat_id, "1000")
+        self.assertIn("Teste do modelo", text)
+        self.assertIn("Mudança na ilha [83:90]", text)
+
+        self.bot.chat_id = ""
+        self.bot.save()
+        with patch("apps.telegram.services.bot_api.send_message", return_value=SENT_OK) as send:
+            page = self.client.post(self._url("template-test", self.island.pk)).content.decode()
+        send.assert_not_called()
+        self.assertIn("Não há bot ativo com chat global", page)
+
+    def test_an_account_gets_a_text_of_its_own_and_can_go_back_to_the_global(self):
+        page = self.client.post(self._url("template-account-create", self.island.pk), {"game_account": str(self.alpha.pk)}).content.decode()
+        own = NotificationTemplate.objects.get(event_key="island_monitor", game_account=self.alpha)
+        self.assertEqual((own.title_template, own.body_template), (self.island.title_template, self.island.body_template))
+        self.assertIn("Alpha agora tem um texto próprio", page)
+        self.assertIn(self._url("template-edit", own.pk), page)
+        self.assertNotIn(f'<option value="{self.alpha.pk}"', page)                        # no second text for the same account
+
+        self.client.post(self._url("template-edit", own.pk), {"icon": "🏝️", "title_template": "Só da Alpha {coords}", "body_template": "{changes}"})
+        self.assertIn("Só da Alpha [1:2]", format_message("island_monitor", game_account=self.alpha, coords="[1:2]", changes="x"))
+        self.assertIn("Mudança na ilha [1:2]", format_message("island_monitor", game_account=self.beta, coords="[1:2]", changes="x"))
+
+        own_editor = self.client.get(self._url("template-edit", own.pk)).content.decode()
+        self.assertIn("texto só desta conta", own_editor)
+        self.assertIn(self._url("template-row", self.island.pk), own_editor)             # closing goes back to the row of the list
+
+        page = self.client.post(self._url("template-account-delete", own.pk)).content.decode()
+        self.assertFalse(NotificationTemplate.objects.filter(pk=own.pk).exists())
+        self.assertIn("Alpha voltou a usar o texto global.", page)
+        self.assertEqual(self.client.post(self._url("template-account-create", self.island.pk), {"game_account": "lixo"}).status_code, 200)
+        self.assertEqual(NotificationTemplate.objects.filter(game_account__isnull=False).count(), 0)
+
+    def test_the_history_filters_by_kind_of_notice_and_names_it(self):
+        MessageAudit.objects.create(channel="cinema_available", status="sent", title="Cineteatro em 2 contas")
+        MessageAudit.objects.create(channel="island_monitor", status="sent", title="Mudança na ilha", game_account=self.alpha)
+        everything = self.client.get("/telegram/audit/").content.decode()
+        self.assertIn("Cineteatro disponível", everything)
+        self.assertIn("Monitor de ilha", everything)
+        only = self.client.get("/telegram/audit/", {"channel": "island_monitor"}).content.decode()
+        self.assertIn("Mudança na ilha", only)
+        self.assertNotIn("Cineteatro em 2 contas", only)
+
+
 class IslandTextTests(TestCase):
     def test_lines(self):
         text, count = digests.island_changes_text([

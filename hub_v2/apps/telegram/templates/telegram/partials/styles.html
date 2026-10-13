@@ -1,0 +1,44 @@
+{# N-104: styles of the Telegram pages (the hub CSS is precompiled) #}
+<style>
+  .tg-tabs { display: flex; flex-wrap: wrap; gap: .25rem; margin-bottom: 1.25rem; border-bottom: 1px solid var(--ik-line); }
+  .tg-tabs button, .tg-tabs a { display: inline-flex; align-items: center; gap: .4rem; padding: .55rem .95rem; margin-bottom: -1px; border: 1px solid transparent; border-bottom: 0; border-radius: 10px 10px 0 0; font-size: .86rem; font-weight: 600; color: var(--ik-muted); background: transparent; cursor: pointer; text-decoration: none; }
+  .tg-tabs button:hover, .tg-tabs a:hover { color: var(--ik-ink); }
+  .tg-tabs .on { color: var(--ik-sea); border-color: var(--ik-line); background: var(--ik-paper); box-shadow: 0 -2px 0 var(--ik-sea) inset; }
+  .tg-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: .2rem; background: #2d7a2d; }
+  .tg-dot.warn { background: #c9922e; } .tg-dot.off { background: var(--ik-muted); }
+  .tg-rows { display: flex; flex-direction: column; gap: .5rem; }
+  .tg-row { border: 1px solid var(--ik-line); border-radius: 12px; background: var(--ik-paper); }
+  .tg-row.open { border-color: var(--ik-sea); box-shadow: 0 0 0 1px var(--ik-sea) inset; padding: .9rem 1rem; }
+  .tg-row-btn { display: flex; align-items: center; gap: .7rem; width: 100%; padding: .65rem .9rem; text-align: left; background: transparent; cursor: pointer; border-radius: 12px; }
+  .tg-row-btn:hover { background: rgba(79, 134, 185, .06); }
+  .tg-row-btn b { display: block; font-size: .86rem; color: var(--ik-ink); }
+  .tg-row-btn small { display: block; font-size: .74rem; color: var(--ik-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tg-row-icon { font-size: 1.25rem; line-height: 1; flex-shrink: 0; }
+  .tg-tag { flex-shrink: 0; padding: .1rem .5rem; border-radius: 999px; font-size: .68rem; font-weight: 600; color: #3d74a6; background: rgba(79, 134, 185, .13); white-space: nowrap; }
+  .tg-tag.muted { color: var(--ik-muted); background: rgba(120, 113, 100, .12); }
+  .tg-edit-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .75rem; }
+  .tg-edit-head b { font-size: .95rem; color: var(--ik-ink); }
+  .tg-edit { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
+  .tg-fields { display: flex; gap: .6rem; margin-bottom: .6rem; }
+  .tg-fields label span, .tg-body span, .tg-label { display: block; margin-bottom: .2rem; font-size: .66rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ik-muted); }
+  .tg-body textarea { min-height: 8.5rem; }
+  .tg-vars { display: flex; flex-wrap: wrap; gap: .3rem .5rem; margin-top: .6rem; font-size: .7rem; color: var(--ik-muted); }
+  .tg-vars span { padding: .1rem .45rem; border: 1px solid var(--ik-line); border-radius: 8px; background: rgba(255, 255, 255, .6); }
+  .tg-vars code { font-family: ui-monospace, monospace; color: var(--ik-sea); background: none; padding: 0; }
+  .tg-preview { padding: .8rem .9rem; border-radius: 12px; font-size: .86rem; line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; color: #e1e4e8; background: #1e2c3a; }
+  .tg-preview code { color: #9ecbff; }
+  .tg-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .9rem; margin-top: .9rem; padding-top: .75rem; border-top: 1px solid var(--ik-line); }
+  .tg-link { display: inline-flex; align-items: center; gap: .3rem; font-size: .76rem; font-weight: 600; color: var(--ik-sea); background: transparent; cursor: pointer; }
+  .tg-link:hover { text-decoration: underline; }
+  .tg-link.bad { color: #b3402f; }
+  .tg-notice { display: flex; gap: .45rem; align-items: baseline; margin-bottom: .7rem; padding: .45rem .7rem; border-radius: 10px; font-size: .78rem; color: var(--ik-ink); background: rgba(45, 122, 45, .1); border: 1px solid rgba(45, 122, 45, .3); }
+  .tg-notice.bad { background: rgba(201, 102, 46, .1); border-color: rgba(201, 102, 46, .35); }
+  .tg-notice code { font-family: ui-monospace, monospace; }
+  .tg-accounts { margin-top: .9rem; padding-top: .75rem; border-top: 1px dashed var(--ik-line); }
+  .tg-account { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .4rem .8rem; padding: .35rem 0; font-size: .82rem; color: var(--ik-ink); }
+  .tg-account small { color: var(--ik-muted); }
+  .tg-account > span:last-child { display: inline-flex; gap: .8rem; }
+  .tg-add { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+  .tg-add select { max-width: 16rem; }
+  .tg-hint { font-size: .78rem; color: var(--ik-muted); }
+</style>

@@ -1,105 +1,95 @@
 {% extends base_template|default:"base.html" %}
 
-{% block title %}Configuração Telegram{% endblock %}
+{% block title %}Telegram{% endblock %}
 
 {% block breadcrumb_items %}
-  <span class="mx-1">/</span> <span class="text-ink">Configuração Telegram</span>
+  <span class="mx-1">/</span> <span class="text-ink">Telegram</span>
 {% endblock %}
 
 {% block content %}
-<div class="space-y-6">
+{# N-104: one menu for the bot, what it tells, how it says it and what it sent. The hub CSS is precompiled, so the layout lives here. #}
+{% include "telegram/partials/styles.html" %}
+<div x-data="{ tab: (location.hash || '').slice(1) || 'avisos', go(name) { this.tab = name; history.replaceState(null, '', '#' + name); } }">
 
-  {# ── Header ── #}
-  <div class="flex items-center justify-between">
+  <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
     <div>
-      <h1 class="text-2xl font-bold text-ink">Configuração Telegram</h1>
-      <p class="text-sm text-muted mt-1">Bot, chat global e preferências de notificação</p>
-    </div>
-    <div class="flex gap-2">
-      <a href="{% url 'telegram:audit' %}" class="btn btn-secondary btn-sm">
-        <i class="bi bi-chat-dots"></i> Mensagens
-      </a>
+      <h1 class="text-2xl font-bold text-ink">Telegram</h1>
+      <p class="text-sm text-muted mt-1">
+        {% if bot_config.is_active and bot_config.chat_id %}<span class="tg-dot ok"></span> Bot ativo e chat vinculado
+        {% elif bot_config.is_active %}<span class="tg-dot warn"></span> Bot ativo, sem chat global vinculado
+        {% else %}<span class="tg-dot off"></span> Bot desligado{% endif %}
+        {% if sent_total %} · {{ sent_total }} mensagens em 14 dias{% endif %}
+      </p>
     </div>
   </div>
 
-  {# ══════════════════════════════════════════════════════════════════ #}
-  {# Row 1: Bot Config + Chat Global (lado a lado)                    #}
-  {# ══════════════════════════════════════════════════════════════════ #}
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <nav class="tg-tabs">
+    <button type="button" :class="tab === 'avisos' ? 'on' : ''" @click="go('avisos')"><i class="bi bi-bell"></i> Avisos</button>
+    <button type="button" :class="tab === 'mensagens' ? 'on' : ''" @click="go('mensagens')"><i class="bi bi-chat-square-text"></i> Mensagens</button>
+    <button type="button" :class="tab === 'conexao' ? 'on' : ''" @click="go('conexao')"><i class="bi bi-robot"></i> Conexão</button>
+    <a href="{% url 'telegram:audit' %}"><i class="bi bi-clock-history"></i> Histórico</a>
+  </nav>
 
-    {# ── Card: Bot Token ── #}
-    <div class="card">
-      <h2 class="text-lg font-semibold text-ink mb-4">
-        <i class="bi bi-robot"></i> Configuração do Bot
-      </h2>
-      <form method="post">
-        {% csrf_token %}
-
-        {% for field in form %}
-        <div class="form-group">
-          <label for="{{ field.id_for_label }}" class="form-label">
-            {{ field.label }}
-            {% if field.field.required %}<span class="text-red-500">*</span>{% endif %}
-          </label>
-          {{ field }}
-          {% if field.help_text %}
-          <p class="text-xs text-muted mt-1">{{ field.help_text }}</p>
-          {% endif %}
-          {% for error in field.errors %}
-          <p class="form-error">{{ error }}</p>
-          {% endfor %}
-        </div>
-        {% endfor %}
-
-        <div class="flex justify-end mt-4 pt-4 border-t border-line">
-          <button type="submit" class="btn btn-primary">Salvar Bot</button>
-        </div>
-      </form>
+  {# ── Avisos: what the bot tells, and the commands it answers ── #}
+  <div x-show="tab === 'avisos'" class="space-y-6">
+    <div id="global-notifications-area">
+      {% include "telegram/partials/global_notifications.html" %}
     </div>
+    <div id="incoming-commands-area">
+      {% include "telegram/partials/incoming_commands.html" %}
+    </div>
+  </div>
 
-    {# ── Card: Chat Global ── #}
+  {# ── Mensagens: the text of each notice ── #}
+  <div x-show="tab === 'mensagens'" x-cloak class="space-y-5">
+    {% for group in template_groups %}
+    {% if group.items %}
     <div class="card">
-      <h2 class="text-lg font-semibold text-ink mb-2">
-        <i class="bi bi-telegram"></i> Chat Global
-      </h2>
-      <p class="text-xs text-muted mb-4">
-        Todas as notificações vão para este chat. Subcontas podem ter override individual.
-      </p>
-
-      <div id="global-link-area">
-        {% include "telegram/partials/global_link_status.html" %}
+      <h2 class="text-base font-semibold text-ink mb-3">{{ group.title }}</h2>
+      <div id="templates-area-{{ forloop.counter }}" class="tg-rows">
+        {% for item in group.items %}
+          {% include "telegram/partials/template_row.html" %}
+        {% endfor %}
       </div>
     </div>
-
+    {% endif %}
+    {% endfor %}
+    {% if fixed_events %}
+    <p class="tg-hint">Ainda com texto fixo: {{ fixed_events|join:", " }}.</p>
+    {% endif %}
   </div>
 
-  {# ══════════════════════════════════════════════════════════════════ #}
-  {# Row 2: Toggles globais de notificacao (full width)               #}
-  {# ══════════════════════════════════════════════════════════════════ #}
-  <div id="global-notifications-area">
-    {% include "telegram/partials/global_notifications.html" %}
-  </div>
+  {# ── Conexão: the bot and the chat it writes to ── #}
+  <div x-show="tab === 'conexao'" x-cloak>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="card">
+        <h2 class="text-lg font-semibold text-ink mb-4"><i class="bi bi-robot"></i> Bot</h2>
+        <form method="post">
+          {% csrf_token %}
+          {% for field in form %}
+          <div class="form-group">
+            <label for="{{ field.id_for_label }}" class="form-label">
+              {{ field.label }}
+              {% if field.field.required %}<span class="text-red-500">*</span>{% endif %}
+            </label>
+            {{ field }}
+            {% if field.help_text %}<p class="text-xs text-muted mt-1">{{ field.help_text }}</p>{% endif %}
+            {% for error in field.errors %}<p class="form-error">{{ error }}</p>{% endfor %}
+          </div>
+          {% endfor %}
+          <div class="flex justify-end mt-4 pt-4 border-t border-line">
+            <button type="submit" class="btn btn-primary">Salvar Bot</button>
+          </div>
+        </form>
+      </div>
 
-  <div id="incoming-commands-area">
-    {% include "telegram/partials/incoming_commands.html" %}
-  </div>
-
-  {# ══════════════════════════════════════════════════════════════════ #}
-  {# Row 3: Templates de mensagem (editaveis)                         #}
-  {# ══════════════════════════════════════════════════════════════════ #}
-  <div class="card">
-    <h2 class="text-lg font-semibold text-ink mb-2">
-      <i class="bi bi-chat-square-text"></i> Templates de Mensagem
-    </h2>
-    <p class="text-xs text-muted mb-4">
-      Personalize o formato das mensagens enviadas por cada tipo de evento.
-      Clique para editar.
-    </p>
-
-    <div id="templates-area" class="space-y-2">
-      {% for item in template_items %}
-        {% include "telegram/partials/template_row.html" %}
-      {% endfor %}
+      <div class="card">
+        <h2 class="text-lg font-semibold text-ink mb-2"><i class="bi bi-telegram"></i> Chat global</h2>
+        <p class="text-xs text-muted mb-4">Os avisos vão para este chat. Uma conta pode ter um chat só dela.</p>
+        <div id="global-link-area">
+          {% include "telegram/partials/global_link_status.html" %}
+        </div>
+      </div>
     </div>
   </div>
 

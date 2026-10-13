@@ -1,18 +1,17 @@
-{# ── Single template row (collapsed) ── #}
+{# ── One notice text, collapsed (N-104) ── #}
 
-<div id="tpl-row-{{ item.template.pk }}" class="border border-line rounded-lg">
-  <button type="button"
+<div id="tpl-row-{{ item.template.pk }}" class="tg-row">
+  <button type="button" class="tg-row-btn"
           hx-get="{% url 'telegram:template-edit' item.template.pk %}"
           hx-target="#tpl-row-{{ item.template.pk }}"
-          hx-swap="outerHTML"
-          class="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-alt transition-colors text-left">
-    <div class="flex items-center gap-3">
-      <span class="text-lg">{{ item.template.icon }}</span>
-      <div>
-        <span class="text-sm font-medium text-ink">{{ item.label }}</span>
-        <p class="text-xs text-muted">{{ item.description }}</p>
-      </div>
-    </div>
+          hx-swap="outerHTML" hx-push-url="false">
+    <span class="tg-row-icon">{{ item.template.icon }}</span>
+    <span style="min-width: 0; flex: 1;">
+      <b>{{ item.label }}{% if item.account_name %} · {{ item.account_name }}{% endif %}</b>
+      <small>{{ item.template.title_template }}</small>
+    </span>
+    {% if item.overrides %}<span class="tg-tag" title="Contas com um texto próprio para este aviso">{{ item.overrides }} por conta</span>{% endif %}
+    {% if item.sent %}<span class="tg-tag muted" title="Mensagens enviadas nos últimos 14 dias">{{ item.sent }} em 14 dias</span>{% endif %}
     <i class="bi bi-pencil text-muted text-sm"></i>
   </button>
 </div>

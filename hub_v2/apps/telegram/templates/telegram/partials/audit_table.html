@@ -13,7 +13,7 @@
           <th>Data</th>
           <th>Conta</th>
           <th>Subconta</th>
-          <th>Canal</th>
+          <th>Aviso</th>
           <th>Título</th>
           <th>Status</th>
         </tr>
@@ -47,7 +47,7 @@
             {% endif %}
           </td>
           <td>
-            <span class="text-xs text-muted">{{ msg.channel }}</span>
+            <span class="text-xs text-muted" title="{{ msg.channel }}">{{ msg.channel_label|default:msg.channel }}</span>
           </td>
           <td class="text-sm max-w-xs truncate">{{ msg.title|truncatechars:60 }}</td>
           <td>
