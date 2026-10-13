@@ -78,8 +78,11 @@ class CombatMonitorRunner(BaseRunner):
         counts = {"delivered": watched["delivered"], "open": watched["open"]}
         if watched["open"]:
             out["waited_after_arrival"] = 0
-            self.log(jid, "info", f"{watched['open']} combate(s) em andamento — próxima olhada em {POLL_SECONDS // 60} min.")
-            return RunnerResult(success=True, reschedule_seconds=POLL_SECONDS, reschedule_inputs=out, data={"status": "live", **counts})
+            # right after the next round when its time is known, else every 5 minutes
+            ahead = watched.get("next_round_in")
+            wait = max(60, min(ahead + 45, 16 * 60)) if ahead else POLL_SECONDS
+            self.log(jid, "info", f"{watched['open']} combate(s) em andamento — próxima olhada em {max(1, round(wait / 60))} min.")
+            return RunnerResult(success=True, reschedule_seconds=wait, reschedule_inputs=out, data={"status": "live", **counts})
         if arrival_eta > IDLE_POLL_SECONDS:
             self.log(jid, "info", f"Aguardando a chegada do ataque em ~{arrival_eta}s.")
             return RunnerResult(success=True, reschedule_seconds=arrival_eta, reschedule_inputs=out, data={"status": "awaiting_arrival", **counts})

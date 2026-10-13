@@ -11,10 +11,57 @@ keeps them without telling.
 """
 from __future__ import annotations
 
+import calendar
+import re
+import time
 from typing import Any, Callable
 
 
 IMPORT_LIMIT = 5            # combats per account brought in as history (each round of each is a request to the game)
+ROUND_SECONDS = 15 * 60     # the game fights one round every 15 minutes
+# missions of one's own that end in a fight when they arrive (the class the game gives the movement)
+ATTACK_MISSIONS = ("plunder", "occupy", "blockade", "attack", "defend")
+
+
+def round_epoch(html: str, now: float) -> int | None:
+    """When the round of this page was fought, as a clock time of ours.
+
+    The page carries the game's own clock ("13.10.2026 3:04:49"), a whole number of hours
+    away from ours. A round that was just read is minutes old, so the difference to now,
+    rounded to the hour, is that distance. None when the date is not there or does not fit.
+    """
+    found = re.search(
+        r"Round\s*<br\s*/?>\s*\d+\s*/\s*\d+\s*</span>\s*(?:<br\s*/?>)?\s*\(\s*(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*\)",
+        html or "",
+    )
+    if not found:
+        return None
+    day, month, year, hour, minute, second = (int(part) for part in found.groups())
+    try:
+        local = calendar.timegm((year, month, day, hour, minute, second))
+    except (ValueError, OverflowError):
+        return None
+    epoch = local - round((local - now) / 3600) * 3600
+    return int(epoch) if -120 <= now - epoch <= 1800 else None
+
+
+def next_own_attack_arrival(movements: list, time_now: int) -> int | None:
+    """Seconds until the first of one's own attacks on its way lands; None when there is none."""
+    best = None
+    for movement in movements or []:
+        if not isinstance(movement, dict) or not movement.get("isOwnArmyOrFleet"):
+            continue
+        event = movement.get("event") or {}
+        if event.get("isReturning") or event.get("isFleetReturning"):
+            continue
+        mission = str(event.get("missionIconClass") or "").lower()
+        troops = _to_int((movement.get("army") or {}).get("amount"), 0)
+        if troops <= 0 and not any(kind in mission for kind in ATTACK_MISSIONS):
+            continue                            # a transport, a trade ship
+        left = _to_int(movement.get("eventTime"), 0) - _to_int(time_now, 0)
+        if left > 0 and (best is None or left < best):
+            best = left
+    return best
 
 
 def _to_int(raw: Any, default: int = 0) -> int:
@@ -32,10 +79,13 @@ def watch_combats(
     city_id: int | str,
     state: dict | None,
     log: Callable[[str, str], None] | None = None,
-    limit: int = 10,
+    limit: int = 20,
+    now: float | None = None,
 ) -> dict:
-    """Returns {"state": new state, "delivered": reports sent to the hub, "open": combats still going on}."""
+    """Returns {"state": new state, "delivered": reports sent to the hub, "open": combats still going on,
+    "next_round_in": seconds until the next round of an open combat, when the game's clock tells}."""
     say = log or (lambda _level, _message: None)
+    now = float(now or time.time())
     state = dict(state or {})
     seen = {str(key): dict(value) for key, value in (state.get("seen") or {}).items() if isinstance(value, dict)}
     reports = client.fetch_combat_reports(int(city_id), limit=limit) or []
@@ -113,6 +163,12 @@ def watch_combats(
         finished = bool(response.get("finished", True))
         top = max(_to_int(item.get("round"), 0) for item in new_rounds)
         seen[combat_id] = {"rounds": max(upto, top, listed if finished else 0), "open": not finished, "sent": True}
+        if not finished:
+            # the last round carries its time: the next one is fought 15 minutes later
+            newest = max(new_rounds, key=lambda item: _to_int(item.get("round"), 0))
+            fought_at = round_epoch(str(newest.get("html") or ""), now)
+            if fought_at:
+                seen[combat_id]["next_round_at"] = fought_at + ROUND_SECONDS
         delivered += 0 if silent else 1
         still_open += 0 if finished else 1
         if silent:
@@ -128,4 +184,10 @@ def watch_combats(
     # page that failed). After that an empty list is just an account without combats: its
     # history is taken as brought, so that the first combat it ever has is told, not filed.
     done = bool(state.get("imported")) or bool(reports) or bool(state.get("started"))
-    return {"state": {"started": True, "imported": done, "seen": seen}, "delivered": delivered, "imported": imported, "open": still_open}
+    waits = [_to_int(value.get("next_round_at"), 0) - now for value in seen.values() if value.get("open") and value.get("next_round_at")]
+    ahead = [wait for wait in waits if wait > 0]
+    return {
+        "state": {"started": True, "imported": done, "seen": seen},
+        "delivered": delivered, "imported": imported, "open": still_open,
+        "next_round_in": int(min(ahead)) if ahead else None,
+    }

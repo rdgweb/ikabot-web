@@ -46,6 +46,7 @@ def _load_monitoring_module():
     resource_transport.estimate_incoming_transport_wait_seconds = lambda *_args, **_kwargs: None
     combat_watch = types.ModuleType("services.combat_watch")
     combat_watch.watch_combats = lambda *_args, **_kwargs: {"state": {}, "delivered": 0, "open": 0}
+    combat_watch.next_own_attack_arrival = lambda *_args, **_kwargs: None
     wine_tavern = types.ModuleType("services.wine_tavern")
     wine_tavern.find_tavern_position = lambda *_args, **_kwargs: None
     wine_tavern.find_townhall_position = lambda *_args, **_kwargs: None

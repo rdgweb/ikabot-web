@@ -19,7 +19,7 @@ from core.runner_registry import register_runner
 from game_client.parsers.html_parser import GamePageParser
 from runners.base import BaseRunner, RunnerResult
 from sessions.game_session_service import LoginCooldownActive
-from services.combat_watch import watch_combats
+from services.combat_watch import next_own_attack_arrival, watch_combats
 from services.resource_transport import estimate_incoming_transport_wait_seconds
 from services.wine_tavern import (
     find_tavern_position,
@@ -130,6 +130,9 @@ def _wine_happiness_from_breakdown(breakdown: dict[str, int]) -> int:
     )
 
 
+ROUND_WAIT_MAX = 16 * 60        # never sleep past the next round of an open combat
+
+
 @register_runner(701)
 class AlertAttacksRunner(BaseRunner):
     def execute(self, job: dict[str, Any]) -> RunnerResult:
@@ -182,15 +185,20 @@ class AlertAttacksRunner(BaseRunner):
             # (of an attack received or made) goes to the hub, which keeps it and tells it.
             combat_watch = state.get("combat_watch") if isinstance(state.get("combat_watch"), dict) else {}
             open_combats = 0
+            next_round_in = None
+            own_arrival_in = None
             if bool(inputs.get("spawn_combat_monitor", True)):
                 try:
                     watched = watch_combats(
                         client, self.hub, game_account_id=ga_id, city_id=scan["current_city_id"], state=combat_watch,
-                        log=lambda level, message: self.log(jid, level, message),
+                        log=lambda level, message: self.log(jid, level, message), now=scan["time_now"] or None,
                     )
                     combat_watch, open_combats = watched["state"], watched["open"]
+                    next_round_in = watched.get("next_round_in")
                 except Exception as exc:
                     self.log(jid, "warn", f"Lista de combates não pôde ser lida nesta verificação: {exc}")
+                # an attack of one's own on its way: its report exists the moment it lands
+                own_arrival_in = next_own_attack_arrival(scan["movements"], scan["time_now"])
 
             self._persist_attack_state(
                 account_id=aid,
@@ -259,9 +267,17 @@ class AlertAttacksRunner(BaseRunner):
             else:
                 next_seconds = max(180, interval_minutes * 60)
             if open_combats:
-                # a round of the game takes 15 minutes: look again before the next one is old
-                next_seconds = min(next_seconds, 300)
-                self.log(jid, "info", f"{open_combats} combate(s) em andamento — próxima verificação em até 5 min.")
+                # the game fights a round every 15 minutes: wake right after the next one when its
+                # time is known, else look every 5 minutes
+                wait = max(60, min(next_round_in + 45, ROUND_WAIT_MAX)) if next_round_in else 300
+                next_seconds = min(next_seconds, wait)
+                self.log(jid, "info", f"{open_combats} combate(s) em andamento — próxima verificação em {max(1, round(min(next_seconds, wait) / 60))} min"
+                                      f"{' (logo depois do próximo round)' if next_round_in else ''}.")
+            if own_arrival_in:
+                wait = max(60, own_arrival_in + 60)
+                if wait < next_seconds:
+                    next_seconds = wait
+                    self.log(jid, "info", f"Ataque seu a caminho — próxima verificação em {max(1, round(wait / 60))} min, logo depois da chegada.")
 
             return RunnerResult(
                 success=True,

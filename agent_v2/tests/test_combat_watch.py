@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import MagicMock
 
 from game_client.actions.military import FetchCombatDetailedReportAction, FetchCombatReportsAction
-from services.combat_watch import watch_combats
+from services.combat_watch import next_own_attack_arrival, round_epoch, watch_combats
 
 
 class Hub:
@@ -166,6 +166,75 @@ class CombatWatchTests(unittest.TestCase):
         self.assertEqual(list(result["state"]["seen"]), ["2"])
         result = self._watch(Client([], {}), Hub(), state)
         self.assertEqual(sorted(result["state"]["seen"]), ["1", "2"])
+
+
+class ClockTests(unittest.TestCase):
+    """Waking by the clock of the game: the next round of an open combat, the arrival of one's own attack."""
+
+    NOW = 1_800_000_000                       # some moment of ours (UTC)
+    GAME_AHEAD = 2 * 3600                     # the game writes its own clock, two hours ahead
+
+    def _page(self, number: int, seconds_ago: int) -> str:
+        import time as clock
+
+        stamp = clock.strftime("%d.%m.%Y %H:%M:%S", clock.gmtime(self.NOW - seconds_ago + self.GAME_AHEAD)).lstrip("0")
+        return f'<span class="headline_big bold">Batalha por #Tebas Round<br />{number} / {number}</span><br /> ({stamp})</td> battlefield'
+
+    def test_the_time_of_a_round_is_read_from_its_page_whatever_the_clock_of_the_game(self):
+        self.assertEqual(round_epoch(self._page(3, 240), self.NOW), self.NOW - 240)
+        self.assertEqual(round_epoch(self._page(3, 0), self.NOW), self.NOW)
+        self.assertEqual(round_epoch(self._page(3, 14 * 60), self.NOW), self.NOW - 14 * 60)
+        self.assertIsNone(round_epoch("Round<br />3 / 3</span> sem data", self.NOW))
+        self.assertIsNone(round_epoch("", self.NOW))
+
+    def test_an_open_combat_tells_when_its_next_round_is(self):
+        pages = self
+
+        class Timed(Client):
+            def fetch_combat_detailed_report(self, _city_id, combat_id, known_upto=0):
+                self.detail_calls.append((combat_id, known_upto))
+                total = self.rounds.get(combat_id, 0)
+                # the newest round was fought 4 minutes ago, the ones before it 15 minutes apart
+                return {"rounds": [{"round": number, "html": pages._page(number, 240 + (total - number) * 900)} for number in range(known_upto + 1, total + 1)]}
+
+        client, hub = Timed([listed(7, 2, result="")], {7: 2}), Hub(finished=False)
+        result = watch_combats(client, hub, game_account_id="g1", city_id=100, state={"started": True, "imported": True, "seen": {}}, now=self.NOW)
+        self.assertEqual(result["state"]["seen"]["7"]["next_round_at"], self.NOW - 240 + 900)
+        self.assertEqual(result["next_round_in"], 660)                               # 11 minutes from now
+
+        later = watch_combats(client, hub, game_account_id="g1", city_id=100, state=result["state"], now=self.NOW + 700)
+        self.assertIsNone(later["next_round_in"])                                    # its time passed and no round came: back to looking often
+        self.assertEqual(later["open"], 1)
+
+        hub.finished = True
+        client.rounds[7], client.listed = 3, [listed(7, 3)]
+        done = watch_combats(client, hub, game_account_id="g1", city_id=100, state=later["state"], now=self.NOW + 900)
+        self.assertEqual((done["open"], done["next_round_in"]), (0, None))
+        self.assertNotIn("next_round_at", done["state"]["seen"]["7"])
+
+    def test_a_combat_without_a_readable_time_gives_no_clock(self):
+        client, hub = Client([listed(7, 1, result="")], {7: 1}), Hub(finished=False)
+        result = watch_combats(client, hub, game_account_id="g1", city_id=100, state={"started": True, "imported": True, "seen": {}}, now=self.NOW)
+        self.assertEqual((result["open"], result["next_round_in"]), (1, None))
+
+    def test_the_arrival_of_ones_own_attack_is_the_first_of_those_on_their_way(self):
+        def movement(**fields):
+            base = {"isOwnArmyOrFleet": True, "eventTime": self.NOW + 600, "event": {"missionIconClass": "plunder"}, "army": {"amount": 20}}
+            base.update(fields)
+            return base
+
+        movements = [
+            movement(eventTime=self.NOW + 900),
+            movement(eventTime=self.NOW + 300, event={"missionIconClass": "deployarmy"}),                 # troops on their way: may end in a fight
+            movement(eventTime=self.NOW + 100, event={"missionIconClass": "plunder", "isReturning": 1}),   # coming home
+            movement(eventTime=self.NOW + 50, event={"missionIconClass": "transport"}, army={}),            # a transport
+            movement(eventTime=self.NOW + 20, isOwnArmyOrFleet=False),                                      # somebody else's
+            movement(eventTime=self.NOW - 30),                                                              # already landed
+            movement(eventTime=self.NOW + 200, event={"missionIconClass": "blockade"}, army={}),            # a fleet, no troops
+        ]
+        self.assertEqual(next_own_attack_arrival(movements, self.NOW), 200)
+        self.assertIsNone(next_own_attack_arrival(movements[2:6], self.NOW))
+        self.assertIsNone(next_own_attack_arrival([], self.NOW))
 
 
 def _page(number: int, total: int) -> str:
