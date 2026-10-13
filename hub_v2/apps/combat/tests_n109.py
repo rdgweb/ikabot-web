@@ -353,6 +353,25 @@ class CombatPagesTests(CombatBase):
         self.assertIn("left: 47.182%; top: 34.005%;", page)
         self.assertNotIn('<img class="cbt-field"', page)                           # no stretched picture on the page
 
+    def test_a_round_can_be_sent_to_telegram_from_the_page(self):
+        import json
+
+        with patch(SEND_PHOTO, return_value=SENT_OK) as photo, patch(SEND_MESSAGE, return_value=SENT_OK) as message:
+            response = self.client.post(f"/combat/{self.over.pk}/send/", {"round": "1"})
+            texts = [call.kwargs.get("caption", "") for call in photo.call_args_list] + [call.args[1] for call in message.call_args_list]
+            self.assertEqual(len(texts), 1)
+            self.assertIn("Round 1 · Tebas", texts[0])
+            self.assertEqual(json.loads(response["HX-Trigger"])["toast"]["type"], "success")
+            self.client.post(f"/combat/{self.over.pk}/send/", {"round": "2"})               # the last round of a finished combat: the outcome
+            texts = [call.kwargs.get("caption", "") for call in photo.call_args_list] + [call.args[1] for call in message.call_args_list]
+            self.assertIn("Vitória em 2 rounds", texts[-1])
+        from apps.telegram.models import TelegramBotConfig
+
+        TelegramBotConfig.objects.update(notify_combat_report=False)
+        with patch(SEND_PHOTO, return_value=SENT_OK) as photo, patch(SEND_MESSAGE, return_value=SENT_OK) as message:
+            response = self.client.post(f"/combat/{self.over.pk}/send/", {"round": "1"})
+        self.assertEqual((photo.call_count + message.call_count, json.loads(response["HX-Trigger"])["toast"]["type"]), (0, "error"))
+
     def test_a_combat_is_paged_by_round(self):
         response = self.client.get(f"/combat/{self.over.pk}/")
         self.assertEqual(response.status_code, 200)

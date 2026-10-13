@@ -56,7 +56,17 @@
   .cbd-pager button.on { color: #fff; background: var(--ik-sea); border-color: var(--ik-sea); }
   .cbd-pager button:disabled { opacity: .4; cursor: default; }
   .cbd-pager span { margin-right: .3rem; font-size: .66rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ik-muted); }
-  .cbd-pager a { margin-left: auto; font-size: .76rem; font-weight: 600; color: var(--ik-sea); }
+  .cbd-pager .cbd-tools { display: inline-flex; align-items: center; gap: .9rem; margin: 0 0 0 auto; font-size: .76rem; letter-spacing: 0; text-transform: none; }
+  .cbd-pager a, .cbd-pager .cbd-send { min-width: 0; padding: 0; border: 0; font-size: .76rem; font-weight: 600; color: var(--ik-sea); background: none; }
+  .cbd-pager a:hover, .cbd-pager .cbd-send:hover { text-decoration: underline; color: var(--ik-sea); }
+  /* the game draws the field 905px wide: much wider than that and the pieces turn to blocks */
+  .cbd-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: .2rem 1.4rem; }
+  .cbd-main, .cbd-aside { min-width: 0; max-width: 1000px; }
+  @media (min-width: 1500px) {
+    .cbd-layout { grid-template-columns: minmax(0, 1000px) minmax(300px, 1fr); align-items: start; }
+    .cbd-aside { max-width: none; }
+    .cbd-aside .cbd-title.first { margin-top: 2.6rem; }
+  }
   .cbd-board { border: 1px solid var(--ik-line); border-radius: 14px; overflow: hidden; background: var(--ik-paper); }
   .cbd-side { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem; padding: .55rem .9rem; }
   .cbd-side .who { display: flex; align-items: center; gap: .5rem; min-width: 0; margin-right: auto; }
@@ -87,12 +97,13 @@
   .cbf-num.bare { background: none; }
   .cbf-res { position: absolute; width: 13.812%; text-align: center; font-size: clamp(9px, 1.15cqw, 12px); font-weight: 700; color: #612d04; }
 
-  .cbd-events { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: .6rem; margin-top: .8rem; }
+  .cbd-events { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .6rem; }
   .cbd-event { padding: .6rem .8rem; border: 1px solid var(--ik-line); border-radius: 12px; background: var(--ik-paper); font-size: .82rem; color: var(--ik-ink); }
   .cbd-event time { display: block; margin-bottom: .15rem; font-size: .68rem; font-weight: 700; letter-spacing: .05em; color: var(--ik-muted); }
   .cbd-troops { display: flex; flex-wrap: wrap; gap: .4rem .7rem; margin-top: .45rem; }
   .cbd-troops span { display: inline-flex; align-items: center; gap: .3rem; font-size: .8rem; font-weight: 700; }
   .cbd-title { margin: 1.3rem 0 .6rem; font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ik-muted); }
+  .cbd-title.first { margin-top: .9rem; }
   .cbd-result { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.4rem; margin-bottom: .7rem; font-size: .9rem; color: var(--ik-ink); }
   .cbd-result .won { font-weight: 700; color: #2d7a2d; } .cbd-result .lostside { color: #b3402f; }
   .cbd-units { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .5rem; }

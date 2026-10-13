@@ -155,6 +155,39 @@ class CombatDetailView(LoginRequiredMixin, TemplateView):
         return ctx
 
 
+class CombatSendView(LoginRequiredMixin, View):
+    """POST /combat/<pk>/send/ - send one round of a combat to Telegram, with its picture, when asked on the page."""
+
+    def post(self, request, pk):
+        import json
+
+        from apps.telegram.services.notifications import notify
+
+        report = get_object_or_404(CombatReport.objects.select_related("game_account__account"), pk=pk)
+        numbers = [item["round"] for item in parse_rounds(report.detailed_html)]
+        try:
+            number = int(request.POST.get("round") or 0)
+        except ValueError:
+            number = 0
+        if number not in numbers:
+            number = numbers[-1] if numbers else 0
+        sent = False
+        if report.game_account_id and numbers:
+            # the last round of a combat that is over goes with the outcome, like the notice the hub sends by itself
+            final = report.finished and number == numbers[-1]
+            sent = notify(
+                event_key="combat_report", game_account=report.game_account, account=report.game_account.account,
+                title="Combate — enviado pela página", phase="final" if final else "round", combat_id=report.combat_id,
+                result=report.result, city_name=report.target_city_name, owner_name=report.target_owner, round=number,
+            )
+        response = HttpResponse(status=200)
+        response["HX-Trigger"] = json.dumps({"toast": {
+            "type": "success" if sent else "error",
+            "message": f"Round {number} enviado para o Telegram." if sent else "Não foi enviado: o aviso de combate está desligado ou não há chat vinculado.",
+        }})
+        return response
+
+
 class CombatRoundImageView(LoginRequiredMixin, View):
     """GET /combat/<pk>/round/<number>.jpg - the picture of that round, the one that goes on Telegram."""
 
