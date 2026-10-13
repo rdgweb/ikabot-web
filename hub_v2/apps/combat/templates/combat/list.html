@@ -1,0 +1,69 @@
+{% extends base_template|default:"base.html" %}
+
+{% block title %}Combates{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <span class="text-ink">Combates</span>
+{% endblock %}
+
+{% block content %}
+{# N-109: the hub CSS is precompiled, so the layout of this page lives here #}
+{% include "combat/styles.html" %}
+
+<div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+  <div>
+    <h1 class="text-2xl font-bold text-ink">Combates</h1>
+    <p class="text-sm text-muted mt-1">{{ total }} relatório{{ total|pluralize }}{% if live_count %} · <span class="cbt-dot"></span> {{ live_count }} em andamento{% endif %}</p>
+  </div>
+</div>
+
+<div class="cbt-filters">
+  <a href="?{% if account %}account={{ account }}{% endif %}" class="{% if not state %}on{% endif %}">Todos</a>
+  <a href="?state=live{% if account %}&account={{ account }}{% endif %}" class="{% if state == 'live' %}on{% endif %}">Em andamento</a>
+  <a href="?state=victory{% if account %}&account={{ account }}{% endif %}" class="{% if state == 'victory' %}on{% endif %}">Vitórias</a>
+  <a href="?state=defeat{% if account %}&account={{ account }}{% endif %}" class="{% if state == 'defeat' %}on{% endif %}">Derrotas</a>
+  {% if accounts %}
+  <span class="cbt-sep"></span>
+  <a href="?{% if state %}state={{ state }}{% endif %}" class="{% if not account %}on{% endif %}">Todas as contas</a>
+  {% for ga in accounts %}
+  <a href="?account={{ ga.pk }}{% if state %}&state={{ state }}{% endif %}" class="{% if account == ga.pk|stringformat:'s' %}on{% endif %}">{{ ga.name|default:ga.server_id }}</a>
+  {% endfor %}
+  {% endif %}
+</div>
+
+{% if cards %}
+<div class="cbt-grid">
+  {% for item in cards %}
+  <a class="cbt-card {{ item.tone }}" href="{% url 'combat:detail' item.report.pk %}">
+    <div class="cbt-top">
+      <span class="cbt-state {{ item.tone }}">{{ item.label }}</span>
+      <span class="cbt-when">{{ item.when|date:"d/m H:i" }}</span>
+    </div>
+    <b class="cbt-title">{{ item.title }}</b>
+    <div class="cbt-versus">
+      <span class="att">{{ item.attacker|default:"?" }}</span>
+      <i class="bi bi-x-lg"></i>
+      <span class="def">{{ item.defender|default:"?" }}</span>
+    </div>
+    <div class="cbt-facts">
+      <span title="Rounds"><i class="bi bi-arrow-repeat"></i> {{ item.report.total_rounds }}</span>
+      <span title="Perdas do atacante" class="att"><i class="bi bi-heartbreak"></i> {{ item.attacker_lost }}</span>
+      <span title="Perdas do defensor" class="def"><i class="bi bi-heartbreak"></i> {{ item.defender_lost }}</span>
+      {% if item.loot %}<span title="Saque"><i class="bi bi-box-seam"></i> {{ item.loot }}</span>{% endif %}
+      {% if item.account %}<span class="cbt-account">{{ item.account }}</span>{% endif %}
+    </div>
+  </a>
+  {% endfor %}
+</div>
+
+{% if page.has_other_pages %}
+<div class="cbt-pages">
+  {% if page.has_previous %}<a class="btn btn-secondary btn-sm" href="?page={{ page.previous_page_number }}{% if account %}&account={{ account }}{% endif %}{% if state %}&state={{ state }}{% endif %}"><i class="bi bi-chevron-left"></i></a>{% endif %}
+  <span class="text-sm text-muted">{{ page.number }} / {{ page.paginator.num_pages }}</span>
+  {% if page.has_next %}<a class="btn btn-secondary btn-sm" href="?page={{ page.next_page_number }}{% if account %}&account={{ account }}{% endif %}{% if state %}&state={{ state }}{% endif %}"><i class="bi bi-chevron-right"></i></a>{% endif %}
+</div>
+{% endif %}
+{% else %}
+<div class="card cbt-empty"><i class="bi bi-shield-shaded"></i> Nenhum combate aqui ainda.</div>
+{% endif %}
+{% endblock %}

@@ -9,9 +9,9 @@ ENV EXPECTED_AGENT_VERSION=${EXPECTED_AGENT_VERSION}
 
 WORKDIR /app
 
-# System deps for mysqlclient
+# System deps for mysqlclient; DejaVu is the font of the pictures the hub draws (combat report)
 RUN apt-get update && apt-get install -y \
-    gcc default-libmysqlclient-dev pkg-config curl \
+    gcc default-libmysqlclient-dev pkg-config curl fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

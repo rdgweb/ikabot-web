@@ -1,0 +1,53 @@
+{% extends base_template|default:"base.html" %}
+
+{% block title %}{{ card.title }} · Combates{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'combat:list' %}" class="hover:text-ink transition-colors">Combates</a>
+  <span class="mx-1">/</span> <span class="text-ink">{{ card.title }}</span>
+{% endblock %}
+
+{% block content %}
+{% include "combat/styles.html" %}
+
+<div class="cbt-head">
+  <h1>{{ card.title }}</h1>
+  <span class="cbt-state {{ card.tone }}">{{ card.label }}</span>
+  <span class="cbt-when">{{ card.when|date:"d/m/Y H:i" }}</span>
+  {% if card.account %}<span class="cbt-account" style="margin-left: 0;">{{ card.account }}</span>{% endif %}
+</div>
+
+{% if numbers %}
+{# the field of each round is a picture drawn by the hub; the last one carries the outcome #}
+<div x-data="{ round: {{ current }}, base: '{% url 'combat:round-image' report.pk 0 %}'.replace('/0.jpg', '/') }">
+  <div class="cbt-rounds">
+    <span>Round</span>
+    {% for number in numbers %}
+    <button type="button" :class="round === {{ number }} ? 'on' : ''" @click="round = {{ number }}">{{ number }}</button>
+    {% endfor %}
+  </div>
+  <img class="cbt-field" :src="base + round + '.jpg'" src="{% url 'combat:round-image' report.pk current %}" alt="Campo de batalha do round">
+</div>
+{% else %}
+<div class="card cbt-empty"><i class="bi bi-hourglass-split"></i> O jogo ainda não mostrou o campo deste combate.</div>
+{% endif %}
+
+{% if units %}
+<div class="cbt-units">
+  {% for unit in units %}
+  <div class="cbt-unit">
+    <b>{{ unit.name }}</b>
+    {% if unit.attacker %}<div class="att"><span>{{ unit.attacker.left }}</span>{% if unit.attacker.lost %}<small>-{{ unit.attacker.lost }}</small>{% endif %}</div>{% endif %}
+    {% if unit.defender %}<div class="def"><span>{{ unit.defender.left }}</span>{% if unit.defender.lost %}<small>-{{ unit.defender.lost }}</small>{% endif %}</div>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if loot %}
+<div class="cbt-loot">
+  <span class="text-muted"><i class="bi bi-box-seam"></i> Saque</span>
+  {% for label, amount in loot %}<span>{{ label }}<b>{{ amount }}</b></span>{% endfor %}
+</div>
+{% endif %}
+{% endblock %}

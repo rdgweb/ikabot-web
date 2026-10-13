@@ -14,74 +14,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def _to_i(v) -> int:
-    try:
-        return int(v)
-    except Exception:
-        return 0
-
-
-def _unit_name(unit_id: str) -> str:
-    try:
-        from core.catalogs import UNIT_CATALOG
-        info = UNIT_CATALOG.get(f"s{unit_id}") or UNIT_CATALOG.get(str(unit_id)) or {}
-        return str(info.get("name") or f"u{unit_id}")
-    except Exception:
-        return f"u{unit_id}"
-
-
-def _format_combat_report(kwargs: dict) -> str:
-    def _e(v):
-        return html.escape(str(v)) if v is not None else ""
-
-    phase = str(kwargs.get("phase") or "final")
-    result = str(kwargs.get("result") or "")
-    won = result == "victory"
-    city = _e(kwargs.get("city_name"))
-    owner = _e(kwargs.get("owner_name"))
-    total = _to_i(kwargs.get("total_rounds"))
-    date = _e(kwargs.get("date"))
-
-    if phase == "round":
-        rnum = _to_i(kwargs.get("round"))
-        lines = [f"⚔️ <b>Combate — Round {rnum}{('/' + str(total)) if total else ''}</b>"]
-        meta = " | ".join(p for p in [f"Cidade: {city}" if city else "", f"vs {owner}" if owner else ""] if p)
-        if meta:
-            lines.append(meta)
-    else:
-        icon = "\U0001f6e1️" if won else "⚔️"
-        head = "Vitoria" if won else "Derrota"
-        lines = [f"{icon} <b>Relatorio final — {head}</b>"]
-        meta = " | ".join(p for p in [f"Cidade: {city}" if city else "", f"vs {owner}" if owner else "", f"{total} round(s)" if total else ""] if p)
-        if meta:
-            lines.append(meta)
-    if date:
-        lines.append(f"<i>{date}</i>")
-
-    def _losses_block(title: str, losses: dict) -> list:
-        if not isinstance(losses, dict) or not losses:
-            return []
-        rows = sorted(losses.items(), key=lambda kv: -int(kv[1] or 0))
-        body = [f"<b>{title}</b>"]
-        for uid, qty in rows:
-            if int(qty or 0) <= 0:
-                continue
-            body.append(f"  {_e(_unit_name(uid))}: <code>-{int(qty)}</code>")
-        return body if len(body) > 1 else []
-
-    atk = _losses_block("Perdas do atacante", kwargs.get("attacker_losses") or {})
-    dfn = _losses_block("Perdas do defensor", kwargs.get("defender_losses") or {})
-    if atk:
-        lines.append("")
-        lines.extend(atk)
-    if dfn:
-        lines.append("")
-        lines.extend(dfn)
-    if not atk and not dfn:
-        lines.append("Sem perdas registradas.")
-    return "\n".join(lines)
-
-
 def format_message(event_key: str, game_account=None, **kwargs) -> str:
     """
     Format a notification message for a given event type.
@@ -91,7 +23,9 @@ def format_message(event_key: str, game_account=None, **kwargs) -> str:
     Falls back to a richer generic format if no template exists.
     """
     if event_key == "combat_report":
-        return _format_combat_report(kwargs)
+        from .combat import combat_context
+
+        kwargs = combat_context(kwargs)
     if event_key == "island_monitor":
         from .digests import island_context
 
@@ -129,9 +63,12 @@ def format_message(event_key: str, game_account=None, **kwargs) -> str:
         "daily_summary": ("Resumo diario", "\U0001f4ca"),
         "diplomacy_message": ("Mensagem de diplomacia", "\U0001f4e8"),
         "cinema_available": ("Cineteatro disponivel", "\U0001f3ac"),
+        "combat_report": (_e(kwargs.get("headline")) or "Relatório de combate", "⚔️"),
         "proxy_change": ("Proxies: verificacao automatica", "\U0001f501"),
     }
     title, icon = title_map.get(event_key, (action_name, "\U0001f514"))
+    if event_key == "combat_report":
+        body = _e("\n".join(str(part) for part in (kwargs.get("versus"), kwargs.get("losses"), kwargs.get("loot_line")) if part))
 
     lines = [f"{icon} <b>{title}</b>"]
     meta_line = " | ".join(part for part in [ga_name or account_name, server_id, node_name] if part)

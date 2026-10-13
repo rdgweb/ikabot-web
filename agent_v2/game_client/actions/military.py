@@ -1208,12 +1208,11 @@ class FetchCombatReportsAction(BaseAction):
                         break
 
         reports = []
-        # Each <tr class="green"> or <tr class="red"> is a combat report
-        for row_m in re.finditer(
-            r'<tr class="(green|red)[^"]*"[^>]*>(.*?)</tr>',
-            html, re.DOTALL
-        ):
-            result_class = row_m.group(1)
+        # Each row with a combatId link is a combat report: green = victory, red = defeat,
+        # and (N-109) any other colour is a combat with no outcome yet
+        for row_m in re.finditer(r'<tr\b([^>]*)>(.*?)</tr>', html, re.DOTALL):
+            row_classes = (re.search(r'class="([^"]*)"', row_m.group(1)) or [None, ""])[1].split()
+            result_class = "green" if "green" in row_classes else "red" if "red" in row_classes else ""
             row_html = row_m.group(0)
 
             # combatId
@@ -1241,7 +1240,7 @@ class FetchCombatReportsAction(BaseAction):
 
             reports.append({
                 "combat_id":      combat_id,
-                "result":         "victory" if result_class == "green" else "defeat",
+                "result":         {"green": "victory", "red": "defeat"}.get(result_class, ""),
                 "date":           date_str,
                 "rounds":         rounds,
                 "city_id_target": city_id_target,
@@ -1379,16 +1378,26 @@ class FetchCombatDetailedReportAction(BaseAction):
                   <div class="number center"> {qty} (-{lost})
     """
 
-    def execute(self, city_id: int, combat_id: int, max_rounds: int = 100, **kwargs) -> dict:
-        """Itera todos os rounds reais. max_rounds=100 é só guarda de loop infinito —
-        para quando todos os N rounds (descobertos do HTML "Round X / N") foram vistos."""
+    def execute(self, city_id: int, combat_id: int, max_rounds: int = 100, known_upto: int = 0, **kwargs) -> dict:
+        """Itera os rounds reais. max_rounds=100 é só guarda de loop infinito —
+        para quando todos os N rounds (descobertos do HTML "Round X / N") foram vistos.
+
+        N-109: com known_upto=K só os rounds depois do K voltam (rounds, perdas e HTML). A
+        busca começa um índice antes, porque o índice da URL não é o número do round em todo
+        servidor; o número vem sempre do próprio HTML."""
+        known_upto = max(0, int(known_upto or 0))
         rounds_html: list[dict] = []
         attacker_losses: dict[str, int] = {}
         defender_losses: dict[str, int] = {}
         seen_rounds: set[int] = set()
         total_rounds_known = 0  # descoberto no primeiro response
+        repeats = 0
+        first_index = max(0, known_upto - 1)
 
-        for round_num in range(max_rounds):
+        def all_wanted_seen() -> bool:
+            return total_rounds_known > 0 and all(n in seen_rounds for n in range(known_upto + 1, total_rounds_known + 1))
+
+        for round_num in range(first_index, first_index + max_rounds):
             resp = self.client._request(
                 "GET",
                 self.client._server_url,
@@ -1441,11 +1450,17 @@ class FetchCombatDetailedReportAction(BaseAction):
             # Servidor pode retornar mesmo round se combatRound for inválido (fallback).
             # Pulamos duplicados pra não somar perdas duas vezes.
             if current_round in seen_rounds:
-                # Já vimos todos os rounds reais → sair.
-                if total_rounds_known > 0 and len(seen_rounds) >= total_rounds_known:
+                # Já vimos todos os rounds reais (ou o servidor só repete o mesmo) → sair.
+                repeats += 1
+                if all_wanted_seen() or repeats >= 3:
                     break
                 continue
             seen_rounds.add(current_round)
+            if current_round <= known_upto:
+                # round já entregue: só serve para saber onde estamos
+                if all_wanted_seen():
+                    break
+                continue
 
             # Parse slot losses: class="slot army_small normal s{unit_id}"
             # followed by <div class="number center"> N (-lost)
@@ -1478,7 +1493,7 @@ class FetchCombatDetailedReportAction(BaseAction):
             })
 
             # Vimos todos os rounds reais? Encerra.
-            if total_rounds_known > 0 and len(seen_rounds) >= total_rounds_known:
+            if all_wanted_seen():
                 break
 
         combined = "\n<!-- ROUND SEPARATOR -->\n".join(r["html"] for r in rounds_html)

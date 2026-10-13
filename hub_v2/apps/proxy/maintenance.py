@@ -198,8 +198,8 @@ def _clear_proxy_login_blocks(accounts, report: dict, now) -> None:
         report["blocks_cleared"].append(game_account.name or str(game_account.pk))
 
 
-def announcement(report: dict) -> str:
-    """What changed, in the operator's words; "" when nothing did. Never an address or a credential."""
+def announcement_parts(report: dict) -> dict:
+    """The announcement by part, for the notice text (N-109); {} when nothing changed."""
     lines = []
     for item in report.get("accounts_replaced") or []:
         removed, added = len(item.get("removed") or []), len(item.get("added") or [])
@@ -211,16 +211,23 @@ def announcement(report: dict) -> str:
     if report.get("without_proxy"):
         lines.append("SEM proxy livre para: " + ", ".join(report["without_proxy"]) + ".")
     if not lines:
-        return ""
+        return {}
     sync = report.get("sync") or {}
     if sync.get("success"):
-        lines.append(f"Lista do provedor: {sync.get('created') or 0} novo(s), {sync.get('deactivated') or 0} retirado(s).")
+        provider = f"Lista do provedor: {sync.get('created') or 0} novo(s), {sync.get('deactivated') or 0} retirado(s)."
     else:
-        lines.append("Não foi possível consultar o provedor nesta execução.")
-    lines.append(f"Teste: {report.get('passed', 0)} de {report.get('tested', 0)} proxies ok.")
-    if report.get("reason"):
-        lines.append(f"Motivo da verificação: {report['reason']}.")
-    return "\n".join(lines)
+        provider = "Não foi possível consultar o provedor nesta execução."
+    return {
+        "changes": "\n".join(lines),
+        "provider": provider,
+        "tests": f"Teste: {report.get('passed', 0)} de {report.get('tested', 0)} proxies ok.",
+        "reason_line": f"Motivo da verificação: {report['reason']}." if report.get("reason") else "",
+    }
+
+
+def announcement(report: dict) -> str:
+    """What changed, in the operator's words; "" when nothing did. Never an address or a credential."""
+    return "\n".join(part for part in announcement_parts(report).values() if part)
 
 
 def _announce(report: dict) -> None:
@@ -230,7 +237,7 @@ def _announce(report: dict) -> None:
     try:
         from apps.telegram.services.notifications import notify
 
-        notify(event_key="proxy_change", title="Proxies: verificacao automatica", body=body)
+        notify(event_key="proxy_change", title="Proxies: verificação automática", body=body, **announcement_parts(report))
     except Exception:  # noqa: BLE001 - telling about it must not undo the repair
         logger.warning("Could not announce the proxy maintenance", exc_info=True)
 

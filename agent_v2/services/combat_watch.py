@@ -1,0 +1,107 @@
+"""Watching the combat reports of an account (N-109).
+
+One look at the game's list of combats. A combat that is new there, or that gained rounds
+since the last look, has its new rounds and its summary page delivered to the hub. The hub
+keeps the report, draws it, and decides what to tell on Telegram: the agent tells nothing.
+
+The state is small and lives with the job that watches: for each listed combat, how many
+rounds were delivered and whether it is still open.
+"""
+from __future__ import annotations
+
+from typing import Any, Callable
+
+
+def _to_int(raw: Any, default: int = 0) -> int:
+    try:
+        return int(raw)
+    except Exception:
+        return default
+
+
+def watch_combats(
+    client,
+    hub,
+    *,
+    game_account_id: str,
+    city_id: int | str,
+    state: dict | None,
+    log: Callable[[str, str], None] | None = None,
+    limit: int = 10,
+) -> dict:
+    """Returns {"state": new state, "delivered": reports sent to the hub, "open": combats still going on}."""
+    say = log or (lambda _level, _message: None)
+    state = dict(state or {})
+    seen = {str(key): dict(value) for key, value in (state.get("seen") or {}).items() if isinstance(value, dict)}
+    reports = client.fetch_combat_reports(int(city_id), limit=limit) or []
+    first_look = not state.get("started")
+    delivered = 0
+    still_open = 0
+
+    for rep in reports:
+        combat_id = str(rep.get("combat_id") or "")
+        if not combat_id:
+            continue
+        listed = _to_int(rep.get("rounds"), 0)
+        known = seen.get(combat_id)
+        if first_look:
+            # what the list already had when the watch began is old news: noted, not delivered
+            seen[combat_id] = {"rounds": listed, "open": False}
+            continue
+        if known and not known.get("open") and listed <= _to_int(known.get("rounds"), 0):
+            continue
+        upto = _to_int((known or {}).get("rounds"), 0)
+        try:
+            detail = client.fetch_combat_detailed_report(int(city_id), int(combat_id), known_upto=upto) or {}
+        except Exception as exc:
+            say("warn", f"Combate {combat_id}: o relatório detalhado falhou ({exc}); fica para a próxima verificação.")
+            if known and known.get("open"):
+                still_open += 1
+            continue
+        new_rounds = [item for item in (detail.get("rounds") or []) if _to_int(item.get("round"), 0) > upto]
+        if not new_rounds:
+            if known is None:
+                # listed, but the game shows no field of it yet
+                seen[combat_id] = {"rounds": 0, "open": True}
+                still_open += 1
+            else:
+                known["rounds"] = max(upto, listed if not known.get("open") else upto)
+                still_open += 1 if known.get("open") else 0
+            continue
+
+        summary: dict = {}
+        try:
+            summary = client.fetch_combat_report_detail(int(city_id), int(combat_id)) or {}
+        except Exception as exc:
+            say("warn", f"Combate {combat_id}: o resumo falhou ({exc}); os rounds seguem sem ele.")
+        payload = {
+            "combat_id": int(combat_id),
+            "result": rep.get("result") or "",
+            "target_city_id": str(rep.get("city_id_target") or ""),
+            "target_city_name": rep.get("city_name") or "",
+            "target_owner": rep.get("owner_name") or "",
+            "detailed_html": "\n<!-- ROUND SEPARATOR -->\n".join(str(item.get("html") or "") for item in new_rounds),
+            "append_rounds": True,
+        }
+        if summary.get("html"):
+            payload["summary_html"] = summary["html"]
+            payload["combat_date"] = summary.get("date") or ""
+        try:
+            response = hub.save_combat_report(game_account_id, payload) or {}
+        except Exception as exc:
+            say("warn", f"Combate {combat_id}: o hub não guardou o relatório ({exc}); será entregue de novo.")
+            if known and known.get("open"):
+                still_open += 1
+            continue
+        finished = bool(response.get("finished", True))
+        top = max(_to_int(item.get("round"), 0) for item in new_rounds)
+        seen[combat_id] = {"rounds": max(upto, top, listed if finished else 0), "open": not finished}
+        delivered += 1
+        still_open += 0 if finished else 1
+        say("info", f"Combate {combat_id} ({rep.get('city_name') or '?'}): {len(new_rounds)} round(s) novo(s) entregue(s) ao hub"
+                    f"{' — encerrado' if finished else ' — em andamento'}.")
+
+    listed_ids = {str(rep.get("combat_id") or "") for rep in reports}
+    if reports:                                 # an empty list is more likely a page that failed than a clean slate
+        seen = {combat_id: value for combat_id, value in seen.items() if combat_id in listed_ids}
+    return {"state": {"started": True, "seen": seen}, "delivered": delivered, "open": still_open}

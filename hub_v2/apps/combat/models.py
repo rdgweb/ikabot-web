@@ -5,9 +5,10 @@ from core.mixins.models import UUIDTimestampModel
 
 class CombatReport(UUIDTimestampModel):
     """
-    Relatório de combate capturado pelo runner de raid (ac=1008).
+    Relatório de combate do jogo, entregue pelo agente (saque, verificação de ataques,
+    monitor de combate).
 
-    Salva o resultado completo da batalha: sumário + relatório detalhado por round.
+    Guarda as duas páginas do jogo: o sumário e o relatório detalhado, round a round.
     combat_id é o ID único do jogo, usado para deduplicação.
     """
 
@@ -46,6 +47,15 @@ class CombatReport(UUIDTimestampModel):
     # HTML dos relatórios para renderização no hub
     summary_html  = models.TextField(blank=True, default="")   # militaryAdvisorReportView
     detailed_html = models.TextField(blank=True, default="")   # militaryAdvisorDetailedReportView (todos rounds)
+
+    # N-109: read from the pages above when the report arrives (apps.combat.services.intake)
+    battle_title  = models.CharField(max_length=160, blank=True, default="")
+    attacker_name = models.CharField(max_length=160, blank=True, default="")
+    defender_name = models.CharField(max_length=160, blank=True, default="")
+    finished      = models.BooleanField(default=False, db_index=True)   # the summary names the winners
+    # what was already told on Telegram: each round and the outcome go out once
+    notified_round = models.PositiveSmallIntegerField(default=0)
+    notified_final = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["-combat_date", "-created_at"]

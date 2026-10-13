@@ -625,7 +625,7 @@ class GameClient(IslandActions):
         """Fetch full combat report — loot, winner, units."""
         return FetchCombatReportDetailAction(self).execute(city_id=city_id, combat_id=combat_id)
 
-    def fetch_combat_detailed_report(self, city_id: int, combat_id: int) -> dict:
+    def fetch_combat_detailed_report(self, city_id: int, combat_id: int, known_upto: int = 0) -> dict:
         """Fetch per-round detailed report — all rounds with slot/unit data."""
         return FetchCombatDetailedReportAction(self).execute(city_id=city_id, combat_id=combat_id)
 

@@ -29,6 +29,7 @@ EVENT_TYPES = [
     },
     {
         "key": "build_complete",
+        "emitted": False,
         "label": "Construção concluída",
         "description": "Notifica quando uma construção de edifício termina.",
         "category": "operational",
@@ -37,6 +38,7 @@ EVENT_TYPES = [
     },
     {
         "key": "research_complete",
+        "emitted": False,
         "label": "Pesquisa concluída",
         "description": "Notifica quando uma pesquisa termina.",
         "category": "operational",
@@ -45,6 +47,7 @@ EVENT_TYPES = [
     },
     {
         "key": "low_wine",
+        "emitted": False,
         "label": "Vinho baixo",
         "description": "Notifica quando o estoque de vinho está baixo.",
         "category": "operational",
@@ -53,6 +56,7 @@ EVENT_TYPES = [
     },
     {
         "key": "daily_summary",
+        "emitted": False,
         "label": "Resumo diário",
         "description": "Envia um resumo diário do status de todas as contas.",
         "category": "system",
@@ -86,7 +90,7 @@ EVENT_TYPES = [
     {
         "key": "combat_report",
         "label": "Relatório de combate",
-        "description": "Envia o resumo dos relatórios de combate (perdas de cada lado) captados pelo Monitor de Combate.",
+        "description": "Envia cada round e o fim dos combates acompanhados pelo Monitor de Combate, com a imagem do campo de batalha.",
         "category": "operational",
         "icon": "bi-shield-shaded",
         "field": "notify_combat_report",
@@ -100,6 +104,9 @@ EVENT_TYPES = [
         "field": "notify_proxy_change",
     },
 ]
+
+# N-109: a toggle and a text exist for these, but no action of the hub or of the agent sends them yet
+NOT_EMITTED = {e["key"] for e in EVENT_TYPES if e.get("emitted") is False}
 
 # Lookup by field name -> event info
 EVENT_BY_FIELD = {e["field"]: e for e in EVENT_TYPES}

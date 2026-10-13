@@ -236,20 +236,32 @@ class NotificationTemplate(TimestampModel):
                 "Recusar: <code>{decline_command}</code>"
             ),
         },
+        # N-109: written from what the alert carries, not from a ready-made line
         "attack_alert": {
-            "icon": "⚠️",
-            "title_template": "Alerta de Ataque",
-            "body_template": "{ga_name} | {server_id}\nConta: {account_name}\nNode: {node_name}\n{body}",
+            "icon": "🆘",
+            "title_template": "{mission} em {target_city}",
+            "body_template": "{ga_name} · {server_id}\n{origin_player} ({origin_city}) → {target_city}\nTropas: {troops} · Frotas: {fleet}\nChegada em {time_left_human}",
         },
         "job_failed": {
             "icon": "❌",
             "title_template": "{action_name} falhou",
-            "body_template": "{ga_name} | {server_id}\nConta: {account_name}\nNode: {node_name}\nExit code: {exit_code}\nJob: {job_id}\n{body}\n{error}",
+            "body_template": "{ga_name} · {server_id}\n{city_name}\nNó: {node_name} · saída {exit_code}\n{body}",
         },
         "job_done": {
             "icon": "✅",
-            "title_template": "{action_name} concluido",
-            "body_template": "{ga_name} | {server_id}\nConta: {account_name}\nNode: {node_name}\nJob: {job_id}\n{body}",
+            "title_template": "{action_name} concluído",
+            "body_template": "{ga_name} · {server_id}\n{city_name}",
+        },
+        # N-109: a round or the end of a combat; the picture of the battlefield goes with it
+        "combat_report": {
+            "icon": "⚔️",
+            "title_template": "{headline} · {city}",
+            "body_template": "{versus}\n{losses}\n{loot_line}",
+        },
+        "proxy_change": {
+            "icon": "🔁",
+            "title_template": "Proxies: verificação automática",
+            "body_template": "{changes}\n{provider}\n{tests}\n{reason_line}",
         },
         "build_complete": {
             "icon": "🏗️",
@@ -293,7 +305,53 @@ class NotificationTemplate(TimestampModel):
         ("{server_id}", "Servidor (ex.: s78-br)"),
         ("{account_name}", "Conta do lobby"),
     ]
+    # notices about the system, not about one game account: the common variables stay out
+    SYSTEM_EVENTS = {"proxy_change"}
     EVENT_VARS = {
+        "attack_alert": [
+            ("{mission}", "Missão do inimigo (ex.: Roubar)"),
+            ("{target_city}", "Cidade atacada"),
+            ("{origin_player}", "Quem ataca"),
+            ("{origin_city}", "Cidade de onde vem"),
+            ("{troops}", "Quantas tropas"),
+            ("{fleet}", "Quantos navios"),
+            ("{time_left_human}", "Quanto falta para chegar"),
+        ],
+        "job_failed": [
+            ("{action_name}", "Ação do job"),
+            ("{city_name}", "Cidade do job, quando ele tem uma"),
+            ("{node_name}", "Nó onde rodou"),
+            ("{exit_code}", "Código de saída"),
+            ("{body}", "Última linha de erro do job"),
+            ("{job_id}", "Identificador do job"),
+        ],
+        "job_done": [
+            ("{action_name}", "Ação do job"),
+            ("{city_name}", "Cidade do job, quando ele tem uma"),
+            ("{node_name}", "Nó onde rodou"),
+            ("{job_id}", "Identificador do job"),
+        ],
+        "combat_report": [
+            ("{headline}", "\"Round 2 de 5\" durante o combate; \"Vitória em 5 rounds\" no fim"),
+            ("{city}", "Cidade do combate"),
+            ("{versus}", "Atacante × defensor"),
+            ("{attacker}", "Atacante"),
+            ("{defender}", "Defensor"),
+            ("{losses}", "Perdas dos dois lados, uma linha cada"),
+            ("{attacker_losses}", "Perdas do atacante"),
+            ("{defender_losses}", "Perdas do defensor"),
+            ("{loot_line}", "\"Saque: ...\", só no fim e quando houve"),
+            ("{result}", "Vitória ou Derrota, só no fim"),
+            ("{round}", "Número do round"),
+            ("{total_rounds}", "Total de rounds"),
+            ("{date}", "Data do round no jogo"),
+        ],
+        "proxy_change": [
+            ("{changes}", "O que mudou, uma linha por conta ou nó"),
+            ("{provider}", "O que veio da lista do provedor"),
+            ("{tests}", "Quantos proxies passaram no teste"),
+            ("{reason_line}", "Por que a verificação rodou"),
+        ],
         "cinema_available": [
             ("{count}", "Quantas contas têm sessão disponível"),
             ("{accounts}", "Uma linha por conta: nome e cidade"),
@@ -387,7 +445,9 @@ class NotificationTemplate(TimestampModel):
 
     @classmethod
     def variables_for(cls, event_key: str) -> list[tuple[str, str]]:
-        return [*cls.EVENT_VARS.get(event_key, []), *cls.COMMON_VARS] if event_key in cls.EVENT_VARS else cls.AVAILABLE_VARS
+        if event_key not in cls.EVENT_VARS:
+            return cls.AVAILABLE_VARS
+        return [*cls.EVENT_VARS[event_key], *([] if event_key in cls.SYSTEM_EVENTS else cls.COMMON_VARS)]
 
     def unknown_variables(self) -> list[str]:
         """Names between braces that this notice never fills (a typo shows as an empty space)."""

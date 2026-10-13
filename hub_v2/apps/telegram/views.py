@@ -2,6 +2,7 @@
 Views para o app Telegram — configuracao do bot, auditoria e partials HTMX.
 """
 
+import base64
 import json
 import re
 from datetime import timedelta
@@ -19,7 +20,7 @@ from django.views.generic import UpdateView
 from apps.accounts.models import Account, GameAccount
 from core.mixins.views import FilterSortListView
 
-from .constants import EVENT_TYPES, EVENT_BY_FIELD
+from .constants import EVENT_TYPES, EVENT_BY_FIELD, NOT_EMITTED
 from .filters import MessageAuditFilter
 from .forms import (
     TelegramBotConfigForm,
@@ -85,14 +86,12 @@ class TelegramConfigView(LoginRequiredMixin, UpdateView):
         items = [template_item(tpl, counts) for tpl in NotificationTemplate.objects.filter(game_account__isnull=True)]
         items.sort(key=lambda item: (-item["sent"], item["label"]))
         ctx["template_items"] = items
-        # N-104: the notices whose whole text is written from variables, and the ones whose
-        # body still arrives ready-made (only the frame around it can be edited)
+        # N-109: every notice that is sent has its whole text written from variables; the rest
+        # are notices nothing sends yet (a toggle and a text, waiting for whoever emits them)
         ctx["template_groups"] = [
-            {"title": "Texto inteiro editável", "items": [item for item in items if item["structured"]]},
-            {"title": "Só a moldura (o corpo chega pronto)", "items": [item for item in items if not item["structured"]]},
+            {"title": "Avisos", "items": [item for item in items if item["emitted"]]},
+            {"title": "Ainda sem envio", "items": [item for item in items if not item["emitted"]]},
         ]
-        with_template = {item["template"].event_key for item in items}
-        ctx["fixed_events"] = [e["label"] for e in EVENT_TYPES if e["key"] not in with_template]
         ctx["sent_total"] = sum(counts.values())
 
         TelegramIncomingCommand.seed_defaults()
@@ -210,6 +209,31 @@ SAMPLE_CONTEXTS = {
         "island": "Ilha [83:90] — Colosso", "coords": "[83:90]", "resource": "Vinho", "miracle": "Colosso",
         "changes": "➕ Fulano [ABC] colonizou Nova Polis\n🔄 Velha: Ciclano → Beltrano", "changes_count": 2,
     },
+    "attack_alert": {
+        "ga_name": "BlackShadow701", "server_id": "s78-br", "mission": "Roubar", "target_city": "Valhala",
+        "origin_player": "Fulano", "origin_city": "Polis Inimiga", "troops": 70, "fleet": 12, "time_left_human": "21min 22s",
+    },
+    "job_failed": {
+        "ga_name": "BlackShadow701", "server_id": "s78-br", "action_name": "Distribuir Recursos", "city_name": "Valhala",
+        "node_name": "local-dev", "exit_code": "1", "job_id": "71cfa2a2", "body": "Timeout ao conectar no servidor",
+    },
+    "job_done": {
+        "ga_name": "BlackShadow701", "server_id": "s78-br", "action_name": "Enviar Recursos", "city_name": "Valhala",
+        "node_name": "local-dev", "job_id": "71cfa2a2", "body": "",
+    },
+    # used only while the hub keeps no combat report (the preview prefers a real one)
+    "combat_report": {
+        "ga_name": "BlackShadow701", "server_id": "s78-br", "phase": "final", "headline": "Vitória em 2 rounds",
+        "city": "Quartzum [80:71]", "versus": "BlackShadow701 × Godeus", "attacker": "BlackShadow701", "defender": "Godeus",
+        "result": "Vitória", "round": 2, "total_rounds": 2, "attacker_losses": "sem perdas",
+        "defender_losses": "Lanceiro -286, Muralha -7", "losses": "Atacante: sem perdas\nDefensor: Lanceiro -286, Muralha -7",
+        "loot_line": "Saque: 80.631 madeira · 2.220 enxofre", "date": "03.06.2026 12:54:33",
+    },
+    "proxy_change": {
+        "changes": "Conta Principal: 2 proxy(s) fora de uso, 2 novo(s) reservado(s).\nBloqueio de login liberado: BlackShadow701.",
+        "provider": "Lista do provedor: 3 novo(s), 2 retirado(s).", "tests": "Teste: 18 de 20 proxies ok.",
+        "reason_line": "Motivo da verificação: falha de proxy no login de BlackShadow701.",
+    },
     "diplomacy_message": {
         "ga_name": "BlackShadow701", "server_id": "s78-br", "sender": "Fulano", "subject": "Tratado cultural",
         "game_date": "12.10.2026 18:00", "message_body": "Olá, aceita um tratado cultural?",
@@ -246,6 +270,7 @@ def template_item(tpl, counts: dict | None = None) -> dict:
         "label": meta["label"],
         "description": meta["description"],
         "structured": tpl.event_key in NotificationTemplate.EVENT_VARS,
+        "emitted": tpl.event_key not in NOT_EMITTED,
         "sent": (counts or {}).get(tpl.event_key, 0),
         "account_name": (tpl.game_account.name or tpl.game_account.server_id) if tpl.game_account_id else "",
         "overrides": NotificationTemplate.objects.filter(event_key=tpl.event_key, game_account__isnull=False).count()
@@ -270,15 +295,26 @@ def preview_context(tpl) -> tuple[dict, object]:
             used = set(re.findall(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", f"{tpl.title_template}\n{tpl.body_template}"))
             if not (used & own) - set(context):
                 return context, last.created_at
+    if tpl.event_key == "combat_report":
+        # no combat notice was sent yet: the latest combat the hub keeps is a truer sample than a made-up one
+        from .services.combat import sample_combat
+
+        stored, _account = sample_combat()
+        if stored:
+            return _complete(tpl, stored), None
     return _complete(tpl, {**GENERIC_SAMPLE, **SAMPLE_CONTEXTS.get(tpl.event_key, {})}), None
 
 
 def _complete(tpl, context: dict) -> dict:
-    if tpl.event_key != "island_monitor":
-        return context
-    from .services.digests import island_context
+    if tpl.event_key == "island_monitor":
+        from .services.digests import island_context
 
-    return island_context(context)
+        return island_context(context)
+    if tpl.event_key == "combat_report":
+        from .services.combat import combat_context
+
+        return combat_context(context)
+    return context
 
 
 def render_preview(tpl) -> tuple[str, object]:
@@ -286,8 +322,21 @@ def render_preview(tpl) -> tuple[str, object]:
     return tpl.render(**context), sent_at
 
 
+def preview_picture(tpl) -> bytes | None:
+    """The picture that goes with the notice in the preview and in the test (the combat has one)."""
+    if tpl.event_key != "combat_report":
+        return None
+    from apps.combat.models import CombatReport
+    from .services.combat import combat_picture
+
+    context, _sent_at = preview_context(tpl)
+    report = CombatReport.objects.filter(combat_id=context.get("combat_id") or 0).select_related("game_account").first()
+    return combat_picture(context, report.game_account if report else None)
+
+
 def editor_response(request, tpl, *, form=None, saved=False, notice="", notice_ok=True):
     preview, preview_at = render_preview(tpl)
+    picture = preview_picture(tpl)
     taken = NotificationTemplate.objects.filter(event_key=tpl.event_key, game_account__isnull=False)
     html = render_to_string("telegram/partials/template_edit.html", {
         "tpl": tpl,
@@ -295,6 +344,7 @@ def editor_response(request, tpl, *, form=None, saved=False, notice="", notice_o
         "form": form or NotificationTemplateForm(instance=tpl),
         "preview": preview,
         "preview_at": preview_at,
+        "preview_image": base64.b64encode(picture).decode() if picture else "",
         "available_vars": NotificationTemplate.variables_for(tpl.event_key),
         "unknown_vars": tpl.unknown_variables(),
         "account_templates": list(taken.select_related("game_account")) if not tpl.game_account_id else [],
@@ -356,14 +406,14 @@ class TemplateTestView(LoginRequiredMixin, View):
     """POST: send the notice as it is saved now to the global chat, filled like the preview (N-104)."""
 
     def post(self, request, pk):
-        from .services.bot_api import send_message
+        from .services.notifications import _send
 
         tpl = get_object_or_404(NotificationTemplate, pk=pk)
         bot = TelegramBotConfig.objects.filter(pk=1).first()
         if bot is None or not bot.is_active or not bot.chat_id:
             return editor_response(request, tpl, notice="Não há bot ativo com chat global vinculado para receber o teste.", notice_ok=False)
         text, _sent_at = render_preview(tpl)
-        result = send_message(bot.chat_id, "🧪 <i>Teste do modelo</i>\n" + text)
+        result = _send(bot.chat_id, "🧪 <i>Teste do modelo</i>\n" + text, preview_picture(tpl), None)
         if result.get("ok"):
             return editor_response(request, tpl, notice="Teste enviado para o chat global.")
         return editor_response(request, tpl, notice=f"O Telegram recusou o teste: {result.get('description', 'erro desconhecido')}", notice_ok=False)

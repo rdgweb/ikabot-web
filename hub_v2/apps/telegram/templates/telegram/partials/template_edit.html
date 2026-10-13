@@ -5,7 +5,7 @@
     <span class="tg-row-icon">{{ tpl.icon }}</span>
     <b>{{ item.label }}{% if item.account_name %} · {{ item.account_name }}{% endif %}</b>
     {% if item.account_name %}<span class="tg-tag">texto só desta conta</span>{% else %}<span class="tg-tag muted">texto global</span>{% endif %}
-    {% if not item.structured %}<span class="tg-tag muted" title="O corpo deste aviso ainda chega pronto; aqui se edita o título e onde o corpo entra ({body})">só a moldura</span>{% endif %}
+    {% if not item.emitted %}<span class="tg-tag muted" title="Existe a chave e o texto, mas nenhuma ação envia este aviso ainda">sem envio</span>{% endif %}
   </div>
 
   {% if notice %}
@@ -33,6 +33,7 @@
       <div style="min-width: 0;">
         <span class="tg-label">Como chega{% if preview_at %} · com o último aviso real, de {{ preview_at|date:"d/m H:i" }}{% else %} · com dados de exemplo{% endif %}</span>
         <div class="tg-preview">{{ preview|safe }}</div>
+        {% if preview_image %}<img class="tg-shot" src="data:image/jpeg;base64,{{ preview_image }}" alt="Imagem do campo de batalha que acompanha o aviso">{% endif %}
       </div>
     </div>
 

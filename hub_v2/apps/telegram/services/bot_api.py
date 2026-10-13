@@ -72,6 +72,7 @@ def send_photo(
     caption: str = "",
     parse_mode: str = "HTML",
     reply_markup: dict | None = None,
+    filename: str = "captcha.png",
 ) -> dict:
     """Send a photo to a Telegram chat."""
     import json as _json
@@ -86,7 +87,7 @@ def send_photo(
         resp = requests.post(
             url,
             data=payload,
-            files={"photo": ("captcha.png", photo_bytes, "image/png")},
+            files={"photo": (filename, photo_bytes, "image/jpeg" if filename.lower().endswith((".jpg", ".jpeg")) else "image/png")},
             timeout=TIMEOUT,
         )
         return resp.json()

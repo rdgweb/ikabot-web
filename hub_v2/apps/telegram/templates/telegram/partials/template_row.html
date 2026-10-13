@@ -11,6 +11,7 @@
       <small>{{ item.template.title_template }}</small>
     </span>
     {% if item.overrides %}<span class="tg-tag" title="Contas com um texto próprio para este aviso">{{ item.overrides }} por conta</span>{% endif %}
+    {% if not item.emitted %}<span class="tg-tag muted" title="Existe a chave e o texto, mas nenhuma ação envia este aviso ainda">sem envio</span>{% endif %}
     {% if item.sent %}<span class="tg-tag muted" title="Mensagens enviadas nos últimos 14 dias">{{ item.sent }} em 14 dias</span>{% endif %}
     <i class="bi bi-pencil text-muted text-sm"></i>
   </button>

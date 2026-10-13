@@ -18,6 +18,10 @@ from ..models import CombatReport
 logger = logging.getLogger(__name__)
 
 
+def _flag(raw) -> bool:
+    return str(raw).strip().lower() in ("1", "true", "yes", "on") if not isinstance(raw, bool) else raw
+
+
 class CombatReportSaveView(APIView):
     """POST /api/agent/combat/reports/
 
@@ -102,6 +106,11 @@ class CombatReportSaveView(APIView):
             "summary_html":    str(data.get("summary_html") or (existing.summary_html if existing else "")),
             "detailed_html":   str(data.get("detailed_html") or (existing.detailed_html if existing else "")),
         }
+        # N-109: the agent may deliver only the rounds it had not sent yet
+        if existing and data.get("detailed_html") and _flag(data.get("append_rounds")):
+            from ..services.intake import merge_rounds
+
+            defaults["detailed_html"] = merge_rounds(existing.detailed_html, str(data.get("detailed_html")))
 
         obj, created = CombatReport.objects.update_or_create(
             combat_id=combat_id,
@@ -114,8 +123,15 @@ class CombatReportSaveView(APIView):
             obj.pk, combat_id, obj.result, total_loot,
         )
 
+        # N-109: read the pages and tell what is new (the newest round, or the outcome), once
+        from ..services.intake import take_in
+
+        finished = data.get("finished")
+        announced = take_in(obj, silent=_flag(data.get("silent")), finished=None if finished is None else _flag(finished))
+
         return Response(
-            {"ok": True, "combat_report_id": str(obj.pk), "created": created},
+            {"ok": True, "combat_report_id": str(obj.pk), "created": created, "finished": obj.finished,
+             "rounds": obj.total_rounds, "announced": announced},
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 

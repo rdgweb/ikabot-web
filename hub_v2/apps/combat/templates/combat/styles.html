@@ -1,0 +1,43 @@
+{# N-109: styles of the combat pages (the hub CSS is precompiled) #}
+<style>
+  .cbt-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #c9922e; }
+  .cbt-filters { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin-bottom: 1rem; }
+  .cbt-filters a { padding: .25rem .7rem; border: 1px solid var(--ik-line); border-radius: 999px; font-size: .78rem; font-weight: 600; color: var(--ik-muted); background: var(--ik-paper); text-decoration: none; }
+  .cbt-filters a:hover { color: var(--ik-ink); }
+  .cbt-filters a.on { color: #fff; background: var(--ik-sea); border-color: var(--ik-sea); }
+  .cbt-sep { width: 1px; height: 1.2rem; margin: 0 .3rem; background: var(--ik-line); }
+  .cbt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: .75rem; }
+  .cbt-card { display: flex; flex-direction: column; gap: .35rem; min-width: 0; padding: .8rem .9rem; border: 1px solid var(--ik-line); border-left: 4px solid var(--ik-line); border-radius: 12px; background: var(--ik-paper); color: var(--ik-ink); text-decoration: none; }
+  .cbt-card:hover { border-color: var(--ik-sea); }
+  .cbt-card.win { border-left-color: #2d7a2d; } .cbt-card.loss { border-left-color: #b3402f; } .cbt-card.live { border-left-color: #c9922e; }
+  .cbt-top { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+  .cbt-state { padding: .1rem .55rem; border-radius: 999px; font-size: .68rem; font-weight: 700; color: var(--ik-muted); background: rgba(120, 113, 100, .12); }
+  .cbt-state.win { color: #2d7a2d; background: rgba(45, 122, 45, .12); }
+  .cbt-state.loss { color: #b3402f; background: rgba(179, 64, 47, .12); }
+  .cbt-state.live { color: #9a6b12; background: rgba(201, 146, 46, .18); }
+  .cbt-when { font-size: .72rem; color: var(--ik-muted); }
+  .cbt-title { font-size: .95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cbt-versus { display: flex; align-items: center; gap: .4rem; min-width: 0; font-size: .8rem; font-weight: 600; }
+  .cbt-versus span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cbt-versus i { flex-shrink: 0; font-size: .6rem; color: var(--ik-muted); }
+  .att { color: #26568a; } .def { color: #a03026; }
+  .cbt-facts { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .8rem; margin-top: .15rem; font-size: .76rem; color: var(--ik-muted); }
+  .cbt-account { margin-left: auto; padding: .05rem .5rem; border-radius: 999px; font-weight: 600; color: var(--ik-sea); background: rgba(79, 134, 185, .13); }
+  .cbt-pages { display: flex; align-items: center; justify-content: center; gap: .8rem; margin-top: 1rem; }
+  .cbt-empty { text-align: center; color: var(--ik-muted); }
+
+  .cbt-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .8rem; margin-bottom: .9rem; }
+  .cbt-head h1 { font-size: 1.4rem; font-weight: 700; color: var(--ik-ink); }
+  .cbt-rounds { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin-bottom: .7rem; }
+  .cbt-rounds button { min-width: 2.1rem; padding: .25rem .5rem; border: 1px solid var(--ik-line); border-radius: 8px; font-size: .8rem; font-weight: 600; color: var(--ik-muted); background: var(--ik-paper); cursor: pointer; }
+  .cbt-rounds button.on { color: #fff; background: var(--ik-sea); border-color: var(--ik-sea); }
+  .cbt-rounds span { margin-right: .3rem; font-size: .66rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ik-muted); }
+  .cbt-field { display: block; width: 100%; max-width: 1280px; border: 1px solid var(--ik-line); border-radius: 12px; background: #fdf7dd; }
+  .cbt-units { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .5rem; margin-top: .9rem; max-width: 1280px; }
+  .cbt-unit { padding: .5rem .7rem; border: 1px solid var(--ik-line); border-radius: 10px; background: var(--ik-paper); font-size: .8rem; }
+  .cbt-unit b { display: block; margin-bottom: .2rem; color: var(--ik-ink); }
+  .cbt-unit div { display: flex; justify-content: space-between; gap: .5rem; font-weight: 600; }
+  .cbt-unit small { font-weight: 600; color: #b3402f; }
+  .cbt-loot { display: flex; flex-wrap: wrap; gap: .4rem .9rem; margin-top: .8rem; font-size: .85rem; color: var(--ik-ink); }
+  .cbt-loot span b { margin-left: .25rem; }
+</style>

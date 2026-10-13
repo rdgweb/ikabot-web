@@ -31,8 +31,10 @@ Resolution logic:
 import logging
 from typing import Any
 
-from .bot_api import send_message
+from .bot_api import send_message, send_photo
 from .formatters import format_message
+
+CAPTION_LIMIT = 1024    # Telegram: longer than this, the text goes in a message of its own
 
 logger = logging.getLogger("telegram.notifications")
 
@@ -46,10 +48,14 @@ def notify(
     node=None,
     job=None,
     agent_name: str = "",
+    photo: bytes | None = None,
     **extra,
 ) -> bool:
     """
     Send a Telegram notification if the event is enabled.
+
+    `photo` (PNG bytes) goes with the text as its caption. The combat notice needs none
+    given: it draws the battlefield from the report the hub keeps (N-109).
 
     Returns True if a message was sent, False otherwise.
     """
@@ -82,6 +88,13 @@ def notify(
     # reply_markup is a Telegram-specific payload — extract before template rendering
     reply_markup = extra.pop("reply_markup", None) if extra else None
 
+    if event_key == "combat_report":
+        from .combat import combat_context, combat_picture
+
+        extra = combat_context(extra)
+        if photo is None:
+            photo = combat_picture(extra, game_account)
+
     tpl_ctx = _build_template_context(
         game_account=game_account,
         account=account,
@@ -100,7 +113,7 @@ def notify(
         reply_markup = _build_diplomacy_keyboard(tpl_ctx)
 
     # 4. Send
-    result = send_message(chat_id, text, reply_markup=reply_markup)
+    result = _send(chat_id, text, photo, reply_markup)
     ok = result.get("ok", False)
 
     # 5. Audit
@@ -131,6 +144,26 @@ def notify(
         )
 
     return ok
+
+
+def _picture_name(photo: bytes) -> str:
+    return "aviso.jpg" if photo[:2] == b"\xff\xd8" else "aviso.png"
+
+
+def _send(chat_id: str, text: str, photo: bytes | None, reply_markup) -> dict:
+    """The text, with the picture when there is one. A refused picture never loses the text."""
+    if not photo:
+        return send_message(chat_id, text, reply_markup=reply_markup)
+    if len(text) <= CAPTION_LIMIT:
+        result = send_photo(chat_id, photo, caption=text, reply_markup=reply_markup, filename=_picture_name(photo))
+        if result.get("ok"):
+            return result
+        logger.warning("Telegram refused the picture (%s); sending the text alone", result.get("description"))
+        return send_message(chat_id, text, reply_markup=reply_markup)
+    picture = send_photo(chat_id, photo, filename=_picture_name(photo))
+    if not picture.get("ok"):
+        logger.warning("Telegram refused the picture (%s); sending the text alone", picture.get("description"))
+    return send_message(chat_id, text, reply_markup=reply_markup)
 
 
 def _build_template_context(

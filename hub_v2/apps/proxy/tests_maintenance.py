@@ -357,7 +357,7 @@ class ProxyMaintenanceAnnouncementTests(_Base):
 
         notify.assert_called_once()
         sent = notify.call_args.kwargs
-        self.assertEqual((sent["event_key"], sent["title"]), ("proxy_change", "Proxies: verificacao automatica"))
+        self.assertEqual((sent["event_key"], sent["title"]), ("proxy_change", "Proxies: verificação automática"))
         self.assertEqual(sent["body"].split("\n"), [
             "Conta Lobby PX: 3 proxy(s) fora de uso, 3 novo(s) reservado(s).",
             "Nó node-px: proxy trocado.",
@@ -399,7 +399,7 @@ class ProxyMaintenanceAnnouncementTests(_Base):
             self._run()
         chat, text = send.call_args.args[:2]
         self.assertEqual(chat, "555")
-        self.assertIn("<b>Proxies: verificacao automatica</b>", text)
+        self.assertIn("<b>Proxies: verificação automática</b>", text)
         self.assertIn("Conta Lobby PX: 3 proxy(s) fora de uso, 3 novo(s) reservado(s).", text)
 
         bot.notify_proxy_change = False

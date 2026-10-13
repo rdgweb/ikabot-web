@@ -254,11 +254,10 @@ class TelegramPagesTests(Base):
         for label in ("Avisos", "Mensagens", "Conexão", "Histórico"):
             self.assertContains(response, label)
         groups = {group["title"]: [item["template"].event_key for item in group["items"]] for group in response.context["template_groups"]}
-        self.assertEqual(sorted(groups["Texto inteiro editável"]), ["cinema_available", "diplomacy_message", "island_monitor"])
-        self.assertIn("job_failed", groups["Só a moldura (o corpo chega pronto)"])
-        self.assertEqual(groups["Texto inteiro editável"][0], "cinema_available")          # the most sent comes first
+        self.assertLessEqual({"cinema_available", "diplomacy_message", "island_monitor", "job_failed"}, set(groups["Avisos"]))
+        self.assertIn("low_wine", groups["Ainda sem envio"])                              # N-109: nothing sends it
+        self.assertEqual(groups["Avisos"][0], "cinema_available")                         # the most sent comes first
         self.assertContains(response, "1 em 14 dias")
-        self.assertIn("Relatório de combate", response.context["fixed_events"])
 
     def test_the_editor_lists_the_variables_of_that_notice_and_previews_the_last_real_one(self):
         page = self.client.get(self._url("template-edit", self.island.pk)).content.decode()
@@ -285,9 +284,9 @@ class TelegramPagesTests(Base):
         self.assertIn("com dados de exemplo", page)
         self.assertIn("O dia do jogo vira às 00:00", page)
 
-        frame = self.client.get(self._url("template-edit", self.job_failed.pk)).content.decode()
-        self.assertIn("só a moldura", frame)
-        self.assertIn("{exit_code}", frame)
+        failed = self.client.get(self._url("template-edit", self.job_failed.pk)).content.decode()
+        self.assertIn("{exit_code}", failed)
+        self.assertNotIn("{sender}", failed)                                              # N-109: its own variables only
 
     def test_saving_a_text_with_a_variable_that_does_not_exist_says_so(self):
         response = self.client.post(self._url("template-edit", self.island.pk), {
@@ -307,7 +306,7 @@ class TelegramPagesTests(Base):
         self.assertNotIn("não preenche", page)
 
     def test_the_test_button_sends_the_saved_text_to_the_global_chat(self):
-        with patch("apps.telegram.services.bot_api.send_message", return_value=SENT_OK) as send:
+        with patch("apps.telegram.services.notifications.send_message", return_value=SENT_OK) as send:
             page = self.client.post(self._url("template-test", self.island.pk)).content.decode()
         self.assertIn("Teste enviado para o chat global.", page)
         chat_id, text = send.call_args.args[:2]
@@ -317,7 +316,7 @@ class TelegramPagesTests(Base):
 
         self.bot.chat_id = ""
         self.bot.save()
-        with patch("apps.telegram.services.bot_api.send_message", return_value=SENT_OK) as send:
+        with patch("apps.telegram.services.notifications.send_message", return_value=SENT_OK) as send:
             page = self.client.post(self._url("template-test", self.island.pk)).content.decode()
         send.assert_not_called()
         self.assertIn("Não há bot ativo com chat global", page)

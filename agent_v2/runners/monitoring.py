@@ -19,6 +19,7 @@ from core.runner_registry import register_runner
 from game_client.parsers.html_parser import GamePageParser
 from runners.base import BaseRunner, RunnerResult
 from sessions.game_session_service import LoginCooldownActive
+from services.combat_watch import watch_combats
 from services.resource_transport import estimate_incoming_transport_wait_seconds
 from services.wine_tavern import (
     find_tavern_position,
@@ -176,6 +177,21 @@ class AlertAttacksRunner(BaseRunner):
 
             seen_map = self._prune_seen_map(seen_map, now_ts)
             notified_map = self._prune_seen_map(notified_map, now_ts)
+
+            # N-109: the same visit looks at the list of combats. A new report or a new round
+            # (of an attack received or made) goes to the hub, which keeps it and tells it.
+            combat_watch = state.get("combat_watch") if isinstance(state.get("combat_watch"), dict) else {}
+            open_combats = 0
+            if bool(inputs.get("spawn_combat_monitor", True)):
+                try:
+                    watched = watch_combats(
+                        client, self.hub, game_account_id=ga_id, city_id=scan["current_city_id"], state=combat_watch,
+                        log=lambda level, message: self.log(jid, level, message),
+                    )
+                    combat_watch, open_combats = watched["state"], watched["open"]
+                except Exception as exc:
+                    self.log(jid, "warn", f"Lista de combates não pôde ser lida nesta verificação: {exc}")
+
             self._persist_attack_state(
                 account_id=aid,
                 game_account_id=ga_id,
@@ -187,6 +203,7 @@ class AlertAttacksRunner(BaseRunner):
                 matching_events=matching_events,
                 seen_map=seen_map,
                 notified_map=notified_map,
+                combat_watch=combat_watch,
             )
 
             self.log(
@@ -214,24 +231,6 @@ class AlertAttacksRunner(BaseRunner):
                         agent_name=str(job.get("agent") or ""),
                     )
                     notified_map[event_id] = now_ts
-                    # Acorda o Monitor de Combate (ac=34) para acompanhar a
-                    # batalha ao vivo: agenda pela chegada do ataque.
-                    if bool(inputs.get("spawn_combat_monitor", True)):
-                        try:
-                            self.hub.spawn_job(
-                                jid,
-                                action_code=34,
-                                inputs={
-                                    "target_city_id": str(event.get("target_city_id") or ""),
-                                    "arrival_eta_seconds": int(event.get("time_left_sec") or 0),
-                                    "notify_telegram": True,
-                                },
-                                delay_seconds=max(0, int(event.get("time_left_sec") or 0) - 60),
-                                game_account_id=ga_id,
-                            )
-                            self.log(jid, "info", "Monitor de Combate acionado para acompanhar a batalha ao vivo.")
-                        except Exception as exc:
-                            self.log(jid, "warn", f"Falha ao acionar Monitor de Combate: {exc}")
 
             if new_events:
                 notified_map = self._prune_seen_map(notified_map, now_ts)
@@ -246,6 +245,7 @@ class AlertAttacksRunner(BaseRunner):
                     matching_events=matching_events,
                     seen_map=seen_map,
                     notified_map=notified_map,
+                    combat_watch=combat_watch,
                 )
 
             if ga_id:
@@ -258,12 +258,17 @@ class AlertAttacksRunner(BaseRunner):
                 self.log(jid, "info", "Ataque ativo — verificando a cada 2 min ate resolver.")
             else:
                 next_seconds = max(180, interval_minutes * 60)
+            if open_combats:
+                # a round of the game takes 15 minutes: look again before the next one is old
+                next_seconds = min(next_seconds, 300)
+                self.log(jid, "info", f"{open_combats} combate(s) em andamento — próxima verificação em até 5 min.")
 
             return RunnerResult(
                 success=True,
                 reschedule_seconds=next_seconds,
                 data={
                     "status": "ok",
+                    "open_combats": open_combats,
                     "total_movements": total_movements,
                     "hostile_count": hostile_count,
                     "matching_count": len(matching_events),
@@ -390,9 +395,11 @@ class AlertAttacksRunner(BaseRunner):
         matching_events: list[dict[str, Any]],
         seen_map: dict[str, int],
         notified_map: dict[str, int],
+        combat_watch: dict[str, Any] | None = None,
     ) -> None:
         base_snapshot = dict((snapshot or {}).get("base_snapshot") or {})
         base_snapshot["attack_alert_state"] = {
+            "combat_watch": combat_watch or {},
             "interval_minutes": int(interval_minutes),
             "checked_at": datetime.now(timezone.utc).isoformat(),
             "total_movements": int(total_movements),

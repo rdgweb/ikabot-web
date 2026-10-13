@@ -33,6 +33,7 @@ urlpatterns = [
     path("generais/", include("apps.generals_bank.urls")),
     path("diplomacy/", include("apps.diplomacy.urls")),
     path("espionage/", include("apps.espionage.urls")),
+    path("combat/", include("apps.combat.urls")),
     # --- Admin ---
     path("accounts/", include("apps.accounts.urls")),
     path("profiles/", include("apps.profiles.urls")),

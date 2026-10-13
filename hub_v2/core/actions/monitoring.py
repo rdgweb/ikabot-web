@@ -124,13 +124,13 @@ ACTIONS = {
         "recurring": True,
         "long_running": True,
         "ready": True,
-        "description": "Monitora ataques e envia alertas.",
+        "description": "Monitora ataques que chegam e os combates da conta: alerta o ataque e entrega cada relatório e round novo.",
         "inputs": [
             {"key": "interval_minutes", "type": FIELD_INT, "label": "Intervalo de checagem (min)", "required": True, "min": 3, "default": 20, "help": "Frequência com que o advisor militar é relido."},
             {"key": "min_troops", "type": FIELD_INT, "label": "Ignorar abaixo de tropas", "required": True, "min": 0, "default": 0, "help": "Ataques com menos tropas do que isso não geram alerta novo."},
             {"key": "min_fleet", "type": FIELD_INT, "label": "Ignorar abaixo de frotas", "required": True, "min": 0, "default": 0, "help": "Ataques com menos navios do que isso não geram alerta novo."},
             {"key": "notify_telegram", "type": FIELD_BOOL, "label": "Notificar no Telegram", "required": False, "default": True, "help": "Envia notificação para ataques novos detectados."},
-            {"key": "spawn_combat_monitor", "type": FIELD_BOOL, "label": "Acompanhar batalha ao vivo (Telegram)", "required": False, "default": True, "help": "Ao detectar um ataque, aciona o Monitor de Combate para enviar cada round e o relatório final no Telegram."},
+            {"key": "spawn_combat_monitor", "type": FIELD_BOOL, "label": "Acompanhar combates", "required": False, "default": True, "help": "A cada verificação, olha a lista de combates da conta e entrega ao hub os relatórios e rounds novos, de ataques recebidos e feitos. O hub guarda em Combates e avisa no Telegram."},
         ],
     },
     34: {
@@ -144,7 +144,7 @@ ACTIONS = {
         "long_running": True,
         "ready": True,
         "ui_hidden": True,
-        "description": "Acompanha a batalha ao vivo, round a round, e envia ao Telegram cada round e o relatório final. E' acionado automaticamente pelo Alerta de Ataques quando há um ataque; não precisa ser criado manualmente.",
+        "description": "Olha a lista de combates da conta a cada 5 minutos enquanto houver combate em andamento e entrega ao hub os rounds novos. A mesma vigia já roda dentro do Alerta de Ataques; este job é só para acompanhar mais de perto.",
         "inputs": [],
     },
     702: {
