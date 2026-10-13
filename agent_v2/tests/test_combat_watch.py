@@ -63,13 +63,13 @@ class CombatWatchTests(unittest.TestCase):
         self.assertEqual((account, report["combat_id"], report["append_rounds"]), ("g1", 5, True))
         self.assertEqual(report["detailed_html"], "R1\n<!-- ROUND SEPARATOR -->\nR2")
         self.assertEqual((report["summary_html"], report["target_city_id"], report["target_owner"]), ("<summary 5>", "55", "Fulano"))
-        self.assertEqual(result["state"]["seen"]["5"], {"rounds": 2, "open": False})
+        self.assertEqual(result["state"]["seen"]["5"], {"rounds": 2, "open": False, "sent": True})
         self.assertEqual((result["delivered"], result["open"]), (1, 0))
 
     def test_a_combat_going_on_delivers_only_the_rounds_that_are_new(self):
         client, hub = Client([listed(7, 1, result="")], {7: 1}), Hub(finished=False)
         first = self._watch(client, hub, {"started": True, "seen": {}})
-        self.assertEqual(first["state"]["seen"]["7"], {"rounds": 1, "open": True})
+        self.assertEqual(first["state"]["seen"]["7"], {"rounds": 1, "open": True, "sent": True})
         self.assertEqual(first["open"], 1)
 
         client.rounds[7] = 1                                                        # nothing happened since
@@ -83,14 +83,26 @@ class CombatWatchTests(unittest.TestCase):
         last = self._watch(client, hub, idle["state"])
         self.assertEqual(hub.saved[-1][1]["detailed_html"], "R2\n<!-- ROUND SEPARATOR -->\nR3")   # round 1 is not sent again
         self.assertEqual(hub.saved[-1][1]["result"], "victory")
-        self.assertEqual((last["state"]["seen"]["7"], last["open"]), ({"rounds": 3, "open": False}, 0))
+        self.assertEqual((last["state"]["seen"]["7"], last["open"]), ({"rounds": 3, "open": False, "sent": True}, 0))
 
     def test_a_finished_combat_that_gains_rounds_in_the_list_is_opened_again(self):
-        state = {"started": True, "seen": {"9": {"rounds": 2, "open": False}}}
+        state = {"started": True, "seen": {"9": {"rounds": 2, "open": False, "sent": True}}}
         client, hub = Client([listed(9, 4)], {9: 4}), Hub()
         self._watch(client, hub, state)
         self.assertEqual(client.detail_calls, [(9, 2)])
         self.assertEqual(hub.saved[0][1]["detailed_html"], "R3\n<!-- ROUND SEPARATOR -->\nR4")
+
+    def test_a_combat_that_was_going_on_at_the_first_look_is_delivered_whole_when_it_moves(self):
+        client, hub = Client([listed(9, 2, result="")], {9: 2}), Hub(finished=False)
+        first = self._watch(client, hub, None)
+        self.assertEqual((hub.saved, first["state"]["seen"]["9"]), ([], {"rounds": 2, "open": False}))
+        still = self._watch(client, hub, first["state"])
+        self.assertEqual((hub.saved, client.detail_calls), ([], []))               # nothing moved: not even opened
+        client.rounds[9], client.listed = 3, [listed(9, 3, result="")]
+        moved = self._watch(client, hub, still["state"])
+        self.assertEqual(client.detail_calls, [(9, 0)])
+        self.assertEqual(hub.saved[0][1]["detailed_html"].count("ROUND SEPARATOR"), 2)   # rounds 1, 2 and 3: the history is not cut
+        self.assertEqual(moved["state"]["seen"]["9"], {"rounds": 3, "open": True, "sent": True})
 
     def test_what_the_hub_did_not_keep_is_delivered_again_next_time(self):
         state = {"started": True, "seen": {}}

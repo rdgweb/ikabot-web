@@ -50,7 +50,8 @@ def watch_combats(
             continue
         if known and not known.get("open") and listed <= _to_int(known.get("rounds"), 0):
             continue
-        upto = _to_int((known or {}).get("rounds"), 0)
+        # a combat noted at the first look was never delivered: when it moves, the hub gets it whole
+        upto = _to_int(known.get("rounds"), 0) if known and known.get("sent") else 0
         try:
             detail = client.fetch_combat_detailed_report(int(city_id), int(combat_id), known_upto=upto) or {}
         except Exception as exc:
@@ -65,7 +66,7 @@ def watch_combats(
                 seen[combat_id] = {"rounds": 0, "open": True}
                 still_open += 1
             else:
-                known["rounds"] = max(upto, listed if not known.get("open") else upto)
+                known["rounds"] = max(_to_int(known.get("rounds"), 0), listed if not known.get("open") else 0)
                 still_open += 1 if known.get("open") else 0
             continue
 
@@ -95,7 +96,7 @@ def watch_combats(
             continue
         finished = bool(response.get("finished", True))
         top = max(_to_int(item.get("round"), 0) for item in new_rounds)
-        seen[combat_id] = {"rounds": max(upto, top, listed if finished else 0), "open": not finished}
+        seen[combat_id] = {"rounds": max(upto, top, listed if finished else 0), "open": not finished, "sent": True}
         delivered += 1
         still_open += 0 if finished else 1
         say("info", f"Combate {combat_id} ({rep.get('city_name') or '?'}): {len(new_rounds)} round(s) novo(s) entregue(s) ao hub"
