@@ -125,6 +125,8 @@ def watch_combats(
     listed_ids = {str(rep.get("combat_id") or "") for rep in reports}
     if reports:                                 # an empty list is more likely a page that failed than a clean slate
         seen = {combat_id: value for combat_id, value in seen.items() if combat_id in listed_ids}
-    # a list that came back empty is tried again: it may have been a page that failed
-    done = bool(state.get("imported")) or bool(reports)
+    # A list that came back empty on the very first look is tried once more (it may have been a
+    # page that failed). After that an empty list is just an account without combats: its
+    # history is taken as brought, so that the first combat it ever has is told, not filed.
+    done = bool(state.get("imported")) or bool(reports) or bool(state.get("started"))
     return {"state": {"started": True, "imported": done, "seen": seen}, "delivered": delivered, "imported": imported, "open": still_open}

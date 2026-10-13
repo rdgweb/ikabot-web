@@ -89,9 +89,19 @@ class CombatWatchTests(unittest.TestCase):
         self.assertEqual((hub.saved[-1][1]["detailed_html"], hub.saved[-1][1].get("silent")), ("R3", None))   # the new round is told
         self.assertEqual(moved["delivered"], 1)
 
-    def test_an_empty_list_does_not_count_as_the_history_having_been_brought(self):
-        result = self._watch(Client([], {}), Hub(), None)
-        self.assertEqual(result["state"], {"started": True, "imported": False, "seen": {}})
+    def test_an_account_without_combats_has_its_first_combat_told_not_filed(self):
+        client, hub = Client([], {}), Hub()
+        first = self._watch(client, hub, None)
+        self.assertEqual(first["state"], {"started": True, "imported": False, "seen": {}})     # one empty page may be a failure
+        second = self._watch(client, hub, first["state"])
+        self.assertTrue(second["state"]["imported"])                                            # two in a row: no combats
+        client.listed, client.rounds = [listed(50, 1)], {50: 1}
+        result = self._watch(client, hub, second["state"])
+        self.assertEqual((hub.saved[0][1]["combat_id"], hub.saved[0][1].get("silent"), result["delivered"]), (50, None, 1))
+
+    def test_the_accounts_watched_before_the_import_existed_with_an_empty_list_are_settled_at_once(self):
+        result = self._watch(Client([], {}), Hub(), {"started": True, "imported": False, "seen": {}})
+        self.assertTrue(result["state"]["imported"])
 
     def test_a_new_combat_is_delivered_with_its_rounds_and_summary(self):
         state = {**self.WATCHING, "seen": {"1": {"rounds": 3, "open": False}}}
