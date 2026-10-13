@@ -14,8 +14,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 
-IMPORT_LIMIT = 5            # combats per account brought in as history
-IMPORT_MAX_ROUNDS = 12      # each round is a request to the game
+IMPORT_LIMIT = 5            # combats per account brought in as history (each round of each is a request to the game)
 
 
 def _to_int(raw: Any, default: int = 0) -> int:
@@ -54,8 +53,8 @@ def watch_combats(
         known = seen.get(combat_id)
         silent = importing and not (known and known.get("sent"))
         if silent:
-            # only a few of the newest, and not the very long ones: old news is not worth many requests
-            if imported >= IMPORT_LIMIT or listed > IMPORT_MAX_ROUNDS:
+            # only a few of the newest: each one is brought whole, however many rounds it had
+            if imported >= IMPORT_LIMIT:
                 seen.setdefault(combat_id, {"rounds": listed, "open": False})
                 continue
             imported += 1

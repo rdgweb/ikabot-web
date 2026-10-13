@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 API_BASE = "https://api.telegram.org/bot{token}"
 TIMEOUT = 10  # seconds
+# a picture is uploaded and then processed by Telegram: 10s was not enough for a battlefield (N-109)
+PHOTO_TIMEOUT = (10, 60)  # seconds to connect, seconds to get the answer
 
 
 def _get_token() -> str | None:
@@ -88,7 +90,7 @@ def send_photo(
             url,
             data=payload,
             files={"photo": (filename, photo_bytes, "image/jpeg" if filename.lower().endswith((".jpg", ".jpeg")) else "image/png")},
-            timeout=TIMEOUT,
+            timeout=PHOTO_TIMEOUT,
         )
         return resp.json()
     except requests.RequestException as exc:

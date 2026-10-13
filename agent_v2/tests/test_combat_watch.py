@@ -70,13 +70,14 @@ class CombatWatchTests(unittest.TestCase):
         self.assertTrue(result["state"]["imported"])
         self.assertEqual(result["state"]["seen"]["432077"], {"rounds": 1, "open": False, "sent": True})
 
-    def test_the_history_is_a_few_of_the_newest_and_never_a_very_long_combat(self):
+    def test_the_history_is_the_five_newest_each_brought_whole(self):
         rows = [listed(number, 1) for number in range(20, 13, -1)]                               # seven combats, the newest first
-        rows[1] = listed(19, 22)                                                                 # 22 rounds: 22 requests for old news
+        rows[1] = listed(19, 22)                                                                 # a long one comes whole too
         client, hub = Client(rows, {row["combat_id"]: row["rounds"] for row in rows}), Hub()
         result = self._watch(client, hub, None)
-        self.assertEqual([report["combat_id"] for _account, report in hub.saved], [20, 18, 17, 16, 15])
-        self.assertEqual(result["state"]["seen"]["19"], {"rounds": 22, "open": False})           # noted, to be told if it moves
+        self.assertEqual([report["combat_id"] for _account, report in hub.saved], [20, 19, 18, 17, 16])
+        self.assertEqual(hub.saved[1][1]["detailed_html"].count("ROUND SEPARATOR"), 21)          # its 22 rounds
+        self.assertEqual(result["state"]["seen"]["15"], {"rounds": 1, "open": False})            # past the five: noted, told if it moves
         self.assertEqual(result["state"]["seen"]["14"], {"rounds": 1, "open": False})
 
     def test_a_combat_still_going_on_when_imported_keeps_being_followed_and_told(self):
@@ -143,7 +144,7 @@ class CombatWatchTests(unittest.TestCase):
         self.assertEqual(hub.saved[0][1]["detailed_html"], "R3\n<!-- ROUND SEPARATOR -->\nR4")
 
     def test_a_combat_that_was_only_noted_is_delivered_whole_when_it_moves(self):
-        state = {**self.WATCHING, "seen": {"9": {"rounds": 22, "open": False}}}     # too long to be brought as history
+        state = {**self.WATCHING, "seen": {"9": {"rounds": 22, "open": False}}}     # beyond the five brought as history
         client, hub = Client([listed(9, 23, result="")], {9: 23}), Hub(finished=False)
         moved = self._watch(client, hub, state)
         self.assertEqual(client.detail_calls, [(9, 0)])

@@ -87,6 +87,19 @@ document.addEventListener("htmx:responseError", (e) => {
   }));
 });
 
+// hx-confirm asks through the hub's own dialog, not the browser's (N-109)
+document.addEventListener("htmx:confirm", (e) => {
+  if (!e.detail.question) return;            // the element has no hx-confirm
+  e.preventDefault();
+  openConfirm({
+    title: "Confirmar",
+    message: e.detail.question,
+    style: "primary",
+    confirmLabel: "Confirmar",
+    onConfirm: () => e.detail.issueRequest(true),
+  });
+});
+
 // HX-Trigger "toast" events are handled automatically by HTMX:
 // HTMX parses the HX-Trigger header and dispatches a "toast" event
 // on the body, which the Alpine.js toast component listens to via
