@@ -255,27 +255,30 @@ class DailyLoginRunner(BaseRunner):
             # disponivel, no maximo 1x por ciclo de reset (dedup por data UTC).
             if overview is None:
                 overview = client.get_daily_city_overview(bonus_city_id)
-            if overview.get("city_cinema_active"):
-                today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-                if str(inputs.get("cinema_notified_date") or "") != today:
-                    try:
-                        self.hub.send_notification(
-                            event="cinema_available",
-                            game_account_id=ga_id,
-                            account_id=aid,
-                            title="Cineteatro disponivel",
-                            body=(
-                                f"O cineteatro tem sessao disponivel em {before_state.get('city_name') or bonus_city_name}. "
-                                f"A coleta e manual no jogo (o bonus exige assistir um video)."
-                            ),
-                            agent_name=str(job.get("agent") or ""),
-                        )
-                        inputs["cinema_notified_date"] = today
-                        self.log(jid, "info", "Cineteatro disponivel — notificacao Telegram enviada")
-                    except Exception as exc:
-                        self.log(jid, "warn", f"Falha ao notificar cineteatro: {exc}")
+            cinema_active = bool(overview.get("city_cinema_active"))
 
             final_state = client.get_daily_tasks_state(bonus_city_id)
+            # N-104: every run tells the hub whether the cinema has a session and when the game
+            # day turns. The hub sends ONE message a day for all the accounts, an hour before
+            # that; an account whose session is gone by then leaves the list.
+            try:
+                self.hub.send_notification(
+                    event="cinema_available",
+                    game_account_id=ga_id,
+                    account_id=aid,
+                    title="Cineteatro disponivel",
+                    body="",
+                    agent_name=str(job.get("agent") or ""),
+                    metadata={
+                        "available": cinema_active,
+                        "reset_in_seconds": int(final_state.get("countdown_seconds") or 0),
+                        "city_name": str(before_state.get("city_name") or bonus_city_name or ""),
+                    },
+                )
+                if cinema_active:
+                    self.log(jid, "info", "Cineteatro disponivel — entra no resumo diario do Telegram")
+            except Exception as exc:
+                self.log(jid, "warn", f"Falha ao informar o estado do cineteatro: {exc}")
             next_delay, next_kind = _next_daily_delay(
                 int(final_state.get("countdown_seconds") or 0),
                 sweep_interval_hours=sweep_interval_hours,

@@ -271,11 +271,53 @@ class NotificationTemplate(TimestampModel):
             "title_template": "Resumo diário",
             "body_template": "{account_name}",
         },
+        # N-104: the island notice is built from what changed, not from a ready-made text
         "island_monitor": {
             "icon": "🏝️",
-            "title_template": "{title}",
-            "body_template": "{ga_name} | {server_id}\n{body}",
+            "title_template": "Mudança na ilha {coords}",
+            "body_template": "{island_line}\nVisto por {ga_name}\n{changes}",
         },
+        # N-104: one message a day for all the accounts, an hour before the game day turns
+        "cinema_available": {
+            "icon": "🎬",
+            "title_template": "Cineteatro disponível em {count} conta(s)",
+            "body_template": "{accounts}\nO dia do jogo vira às {reset_time}. A sessão é manual no jogo.",
+        },
+    }
+    # what the island template was before N-104, to upgrade rows nobody edited
+    OLD_ISLAND_DEFAULT = ("{title}", "{ga_name} | {server_id}\n{body}")
+
+    # N-104: the variables each notice fills, shown next to its editor
+    COMMON_VARS = [
+        ("{ga_name}", "Nome da conta do jogo"),
+        ("{server_id}", "Servidor (ex.: s78-br)"),
+        ("{account_name}", "Conta do lobby"),
+    ]
+    EVENT_VARS = {
+        "cinema_available": [
+            ("{count}", "Quantas contas têm sessão disponível"),
+            ("{accounts}", "Uma linha por conta: nome e cidade"),
+            ("{reset_time}", "Hora em que o dia do jogo vira"),
+            ("{reset_in}", "Quanto falta para virar (ex.: 1h)"),
+        ],
+        "island_monitor": [
+            ("{coords}", "Coordenadas da ilha"),
+            ("{island_line}", "Ilha, recurso e maravilha numa linha"),
+            ("{island}", "Nome e coordenadas da ilha"),
+            ("{resource}", "Recurso da ilha"),
+            ("{miracle}", "Maravilha da ilha"),
+            ("{changes}", "Uma linha por mudança (cidade nova, sumiu, trocou de dono, batalha)"),
+            ("{changes_count}", "Quantas mudanças"),
+        ],
+        "diplomacy_message": [
+            ("{sender}", "Remetente"),
+            ("{subject}", "Assunto"),
+            ("{game_date}", "Data no jogo"),
+            ("{message_body}", "Texto da mensagem"),
+            ("{reply_command}", "Comando para responder"),
+            ("{accept_command}", "Comando para aceitar"),
+            ("{decline_command}", "Comando para recusar"),
+        ],
     }
 
     # All available variables with descriptions (for UI reference)
@@ -298,7 +340,14 @@ class NotificationTemplate(TimestampModel):
         ("{decline_command}", "Comando para recusar"),
     ]
 
-    event_key = models.CharField(max_length=32, unique=True)
+    event_key = models.CharField(max_length=32, db_index=True)
+    # N-104: empty = the global text; set = the text only this account uses instead of it
+    game_account = models.ForeignKey(
+        "accounts.GameAccount", on_delete=models.CASCADE, null=True, blank=True, related_name="telegram_templates",
+    )
+    # "<event>:global" or "<event>:<account id>": one row per event and scope (MariaDB has no
+    # conditional unique constraint, and NULLs do not collide in a plain one)
+    scope_key = models.CharField(max_length=80, unique=True, null=True, blank=True, editable=False)
     icon = models.CharField(max_length=8, default="🔔")
     title_template = models.CharField(
         max_length=255,
@@ -318,6 +367,44 @@ class NotificationTemplate(TimestampModel):
 
     def __str__(self):
         return f"{self.icon} {self.event_key}"
+
+    @staticmethod
+    def scope_for(event_key: str, game_account_id=None) -> str:
+        return f"{event_key}:{game_account_id or 'global'}"
+
+    def save(self, *args, **kwargs):
+        self.scope_key = self.scope_for(self.event_key, self.game_account_id)
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def for_event(cls, event_key: str, game_account=None):
+        """The template a notice uses: the account's own text when it has one, else the global."""
+        if game_account is not None:
+            own = cls.objects.filter(scope_key=cls.scope_for(event_key, game_account.pk)).first()
+            if own:
+                return own
+        return cls.objects.filter(scope_key=cls.scope_for(event_key)).first()
+
+    @classmethod
+    def variables_for(cls, event_key: str) -> list[tuple[str, str]]:
+        return [*cls.EVENT_VARS.get(event_key, []), *cls.COMMON_VARS] if event_key in cls.EVENT_VARS else cls.AVAILABLE_VARS
+
+    def unknown_variables(self) -> list[str]:
+        """Names between braces that this notice never fills (a typo shows as an empty space)."""
+        import re
+
+        known = {name.strip("{}") for name, _label in self.variables_for(self.event_key)}
+        known |= {name.strip("{}") for name, _label in self.AVAILABLE_VARS} | {"title", "body"}
+        used = set(re.findall(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", f"{self.title_template}\n{self.body_template}"))
+        return sorted(used - known)
+
+    def reset_to_default(self) -> bool:
+        defaults = self.DEFAULTS.get(self.event_key)
+        if not defaults:
+            return False
+        self.icon, self.title_template, self.body_template = defaults["icon"], defaults["title_template"], defaults["body_template"]
+        self.save()
+        return True
 
     def render(self, **kwargs):
         """
@@ -374,8 +461,9 @@ class NotificationTemplate(TimestampModel):
         """Create default templates for all event types (idempotent)."""
         for key, defaults in cls.DEFAULTS.items():
             cls.objects.get_or_create(
-                event_key=key,
+                scope_key=cls.scope_for(key),
                 defaults={
+                    "event_key": key,
                     "icon": defaults["icon"],
                     "title_template": defaults["title_template"],
                     "body_template": defaults["body_template"],
@@ -388,6 +476,31 @@ class _SafeDict(dict):
 
     def __missing__(self, key):
         return ""
+
+
+class DigestEntry(TimestampModel):
+    """What one account has to say in a notice that is sent once, for all accounts together (N-104).
+
+    Cinema: every daily-login run of an account reports whether the cinema has a session; an
+    hour before the game day turns the hub sends ONE message listing the accounts that still
+    have it. A row per account and game day; `active` follows the latest report.
+    """
+
+    event_key = models.CharField(max_length=32)
+    game_account = models.ForeignKey("accounts.GameAccount", on_delete=models.CASCADE, related_name="telegram_digest_entries")
+    day_key = models.CharField(max_length=16, help_text="Game day the entry belongs to (date of its reset, UTC)")
+    active = models.BooleanField(default=True)
+    due_at = models.DateTimeField(null=True, blank=True, help_text="When the digest should go out")
+    reset_at = models.DateTimeField(null=True, blank=True)
+    data_json = models.TextField(blank=True, default="{}")
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        unique_together = [("event_key", "game_account", "day_key")]
+        indexes = [models.Index(fields=["event_key", "sent_at", "due_at"], name="tg_digest_due_idx")]
+
+    def __str__(self):
+        return f"{self.event_key} {self.game_account_id} {self.day_key}"
 
 
 class MessageAudit(models.Model):

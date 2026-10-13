@@ -1317,19 +1317,23 @@ class IslandMonitorRunner(BaseRunner):
                     continue
 
                 changes: list[str] = []
+                # N-104: the same changes as data; the hub builds the text from its template
+                change_items: list[dict] = []
 
                 if notify_new:
                     for cid, city in current.items():
                         if cid not in prev_state:
                             ally = f" [{city['ally_tag']}]" if city.get("ally_tag") else ""
-                            changes.append(f"➕ *{city['owner_name']}{ally}* colonizou *{city['name']}*")
+                            changes.append(f"➕ {city['owner_name']}{ally} colonizou {city['name']}")
+                            change_items.append({"kind": "new", "city": city["name"], "owner": city["owner_name"], "ally": city.get("ally_tag") or ""})
                             self.log(jid, "info", f"{island_label}: nova cidade — {city['owner_name']} / {city['name']}")
                             total_changes += 1
 
                 if notify_removed:
                     for cid, prev in prev_state.items():
                         if cid not in current:
-                            changes.append(f"➖ *{prev['city_name']}* sumiu (era de *{prev['owner_name']}*)")
+                            changes.append(f"➖ {prev['city_name']} sumiu (era de {prev['owner_name']})")
+                            change_items.append({"kind": "removed", "city": prev["city_name"], "owner": prev["owner_name"]})
                             self.log(jid, "info", f"{island_label}: cidade sumida — {prev['owner_name']} / {prev['city_name']}")
                             total_changes += 1
 
@@ -1340,8 +1344,12 @@ class IslandMonitorRunner(BaseRunner):
                             if city["owner_name"] != prev["owner_name"]:
                                 ally = f" [{city['ally_tag']}]" if city.get("ally_tag") else ""
                                 changes.append(
-                                    f"🔄 *{city['name']}*: {prev['owner_name']} → *{city['owner_name']}{ally}*"
+                                    f"🔄 {city['name']}: {prev['owner_name']} → {city['owner_name']}{ally}"
                                 )
+                                change_items.append({
+                                    "kind": "owner_change", "city": city["name"], "owner": city["owner_name"],
+                                    "prev_owner": prev["owner_name"], "ally": city.get("ally_tag") or "",
+                                })
                                 self.log(jid, "info", f"{island_label}: troca de jogador — {prev['owner_name']} → {city['owner_name']}")
                                 total_changes += 1
 
@@ -1350,13 +1358,15 @@ class IslandMonitorRunner(BaseRunner):
                         in_fight_now = city.get("in_fight", False)
                         was_in_fight = prev_state.get(cid, {}).get("in_fight", False)
                         if in_fight_now and not was_in_fight:
-                            changes.append(f"⚔️ Batalha em *{city['name']}* (de *{city['owner_name']}*)")
+                            changes.append(f"⚔️ Batalha em {city['name']} (de {city['owner_name']})")
+                            change_items.append({"kind": "fight_start", "city": city["name"], "owner": city["owner_name"]})
                             total_changes += 1
                         elif not in_fight_now and was_in_fight:
-                            changes.append(f"🏳 Batalha encerrada em *{city['name']}*")
+                            changes.append(f"🏳 Batalha encerrada em {city['name']}")
+                            change_items.append({"kind": "fight_end", "city": city["name"], "owner": city["owner_name"]})
 
                 if changes:
-                    header = f"🏝 *{island_label}* · {resource} · {miracle}"
+                    header = f"🏝 {island_label} · {resource} · {miracle}"
                     body_text = "\n".join(changes)
                     try:
                         self.hub.send_notification(
@@ -1364,6 +1374,10 @@ class IslandMonitorRunner(BaseRunner):
                             game_account_id=ga_id,
                             title=f"Mudança na ilha {coords}",
                             body=f"{header}\n{body_text}",
+                            metadata={
+                                "island": island_label, "coords": coords, "resource": resource, "miracle": miracle,
+                                "changes": change_items,
+                            },
                         )
                     except Exception as ne:
                         self.log(jid, "warn", f"Telegram falhou: {ne}")

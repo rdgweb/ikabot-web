@@ -93,7 +93,7 @@ def notify(
         **extra,
     )
 
-    text = format_message(event_key, **tpl_ctx)
+    text = format_message(event_key, game_account=game_account, **tpl_ctx)
 
     # Auto-build inline keyboard for diplomacy_message when not overridden
     if event_key == "diplomacy_message" and reply_markup is None:

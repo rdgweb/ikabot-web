@@ -103,6 +103,31 @@ class AgentNotifyView(APIView):
                     ]]
                 }
 
+        if data["event"] == "cinema_available" and game_account is not None:
+            # N-104: not sent per account any more. The state is kept and one message a day
+            # lists every account that has a session, an hour before the game day turns.
+            # An agent that does not send the state yet only reports when a session exists.
+            from apps.telegram.services.digests import record_cinema
+
+            try:
+                reset_in = int(metadata.get("reset_in_seconds") or 0)
+            except (TypeError, ValueError):
+                reset_in = 0
+            record_cinema(
+                game_account,
+                available=bool(metadata.get("available", True)),
+                reset_in_seconds=reset_in,
+                city_name=str(metadata.get("city_name") or ""),
+            )
+            return Response({"ok": True, "sent": False, "queued": True}, status=status.HTTP_200_OK)
+
+        if data["event"] == "island_monitor" and isinstance(metadata.get("changes"), list):
+            # N-104: what changed arrives as data; the lines are written here (and kept as text
+            # in the history, so a message sent again from there reads the same)
+            from apps.telegram.services.digests import island_changes_text
+
+            metadata["changes"], metadata["changes_count"] = island_changes_text(metadata["changes"])
+
         if data["event"] == "diplomacy_message":
             reply_command = TelegramIncomingCommand.command_for(
                 TelegramIncomingCommand.COMMAND_DIPLOMACY_REPLY

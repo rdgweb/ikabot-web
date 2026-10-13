@@ -50,7 +50,8 @@ class TelegramFormatterTests(TestCase):
         )
         self.assertIn("Mudança na ilha [83:90]", text)
         self.assertIn("BlackShadow701", text)
-        self.assertIn("M01", text)
+        self.assertIn("➖ M01 sumiu", text)                 # N-104: the ready-made text loses its Markdown stars
+        self.assertNotIn(" ·  · ", text)                    # and no loose separators when the island is not described
 
 
 class DefenseJobUnitNamesTests(TestCase):

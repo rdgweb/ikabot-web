@@ -82,20 +82,25 @@ def _format_combat_report(kwargs: dict) -> str:
     return "\n".join(lines)
 
 
-def format_message(event_key: str, **kwargs) -> str:
+def format_message(event_key: str, game_account=None, **kwargs) -> str:
     """
     Format a notification message for a given event type.
 
-    Loads the NotificationTemplate from DB and renders with context.
+    Loads the NotificationTemplate from DB and renders with context: the text the
+    account has of its own (N-104) when there is one, else the global text.
     Falls back to a richer generic format if no template exists.
     """
     if event_key == "combat_report":
         return _format_combat_report(kwargs)
+    if event_key == "island_monitor":
+        from .digests import island_context
+
+        kwargs = island_context(kwargs)
 
     try:
         from apps.telegram.models import NotificationTemplate
 
-        tpl = NotificationTemplate.objects.filter(event_key=event_key).first()
+        tpl = NotificationTemplate.for_event(event_key, game_account)
         if tpl:
             return tpl.render(**kwargs)
     except Exception as exc:

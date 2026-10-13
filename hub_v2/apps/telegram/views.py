@@ -77,7 +77,7 @@ class TelegramConfigView(LoginRequiredMixin, UpdateView):
 
         # Notification templates (seed if first time)
         NotificationTemplate.seed_defaults()
-        templates = NotificationTemplate.objects.all()
+        templates = NotificationTemplate.objects.filter(game_account__isnull=True)
         template_items = []
         for tpl in templates:
             meta = next((e for e in EVENT_TYPES if e["key"] == tpl.event_key), None)
@@ -274,12 +274,7 @@ class TemplateResetView(LoginRequiredMixin, View):
 
     def post(self, request, pk):
         tpl = get_object_or_404(NotificationTemplate, pk=pk)
-        defaults = NotificationTemplate.DEFAULTS.get(tpl.event_key)
-        if defaults:
-            tpl.icon = defaults["icon"]
-            tpl.title_template = defaults["title_template"]
-            tpl.body_template = defaults["body_template"]
-            tpl.save()
+        tpl.reset_to_default()
 
         meta = next((e for e in EVENT_TYPES if e["key"] == tpl.event_key), None)
         html = render_to_string(

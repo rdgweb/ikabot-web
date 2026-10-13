@@ -190,6 +190,14 @@ class AgentHeartbeatView(APIView):
         except Exception:
             logger.warning("Could not sweep manual-control sessions from heartbeat", exc_info=True)
 
+        # N-104: notices that go out once a day for all the accounts (cinema) are sent from here
+        try:
+            from apps.telegram.services.digests import flush_due
+
+            flush_due()
+        except Exception:
+            logger.warning("Could not flush Telegram digests from heartbeat", exc_info=True)
+
         if _should_run_stale_recovery(previous_last_seen, now=now):
             try:
                 node = Node.objects.get(pk=node_id)
