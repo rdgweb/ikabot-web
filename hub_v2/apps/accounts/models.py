@@ -63,7 +63,9 @@ class Node(UUIDTimestampModel):
     )
 
     # Deploy token (used for agent auto-registration)
-    deploy_token = models.CharField(max_length=64, blank=True, default="")
+    deploy_token = models.CharField(max_length=64, blank=True, default="")   # N-106: no longer kept (see agent_token_hash)
+    # N-106: hash of this node's agent key; the key itself is shown once when issued
+    agent_token_hash = models.CharField(max_length=64, blank=True, default="")
 
     active = models.BooleanField(default=True)
 
@@ -74,9 +76,23 @@ class Node(UUIDTimestampModel):
     def __str__(self):
         return self.name
 
+    def issue_agent_token(self) -> str:
+        """A new key for this node's agent (the old one stops working). Returns it once."""
+        from core.auth.tokens import hash_agent_token, new_agent_token
+
+        token = new_agent_token()
+        self.agent_token_hash = hash_agent_token(token)
+        self.deploy_token = ""
+        return token
+
+    def agent_token_matches(self, token: str) -> bool:
+        from core.auth.tokens import agent_token_matches
+
+        return agent_token_matches(token, self.agent_token_hash)
+
     def save(self, *args, **kwargs):
-        if not self.deploy_token:
-            self.deploy_token = f"tok_{secrets.token_hex(24)}"
+        if self._state.adding and not self.agent_token_hash:
+            self.new_agent_token = self.issue_agent_token()   # read once by the creation page
         super().save(*args, **kwargs)
 
     @property

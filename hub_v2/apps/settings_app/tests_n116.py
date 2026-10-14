@@ -36,11 +36,11 @@ class FirstStepsTests(TestCase):
         with patch("apps.settings_app.services.requests.get", side_effect=_offline):
             checks, response = self._page()
         self.assertEqual({key: item["state"] for key, item in checks.items()}, {
-            "ikabotapi": "missing", "agents": "missing", "accounts": "missing", "address": "warn",
+            "ikabotapi": "missing", "agents": "missing", "agent_keys": "ok", "accounts": "missing", "address": "warn",
             "telegram": "optional", "manual": "optional", "supervisor": "optional",
         })
         self.assertIn("Contas do Jogo", response.content.decode())                     # where to fix it
-        self.assertEqual(response.context["counts"], {"ok": 0, "warn": 1, "missing": 3, "optional": 3})
+        self.assertEqual(response.context["counts"], {"ok": 1, "warn": 1, "missing": 3, "optional": 3})
 
     @override_settings(HUB_PUBLIC_URL="http://testserver", MANUAL_GATEWAY_DOMAIN="jogo.example.com")
     def test_a_working_installation_is_all_ready(self):
@@ -52,7 +52,7 @@ class FirstStepsTests(TestCase):
                 patch("apps.settings_app.first_steps.requests.get", return_value=_Resp(200)) as gateway:
             checks, _response = self._page()
         self.assertEqual({key: item["state"] for key, item in checks.items() if key != "telegram"},
-                         {"ikabotapi": "ok", "agents": "ok", "accounts": "ok", "address": "ok", "manual": "ok", "supervisor": "ok"})
+                         {"ikabotapi": "ok", "agents": "ok", "agent_keys": "ok", "accounts": "ok", "address": "ok", "manual": "ok", "supervisor": "ok"})
         self.assertIn("agente-1", checks["agents"]["detail"])
         self.assertEqual(gateway.call_args.args[0], first_steps.GATEWAY_HEALTH_URL)
 

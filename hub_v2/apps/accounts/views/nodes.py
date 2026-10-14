@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.views import View
@@ -153,13 +153,44 @@ class NodeQueuePurgeView(LoginRequiredMixin, View):
         return redirect("accounts:node-detail", pk=node.pk)
 
 
+NEW_TOKEN_SESSION_KEY = "agent-key:{pk}"
+
+
+def _keep_new_token_for_one_view(request, node) -> None:
+    """N-106: the key is shown once, on the next page, and then only its hash exists."""
+    token = getattr(node, "new_agent_token", "")
+    if token:
+        request.session[NEW_TOKEN_SESSION_KEY.format(pk=node.pk)] = token
+
+
 class NodeCreateView(LoginRequiredMixin, CreateView):
     model = Node
     form_class = NodeCreateForm
     template_name = "accounts/node_create.html"
 
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        _keep_new_token_for_one_view(self.request, self.object)
+        return response
+
     def get_success_url(self):
         return reverse_lazy("accounts:node-deploy", kwargs={"pk": self.object.pk})
+
+
+class NodeTokenRotateView(LoginRequiredMixin, View):
+    """POST: a new key for the node's agent; the old one stops working at once (N-106)."""
+
+    def post(self, request, pk):
+        if not (request.user.is_staff or request.user.is_superuser):
+            raise Http404()
+        node = get_object_or_404(Node, pk=pk)
+        node.new_agent_token = node.issue_agent_token()
+        node.save(update_fields=["agent_token_hash", "deploy_token", "updated_at"])
+        _keep_new_token_for_one_view(request, node)
+        from apps.audit.services import record
+
+        record("node.updated", target=node, target_label=node.name, details={"campos": ["chave do agente"]})
+        return redirect("accounts:node-deploy", pk=node.pk)
 
 
 class NodeEditView(LoginRequiredMixin, UpdateView):
@@ -245,8 +276,18 @@ class NodeDeployView(LoginRequiredMixin, DetailView):
     template_name = "accounts/node_deploy.html"
     context_object_name = "node"
 
+    def get(self, request, *args, **kwargs):
+        # N-106: shows the platform's Redis address and password: only the platform's staff
+        if not (request.user.is_staff or request.user.is_superuser):
+            raise Http404()
+        return super().get(request, *args, **kwargs)
+
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        # the key exists in clear text only right after it was issued, once
+        new_token = self.request.session.pop(NEW_TOKEN_SESSION_KEY.format(pk=self.object.pk), "")
+        ctx["new_token"] = new_token
+        token_shown = new_token or "<CHAVE-DO-NO>"
         # Build the hub URL for the deploy command
         request = self.request
         default_hub_url = f"{request.scheme}://{request.get_host()}"
@@ -263,7 +304,7 @@ class NodeDeployView(LoginRequiredMixin, DetailView):
             f"docker run -d --restart unless-stopped --name {agent_container_name}",
             f"  -e HUB_URL={hub_url}",
             f"  -e REDIS_URL={redis_url}",
-            f"  -e AGENT_TOKEN={self.object.deploy_token}",
+            f"  -e AGENT_TOKEN={token_shown}",
             f"  -e AGENT_NODE_ID={self.object.pk}",
             f"  -e AGENT_IMAGE={agent_image}",
             f"  {agent_image}",
@@ -272,7 +313,7 @@ class NodeDeployView(LoginRequiredMixin, DetailView):
             f"docker run -d --restart unless-stopped --name {agent_container_name} \\\n"
             f"  -e HUB_URL={hub_url} \\\n"
             f"  -e REDIS_URL={redis_url} \\\n"
-            f"  -e AGENT_TOKEN={self.object.deploy_token} \\\n"
+            f"  -e AGENT_TOKEN={token_shown} \\\n"
             f"  -e AGENT_NODE_ID={self.object.pk} \\\n"
             f"  -e AGENT_IMAGE={agent_image} \\\n"
             f"  {agent_image}"

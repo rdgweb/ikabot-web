@@ -11,10 +11,13 @@ class OrganizationScopeMiddleware:
         user = getattr(request, "user", None)
         if user is None or not user.is_authenticated:
             request.organization = None
-            return self.get_response(request)
-        organization = scope.organization_for(user)
-        request.organization = organization
-        token = scope.activate(organization, deny=organization is None)
+            # no person: no scope — but the agent API may set its node's scope further in; the reset
+            # below guarantees it never outlives this request
+            token = scope._current.set(None)
+        else:
+            organization = scope.organization_for(user)
+            request.organization = organization
+            token = scope.activate(organization, deny=organization is None)
         try:
             return self.get_response(request)
         finally:

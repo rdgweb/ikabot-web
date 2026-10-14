@@ -9,6 +9,7 @@ from .nodes import (
     NodeDeleteView,
     NodeDeployView,
     NodeToggleView,
+    NodeTokenRotateView,
     NodeProxyTestView,
     NodeQueuePurgeView,
     NodeRequestUpdateView,

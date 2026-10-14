@@ -1,15 +1,16 @@
 from django.conf import settings
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from apps.accounts.models import Account, Node
 from apps.proxy.models import AccountProxyReservation, ProxyProfile
 
 
+@override_settings(AGENT_TOKEN="test-agent-token", AGENT_ALLOWED_IPS="")   # N-106: no built-in key anymore
 class AccountLobbyProxiesViewTests(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.client.credentials(HTTP_X_AGENT_TOKEN=settings.AGENT_TOKEN)
+        self.client.credentials(HTTP_X_AGENT_TOKEN="test-agent-token")
 
         self.node = Node.objects.create(name="node-a")
         self.account = Account.objects.create(

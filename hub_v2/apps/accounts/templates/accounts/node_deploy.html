@@ -102,10 +102,16 @@
   <h3 class="text-sm font-semibold text-ink mb-3">
     <i class="bi bi-key"></i> Token do Agent
   </h3>
-  <p class="text-sm text-muted mb-2">Este token é usado pelo agent para se registrar no hub. Mantenha-o seguro.</p>
-  <code class="block bg-sand rounded px-3 py-2 text-sm font-mono text-ink break-all">
-    {{ node.deploy_token }}
-  </code>
+  {% if new_token %}
+  <p class="text-sm mb-2" style="color: #8a6420;"><i class="bi bi-exclamation-triangle"></i> Copie agora: esta chave só aparece desta vez. O hub guarda apenas uma impressão dela.</p>
+  <code class="block bg-sand rounded px-3 py-2 text-sm font-mono text-ink break-all">{{ new_token }}</code>
+  {% else %}
+  <p class="text-sm text-muted mb-3">A chave deste nó não fica guardada no hub e não pode ser mostrada de novo. Gerar uma nova desliga a atual: o agente precisa receber a nova.</p>
+  <form method="post" action="{% url 'accounts:node-new-key' node.pk %}" onsubmit="return confirm('Gerar uma nova chave? A atual para de funcionar na hora.');">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-repeat"></i> Gerar nova chave</button>
+  </form>
+  {% endif %}
 </div>
 
 <div class="card">

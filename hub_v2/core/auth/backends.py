@@ -3,6 +3,7 @@ DRF authentication backend for agent workers.
 Agents authenticate via X-Agent-Token header.
 """
 
+import hmac
 from ipaddress import ip_address, ip_network
 
 from django.conf import settings
@@ -25,13 +26,18 @@ class AgentTokenAuthentication(BaseAuthentication):
         if not token:
             return None
 
-        if token == settings.AGENT_TOKEN:
+        node = None
+        shared = settings.AGENT_TOKEN
+        if shared and getattr(settings, "AGENT_SHARED_TOKEN_ENABLED", True) and hmac.compare_digest(token, shared):
+            # N-106: the installation's single key, kept while the agents move to their own keys
             auth_kind = "agent"
+            self._remember_shared_key_use(request)
         else:
             node_id = self._get_node_id(request)
             if not node_id:
                 raise AuthenticationFailed("Invalid agent token.")
-            if not self._node_token_matches(node_id, token):
+            node = self._node_for_token(node_id, token)
+            if node is None:
                 raise AuthenticationFailed("Invalid agent token.")
             auth_kind = "agent"
 
@@ -47,6 +53,13 @@ class AgentTokenAuthentication(BaseAuthentication):
                     f"Agent IP {remote_ip} not in allow-list."
                 )
 
+        if node is not None:
+            # N-106: this request is this node's: the permission refuses any other node id, and the
+            # data access is narrowed to the node's organization (the scope middleware resets it)
+            from apps.orgs import scope
+
+            request._request.agent_node_id = str(node.pk)
+            scope.activate(node.organization, deny=node.organization is None)
         return (AnonymousUser(), auth_kind)
 
     def authenticate_header(self, request):
@@ -74,14 +87,29 @@ class AgentTokenAuthentication(BaseAuthentication):
         return ""
 
     @staticmethod
-    def _node_token_matches(node_id: str, token: str) -> bool:
+    def _node_for_token(node_id: str, token: str):
+        from django.core.exceptions import ValidationError
+
         from apps.accounts.models import Node
 
         try:
-            node = Node.objects.only("deploy_token").get(pk=node_id)
-        except Node.DoesNotExist:
-            return False
-        return bool(node.deploy_token) and token == node.deploy_token
+            node = Node._base_manager.select_related("organization").get(pk=node_id)
+        except (Node.DoesNotExist, ValidationError, ValueError):
+            return None
+        return node if node.agent_token_matches(token) else None
+
+    @staticmethod
+    def _remember_shared_key_use(request) -> None:
+        """Which nodes still use the single key (Configurações → Saúde do sistema shows them)."""
+        node_id = request.META.get("HTTP_X_AGENT_NODE_ID", "").strip()[:64]
+        if not node_id:
+            return
+        try:
+            from django.core.cache import cache
+
+            cache.set(f"agent:shared-key:{node_id}", 1, timeout=15 * 60)
+        except Exception:  # noqa: BLE001 - only a hint for the health page
+            pass
 
     @staticmethod
     def _ip_allowed(ip: str, allowed: list[str]) -> bool:

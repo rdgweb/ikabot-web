@@ -79,7 +79,7 @@ class AgentRegisterView(APIView):
 
         # Validate deploy token if provided
         deploy_token = data.get("deploy_token")
-        if deploy_token and deploy_token != node.deploy_token:
+        if deploy_token and not node.agent_token_matches(deploy_token):
             return Response(
                 {"error": "Invalid deploy token."},
                 status=status.HTTP_403_FORBIDDEN,

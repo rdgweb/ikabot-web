@@ -245,7 +245,7 @@ class TelemetryViewsTests(TestCase):
     def test_non_admin_cannot_change_telemetry(self):
         self.client.force_login(self.regular)
         for name, data in (("telemetry:consent", {"choice": "decline"}), ("telemetry:items", {"items": []})):
-            self.assertEqual(self.client.post(reverse(name), data).status_code, 403)
+            self.assertEqual(self.client.post(reverse(name), data).status_code, 404)   # N-106: platform pages do not exist for others
 
         self.assertEqual(services.get_status(), services.STATUS_UNSET)
         self.assertEqual(services.enabled_items(), services.ITEM_KEYS)

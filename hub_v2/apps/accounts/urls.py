@@ -3,7 +3,7 @@ from django.urls import path
 from .views import (
     DockerHostListView, DockerHostCreateView, DockerHostEditView,
     NodeListView, NodeDetailView, NodeCreateView, NodeEditView, NodeDeleteView, NodeDeployView,
-    NodeToggleView, NodeProxyTestView, NodeQueuePurgeView,
+    NodeToggleView, NodeTokenRotateView, NodeProxyTestView, NodeQueuePurgeView,
     NodeRequestUpdateView,
     AccountListView, AccountDetailView, AccountCreateView, AccountEditView, AccountDeleteView,
     AccountToggleView,
@@ -30,6 +30,7 @@ urlpatterns = [
     path("nodes/<uuid:pk>/delete/", NodeDeleteView.as_view(), name="node-delete"),
     path("nodes/<uuid:pk>/toggle/", NodeToggleView.as_view(), name="node-toggle"),
     path("nodes/<uuid:pk>/deploy/", NodeDeployView.as_view(), name="node-deploy"),
+    path("nodes/<uuid:pk>/new-key/", NodeTokenRotateView.as_view(), name="node-new-key"),
     path("nodes/<uuid:pk>/proxy-test/", NodeProxyTestView.as_view(), name="node-proxy-test"),
     path("nodes/<uuid:pk>/purge-queue/", NodeQueuePurgeView.as_view(), name="node-purge-queue"),
     path("nodes/<uuid:pk>/request-update/", NodeRequestUpdateView.as_view(), name="node-request-update"),

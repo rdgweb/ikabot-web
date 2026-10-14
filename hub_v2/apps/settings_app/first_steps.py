@@ -45,6 +45,23 @@ def check_agents() -> dict:
                  link="/accounts/nodes/", link_label="Nós & Agents")
 
 
+def check_agent_keys() -> dict:
+    """N-106: every agent should use its node's own key; the installation's single key is being retired."""
+    from django.core.cache import cache
+
+    from apps.accounts.models import Node
+
+    if not getattr(settings, "AGENT_SHARED_TOKEN_ENABLED", True) or not getattr(settings, "AGENT_TOKEN", ""):
+        return _item("agent_keys", "Chave dos agentes", "bi-key-fill", "ok", "Cada agente entra só com a chave do próprio nó.")
+    using_shared = [node.name for node in Node.objects.all() if cache.get(f"agent:shared-key:{node.pk}")]
+    if using_shared:
+        return _item("agent_keys", "Chave dos agentes", "bi-key-fill", "warn",
+                     f"Ainda com a chave única da instalação: {', '.join(using_shared)}. Gere a chave de cada nó em Nós & Agents.",
+                     link="/accounts/nodes/", link_label="Nós & Agents")
+    return _item("agent_keys", "Chave dos agentes", "bi-key-fill", "ok",
+                 "Nenhum agente usou a chave única nos últimos 15 minutos; ela já pode ser desligada (AGENT_SHARED_TOKEN_ENABLED=false).")
+
+
 def check_accounts() -> dict:
     from apps.accounts.models import GameAccount
 
@@ -115,7 +132,7 @@ def check_supervisor() -> dict:
 
 def run_checks(request) -> list[dict]:
     checks = []
-    for check in (check_ikabotapi, check_agents, check_accounts, lambda: check_address(request), check_telegram, check_manual_control, check_supervisor):
+    for check in (check_ikabotapi, check_agents, check_agent_keys, check_accounts, lambda: check_address(request), check_telegram, check_manual_control, check_supervisor):
         try:
             checks.append(check())
         except Exception as exc:  # noqa: BLE001 - one broken check must not take the page down
