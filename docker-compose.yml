@@ -124,6 +124,10 @@ services:
       # estatística do site (perfil stats): o hub repassa só o script e a contagem ao Umami
       UMAMI_URL: ${UMAMI_URL:-}
       UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
+      # cobrança (N-124): chave da API do Asaas, sandbox até ASAAS_SANDBOX=false, token do webhook
+      ASAAS_API_KEY: ${ASAAS_API_KEY:-}
+      ASAAS_SANDBOX: ${ASAAS_SANDBOX:-true}
+      ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:-}
       TZ: ${TZ:-America/Sao_Paulo}
     ports:
       # com o Nginx Proxy Manager na frente, o instalador põe HUB_BIND=127.0.0.1

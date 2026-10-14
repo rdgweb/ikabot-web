@@ -16,6 +16,7 @@ handler500 = "config.views.custom_500"
 
 from apps.orgs.invite_views import InviteAcceptView, InviteManageView  # noqa: E402
 from apps.website import views as site_views  # noqa: E402
+from apps.billing import views as billing_views  # noqa: E402
 
 urlpatterns = [
     # Django admin
@@ -47,6 +48,7 @@ urlpatterns = [
     path("users/", include("apps.users.urls")),
     path("notes/", include("apps.notes.urls")),
     path("atividades/", include("apps.audit.urls")),
+    path("organizacao/plano/", include("apps.billing.urls")),
     path("organizacao/", include("apps.orgs.urls")),
     # N-106: beta by invitation (terms and the invitation link are public; the list is the team's)
     path("termos/", site_views.old_terms, name="terms"),
@@ -55,6 +57,8 @@ urlpatterns = [
     path("telemetry/", include("apps.telemetry.urls")),
     # N-119: public site (sales, pricing, FAQ, legal) in pt and en, robots, sitemap, visit statistics
     path("", include("apps.website.urls")),
+    # --- Billing: Asaas notices (N-124) ---
+    path("api/billing/asaas/", billing_views.asaas_webhook, name="asaas-webhook"),
     # --- Telegram Webhook API ---
     path("api/telegram/", include("apps.telegram.api_urls")),
     # --- Agent API ---

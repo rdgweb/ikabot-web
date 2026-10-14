@@ -1,0 +1,7 @@
+{# N-124: aviso do plano no topo do painel #}
+<div class="card mb-4" style="padding: .75rem 1rem; display: flex; align-items: center; gap: .7rem; flex-wrap: wrap;
+     {% if BILLING_NOTICE.level == 'bad' %}border-color: rgba(176,58,46,.45); background: rgba(176,58,46,.06);{% else %}border-color: rgba(201,156,78,.6); background: rgba(201,156,78,.08);{% endif %}">
+  <i class="bi {% if BILLING_NOTICE.level == 'bad' %}bi-pause-circle{% else %}bi-hourglass-split{% endif %}" style="color: {% if BILLING_NOTICE.level == 'bad' %}#b03a2e{% else %}#8a6420{% endif %}; font-size: 1.1rem;"></i>
+  <span class="text-sm" style="flex: 1; min-width: 200px; color: var(--ik-ink);">{{ BILLING_NOTICE.text }}</span>
+  <a href="/organizacao/plano/" class="btn btn-primary btn-sm"><i class="bi bi-credit-card"></i> Ver plano</a>
+</div>

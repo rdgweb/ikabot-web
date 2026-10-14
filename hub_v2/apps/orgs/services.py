@@ -71,7 +71,7 @@ def captcha_goes_to_telegram(organization, platform_config) -> bool:
     return platform_config.solve_method == "telegram" or platform_config.fallback_method == "telegram"
 
 
-TERMS_VERSION = "beta-2026-10-14"
+TERMS_VERSION = "beta-2026-10-14b"   # b: plans and payment (N-124); nobody had accepted the first
 INVITE_DAYS = 7
 
 

@@ -7,14 +7,22 @@
     <div class="legal">
       <p class="meta">This is a translation. The Portuguese version is the one that applies.</p>
 
-      <h2>During the beta</h2>
-      <p>The closed beta has no charge, so there is nothing to refund. You may leave whenever you want: ask through
-      {% if legal.email %}<a href="mailto:{{ legal.email }}">{{ legal.email }}</a>{% else %}the <a href="{{ links.contact }}">contact</a> page{% endif %}
-      and we delete your organization's data, as described in the <a href="{{ links.privacy }}">privacy policy</a>.</p>
+      <h2>Free trial</h2>
+      <p>The 7 trial days have no charge and need no card. If you do not subscribe, the agents stop receiving jobs when the trial ends; nothing is charged.</p>
 
-      <h2>Paid plans</h2>
-      <p>The cancellation and refund policy for paid plans — including the 7-day trial — will be published on this page before charging starts.
-      Nothing is charged without your acceptance.</p>
+      <h2>Cancelling</h2>
+      <p>Cancel whenever you want in <b>My organization &gt; Plan</b>. The subscription stops renewing and the plan lasts until the end of the period already paid.</p>
+
+      <h2>Refunds</h2>
+      <ul>
+        <li><b>First charge:</b> if you ask within 7 days of paying, we refund the full amount (right of withdrawal, art. 49 of the Brazilian Consumer Code).</li>
+        <li><b>Renewals:</b> a month already started is not refunded; after cancelling you keep access until the end of the paid period.</li>
+        <li><b>Wrong or duplicate charges:</b> always refunded.</li>
+      </ul>
+      <p>Ask through {% if legal.email %}<a href="mailto:{{ legal.email }}">{{ legal.email }}</a>{% else %}the <a href="{{ links.contact }}">contact</a> page{% endif %}. The refund goes back through the same payment method, via Asaas, within 10 business days — on cards, the statement date depends on the issuing bank.</p>
+
+      <h2>Leaving and deleting data</h2>
+      <p>After cancelling, you may ask us to delete your organization's data, as described in the <a href="{{ links.privacy }}">privacy policy</a>.</p>
     </div>
   </div>
 </section>

@@ -2,5 +2,6 @@
 {# This template is used for HTMX boosted requests — renders only the #page-content innards #}
 {% include "components/topbar.html" %}
 <main id="main-area" class="p-6">
+  {% if BILLING_NOTICE %}{% include "billing/_notice.html" %}{% endif %}
   {% block content %}{% endblock %}
 </main>

@@ -119,11 +119,26 @@ class AccountDeleteView(LoginRequiredMixin, DeleteView):
     template_name = "accounts/account_confirm_delete.html"
 
 
+def _over_plan(organization, more: int):
+    """N-124: turning these sub-accounts on would go over the plan — answer with the reason."""
+    from apps.billing.services import limit_message, room_for
+
+    if more <= 0 or room_for(organization, more):
+        return None
+    resp = HttpResponse(status=204)
+    resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": limit_message(organization)}})
+    return resp
+
+
 class AccountToggleView(LoginRequiredMixin, View):
     """POST: toggle active status of a lobby account. Returns HTMX toast."""
 
     def post(self, request, pk):
         account = get_object_or_404(Account, pk=pk)
+        if not account.active:
+            refused = _over_plan(account.organization, GameAccount._base_manager.filter(account=account, active=True, blocked=False).count())
+            if refused:
+                return refused
         account.active = not account.active
         account.save(update_fields=["active"])
 
@@ -145,6 +160,10 @@ class GameAccountToggleView(LoginRequiredMixin, View):
 
     def post(self, request, pk):
         ga = get_object_or_404(GameAccount, pk=pk)
+        if not ga.active and not ga.blocked and ga.account.active:
+            refused = _over_plan(ga.account.organization, 1)
+            if refused:
+                return refused
         ga.active = not ga.active
         ga.save(update_fields=["active"])
 

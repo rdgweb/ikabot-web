@@ -64,8 +64,8 @@ def _structured(base: str, lang: str, page: str) -> list:
         "@context": "https://schema.org", "@type": "SoftwareApplication", "name": "IkaHub",
         "applicationCategory": "GameApplication", "operatingSystem": "Web, Linux, Windows",
         "url": base + C.path_of(lang, "home"), "description": C.META[lang]["home"][1],
-        "offers": {"@type": "AggregateOffer", "priceCurrency": "USD", "lowPrice": str(C.TIERS[0][2]),
-                   "highPrice": str(C.TIERS[-1][2]), "offerCount": str(len(C.TIERS))},
+        "offers": {"@type": "AggregateOffer", "priceCurrency": C.price_range(lang)[0], "lowPrice": C.price_range(lang)[1],
+                   "highPrice": C.price_range(lang)[2], "offerCount": str(len(C.TIERS))},
     }]
     if page == "faq":
         data.append({
@@ -84,7 +84,7 @@ class SitePageView(View):
         if page == "home":
             extra = {"t": C.HOME[lang], "p": C.PRICING[lang], "faq": C.FAQ[lang][:4]}
         elif page == "pricing":
-            extra = {"t": C.PRICING[lang], "tiers": C.TIERS, "above": C.ABOVE}
+            extra = {"t": C.PRICING[lang], "tiers": C.tiers_for(lang), "above": C.ABOVE}
         elif page == "faq":
             extra = {"faq": C.FAQ[lang]}
         elif page == "contact":

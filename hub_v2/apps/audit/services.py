@@ -61,10 +61,13 @@ ACTIONS = {
     "invite.created": ("usuarios", "Criou convite"),
     "invite.accepted": ("usuarios", "Aceitou convite e os termos"),
     "invite.requested": ("usuarios", "Pediu convite pelo site"),
+    "billing.checkout": ("plano", "Abriu o pagamento do plano"),
+    "billing.changed": ("plano", "Trocou a faixa do plano"),
+    "billing.canceled": ("plano", "Cancelou a assinatura"),
 }
 CATEGORIES = {
     "acesso": "Acesso", "contas": "Contas", "nos": "Nós e máquinas", "proxies": "Proxies", "jobs": "Jobs",
-    "controle": "Controle manual", "config": "Configurações", "usuarios": "Usuários", "credenciais": "Credenciais",
+    "controle": "Controle manual", "config": "Configurações", "usuarios": "Usuários", "credenciais": "Credenciais", "plano": "Plano",
 }
 
 

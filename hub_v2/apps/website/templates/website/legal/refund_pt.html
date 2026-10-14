@@ -5,14 +5,22 @@
 <section style="padding-top: 6px;">
   <div class="wrap narrow">
     <div class="legal">
-      <h2>Durante o beta</h2>
-      <p>O beta fechado não tem cobrança, então não há o que reembolsar. Você pode sair quando quiser: peça pelo
-      {% if legal.email %}e-mail <a href="mailto:{{ legal.email }}">{{ legal.email }}</a>{% else %}<a href="{{ links.contact }}">contato</a>{% endif %}
-      e apagamos os dados da sua organização, como descrito na <a href="{{ links.privacy }}">política de privacidade</a>.</p>
+      <h2>Teste grátis</h2>
+      <p>Os 7 dias de teste não têm cobrança e não pedem cartão. Se você não assinar, os agentes param de receber jobs ao fim do teste; nada é cobrado.</p>
 
-      <h2>Planos pagos</h2>
-      <p>A política de cancelamento e reembolso dos planos pagos — incluindo o teste de 7 dias — será publicada nesta página antes do início da cobrança.
-      Nenhuma cobrança acontece sem o seu aceite.</p>
+      <h2>Cancelar</h2>
+      <p>Cancele quando quiser em <b>Minha organização &gt; Plano</b>. A assinatura não renova mais e o plano vale até o fim do período já pago.</p>
+
+      <h2>Reembolso</h2>
+      <ul>
+        <li><b>Primeira cobrança:</b> se pedir em até 7 dias depois do pagamento, devolvemos o valor integral (direito de arrependimento, art. 49 do Código de Defesa do Consumidor).</li>
+        <li><b>Renovações:</b> o mês já iniciado não é reembolsado; ao cancelar, você usa até o fim do período pago.</li>
+        <li><b>Cobrança indevida ou em duplicidade:</b> devolvemos sempre.</li>
+      </ul>
+      <p>Peça pelo {% if legal.email %}e-mail <a href="mailto:{{ legal.email }}">{{ legal.email }}</a>{% else %}<a href="{{ links.contact }}">contato</a>{% endif %}. O estorno volta pelo mesmo meio do pagamento, pelo Asaas, em até 10 dias úteis — no cartão, o prazo da fatura depende do banco emissor.</p>
+
+      <h2>Sair e apagar os dados</h2>
+      <p>Depois de cancelar, você pode pedir para apagar os dados da sua organização, como descrito na <a href="{{ links.privacy }}">política de privacidade</a>.</p>
     </div>
   </div>
 </section>

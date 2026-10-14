@@ -102,7 +102,7 @@ section { padding: 52px 0; }
 .tiers { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
 .tier { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 14px; text-align: center; }
 .tier .range { font-size: .85rem; color: var(--muted); font-weight: 600; }
-.tier .price { font-family: var(--head); font-size: 2rem; font-weight: 700; color: var(--brown); margin: 6px 0 0; }
+.tier .price { font-family: var(--head); font-size: clamp(1.35rem, 3.2vw, 1.9rem); white-space: nowrap; font-weight: 700; color: var(--brown); margin: 6px 0 0; }
 .tier .price small { font-size: .9rem; color: var(--muted); font-weight: 600; }
 .tier.first { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201,156,78,.18); }
 .note { color: var(--muted); font-size: .9rem; margin-top: 14px; }

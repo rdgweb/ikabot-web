@@ -1,0 +1,9 @@
+{% extends base_template|default:"base.html" %}
+{% block title %}Somente leitura{% endblock %}
+{% block content %}
+<div class="card p-6" style="max-width: 36rem;">
+  <h1 class="text-lg font-bold text-ink flex items-center gap-2"><i class="bi bi-lock" style="color: #b03a2e;"></i> Organização só para leitura</h1>
+  <p class="text-sm mt-2" style="color: var(--ik-ink);">O plano está vencido há mais de 30 dias. Você ainda vê tudo, mas não pode alterar nada até regularizar.</p>
+  <a href="/organizacao/plano/" class="btn btn-primary btn-sm mt-4"><i class="bi bi-credit-card"></i> Ver plano</a>
+</div>
+{% endblock %}

@@ -39,6 +39,7 @@ def nav_context(request):
             "label": "Minha organização",
             "items": [
                 {"name": "Telegram", "url": "/organizacao/telegram/", "icon": "bi-telegram"},
+                {"name": "Plano", "url": "/organizacao/plano/", "icon": "bi-credit-card"},
             ],
         },
         {

@@ -15,7 +15,7 @@
       {% for low, high, price in tiers %}
       <div class="tier{% if forloop.first %} first{% endif %}">
         <div class="range">{{ low }}–{{ high }} {{ t.subaccounts }}</div>
-        <div class="price">US$ {{ price }}<small>{{ t.per_month }}</small></div>
+        <div class="price">{{ price }}<small>{{ t.per_month }}</small></div>
       </div>
       {% endfor %}
       <div class="tier">
@@ -42,7 +42,7 @@
         <span class="icon"><i class="bi {{ icon }}"></i></span>
         <div>
           <b>{{ name }}</b><span class="soon">{{ t.addons_soon }}</span>
-          <div style="color: var(--brown); font-weight: 700; font-size: .95rem;">{{ price }}</div>
+          {% if price %}<div style="color: var(--brown); font-weight: 700; font-size: .95rem;">{{ price }}</div>{% endif %}
           <div style="color: var(--ink-2); font-size: .94rem;">{{ text }}</div>
         </div>
       </div>

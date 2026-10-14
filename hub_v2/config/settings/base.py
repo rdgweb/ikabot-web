@@ -89,6 +89,7 @@ INSTALLED_APPS = [
     "apps.orgs",
     "apps.audit",
     "apps.website",
+    "apps.billing",
 ]
 
 MIDDLEWARE = [
@@ -103,6 +104,7 @@ MIDDLEWARE = [
     "apps.orgs.middleware.OrganizationScopeMiddleware",
     "apps.orgs.middleware.PlatformPagesMiddleware",
     "apps.audit.middleware.AuditMiddleware",
+    "apps.billing.middleware.ReadOnlyOrganizationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
@@ -137,6 +139,7 @@ TEMPLATES = [
                 "core.context_processors.nav_context",
                 "core.context_processors.hub_version",
                 "core.context_processors.htmx_context",
+                "apps.billing.context_processors.billing_notice",
                 "apps.telemetry.context.telemetry_prompt",
                 "apps.settings_app.tour.tour_context",
             ],
@@ -286,6 +289,11 @@ SITE_LEGAL = {
 # visit statistics (Umami in the same server, never published): the hub hands out only the script and the count
 UMAMI_URL = os.environ.get("UMAMI_URL", "").strip().rstrip("/")
 UMAMI_WEBSITE_ID = os.environ.get("UMAMI_WEBSITE_ID", "").strip()
+
+# --- Billing (N-124): Asaas. The key only in the environment; sandbox until said otherwise ---
+ASAAS_API_KEY = os.environ.get("ASAAS_API_KEY", "").strip()
+ASAAS_SANDBOX = os.environ.get("ASAAS_SANDBOX", "true").strip().lower() in ("1", "true", "yes")
+ASAAS_WEBHOOK_TOKEN = os.environ.get("ASAAS_WEBHOOK_TOKEN", "").strip()
 
 # --- Celery ---
 

@@ -29,8 +29,8 @@ META = {
                  "Painel único para várias contas e mundos do Ikariam: construção, transporte, mercado entre as suas "
                  "contas e alertas no Telegram, com o agente rodando na sua máquina."),
         "pricing": ("Preços — IkaHub",
-                    "Preço por subcontas ativas, a partir de US$ 4 por mês. Agente e proxy próprios incluídos; "
-                    "agente e proxy da plataforma como adicionais."),
+                    "Preço por subcontas ativas, a partir de R$ 14,90 por mês, com Pix, cartão ou boleto. Agente e proxy próprios "
+                    "incluídos; 7 dias grátis para começar."),
         "faq": ("Perguntas frequentes — IkaHub",
                 "Subcontas, agente, proxies, segurança da senha, risco de banimento e cancelamento: as dúvidas mais comuns sobre o IkaHub."),
         "contact": ("Pedir convite — IkaHub", "O IkaHub está em beta fechado. Peça um convite e fale com a equipe."),
@@ -107,7 +107,7 @@ HOME = {
         "identity_text": "Contas no mesmo mundo saem por agentes e proxies diferentes. Contas do mesmo agente nunca "
                          "interagem entre si — o hub já respeita isso no mercado e no banco de generais.",
         "pricing_title": "Preço por subcontas ativas",
-        "pricing_text": "A partir de US$ 4 por mês para até 4 subcontas, com agente e proxy próprios. Pausou uma subconta, liberou a vaga.",
+        "pricing_text": "A partir de R$ 14,90 por mês para até 4 subcontas, com agente e proxy próprios. Pausou uma subconta, liberou a vaga.",
         "cta_title": "Quer testar no beta?",
         "cta_text": "O IkaHub está em beta fechado. Peça um convite.",
         "mock": {"title": "Painel", "jobs": "Fila", "online": "agente online",
@@ -152,8 +152,30 @@ HOME = {
     },
 }
 
-# Prices: the launch proposal (N-106). Monthly, in US dollars, by ACTIVE sub-accounts.
+# Prices, monthly, by ACTIVE sub-accounts: reais from the billing table (N-124) for Portuguese; the
+# English page keeps the planned dollar prices (N-106) until charging abroad exists.
 TIERS = [(1, 4, 4), (5, 10, 8), (11, 20, 14), (21, 40, 24), (41, 80, 40)]
+
+
+def tiers_for(lang: str) -> list[tuple[int, int, str]]:
+    if lang == "pt":
+        from apps.billing.plans import TIERS as BRL, brl
+
+        out, low = [], 1
+        for most, price in BRL:
+            out.append((low, most, brl(price)))
+            low = most + 1
+        return out
+    return [(low, high, f"US$ {price}") for low, high, price in TIERS]
+
+
+def price_range(lang: str) -> tuple[str, str, str]:
+    """(currency, lowest, highest) for the structured data."""
+    if lang == "pt":
+        from apps.billing.plans import TIERS as BRL
+
+        return "BRL", str(BRL[0][1]), str(BRL[-1][1])
+    return "USD", str(TIERS[0][2]), str(TIERS[-1][2])
 ABOVE = {"from": 81, "each": "0,50"}
 ADDONS = {"agent": 2, "proxy": 3}
 
@@ -161,20 +183,20 @@ PRICING = {
     "pt": {
         "title": "Preço por subcontas ativas",
         "lead": "Você paga pelas subcontas que estão trabalhando. Agente e proxies próprios já estão incluídos.",
-        "note": "Valores previstos para o lançamento. Durante o beta fechado o acesso é por convite.",
+        "note": "Pix, cartão ou boleto, renovação mensal; cancele quando quiser. Durante o beta fechado o acesso é por convite.",
         "per_month": "/mês", "subaccounts": "subcontas", "up_to": "até", "above": "Acima de 80",
-        "above_text": "US$ 0,50 por subconta ativa",
+        "above_text": "R$ 1,90 por subconta ativa",
         "included_title": "Incluído em todos",
         "included": ["Painel, ações e construção", "Mercado entre as suas contas", "Telegram por organização",
                      "Controle manual", "Registro de atividades", "Agente e proxies próprios"],
         "addons_title": "Adicionais",
         "addons_soon": "em breve",
-        "addons": [("bi-hdd-network", "Agente da plataforma", "US$ 2/mês por conta GameForge",
+        "addons": [("bi-hdd-network", "Agente da plataforma", "",
                     "Rodamos o agente para você; um agente por conta, sempre com proxy."),
-                   ("bi-globe2", "Proxies da plataforma", "US$ 3/mês por conta GameForge",
+                   ("bi-globe2", "Proxies da plataforma", "",
                     "Proxies reservados só para a sua conta, no login e no jogo.")],
         "trial_title": "Teste de 7 dias",
-        "trial_text": "Quando a venda abrir, o teste cobre até 4 subcontas, sem cobrança nos primeiros 7 dias.",
+        "trial_text": "Toda organização nova começa com 7 dias grátis e até 4 subcontas, sem cartão. Depois, é só escolher a faixa.",
         "what_title": "O que é uma subconta?",
         "what_text": "Cada conta de jogo, num mundo, dentro da sua conta GameForge. Pausada não conta.",
     },
@@ -222,9 +244,9 @@ FAQ = {
         ("Em quais servidores funciona?",
          "Foi construído e testado em mundos do servidor brasileiro. Outros servidores podem funcionar, mas ainda não são oferecidos oficialmente."),
         ("Como funciona o teste de 7 dias?",
-         "Quando a venda abrir, o teste cobre até 4 subcontas, sem cobrança nos primeiros 7 dias. Hoje o acesso é por convite."),
+         "Toda organização nova tem 7 dias grátis, com até 4 subcontas e sem cartão. Depois você escolhe a faixa e paga por Pix, cartão ou boleto. Hoje o acesso é por convite."),
         ("Como cancelo?",
-         "A qualquer momento. Durante o beta, peça para sair e apagamos seus dados. Os detalhes estão em Cancelamento e reembolso."),
+         "A qualquer momento, em Minha organização > Plano. O plano vale até o fim do período pago e não renova. Os detalhes estão em Cancelamento e reembolso."),
     ],
     "en": [
         ("What is a sub-account?",
@@ -249,7 +271,7 @@ FAQ = {
         ("How does the 7-day trial work?",
          "When sales open, the trial covers up to 4 sub-accounts with no charge for the first 7 days. Today access is by invitation."),
         ("How do I cancel?",
-         "Any time. During the beta, ask to leave and we delete your data. Details are in Cancellation and refunds."),
+         "Any time, in My organization > Plan. The plan lasts until the end of the paid period and does not renew. Details are in Cancellation and refunds."),
     ],
 }
 

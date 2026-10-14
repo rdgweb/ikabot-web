@@ -72,6 +72,11 @@ class JobClaimView(APIView):
             slots = max(0, min(MAX_SLOTS, int(request.data.get("slots", 1))))
         except (TypeError, ValueError):
             slots = 1
+        if slots and node.organization_id:
+            from apps.billing.services import allows_work
+
+            if not allows_work(node.organization):
+                slots = 0                       # N-124: plan not in order — the jobs wait, nothing is lost
 
         jobs = []
         if slots:

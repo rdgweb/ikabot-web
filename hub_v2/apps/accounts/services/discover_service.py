@@ -75,12 +75,19 @@ def sync_game_accounts(account_id: str, characters_data: list[dict[str, Any]]) -
             "blocked": char.get("blocked", False),
         }
 
-        _, created = GameAccount.objects.update_or_create(
+        game_account, created = GameAccount.objects.update_or_create(
             account=account,
             lobby_account_id=lobby_account_id,
             server_id=server_id,
             defaults=defaults,
         )
+        if created and game_account.active and not game_account.blocked and getattr(account, "organization_id", None):
+            from apps.billing.services import room_for
+
+            # N-124: a new sub-account beyond the plan arrives paused; the customer chooses which ones work
+            if not room_for(account.organization, 0):
+                game_account.active = False
+                game_account.save(update_fields=["active", "updated_at"])
 
         action = "created" if created else "updated"
         logger.info(
