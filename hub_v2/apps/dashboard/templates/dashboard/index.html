@@ -97,6 +97,15 @@
   .dash-chip small { color: var(--ik-muted); font-size: .7rem; }
 </style>
 
+{% if first_use_next %}
+{# N-116: enquanto o primeiro uso não termina, o próximo passo fica no topo #}
+<a href="/settings/primeiros-passos/" class="dash-alert dash-block" style="border-left: 4px solid var(--ik-sea); align-items: center">
+  <i class="bi bi-flag" style="color: var(--ik-sea)"></i>
+  <span style="flex: 1"><strong>Primeiros passos · {{ first_use_done }} de {{ first_use_total }}</strong><small>Próximo: {{ first_use_next.title }}</small></span>
+  <i class="bi bi-arrow-right dash-muted"></i>
+</a>
+{% endif %}
+
 {% include "dashboard/partials/live.html" %}
 
 {% endblock %}

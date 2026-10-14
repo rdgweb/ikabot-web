@@ -87,3 +87,63 @@ class FirstStepsTests(TestCase):
         with patch("apps.settings_app.services.requests.get", side_effect=_offline):
             _checks, response = self._page()
         self.assertIn('href="/settings/primeiros-passos/"', response.content.decode())
+
+
+class FirstUseTests(TestCase):
+    """The first-use guide: each step marked by what exists, and the real button pointed out."""
+
+    def setUp(self):
+        self.client.force_login(get_user_model().objects.create_user("novato", password="x"))
+        self.offline = patch("apps.settings_app.services.requests.get", side_effect=_offline)
+        self.offline.start()
+        self.addCleanup(self.offline.stop)
+
+    def _done(self):
+        return {step["key"]: step["done"] for step in first_steps.first_use()}
+
+    def test_the_steps_follow_what_exists(self):
+        from apps.game.models import AccountSnapshot
+        from apps.jobs.models import Job
+
+        self.assertEqual(self._done(), {"account": False, "worlds": False, "status": False, "queue": False, "action": False})
+        node = Node.objects.create(name="agente-1")
+        account = Account.objects.create(node=node, label="Lobby", email="a@example.com", password_enc="x")
+        Job.objects.create(account=account, node=node, action_code=first_steps.DISCOVER_ACTION, status="finished")
+        self.assertEqual(self._done(), {"account": True, "worlds": False, "status": False, "queue": False, "action": False})
+        world = GameAccount.objects.create(account=account, lobby_account_id=1, server_id="s78-br", server_language="br", server_number=78, name="Alpha")
+        steps = {step["key"]: step for step in first_steps.first_use()}
+        self.assertEqual(steps["worlds"]["link"], f"/accounts/{account.pk}/?guia=discover")
+        self.assertTrue(steps["worlds"]["done"])
+        Job.objects.create(account=account, game_account=world, node=node, action_code=100, status="finished")
+        AccountSnapshot.objects.create(account=account, game_account=world)
+        self.assertEqual(self._done(), {"account": True, "worlds": True, "status": True, "queue": True, "action": False})
+        Job.objects.create(account=account, game_account=world, node=node, action_code=1002, status="queued")
+        self.assertTrue(all(self._done().values()))
+
+    def test_the_page_points_to_the_next_step(self):
+        response = self.client.get(reverse("settings_app:first-steps"))
+        html = response.content.decode()
+        self.assertEqual(response.context["next_step"]["key"], "account")
+        self.assertEqual(response.context["steps_done"], 0)
+        self.assertIn('href="/accounts/?guia=nova-conta"', html)
+        self.assertIn("Primeiro uso", html)
+
+    def test_the_dashboard_shows_the_next_step_until_all_are_done(self):
+        html = self.client.get("/").content.decode()
+        self.assertIn("Primeiros passos · 0 de 5", html)
+        self.assertIn("Próximo: Cadastrar a conta", html)
+        with patch("apps.settings_app.first_steps.first_use", return_value=[{"done": True, "title": "x"}] * 5):
+            self.assertNotIn("Primeiros passos ·", self.client.get("/").content.decode())
+
+    def test_the_guide_marks_the_real_buttons(self):
+        node = Node.objects.create(name="agente-1")
+        account = Account.objects.create(node=node, label="Lobby", email="a@example.com", password_enc="x")
+        self.assertIn('data-guia="nova-conta"', self.client.get(reverse("accounts:account-list")).content.decode())
+        detail = self.client.get(reverse("accounts:account-detail", args=[account.pk])).content.decode()
+        self.assertIn('data-guia="discover"', detail)
+        self.assertIn('data-guia="novo-job"', detail)                                   # the top bar is on every page
+        self.assertIn("guia-alvo", detail)
+
+    def test_every_user_finds_the_page_in_the_menu(self):
+        html = self.client.get("/").content.decode()
+        self.assertIn('href="/settings/primeiros-passos/"', html)

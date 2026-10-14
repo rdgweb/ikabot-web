@@ -17,6 +17,7 @@ def nav_context(request):
             "label": "Operacional",
             "items": [
                 {"name": "Dashboard", "url": "/", "icon": "bi-speedometer2"},
+                {"name": "Primeiros passos", "url": "/settings/primeiros-passos/", "icon": "bi-flag"},
                 {"name": "Painel do Jogo", "url": "/game/", "icon": "bi-joystick"},
                 {"name": "Inteligência", "url": "/intel/players/", "icon": "bi-binoculars"},
                 {"name": "Ações do Jogo", "url": "/game/actions/", "icon": "bi-controller"},
@@ -34,7 +35,6 @@ def nav_context(request):
             "label": "Administrativo",
             "perm": "operator",
             "items": [
-                {"name": "Primeiros passos", "url": "/settings/primeiros-passos/", "icon": "bi-flag"},
                 {"name": "Nós & Agents", "url": "/accounts/nodes/", "icon": "bi-hdd-network"},
                 {"name": "Contas do Jogo", "url": "/accounts/", "icon": "bi-person-badge"},
                 {"name": "Presets", "url": "/profiles/presets/", "icon": "bi-collection"},

@@ -17,6 +17,7 @@
     {# ── Global "New Job" button ── #}
     <button type="button"
             class="btn btn-primary btn-sm"
+            data-guia="novo-job"
             hx-get="{% url 'jobs:job-create' %}"
             hx-target="#job-modal-body"
             hx-swap="innerHTML"

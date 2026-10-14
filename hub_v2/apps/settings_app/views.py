@@ -52,7 +52,7 @@ class FirstStepsView(LoginRequiredMixin, TemplateView):
     template_name = "settings_app/first_steps.html"
 
     def get_context_data(self, **kwargs):
-        from .first_steps import run_checks
+        from .first_steps import first_use, run_checks
 
         ctx = super().get_context_data(**kwargs)
         checks = run_checks(self.request)
@@ -60,6 +60,10 @@ class FirstStepsView(LoginRequiredMixin, TemplateView):
             item["state_label"] = STATE_LABELS.get(item["state"], item["state"])
         ctx["checks"] = checks
         ctx["counts"] = {state: sum(1 for item in checks if item["state"] == state) for state in STATE_LABELS}
+        steps = first_use()
+        ctx["steps"] = steps
+        ctx["steps_done"] = sum(1 for step in steps if step["done"])
+        ctx["next_step"] = next((step for step in steps if not step["done"]), None)
         return ctx
 
 

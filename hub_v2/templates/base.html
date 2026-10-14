@@ -60,6 +60,28 @@
   <script src="{% static 'js/game-dashboard-core.js' %}"></script>
   {% block extra_js %}{% endblock %}
 
+  {# N-116: o guia de primeiro uso abre a página com ?guia=<chave> e o botão com data-guia="<chave>" pulsa #}
+  <style>
+    @keyframes guia-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(79, 134, 185, .75); } 50% { box-shadow: 0 0 0 9px rgba(79, 134, 185, 0); } }
+    .guia-alvo { position: relative; z-index: 30; outline: 3px solid var(--ik-sea, #4f86b9); outline-offset: 3px; animation: guia-pulse 1.4s ease-in-out infinite; }
+  </style>
+  <script>
+  (function() {
+    function point() {
+      var key = new URLSearchParams(window.location.search).get('guia');
+      if (!key) return;
+      var target = document.querySelector('[data-guia="' + CSS.escape(key) + '"]');
+      if (!target || target.classList.contains('guia-alvo')) return;
+      target.classList.add('guia-alvo');
+      target.scrollIntoView({block: 'center', behavior: 'smooth'});
+      target.addEventListener('click', function() { target.classList.remove('guia-alvo'); }, {once: true});
+    }
+    document.addEventListener('DOMContentLoaded', point);
+    document.body.addEventListener('htmx:afterSettle', point);
+    document.body.addEventListener('htmx:pushedIntoHistory', function() { setTimeout(point, 50); });
+  })();
+  </script>
+
   <script>
   /* Fix scroll-jump for sr-only inputs inside #job-modal-body.
    *

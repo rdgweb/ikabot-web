@@ -113,6 +113,37 @@ def check_supervisor() -> dict:
                  link="/accounts/nodes/", link_label="Nós & Agents")
 
 
+STATUS_ACTIONS = (4, 100)          # read the account: cities, resources, buildings
+DISCOVER_ACTION = 101
+
+
+def _step(number: int, key: str, title: str, detail: str, done: bool, link: str, button: str, icon: str) -> dict:
+    return {"number": number, "key": key, "title": title, "detail": detail, "done": done, "link": link, "button": button, "icon": icon}
+
+
+def first_use() -> list[dict]:
+    """The way from an empty hub to the first action in the game, each step marked by what exists."""
+    from apps.accounts.models import Account, GameAccount
+    from apps.game.models import AccountSnapshot
+    from apps.jobs.models import Job
+
+    account = Account.objects.order_by("created_at").first()
+    jobs = Job.objects.exclude(action_code=DISCOVER_ACTION)
+    return [
+        _step(1, "account", "Cadastrar a conta", "E-mail e senha do GameForge, e o nó que vai jogar por ela.",
+              account is not None, "/accounts/?guia=nova-conta", "Nova Conta", "bi-plus-lg"),
+        _step(2, "worlds", "Trazer os mundos", "Cada servidor em que a conta joga vira uma subconta.",
+              GameAccount.objects.filter(active=True).exists(),
+              f"/accounts/{account.pk}/?guia=discover" if account else "/accounts/", "Discover Characters", "bi-search"),
+        _step(3, "status", "Ler a conta", "Novo Job → subconta → Verificar Status: cidades, recursos e edifícios vão para o Painel do Jogo.",
+              AccountSnapshot.objects.exists(), "/game/?guia=novo-job", "Novo Job", "bi-plus-lg"),
+        _step(4, "queue", "Acompanhar", "Na fila, executando, concluído ou erro; o job aberto mostra o log.",
+              jobs.filter(status="finished").exists(), "/jobs/", "Fila de Jobs", "bi-list-task"),
+        _step(5, "action", "Primeira ação", "Construir, transportar, pesquisar, vender: escolha a ação e a subconta.",
+              jobs.exclude(action_code__in=STATUS_ACTIONS).exists(), "/game/actions/", "Ações do Jogo", "bi-controller"),
+    ]
+
+
 def run_checks(request) -> list[dict]:
     checks = []
     for check in (check_ikabotapi, check_agents, check_accounts, lambda: check_address(request), check_telegram, check_manual_control, check_supervisor):
