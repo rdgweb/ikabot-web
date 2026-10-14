@@ -358,7 +358,7 @@ class AbandonColonyRunner(BaseRunner):
                     "city_id": str(city_id),
                     "city_name": city_name,
                     "captcha_solution": result.get("captcha_solution") or "",
-                    "has_captcha": bool(preview.get("captcha_src")),
+                    "has_captcha": bool(preview.get("captcha_src") or preview.get("captcha_embedded")),
                 },
             )
         except Exception as exc:
