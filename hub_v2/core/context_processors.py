@@ -31,6 +31,13 @@ def nav_context(request):
             ],
         },
         {
+            # N-106: what each organization sets for itself
+            "label": "Minha organização",
+            "items": [
+                {"name": "Telegram", "url": "/organizacao/telegram/", "icon": "bi-telegram"},
+            ],
+        },
+        {
             "label": "Administrativo",
             "perm": "operator",
             "items": [

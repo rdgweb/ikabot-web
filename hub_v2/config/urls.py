@@ -44,6 +44,7 @@ urlpatterns = [
     path("users/", include("apps.users.urls")),
     path("notes/", include("apps.notes.urls")),
     path("atividades/", include("apps.audit.urls")),
+    path("organizacao/", include("apps.orgs.urls")),
     path("telemetry/", include("apps.telemetry.urls")),
     # --- Telegram Webhook API ---
     path("api/telegram/", include("apps.telegram.api_urls")),

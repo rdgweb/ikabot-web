@@ -1,0 +1,80 @@
+{% extends base_template|default:"base.html" %}
+
+{% block title %}Telegram{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <span class="text-ink">Telegram</span>
+{% endblock %}
+
+{% block content %}
+{# N-106: o chat e os avisos desta organização; o bot é da plataforma #}
+<style>
+  .otg-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .otg-state { display: flex; align-items: center; gap: .8rem; }
+  .otg-state i.big { display: grid; place-items: center; width: 2.6rem; height: 2.6rem; border-radius: 12px; font-size: 1.3rem; background: rgba(79, 134, 185, .12); color: var(--ik-sea); }
+  .otg-state.on i.big { background: rgba(45, 122, 45, .12); color: #2d7a2d; }
+  .otg-state b { display: block; color: var(--ik-ink); }
+  .otg-state small { color: var(--ik-muted); }
+  .otg-code { display: flex; flex-direction: column; gap: .5rem; margin-top: 1rem; padding: .9rem 1rem; border-radius: 12px; border: 1px dashed rgba(201, 156, 78, .7); background: rgba(201, 156, 78, .08); }
+  .otg-code code { font-size: 1.35rem; letter-spacing: .12em; font-weight: 700; color: var(--ik-ink); }
+  .otg-code small { color: var(--ik-muted); }
+  .otg-toggles { display: grid; gap: .35rem .9rem; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .otg-toggles label { display: flex; align-items: center; gap: .5rem; font-size: .86rem; color: var(--ik-ink); }
+</style>
+
+<div class="mb-5">
+  <h1 class="text-xl font-bold text-ink flex items-center gap-2"><i class="bi bi-telegram text-sea"></i> Telegram</h1>
+</div>
+
+{% if not bot_ready %}
+<div class="card p-5 text-sm text-muted">O Telegram ainda não está disponível nesta plataforma.</div>
+{% else %}
+<div class="otg-grid">
+  <div class="card p-5">
+    {% if config.link_status == "linked" %}
+    <div class="otg-state on">
+      <i class="big bi bi-check2-circle"></i>
+      <span><b>Chat vinculado</b><small>{% if config.telegram_username %}@{{ config.telegram_username }}{% else %}recebendo os avisos{% endif %}</small></span>
+    </div>
+    {% if can_change %}
+    <form method="post" class="mt-4" onsubmit="return confirm('Desvincular este chat? Os avisos param até vincular de novo.');">
+      {% csrf_token %}<input type="hidden" name="action" value="unlink">
+      <button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-x-lg"></i> Desvincular</button>
+    </form>
+    {% endif %}
+    {% else %}
+    <div class="otg-state">
+      <i class="big bi bi-telegram"></i>
+      <span><b>Nenhum chat vinculado</b><small>Avisos, captchas e confirmações chegam no chat que você vincular.</small></span>
+    </div>
+    {% if code %}
+    <div class="otg-code">
+      <small>Código, válido por 10 minutos</small>
+      <code>{{ code }}</code>
+      {% if deep_link %}<a class="btn btn-primary btn-sm self-start" href="{{ deep_link }}" target="_blank" rel="noopener" hx-boost="false"><i class="bi bi-telegram"></i> Abrir no Telegram</a>{% endif %}
+      <small>Ou envie <b>/start {{ code }}</b>{% if bot_username %} para @{{ bot_username }}{% endif %}. Depois, recarregue esta página.</small>
+    </div>
+    {% elif can_change %}
+    <form method="post" class="mt-4">
+      {% csrf_token %}<input type="hidden" name="action" value="link">
+      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-link-45deg"></i> Vincular chat</button>
+    </form>
+    {% endif %}
+    {% endif %}
+  </div>
+
+  <div class="card p-5">
+    <h3 class="text-sm font-semibold text-ink mb-3"><i class="bi bi-bell"></i> Avisos</h3>
+    <form method="post">
+      {% csrf_token %}<input type="hidden" name="action" value="notices">
+      <div class="otg-toggles">
+        {% for field in form %}
+        <label>{{ field }} {{ field.label }}</label>
+        {% endfor %}
+      </div>
+      {% if can_change %}<button type="submit" class="btn btn-secondary btn-sm mt-4"><i class="bi bi-check-lg"></i> Salvar avisos</button>{% endif %}
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
