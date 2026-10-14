@@ -176,7 +176,12 @@ def recheck_sample(check):
     """A combat read from outside, fought again with the simulator as it is now (its inputs are kept)."""
     inputs = normalize(check.inputs_json)
     guess = (check.inputs_json or {}).get("assumptions") or {}
-    real = check.real_json or {}
+    # stored JSON turns the unit ids into text; the losses are compared by unit, so they go back to numbers
+    real = {
+        **(check.real_json or {}),
+        "losses": {side: {int(unit): int(amount) for unit, amount in (((check.real_json or {}).get("losses") or {}).get(side) or {}).items()}
+                   for side in ("attacker", "defender")},
+    }
     predicted = simulate_check(inputs, guess, real_rounds=int(real.get("rounds") or 0))
     score = compare(real, predicted)
     check.predicted_json = predicted

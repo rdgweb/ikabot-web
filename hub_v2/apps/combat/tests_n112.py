@@ -229,6 +229,22 @@ class IntelTests(Base):
         self.assertEqual(guess["upgrades"]["attacker"], {"303": {"offensive": 8, "defensive": 6}, "305": {"offensive": 4, "defensive": 4}})
         self.assertEqual(guess["upgrades"]["defender"], {"305": {"offensive": 3, "defensive": 2}})
 
+    def test_a_combat_from_outside_fought_again_keeps_the_same_score(self):
+        """Fought again from what is stored (JSON, unit ids as text), the comparison is the one made when it came in."""
+        from apps.combat.services.checks import add_sample, recheck_sample
+
+        check = add_sample(
+            source="ikalogs", external_id="abc", title="A VS B", fought_at="",
+            inputs={"field_level": 25, "wall_segments": 0, "attacker": {303: 300, 305: 12}, "defender": {315: 250, 303: 120}, "reinforcements": {"attacker": {}, "defender": {}}},
+            real={"winner": "attacker", "rounds": 3, "losses": {"attacker": {303: 40}, "defender": {315: 250, 303: 120}}},
+            upgrades={"attacker": {303: [8, 6]}, "defender": {}},
+        )
+        first = (check.winner_ok, check.rounds_gap, check.attacker_error, check.defender_error)
+        self.assertLess(check.defender_error, 1.0)
+        again = recheck_sample(SimulationCheck.objects.get(pk=check.pk))
+        self.assertEqual((again.winner_ok, again.rounds_gap, again.attacker_error, again.defender_error), first)
+        self.assertEqual(again.inputs_json["assumptions"]["upgrades"]["attacker"], {"303": {"offensive": 8, "defensive": 6}})
+
     def test_the_combat_page_shows_the_morale_card_and_the_level_of_the_wall(self):
         from django.contrib.auth import get_user_model
 
