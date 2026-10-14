@@ -147,7 +147,7 @@ class BalancePageTests(BalanceBase):
         response = self.client.get(reverse("market:balance"))
         self.assertEqual(response.status_code, 200)
         page = response.content.decode()
-        for text in ("Ouro movimentado", "41.800", "Quem pagou a quem", "Preço por recurso", "Ouro em caixa", "5.000.000", "+33.000", "-37.800",
+        for text in ("Ouro movimentado", "41.800", "Quem comprou de quem", "Preço por recurso", "Ouro em caixa", "5.000.000", "+33.000", "-37.800",
                      f"?seller={self.beta.pk}#orders-section", f"?buyer={self.alpha.pk}#orders-section", "1 só em parte"):
             self.assertIn(text, page)
         self.assertEqual([period["active"] for period in response.context["periods"]], [False, True, False])
@@ -162,7 +162,7 @@ class BalancePageTests(BalanceBase):
         InternalMarketOrder.objects.all().delete()
         page = self.client.get(reverse("market:balance")).content.decode()
         self.assertIn("Nenhuma compra interna entregue neste período.", page)
-        self.assertNotIn("Quem pagou a quem", page)
+        self.assertNotIn("Quem comprou de quem", page)
 
     def test_the_market_page_links_the_balance_and_the_orders_filter_by_who_bought_and_who_sold(self):
         page = self.client.get(reverse("market:dashboard") + f"?seller={self.beta.pk}").content.decode()
@@ -176,3 +176,76 @@ class BalancePageTests(BalanceBase):
     def test_the_page_asks_for_a_login(self):
         self.client.logout()
         self.assertEqual(self.client.get(reverse("market:balance")).status_code, 302)
+
+
+class RelationsTests(BalanceBase):
+    """N-114: who bought from whom, each purchase, and what it was for."""
+
+    def test_the_work_behind_a_purchase_is_read_from_the_order(self):
+        from .balance import short_gold, why
+
+        order = InternalMarketOrder(reason_detail="Tribunal | Esconderijo | missing wood=21887 for level 32")
+        self.assertEqual(why(order), {"city": "Tribunal", "building": "Esconderijo", "icon": "game/buildings/safehouse.png", "level": 32, "missing": 21887})
+        order.reason_detail = "Pena Capital | Armazem | missing wood=2674 for level 26 | pedido 5000, atendido 2674"
+        self.assertEqual((why(order)["building"], why(order)["icon"]), ("Armazém", "game/buildings/warehouse.png"))
+        order.reason_detail = "Capital | Residencia do Governador | missing marble=10 for level 7"
+        self.assertEqual(why(order)["building"], "Residência do Governador")
+        order.reason_detail = "Capital | Prédio Novo | missing marble=10 for level 7"
+        self.assertEqual((why(order)["building"], why(order)["icon"]), ("Prédio Novo", ""))
+        order.reason_detail = "comprado na mão"
+        self.assertIsNone(why(order))
+        self.assertEqual([short_gold(value) for value in (8_476_425, 2_000_000, 420_000, 35_000, 4_800, 0)], ["8,5 mi", "2 mi", "420 mil", "35 mil", "4.800", "0"])
+
+    def test_each_pair_of_accounts_has_its_purchases_both_ways(self):
+        relations = {(rel["payer"], rel["receiver"]): rel for rel in build_balance(30)["relations"]}
+        self.assertEqual(sorted(relations), [("Alpha", "Beta"), ("Alpha", "Gamma"), ("Gamma", "Beta")])
+        beta = relations[("Alpha", "Beta")]
+        self.assertEqual((beta["gold"], beta["gross"], beta["count"], beta["even"], beta["nothing"], beta["pct"]), (33_000, 37_000, 2, False, False, 100))
+        self.assertEqual({(deal["buyer"], deal["seller"], deal["gold"], deal["state"]) for deal in beta["deals"]},
+                         {("Alpha", "Beta", 35_000, "done"), ("Beta", "Alpha", 2_000, "done")})
+        gamma = relations[("Alpha", "Gamma")]["deals"][0]
+        self.assertEqual((gamma["amount"], gamma["ordered"], gamma["state"], gamma["state_label"]), (300, 500, "partial", "Em parte"))
+        nothing = relations[("Gamma", "Beta")]
+        self.assertEqual((nothing["nothing"], nothing["empty"], nothing["pct"], nothing["deals"][0]["state_label"]), (True, 1, 0, "Sem entrega"))
+
+    def test_a_purchase_says_where_it_came_from_where_it_went_and_why_it_failed(self):
+        AccountSnapshot.objects.filter(game_account=self.beta).update(cities=[{"id": 77, "name": "Porto Beta"}])
+        AccountSnapshot.objects.filter(game_account=self.gamma).update(cities=[{"id": 55, "name": "Vila Gamma"}])
+        order = self.order(self.gamma, self.beta, MARBLE, 900, 10, status="failed")
+        InternalMarketOrder.objects.filter(pk=order.pk).update(
+            seller_city_id=77, target_city_id=55,
+            result_note="Compra interna falhou. | Ouro insuficiente para a compra apos varias tentativas (guard pre-compra). | cleanup_job_id=abc remain=900",
+        )
+        deal = next(deal for rel in build_balance(30)["relations"] for deal in rel["deals"] if deal["pk"] == order.pk)
+        self.assertEqual((deal["from_city"], deal["to_city"]), ("Porto Beta", "Vila Gamma"))
+        self.assertEqual(deal["failure"], "Ouro insuficiente para a compra apos varias tentativas (guard pre-compra).")
+        InternalMarketOrder.objects.filter(pk=order.pk).update(reason_detail="Tribunal | Templo | missing marble=900 for level 31")
+        deal = next(deal for rel in build_balance(30)["relations"] for deal in rel["deals"] if deal["pk"] == order.pk)
+        self.assertEqual(deal["to_city"], "Tribunal")                                      # the work names the city the resource was for
+
+    def test_the_grid_has_buyers_down_and_sellers_across(self):
+        matrix = build_balance(30)["matrix"]
+        self.assertEqual(matrix["sellers"], ["Alpha", "Beta", "Gamma"])
+        self.assertEqual([row["buyer"] for row in matrix["rows"]], ["Alpha", "Beta"])        # Gamma paid nothing that arrived
+        alpha = matrix["rows"][0]
+        self.assertEqual([(cell["seller"], cell["short"], cell["pct"]) for cell in alpha["cells"]], [("Alpha", "", 0), ("Beta", "35 mil", 100), ("Gamma", "4.800", 14)])
+        self.assertEqual((alpha["total"], alpha["cells"][0]["alpha"], alpha["cells"][1]["alpha"]), (39_800, "0", "0.56"))
+
+    def test_the_works_put_together_what_each_one_cost_and_who_sold_it(self):
+        first = self.order(self.gamma, self.beta, WOOD, 1000, 30)
+        second = self.order(self.gamma, self.alpha, MARBLE, 500, 10)
+        InternalMarketOrder.objects.filter(pk__in=[first.pk, second.pk]).update(reason_detail="Tribunal | Esconderijo | missing wood=1000 for level 32")
+        works = build_balance(30)["works"]
+        hideout = next(work for work in works if work["building"] == "Esconderijo")
+        self.assertEqual((hideout["city"], hideout["level"], hideout["gold"], hideout["orders"]), ("Tribunal", 32, 35_000, 2))
+        self.assertEqual((hideout["resources_list"], hideout["sellers_list"]), ([{"idx": WOOD, "amount": 1000}, {"idx": MARBLE, "amount": 500}], ["Beta", "Alpha"]))
+        self.assertIn("Sem motivo registrado", [work["building"] for work in works])        # the orders without a reason, together
+
+    def test_the_page_shows_the_grid_the_pairs_and_the_works(self):
+        order = self.order(self.gamma, self.beta, WOOD, 1000, 30)
+        InternalMarketOrder.objects.filter(pk=order.pk).update(reason_detail="Tribunal | Esconderijo | missing wood=1000 for level 32")
+        self.client.force_login(get_user_model().objects.create_user("rodrigo", password="x"))
+        page = self.client.get(reverse("market:balance")).content.decode()
+        for text in ("Quem comprou de quem", "Compras entre as contas", "Para quê", "Esconderijo 32", "Em parte",
+                     reverse("market:order-detail", args=[order.pk]), "game/buildings/safehouse.png", "Alpha pagou 35.000 de ouro a Beta"):
+            self.assertIn(text, page)

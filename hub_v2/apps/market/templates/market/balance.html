@@ -48,6 +48,43 @@
   .mb-price .head img { width: 1rem; height: 1rem; }
   .mb-tag { display: inline-block; margin-top: .5rem; padding: .12rem .55rem; border-radius: 999px; font-size: .7rem; font-weight: 600; }
   .mb-tag.good { color: #1f6a1f; background: rgba(45, 122, 45, .12); } .mb-tag.bad { color: #8a2c20; background: rgba(179, 64, 47, .1); }
+  .mb-matrix { width: 100%; border-collapse: separate; border-spacing: 3px; font-size: .78rem; }
+  .mb-matrix th { padding: .35rem .5rem; font-weight: 600; color: var(--ik-muted); white-space: nowrap; }
+  .mb-matrix thead th { text-align: center; font-size: .72rem; }
+  .mb-matrix thead th.corner { text-align: left; font-weight: 400; }
+  .mb-matrix tbody th { text-align: left; color: var(--ik-ink); }
+  .mb-matrix td { min-width: 4.5rem; padding: .45rem .5rem; border-radius: 8px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ik-ink); }
+  .mb-matrix td.total { background: transparent; text-align: right; color: var(--ik-muted); font-weight: 600; }
+  .mb-rel { border-bottom: 1px solid var(--ik-line); }
+  .mb-rel:last-child { border-bottom: 0; }
+  .mb-rel summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .15rem .8rem; padding: .55rem 0; cursor: pointer; list-style: none; font-size: .84rem; }
+  .mb-rel summary::-webkit-details-marker { display: none; }
+  .mb-rel summary .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ik-ink); }
+  .mb-rel summary .who i { margin: 0 .3rem; color: var(--ik-muted); }
+  .mb-rel summary .gold { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ik-ink); }
+  .mb-rel summary .count { grid-column: 1 / -1; font-size: .72rem; color: var(--ik-muted); }
+  .mb-rel summary .count i { margin-right: .25rem; transition: transform .15s; }
+  .mb-rel[open] summary .count i { transform: rotate(90deg); }
+  .mb-rel summary u { grid-column: 1 / -1; display: block; height: .3rem; border-radius: 999px; background: rgba(79, 134, 185, .15); text-decoration: none; }
+  .mb-rel summary u i { display: block; height: 100%; border-radius: 999px; background: var(--ik-sea); }
+  .mb-deals { display: flex; flex-direction: column; gap: .4rem; padding: .2rem 0 .7rem; }
+  .mb-deal { display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .7rem; padding: .5rem .65rem; border: 1px solid var(--ik-line); border-radius: 10px; background: rgba(255, 255, 255, .45); font-size: .78rem; color: var(--ik-ink); text-decoration: none; }
+  .mb-deal:hover { border-color: var(--ik-sea); }
+  .mb-deal time { font-size: .7rem; color: var(--ik-muted); font-variant-numeric: tabular-nums; }
+  .mb-deal .what { display: inline-flex; align-items: center; gap: .25rem; font-variant-numeric: tabular-nums; }
+  .mb-deal .what img, .mb-deal .why img { width: 1rem; height: 1rem; object-fit: contain; }
+  .mb-deal .path { flex-basis: 100%; color: var(--ik-muted); }
+  .mb-deal .why { display: inline-flex; align-items: center; gap: .3rem; font-weight: 600; }
+  .mb-deal .state { margin-left: auto; padding: .08rem .5rem; border-radius: 999px; font-size: .66rem; font-weight: 700; color: #fff; background: #2d7a2d; }
+  .mb-deal .state.partial, .mb-deal .state.running { background: #c9922e; } .mb-deal .state.empty { background: #b3402f; }
+  .mb-deal .fail { flex-basis: 100%; font-size: .72rem; color: #8a2c20; }
+  .mb-work { display: flex; flex-direction: column; gap: .5rem; }
+  .mb-work .head { display: flex; align-items: center; gap: .6rem; }
+  .mb-work .head img { width: 2.2rem; height: 2.2rem; object-fit: contain; flex-shrink: 0; }
+  .mb-work .head div { min-width: 0; margin-right: auto; }
+  .mb-work .head b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ik-ink); }
+  .mb-work .head small { display: block; font-size: .72rem; color: var(--ik-muted); }
+  .mb-work .head .gold { flex-shrink: 0; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ik-ink); }
   .mb-two { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
   @media (min-width: 1100px) { .mb-two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 </style>
@@ -123,18 +160,52 @@
     </div>
   </div>
 
+  {# N-114: quem comprou de quem, num relance #}
+  <div>
+    <h2 class="mb-title">Quem comprou de quem</h2>
+    <div class="mb-card" style="overflow-x: auto;">
+      <table class="mb-matrix">
+        <thead>
+          <tr><th class="corner">Comprou <i class="bi bi-arrow-down"></i> · vendeu <i class="bi bi-arrow-right"></i></th>{% for name in matrix.sellers %}<th>{{ name }}</th>{% endfor %}<th>Total</th></tr>
+        </thead>
+        <tbody>
+          {% for row in matrix.rows %}
+          <tr>
+            <th>{{ row.buyer }}</th>
+            {% for cell in row.cells %}<td style="background: rgba(79, 134, 185, {{ cell.alpha }});"{% if cell.gold %} title="{{ row.buyer }} pagou {{ cell.gold|intcomma }} de ouro a {{ cell.seller }}"{% endif %}>{{ cell.short }}</td>{% endfor %}
+            <td class="total">{{ row.total|intcomma }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="mb-two">
     <div>
-      <h2 class="mb-title">Quem pagou a quem</h2>
+      <h2 class="mb-title">Compras entre as contas</h2>
       <div class="mb-card">
-        {% for flow in flows %}
-        <div class="mb-flow">
-          <span class="who">{{ flow.payer }}<i class="bi bi-arrow-right"></i>{{ flow.receiver }}</span>
-          <span class="gold"{% if flow.back %} title="Já descontados {{ flow.back|intcomma }} que foram no sentido contrário"{% endif %}>{{ flow.gold|intcomma }}</span>
-          <u><i style="width: {{ flow.pct }}%;"></i></u>
-        </div>
-        {% empty %}
-        <div class="text-sm text-muted">As contas estão quites entre si.</div>
+        {% for rel in relations %}
+        <details class="mb-rel">
+          <summary>
+            <span class="who">{{ rel.payer }}<i class="bi bi-arrow-right"></i>{{ rel.receiver }}</span>
+            <span class="gold" title="O que um pagou ao outro, já descontado o que foi no sentido contrário">{% if rel.nothing %}nada entregue{% elif rel.even %}quites{% else %}{{ rel.gold|intcomma }}{% endif %}</span>
+            <span class="count"><i class="bi bi-chevron-right"></i>{{ rel.count }} compra{{ rel.count|pluralize }}{% if rel.empty %} · {{ rel.empty }} sem entrega{% endif %}</span>
+            <u><i style="width: {{ rel.pct }}%;"></i></u>
+          </summary>
+          <div class="mb-deals">
+            {% for deal in rel.deals %}
+            <a class="mb-deal" href="{% url 'market:order-detail' deal.pk %}" title="Abrir a ordem">
+              <time>{{ deal.date|date:"d/m H:i" }}</time>
+              <span class="what"><img src="{% static deal.resource|resource_icon %}" alt="">{{ deal.amount|intcomma }}{% if deal.amount != deal.ordered %} de {{ deal.ordered|intcomma }}{% endif %} × {{ deal.price }} = <b>{{ deal.gold|intcomma }}</b></span>
+              {% if deal.why %}<span class="why">{% if deal.why.icon %}<img src="{% static deal.why.icon %}" alt="">{% endif %}{{ deal.why.building }} {{ deal.why.level }}</span>{% endif %}
+              <span class="state {{ deal.state }}">{{ deal.state_label }}</span>
+              <span class="path">{{ deal.buyer }} comprou de {{ deal.seller }}{% if deal.from_city %}, saindo de {{ deal.from_city }}{% endif %}{% if deal.to_city %}, para {{ deal.to_city }}{% endif %}</span>
+              {% if deal.failure %}<span class="fail">{{ deal.failure }}</span>{% endif %}
+            </a>
+            {% endfor %}
+          </div>
+        </details>
         {% endfor %}
       </div>
     </div>
@@ -153,6 +224,26 @@
       </div>
     </div>
   </div>
+
+  {# N-114: para quê - as obras que pediram os recursos #}
+  {% if works %}
+  <div>
+    <h2 class="mb-title">Para quê</h2>
+    <div class="mb-grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));">
+      {% for work in works %}
+      <div class="mb-card mb-work">
+        <div class="head">
+          {% if work.icon %}<img src="{% static work.icon %}" alt="">{% endif %}
+          <div><b>{{ work.building }}{% if work.level %} {{ work.level }}{% endif %}</b>{% if work.city %}<small>{{ work.city }}</small>{% endif %}</div>
+          <span class="gold">{{ work.gold|intcomma }}</span>
+        </div>
+        <div class="mb-side">{% for item in work.resources_list %}<span class="mb-res"><img src="{% static item.idx|resource_icon %}" alt="">{{ item.amount|intcomma }}</span>{% endfor %}</div>
+        <div class="mb-sub">{{ work.orders }} compra{{ work.orders|pluralize }} · de {{ work.sellers_list|join:", " }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
 
   <div>
     <h2 class="mb-title">Preço por recurso</h2>
