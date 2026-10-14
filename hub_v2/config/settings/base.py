@@ -255,7 +255,7 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 APP_SECRET = os.environ.get("APP_SECRET", "troque-este-segredo")
 # N-106: no built-in default — without the variable there is no single key at all (fail closed)
 AGENT_TOKEN = os.environ.get("AGENT_TOKEN", "")
-if AGENT_TOKEN in ("troque-agent-token", "change-me", "changeme"):
+if AGENT_TOKEN in ("troque-agent-token", "change-me", "changeme", "change-me-agent-token"):
     AGENT_TOKEN = ""
 # the single key of the installation, while the agents move to their own node keys
 AGENT_SHARED_TOKEN_ENABLED = os.environ.get("AGENT_SHARED_TOKEN_ENABLED", "true").strip().lower() in ("1", "true", "yes")
