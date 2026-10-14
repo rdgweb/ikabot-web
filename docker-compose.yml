@@ -60,7 +60,7 @@ services:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     ports:
-      # agentes em outra máquina precisam do Redis: REDIS_BIND=0.0.0.0 (e senha forte)
+      # só dentro do servidor: agentes em outra máquina falam com o hub por HTTPS (N-106), não com o Redis
       - "${REDIS_BIND:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
@@ -102,6 +102,8 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
       APP_SECRET: ${APP_SECRET:?defina APP_SECRET no .env (o instalador gera)}
       AGENT_TOKEN: ${AGENT_TOKEN:?defina AGENT_TOKEN no .env (o instalador gera)}
+      # N-106: false = só a chave de cada nó abre a API do agente (desligue quando todos os agentes tiverem a sua)
+      AGENT_SHARED_TOKEN_ENABLED: ${AGENT_SHARED_TOKEN_ENABLED:-true}
       WEBSHARE_API_KEY: ${WEBSHARE_API_KEY:-}
       IKABOTAPI_URL: ${IKABOTAPI_URL:-http://ikabotapi:5005}
       # controle manual (N-72): cada sessão é servida em <token>.<este domínio> pelo
@@ -171,7 +173,8 @@ services:
     environment:
       HUB_URL: ${HUB_URL:-http://hub:8000}
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
-      AGENT_TOKEN: ${AGENT_TOKEN}
+      # N-106: a chave do próprio nó (Nós & Agents → Gerar nova chave); sem ela, a chave única da instalação
+      AGENT_TOKEN: ${AGENT_NODE_TOKEN:-${AGENT_TOKEN}}
       # fixo: com ele vazio o agente sorteia outro a cada início e vira um nó novo no hub
       AGENT_NODE_ID: ${AGENT_NODE_ID:?defina AGENT_NODE_ID no .env (o instalador gera; à mão use uuidgen)}
       AGENT_NAME: ${AGENT_NAME:-ikabot-agent-01}
