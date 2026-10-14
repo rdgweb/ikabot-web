@@ -14,6 +14,7 @@
 <button hx-post="{% url 'game:run-action' %}"
         hx-vals='{"account_id": "{{ account.pk }}", "action_code": "101"}'
         hx-swap="none"
+        data-tour="discover"
         class="btn btn-primary btn-sm" title="Descobrir personagens no lobby Gameforge">
   <i class="bi bi-search"></i> Discover Characters
 </button>
@@ -97,7 +98,7 @@
 </div>
 
 {# ── Game Accounts (Sub-accounts) ── #}
-<div id="game-accounts-section" class="card">
+<div id="game-accounts-section" class="card" data-tour="worlds">
   <div class="flex items-center justify-between mb-3">
     <h3 class="text-sm font-semibold text-ink">
       <i class="bi bi-people"></i> Contas de Jogo ({{ account.game_accounts.count }})

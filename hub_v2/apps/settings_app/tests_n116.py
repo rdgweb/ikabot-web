@@ -130,15 +130,42 @@ class TourTests(TestCase):
         self.assertIn("window.ikTour.start()", html)
         self.assertFalse([item.key for item in response.context["generic_settings"] if item.key.startswith("tour_")])
 
+    def test_the_state_follows_the_installation(self):
+        url = reverse("settings_app:tour-state")
+        self.assertEqual(self.client.get(url).json(), {"nodes": 0, "online": 0, "accounts": 0, "worlds": 0, "first_account": ""})
+        node = Node.objects.create(name="agente-1", agent_last_seen_at=timezone.now())
+        Node.objects.create(name="parado")
+        account = Account.objects.create(node=node, label="Lobby", email="a@example.com", password_enc="x")
+        GameAccount.objects.create(account=account, lobby_account_id=1, server_id="s78-br", server_language="br", server_number=78, name="Alpha")
+        self.assertEqual(self.client.get(url).json(), {"nodes": 2, "online": 1, "accounts": 1, "worlds": 1, "first_account": str(account.pk)})
+
+    def test_the_account_form_says_why_there_is_no_node(self):
+        html = self.client.get(reverse("accounts:account-create")).content.decode()
+        self.assertIn("Nenhum nó ainda", html)
+        Node.objects.create(name="agente-1")
+        self.assertNotIn("Nenhum nó ainda", self.client.get(reverse("accounts:account-create")).content.decode())
+
     def test_the_tour_points_at_the_real_parts(self):
         from pathlib import Path
 
         from django.conf import settings as django_settings
 
-        html = self.client.get("/").content.decode()
-        self.assertIn('data-tour="novo-job"', html)
-        self.assertNotIn("data-tour-script", self.client.get("/", HTTP_HX_REQUEST="true", HTTP_HX_BOOSTED="true").content.decode())
         script = (Path(django_settings.BASE_DIR) / "static" / "js" / "tour.js").read_text(encoding="utf-8")
-        for href in ("/accounts/", "/game/", "/game/actions/", "/jobs/", "/telegram/", "/settings/"):
-            self.assertIn(f'a.sidebar-item[href="{href}"]', script)
-            self.assertIn(f'href="{href}"', html)
+        node = Node.objects.create(name="agente-1")
+        account = Account.objects.create(node=node, label="Lobby", email="a@example.com", password_enc="x")
+        pages = {
+            "/": ['data-tour="novo-job"', 'href="/jobs/"', 'href="/game/"', 'href="/game/actions/"'],
+            reverse("accounts:node-list"): ['data-tour="nodes"'],
+            reverse("accounts:account-create"): ['id="id_node"', 'id="id_label"', 'id="id_email"', 'id="id_gf_token"', 'data-tour="form-submit"'],
+            reverse("accounts:account-list"): ['data-tour="account-row"'],
+            reverse("accounts:account-detail", args=[account.pk]): ['data-tour="discover"', 'data-tour="worlds"'],
+        }
+        for url, markers in pages.items():
+            html = self.client.get(url).content.decode()
+            for marker in markers:
+                self.assertIn(marker, html, f"{marker} em {url}")
+        for selector in ('[data-tour="nodes"]', "#id_node", "#id_label", "#id_email", "#id_gf_token", '[data-tour="form-submit"]', '[data-tour="account-row"]',
+                         '[data-tour="discover"]', '[data-tour="worlds"]', '[data-tour="novo-job"]', 'a.sidebar-item[href="/jobs/"]'):
+            self.assertIn(selector, script)
+        self.assertIn('data-state-url="/settings/tour/state/"', self.client.get("/").content.decode())
+        self.assertNotIn("data-tour-script", self.client.get("/", HTTP_HX_REQUEST="true", HTTP_HX_BOOSTED="true").content.decode())

@@ -44,6 +44,21 @@ def set_enabled(enabled: bool) -> None:
         AppSetting.objects.filter(key__startswith=DONE_PREFIX).delete()
 
 
+def state() -> dict:
+    """What the installation already has, so each step of the tour talks about the real hub."""
+    from apps.accounts.models import Account, GameAccount, Node
+
+    nodes = list(Node.objects.all())
+    account = Account.objects.order_by("created_at").first()
+    return {
+        "nodes": len(nodes),
+        "online": sum(1 for node in nodes if node.is_online),
+        "accounts": Account.objects.count(),
+        "worlds": GameAccount.objects.filter(active=True).count(),
+        "first_account": str(account.pk) if account else "",
+    }
+
+
 def tour_context(request):
     """TOUR_AUTOSTART is only queried by the full page (base.html), not by every partial."""
     user = getattr(request, "user", None)

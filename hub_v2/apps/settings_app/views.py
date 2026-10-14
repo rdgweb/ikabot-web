@@ -81,6 +81,17 @@ class TourDoneView(LoginRequiredMixin, View):
         return HttpResponse(status=204)
 
 
+class TourStateView(LoginRequiredMixin, View):
+    """GET: what the installation already has; the tour adapts each step to it."""
+
+    def get(self, request):
+        from django.http import JsonResponse
+
+        from .tour import state
+
+        return JsonResponse(state())
+
+
 class TourToggleView(LoginRequiredMixin, View):
     """POST: switch the welcome tour; switching it on shows it once more to every user."""
 

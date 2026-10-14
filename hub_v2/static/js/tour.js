@@ -1,38 +1,94 @@
 /* Tour de boas-vindas (N-116).
  *
- * A tela escurece, a parte apresentada fica acesa e um cartão explica o que ela faz.
+ * Leva o usuário pelo caminho real até o primeiro job: o agente (nó), a conta, os mundos e o job.
+ * A tela escurece, a parte apresentada fica acesa e um cartão explica o que fazer ali. O tour troca
+ * de página sozinho quando o passo seguinte mora em outra, e espera quando o passo é do usuário
+ * (salvar a conta). O texto de cada passo segue o que a instalação já tem (/settings/tour/state/).
+ *
  * Começa sozinho uma vez para cada usuário (data-autostart no <script>) e pode ser revisto em
- * Configurações (window.ikTour.start()). Passos cuja peça não existe para o usuário são pulados;
- * peça escondida (menu fechado no celular) vira cartão no centro.
+ * Configurações (window.ikTour.start()).
  */
 (function () {
   "use strict";
 
+  var ACCOUNT_PAGE = /^\/accounts\/[0-9a-f-]{36}\/$/;
+
+  function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
+
   var STEPS = [
     { icon: "bi-stars", title: "Bem-vindo ao Ikabot",
-      text: "Um giro rápido pelas partes que você vai usar no dia a dia. Leva menos de um minuto." },
-    { target: 'a.sidebar-item[href="/accounts/"]', icon: "bi-person-badge", title: "Contas do Jogo",
-      text: "Comece por aqui: cadastre o e-mail e a senha do GameForge. Cada mundo em que a conta joga vira uma subconta." },
-    { target: '[data-tour="novo-job"]', icon: "bi-plus-lg", title: "Novo Job",
-      text: "Tudo o que o Ikabot faz no jogo é um job: escolha a subconta, a ação e envie. O primeiro costuma ser Verificar Status." },
-    { target: 'a.sidebar-item[href="/game/"]', icon: "bi-joystick", title: "Painel do Jogo",
-      text: "Cidades, recursos, edifícios e tropas de cada subconta, atualizados a cada leitura." },
-    { target: 'a.sidebar-item[href="/game/actions/"]', icon: "bi-controller", title: "Ações do Jogo",
-      text: "O catálogo completo: construir, transportar, pesquisar, vender e muito mais." },
-    { target: 'a.sidebar-item[href="/jobs/"]', icon: "bi-list-task", title: "Fila de Jobs",
-      text: "Cada job com o seu estado (na fila, executando, concluído ou com erro) e o log de cada passo." },
-    { target: 'a.sidebar-item[href="/telegram/"]', icon: "bi-telegram", title: "Telegram",
-      text: "Avisos, captchas e confirmações direto no celular." },
-    { target: 'a.sidebar-item[href="/settings/"]', icon: "bi-gear", title: "Configurações",
-      text: "Saúde do sistema, integrações e este tour, se quiser vê-lo de novo." },
+      text: "Vamos deixar a primeira conta jogando, na ordem certa: o agente, a conta, os mundos e o primeiro job. Esc sai a qualquer momento." },
+
+    { page: /^\/accounts\/nodes\/$/, go: "/accounts/nodes/", target: '[data-tour="nodes"]', icon: "bi-hdd-network",
+      chapter: "1 · O agente", title: "Nós & Agents",
+      text: function (s) {
+        if (s.online) return "O agente é o programa que entra no jogo e executa os jobs; cada agente conectado aparece aqui como um nó. "
+          + plural(s.online, "nó online", "nós online") + ": pronto para receber contas.";
+        if (s.nodes) return "O nó existe, mas o agente não fala com o hub há mais de 3 minutos. Sem agente online os jobs ficam parados na fila: confira se o container agent está rodando.";
+        return "Ainda não há agente. O nó aparece aqui sozinho quando o container do agente sobe com o mesmo AGENT_TOKEN do hub (o instalador já deixa assim); agente em outra máquina começa por Novo Nó. Sem nó, a conta não tem quem jogue por ela.";
+      },
+      tone: function (s) { return s.online ? "" : "warn"; },
+      cta: function (s) { return s.online ? null : { label: "Saúde do sistema", href: "/settings/#saude" }; } },
+
+    { page: /^\/accounts\/create\/$/, go: "/accounts/create/", target: "#id_node", wrap: ".form-group", icon: "bi-hdd-network",
+      chapter: "2 · A conta", title: "Quem joga por ela",
+      text: function (s) {
+        return s.nodes ? "Escolha o nó que vai jogar por esta conta. Cada conta fica sempre no mesmo nó."
+          : "A lista está vazia porque ainda não há nó. Volte aqui depois que o agente conectar.";
+      } },
+    { page: /^\/accounts\/create\/$/, target: "#id_label", wrap: ".form-group", icon: "bi-tag",
+      chapter: "2 · A conta", title: "Nome", text: "Um nome só seu para reconhecer a conta no hub, como \"Principal\"." },
+    { page: /^\/accounts\/create\/$/, target: "#id_email", wrap: ".form-group", icon: "bi-envelope",
+      chapter: "2 · A conta", title: "E-mail e senha",
+      text: "Os mesmos do login do GameForge (o do Ikariam). A senha é guardada criptografada." },
+    { page: /^\/accounts\/create\/$/, target: "#id_gf_token", wrap: ".form-group", icon: "bi-key",
+      chapter: "2 · A conta", title: "Token (opcional)",
+      text: "Com o cookie gf-token-production, o hub já busca os mundos ao salvar. Sem ele, os mundos são buscados na página da conta." },
+    { page: /^\/accounts\/create\/$/, target: '[data-tour="form-submit"]', icon: "bi-check-lg",
+      chapter: "2 · A conta", title: "Criar Conta",
+      text: function (s) {
+        return s.accounts ? "Clique aqui quando for cadastrar uma conta. Para seguir o tour, vamos usar a conta que você já tem."
+          : "Preencha e clique em Criar Conta. O tour continua na lista de contas.";
+      },
+      waits: function (s) { return !s.accounts; } },
+
+    { page: /^\/accounts\/$/, go: "/accounts/", target: '[data-tour="account-row"]', icon: "bi-person-badge",
+      skip: function (s) { return !s.accounts; },
+      chapter: "3 · Os mundos", title: "Sua conta",
+      text: "Cada conta do GameForge aparece aqui. Abra a conta para buscar os mundos em que ela joga." },
+    { page: ACCOUNT_PAGE, go: function (s) { return s.first_account ? "/accounts/" + s.first_account + "/" : "/accounts/"; },
+      target: '[data-tour="discover"]', icon: "bi-search", skip: function (s) { return !s.first_account; },
+      chapter: "3 · Os mundos", title: "Discover Characters",
+      text: "Entra no lobby do GameForge e traz cada mundo da conta. Vira um job: leva alguns segundos e precisa do agente online." },
+    { page: ACCOUNT_PAGE, target: '[data-tour="worlds"]', icon: "bi-people", skip: function (s) { return !s.first_account; },
+      chapter: "3 · Os mundos", title: "Subcontas",
+      text: function (s) {
+        return s.worlds ? "Cada linha é um mundo (" + plural(s.worlds, "subconta ativa", "subcontas ativas") + " no hub). Pause as que o Ikabot não deve tocar."
+          : "Os mundos aparecem aqui quando o Discover termina. Cada um vira uma subconta.";
+      } },
+
+    { target: '[data-tour="novo-job"]', icon: "bi-plus-lg",
+      chapter: "4 · O primeiro job", title: "Novo Job",
+      text: "Tudo o que o Ikabot faz no jogo é um job. Novo Job → escolha a subconta → Verificar Status: ele lê cidades, recursos e edifícios." },
+    { target: 'a.sidebar-item[href="/jobs/"]', icon: "bi-list-task",
+      chapter: "4 · O primeiro job", title: "Fila de Jobs",
+      text: "Acompanhe cada job: na fila, executando, concluído ou com erro, com o log de cada passo." },
+    { target: 'a.sidebar-item[href="/game/"]', icon: "bi-joystick",
+      chapter: "4 · O primeiro job", title: "Painel do Jogo",
+      text: "Depois do Verificar Status, as cidades da subconta aparecem aqui." },
+    { target: 'a.sidebar-item[href="/game/actions/"]', icon: "bi-controller",
+      chapter: "Daqui em diante", title: "Ações do Jogo",
+      text: "Construir, transportar, pesquisar, vender e o resto: escolha a ação e a subconta." },
+
     { icon: "bi-flag", title: "Tudo pronto", final: true,
-      text: "Cadastre a primeira conta e o resto acompanha.",
-      cta: { label: "Cadastrar conta", href: "/accounts/create/", needs: 'a.sidebar-item[href="/accounts/"]' } },
+      text: "Se algo não andar, Configurações → Saúde do sistema mostra o que falta. O tour pode ser revisto por lá." },
   ];
 
   var GAP = 14;          // between the lit part and the card
   var PAD = 6;           // light around the lit part
   var EDGE = 12;         // card never closer than this to the window edge
+  var STORE = "iktour";  // sessionStorage: the step to resume after a page change
+  var STORE_TTL = 30 * 60 * 1000;
 
   var CSS = [
     ".iktour{position:fixed;inset:0;z-index:10000;font-family:inherit}",
@@ -55,32 +111,67 @@
     ".iktour-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}",
     ".iktour-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:11px;font-size:1.1rem;color:#fff;",
     "  background:linear-gradient(135deg,#c99c4e,#a67c2e);box-shadow:0 4px 10px rgba(166,124,46,.35)}",
-    ".iktour-count{margin-right:auto;font-size:.68rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ik-muted,#6f6b63)}",
+    ".iktour-chapter{margin-right:auto;font-size:.68rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#a67c2e}",
+    ".iktour-count{font-size:.72rem;font-weight:600;color:var(--ik-muted,#6f6b63)}",
+    ".iktour-card.warn .iktour-icon{background:linear-gradient(135deg,#d9894a,#b3402f);box-shadow:0 4px 10px rgba(179,64,47,.35)}",
+    ".iktour-card.warn .iktour-chapter{color:#b3402f}",
     ".iktour-close{display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:8px;background:transparent;",
     "  color:var(--ik-muted,#6f6b63);font-size:1rem;cursor:pointer}",
     ".iktour-close:hover{background:rgba(0,0,0,.06);color:var(--ik-ink,#2d2a24)}",
     ".iktour-title{margin:0 0 6px;font-family:Rajdhani,inherit;font-size:1.45rem;font-weight:700;line-height:1.1;color:var(--ik-ink,#2d2a24)}",
     ".iktour-text{margin:0;font-size:.9rem;line-height:1.5;color:#4a463e}",
     ".iktour-foot{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:16px}",
-    ".iktour-dots{display:flex;gap:5px;margin-right:auto}",
-    ".iktour-dots span{width:7px;height:7px;border-radius:99px;background:rgba(138,129,114,.3);transition:width .25s ease,background .25s ease}",
-    ".iktour-dots span.on{width:20px;background:#c99c4e}.iktour-dots span.past{background:rgba(201,156,78,.55)}",
+    ".iktour-bar{flex:1;min-width:40px;height:4px;margin-right:6px;border-radius:99px;background:rgba(138,129,114,.2);overflow:hidden}",
+    ".iktour-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#c99c4e,#a67c2e);transition:width .35s ease}",
     ".iktour-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:9px;font-size:.84rem;font-weight:600;",
     "  border:1px solid transparent;cursor:pointer;text-decoration:none;line-height:1.2;white-space:nowrap}",
     ".iktour-btn.ghost{background:transparent;color:var(--ik-muted,#6f6b63)}.iktour-btn.ghost:hover{color:var(--ik-ink,#2d2a24);background:rgba(0,0,0,.05)}",
     ".iktour-btn.primary{background:var(--ik-sea,#4f86b9);color:#fff}.iktour-btn.primary:hover{background:var(--ik-sea-dark,#3e719f)}",
     ".iktour-btn.gold{background:linear-gradient(135deg,#c99c4e,#a67c2e);color:#fff}",
     ".iktour-btn:focus{outline:none}.iktour-btn:focus-visible,.iktour-close:focus-visible{box-shadow:0 0 0 3px rgba(79,134,185,.35)}",
-    "@media (prefers-reduced-motion:reduce){.iktour-spot,.iktour-card,.iktour-dots span{transition:none!important}}",
+    "@media (prefers-reduced-motion:reduce){.iktour-spot,.iktour-card,.iktour-bar i{transition:none!important}}",
   ].join("\n");
 
-  var root, spot, card, steps, index, lastFocus, rafPending;
+
+  var root, spot, card, index = 0, lastFocus, rafPending, state = {}, config = {};
 
   function el(tag, cls, html) {
     var node = document.createElement(tag);
     if (cls) node.className = cls;
     if (html != null) node.innerHTML = html;
     return node;
+  }
+
+  function resolve(value) { return typeof value === "function" ? value(state) : value; }
+
+  function onPage(step) { return !step.page || step.page.test(window.location.pathname); }
+
+  function findTarget(step) {
+    if (!step.target) return null;
+    var node = document.querySelector(step.target);
+    if (node && step.wrap) node = node.closest(step.wrap) || node;
+    return node;
+  }
+
+  // ── where the tour stopped, kept across page changes ──
+  function save(i, waiting) {
+    try { window.sessionStorage.setItem(STORE, JSON.stringify({ i: i, w: !!waiting, t: Date.now() })); } catch (e) { /* private mode */ }
+  }
+  function load() {
+    try {
+      var saved = JSON.parse(window.sessionStorage.getItem(STORE) || "null");
+      if (saved && Date.now() - saved.t < STORE_TTL && STEPS[saved.i]) return saved;
+    } catch (e) { /* nothing saved */ }
+    return null;
+  }
+  function forget() { try { window.sessionStorage.removeItem(STORE); } catch (e) { /* private mode */ } }
+
+  function fetchState() {
+    if (!config.stateUrl) return Promise.resolve();
+    return window.fetch(config.stateUrl, { credentials: "same-origin", headers: { "X-Requested-With": "XMLHttpRequest" } })
+      .then(function (response) { return response.ok ? response.json() : {}; })
+      .catch(function () { return {}; })
+      .then(function (data) { state = data || {}; });
   }
 
   function injectStyle() {
@@ -101,12 +192,6 @@
     return rect;
   }
 
-  function availableSteps() {
-    return STEPS.filter(function (step) {
-      return !step.target || document.querySelector(step.target);
-    });
-  }
-
   function build() {
     injectStyle();
     root = el("div", "iktour is-entering");
@@ -117,10 +202,11 @@
     card = el("div", "iktour-card is-hidden");
     card.innerHTML =
       '<div class="iktour-arrow none"></div>' +
-      '<div class="iktour-head"><span class="iktour-icon"><i class="bi"></i></span><span class="iktour-count"></span>' +
+      '<div class="iktour-head"><span class="iktour-icon"><i class="bi"></i></span><span class="iktour-chapter"></span>' +
+      '<span class="iktour-count"></span>' +
       '<button type="button" class="iktour-close" aria-label="Fechar o tour"><i class="bi bi-x-lg"></i></button></div>' +
       '<h3 class="iktour-title" id="iktour-title"></h3><p class="iktour-text"></p>' +
-      '<div class="iktour-foot"><div class="iktour-dots"></div>' +
+      '<div class="iktour-foot"><span class="iktour-bar"><i></i></span>' +
       '<button type="button" class="iktour-btn ghost" data-act="back"><i class="bi bi-arrow-left"></i> Voltar</button>' +
       '<a class="iktour-btn gold" data-act="cta" hx-boost="false"></a>' +
       '<button type="button" class="iktour-btn primary" data-act="next"></button></div>';
@@ -130,21 +216,30 @@
     document.body.appendChild(root);
 
     card.querySelector(".iktour-close").addEventListener("click", finish);
-    card.querySelector('[data-act="back"]').addEventListener("click", function () { go(index - 1); });
-    card.querySelector('[data-act="next"]').addEventListener("click", function () {
-      if (index >= steps.length - 1) finish(); else go(index + 1);
-    });
-    card.querySelector('[data-act="cta"]').addEventListener("click", function () { finish(); });
+    card.querySelector('[data-act="back"]').addEventListener("click", function () { go(index - 1, -1); });
+    card.querySelector('[data-act="next"]').addEventListener("click", next);
+    card.querySelector('[data-act="cta"]').addEventListener("click", function () { forget(); close(); });
     document.addEventListener("keydown", onKey, true);
     window.addEventListener("resize", schedule);
     window.addEventListener("scroll", schedule, true);
   }
 
+  function next() {
+    var step = STEPS[index];
+    if (index >= STEPS.length - 1) { finish(); return; }
+    if (resolve(step.waits)) {          // the user acts now (save the form); the tour comes back on the next page
+      save(index + 1, true);
+      close();
+      return;
+    }
+    go(index + 1, 1);
+  }
+
   function onKey(event) {
     if (!root) return;
     if (event.key === "Escape") { event.preventDefault(); finish(); }
-    else if (event.key === "ArrowRight") { event.preventDefault(); if (index < steps.length - 1) go(index + 1); }
-    else if (event.key === "ArrowLeft") { event.preventDefault(); if (index > 0) go(index - 1); }
+    else if (event.key === "ArrowRight") { event.preventDefault(); next(); }
+    else if (event.key === "ArrowLeft") { event.preventDefault(); if (index > 0) go(index - 1, -1); }
     else if (event.key === "Tab") {                       // keep the focus inside the card
       var focusable = Array.prototype.filter.call(card.querySelectorAll("button, a[href]"), function (node) { return node.offsetParent !== null; });
       if (!focusable.length) return;
@@ -157,37 +252,38 @@
   function schedule() {
     if (rafPending || !root) return;
     rafPending = true;
-    window.requestAnimationFrame(function () { rafPending = false; place(false); });
+    window.requestAnimationFrame(function () { rafPending = false; if (root) place(false); });
   }
 
   function fill(step) {
+    card.className = "iktour-card is-hidden" + (resolve(step.tone) === "warn" ? " warn" : "");
     card.querySelector(".iktour-icon i").className = "bi " + (step.icon || "bi-signpost-split");
-    card.querySelector(".iktour-count").textContent = (index + 1) + " de " + steps.length;
+    card.querySelector(".iktour-chapter").textContent = step.chapter || "Ikabot";
+    card.querySelector(".iktour-count").textContent = (index + 1) + "/" + STEPS.length;
     card.querySelector(".iktour-title").textContent = step.title;
-    card.querySelector(".iktour-text").textContent = step.text;
-    var dots = card.querySelector(".iktour-dots");
-    dots.innerHTML = "";
-    dots.style.display = step.final ? "none" : "";
-    steps.forEach(function (_, i) { dots.appendChild(el("span", i === index ? "on" : (i < index ? "past" : ""))); });
-    var back = card.querySelector('[data-act="back"]');
-    back.style.display = index > 0 && !step.final ? "" : "none";
-    var next = card.querySelector('[data-act="next"]');
-    var last = index >= steps.length - 1;
-    next.innerHTML = index === 0 ? 'Começar <i class="bi bi-arrow-right"></i>' : (last ? "Concluir" : 'Próximo <i class="bi bi-arrow-right"></i>');
-    next.className = "iktour-btn " + (last && step.cta && document.querySelector(step.cta.needs) ? "ghost" : "primary");
-    var cta = card.querySelector('[data-act="cta"]');
-    if (step.cta && document.querySelector(step.cta.needs)) {
-      cta.style.display = "";
-      cta.setAttribute("href", step.cta.href);
-      cta.innerHTML = step.cta.label + ' <i class="bi bi-arrow-right"></i>';
+    card.querySelector(".iktour-text").textContent = resolve(step.text);
+    card.querySelector(".iktour-bar i").style.width = Math.round((index + 1) * 100 / STEPS.length) + "%";
+    card.querySelector('[data-act="back"]').style.display = index > 0 && !step.final ? "" : "none";
+    var waits = resolve(step.waits);
+    var nextButton = card.querySelector('[data-act="next"]');
+    nextButton.innerHTML = index === 0 ? 'Começar <i class="bi bi-arrow-right"></i>'
+      : step.final ? "Concluir"
+      : waits ? 'Entendi <i class="bi bi-check-lg"></i>'
+      : 'Próximo <i class="bi bi-arrow-right"></i>';
+    var cta = resolve(step.cta);
+    var link = card.querySelector('[data-act="cta"]');
+    if (cta) {
+      link.style.display = "";
+      link.setAttribute("href", cta.href);
+      link.innerHTML = cta.label + ' <i class="bi bi-arrow-right"></i>';
     } else {
-      cta.style.display = "none";
+      link.style.display = "none";
     }
   }
 
   function place(scroll) {
-    var step = steps[index];
-    var target = step.target ? document.querySelector(step.target) : null;
+    var step = STEPS[index];
+    var target = findTarget(step);
     if (target && scroll) target.scrollIntoView({ block: "nearest", inline: "nearest" });
     var rect = visibleRect(target);
     var vw = window.innerWidth, vh = window.innerHeight;
@@ -232,32 +328,53 @@
 
   function setPos(node, top, left) { node.style.top = top + "px"; node.style.left = left + "px"; }
 
-  function go(next) {
-    if (next < 0 || next >= steps.length) return;
+  // ── moving between steps ──
+  function go(target, direction) {
+    if (target < 0 || target >= STEPS.length) return;
+    var step = STEPS[target];
+    if (resolve(step.skip)) { go(target + direction, direction); return; }   // nothing to show yet (no account)
+    if (!onPage(step)) {
+      var url = resolve(step.go);
+      if (url) {                        // the step lives on another page: open it there
+        save(target, false);
+        close();
+        window.location.href = url;
+        return;
+      }
+      go(target + direction, direction); // a step of a page we are not on, reached backwards: the page's first step opens it
+      return;
+    }
+    show(target);
+  }
+
+  function show(target) {
+    if (!root) build();
     card.classList.add("is-hidden");
     window.setTimeout(function () {
       if (!root) return;
-      index = next;
-      fill(steps[index]);
+      index = target;
+      save(index, false);
+      fill(STEPS[index]);
       place(true);
       card.classList.remove("is-hidden");
       card.querySelector('[data-act="next"]').focus({ preventScroll: true });
     }, root.classList.contains("is-entering") ? 0 : 180);
   }
 
-  function start() {
+  function open(target) {
     if (root) return;
-    steps = availableSteps();
     lastFocus = document.activeElement;
-    build();
-    index = 0;
-    go(0);
-    window.requestAnimationFrame(function () {
-      window.requestAnimationFrame(function () { if (root) root.classList.remove("is-entering"); });
+    fetchState().then(function () {
+      if (root) return;
+      build();
+      go(target, 1);
+      window.requestAnimationFrame(function () {
+        window.requestAnimationFrame(function () { if (root) root.classList.remove("is-entering"); });
+      });
     });
   }
 
-  function finish() {
+  function close() {
     if (!root) return;
     var node = root;
     root = null;
@@ -267,7 +384,20 @@
     node.classList.add("is-entering");
     node.querySelector(".iktour-card").classList.add("is-hidden");
     window.setTimeout(function () { node.remove(); }, 320);
-    if (lastFocus && lastFocus.focus) lastFocus.focus({ preventScroll: true });
+    if (lastFocus && lastFocus.focus && document.contains(lastFocus)) lastFocus.focus({ preventScroll: true });
+  }
+
+  function finish() { forget(); close(); }
+
+  function start() { forget(); close(); open(0); }
+
+  // the tour was left on another page (a page change or the user saving the form): pick it up here
+  function resume() {
+    if (root) return false;
+    var saved = load();
+    if (!saved || !onPage(STEPS[saved.i])) return false;
+    open(saved.i);
+    return true;
   }
 
   function markShown(url) {
@@ -279,13 +409,20 @@
   window.ikTour = { start: start, finish: finish };
 
   var script = document.querySelector("script[data-tour-script]");
-  if (script && script.hasAttribute("data-autostart")) {
-    var begin = function () {
-      // shown once: marked as soon as it opens, so closing the tab does not bring it back
-      markShown(script.getAttribute("data-done-url"));
-      window.setTimeout(start, 500);
+  if (script) {
+    config.stateUrl = script.getAttribute("data-state-url");
+    var boot = function () {
+      if (resume()) return;
+      if (script.hasAttribute("data-autostart")) {
+        // shown once: marked as soon as it opens, so closing the tab does not bring it back
+        markShown(script.getAttribute("data-done-url"));
+        window.setTimeout(function () { open(0); }, 500);
+      }
     };
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", begin);
-    else begin();
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+    else boot();
+    // boosted navigation (menu, saved form) swaps the page without loading this script again
+    document.body.addEventListener("htmx:afterSettle", function () { window.setTimeout(resume, 60); });
+    window.addEventListener("popstate", function () { window.setTimeout(resume, 60); });
   }
 })();

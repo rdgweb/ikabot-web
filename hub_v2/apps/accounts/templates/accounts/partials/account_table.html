@@ -13,7 +13,7 @@
     </thead>
     <tbody>
       {% for account in object_list %}
-      <tr>
+      <tr{% if forloop.first %} data-tour="account-row"{% endif %}>
         <td>
           <a href="{% url 'accounts:account-detail' account.pk %}" class="font-medium link-sea">
             {{ account.label }}

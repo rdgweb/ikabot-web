@@ -62,7 +62,7 @@
 
   {% if user.is_authenticated %}
   {# N-116: tour de boas-vindas; começa sozinho uma vez para cada usuário #}
-  <script src="{% static 'js/tour.js' %}" defer data-tour-script data-done-url="{% url 'settings_app:tour-done' %}"{% if TOUR_AUTOSTART %} data-autostart{% endif %}></script>
+  <script src="{% static 'js/tour.js' %}" defer data-tour-script data-done-url="{% url 'settings_app:tour-done' %}" data-state-url="{% url 'settings_app:tour-state' %}"{% if TOUR_AUTOSTART %} data-autostart{% endif %}></script>
   {% endif %}
 
   <script>

@@ -56,7 +56,7 @@
         <a href="{% block cancel_url %}javascript:history.back(){% endblock %}" class="btn btn-secondary">
           <i class="bi bi-x-lg"></i> Cancelar
         </a>
-        <button type="submit" class="btn btn-primary">
+        <button type="submit" class="btn btn-primary" data-tour="form-submit">
           <i class="bi bi-check-lg"></i> {% block submit_label %}Salvar{% endblock %}
         </button>
         {% endblock %}
