@@ -29,10 +29,19 @@ def _own_side(report, rounds: list) -> str:
 
 def assumptions(report, rounds: list, inputs: dict) -> dict:
     """What the report does not tell and had to be taken from elsewhere, or guessed."""
+    from .intel import side_upgrades, wall_level
+
     found = {"wall_level": 0, "wall_source": "", "own_side": _own_side(report, rounds), "own_upgrades": {}}
+    # N-112: the report shows the upgrades of every army in it
+    shown = {side: side_upgrades(rounds, side) for side in ("attacker", "defender")}
+    if shown["attacker"] or shown["defender"]:
+        found["upgrades"] = {side: {str(unit): levels for unit, levels in units.items()} for side, units in shown.items()}
     if inputs.get("wall_segments"):
         found["wall_level"], found["wall_source"] = UNKNOWN_WALL_LEVEL, "padrão"
-        if report.target_city_id and report.game_account_id:
+        level = wall_level(rounds)
+        if level:
+            found["wall_level"], found["wall_source"] = level, "relatório"
+        elif report.target_city_id and report.game_account_id:
             try:
                 from apps.worldintel.models import WorldDumpCity
 
@@ -62,10 +71,14 @@ def simulate_check(inputs: dict, guess: dict, *, attacker_pct: float = 0.0, defe
     lasted (`real_rounds`): that is the only fair thing to put beside the real losses.
     """
     upgrades = {int(unit): value for unit, value in (guess.get("own_upgrades") or {}).items()}
+    sides = {"attacker": upgrades if guess.get("own_side") == "attacker" else None, "defender": upgrades if guess.get("own_side") == "defender" else None}
+    for side, units in (guess.get("upgrades") or {}).items():
+        if units:           # what the report itself shows, when it does (N-112)
+            sides[side] = {int(unit): value for unit, value in units.items()}
     options = {
         "wall_level": int(guess.get("wall_level") or 0),
-        "attacker_upgrades": upgrades if guess.get("own_side") == "attacker" else None,
-        "defender_upgrades": upgrades if guess.get("own_side") == "defender" else None,
+        "attacker_upgrades": sides["attacker"],
+        "defender_upgrades": sides["defender"],
         "attacker_damage_bonus_pct": attacker_pct,
         "defender_damage_bonus_pct": defender_pct,
     }
@@ -121,7 +134,8 @@ def check_report(report):
     return check
 
 
-def add_sample(*, source: str, external_id: str, title: str, fought_at: str, inputs: dict, real: dict, wall_level: int | None = None):
+def add_sample(*, source: str, external_id: str, title: str, fought_at: str, inputs: dict, real: dict, wall_level: int | None = None,
+               upgrades: dict | None = None):
     """A combat read from outside the hub (a public battle log), kept as a check like the others.
 
     `inputs` and `real` come in the shape replay builds them. Returns the check, or None when the
@@ -134,9 +148,14 @@ def add_sample(*, source: str, external_id: str, title: str, fought_at: str, inp
         return None
     guess = {"wall_level": 0, "wall_source": "", "own_side": "", "own_upgrades": {}}
     if inputs.get("wall_segments"):
-        guess["wall_level"], guess["wall_source"] = (int(wall_level), "informado") if wall_level else (UNKNOWN_WALL_LEVEL, "padrão")
+        guess["wall_level"], guess["wall_source"] = (int(wall_level), "relatório") if wall_level else (UNKNOWN_WALL_LEVEL, "padrão")
+    if upgrades:
+        guess["upgrades"] = {
+            side: {str(unit): {"offensive": int(levels[0]), "defensive": int(levels[1])} for unit, levels in (upgrades.get(side) or {}).items()}
+            for side in ("attacker", "defender")
+        }
     real = {
-        "winner": real.get("winner") or "", "rounds": int(real.get("rounds") or 0),
+        "winner": real.get("winner") or "", "rounds": int(real.get("rounds") or 0), "fled": real.get("fled") or "",
         "losses": {side: {int(unit): int(amount) for unit, amount in ((real.get("losses") or {}).get(side) or {}).items()} for side in ("attacker", "defender")},
     }
     predicted = simulate_check(inputs, guess, real_rounds=real["rounds"])
@@ -150,6 +169,20 @@ def add_sample(*, source: str, external_id: str, title: str, fought_at: str, inp
             "attacker_error": score["attacker_error"], "defender_error": score["defender_error"],
         },
     )
+    return check
+
+
+def recheck_sample(check):
+    """A combat read from outside, fought again with the simulator as it is now (its inputs are kept)."""
+    inputs = normalize(check.inputs_json)
+    guess = (check.inputs_json or {}).get("assumptions") or {}
+    real = check.real_json or {}
+    predicted = simulate_check(inputs, guess, real_rounds=int(real.get("rounds") or 0))
+    score = compare(real, predicted)
+    check.predicted_json = predicted
+    check.winner_ok, check.rounds_gap = score["winner_ok"], score["rounds_gap"]
+    check.attacker_error, check.defender_error = score["attacker_error"], score["defender_error"]
+    check.save(update_fields=["predicted_json", "winner_ok", "rounds_gap", "attacker_error", "defender_error", "updated_at"])
     return check
 
 

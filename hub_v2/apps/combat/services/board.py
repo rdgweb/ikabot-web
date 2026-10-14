@@ -81,6 +81,21 @@ def round_board(round_data: dict, own_name: str = "") -> dict:
                 for army in morale.get(side) or []
             ],
         }
+    # N-112: why the morale of each army changed in the round, as the game lists it
+    naval = bool(round_data.get("naval"))
+    moods = []
+    for side, tone, label in (("attacker", "att", "ATACANTE"), ("defender", "def", "DEFENSOR")):
+        for army in morale.get(side) or []:
+            chips = []
+            for reason in army.get("reasons") or []:
+                name = MORALE_CHIPS.get(reason["reason"]) or reason["text"][:60]
+                if reason["reason"] == "supply" and naval:
+                    name = "reparadores"
+                points = reason.get("points")
+                chips.append({"points": f"{points:+d}" if points else "+" if reason["reason"] == "supply" else "", "label": name, "gain": reason["reason"] == "supply"})
+            if chips:
+                moods.append({"side": label, "tone": tone, "name": army["name"], "morale": army["morale"], "chips": chips})
+    wall = round_data.get("wall") or {}
     events = [
         {
             "time": (event.get("date") or "")[-8:],
@@ -97,8 +112,24 @@ def round_board(round_data: dict, own_name: str = "") -> dict:
         "reserves": reserves,
         "sides": sides,
         "events": events,
+        "moods": moods,
+        "wall": wall if wall.get("level") else None,
     }
 
+
+# the reasons of the morale, short, as they go on the page
+MORALE_CHIPS = {
+    "tired": "exaustão",
+    "more_damage": "mais dano",
+    "more_losses": "mais perdas",
+    "outnumbered": "em menor número",
+    "bombed": "bombardeio",
+    "flanks": "flancos",
+    "wall": "muralha fechada",
+    "same_damage": "dano igual",
+    "same_losses": "perdas iguais",
+    "supply": "cozinheiros",
+}
 
 # what the stylesheet needs to cut the sheet and size the pieces, in percent of the field
 GEOMETRY = {

@@ -100,6 +100,11 @@ def take_in(report, *, silent: bool = False, finished=None) -> str:
         report.notified_final = True
     report.save()
 
+    # N-112: the wall and the upgrades the rounds show are kept for the next simulation
+    from .intel import learn_safely
+
+    learn_safely(report, rounds)
+
     if report.finished:
         # N-110: the combat is over - fight it again in the simulator and keep the comparison
         from .checks import check_safely

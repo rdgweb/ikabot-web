@@ -186,13 +186,26 @@ def _parse_enemy_intel(target_city_id: str, target_owner_id: str, server_id: str
     except Exception:
         pass
 
+    # N-112: a combat already fought there shows the real wall, and the upgrades of who was in it
+    wall_level, wall_known = _guess_wall_level_from_city_level(city_level), False
+    try:
+        from apps.combat.services.intel import known_upgrades, known_wall_level, merge_upgrades
+
+        seen = known_wall_level(server_id, target_city_id)
+        if seen:
+            wall_level, wall_known = seen, True
+        enemy_upgrades = merge_upgrades(enemy_upgrades, known_upgrades(server_id, target_owner))
+    except Exception:  # noqa: BLE001 - without it the guess is what there was before
+        pass
+
     return {
         "enemy_units": enemy_units,
         "enemy_fleet": enemy_fleet,
         "enemy_upgrades": enemy_upgrades,
         "needs_blockade": needs_blockade,
         "city_level": city_level,
-        "wall_level": _guess_wall_level_from_city_level(city_level),
+        "wall_level": wall_level,
+        "wall_known": wall_known,
     }
 
 
@@ -980,6 +993,12 @@ class SpyIntelView(APIView):
         except Exception:
             pass
         wall_level = _guess_wall_level_from_city_level(city_level)
+        try:
+            from apps.combat.services.intel import known_wall_level
+
+            wall_level = known_wall_level(server_id, target_city_id) or wall_level     # N-112: seen in a combat there
+        except Exception:  # noqa: BLE001
+            pass
         last_updated = None
 
         # Consolidate from most recent reports per mission

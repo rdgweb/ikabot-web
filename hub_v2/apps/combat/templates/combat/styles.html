@@ -97,6 +97,14 @@
   .cbf-num.bare { background: none; }
   .cbf-res { position: absolute; width: 13.812%; text-align: center; font-size: clamp(9px, 1.15cqw, 12px); font-weight: 700; color: #612d04; }
 
+  .cbd-moods { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .6rem; }
+  .cbd-mood { display: flex; flex-direction: column; gap: .45rem; padding: .6rem .8rem; border: 1px solid var(--ik-line); border-radius: 12px; background: var(--ik-paper); }
+  .cbd-mood .head { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem; }
+  .cbd-mood .head small { font-size: .6rem; font-weight: 700; letter-spacing: .08em; }
+  .cbd-mood .head > b { margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .88rem; color: var(--ik-ink); }
+  .cbd-mood .chips { display: flex; flex-wrap: wrap; gap: .3rem; }
+  .cbd-mood .chips span { padding: .1rem .5rem; border-radius: 999px; font-size: .72rem; color: #8a2c20; background: rgba(179, 64, 47, .1); }
+  .cbd-mood .chips span.up { color: #1f6a1f; background: rgba(45, 122, 45, .12); }
   .cbd-events { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .6rem; }
   .cbd-event { padding: .6rem .8rem; border: 1px solid var(--ik-line); border-radius: 12px; background: var(--ik-paper); font-size: .82rem; color: var(--ik-ink); }
   .cbd-event time { display: block; margin-bottom: .15rem; font-size: .68rem; font-weight: 700; letter-spacing: .05em; color: var(--ik-muted); }

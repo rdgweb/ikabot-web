@@ -117,3 +117,31 @@ class SimulatorCalibration(models.Model):
     def load(cls):
         row, _created = cls.objects.get_or_create(pk=1)
         return row
+
+
+class BattleIntel(UUIDTimestampModel):
+    """N-112: what a combat report revealed about somebody else, kept for the next simulation.
+
+    A report shows the level of the wall it was fought against and the upgrades of every army
+    in it. Before this the simulator guessed both. One row per thing known: the wall of a city
+    (key = the city id) or the upgrades of a player (key = the name, lower case, no alliance tag).
+    """
+
+    KIND_CHOICES = [("wall", "Muralha"), ("upgrades", "Melhorias")]
+
+    server_id = models.CharField(max_length=64, db_index=True)
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES)
+    key = models.CharField(max_length=160)
+    label = models.CharField(max_length=160, blank=True, default="")          # the city or the player as the game writes it
+    value_json = models.JSONField(default=dict, blank=True)                   # {"level": 7} | {"303": [8, 6], ...}
+    seen_at = models.DateTimeField(null=True, blank=True)                     # when the combat was fought
+    report = models.ForeignKey(CombatReport, on_delete=models.SET_NULL, null=True, blank=True, related_name="intel")
+
+    class Meta:
+        ordering = ["-seen_at"]
+        verbose_name = "Informação de combate"
+        verbose_name_plural = "Informações de combate"
+        constraints = [models.UniqueConstraint(fields=["server_id", "kind", "key"], name="combat_intel_unique")]
+
+    def __str__(self):
+        return f"{self.kind} {self.label or self.key}"

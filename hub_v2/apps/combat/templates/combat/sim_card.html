@@ -6,8 +6,8 @@
     {% else %}<span class="cbt-state {% if item.winner_ok %}win{% else %}loss{% endif %}">{% if item.winner_ok %}Acertou o vencedor{% else %}Errou o vencedor{% endif %}</span>{% endif %}
   </div>
   <div class="sim-versus">
-    <div><small>Real</small><b>{{ item.real_winner }}</b><span>{{ item.real_rounds }} round{{ item.real_rounds|pluralize }}</span></div>
-    <div><small>Previsto</small><b>{{ item.predicted_winner }}</b><span>{{ item.predicted_rounds }} round{{ item.predicted_rounds|pluralize }}</span></div>
+    <div><small>Real</small><b>{{ item.real_winner }}</b><span>{{ item.real_rounds }} round{{ item.real_rounds|pluralize }}{% if item.real_fled %} · {{ item.real_fled|lower }} fugiu{% endif %}</span></div>
+    <div><small>Previsto</small><b>{{ item.predicted_winner }}</b><span>{{ item.predicted_rounds }} round{{ item.predicted_rounds|pluralize }}{% if item.predicted_fled %} · {{ item.predicted_fled|lower }} foge{% endif %}</span></div>
   </div>
   {% for side in item.sides %}
   <div class="sim-side">

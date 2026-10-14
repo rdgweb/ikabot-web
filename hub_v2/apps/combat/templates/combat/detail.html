@@ -77,9 +77,33 @@
 
     <div class="cbd-aside">
       {% for board in boards %}
-      {% if board.events %}
+      {% if board.events or board.moods or board.wall %}
       <div x-show="round === {{ board.number }}"{% if board.number != current %} x-cloak{% endif %}>
-        <h2 class="cbd-title first">Neste round</h2>
+        {# N-112: why the morale changed, and the wall the round was fought against #}
+        {% if board.moods or board.wall %}
+        <h2 class="cbd-title first">Moral</h2>
+        <div class="cbd-moods">
+          {% for mood in board.moods %}
+          <div class="cbd-mood">
+            <div class="head">
+              <small class="{{ mood.tone }}">{{ mood.side }}</small><b>{{ mood.name }}</b>
+              <span class="cbd-morale"><u><i style="width: {{ mood.morale }}%;"></i></u><b>{{ mood.morale }}%</b></span>
+            </div>
+            <div class="chips">{% for chip in mood.chips %}<span{% if chip.gain %} class="up"{% endif %}>{% if chip.points %}<b>{{ chip.points }}</b> {% endif %}{{ chip.label }}</span>{% endfor %}</div>
+          </div>
+          {% endfor %}
+          {% if board.wall %}
+          <div class="cbd-mood">
+            <div class="head">
+              <small class="def">MURALHA</small><b>Nível {{ board.wall.level }}</b>
+              <span class="cbd-stat"><b>{{ board.wall.standing }}</b> de {{ board.wall.sections }} de pé</span>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+        {% if board.events %}
+        <h2 class="cbd-title{% if not board.moods and not board.wall %} first{% endif %}">Neste round</h2>
         <div class="cbd-events">
           {% for event in board.events %}
           <div class="cbd-event">
@@ -93,6 +117,7 @@
           </div>
           {% endfor %}
         </div>
+        {% endif %}
       </div>
       {% endif %}
       {% endfor %}

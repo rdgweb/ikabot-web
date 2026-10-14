@@ -104,14 +104,26 @@ class BattleLandTests(unittest.TestCase):
         )
 
     def test_cristaleira_like_case_is_not_one_round_stomp(self):
+        # N-112: the wall now has the game's numbers. One mortar opens a level 1 wall, not a level 8
+        # one (4.760 of damage a shot against sections of 10.000 that share it between rounds).
         sim = simulate_land_battle(
             attacker_units={303: 30, 305: 1},
             defender_units={303: 20, 315: 16, 313: 30},
             town_hall_level=5,
-            wall_level=5,
+            wall_level=1,
             max_rounds=12,
         )
 
         self.assertEqual(sim["winner"], "attacker")
-        self.assertGreaterEqual(sim["rounds"], 3)
+        self.assertGreaterEqual(sim["rounds"], 2)
         self.assertLess(sim["attacker_survivors_pct"], 100.0)
+
+        closed = simulate_land_battle(
+            attacker_units={303: 30, 305: 1},
+            defender_units={303: 20, 315: 16, 313: 30},
+            town_hall_level=5,
+            wall_level=8,
+            max_rounds=12,
+        )
+        self.assertEqual(closed["winner"], "defender")
+        self.assertEqual(closed["wall_sections_left"], closed["wall_sections"])

@@ -73,11 +73,40 @@ DEPLOY_PRIORITY = {
     "bagagem": [310, 311],
 }
 
-def _wall_hp(level: int) -> int:
+# The wall, as the reports and the game's own table show it (N-112). The numbers are the game's,
+# in the scale of UNIT_STATS (20 times the ones the wiki lists).
+WALL_SCALE = 20
+WALL_ACCURACY = 0.30
+ARTILLERY_UPGRADE_PCT = 3.0     # each level of the artillery upgrade, in percent of the weapon (read from three real combats)
+BARBARIANS = {320, 321, 322, 323, 324, 325}     # they do not lose morale
+
+MORALE_TIRED = 10               # every round
+MORALE_STEP = 5                 # each of: more damage, more losses, outnumbered, bombed, flanks broken
+MORALE_WALL = 13                # the attacker, when none of his weapons hurts the wall
+MORALE_PER_COOK = 1
+MORALE_PER_TENDER = 3            # at sea the tenders do what the cooks do on land (seen in four sea battles)
+OUTNUMBERED_BY = 1.25           # "superior in every way": the other side has this many times the units
+
+
+def _wall_segment_hp(level: int) -> int:
+    """Hit points of one section of the wall."""
     lv = max(0, int(level or 0))
-    if lv == 0:
-        return 0
-    return int(500 + 200 * lv * lv / 10)
+    return (100 + 50 * lv) * WALL_SCALE if lv else 0
+
+
+def _wall_armor(level: int) -> int:
+    return 4 * max(0, int(level or 0)) * WALL_SCALE
+
+
+def _wall_shot(level: int) -> int:
+    """What one section throws at the attacker's front each round (the ballista of the low levels)."""
+    lv = max(0, int(level or 0))
+    return (10 + 2 * lv) * WALL_SCALE if lv else 0
+
+
+def _wall_hp(level: int) -> int:
+    """Kept for callers that only want "is there a wall": the hit points of one section."""
+    return _wall_segment_hp(level)
 
 
 def _field_level_from_th(town_hall_level: int) -> int:
@@ -128,11 +157,27 @@ def _weapon_damage(unit_id: int, weapon_index: int, off_level: int) -> int:
     weapon = weapons[idx]
     base = int(weapon.get("damage", 0))
     precision = float(weapon.get("precision", 100.0)) / 100.0
-    bonus = int(off_level or 0) * IMPROVEMENT_BONUS_LAND
+    bonus = _upgrade_bonus(unit_id, idx, base, off_level)
     # Precision already influences focus/scatter below. Here we only damp very
     # inaccurate weapons enough to avoid overkilling every round.
     damage_scale = 0.35 + (0.65 * precision)
     return int((base + bonus) * damage_scale)
+
+
+def _upgrade_bonus(unit_id: int, weapon_index: int, base: int, off_level: int) -> int:
+    level = int(off_level or 0)
+    if unit_id in LINE_ARTILH and weapon_index == 1:
+        return int(round(base * ARTILLERY_UPGRADE_PCT / 100.0 * level))
+    return level * IMPROVEMENT_BONUS_LAND
+
+
+def _weapon_raw_damage(unit_id: int, weapon_index: int, off_level: int) -> int:
+    """The damage of one hit as the game counts it against a wall: nothing taken off for accuracy."""
+    unit = UNIT_STATS.get(unit_id) or {}
+    weapons = unit.get("weapons") or [{}]
+    idx = weapon_index if weapon_index < len(weapons) else len(weapons) - 1
+    base = int(weapons[idx].get("damage", 0))
+    return base + _upgrade_bonus(unit_id, idx, base, off_level)
 
 
 def _weapon_ammo(unit_id: int, weapon_index: int) -> int | None:
@@ -168,6 +213,13 @@ class AttackProfile:
     total_damage: int = 0
     total_hits: int = 0
     weighted_precision: float = 0.0
+    raw_damage: int = 0             # the same hits with nothing taken off for accuracy: what a wall takes
+
+    @property
+    def avg_raw_damage(self) -> float:
+        if self.total_hits <= 0:
+            return 0.0
+        return (self.raw_damage or self.total_damage) / self.total_hits
 
     @property
     def avg_precision(self) -> float:
@@ -239,7 +291,7 @@ class Army:
         field_level: int,
         *,
         is_defender: bool,
-        wall_hp: int = 0,
+        wall_level: int = 0,
         damage_bonus_pct: float = 0.0,
         armor_bonus: int = 0,
     ):
@@ -247,8 +299,13 @@ class Army:
         self.upgrades = upgrades or {}
         self.field_level = field_level
         self.is_defender = is_defender
-        self.wall_hp = int(wall_hp) if is_defender else 0
+        self.wall_level = max(0, int(wall_level or 0)) if is_defender else 0
+        self.wall_hp = 0
         self.wall_segments: list[int] = []
+        self.wall_was_up = False            # at the start of the round being fought
+        self.wall_gaps = 0.0                # share of the sections already open when the round began
+        self.wall_damage_round = 0
+        self.morale = 100
         self.damage_bonus_pct = float(damage_bonus_pct or 0.0)
         self.armor_bonus = int(armor_bonus or 0)
         self.ammo_left: dict[tuple[int, int], int] = {}
@@ -266,12 +323,11 @@ class Army:
             "bomb": {},
             "aa": {},
         }
-        if self.is_defender and self.wall_hp > 0:
+        if self.is_defender and self.wall_level > 0:
             principal_slots = FIELD_SLOTS.get(self.field_level, FIELD_SLOTS[1]).get("principal", (0, 0))[0]
             principal_slots = max(1, int(principal_slots or 1))
-            base_seg = self.wall_hp // principal_slots
-            rem = self.wall_hp % principal_slots
-            self.wall_segments = [base_seg + (1 if idx < rem else 0) for idx in range(principal_slots)]
+            self.wall_segments = [_wall_segment_hp(self.wall_level)] * principal_slots
+            self.wall_hp = sum(self.wall_segments)
 
         for uid, qty in self.units.items():
             self.hp_pools[uid] = qty * self.unit_max_hp(uid)
@@ -325,6 +381,60 @@ class Army:
             base = int(base * (1.0 + self.damage_bonus_pct / 100.0))
         return base
 
+    def unit_raw_damage(self, unit_id: int, weapon_index: int) -> int:
+        base = _weapon_raw_damage(unit_id, weapon_index, self.off_level(unit_id))
+        if self.damage_bonus_pct:
+            base = int(base * (1.0 + self.damage_bonus_pct / 100.0))
+        return base
+
+    def has_morale(self) -> bool:
+        """An army has morale; a wall with nobody behind it has none, and neither have the barbarians."""
+        return sum(self.units.values()) > 0 and not any(uid in BARBARIANS for uid in self.initial_units)
+
+    def wall_standing(self) -> int:
+        return sum(1 for hp in self.wall_segments if int(hp or 0) > 0)
+
+    def begin_round(self) -> None:
+        """What the round starts from: the sections already open stay open for all of it."""
+        self.wall_was_up = self.wall_standing() > 0
+        self.wall_gaps = self.wall_exposed_fraction() if self.wall_segments else 1.0
+        self.wall_damage_round = 0
+
+    def absorb_wall_hits(self, hits: int, hit_damage: float) -> int:
+        """Hits on the wall: each loses the wall's armour; a section falls only when what it has left is gone.
+
+        The damage goes to one section until it falls and then to the next, as the reports show.
+        Returns the damage the wall took.
+        """
+        effective = int(round(hit_damage - _wall_armor(self.wall_level)))
+        if hits <= 0 or effective <= 0 or not self.wall_segments:
+            return 0
+        remaining = hits * effective
+        dealt = 0
+        for idx, hp in enumerate(self.wall_segments):
+            hp = int(hp or 0)
+            if hp <= 0:
+                continue
+            take = min(hp, remaining)
+            self.wall_segments[idx] = hp - take
+            remaining -= take
+            dealt += take
+            if remaining <= 0:
+                break
+        self.wall_hp = sum(max(0, int(hp or 0)) for hp in self.wall_segments)
+        self.wall_damage_round += dealt
+        return dealt
+
+    def wall_regroup(self) -> None:
+        """Between rounds the sections left standing share what they have: a hole half made closes again."""
+        standing = [idx for idx, hp in enumerate(self.wall_segments) if int(hp or 0) > 0]
+        if len(standing) < 2:
+            return
+        total = sum(self.wall_segments[idx] for idx in standing)
+        share, extra = divmod(total, len(standing))
+        for position, idx in enumerate(standing):
+            self.wall_segments[idx] = share + (1 if position < extra else 0)
+
     def wall_segment_count(self) -> int:
         return len(self.wall_segments)
 
@@ -338,24 +448,6 @@ class Army:
         if total <= 0:
             return 1.0
         return max(0.0, min(1.0, self.wall_broken_segments() / total))
-
-    def absorb_wall_damage(self, damage: int) -> tuple[int, int, int]:
-        if damage <= 0 or not self.wall_segments or self.wall_hp <= 0:
-            return damage, self.wall_broken_segments(), self.wall_broken_segments()
-        broken_before = self.wall_broken_segments()
-        remaining = int(damage)
-        for idx, hp in enumerate(self.wall_segments):
-            hp = int(hp or 0)
-            if hp <= 0:
-                continue
-            take = min(hp, remaining)
-            self.wall_segments[idx] = hp - take
-            remaining -= take
-            if remaining <= 0:
-                break
-        self.wall_hp = max(0, sum(max(0, int(hp or 0)) for hp in self.wall_segments))
-        broken_after = self.wall_broken_segments()
-        return remaining, broken_before, broken_after
 
     def heal_end_of_round(self) -> None:
         medics = self.units.get(311, 0)
@@ -537,6 +629,7 @@ def _line_attack_profile(army: Army, deployment: RoundDeployment, line: str, pre
         if ammo is None:
             precision = float(weapons[weapon_idx].get("precision", 100.0)) / 100.0
             profile.total_damage += qty * army.unit_damage(uid, weapon_idx)
+            profile.raw_damage += qty * army.unit_raw_damage(uid, weapon_idx)
             profile.total_hits += qty
             profile.weighted_precision += qty * precision
             continue
@@ -554,6 +647,7 @@ def _line_attack_profile(army: Army, deployment: RoundDeployment, line: str, pre
         if shooting > 0:
             precision = float(weapons[weapon_idx].get("precision", 100.0)) / 100.0
             profile.total_damage += shooting * army.unit_damage(uid, weapon_idx)
+            profile.raw_damage += shooting * army.unit_raw_damage(uid, weapon_idx)
             profile.total_hits += shooting
             profile.weighted_precision += shooting * precision
             if use_deployment_ammo:
@@ -570,6 +664,7 @@ def _line_attack_profile(army: Army, deployment: RoundDeployment, line: str, pre
             fallback_weapons = (UNIT_STATS.get(uid) or {}).get("weapons") or [{}]
             fallback_precision = float(fallback_weapons[fallback_idx].get("precision", 100.0)) / 100.0
             profile.total_damage += fallback * army.unit_damage(uid, fallback_idx)
+            profile.raw_damage += fallback * army.unit_raw_damage(uid, fallback_idx)
             profile.total_hits += fallback
             profile.weighted_precision += fallback * fallback_precision
     return profile
@@ -678,22 +773,15 @@ def _apply_damage_to_line(
     avg_precision = attack.avg_precision
     avg_hit_damage = attack.avg_hit_damage
 
-    if use_wall and army.is_defender and army.wall_hp > 0 and line == "principal":
-        damage_after_wall, broken_before, broken_after = army.absorb_wall_damage(damage)
-        if damage_after_wall <= 0:
+    if use_wall and army.is_defender and army.wall_was_up and line == "principal":
+        # the hits that face a section still standing go to the wall, the others through the
+        # holes that were there when the round began (a section opened now is filled next round)
+        through = int(round(hits * army.wall_gaps))
+        army.absorb_wall_hits(hits - through, attack.avg_raw_damage)
+        if through <= 0:
             return 0, AttackProfile()
-        opened_segments = max(0, broken_after - broken_before)
-        exposed_fraction = army.wall_exposed_fraction()
-        if opened_segments > 0 and army.wall_segment_count() > 0:
-            exposed_fraction = max(
-                exposed_fraction,
-                opened_segments / max(1, army.wall_segment_count()),
-            )
-        if exposed_fraction <= 0:
-            return 0, AttackProfile()
-        damage = max(1, int(round(damage_after_wall * exposed_fraction)))
-        ratio = damage / max(1, attack.total_damage)
-        hits = max(1, int(round(hits * ratio)))
+        damage = max(1, int(round(damage * through / hits)))
+        hits = through
 
     alive_stacks = [stack for stack in deployment.lines.get(line, []) if stack.count > 0]
     if not alive_stacks:
@@ -775,7 +863,76 @@ def _tune_attack_profile(
         total_damage=max(0, int(round(attack.total_damage * damage_scale))),
         total_hits=tuned_hits,
         weighted_precision=tuned_weighted_precision,
+        raw_damage=int(round(attack.avg_raw_damage * tuned_hits)),
     )
+
+
+def _share(attack: AttackProfile, fraction: float) -> AttackProfile:
+    """The part of an attack that a share of the attackers makes."""
+    fraction = max(0.0, min(1.0, float(fraction)))
+    hits = int(round(attack.total_hits * fraction))
+    if hits <= 0:
+        return AttackProfile()
+    return AttackProfile(
+        total_damage=int(round(attack.total_damage * hits / attack.total_hits)),
+        total_hits=hits,
+        weighted_precision=attack.weighted_precision * hits / attack.total_hits,
+        raw_damage=int(round(attack.avg_raw_damage * hits)),
+    )
+
+
+def _wall_volley(army: "Army", sections: int) -> AttackProfile:
+    """What the sections standing throw at the attacker's front in a round."""
+    shot = _wall_shot(army.wall_level)
+    if sections <= 0 or shot <= 0:
+        return AttackProfile()
+    damped = int(shot * (0.35 + 0.65 * WALL_ACCURACY))        # as every other weapon here
+    return AttackProfile(total_damage=sections * damped, total_hits=sections, weighted_precision=sections * WALL_ACCURACY, raw_damage=sections * shot)
+
+
+def morale_changes(
+    *,
+    is_attacker: bool,
+    damage_taken: int,
+    damage_dealt: int,
+    losses: int,
+    enemy_losses: int,
+    units: int,
+    enemy_units: int,
+    bombed: bool = False,
+    flanks_broken: bool = False,
+    wall_closed: bool = False,
+    supply: int = 0,
+) -> list[tuple[str, int]]:
+    """What changes the morale of an army in one round, as the game lists it in the report (N-112).
+
+    Each item is (reason, points): negative for what tires the army, positive for what the cooks
+    (or, at sea, the tenders) give back. The same rule holds on land and at sea.
+    """
+    changes: list[tuple[str, int]] = [("tired", -MORALE_TIRED)]
+    if damage_taken > damage_dealt:
+        changes.append(("more_damage", -MORALE_STEP))
+    elif is_attacker and damage_taken == damage_dealt:
+        changes.append(("same_damage", -MORALE_STEP))          # a draw counts against who attacks
+    if losses > enemy_losses:
+        changes.append(("more_losses", -MORALE_STEP))
+    elif is_attacker and losses == enemy_losses:
+        changes.append(("same_losses", -MORALE_STEP))
+    if units > 0 and enemy_units >= units * OUTNUMBERED_BY:
+        changes.append(("outnumbered", -MORALE_STEP))
+    if bombed:
+        changes.append(("bombed", -MORALE_STEP))
+    if flanks_broken:
+        changes.append(("flanks", -MORALE_STEP))
+    if wall_closed and is_attacker:
+        changes.append(("wall", -MORALE_WALL))
+    if supply > 0:
+        changes.append(("supply", int(supply)))
+    return changes
+
+
+def morale_after(morale: int, changes: list[tuple[str, int]]) -> int:
+    return max(0, min(100, int(morale) + sum(points for _reason, points in changes)))
 
 
 def _spill_attack(
@@ -838,6 +995,7 @@ def simulate_land_battle(
     attacker_reinforcements_by_round: dict[int, dict[int, int]] | None = None,
     defender_reinforcements_by_round: dict[int, dict[int, int]] | None = None,
     calibrated: bool = True,
+    morale: bool = True,
 ) -> dict[str, Any]:
     if calibrated:
         # N-110: the adjustment learned from real combats and approved on the screen (0, 0 until then)
@@ -858,7 +1016,7 @@ def simulate_land_battle(
         defender_upgrades,
         field_level,
         is_defender=True,
-        wall_hp=_wall_hp(wall_level),
+        wall_level=wall_level,
         damage_bonus_pct=defender_damage_bonus_pct,
         armor_bonus=defender_armor_bonus,
     )
@@ -880,7 +1038,7 @@ def simulate_land_battle(
             "details": "Atacante sem tropas.",
         }
 
-    if defender_initial_total == 0:
+    if defender_initial_total == 0 and not defender.wall_segments:
         return {
             "winner": "attacker",
             "rounds": 0,
@@ -897,6 +1055,8 @@ def simulate_land_battle(
     winner = "draw"
     round_summaries: list[dict[str, Any]] = []
     rounds_played = 0
+    fled = ""
+    wall_ever_hurt = False
 
     for round_no in range(1, max_rounds + 1):
         round_trace: list[dict[str, Any]] = []
@@ -923,6 +1083,12 @@ def simulate_land_battle(
         att_start_lines = _clone_deployment(att_dep)
         def_start_lines = _clone_deployment(def_dep)
         wall_start_hp = defender.wall_hp
+        defender.begin_round()
+        wall_sections_start = defender.wall_standing()
+        start_units = {"attacker": sum(attacker.units.values()), "defender": sum(defender.units.values()) + wall_sections_start}
+        start_hp = {"attacker": sum(attacker.hp_pools.values()), "defender": sum(defender.hp_pools.values()) + defender.wall_hp}
+        bombed = {"attacker": False, "defender": False}
+        flanks_broken = {"attacker": False, "defender": False}
 
         def apply_with_trace(
             *,
@@ -1032,6 +1198,7 @@ def simulate_land_battle(
                 precision_scale=1.15 if target_line in {"artilharia", "longa"} else 1.0,
             )
             apply_with_trace(actor="attacker", source_line="bomb", target_army=defender, target_dep=def_dep, target_label="defender", target_line=target_line, attack=tuned, use_wall=False)
+            bombed["defender"] = bool(target_line)
         bomb_attack = _line_attack_profile(defender, def_dep, "bomb", 0)
         if bomb_attack.total_damage > 0:
             target_line = _first_alive_line(att_dep, ["artilharia", "longa", "principal", "flancos"])
@@ -1041,10 +1208,14 @@ def simulate_land_battle(
                 precision_scale=1.15 if target_line in {"artilharia", "longa"} else 1.0,
             )
             apply_with_trace(actor="defender", source_line="bomb", target_army=attacker, target_dep=att_dep, target_label="attacker", target_line=target_line, attack=tuned, use_wall=False)
+            bombed["attacker"] = bool(target_line)
 
         att_art = _line_attack_profile(attacker, att_dep, "artilharia", 1)
         def_art = _line_attack_profile(defender, def_dep, "artilharia", 1)
-        if att_art.total_damage > 0:
+        if att_art.total_damage > 0 and defender.wall_was_up:
+            # the artillery is there to open the wall: every shot at it, nothing taken off
+            apply_with_trace(actor="attacker", source_line="artilharia", target_army=defender, target_dep=def_dep, target_label="defender", target_line="principal", attack=att_art, use_wall=True, note="muralha")
+        elif att_art.total_damage > 0:
             target = _first_alive_line(def_dep, ["principal", "flancos"])
             if target:
                 tuned = _tune_attack_profile(
@@ -1053,6 +1224,15 @@ def simulate_land_battle(
                     precision_scale=0.9 if target == "principal" else 0.95,
                 )
                 apply_with_trace(actor="attacker", source_line="artilharia", target_army=defender, target_dep=def_dep, target_label="defender", target_line=target, attack=tuned, use_wall=False)
+        if defender.wall_was_up:
+            # a section shoots at the slot in front of it: only the ones that face somebody
+            slots, per_slot = FIELD_SLOTS.get(field_level, FIELD_SLOTS[1])["principal"]
+            front_space = sum(stack.count * stack.size for stack in att_dep.lines.get("principal", []))
+            facing = min(slots, max(1, math.ceil(front_space / max(1, per_slot))))
+            volley = _wall_volley(defender, min(wall_sections_start, facing))
+            target = _first_alive_line(att_dep, ["principal", "flancos", "longa", "artilharia"])
+            if volley.total_damage > 0 and target:
+                apply_with_trace(actor="defender", source_line="muralha", target_army=attacker, target_dep=att_dep, target_label="attacker", target_line=target, attack=volley, use_wall=False)
         if def_art.total_damage > 0:
             target = _first_alive_line(att_dep, ["principal", "flancos"])
             if target:
@@ -1066,15 +1246,15 @@ def simulate_land_battle(
         att_long = _line_attack_profile(attacker, att_dep, "longa", 1)
         def_long = _line_attack_profile(defender, def_dep, "longa", 1)
         if att_long.total_damage > 0:
-            target = _first_alive_line(def_dep, ["principal", "flancos", "longa"])
+            target = "principal" if defender.wall_was_up else _first_alive_line(def_dep, ["principal", "flancos", "longa"])
             if target:
                 tuned = _tune_attack_profile(
                     att_long,
                     damage_scale=0.94 if target == "principal" else 1.0,
                     precision_scale=0.9 if target == "principal" else 1.0,
                 )
-                _losses, leftover = apply_with_trace(actor="attacker", source_line="longa", target_army=defender, target_dep=def_dep, target_label="defender", target_line=target, attack=tuned, use_wall=(target == "principal" and defender.wall_hp > 0))
-                if leftover.total_damage > 0 and defender.wall_hp <= 0:
+                _losses, leftover = apply_with_trace(actor="attacker", source_line="longa", target_army=defender, target_dep=def_dep, target_label="defender", target_line=target, attack=tuned, use_wall=(target == "principal" and defender.wall_was_up))
+                if leftover.total_damage > 0 and not defender.wall_was_up:
                     spill_with_trace(actor="attacker", source_line="longa", target_army=defender, target_dep=def_dep, target_label="defender", attack=leftover, targets=["flancos", "longa"], note="spill")
         if def_long.total_damage > 0:
             target = _first_alive_line(att_dep, ["principal", "flancos", "longa"])
@@ -1091,16 +1271,18 @@ def simulate_land_battle(
         att_main = _line_attack_profile(attacker, att_dep, "principal", 0)
         def_main = _line_attack_profile(defender, def_dep, "principal", 0)
         if att_main.total_damage > 0:
-            target = _first_alive_line(def_dep, ["principal", "longa", "artilharia", "flancos"])
+            target = "principal" if defender.wall_was_up else _first_alive_line(def_dep, ["principal", "longa", "artilharia", "flancos"])
             if target:
                 tuned = _tune_attack_profile(
                     att_main,
                     damage_scale=0.95 if target == "principal" else 1.0,
                     precision_scale=0.92 if target == "principal" else 1.0,
                 )
-                _losses, leftover = apply_with_trace(actor="attacker", source_line="principal", target_army=defender, target_dep=def_dep, target_label="defender", target_line=target, attack=tuned, use_wall=(target == "principal" and defender.wall_hp > 0))
-                if leftover.total_damage > 0 and defender.wall_hp <= 0:
+                _losses, leftover = apply_with_trace(actor="attacker", source_line="principal", target_army=defender, target_dep=def_dep, target_label="defender", target_line=target, attack=tuned, use_wall=(target == "principal" and defender.wall_was_up))
+                if leftover.total_damage > 0 and not defender.wall_was_up:
                     spill_with_trace(actor="attacker", source_line="principal", target_army=defender, target_dep=def_dep, target_label="defender", attack=leftover, targets=["longa", "artilharia", "flancos"], note="spill")
+        if defender.wall_was_up:
+            def_main = _share(def_main, defender.wall_gaps)
         if def_main.total_damage > 0:
             target = _first_alive_line(att_dep, ["principal", "longa", "artilharia", "flancos"])
             if target:
@@ -1115,8 +1297,9 @@ def simulate_land_battle(
 
         att_flanks = _line_attack_profile(attacker, att_dep, "flancos", 0)
         def_flanks = _line_attack_profile(defender, def_dep, "flancos", 0)
-        if att_flanks.total_damage > 0 and defender.wall_hp <= 0:
+        if att_flanks.total_damage > 0 and not defender.wall_was_up:
             target = _first_alive_line(def_dep, ["flancos", "longa", "artilharia", "principal"])
+            flanks_broken["defender"] = bool(target) and target != "flancos"
             if target:
                 tuned = _tune_attack_profile(
                     att_flanks,
@@ -1126,8 +1309,9 @@ def simulate_land_battle(
                 _losses, leftover = apply_with_trace(actor="attacker", source_line="flancos", target_army=defender, target_dep=def_dep, target_label="defender", target_line=target, attack=tuned, use_wall=False)
                 if leftover.total_damage > 0:
                     spill_with_trace(actor="attacker", source_line="flancos", target_army=defender, target_dep=def_dep, target_label="defender", attack=leftover, targets=["longa", "artilharia", "principal"], note="spill")
-        if def_flanks.total_damage > 0 and attacker.wall_hp <= 0:
+        if def_flanks.total_damage > 0 and not defender.wall_was_up:
             target = _first_alive_line(att_dep, ["flancos", "longa", "artilharia", "principal"])
+            flanks_broken["attacker"] = bool(target) and target != "flancos"
             if target:
                 tuned = _tune_attack_profile(
                     def_flanks,
@@ -1138,8 +1322,34 @@ def simulate_land_battle(
                 if leftover.total_damage > 0:
                     spill_with_trace(actor="defender", source_line="flancos", target_army=attacker, target_dep=att_dep, target_label="attacker", attack=leftover, targets=["longa", "artilharia", "principal"], note="spill")
 
+        wall_sections_end = defender.wall_standing()
+        wall_ever_hurt = wall_ever_hurt or defender.wall_damage_round > 0
+        end_units = {"attacker": sum(attacker.units.values()), "defender": sum(defender.units.values()) + wall_sections_end}
+        damage = {
+            "attacker": max(0, start_hp["attacker"] - sum(attacker.hp_pools.values())),
+            "defender": max(0, start_hp["defender"] - sum(defender.hp_pools.values()) - defender.wall_hp),
+        }
+        lost = {side: max(0, start_units[side] - end_units[side]) for side in ("attacker", "defender")}
+        morale_trace: dict[str, Any] = {}
+        if morale:
+            for side, army, other in (("attacker", attacker, "defender"), ("defender", defender, "attacker")):
+                if not army.has_morale():
+                    continue
+                changes = morale_changes(
+                    is_attacker=side == "attacker",
+                    damage_taken=damage[side], damage_dealt=damage[other],
+                    losses=lost[side], enemy_losses=lost[other],
+                    units=end_units[side], enemy_units=end_units[other],
+                    bombed=bombed[side], flanks_broken=flanks_broken[side],
+                    wall_closed=side == "attacker" and defender.wall_was_up and defender.wall_damage_round <= 0,
+                    supply=army.units.get(310, 0) * MORALE_PER_COOK,
+                )
+                army.morale = morale_after(army.morale, changes)
+                morale_trace[side] = {"morale": army.morale, "changes": changes}
+
         attacker.heal_end_of_round()
         defender.heal_end_of_round()
+        defender.wall_regroup()
         attacker.remember_support_lines(att_dep)
         defender.remember_support_lines(def_dep)
 
@@ -1154,6 +1364,8 @@ def simulate_land_battle(
                 "attacker_flanks": att_dep.line_total("flancos"),
                 "defender_flanks": def_dep.line_total("flancos"),
                 "wall_hp": defender.wall_hp,
+                "wall_sections": wall_sections_end,
+                "morale": morale_trace,
                 "attacker_lines": _serialize_deployment(att_dep),
                 "defender_lines": _serialize_deployment(def_dep),
                 "trace": round_trace,
@@ -1165,14 +1377,22 @@ def simulate_land_battle(
         attacker_main_alive = att_dep.line_total("principal") + att_dep.line_total("flancos")
         defender_main_alive = def_dep.line_total("principal") + def_dep.line_total("flancos")
 
-        if attacker_combat <= 0 and defender_combat <= 0:
+        # a whole wall holds the front for whoever is behind it, cooks included; with nobody at all
+        # in the city there is no combat to go on (the wall-only reports all end in the first round)
+        wall_holds = bool(defender.wall_segments) and defender.wall_broken_segments() == 0 and sum(defender.units.values()) > 0
+        if attacker_combat <= 0 and defender_combat <= 0 and not wall_holds:
             winner = "draw"
             break
         if attacker_combat <= 0 or attacker_main_alive <= 0:
             winner = "defender"
             break
-        if defender_combat <= 0 or (defender_main_alive <= 0 and defender.wall_hp <= 0):
+        if (defender_combat <= 0 or defender_main_alive <= 0) and not wall_holds:
             winner = "attacker"
+            break
+        # an army with no morale left runs, whatever it still has (N-112)
+        if morale and (attacker.morale <= 0 or defender.morale <= 0):
+            fled = "attacker" if attacker.morale <= 0 else "defender"
+            winner = "defender" if fled == "attacker" else "attacker"
             break
     else:
         attacker_hp = sum(
@@ -1185,7 +1405,9 @@ def simulate_land_battle(
             for uid, qty in defender.units.items()
             if _classify(uid) in {"principal", "flancos", "longa", "artilharia", "bomb", "aa"}
         ) + defender.wall_hp
-        if attacker_hp > defender_hp * 1.15:
+        if wall_holds:
+            winner = "defender"
+        elif attacker_hp > defender_hp * 1.15:
             winner = "attacker"
         elif defender_hp > attacker_hp * 1.15:
             winner = "defender"
@@ -1219,11 +1441,30 @@ def simulate_land_battle(
         "attacker_survivors_pct": attacker_survivors_pct,
         "defender_survivors_pct": defender_survivors_pct,
         "wall_hp_left": defender.wall_hp,
+        "wall_level": defender.wall_level,
+        "wall_sections": len(defender.wall_segments),
+        "wall_sections_left": defender.wall_standing(),
+        "wall_never_hurt": bool(defender.wall_segments) and not wall_ever_hurt,
+        "fled": fled,
+        "morale": {"attacker": attacker.morale, "defender": defender.morale},
         "details": {
             "field_level": field_level,
             "rounds": round_summaries,
         },
     }
+
+
+def why_it_fails(sim: dict[str, Any]) -> str:
+    """One line, for whoever reads the recommendation, on why the attack simulated does not win."""
+    wall = int(sim.get("wall_level") or 0)
+    rounds = int(sim.get("rounds") or 0)
+    if sim.get("fled") == "attacker" and wall and sim.get("wall_sections_left") == sim.get("wall_sections"):
+        return f"A artilharia disponível não abre a muralha nível {wall}: sem brecha, a moral acaba e o exército foge no round {rounds}."
+    if sim.get("fled") == "attacker":
+        return f"A moral do exército acaba no round {rounds} e ele foge. Mais cozinheiros seguram a moral."
+    if wall and sim.get("wall_sections_left") == sim.get("wall_sections"):
+        return f"A artilharia disponível não abre a muralha nível {wall}."
+    return "Mesmo enviando tudo, não vence."
 
 
 def recommend_attack_force(
@@ -1307,7 +1548,7 @@ def recommend_attack_force(
             "can_win": False,
             "recommended": {},
             "simulation": full_sim,
-            "note": "Mesmo enviando tudo, não vence.",
+            "note": why_it_fails(full_sim),
         }
 
     def build_scaled_force(factor: float) -> dict[int, int]:

@@ -82,16 +82,26 @@ def real_outcome(rounds: list, summary: dict | None) -> dict:
                     for slot in slots:
                         if slot and slot["lost"] and slot["unit"] != WALL:
                             losses[side][slot["unit"]] = losses[side].get(slot["unit"], 0) + slot["lost"]
+    # N-112: an army that ran, as the game tells it under the field
+    fled = ""
+    for parsed in rounds:
+        for event in parsed.get("events") or []:
+            if "fugiu" not in event["text"].lower():
+                continue
+            for side in ("attacker", "defender"):
+                names = [part.strip().split("[")[0].lower() for part in (rounds[0][side].get("name") or "").split(",") if part.strip()]
+                if any(name and name in event["text"].lower() for name in names):
+                    fled = side
     winner = ""
     if summary and summary.get("winners"):
         names = (summary.get("attacker") or {}).get("name") or (rounds[0]["attacker"].get("name") if rounds else "")
         first_winner = summary["winners"].split(",")[0].strip().lower()
         winner = "attacker" if names and first_winner and first_winner in names.lower() else "defender"
-    return {"winner": winner, "rounds": rounds[-1]["round"] if rounds else 0, "losses": losses}
+    return {"winner": winner, "rounds": rounds[-1]["round"] if rounds else 0, "losses": losses, "fled": fled}
 
 
 def simulate(inputs: dict, *, wall_level: int = 0, attacker_upgrades: dict | None = None, defender_upgrades: dict | None = None,
-             attacker_damage_bonus_pct: float = 0.0, defender_damage_bonus_pct: float = 0.0, max_rounds: int = 40) -> dict:
+             attacker_damage_bonus_pct: float = 0.0, defender_damage_bonus_pct: float = 0.0, max_rounds: int = 40, morale: bool = True) -> dict:
     """What the simulator says about these armies."""
     from apps.espionage.services.battle_land import simulate_land_battle
 
@@ -108,10 +118,14 @@ def simulate(inputs: dict, *, wall_level: int = 0, attacker_upgrades: dict | Non
         attacker_reinforcements_by_round=inputs["reinforcements"]["attacker"] or None,
         defender_reinforcements_by_round=inputs["reinforcements"]["defender"] or None,
         calibrated=False,               # the check measures the simulator itself; any adjustment is given explicitly
+        morale=morale,
     )
     return {
         "winner": result.get("winner") or "",
         "rounds": int(result.get("rounds") or 0),
+        "fled": result.get("fled") or "",
+        "morale": result.get("morale") or {},
+        "wall_left": [int(result.get("wall_sections_left") or 0), int(result.get("wall_sections") or 0)],
         "losses": {
             "attacker": {int(unit): int(amount) for unit, amount in (result.get("attacker_losses") or {}).items()},
             "defender": {int(unit): int(amount) for unit, amount in (result.get("defender_losses") or {}).items()},

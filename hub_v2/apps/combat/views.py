@@ -253,6 +253,9 @@ def check_card(check) -> dict:
         "predicted_winner": SIDES.get(predicted.get("winner"), "?"),
         "real_rounds": int(real.get("rounds") or 0),
         "predicted_rounds": int(predicted.get("rounds") or 0),
+        # N-112: an army that ran with no morale left, in the game and in the simulator
+        "real_fled": SIDES.get(real.get("fled"), ""),
+        "predicted_fled": SIDES.get(predicted.get("fled"), ""),
         "sides": [
             {"label": SIDES[side], "tone": tone, "real": _number(lost(real, side)), "predicted": _number(lost(predicted, side)),
              "hit": round(100 * (1 - error))}
