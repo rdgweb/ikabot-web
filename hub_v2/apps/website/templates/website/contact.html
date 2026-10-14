@@ -1,0 +1,47 @@
+{% extends "website/base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div class="wrap narrow">
+    <span class="pill"><i class="bi bi-stars"></i> {{ ui.beta }}</span>
+    <h1 style="margin-top: 14px;">{{ t.title }}</h1>
+    <p>{{ t.lead }}</p>
+  </div>
+</div>
+
+<section style="padding-top: 10px;">
+  <div class="wrap narrow">
+    {% if sent %}
+    <div class="success"><h3 style="margin-bottom: 6px;"><i class="bi bi-check-circle-fill" style="color: var(--green);"></i> {{ t.sent_title }}</h3><p style="margin: 0;">{{ t.sent_text }}</p></div>
+    {% else %}
+    <div class="card">
+      {% for error in errors %}<div class="error">{{ error }}</div>{% endfor %}
+      <form class="form" method="post" action="{% if lang == 'pt' %}{% url 'site-pt-invite-request' %}{% else %}{% url 'site-en-invite-request' %}{% endif %}">
+        {% csrf_token %}
+        <label for="f-email">{{ t.email }}</label>
+        <input id="f-email" type="email" name="email" required maxlength="254" value="{{ form.email|default:'' }}" autocomplete="email">
+        <label for="f-name">{{ t.name }}</label>
+        <input id="f-name" name="name" maxlength="120" value="{{ form.name|default:'' }}">
+        <label for="f-accounts">{{ t.accounts }}</label>
+        <select id="f-accounts" name="accounts">
+          {% for value, label in t.accounts_choices %}<option value="{{ value }}"{% if form.accounts == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <label for="f-message">{{ t.message }}</label>
+        <textarea id="f-message" name="message" rows="4" maxlength="1000">{{ form.message|default:'' }}</textarea>
+        <div class="hp" aria-hidden="true"><label>Website<input name="website" tabindex="-1" autocomplete="off"></label></div>
+        <p class="note">{% if lang == 'pt' %}Ao enviar, você concorda com a <a href="{{ links.privacy }}">política de privacidade</a>.{% else %}By sending, you agree to the <a href="{{ links.privacy }}">privacy policy</a>.{% endif %}</p>
+        <button class="btn btn-primary" type="submit" style="margin-top: 6px;"><i class="bi bi-send"></i> {{ t.send }}</button>
+      </form>
+    </div>
+    {% endif %}
+
+    {% if legal.email or legal.telegram %}
+    <div class="card" style="margin-top: 18px;">
+      <h3 style="margin-top: 0; margin-bottom: 8px;">{{ t.direct }}</h3>
+      {% if legal.email %}<p style="margin: 4px 0;"><i class="bi bi-envelope"></i> <a href="mailto:{{ legal.email }}">{{ legal.email }}</a></p>{% endif %}
+      {% if legal.telegram %}<p style="margin: 4px 0;"><i class="bi bi-telegram"></i> <a href="https://t.me/{{ legal.telegram }}" rel="noopener">@{{ legal.telegram }}</a></p>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

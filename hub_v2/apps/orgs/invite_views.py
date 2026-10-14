@@ -1,4 +1,4 @@
-"""Beta by invitation (N-106): terms, accepting an invitation, the team's list of invitations."""
+"""Beta by invitation (N-106): accepting an invitation, the team's list of invitations (the terms are on the site, N-119)."""
 from django.contrib.auth import get_user_model, login
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.password_validation import validate_password
@@ -10,13 +10,6 @@ from django.views import View
 
 from .models import Invite
 from .services import TERMS_VERSION, accept_invite, create_invite, find_invite
-
-
-class TermsView(View):
-    """GET /termos/ — public."""
-
-    def get(self, request):
-        return render(request, "orgs/terms.html", {"version": TERMS_VERSION})
 
 
 class InviteAcceptView(View):
@@ -76,9 +69,13 @@ class InviteManageView(LoginRequiredMixin, View):
         return super().dispatch(request, *args, **kwargs)
 
     def get(self, request):
+        from apps.website.models import InviteRequest
+
         new_link = request.session.pop("invite-link", "")
         return render(request, "orgs/invites.html", {
             "invites": Invite.objects.all()[:200], "new_link": new_link, "version": TERMS_VERSION, "now": timezone.now(),
+            "requests": InviteRequest.objects.filter(handled_at__isnull=True)[:100],   # asked on the site (N-119)
+            "prefill": {"email": request.GET.get("email", "")[:254], "name": request.GET.get("name", "")[:120]},
         })
 
     def post(self, request):
@@ -86,6 +83,11 @@ class InviteManageView(LoginRequiredMixin, View):
 
         from apps.audit.services import record
 
+        if request.POST.get("handled"):
+            from apps.website.models import InviteRequest
+
+            InviteRequest.objects.filter(pk=request.POST["handled"], handled_at__isnull=True).update(handled_at=timezone.now())
+            return redirect("invites")
         email = (request.POST.get("email") or "").strip()
         name = (request.POST.get("organization_name") or "").strip()
         try:

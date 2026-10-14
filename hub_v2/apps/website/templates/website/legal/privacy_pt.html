@@ -1,0 +1,61 @@
+{% extends "website/base.html" %}
+
+{% block content %}
+<div class="page-head"><div class="wrap narrow"><h1>Política de privacidade</h1><p class="meta">{{ ui.updated }} {{ terms_version }}</p></div></div>
+<section style="padding-top: 6px;">
+  <div class="wrap narrow">
+    <div class="legal">
+      <h2>1. Controlador</h2>
+      <p>{% if legal.name %}<b>{{ legal.name }}</b>{% if legal.document %} ({{ legal.document }}){% endif %} é o controlador dos dados tratados pelo IkaHub.{% else %}O IkaHub é o controlador dos dados tratados neste serviço.{% endif %}
+      {% if legal.privacy_email %}Encarregado de dados (LGPD): <a href="mailto:{{ legal.privacy_email }}">{{ legal.privacy_email }}</a>.{% endif %}</p>
+
+      <h2>2. O que guardamos</h2>
+      <ul>
+        <li><b>Sua conta no IkaHub:</b> usuário, e-mail e senha (guardada só como hash).</li>
+        <li><b>Contas do jogo:</b> e-mail e senha do GameForge (cifrada), mundos e o que a automação lê das contas — cidades, recursos, tropas, relatórios e mensagens do jogo.</li>
+        <li><b>Agentes e proxies:</b> nome da máquina, versão do agente, endereço e dados de acesso dos proxies que você cadastrar (cifrados quando são senhas).</li>
+        <li><b>Registro de atividades:</b> quem fez o quê e quando, com IP e navegador, por 12 meses.</li>
+        <li><b>Aceite dos termos:</b> versão, data, IP e navegador.</li>
+        <li><b>Pedido de convite:</b> e-mail, nome, número de contas, mensagem e IP.</li>
+        <li><b>Telegram:</b> o identificador do chat que você vincular e as mensagens trocadas com o bot.</li>
+        <li><b>Visitas ao site:</b> contagem de páginas sem cookies e sem guardar o IP (Umami, no nosso próprio servidor).</li>
+      </ul>
+
+      <h2>3. Para quê e com qual base legal</h2>
+      <ul>
+        <li>Operar o serviço que você contratou ou pediu para testar (execução de contrato).</li>
+        <li>Segurança, prevenção de fraude e registro de atividades (legítimo interesse e obrigação legal).</li>
+        <li>Responder ao seu pedido de convite e ao suporte (procedimentos preliminares a pedido seu).</li>
+        <li>Entender, de forma agregada, quais páginas do site são visitadas (legítimo interesse).</li>
+      </ul>
+      <p>Não vendemos seus dados e não os usamos para publicidade.</p>
+
+      <h2>4. Com quem compartilhamos</h2>
+      <ul>
+        <li><b>Gameforge:</b> o agente entra no jogo com as suas credenciais, por sua conta.</li>
+        <li><b>Provedores de proxy</b> que você escolher: o tráfego do jogo passa por eles.</li>
+        <li><b>Telegram</b>, se você vincular um chat (pode envolver transferência internacional).</li>
+        <li><b>Autoridades</b>, quando a lei exigir.</li>
+      </ul>
+
+      <h2>5. Por quanto tempo</h2>
+      <p>Enquanto sua conta existir. Se você sair, apagamos os dados da sua organização; o registro de atividades e o aceite dos termos ficam até 12 meses para segurança e defesa de direitos.
+      Pedidos de convite não atendidos são apagados em até 12 meses.</p>
+
+      <h2>6. Seus direitos</h2>
+      <p>Você pode pedir confirmação do tratamento, acesso, correção, portabilidade, anonimização ou exclusão dos seus dados, e informações sobre compartilhamento (art. 18 da LGPD).
+      {% if legal.privacy_email %}Escreva para <a href="mailto:{{ legal.privacy_email }}">{{ legal.privacy_email }}</a>.{% else %}Use a página de <a href="{{ links.contact }}">contato</a>.{% endif %}
+      Você também pode reclamar à ANPD.</p>
+
+      <h2>7. Segurança</h2>
+      <p>Senhas do jogo cifradas, chave própria para cada agente guardada só como hash, agentes conectados apenas por HTTPS, dados de cada organização isolados e registro de atividades.</p>
+
+      <h2>8. Cookies</h2>
+      <p>Usamos apenas os cookies necessários para manter você conectado e proteger os formulários. As estatísticas do site não usam cookies.</p>
+
+      <h2>9. Mudanças</h2>
+      <p>Se esta política mudar, publicamos a nova versão aqui e avisamos no painel.</p>
+    </div>
+  </div>
+</section>
+{% endblock %}

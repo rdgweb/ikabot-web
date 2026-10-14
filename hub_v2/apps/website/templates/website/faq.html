@@ -1,0 +1,21 @@
+{% extends "website/base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div class="wrap narrow">
+    <h1>{{ ui.nav.faq }}</h1>
+  </div>
+</div>
+
+<section style="padding-top: 10px;">
+  <div class="wrap narrow faq">
+    {% for q, a in faq %}
+    <details{% if forloop.first %} open{% endif %}><summary>{{ q }}</summary><p>{{ a }}</p></details>
+    {% endfor %}
+    <div class="card center" style="margin-top: 26px;">
+      <p style="margin-bottom: 14px;">{{ ui.beta }}</p>
+      <a class="btn btn-primary" href="{{ links.contact }}"><i class="bi bi-envelope-paper"></i> {{ ui.invite }}</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

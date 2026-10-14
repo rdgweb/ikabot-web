@@ -1,0 +1,21 @@
+{% extends "website/base.html" %}
+
+{% block content %}
+<div class="page-head"><div class="wrap narrow"><h1>Cancellation and refunds</h1><p class="meta">{{ ui.updated }} {{ terms_version }}</p></div></div>
+<section style="padding-top: 6px;">
+  <div class="wrap narrow">
+    <div class="legal">
+      <p class="meta">This is a translation. The Portuguese version is the one that applies.</p>
+
+      <h2>During the beta</h2>
+      <p>The closed beta has no charge, so there is nothing to refund. You may leave whenever you want: ask through
+      {% if legal.email %}<a href="mailto:{{ legal.email }}">{{ legal.email }}</a>{% else %}the <a href="{{ links.contact }}">contact</a> page{% endif %}
+      and we delete your organization's data, as described in the <a href="{{ links.privacy }}">privacy policy</a>.</p>
+
+      <h2>Paid plans</h2>
+      <p>The cancellation and refund policy for paid plans — including the 7-day trial — will be published on this page before charging starts.
+      Nothing is charged without your acceptance.</p>
+    </div>
+  </div>
+</section>
+{% endblock %}

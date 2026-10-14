@@ -1,0 +1,63 @@
+{% extends "website/base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div class="wrap">
+    <span class="pill"><i class="bi bi-stars"></i> {{ ui.beta }}</span>
+    <h1 style="margin-top: 14px;">{{ t.title }}</h1>
+    <p>{{ t.lead }}</p>
+  </div>
+</div>
+
+<section style="padding-top: 16px;">
+  <div class="wrap">
+    <div class="tiers">
+      {% for low, high, price in tiers %}
+      <div class="tier{% if forloop.first %} first{% endif %}">
+        <div class="range">{{ low }}–{{ high }} {{ t.subaccounts }}</div>
+        <div class="price">US$ {{ price }}<small>{{ t.per_month }}</small></div>
+      </div>
+      {% endfor %}
+      <div class="tier">
+        <div class="range">{{ t.above }}</div>
+        <div style="font-weight: 700; color: var(--brown); margin-top: 10px;">{{ t.above_text }}</div>
+      </div>
+    </div>
+    <p class="note"><i class="bi bi-info-circle"></i> {{ t.note }}</p>
+  </div>
+</section>
+
+<section style="padding-top: 10px;">
+  <div class="wrap split">
+    <div class="card">
+      <h3 style="margin-top: 0; margin-bottom: 14px;">{{ t.included_title }}</h3>
+      <ul class="check">
+        {% for item in t.included %}<li><i class="bi bi-check-circle-fill"></i> {{ item }}</li>{% endfor %}
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top: 0; margin-bottom: 14px;">{{ t.addons_title }}</h3>
+      {% for icon, name, price, text in t.addons %}
+      <div style="display: flex; gap: 12px; margin-bottom: 14px;">
+        <span class="icon"><i class="bi {{ icon }}"></i></span>
+        <div>
+          <b>{{ name }}</b><span class="soon">{{ t.addons_soon }}</span>
+          <div style="color: var(--brown); font-weight: 700; font-size: .95rem;">{{ price }}</div>
+          <div style="color: var(--ink-2); font-size: .94rem;">{{ text }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section style="padding-top: 10px;">
+  <div class="wrap split">
+    <div class="card"><h3 style="margin-top: 0;"><i class="bi bi-hourglass-split" style="color: var(--gold-2);"></i> {{ t.trial_title }}</h3><p>{{ t.trial_text }}</p></div>
+    <div class="card"><h3 style="margin-top: 0;"><i class="bi bi-diagram-3" style="color: var(--gold-2);"></i> {{ t.what_title }}</h3><p>{{ t.what_text }}</p></div>
+  </div>
+  <div class="wrap center" style="margin-top: 30px;">
+    <a class="btn btn-primary" href="{{ links.contact }}"><i class="bi bi-envelope-paper"></i> {{ ui.invite }}</a>
+  </div>
+</section>
+{% endblock %}

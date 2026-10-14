@@ -1,0 +1,109 @@
+{% extends "website/base.html" %}
+
+{% block content %}
+<div class="hero">
+  <div class="wrap">
+    <div>
+      <span class="pill"><i class="bi bi-stars"></i> {{ ui.beta }}</span>
+      <h1>{{ t.title }}</h1>
+      <p class="lead">{{ t.lead }}</p>
+      <div class="actions">
+        <a class="btn btn-primary" href="{{ links.contact }}"><i class="bi bi-envelope-paper"></i> {{ ui.invite }}</a>
+        <a class="btn btn-ghost" href="{{ links.pricing }}">{{ ui.see_pricing }} <i class="bi bi-arrow-right"></i></a>
+      </div>
+    </div>
+    <div class="mock" aria-hidden="true">
+      <div class="mock-head"><span class="mock-title"><i class="bi bi-speedometer2"></i> {{ t.mock.title }}</span><span class="dot">{{ t.mock.online }}</span></div>
+      <div class="mock-grid">
+        <div class="mock-card"><b>12</b><span><i class="bi bi-buildings"></i></span><div class="bar"><i style="width: 78%;"></i></div></div>
+        <div class="mock-card"><b>4</b><span><i class="bi bi-globe2"></i></span><div class="bar"><i style="width: 55%;"></i></div></div>
+        <div class="mock-card"><b>98%</b><span><i class="bi bi-activity"></i></span><div class="bar"><i style="width: 98%;"></i></div></div>
+      </div>
+      <div class="mock-title" style="font-size: .9rem; margin-bottom: 6px;"><i class="bi bi-list-task"></i> {{ t.mock.jobs }}</div>
+      {% for name, state in t.mock.rows %}
+      <div class="mock-row"><span>{{ name }}</span><span class="tag {% cycle 'tag-ok' 'tag-run' 'tag-wait' %}">{{ state }}</span></div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<section>
+  <div class="wrap">
+    <h2 class="sec-title center">{{ t.steps_title }}</h2>
+    <div class="grid-3">
+      {% for icon, title, text in t.steps %}
+      <div class="card">
+        <div class="step-n">0{{ forloop.counter }}</div>
+        <h3><i class="bi {{ icon }}" style="color: var(--gold-2);"></i> {{ title }}</h3>
+        <p>{{ text }}</p>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section style="padding-top: 10px;">
+  <div class="wrap">
+    <h2 class="sec-title center">{{ t.features_title }}</h2>
+    <div class="grid-3">
+      {% for icon, title, text in t.features %}
+      <div class="card">
+        <span class="icon"><i class="bi {{ icon }}"></i></span>
+        <h3>{{ title }}</h3>
+        <p>{{ text }}</p>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section style="padding-top: 10px;">
+  <div class="wrap">
+    <div class="band">
+      <h2 class="sec-title" style="margin-bottom: 0;">{{ t.security_title }}</h2>
+      <div class="chips">
+        {% for icon, label in t.security %}<span class="chip"><i class="bi {{ icon }}"></i> {{ label }}</span>{% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="padding-top: 10px;">
+  <div class="wrap split">
+    <div class="card">
+      <h3 style="margin-top: 0;">{{ t.identity_title }}</h3>
+      <p>{{ t.identity_text }}</p>
+      <div class="identity" aria-hidden="true">
+        <span class="node"><i class="bi bi-person-badge"></i>GameForge</span><i class="bi bi-arrow-right arrow"></i>
+        <span class="node"><i class="bi bi-hdd-network"></i>Agent</span><i class="bi bi-arrow-right arrow"></i>
+        <span class="node"><i class="bi bi-globe2"></i>Proxy</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top: 0;">{{ t.pricing_title }}</h3>
+      <p>{{ t.pricing_text }}</p>
+      <div style="margin-top: 16px;"><a class="btn btn-ghost btn-sm" href="{{ links.pricing }}">{{ ui.see_pricing }} <i class="bi bi-arrow-right"></i></a></div>
+    </div>
+  </div>
+</section>
+
+<section style="padding-top: 10px;">
+  <div class="wrap narrow faq">
+    <h2 class="sec-title center">{{ ui.nav.faq }}</h2>
+    {% for q, a in faq %}
+    <details><summary>{{ q }}</summary><p>{{ a }}</p></details>
+    {% endfor %}
+    <p class="center" style="margin-top: 16px;"><a href="{{ links.faq }}">{{ ui.nav.faq }} <i class="bi bi-arrow-right"></i></a></p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="card center" style="padding: 36px;">
+      <h2 class="sec-title" style="margin-bottom: 8px;">{{ t.cta_title }}</h2>
+      <p style="margin-bottom: 20px;">{{ t.cta_text }}</p>
+      <a class="btn btn-primary" href="{{ links.contact }}"><i class="bi bi-envelope-paper"></i> {{ ui.invite }}</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

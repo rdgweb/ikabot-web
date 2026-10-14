@@ -17,6 +17,14 @@ from .services.overview import dashboard_data
 class DashboardView(LoginRequiredMixin, TemplateView):
     template_name = "dashboard/index.html"
 
+    def handle_no_permission(self):
+        # N-119: someone not logged in at the address itself sees the public site
+        if self.request.path == "/" and not self.request.user.is_authenticated:
+            from apps.website.views import home_for
+
+            return home_for(self.request)
+        return super().handle_no_permission()
+
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["dash"] = dashboard_data()

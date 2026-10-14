@@ -88,10 +88,12 @@ INSTALLED_APPS = [
     "apps.manual_control",
     "apps.orgs",
     "apps.audit",
+    "apps.website",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "apps.website.middleware.SearchEnginesMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.locale.LocaleMiddleware",
@@ -266,6 +268,24 @@ IKABOTAPI_URL = os.environ.get("IKABOTAPI_URL", "http://ikabotapi:5005")
 TELEMETRY_URL = os.environ.get("TELEMETRY_URL") or "https://telemetry.rdgh.com.br"
 TELEMETRY_DISABLED = os.environ.get("TELEMETRY_DISABLED", "false").lower() in ("true", "1", "yes")
 WEBSHARE_API_KEY = os.environ.get("WEBSHARE_API_KEY", "")
+
+# --- Public site (N-119) ---
+# SITE_URL: the address the site is published at (canonical, sitemap, previews); empty = HUB_PUBLIC_URL.
+# SITE_INDEXABLE: search engines may index the site pages (the panel never is).
+SITE_URL = (os.environ.get("SITE_URL", "").strip() or HUB_PUBLIC_URL).rstrip("/")
+SITE_INDEXABLE = os.environ.get("SITE_INDEXABLE", "false").strip().lower() in ("1", "true", "yes")
+# who answers for the service in the terms and the privacy policy; each line shows only when filled
+SITE_LEGAL = {
+    "name": os.environ.get("SITE_LEGAL_NAME", "").strip(),
+    "document": os.environ.get("SITE_LEGAL_DOCUMENT", "").strip(),
+    "city": os.environ.get("SITE_LEGAL_CITY", "").strip(),
+    "email": os.environ.get("SITE_CONTACT_EMAIL", "").strip(),
+    "privacy_email": os.environ.get("SITE_PRIVACY_EMAIL", "").strip() or os.environ.get("SITE_CONTACT_EMAIL", "").strip(),
+    "telegram": os.environ.get("SITE_CONTACT_TELEGRAM", "").strip().lstrip("@"),
+}
+# visit statistics (Umami in the same server, never published): the hub hands out only the script and the count
+UMAMI_URL = os.environ.get("UMAMI_URL", "").strip().rstrip("/")
+UMAMI_WEBSITE_ID = os.environ.get("UMAMI_WEBSITE_ID", "").strip()
 
 # --- Celery ---
 

@@ -16,6 +16,7 @@
 #   tools  - phpMyAdmin, só para olhar o banco (em 127.0.0.1)
 #   telegram - Telegram sem HTTPS: busca as mensagens e os botões em vez de esperar o webhook
 #   supervisor - atualiza os agentes desta máquina pelo painel (Atualizações)
+#   stats  - Umami: visitas do site público, sem cookie; o painel dele fica só em 127.0.0.1
 #
 # Código-fonte em vez das imagens publicadas:
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
@@ -111,6 +112,18 @@ services:
       MANUAL_GATEWAY_DOMAIN: ${MANUAL_GATEWAY_DOMAIN:-}
       MANUAL_GATEWAY_SCHEME: ${MANUAL_GATEWAY_SCHEME:-https}
       MANUAL_GATEWAY_PORT: ${MANUAL_GATEWAY_PORT:-}
+      # site público (N-119): endereço publicado, indexação e quem responde nos termos (vazio = não aparece)
+      SITE_URL: ${SITE_URL:-}
+      SITE_INDEXABLE: ${SITE_INDEXABLE:-false}
+      SITE_LEGAL_NAME: ${SITE_LEGAL_NAME:-}
+      SITE_LEGAL_DOCUMENT: ${SITE_LEGAL_DOCUMENT:-}
+      SITE_LEGAL_CITY: ${SITE_LEGAL_CITY:-}
+      SITE_CONTACT_EMAIL: ${SITE_CONTACT_EMAIL:-}
+      SITE_PRIVACY_EMAIL: ${SITE_PRIVACY_EMAIL:-}
+      SITE_CONTACT_TELEGRAM: ${SITE_CONTACT_TELEGRAM:-}
+      # estatística do site (perfil stats): o hub repassa só o script e a contagem ao Umami
+      UMAMI_URL: ${UMAMI_URL:-}
+      UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
       TZ: ${TZ:-America/Sao_Paulo}
     ports:
       # com o Nginx Proxy Manager na frente, o instalador põe HUB_BIND=127.0.0.1
@@ -300,8 +313,48 @@ services:
     profiles:
       - tools
 
+  # Umami (perfil "stats", N-119): conta as visitas do site público, sem cookie e sem guardar IP.
+  # Nunca é publicado: o hub entrega o script e repassa a contagem (/stats/...); o painel do
+  # Umami só abre em 127.0.0.1 (túnel SSH). Primeiro login admin / umami: troque na hora.
+  umami:
+    image: ${UMAMI_IMAGE:-ghcr.io/umami-software/umami:3}
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      umami-db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://umami:${UMAMI_DB_PASSWORD:-}@umami-db:5432/umami
+      APP_SECRET: ${UMAMI_APP_SECRET:-}
+      DISABLE_TELEMETRY: "1"
+    ports:
+      - "127.0.0.1:${UMAMI_PORT:-3001}:3000"
+    mem_limit: 384m
+    profiles:
+      - stats
+
+  umami-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_DB: umami
+      POSTGRES_USER: umami
+      POSTGRES_PASSWORD: ${UMAMI_DB_PASSWORD:-}
+    volumes:
+      - umami_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U umami -d umami"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 256m
+    profiles:
+      - stats
+
 volumes:
   mariadb_data:
   redis_data:
   npm_data:
   npm_letsencrypt:
+  umami_db_data:

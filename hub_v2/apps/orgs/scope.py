@@ -77,6 +77,7 @@ SCOPES: dict[str, tuple[str, str, bool]] = {
 # Platform-wide for now (per-organization settings are stage 4).
 GLOBAL_MODELS = {
     "combat.SimulatorCalibration", "telegram.TelegramBotConfig", "telegram.TelegramIncomingCommand", "captcha.CaptchaConfig",
+    "website.InviteRequest",    # the public site's invitation requests: the platform's own
 }
 
 

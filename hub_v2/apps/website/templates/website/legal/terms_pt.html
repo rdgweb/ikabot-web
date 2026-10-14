@@ -1,0 +1,63 @@
+{% extends "website/base.html" %}
+
+{% block content %}
+<div class="page-head"><div class="wrap narrow"><h1>Termos de uso</h1><p class="meta">{{ ui.updated }} {{ terms_version }}</p></div></div>
+<section style="padding-top: 6px;">
+  <div class="wrap narrow">
+    <div class="legal">
+      <h2>1. Quem somos</h2>
+      <p>O IkaHub é um serviço de automação e painel para contas do jogo Ikariam{% if legal.name %}, oferecido por <b>{{ legal.name }}</b>{% if legal.document %} ({{ legal.document }}){% endif %}{% endif %}.
+      {% if legal.email %}Contato: <a href="mailto:{{ legal.email }}">{{ legal.email }}</a>.{% endif %}</p>
+
+      <h2>2. Beta fechado</h2>
+      <p>O IkaHub está em beta, com acesso por convite. As funções podem mudar, ficar indisponíveis ou ser encerradas a qualquer momento.
+      Ao criar sua conta você aceita estes termos; registramos a versão aceita, a data, o IP e o navegador.</p>
+
+      <h2>3. Sem vínculo com a Gameforge</h2>
+      <p>O IkaHub não é afiliado, aprovado nem mantido pela Gameforge. Ikariam é marca registrada da Gameforge 4D GmbH.</p>
+
+      <h2>4. O risco é seu</h2>
+      <p>Automatizar ações pode violar as regras do Ikariam. Contas podem ser advertidas, suspensas ou banidas pelo jogo.
+      Ao usar o IkaHub você assume esse risco; não respondemos por perdas dentro do jogo, incluindo recursos, tropas, cidades ou contas.</p>
+
+      <h2>5. Sua conta e suas credenciais</h2>
+      <ul>
+        <li>Você só cadastra contas do jogo que são suas ou que tem autorização para usar.</li>
+        <li>A senha da conta do GameForge é guardada cifrada e entregue apenas ao seu agente, por HTTPS, com a chave daquele agente.</li>
+        <li>Você cuida do acesso ao IkaHub: senha forte, sem compartilhar o usuário. Avise-nos se suspeitar de acesso indevido.</li>
+      </ul>
+
+      <h2>6. Agentes e proxies</h2>
+      <p>O agente roda numa máquina sua. Você responde por essa máquina, pela rede dela e pelos proxies que cadastrar — inclusive pelo contrato com o provedor de proxies.
+      Agente e proxies da plataforma, quando existirem, terão condições próprias publicadas nesta página.</p>
+
+      <h2>7. Uso aceitável</h2>
+      <ul>
+        <li>Não use o IkaHub para prejudicar outras pessoas, assediar jogadores ou fraudar terceiros.</li>
+        <li>Não tente acessar dados de outros clientes, contornar limites ou testar a segurança do serviço sem autorização por escrito.</li>
+        <li>Não sobrecarregue o serviço nem revenda o acesso.</li>
+      </ul>
+
+      <h2>8. Planos e pagamento</h2>
+      <p>Durante o beta não há cobrança. Os planos pagos, o teste de 7 dias e as condições de cancelamento e reembolso serão publicados antes de qualquer cobrança,
+      e nada será cobrado sem o seu aceite.</p>
+
+      <h2>9. Suspensão e encerramento</h2>
+      <p>Você pode sair quando quiser. Podemos suspender ou encerrar contas que violem estes termos, que coloquem o serviço ou outros clientes em risco, ou quando a lei exigir.</p>
+
+      <h2>10. Sem garantia e limite de responsabilidade</h2>
+      <p>O serviço é oferecido como está, sem garantia de disponibilidade, de resultado no jogo ou de compatibilidade com mudanças feitas pela Gameforge.
+      Na medida permitida pela lei, nossa responsabilidade se limita ao valor pago por você nos últimos 3 meses.</p>
+
+      <h2>11. Privacidade</h2>
+      <p>O tratamento dos seus dados segue a <a href="{{ links.privacy }}">política de privacidade</a>.</p>
+
+      <h2>12. Mudanças nestes termos</h2>
+      <p>Se estes termos mudarem, publicamos a nova versão aqui e pedimos um novo aceite antes de ela valer para você.</p>
+
+      <h2>13. Lei e foro</h2>
+      <p>Estes termos seguem as leis do Brasil{% if legal.city %}. Fica eleito o foro da comarca de {{ legal.city }}, salvo quando a lei garantir a você o foro do seu domicílio{% endif %}.</p>
+    </div>
+  </div>
+</section>
+{% endblock %}

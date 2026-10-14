@@ -1,0 +1,63 @@
+{% extends "website/base.html" %}
+
+{% block content %}
+<div class="page-head"><div class="wrap narrow"><h1>Privacy policy</h1><p class="meta">{{ ui.updated }} {{ terms_version }}</p></div></div>
+<section style="padding-top: 6px;">
+  <div class="wrap narrow">
+    <div class="legal">
+      <p class="meta">This is a translation. The Portuguese version is the one that applies.</p>
+
+      <h2>1. Controller</h2>
+      <p>{% if legal.name %}<b>{{ legal.name }}</b>{% if legal.document %} ({{ legal.document }}){% endif %} is the controller of the data processed by IkaHub.{% else %}IkaHub is the controller of the data processed in this service.{% endif %}
+      {% if legal.privacy_email %}Data protection officer: <a href="mailto:{{ legal.privacy_email }}">{{ legal.privacy_email }}</a>.{% endif %}</p>
+
+      <h2>2. What we keep</h2>
+      <ul>
+        <li><b>Your IkaHub account:</b> username, email and password (stored only as a hash).</li>
+        <li><b>Game accounts:</b> GameForge email and password (encrypted), worlds and what the automation reads from the accounts — cities, resources, troops, reports and in-game messages.</li>
+        <li><b>Agents and proxies:</b> machine name, agent version, address and access data of the proxies you add (encrypted when they are passwords).</li>
+        <li><b>Activity log:</b> who did what and when, with IP and browser, for 12 months.</li>
+        <li><b>Terms acceptance:</b> version, date, IP and browser.</li>
+        <li><b>Invite requests:</b> email, name, number of accounts, message and IP.</li>
+        <li><b>Telegram:</b> the id of the chat you link and the messages exchanged with the bot.</li>
+        <li><b>Site visits:</b> page counts without cookies and without storing the IP (Umami, on our own server).</li>
+      </ul>
+
+      <h2>3. Why and on what legal basis</h2>
+      <ul>
+        <li>Running the service you signed up or asked to try (performance of a contract).</li>
+        <li>Security, fraud prevention and the activity log (legitimate interest and legal obligation).</li>
+        <li>Answering your invite request and support (steps taken at your request).</li>
+        <li>Understanding, in aggregate, which site pages are visited (legitimate interest).</li>
+      </ul>
+      <p>We do not sell your data and do not use it for advertising.</p>
+
+      <h2>4. Who we share it with</h2>
+      <ul>
+        <li><b>Gameforge:</b> the agent signs in to the game with your credentials, on your behalf.</li>
+        <li><b>Proxy providers</b> you choose: the game traffic goes through them.</li>
+        <li><b>Telegram</b>, if you link a chat (may involve international transfer).</li>
+        <li><b>Authorities</b>, when the law requires it.</li>
+      </ul>
+
+      <h2>5. For how long</h2>
+      <p>While your account exists. If you leave, we delete your organization's data; the activity log and the terms acceptance are kept up to 12 months for security and legal defence.
+      Unanswered invite requests are deleted within 12 months.</p>
+
+      <h2>6. Your rights</h2>
+      <p>You may ask for confirmation of processing, access, correction, portability, anonymization or deletion of your data, and information about sharing (Brazilian LGPD, art. 18).
+      {% if legal.privacy_email %}Write to <a href="mailto:{{ legal.privacy_email }}">{{ legal.privacy_email }}</a>.{% else %}Use the <a href="{{ links.contact }}">contact</a> page.{% endif %}
+      You may also complain to the Brazilian data protection authority (ANPD).</p>
+
+      <h2>7. Security</h2>
+      <p>Encrypted game passwords, one key per agent stored only as a hash, agents connected over HTTPS only, each organization's data isolated, and an activity log.</p>
+
+      <h2>8. Cookies</h2>
+      <p>We only use the cookies needed to keep you signed in and protect forms. Site statistics use no cookies.</p>
+
+      <h2>9. Changes</h2>
+      <p>If this policy changes, we publish the new version here and let you know in the dashboard.</p>
+    </div>
+  </div>
+</section>
+{% endblock %}

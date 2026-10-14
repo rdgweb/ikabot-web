@@ -73,7 +73,7 @@ class InviteTests(TestCase):
         self.client.force_login(customer)
         self.assertEqual(self.client.get(reverse("invites")).status_code, 404)
         self.client.logout()
-        self.assertEqual(self.client.get(reverse("terms")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("terms"), follow=True).status_code, 200)   # now on the site (N-119)
 
     def test_a_logged_person_cannot_use_an_invite(self):
         _invite, token = self._invite()

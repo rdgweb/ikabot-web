@@ -1,0 +1,65 @@
+{% extends "website/base.html" %}
+
+{% block content %}
+<div class="page-head"><div class="wrap narrow"><h1>Terms of use</h1><p class="meta">{{ ui.updated }} {{ terms_version }}</p></div></div>
+<section style="padding-top: 6px;">
+  <div class="wrap narrow">
+    <div class="legal">
+      <p class="meta">This is a translation. The Portuguese version is the one that applies.</p>
+
+      <h2>1. Who we are</h2>
+      <p>IkaHub is an automation service and dashboard for accounts of the game Ikariam{% if legal.name %}, provided by <b>{{ legal.name }}</b>{% if legal.document %} ({{ legal.document }}){% endif %}{% endif %}.
+      {% if legal.email %}Contact: <a href="mailto:{{ legal.email }}">{{ legal.email }}</a>.{% endif %}</p>
+
+      <h2>2. Closed beta</h2>
+      <p>IkaHub is in beta, by invitation. Features may change, become unavailable or be discontinued at any time.
+      By creating your account you accept these terms; we record the accepted version, the date, the IP and the browser.</p>
+
+      <h2>3. Not affiliated with Gameforge</h2>
+      <p>IkaHub is not affiliated with, endorsed or maintained by Gameforge. Ikariam is a registered trademark of Gameforge 4D GmbH.</p>
+
+      <h2>4. The risk is yours</h2>
+      <p>Automating actions may break the Ikariam rules. Accounts may be warned, suspended or banned by the game.
+      By using IkaHub you take that risk; we are not liable for in-game losses, including resources, troops, cities or accounts.</p>
+
+      <h2>5. Your account and credentials</h2>
+      <ul>
+        <li>You only add game accounts that are yours or that you are authorized to use.</li>
+        <li>The GameForge password is stored encrypted and only handed to your agent, over HTTPS, with that agent's key.</li>
+        <li>You keep your IkaHub access safe: a strong password, no shared logins. Tell us if you suspect unauthorized access.</li>
+      </ul>
+
+      <h2>6. Agents and proxies</h2>
+      <p>The agent runs on a machine of yours. You are responsible for that machine, its network and the proxies you add — including your contract with the proxy provider.
+      Platform agents and proxies, when available, will have their own conditions published on this page.</p>
+
+      <h2>7. Acceptable use</h2>
+      <ul>
+        <li>Do not use IkaHub to harm others, harass players or defraud third parties.</li>
+        <li>Do not try to access other customers' data, bypass limits or test the service's security without written permission.</li>
+        <li>Do not overload the service or resell access.</li>
+      </ul>
+
+      <h2>8. Plans and payment</h2>
+      <p>There is no charge during the beta. Paid plans, the 7-day trial and the cancellation and refund conditions will be published before any charge,
+      and nothing will be charged without your acceptance.</p>
+
+      <h2>9. Suspension and termination</h2>
+      <p>You may leave whenever you want. We may suspend or close accounts that break these terms, put the service or other customers at risk, or when the law requires it.</p>
+
+      <h2>10. No warranty and limitation of liability</h2>
+      <p>The service is provided as is, with no warranty of availability, of in-game results or of compatibility with changes made by Gameforge.
+      To the extent permitted by law, our liability is limited to the amount you paid in the last 3 months.</p>
+
+      <h2>11. Privacy</h2>
+      <p>Your data is handled according to the <a href="{{ links.privacy }}">privacy policy</a>.</p>
+
+      <h2>12. Changes to these terms</h2>
+      <p>If these terms change, we publish the new version here and ask for a new acceptance before it applies to you.</p>
+
+      <h2>13. Law and jurisdiction</h2>
+      <p>These terms are governed by the laws of Brazil{% if legal.city %}. The courts of {{ legal.city }} have jurisdiction, except where the law grants you the courts of your own domicile{% endif %}.</p>
+    </div>
+  </div>
+</section>
+{% endblock %}

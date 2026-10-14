@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="{{ html_lang }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }}</title>
+  <meta name="description" content="{{ description }}">
+  {% if not indexable %}<meta name="robots" content="noindex, nofollow">{% endif %}
+  <link rel="canonical" href="{{ canonical }}">
+  {% for code, href in alternates %}<link rel="alternate" hreflang="{{ code }}" href="{{ href }}">
+  {% endfor %}<link rel="alternate" hreflang="x-default" href="{{ x_default }}">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="IkaHub">
+  <meta property="og:title" content="{{ title }}">
+  <meta property="og:description" content="{{ description }}">
+  <meta property="og:url" content="{{ canonical }}">
+  <meta property="og:image" content="{{ og_image }}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:locale" content="{% if lang == 'pt' %}pt_BR{% else %}en_US{% endif %}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#f7f1e5">
+  <link rel="icon" href="/static/website/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/vendor/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/static/website/site.css">
+  <script type="application/ld+json">{{ structured|safe }}</script>
+  {% if umami %}<script defer src="/stats/script.js" data-website-id="{{ umami_id }}" data-host-url="/stats" data-do-not-track="true"></script>{% endif %}
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="{{ links.home }}"><i class="bi bi-controller"></i> IkaHub</a>
+      <nav class="nav">
+        <a href="{{ links.pricing }}" class="{% if page == 'pricing' %}on{% endif %}">{{ ui.nav.pricing }}</a>
+        <a href="{{ links.faq }}" class="{% if page == 'faq' %}on{% endif %}">{{ ui.nav.faq }}</a>
+        <a href="{{ links.contact }}" class="{% if page == 'contact' %}on{% endif %}">{{ ui.nav.contact }}</a>
+      </nav>
+      <div class="right">
+        <a class="lang" href="{{ other_lang_url }}" hreflang="{% if lang == 'pt' %}en{% else %}pt-BR{% endif %}"><i class="bi bi-translate"></i> <span class="lang-label">{{ ui.other_lang }}</span></a>
+        <a class="btn btn-ghost btn-sm" href="/login/">{{ ui.login }}</a>
+        <a class="btn btn-primary btn-sm" href="{{ links.contact }}">{{ ui.invite }}</a>
+      </div>
+    </div>
+  </header>
+
+  <main>{% block content %}{% endblock %}</main>
+
+  <footer>
+    <div class="wrap cols">
+      <div>
+        <a class="brand" href="{{ links.home }}" style="display: inline-flex; padding: 0; margin-bottom: 8px;"><i class="bi bi-controller"></i> IkaHub</a>
+        <p style="margin: 0 0 8px;">{{ ui.footer_disclaimer }}</p>
+        {% if legal.name %}<p style="margin: 0;">© {% now "Y" %} {{ legal.name }}{% if legal.document %} · {{ legal.document }}{% endif %}</p>{% endif %}
+      </div>
+      <div>
+        <h4>{{ ui.footer_product }}</h4>
+        <a href="{{ links.home }}">{{ ui.nav.home }}</a>
+        <a href="{{ links.pricing }}">{{ ui.nav.pricing }}</a>
+        <a href="{{ links.faq }}">{{ ui.nav.faq }}</a>
+        <a href="{{ links.contact }}">{{ ui.nav.contact }}</a>
+      </div>
+      <div>
+        <h4>{{ ui.footer_legal }}</h4>
+        <a href="{{ links.terms }}">{{ ui.nav.terms }}</a>
+        <a href="{{ links.privacy }}">{{ ui.nav.privacy }}</a>
+        <a href="{{ links.refund }}">{{ ui.nav.refund }}</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

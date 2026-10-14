@@ -14,7 +14,8 @@ from .views import ApiDocsView, AuthenticatedSchemaView, HtmxLogoutView
 handler404 = "config.views.custom_404"
 handler500 = "config.views.custom_500"
 
-from apps.orgs.invite_views import InviteAcceptView, InviteManageView, TermsView  # noqa: E402
+from apps.orgs.invite_views import InviteAcceptView, InviteManageView  # noqa: E402
+from apps.website import views as site_views  # noqa: E402
 
 urlpatterns = [
     # Django admin
@@ -48,10 +49,12 @@ urlpatterns = [
     path("atividades/", include("apps.audit.urls")),
     path("organizacao/", include("apps.orgs.urls")),
     # N-106: beta by invitation (terms and the invitation link are public; the list is the team's)
-    path("termos/", TermsView.as_view(), name="terms"),
+    path("termos/", site_views.old_terms, name="terms"),
     path("convite/<str:token>/", InviteAcceptView.as_view(), name="invite-accept"),
     path("users/convites/", InviteManageView.as_view(), name="invites"),
     path("telemetry/", include("apps.telemetry.urls")),
+    # N-119: public site (sales, pricing, FAQ, legal) in pt and en, robots, sitemap, visit statistics
+    path("", include("apps.website.urls")),
     # --- Telegram Webhook API ---
     path("api/telegram/", include("apps.telegram.api_urls")),
     # --- Agent API ---

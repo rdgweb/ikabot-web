@@ -60,6 +60,7 @@ ACTIONS = {
     "credentials.delivered": ("credenciais", "Senhas entregues ao agente"),
     "invite.created": ("usuarios", "Criou convite"),
     "invite.accepted": ("usuarios", "Aceitou convite e os termos"),
+    "invite.requested": ("usuarios", "Pediu convite pelo site"),
 }
 CATEGORIES = {
     "acesso": "Acesso", "contas": "Contas", "nos": "Nós e máquinas", "proxies": "Proxies", "jobs": "Jobs",
