@@ -46,13 +46,14 @@
         if (s.online) return "O agente é o programa que entra no jogo e executa os jobs; cada agente conectado aparece aqui como um nó. "
           + plural(s.online, "nó online", "nós online") + ": pronto para receber contas.";
         if (s.nodes) return "O nó existe, mas o agente não fala com o hub há mais de 3 minutos. Sem agente online os jobs ficam parados na fila: confira se o container agent está rodando.";
-        return "Ainda não há agente. O nó aparece aqui sozinho quando o container do agente conecta com o mesmo AGENT_TOKEN do hub; agente em outra máquina começa por Novo Nó. Abaixo, um exemplo. O tour espera e continua quando o nó chegar.";
+        return "Ainda não há agente. Crie o nó em Novo Nó: o hub mostra o comando de instalação, já com a chave do nó, para rodar na sua máquina com Docker. Abaixo, um exemplo. O tour espera e continua quando o agente conectar.";
       },
       example: function (s) { return s.nodes ? null : { into: '[data-tour="nodes"] > *', html: EXAMPLE_NODES }; },
+      cta: function (s) { return s.online ? null : { label: "Novo Nó", href: "/accounts/nodes/create/" }; },
       tone: function (s) { return s.online ? "" : "warn"; },
-      waits: function (s) { return !s.nodes; }, until: function (s) { return s.nodes > 0; },
+      waits: function (s) { return !s.online; }, until: function (s) { return s.online > 0; },
       waitText: "Esperando o agente conectar", readyText: "O agente conectou",
-      cta: function (s) { return s.online ? null : { label: "Saúde do sistema", href: "/settings/#saude" }; } },
+      },
 
     { page: /^\/accounts\/create\/$/, go: "/accounts/create/", target: "#id_node", wrap: ".form-group", icon: "bi-hdd-network",
       chapter: "2 · A conta", title: "Quem joga por ela",
