@@ -138,6 +138,7 @@ class TourTests(TestCase):
         account = Account.objects.create(node=node, label="Lobby", email="a@example.com", password_enc="x")
         GameAccount.objects.create(account=account, lobby_account_id=1, server_id="s78-br", server_language="br", server_number=78, name="Alpha")
         self.assertEqual(self.client.get(url).json(), {"nodes": 2, "online": 1, "accounts": 1, "worlds": 1, "first_account": str(account.pk)})
+        self.assertIn("no-cache", self.client.get(url)["Cache-Control"])                # polled while the tour waits
 
     def test_the_account_form_says_why_there_is_no_node(self):
         html = self.client.get(reverse("accounts:account-create")).content.decode()

@@ -86,10 +86,13 @@ class TourStateView(LoginRequiredMixin, View):
 
     def get(self, request):
         from django.http import JsonResponse
+        from django.utils.cache import add_never_cache_headers
 
         from .tour import state
 
-        return JsonResponse(state())
+        response = JsonResponse(state())
+        add_never_cache_headers(response)      # the tour polls it while it waits for the agent, the account or the worlds
+        return response
 
 
 class TourToggleView(LoginRequiredMixin, View):

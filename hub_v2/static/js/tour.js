@@ -25,9 +25,11 @@
         if (s.online) return "O agente é o programa que entra no jogo e executa os jobs; cada agente conectado aparece aqui como um nó. "
           + plural(s.online, "nó online", "nós online") + ": pronto para receber contas.";
         if (s.nodes) return "O nó existe, mas o agente não fala com o hub há mais de 3 minutos. Sem agente online os jobs ficam parados na fila: confira se o container agent está rodando.";
-        return "Ainda não há agente. O nó aparece aqui sozinho quando o container do agente sobe com o mesmo AGENT_TOKEN do hub (o instalador já deixa assim); agente em outra máquina começa por Novo Nó. Sem nó, a conta não tem quem jogue por ela.";
+        return "Ainda não há agente. O nó aparece aqui sozinho quando o container do agente sobe com o mesmo AGENT_TOKEN do hub (o instalador já deixa assim); agente em outra máquina começa por Novo Nó. Sem nó, a conta não tem quem jogue por ela: o tour espera e continua quando o nó aparecer.";
       },
       tone: function (s) { return s.online ? "" : "warn"; },
+      waits: function (s) { return !s.nodes; }, until: function (s) { return s.nodes > 0; },
+      waitText: "Esperando o agente conectar", readyText: "O agente conectou",
       cta: function (s) { return s.online ? null : { label: "Saúde do sistema", href: "/settings/#saude" }; } },
 
     { page: /^\/accounts\/create\/$/, go: "/accounts/create/", target: "#id_node", wrap: ".form-group", icon: "bi-hdd-network",
@@ -50,7 +52,8 @@
         return s.accounts ? "Clique aqui quando for cadastrar uma conta. Para seguir o tour, vamos usar a conta que você já tem."
           : "Preencha e clique em Criar Conta. O tour continua na lista de contas.";
       },
-      waits: function (s) { return !s.accounts; } },
+      waits: function (s) { return !s.accounts; }, until: function (s) { return s.accounts > 0; },
+      waitText: "Esperando a conta ser salva", readyText: "Conta salva" },
 
     { page: /^\/accounts\/$/, go: "/accounts/", target: '[data-tour="account-row"]', icon: "bi-person-badge",
       skip: function (s) { return !s.accounts; },
@@ -59,8 +62,14 @@
     { page: ACCOUNT_PAGE, go: function (s) { return s.first_account ? "/accounts/" + s.first_account + "/" : "/accounts/"; },
       target: '[data-tour="discover"]', icon: "bi-search", skip: function (s) { return !s.first_account; },
       chapter: "3 · Os mundos", title: "Discover Characters",
-      text: "Entra no lobby do GameForge e traz cada mundo da conta. Vira um job: leva alguns segundos e precisa do agente online." },
-    { page: ACCOUNT_PAGE, target: '[data-tour="worlds"]', icon: "bi-people", skip: function (s) { return !s.first_account; },
+      text: function (s) {
+        return s.worlds ? "Entra no lobby do GameForge e traz cada mundo da conta. Vira um job: leva alguns segundos e precisa do agente online."
+          : "Clique aqui para trazer os mundos da conta (com o token, ele já rodou ao salvar). É um job: leva alguns segundos e precisa do agente online. O tour continua quando os mundos chegarem.";
+      },
+      waits: function (s) { return !s.worlds; }, until: function (s) { return s.worlds > 0; },
+      waitText: "Esperando os mundos chegarem", readyText: "Os mundos chegaram" },
+    { page: ACCOUNT_PAGE, go: function (s) { return s.first_account ? "/accounts/" + s.first_account + "/" : "/accounts/"; },
+      target: '[data-tour="worlds"]', icon: "bi-people", skip: function (s) { return !s.first_account; },
       chapter: "3 · Os mundos", title: "Subcontas",
       text: function (s) {
         return s.worlds ? "Cada linha é um mundo (" + plural(s.worlds, "subconta ativa", "subcontas ativas") + " no hub). Pause as que o Ikabot não deve tocar."
@@ -129,11 +138,22 @@
     ".iktour-btn.primary{background:var(--ik-sea,#4f86b9);color:#fff}.iktour-btn.primary:hover{background:var(--ik-sea-dark,#3e719f)}",
     ".iktour-btn.gold{background:linear-gradient(135deg,#c99c4e,#a67c2e);color:#fff}",
     ".iktour-btn:focus{outline:none}.iktour-btn:focus-visible,.iktour-close:focus-visible{box-shadow:0 0 0 3px rgba(79,134,185,.35)}",
-    "@media (prefers-reduced-motion:reduce){.iktour-spot,.iktour-card,.iktour-bar i{transition:none!important}}",
+    ".iktour-chip{position:fixed;right:18px;bottom:18px;z-index:9990;display:flex;align-items:center;gap:12px;max-width:calc(100vw - 36px);",
+    "  padding:10px 10px 10px 14px;border-radius:14px;background:var(--ik-paper,#fffdf7);color:var(--ik-ink,#2d2a24);",
+    "  border:1px solid rgba(201,156,78,.5);box-shadow:0 12px 32px rgba(0,0,0,.22);animation:iktour-in .3s ease}",
+    ".iktour-chip > i{font-size:1.2rem;color:#a67c2e}.iktour-chip:not(.ready) > i{animation:iktour-spin 1.2s linear infinite}",
+    ".iktour-chip.ready > i{color:#2d7a2d}",
+    ".iktour-chip span{display:flex;flex-direction:column;line-height:1.25}",
+    ".iktour-chip small{font-size:.66rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#a67c2e}",
+    ".iktour-chip b{font-size:.88rem;font-weight:600}",
+    "@keyframes iktour-spin{to{transform:rotate(360deg)}}",
+    "@keyframes iktour-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}",
+    "@media (prefers-reduced-motion:reduce){.iktour-spot,.iktour-card,.iktour-bar i{transition:none!important}.iktour-chip,.iktour-chip > i{animation:none!important}}",
   ].join("\n");
 
 
   var root, spot, card, index = 0, lastFocus, rafPending, state = {}, config = {};
+  var chip, poll, resuming;   // the corner chip while the tour waits for the hub (agent, account, worlds)
 
   function el(tag, cls, html) {
     var node = document.createElement(tag);
@@ -154,8 +174,10 @@
   }
 
   // ── where the tour stopped, kept across page changes ──
-  function save(i, waiting) {
-    try { window.sessionStorage.setItem(STORE, JSON.stringify({ i: i, w: !!waiting, t: Date.now() })); } catch (e) { /* private mode */ }
+  function save(i, waiting, gate) {
+    var data = { i: i, w: !!waiting, t: Date.now() };
+    if (gate != null) data.u = gate;   // the step whose until() lets the tour go on
+    try { window.sessionStorage.setItem(STORE, JSON.stringify(data)); } catch (e) { /* private mode */ }
   }
   function load() {
     try {
@@ -168,7 +190,7 @@
 
   function fetchState() {
     if (!config.stateUrl) return Promise.resolve();
-    return window.fetch(config.stateUrl, { credentials: "same-origin", headers: { "X-Requested-With": "XMLHttpRequest" } })
+    return window.fetch(config.stateUrl, { credentials: "same-origin", cache: "no-store", headers: { "X-Requested-With": "XMLHttpRequest" } })
       .then(function (response) { return response.ok ? response.json() : {}; })
       .catch(function () { return {}; })
       .then(function (data) { state = data || {}; });
@@ -227,9 +249,10 @@
   function next() {
     var step = STEPS[index];
     if (index >= STEPS.length - 1) { finish(); return; }
-    if (resolve(step.waits)) {          // the user acts now (save the form); the tour comes back on the next page
-      save(index + 1, true);
+    if (resolve(step.waits)) {          // the user (or the agent) acts now; the tour comes back when it is done
+      save(index + 1, true, step.until ? index : null);
       close();
+      if (step.until) resume();
       return;
     }
     go(index + 1, 1);
@@ -387,16 +410,73 @@
     if (lastFocus && lastFocus.focus && document.contains(lastFocus)) lastFocus.focus({ preventScroll: true });
   }
 
-  function finish() { forget(); close(); }
+  function finish() { chipHide(); forget(); close(); }
 
-  function start() { forget(); close(); open(0); }
+  function start() { chipHide(); forget(); close(); open(0); }
+
+  // ── waiting: a chip in the corner says what the tour waits for, and turns into "Continuar" ──
+  function chipShow(saved, ready) {
+    var gate = STEPS[saved.u];
+    injectStyle();
+    if (!chip) { chip = el("div"); document.body.appendChild(chip); }
+    chip.className = "iktour-chip" + (ready ? " ready" : "");
+    chip.setAttribute("data-path", window.location.pathname);
+    chip.innerHTML = '<i class="bi ' + (ready ? "bi-check-circle-fill" : "bi-arrow-repeat") + '"></i>' +
+      '<span><small></small><b></b></span>' +
+      (ready ? '<button type="button" class="iktour-btn primary" data-act="go">Continuar <i class="bi bi-arrow-right"></i></button>' : "") +
+      '<button type="button" class="iktour-close" data-act="stop" aria-label="Encerrar o tour"><i class="bi bi-x-lg"></i></button>';
+    chip.querySelector("small").textContent = "Tour · " + (gate.chapter || "Ikabot");
+    chip.querySelector("b").textContent = ready ? gate.readyText : gate.waitText;
+    chip.querySelector('[data-act="stop"]').addEventListener("click", finish);
+    if (ready) chip.querySelector('[data-act="go"]').addEventListener("click", function () { continueTo(saved.i); });
+  }
+
+  function chipHide() {
+    if (poll) { window.clearInterval(poll); poll = null; }
+    if (chip) { chip.remove(); chip = null; }
+  }
+
+  function continueTo(i) {
+    chipHide();
+    var step = STEPS[i];
+    save(i, false);
+    if (onPage(step)) { window.location.reload(); return; }   // fresh page: the new node, account or worlds show up
+    window.location.href = resolve(step.go) || window.location.href;
+  }
 
   // the tour was left on another page (a page change or the user saving the form): pick it up here
   function resume() {
-    if (root) return false;
+    if (root || resuming) return false;
     var saved = load();
-    if (!saved || !onPage(STEPS[saved.i])) return false;
-    open(saved.i);
+    if (!saved) { chipHide(); return false; }
+    if (saved.u == null) {
+      if (!onPage(STEPS[saved.i])) return false;
+      open(saved.i);
+      return true;
+    }
+    if (chip && chip.getAttribute("data-path") === window.location.pathname) return true;   // already said here
+    resuming = true;
+    fetchState().then(function () {
+      resuming = false;
+      var gate = STEPS[saved.u];
+      var ready = !!resolve(gate.until);
+      if (ready && onPage(STEPS[saved.i])) {    // done, and already where the tour goes on (the account list after saving)
+        chipHide();
+        save(saved.i, false);
+        open(saved.i);
+        return;
+      }
+      chipShow(saved, ready);
+      if (!ready && !poll) {
+        poll = window.setInterval(function () {
+          fetchState().then(function () {
+            if (!resolve(gate.until) || !chip) return;
+            window.clearInterval(poll); poll = null;
+            chipShow(saved, true);
+          });
+        }, 10000);
+      }
+    });
     return true;
   }
 
