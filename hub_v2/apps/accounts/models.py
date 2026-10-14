@@ -13,6 +13,7 @@ import secrets
 
 from django.conf import settings
 from django.db import models
+from apps.orgs.services import default_organization_id
 
 from core.mixins.models import UUIDTimestampModel
 
@@ -26,6 +27,11 @@ class Node(UUIDTimestampModel):
     name = models.CharField(max_length=64, unique=True)
     description = models.TextField(blank=True, default="")
     location = models.CharField(max_length=128, blank=True, default="")
+    # N-106: who owns it. Stage 1 fills it with the default organization; nothing filters by it yet.
+    organization = models.ForeignKey(
+        "orgs.Organization", on_delete=models.PROTECT, null=True, blank=True,
+        default=default_organization_id, related_name="nodes",
+    )
 
     # Network
     proxy = models.CharField(max_length=256, blank=True, default="")
@@ -98,6 +104,11 @@ class DockerHost(UUIDTimestampModel):
 
     name = models.CharField(max_length=80, unique=True)
     description = models.TextField(blank=True, default="")
+    # N-106: who owns it. Stage 1 fills it with the default organization; nothing filters by it yet.
+    organization = models.ForeignKey(
+        "orgs.Organization", on_delete=models.PROTECT, null=True, blank=True,
+        default=default_organization_id, related_name="docker_hosts",
+    )
     enrollment_token = models.CharField(max_length=80, blank=True, default="")
     machine_id = models.CharField(max_length=128, blank=True, default="", unique=True, null=True)
     supervisor_version = models.CharField(max_length=64, blank=True, default="")
@@ -170,6 +181,11 @@ class Account(UUIDTimestampModel):
 
     node = models.ForeignKey(
         Node, on_delete=models.CASCADE, related_name="accounts"
+    )
+    # N-106: who owns it. Stage 1 fills it with the default organization; nothing filters by it yet.
+    organization = models.ForeignKey(
+        "orgs.Organization", on_delete=models.PROTECT, null=True, blank=True,
+        default=default_organization_id, related_name="accounts",
     )
     label = models.CharField(
         max_length=64,

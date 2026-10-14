@@ -4,6 +4,7 @@ Models: Profile (legacy) + Preset (F006) — reusable multi-action × multi-acco
 
 from django.conf import settings
 from django.db import models
+from apps.orgs.services import default_organization_id
 
 from core.mixins.models import UUIDTimestampModel
 
@@ -16,6 +17,11 @@ class Profile(UUIDTimestampModel):
 
     name = models.CharField(max_length=96, unique=True)
     description = models.TextField(blank=True, default="")
+    # N-106: who owns it. Stage 1 fills it with the default organization; nothing filters by it yet.
+    organization = models.ForeignKey(
+        "orgs.Organization", on_delete=models.PROTECT, null=True, blank=True,
+        default=default_organization_id, related_name="profiles",
+    )
     action_code = models.IntegerField()
     inputs_json = models.TextField(
         default="[]", help_text="JSON array of default input values"
@@ -41,6 +47,11 @@ class Preset(UUIDTimestampModel):
 
     name = models.CharField(max_length=128, unique=True)
     description = models.TextField(blank=True, default="")
+    # N-106: who owns it. Stage 1 fills it with the default organization; nothing filters by it yet.
+    organization = models.ForeignKey(
+        "orgs.Organization", on_delete=models.PROTECT, null=True, blank=True,
+        default=default_organization_id, related_name="presets",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,

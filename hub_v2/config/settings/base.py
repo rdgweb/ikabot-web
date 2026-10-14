@@ -86,6 +86,7 @@ INSTALLED_APPS = [
     "apps.notes",
     "apps.telemetry",
     "apps.manual_control",
+    "apps.orgs",
 ]
 
 MIDDLEWARE = [

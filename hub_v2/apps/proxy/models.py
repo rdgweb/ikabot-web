@@ -3,6 +3,7 @@ Models: ProxyProfile — proxy management via Webshare.io or manual entry.
 """
 
 from django.db import models
+from apps.orgs.services import default_organization_id
 
 from core.mixins.models import TimestampModel
 
@@ -18,6 +19,11 @@ class ProxyProfile(TimestampModel):
         OTHER = "other", "Outro"
 
     webshare_id = models.CharField(max_length=64, null=True, blank=True, unique=True)
+    # N-106: who owns it. Stage 1 fills it with the default organization; nothing filters by it yet.
+    organization = models.ForeignKey(
+        "orgs.Organization", on_delete=models.PROTECT, null=True, blank=True,
+        default=default_organization_id, related_name="proxies",
+    )
     provider = models.CharField(
         max_length=16,
         choices=Provider.choices,
