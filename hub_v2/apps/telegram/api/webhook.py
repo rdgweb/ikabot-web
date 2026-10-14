@@ -398,7 +398,15 @@ class TelegramWebhookView(APIView):
             logger.warning("Webhook called with invalid secret.")
             return Response({"status": "ok"})
 
-        data = request.data
+        self.handle_update(request.data)
+        return Response({"status": "ok"})
+
+    def handle_update(self, data: dict):
+        """One update of Telegram: a button pressed or a message written.
+
+        The webhook brings it when the hub has public HTTPS; without it the polling service
+        (telegram_poll, N-107) fetches the updates and hands each one here, so both answer the same.
+        """
 
         # ── Callback queries (inline keyboard buttons) ────────────────────────
         if data.get("callback_query"):

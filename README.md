@@ -18,6 +18,7 @@ mais, rodando 24 horas no seu próprio servidor.
 | `gateway` | controle manual (jogar pelo painel); só funciona com domínio |
 | `npm` *(opcional)* | Nginx Proxy Manager, para abrir o hub por um domínio, com ou sem HTTPS |
 | `phpmyadmin` *(opcional)* | só para olhar as tabelas do banco; nada depende dele |
+| `telegram` *(opcional)* | Telegram sem HTTPS: busca mensagens e botões em vez de esperar o webhook (o instalador liga quando não há HTTPS) |
 
 ## Requisitos
 
@@ -89,7 +90,7 @@ Tudo fica no `.env`; o [`.env.example`](.env.example) explica cada linha. As que
 |---|---|
 | `HUB_PUBLIC_URL` | o endereço da barra do navegador. Errado, o login falha com erro de CSRF. |
 | `HUB_PORT`, `HUB_BIND` | porta do hub e em que interface escuta (`127.0.0.1` atrás de um proxy) |
-| `COMPOSE_PROFILES` | `proxy` (Nginx Proxy Manager), `tools` (phpMyAdmin), separados por vírgula |
+| `COMPOSE_PROFILES` | `proxy` (Nginx Proxy Manager), `tools` (phpMyAdmin), `telegram` (Telegram sem HTTPS), separados por vírgula |
 | `REDIS_BIND` | `0.0.0.0` só se houver agentes em outra máquina |
 | `MANUAL_GATEWAY_DOMAIN` | domínio do controle manual; vazio = desligado |
 | `TZ` | fuso horário dos containers |

@@ -114,7 +114,7 @@ if (-not (Test-Path ".env")) {
         Set-Env "HUB_PORT" $port
         Set-Env "HUB_BIND" "0.0.0.0"
         Set-Env "HUB_PUBLIC_URL" "http://${ip}:$port"
-        Set-Env "COMPOSE_PROFILES" ""
+        Set-Env "COMPOSE_PROFILES" "telegram"   # sem HTTPS o Telegram não tem webhook
     } else {
         $domain = if ($env:IKABOT_DOMAIN) { $env:IKABOT_DOMAIN } else { Ask "  Domínio do hub (ex.: ikabot.seudominio.com)" "" }
         if (-not $domain) { Fail "o modo com proxy precisa de um domínio apontando para esta máquina" }
@@ -124,7 +124,7 @@ if (-not (Test-Path ".env")) {
         Set-Env "HUB_BIND" "127.0.0.1"
         Set-Env "HUB_PUBLIC_URL" "${scheme}://$domain"
         Set-Env "MANUAL_GATEWAY_SCHEME" $scheme
-        Set-Env "COMPOSE_PROFILES" "proxy"
+        Set-Env "COMPOSE_PROFILES" $(if ($scheme -eq "https") { "proxy" } else { "proxy,telegram" })
     }
 
     $user = Ask "  Usuário do administrador" "admin"

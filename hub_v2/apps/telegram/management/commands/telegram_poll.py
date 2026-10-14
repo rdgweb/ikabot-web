@@ -110,6 +110,12 @@ class Command(BaseCommand):
                 if not data.get("ok"):
                     # Token might have changed — re-check config
                     desc = data.get("description", "")
+                    if data.get("error_code") == 409:
+                        # a webhook is set: Telegram delivers there and refuses getUpdates.
+                        # It is not removed from here; wait and look again.
+                        self.stderr.write("A webhook is active for this bot; polling waits.")
+                        self._backoff_sleep(MAX_BACKOFF)
+                        continue
                     if "Unauthorized" in desc or "Not Found" in desc:
                         self.stderr.write(
                             f"Bot token rejected: {desc}. Waiting for new config..."
@@ -154,7 +160,22 @@ class Command(BaseCommand):
             time.sleep(1)
 
     def _process_update(self, update):
-        """Process a single Telegram update."""
+        """Process a single Telegram update: the same code the webhook runs (buttons included).
+
+        N-107: before, the polling service only knew /start and /replyto; without HTTPS (no webhook)
+        every button of the alerts did nothing. The old handling below stays as the fallback.
+        """
+        try:
+            from apps.telegram.api.webhook import TelegramWebhookView
+
+            TelegramWebhookView().handle_update(update)
+            return
+        except Exception:  # noqa: BLE001 - an update that breaks the shared handler still gets the old one
+            logger.exception("Shared Telegram handler failed; using the polling one")
+        self._process_update_basic(update)
+
+    def _process_update_basic(self, update):
+        """What the polling service knew before N-107: /start and /replyto."""
         message = update.get("message", {})
         text = message.get("text", "")
         chat = message.get("chat", {})

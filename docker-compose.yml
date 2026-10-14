@@ -14,6 +14,7 @@
 # Perfis opcionais (COMPOSE_PROFILES no .env, separados por vírgula):
 #   proxy  - Nginx Proxy Manager na frente do hub (portas 80/443, painel na 81)
 #   tools  - phpMyAdmin, só para olhar o banco (em 127.0.0.1)
+#   telegram - Telegram sem HTTPS: busca as mensagens e os botões em vez de esperar o webhook
 #
 # Código-fonte em vez das imagens publicadas:
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
@@ -213,6 +214,33 @@ services:
       - npm_letsencrypt:/etc/letsencrypt
     profiles:
       - proxy
+
+  # Telegram sem HTTPS (perfil "telegram"): o Telegram só entrega mensagens e botões por
+  # webhook em HTTPS público. Sem ele, este serviço busca as atualizações e as trata com o
+  # mesmo código do webhook. Não ligue junto com um webhook ativo (o Telegram recusa os dois).
+  telegram:
+    image: ${HUB_IMAGE:-blackoneal/ikabot-web-hub:latest}
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      hub:
+        condition: service_healthy
+    entrypoint: []
+    command: ["python", "manage.py", "telegram_poll"]
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.base
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+      DB_NAME: ${DB_NAME:-ikabot_hub}
+      DB_USER: ${DB_USER:-ikabot}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: mariadb
+      DB_PORT: "3306"
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
+      APP_SECRET: ${APP_SECRET}
+      HUB_PUBLIC_URL: ${HUB_PUBLIC_URL:-}
+      TZ: ${TZ:-America/Sao_Paulo}
+    profiles:
+      - telegram
 
   # phpMyAdmin (perfil "tools"): só para olhar as tabelas; nada do sistema depende dele.
   phpmyadmin:
