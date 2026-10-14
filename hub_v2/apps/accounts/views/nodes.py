@@ -183,6 +183,28 @@ class NodeQueuePurgeView(LoginRequiredMixin, View):
 NEW_TOKEN_SESSION_KEY = "agent-key:{pk}"
 
 
+def _may_manage(request, node) -> bool:
+    """Platform staff, or an owner/operator of the node's organization (N-106)."""
+    if request.user.is_staff or request.user.is_superuser:
+        return True
+    if node.transport != Node.TRANSPORT_HTTPS:
+        return False                                   # a broker node shows the platform's Redis
+    from apps.orgs.views import can_change
+
+    return can_change(request)
+
+
+def install_commands(*, hub_url: str, node, token: str, image: str) -> tuple[str, str]:
+    """docker run for Linux/macOS and for Windows PowerShell: only the hub address and the node key."""
+    name = f"ikahub-agente-{str(node.pk)[:8]}"
+    agent_name = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in node.name)[:40] or name
+    pairs = [("HUB_URL", hub_url), ("AGENT_NODE_ID", str(node.pk)), ("AGENT_TOKEN", token),
+             ("AGENT_TRANSPORT", "https"), ("AGENT_NAME", agent_name)]
+    linux = [f"docker run -d --restart unless-stopped --name {name}"] + [f"  -e {key}={value}" for key, value in pairs] + [f"  {image}"]
+    windows = [f"docker run -d --restart unless-stopped --name {name}"] + [f'  -e "{key}={value}"' for key, value in pairs] + [f"  {image}"]
+    return " \\\n".join(linux), " `\n".join(windows)
+
+
 def _keep_new_token_for_one_view(request, node) -> None:
     """N-106: the key is shown once, on the next page, and then only its hash exists."""
     token = getattr(node, "new_agent_token", "")
@@ -196,6 +218,7 @@ class NodeCreateView(LoginRequiredMixin, CreateView):
     template_name = "accounts/node_create.html"
 
     def form_valid(self, form):
+        form.instance.transport = Node.TRANSPORT_HTTPS     # N-106: a new agent never touches the broker
         response = super().form_valid(form)
         _keep_new_token_for_one_view(self.request, self.object)
         return response
@@ -208,9 +231,9 @@ class NodeTokenRotateView(LoginRequiredMixin, View):
     """POST: a new key for the node's agent; the old one stops working at once (N-106)."""
 
     def post(self, request, pk):
-        if not (request.user.is_staff or request.user.is_superuser):
+        node = get_object_or_404(Node, pk=pk)        # scoped: only a node of the person's organization
+        if not _may_manage(request, node):
             raise Http404()
-        node = get_object_or_404(Node, pk=pk)
         node.new_agent_token = node.issue_agent_token()
         node.save(update_fields=["agent_token_hash", "deploy_token", "updated_at"])
         _keep_new_token_for_one_view(request, node)
@@ -304,10 +327,27 @@ class NodeDeployView(LoginRequiredMixin, DetailView):
     context_object_name = "node"
 
     def get(self, request, *args, **kwargs):
-        # N-106: shows the platform's Redis address and password: only the platform's staff
+        node = self.get_object()
+        if node.transport == Node.TRANSPORT_HTTPS:
+            return self._install_page(request, node)
+        # N-106: a broker node's page shows the platform's Redis address and password: staff only
         if not (request.user.is_staff or request.user.is_superuser):
             raise Http404()
         return super().get(request, *args, **kwargs)
+
+    def _install_page(self, request, node):
+        """N-106: the customer's install page — one command, the hub address and the node key, no Redis."""
+        from django.shortcuts import render
+
+        new_token = request.session.pop(NEW_TOKEN_SESSION_KEY.format(pk=node.pk), "")
+        hub_url = (getattr(settings, "HUB_PUBLIC_URL", "") or get_setting("agent_deploy_hub_url", "").strip()
+                   or f"{request.scheme}://{request.get_host()}").rstrip("/")
+        image = get_setting("agent_deploy_image", "").strip() or "blackoneal/ikabot-web-agent:latest"
+        linux, windows = install_commands(hub_url=hub_url, node=node, token=new_token or "<CHAVE-DO-NO>", image=image)
+        return render(request, "accounts/node_install.html", {
+            "node": node, "new_token": new_token, "linux_command": linux, "windows_command": windows,
+            "can_change": _may_manage(request, node),
+        })
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)

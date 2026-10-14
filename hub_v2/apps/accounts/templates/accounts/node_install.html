@@ -1,0 +1,69 @@
+{% extends base_template|default:"base.html" %}
+
+{% block title %}Instalar agente — {{ node.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'accounts:node-list' %}" class="hover:text-ink">Nós</a>
+  <span class="mx-1">/</span> <a href="{% url 'accounts:node-detail' node.pk %}" class="hover:text-ink">{{ node.name }}</a>
+  <span class="mx-1">/</span> <span class="text-ink">Instalar</span>
+{% endblock %}
+
+{% block content %}
+{# N-106: agente por HTTPS — só o endereço do hub e a chave do nó; nada de Redis #}
+<style>
+  .ins-grid { display: grid; gap: 1rem; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); }
+  @media (max-width: 900px) { .ins-grid { grid-template-columns: 1fr; } }
+  .ins-cmd { position: relative; }
+  .ins-cmd pre { margin: 0; padding: 1rem 1.1rem; border-radius: 12px; background: #1d1b17; color: #b9e3a6; font-size: .8rem; line-height: 1.55; overflow-x: auto; }
+  .ins-cmd button { position: absolute; top: .55rem; right: .55rem; }
+  .ins-tab { display: flex; gap: .4rem; margin-bottom: .6rem; }
+  .ins-key code { display: block; padding: .7rem .8rem; border-radius: 10px; background: rgba(201, 156, 78, .1); border: 1px dashed rgba(201, 156, 78, .6); font-size: .82rem; word-break: break-all; color: var(--ik-ink); }
+  .ins-state { display: flex; align-items: center; gap: .6rem; font-size: .88rem; }
+  .ins-dot { width: .7rem; height: .7rem; border-radius: 999px; background: #c9922e; }
+  .ins-dot.on { background: #2d7a2d; }
+</style>
+
+<div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+  <h1 class="text-xl font-bold text-ink flex items-center gap-2"><i class="bi bi-hdd-network text-sea"></i> Instalar o agente de {{ node.name }}</h1>
+  <a href="{% url 'accounts:node-detail' node.pk %}" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Voltar</a>
+</div>
+
+<div class="ins-grid">
+  <div class="card p-5" x-data="{ tab: 'linux', copied: false }">
+    <div class="ins-tab">
+      <button type="button" class="btn btn-sm" :class="tab === 'linux' ? 'btn-primary' : 'btn-secondary'" @click="tab = 'linux'"><i class="bi bi-terminal"></i> Linux / macOS</button>
+      <button type="button" class="btn btn-sm" :class="tab === 'windows' ? 'btn-primary' : 'btn-secondary'" @click="tab = 'windows'"><i class="bi bi-windows"></i> Windows</button>
+    </div>
+    <div class="ins-cmd" x-show="tab === 'linux'">
+      <pre x-ref="linux">{{ linux_command }}</pre>
+      <button type="button" class="btn btn-secondary btn-sm" @click="navigator.clipboard.writeText($refs.linux.textContent); copied = true; setTimeout(() => copied = false, 2000)"><i class="bi" :class="copied ? 'bi-check' : 'bi-clipboard'"></i></button>
+    </div>
+    <div class="ins-cmd" x-show="tab === 'windows'" x-cloak>
+      <pre x-ref="windows">{{ windows_command }}</pre>
+      <button type="button" class="btn btn-secondary btn-sm" @click="navigator.clipboard.writeText($refs.windows.textContent); copied = true; setTimeout(() => copied = false, 2000)"><i class="bi" :class="copied ? 'bi-check' : 'bi-clipboard'"></i></button>
+    </div>
+    <p class="text-xs text-muted mt-3">Precisa do Docker na máquina. O agente só fala com o hub por HTTPS; nenhuma porta precisa ser aberta.</p>
+  </div>
+
+  <div class="flex flex-col gap-4">
+    <div class="card p-5">
+      <div class="ins-state"><span class="ins-dot {% if node.is_online %}on{% endif %}"></span>{% if node.is_online %}Agente conectado{% if node.agent_version %} · v{{ node.agent_version }}{% endif %}{% else %}Aguardando o agente conectar{% endif %}</div>
+    </div>
+    <div class="card p-5 ins-key">
+      <h3 class="text-sm font-semibold text-ink mb-2"><i class="bi bi-key"></i> Chave do nó</h3>
+      {% if new_token %}
+      <p class="text-xs mb-2" style="color: #8a6420;"><i class="bi bi-exclamation-triangle"></i> Copie agora: ela só aparece desta vez e já está no comando.</p>
+      <code>{{ new_token }}</code>
+      {% else %}
+      <p class="text-xs text-muted mb-3">A chave não fica guardada no hub. Gerar uma nova desliga a atual na hora.</p>
+      {% if can_change %}
+      <form method="post" action="{% url 'accounts:node-new-key' node.pk %}" onsubmit="return confirm('Gerar uma nova chave? A atual para de funcionar na hora.');">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-repeat"></i> Gerar nova chave</button>
+      </form>
+      {% endif %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

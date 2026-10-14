@@ -9,8 +9,12 @@ def nav_context(request):
     if not hasattr(user, "_perm_is_admin"):
         user._perm_is_admin = _is_admin(user)
         user._perm_is_operator = _is_operator(user)
+        user._perm_is_staff = _is_staff(user)
+        user._perm_is_owner = _is_owner(user)
     is_admin = user._perm_is_admin
     is_operator = user._perm_is_operator
+    is_staff = user._perm_is_staff
+    is_owner = user._perm_is_owner
 
     all_sections = [
         {
@@ -44,15 +48,15 @@ def nav_context(request):
                 {"name": "Nós & Agents", "url": "/accounts/nodes/", "icon": "bi-hdd-network"},
                 {"name": "Contas do Jogo", "url": "/accounts/", "icon": "bi-person-badge"},
                 {"name": "Presets", "url": "/profiles/presets/", "icon": "bi-collection"},
-                {"name": "Proxy", "url": "/proxy/", "icon": "bi-shield-lock"},
-                {"name": "Telegram", "url": "/telegram/", "icon": "bi-telegram"},
-                {"name": "Mensagens", "url": "/telegram/audit/", "icon": "bi-chat-dots"},
-                {"name": "Captcha", "url": "/captcha/", "icon": "bi-robot"},
-                {"name": "Notas", "url": "/notes/", "icon": "bi-card-checklist"},
-                {"name": "Atualizações", "url": "/notes/atualizacoes/", "icon": "bi-journal-code"},
-                {"name": "Atividades", "url": "/atividades/", "icon": "bi-clock-history", "perm": "admin"},
-                {"name": "Configurações", "url": "/settings/", "icon": "bi-gear", "perm": "admin"},
-                {"name": "Usuários", "url": "/users/", "icon": "bi-people", "perm": "admin"},
+                {"name": "Proxy", "url": "/proxy/", "icon": "bi-shield-lock", "perm": "staff"},
+                {"name": "Telegram", "url": "/telegram/", "icon": "bi-telegram", "perm": "staff"},
+                {"name": "Mensagens", "url": "/telegram/audit/", "icon": "bi-chat-dots", "perm": "staff"},
+                {"name": "Captcha", "url": "/captcha/", "icon": "bi-robot", "perm": "staff"},
+                {"name": "Notas", "url": "/notes/", "icon": "bi-card-checklist", "perm": "staff"},
+                {"name": "Atualizações", "url": "/notes/atualizacoes/", "icon": "bi-journal-code", "perm": "staff"},
+                {"name": "Atividades", "url": "/atividades/", "icon": "bi-clock-history", "perm": "owner"},
+                {"name": "Configurações", "url": "/settings/", "icon": "bi-gear", "perm": "staff"},
+                {"name": "Usuários", "url": "/users/", "icon": "bi-people", "perm": "staff"},
             ],
         },
     ]
@@ -70,6 +74,8 @@ def nav_context(request):
             if not item.get("perm")
             or (item["perm"] == "admin" and is_admin)
             or (item["perm"] == "operator" and is_operator)
+            or (item["perm"] == "staff" and is_staff)
+            or (item["perm"] == "owner" and is_owner)
         ]
         if items:
             filtered.append({"label": section["label"], "items": items})
@@ -94,7 +100,23 @@ def _is_operator(user):
         return False
     if user.is_superuser or user.is_staff:
         return True
-    return user.groups.filter(name__in=["admin", "operator"]).exists()
+    if user.groups.filter(name__in=["admin", "operator"]).exists():
+        return True
+    # N-106: an owner or operator of an organization runs its own nodes, accounts and presets
+    return user.memberships.filter(role__in=["owner", "operator"]).exists()
+
+
+def _is_staff(user):
+    """The platform's own team: the only ones who see the platform's pages (N-106)."""
+    return bool(user and getattr(user, "is_authenticated", False) and (user.is_superuser or user.is_staff))
+
+
+def _is_owner(user):
+    if _is_staff(user):
+        return True
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    return user.memberships.filter(role="owner").exists()
 
 
 def hub_version(request):
