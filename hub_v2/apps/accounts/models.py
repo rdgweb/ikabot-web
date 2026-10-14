@@ -66,6 +66,11 @@ class Node(UUIDTimestampModel):
     deploy_token = models.CharField(max_length=64, blank=True, default="")   # N-106: no longer kept (see agent_token_hash)
     # N-106: hash of this node's agent key; the key itself is shown once when issued
     agent_token_hash = models.CharField(max_length=64, blank=True, default="")
+    # N-106 3b-2: how the agent gets its jobs and the manual-control requests. "https": only the
+    # hub's API with the node key (no broker access) — the only way for customer agents.
+    TRANSPORT_REDIS, TRANSPORT_HTTPS = "redis", "https"
+    TRANSPORT_CHOICES = [(TRANSPORT_REDIS, "Redis (interno)"), (TRANSPORT_HTTPS, "HTTPS")]
+    transport = models.CharField(max_length=8, choices=TRANSPORT_CHOICES, default=TRANSPORT_REDIS)
 
     active = models.BooleanField(default=True)
 

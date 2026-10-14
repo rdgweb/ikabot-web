@@ -48,6 +48,15 @@ def build_payload(job: Job) -> dict:
 
 
 def dispatch_job(job: Job, eta: datetime | None = None) -> None:
+    from apps.accounts.models import Node
+
+    transport = Node._base_manager.filter(pk=job.node_id).values_list("transport", flat=True).first()
+    if transport == Node.TRANSPORT_HTTPS:
+        # N-106 3b-2: the job stays in the database and the node's agent claims it over HTTPS
+        # when it is due; nothing goes to the broker.
+        if eta is not None:
+            Job._base_manager.filter(pk=job.pk).update(scheduled_for=eta)
+        return
     celery_app.send_task(
         TASK_NAME,
         kwargs={"job": build_payload(job)},

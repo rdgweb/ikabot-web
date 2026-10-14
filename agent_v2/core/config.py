@@ -26,6 +26,9 @@ class AgentSettings(BaseSettings):
     agent_image: str = ""
     agent_image_digest: str = ""
     max_parallel: int = 12
+    # N-106 3b-2: "https" = jobs and manual control only through the hub's API (no broker);
+    # empty = what the hub says for this node
+    agent_transport: str = ""
     heartbeat_interval: int = 60
     log_level: str = "INFO"
     # Blackbox (N-73): how long the agent waits for the hub to answer with the login

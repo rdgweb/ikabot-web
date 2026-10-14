@@ -1,5 +1,7 @@
 from django.urls import path
 
+from .api.transport import JobClaimView, ManualAnswerView, ManualNextView
+
 from .api.agent import (
     ActiveSpyTargetsView,
     ConstructionReservationSyncView,
@@ -18,6 +20,10 @@ from .api.agent import (
 app_name = "agent-jobs"
 
 urlpatterns = [
+    # N-106 3b-2: agents over HTTPS only
+    path("jobs/claim/", JobClaimView.as_view(), name="claim"),
+    path("manual/next/", ManualNextView.as_view(), name="manual-next"),
+    path("manual/answer/", ManualAnswerView.as_view(), name="manual-answer"),
     path("jobs/<uuid:job_id>/status/", JobStatusView.as_view(), name="status"),
     path("jobs/<uuid:job_id>/logs/", JobLogView.as_view(), name="logs"),
     path("jobs/<uuid:job_id>/reschedule/", RescheduleJobView.as_view(), name="reschedule"),

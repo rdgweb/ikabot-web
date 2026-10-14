@@ -25,4 +25,5 @@ ENTRYPOINT ["./entrypoint.sh"]
 
 EXPOSE 8000
 
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2"]
+# N-106 3b-2: threads, so an agent waiting for manual-control requests does not hold a whole worker
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--worker-class", "gthread", "--threads", "8"]

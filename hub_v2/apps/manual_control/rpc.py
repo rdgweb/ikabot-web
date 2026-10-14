@@ -25,6 +25,8 @@ from django.conf import settings
 
 REQUEST_KEY = "ikabot:manual:req:{node_id}"
 RESPONSE_KEY = "ikabot:manual:resp:{request_id}"
+# N-106 3b-2: which node a request was sent to — an agent over HTTPS answers only its own
+OWNER_KEY = "ikabot:manual:owner:{request_id}"
 # A request nobody picked up is worthless after this long; the agent drops it.
 REQUEST_TTL_SECONDS = 60
 # Requests of a node whose agent is gone must not pile up forever.
@@ -48,9 +50,32 @@ def send(node_id, payload: dict, *, ttl: int = REQUEST_TTL_SECONDS) -> str:
     message["expires"] = time.time() + ttl
     key = REQUEST_KEY.format(node_id=node_id)
     connection = client()
+    connection.set(OWNER_KEY.format(request_id=request_id), str(node_id), ex=max(ttl, 1) + 60)
     connection.lpush(key, json.dumps(message))
     connection.expire(key, QUEUE_TTL_SECONDS)
     return request_id
+
+
+def next_for(node_id, *, timeout: int):
+    """Over HTTPS (N-106 3b-2): the next request for this node, waiting up to ``timeout`` seconds."""
+    found = client().brpop(REQUEST_KEY.format(node_id=node_id), timeout=max(1, int(timeout)))
+    return _decode(found[1]) if found else None
+
+
+def pending(node_id) -> bool:
+    return bool(client().llen(REQUEST_KEY.format(node_id=node_id)))
+
+
+def answer_from(node_id, request_id: str, answer: dict, *, ttl: int = 120) -> bool:
+    """Store an agent's answer, only if the request was sent to that agent's node."""
+    connection = client()
+    owner = connection.get(OWNER_KEY.format(request_id=request_id))
+    if owner is None or owner.decode() != str(node_id):
+        return False
+    key = RESPONSE_KEY.format(request_id=request_id)
+    connection.rpush(key, json.dumps(answer))
+    connection.expire(key, ttl)
+    return True
 
 
 def _decode(raw) -> dict | None:

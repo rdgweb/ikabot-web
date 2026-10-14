@@ -42,12 +42,19 @@ def main():
         logger.error("Failed to register with hub: %s", exc)
         sys.exit(1)
 
+    config = {}
     try:
         config = hub.get_config()
         _proxy_url = config.get("proxy", "")
     except Exception as exc:
         logger.warning("Failed to fetch config for proxy: %s", exc)
         _proxy_url = ""
+
+    # N-106 3b-2: an agent over HTTPS never touches the broker (the env decides, else the hub)
+    transport = (settings.agent_transport or config.get("transport") or "redis").strip().lower()
+    if transport == "https":
+        _run_over_https(hub)
+        return
 
     configure_worker_runtime(_proxy_url)
 
@@ -81,6 +88,34 @@ def main():
         f"{settings.agent_name}@%h",
     ]
     app.worker_main(argv)
+
+
+def _run_over_https(hub) -> None:
+    import threading
+
+    import https_worker
+    import tasks
+    from services.manual_control import start_manual_control
+
+    logger.info("Transport: HTTPS only (no broker)")
+    configure_worker_runtime(_proxy_url)
+    heartbeat = HeartbeatThread(hub, proxy_url=_proxy_url)
+    heartbeat.start()
+    current_proxy = lambda: heartbeat.proxy_url or _proxy_url  # noqa: E731
+    channel = https_worker.HttpsManualChannel(HubClient())     # its own connection to the hub
+    start_manual_control(sessions=tasks._sessions, hub=hub, proxy_url=current_proxy, channel=channel)
+
+    stop = threading.Event()
+
+    def shutdown(sig, frame):
+        logger.info("Shutting down...")
+        heartbeat.stop()
+        stop.set()
+
+    signal.signal(signal.SIGINT, shutdown)
+    signal.signal(signal.SIGTERM, shutdown)
+    https_worker.run(hub=HubClient(), sessions=tasks._sessions, proxy_url=current_proxy,
+                     max_parallel=settings.max_parallel, channel=channel, stop=stop)
 
 
 if __name__ == "__main__":

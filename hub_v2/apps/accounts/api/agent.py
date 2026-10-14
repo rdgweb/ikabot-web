@@ -318,6 +318,7 @@ class AgentConfigView(APIView):
             "proxy": node.proxy,
             "proxy_verified": proxy_verified,
             "active": node.active,
+            "transport": node.transport,
             "system_settings": {
                 "snapshot_stale_seconds": get_int_setting("snapshot_stale_seconds", 2 * 60 * 60),
                 "building_options_stale_seconds": get_int_setting("building_options_stale_seconds", 6 * 60 * 60),

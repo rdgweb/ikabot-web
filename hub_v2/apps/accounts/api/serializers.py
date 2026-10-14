@@ -92,5 +92,6 @@ class NodeConfigResponseSerializer(serializers.Serializer):
                   "False/null means proxy changed or was never tested.",
     )
     active = serializers.BooleanField()
+    transport = serializers.CharField(required=False, default="redis")   # N-106 3b-2
     system_settings = serializers.JSONField(required=False)
     accounts = AccountConfigSerializer(many=True)

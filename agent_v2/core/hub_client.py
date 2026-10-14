@@ -95,6 +95,26 @@ class HubClient:
             payload["external_ip"] = external_ip
         return self._post("/api/agent/heartbeat", payload)
 
+    # ── HTTPS transport (N-106 3b-2): no broker, the hub hands out this node's work ──
+
+    def claim_jobs(self, slots: int) -> dict:
+        """POST /api/agent/jobs/claim/ — the node's due jobs (at most ``slots``) and whether manual control is on."""
+        return self._post("/api/agent/jobs/claim/", {"node_id": settings.agent_node_id, "slots": max(0, int(slots))})
+
+    def manual_next(self, wait: int = 20) -> dict:
+        """GET /api/agent/manual/next/ — waits on the hub up to ``wait`` seconds for a manual-control request."""
+        resp = self.session.get(
+            self._url("/api/agent/manual/next/"),
+            params={"node_id": settings.agent_node_id, "wait": int(wait)},
+            timeout=(5, int(wait) + 15),
+        )
+        resp.raise_for_status()
+        return resp.json() if resp.content else {}
+
+    def manual_answer(self, request_id: str, answer: dict) -> dict:
+        """POST /api/agent/manual/answer/ — the answer to a manual-control request of this node."""
+        return self._post("/api/agent/manual/answer/", {"node_id": settings.agent_node_id, "id": request_id, "answer": answer})
+
     def get_config(self) -> dict:
         """GET /api/agent/config"""
         return self._get("/api/agent/config", params={"node_id": settings.agent_node_id})

@@ -366,14 +366,21 @@ class ManualControlService(threading.Thread):
         return (urlparse(location).hostname or "") != entry.host
 
 
-def start_manual_control(*, sessions, hub, proxy_url) -> ManualControlService | None:
-    """Start the service for this node. ``proxy_url`` is a callable: the node proxy can change."""
-    try:
-        import redis
+def start_manual_control(*, sessions, hub, proxy_url, channel=None) -> ManualControlService | None:
+    """Start the service for this node. ``proxy_url`` is a callable: the node proxy can change.
 
+    ``channel`` replaces the broker (N-106 3b-2): anything with brpop/rpush/expire, like the
+    HTTPS channel of an agent that only talks to the hub.
+    """
+    try:
         from core.config import settings
 
-        client = redis.Redis.from_url(settings.redis_url, socket_keepalive=True, health_check_interval=25)
+        if channel is not None:
+            client = channel
+        else:
+            import redis
+
+            client = redis.Redis.from_url(settings.redis_url, socket_keepalive=True, health_check_interval=25)
         from core.heartbeat import _fetch_external_ip
 
         open_client, save_client = default_client_factory(sessions, hub, proxy_url)
