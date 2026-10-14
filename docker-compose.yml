@@ -1,33 +1,47 @@
 # =============================================================================
 # ikabot-web - Docker Compose
 # =============================================================================
-# Installation from source:
-#   cp .env.example .env
-#   docker compose up -d --build
+# Instalação (recomendada): rode o instalador na pasta do projeto.
+#   Linux:   ./install.sh
+#   Windows: powershell -ExecutionPolicy Bypass -File .\install.ps1
+# Ele gera o .env com senhas aleatórias, pergunta o modo de acesso e sobe tudo.
 #
-# Installation using prebuilt images:
-#   cp .env.example .env
+# Instalação à mão:
+#   cp .env.example .env      # e preencha TODAS as senhas (não há valor padrão)
 #   docker compose pull
 #   docker compose up -d
 #
-# Notes:
-# - By default hub and agent are always pulled from Docker Hub.
-# - For local source builds, use: docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
-# - IkabotAPI is an external dependency and is not bundled in this repository.
+# Perfis opcionais (COMPOSE_PROFILES no .env, separados por vírgula):
+#   proxy  - Nginx Proxy Manager na frente do hub (portas 80/443, painel na 81)
+#   tools  - phpMyAdmin, só para olhar o banco (em 127.0.0.1)
+#
+# Código-fonte em vez das imagens publicadas:
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+# Diferenças da sua máquina (um segundo agente, outra porta...) vão num
+# docker-compose.override.yml, que o compose lê sozinho e o git ignora.
 # =============================================================================
+
+x-logging: &logging
+  # sem limite, o log de cada container cresce até encher o disco
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   mariadb:
     image: mariadb:11
     restart: unless-stopped
+    logging: *logging
     environment:
-      MARIADB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me-root-password}
+      MARIADB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?defina MYSQL_ROOT_PASSWORD no .env (o instalador gera)}
       MARIADB_DATABASE: ${DB_NAME:-ikabot_hub}
       MARIADB_USER: ${DB_USER:-ikabot}
-      MARIADB_PASSWORD: ${DB_PASSWORD:-change-me-db-password}
-      TZ: America/Cuiaba
+      MARIADB_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD no .env (o instalador gera)}
+      TZ: ${TZ:-America/Sao_Paulo}
     ports:
-      - "${DB_PORT:-3306}:3306"
+      # só nesta máquina; para abrir, DB_BIND=0.0.0.0
+      - "${DB_BIND:-127.0.0.1}:${DB_PORT:-3306}:3306"
     volumes:
       - mariadb_data:/var/lib/mysql
     healthcheck:
@@ -38,12 +52,14 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-change-me-redis-password}"]
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?defina REDIS_PASSWORD no .env (o instalador gera)}"]
     restart: unless-stopped
+    logging: *logging
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me-redis-password}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      # agentes em outra máquina precisam do Redis: REDIS_BIND=0.0.0.0 (e senha forte)
+      - "${REDIS_BIND:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -55,6 +71,7 @@ services:
   hub:
     image: ${HUB_IMAGE:-blackoneal/ikabot-web-hub:latest}
     restart: unless-stopped
+    logging: *logging
     depends_on:
       mariadb:
         condition: service_healthy
@@ -62,33 +79,38 @@ services:
         condition: service_healthy
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.base
-      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-to-a-long-random-string}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?defina DJANGO_SECRET_KEY no .env (o instalador gera)}
       DJANGO_DEBUG: ${DJANGO_DEBUG:-false}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,hub}
-      DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:-}
+      # o endereço pelo qual o hub é aberto (ex.: https://ikabot.seudominio.com); dele saem
+      # também o host aceito e a origem do formulário de login quando as duas abaixo faltam
       HUB_PUBLIC_URL: ${HUB_PUBLIC_URL:-}
+      DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:-}
+      # o admin é criado na primeira subida com esta senha; depois a senha é a da tela
       ADMIN_CREATE: ${ADMIN_CREATE:-true}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@ikabot.local}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?defina ADMIN_PASSWORD no .env (o instalador gera)}
+      ADMIN_RESET_PASSWORD: ${ADMIN_RESET_PASSWORD:-false}
       DB_NAME: ${DB_NAME:-ikabot_hub}
       DB_USER: ${DB_USER:-ikabot}
-      DB_PASSWORD: ${DB_PASSWORD:-change-me-db-password}
+      DB_PASSWORD: ${DB_PASSWORD}
       DB_HOST: mariadb
       DB_PORT: "3306"
-      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379/0}
-      APP_SECRET: ${APP_SECRET:-change-me-app-secret}
-      AGENT_TOKEN: ${AGENT_TOKEN:-change-me-agent-token}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
+      APP_SECRET: ${APP_SECRET:?defina APP_SECRET no .env (o instalador gera)}
+      AGENT_TOKEN: ${AGENT_TOKEN:?defina AGENT_TOKEN no .env (o instalador gera)}
       WEBSHARE_API_KEY: ${WEBSHARE_API_KEY:-}
       IKABOTAPI_URL: ${IKABOTAPI_URL:-http://ikabotapi:5005}
-      # N-72 manual control: sessions of the game are served at <token>.<this domain> by the
-      # gateway service below. Empty = feature off (no button in the hub).
+      # controle manual (N-72): cada sessão é servida em <token>.<este domínio> pelo
+      # gateway abaixo. Vazio = recurso desligado (o botão não aparece). Exige domínio.
       MANUAL_GATEWAY_DOMAIN: ${MANUAL_GATEWAY_DOMAIN:-}
       MANUAL_GATEWAY_SCHEME: ${MANUAL_GATEWAY_SCHEME:-https}
       MANUAL_GATEWAY_PORT: ${MANUAL_GATEWAY_PORT:-}
-      TZ: America/Cuiaba
+      TZ: ${TZ:-America/Sao_Paulo}
     ports:
-      - "${HUB_PORT:-8000}:8000"
+      # com o Nginx Proxy Manager na frente, o instalador põe HUB_BIND=127.0.0.1
+      - "${HUB_BIND:-0.0.0.0}:${HUB_PORT:-8000}:8000"
     command: ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "4", "--access-logfile", "-", "--timeout", "120"]
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/agent/heartbeat/ || curl -fsS http://127.0.0.1:8000/ || exit 1"]
@@ -96,48 +118,48 @@ services:
       timeout: 6s
       retries: 10
 
-  # N-72: game session gateway (manual control). Same image, code and database as the
-  # hub, its own process with threads: a request here waits for the game through the
-  # agent, and the hub's workers must not be the ones waiting. Point the wildcard host
-  # (*.MANUAL_GATEWAY_DOMAIN) of the reverse proxy at this port. Answers nothing but
-  # its health check while MANUAL_GATEWAY_DOMAIN is empty.
+  # N-72: gateway das sessões do jogo (controle manual). Mesma imagem, código e banco do
+  # hub, processo próprio com threads: um pedido aqui espera o jogo pelo agente, e os
+  # workers do hub não devem ser os que esperam. O host curinga (*.MANUAL_GATEWAY_DOMAIN)
+  # do proxy aponta para esta porta. Sem MANUAL_GATEWAY_DOMAIN só responde o health check.
   gateway:
     image: ${HUB_IMAGE:-blackoneal/ikabot-web-hub:latest}
     restart: unless-stopped
+    logging: *logging
     depends_on:
       hub:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # the hub's entrypoint runs the migrations; this one only serves
+    # o entrypoint do hub roda as migrações; este só serve
     entrypoint: []
     command: ["gunicorn", "config.gateway_wsgi:application", "--bind", "0.0.0.0:8001", "--worker-class", "gthread", "--workers", "2", "--threads", "24", "--timeout", "120"]
     environment:
-      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-to-a-long-random-string}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
       DJANGO_DEBUG: "false"
       DB_NAME: ${DB_NAME:-ikabot_hub}
       DB_USER: ${DB_USER:-ikabot}
-      DB_PASSWORD: ${DB_PASSWORD:-change-me-db-password}
+      DB_PASSWORD: ${DB_PASSWORD}
       DB_HOST: mariadb
       DB_PORT: "3306"
-      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379/0}
-      APP_SECRET: ${APP_SECRET:-change-me-app-secret}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
+      APP_SECRET: ${APP_SECRET}
       MANUAL_GATEWAY_DOMAIN: ${MANUAL_GATEWAY_DOMAIN:-}
       MANUAL_GATEWAY_SCHEME: ${MANUAL_GATEWAY_SCHEME:-https}
       MANUAL_GATEWAY_PORT: ${MANUAL_GATEWAY_PORT:-}
-      TZ: America/Cuiaba
+      TZ: ${TZ:-America/Sao_Paulo}
     ports:
-      - "${GATEWAY_PORT:-8001}:8001"
+      - "${GATEWAY_BIND:-0.0.0.0}:${GATEWAY_PORT:-8001}:8001"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8001/__ikabot/health || exit 1"]
       interval: 15s
       timeout: 6s
       retries: 10
 
-
   agent:
     image: ${AGENT_IMAGE:-blackoneal/ikabot-web-agent:latest}
     restart: unless-stopped
+    logging: *logging
     depends_on:
       hub:
         condition: service_healthy
@@ -145,40 +167,56 @@ services:
         condition: service_healthy
     environment:
       HUB_URL: ${HUB_URL:-http://hub:8000}
-      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379/0}
-      AGENT_TOKEN: ${AGENT_TOKEN:-change-me-agent-token}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
+      AGENT_TOKEN: ${AGENT_TOKEN}
       AGENT_NODE_ID: ${AGENT_NODE_ID:-}
       AGENT_NAME: ${AGENT_NAME:-ikabot-agent-01}
-
       AGENT_IMAGE: ${AGENT_IMAGE:-blackoneal/ikabot-web-agent:latest}
       AGENT_IMAGE_DIGEST: ${AGENT_IMAGE_DIGEST:-}
-      TZ: America/Cuiaba
+      TZ: ${TZ:-America/Sao_Paulo}
 
   ikabotapi:
-    # Required, not optional — generates the login (blackbox) token and
-    # solves captchas; the hub cannot log into the game without it. It used
-    # to be gated behind a "captcha" profile as if it were an add-on, which
-    # meant a plain `docker compose up -d` produced a hub that could never
-    # actually log in. No profile here on purpose — it always starts.
+    # Obrigatório: gera o token de login (blackbox) e resolve captchas; sem ele o hub
+    # não entra no jogo. Sempre sobe, sem perfil.
     build:
-      # Pinned on purpose (N-74): a third-party service that every login depends on is
-      # not rebuilt from whatever the branch happens to be that day. fb87efee is the
-      # revision tested here: GET /v1/token accepts locale and timezone_id (#41).
-      # To move it: read the upstream changes, test a login, then change the hash.
-      # See ikabotapi_overrides/README.md.
+      # Fixado de propósito (N-74): um serviço de terceiros do qual todo login depende
+      # não é reconstruído a partir do que o ramo tiver naquele dia. fb87efee é a revisão
+      # testada aqui. Para mudar: ler as mudanças, testar um login, trocar o hash.
+      # Ver ikabotapi_overrides/README.md.
       context: https://github.com/Ikabot-Collective/IkabotAPI.git#fb87efee84e476c74829a7a5a91cea5f3beeb93e
     restart: unless-stopped
+    logging: *logging
     ports:
-      - "5005:5005"
+      - "${IKABOTAPI_BIND:-127.0.0.1}:${IKABOTAPI_PORT:-5005}:5005"
     volumes:
-      # Third-party image; upstream's own list is stale/truncated. Keeps
-      # blackbox tokens consistent with agent_v2's USER_AGENTS pool — see
-      # ikabotapi_overrides/README.md (N-37).
+      # A lista do próprio projeto está desatualizada; esta mantém os tokens coerentes com
+      # os navegadores do agente (agent_v2 USER_AGENTS) - ver ikabotapi_overrides/README.md (N-37).
       - ./ikabotapi_overrides/SupportedUserAgents.json:/ikabotapi/apps/token/SupportedUserAgents.json:ro
 
-  phpmyadmin:
-    image: phpmyadmin:latest
+  # ── opcionais ────────────────────────────────────────────────────────────────
+
+  # Nginx Proxy Manager (perfil "proxy"): recebe o domínio nas portas 80/443 e entrega ao
+  # hub; com HTTPS, emite e renova o certificado sozinho. O painel fica na porta 81
+  # (primeiro login admin@example.com / changeme). Veja docs/proxy.md.
+  npm:
+    image: jc21/nginx-proxy-manager:2.11.3
     restart: unless-stopped
+    logging: *logging
+    ports:
+      - "${PROXY_HTTP_PORT:-80}:80"
+      - "${PROXY_HTTPS_PORT:-443}:443"
+      - "${PROXY_ADMIN_BIND:-0.0.0.0}:${PROXY_ADMIN_PORT:-81}:81"
+    volumes:
+      - npm_data:/data
+      - npm_letsencrypt:/etc/letsencrypt
+    profiles:
+      - proxy
+
+  # phpMyAdmin (perfil "tools"): só para olhar as tabelas; nada do sistema depende dele.
+  phpmyadmin:
+    image: phpmyadmin:5.2
+    restart: unless-stopped
+    logging: *logging
     depends_on:
       mariadb:
         condition: service_healthy
@@ -187,10 +225,12 @@ services:
       PMA_PORT: "3306"
       UPLOAD_LIMIT: 64M
     ports:
-      - "${PMA_PORT:-8080}:80"
+      - "127.0.0.1:${PMA_PORT:-8080}:80"
     profiles:
       - tools
 
 volumes:
   mariadb_data:
   redis_data:
+  npm_data:
+  npm_letsencrypt:

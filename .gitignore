@@ -1,5 +1,7 @@
 # Secrets / local env
 .env
+# differences of one machine (a second agent, another port): see README
+docker-compose.override.yml
 .env.*
 !.env.example
 !**/.env.example
@@ -34,7 +36,9 @@ tmp/
 
 # Publish only hub_v2 and agent_v2 for now
 /agent/
-/docs/
+/docs/*
+# the install guide is published with the project (N-107)
+!/docs/proxy.md
 /hub/
 /ikabotapi/
 /shared/

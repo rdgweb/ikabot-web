@@ -31,7 +31,9 @@ echo "Collecting static files..."
 python manage.py collectstatic --noinput 2>/dev/null || true
 
 if [ "$ADMIN_CREATE" = "true" ] || [ "$ADMIN_CREATE" = "1" ] || [ "$ADMIN_CREATE" = "yes" ]; then
-    # Create or update the initial admin from environment variables.
+    # Create the initial admin from environment variables. N-107: the password of the .env is
+    # only the first one; afterwards the one changed on the screen survives a restart, unless
+    # ADMIN_RESET_PASSWORD=true asks for the .env one again.
     echo "Checking superuser..."
     python manage.py shell -c "
 import os
@@ -55,9 +57,10 @@ else:
         user.is_staff = True
         user.is_superuser = True
         changed = True
-    if password:
+    if password and os.environ.get('ADMIN_RESET_PASSWORD', 'false').lower() in ('true', '1', 'yes'):
         user.set_password(password)
         changed = True
+        print('  Admin password reset from ADMIN_PASSWORD (ADMIN_RESET_PASSWORD=true)')
     if changed:
         user.save()
         print(f'  Superuser updated: {username}')

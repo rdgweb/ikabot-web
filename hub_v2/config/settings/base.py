@@ -34,6 +34,20 @@ CSRF_TRUSTED_ORIGINS = [
     if origin.strip()
 ]
 
+# N-107: the address the hub is opened at is enough. Behind a proxy (or opened by a domain or an IP
+# that is not localhost) its host must be accepted and its origin trusted for the login form,
+# which otherwise fails with a CSRF error nobody can read.
+_PUBLIC_URL = os.environ.get("HUB_PUBLIC_URL", "").strip().rstrip("/")
+if _PUBLIC_URL.startswith(("http://", "https://")):
+    from urllib.parse import urlsplit
+
+    _public = urlsplit(_PUBLIC_URL)
+    if _public.hostname and _public.hostname not in ALLOWED_HOSTS and "*" not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_public.hostname)
+    _origin = f"{_public.scheme}://{_public.netloc}"
+    if _origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(_origin)
+
 # --- Application definition ---
 
 INSTALLED_APPS = [

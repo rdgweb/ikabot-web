@@ -1,225 +1,187 @@
 # ikabot-web
 
-Web panel and automation agent for [Ikariam](https://www.ikariam.gameforge.com/) built on top of the [ikabot](https://github.com/Ikabot-Collective/ikabot) project.
+Painel web e agente de automação para [Ikariam](https://www.ikariam.gameforge.com/), feito sobre o
+projeto [ikabot](https://github.com/Ikabot-Collective/ikabot). Várias contas do jogo num painel só:
+construção, envio de recursos, tropas, mercado entre as contas, alertas de ataque no Telegram e
+mais, rodando 24 horas no seu próprio servidor.
 
-Manage multiple game accounts from a single dashboard: schedule construction upgrades, send resources, train troops, collect daily rewards, and more -- all running 24/7 on your own server.
+*English summary at the end.*
 
-## Architecture
+## O que sobe
 
-| Service | Role |
-|---------|------|
-| **Hub** (`hub_v2`) | Django web panel, REST API, job queue |
-| **Agent** (`agent_v2`) | Worker that picks jobs from the hub and executes game actions |
-| **MariaDB** | Persistent storage |
-| **Redis** | Job queue and caching |
+| Serviço | Para quê |
+|---|---|
+| `hub` | o painel, a API e a fila de tarefas (Django) |
+| `agent` | executa as tarefas no jogo; dá para ter outros em outras máquinas |
+| `ikabotapi` | gera o token de login e resolve captchas; sem ele o hub não entra no jogo |
+| `mariadb`, `redis` | banco e fila |
+| `gateway` | controle manual (jogar pelo painel); só funciona com domínio |
+| `npm` *(opcional)* | Nginx Proxy Manager, para abrir o hub por um domínio, com ou sem HTTPS |
+| `phpmyadmin` *(opcional)* | só para olhar as tabelas do banco; nada depende dele |
 
-The hub and agent communicate over an internal API. You can run additional agents on remote servers (VPS) to distribute the workload.
+## Requisitos
 
-## Requirements
+- Linux (VPS ou servidor) com Docker Engine e o plugin `docker compose` v2, **ou**
+- Windows com Docker Desktop.
+- 2 GB de memória livres e uns 5 GB de disco (a montagem do IkabotAPI baixa o Chromium).
 
-- [Docker](https://docs.docker.com/get-docker/) (v20+)
-- [Docker Compose](https://docs.docker.com/compose/install/) (v2+)
+## Instalar
 
-Verify your installation:
+Baixe o projeto e rode o instalador na pasta dele.
 
-```bash
-docker --version
-docker compose version
-```
-
-## Quick Start
-
-### Option A -- Using prebuilt images (recommended)
-
-No need to clone the full repository. Just grab the two config files:
-
-```bash
-# Download docker-compose.yml and .env.example
-curl -LO https://raw.githubusercontent.com/rdgweb/ikabot-web/main/docker-compose.yml
-curl -LO https://raw.githubusercontent.com/rdgweb/ikabot-web/main/.env.example
-
-# Create your .env
-cp .env.example .env
-```
-
-Edit `.env` and **change every value that says `change-me`**:
-
-```bash
-nano .env    # or use any text editor
-```
-
-Start the stack:
-
-```bash
-docker compose pull
-docker compose up -d
-```
-
-### Option B -- Building from source
+**Linux**
 
 ```bash
 git clone https://github.com/rdgweb/ikabot-web.git
 cd ikabot-web
-cp .env.example .env
+./install.sh
 ```
 
-Edit `.env` and **change every value that says `change-me`**.
+**Windows** (PowerShell)
 
-```bash
-docker compose up -d --build
+```powershell
+git clone https://github.com/rdgweb/ikabot-web.git
+cd ikabot-web
+powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-### Verify everything is running
+O instalador:
+
+1. confere o Docker;
+2. cria o `.env` com senhas aleatórias (se já existir um, pergunta antes de mexer);
+3. pergunta como o hub vai ser aberto, a porta, o usuário e a senha do administrador e se haverá
+   agentes em outra máquina;
+4. baixa as imagens e sobe tudo (a primeira vez leva alguns minutos);
+5. espera o hub ficar pronto e mostra o endereço.
+
+### Os dois modos de acesso
+
+| | Endereço | Quando usar |
+|---|---|---|
+| **Direto** | `http://IP:8000` | rede local, ou um servidor só seu |
+| **Com domínio** | `https://ikabot.seudominio.com` | acesso de fora, com ou sem HTTPS |
+
+No modo com domínio o instalador liga o Nginx Proxy Manager; falta só cadastrar o domínio no
+painel dele (porta 81). Passo a passo, inclusive o controle manual: [docs/proxy.md](docs/proxy.md).
+
+### Instalar à mão
 
 ```bash
-docker compose ps
+cp .env.example .env     # preencha TODAS as senhas: não há valor padrão, de propósito
+docker compose pull
+docker compose up -d
 ```
 
-All services should show `healthy` or `running`. Open the panel at **http://localhost:8000**.
+Para gerar uma senha: `openssl rand -hex 32`.
 
-## First Login
+## Primeiro acesso
 
-On the first boot the hub automatically creates an admin user using the credentials from your `.env`:
+1. Abra o endereço mostrado no fim da instalação e entre com o administrador.
+2. Em **Contas do Jogo**, cadastre a primeira conta: o agente entra no jogo e lê as cidades.
+3. Troque a senha do administrador pela tela, se quiser: ela vale daí em diante (a do `.env`
+   só serve para criar o usuário; `ADMIN_RESET_PASSWORD=true` força a do `.env` de novo).
 
-| Variable | Default |
-|----------|---------|
-| `ADMIN_USERNAME` | `admin` |
-| `ADMIN_PASSWORD` | *(what you set in `.env`)* |
+## Configuração
 
-Log in at **http://localhost:8000** with those credentials.
+Tudo fica no `.env`; o [`.env.example`](.env.example) explica cada linha. As que mais importam:
 
-## Configuration Reference
+| Variável | Para quê |
+|---|---|
+| `HUB_PUBLIC_URL` | o endereço da barra do navegador. Errado, o login falha com erro de CSRF. |
+| `HUB_PORT`, `HUB_BIND` | porta do hub e em que interface escuta (`127.0.0.1` atrás de um proxy) |
+| `COMPOSE_PROFILES` | `proxy` (Nginx Proxy Manager), `tools` (phpMyAdmin), separados por vírgula |
+| `REDIS_BIND` | `0.0.0.0` só se houver agentes em outra máquina |
+| `MANUAL_GATEWAY_DOMAIN` | domínio do controle manual; vazio = desligado |
+| `TZ` | fuso horário dos containers |
 
-All configuration is done through the `.env` file. Here are the key variables:
+Banco, Redis e IkabotAPI escutam só em `127.0.0.1` por padrão.
 
-### Required (must change)
+## Agente em outra máquina
 
-| Variable | Purpose |
-|----------|---------|
-| `DJANGO_SECRET_KEY` | Django cryptographic key -- use a long random string |
-| `DB_PASSWORD` | MariaDB user password |
-| `MYSQL_ROOT_PASSWORD` | MariaDB root password |
-| `REDIS_PASSWORD` | Redis password |
-| `APP_SECRET` | Internal encryption key |
-| `AGENT_TOKEN` | Shared token between hub and agent -- must match on both |
-| `ADMIN_PASSWORD` | Password for the initial admin user |
-
-### Optional
-
-| Variable | Purpose | Default |
-|----------|---------|---------|
-| `DJANGO_ALLOWED_HOSTS` | Hostnames the hub accepts | `localhost,127.0.0.1` |
-| `WEBSHARE_API_KEY` | Proxy rotation API key (webshare.io) | *(empty)* |
-| `IKABOTAPI_URL` | Blackbox token/captcha solver URL | `http://ikabotapi:5005` |
-| `HUB_PORT` | Port for the web panel | `8000` |
-| `DB_PORT` | Exposed MariaDB port | `3306` |
-| `REDIS_PORT` | Exposed Redis port | `6379` |
-
-## Adding a Game Account
-
-1. Open the panel at **http://localhost:8000**
-2. Go to **Accounts** and click **Add Account**
-3. Enter your Ikariam email and password
-4. The agent will log in and sync your cities automatically
-
-## Running a Remote Agent
-
-You can run extra agents on other machines (e.g. a VPS) to distribute actions across different IPs.
-
-On the remote machine:
+Para espalhar as contas por outros IPs. No servidor do hub, o Redis precisa estar aberto
+(`REDIS_BIND=0.0.0.0` no `.env`, depois `docker compose up -d redis`) e a porta do hub acessível.
+Na outra máquina:
 
 ```bash
-docker run -d --restart unless-stopped \
-  -e HUB_URL=http://YOUR_HUB_IP:8000 \
-  -e REDIS_URL=redis://:YOUR_REDIS_PASSWORD@YOUR_HUB_IP:6379/0 \
-  -e AGENT_TOKEN=YOUR_AGENT_TOKEN \
-  -e AGENT_NODE_ID=any-unique-id \
-  -e AGENT_NAME=agent-vps-01 \
+docker run -d --restart unless-stopped --name ikabot-agent \
+  -e HUB_URL=http://IP_DO_HUB:8000 \
+  -e REDIS_URL=redis://:SENHA_DO_REDIS@IP_DO_HUB:6379/0 \
+  -e AGENT_TOKEN=O_MESMO_AGENT_TOKEN_DO_HUB \
+  -e AGENT_NAME=agente-vps-01 \
+  --log-opt max-size=10m --log-opt max-file=3 \
   blackoneal/ikabot-web-agent:latest
 ```
 
-Make sure `AGENT_TOKEN` matches the one in your hub's `.env` and that ports `8000` and `6379` are accessible from the remote machine.
+Pela internet aberta, prefira uma VPN entre as máquinas: Redis e hub falam sem criptografia.
 
-## IkabotAPI (Blackbox Token & Captcha)
-
-[IkabotAPI](https://github.com/Ikabot-Collective/IkabotAPI) generates blackbox tokens (required for game login) and solves captchas. **It is required for the system to work properly** — the hub cannot log into the game without it, so it's a core service in `docker-compose.yml` and starts automatically with `docker compose up -d`, no profile flag needed.
-
-This builds IkabotAPI directly from the official repository. The hub already points to it by default (`http://ikabotapi:5005`).
-
-> **Note:** The first build takes several minutes because it installs Playwright + Chromium.
-
-## Optional Tools
-
-### phpMyAdmin
-
-```bash
-docker compose --profile tools up -d
-```
-
-Access at **http://localhost:8080**.
-
-## Updating
-
-### Prebuilt images
+## Atualizar
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
 
-### From source
+A página **Atualizações** do hub mostra as versões em uso e as publicadas, e atualiza os agentes
+pelo supervisor quando ele está instalado.
+
+## Backup
 
 ```bash
-git pull
-docker compose up -d --build
+# copia o banco para um arquivo
+docker compose exec -T mariadb sh -c 'mariadb-dump -uroot -p"$MARIADB_ROOT_PASSWORD" --single-transaction ikabot_hub' > backup-$(date +%F).sql
+# restaura
+docker compose exec -T mariadb sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" ikabot_hub' < backup-AAAA-MM-DD.sql
 ```
 
-## Troubleshooting
+Guarde também o `.env`: sem ele as senhas guardadas no banco não abrem (`APP_SECRET`).
 
-### Panel does not open
+## Diferenças da sua máquina
 
-```bash
-docker compose logs -f hub
+Um segundo agente, outra porta, um volume a mais: ponha num `docker-compose.override.yml` ao lado
+do `docker-compose.yml`. O compose lê os dois sozinho e o git ignora o override, então
+`git pull` nunca briga com as suas mudanças.
+
+```yaml
+services:
+  agent_2:
+    extends: { file: docker-compose.yml, service: agent }
+    environment:
+      AGENT_NAME: ikabot-agent-02
 ```
 
-Check that `DJANGO_ALLOWED_HOSTS` includes the hostname or IP you are using.
+## Problemas comuns
 
-### Agent does not connect
+| Sintoma | O que ver |
+|---|---|
+| O compose diz "defina ... no .env" | falta uma senha no `.env`; rode o instalador ou preencha à mão |
+| Erro de CSRF ou "Bad Request (400)" ao entrar | `HUB_PUBLIC_URL` diferente do endereço da barra do navegador |
+| O agente não aparece em Nós & Agents | `AGENT_TOKEN` igual no hub e no agente; `docker compose logs -f agent` |
+| Login no jogo falha com token/captcha | `docker compose logs ikabotapi`; a primeira montagem leva minutos |
+| O painel não abre | `docker compose ps` e `docker compose logs -f hub` |
 
-- Verify `AGENT_TOKEN` is the same in both hub and agent
-- Check that the hub is healthy: `docker compose ps`
-- Check agent logs: `docker compose logs -f agent`
+Comandos úteis: `docker compose ps`, `docker compose logs -f hub`, `docker compose restart hub`,
+`docker compose down` (para tudo, sem apagar dados).
 
-### Captcha/token errors
+---
 
-- Verify `IKABOTAPI_URL` is set and reachable from the hub container
-- Test connectivity: `docker compose exec hub curl -s http://ikabotapi:5005/`
+## English summary
 
-## Common Commands
+**Install.** Clone the repository and run `./install.sh` (Linux) or
+`powershell -ExecutionPolicy Bypass -File .\install.ps1` (Windows with Docker Desktop). The installer
+checks Docker, writes `.env` with random secrets, asks how the hub will be reached (directly at
+`http://IP:8000`, or through a domain with the bundled Nginx Proxy Manager, with or without HTTPS),
+pulls the images, starts everything and waits until the hub is healthy.
 
-```bash
-docker compose up -d            # Start all services
-docker compose down            # Stop all services
-docker compose logs -f hub     # Follow hub logs
-docker compose logs -f agent   # Follow agent logs
-docker compose restart hub     # Restart hub only
-docker compose build --no-cache  # Rebuild images from scratch
+**Manual install.** `cp .env.example .env`, fill in every secret (there are no working defaults on
+purpose: compose refuses to start without them), then `docker compose pull && docker compose up -d`.
 
-# PowerShell: pull, wait for health and print the versions actually running
-.\.github\scripts\update_containers.ps1
-.\.github\scripts\update_containers.ps1 -Target agent
-```
+**Access by domain.** See [docs/proxy.md](docs/proxy.md) (Portuguese, with tables): proxy host
+`hub:8000`, optional wildcard host `gateway:8001` for manual control. Set `HUB_PUBLIC_URL` to the exact
+address in the browser bar, or login fails with a CSRF error.
 
-The authenticated **Atualizacoes** page compares the Hub and agent versions
-currently reported in production with semantic version tags published on
-Docker Hub. After a one-time installation of one supervisor per Docker host,
-an operator can update any agent assigned to that host directly from the page.
-The Hub blocks updates while jobs are queued or running, and the supervisor
-validates the target node before replacing one container with automatic
-rollback. Updates are requested per node; there is no unrestricted bulk
-restart of every worker. The supervisor opens no inbound port and communicates
-with the public Hub only through outbound HTTPS polling.
+**Update.** `docker compose pull && docker compose up -d`. **Back up** the database with
+`mariadb-dump` (see above) and keep your `.env`.
 
-## License
+## Licença
 
-This project builds upon [ikabot](https://github.com/Ikabot-Collective/ikabot) by the Ikabot Collective.
+Este projeto se apoia no [ikabot](https://github.com/Ikabot-Collective/ikabot), do Ikabot Collective.
