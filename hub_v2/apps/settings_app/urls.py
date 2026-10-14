@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     SettingsPageView,
+    FirstStepsView,
     SettingEditView,
     WebshareSaveView,
     WebshareTestView,
@@ -19,6 +20,7 @@ app_name = "settings_app"
 
 urlpatterns = [
     path("", SettingsPageView.as_view(), name="list"),
+    path("primeiros-passos/", FirstStepsView.as_view(), name="first-steps"),
     path("<str:key>/edit/", SettingEditView.as_view(), name="edit"),
     path("webshare/save/", WebshareSaveView.as_view(), name="webshare-save"),
     path("webshare/test/", WebshareTestView.as_view(), name="webshare-test"),

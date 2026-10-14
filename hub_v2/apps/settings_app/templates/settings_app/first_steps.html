@@ -1,0 +1,56 @@
+{% extends base_template|default:"base.html" %}
+
+{% block title %}Primeiros passos{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <span class="text-ink">Primeiros passos</span>
+{% endblock %}
+
+{% block content %}
+{# N-116: cada peça que a instalação precisa, testada de verdade #}
+<style>
+  .fs-grid { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .fs-card { display: flex; flex-direction: column; gap: .5rem; padding: 1rem; border: 1px solid var(--ik-line); border-radius: 16px; background: var(--ik-paper); }
+  .fs-card .head { display: flex; align-items: center; gap: .6rem; }
+  .fs-card .head i.icon { display: grid; place-items: center; width: 2.2rem; height: 2.2rem; border-radius: 10px; font-size: 1.1rem; background: rgba(79, 134, 185, .12); color: var(--ik-sea); }
+  .fs-card .head b { margin-right: auto; font-size: .98rem; color: var(--ik-ink); }
+  .fs-card p { margin: 0; font-size: .82rem; line-height: 1.4; color: var(--ik-muted); }
+  .fs-card a.fix { align-self: flex-start; font-size: .78rem; font-weight: 600; color: var(--ik-sea); }
+  .fs-state { padding: .12rem .6rem; border-radius: 999px; font-size: .68rem; font-weight: 700; color: #fff; }
+  .fs-state.ok { background: #2d7a2d; } .fs-state.warn { background: #c9922e; } .fs-state.missing { background: #b3402f; } .fs-state.optional { background: #8a8172; }
+  .fs-card.missing { border-color: rgba(179, 64, 47, .45); }
+  .fs-summary { display: flex; flex-wrap: wrap; gap: .5rem 1.2rem; font-size: .85rem; color: var(--ik-muted); }
+  .fs-summary b { color: var(--ik-ink); }
+</style>
+
+<div id="first-steps" class="space-y-6">
+  <div class="flex flex-wrap items-center justify-between gap-4">
+    <div>
+      <h1 class="text-xl font-bold text-ink flex items-center gap-2"><i class="bi bi-flag text-sea"></i> Primeiros passos</h1>
+      <div class="fs-summary mt-1">
+        <span><b>{{ counts.ok }}</b> prontos</span>
+        {% if counts.missing %}<span><b>{{ counts.missing }}</b> faltando</span>{% endif %}
+        {% if counts.warn %}<span><b>{{ counts.warn }}</b> para conferir</span>{% endif %}
+        {% if counts.optional %}<span><b>{{ counts.optional }}</b> opcionais</span>{% endif %}
+      </div>
+    </div>
+    <button type="button" class="btn btn-primary btn-sm" hx-get="{% url 'settings_app:first-steps' %}" hx-select="#first-steps" hx-target="#first-steps" hx-swap="outerHTML" hx-push-url="false">
+      <i class="bi bi-arrow-repeat"></i> Testar de novo
+    </button>
+  </div>
+
+  <div class="fs-grid">
+    {% for item in checks %}
+    <div class="fs-card {{ item.state }}">
+      <div class="head">
+        <i class="icon bi {{ item.icon }}"></i>
+        <b>{{ item.title }}</b>
+        <span class="fs-state {{ item.state }}">{{ item.state_label }}</span>
+      </div>
+      <p>{{ item.detail }}</p>
+      {% if item.link and item.state != "ok" %}<a class="fix" href="{{ item.link }}"{% if item.link|slice:":4" == "http" %} target="_blank" rel="noopener" hx-boost="false"{% endif %}>{{ item.link_label }} <i class="bi bi-arrow-right"></i></a>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

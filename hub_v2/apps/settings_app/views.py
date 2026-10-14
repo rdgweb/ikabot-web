@@ -43,6 +43,26 @@ def _set_encrypted_setting(key, value):
     _set_setting(key, encrypt(value))
 
 
+STATE_LABELS = {"ok": "Pronto", "warn": "Conferir", "missing": "Faltando", "optional": "Opcional"}
+
+
+class FirstStepsView(LoginRequiredMixin, TemplateView):
+    """GET /settings/primeiros-passos/ - each piece the installation needs, tested for real (N-116)."""
+
+    template_name = "settings_app/first_steps.html"
+
+    def get_context_data(self, **kwargs):
+        from .first_steps import run_checks
+
+        ctx = super().get_context_data(**kwargs)
+        checks = run_checks(self.request)
+        for item in checks:
+            item["state_label"] = STATE_LABELS.get(item["state"], item["state"])
+        ctx["checks"] = checks
+        ctx["counts"] = {state: sum(1 for item in checks if item["state"] == state) for state in STATE_LABELS}
+        return ctx
+
+
 class SettingsPageView(LoginRequiredMixin, TemplateView):
     template_name = "settings_app/page.html"
 

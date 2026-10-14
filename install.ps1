@@ -100,6 +100,8 @@ if (-not (Test-Path ".env")) {
     foreach ($key in @("DJANGO_SECRET_KEY", "APP_SECRET", "AGENT_TOKEN", "MYSQL_ROOT_PASSWORD", "DB_PASSWORD", "REDIS_PASSWORD")) {
         Set-Env $key (New-Secret 32)
     }
+    # o id do nó do agente é fixo: vazio, ele sortearia outro a cada início
+    Set-Env "AGENT_NODE_ID" ([guid]::NewGuid().ToString())
 
     Say ""
     Say "  Como o hub vai ser aberto no navegador?"

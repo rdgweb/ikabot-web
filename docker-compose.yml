@@ -15,6 +15,7 @@
 #   proxy  - Nginx Proxy Manager na frente do hub (portas 80/443, painel na 81)
 #   tools  - phpMyAdmin, só para olhar o banco (em 127.0.0.1)
 #   telegram - Telegram sem HTTPS: busca as mensagens e os botões em vez de esperar o webhook
+#   supervisor - atualiza os agentes desta máquina pelo painel (Atualizações)
 #
 # Código-fonte em vez das imagens publicadas:
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
@@ -170,7 +171,8 @@ services:
       HUB_URL: ${HUB_URL:-http://hub:8000}
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
       AGENT_TOKEN: ${AGENT_TOKEN}
-      AGENT_NODE_ID: ${AGENT_NODE_ID:-}
+      # fixo: com ele vazio o agente sorteia outro a cada início e vira um nó novo no hub
+      AGENT_NODE_ID: ${AGENT_NODE_ID:?defina AGENT_NODE_ID no .env (o instalador gera; à mão use uuidgen)}
       AGENT_NAME: ${AGENT_NAME:-ikabot-agent-01}
       AGENT_IMAGE: ${AGENT_IMAGE:-blackoneal/ikabot-web-agent:latest}
       AGENT_IMAGE_DIGEST: ${AGENT_IMAGE_DIGEST:-}
@@ -195,6 +197,12 @@ services:
       # A lista do próprio projeto está desatualizada; esta mantém os tokens coerentes com
       # os navegadores do agente (agent_v2 USER_AGENTS) - ver ikabotapi_overrides/README.md (N-37).
       - ./ikabotapi_overrides/SupportedUserAgents.json:/ikabotapi/apps/token/SupportedUserAgents.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:5005/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
 
   # ── opcionais ────────────────────────────────────────────────────────────────
 
@@ -214,6 +222,35 @@ services:
       - npm_letsencrypt:/etc/letsencrypt
     profiles:
       - proxy
+
+  # Supervisor (perfil "supervisor"): atualiza os agentes desta máquina pelo painel
+  # (Atualizações), com volta automática se o novo não subir. Cadastre a máquina em
+  # Nós & Agents > Docker Hosts e copie o id e o token para o .env. Não abre porta.
+  supervisor:
+    image: ${SUPERVISOR_IMAGE:-blackoneal/ikabot-web-supervisor:latest}
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      hub:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 100
+    mem_limit: 192m
+    cpus: 0.5
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # dentro do compose fala com o hub pela rede interna; noutra máquina, o endereço HTTPS do hub
+      HUB_URL: ${SUPERVISOR_HUB_URL:-http://hub:8000}
+      IKABOT_HOST_ID: ${SUPERVISOR_HOST_ID:-}
+      IKABOT_HOST_TOKEN: ${SUPERVISOR_HOST_TOKEN:-}
+      SUPERVISOR_IMAGE: ${SUPERVISOR_IMAGE:-blackoneal/ikabot-web-supervisor:latest}
+    profiles:
+      - supervisor
 
   # Telegram sem HTTPS (perfil "telegram"): o Telegram só entrega mensagens e botões por
   # webhook em HTTPS público. Sem ele, este serviço busca as atualizações e as trata com o

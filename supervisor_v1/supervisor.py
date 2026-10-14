@@ -6,6 +6,7 @@ import signal
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import docker
 import requests
@@ -22,6 +23,17 @@ _running = True
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s supervisor %(message)s")
 logger = logging.getLogger(__name__)
+
+
+def hub_url_allowed(url: str) -> bool:
+    """HTTPS always; plain HTTP only to a service of the same compose (a name without dots, like "hub").
+
+    That traffic never leaves the machine; anything that crosses a network must be HTTPS.
+    """
+    parts = urlsplit(url or "")
+    if parts.scheme == "https" and parts.hostname:
+        return True
+    return parts.scheme == "http" and bool(parts.hostname) and "." not in parts.hostname and parts.hostname != "localhost"
 
 
 def stop(*_args):
@@ -152,8 +164,8 @@ def replace_agent(client, node_id: str, target_image: str) -> str:
 
 
 def run():
-    if not HUB_URL.startswith("https://") or not HOST_ID or not HOST_TOKEN:
-        raise SystemExit("HTTPS HUB_URL, IKABOT_HOST_ID and IKABOT_HOST_TOKEN are required.")
+    if not hub_url_allowed(HUB_URL) or not HOST_ID or not HOST_TOKEN:
+        raise SystemExit("HUB_URL (HTTPS, or http://<service> inside the same compose), IKABOT_HOST_ID and IKABOT_HOST_TOKEN are required.")
     client = docker.from_env()
     machine_id = str(client.info().get("ID") or "")
     if not machine_id:

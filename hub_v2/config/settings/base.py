@@ -38,6 +38,7 @@ CSRF_TRUSTED_ORIGINS = [
 # that is not localhost) its host must be accepted and its origin trusted for the login form,
 # which otherwise fails with a CSRF error nobody can read.
 _PUBLIC_URL = os.environ.get("HUB_PUBLIC_URL", "").strip().rstrip("/")
+HUB_PUBLIC_URL = _PUBLIC_URL
 if _PUBLIC_URL.startswith(("http://", "https://")):
     from urllib.parse import urlsplit
 

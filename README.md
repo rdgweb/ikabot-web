@@ -18,6 +18,7 @@ mais, rodando 24 horas no seu próprio servidor.
 | `gateway` | controle manual (jogar pelo painel); só funciona com domínio |
 | `npm` *(opcional)* | Nginx Proxy Manager, para abrir o hub por um domínio, com ou sem HTTPS |
 | `phpmyadmin` *(opcional)* | só para olhar as tabelas do banco; nada depende dele |
+| `supervisor` *(opcional)* | atualiza os agentes desta máquina pela página Atualizações, com volta automática |
 | `telegram` *(opcional)* | Telegram sem HTTPS: busca mensagens e botões em vez de esperar o webhook (o instalador liga quando não há HTTPS) |
 
 ## Requisitos
@@ -123,7 +124,12 @@ docker compose up -d
 ```
 
 A página **Atualizações** do hub mostra as versões em uso e as publicadas, e atualiza os agentes
-pelo supervisor quando ele está instalado.
+pelo supervisor quando ele está ligado: cadastre a máquina em **Nós & Agents → Docker Hosts**, copie
+o id e o token para `SUPERVISOR_HOST_ID` e `SUPERVISOR_HOST_TOKEN` no `.env`, acrescente `supervisor` a
+`COMPOSE_PROFILES` e rode `docker compose up -d`.
+
+A página **Primeiros passos** (menu Administrativo) testa cada peça da instalação: IkabotAPI,
+agente, contas, endereço, Telegram, controle manual e supervisor.
 
 ## Backup
 

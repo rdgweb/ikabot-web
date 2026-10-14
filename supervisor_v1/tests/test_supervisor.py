@@ -16,6 +16,13 @@ class SupervisorSafetyTests(unittest.TestCase):
             with self.subTest(image=image), self.assertRaises(RuntimeError):
                 supervisor.validate_image(image)
 
+    def test_plain_http_only_to_a_service_of_the_same_compose(self):
+        self.assertTrue(supervisor.hub_url_allowed("https://ikabot.example.com"))
+        self.assertTrue(supervisor.hub_url_allowed("http://hub:8000"))
+        for url in ("http://ikabot.example.com", "http://192.168.0.10:8000", "http://localhost:8000", "ftp://hub", "", "hub:8000"):
+            with self.subTest(url=url):
+                self.assertFalse(supervisor.hub_url_allowed(url))
+
     def test_existing_host_label_must_match(self):
         own = SimpleNamespace(id="supervisor-id")
         target = SimpleNamespace(

@@ -75,6 +75,8 @@ if [ ! -f .env ]; then
     for key in DJANGO_SECRET_KEY APP_SECRET AGENT_TOKEN MYSQL_ROOT_PASSWORD DB_PASSWORD REDIS_PASSWORD; do
         set_env "$key" "$(secret 32)"
     done
+    # o id do nó do agente é fixo: vazio, ele sortearia outro a cada início
+    set_env AGENT_NODE_ID "$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen 2>/dev/null || python3 -c 'import uuid; print(uuid.uuid4())')"
 
     say ""
     say "  Como o hub vai ser aberto no navegador?"
