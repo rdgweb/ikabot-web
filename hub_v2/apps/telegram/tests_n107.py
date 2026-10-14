@@ -10,6 +10,13 @@ WEBHOOK = "apps.telegram.api.webhook"
 
 
 class PollingTests(TestCase):
+    def setUp(self):
+        # N-106: updates are only handled for a chat linked to an organization
+        from apps.orgs.services import default_organization
+        from apps.telegram.models import TelegramBotConfig
+
+        TelegramBotConfig.objects.create(pk=1, organization=default_organization(), chat_id="555", link_status="linked")
+
     def test_a_button_pressed_is_answered_as_the_webhook_answers_it(self):
         update = {"update_id": 10, "callback_query": {
             "id": "cb1", "data": "defend_skip:abc", "from": {"id": 7},
@@ -41,7 +48,7 @@ class PollingTests(TestCase):
     def test_the_webhook_still_checks_its_secret_before_handling(self):
         from apps.telegram.models import TelegramBotConfig
 
-        TelegramBotConfig.objects.create(pk=1, bot_token="123:abc", enabled=True, webhook_secret="s3cret")
+        TelegramBotConfig.objects.filter(pk=1).update(bot_token="123:abc", enabled=True, webhook_secret="s3cret")
         update = {"update_id": 13, "callback_query": {"id": "cb2", "data": "defend_skip:x", "from": {"id": 7}, "message": {"message_id": 1, "text": "x", "chat": {"id": 555}}}}
         with patch(f"{WEBHOOK}.answer_callback_query") as answer:
             wrong = self.client.post("/api/telegram/webhook/errado/", update, content_type="application/json")

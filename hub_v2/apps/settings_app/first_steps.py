@@ -89,13 +89,19 @@ def check_address(request) -> dict:
 def check_telegram() -> dict:
     from apps.telegram.models import TelegramBotConfig
 
-    config = TelegramBotConfig.objects.filter(pk=1).first()
-    if not config or not config.bot_token:
+    from apps.orgs.scope import current_organization
+    from apps.orgs.services import default_organization
+    from apps.telegram.services.config import organization_config
+
+    platform = TelegramBotConfig._base_manager.filter(pk=1).first()
+    if not platform or not platform.bot_token:
         return _item("telegram", "Telegram", "bi-telegram", "optional", "Sem bot configurado: avisos e botões ficam só no painel.", link="/telegram/", link_label="Telegram")
-    if not config.enabled:
+    if not platform.enabled:
         return _item("telegram", "Telegram", "bi-telegram", "warn", "Bot configurado, mas desligado.", link="/telegram/", link_label="Telegram")
+    # N-106: the bot is the platform's; the linked chat is this organization's
+    config = organization_config(current_organization() or default_organization())
     public = getattr(settings, "HUB_PUBLIC_URL", "") or ""
-    channel = ("Recebe pelo webhook (HTTPS)." if public.startswith("https://") and config.webhook_secret
+    channel = ("Recebe pelo webhook (HTTPS)." if public.startswith("https://") and platform.webhook_secret
                else "Sem webhook: o serviço telegram (perfil telegram do compose) busca as mensagens e os botões.")
     if config.link_status != "linked":
         return _item("telegram", "Telegram", "bi-telegram", "warn", f"Bot ligado, chat ainda não vinculado. {channel}", link="/telegram/", link_label="Telegram")

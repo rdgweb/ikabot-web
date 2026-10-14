@@ -375,6 +375,12 @@ def _create_diplomacy_send_job_from_uuid(
     return True, ""
 
 
+def _link_code_in(text: str) -> bool:
+    """Is this message the link command with a code? (N-106: what an unlinked chat may send)"""
+    command = TelegramIncomingCommand.command_for(TelegramIncomingCommand.COMMAND_LINK)
+    return bool(command) and re.match(rf"^{re.escape(command)}\s+[A-Za-z0-9]{{6,12}}$", text or "") is not None
+
+
 class TelegramWebhookView(APIView):
     """
     POST /api/telegram/webhook/<secret>/
@@ -402,6 +408,28 @@ class TelegramWebhookView(APIView):
         return Response({"status": "ok"})
 
     def handle_update(self, data: dict):
+        """N-106: every update runs inside the organization of its chat (the same scope the screens
+        use, so a command only reaches that organization's accounts). A chat that is not linked to
+        any organization can only link itself, with a limited number of attempts."""
+        from apps.orgs import scope
+        from apps.telegram.services.config import organization_for_chat
+
+        message = data.get("message") or {}
+        callback = data.get("callback_query") or {}
+        chat_id = str(((callback.get("message") or {}).get("chat") or message.get("chat") or {}).get("id", ""))
+        organization = organization_for_chat(chat_id)
+        if organization is None:
+            if message and _link_code_in(str(message.get("text") or "").strip()):
+                return self._handle_update(data)          # linking happens before there is an organization
+            logger.info("Telegram update from a chat linked to no organization ignored")
+            return Response({"status": "ok"})
+        token = scope.activate(organization)
+        try:
+            return self._handle_update(data)
+        finally:
+            scope.deactivate(token)
+
+    def _handle_update(self, data: dict):
         """One update of Telegram: a button pressed or a message written.
 
         The webhook brings it when the hub has public HTTPS; without it the polling service
@@ -627,7 +655,7 @@ class TelegramWebhookView(APIView):
             TelegramIncomingCommand.COMMAND_DIPLOMACY_REPLY
         )
         code_re = (
-            re.compile(rf"^{re.escape(link_command)}\s+(\d{{6}})$")
+            re.compile(rf"^{re.escape(link_command)}\s+([A-Za-z0-9]{{6,12}})$")   # N-106: long codes
             if link_command else None
         )
         replyto_re = (
@@ -662,7 +690,14 @@ class TelegramWebhookView(APIView):
     # ── Handlers ──────────────────────────────────────────────────────────
 
     def _handle_start(self, code: str, chat_id: str, username: str) -> None:
-        config = validate_link_code(code, chat_id, username)
+        from apps.telegram.services.config import link_blocked, link_failed
+
+        if link_blocked(chat_id):                      # N-106: too many wrong codes from this chat
+            logger.warning("Telegram link attempts blocked for a chat after repeated failures")
+            return
+        config = validate_link_code(code.upper() if not code.isdigit() else code, chat_id, username)
+        if not config:
+            link_failed(chat_id)
 
         if config:
             if isinstance(config, TelegramBotConfig):

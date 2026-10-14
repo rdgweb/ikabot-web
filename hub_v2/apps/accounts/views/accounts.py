@@ -51,7 +51,9 @@ class AccountDetailView(LoginRequiredMixin, DetailView):
         # Telegram context (rendered server-side, no HTMX load)
         from apps.telegram.models import TelegramBotConfig, TelegramAccountConfig
 
-        bot_config, _ = TelegramBotConfig.objects.get_or_create(pk=1)
+        from apps.telegram.services.config import config_for
+
+        bot_config = config_for(account=account)   # N-106: this organization's chat
 
         # Bulk-ensure TelegramAccountConfig exists for all game_accounts
         # in a single query instead of N get_or_create calls.

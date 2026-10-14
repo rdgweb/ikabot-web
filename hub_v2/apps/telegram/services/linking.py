@@ -18,12 +18,16 @@ LINK_CODE_TTL = timedelta(minutes=10)
 
 # ── Global linking ───────────────────────────────────────────────────
 
-def generate_global_link_code() -> str:
+def generate_global_link_code(organization=None) -> str:
     """
-    Generate a 6-digit linking code for the global bot config.
+    A linking code for the organization's chat (N-106: long, not guessable).
     """
-    config, _ = TelegramBotConfig.objects.get_or_create(pk=1)
-    code = str(secrets.randbelow(900000) + 100000)
+    from apps.orgs.scope import current_organization
+    from apps.orgs.services import default_organization
+    from apps.telegram.services.config import new_link_code, organization_config
+
+    config = organization_config(organization or current_organization() or default_organization())
+    code = new_link_code()
     config.link_code = code
     config.link_code_created_at = timezone.now()
     config.link_status = "pending"
@@ -39,16 +43,14 @@ def validate_global_link_code(
     """
     Validate a global link code. Sets the global chat_id if valid.
     """
-    try:
-        config = TelegramBotConfig.objects.get(
-            pk=1,
-            link_code=code,
-            link_status="pending",
-        )
-    except TelegramBotConfig.DoesNotExist:
+    config = TelegramBotConfig._base_manager.filter(link_code=code, link_status="pending").select_related("organization").first()
+    if config is None or not code or _is_code_expired(config.link_code_created_at):
         return None
+    # N-106: a chat already linked to another organization is not moved by a code
+    from apps.telegram.services.config import organization_for_chat
 
-    if _is_code_expired(config.link_code_created_at):
+    owner = organization_for_chat(chat_id)
+    if owner is not None and config.organization_id and owner.pk != config.organization_id:
         return None
 
     config.chat_id = chat_id
@@ -63,11 +65,14 @@ def validate_global_link_code(
     return config
 
 
-def unlink_global() -> None:
-    """Unlink the global Telegram chat."""
-    try:
-        config = TelegramBotConfig.objects.get(pk=1)
-    except TelegramBotConfig.DoesNotExist:
+def unlink_global(organization=None) -> None:
+    """Unlink the organization's Telegram chat."""
+    from apps.orgs.scope import current_organization
+    from apps.orgs.services import default_organization
+    from apps.telegram.services.config import organization_config
+
+    config = organization_config(organization or current_organization() or default_organization())
+    if config is None:
         return
 
     config.chat_id = ""
@@ -90,7 +95,9 @@ def generate_link_code(game_account_id: str) -> str:
     config, _ = TelegramAccountConfig.objects.get_or_create(
         game_account_id=game_account_id,
     )
-    code = str(secrets.randbelow(900000) + 100000)
+    from apps.telegram.services.config import new_link_code
+
+    code = new_link_code()   # N-106: long, not guessable
     config.link_code = code
     config.link_code_created_at = timezone.now()
     config.link_status = "pending"
@@ -109,12 +116,17 @@ def validate_link_code(
     Checks per-subconta codes first, then global code.
     Returns the linked config object or None.
     """
-    # Try per-subconta first
+    # Try per-subconta first (any organization's: the code says which)
     try:
-        config = TelegramAccountConfig.objects.get(
+        config = TelegramAccountConfig._base_manager.select_related("game_account__account").get(
             link_code=code,
             link_status="pending",
         )
+        from apps.telegram.services.config import organization_for_chat
+
+        owner = organization_for_chat(chat_id)
+        if owner is not None and owner.pk != config.game_account.account.organization_id:
+            return None                      # N-106: a chat of another organization is not taken
         if not _is_code_expired(config.link_code_created_at):
             config.chat_id = chat_id
             config.telegram_username = username

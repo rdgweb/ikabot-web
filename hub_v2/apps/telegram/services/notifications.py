@@ -59,15 +59,13 @@ def notify(
 
     Returns True if a message was sent, False otherwise.
     """
-    from apps.telegram.models import TelegramBotConfig, TelegramAccountConfig
+    from apps.telegram.services.config import config_for, platform_bot
 
-    # 1. Bot must be active
-    try:
-        bot = TelegramBotConfig.objects.get(pk=1)
-    except TelegramBotConfig.DoesNotExist:
+    # 1. The platform's bot must be on; the chat and the choices are the organization's (N-106)
+    if not platform_bot().is_active:
         return False
-
-    if not bot.is_active:
+    bot = config_for(game_account=game_account, account=account)
+    if bot is None:
         return False
 
     if not bot.chat_id and not game_account:

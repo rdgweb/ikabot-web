@@ -20,6 +20,11 @@ class TelegramBotConfig(TimestampModel):
     TelegramAccountConfig overrides it with its own chat_id.
     """
 
+    # N-106 stage 4: the organization whose chat and notice choices these are. Row pk=1 also holds the
+    # platform's bot (token, webhook) and belongs to the default organization.
+    organization = models.OneToOneField(
+        "orgs.Organization", on_delete=models.CASCADE, null=True, blank=True, related_name="telegram",
+    )
     bot_token = models.CharField(max_length=255, blank=True, default="")
     enabled = models.BooleanField(default=False)
     webhook_secret = models.CharField(max_length=64, blank=True, default="")
@@ -30,7 +35,7 @@ class TelegramBotConfig(TimestampModel):
         verbose_name="Chat ID global",
     )
     telegram_username = models.CharField(max_length=64, blank=True, default="")
-    link_code = models.CharField(max_length=6, blank=True, default="")
+    link_code = models.CharField(max_length=12, blank=True, default="")   # N-106: 10 letters/digits
     link_code_created_at = models.DateTimeField(null=True, blank=True)
     link_status = models.CharField(
         max_length=16,
@@ -96,7 +101,7 @@ class TelegramAccountConfig(TimestampModel):
     enabled = models.BooleanField(default=False)
 
     # Linking fields
-    link_code = models.CharField(max_length=6, blank=True, default="")
+    link_code = models.CharField(max_length=12, blank=True, default="")   # N-106: 10 letters/digits
     link_code_created_at = models.DateTimeField(null=True, blank=True)
     link_status = models.CharField(
         max_length=16,

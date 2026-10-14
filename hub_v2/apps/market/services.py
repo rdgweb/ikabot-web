@@ -1306,23 +1306,9 @@ def _resource_label(resource_idx: int) -> str:
 
 
 def _resolve_telegram_chat_id(game_account: GameAccount) -> str:
-    from apps.telegram.models import TelegramAccountConfig, TelegramBotConfig
+    from apps.telegram.services.config import destination_chat
 
-    try:
-        bot = TelegramBotConfig.objects.get(pk=1)
-    except TelegramBotConfig.DoesNotExist:
-        return ""
-    if not bot.is_active:
-        return ""
-
-    try:
-        ga_config = TelegramAccountConfig.objects.get(game_account=game_account)
-    except TelegramAccountConfig.DoesNotExist:
-        ga_config = None
-
-    if ga_config and ga_config.enabled and ga_config.chat_id:
-        return str(ga_config.chat_id)
-    return str(bot.chat_id or "")
+    return destination_chat(game_account)   # N-106: its own chat, else its organization's
 
 
 def _build_intervention_message(request: ConstructionMarketIntervention) -> str:

@@ -90,14 +90,16 @@ def flush_due(now=None) -> int:
         # the digest of this game day went out already: what arrives later is not sent on its own
         if DigestEntry.objects.filter(event_key=CINEMA, day_key=day_key, sent_at__lt=now).exclude(pk__in=ids).exists():
             continue
-        bot = TelegramBotConfig.objects.filter(pk=1).first()
-        if bot is None or not bot.is_active:
+        from apps.telegram.services.config import config_for, platform_bot
+
+        if not platform_bot().is_active:
             continue
         by_chat: dict[str, list] = {}
         for entry in entries:
             if not entry.active:
                 continue
-            chat_id, _source = _resolve_destination(bot, entry.game_account, CINEMA)
+            # N-106: each game account's notice goes to its own organization's chat
+            chat_id, _source = _resolve_destination(config_for(game_account=entry.game_account), entry.game_account, CINEMA)
             if chat_id:
                 by_chat.setdefault(chat_id, []).append(entry)
         reset_at = next((entry.reset_at for entry in entries if entry.reset_at), None)

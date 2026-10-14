@@ -71,25 +71,15 @@ def _is_image_bytes(raw: bytes) -> bool:
 
 
 def _resolve_telegram_chat_id(game_account=None) -> str | None:
-    """Return the Telegram chat_id for the given game_account, or the global chat."""
-    from apps.telegram.models import TelegramAccountConfig, TelegramBotConfig
+    """The chat of the game account, else its organization's (N-106: never another organization's)."""
+    from apps.telegram.services.config import config_for, destination_chat, platform_bot
 
     if game_account:
-        try:
-            ga_cfg = TelegramAccountConfig.objects.get(game_account=game_account)
-            if ga_cfg.enabled and ga_cfg.chat_id:
-                return ga_cfg.chat_id
-        except TelegramAccountConfig.DoesNotExist:
-            pass
-
-    try:
-        bot = TelegramBotConfig.objects.get(pk=1)
-        if bot.is_active and bot.chat_id:
-            return bot.chat_id
-    except TelegramBotConfig.DoesNotExist:
-        pass
-
-    return None
+        return destination_chat(game_account) or None
+    if not platform_bot().is_active:
+        return None
+    config = config_for()
+    return (config.chat_id or None) if config else None
 
 
 class UpdateSnapshotView(APIView):
