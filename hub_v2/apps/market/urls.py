@@ -4,6 +4,7 @@ from .views import (
     BlackMarketOfferArchiveView,
     BlackMarketDashboardView,
     BlackMarketOfferCloseView,
+    MarketBalanceView,
     MarketDashboardView,
     MarketOrderBulkCancelView,
     MarketOrderBulkDeleteView,
@@ -21,6 +22,7 @@ app_name = "market"
 
 urlpatterns = [
     path("", MarketDashboardView.as_view(), name="dashboard"),
+    path("balance/", MarketBalanceView.as_view(), name="balance"),
     path("general/", PublicMarketView.as_view(), name="public-market"),
     path("general/refresh/", PublicMarketRefreshView.as_view(), name="public-market-refresh"),
     path("black-market/", BlackMarketDashboardView.as_view(), name="black-market"),

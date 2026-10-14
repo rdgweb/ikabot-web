@@ -1,0 +1,176 @@
+{% extends base_template|default:"base.html" %}
+{% load static hub_tags humanize %}
+
+{% block title %}Balanço · Mercado Interno{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'market:dashboard' %}" class="text-muted">Mercado Interno</a>
+  <span class="mx-1">/</span> <span class="text-ink">Balanço</span>
+{% endblock %}
+
+{% block content %}
+{# N-111: o que as contas venderam e compraram entre si, e o ouro que ficou com cada uma #}
+<style>
+  .mb-grid { display: grid; gap: 1rem; }
+  .mb-card { border: 1px solid var(--ik-line); border-radius: 16px; background: var(--ik-paper); padding: 1rem; box-shadow: 0 1px 2px rgba(0, 0, 0, .04); }
+  .mb-label { font-size: .68rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ik-muted); }
+  .mb-big { margin-top: .35rem; font-size: 1.7rem; font-weight: 700; line-height: 1.1; color: var(--ik-ink); font-variant-numeric: tabular-nums; }
+  .mb-sub { margin-top: .2rem; font-size: .72rem; color: var(--ik-muted); }
+  .mb-title { margin: 0 0 .6rem; font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ik-muted); }
+  .mb-up { color: #1f7a3a; } .mb-down { color: #b3402f; }
+  .mb-account { display: flex; flex-direction: column; gap: .6rem; }
+  .mb-account .head { display: flex; align-items: baseline; justify-content: space-between; gap: .6rem; }
+  .mb-account .head b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1rem; color: var(--ik-ink); }
+  .mb-account .head small { display: block; font-size: .68rem; color: var(--ik-muted); }
+  .mb-account .net { flex-shrink: 0; font-size: 1.2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .mb-split { display: flex; height: .5rem; overflow: hidden; border-radius: 999px; background: rgba(179, 64, 47, .75); }
+  .mb-split i { display: block; height: 100%; background: #2d9a4b; }
+  .mb-side { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; font-size: .78rem; color: var(--ik-muted); }
+  .mb-side a { color: inherit; text-decoration: none; }
+  .mb-side a:hover { color: var(--ik-sea); }
+  .mb-side .gold { margin-right: auto; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ik-ink); }
+  .mb-res { display: inline-flex; align-items: center; gap: .2rem; font-variant-numeric: tabular-nums; color: var(--ik-ink); }
+  .mb-res img { width: .9rem; height: .9rem; }
+  .mb-foot { display: flex; justify-content: space-between; padding-top: .5rem; border-top: 1px dashed var(--ik-line); font-size: .74rem; color: var(--ik-muted); }
+  .mb-foot b { font-variant-numeric: tabular-nums; color: var(--ik-ink); }
+  .mb-flow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .15rem .8rem; padding: .5rem 0; border-bottom: 1px solid var(--ik-line); font-size: .84rem; }
+  .mb-flow:last-child { border-bottom: 0; }
+  .mb-flow .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ik-ink); }
+  .mb-flow .who i { margin: 0 .3rem; color: var(--ik-muted); }
+  .mb-flow .gold { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ik-ink); }
+  .mb-flow u { grid-column: 1 / -1; display: block; height: .3rem; border-radius: 999px; background: rgba(79, 134, 185, .15); text-decoration: none; }
+  .mb-flow u i { display: block; height: 100%; border-radius: 999px; background: var(--ik-sea); }
+  .mb-chart { display: flex; align-items: flex-end; gap: .3rem; height: 9rem; }
+  .mb-chart .bar { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; min-width: 0; }
+  .mb-chart .bar i { display: block; width: 100%; max-width: 2rem; border-radius: 6px 6px 0 0; background: var(--ik-sea); }
+  .mb-chart .bar span { margin-top: .3rem; font-size: .6rem; color: var(--ik-muted); white-space: nowrap; }
+  .mb-price .head { display: flex; align-items: center; gap: .4rem; }
+  .mb-price .head img { width: 1rem; height: 1rem; }
+  .mb-tag { display: inline-block; margin-top: .5rem; padding: .12rem .55rem; border-radius: 999px; font-size: .7rem; font-weight: 600; }
+  .mb-tag.good { color: #1f6a1f; background: rgba(45, 122, 45, .12); } .mb-tag.bad { color: #8a2c20; background: rgba(179, 64, 47, .1); }
+  .mb-two { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 1100px) { .mb-two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+</style>
+
+<div class="space-y-6">
+  <div class="flex flex-wrap items-center justify-between gap-4">
+    <div>
+      <h1 class="text-xl font-bold text-ink flex items-center gap-2"><i class="bi bi-cash-coin text-sea"></i> Balanço</h1>
+      <p class="mt-0.5 text-sm text-muted">O que as contas venderam e compraram entre si.</p>
+    </div>
+    <div class="flex flex-shrink-0 flex-wrap items-center gap-2">
+      {% for period in periods %}
+      <a href="?days={{ period.days }}" class="btn btn-sm {% if period.active %}btn-primary{% else %}btn-secondary{% endif %}">{{ period.label }}</a>
+      {% endfor %}
+      <a href="{% url 'market:dashboard' %}" class="btn btn-secondary btn-sm"><i class="bi bi-shop"></i> Mercado Interno</a>
+    </div>
+  </div>
+
+  {% if not totals.orders %}
+  <div class="mb-card text-center text-sm text-muted" style="padding: 2.5rem 1rem;">
+    <i class="bi bi-cash-coin block mb-2 text-2xl"></i>
+    Nenhuma compra interna entregue neste período.
+  </div>
+  {% else %}
+
+  <div class="mb-grid" style="grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));">
+    <div class="mb-card">
+      <div class="mb-label">Ouro movimentado</div>
+      <div class="mb-big">{{ totals.gold|intcomma }}</div>
+    </div>
+    <div class="mb-card">
+      <div class="mb-label">Recursos entregues</div>
+      <div class="mb-big">{{ totals.amount|intcomma }}</div>
+    </div>
+    <div class="mb-card">
+      <div class="mb-label">Compras entregues</div>
+      <div class="mb-big">{{ totals.orders }}</div>
+      {% if totals.partial %}<div class="mb-sub">{{ totals.partial }} só em parte</div>{% endif %}
+    </div>
+    <div class="mb-card">
+      <div class="mb-label">Sem entrega</div>
+      <div class="mb-big">{{ totals.empty }}</div>
+    </div>
+  </div>
+
+  <div>
+    <h2 class="mb-title">Contas</h2>
+    <div class="mb-grid" style="grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));">
+      {% for account in accounts %}
+      <div class="mb-card mb-account">
+        <div class="head">
+          <div style="min-width: 0;"><b>{{ account.name }}</b>{% if account.label and account.label != account.name %}<small>{{ account.label }}</small>{% endif %}</div>
+          <span class="net {% if account.net >= 0 %}mb-up{% else %}mb-down{% endif %}" title="Ouro recebido das vendas menos o gasto nas compras">{% if account.net > 0 %}+{% endif %}{{ account.net|intcomma }}</span>
+        </div>
+        <div class="mb-split" title="Verde: vendas. Vermelho: compras."><i style="width: {{ account.sold_pct }}%;"></i></div>
+        <div class="mb-side">
+          <span class="mb-up"><i class="bi bi-arrow-up-right"></i> Vendeu</span>
+          <span class="gold">{{ account.sold_gold|intcomma }}</span>
+          {% for item in account.sold_list %}<span class="mb-res"><img src="{% static item.idx|resource_icon %}" alt="">{{ item.amount|intcomma }}</span>{% endfor %}
+          {% if account.game_account and account.sales %}<a href="{% url 'market:dashboard' %}?seller={{ account.game_account.pk }}#orders-section" title="Ver as vendas na lista de ordens"><i class="bi bi-list-ul"></i> {{ account.sales }}</a>{% endif %}
+        </div>
+        <div class="mb-side">
+          <span class="mb-down"><i class="bi bi-arrow-down-left"></i> Comprou</span>
+          <span class="gold">{{ account.bought_gold|intcomma }}</span>
+          {% for item in account.bought_list %}<span class="mb-res"><img src="{% static item.idx|resource_icon %}" alt="">{{ item.amount|intcomma }}</span>{% endfor %}
+          {% if account.game_account and account.purchases %}<a href="{% url 'market:dashboard' %}?buyer={{ account.game_account.pk }}#orders-section" title="Ver as compras na lista de ordens"><i class="bi bi-list-ul"></i> {{ account.purchases }}</a>{% endif %}
+        </div>
+        {% if account.gold_now != None %}
+        <div class="mb-foot"><span>Ouro em caixa</span><b>{{ account.gold_now|intcomma }}</b></div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="mb-two">
+    <div>
+      <h2 class="mb-title">Quem pagou a quem</h2>
+      <div class="mb-card">
+        {% for flow in flows %}
+        <div class="mb-flow">
+          <span class="who">{{ flow.payer }}<i class="bi bi-arrow-right"></i>{{ flow.receiver }}</span>
+          <span class="gold"{% if flow.back %} title="Já descontados {{ flow.back|intcomma }} que foram no sentido contrário"{% endif %}>{{ flow.gold|intcomma }}</span>
+          <u><i style="width: {{ flow.pct }}%;"></i></u>
+        </div>
+        {% empty %}
+        <div class="text-sm text-muted">As contas estão quites entre si.</div>
+        {% endfor %}
+      </div>
+    </div>
+    <div>
+      <h2 class="mb-title">Ouro por dia</h2>
+      <div class="mb-card">
+        <div class="mb-chart">
+          {% for bar in chart %}
+          <div class="bar" title="{{ bar.date|date:'d/m' }}: {{ bar.gold|intcomma }} de ouro">
+            <i style="height: {{ bar.pct }}%;"></i>
+            <span>{{ bar.date|date:"d/m" }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="mb-sub">Maior dia: {{ chart_peak|intcomma }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <h2 class="mb-title">Preço por recurso</h2>
+    <div class="mb-grid" style="grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));">
+      {% for price in prices %}
+      <div class="mb-card mb-price">
+        <div class="head mb-label"><img src="{% static price.idx|resource_icon %}" alt=""> {{ price.label }}</div>
+        <div class="mb-big">{{ price.average }} <span style="font-size: .75rem; font-weight: 400; color: var(--ik-muted);">ouro / un.</span></div>
+        <div class="mb-sub">{{ price.amount|intcomma }} em {{ price.orders }} compra{{ price.orders|pluralize }}{% if price.low != price.high %} · de {{ price.low }} a {{ price.high }}{% endif %}</div>
+        {% if price.outside %}
+        <span class="mb-tag {% if price.saved >= 0 %}good{% else %}bad{% endif %}" title="Menor oferta de fora vista nas varreduras do mercado geral: {{ price.outside }} de ouro. A mesma quantidade comprada lá a esse preço, menos o que foi pago aqui.">
+          Mercado geral {{ price.outside }} · {% if price.saved >= 0 %}{{ price.saved|intcomma }} a menos aqui{% else %}{{ price.saved|cut:"-"|intcomma }} a mais aqui{% endif %}
+        </span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

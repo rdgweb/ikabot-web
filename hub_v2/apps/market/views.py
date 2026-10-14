@@ -156,6 +156,28 @@ class MarketDashboardView(LoginRequiredMixin, TemplateView):
             )
         ]
         ctx["resource_choices"] = InternalMarketOrder.RESOURCE_CHOICES
+        # N-111: the order list can be opened already filtered by who bought or who sold
+        ctx["order_parties"] = [{"id": str(item["id"]), "name": item["name"] or item["account__label"]} for item in ctx["buyer_choices"]]
+        return ctx
+
+
+class MarketBalanceView(LoginRequiredMixin, TemplateView):
+    """GET /market/balance/ - what the accounts sold to and bought from each other, and the gold left of it (N-111)."""
+
+    template_name = "market/balance.html"
+
+    def get_context_data(self, **kwargs):
+        from .balance import DEFAULT_DAYS, PERIODS, build_balance
+
+        ctx = super().get_context_data(**kwargs)
+        try:
+            days = int(self.request.GET.get("days", DEFAULT_DAYS))
+        except (TypeError, ValueError):
+            days = DEFAULT_DAYS
+        if days not in {value for value, _label in PERIODS}:
+            days = DEFAULT_DAYS
+        ctx.update(build_balance(days))
+        ctx["periods"] = [{"days": value, "label": label, "active": value == days} for value, label in PERIODS]
         return ctx
 
 

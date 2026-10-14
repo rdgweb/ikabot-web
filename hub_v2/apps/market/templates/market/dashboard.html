@@ -17,6 +17,9 @@
       <p class="mt-0.5 text-sm text-muted">Ordens, participantes e cadeia de compra/venda entre contas.</p>
     </div>
     <div class="flex flex-shrink-0 items-center gap-2">
+      <a href="{% url 'market:balance' %}" class="btn btn-secondary btn-sm" title="O que as contas venderam e compraram entre si, e o ouro que ficou com cada uma">
+        <i class="bi bi-cash-coin"></i> Balanço
+      </a>
       <a href="{% url 'market:public-market' %}" class="btn btn-secondary btn-sm" title="O que as varreduras viram em oferta no mercado geral">
         <i class="bi bi-binoculars"></i> Mercado geral
       </a>
