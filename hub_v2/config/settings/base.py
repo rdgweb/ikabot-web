@@ -87,6 +87,7 @@ INSTALLED_APPS = [
     "apps.telemetry",
     "apps.manual_control",
     "apps.orgs",
+    "apps.audit",
 ]
 
 MIDDLEWARE = [
@@ -97,6 +98,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.audit.middleware.AuditMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django_htmx.middleware.HtmxMiddleware",

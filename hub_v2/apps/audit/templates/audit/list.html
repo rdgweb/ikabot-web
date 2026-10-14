@@ -1,0 +1,89 @@
+{% extends base_template|default:"base.html" %}
+
+{% block title %}Atividades{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <span class="text-ink">Atividades</span>
+{% endblock %}
+
+{% block content %}
+{# N-120: quem fez o quê, quando e de onde #}
+<style>
+  .au-bar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: 1rem; }
+  .au-bar .form-input { width: auto; min-width: 9rem; padding-top: .35rem; padding-bottom: .35rem; font-size: .82rem; }
+  .au-bar label.chk { display: inline-flex; align-items: center; gap: .35rem; font-size: .82rem; color: var(--ik-muted); }
+  .au-table td { font-size: .82rem; vertical-align: top; }
+  .au-when { white-space: nowrap; color: var(--ik-muted); font-variant-numeric: tabular-nums; }
+  .au-who b { color: var(--ik-ink); font-weight: 600; }
+  .au-who small, .au-where small { display: block; color: var(--ik-muted); font-size: .72rem; }
+  .au-kind { padding: .05rem .45rem; border-radius: 999px; font-size: .66rem; font-weight: 700; background: rgba(138, 129, 114, .15); color: var(--ik-muted); }
+  .au-kind.agent { background: rgba(79, 134, 185, .14); color: var(--ik-sea); }
+  .au-cat { font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #a67c2e; }
+  .au-count { margin-left: .35rem; padding: .02rem .4rem; border-radius: 999px; font-size: .68rem; font-weight: 700; background: rgba(201, 156, 78, .18); color: #8a6420; }
+  .au-bad { color: #b3402f; font-weight: 600; }
+  .au-where { font-family: ui-monospace, monospace; font-size: .76rem; }
+  .au-pages { display: flex; justify-content: space-between; align-items: center; margin-top: .9rem; font-size: .82rem; color: var(--ik-muted); }
+</style>
+
+<div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+  <div>
+    <h1 class="text-xl font-bold text-ink flex items-center gap-2"><i class="bi bi-clock-history text-sea"></i> Atividades</h1>
+    <p class="text-sm text-muted mt-1">{{ page.paginator.count }} registro{{ page.paginator.count|pluralize }} · guardados por 12 meses</p>
+  </div>
+</div>
+
+<form method="get" class="au-bar" hx-get="{% url 'audit:list' %}" hx-trigger="change, keyup changed delay:400ms from:input[name=busca]" hx-target="#page-content" hx-push-url="true">
+  <select name="periodo" class="form-input">
+    <option value="1" {% if filters.periodo == "1" %}selected{% endif %}>Últimas 24 h</option>
+    <option value="7" {% if filters.periodo == "7" %}selected{% endif %}>7 dias</option>
+    <option value="30" {% if filters.periodo == "30" %}selected{% endif %}>30 dias</option>
+    <option value="90" {% if filters.periodo == "90" %}selected{% endif %}>90 dias</option>
+    <option value="365" {% if filters.periodo == "365" %}selected{% endif %}>12 meses</option>
+  </select>
+  <select name="categoria" class="form-input">
+    <option value="">Tudo</option>
+    {% for key, label in categories.items %}<option value="{{ key }}" {% if filters.categoria == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <select name="quem" class="form-input">
+    <option value="">Todos</option>
+    {% for person in people %}<option value="{{ person }}" {% if filters.quem == person %}selected{% endif %}>{{ person }}</option>{% endfor %}
+  </select>
+  <input type="search" name="busca" value="{{ filters.busca }}" placeholder="Buscar conta, nó, IP…" class="form-input">
+  <label class="chk"><input type="checkbox" name="falhas" value="1" {% if filters.falhas %}checked{% endif %}> Só falhas</label>
+</form>
+
+<div class="card overflow-hidden p-0">
+  <table class="data-table au-table">
+    <thead><tr><th>Quando</th><th>Quem</th><th>O quê</th><th>Em</th><th>De onde</th></tr></thead>
+    <tbody>
+      {% for event in page %}
+      <tr>
+        <td class="au-when">{{ event.created_at|date:"d/m H:i:s" }}</td>
+        <td class="au-who">
+          <b>{{ event.actor_label|default:"—" }}</b>
+          {% if event.actor_kind != "user" %}<span class="au-kind {{ event.actor_kind }}">{{ event.get_actor_kind_display }}</span>{% endif %}
+        </td>
+        <td>
+          <span class="au-cat">{{ event.category_label }}</span><br>
+          <span class="{% if event.result != 'ok' %}au-bad{% endif %}">{{ event.label }}</span>{% if event.count > 1 %}<span class="au-count">×{{ event.count }}</span>{% endif %}
+        </td>
+        <td>{{ event.target_label|default:"—" }}{% if event.note %}<small class="block text-muted text-xs">{{ event.note }}</small>{% endif %}</td>
+        <td class="au-where">{{ event.ip|default:"—" }}<small title="{{ event.user_agent }}">{{ event.user_agent|truncatechars:38 }}</small></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="text-center py-8 text-muted"><i class="bi bi-clock-history text-2xl block mb-2"></i>Nada neste período.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if page.paginator.num_pages > 1 %}
+<div class="au-pages">
+  <span>Página {{ page.number }} de {{ page.paginator.num_pages }}</span>
+  <span class="flex gap-2">
+    {% if page.has_previous %}<a class="btn btn-secondary btn-sm" href="?{{ querystring }}&page={{ page.previous_page_number }}"><i class="bi bi-chevron-left"></i></a>{% endif %}
+    {% if page.has_next %}<a class="btn btn-secondary btn-sm" href="?{{ querystring }}&page={{ page.next_page_number }}"><i class="bi bi-chevron-right"></i></a>{% endif %}
+  </span>
+</div>
+{% endif %}
+{% endblock %}

@@ -2800,6 +2800,10 @@ class JobCancelView(LoginRequiredMixin, View):
             lease_expires_at=None,
         )
         _cancel_active_construction_reservations_for_jobs(chain_qs)
+        from apps.audit.services import record
+        from apps.audit.signals import label
+
+        record("job.cancelled", target=job, target_label=label(job))
         return redirect("jobs:job-detail", pk=job.pk)
 
 

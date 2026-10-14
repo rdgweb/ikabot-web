@@ -193,7 +193,7 @@ def request_control(game_account: GameAccount, user) -> ManualControlSession:
     now = _now()
     try:
         with transaction.atomic():
-            return ManualControlSession.objects.create(
+            session = ManualControlSession.objects.create(
                 game_account=game_account,
                 node=node,
                 user=user if getattr(user, "pk", None) else None,
@@ -209,6 +209,12 @@ def request_control(game_account: GameAccount, user) -> ManualControlSession:
         if existing is None:
             raise ControlRefused("Não foi possível iniciar o controle manual; tente de novo.") from None
         return existing
+
+    from apps.audit.services import record
+
+    record("control.opened", target=game_account, target_label=f"{game_account.name or '-'} ({game_account.server_id})",
+           user=user if getattr(user, "pk", None) else None, details={"node": node.name})
+    return session
 
 
 def advance(session_id) -> dict:
@@ -530,6 +536,13 @@ def end(session: ManualControlSession, reason: str, *, error: str = "") -> bool:
         "Manual control ended: session=%s game_account=%s reason=%s jobs_resumed=%s",
         current.pk, current.game_account_id, current.end_reason, released,
     )
+    from apps.audit.services import acting_user, record
+
+    game_account = current.game_account
+    by_person = current.end_reason == "closed" and acting_user() is not None   # expiry and errors are the system's
+    record("control.ended", target=game_account, target_label=f"{game_account.name or '-'} ({game_account.server_id})",
+           user=acting_user() if by_person else None, actor_kind=None if by_person else "system",
+           actor_label="" if by_person else "sistema", details={"reason": current.end_reason, "jobs": released})
     return True
 
 

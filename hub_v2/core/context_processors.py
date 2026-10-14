@@ -43,6 +43,7 @@ def nav_context(request):
                 {"name": "Captcha", "url": "/captcha/", "icon": "bi-robot"},
                 {"name": "Notas", "url": "/notes/", "icon": "bi-card-checklist"},
                 {"name": "Atualizações", "url": "/notes/atualizacoes/", "icon": "bi-journal-code"},
+                {"name": "Atividades", "url": "/atividades/", "icon": "bi-clock-history", "perm": "admin"},
                 {"name": "Configurações", "url": "/settings/", "icon": "bi-gear", "perm": "admin"},
                 {"name": "Usuários", "url": "/users/", "icon": "bi-people", "perm": "admin"},
             ],

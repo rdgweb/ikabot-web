@@ -73,6 +73,9 @@ class AgentRegisterView(APIView):
         )
         if created:
             logger.info("Auto-created node %s on first registration", node.pk)
+            from apps.audit.services import record
+
+            record("node.created", target=node, target_label=node.name, actor_kind="agent", actor_label=node.name)
 
         # Validate deploy token if provided
         deploy_token = data.get("deploy_token")
@@ -326,6 +329,14 @@ class AgentConfigView(APIView):
             },
             "accounts": accounts,
         }
+        # N-120: the passwords left the hub for this agent; once an hour per node is enough to trace it
+        with_password = [acc for acc in accounts if acc["password"] or acc["gf_token"]]
+        if with_password:
+            from apps.audit.services import once_per, record
+
+            if once_per(f"credentials:{node.pk}", 3600):
+                record("credentials.delivered", target=node, target_label=node.name, actor_kind="agent", actor_label=node.name,
+                       details={"contas": [acc["label"] for acc in with_password]})
         return Response(
             NodeConfigResponseSerializer(response_data).data,
         )
