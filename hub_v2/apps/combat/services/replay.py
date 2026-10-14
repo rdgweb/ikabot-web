@@ -10,7 +10,7 @@ from __future__ import annotations
 from .report_parser import parse_rounds, parse_summary, unit_name
 
 WALL = 314
-SIMULATED_KINDS = range(301, 330)       # the simulator knows land units only
+SEA_FIELDS = (101, 102, 103, 104, 105)  # the fields of the sea in the simulator's table, smallest to biggest (N-113)
 
 
 def _start(side: dict) -> dict[int, int]:
@@ -40,6 +40,9 @@ def field_level(first_round: dict) -> int:
     """The size of the field, in the levels the simulator's table uses, from the slots the game drew."""
     zones = first_round["attacker"].get("zones") or {}
     front, artillery = len(zones.get("main") or []), len(zones.get("artillery") or [])
+    if first_round.get("naval"):
+        # at sea each size of field has its own number of first-strike slots, one to five
+        return SEA_FIELDS[max(1, min(len(SEA_FIELDS), artillery or 1)) - 1]
     if front <= 3:
         return 1
     if front <= 5:
@@ -53,6 +56,8 @@ def battle_inputs(rounds: list) -> dict:
     """What the simulator needs to fight this combat again, read from its rounds."""
     first = rounds[0]
     inputs = {"field_level": field_level(first), "wall_segments": 0, "attacker": {}, "defender": {}, "reinforcements": {"attacker": {}, "defender": {}}}
+    if first.get("naval"):
+        inputs["naval"] = True
     for side in ("attacker", "defender"):
         start = _start(first[side])
         if side == "defender":
@@ -102,8 +107,22 @@ def real_outcome(rounds: list, summary: dict | None) -> dict:
 
 def simulate(inputs: dict, *, wall_level: int = 0, attacker_upgrades: dict | None = None, defender_upgrades: dict | None = None,
              attacker_damage_bonus_pct: float = 0.0, defender_damage_bonus_pct: float = 0.0, max_rounds: int = 40, morale: bool = True) -> dict:
-    """What the simulator says about these armies."""
+    """What the simulator says about these armies (or, at sea, about these fleets)."""
     from apps.espionage.services.battle_land import simulate_land_battle
+
+    if inputs.get("naval"):
+        from apps.espionage.services.battle_sea import simulate_sea_battle
+
+        result = simulate_sea_battle(
+            dict(inputs["attacker"]), dict(inputs["defender"]),
+            attacker_upgrades=attacker_upgrades or {}, defender_upgrades=defender_upgrades or {},
+            field=inputs["field_level"], max_rounds=max_rounds,
+            attacker_damage_bonus_pct=attacker_damage_bonus_pct, defender_damage_bonus_pct=defender_damage_bonus_pct,
+            attacker_reinforcements_by_round=inputs["reinforcements"]["attacker"] or None,
+            defender_reinforcements_by_round=inputs["reinforcements"]["defender"] or None,
+            morale=morale,
+        )
+        return _predicted(result)
 
     result = simulate_land_battle(
         attacker_units=dict(inputs["attacker"]),
@@ -120,6 +139,10 @@ def simulate(inputs: dict, *, wall_level: int = 0, attacker_upgrades: dict | Non
         calibrated=False,               # the check measures the simulator itself; any adjustment is given explicitly
         morale=morale,
     )
+    return _predicted(result)
+
+
+def _predicted(result: dict) -> dict:
     return {
         "winner": result.get("winner") or "",
         "rounds": int(result.get("rounds") or 0),
@@ -170,7 +193,7 @@ def simulable(inputs: dict) -> bool:
 def replay_pages(detailed_html: str, summary_html: str, **simulate_options) -> dict | None:
     """Everything at once for a stored report; None when there is no field to read."""
     rounds = parse_rounds(detailed_html)
-    if not rounds or rounds[0].get("naval"):
+    if not rounds:
         return None
     inputs = battle_inputs(rounds)
     if not simulable(inputs):

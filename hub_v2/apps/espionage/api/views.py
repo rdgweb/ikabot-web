@@ -249,8 +249,39 @@ def _recommend_fleet_for_blockade(
     own_fleet_pt: dict,
     enemy_fleet: dict[int, int] | None = None,
     enemy_upgrades: dict[int, dict] | None = None,
+    own_upgrades: dict[int, dict] | None = None,
+    city_level: int | None = None,
 ) -> dict:
     """Recomenda frota para blockade.
+
+    A regra antiga dá o primeiro palpite; o simulador naval (N-113) confere se ele vence e,
+    se não vencer, tenta mais navios até o que a cidade tem. Sem frota inimiga conhecida, ou
+    se o simulador falhar, vale o palpite.
+    """
+    guess = _fleet_rule_for_blockade(own_fleet_pt, enemy_fleet, enemy_upgrades)
+    if not enemy_fleet or not guess:
+        return guess
+    try:
+        from apps.espionage.services.battle_sea import recommend_fleet
+
+        rec = recommend_fleet(
+            _troops_dict_to_ids(own_fleet_pt), enemy_fleet, first_guess=guess,
+            attacker_upgrades=own_upgrades or {}, defender_upgrades=enemy_upgrades or {},
+            # the field is the one of the port attacked; unknown, it is guessed from the city like the wall
+            port_level=_guess_wall_level_from_city_level(city_level) if city_level else None,
+        )
+        return rec["recommended"] or guess
+    except Exception:  # noqa: BLE001 - a blockade is never left without a fleet because the simulator failed
+        logger.warning("Sea simulation failed for the blockade fleet; using the rule", exc_info=True)
+        return guess
+
+
+def _fleet_rule_for_blockade(
+    own_fleet_pt: dict,
+    enemy_fleet: dict[int, int] | None = None,
+    enemy_upgrades: dict[int, dict] | None = None,
+) -> dict:
+    """O palpite de frota de antes do simulador.
 
     Regra:
     - toda unidade naval relevante: envia `ceil(enemy * 1.25) + supressão_upgrade`
@@ -393,6 +424,8 @@ def _choose_raid_account(target_city_id: str, target_owner_id: str, server_id: s
                     fleet,
                     enemy_fleet=enemy_intel.get("enemy_fleet") or {},
                     enemy_upgrades=enemy_intel.get("enemy_upgrades") or {},
+                    own_upgrades=own_upgrades,
+                    city_level=enemy_intel.get("city_level"),
                 )
 
             # Score = sobrevivência atacante após combate (mais alto = melhor)

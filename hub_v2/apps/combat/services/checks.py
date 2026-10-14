@@ -92,6 +92,7 @@ def normalize(inputs: dict) -> dict:
     """Inputs as the simulator wants them: stored JSON turns the unit ids into text."""
     units = lambda raw: {int(unit): int(amount) for unit, amount in (raw or {}).items()}   # noqa: E731
     return {
+        **({"naval": True} if inputs.get("naval") else {}),
         "field_level": int(inputs.get("field_level") or 1),
         "wall_segments": int(inputs.get("wall_segments") or 0),
         "attacker": units(inputs.get("attacker")),
@@ -107,7 +108,7 @@ def check_report(report):
     """Fight a finished report again and store the comparison. Returns the check, or None when there is nothing to compare."""
     from apps.combat.models import SimulationCheck
 
-    if not report.finished or report.combat_type == "naval":
+    if not report.finished:
         return None
     rounds = parse_rounds(report.detailed_html)
     if not rounds:
@@ -198,12 +199,14 @@ def check_safely(report) -> None:
         logger.warning("Could not check the simulator against the combat %s", report.combat_id, exc_info=True)
 
 
-KINDS = (("wall", "Só muralha"), ("mixed", "Muralha e defensores"), ("open", "Campo aberto"))
+KINDS = (("wall", "Só muralha"), ("mixed", "Muralha e defensores"), ("open", "Campo aberto"), ("sea", "No mar"))
 
 
 def kind_of(check) -> str:
-    """What the attacker met: only the wall, the wall with troops behind it, or troops in the open."""
+    """What the attacker met: only the wall, the wall with troops behind it, troops in the open, or a fleet."""
     inputs = check.inputs_json or {}
+    if inputs.get("naval"):
+        return "sea"
     if inputs.get("wall_segments"):
         return "mixed" if inputs.get("defender") else "wall"
     return "open"

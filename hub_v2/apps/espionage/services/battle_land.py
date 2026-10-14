@@ -6,16 +6,22 @@ from dataclasses import dataclass, field
 import math
 from typing import Any
 
-from .unit_stats import UNIT_STATS, IMPROVEMENT_BONUS_LAND
+from .unit_stats import UNIT_STATS, IMPROVEMENT_BONUS_LAND, IMPROVEMENT_BONUS_NAVAL
 
 
-LINE_PRINCIPAL = {303, 308, 316, 319}
-LINE_FLANCOS = {302, 315, 320, 321}
-LINE_LONGA = {301, 304, 313}
-LINE_ARTILH = {305, 306, 307}
-LINE_BOMB = {309}
-LINE_AA = {312}
-LINE_BAGAGEM = {310, 311}
+# The lines of a battlefield. At sea the game draws the same field with other names (N-113):
+# heavy battleships hold the front, light ones the flanks, the long-range ships stand behind,
+# the "first strike" ships are where the artillery is on land, the carriers where the bombers
+# are and the ships that hunt carriers where the gyrocopters are. A ship and a land unit never
+# share an id, so one table serves both.
+LINE_PRINCIPAL = {303, 308, 316, 319} | {216, 211, 223, 225}
+LINE_FLANCOS = {302, 315, 320, 321} | {210, 221}
+LINE_LONGA = {301, 304, 313} | {213, 214, 215, 222, 224}
+LINE_ARTILH = {305, 306, 307} | {212, 217}
+LINE_BOMB = {309} | {219}
+LINE_AA = {312} | {218}
+LINE_BAGAGEM = {310, 311} | {220}
+SIEGE = {305, 306, 307}             # what is fired at a wall
 
 PROTECTED_LINES_BY_WALL = {"principal", "flancos"}
 
@@ -60,17 +66,24 @@ FIELD_SLOTS: dict[int, dict[str, tuple[int, int]]] = {
         "bomb": (2, 30),
         "aa": (2, 30),
     },
+    # the sea, by the level of the port of the city: 0-7, 8-14, 15-21, 22-28, 29 and up
+    101: {"principal": (3, 15), "flancos": (0, 0), "longa": (3, 15), "artilharia": (1, 15), "bomb": (1, 10), "aa": (1, 10)},
+    102: {"principal": (5, 15), "flancos": (2, 15), "longa": (5, 15), "artilharia": (2, 15), "bomb": (1, 10), "aa": (1, 10)},
+    103: {"principal": (7, 15), "flancos": (4, 15), "longa": (7, 15), "artilharia": (3, 15), "bomb": (1, 15), "aa": (1, 15)},
+    104: {"principal": (7, 20), "flancos": (6, 15), "longa": (7, 20), "artilharia": (4, 15), "bomb": (2, 10), "aa": (2, 10)},
+    105: {"principal": (7, 25), "flancos": (6, 20), "longa": (7, 25), "artilharia": (5, 15), "bomb": (2, 15), "aa": (2, 15)},
 }
+SEA_FIELDS = (101, 102, 103, 104, 105)
 
 DEPLOY_PRIORITY = {
-    "principal": [303, 319, 316, 308],
-    "principal_fillers": [302, 315, 321, 320],
-    "flancos": [302, 321, 315, 320],
-    "longa": [304, 313, 301],
-    "artilharia": [305, 306, 307],
-    "bomb": [309],
-    "aa": [312],
-    "bagagem": [310, 311],
+    "principal": [303, 319, 316, 308] + [216, 225, 211, 223],
+    "principal_fillers": [302, 315, 321, 320] + [210, 221],
+    "flancos": [302, 321, 315, 320] + [210, 221],
+    "longa": [304, 313, 301] + [215, 214, 224, 213, 222],
+    "artilharia": [305, 306, 307] + [217, 212],
+    "bomb": [309] + [219],
+    "aa": [312] + [218],
+    "bagagem": [310, 311] + [220],
 }
 
 # The wall, as the reports and the game's own table show it (N-112). The numbers are the game's,
@@ -164,11 +177,15 @@ def _weapon_damage(unit_id: int, weapon_index: int, off_level: int) -> int:
     return int((base + bonus) * damage_scale)
 
 
+def _is_ship(unit_id: int) -> bool:
+    return (UNIT_STATS.get(unit_id) or {}).get("kind") == "naval"
+
+
 def _upgrade_bonus(unit_id: int, weapon_index: int, base: int, off_level: int) -> int:
     level = int(off_level or 0)
-    if unit_id in LINE_ARTILH and weapon_index == 1:
+    if unit_id in SIEGE and weapon_index == 1:
         return int(round(base * ARTILLERY_UPGRADE_PCT / 100.0 * level))
-    return level * IMPROVEMENT_BONUS_LAND
+    return level * (IMPROVEMENT_BONUS_NAVAL if _is_ship(unit_id) else IMPROVEMENT_BONUS_LAND)
 
 
 def _weapon_raw_damage(unit_id: int, weapon_index: int, off_level: int) -> int:
@@ -369,7 +386,7 @@ class Army:
     def unit_armor(self, unit_id: int) -> int:
         unit = UNIT_STATS.get(unit_id) or {}
         base_armor = int(unit.get("armor", 0))
-        bonus_armor = int(self.def_level(unit_id) or 0) * IMPROVEMENT_BONUS_LAND
+        bonus_armor = int(self.def_level(unit_id) or 0) * (IMPROVEMENT_BONUS_NAVAL if _is_ship(unit_id) else IMPROVEMENT_BONUS_LAND)
         return base_armor + bonus_armor + self.armor_bonus
 
     def unit_hp(self, unit_id: int) -> int:
@@ -492,6 +509,15 @@ class Army:
             "bagagem": [],
         }
         ammo_state: dict[tuple[str, int, int], int] = {}
+        # N-113: a slot holds one kind of unit, as many as fit in it (16 steam giants in a slot of
+        # 50, 5 steam rams in one of 25); what a line takes is counted in slots, not in loose space
+        slot_table = FIELD_SLOTS.get(self.field_level, FIELD_SLOTS[1])
+        slots_used: dict[str, int] = {}
+
+        def room(line: str, size: int) -> tuple[int, int]:
+            slots, per = slot_table.get(line, (0, 0))
+            per_slot = per // max(1, size)
+            return max(0, slots - slots_used.get(line, 0)) * per_slot, per_slot
 
         def fill(line: str, unit_ids: list[int], capacity: int, unlimited: bool = False) -> None:
             used = sum(stack.count * stack.size for stack in lines[line])
@@ -508,10 +534,11 @@ class Army:
                 if unlimited:
                     take = qty
                 else:
-                    free = capacity - used
-                    if free < size:
+                    fits, per_slot = room(line, size)
+                    if fits <= 0:
                         continue
-                    take = min(qty, free // size)
+                    take = min(qty, fits)
+                    slots_used[line] = slots_used.get(line, 0) + math.ceil(take / per_slot)
                 if take <= 0:
                     continue
                 lines[line].append(Stack(uid, take, size))
@@ -519,7 +546,7 @@ class Army:
                 if remaining[uid] <= 0:
                     remaining.pop(uid, None)
                 used += take * size
-                if not unlimited and used >= capacity:
+                if not unlimited and room(line, 1)[0] <= 0:
                     break
 
         def fill_from_memory(line: str, capacity: int) -> int:
@@ -535,12 +562,13 @@ class Army:
                 if qty <= 0:
                     continue
                 size = _unit_size(uid)
-                free = capacity - used
-                if free < size:
+                fits, per_slot = room(line, size)
+                if fits <= 0:
                     continue
-                take = min(desired, qty, free // size)
+                take = min(desired, qty, fits)
                 if take <= 0:
                     continue
+                slots_used[line] = slots_used.get(line, 0) + math.ceil(take / per_slot)
                 lines[line].append(Stack(uid, take, size))
                 remaining[uid] -= take
                 if remaining[uid] <= 0:
@@ -996,13 +1024,15 @@ def simulate_land_battle(
     defender_reinforcements_by_round: dict[int, dict[int, int]] | None = None,
     calibrated: bool = True,
     morale: bool = True,
+    field_key: int | None = None,
 ) -> dict[str, Any]:
     if calibrated:
         # N-110: the adjustment learned from real combats and approved on the screen (0, 0 until then)
         learned_attacker, learned_defender = _learned_bonus()
         attacker_damage_bonus_pct = float(attacker_damage_bonus_pct or 0.0) + learned_attacker
         defender_damage_bonus_pct = float(defender_damage_bonus_pct or 0.0) + learned_defender
-    field_level = _field_level_from_th(town_hall_level)
+    # `field_key` names a field of the table directly (the sea ones); otherwise it comes from the town hall
+    field_level = field_key if field_key in FIELD_SLOTS else _field_level_from_th(town_hall_level)
     attacker = Army(
         attacker_units,
         attacker_upgrades,
@@ -1342,7 +1372,7 @@ def simulate_land_battle(
                     units=end_units[side], enemy_units=end_units[other],
                     bombed=bombed[side], flanks_broken=flanks_broken[side],
                     wall_closed=side == "attacker" and defender.wall_was_up and defender.wall_damage_round <= 0,
-                    supply=army.units.get(310, 0) * MORALE_PER_COOK,
+                    supply=army.units.get(310, 0) * MORALE_PER_COOK + army.units.get(220, 0) * MORALE_PER_TENDER,
                 )
                 army.morale = morale_after(army.morale, changes)
                 morale_trace[side] = {"morale": army.morale, "changes": changes}

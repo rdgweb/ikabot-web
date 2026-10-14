@@ -268,6 +268,7 @@ def _create_raid_job(
                     fleet,
                     enemy_fleet=enemy_intel.get("enemy_fleet") or enemy_fleet,
                     enemy_upgrades=enemy_intel.get("enemy_upgrades") or {},
+                    city_level=enemy_intel.get("city_level"),
                 )
                 if rec_fleet:
                     inputs["blockade_fleet_units"] = rec_fleet

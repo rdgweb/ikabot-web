@@ -60,7 +60,8 @@ def propose() -> dict:
     """Search the adjustment that fits the checks best and store it as the proposal."""
     from apps.combat.models import SimulationCheck, SimulatorCalibration
 
-    checks = list(SimulationCheck.objects.order_by("-created_at")[:MAX_CHECKS])
+    # the adjustment is used by the land recommendation only, so it is learned from land combats only (N-113)
+    checks = [check for check in SimulationCheck.objects.order_by("-created_at")[:MAX_CHECKS] if not (check.inputs_json or {}).get("naval")]
     proposal = {"samples": len(checks), "computed_at": timezone.now().isoformat(), "attacker_pct": 0, "defender_pct": 0, "before": {}, "after": {}, "better": False}
     if checks:
         base_cost, before = _cost(checks, 0, 0)
