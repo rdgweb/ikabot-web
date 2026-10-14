@@ -27,7 +27,7 @@ class FirstStepsTests(TestCase):
         self.client.force_login(get_user_model().objects.create_user("rodrigo", password="x", is_staff=True))
 
     def _page(self, **headers):
-        response = self.client.get(reverse("settings_app:first-steps"), **headers)
+        response = self.client.get(reverse("settings_app:health"), HTTP_HX_REQUEST="true", **headers)
         self.assertEqual(response.status_code, 200)
         return {item["key"]: item for item in response.context["checks"]}, response
 
@@ -83,67 +83,62 @@ class FirstStepsTests(TestCase):
             checks, _response = self._page()
         self.assertIn("boom", checks["error"]["detail"])
 
-    def test_the_menu_has_the_page(self):
-        with patch("apps.settings_app.services.requests.get", side_effect=_offline):
-            _checks, response = self._page()
-        self.assertIn('href="/settings/primeiros-passos/"', response.content.decode())
+    def test_the_health_lives_in_configuracoes(self):
+        page = self.client.get(reverse("settings_app:list")).content.decode()
+        self.assertIn('id="saude"', page)
+        self.assertIn(f'hx-get="{reverse("settings_app:health")}"', page)
+        self.assertRedirects(self.client.get(reverse("settings_app:health")), "/settings/#saude", fetch_redirect_response=False)
+        self.assertRedirects(self.client.get("/settings/primeiros-passos/"), "/settings/#saude", fetch_redirect_response=False)
+        self.assertNotIn("primeiros-passos", self.client.get("/").content.decode())     # out of the menu
 
 
-class FirstUseTests(TestCase):
-    """The first-use guide: each step marked by what exists, and the real button pointed out."""
+class TourTests(TestCase):
+    """The welcome tour starts by itself once for each user and is switched in Configurações."""
 
     def setUp(self):
-        self.client.force_login(get_user_model().objects.create_user("novato", password="x"))
-        self.offline = patch("apps.settings_app.services.requests.get", side_effect=_offline)
-        self.offline.start()
-        self.addCleanup(self.offline.stop)
+        self.user = get_user_model().objects.create_user("novato", password="x", is_staff=True)
+        self.client.force_login(self.user)
 
-    def _done(self):
-        return {step["key"]: step["done"] for step in first_steps.first_use()}
+    def _autostarts(self):
+        html = self.client.get("/").content.decode()
+        self.assertIn("js/tour.js", html)
+        return "data-autostart" in html
 
-    def test_the_steps_follow_what_exists(self):
-        from apps.game.models import AccountSnapshot
-        from apps.jobs.models import Job
+    def test_it_starts_once_for_each_user(self):
+        self.assertTrue(self._autostarts())
+        self.assertEqual(self.client.post(reverse("settings_app:tour-done")).status_code, 204)
+        self.assertFalse(self._autostarts())
+        other = get_user_model().objects.create_user("outro", password="x")
+        self.client.force_login(other)
+        self.assertTrue(self._autostarts())
 
-        self.assertEqual(self._done(), {"account": False, "worlds": False, "status": False, "queue": False, "action": False})
-        node = Node.objects.create(name="agente-1")
-        account = Account.objects.create(node=node, label="Lobby", email="a@example.com", password_enc="x")
-        Job.objects.create(account=account, node=node, action_code=first_steps.DISCOVER_ACTION, status="finished")
-        self.assertEqual(self._done(), {"account": True, "worlds": False, "status": False, "queue": False, "action": False})
-        world = GameAccount.objects.create(account=account, lobby_account_id=1, server_id="s78-br", server_language="br", server_number=78, name="Alpha")
-        steps = {step["key"]: step for step in first_steps.first_use()}
-        self.assertEqual(steps["worlds"]["link"], f"/accounts/{account.pk}/?guia=discover")
-        self.assertTrue(steps["worlds"]["done"])
-        Job.objects.create(account=account, game_account=world, node=node, action_code=100, status="finished")
-        AccountSnapshot.objects.create(account=account, game_account=world)
-        self.assertEqual(self._done(), {"account": True, "worlds": True, "status": True, "queue": True, "action": False})
-        Job.objects.create(account=account, game_account=world, node=node, action_code=1002, status="queued")
-        self.assertTrue(all(self._done().values()))
+    def test_switching_it_on_shows_it_again_to_everybody(self):
+        from apps.settings_app.models import AppSetting
 
-    def test_the_page_points_to_the_next_step(self):
-        response = self.client.get(reverse("settings_app:first-steps"))
+        self.client.post(reverse("settings_app:tour-done"))
+        self.client.post(reverse("settings_app:tour-toggle"), {"enabled": "0"})
+        self.assertFalse(self._autostarts())
+        self.assertIn("Desligado", self.client.get(reverse("settings_app:list")).content.decode())
+        self.client.post(reverse("settings_app:tour-toggle"), {"enabled": "1"})
+        self.assertTrue(self._autostarts())
+        self.assertFalse(AppSetting.objects.filter(key__startswith="tour_done:").exists())
+
+    def test_settings_page_offers_it_and_hides_its_keys(self):
+        self.client.post(reverse("settings_app:tour-done"))
+        response = self.client.get(reverse("settings_app:list"))
         html = response.content.decode()
-        self.assertEqual(response.context["next_step"]["key"], "account")
-        self.assertEqual(response.context["steps_done"], 0)
-        self.assertIn('href="/accounts/?guia=nova-conta"', html)
-        self.assertIn("Primeiro uso", html)
+        self.assertIn("window.ikTour.start()", html)
+        self.assertFalse([item.key for item in response.context["generic_settings"] if item.key.startswith("tour_")])
 
-    def test_the_dashboard_shows_the_next_step_until_all_are_done(self):
+    def test_the_tour_points_at_the_real_parts(self):
+        from pathlib import Path
+
+        from django.conf import settings as django_settings
+
         html = self.client.get("/").content.decode()
-        self.assertIn("Primeiros passos · 0 de 5", html)
-        self.assertIn("Próximo: Cadastrar a conta", html)
-        with patch("apps.settings_app.first_steps.first_use", return_value=[{"done": True, "title": "x"}] * 5):
-            self.assertNotIn("Primeiros passos ·", self.client.get("/").content.decode())
-
-    def test_the_guide_marks_the_real_buttons(self):
-        node = Node.objects.create(name="agente-1")
-        account = Account.objects.create(node=node, label="Lobby", email="a@example.com", password_enc="x")
-        self.assertIn('data-guia="nova-conta"', self.client.get(reverse("accounts:account-list")).content.decode())
-        detail = self.client.get(reverse("accounts:account-detail", args=[account.pk])).content.decode()
-        self.assertIn('data-guia="discover"', detail)
-        self.assertIn('data-guia="novo-job"', detail)                                   # the top bar is on every page
-        self.assertIn("guia-alvo", detail)
-
-    def test_every_user_finds_the_page_in_the_menu(self):
-        html = self.client.get("/").content.decode()
-        self.assertIn('href="/settings/primeiros-passos/"', html)
+        self.assertIn('data-tour="novo-job"', html)
+        self.assertNotIn("data-tour-script", self.client.get("/", HTTP_HX_REQUEST="true", HTTP_HX_BOOSTED="true").content.decode())
+        script = (Path(django_settings.BASE_DIR) / "static" / "js" / "tour.js").read_text(encoding="utf-8")
+        for href in ("/accounts/", "/game/", "/game/actions/", "/jobs/", "/telegram/", "/settings/"):
+            self.assertIn(f'a.sidebar-item[href="{href}"]', script)
+            self.assertIn(f'href="{href}"', html)

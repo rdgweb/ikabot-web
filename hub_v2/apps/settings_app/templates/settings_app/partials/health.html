@@ -1,0 +1,45 @@
+{# N-116: cada peça que a instalação precisa, testada de verdade; bloco de Configurações #}
+<style>
+  .sh-grid { display: grid; gap: .7rem; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .sh-item { display: flex; gap: .7rem; align-items: flex-start; padding: .75rem .85rem; border: 1px solid var(--ik-line); border-radius: 12px; background: var(--ik-paper); }
+  .sh-item > i { display: grid; place-items: center; flex: none; width: 2rem; height: 2rem; border-radius: 9px; font-size: 1rem; background: rgba(79, 134, 185, .12); color: var(--ik-sea); }
+  .sh-item .body { min-width: 0; flex: 1; }
+  .sh-item .top { display: flex; align-items: center; gap: .5rem; }
+  .sh-item b { margin-right: auto; font-size: .88rem; color: var(--ik-ink); }
+  .sh-item p { margin: .2rem 0 0; font-size: .76rem; line-height: 1.35; color: var(--ik-muted); overflow-wrap: anywhere; }
+  .sh-item a.fix { display: inline-block; margin-top: .3rem; font-size: .74rem; font-weight: 600; color: var(--ik-sea); }
+  .sh-item.missing { border-color: rgba(179, 64, 47, .45); }
+  .sh-state { padding: .1rem .55rem; border-radius: 999px; font-size: .64rem; font-weight: 700; color: #fff; }
+  .sh-state.ok { background: #2d7a2d; } .sh-state.warn { background: #c9922e; } .sh-state.missing { background: #b3402f; } .sh-state.optional { background: #8a8172; }
+  .sh-summary { display: flex; flex-wrap: wrap; gap: .3rem .9rem; font-size: .78rem; color: var(--ik-muted); }
+  .sh-summary b { color: var(--ik-ink); }
+</style>
+<div class="card-header !px-5 !py-3">
+  <div class="flex flex-wrap items-center gap-3">
+    <i class="bi bi-heart-pulse text-sea"></i>
+    <h3 class="text-sm font-semibold text-ink">Saúde do sistema</h3>
+    <div class="sh-summary">
+      <span><b>{{ counts.ok }}</b> prontos</span>
+      {% if counts.missing %}<span><b>{{ counts.missing }}</b> faltando</span>{% endif %}
+      {% if counts.warn %}<span><b>{{ counts.warn }}</b> para conferir</span>{% endif %}
+      {% if counts.optional %}<span><b>{{ counts.optional }}</b> opcionais</span>{% endif %}
+    </div>
+    <button type="button" class="btn btn-secondary btn-sm ml-auto" hx-get="{% url 'settings_app:health' %}" hx-target="#saude" hx-swap="innerHTML" hx-push-url="false">
+      <i class="bi bi-arrow-repeat"></i> Testar de novo
+    </button>
+  </div>
+</div>
+<div class="p-5">
+  <div class="sh-grid">
+    {% for item in checks %}
+    <div class="sh-item {{ item.state }}">
+      <i class="bi {{ item.icon }}"></i>
+      <div class="body">
+        <div class="top"><b>{{ item.title }}</b><span class="sh-state {{ item.state }}">{{ item.state_label }}</span></div>
+        <p>{{ item.detail }}</p>
+        {% if item.link and item.state != "ok" %}<a class="fix" href="{{ item.link }}"{% if item.link|slice:":4" == "http" %} target="_blank" rel="noopener" hx-boost="false"{% endif %}>{{ item.link_label }} <i class="bi bi-arrow-right"></i></a>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>

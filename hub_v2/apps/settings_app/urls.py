@@ -1,8 +1,11 @@
 from django.urls import path
+from django.views.generic import RedirectView
 
 from .views import (
     SettingsPageView,
-    FirstStepsView,
+    SystemHealthView,
+    TourDoneView,
+    TourToggleView,
     SettingEditView,
     WebshareSaveView,
     WebshareTestView,
@@ -20,7 +23,10 @@ app_name = "settings_app"
 
 urlpatterns = [
     path("", SettingsPageView.as_view(), name="list"),
-    path("primeiros-passos/", FirstStepsView.as_view(), name="first-steps"),
+    path("saude/", SystemHealthView.as_view(), name="health"),
+    path("primeiros-passos/", RedirectView.as_view(url="/settings/#saude"), name="first-steps"),
+    path("tour/done/", TourDoneView.as_view(), name="tour-done"),
+    path("tour/toggle/", TourToggleView.as_view(), name="tour-toggle"),
     path("<str:key>/edit/", SettingEditView.as_view(), name="edit"),
     path("webshare/save/", WebshareSaveView.as_view(), name="webshare-save"),
     path("webshare/test/", WebshareTestView.as_view(), name="webshare-test"),

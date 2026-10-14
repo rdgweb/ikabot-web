@@ -9,7 +9,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse
 from django.shortcuts import redirect
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.views import View
 from django.views.generic import TemplateView, UpdateView
 
@@ -46,13 +46,21 @@ def _set_encrypted_setting(key, value):
 STATE_LABELS = {"ok": "Pronto", "warn": "Conferir", "missing": "Faltando", "optional": "Opcional"}
 
 
-class FirstStepsView(LoginRequiredMixin, TemplateView):
-    """GET /settings/primeiros-passos/ - each piece the installation needs, tested for real (N-116)."""
+class SystemHealthView(LoginRequiredMixin, TemplateView):
+    """GET /settings/saude/ - each piece the installation needs, tested for real (N-116).
 
-    template_name = "settings_app/first_steps.html"
+    A block of Configurações, loaded after the page so the slow checks do not hold it.
+    """
+
+    template_name = "settings_app/partials/health.html"
+
+    def get(self, request, *args, **kwargs):
+        if request.headers.get("HX-Request") != "true":
+            return redirect(f"{reverse('settings_app:list')}#saude")
+        return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
-        from .first_steps import first_use, run_checks
+        from .first_steps import run_checks
 
         ctx = super().get_context_data(**kwargs)
         checks = run_checks(self.request)
@@ -60,11 +68,29 @@ class FirstStepsView(LoginRequiredMixin, TemplateView):
             item["state_label"] = STATE_LABELS.get(item["state"], item["state"])
         ctx["checks"] = checks
         ctx["counts"] = {state: sum(1 for item in checks if item["state"] == state) for state in STATE_LABELS}
-        steps = first_use()
-        ctx["steps"] = steps
-        ctx["steps_done"] = sum(1 for step in steps if step["done"])
-        ctx["next_step"] = next((step for step in steps if not step["done"]), None)
         return ctx
+
+
+class TourDoneView(LoginRequiredMixin, View):
+    """POST: the welcome tour was shown to this user; it does not start by itself again."""
+
+    def post(self, request):
+        from .tour import mark_done
+
+        mark_done(request.user)
+        return HttpResponse(status=204)
+
+
+class TourToggleView(LoginRequiredMixin, View):
+    """POST: switch the welcome tour; switching it on shows it once more to every user."""
+
+    def post(self, request):
+        from .tour import set_enabled
+
+        enabled = request.POST.get("enabled") == "1"
+        set_enabled(enabled)
+        messages.success(request, "Tour ligado: cada usuário vai vê-lo uma vez ao entrar." if enabled else "Tour desligado.")
+        return redirect("settings_app:list")
 
 
 class SettingsPageView(LoginRequiredMixin, TemplateView):
@@ -115,7 +141,10 @@ class SettingsPageView(LoginRequiredMixin, TemplateView):
         from apps.telemetry.services import TELEMETRY_KEYS, status_context
         ctx.update(status_context())
 
-        ctx["generic_settings"] = AppSetting.objects.exclude(
+        from .tour import DONE_PREFIX, ENABLED_KEY, is_enabled
+        ctx["tour_enabled"] = is_enabled()
+
+        ctx["generic_settings"] = AppSetting.objects.exclude(key__startswith=DONE_PREFIX).exclude(
             key__in=[
                 "webshare_api_key",
                 "ikabotapi_url",
@@ -134,6 +163,7 @@ class SettingsPageView(LoginRequiredMixin, TemplateView):
                 "login_locale",
                 "login_timezone_id",
                 "spy_report_expiry_hours",
+                ENABLED_KEY,
                 *TELEMETRY_KEYS,
             ]
         ).order_by("key")
