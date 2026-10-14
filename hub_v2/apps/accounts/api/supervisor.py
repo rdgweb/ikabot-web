@@ -2,6 +2,7 @@
 
 import secrets
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
@@ -19,11 +20,15 @@ def _authenticated_host(request):
     if not host_id or not token:
         return None
     try:
-        host = DockerHost.objects.get(pk=host_id, active=True)
-    except (DockerHost.DoesNotExist, ValueError):
+        host = DockerHost._base_manager.select_related("organization").get(pk=host_id, active=True)
+    except (DockerHost.DoesNotExist, ValueError, ValidationError):
         return None
-    if not secrets.compare_digest(host.enrollment_token, token):
+    if not host.enrollment_token_matches(token):
         return None
+    # N-106: a supervisor only reaches its machine's organization (the scope middleware resets it)
+    from apps.orgs import scope
+
+    scope.activate(host.organization, deny=host.organization is None)
     return host
 
 
@@ -40,7 +45,8 @@ class SupervisorHeartbeatView(APIView):
             return Response({"error": "machine_id is required."}, status=status.HTTP_400_BAD_REQUEST)
         if host.machine_id and not secrets.compare_digest(host.machine_id, machine_id):
             return Response({"error": "Docker engine identity mismatch."}, status=status.HTTP_409_CONFLICT)
-        duplicate = DockerHost.objects.exclude(pk=host.pk).filter(machine_id=machine_id).exists()
+        # every machine of the platform, not only this organization's: one engine, one enrollment
+        duplicate = DockerHost._base_manager.exclude(pk=host.pk).filter(machine_id=machine_id).exists()
         if duplicate:
             return Response({"error": "Docker engine already enrolled."}, status=status.HTTP_409_CONFLICT)
         host.machine_id = machine_id

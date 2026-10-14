@@ -94,3 +94,43 @@ class AgentKeyTests(TestCase):
         self.client.force_login(customer)
         self.assertEqual(self.client.get(reverse("accounts:node-deploy", args=[self.node_a.pk])).status_code, 404)
         self.assertEqual(self.client.post(reverse("accounts:node-new-key", args=[self.node_a.pk])).status_code, 404)
+
+
+class SupervisorKeyTests(TestCase):
+    """N-106: the supervisor's key, like the agent's, is kept only as a hash."""
+
+    def setUp(self):
+        from apps.accounts.models import DockerHost
+
+        self.host = DockerHost.objects.create(name="servidor")
+        self.key = self.host.new_enrollment_token
+
+    def _heartbeat(self, key):
+        return self.client.post(reverse("agent-accounts:supervisor-heartbeat"), {"machine_id": "engine-1", "version": "0.1.3"},
+                                content_type="application/json", HTTP_X_IKABOT_HOST_ID=str(self.host.pk), HTTP_X_IKABOT_HOST_TOKEN=key)
+
+    def test_only_the_hash_is_kept_and_the_key_works(self):
+        from apps.accounts.models import DockerHost
+
+        stored = DockerHost._base_manager.get(pk=self.host.pk)
+        self.assertEqual((stored.enrollment_token, stored.enrollment_token_hash), ("", hash_agent_token(self.key)))
+        self.assertEqual(self._heartbeat(self.key).status_code, 200)
+        self.assertEqual(self._heartbeat("host_errada").status_code, 403)
+
+    def test_existing_keys_keep_working_after_the_migration(self):
+        from apps.accounts.models import DockerHost
+
+        DockerHost._base_manager.filter(pk=self.host.pk).update(enrollment_token="host_antiga", enrollment_token_hash="")
+        import_module("apps.accounts.migrations.0018_n106_host_token_hash").hash_existing(django_apps, None)
+        self.assertEqual(self._heartbeat("host_antiga").status_code, 200)
+
+    def test_a_new_key_is_shown_once_and_the_old_stops(self):
+        node = Node.objects.create(name="agente", docker_host=self.host)
+        self.client.force_login(get_user_model().objects.create_user("rodrigo", password="x", is_staff=True))
+        deploy = reverse("accounts:node-deploy", args=[node.pk])
+        self.client.post(reverse("accounts:docker-host-new-key", args=[self.host.pk]), {"next": deploy})
+        first = self.client.get(deploy).content.decode()
+        self.assertIn("só aparece desta vez", first)
+        self.assertNotIn("<CHAVE-DA-MAQUINA>", first.replace("&lt;", "<").replace("&gt;", ">"))
+        self.assertIn("&lt;CHAVE-DA-MAQUINA&gt;", self.client.get(deploy).content.decode())
+        self.assertEqual(self._heartbeat(self.key).status_code, 403)

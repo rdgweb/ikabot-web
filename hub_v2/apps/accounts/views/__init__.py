@@ -2,6 +2,7 @@ from .nodes import (
     DockerHostListView,
     DockerHostCreateView,
     DockerHostEditView,
+    DockerHostTokenRotateView,
     NodeListView,
     NodeDetailView,
     NodeCreateView,

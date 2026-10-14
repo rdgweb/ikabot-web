@@ -135,7 +135,9 @@ class DockerHost(UUIDTimestampModel):
         "orgs.Organization", on_delete=models.PROTECT, null=True, blank=True,
         default=default_organization_id, related_name="docker_hosts",
     )
-    enrollment_token = models.CharField(max_length=80, blank=True, default="")
+    enrollment_token = models.CharField(max_length=80, blank=True, default="")   # N-106: no longer kept (see the hash)
+    # N-106: hash of the supervisor's key; the key itself is shown once when issued
+    enrollment_token_hash = models.CharField(max_length=64, blank=True, default="")
     machine_id = models.CharField(max_length=128, blank=True, default="", unique=True, null=True)
     supervisor_version = models.CharField(max_length=64, blank=True, default="")
     supervisor_image = models.CharField(max_length=255, blank=True, default="")
@@ -149,9 +151,23 @@ class DockerHost(UUIDTimestampModel):
     def __str__(self):
         return self.name
 
+    def issue_enrollment_token(self) -> str:
+        """A new key for this machine's supervisor (the old one stops working). Returns it once."""
+        from core.auth.tokens import hash_agent_token
+
+        token = f"host_{secrets.token_hex(32)}"
+        self.enrollment_token_hash = hash_agent_token(token)
+        self.enrollment_token = ""
+        return token
+
+    def enrollment_token_matches(self, token: str) -> bool:
+        from core.auth.tokens import agent_token_matches
+
+        return agent_token_matches(token, self.enrollment_token_hash)
+
     def save(self, *args, **kwargs):
-        if not self.enrollment_token:
-            self.enrollment_token = f"host_{secrets.token_hex(32)}"
+        if self._state.adding and not self.enrollment_token_hash:
+            self.new_enrollment_token = self.issue_enrollment_token()   # read once by the next page
         if self.machine_id == "":
             self.machine_id = None
         super().save(*args, **kwargs)

@@ -86,7 +86,7 @@ class AgentUpdateTests(TestCase):
         )
         client = APIClient()
         client.credentials(
-            HTTP_X_IKABOT_HOST_TOKEN=self.host.enrollment_token,
+            HTTP_X_IKABOT_HOST_TOKEN=self.host.new_enrollment_token,
             HTTP_X_IKABOT_HOST_ID=str(self.host.pk),
         )
 
@@ -107,7 +107,7 @@ class AgentUpdateTests(TestCase):
         )
         client = APIClient()
         client.credentials(
-            HTTP_X_IKABOT_HOST_TOKEN=other_host.enrollment_token,
+            HTTP_X_IKABOT_HOST_TOKEN=other_host.new_enrollment_token,
             HTTP_X_IKABOT_HOST_ID=str(other_host.pk),
         )
 
@@ -124,7 +124,7 @@ class AgentUpdateTests(TestCase):
         self.host.save(update_fields=["machine_id"])
         client = APIClient()
         client.credentials(
-            HTTP_X_IKABOT_HOST_TOKEN=self.host.enrollment_token,
+            HTTP_X_IKABOT_HOST_TOKEN=self.host.new_enrollment_token,
             HTTP_X_IKABOT_HOST_ID=str(self.host.pk),
         )
 

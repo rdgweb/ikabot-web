@@ -29,13 +29,40 @@ class DockerHostListView(LoginRequiredMixin, ListView):
     context_object_name = "hosts"
 
 
+HOST_KEY_SESSION_KEY = "host-key:{pk}"
+
+
 class DockerHostCreateView(LoginRequiredMixin, CreateView):
     model = DockerHost
     form_class = DockerHostForm
     template_name = "accounts/docker_host_form.html"
 
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        token = getattr(self.object, "new_enrollment_token", "")
+        if token:   # N-106: shown once, on the install page of the next node of this machine
+            self.request.session[HOST_KEY_SESSION_KEY.format(pk=self.object.pk)] = token
+        return response
+
     def get_success_url(self):
         return reverse_lazy("accounts:node-create")
+
+
+class DockerHostTokenRotateView(LoginRequiredMixin, View):
+    """POST: a new key for the machine's supervisor; the old one stops working at once (N-106)."""
+
+    def post(self, request, pk):
+        if not (request.user.is_staff or request.user.is_superuser):
+            raise Http404()
+        host = get_object_or_404(DockerHost, pk=pk)
+        token = host.issue_enrollment_token()
+        host.save(update_fields=["enrollment_token_hash", "enrollment_token", "updated_at"])
+        request.session[HOST_KEY_SESSION_KEY.format(pk=host.pk)] = token
+        from apps.audit.services import record
+
+        record("dockerhost.updated", target=host, target_label=host.name, details={"campos": ["chave do supervisor"]})
+        back = request.POST.get("next", "")
+        return redirect(back if back.startswith("/accounts/") else "accounts:docker-host-list")
 
 
 class DockerHostEditView(LoginRequiredMixin, UpdateView):
@@ -326,6 +353,9 @@ class NodeDeployView(LoginRequiredMixin, DetailView):
         host = self.object.docker_host
         ctx["docker_host"] = host
         if host:
+            new_host_token = self.request.session.pop(HOST_KEY_SESSION_KEY.format(pk=host.pk), "")
+            ctx["new_host_token"] = new_host_token
+            host_token_shown = new_host_token or "<CHAVE-DA-MAQUINA>"
             ctx["supervisor_command"] = (
                 "docker inspect ikabot-host-supervisor >/dev/null 2>&1 || docker run -d \\\n"
                 "  --name ikabot-host-supervisor --restart unless-stopped \\\n"
@@ -334,7 +364,7 @@ class NodeDeployView(LoginRequiredMixin, DetailView):
                 "  -v /var/run/docker.sock:/var/run/docker.sock \\\n"
                 f"  -e HUB_URL={hub_url} \\\n"
                 f"  -e IKABOT_HOST_ID={host.pk} \\\n"
-                f"  -e IKABOT_HOST_TOKEN={host.enrollment_token} \\\n"
+                f"  -e IKABOT_HOST_TOKEN={host_token_shown} \\\n"
                 f"  -e SUPERVISOR_IMAGE={supervisor_image} \\\n"
                 f"  {supervisor_image}"
             )
