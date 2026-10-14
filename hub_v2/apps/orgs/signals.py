@@ -11,7 +11,8 @@ from django.dispatch import receiver
 
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
 def join_default_organization(sender, instance, created, raw=False, **kwargs):
-    if created and not raw:
+    if created and not raw and not getattr(instance, "_own_organization", False):
+        # N-106: the platform's team joins the default organization; an invited customer never does
         from .services import ensure_membership
 
         ensure_membership(instance)

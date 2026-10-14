@@ -57,6 +57,7 @@ def nav_context(request):
                 {"name": "Atividades", "url": "/atividades/", "icon": "bi-clock-history", "perm": "owner"},
                 {"name": "Configurações", "url": "/settings/", "icon": "bi-gear", "perm": "staff"},
                 {"name": "Usuários", "url": "/users/", "icon": "bi-people", "perm": "staff"},
+                {"name": "Convites", "url": "/users/convites/", "icon": "bi-envelope-paper", "perm": "staff"},
             ],
         },
     ]

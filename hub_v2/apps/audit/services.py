@@ -58,6 +58,8 @@ ACTIONS = {
     "user.deleted": ("usuarios", "Apagou usuário"),
     "membership.changed": ("usuarios", "Mudou papel"),
     "credentials.delivered": ("credenciais", "Senhas entregues ao agente"),
+    "invite.created": ("usuarios", "Criou convite"),
+    "invite.accepted": ("usuarios", "Aceitou convite e os termos"),
 }
 CATEGORIES = {
     "acesso": "Acesso", "contas": "Contas", "nos": "Nós e máquinas", "proxies": "Proxies", "jobs": "Jobs",

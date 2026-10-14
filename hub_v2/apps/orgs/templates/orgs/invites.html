@@ -1,0 +1,49 @@
+{% extends base_template|default:"base.html" %}
+
+{% block title %}Convites{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <span class="text-ink">Convites</span>
+{% endblock %}
+
+{% block content %}
+{# N-106: convites do beta; o link aparece uma vez, o hub guarda só a impressão do token #}
+<div class="mb-5 flex flex-wrap items-end justify-between gap-3">
+  <h1 class="text-xl font-bold text-ink flex items-center gap-2"><i class="bi bi-envelope-paper text-sea"></i> Convites</h1>
+  <a href="{% url 'terms' %}" target="_blank" class="text-sm link-sea" hx-boost="false">Termos do beta ({{ version }}) <i class="bi bi-box-arrow-up-right"></i></a>
+</div>
+
+{% if new_link %}
+<div class="card p-5 mb-5" style="border-color: rgba(201,156,78,.7);">
+  <p class="text-sm mb-2" style="color: #8a6420;"><i class="bi bi-exclamation-triangle"></i> Copie e envie ao convidado: este link só aparece agora e vale 7 dias.</p>
+  <code style="display: block; padding: .7rem .8rem; border-radius: 10px; background: rgba(201,156,78,.1); word-break: break-all;">{{ new_link }}</code>
+</div>
+{% endif %}
+
+<div class="card p-5 mb-5">
+  <form method="post" class="flex flex-wrap items-end gap-3">
+    {% csrf_token %}
+    <div><label class="block text-xs font-medium text-muted mb-1">E-mail do convidado</label><input type="email" name="email" class="form-input" required></div>
+    <div><label class="block text-xs font-medium text-muted mb-1">Nome da organização</label><input name="organization_name" class="form-input" required maxlength="120"></div>
+    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> Gerar convite</button>
+  </form>
+</div>
+
+<div class="card overflow-hidden p-0">
+  <table class="data-table">
+    <thead><tr><th>E-mail</th><th>Organização</th><th>Criado</th><th>Situação</th></tr></thead>
+    <tbody>
+      {% for invite in invites %}
+      <tr>
+        <td>{{ invite.email }}</td>
+        <td>{{ invite.organization_name }}</td>
+        <td class="text-muted text-xs">{{ invite.created_at|date:"d/m H:i" }}</td>
+        <td>{% if invite.used_at %}<span class="badge badge-success">Usado {{ invite.used_at|date:"d/m" }}</span>{% elif invite.expires_at < now %}<span class="badge badge-secondary">Expirou</span>{% else %}<span class="badge badge-warning">Aguardando até {{ invite.expires_at|date:"d/m" }}</span>{% endif %}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="4" class="text-center py-8 text-muted">Nenhum convite ainda.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

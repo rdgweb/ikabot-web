@@ -14,6 +14,8 @@ from .views import ApiDocsView, AuthenticatedSchemaView, HtmxLogoutView
 handler404 = "config.views.custom_404"
 handler500 = "config.views.custom_500"
 
+from apps.orgs.invite_views import InviteAcceptView, InviteManageView, TermsView  # noqa: E402
+
 urlpatterns = [
     # Django admin
     path("django-admin/", admin.site.urls),
@@ -45,6 +47,10 @@ urlpatterns = [
     path("notes/", include("apps.notes.urls")),
     path("atividades/", include("apps.audit.urls")),
     path("organizacao/", include("apps.orgs.urls")),
+    # N-106: beta by invitation (terms and the invitation link are public; the list is the team's)
+    path("termos/", TermsView.as_view(), name="terms"),
+    path("convite/<str:token>/", InviteAcceptView.as_view(), name="invite-accept"),
+    path("users/convites/", InviteManageView.as_view(), name="invites"),
     path("telemetry/", include("apps.telemetry.urls")),
     # --- Telegram Webhook API ---
     path("api/telegram/", include("apps.telegram.api_urls")),

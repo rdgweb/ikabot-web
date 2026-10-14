@@ -1,0 +1,26 @@
+{% extends "orgs/public_base.html" %}
+{% block title %}Convite — IkaHub{% endblock %}
+
+{% block content %}
+<div class="pub-card">
+  {% if not invite %}
+  <h1 class="text-lg font-bold mb-2">Convite inválido</h1>
+  <p class="pub-muted">Este link não vale mais: já foi usado ou expirou. Peça um novo a quem te convidou.</p>
+  {% else %}
+  <h1 class="text-lg font-bold">Bem-vindo ao IkaHub</h1>
+  <p class="pub-muted mb-4">Convite para <b>{{ invite.email }}</b> · organização <b>{{ invite.organization_name }}</b></p>
+  {% if errors %}<div class="pub-error">{% for error in errors %}<div>{{ error }}</div>{% endfor %}</div>{% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <div class="mb-3"><label for="id_username">Usuário</label><input id="id_username" name="username" class="form-input" value="{{ username }}" autocomplete="username" required maxlength="150"></div>
+    <div class="mb-3"><label for="id_password1">Senha</label><input id="id_password1" name="password1" type="password" class="form-input" autocomplete="new-password" required></div>
+    <div class="mb-4"><label for="id_password2">Repita a senha</label><input id="id_password2" name="password2" type="password" class="form-input" autocomplete="new-password" required></div>
+    <label class="flex items-start gap-2 mb-4" style="font-weight: 400;">
+      <input type="checkbox" name="accept_terms" value="1" required style="margin-top: .25rem;">
+      <span class="text-sm">Li e aceito os <a href="{% url 'terms' %}" target="_blank" rel="noopener" style="color: #4f86b9; font-weight: 600;">termos de uso do beta</a>, inclusive o risco de a automação violar as regras do Ikariam.</span>
+    </label>
+    <button type="submit" class="btn btn-primary w-full"><i class="bi bi-check-lg"></i> Criar minha conta</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

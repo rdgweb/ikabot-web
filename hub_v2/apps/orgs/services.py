@@ -69,3 +69,72 @@ def captcha_goes_to_telegram(organization, platform_config) -> bool:
     if choice == "off":
         return False
     return platform_config.solve_method == "telegram" or platform_config.fallback_method == "telegram"
+
+
+TERMS_VERSION = "beta-2026-10-14"
+INVITE_DAYS = 7
+
+
+def create_invite(*, email: str, organization_name: str, created_by) -> tuple[object, str]:
+    """A one-use invitation; returns it and the link token (shown once, kept only as a hash)."""
+    import secrets
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from core.auth.tokens import hash_agent_token
+
+    from .models import Invite
+
+    token = secrets.token_urlsafe(32)
+    invite = Invite.objects.create(
+        email=email.strip().lower(), organization_name=organization_name.strip(), token_hash=hash_agent_token(token),
+        created_by=created_by if getattr(created_by, "pk", None) else None,
+        expires_at=timezone.now() + timedelta(days=INVITE_DAYS),
+    )
+    return invite, token
+
+
+def find_invite(token: str):
+    """The invitation behind a link, if it is still usable."""
+    from django.utils import timezone
+
+    from core.auth.tokens import hash_agent_token
+
+    from .models import Invite
+
+    if not token or len(token) > 100:
+        return None
+    invite = Invite.objects.filter(token_hash=hash_agent_token(token)).first()
+    if invite is None or invite.used_at is not None or invite.expires_at <= timezone.now():
+        return None
+    return invite
+
+
+def accept_invite(invite, *, username: str, password: str, ip=None, user_agent: str = ""):
+    """Create the person, their own organization (they own it) and the record of the accepted terms."""
+    from django.contrib.auth import get_user_model
+    from django.db import transaction
+    from django.utils import timezone
+    from django.utils.text import slugify
+
+    from .models import Membership, Organization, TermsAcceptance
+
+    User = get_user_model()
+    with transaction.atomic():
+        user = User(username=username, email=invite.email)
+        user.set_password(password)
+        user._own_organization = True
+        user.save()
+        base = slugify(invite.organization_name)[:40] or "organizacao"
+        slug = base
+        while Organization.objects.filter(slug=slug).exists():
+            slug = f"{base}-{__import__('secrets').token_hex(3)}"
+        organization = Organization.objects.create(name=invite.organization_name, slug=slug)
+        Membership.objects.create(organization=organization, user=user, role=Membership.OWNER)
+        TermsAcceptance.objects.create(user=user, version=TERMS_VERSION, ip=ip, user_agent=(user_agent or "")[:200])
+        invite.used_at = timezone.now()
+        invite.used_by = user
+        invite.organization = organization
+        invite.save(update_fields=["used_at", "used_by", "organization", "updated_at"])
+    return user, organization

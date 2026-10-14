@@ -69,3 +69,39 @@ class OrganizationPreferences(UUIDTimestampModel):
 
     def __str__(self):
         return f"Preferências de {self.organization}"
+
+
+class Invite(UUIDTimestampModel):
+    """An invitation to the beta (N-106): one use, expires; the link's token is kept only as a hash."""
+
+    email = models.EmailField()
+    organization_name = models.CharField(max_length=120)
+    token_hash = models.CharField(max_length=64, unique=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+    used_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    organization = models.ForeignKey(Organization, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Convite"
+        verbose_name_plural = "Convites"
+
+    def __str__(self):
+        return f"Convite {self.email}"
+
+
+class TermsAcceptance(models.Model):
+    """Which version of the terms a person accepted, when and from where (N-106)."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="terms_acceptances")
+    version = models.CharField(max_length=40)
+    accepted_at = models.DateTimeField(auto_now_add=True)
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=200, blank=True, default="")
+
+    class Meta:
+        ordering = ["-accepted_at"]
+        verbose_name = "Aceite dos termos"
+        verbose_name_plural = "Aceites dos termos"

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>{% block title %}IkaHub{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Source+Sans+3:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/output.css">
+  <link rel="stylesheet" href="/static/vendor/bootstrap-icons.min.css">
+  <style>
+    body { font-family: 'Source Sans 3', 'Segoe UI', sans-serif; color: #2d2a24; min-height: 100vh;
+           background: radial-gradient(760px 420px at 100% 0%, rgba(201,156,78,0.15), transparent 58%),
+                       radial-gradient(620px 420px at 0% 100%, rgba(95,140,78,0.10), transparent 64%),
+                       linear-gradient(180deg, #efe4d1, #f7f1e5); }
+    .pub-wrap { max-width: {% block width %}28rem{% endblock %}; margin: 0 auto; padding: 3rem 1rem; }
+    .pub-brand { text-align: center; margin-bottom: 1.6rem; font-family: Rajdhani, 'Segoe UI', sans-serif; color: #654b1f;
+                 font-size: 1.9rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+    .pub-card { background: #fffdf7; border: 1px solid #dbc9a7; border-radius: 14px; padding: 1.5rem; box-shadow: 0 4px 16px rgba(87,66,24,0.12); }
+    .pub-card label { display: block; font-size: .85rem; font-weight: 600; color: #4a4639; margin-bottom: .3rem; }
+    .pub-error { margin-bottom: 1rem; padding: .7rem .8rem; border-radius: 10px; background: #fde8e5; border: 1px solid #e8b4af; color: #8c3028; font-size: .86rem; }
+    .pub-muted { color: #6f6b63; font-size: .84rem; }
+    .pub-terms h2 { font-family: Rajdhani, 'Segoe UI', sans-serif; font-size: 1.15rem; font-weight: 700; color: #654b1f; margin: 1.3rem 0 .4rem; }
+    .pub-terms p, .pub-terms li { font-size: .92rem; line-height: 1.55; color: #3c3830; }
+    .pub-terms ul { padding-left: 1.2rem; list-style: disc; }
+  </style>
+</head>
+<body>
+  <div class="pub-wrap">
+    <div class="pub-brand"><i class="bi bi-controller" style="color: #c99c4e;"></i> IkaHub</div>
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>
