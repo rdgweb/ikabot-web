@@ -37,7 +37,7 @@ class ReleaseStatusTests(SimpleTestCase):
 
 class NotesViewsTests(TestCase):
     def setUp(self):
-        self.user = get_user_model().objects.create_user(username="admin", password="x")
+        self.user = get_user_model().objects.create_user(username="admin", password="x", is_staff=True)   # N-106: notes are the platform's
         self.client.force_login(self.user)
 
     def test_note_list_loads(self):

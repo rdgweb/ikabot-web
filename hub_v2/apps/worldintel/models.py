@@ -1,9 +1,13 @@
 from django.db import models
 
+from apps.orgs.scope import OrgScopedManager
+
 from core.mixins.models import UUIDTimestampModel
 
 
 class WorldDump(UUIDTimestampModel):
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
+
     account = models.ForeignKey(
         "accounts.Account",
         on_delete=models.CASCADE,
@@ -43,6 +47,8 @@ class WorldDump(UUIDTimestampModel):
 
 
 class WorldDumpIsland(models.Model):
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
+
     dump = models.ForeignKey(
         WorldDump,
         on_delete=models.CASCADE,
@@ -75,6 +81,8 @@ class WorldDumpIsland(models.Model):
 
 
 class WorldDumpCity(models.Model):
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
+
     dump = models.ForeignKey(
         WorldDump,
         on_delete=models.CASCADE,
@@ -117,6 +125,8 @@ class WorldDumpCity(models.Model):
 
 class WorldDumpPlayer(models.Model):
     """Consolidated player scores extracted from avatarScores in island view."""
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
+
     dump = models.ForeignKey(
         WorldDump,
         on_delete=models.CASCADE,

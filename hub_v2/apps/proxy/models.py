@@ -3,6 +3,8 @@ Models: ProxyProfile — proxy management via Webshare.io or manual entry.
 """
 
 from django.db import models
+
+from apps.orgs.scope import OrgScopedManager
 from apps.orgs.services import default_organization_id
 
 from core.mixins.models import TimestampModel
@@ -12,6 +14,7 @@ class ProxyProfile(TimestampModel):
     """
     A proxy entry synced from Webshare.io or manually configured.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     class Provider(models.TextChoices):
         WEBSHARE = "webshare", "Webshare"
@@ -90,6 +93,7 @@ class ProxyProfile(TimestampModel):
 
 class AccountProxyReservation(TimestampModel):
     """Stable proxy reservation for one lobby account."""
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     account = models.ForeignKey(
         "accounts.Account",

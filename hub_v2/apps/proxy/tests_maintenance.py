@@ -322,7 +322,7 @@ class ProxyPageShowsTheLastCheckTests(_Base):
         from django.contrib.auth import get_user_model
         from django.urls import reverse
 
-        self.client.force_login(get_user_model().objects.create_user(username="px", email="px-user@example.com", password="secret123"))
+        self.client.force_login(get_user_model().objects.create_user(username="px", email="px-user@example.com", password="secret123", is_staff=True))
         url = reverse("proxy:list")
         self.assertIn("a verificação automática ainda não rodou", self.client.get(url).content.decode())
 

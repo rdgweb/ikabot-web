@@ -3,6 +3,8 @@ Models: CaptchaConfig, CaptchaChallenge — captcha management system.
 """
 
 from django.db import models
+
+from apps.orgs.scope import OrgScopedManager
 from django.utils import timezone
 
 from core.mixins.models import TimestampModel
@@ -63,6 +65,7 @@ class CaptchaChallenge(models.Model):
     Created when an agent encounters a captcha. Status progresses:
     pending → solving → solved/failed/expired
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     STATUS_CHOICES = [
         ("pending", "Aguardando"),

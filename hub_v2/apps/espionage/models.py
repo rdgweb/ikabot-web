@@ -3,6 +3,8 @@ Models: SpyReport — relatórios de espionagem capturados pelo agente.
 """
 
 from django.db import models
+
+from apps.orgs.scope import OrgScopedManager
 from django.utils import timezone
 
 from core.mixins.models import UUIDTimestampModel
@@ -15,6 +17,7 @@ class SpyReport(UUIDTimestampModel):
     Salva todos os relatórios da Casa Segura para consulta no hub.
     Vinculado ao jogador alvo via target_owner_id para uso no runner de ataque.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     game_account = models.ForeignKey(
         "accounts.GameAccount",
@@ -117,6 +120,7 @@ class RaidAlertSent(UUIDTimestampModel):
       - Próximo alerta dispara somente se o report mais recente tem ID diferente de
         ambos os campos acima — novo report → re-alerta automaticamente
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     game_account = models.ForeignKey(
         "accounts.GameAccount",

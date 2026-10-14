@@ -238,7 +238,7 @@ class TelegramPagesTests(Base):
         super().setUp()
         from django.contrib.auth import get_user_model
 
-        self.client.force_login(get_user_model().objects.create_user(username="tg-user", email="tg-user@example.com", password="secret123"))
+        self.client.force_login(get_user_model().objects.create_user(username="tg-user", email="tg-user@example.com", password="secret123", is_staff=True))
         self.island = NotificationTemplate.for_event("island_monitor")
         self.job_failed = NotificationTemplate.for_event("job_failed")
 

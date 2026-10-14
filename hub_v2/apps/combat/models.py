@@ -1,5 +1,7 @@
 from django.db import models
 
+from apps.orgs.scope import OrgScopedManager
+
 from core.mixins.models import UUIDTimestampModel
 
 
@@ -11,6 +13,7 @@ class CombatReport(UUIDTimestampModel):
     Guarda as duas páginas do jogo: o sumário e o relatório detalhado, round a round.
     combat_id é o ID único do jogo, usado para deduplicação.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     game_account = models.ForeignKey(
         "accounts.GameAccount",
@@ -73,6 +76,7 @@ class CombatReport(UUIDTimestampModel):
 
 class SimulationCheck(UUIDTimestampModel):
     """N-110: a real combat fought again in the simulator, the prediction beside what happened."""
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     # a combat of the accounts has its report here; one read from a public log (IkaLogs) has none
     report = models.OneToOneField(CombatReport, on_delete=models.CASCADE, related_name="simulation", null=True, blank=True)
@@ -126,6 +130,7 @@ class BattleIntel(UUIDTimestampModel):
     in it. Before this the simulator guessed both. One row per thing known: the wall of a city
     (key = the city id) or the upgrades of a player (key = the name, lower case, no alliance tag).
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     KIND_CHOICES = [("wall", "Muralha"), ("upgrades", "Melhorias")]
 

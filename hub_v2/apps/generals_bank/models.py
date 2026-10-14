@@ -8,11 +8,14 @@ Flow:
 
 from django.db import models
 
+from apps.orgs.scope import OrgScopedManager
+
 from core.mixins.models import UUIDTimestampModel
 
 
 class GeneralsBankConfig(UUIDTimestampModel):
     """One bank account configuration. Multiple banks allowed per lobby."""
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     bank_game_account = models.OneToOneField(
         "accounts.GameAccount",
@@ -53,6 +56,7 @@ class GeneralsBankConfig(UUIDTimestampModel):
 
 class GeneralsBankProducer(UUIDTimestampModel):
     """A producer account that trains and sells units to the bank."""
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     bank_config = models.ForeignKey(
         GeneralsBankConfig,
@@ -98,6 +102,7 @@ class GeneralsBankProducer(UUIDTimestampModel):
 
 class GeneralsBankCycle(UUIDTimestampModel):
     """A single accumulation or liquidation cycle."""
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     MODE_CHOICES = [
         ("accumulation", "Acumulação"),
@@ -166,6 +171,7 @@ class GeneralsBankCycle(UUIDTimestampModel):
 
 class GeneralsBankCycleTask(UUIDTimestampModel):
     """Per-producer training + transport + listing task within a cycle."""
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     STATUS_CHOICES = [
         ("training", "Treinando"),
@@ -230,6 +236,7 @@ class GeneralsBankCycleTask(UUIDTimestampModel):
 
 class GeneralsBankTransaction(UUIDTimestampModel):
     """Record of a buy or sell transaction within a bank cycle."""
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     DIRECTION_CHOICES = [
         ("buy", "Compra"),

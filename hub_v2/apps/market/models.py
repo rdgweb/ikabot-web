@@ -4,6 +4,8 @@ Model: InternalMarketOrder — resource trading between accounts.
 
 from django.db import models
 
+from apps.orgs.scope import OrgScopedManager
+
 from core.mixins.models import UUIDTimestampModel
 
 
@@ -12,6 +14,7 @@ class InternalMarketOrder(UUIDTimestampModel):
     An internal resource trade order between player accounts.
     Managed by the market engine service.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     STATUS_CHOICES = [
         ("created", "Criado"),
@@ -123,6 +126,7 @@ class InternalMarketOrder(UUIDTimestampModel):
 
 class BlackMarketOffer(UUIDTimestampModel):
     """Tracks offers listed on the game's Black Market by this hub."""
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     STATUS_CHOICES = [
         ("active", "Ativa"),
@@ -172,6 +176,7 @@ class BlackMarketOffer(UUIDTimestampModel):
 
 class BlackMarketUnitQuote(UUIDTimestampModel):
     """Snapshot of Black Market unit price ranges captured during a runner execution."""
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     game_account = models.ForeignKey(
         "accounts.GameAccount",
@@ -213,6 +218,7 @@ class BlackMarketAvailableOffer(UUIDTimestampModel):
 
     Cleared and replaced on each scan for the same game_account + buyer_city_id.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     game_account = models.ForeignKey(
         "accounts.GameAccount",
@@ -252,6 +258,7 @@ class PublicMarketScan(UUIDTimestampModel):
     One row per account + city, replaced on every scan. kind="range_sync" rows only
     record the market range check (no offers were listed from that city).
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     KIND_CHOICES = [("full", "Varredura"), ("range_sync", "Só alcance")]
 
@@ -280,6 +287,7 @@ class PublicMarketScan(UUIDTimestampModel):
 
 class PublicMarketOffer(UUIDTimestampModel):
     """One offer listed in the public market, as seen by a PublicMarketScan."""
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     RESOURCE_CHOICES = [(0, "Madeira"), (1, "Vinho"), (2, "Mármore"), (3, "Cristal"), (4, "Enxofre")]
     KIND_CHOICES = [("sell", "Vendendo"), ("buy", "Comprando")]
@@ -308,6 +316,8 @@ class PublicMarketOffer(UUIDTimestampModel):
 
 
 class ConstructionMarketIntervention(UUIDTimestampModel):
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
+
     STATUS_CHOICES = [
         ("pending", "Pendente"),
         ("approved", "Aprovada"),

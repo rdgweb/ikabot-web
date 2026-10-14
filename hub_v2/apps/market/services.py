@@ -921,6 +921,8 @@ def create_internal_gold_raise_order_result(
     candidates: list[tuple[int, GameAccount, int, int]] = []
     buyer_qs = (
         GameAccount.objects.filter(open_for_market=True, active=True, blocked=False)
+        # N-106: trades never cross organizations, with or without a person behind the request
+        .filter(account__organization_id=seller_ga.account.organization_id)
         .exclude(account__node=seller_ga.account.node)
         .select_related("account", "account__node")
     )
@@ -987,6 +989,7 @@ def iter_eligible_sellers(
 
     candidates = (
         GameAccount.objects.filter(open_for_market=True, active=True, blocked=False)
+        .filter(account__organization_id=buyer_ga.account.organization_id)   # N-106: never across organizations
         .exclude(account__node=buyer_node)
         .select_related("account", "account__node")
         .order_by("?")
@@ -1051,6 +1054,7 @@ def iter_seller_candidates(
     partial: list[tuple[GameAccount, dict, int, int]] = []
     candidates = (
         GameAccount.objects.filter(open_for_market=True, active=True, blocked=False)
+        .filter(account__organization_id=buyer_ga.account.organization_id)   # N-106: never across organizations
         .exclude(account__node=buyer_ga.node)
         .select_related("account", "account__node")
         .order_by("?")

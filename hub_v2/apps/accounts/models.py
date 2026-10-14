@@ -13,6 +13,8 @@ import secrets
 
 from django.conf import settings
 from django.db import models
+
+from apps.orgs.scope import OrgScopedManager
 from apps.orgs.services import default_organization_id
 
 from core.mixins.models import UUIDTimestampModel
@@ -23,8 +25,9 @@ class Node(UUIDTimestampModel):
     Represents an agent server (physical or virtual).
     Each node runs one agent_v2 instance.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
-    name = models.CharField(max_length=64, unique=True)
+    name = models.CharField(max_length=64)   # N-106: unique per organization (Meta)
     description = models.TextField(blank=True, default="")
     location = models.CharField(max_length=128, blank=True, default="")
     # N-106: who owns it. Stage 1 fills it with the default organization; nothing filters by it yet.
@@ -66,6 +69,7 @@ class Node(UUIDTimestampModel):
 
     class Meta:
         ordering = ["name"]
+        constraints = [models.UniqueConstraint(fields=["organization", "name"], name="uq_node_org_name")]
 
     def __str__(self):
         return self.name
@@ -101,8 +105,9 @@ class Node(UUIDTimestampModel):
 
 class DockerHost(UUIDTimestampModel):
     """A Docker engine shared by one or more agent nodes."""
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
-    name = models.CharField(max_length=80, unique=True)
+    name = models.CharField(max_length=80)   # N-106: unique per organization (Meta)
     description = models.TextField(blank=True, default="")
     # N-106: who owns it. Stage 1 fills it with the default organization; nothing filters by it yet.
     organization = models.ForeignKey(
@@ -118,6 +123,7 @@ class DockerHost(UUIDTimestampModel):
 
     class Meta:
         ordering = ["name"]
+        constraints = [models.UniqueConstraint(fields=["organization", "name"], name="uq_dockerhost_org_name")]
 
     def __str__(self):
         return self.name
@@ -140,6 +146,7 @@ class DockerHost(UUIDTimestampModel):
 
 class AgentUpdateRequest(UUIDTimestampModel):
     """One scoped request for a node updater to replace its agent container."""
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     STATUS_CHOICES = [
         ("queued", "Na fila"),
@@ -178,6 +185,7 @@ class Account(UUIDTimestampModel):
     Holds email + encrypted password + gf_token. Created manually by the
     user. Child GameAccount records are auto-discovered.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     node = models.ForeignKey(
         Node, on_delete=models.CASCADE, related_name="accounts"
@@ -215,6 +223,7 @@ class GameAccount(UUIDTimestampModel):
     Auto-created from discover_characters results.
     Jobs (check_status, etc.) run per GameAccount.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     account = models.ForeignKey(
         Account,

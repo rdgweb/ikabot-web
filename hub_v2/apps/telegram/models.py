@@ -6,6 +6,8 @@ import secrets
 
 from django.db import models
 
+from apps.orgs.scope import OrgScopedManager
+
 from core.mixins.models import TimestampModel
 
 
@@ -83,6 +85,7 @@ class TelegramAccountConfig(TimestampModel):
     Cada subconta (servidor) pode ter configuracoes independentes:
     chat_id diferente, toggles diferentes, etc.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     game_account = models.OneToOneField(
         "accounts.GameAccount",
@@ -221,6 +224,7 @@ class NotificationTemplate(TimestampModel):
       {status}       — Status do job (finished, error)
       {error}        — Mensagem de erro (se houver)
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     DEFAULTS = {
         "diplomacy_message": {
@@ -545,6 +549,7 @@ class DigestEntry(TimestampModel):
     hour before the game day turns the hub sends ONE message listing the accounts that still
     have it. A row per account and game day; `active` follows the latest report.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     event_key = models.CharField(max_length=32)
     game_account = models.ForeignKey("accounts.GameAccount", on_delete=models.CASCADE, related_name="telegram_digest_entries")
@@ -567,6 +572,7 @@ class MessageAudit(models.Model):
     """
     Audit trail for sent notifications.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     STATUS_CHOICES = [
         ("sent", "Enviado"),

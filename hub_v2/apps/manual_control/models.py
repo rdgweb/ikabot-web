@@ -15,10 +15,14 @@ The control state of an account is whether it has an open session here:
 from django.conf import settings
 from django.db import models
 
+from apps.orgs.scope import OrgScopedManager
+
 from core.mixins.models import UUIDTimestampModel
 
 
 class ManualControlSession(UUIDTimestampModel):
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
+
     PAUSING = "pausing"
     ACTIVE = "active"
     RESUMING = "resuming"
@@ -92,6 +96,7 @@ class HeldJob(models.Model):
     It stays exactly as it was (queued or scheduled); this row is how the release
     knows which jobs to hand back to the agent.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     session = models.ForeignKey(ManualControlSession, on_delete=models.CASCADE, related_name="held_jobs")
     job = models.OneToOneField("jobs.Job", on_delete=models.CASCADE, related_name="manual_hold")

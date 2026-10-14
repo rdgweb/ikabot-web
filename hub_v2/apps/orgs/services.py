@@ -19,8 +19,12 @@ def default_organization():
 
 
 def default_organization_id():
-    """Default of the organization column of the root models (one query when a row is created)."""
-    return default_organization().pk
+    """Default of the organization column of the root models: the organization of the request
+    (stage 3a), or the default one for what the platform creates by itself (agent, commands)."""
+    from .scope import current_organization
+
+    organization = current_organization()
+    return organization.pk if organization is not None else default_organization().pk
 
 
 def role_for(user) -> str:

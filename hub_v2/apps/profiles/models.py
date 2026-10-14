@@ -4,6 +4,8 @@ Models: Profile (legacy) + Preset (F006) — reusable multi-action × multi-acco
 
 from django.conf import settings
 from django.db import models
+
+from apps.orgs.scope import OrgScopedManager
 from apps.orgs.services import default_organization_id
 
 from core.mixins.models import UUIDTimestampModel
@@ -14,8 +16,9 @@ class Profile(UUIDTimestampModel):
     Legacy: A reusable action template that can be applied to accounts.
     Stores action_code + default inputs for quick job creation.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
-    name = models.CharField(max_length=96, unique=True)
+    name = models.CharField(max_length=96)   # N-106: unique per organization (Meta)
     description = models.TextField(blank=True, default="")
     # N-106: who owns it. Stage 1 fills it with the default organization; nothing filters by it yet.
     organization = models.ForeignKey(
@@ -31,6 +34,7 @@ class Profile(UUIDTimestampModel):
 
     class Meta:
         ordering = ["name"]
+        constraints = [models.UniqueConstraint(fields=["organization", "name"], name="uq_profile_org_name")]
 
     def __str__(self):
         return self.name
@@ -44,8 +48,9 @@ class Preset(UUIDTimestampModel):
     A saved multi-action × multi-account template.
     When executed it creates one job per (game_account, preset_action) pair.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
-    name = models.CharField(max_length=128, unique=True)
+    name = models.CharField(max_length=128)   # N-106: unique per organization (Meta)
     description = models.TextField(blank=True, default="")
     # N-106: who owns it. Stage 1 fills it with the default organization; nothing filters by it yet.
     organization = models.ForeignKey(
@@ -62,6 +67,7 @@ class Preset(UUIDTimestampModel):
 
     class Meta:
         ordering = ["name"]
+        constraints = [models.UniqueConstraint(fields=["organization", "name"], name="uq_preset_org_name")]
 
     def __str__(self):
         return self.name
@@ -81,6 +87,7 @@ class Preset(UUIDTimestampModel):
 
 class PresetGameAccount(models.Model):
     """Through model linking a Preset to selected GameAccounts."""
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     preset = models.ForeignKey(
         Preset, on_delete=models.CASCADE, related_name="preset_accounts"
@@ -102,6 +109,7 @@ class PresetAction(UUIDTimestampModel):
     One action slot inside a Preset.
     Stores default inputs (all accounts) and optional per-account overrides.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     preset = models.ForeignKey(
         Preset, on_delete=models.CASCADE, related_name="actions"

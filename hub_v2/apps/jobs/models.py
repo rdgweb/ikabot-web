@@ -5,10 +5,14 @@ Models for workflow, run, and job execution tracking.
 from django.conf import settings
 from django.db import models
 
+from apps.orgs.scope import OrgScopedManager
+
 from core.mixins.models import UUIDTimestampModel
 
 
 class Workflow(UUIDTimestampModel):
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
+
     STATUS_CHOICES = [
         ("draft", "Rascunho"),
         ("active", "Ativo"),
@@ -79,6 +83,8 @@ class Workflow(UUIDTimestampModel):
 
 
 class WorkflowRun(UUIDTimestampModel):
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
+
     STATUS_CHOICES = [
         ("scheduled", "Agendado"),
         ("running", "Executando"),
@@ -124,6 +130,7 @@ class Job(UUIDTimestampModel):
     Represents a single execution of a game action.
     Created by the hub, executed by an agent runner.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     STATUS_CHOICES = [
         ("queued", "Na fila"),
@@ -217,6 +224,7 @@ class JobLog(models.Model):
     Timestamped log entry for a job execution.
     Agents report these as they execute.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     LEVEL_CHOICES = [
         ("info", "Info"),
@@ -241,6 +249,8 @@ class JobLog(models.Model):
 
 
 class ConstructionResourceReservation(models.Model):
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
+
     STATUS_CHOICES = [
         ("active", "Ativa"),
         ("released", "Liberada"),

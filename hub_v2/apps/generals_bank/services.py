@@ -483,6 +483,7 @@ def create_buyer_sell_jobs(cycle: GeneralsBankCycle, bank_inventory: list[dict])
     buyer_candidates = (
         GameAccount.objects
         .filter(open_for_market=True, active=True, blocked=False)
+        .filter(account__organization_id=bank_ga.account.organization_id)   # N-106: never across organizations
         .exclude(account__node=bank_node)
         .select_related("account", "account__node")
     )

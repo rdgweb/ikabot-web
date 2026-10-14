@@ -183,7 +183,7 @@ class ScreenTests(Base):
         super().setUp()
         from django.contrib.auth import get_user_model
 
-        self.client.force_login(get_user_model().objects.create_user(username="n109", email="n109@example.com", password="secret123"))
+        self.client.force_login(get_user_model().objects.create_user(username="n109", email="n109@example.com", password="secret123", is_staff=True))
 
     def test_the_notices_nothing_sends_are_set_apart(self):
         self.assertEqual(NOT_EMITTED, {"build_complete", "research_complete", "low_wine", "daily_summary"})

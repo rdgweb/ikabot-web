@@ -7,6 +7,8 @@ The ``account`` FK is kept for convenience / backward compatibility.
 
 from django.db import models
 
+from apps.orgs.scope import OrgScopedManager
+
 from core.mixins.models import UUIDTimestampModel
 
 
@@ -16,6 +18,7 @@ class AccountSnapshot(UUIDTimestampModel):
     Updated each time a status runner executes.
     One-to-one with GameAccount.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     account = models.ForeignKey(
         "accounts.Account",
@@ -71,6 +74,7 @@ class AccountSnapshotHistory(UUIDTimestampModel):
     """
     Historical snapshots for trend analysis.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     account = models.ForeignKey(
         "accounts.Account",

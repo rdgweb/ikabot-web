@@ -6,6 +6,8 @@ import json
 
 from django.db import models
 
+from apps.orgs.scope import OrgScopedManager
+
 from core.mixins.models import UUIDTimestampModel
 
 
@@ -16,6 +18,7 @@ class DiplomacyMessage(UUIDTimestampModel):
     Salva todas as mensagens do inbox (tratados, respostas, IP sharing, etc.)
     para consulta na Central de Mensagens do hub.
     """
+    objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 
     STATUS_CHOICES = [
         ("new", "Nova"),
