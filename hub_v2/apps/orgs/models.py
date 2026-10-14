@@ -47,3 +47,25 @@ class Membership(UUIDTimestampModel):
 
     def __str__(self):
         return f"{self.user} @ {self.organization} ({self.role})"
+
+
+class OrganizationPreferences(UUIDTimestampModel):
+    """What an organization chooses for itself (N-106, stage 4). Empty = the platform's default."""
+
+    PLATFORM, ON, OFF = "", "on", "off"
+    CAPTCHA_TELEGRAM_CHOICES = [
+        (PLATFORM, "Padrão da plataforma"),
+        (ON, "Mandar para o Telegram"),
+        (OFF, "Não mandar"),
+    ]
+
+    organization = models.OneToOneField(Organization, on_delete=models.CASCADE, related_name="preferences")
+    # when the automatic solver fails, send the captcha to this organization's Telegram chat
+    captcha_telegram = models.CharField(max_length=8, choices=CAPTCHA_TELEGRAM_CHOICES, blank=True, default=PLATFORM)
+
+    class Meta:
+        verbose_name = "Preferências da organização"
+        verbose_name_plural = "Preferências das organizações"
+
+    def __str__(self):
+        return f"Preferências de {self.organization}"

@@ -48,3 +48,24 @@ def ensure_membership(user):
         organization=default_organization(), user=user, defaults={"role": role_for(user)},
     )
     return membership
+
+
+def preferences_of(organization):
+    """The organization's own choices (created empty: everything follows the platform)."""
+    from .models import OrganizationPreferences
+
+    if organization is None:
+        return None
+    preferences, _ = OrganizationPreferences.objects.get_or_create(organization=organization)
+    return preferences
+
+
+def captcha_goes_to_telegram(organization, platform_config) -> bool:
+    """After the automatic solver failed: send the captcha to the organization's chat?"""
+    preferences = preferences_of(organization)
+    choice = preferences.captcha_telegram if preferences else ""
+    if choice == "on":
+        return True
+    if choice == "off":
+        return False
+    return platform_config.solve_method == "telegram" or platform_config.fallback_method == "telegram"

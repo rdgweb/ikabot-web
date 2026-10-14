@@ -75,6 +75,18 @@
       {% if can_change %}<button type="submit" class="btn btn-secondary btn-sm mt-4"><i class="bi bi-check-lg"></i> Salvar avisos</button>{% endif %}
     </form>
   </div>
+
+  <div class="card p-5">
+    <h3 class="text-sm font-semibold text-ink mb-1"><i class="bi bi-shield-lock"></i> Captcha</h3>
+    <p class="text-xs text-muted mb-3">Quando o automático não resolver.</p>
+    <form method="post" class="flex flex-wrap items-center gap-2">
+      {% csrf_token %}<input type="hidden" name="action" value="captcha">
+      <select name="captcha_telegram" class="form-input" style="width: auto;" {% if not can_change %}disabled{% endif %}>
+        {% for value, label in captcha_choices %}<option value="{{ value }}" {% if preferences.captcha_telegram == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      {% if can_change %}<button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-check-lg"></i> Salvar</button>{% endif %}
+    </form>
+  </div>
 </div>
 {% endif %}
 {% endblock %}

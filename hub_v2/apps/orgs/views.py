@@ -6,7 +6,8 @@ from django.http import Http404
 from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
-from .models import Membership
+from .models import Membership, OrganizationPreferences
+from .services import preferences_of
 
 
 def membership_of(request):
@@ -65,6 +66,8 @@ class OrganizationTelegramView(LoginRequiredMixin, TemplateView):
             "deep_link": f"https://t.me/{username}?start={code}" if code and username else "",
             "form": TelegramGlobalNotificationForm(instance=config),
             "can_change": can_change(self.request),
+            "preferences": preferences_of(self.request.organization),
+            "captcha_choices": OrganizationPreferences.CAPTCHA_TELEGRAM_CHOICES,
         })
         return ctx
 
@@ -80,6 +83,13 @@ class OrganizationTelegramView(LoginRequiredMixin, TemplateView):
         elif action == "unlink":
             unlink_global(request.organization)
             messages.success(request, "Chat desvinculado.")
+        elif action == "captcha":
+            choice = request.POST.get("captcha_telegram", "")
+            if choice in dict(OrganizationPreferences.CAPTCHA_TELEGRAM_CHOICES):
+                preferences = preferences_of(request.organization)
+                preferences.captcha_telegram = choice
+                preferences.save(update_fields=["captcha_telegram", "updated_at"])
+                messages.success(request, "Escolha do captcha salva.")
         elif action == "notices":
             form = TelegramGlobalNotificationForm(request.POST, instance=self._config())
             if form.is_valid():

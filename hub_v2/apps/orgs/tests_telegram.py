@@ -51,3 +51,41 @@ class OrganizationTelegramPageTests(TestCase):
         self.client.post(reverse("orgs:telegram"), {"action": "unlink"})
         self.assertEqual(organization_config(self.org_b).link_status, "unlinked")
         self.assertEqual(platform_bot().chat_id, "111")
+
+
+class CaptchaChoiceTests(TestCase):
+    def test_the_organization_decides_and_empty_follows_the_platform(self):
+        from apps.captcha.models import CaptchaConfig
+        from apps.orgs.services import captcha_goes_to_telegram, preferences_of
+
+        org = Organization.objects.create(name="Cliente", slug="cliente")
+        platform = CaptchaConfig(solve_method="auto", fallback_method="manual")
+        self.assertFalse(captcha_goes_to_telegram(org, platform))
+        platform.fallback_method = "telegram"
+        self.assertTrue(captcha_goes_to_telegram(org, platform))
+        preferences = preferences_of(org)
+        preferences.captcha_telegram = "off"
+        preferences.save()
+        self.assertFalse(captcha_goes_to_telegram(org, platform))
+        preferences.captcha_telegram = "on"
+        preferences.save()
+        self.assertTrue(captcha_goes_to_telegram(org, CaptchaConfig(solve_method="auto", fallback_method="none")))
+
+
+@patch("apps.orgs.views.bot_username", return_value="IkaHubBot")
+class CaptchaChoicePageTests(TestCase):
+    def test_an_owner_saves_and_a_reader_cannot(self, _name):
+        org = Organization.objects.create(name="Cliente", slug="cliente")
+        owner = get_user_model().objects.create_user("dono", password="x")
+        Membership.objects.filter(user=owner).update(organization=org, role="owner")
+        bot = platform_bot()
+        bot.bot_token, bot.enabled = "123:abc", True
+        bot.save()
+        self.client.force_login(owner)
+        self.client.post(reverse("orgs:telegram"), {"action": "captcha", "captcha_telegram": "on"})
+        from apps.orgs.services import preferences_of
+
+        self.assertEqual(preferences_of(org).captcha_telegram, "on")
+        Membership.objects.filter(user=owner).update(role="viewer")
+        self.assertEqual(self.client.post(reverse("orgs:telegram"), {"action": "captcha", "captcha_telegram": "off"}).status_code, 404)
+        self.assertEqual(preferences_of(org).captcha_telegram, "on")

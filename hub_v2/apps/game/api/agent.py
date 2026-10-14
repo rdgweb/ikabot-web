@@ -982,7 +982,12 @@ class CaptchaChallengeCreateView(APIView):
         )
 
         # 3. Send via Telegram if configured
-        use_telegram = captcha_cfg.solve_method == "telegram" or captcha_cfg.fallback_method == "telegram"
+        # N-106: the account's organization decides, else the platform's setting
+        from apps.orgs.services import captcha_goes_to_telegram
+
+        organization = game_account.account.organization if game_account is not None else None
+        use_telegram = captcha_goes_to_telegram(organization, captcha_cfg) if organization else (
+            captcha_cfg.solve_method == "telegram" or captcha_cfg.fallback_method == "telegram")
         if use_telegram:
             chat_id = _resolve_telegram_chat_id(game_account)
             if chat_id:
