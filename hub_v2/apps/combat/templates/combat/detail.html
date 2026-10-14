@@ -97,6 +97,11 @@
       {% endif %}
       {% endfor %}
 
+      {% if sim %}
+      <h2 class="cbd-title">Previsto × real</h2>
+      {% include "combat/sim_card.html" with item=sim link=False %}
+      {% endif %}
+
       {% if units %}
       <h2 class="cbd-title">Saldo do combate</h2>
       {% if summary.winners %}

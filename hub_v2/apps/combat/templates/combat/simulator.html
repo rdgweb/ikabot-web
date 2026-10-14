@@ -1,0 +1,111 @@
+{% extends base_template|default:"base.html" %}
+
+{% block title %}Simulador · Combates{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'combat:list' %}" class="hover:text-ink transition-colors">Combates</a>
+  <span class="mx-1">/</span> <span class="text-ink">Simulador</span>
+{% endblock %}
+
+{% block content %}
+{# N-110: the simulator beside the real combats. The hub CSS is precompiled; the layout lives in combat/styles.html #}
+{% include "combat/styles.html" %}
+
+<div class="mb-4">
+  <h1 class="text-2xl font-bold text-ink">Simulador × combates reais</h1>
+</div>
+
+{% if messages %}
+{% for message in messages %}
+<div class="sim-flash{% if message.tags == 'error' %} bad{% endif %}">{{ message }}</div>
+{% endfor %}
+{% endif %}
+
+<div class="cbt-tiles">
+  <div class="cbt-tile"><b>{{ board.total }}</b><span>Combates comparados</span></div>
+  <div class="cbt-tile"><b>{{ board.own }}</b><span>Das suas contas</span></div>
+  <div class="cbt-tile {% if board.winner_pct >= 80 %}win{% elif board.winner_known %}loss{% endif %}"><b>{{ board.winner_pct }}%</b><span>Vencedor certo</span></div>
+  <div class="cbt-tile"><b class="att">{{ board.attacker_hit }}%</b><span>Perdas do atacante</span></div>
+  <div class="cbt-tile"><b class="def">{{ board.defender_hit }}%</b><span>Perdas do defensor</span></div>
+  <div class="cbt-tile"><b>{{ board.rounds_ok }}%</b><span>Rounds certos</span></div>
+</div>
+
+{# where it is furthest from the game: the score of each kind of combat #}
+{% if kinds %}
+<div class="sim-kinds">
+  {% for kind in kinds %}
+  <div class="sim-kind">
+    <div class="sim-card-head"><b>{{ kind.label }}</b><span class="cbt-state">{{ kind.total }} combate{{ kind.total|pluralize }}</span></div>
+    <div class="sim-side"><span>Vencedor</span><u><i style="width: {{ kind.winner_pct }}%;"></i></u><em>{% if kind.winner_known %}{{ kind.winner_pct }}%{% else %}–{% endif %}</em></div>
+    <div class="sim-side"><span class="att">Atacante</span><u><i style="width: {{ kind.attacker_hit }}%;"></i></u><em>{{ kind.attacker_hit }}%</em></div>
+    <div class="sim-side"><span class="def">Defensor</span><u><i style="width: {{ kind.defender_hit }}%;"></i></u><em>{{ kind.defender_hit }}%</em></div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# what was learned: a proposal that only goes into use when approved here #}
+<div class="sim-learn">
+  <div class="sim-learn-head">
+    <b><i class="bi bi-mortarboard"></i> Ajuste aprendido</b>
+    {% if approved.approved_at %}
+    <span class="cbt-state win">Em uso</span>
+    {% else %}
+    <span class="cbt-state">Simulador original</span>
+    {% endif %}
+  </div>
+
+  {% if approved.approved_at %}
+  <div class="sim-row">
+    <span class="sim-factor">Dano do atacante <b>{{ approved.attacker_pct|stringformat:"+d" }}%</b></span>
+    <span class="sim-factor">Dano do defensor <b>{{ approved.defender_pct|stringformat:"+d" }}%</b></span>
+    <span class="sim-note">aprovado com {{ approved.samples }} combates{% if approved.approved_by %} por {{ approved.approved_by }}{% endif %}</span>
+  </div>
+  {% endif %}
+
+  {% if proposal.samples %}
+  <div class="sim-row">
+    <span class="sim-factor">Proposta: atacante <b>{{ proposal.attacker_pct|stringformat:"+d" }}%</b></span>
+    <span class="sim-factor">defensor <b>{{ proposal.defender_pct|stringformat:"+d" }}%</b></span>
+    <span class="sim-note">{{ proposal.samples }} combate{{ proposal.samples|pluralize }}</span>
+  </div>
+  <div class="sim-compare">
+    <div><small>Vencedor certo</small><b>{{ proposal.before.winner_pct }}%</b><i class="bi bi-arrow-right"></i><b class="{% if proposal.after.winner_pct > proposal.before.winner_pct %}up{% endif %}">{{ proposal.after.winner_pct }}%</b></div>
+    <div><small>Perdas do atacante</small><b>{{ proposal.before.attacker_hit }}%</b><i class="bi bi-arrow-right"></i><b class="{% if proposal.after.attacker_hit > proposal.before.attacker_hit %}up{% endif %}">{{ proposal.after.attacker_hit }}%</b></div>
+    <div><small>Perdas do defensor</small><b>{{ proposal.before.defender_hit }}%</b><i class="bi bi-arrow-right"></i><b class="{% if proposal.after.defender_hit > proposal.before.defender_hit %}up{% endif %}">{{ proposal.after.defender_hit }}%</b></div>
+  </div>
+  {% endif %}
+
+  <div class="sim-actions">
+    <form method="post" action="{% url 'combat:simulator-action' %}">{% csrf_token %}<input type="hidden" name="action" value="propose">
+      <button type="submit" class="btn btn-secondary btn-sm"{% if not board.total %} disabled{% endif %}><i class="bi bi-arrow-repeat"></i> Recalcular</button>
+    </form>
+    {% if can_approve %}
+    <form method="post" action="{% url 'combat:simulator-action' %}"
+          @submit.prevent="$dispatch('confirm', {title: 'Aprovar ajuste', message: 'O simulador passa a usar este ajuste em toda recomendação de tropa. Dá para retirar depois.', style: 'primary', confirmLabel: 'Aprovar', onConfirm: () => $el.submit()})">
+      {% csrf_token %}<input type="hidden" name="action" value="approve">
+      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check-lg"></i> Aprovar</button>
+    </form>
+    {% elif missing %}
+    <span class="sim-note">Faltam {{ missing }} combate{{ missing|pluralize }} para poder aprovar (mínimo {{ min_checks }}).</span>
+    {% elif proposal.samples and not proposal.better %}
+    <span class="sim-note">Nenhum ajuste melhora o que o simulador já faz.</span>
+    {% endif %}
+    {% if approved.approved_at %}
+    <form method="post" action="{% url 'combat:simulator-action' %}">{% csrf_token %}<input type="hidden" name="action" value="revoke">
+      <button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-counterclockwise"></i> Voltar ao original</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if cards %}
+<div class="cbt-grid">
+  {% for item in cards %}
+  {% include "combat/sim_card.html" with link=True %}
+  {% endfor %}
+</div>
+{% else %}
+<div class="card cbt-empty"><i class="bi bi-cpu"></i> Nenhum combate comparado ainda.</div>
+{% endif %}
+{% endblock %}

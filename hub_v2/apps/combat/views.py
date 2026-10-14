@@ -10,6 +10,7 @@ from django.core.paginator import Paginator
 from django.db.models import Count, Q, Sum
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
 from django.views import View
 from django.views.generic import TemplateView
 
@@ -108,8 +109,15 @@ class CombatListView(LoginRequiredMixin, TemplateView):
                 {"label": "Saque", "value": _number(totals["loot"]), "state": None, "tone": ""},
             ],
             "geometry": GEOMETRY,
+            "simulator": _simulator_chip(),
         })
         return ctx
+
+
+def _simulator_chip() -> dict:
+    from .services.checks import scoreboard
+
+    return scoreboard()
 
 
 class CombatDetailView(LoginRequiredMixin, TemplateView):
@@ -151,6 +159,7 @@ class CombatDetailView(LoginRequiredMixin, TemplateView):
                 for key, amount in ((summary or {}).get("loot") or {}).items()
             ],
             "geometry": GEOMETRY,
+            "sim": check_card(report.simulation) if hasattr(report, "simulation") else None,
         })
         return ctx
 
@@ -209,3 +218,96 @@ class CombatRoundImageView(LoginRequiredMixin, View):
         # a round that is over never changes; the last one may still gain the outcome
         response["Cache-Control"] = "private, max-age=60" if last and not report.finished else "private, max-age=86400"
         return response
+
+
+# ── N-110: the simulator beside what really happened ──
+
+SIDES = {"attacker": "Atacante", "defender": "Defensor", "draw": "Empate"}
+
+
+def check_card(check) -> dict:
+    """One comparison as the pages show it: who won and what each side lost, real and predicted."""
+    real, predicted = check.real_json or {}, check.predicted_json or {}
+    guess = (check.inputs_json or {}).get("assumptions") or {}
+
+    def lost(data: dict, side: str) -> int:
+        return sum(int(amount or 0) for amount in ((data.get("losses") or {}).get(side) or {}).values())
+
+    report = check.report
+    if report is not None:
+        title = (report.battle_title or "").replace("Batalha por", "").strip() or report.target_city_name or f"Combate {report.combat_id}"
+        url, external = reverse("combat:detail", args=[report.pk]), False
+    else:
+        title = check.title or check.external_id
+        url, external = (f"https://ikalogs.ru/report/{check.external_id}/", True) if check.source == "ikalogs" else ("", False)
+    return {
+        "check": check,
+        "report": report,
+        "title": title,
+        "url": url,
+        "external": external,
+        "source": "IkaLogs" if check.source == "ikalogs" else "",
+        "winner_known": bool(real.get("winner")),
+        "winner_ok": check.winner_ok,
+        "real_winner": SIDES.get(real.get("winner"), "?"),
+        "predicted_winner": SIDES.get(predicted.get("winner"), "?"),
+        "real_rounds": int(real.get("rounds") or 0),
+        "predicted_rounds": int(predicted.get("rounds") or 0),
+        "sides": [
+            {"label": SIDES[side], "tone": tone, "real": _number(lost(real, side)), "predicted": _number(lost(predicted, side)),
+             "hit": round(100 * (1 - error))}
+            for side, tone, error in (("attacker", "att", check.attacker_error), ("defender", "def", check.defender_error))
+        ],
+        "wall": f"Muralha nível {guess['wall_level']} · {guess.get('wall_source') or 'padrão'}" if guess.get("wall_level") else "",
+    }
+
+
+class SimulatorView(LoginRequiredMixin, TemplateView):
+    """GET /combat/simulador/ - how the simulator did against the real combats, and what it learned from them."""
+
+    template_name = "combat/simulator.html"
+
+    def get_context_data(self, **kwargs):
+        from .models import SimulationCheck, SimulatorCalibration
+        from .services.checks import by_kind, scoreboard
+        from .services.learning import MIN_CHECKS, can_approve
+
+        ctx = super().get_context_data(**kwargs)
+        checks = list(SimulationCheck.objects.select_related("report__game_account").defer("report__summary_html", "report__detailed_html")
+                      .order_by("source", "-created_at"))
+        calibration = SimulatorCalibration.load()
+        ctx.update({
+            "board": scoreboard(checks),
+            "kinds": by_kind(checks),
+            "cards": [check_card(check) for check in checks],
+            "proposal": calibration.proposed_json or {},
+            "approved": calibration.approved_json or {},
+            "can_approve": can_approve(calibration.proposed_json or {}),
+            "min_checks": MIN_CHECKS,
+            "missing": max(0, MIN_CHECKS - len(checks)),
+        })
+        return ctx
+
+
+class SimulatorActionView(LoginRequiredMixin, View):
+    """POST /combat/simulador/acao/ - recompute the proposal, approve it, or take the approval back."""
+
+    def post(self, request):
+        from django.contrib import messages
+        from django.shortcuts import redirect
+
+        from .services import learning
+
+        action = request.POST.get("action") or ""
+        if action == "propose":
+            proposal = learning.propose()
+            messages.success(request, f"Proposta recalculada com {proposal['samples']} combate(s).")
+        elif action == "approve":
+            if learning.approve(request.user.get_username()):
+                messages.success(request, "Ajuste aprovado: o simulador passa a usá-lo.")
+            else:
+                messages.error(request, "Esta proposta ainda não pode ser aprovada.")
+        elif action == "revoke":
+            learning.revoke()
+            messages.success(request, "Ajuste retirado: o simulador voltou ao original.")
+        return redirect("combat:simulator")

@@ -813,6 +813,15 @@ def _first_alive_line(deployment: RoundDeployment, targets: list[str]) -> str | 
     return None
 
 
+def _learned_bonus() -> tuple[float, float]:
+    try:
+        from apps.combat.services.learning import active_bonus
+
+        return active_bonus()
+    except Exception:  # noqa: BLE001 - the simulator must work without the combat app
+        return 0.0, 0.0
+
+
 def simulate_land_battle(
     attacker_units: dict[int, int],
     defender_units: dict[int, int],
@@ -828,7 +837,13 @@ def simulate_land_battle(
     defender_armor_bonus: int = 0,
     attacker_reinforcements_by_round: dict[int, dict[int, int]] | None = None,
     defender_reinforcements_by_round: dict[int, dict[int, int]] | None = None,
+    calibrated: bool = True,
 ) -> dict[str, Any]:
+    if calibrated:
+        # N-110: the adjustment learned from real combats and approved on the screen (0, 0 until then)
+        learned_attacker, learned_defender = _learned_bonus()
+        attacker_damage_bonus_pct = float(attacker_damage_bonus_pct or 0.0) + learned_attacker
+        defender_damage_bonus_pct = float(defender_damage_bonus_pct or 0.0) + learned_defender
     field_level = _field_level_from_th(town_hall_level)
     attacker = Army(
         attacker_units,

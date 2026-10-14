@@ -115,4 +115,39 @@
   .cbd-loot { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .7rem; }
   .cbd-loot span { display: inline-flex; align-items: center; gap: .35rem; padding: .3rem .7rem; border: 1px solid var(--ik-line); border-radius: 999px; background: var(--ik-paper); font-size: .85rem; font-weight: 700; color: var(--ik-ink); }
   .cbd-loot img { height: 1rem; }
+
+  /* ── simulator beside the real combats (N-110) ── */
+  .sim-flash { margin-bottom: .8rem; padding: .5rem .8rem; border: 1px solid rgba(45, 122, 45, .3); border-radius: 10px; font-size: .82rem; color: var(--ik-ink); background: rgba(45, 122, 45, .1); }
+  .sim-flash.bad { border-color: rgba(201, 102, 46, .35); background: rgba(201, 102, 46, .1); }
+  .sim-learn { margin-bottom: 1rem; padding: .9rem 1rem; border: 1px solid var(--ik-line); border-radius: 14px; background: var(--ik-paper); }
+  .sim-learn-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-bottom: .6rem; font-size: .95rem; color: var(--ik-ink); }
+  .sim-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem; margin-bottom: .5rem; }
+  .sim-factor { padding: .25rem .7rem; border: 1px solid var(--ik-line); border-radius: 999px; font-size: .82rem; color: var(--ik-muted); }
+  .sim-factor b { margin-left: .25rem; font-size: .92rem; color: var(--ik-ink); }
+  .sim-note { font-size: .76rem; color: var(--ik-muted); }
+  .sim-compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .5rem; margin-bottom: .7rem; }
+  .sim-compare div { display: flex; align-items: center; gap: .45rem; padding: .45rem .7rem; border-radius: 10px; background: rgba(120, 113, 100, .08); font-size: .9rem; color: var(--ik-ink); }
+  .sim-compare small { margin-right: auto; font-size: .7rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ik-muted); }
+  .sim-compare i { font-size: .7rem; color: var(--ik-muted); }
+  .sim-compare b.up { color: #2d7a2d; }
+  .sim-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+  .sim-card { display: flex; flex-direction: column; gap: .5rem; min-width: 0; padding: .8rem .9rem; border: 1px solid var(--ik-line); border-radius: 14px; background: var(--ik-paper); color: var(--ik-ink); text-decoration: none; }
+  a.sim-card:hover { border-color: var(--ik-sea); }
+  .sim-card-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+  .sim-card-head b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .95rem; }
+  .sim-versus { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+  .sim-versus div { padding: .4rem .6rem; border-radius: 10px; background: rgba(120, 113, 100, .08); }
+  .sim-versus small { display: block; font-size: .6rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ik-muted); }
+  .sim-versus b { display: block; font-size: .9rem; }
+  .sim-versus span { font-size: .74rem; color: var(--ik-muted); }
+  .sim-side { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .7rem; font-size: .78rem; color: var(--ik-muted); }
+  .sim-side > span:first-child { min-width: 4.6rem; font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .sim-side b { color: var(--ik-ink); }
+  .sim-side u { flex: 1; min-width: 3rem; height: .4rem; border-radius: 999px; overflow: hidden; background: rgba(179, 64, 47, .25); text-decoration: none; }
+  .sim-side u i { display: block; height: 100%; background: #2d7a2d; }
+  .sim-side em { font-style: normal; font-weight: 700; color: var(--ik-ink); }
+  .sim-kinds { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .7rem; margin-bottom: 1rem; }
+  .sim-kind { display: flex; flex-direction: column; gap: .45rem; padding: .8rem .9rem; border: 1px solid var(--ik-line); border-radius: 14px; background: var(--ik-paper); }
+  .sim-chip { display: inline-flex; align-items: center; gap: .4rem; padding: .3rem .8rem; border: 1px solid var(--ik-line); border-radius: 999px; font-size: .8rem; font-weight: 600; color: var(--ik-sea); background: var(--ik-paper); text-decoration: none; }
+  .sim-chip:hover { border-color: var(--ik-sea); }
 </style>

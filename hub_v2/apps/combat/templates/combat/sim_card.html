@@ -1,0 +1,22 @@
+{# N-110: one real combat beside what the simulator predicted for it #}
+{% if link and item.url %}<a class="sim-card" href="{{ item.url }}"{% if item.external %} target="_blank" rel="noopener" hx-boost="false"{% endif %}>{% else %}<div class="sim-card">{% endif %}
+  <div class="sim-card-head">
+    <b>{% if link %}{{ item.title }}{% else %}<i class="bi bi-cpu"></i> Simulador{% endif %}</b>
+    {% if not item.winner_known %}<span class="cbt-state">Sem vencedor no relatório</span>
+    {% else %}<span class="cbt-state {% if item.winner_ok %}win{% else %}loss{% endif %}">{% if item.winner_ok %}Acertou o vencedor{% else %}Errou o vencedor{% endif %}</span>{% endif %}
+  </div>
+  <div class="sim-versus">
+    <div><small>Real</small><b>{{ item.real_winner }}</b><span>{{ item.real_rounds }} round{{ item.real_rounds|pluralize }}</span></div>
+    <div><small>Previsto</small><b>{{ item.predicted_winner }}</b><span>{{ item.predicted_rounds }} round{{ item.predicted_rounds|pluralize }}</span></div>
+  </div>
+  {% for side in item.sides %}
+  <div class="sim-side">
+    <span class="{{ side.tone }}">{{ side.label }}</span>
+    <span>perdeu <b>{{ side.real }}</b></span>
+    <span>previsto <b>{{ side.predicted }}</b></span>
+    <u><i style="width: {{ side.hit }}%;"></i></u>
+    <em>{{ side.hit }}%</em>
+  </div>
+  {% endfor %}
+  {% if item.wall or item.source %}<div class="sim-note">{% if item.source %}<i class="bi bi-box-arrow-up-right"></i> {{ item.source }}{% if item.wall %} · {% endif %}{% endif %}{{ item.wall }}</div>{% endif %}
+{% if link and item.url %}</a>{% else %}</div>{% endif %}

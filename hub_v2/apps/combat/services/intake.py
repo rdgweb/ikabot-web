@@ -100,6 +100,12 @@ def take_in(report, *, silent: bool = False, finished=None) -> str:
         report.notified_final = True
     report.save()
 
+    if report.finished:
+        # N-110: the combat is over - fight it again in the simulator and keep the comparison
+        from .checks import check_safely
+
+        check_safely(report)
+
     if kind and report.game_account_id:
         try:
             from apps.telegram.services.notifications import notify

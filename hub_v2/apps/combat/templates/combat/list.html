@@ -11,8 +11,9 @@
 {# N-109: the hub CSS is precompiled, so the layout of this page lives in combat/styles.html #}
 {% include "combat/styles.html" %}
 
-<div class="mb-4">
+<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
   <h1 class="text-2xl font-bold text-ink">Combates</h1>
+  <a class="sim-chip" href="{% url 'combat:simulator' %}" title="O simulador comparado com os combates reais"><i class="bi bi-cpu"></i> Simulador{% if simulator.total %} · {{ simulator.winner_pct }}% vencedor certo{% endif %}</a>
 </div>
 
 <div class="cbt-tiles">

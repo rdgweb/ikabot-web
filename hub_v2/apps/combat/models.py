@@ -69,3 +69,51 @@ class CombatReport(UUIDTimestampModel):
 
     def __str__(self):
         return f"[{self.combat_date:%d/%m %H:%M}] {self.result} vs {self.target_owner} ({self.target_city_name})"
+
+
+class SimulationCheck(UUIDTimestampModel):
+    """N-110: a real combat fought again in the simulator, the prediction beside what happened."""
+
+    # a combat of the accounts has its report here; one read from a public log (IkaLogs) has none
+    report = models.OneToOneField(CombatReport, on_delete=models.CASCADE, related_name="simulation", null=True, blank=True)
+    source = models.CharField(max_length=16, default="jogo", db_index=True)       # "jogo" | "ikalogs"
+    external_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    title = models.CharField(max_length=200, blank=True, default="")
+    fought_at = models.CharField(max_length=32, blank=True, default="")           # as the game wrote it
+    # what was given to the simulator (armies, field, wall, what had to be assumed) and what came out
+    inputs_json = models.JSONField(default=dict, blank=True)
+    real_json = models.JSONField(default=dict, blank=True)
+    predicted_json = models.JSONField(default=dict, blank=True)
+    winner_ok = models.BooleanField(default=False, db_index=True)
+    rounds_gap = models.SmallIntegerField(default=0)            # predicted - real
+    attacker_error = models.FloatField(default=0)               # 0 = the same losses, 1 = nothing alike
+    defender_error = models.FloatField(default=0)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Conferência do simulador"
+        verbose_name_plural = "Conferências do simulador"
+
+    def __str__(self):
+        return f"sim x real {self.report.combat_id if self.report_id else self.external_id}"
+
+
+class SimulatorCalibration(models.Model):
+    """N-110: what the simulator learned from the checks. One row.
+
+    `proposed_json` is recomputed from the checks; `approved_json` is what the simulator
+    actually uses, and only changes when someone approves the proposal on the screen.
+    """
+
+    proposed_json = models.JSONField(default=dict, blank=True)
+    approved_json = models.JSONField(default=dict, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Ajuste do simulador"
+        verbose_name_plural = "Ajuste do simulador"
+
+    @classmethod
+    def load(cls):
+        row, _created = cls.objects.get_or_create(pk=1)
+        return row
