@@ -143,10 +143,10 @@ if (-not (Test-Path ".env")) {
 }
 
 # ── 4. Subir ─────────────────────────────────────────────────────────────────
-Step "4/5  Baixando as imagens e subindo (a primeira vez demora: o IkabotAPI é montado aqui)"
-docker compose pull --ignore-buildable
-if ($LASTEXITCODE -ne 0) { docker compose pull hub agent }
-docker compose up -d --build
+Step "4/5  Baixando as imagens e subindo (a primeira vez leva alguns minutos)"
+# o que não estiver publicado é montado no passo seguinte
+docker compose pull --ignore-pull-failures
+docker compose up -d
 if ($LASTEXITCODE -ne 0) { Fail "o docker compose não conseguiu subir. Veja a mensagem acima." }
 
 # ── 5. Esperar o hub ─────────────────────────────────────────────────────────

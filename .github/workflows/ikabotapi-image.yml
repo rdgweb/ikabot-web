@@ -1,0 +1,59 @@
+name: Publish IkabotAPI Image
+
+# N-107: the IkabotAPI is a third-party service that every login depends on. Until now each
+# installation built it from GitHub on the first "up" (minutes, and it fails without network
+# to GitHub). This publishes the revision pinned in docker-compose.yml as an image, so a new
+# installation only pulls it. It runs when the pin (or the overrides) change, or by hand.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docker-compose.yml
+      - ikabotapi_overrides/**
+      - .github/workflows/ikabotapi-image.yml
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read the pinned revision
+        id: pin
+        shell: bash
+        run: |
+          revision=$(grep -oE 'IkabotAPI\.git#[0-9a-f]{40}' docker-compose.yml | head -1 | cut -d'#' -f2)
+          if [[ -z "$revision" ]]; then echo "no pinned IkabotAPI revision in docker-compose.yml" >&2; exit 1; fi
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+          echo "short=${revision:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          # the upstream repository at the pinned revision, as docker-compose.yml builds it
+          context: https://github.com/Ikabot-Collective/IkabotAPI.git#${{ steps.pin.outputs.revision }}
+          # Playwright + Chromium: the upstream image is built and tested on amd64 only
+          platforms: linux/amd64
+          push: true
+          tags: |
+            blackoneal/ikabot-web-ikabotapi:${{ steps.pin.outputs.short }}
+            blackoneal/ikabot-web-ikabotapi:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/Ikabot-Collective/IkabotAPI
+            org.opencontainers.image.revision=${{ steps.pin.outputs.revision }}
+          cache-from: type=gha,scope=ikabotapi
+          cache-to: type=gha,mode=max,scope=ikabotapi

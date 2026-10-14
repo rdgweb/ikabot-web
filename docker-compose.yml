@@ -177,7 +177,9 @@ services:
 
   ikabotapi:
     # Obrigatório: gera o token de login (blackbox) e resolve captchas; sem ele o hub
-    # não entra no jogo. Sempre sobe, sem perfil.
+    # não entra no jogo. Sempre sobe, sem perfil. A imagem publicada é a mesma revisão
+    # fixada abaixo (workflow ikabotapi-image); sem ela, o compose monta a partir do GitHub.
+    image: ${IKABOTAPI_IMAGE:-blackoneal/ikabot-web-ikabotapi:fb87efe}
     build:
       # Fixado de propósito (N-74): um serviço de terceiros do qual todo login depende
       # não é reconstruído a partir do que o ramo tiver naquele dia. fb87efee é a revisão

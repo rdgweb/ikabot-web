@@ -123,9 +123,9 @@ if [ ! -f .env ]; then
 fi
 
 # ── 4. Subir ─────────────────────────────────────────────────────────────────
-step "4/5  Baixando as imagens e subindo (a primeira vez demora: o IkabotAPI é montado aqui)"
-docker compose pull --ignore-buildable 2>/dev/null || docker compose pull hub agent
-docker compose up -d --build || fail "o docker compose não conseguiu subir. Veja a mensagem acima (uma porta já em uso? mude HUB_PORT no .env)."
+step "4/5  Baixando as imagens e subindo (a primeira vez leva alguns minutos)"
+docker compose pull --ignore-pull-failures || true      # o que não estiver publicado é montado no passo seguinte
+docker compose up -d || fail "o docker compose não conseguiu subir. Veja a mensagem acima (uma porta já em uso? mude HUB_PORT no .env)."
 
 # ── 5. Esperar o hub ─────────────────────────────────────────────────────────
 step "5/5  Esperando o hub ficar pronto"
