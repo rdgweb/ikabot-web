@@ -20,6 +20,48 @@ def _recount_dump(dump: WorldDump) -> None:
     dump.save(update_fields=["island_count", "city_count", "player_count", "updated_at"])
 
 
+def _propagate_states(dump: WorldDump, city_models: list) -> None:
+    """Propagar estados frescos para dumps anteriores do mesmo servidor.
+
+    Quando uma cidade muda de "inactive" → "vacation" entre dumps, o WorldSpy (que usa o dump mais
+    recente) precisa ver o estado atualizado imediatamente — sem esperar um novo dump completo.
+    N-123: uma consulta por estado (não por cidade), só nos dumps do mesmo servidor e da mesma
+    organização; o id da cidade só vale dentro do servidor.
+    """
+    game_account = dump.game_account
+    if game_account is None:
+        return
+    state_by_city = {c.game_city_id: c.state for c in city_models if c.game_city_id and c.state}
+    cities_by_state: dict[str, list[str]] = {}
+    for game_city_id, new_state in state_by_city.items():
+        cities_by_state.setdefault(new_state, []).append(game_city_id)
+    older_dumps = list(
+        WorldDump._base_manager.filter(
+            game_account__server_id=game_account.server_id,
+            account__organization_id=dump.account.organization_id,
+        ).exclude(pk=dump.pk).values_list("pk", flat=True)  # não toca no dump que acabou de criar
+    )
+    if not older_dumps:
+        return
+    for new_state, game_city_ids in cities_by_state.items():
+        WorldDumpCity._base_manager.filter(
+            dump_id__in=older_dumps, game_city_id__in=game_city_ids,
+        ).exclude(state=new_state).update(state=new_state)  # só atualiza se mudou
+
+
+def _dump_of_same_run(game_account, source_job_id) -> WorldDump | None:
+    """N-123: a retry of the job that starts a dump (same job tree) continues the dump it already began
+    instead of opening another one."""
+    if game_account is None or not source_job_id:
+        return None
+    from apps.jobs.models import Job
+
+    root_id = Job._base_manager.filter(pk=source_job_id).values_list("root_job_id", flat=True).first() or source_job_id
+    run_jobs = [root_id, *Job._base_manager.filter(root_job_id=root_id).values_list("pk", flat=True)]
+    return (WorldDump._base_manager.filter(game_account=game_account, status="in_progress", source_job_id__in=run_jobs)
+            .order_by("-created_at").first())
+
+
 def _save_islands_to_dump(dump: WorldDump, islands_payload: list) -> tuple[int, int]:
     """Save a batch of islands to an existing dump. Returns (city_count_added, player_count_added)."""
     city_total = 0
@@ -88,24 +130,7 @@ def _save_islands_to_dump(dump: WorldDump, islands_payload: list) -> tuple[int, 
 
         if city_models:
             WorldDumpCity.objects.bulk_create(city_models, batch_size=500)
-
-            # Propagar estados frescos para dumps anteriores do mesmo servidor.
-            # Quando uma cidade muda de "inactive" → "vacation" entre dumps,
-            # o WorldSpy (que usa o dump mais recente) precisa ver o estado
-            # atualizado imediatamente — sem esperar um novo dump completo.
-            state_by_city = {
-                c.game_city_id: c.state
-                for c in city_models
-                if c.game_city_id and c.state
-            }
-            for game_city_id, new_state in state_by_city.items():
-                WorldDumpCity.objects.filter(
-                    game_city_id=game_city_id,
-                ).exclude(
-                    dump=dump,  # não toca no dump que acabou de criar
-                ).exclude(
-                    state=new_state,  # só atualiza se mudou
-                ).update(state=new_state)
+            _propagate_states(dump, city_models)
 
         # Upsert player records (ignore_conflicts handles duplicates on append)
         player_models = []
@@ -172,6 +197,24 @@ class WorldDumpCreateView(APIView):
                 return Response({"error": "GameAccount not found."}, status=status.HTTP_404_NOT_FOUND)
 
         dump_status = str(data.get("dump_status") or "complete")
+
+        dump = _dump_of_same_run(game_account, data.get("source_job_id"))
+        if dump is not None:
+            _replace_islands_in_dump(dump, data.get("islands") or [])
+            if dump_status == "complete":
+                dump.status = "complete"
+                dump.save(update_fields=["status", "updated_at"])
+            return Response(
+                {
+                    "ok": True,
+                    "dump_id": str(dump.pk),
+                    "island_count": dump.island_count,
+                    "city_count": dump.city_count,
+                    "player_count": dump.player_count,
+                    "status": dump.status,
+                },
+                status=status.HTTP_201_CREATED,
+            )
 
         dump = WorldDump.objects.create(
             account=account,

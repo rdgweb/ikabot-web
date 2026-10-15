@@ -117,6 +117,7 @@ class WorldDumpCity(models.Model):
             models.Index(fields=["dump", "ally_tag"]),
             models.Index(fields=["dump", "type"]),
             models.Index(fields=["dump", "state"]),
+            models.Index(fields=["game_city_id"], name="worldintel_city_gameid_idx"),  # N-123
         ]
 
     def __str__(self):
