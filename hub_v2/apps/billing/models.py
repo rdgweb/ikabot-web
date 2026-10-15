@@ -20,6 +20,12 @@ class BillingAccount(models.Model):
     link_limit = models.PositiveIntegerField(null=True, blank=True)
     customer_id = models.CharField(max_length=64, blank=True, default="")
     subscription_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    # going down waits for the next due date; going up waits for the prorated difference to be paid
+    pending_limit = models.PositiveIntegerField(null=True, blank=True)
+    upgrade_limit = models.PositiveIntegerField(null=True, blank=True)
+    upgrade_payment_id = models.CharField(max_length=64, blank=True, default="")
+    upgrade_url = models.URLField(blank=True, default="")
+    upgrade_value = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

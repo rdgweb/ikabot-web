@@ -60,6 +60,25 @@
   {% endif %}
 </div>
 
+{% if account.upgrade_payment_id %}
+<div class="pl-msg info" style="align-items: center; flex-wrap: wrap;">
+  <i class="bi bi-hourglass-split"></i>
+  <span style="flex: 1; min-width: 220px;">Subida para até <b>{{ account.upgrade_limit }} subcontas</b> esperando o pagamento da diferença ({{ upgrade_value }}). A faixa muda assim que ele for confirmado.</span>
+  {% if can_change %}
+  <a class="btn btn-primary btn-sm" href="{{ account.upgrade_url }}" hx-boost="false" target="_blank" rel="noopener"><i class="bi bi-credit-card"></i> Pagar</a>
+  <form method="post" hx-boost="false">{% csrf_token %}<input type="hidden" name="action" value="keep"><button class="btn btn-secondary btn-sm" type="submit">Desistir</button></form>
+  {% endif %}
+</div>
+{% elif account.pending_limit %}
+<div class="pl-msg info" style="align-items: center; flex-wrap: wrap;">
+  <i class="bi bi-calendar-event"></i>
+  <span style="flex: 1; min-width: 220px;">No vencimento de <b>{{ account.paid_until|date:"d/m" }}</b> a faixa passa para até <b>{{ account.pending_limit }} subcontas</b>. Se houver mais ativas, as mais recentes são pausadas.</span>
+  {% if can_change %}
+  <form method="post" hx-boost="false">{% csrf_token %}<input type="hidden" name="action" value="keep"><button class="btn btn-secondary btn-sm" type="submit">Manter a atual</button></form>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if state.code != 'exempt' %}
 <div class="org-panel">
   {% if not configured %}
@@ -77,6 +96,8 @@
         {% if o.current %}<span class="pl-tag cur">atual</span>{% elif o.suggested %}<span class="pl-tag sug">indicada</span>{% endif %}
         <span class="n">até {{ o.limit }} subcontas</span>
         <span class="p">{{ o.price }}<small>/mês</small></span>
+        {% if o.now %}<span class="org-chip gold" style="margin-top: .25rem;">+{{ o.now }} agora</span>
+        {% elif o.later %}<span class="org-chip off" style="margin-top: .25rem;">no vencimento</span>{% endif %}
       </label>
       {% endfor %}
     </div>
@@ -92,6 +113,7 @@
     <div class="org-form" style="margin-top: 1rem; align-items: center;">
       {% if account.subscription_id and account.status == 'active' %}
       <button class="btn btn-primary" type="submit"><i class="bi bi-arrow-repeat"></i> Trocar de faixa</button>
+      <span class="org-chip off"><i class="bi bi-info-circle"></i> subir: paga a diferença dos dias que faltam · descer: no vencimento</span>
       {% else %}
       <button class="btn btn-primary" type="submit"><i class="bi bi-credit-card"></i> Assinar</button>
       <span class="org-chip off"><i class="bi bi-shield-lock"></i> cartão, boleto ou Pix · página do Asaas</span>

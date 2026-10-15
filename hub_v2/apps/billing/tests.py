@@ -164,15 +164,54 @@ class PlanPageTests(TestCase):
         self.assertIn("Só o dono", self.client.get(reverse("billing:plan")).content.decode())
         self.assertEqual(self.client.post(reverse("billing:plan"), {"limit": "10"}).status_code, 404)
 
-    def test_change_and_cancel_an_active_subscription(self):
+    def _subscribed(self, days_left=15, limit=10):
         BillingAccount.objects.filter(organization=account_for(self.org).organization).update(
-            status=BillingAccount.ACTIVE, subscription_id="sub_1", limit=10, price=Decimal("29.90"),
-            paid_until=timezone.now() + timedelta(days=20))
+            status=BillingAccount.ACTIVE, subscription_id="sub_1", customer_id="cus_1", limit=limit,
+            price=plans.price_for(limit), paid_until=timezone.now() + timedelta(days=days_left))
+
+    def test_going_up_charges_the_difference_and_waits_for_it(self):
+        self._subscribed(days_left=15)
+        account = BillingAccount.objects.get(organization=self.org)
+        start, end = __import__("apps.billing.services", fromlist=["period_of"]).period_of(account)
+        expected = plans.prorated(10, 20, start, end, timezone.now())
+        self.assertIn(plans.brl(expected), self.client.get(reverse("billing:plan")).content.decode())   # shown on the tier
+        with patch("apps.billing.asaas.create_charge", return_value=("pay_up", "https://sandbox.asaas.com/i/pay_up")) as charge, \
+             patch("apps.billing.asaas.update_subscription_value") as update:
+            response = self.client.post(reverse("billing:plan"), {"limit": "20"})
+        self.assertRedirects(response, "https://sandbox.asaas.com/i/pay_up", fetch_redirect_response=False)
+        self.assertAlmostEqual(float(charge.call_args.kwargs["value"]), float(expected), places=2)
+        self.assertGreater(charge.call_args.kwargs["value"], Decimal("8"))      # about half of R$ 20,00
+        update.assert_not_called()                                               # the subscription waits for the payment
+        account.refresh_from_db()
+        self.assertEqual((account.limit, account.upgrade_limit, account.upgrade_payment_id), (10, 20, "pay_up"))
+        self.assertIn("esperando o pagamento", self.client.get(reverse("billing:plan")).content.decode())
+
+    def test_going_down_waits_for_the_next_due_date(self):
+        self._subscribed(days_left=15, limit=20)
         with patch("apps.billing.asaas.update_subscription_value") as update:
-            self.client.post(reverse("billing:plan"), {"limit": "20"})
+            self.client.post(reverse("billing:plan"), {"limit": "10"})
+        self.assertEqual(update.call_args.args[:2], ("sub_1", Decimal("29.90")))   # the next charge comes lower
+        account = BillingAccount.objects.get(organization=self.org)
+        self.assertEqual((account.limit, account.pending_limit), (20, 10))         # still 20 until the due date
+        with patch("apps.billing.asaas.update_subscription_value") as update:
+            self.client.post(reverse("billing:plan"), {"action": "keep"})
         update.assert_called_once()
-        self.assertEqual(update.call_args.args[:2], ("sub_1", Decimal("49.90")))
+        account.refresh_from_db()
+        self.assertIsNone(account.pending_limit)
+
+    def test_a_few_cents_go_up_without_a_charge(self):
+        self._subscribed(days_left=0.2)
+        with patch("apps.billing.asaas.create_charge") as charge, patch("apps.billing.asaas.update_subscription_value"):
+            self.client.post(reverse("billing:plan"), {"limit": "20"})
+        charge.assert_not_called()
         self.assertEqual(BillingAccount.objects.get(organization=self.org).limit, 20)
+
+    def test_change_and_cancel_an_active_subscription(self):
+        self._subscribed(days_left=20)
+        with patch("apps.billing.asaas.update_subscription_value") as update:
+            self.client.post(reverse("billing:plan"), {"limit": "4"})
+        self.assertEqual(update.call_args.args[:2], ("sub_1", Decimal("14.90")))
+        self.assertEqual(BillingAccount.objects.get(organization=self.org).pending_limit, 4)
         with patch("apps.billing.asaas.cancel_subscription") as cancel:
             self.client.post(reverse("billing:plan"), {"action": "cancel"})
         cancel.assert_called_once_with("sub_1")
@@ -235,6 +274,39 @@ class WebhookTests(TestCase):
         account.refresh_from_db()
         self.assertEqual(account.status, BillingAccount.CANCELED)
         self.assertEqual(BillingEvent.objects.filter(organization=self.org).count(), 4)
+
+    def test_the_difference_paid_raises_the_tier_without_extending_the_period(self):
+        account = BillingAccount.objects.get(organization=self.org)
+        until = timezone.now() + timedelta(days=15)
+        BillingAccount.objects.filter(pk=account.pk).update(status=BillingAccount.ACTIVE, subscription_id="sub_9", customer_id="cus_9",
+                                                            limit=10, price=Decimal("29.90"), paid_until=until,
+                                                            upgrade_payment_id="pay_up", upgrade_limit=20, upgrade_value=Decimal("10.00"))
+        with patch("apps.billing.asaas.update_subscription_value") as update, patch("apps.billing.services._notify"):
+            response = self._send("PAYMENT_RECEIVED", {"object": "payment", "id": "pay_up", "customer": "cus_9", "value": 10.0,
+                                                       "dueDate": timezone.localdate().isoformat()})
+        self.assertEqual(response.json()["result"], "upgraded")
+        update.assert_called_once()
+        self.assertEqual(update.call_args.args[:2], ("sub_9", Decimal("49.90")))
+        account.refresh_from_db()
+        self.assertEqual((account.limit, account.upgrade_payment_id), (20, ""))
+        self.assertEqual(account.paid_until, until)                                # the period is the same
+
+    def test_the_lower_tier_starts_with_the_new_period_and_pauses_the_extra(self):
+        account = BillingAccount.objects.get(organization=self.org)
+        BillingAccount.objects.filter(pk=account.pk).update(status=BillingAccount.ACTIVE, subscription_id="sub_9", customer_id="cus_9",
+                                                            limit=10, price=Decimal("29.90"), paid_until=timezone.now(), pending_limit=4)
+        node = Node.objects.create(name="agente-w", organization=self.org)
+        game = Account.objects.create(node=node, label="C", email="w@example.com", password_enc="x", organization=self.org)
+        for i in range(6):
+            GameAccount.objects.create(account=game, lobby_account_id=1, server_id=f"w{i}", name=f"W{i}", server_language="br", server_number=i)
+        with patch("apps.billing.services._notify") as notify:
+            self._send("PAYMENT_RECEIVED", {"object": "payment", "id": "pay_next", "subscription": "sub_9",
+                                            "dueDate": timezone.localdate().isoformat()})
+        account.refresh_from_db()
+        self.assertEqual((account.limit, account.pending_limit), (4, None))
+        self.assertEqual(GameAccount._base_manager.filter(account=game, active=True).count(), 4)
+        self.assertFalse(GameAccount._base_manager.get(server_id="w5").active)        # the most recent went first
+        self.assertTrue(any("pausadas" in call.args[1] for call in notify.call_args_list))
 
     def test_a_notice_about_nobody_is_kept_and_ignored(self):
         response = self._send("PAYMENT_RECEIVED", {"object": "payment", "id": "pay_x", "subscription": "sub_estranha"})

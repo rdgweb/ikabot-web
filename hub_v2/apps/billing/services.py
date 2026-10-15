@@ -173,7 +173,16 @@ def _apply(account: BillingAccount, event: str, obj: dict) -> str:
             fields += ["limit", "price"]
     result = "linked" if fields else "seen"
 
-    if event in ("PAYMENT_CONFIRMED", "PAYMENT_RECEIVED"):
+    is_upgrade = bool(obj.get("object") == "payment" and account.upgrade_payment_id and obj.get("id") == account.upgrade_payment_id)
+    if is_upgrade:
+        if event in ("PAYMENT_CONFIRMED", "PAYMENT_RECEIVED"):
+            result = _finish_upgrade(account, fields)
+        elif event in ("PAYMENT_DELETED", "PAYMENT_REFUNDED"):
+            _clear_upgrade(account, fields)
+            result = "upgrade-dropped"
+        else:
+            result = "upgrade-" + event.lower()
+    elif event in ("PAYMENT_CONFIRMED", "PAYMENT_RECEIVED") and (obj.get("subscription") or obj.get("paymentLink")):
         due = _parse_day(obj.get("dueDate")) or timezone.localdate()
         until = _end_of(_add_month(due))
         if account.paid_until is None or until > account.paid_until:
@@ -182,9 +191,15 @@ def _apply(account: BillingAccount, event: str, obj: dict) -> str:
         if account.status != BillingAccount.ACTIVE:
             account.status = BillingAccount.ACTIVE
             fields.append("status")
+        if account.pending_limit:                       # the lower tier chosen before starts with the new period
+            account.limit, account.price, account.pending_limit = account.pending_limit, plans.price_for(account.pending_limit), None
+            fields += ["limit", "price", "pending_limit"]
+            paused = pause_beyond(account.organization, account.limit)
+            if paused:
+                _notify(account, f"ℹ️ IkaHub: a faixa mudou para até {account.limit} subcontas; {paused} subconta(s) foram pausadas.")
         result = "paid"
         _notify(account, f"✅ IkaHub: pagamento confirmado. Plano ativo até {timezone.localtime(account.paid_until):%d/%m/%Y}.")
-    elif event == "PAYMENT_OVERDUE":
+    elif event == "PAYMENT_OVERDUE" and (obj.get("subscription") or obj.get("paymentLink")):
         result = "overdue"
         _notify(account, "⚠️ IkaHub: o pagamento do plano venceu. Os jobs pausam em 3 dias se ele não for pago. "
                          "Veja em Minha organização > Plano.")
@@ -224,3 +239,113 @@ def _notify(account: BillingAccount, text: str) -> None:
             send_message(config.chat_id, text)
     except Exception:  # noqa: BLE001
         logger.warning("Billing notice to Telegram failed for organization %s", account.organization_id)
+
+
+# --- Changing tier (N-124) ---------------------------------------------------------------------
+
+def period_of(account: BillingAccount):
+    """(start, end) of the period already paid."""
+    end = account.paid_until
+    start_day = _sub_month(timezone.localtime(end).date())
+    return _end_of(start_day), end
+
+
+def _sub_month(day: date) -> date:
+    month = 12 if day.month == 1 else day.month - 1
+    year = day.year - 1 if day.month == 1 else day.year
+    return day.replace(year=year, month=month, day=min(day.day, calendar.monthrange(year, month)[1]))
+
+
+def upgrade_cost(account: BillingAccount, limit: int, now=None):
+    if not account.paid_until or limit <= account.limit:
+        return plans.Decimal("0.00")
+    start, end = period_of(account)
+    return plans.prorated(account.limit, limit, start, end, now or timezone.now())
+
+
+def change_tier(account: BillingAccount, organization, limit: int, *, now=None) -> dict:
+    """Going up: charge the prorated difference (the tier is raised when it is paid). Going down: from the
+    next due date. The same tier: undo what was waiting. Returns what happened."""
+    from . import asaas
+
+    now = now or timezone.now()
+    description = f"IkaHub — até {limit} subcontas"
+    if limit == account.limit:
+        undone = []
+        if account.pending_limit:
+            account.pending_limit = None
+            undone.append("pending_limit")
+            asaas.update_subscription_value(account.subscription_id, plans.price_for(limit), description)
+        if account.upgrade_payment_id:
+            _drop_upgrade_charge(account, undone)
+        if undone:
+            account.save(update_fields=undone + ["updated_at"])
+        return {"kind": "kept"}
+    if limit < account.limit:
+        if account.upgrade_payment_id:
+            fields = []
+            _drop_upgrade_charge(account, fields)
+        asaas.update_subscription_value(account.subscription_id, plans.price_for(limit), description)
+        account.pending_limit = limit
+        account.save(update_fields=["pending_limit", "upgrade_payment_id", "upgrade_limit", "upgrade_url", "upgrade_value", "updated_at"])
+        return {"kind": "down", "when": account.paid_until}
+    cost = upgrade_cost(account, limit, now)
+    if cost < plans.MIN_CHARGE:                         # a few cents at the end of the period: up at once
+        asaas.update_subscription_value(account.subscription_id, plans.price_for(limit), description)
+        account.limit, account.price, account.pending_limit = limit, plans.price_for(limit), None
+        account.save(update_fields=["limit", "price", "pending_limit", "updated_at"])
+        return {"kind": "up-free", "cost": cost}
+    if account.upgrade_payment_id:
+        fields = []
+        _drop_upgrade_charge(account, fields)
+    payment_id, url = asaas.create_charge(
+        customer_id=account.customer_id, value=cost, reference=f"upgrade:{organization.pk}:{limit}",
+        description=f"IkaHub — diferença para até {limit} subcontas até {timezone.localtime(account.paid_until):%d/%m}",
+    )
+    account.upgrade_payment_id, account.upgrade_url, account.upgrade_limit, account.upgrade_value = payment_id, url, limit, cost
+    account.pending_limit = None
+    account.save(update_fields=["upgrade_payment_id", "upgrade_url", "upgrade_limit", "upgrade_value", "pending_limit", "updated_at"])
+    return {"kind": "up-charge", "cost": cost, "url": url}
+
+
+def _drop_upgrade_charge(account: BillingAccount, fields: list) -> None:
+    from . import asaas
+
+    try:
+        asaas.delete_charge(account.upgrade_payment_id)
+    except asaas.AsaasError:
+        logger.warning("Upgrade charge of organization %s could not be removed", account.organization_id)
+    _clear_upgrade(account, fields)
+
+
+def _clear_upgrade(account: BillingAccount, fields: list) -> None:
+    account.upgrade_payment_id, account.upgrade_url, account.upgrade_limit = "", "", None
+    account.upgrade_value = plans.Decimal("0.00")
+    fields += ["upgrade_payment_id", "upgrade_url", "upgrade_limit", "upgrade_value"]
+
+
+def _finish_upgrade(account: BillingAccount, fields: list) -> str:
+    from . import asaas
+
+    limit = account.upgrade_limit or account.limit
+    account.limit, account.price = limit, plans.price_for(limit)
+    fields += ["limit", "price"]
+    _clear_upgrade(account, fields)
+    try:
+        asaas.update_subscription_value(account.subscription_id, account.price, f"IkaHub — até {limit} subcontas")
+    except asaas.AsaasError:
+        logger.warning("Subscription value of organization %s not updated after the upgrade", account.organization_id)
+    _notify(account, f"✅ IkaHub: diferença paga. Sua faixa agora é até {limit} subcontas.")
+    return "upgraded"
+
+
+def pause_beyond(organization, limit: int) -> int:
+    """Over the tier: pause the most recent active sub-accounts until it fits. Returns how many."""
+    from apps.accounts.models import GameAccount
+
+    active = list(GameAccount._base_manager.filter(account__organization=organization, active=True, blocked=False, account__active=True)
+                  .order_by("-created_at").values_list("pk", flat=True))
+    extra = active[: max(0, len(active) - limit)]
+    if extra:
+        GameAccount._base_manager.filter(pk__in=extra).update(active=False, updated_at=timezone.now())
+    return len(extra)

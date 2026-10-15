@@ -71,12 +71,19 @@ class PlanView(LoginRequiredMixin, TemplateView):
         state = state_of(account)
         active = active_subaccounts(self.request.organization)
         current = account.limit if account.status in (BillingAccount.ACTIVE, BillingAccount.CANCELED) else None
+        subscribed = bool(account.subscription_id and account.status == BillingAccount.ACTIVE and account.paid_until)
+        from .services import upgrade_cost
         ctx.update({
             "account": account, "state": state, "active": active, "can_change": _is_owner(self.request),
             "configured": asaas.configured(), "sandbox": settings.ASAAS_SANDBOX,
-            "options": [{"limit": limit, "price": plans.brl(plans.price_for(limit)), "fits": active <= limit,
-                         "current": limit == current, "suggested": limit == plans.tier_for(active)}
+            "options": [{"limit": limit, "price": plans.brl(plans.price_for(limit)),
+                         "fits": active <= limit or (subscribed and limit < account.limit),
+                         "current": limit == current, "suggested": limit == plans.tier_for(active),
+                         "now": plans.brl(upgrade_cost(account, limit)) if subscribed and limit > account.limit else "",
+                         "later": subscribed and limit < account.limit}
                         for limit in plans.limits()[:7]],
+            "subscribed": subscribed,
+            "upgrade_value": plans.brl(account.upgrade_value) if account.upgrade_payment_id else "",
             "more": [{"limit": limit, "price": plans.brl(plans.price_for(limit))} for limit in plans.limits()[7:]],
             "price": plans.brl(account.price) if account.price else "",
             "returned": self.request.GET.get("ok") == "1",
@@ -92,14 +99,21 @@ class PlanView(LoginRequiredMixin, TemplateView):
         try:
             if action == "cancel":
                 self._cancel(request, account)
+            elif action == "keep":
+                from .services import change_tier
+
+                change_tier(account, request.organization, account.limit)
+                messages.success(request, f"Faixa mantida: até {account.limit} subcontas.")
             else:
                 limit = int(request.POST.get("limit") or 0)
                 if limit not in plans.limits():
                     raise ValueError
-                if limit < active_subaccounts(request.organization):
+                if account.subscription_id and account.status == BillingAccount.ACTIVE:
+                    response = self._change(request, account, limit)
+                    if response is not None:
+                        return response
+                elif limit < active_subaccounts(request.organization):
                     messages.error(request, f"Você tem mais de {limit} subcontas ativas. Pause algumas antes de escolher esta faixa.")
-                elif account.subscription_id and account.status == BillingAccount.ACTIVE:
-                    self._change(request, account, limit)
                 else:
                     return self._subscribe(request, account, limit)
         except ValueError:
@@ -129,15 +143,32 @@ class PlanView(LoginRequiredMixin, TemplateView):
         return _leave_to(request, url)
 
     def _change(self, request, account, limit):
+        """N-124: up = pay the prorated difference first; down = from the next due date."""
+        from django.utils import timezone
+
         from apps.audit.services import record
 
-        price = plans.price_for(limit)
-        asaas.update_subscription_value(account.subscription_id, price, f"IkaHub — até {limit} subcontas")
+        from .services import change_tier
+
         old = account.limit
-        account.limit, account.price, account.link_limit = limit, price, limit
-        account.save(update_fields=["limit", "price", "link_limit", "updated_at"])
-        record("billing.changed", target=request.organization, target_label=f"{old} → {limit} subcontas · {plans.brl(price)}")
-        messages.success(request, f"Plano alterado para até {limit} subcontas ({plans.brl(price)}/mês) a partir da próxima cobrança.")
+        outcome = change_tier(account, request.organization, limit)
+        price = plans.brl(plans.price_for(limit))
+        if outcome["kind"] == "kept":
+            messages.success(request, f"Faixa mantida: até {limit} subcontas.")
+            return None
+        if outcome["kind"] == "down":
+            when = timezone.localtime(outcome["when"]).strftime("%d/%m")
+            record("billing.changed", target=request.organization, target_label=f"{old} → {limit} subcontas em {when} · {price}")
+            messages.success(request, f"A faixa passa para até {limit} subcontas ({price}/mês) no vencimento de {when}. "
+                                      f"Até lá continua a atual.")
+            return None
+        if outcome["kind"] == "up-free":
+            record("billing.changed", target=request.organization, target_label=f"{old} → {limit} subcontas · {price}")
+            messages.success(request, f"Faixa agora é até {limit} subcontas; a próxima cobrança já vem com {price}.")
+            return None
+        record("billing.changed", target=request.organization,
+               target_label=f"{old} → {limit} subcontas · diferença {plans.brl(outcome['cost'])}")
+        return _leave_to(request, outcome["url"])
 
     def _cancel(self, request, account):
         from apps.audit.services import record

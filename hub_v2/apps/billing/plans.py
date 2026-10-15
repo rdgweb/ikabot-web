@@ -16,6 +16,7 @@ ABOVE_MAX = 300
 TRIAL_DAYS = 7
 TRIAL_LIMIT = 4
 GRACE_DAYS = 3                       # after the due date, work goes on this long
+MIN_CHARGE = Decimal("5.00")         # the Asaas' smallest charge; a smaller difference goes up for free
 READ_ONLY_DAYS = 30                  # after the due date, the organization only reads
 
 
@@ -41,3 +42,15 @@ def tier_for(active: int) -> int:
 
 def brl(value) -> str:
     return "R$ " + f"{Decimal(value):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def prorated(old_limit: int, new_limit: int, period_start, period_end, now) -> Decimal:
+    """What going up costs for the days left in the period already paid (0 when going down)."""
+    from decimal import ROUND_HALF_UP
+
+    difference = price_for(new_limit) - price_for(old_limit)
+    total = (period_end - period_start).total_seconds()
+    left = (period_end - now).total_seconds()
+    if difference <= 0 or total <= 0 or left <= 0:
+        return Decimal("0.00")
+    return (difference * Decimal(min(left, total) / total)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)

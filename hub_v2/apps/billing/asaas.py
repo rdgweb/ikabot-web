@@ -76,6 +76,23 @@ def update_subscription_value(subscription_id: str, value: Decimal, description:
     })
 
 
+def create_charge(*, customer_id: str, value: Decimal, description: str, reference: str) -> tuple[str, str]:
+    """A one-off charge the customer pays on the Asaas page (card, boleto or Pix). Returns (id, invoice url)."""
+    from datetime import date, timedelta
+
+    data = _call("POST", "/payments", {
+        "customer": customer_id, "billingType": "UNDEFINED", "value": float(value),
+        "dueDate": (date.today() + timedelta(days=2)).isoformat(), "description": description,
+        "externalReference": reference,
+    })
+    return str(data.get("id") or ""), str(data.get("invoiceUrl") or "")
+
+
+def delete_charge(payment_id: str) -> None:
+    if payment_id:
+        _call("DELETE", f"/payments/{payment_id}")
+
+
 def cancel_subscription(subscription_id: str) -> None:
     _call("DELETE", f"/subscriptions/{subscription_id}")
 
