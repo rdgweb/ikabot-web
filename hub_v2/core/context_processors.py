@@ -86,6 +86,7 @@ def nav_context(request):
         "NAV_SECTIONS": filtered,
         "user_is_admin": is_admin,
         "user_is_operator": is_operator,
+        "user_is_staff": is_staff,
     }
 
 

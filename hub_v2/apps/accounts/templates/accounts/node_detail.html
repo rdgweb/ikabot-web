@@ -212,9 +212,11 @@
               hx-swap="innerHTML">
         <i class="bi bi-lightning"></i> Testar Proxy
       </button>
+      {% if user_is_staff %}
       <a href="{% url 'proxy:edit' proxy_profile.pk %}" class="btn btn-secondary btn-sm">
         <i class="bi bi-pencil"></i> Editar Proxy
       </a>
+      {% endif %}
     </div>
     <div id="proxy-test-result"></div>
   </div>

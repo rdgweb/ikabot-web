@@ -21,6 +21,14 @@ from .services import account_for, active_subaccounts, handle_event, state_of
 logger = logging.getLogger(__name__)
 
 
+def _public_url(request, path: str) -> str:
+    """N-126: behind the proxy the request looks like http; the Asaas only accepts the https address."""
+    base = (settings.SITE_URL or settings.HUB_PUBLIC_URL or "").rstrip("/")
+    if not base:
+        base = request.build_absolute_uri("/").rstrip("/").replace("http://", "https://", 1)
+    return base + path
+
+
 def _is_owner(request) -> bool:
     if request.user.is_superuser:
         return True
@@ -92,7 +100,7 @@ class PlanView(LoginRequiredMixin, TemplateView):
         price = plans.price_for(limit)
         link_id, url = asaas.create_payment_link(
             organization=request.organization, limit=limit, value=price,
-            success_url=request.build_absolute_uri("/organizacao/plano/?ok=1"),
+            success_url=_public_url(request, "/organizacao/plano/?ok=1"),
         )
         account.link_id, account.link_url, account.link_limit = link_id, url, limit
         account.save(update_fields=["link_id", "link_url", "link_limit", "updated_at"])

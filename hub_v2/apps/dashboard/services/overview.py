@@ -29,9 +29,10 @@ FULL_WAREHOUSE_PCT = 95
 GOLD_RUNWAY_WARN = timedelta(hours=48)
 GOLD_RUNWAY_BAD = timedelta(hours=12)
 LEVELS = {"bad": 0, "warn": 1, "info": 2, "ok": 3}
-CACHE_KEY = "dashboard:home:v1"
+# N-126: one cache per organization (the scope of the request), never one for everybody
+CACHE_KEY = "dashboard:home:v2:{org}"
 CACHE_SECONDS = 30
-HISTORY_CACHE_KEY = "dashboard:home:history24h"
+HISTORY_CACHE_KEY = "dashboard:home:history24h:{org}"
 HISTORY_CACHE_SECONDS = 600
 
 # One colour and one image per number, the same ones the game panel uses.
@@ -204,7 +205,7 @@ def account_row(game_account, snapshot, now, *, manual_control: bool = False) ->
     return row
 
 
-def build_alerts(rows, nodes, now, *, problem_workflows=0, pending_captchas=0, proxy_result=None) -> list[dict]:
+def build_alerts(rows, nodes, now, *, problem_workflows=0, pending_captchas=0, proxy_result=None, platform=True) -> list[dict]:
     """What needs the operator, most serious first. Empty means everything is in order."""
     alerts = []
     game, jobs = reverse("game:dashboard"), reverse("jobs:job-list")
@@ -222,7 +223,8 @@ def build_alerts(rows, nodes, now, *, problem_workflows=0, pending_captchas=0, p
             add("bad", "bi-lock-fill", f"{row['name']}: login bloqueado até {local:%d/%m %H:%M}",
                 reverse("accounts:account-list"), row["blocked_reason"])
     if pending_captchas:
-        add("bad", "bi-puzzle-fill", f"{pending_captchas} captcha(s) esperando resposta", reverse("captcha:config"),
+        add("bad", "bi-puzzle-fill", f"{pending_captchas} captcha(s) esperando resposta",
+            reverse("captcha:config") if platform else "/organizacao/telegram/",
             "Os jobs dessas contas ficam parados até alguém resolver.")
     for node in nodes:
         if node["accounts"] and not node["online"]:
@@ -236,7 +238,7 @@ def build_alerts(rows, nodes, now, *, problem_workflows=0, pending_captchas=0, p
         if row["stale"] and not row["vacation"] and not row["blocked_until"] and not row["manual_control"]:
             add("warn", "bi-clock-history", f"{row['name']} sem leitura" + (f" há {row['snapshot_age']}" if row["snapshot_age"] else ""),
                 jobs, "O Verificar Status desta conta não está rodando ou está falhando.")
-    without_proxy = [str(name) for name in ((proxy_result or {}).get("without_proxy") or [])]
+    without_proxy = [str(name) for name in ((proxy_result or {}).get("without_proxy") or [])] if platform else []
     if without_proxy:
         add("warn", "bi-shield-exclamation", "Sem proxy livre para: " + ", ".join(without_proxy[:4]), reverse("proxy:list"),
             "A lista de proxies não tem reserva suficiente.")
@@ -457,13 +459,30 @@ def workflow_health(now) -> dict:
 
 def history_24h(game_account_ids) -> dict:
     """The 24-hour KPI history, kept for a few minutes: it is the heavy part and moves slowly."""
-    history = cache.get(HISTORY_CACHE_KEY)
+    key = HISTORY_CACHE_KEY.format(org=_org_key())
+    history = cache.get(key)
     if history is None:
         from apps.game.services.kpi_history import build_history_map
 
         history = build_history_map(list(game_account_ids), "24h")
-        cache.set(HISTORY_CACHE_KEY, history, HISTORY_CACHE_SECONDS)
+        cache.set(key, history, HISTORY_CACHE_SECONDS)
     return history
+
+
+def _org_key() -> str:
+    from apps.orgs.scope import current_organization
+
+    organization = current_organization()
+    return str(organization.pk) if organization is not None else "none"
+
+
+def _is_platform() -> bool:
+    """The proxy pool and its maintenance belong to the platform: only its own organization sees them."""
+    from apps.orgs.scope import current_organization
+    from apps.orgs.services import DEFAULT_SLUG
+
+    organization = current_organization()
+    return organization is None or organization.slug == DEFAULT_SLUG
 
 
 def build_dashboard(now=None) -> dict:
@@ -483,8 +502,9 @@ def build_dashboard(now=None) -> dict:
     nodes = node_rows(now)
     workflows = workflow_health(now)
     pending_captchas = CaptchaChallenge.objects.filter(status__in=("pending", "solving")).exclude(expires_at__lt=now).count()
+    platform = _is_platform()
     try:
-        proxy_result, proxy_at = maintenance.last_result(), maintenance.last_run()
+        proxy_result, proxy_at = (maintenance.last_result(), maintenance.last_run()) if platform else ({}, None)
     except Exception:  # noqa: BLE001 - the proxy summary is a detail of this page
         proxy_result, proxy_at = {}, None
     try:
@@ -493,6 +513,7 @@ def build_dashboard(now=None) -> dict:
         history = {}
     alerts = build_alerts(
         rows, nodes, now, problem_workflows=workflows["problem_total"], pending_captchas=pending_captchas, proxy_result=proxy_result,
+        platform=platform,
     )
     return {
         "now": now,
@@ -515,8 +536,9 @@ def build_dashboard(now=None) -> dict:
 
 def dashboard_data() -> dict:
     """The dashboard, rebuilt at most every CACHE_SECONDS (the page refreshes itself every minute)."""
-    data = cache.get(CACHE_KEY)
+    key = CACHE_KEY.format(org=_org_key())
+    data = cache.get(key)
     if data is None:
         data = build_dashboard()
-        cache.set(CACHE_KEY, data, CACHE_SECONDS)
+        cache.set(key, data, CACHE_SECONDS)
     return data

@@ -212,10 +212,20 @@ def _keep_new_token_for_one_view(request, node) -> None:
         request.session[NEW_TOKEN_SESSION_KEY.format(pk=node.pk)] = token
 
 
+def _without_platform_fields(request, form):
+    """N-126: the Docker host (the platform's supervisor) is not a customer's choice."""
+    if not (request.user.is_staff or request.user.is_superuser):
+        form.fields.pop("docker_host", None)
+    return form
+
+
 class NodeCreateView(LoginRequiredMixin, CreateView):
     model = Node
     form_class = NodeCreateForm
     template_name = "accounts/node_create.html"
+
+    def get_form(self, form_class=None):
+        return _without_platform_fields(self.request, super().get_form(form_class))
 
     def form_valid(self, form):
         form.instance.transport = Node.TRANSPORT_HTTPS     # N-106: a new agent never touches the broker
@@ -247,6 +257,9 @@ class NodeEditView(LoginRequiredMixin, UpdateView):
     model = Node
     form_class = NodeEditForm
     template_name = "accounts/node_edit.html"
+
+    def get_form(self, form_class=None):
+        return _without_platform_fields(self.request, super().get_form(form_class))
 
     def get_success_url(self):
         return reverse_lazy("accounts:node-detail", kwargs={"pk": self.object.pk})

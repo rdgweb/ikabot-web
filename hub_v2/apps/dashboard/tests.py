@@ -54,8 +54,7 @@ class FormattingTests(TestCase):
 @override_settings(EXPECTED_AGENT_VERSION="")
 class DashboardDataTests(TestCase):
     def setUp(self):
-        cache.delete(services.CACHE_KEY)
-        cache.delete(services.HISTORY_CACHE_KEY)
+        cache.clear()   # N-126: the keys are per organization now
         self.now = timezone.now()
         self.node = Node.objects.create(name="node-dash", active=True, agent_last_seen_at=self.now, agent_version="0.1.95")
         self.account = Account.objects.create(node=self.node, label="Lobby Dash", email="dash@example.com", password_enc="x")
@@ -320,8 +319,7 @@ class DashboardDataTests(TestCase):
 @override_settings(EXPECTED_AGENT_VERSION="")
 class DashboardPageTests(TestCase):
     def setUp(self):
-        cache.delete(services.CACHE_KEY)
-        cache.delete(services.HISTORY_CACHE_KEY)
+        cache.clear()   # N-126: the keys are per organization now
         self.user = get_user_model().objects.create_user(username="dash-user", email="dash@example.com", password="secret123")
         self.node = Node.objects.create(name="node-pagina", active=True, agent_last_seen_at=timezone.now(), agent_version="0.1.95")
         self.account = Account.objects.create(node=self.node, label="Lobby", email="p@example.com", password_enc="x")
