@@ -11,9 +11,13 @@ from typing import Any
 from core.runner_registry import register_runner
 from runners.base import BaseRunner, RunnerResult
 from services.donation_automation import (
+    NO_STOCK_RETRY_SECONDS,
     RETRY_BUFFER_SECONDS,
+    TRADEGOOD_KEYS,
     build_modify_production_inputs,
+    cap_donation,
     compute_due_delay,
+    is_quantity_refused,
 )
 from services.island_donation import (
     clean_number,
@@ -162,15 +166,22 @@ class DonateLoopRunner(BaseRunner):
                 interval_minutes=interval_minutes,
             )
             planned_amount = computed_amount + carry_over_amount
-            donation_amount = min(planned_amount, before["remaining"]) if before["remaining"] > 0 else planned_amount
-            next_carry_over = max(0, planned_amount - donation_amount)
+            # N-130: never more than the city has, keeping aside what the construction plan reserved
+            resource_key = "wood" if donation_type == "resource" else TRADEGOOD_KEYS.get(str(city_context.get("tradegood_type") or ""), "")
+            stock = self._fetch_city_resources(city_id).get(resource_key, 0) if resource_key else 0
+            reserved = self._reserved_for(jid, ga_id, city_id, resource_key)
+            donation_amount, next_carry_over = cap_donation(
+                planned=planned_amount, remaining=before["remaining"], stock=stock, reserved=reserved, cycle_amount=computed_amount,
+            )
 
             if donation_amount <= 0:
-                next_delay = max(60, base_delay)
+                no_stock = planned_amount > 0 and stock - reserved < planned_amount
+                next_delay = max(60, min(base_delay, NO_STOCK_RETRY_SECONDS) if no_stock else base_delay)
                 self.log(
                     jid,
                     "info",
-                    f"Ciclo sem doacao: cidade={city_name} | destino={target_label} | motivo=sem_excedente",
+                    f"Ciclo sem doacao: cidade={city_name} | destino={target_label} | "
+                    f"motivo={'sem_estoque' if no_stock else 'sem_excedente'} | estoque={stock:,} | reservado_obras={reserved:,}",
                 )
                 if ga_id:
                     self.save_game_client(ga_id, client)
@@ -192,6 +203,7 @@ class DonateLoopRunner(BaseRunner):
                 "info",
                 (
                     f"Postando doacao: planejado={planned_amount:,} | efetivo={donation_amount:,} | "
+                    f"estoque={stock:,} | reservado_obras={reserved:,} | "
                     f"faltava_antes={before['remaining']:,} | sobra_proximo={next_carry_over:,}"
                 ),
             )
@@ -282,7 +294,7 @@ class DonateLoopRunner(BaseRunner):
                 "serraria",
                 "sawmill",
             )
-            is_transient = any(p in exc_str.lower() for p in _TRANSIENT_PATTERNS)
+            is_transient = any(p in exc_str.lower() for p in _TRANSIENT_PATTERNS) or is_quantity_refused(exc_str)
             retry_delay = 3600 if is_transient else 60
             level = "info" if is_transient else "error"
             self.log(jid, level, f"Erro no ciclo: {exc_str} | retry_em={retry_delay}s")
@@ -388,6 +400,18 @@ class DonateLoopRunner(BaseRunner):
             return True
         return bool(project_state.get("is_upgrading")) and next_level >= target_level
 
+    def _reserved_for(self, jid: str, ga_id: str | None, city_id: str, resource_key: str) -> int:
+        """What the construction plan keeps for this city and resource (0 when unknown)."""
+        if not ga_id or not resource_key:
+            return 0
+        try:
+            payload = self.hub.get_construction_reservations(game_account_id=ga_id, city_ids=[city_id]) or {}
+            bucket = (payload.get("reservations") or {}).get(str(city_id)) or {}
+            return max(0, self._to_int(bucket.get(resource_key, bucket.get("glas") if resource_key == "crystal" else 0), 0))
+        except Exception as exc:  # noqa: BLE001 - without the reservations, donate only what the city has
+            self.log(jid, "warn", f"Reservas de construcao indisponiveis: {exc}")
+            return 0
+
     def _fetch_city_resources(self, city_id: str) -> dict[str, int]:
         client = getattr(self, "_current_client", None)
         if client is None:
@@ -405,6 +429,11 @@ class DonateLoopRunner(BaseRunner):
             raise ValueError(f"city_resources_not_found:{city_id}")
         return {
             "wood": clean_number(resource_match.group(1)),
+            # the game numbers the tradegoods: 1 wine, 2 marble, 3 crystal, 4 sulfur (N-130)
+            "marble": clean_number(resource_match.group(2)),
+            "wine": clean_number(resource_match.group(3)),
+            "sulfur": clean_number(resource_match.group(4)),
+            "crystal": clean_number(resource_match.group(5)),
             "storage_capacity": clean_number(storage_match.group(1)),
             "wood_production_h": int(float(production_match.group(1)) * 3600) if production_match else 0,
             "island_id": clean_number(city.get("islandId")),
