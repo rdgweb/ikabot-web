@@ -95,6 +95,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "apps.website.middleware.SearchEnginesMiddleware",
+    "core.middleware.MemoryWatchMiddleware",   # N-132: which request makes a process swell
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.locale.LocaleMiddleware",

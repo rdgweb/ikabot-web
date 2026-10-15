@@ -620,6 +620,12 @@ class LoginContextView(APIView):
         return Response(login_context())
 
 
+def _watch_failure(reason: str) -> None:
+    from apps.game.services.ikabotapi_watch import record_failure
+
+    record_failure(reason)
+
+
 class BlackboxTokenView(APIView):
     """
     GET /api/agent/blackbox/token/?user_agent=<string>&wait=<seconds>[&locale=..][&timezone_id=..]
@@ -728,15 +734,20 @@ class BlackboxTokenView(APIView):
                 token_data = {"token": token_data}
             if context and isinstance(token_data, dict):
                 token_data = {**token_data, "context_applied": context_applied}
+            from apps.game.services.ikabotapi_watch import record_success
+
+            record_success()
             return Response(token_data)
         except http_requests.ConnectionError:       # includes ConnectTimeout: not reachable
             logger.error("ikabotapi unreachable for blackbox token request")
+            _watch_failure("inacessível")
             return Response(
                 {"error": "ikabotapi inacessivel (container parado ou sem rede).", "reason": "unavailable"},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
         except http_requests.Timeout:
             logger.error("ikabotapi did not produce a blackbox token within %ss", budget)
+            _watch_failure(f"sem resposta em {budget}s")
             return Response(
                 {
                     "error": f"ikabotapi nao gerou o blackbox em {budget}s.",

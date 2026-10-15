@@ -238,6 +238,12 @@ def build_alerts(rows, nodes, now, *, problem_workflows=0, pending_captchas=0, p
         if row["stale"] and not row["vacation"] and not row["blocked_until"] and not row["manual_control"]:
             add("warn", "bi-clock-history", f"{row['name']} sem leitura" + (f" há {row['snapshot_age']}" if row["snapshot_age"] else ""),
                 jobs, "O Verificar Status desta conta não está rodando ou está falhando.")
+    if platform:
+        from apps.game.services.ikabotapi_watch import is_stuck
+
+        if is_stuck():
+            add("bad", "bi-robot", "ikabotapi não está gerando o blackbox", "",
+                "Os logins estão parados. Reinicie o ikabotapi.")
     without_proxy = [str(name) for name in ((proxy_result or {}).get("without_proxy") or [])] if platform else []
     if without_proxy:
         add("warn", "bi-shield-exclamation", "Sem proxy livre para: " + ", ".join(without_proxy[:4]), reverse("proxy:list"),
