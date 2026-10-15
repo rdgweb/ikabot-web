@@ -11,6 +11,8 @@ function gameDashboard() {
     filterAccount: '',
     filterServer: '',
     filterCity: '',
+    filterVisibleCount: null,
+    filterSummary: '',
     kpiModal: null,
     historyMap: {},
     historyLoaded: false,
@@ -60,6 +62,7 @@ function gameDashboard() {
         this.$nextTick(() => this.renderKpiCharts());
       });
       this.syncModalScrollLock(Boolean(this.kpiModal));
+      this.readFiltersFromUrl();
       this.applyFilter();
       this.initProjectionValues();
       this.loadDayHistory();
@@ -258,28 +261,104 @@ function gameDashboard() {
       return this.visibleCardElements().map((el) => this.cardFromElement(el));
     },
 
-    applyFilter() {
-      const wantedNode = String(this.filterNode || '');
-      const wantedAccount = String(this.filterAccount || '');
-      const wantedServer = String(this.filterServer || '');
+    // ── Filters (N-128: node, account, player and city; the city narrows inside each account) ──
+
+    filterKeys: [['no', 'filterNode'], ['conta', 'filterAccount'], ['jogador', 'filterServer'], ['cidade', 'filterCity']],
+
+    hasFilter() {
+      return Boolean(this.filterNode || this.filterAccount || this.filterServer || this.filterCity);
+    },
+
+    clearFilters() {
+      this.filterNode = '';
+      this.filterAccount = '';
+      this.filterServer = '';
+      this.filterCity = '';
+      this.applyFilter();
+    },
+
+    readFiltersFromUrl() {
+      let params;
+      try { params = new URLSearchParams(window.location.search); } catch (e) { return; }
+      this.filterKeys.forEach(([param, field]) => {
+        const value = params.get(param);
+        if (value) this[field] = value;
+      });
+    },
+
+    writeFiltersToUrl() {
+      try {
+        const url = new URL(window.location.href);
+        this.filterKeys.forEach(([param, field]) => {
+          if (this[field]) url.searchParams.set(param, this[field]);
+          else url.searchParams.delete(param);
+        });
+        if (url.href !== window.location.href) window.history.replaceState(window.history.state, '', url.href);
+      } catch (e) { /* the filter still works without the address */ }
+    },
+
+    cardMatches(el, skip) {
+      const d = el.dataset;
       const wantedCity = this.normalize(this.filterCity);
+      const cityNames = (d.cityNames || '').split('|').map((name) => this.normalize(name)).filter(Boolean);
+      return (skip === 'node' || !this.filterNode || String(d.node || '') === String(this.filterNode))
+        && (skip === 'account' || !this.filterAccount || String(d.account || '') === String(this.filterAccount))
+        && (skip === 'player' || !this.filterServer || String(d.gameAccount || '') === String(this.filterServer))
+        && (skip === 'city' || !wantedCity || cityNames.includes(wantedCity));
+    },
 
-      this.allCardElements().forEach((el) => {
-        const cityNames = (el.dataset.cityNames || '')
-          .split('|')
-          .map((name) => this.normalize(name))
-          .filter(Boolean);
+    // Each list offers only what still has accounts under the other filters.
+    narrowOptions(cards) {
+      const root = document.querySelector('[data-panel-filters]');
+      if (!root) return;
+      root.querySelectorAll('select[data-filter]').forEach((select) => {
+        const kind = select.dataset.filter;
+        const pool = cards.filter((el) => this.cardMatches(el, kind));
+        Array.from(select.options).forEach((option) => {
+          if (!option.value) return;
+          let available;
+          if (kind === 'node') available = pool.some((el) => String(el.dataset.node || '') === option.value);
+          else if (kind === 'account') available = pool.some((el) => String(el.dataset.account || '') === option.value);
+          else if (kind === 'player') available = pool.some((el) => String(el.dataset.gameAccount || '') === option.value);
+          else {
+            const owners = (option.dataset.gameAccounts || '').split('|');
+            available = pool.some((el) => owners.includes(String(el.dataset.gameAccount || '')));
+          }
+          const keep = available || option.value === select.value;
+          option.hidden = !keep;
+          option.disabled = !keep;
+        });
+      });
+    },
 
-        const matchNode = !wantedNode || String(el.dataset.node || '') === wantedNode;
-        const matchAccount = !wantedAccount || String(el.dataset.account || '') === wantedAccount;
-        const matchServer = !wantedServer || String(el.dataset.server || '') === wantedServer;
-        const matchCity = !wantedCity || cityNames.includes(wantedCity);
-        const visible = matchNode && matchAccount && matchServer && matchCity;
+    applyFilter() {
+      const wantedCity = this.normalize(this.filterCity);
+      const cards = this.allCardElements();
+      let shown = 0;
 
+      cards.forEach((el) => {
+        const visible = this.cardMatches(el);
         el.dataset.filterVisible = visible ? '1' : '0';
         el.classList.toggle('hidden', !visible);
+        if (visible) shown += 1;
+
+        // the city filter shows only that city inside the account, in every tab
+        let cityRows = 0;
+        el.querySelectorAll('[data-city-name]').forEach((part) => {
+          const out = Boolean(wantedCity) && this.normalize(part.dataset.cityName) !== wantedCity;
+          part.dataset.cityOut = out ? '1' : '0';
+          part.style.display = out ? 'none' : '';
+          if (!out && part.hasAttribute('data-city-troops')) cityRows += 1;
+        });
+        const count = el.querySelector('[data-city-count]');
+        if (count) count.textContent = cityRows;
       });
 
+      this.filterVisibleCount = shown;
+      const summary = document.querySelector('[data-panel-filters] [data-of]');
+      this.filterSummary = summary ? `${shown} ${summary.dataset.of} ${cards.length} ${summary.dataset.unit}` : '';
+      this.narrowOptions(cards);
+      this.writeFiltersToUrl();
       this.recalcKpi();
     },
 
@@ -296,7 +375,28 @@ function gameDashboard() {
       let crystal = 0;
       let sulfur = 0;
 
+      const wantedCity = this.normalize(this.filterCity);
       this.kpiCards().forEach((card) => {
+        if (wantedCity) {
+          // N-128: with a city chosen, the cities, resources and forces are those of that city
+          const el = this.visibleCardElements().find((node) => (node.dataset.gameAccount || '') === String(card.gameAccountId || ''));
+          gold += card.gold;
+          income += card.income;
+          (el ? Array.from(el.querySelectorAll('tr[data-city-troops]')) : []).forEach((row) => {
+            if (row.dataset.cityOut === '1') return;
+            const values = Array.from(row.querySelectorAll('.js-projected-resource')).map((node) => parseInt(node.dataset.base || '0', 10) || 0);
+            cities += 1;
+            wood += values[0] || 0;
+            wine += values[1] || 0;
+            marble += values[2] || 0;
+            crystal += values[3] || 0;
+            sulfur += values[4] || 0;
+            resources += values.reduce((sum, value) => sum + value, 0);
+            troops += parseInt(row.dataset.cityTroops || '0', 10) || 0;
+            ships += parseInt(row.dataset.cityShips || '0', 10) || 0;
+          });
+          return;
+        }
         gold += card.gold;
         income += card.income;
         cities += card.cities;

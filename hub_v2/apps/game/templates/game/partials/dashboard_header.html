@@ -4,43 +4,58 @@
     <p class="text-sm text-muted mt-1">Visão geral de todas as contas com dados em tempo real</p>
   </div>
 
-  <div class="flex flex-wrap gap-2 items-center">
-    {% if nodes.count > 1 %}
-    <select x-model="filterNode" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto">
+  <div class="flex flex-wrap gap-2 items-center" data-panel-filters>
+    {% if nodes|length > 1 %}
+    <select x-model="filterNode" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto" style="padding-right: 1.9rem;" aria-label="Filtrar por nó" data-filter="node">
       <option value="">Todos os nós</option>
       {% for node in nodes %}
-      <option value="{{ node.pk }}">{{ node.name }}</option>
+      <option value="{{ node.pk }}" data-node="{{ node.pk }}">{{ node.name }}</option>
       {% endfor %}
     </select>
     {% endif %}
 
-    {% if accounts.count > 1 %}
-    <select x-model="filterAccount" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto">
+    {% if accounts|length > 1 %}
+    <select x-model="filterAccount" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto" style="padding-right: 1.9rem;" aria-label="Filtrar por conta" data-filter="account">
       <option value="">Todas as contas</option>
       {% for acct in accounts %}
-      <option value="{{ acct.pk }}">{{ acct.label }}</option>
+      <option value="{{ acct.pk }}" data-account="{{ acct.pk }}" data-node="{{ acct.node_id|default_if_none:"" }}">{{ acct.label }}</option>
       {% endfor %}
     </select>
     {% endif %}
 
-    <select x-model="filterServer" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto">
-      <option value="">Todos os servidores</option>
+    {% if account_cards|length > 1 %}
+    <select x-model="filterServer" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto" style="padding-right: 1.9rem;" aria-label="Filtrar por jogador" data-filter="player">
+      <option value="">Todos os jogadores</option>
       {% for card in account_cards %}
-      <option value="{{ card.server_id }}">{{ card.player_name }} ({{ card.server_id }})</option>
+      <option value="{{ card.game_account_id }}" data-game-account="{{ card.game_account_id }}" data-account="{{ card.account.pk }}" data-node="{{ card.account.node_id|default_if_none:"" }}">{{ card.player_name }} · {{ card.server_id }}</option>
       {% endfor %}
     </select>
+    {% endif %}
 
     {% if city_options %}
-    <select x-model="filterCity" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto">
+    <select x-model="filterCity" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto" style="padding-right: 1.9rem;" aria-label="Filtrar por cidade" data-filter="city">
       <option value="">Todas as cidades</option>
-      {% for city_name in city_options %}
-      <option value="{{ city_name }}">{{ city_name }}</option>
+      {% for city in city_options %}
+      <option value="{{ city.name }}" data-game-accounts="{{ city.game_accounts }}">{{ city.name }}</option>
       {% endfor %}
     </select>
     {% endif %}
 
-    <button x-show="filterNode || filterAccount || filterServer || filterCity" x-cloak
-            @click="filterNode=''; filterAccount=''; filterServer=''; filterCity=''; applyFilter()"
+    {% if account_cards %}
+    <button type="button"
+            hx-post="{% url 'game:check-status-all' %}"
+            hx-vals='js:{game_account_ids: Array.from(document.querySelectorAll(".game-card[data-filter-visible=\"1\"]")).map(function (el) { return el.dataset.gameAccount; }).join(",")}'
+            hx-swap="none" hx-disabled-elt="this"
+            class="btn btn-secondary btn-sm !py-1 !px-2 text-xs"
+            :title="hasFilter() ? 'Pede Verificar Status para as contas que o filtro mostra' : 'Pede Verificar Status para todas as contas'">
+      <i class="bi bi-arrow-clockwise"></i> <span x-text="hasFilter() ? 'Atualizar as filtradas' : 'Atualizar todas'">Atualizar todas</span>
+    </button>
+    {% endif %}
+
+    <span x-show="hasFilter()" x-cloak class="text-[11px] text-muted" x-text="filterSummary"
+          data-of="de" data-unit="contas"></span>
+    <button x-show="hasFilter()" x-cloak
+            @click="clearFilters()"
             class="btn btn-secondary btn-sm !py-1 !px-2 text-xs">
       <i class="bi bi-x"></i> Limpar
     </button>

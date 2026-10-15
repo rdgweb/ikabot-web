@@ -423,7 +423,8 @@
           <tbody>
             {% for city in card.cities %}
             <tr class="hover:bg-[var(--ik-sand-light)] transition-colors"
-                style="border-bottom: 1px solid var(--ik-line);">
+                style="border-bottom: 1px solid var(--ik-line);"
+                data-city-name="{{ city.name }}" data-city-troops="{{ city.troop_total|default:0 }}" data-city-ships="{{ city.fleet_total|default:0 }}">
               <td class="py-2 px-2">
                 <div class="flex items-center gap-1">
                   {% with city.produced_tradegood|default:city.tradegood|tradegood_icon as tg_icon %}
@@ -524,7 +525,7 @@
             {# Totals #}
             <tr style="border-top: 2px solid var(--ik-line); background: var(--ik-sand-light);">
               <td class="py-2 px-2 font-semibold text-ink text-[11px]">
-                Total ({{ card.cities|length }})
+                Total (<span data-city-count>{{ card.cities|length }}</span>)
               </td>
               <td class="py-2 px-1 text-right font-mono font-bold text-ink"><span class="js-projected-col-total" data-col="0">{{ card.totals.wood|intcomma }}</span></td>
               <td class="py-2 px-1 text-right font-mono font-bold text-ink"><span class="js-projected-col-total" data-col="1">{{ card.totals.wine|intcomma }}</span></td>
@@ -694,7 +695,7 @@
         {# ── Occupation / Blockade alert cards ── #}
         {% for city in card.cities %}
         {% if city.city_occupied or city.harbour_occupied %}
-        <div class="mb-3 rounded-lg overflow-hidden" style="border-left:4px solid #dc2626;background:#fef2f2;">
+        <div class="mb-3 rounded-lg overflow-hidden" style="border-left:4px solid #dc2626;background:#fef2f2;" data-city-name="{{ city.name }}">
           <div class="px-3 pt-2.5 pb-2">
             <div class="flex items-center gap-1.5 text-[11px] font-bold text-red-800 mb-2">
               <i class="bi bi-exclamation-triangle-fill text-red-600 text-xs"></i>
@@ -772,7 +773,7 @@
                   {% for city in card.cities %}
                   {% for row in city.troop_rows %}
                   <tr class="transition-colors {% if row.kind == 'enemy' %}bg-red-50 hover:bg-red-100{% else %}hover:bg-[var(--ik-sand-light)]{% endif %}"
-                      style="border-bottom: 1px solid var(--ik-line);">
+                      style="border-bottom: 1px solid var(--ik-line);" data-city-name="{{ city.name }}">
                     {% if forloop.first %}
                     <td class="py-2 px-2 align-top" rowspan="{{ city.troop_rows|length }}">
                       <div class="flex items-center gap-1">
@@ -854,7 +855,7 @@
                   {% for city in card.cities %}
                   {% for row in city.fleet_rows %}
                   <tr class="transition-colors {% if row.kind == 'enemy' %}bg-red-50 hover:bg-red-100{% else %}hover:bg-[var(--ik-sand-light)]{% endif %}"
-                      style="border-bottom: 1px solid var(--ik-line);">
+                      style="border-bottom: 1px solid var(--ik-line);" data-city-name="{{ city.name }}">
                     {% if forloop.first %}
                     <td class="py-2 px-2 align-top" rowspan="{{ city.fleet_rows|length }}">
                       <div class="flex items-center gap-1">
@@ -921,7 +922,7 @@
       <div class="space-y-3">
         {% for city in card.cities %}
         {% if city.buildings %}
-        <div>
+        <div data-city-name="{{ city.name }}">
           <div class="flex items-center gap-1.5 mb-1.5">
             {% with city.produced_tradegood|default:city.tradegood|tradegood_icon as tg_icon %}
             {% if tg_icon %}
@@ -981,6 +982,12 @@
     </div>{# end collapsible body #}
   </div>
   {% endfor %}
+
+  <div class="card text-center py-10" x-show="filterVisibleCount === 0" x-cloak>
+    <i class="bi bi-funnel text-3xl text-muted" style="opacity:.4;"></i>
+    <p class="mt-2 text-sm font-semibold text-ink">Nenhuma conta com esses filtros</p>
+    <button type="button" class="btn btn-secondary btn-sm mt-3" @click="clearFilters()"><i class="bi bi-x"></i> Limpar filtros</button>
+  </div>
 </div>
 
 {% else %}

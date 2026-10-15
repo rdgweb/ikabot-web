@@ -7,9 +7,11 @@ Returns an HTMX-compatible response that triggers a toast notification.
 """
 
 import json
+from datetime import timedelta
 
 from django.http import HttpResponse
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.utils import timezone
 from django.views import View
 
 from apps.accounts.models import Account, GameAccount
@@ -23,6 +25,57 @@ ACTION_NAMES = {
     602: "Dump Mundo",
     9002: "Revolta",
 }
+
+
+CHECK_STATUS = 100
+CHECK_ALL_SPACING_SECONDS = 20     # one login every 20 s, so ikabotapi is never flooded
+
+
+class CheckAllStatusView(LoginRequiredMixin, View):
+    """N-127: "Verificar Status" for every game account on the panel (the ones the filters leave visible).
+
+    Accounts that already have one waiting or running are skipped; the others start one after another.
+    """
+
+    def post(self, request):
+        wanted = {part.strip() for part in (request.POST.get("game_account_ids") or "").split(",") if part.strip()}
+        game_accounts = (GameAccount.objects.filter(active=True, account__active=True)
+                         .select_related("account__node").order_by("account__label", "name"))
+        if wanted:
+            game_accounts = game_accounts.filter(pk__in=wanted)
+        game_accounts = [ga for ga in game_accounts if ga.account.node_id and ga.account.node.active]
+        if not game_accounts:
+            return RunActionView._toast("Nenhuma conta com nó ativo para verificar.", "error")
+
+        from apps.jobs.models import Job
+
+        busy = set(Job.objects.filter(game_account__in=game_accounts, action_code=CHECK_STATUS,
+                                      status__in=("queued", "scheduled", "running"))
+                   .values_list("game_account_id", flat=True))
+        now = timezone.now()
+        started = 0
+        for ga in game_accounts:
+            if ga.pk in busy:
+                continue
+            when = now + timedelta(seconds=CHECK_ALL_SPACING_SECONDS * started) if started else None
+            create_job_with_workflow(
+                account=ga.account,
+                game_account=ga,
+                node=ga.account.node,
+                action_code=CHECK_STATUS,
+                inputs={},
+                status="scheduled" if when else "queued",
+                scheduled_for=when,
+            )
+            started += 1
+
+        skipped = len(game_accounts) - started
+        if not started:
+            return RunActionView._toast("Todas essas contas já têm um Verificar Status na fila.", "info")
+        message = f"Verificar Status pedido para {started} conta{'s' if started != 1 else ''}"
+        if skipped:
+            message += f" ({skipped} já estava{'m' if skipped != 1 else ''} na fila)"
+        return RunActionView._toast(message + ".", "success")
 
 
 class RunActionView(LoginRequiredMixin, View):

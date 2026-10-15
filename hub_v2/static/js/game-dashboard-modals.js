@@ -105,7 +105,7 @@ function gameDashboardModals() {
         .filter((account) => {
           const matchNode = !wantedNode || String(account.node_id || '') === wantedNode;
           const matchAccount = !wantedAccount || String(account.account_id || '') === wantedAccount;
-          const matchServer = !wantedServer || String(account.server_id || '') === wantedServer;
+          const matchServer = !wantedServer || String(account.game_account_id || '') === wantedServer;
           const cityNames = (account.city_names || []).map((name) => this.normalize(name));
           const matchCity = !wantedCity || cityNames.includes(wantedCity);
           return matchNode && matchAccount && matchServer && matchCity;
@@ -205,7 +205,7 @@ function gameDashboardModals() {
         .filter((account) => {
           const matchNode = !wantedNode || String(account.node_id || '') === wantedNode;
           const matchAccount = !wantedAccount || String(account.account_id || '') === wantedAccount;
-          const matchServer = !wantedServer || String(account.server_id || '') === wantedServer;
+          const matchServer = !wantedServer || String(account.game_account_id || '') === wantedServer;
           const cityNames = (account.city_names || []).map((name) => this.normalize(name));
           const matchCity = !wantedCity || cityNames.includes(wantedCity);
           return matchNode && matchAccount && matchServer && matchCity;

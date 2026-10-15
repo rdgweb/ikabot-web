@@ -5,7 +5,7 @@ _DASHBOARD_VERSION_CACHE_KEY = "game_dashboard_version"
 
 def get_dashboard_cache_key(user_id) -> str:
     version = cache.get(_DASHBOARD_VERSION_CACHE_KEY) or "0"
-    return f"game_dashboard_{user_id}_v{version}"
+    return f"game_dashboard_{user_id}_v{version}_f2"  # f2: city options carry their game accounts
 
 
 def bump_dashboard_cache_version() -> str:

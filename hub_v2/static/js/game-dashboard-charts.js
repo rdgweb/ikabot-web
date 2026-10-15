@@ -28,7 +28,7 @@ function gameDashboardCharts() {
       if (this.filterCity) return `Cidade: ${this.filterCity}`;
       if (visibleCards.length === 1) return visibleCards[0].player;
       if (this.filterAccount) return 'Conta filtrada';
-      if (this.filterServer) return 'Servidor filtrado';
+      if (this.filterServer) return 'Jogador filtrado';
       return 'Geral';
     },
 
@@ -357,7 +357,7 @@ function gameDashboardCharts() {
           let sum = 0;
           table.querySelectorAll('tbody tr .js-projected-resource').forEach((r) => {
             const tr = r.closest('tr');
-            if (!tr || tr.querySelector('.js-projected-col-total')) return;
+            if (!tr || tr.dataset.cityOut === '1' || tr.querySelector('.js-projected-col-total')) return;
             const resources = tr.querySelectorAll('.js-projected-resource');
             if (resources[col] === r) sum += parseNum(r.textContent);
           });
@@ -369,7 +369,11 @@ function gameDashboardCharts() {
           const table = node.closest('table');
           if (!table) return;
           let sum = 0;
-          table.querySelectorAll('.js-projected-total').forEach((t) => { sum += parseNum(t.textContent); });
+          table.querySelectorAll('.js-projected-total').forEach((t) => {
+            const row = t.closest('tr');
+            if (row && row.dataset.cityOut === '1') return;
+            sum += parseNum(t.textContent);
+          });
           const txt = numberFormatter.format(sum);
           if (node.textContent !== txt) node.textContent = txt;
         });

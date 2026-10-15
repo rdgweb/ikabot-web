@@ -82,7 +82,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         total_income = 0
         account_cards = []
         resource_modal_data = []
-        city_options: set[str] = set()
+        city_options: dict[str, set[str]] = {}
 
         for acct in accounts:
             game_accounts = getattr(acct, "active_game_accounts", [])
@@ -172,7 +172,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                     })
                     city_name = str(city.get("name") or "").strip()
                     if city_name:
-                        city_options.add(city_name)
+                        city_options.setdefault(city_name, set()).add(str(ga.pk))
 
                 # --- Resource projections ---
                 # Production rates from Ikariam API are per-second; convert to per-hour
@@ -532,7 +532,10 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         history_map = {}
 
         ctx["account_cards"] = account_cards
-        ctx["city_options"] = sorted(city_options, key=str.lower)
+        ctx["city_options"] = [
+            {"name": name, "game_accounts": "|".join(sorted(ids))}
+            for name, ids in sorted(city_options.items(), key=lambda item: item[0].lower())
+        ]
         ctx["kpi_history"] = history_map
         ctx["resource_modal_data"] = resource_modal_data
         ctx["account_detail_data"] = account_detail_data
