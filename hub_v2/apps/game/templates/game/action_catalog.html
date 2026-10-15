@@ -7,7 +7,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="space-y-6">
+<div class="space-y-6" data-action-search-root>
 
   {# ── Header ── #}
   <div>
@@ -15,9 +15,11 @@
     <p class="text-sm text-muted mt-1">{{ total_actions }} ações disponíveis para automação — clique em uma ação para criar um job</p>
   </div>
 
+  {% include "game/_action_search.html" with action_groups=action_groups autofocus=True %}
+
   {# ── Categories ── #}
   {% for group in action_groups %}
-  <div>
+  <div data-action-group="{{ group.key }}">
     {# Category header #}
     <div class="flex items-center gap-2 mb-3">
       <div class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
@@ -27,7 +29,7 @@
         <i class="bi {{ group.icon }} text-base"></i>
       </div>
       <h2 class="text-base font-bold text-ink">{{ group.label }}</h2>
-      <span class="text-[10px] text-muted font-medium px-1.5 py-0.5 rounded-full bg-[var(--ik-sand)]">
+      <span class="text-[10px] text-muted font-medium px-1.5 py-0.5 rounded-full bg-[var(--ik-sand)]" data-group-count>
         {{ group.actions|length }}
       </span>
     </div>
@@ -36,7 +38,7 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
       {% for action in group.actions %}
       {% if action.ready %}
-      <button type="button"
+      <button type="button" data-action-item data-ready="{% if action.ready %}1{% else %}0{% endif %}" data-search="{{ action.search }}" data-fields="{{ action.fields }}" data-visible="{{ action.name }} {{ action.description }} {{ action.code }}"
               class="card !p-4 hover:shadow-md hover:border-[var(--ik-sea)]/50 transition-all group cursor-pointer text-left w-full"
               hx-get="{% url 'jobs:job-create' %}?action={{ action.code }}"
               hx-target="#job-modal-body"
@@ -45,7 +47,7 @@
               hx-boost="false"
               onclick="event.stopPropagation(); this.dispatchEvent(new CustomEvent('open-modal-jobcreate', {bubbles: true}));">
       {% else %}
-      <div class="card !p-4 opacity-45 cursor-not-allowed text-left w-full" title="Em breve">
+      <div class="card !p-4 opacity-45 cursor-not-allowed text-left w-full" title="Em breve" data-action-item data-ready="{% if action.ready %}1{% else %}0{% endif %}" data-search="{{ action.search }}" data-fields="{{ action.fields }}" data-visible="{{ action.name }} {{ action.description }} {{ action.code }}">
       {% endif %}
         <div class="flex items-start gap-3">
           <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
@@ -68,6 +70,7 @@
             {% if action.description %}
             <p class="text-[11px] text-muted leading-relaxed mt-1 line-clamp-2">{{ action.description }}</p>
             {% endif %}
+            <p class="text-[10px] mt-1 font-medium" style="display:none; color: var(--ik-sea);" data-field-hint data-prefix="Campo:"></p>
             <div class="flex items-center gap-1.5 mt-2">
               {% if action.recurring %}
               <span class="text-[9px] font-medium px-1.5 py-0.5 rounded-full"

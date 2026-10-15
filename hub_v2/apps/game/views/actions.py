@@ -14,4 +14,5 @@ class ActionCatalogView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["action_groups"] = get_actions_for_ui()
+        ctx["total_actions"] = sum(len(group["actions"]) for group in ctx["action_groups"])
         return ctx

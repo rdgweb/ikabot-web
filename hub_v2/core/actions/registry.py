@@ -1,3 +1,5 @@
+import unicodedata
+
 from .admin import ACTIONS as ADMIN_ACTIONS
 from .automation import ACTIONS as AUTOMATION_ACTIONS
 from .constants import (
@@ -56,6 +58,25 @@ def get_action_contract(code: int) -> dict:
     }
 
 
+def _plain(text: str) -> str:
+    """Lowercase, without accents: what the search in Ações do Jogo compares (N-128)."""
+    decomposed = unicodedata.normalize("NFD", str(text or ""))
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).lower()
+
+
+def _field_labels(meta: dict) -> list[str]:
+    labels = []
+    for field in meta.get("inputs") or []:
+        label = str(field.get("label") or "").strip() if isinstance(field, dict) else ""
+        if label and label not in labels:
+            labels.append(label)
+    return labels
+
+
+def _search_text(*parts: str) -> str:
+    return " ".join(_plain(part) for part in parts if part)
+
+
 def get_actions_for_ui() -> list[dict]:
     groups = []
     ordered_categories = CATEGORY_ORDER
@@ -69,10 +90,16 @@ def get_actions_for_ui() -> list[dict]:
             meta = ACTION_CATALOG[code]
             if meta.get("ui_hidden"):
                 continue
+            fields = _field_labels(meta)
             actions.append(
                 {
                     "code": code,
                     "name": meta["name"],
+                    "name_en": meta.get("name_en", ""),
+                    "search": _search_text(meta["name"], meta.get("name_en", ""), meta.get("description", ""), str(code),
+                                           category_meta["label"], *fields,
+                                           "loop" if meta.get("recurring") else "", "longa" if meta.get("long_running") else ""),
+                    "fields": "|".join(fields),
                     "icon": meta.get("icon", "bi-play"),
                     "description": meta.get("description", ""),
                     "recurring": meta.get("recurring", False),

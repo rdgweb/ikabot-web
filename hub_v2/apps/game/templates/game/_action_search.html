@@ -1,0 +1,167 @@
+{# N-128: search over the game actions. Used by Ações do Jogo and by the "choose action" step of the job modal. #}
+{# Goes inside a [data-action-search-root] that holds [data-action-group="<key>"] blocks of [data-action-item] entries. #}
+{# Receives: action_groups, autofocus (optional) #}
+<div class="space-y-2">
+  <div class="relative">
+    <i class="bi bi-search text-sm text-muted" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); pointer-events:none;"></i>
+    <input type="search" data-action-search-input
+           class="form-input w-full"
+           style="padding-left:36px; padding-right:44px;"
+           placeholder="Buscar ação: nome, descrição, campo ou código"
+           aria-label="Buscar ação"
+           autocomplete="off" spellcheck="false"
+           {% if autofocus %}data-autofocus{% endif %}>
+    <kbd class="text-[10px] text-muted font-mono rounded"
+         style="position:absolute; right:10px; top:50%; transform:translateY(-50%); border:1px solid var(--ik-line); padding:1px 6px; background:var(--ik-paper);"
+         title="Atalho: / para buscar, Enter abre a primeira, Esc limpa">/</kbd>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-1.5">
+    <button type="button" data-action-search-cat=""
+            class="text-[11px] font-semibold rounded-full px-2.5 py-1 transition-colors"
+            style="border:1px solid var(--ik-line);">Todas</button>
+    {% for group in action_groups %}
+    <button type="button" data-action-search-cat="{{ group.key }}"
+            class="text-[11px] font-semibold rounded-full px-2.5 py-1 transition-colors inline-flex items-center gap-1"
+            style="border:1px solid var(--ik-line);" data-color="{{ group.color }}">
+      <i class="bi {{ group.icon }}" style="color: {{ group.color }};"></i>{{ group.label }}
+    </button>
+    {% endfor %}
+    <span class="text-[11px] text-muted ml-auto" data-action-search-count
+          data-of="de" data-unit="ações"></span>
+  </div>
+
+  <div data-action-search-empty class="text-center py-10" style="display:none;">
+    <i class="bi bi-search text-3xl text-muted" style="opacity:.35;"></i>
+    <p class="mt-2 text-sm text-ink font-semibold">Nenhuma ação encontrada</p>
+    <p class="text-xs text-muted mt-1">Nada bate com “<span data-action-search-term></span>”. Tente outra palavra ou volte para todas as categorias.</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  var script = document.currentScript;
+  var root = script && script.closest('[data-action-search-root]');
+  if (!root) return;
+  // On a full page load this runs before the action cards below it exist.
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+
+  function start() {
+  if (root.dataset.searchReady) return;
+  root.dataset.searchReady = '1';
+
+  var input = root.querySelector('[data-action-search-input]');
+  var counter = root.querySelector('[data-action-search-count]');
+  var empty = root.querySelector('[data-action-search-empty]');
+  var emptyTerm = root.querySelector('[data-action-search-term]');
+  var chips = Array.prototype.slice.call(root.querySelectorAll('[data-action-search-cat]'));
+  var groups = Array.prototype.slice.call(root.querySelectorAll('[data-action-group]'));
+  var items = Array.prototype.slice.call(root.querySelectorAll('[data-action-item]'));
+  var category = '';
+
+  function plain(text) {
+    return String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  }
+  // "doar" also finds "doação", "comprar" finds "compra": a word of 4+ letters counts without its last letter.
+  function hit(haystack, term) {
+    if (haystack.indexOf(term) !== -1) return true;
+    return term.length >= 4 && !/^\d+$/.test(term) && haystack.indexOf(term.slice(0, -1)) !== -1;
+  }
+  function hasAll(haystack, terms) {
+    return terms.every(function (t) { return hit(haystack, t); });
+  }
+  function paintChips() {
+    chips.forEach(function (chip) {
+      var on = chip.dataset.actionSearchCat === category;
+      chip.style.background = on ? 'var(--ik-ink)' : 'var(--ik-paper)';
+      chip.style.color = on ? 'var(--ik-paper)' : 'var(--ik-ink)';
+      chip.style.borderColor = on ? 'var(--ik-ink)' : 'var(--ik-line)';
+      chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+  function apply() {
+    var terms = plain(input.value).split(/\s+/).filter(Boolean);
+    var shown = 0;
+    groups.forEach(function (group) {
+      var inCategory = !category || group.dataset.actionGroup === category;
+      var count = 0;
+      group.querySelectorAll('[data-action-item]').forEach(function (item) {
+        var ok = inCategory && hasAll(item.dataset.search || '', terms);
+        item.style.display = ok ? '' : 'none';
+        var hint = item.querySelector('[data-field-hint]');
+        if (hint) {
+          var label = '';
+          if (ok && terms.length && !hasAll(plain(item.dataset.visible), terms)) {
+            var fields = (item.dataset.fields || '').split('|');
+            for (var i = 0; i < fields.length && !label; i++) {
+              var field = plain(fields[i]);
+              if (field && terms.some(function (t) { return hit(field, t); })) label = fields[i];
+            }
+          }
+          hint.textContent = label ? (hint.dataset.prefix + ' ' + label) : '';
+          hint.style.display = label ? '' : 'none';
+        }
+        if (ok) count++;
+      });
+      group.style.display = count ? '' : 'none';
+      var badge = group.querySelector('[data-group-count]');
+      if (badge) badge.textContent = count;
+      shown += count;
+    });
+    var unit = counter.dataset.unit;
+    counter.textContent = (terms.length || category)
+      ? shown + ' ' + counter.dataset.of + ' ' + items.length + ' ' + unit
+      : items.length + ' ' + unit;
+    empty.style.display = shown ? 'none' : '';
+    emptyTerm.textContent = input.value.trim();
+  }
+  function firstVisible() {
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (item.style.display !== 'none' && item.dataset.ready === '1' && item.closest('[data-action-group]').style.display !== 'none') return item;
+    }
+    return null;
+  }
+
+  input.addEventListener('input', apply);
+  input.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      var first = firstVisible();
+      if (first) first.click();
+    } else if (event.key === 'Escape') {
+      if (input.value) { event.preventDefault(); event.stopPropagation(); input.value = ''; apply(); }
+      else { input.blur(); }
+    }
+  });
+  chips.forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      category = chip.dataset.actionSearchCat === category ? '' : chip.dataset.actionSearchCat;
+      paintChips();
+      apply();
+      input.focus();
+    });
+  });
+
+  if (!window.__ikActionSearchKey) {
+    window.__ikActionSearchKey = true;
+    document.addEventListener('keydown', function (event) {
+      if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
+      var target = event.target;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      var inputs = Array.prototype.slice.call(document.querySelectorAll('[data-action-search-input]'))
+        .filter(function (el) { return el.offsetParent !== null; });
+      var box = inputs[inputs.length - 1];
+      if (box) { event.preventDefault(); box.focus(); box.select(); }
+    });
+  }
+
+  paintChips();
+  apply();
+  if (input.hasAttribute('data-autofocus') && window.matchMedia('(min-width: 640px)').matches) {
+    setTimeout(function () { input.focus(); }, 30);
+  }
+  }
+})();
+</script>
