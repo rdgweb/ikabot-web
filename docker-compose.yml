@@ -332,7 +332,7 @@ services:
 
   # Umami (perfil "stats", N-119): conta as visitas do site público, sem cookie e sem guardar IP.
   # Nunca é publicado: o hub entrega o script e repassa a contagem (/stats/...); o painel do
-  # Umami só abre em 127.0.0.1 (túnel SSH). Primeiro login admin / umami: troque na hora.
+  # Umami abre em UMAMI_BIND (padrão 127.0.0.1; ponha o IP da rede interna no .env). Primeiro login admin / umami: troque na hora.
   umami:
     image: ${UMAMI_IMAGE:-ghcr.io/umami-software/umami:3}
     restart: unless-stopped
@@ -345,7 +345,7 @@ services:
       APP_SECRET: ${UMAMI_APP_SECRET:-}
       DISABLE_TELEMETRY: "1"
     ports:
-      - "127.0.0.1:${UMAMI_PORT:-3001}:3000"
+      - "${UMAMI_BIND:-127.0.0.1}:${UMAMI_PORT:-3001}:3000"
     mem_limit: 384m
     profiles:
       - stats
