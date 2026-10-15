@@ -135,6 +135,10 @@ services:
       EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
       EMAIL_FROM: ${EMAIL_FROM:-}
       SIGNUP_OPEN: ${SIGNUP_OPEN:-false}
+      # agente da plataforma (N-131): o Host Docker cujo supervisor cria os agentes dos clientes
+      PLATFORM_AGENT_HOST_ID: ${PLATFORM_AGENT_HOST_ID:-}
+      PLATFORM_AGENT_LIMIT: ${PLATFORM_AGENT_LIMIT:-10}
+      PLATFORM_AGENT_MEMORY_MB: ${PLATFORM_AGENT_MEMORY_MB:-256}
       TZ: ${TZ:-America/Sao_Paulo}
     ports:
       # com o Nginx Proxy Manager na frente, o instalador põe HUB_BIND=127.0.0.1

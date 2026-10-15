@@ -1,6 +1,7 @@
 """Strict proxy session — NEVER fallback to local IP for game requests."""
 
 import logging
+import os
 
 import requests
 
@@ -16,6 +17,15 @@ GAME_DOMAINS = [
 # se o servidor não responde. Jobs zumbi (48h+ "running" sem heartbeat) foram
 # rastreados até chamadas HTTP sem timeout explícito.
 DEFAULT_TIMEOUT_SECONDS = 60
+
+
+def proxy_required() -> bool:
+    """N-131: a platform agent never reaches the game from the server's own IP."""
+    return os.environ.get("AGENT_REQUIRE_PROXY", "").strip().lower() in ("1", "true", "yes")
+
+
+class ProxyRequired(requests.exceptions.ConnectionError):
+    """A game request without a proxy on an agent that must always use one."""
 
 
 class StrictProxySession(requests.Session):
@@ -42,6 +52,10 @@ class StrictProxySession(requests.Session):
                     "https": self._proxy_url,
                 }
                 logger.debug(f"Using proxy for: {request.url}")
+            elif proxy_required():
+                raise ProxyRequired(
+                    "Agente da plataforma sem proxy: conexao com o jogo bloqueada (nunca sai pelo IP do servidor)."
+                )
             else:
                 logger.debug(f"No proxy configured, using local IP for: {request.url}")
         return super().send(request, **kwargs)

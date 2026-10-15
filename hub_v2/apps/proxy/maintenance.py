@@ -300,6 +300,12 @@ def run_proxy_maintenance(*, reason: str = "") -> dict:
     from .platform import end_due
 
     end_due(now=now)                            # N-129: add-ons switched off whose paid period is over
+    from apps.accounts.platform_agent import end_due as agents_end_due
+
+    try:
+        agents_end_due(now=now)                 # N-131: platform agents over or held
+    except Exception:  # noqa: BLE001 - the proxies are maintained even if this fails
+        logger.exception("Platform agents could not be checked")
     _heal_nodes(report, now)
     healthy_accounts = _heal_accounts(report)
     _clear_proxy_login_blocks(healthy_accounts, report, now)

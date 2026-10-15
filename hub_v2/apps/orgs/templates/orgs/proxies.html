@@ -19,6 +19,13 @@
     <span class="org-icon {% if own and own_ok == own|length %}ok{% elif own %}warn{% endif %}"><i class="bi bi-shield-lock"></i></span>
     <span><span class="org-card-label">Seus proxies</span><span class="org-card-value" style="display: block;">{{ own_ok }} <small style="font-size: .8rem; color: var(--ik-muted);">de {{ own|length }} ok</small></span></span>
   </div>
+  {% if not is_platform and agent_offered %}
+  <div class="org-card">
+    <span class="org-icon gold"><i class="bi bi-hdd-network"></i></span>
+    <span><span class="org-card-label">Agente da plataforma</span><span class="org-card-value" style="display: block;">{{ agent_price }} <small style="font-size: .8rem; color: var(--ik-muted);">/mês por conta</small></span>
+      <span class="org-card-note">sem PC ligado · sempre por proxy · {% if agent_slots %}{{ agent_slots }} vaga(s){% else %}esgotado{% endif %}</span></span>
+  </div>
+  {% endif %}
   {% if not is_platform %}
   <div class="org-card">
     <span class="org-icon gold"><i class="bi bi-globe2"></i></span>
@@ -39,6 +46,7 @@
       {% if row.account.platform_proxies and row.account.platform_proxies_ends_at %}<span class="org-chip gold">plataforma até {{ row.account.platform_proxies_ends_at|date:"d/m" }}</span>
       {% elif row.account.platform_proxies %}<span class="org-chip ok"><i class="bi bi-globe2"></i> plataforma</span>{% endif %}
       {% if is_owner %}
+      <span class="org-chip off" title="Proxies da plataforma">proxies</span>
       <form method="post">{% csrf_token %}<input type="hidden" name="action" value="addon"><input type="hidden" name="account" value="{{ row.account.pk }}">
         <input type="hidden" name="on" value="{% if row.account.platform_proxies and not row.account.platform_proxies_ends_at %}0{% else %}1{% endif %}">
         <button type="submit" class="org-switch{% if row.account.platform_proxies and not row.account.platform_proxies_ends_at %} on{% endif %}"
@@ -46,6 +54,22 @@
                 {% if not subscribed and not row.account.platform_proxies %}disabled{% endif %}
                 {% if row.account.platform_proxies and not row.account.platform_proxies_ends_at %}onclick="return confirm('Desligar os proxies da plataforma desta conta? Eles ficam até o fim do período pago.');"{% endif %}></button>
       </form>
+      {% endif %}
+      {% if agent_offered %}
+        {% if row.agent.code == 'online' %}<span class="org-chip ok"><i class="bi bi-hdd-network"></i> agente online{% if row.agent.ends_at %} até {{ row.agent.ends_at|date:"d/m" }}{% endif %}</span>
+        {% elif row.agent.code == 'starting' %}<span class="org-chip gold"><i class="bi bi-hourglass-split"></i> agente subindo</span>
+        {% elif row.agent.code == 'failed' %}<span class="org-chip bad" title="{{ row.agent.message }}"><i class="bi bi-exclamation-triangle"></i> agente com erro</span>
+        {% elif row.agent.code == 'paying' %}<a class="org-chip gold" href="{{ row.agent.url }}" hx-boost="false" target="_blank" rel="noopener"><i class="bi bi-credit-card"></i> pagar o agente</a>{% endif %}
+        {% if is_owner %}
+        <span class="org-chip off" title="Agente da plataforma ({{ agent_price }}/mês)">agente</span>
+        <form method="post" hx-boost="false">{% csrf_token %}<input type="hidden" name="action" value="agent"><input type="hidden" name="account" value="{{ row.account.pk }}">
+          <input type="hidden" name="on" value="{% if row.agent.code == 'off' or row.agent.ends_at %}1{% else %}0{% endif %}">
+          <button type="submit" class="org-switch{% if row.agent.code != 'off' and not row.agent.ends_at %} on{% endif %}"
+                  title="Agente da plataforma ({{ agent_price }}/mês)" aria-label="Agente da plataforma para {{ row.account.label }}"
+                  {% if not subscribed and row.agent.code == 'off' %}disabled{% endif %}
+                  {% if row.agent.code != 'off' and not row.agent.ends_at %}onclick="return confirm('Desligar o agente da plataforma desta conta? Ele fica até o fim do período já cobrado e depois a conta volta ao nó anterior.');"{% endif %}></button>
+        </form>
+        {% endif %}
       {% endif %}
     {% endif %}
   </div>

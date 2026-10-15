@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import signal
 import time
 from datetime import datetime, timezone
@@ -163,6 +164,108 @@ def replace_agent(client, node_id: str, target_image: str) -> str:
         raise
 
 
+# --- Platform agents (N-131): one container per customer's GameForge account, created and removed here.
+PLATFORM_LABEL = "com.ikabot.platform-agent"
+NAME_PATTERN = re.compile(r"^ikahub-plat-[a-z0-9]{8,32}$")
+ALLOWED_ENV = {"HUB_URL", "AGENT_NODE_ID", "AGENT_TOKEN", "AGENT_TRANSPORT", "AGENT_NAME", "AGENT_REQUIRE_PROXY"}
+MAX_MEMORY = 512 * 1024 * 1024
+MAX_NANO_CPUS = 1_000_000_000
+
+
+def platform_containers(client, node_id: str):
+    """Only containers this supervisor created as platform agents for that node — never anything else."""
+    found = []
+    for container in client.containers.list(all=True, filters={"label": [f"{PLATFORM_LABEL}=true", f"com.ikabot.node-id={node_id}"]}):
+        labels = container.attrs.get("Config", {}).get("Labels") or {}
+        if labels.get(PLATFORM_LABEL) == "true" and labels.get("com.ikabot.host-id") == HOST_ID and labels.get("com.ikabot.node-id") == node_id:
+            found.append(container)
+    return found
+
+
+def validate_platform_request(job: dict) -> None:
+    validate_image(job.get("image", ""))
+    if not NAME_PATTERN.match(job.get("container_name", "")):
+        raise RuntimeError("Invalid container name for a platform agent.")
+    environment = job.get("environment") or {}
+    if set(environment) - ALLOWED_ENV:
+        raise RuntimeError("Unexpected environment for a platform agent.")
+    if urlsplit(environment.get("HUB_URL", "")).scheme != "https":
+        raise RuntimeError("A platform agent talks to the hub over HTTPS only.")
+    if environment.get("AGENT_REQUIRE_PROXY") != "1" or environment.get("AGENT_NODE_ID") != job.get("node_id"):
+        raise RuntimeError("A platform agent must require a proxy and belong to its node.")
+
+
+def create_platform_agent(client, job: dict) -> str:
+    validate_platform_request(job)
+    node_id = job["node_id"]
+    existing = platform_containers(client, node_id)
+    if existing:
+        container = existing[0]
+        container.reload()
+        if container.status != "running":
+            container.start()
+        return container.name
+    client.images.pull(job["image"])
+    memory = min(int(job.get("memory_bytes") or 268_435_456), MAX_MEMORY)
+    nano_cpus = min(int(job.get("nano_cpus") or 500_000_000), MAX_NANO_CPUS)
+    created = client.api.create_container(
+        image=job["image"],
+        name=job["container_name"],
+        environment=[f"{key}={value}" for key, value in (job.get("environment") or {}).items()],
+        labels={
+            "com.ikabot.managed": "true", PLATFORM_LABEL: "true", "com.ikabot.host-id": HOST_ID,
+            "com.ikabot.node-id": node_id, "com.ikabot.component": "agent",
+        },
+        host_config=client.api.create_host_config(
+            restart_policy={"Name": "unless-stopped"},
+            network_mode="bridge",                         # outside the internal network: the hub only by HTTPS
+            mem_limit=memory, nano_cpus=nano_cpus, pids_limit=256,
+            security_opt=["no-new-privileges:true"], cap_drop=["ALL"],
+            log_config={"Type": "json-file", "Config": {"max-size": "10m", "max-file": "3"}},
+        ),
+    )
+    container = client.containers.get(created["Id"])
+    container.start()
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        container.reload()
+        if container.status == "running":
+            time.sleep(5)
+            container.reload()
+            if container.status == "running":
+                return container.name
+        time.sleep(1)
+    status = container.status
+    container.remove(force=True)
+    raise RuntimeError(f"Platform agent ended in state {status}.")
+
+
+def remove_platform_agent(client, node_id: str) -> int:
+    removed = 0
+    for container in platform_containers(client, node_id):
+        container.remove(force=True)
+        removed += 1
+    return removed
+
+
+def run_provision(client) -> None:
+    job = request("GET", "/api/agent/supervisor/provision/next/").get("provision")
+    if not job:
+        return
+    try:
+        if job.get("action") == "create":
+            name = create_platform_agent(client, job)
+            message = f"Agente {name} rodando."
+        elif job.get("action") == "remove":
+            message = f"{remove_platform_agent(client, job['node_id'])} container(s) removido(s)."
+        else:
+            raise RuntimeError("Unknown provisioning action.")
+        request("POST", f"/api/agent/supervisor/provision/{job['id']}/status/", json={"status": "succeeded", "message": message})
+    except Exception as exc:
+        logger.exception("Provisioning failed")
+        request("POST", f"/api/agent/supervisor/provision/{job['id']}/status/", json={"status": "failed", "message": str(exc)[:500]})
+
+
 def run():
     if not hub_url_allowed(HUB_URL) or not HOST_ID or not HOST_TOKEN:
         raise SystemExit("HUB_URL (HTTPS, or http://<service> inside the same compose), IKABOT_HOST_ID and IKABOT_HOST_TOKEN are required.")
@@ -196,6 +299,7 @@ def run():
                     request("POST", f"/api/agent/supervisor/updates/{update_id}/status/", json={
                         "status": "failed", "message": f"Rollback executado: {exc}",
                     })
+            run_provision(client)
         except Exception:
             logger.exception("Supervisor cycle failed")
         for _ in range(POLL_SECONDS):

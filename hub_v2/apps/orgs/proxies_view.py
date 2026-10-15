@@ -48,6 +48,7 @@ class ProxiesView(OrgPage):
         from apps.accounts.models import Account
         from apps.billing import plans
         from apps.billing.services import account_for, subscribed
+        from apps.accounts import platform_agent
         from apps.proxy import platform
         from apps.proxy.models import AccountProxyReservation, ProxyProfile
 
@@ -62,12 +63,15 @@ class ProxiesView(OrgPage):
                 "account": account, "total": len(reserved),
                 "ok": sum(1 for proxy in reserved if proxy.active and proxy.last_test_status is True),
                 "lent": sum(1 for proxy in reserved if proxy.lent_to_id == account.pk),
+                "agent": _agent_state(account),
             })
         billing = account_for(organization)
         ctx.update({
             "own": own, "own_ok": sum(1 for proxy in own if proxy.active and proxy.last_test_status is True),
             "rows": rows, "addon_price": plans.brl(plans.ADDON_PROXIES), "subscribed": subscribed(billing),
             "available": platform.accounts_available(), "is_platform": billing.status == billing.EXEMPT,
+            "agent_price": plans.brl(plans.ADDON_AGENT), "agent_slots": platform_agent.slots_left(),
+            "agent_offered": platform_agent.host() is not None,
         })
         return ctx
 
@@ -90,7 +94,43 @@ class ProxiesView(OrgPage):
             if self.role != Membership.OWNER:
                 raise Http404()
             self._addon(request, record)
+        elif action == "agent":
+            if self.role != Membership.OWNER:
+                raise Http404()
+            leave = self._agent(request, record)
+            if leave is not None:
+                return leave
         return redirect("orgs:proxies")
+
+    def _agent(self, request, record):
+        from apps.accounts.models import Account
+        from apps.billing import asaas, plans
+        from apps.billing.services import account_for, set_agent_addon
+        from apps.billing.views import _leave_to
+
+        account = Account.objects.filter(pk=request.POST.get("account")).first()
+        if account is None:
+            raise Http404()
+        on = request.POST.get("on") == "1"
+        try:
+            outcome = set_agent_addon(account_for(request.organization), account, on)
+        except (asaas.AsaasError, RuntimeError) as exc:
+            messages.error(request, str(exc))
+            return None
+        if not outcome.get("ok"):
+            messages.error(request, outcome["reason"])
+            return None
+        record("account.updated", target=account, target_label=f"{account.label}: agente da plataforma {'ligado' if on else 'desligado'}")
+        kind = outcome.get("kind")
+        if kind == "charge":
+            return _leave_to(request, outcome["url"])
+        if kind == "on":
+            messages.success(request, f"Agente da plataforma pedido para {account.label}: o container nasce em até 1 minuto.")
+        elif kind == "off" and outcome.get("until"):
+            messages.success(request, f"O agente da plataforma de {account.label} fica até {outcome['until']:%d/%m} e depois a conta volta ao nó anterior.")
+        elif kind == "dropped":
+            messages.success(request, "Pedido de agente cancelado.")
+        return None
 
     def _add(self, request):
         from apps.audit.services import record
@@ -159,3 +199,20 @@ class ProxiesView(OrgPage):
             messages.success(request, f"Os proxies da plataforma de {account.label} ficam até {outcome['until']:%d/%m} e depois voltam ao pool.")
         else:
             messages.success(request, f"Proxies da plataforma desligados para {account.label}.")
+
+
+def _agent_state(account) -> dict:
+    """What the owner sees about the platform agent of this account."""
+    from apps.accounts.models import AgentProvisionRequest
+
+    if account.platform_agent_payment_id and not account.platform_agent:
+        return {"code": "paying", "url": account.platform_agent_payment_url}
+    if not account.platform_agent:
+        return {"code": "off"}
+    node = account.platform_agent_node
+    if node is not None and node.is_online:
+        return {"code": "online", "ends_at": account.platform_agent_ends_at}
+    last = AgentProvisionRequest._base_manager.filter(node_ref=node.pk).order_by("-created_at").first() if node else None
+    if last is not None and last.status == "failed":
+        return {"code": "failed", "message": last.message[:160], "ends_at": account.platform_agent_ends_at}
+    return {"code": "starting", "ends_at": account.platform_agent_ends_at}

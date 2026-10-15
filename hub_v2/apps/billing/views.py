@@ -196,6 +196,9 @@ class PlanView(LoginRequiredMixin, TemplateView):
             from apps.proxy.platform import schedule_all_off
 
             schedule_all_off(request.organization, account.paid_until)   # N-129: add-ons end with the paid period
+            from apps.accounts.platform_agent import schedule_all_off as agents_off
+
+            agents_off(request.organization, account.paid_until)
         record("billing.canceled", target=request.organization, target_label=request.organization.name)
         messages.success(request, "Assinatura cancelada. O plano vale até o fim do período já pago.")
 

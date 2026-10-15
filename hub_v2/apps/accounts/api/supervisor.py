@@ -121,3 +121,37 @@ class SupervisorUpdateStatusView(APIView):
             update.finished_at = timezone.now()
         update.save(update_fields=["status", "status_message", "finished_at", "updated_at"])
         return Response({"ok": True})
+
+
+class SupervisorProvisionNextView(APIView):
+    """N-131: the next platform agent to create or remove on this machine (only the platform's machine has any)."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from apps.accounts.platform_agent import next_request
+
+        host = _authenticated_host(request)
+        if not host:
+            return Response({"error": "Invalid host credentials."}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            payload = next_request(host)
+        except RuntimeError as exc:
+            return Response({"provision": None, "error": str(exc)})
+        return Response({"provision": payload})
+
+
+class SupervisorProvisionStatusView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request, request_id):
+        from apps.accounts.platform_agent import finish_request
+
+        host = _authenticated_host(request)
+        if not host:
+            return Response({"error": "Invalid host credentials."}, status=status.HTTP_403_FORBIDDEN)
+        if not finish_request(host, request_id, str(request.data.get("status") or ""), str(request.data.get("message") or "")):
+            return Response({"error": "Provision request not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"ok": True})

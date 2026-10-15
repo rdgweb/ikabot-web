@@ -71,6 +71,7 @@ class Node(UUIDTimestampModel):
     TRANSPORT_REDIS, TRANSPORT_HTTPS = "redis", "https"
     TRANSPORT_CHOICES = [(TRANSPORT_REDIS, "Redis (interno)"), (TRANSPORT_HTTPS, "HTTPS")]
     transport = models.CharField(max_length=8, choices=TRANSPORT_CHOICES, default=TRANSPORT_REDIS)
+    platform_managed = models.BooleanField(default=False)   # N-131: run by the platform for one customer's account
 
     active = models.BooleanField(default=True)
 
@@ -249,6 +250,14 @@ class Account(UUIDTimestampModel):
     platform_proxies = models.BooleanField(default=False)
     platform_proxies_ends_at = models.DateTimeField(null=True, blank=True)   # switched off: lasts until the paid period ends
     platform_proxies_billed = models.BooleanField(default=False)   # already in a paid monthly charge since switched on
+    # N-131: the platform runs this account's agent (a node of its own on the platform's machine)
+    platform_agent = models.BooleanField(default=False)
+    platform_agent_ends_at = models.DateTimeField(null=True, blank=True)
+    platform_agent_billed = models.BooleanField(default=False)
+    platform_agent_payment_id = models.CharField(max_length=64, blank=True, default="")   # the prorated charge to switch it on
+    platform_agent_payment_url = models.URLField(blank=True, default="")
+    platform_agent_node = models.ForeignKey("Node", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    previous_node = models.ForeignKey("Node", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
 
     class Meta:
         ordering = ["label"]
@@ -412,3 +421,25 @@ class GameAccount(UUIDTimestampModel):
     def server(self) -> str:
         """Full server hostname for backward compat."""
         return f"{self.server_id}.ikariam.gameforge.com"
+
+
+class AgentProvisionRequest(UUIDTimestampModel):
+    """N-131: the platform's supervisor creates or removes the container of a platform agent.
+
+    The node key in clear text exists only here, encrypted, until the supervisor takes it once.
+    """
+
+    ACTIONS = [("create", "Criar"), ("remove", "Remover")]
+    STATUS = [("queued", "Na fila"), ("running", "Em andamento"), ("succeeded", "Concluído"), ("failed", "Falhou")]
+
+    docker_host = models.ForeignKey(DockerHost, on_delete=models.CASCADE, related_name="provision_requests")
+    node = models.ForeignKey(Node, on_delete=models.SET_NULL, null=True, blank=True, related_name="provision_requests")
+    node_ref = models.UUIDField()                       # the node, even after it is gone (removal)
+    action = models.CharField(max_length=8, choices=ACTIONS)
+    status = models.CharField(max_length=10, choices=STATUS, default="queued", db_index=True)
+    token_enc = models.TextField(blank=True, default="")
+    message = models.TextField(blank=True, default="")
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["created_at"]

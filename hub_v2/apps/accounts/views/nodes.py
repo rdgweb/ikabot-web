@@ -85,6 +85,20 @@ def _get_ip_conflicts():
     return {ip for ip, count in counter.items() if count > 1}
 
 
+
+class PlatformNodeGuard:
+    """N-131: a platform agent's node is run by the platform — the customer looks, never changes it."""
+
+    def dispatch(self, request, *args, **kwargs):
+        pk = kwargs.get("pk")
+        if pk and request.user.is_authenticated and not (request.user.is_staff or request.user.is_superuser):
+            if Node.objects.filter(pk=pk, platform_managed=True).exists():
+                from django.contrib import messages
+
+                messages.error(request, "Este nó é do agente da plataforma: ele é gerenciado em Minha organização > Proxies e agente.")
+                return redirect("accounts:node-list")
+        return super().dispatch(request, *args, **kwargs)
+
 class NodeListView(FilterSortListView):
     model = Node
     filterset_class = NodeFilter
@@ -160,7 +174,7 @@ class NodeDetailView(LoginRequiredMixin, DetailView):
         return ctx
 
 
-class NodeQueuePurgeView(LoginRequiredMixin, View):
+class NodeQueuePurgeView(PlatformNodeGuard, LoginRequiredMixin, View):
     """POST: limpa a fila Celery/Redis (imediata + unacked) de um no."""
 
     def post(self, request, pk):
@@ -237,7 +251,7 @@ class NodeCreateView(LoginRequiredMixin, CreateView):
         return reverse_lazy("accounts:node-deploy", kwargs={"pk": self.object.pk})
 
 
-class NodeTokenRotateView(LoginRequiredMixin, View):
+class NodeTokenRotateView(PlatformNodeGuard, LoginRequiredMixin, View):
     """POST: a new key for the node's agent; the old one stops working at once (N-106)."""
 
     def post(self, request, pk):
@@ -253,7 +267,7 @@ class NodeTokenRotateView(LoginRequiredMixin, View):
         return redirect("accounts:node-deploy", pk=node.pk)
 
 
-class NodeEditView(LoginRequiredMixin, UpdateView):
+class NodeEditView(PlatformNodeGuard, LoginRequiredMixin, UpdateView):
     model = Node
     form_class = NodeEditForm
     template_name = "accounts/node_edit.html"
@@ -265,13 +279,13 @@ class NodeEditView(LoginRequiredMixin, UpdateView):
         return reverse_lazy("accounts:node-detail", kwargs={"pk": self.object.pk})
 
 
-class NodeDeleteView(LoginRequiredMixin, DeleteView):
+class NodeDeleteView(PlatformNodeGuard, LoginRequiredMixin, DeleteView):
     model = Node
     success_url = reverse_lazy("accounts:node-list")
     template_name = "accounts/node_confirm_delete.html"
 
 
-class NodeToggleView(LoginRequiredMixin, View):
+class NodeToggleView(PlatformNodeGuard, LoginRequiredMixin, View):
     """POST: toggle active status of a node/agent. Returns HTMX toast."""
 
     def post(self, request, pk):
@@ -333,7 +347,7 @@ class NodeProxyTestView(LoginRequiredMixin, View):
         return HttpResponse(html)
 
 
-class NodeDeployView(LoginRequiredMixin, DetailView):
+class NodeDeployView(PlatformNodeGuard, LoginRequiredMixin, DetailView):
     """Shows deploy token + docker command after node creation."""
     model = Node
     template_name = "accounts/node_deploy.html"
@@ -438,7 +452,7 @@ class NodeDeployView(LoginRequiredMixin, DetailView):
         return ctx
 
 
-class NodeRequestUpdateView(LoginRequiredMixin, View):
+class NodeRequestUpdateView(PlatformNodeGuard, LoginRequiredMixin, View):
     """Queue a versioned update for one node's scoped updater."""
 
     def post(self, request, pk):

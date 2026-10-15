@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 from unittest.mock import patch
 
 import supervisor
@@ -47,3 +48,52 @@ class SupervisorSafetyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class PlatformAgentTests(unittest.TestCase):
+    DIGEST = "blackoneal/ikabot-web-agent@sha256:" + "a" * 64
+
+    def _job(self, **change):
+        job = {"id": "p1", "action": "create", "node_id": "n1", "container_name": "ikahub-plat-abcdef12", "image": self.DIGEST,
+               "environment": {"HUB_URL": "https://hub.example", "AGENT_NODE_ID": "n1", "AGENT_TOKEN": "t",
+                               "AGENT_TRANSPORT": "https", "AGENT_NAME": "x", "AGENT_REQUIRE_PROXY": "1"}}
+        job.update(change)
+        return job
+
+    def test_only_safe_requests_are_accepted(self):
+        supervisor.validate_platform_request(self._job())
+        for bad in ({"image": "evil/agent:latest"}, {"container_name": "ikabot-web-hub-1"},
+                    {"environment": {**self._job()["environment"], "LD_PRELOAD": "x"}},
+                    {"environment": {**self._job()["environment"], "HUB_URL": "http://hub:8000"}},
+                    {"environment": {**self._job()["environment"], "AGENT_REQUIRE_PROXY": "0"}}):
+            with self.assertRaises(RuntimeError):
+                supervisor.validate_platform_request(self._job(**bad))
+
+    def test_created_outside_the_internal_network_with_limits(self):
+        client = mock.MagicMock()
+        client.containers.list.return_value = []
+        client.api.create_container.return_value = {"Id": "c1"}
+        container = client.containers.get.return_value
+        container.status = "running"
+        container.name = "ikahub-plat-abcdef12"
+        with mock.patch.object(supervisor, "HOST_ID", "h1"), mock.patch.object(supervisor.time, "sleep"):
+            self.assertEqual(supervisor.create_platform_agent(client, self._job()), "ikahub-plat-abcdef12")
+        kwargs = client.api.create_host_config.call_args.kwargs
+        self.assertEqual(kwargs["network_mode"], "bridge")
+        self.assertEqual(kwargs["cap_drop"], ["ALL"])
+        self.assertLessEqual(kwargs["mem_limit"], supervisor.MAX_MEMORY)
+        labels = client.api.create_container.call_args.kwargs["labels"]
+        self.assertEqual((labels[supervisor.PLATFORM_LABEL], labels["com.ikabot.node-id"], labels["com.ikabot.host-id"]), ("true", "n1", "h1"))
+
+    def test_remove_touches_only_platform_agents_of_this_host(self):
+        own = mock.MagicMock()
+        own.attrs = {"Config": {"Labels": {supervisor.PLATFORM_LABEL: "true", "com.ikabot.host-id": "h1", "com.ikabot.node-id": "n1"}}}
+        other_host = mock.MagicMock()
+        other_host.attrs = {"Config": {"Labels": {supervisor.PLATFORM_LABEL: "true", "com.ikabot.host-id": "h2", "com.ikabot.node-id": "n1"}}}
+        client = mock.MagicMock()
+        client.containers.list.return_value = [own, other_host]
+        with mock.patch.object(supervisor, "HOST_ID", "h1"):
+            self.assertEqual(supervisor.remove_platform_agent(client, "n1"), 1)
+        own.remove.assert_called_once_with(force=True)
+        other_host.remove.assert_not_called()

@@ -307,6 +307,11 @@ PASSWORD_RESET_TIMEOUT = 2 * 3600
 # open sign-up on the site (with SMTP); off = by invitation only
 SIGNUP_OPEN = os.environ.get("SIGNUP_OPEN", "false").strip().lower() in ("1", "true", "yes")
 
+# --- Platform agents (N-131): the platform's machine (a Docker host with its supervisor) ---
+PLATFORM_AGENT_HOST_ID = os.environ.get("PLATFORM_AGENT_HOST_ID", "").strip()
+PLATFORM_AGENT_LIMIT = int(os.environ.get("PLATFORM_AGENT_LIMIT", "10").strip() or 10)
+PLATFORM_AGENT_MEMORY_MB = int(os.environ.get("PLATFORM_AGENT_MEMORY_MB", "256").strip() or 256)
+
 # --- Billing (N-124): Asaas. The key only in the environment; sandbox until said otherwise ---
 ASAAS_API_KEY = os.environ.get("ASAAS_API_KEY", "").strip()
 ASAAS_SANDBOX = os.environ.get("ASAAS_SANDBOX", "true").strip().lower() in ("1", "true", "yes")

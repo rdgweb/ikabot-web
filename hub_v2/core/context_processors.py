@@ -40,7 +40,7 @@ def nav_context(request):
             "items": [
                 {"name": "Visão geral", "url": "/organizacao/", "icon": "bi-building-gear"},
                 {"name": "Subcontas", "url": "/organizacao/subcontas/", "icon": "bi-toggles"},
-                {"name": "Proxies", "url": "/organizacao/proxies/", "icon": "bi-shield-lock"},
+                {"name": "Proxies e agente", "url": "/organizacao/proxies/", "icon": "bi-shield-lock"},
                 {"name": "Membros", "url": "/organizacao/membros/", "icon": "bi-people"},
                 {"name": "Telegram", "url": "/organizacao/telegram/", "icon": "bi-telegram"},
                 {"name": "Plano", "url": "/organizacao/plano/", "icon": "bi-credit-card"},

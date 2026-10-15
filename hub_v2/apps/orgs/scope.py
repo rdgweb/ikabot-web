@@ -78,7 +78,8 @@ SCOPES: dict[str, tuple[str, str, bool]] = {
 GLOBAL_MODELS = {
     "combat.SimulatorCalibration", "telegram.TelegramBotConfig", "telegram.TelegramIncomingCommand", "captcha.CaptchaConfig",
     "website.InviteRequest",
-    "billing.BillingAccount", "billing.BillingEvent",   # read by the organization's own id only (N-124)    # the public site's invitation requests: the platform's own
+    "billing.BillingAccount", "billing.BillingEvent",
+    "accounts.AgentProvisionRequest",   # the platform's own work orders to its supervisor (N-131)   # read by the organization's own id only (N-124)    # the public site's invitation requests: the platform's own
 }
 
 

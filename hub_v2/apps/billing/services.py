@@ -174,7 +174,17 @@ def _apply(account: BillingAccount, event: str, obj: dict) -> str:
     result = "linked" if fields else "seen"
 
     is_upgrade = bool(obj.get("object") == "payment" and account.upgrade_payment_id and obj.get("id") == account.upgrade_payment_id)
-    if is_upgrade:
+    agent_account = _agent_charge(account, obj)
+    if agent_account is not None:
+        if event in ("PAYMENT_CONFIRMED", "PAYMENT_RECEIVED"):
+            result = _finish_agent_charge(account, agent_account)
+        elif event in ("PAYMENT_DELETED", "PAYMENT_REFUNDED"):
+            agent_account.platform_agent_payment_id, agent_account.platform_agent_payment_url = "", ""
+            agent_account.save(update_fields=["platform_agent_payment_id", "platform_agent_payment_url", "updated_at"])
+            result = "agent-dropped"
+        else:
+            result = "agent-" + event.lower()
+    elif is_upgrade:
         if event in ("PAYMENT_CONFIRMED", "PAYMENT_RECEIVED"):
             result = _finish_upgrade(account, fields)
         elif event in ("PAYMENT_DELETED", "PAYMENT_REFUNDED"):
@@ -191,10 +201,13 @@ def _apply(account: BillingAccount, event: str, obj: dict) -> str:
         if account.status != BillingAccount.ACTIVE:
             account.status = BillingAccount.ACTIVE
             fields.append("status")
+        from apps.accounts import platform_agent
         from apps.proxy.platform import end_due, mark_billed
 
         end_due(account.organization, include_held=False)   # N-129: add-ons switched off end with the old period (not the ones just paid for)
-        if mark_billed(account.organization) and account.subscription_id:
+        platform_agent.end_due(account.organization, include_held=False)
+        billed = mark_billed(account.organization) + platform_agent.mark_billed(account.organization)
+        if billed and account.subscription_id:
             from . import asaas
 
             try:                                        # charged once now: the ones switched off leave the next charge
@@ -227,6 +240,9 @@ def _apply(account: BillingAccount, event: str, obj: dict) -> str:
             from apps.proxy.platform import schedule_all_off
 
             schedule_all_off(account.organization, account.paid_until)    # N-129: add-ons end with the paid period
+            from apps.accounts.platform_agent import schedule_all_off as agents_off
+
+            agents_off(account.organization, account.paid_until)
         result = "canceled"
     if fields:
         account.save(update_fields=list(dict.fromkeys(fields)) + ["updated_at"])
@@ -371,8 +387,11 @@ def monthly_value(account: BillingAccount, limit: int | None = None):
     """What the subscription charges each month: the tier plus the add-ons switched on."""
     from apps.proxy.platform import accounts_with_addon
 
+    from apps.accounts.platform_agent import accounts_with_agent
+
     tier = plans.price_for(limit or account.pending_limit or account.limit)
-    return tier + plans.ADDON_PROXIES * accounts_with_addon(account.organization)
+    return (tier + plans.ADDON_PROXIES * accounts_with_addon(account.organization)
+            + plans.ADDON_AGENT * accounts_with_agent(account.organization))
 
 
 def subscribed(account: BillingAccount) -> bool:
@@ -411,3 +430,100 @@ def set_proxy_addon(account: BillingAccount, game_account, on: bool) -> dict:
         return {"ok": True, "until": until}
     platform.end(game_account)
     return {"ok": True}
+
+
+# --- Platform agent add-on (N-131) -------------------------------------------------------------
+
+def _agent_charge(account: BillingAccount, obj: dict):
+    """The GameForge account whose prorated agent charge this payment is (None when it is not one)."""
+    if obj.get("object") != "payment" or not obj.get("id"):
+        return None
+    from apps.accounts.models import Account
+
+    return Account._base_manager.filter(organization=account.organization, platform_agent_payment_id=obj["id"]).first()
+
+
+def _finish_agent_charge(account: BillingAccount, game_account) -> str:
+    from apps.accounts import platform_agent
+
+    from . import asaas
+
+    game_account.platform_agent_payment_id, game_account.platform_agent_payment_url = "", ""
+    game_account.save(update_fields=["platform_agent_payment_id", "platform_agent_payment_url", "updated_at"])
+    if not game_account.platform_agent:
+        platform_agent.provision(game_account)
+    game_account.platform_agent_billed = True                  # this period is paid
+    game_account.save(update_fields=["platform_agent_billed", "updated_at"])
+    try:
+        asaas.update_subscription_value(account.subscription_id, monthly_value(account), "IkaHub — plano e adicionais")
+    except asaas.AsaasError:
+        logger.warning("Subscription value of organization %s not updated after the agent charge", account.organization_id)
+    _notify(account, f"✅ IkaHub: pagamento confirmado. O agente da plataforma de {game_account.label} está sendo criado.")
+    return "agent-on"
+
+
+def set_agent_addon(account: BillingAccount, game_account, on: bool, *, now=None) -> dict:
+    """The platform runs this account's agent. On: the prorated month (when R$ 5,00 or more) is paid
+    first, then the agent is created; below that it starts at once and the next monthly charge includes it.
+    Off: same rule as the other add-ons."""
+    from apps.accounts import platform_agent
+
+    from . import asaas
+
+    now = now or timezone.now()
+    if on:
+        if not subscribed(account):
+            return {"ok": False, "reason": "Os adicionais precisam de uma assinatura ativa."}
+        if game_account.platform_agent and not game_account.platform_agent_ends_at:
+            return {"ok": True, "kind": "already"}
+        if game_account.platform_agent and game_account.platform_agent_ends_at:
+            game_account.platform_agent_ends_at = None          # switched back on before it ended
+            game_account.save(update_fields=["platform_agent_ends_at", "updated_at"])
+            asaas.update_subscription_value(account.subscription_id, monthly_value(account), "IkaHub — plano e adicionais")
+            return {"ok": True, "kind": "on"}
+        reason = platform_agent.why_not(game_account)
+        if reason:
+            return {"ok": False, "reason": reason}
+        start, end = period_of(account)
+        cost = _prorated_addon(plans.ADDON_AGENT, start, end, now)
+        if cost >= plans.MIN_CHARGE:
+            payment_id, url = asaas.create_charge(
+                customer_id=account.customer_id, value=cost, reference=f"agent:{account.organization_id}:{game_account.pk}",
+                description=f"IkaHub — agente da plataforma para {game_account.label} até {timezone.localtime(account.paid_until):%d/%m}",
+            )
+            game_account.platform_agent_payment_id, game_account.platform_agent_payment_url = payment_id, url
+            game_account.save(update_fields=["platform_agent_payment_id", "platform_agent_payment_url", "updated_at"])
+            return {"ok": True, "kind": "charge", "cost": cost, "url": url}
+        platform_agent.provision(game_account)
+        game_account.platform_agent_billed = False
+        game_account.save(update_fields=["platform_agent_billed", "updated_at"])
+        asaas.update_subscription_value(account.subscription_id, monthly_value(account), "IkaHub — plano e adicionais")
+        return {"ok": True, "kind": "on"}
+    if game_account.platform_agent_payment_id and not game_account.platform_agent:
+        try:
+            asaas.delete_charge(game_account.platform_agent_payment_id)
+        except asaas.AsaasError:
+            pass
+        game_account.platform_agent_payment_id, game_account.platform_agent_payment_url = "", ""
+        game_account.save(update_fields=["platform_agent_payment_id", "platform_agent_payment_url", "updated_at"])
+        return {"ok": True, "kind": "dropped"}
+    if not game_account.platform_agent:
+        return {"ok": True, "kind": "off"}
+    if subscribed(account):
+        until = account.paid_until if game_account.platform_agent_billed else _end_of(_add_month(timezone.localtime(account.paid_until).date()))
+        game_account.platform_agent_ends_at = until
+        game_account.save(update_fields=["platform_agent_ends_at", "updated_at"])
+        asaas.update_subscription_value(account.subscription_id, monthly_value(account), "IkaHub — plano e adicionais")
+        return {"ok": True, "kind": "off", "until": until}
+    platform_agent.end(game_account)
+    return {"ok": True, "kind": "off"}
+
+
+def _prorated_addon(price, start, end, now):
+    from decimal import ROUND_HALF_UP
+
+    total = (end - start).total_seconds()
+    left = (end - now).total_seconds()
+    if total <= 0 or left <= 0:
+        return plans.Decimal("0.00")
+    return (price * plans.Decimal(min(left, total) / total)).quantize(plans.Decimal("0.01"), rounding=ROUND_HALF_UP)
