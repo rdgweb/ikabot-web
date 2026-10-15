@@ -116,20 +116,37 @@ def end(account) -> int:
     return count
 
 
-def end_due(organization=None, now=None) -> int:
-    """Add-ons switched off whose paid period is over."""
+def end_due(organization=None, now=None, *, include_held: bool = True) -> int:
+    """Add-ons switched off whose paid period is over, and every add-on of an organization whose plan
+    no longer allows work (canceled and over, or unpaid past the grace days): the proxies go back."""
     from apps.accounts.models import Account
+    from apps.billing.services import state_for
 
     now = now or timezone.now()
-    due = Account._base_manager.filter(platform_proxies=True, platform_proxies_ends_at__isnull=False,
-                                       platform_proxies_ends_at__lte=now)
+    with_addon = Account._base_manager.filter(platform_proxies=True)
     if organization is not None:
-        due = due.filter(organization=organization)
+        with_addon = with_addon.filter(organization=organization)
     ended = 0
-    for account in due:
-        end(account)
-        ended += 1
+    held = {}
+    for account in with_addon.select_related("organization"):
+        if account.organization_id not in held:
+            held[account.organization_id] = include_held and not state_for(account.organization, now).allows_work
+        over = account.platform_proxies_ends_at is not None and account.platform_proxies_ends_at <= now
+        if over or held[account.organization_id]:
+            end(account)
+            ended += 1
     return ended
+
+
+def schedule_all_off(organization, until) -> int:
+    """The subscription was canceled: every add-on ends with the period already paid."""
+    from django.db.models import Q
+
+    from apps.accounts.models import Account
+
+    return Account._base_manager.filter(organization=organization, platform_proxies=True).filter(
+        Q(platform_proxies_ends_at__isnull=True) | Q(platform_proxies_ends_at__gt=until)
+    ).update(platform_proxies_ends_at=until)
 
 
 def accounts_with_addon(organization) -> int:

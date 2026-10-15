@@ -193,7 +193,7 @@ def _apply(account: BillingAccount, event: str, obj: dict) -> str:
             fields.append("status")
         from apps.proxy.platform import end_due, mark_billed
 
-        end_due(account.organization)                   # N-129: add-ons switched off end with the old period
+        end_due(account.organization, include_held=False)   # N-129: add-ons switched off end with the old period (not the ones just paid for)
         if mark_billed(account.organization) and account.subscription_id:
             from . import asaas
 
@@ -223,6 +223,10 @@ def _apply(account: BillingAccount, event: str, obj: dict) -> str:
         if account.status == BillingAccount.ACTIVE:
             account.status = BillingAccount.CANCELED
             fields.append("status")
+        if account.paid_until:
+            from apps.proxy.platform import schedule_all_off
+
+            schedule_all_off(account.organization, account.paid_until)    # N-129: add-ons end with the paid period
         result = "canceled"
     if fields:
         account.save(update_fields=list(dict.fromkeys(fields)) + ["updated_at"])

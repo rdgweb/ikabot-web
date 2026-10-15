@@ -165,3 +165,39 @@ class PlatformProxiesTests(TestCase):
         self.assertIsNone(victim.lent_to_id)
         self.assertEqual(victim.organization_id, self.platform.pk)
         self.assertEqual(ProxyProfile._base_manager.filter(lent_to=self.account, active=True).count(), 3)
+
+
+@override_settings(ASAAS_API_KEY="k", ASAAS_SANDBOX=True)
+class CancelAndUnpaidTests(PlatformProxiesTests):
+    def _with_addon(self):
+        self._subscribe()
+        with patch("apps.billing.asaas.update_subscription_value"):
+            self.client.post("/organizacao/proxies/", {"action": "addon", "account": str(self.account.pk), "on": "1"})
+        self.assertEqual(ProxyProfile._base_manager.filter(lent_to=self.account).count(), 3)
+
+    def test_canceling_ends_the_add_ons_with_the_paid_period(self):
+        self._with_addon()
+        with patch("apps.billing.asaas.cancel_subscription"):
+            self.client.post("/organizacao/plano/", {"action": "cancel"})
+        self.account.refresh_from_db()
+        self.assertEqual(self.account.platform_proxies_ends_at, account_for(self.org).paid_until)
+        platform.end_due(now=timezone.now() + timedelta(days=21))
+        self.assertFalse(ProxyProfile._base_manager.filter(lent_to=self.account).exists())
+
+    def test_an_unpaid_plan_gives_the_proxies_back_and_a_late_payment_keeps_nothing_stuck(self):
+        self._with_addon()
+        BillingAccount.objects.filter(organization=self.org).update(paid_until=timezone.now() - timedelta(days=5))
+        platform.end_due()                                                     # paused: past the 3 grace days
+        self.assertFalse(ProxyProfile._base_manager.filter(lent_to=self.account).exists())
+        self.account.refresh_from_db()
+        self.assertFalse(self.account.platform_proxies)
+
+    def test_the_payment_itself_never_ends_the_add_ons(self):
+        self._with_addon()
+        BillingAccount.objects.filter(organization=self.org).update(paid_until=timezone.now() - timedelta(days=5))
+        from apps.billing.services import handle_event
+
+        with patch("apps.billing.asaas.update_subscription_value"), patch("apps.billing.services._notify"):
+            handle_event({"id": "evt_pay", "event": "PAYMENT_RECEIVED",
+                          "payment": {"object": "payment", "id": "pay_1", "subscription": "sub_1", "dueDate": timezone.localdate().isoformat()}})
+        self.assertEqual(ProxyProfile._base_manager.filter(lent_to=self.account).count(), 3)
