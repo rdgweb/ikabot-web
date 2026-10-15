@@ -152,6 +152,12 @@ class PlanPageTests(TestCase):
         account = BillingAccount.objects.get(organization=self.org)
         self.assertEqual((account.link_id, account.link_limit), ("lnk_1", 10))
 
+    def test_a_boosted_request_leaves_to_the_asaas_with_a_full_page_load(self):
+        with patch("apps.billing.asaas.create_payment_link", return_value=("lnk_2", "https://sandbox.asaas.com/c/lnk_2")):
+            response = self.client.post(reverse("billing:plan"), {"limit": "4"}, HTTP_HX_REQUEST="true")
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response["HX-Redirect"], "https://sandbox.asaas.com/c/lnk_2")
+
     def test_an_operator_cannot_pay_or_change(self):
         operator, _org = customer("operador", role=Membership.OPERATOR, organization=self.org)
         self.client.force_login(operator)

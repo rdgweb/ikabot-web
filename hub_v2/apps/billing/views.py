@@ -29,6 +29,18 @@ def _public_url(request, path: str) -> str:
     return base + path
 
 
+def _leave_to(request, url: str):
+    """N-126: the Asaas page is another site — a boosted (HTMX) request must leave with a full page load,
+    or the browser follows the redirect inside XHR and CORS blocks it."""
+    if request.headers.get("HX-Request") == "true":
+        from django.http import HttpResponse
+
+        response = HttpResponse(status=204)
+        response["HX-Redirect"] = url
+        return response
+    return redirect(url)
+
+
 def _org_tabs(request, tab: str) -> dict:
     """The header of Minha organização (N-126)."""
     from apps.orgs.services import role_of
@@ -100,7 +112,7 @@ class PlanView(LoginRequiredMixin, TemplateView):
         from apps.audit.services import record
 
         if account.link_id and account.link_limit == limit and account.link_url:
-            return redirect(account.link_url)
+            return _leave_to(request, account.link_url)
         if account.link_id:
             try:
                 asaas.delete_payment_link(account.link_id)
@@ -114,7 +126,7 @@ class PlanView(LoginRequiredMixin, TemplateView):
         account.link_id, account.link_url, account.link_limit = link_id, url, limit
         account.save(update_fields=["link_id", "link_url", "link_limit", "updated_at"])
         record("billing.checkout", target=request.organization, target_label=f"até {limit} subcontas · {plans.brl(price)}")
-        return redirect(url)
+        return _leave_to(request, url)
 
     def _change(self, request, account, limit):
         from apps.audit.services import record

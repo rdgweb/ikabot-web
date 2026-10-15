@@ -68,7 +68,7 @@
   <p class="text-sm text-muted" style="margin: 0;">Só o dono da organização escolhe e paga o plano.</p>
   {% else %}
   <h3><i class="bi bi-layers"></i> {% if account.subscription_id and account.status == 'active' %}Trocar de faixa{% else %}Escolha a faixa{% endif %}</h3>
-  <form method="post">
+  <form method="post" hx-boost="false">
     {% csrf_token %}
     <div class="pl-tiers">
       {% for o in options %}

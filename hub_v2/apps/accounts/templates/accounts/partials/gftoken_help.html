@@ -1,0 +1,32 @@
+{# N-126: como pegar o gf-token-production — sempre visível ao lado do campo, e o tour aponta para cá #}
+<div data-tour="gf-help" x-data="{ copied: false, cmd: `copy(document.cookie.split('; ').find(c => c.startsWith('gf-token-production=')).split('=')[1]); 'Token copiado'` }"
+     style="margin-top: .6rem; border: 1px solid var(--ik-line); border-radius: .75rem; background: var(--ik-paper); padding: .8rem .9rem;">
+  <div style="display: flex; align-items: center; gap: .45rem; font-size: .8rem; font-weight: 700; color: var(--ik-ink); margin-bottom: .6rem;">
+    <i class="bi bi-cookie" style="color: #c99c4e;"></i> Como pegar o token
+  </div>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .55rem;">
+    <div style="display: flex; gap: .55rem; align-items: flex-start;">
+      <span style="flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: rgba(201,156,78,.2); color: #7a5618; font-size: .72rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center;">1</span>
+      <span class="text-xs" style="color: var(--ik-ink); line-height: 1.4;">Entre no <a href="https://lobby.ikariam.gameforge.com/pt_BR/" target="_blank" rel="noopener" hx-boost="false" class="link-sea font-semibold">lobby do Ikariam</a> com a conta</span>
+    </div>
+    <div style="display: flex; gap: .55rem; align-items: flex-start;">
+      <span style="flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: rgba(201,156,78,.2); color: #7a5618; font-size: .72rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center;">2</span>
+      <span class="text-xs" style="color: var(--ik-ink); line-height: 1.4;"><b>F12</b> → aba <b>Console</b> → cole o comando e tecle Enter</span>
+    </div>
+    <div style="display: flex; gap: .55rem; align-items: flex-start;">
+      <span style="flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: rgba(201,156,78,.2); color: #7a5618; font-size: .72rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center;">3</span>
+      <span class="text-xs" style="color: var(--ik-ink); line-height: 1.4;">O token já fica copiado: cole no campo acima</span>
+    </div>
+  </div>
+  <div style="display: flex; gap: .5rem; align-items: stretch; margin-top: .7rem;">
+    <code x-text="cmd" style="flex: 1; min-width: 0; display: block; padding: .5rem .6rem; border-radius: .5rem; background: #2b2620; color: #a6e3a1; font-size: .68rem; white-space: nowrap; overflow-x: auto;"></code>
+    <button type="button" class="btn btn-secondary btn-sm" style="flex-shrink: 0;"
+            @click="navigator.clipboard.writeText(cmd).then(() => { copied = true; setTimeout(() => copied = false, 1800) })">
+      <i class="bi" :class="copied ? 'bi-check2' : 'bi-clipboard'"></i> <span x-text="copied ? 'Copiado' : 'Copiar'"></span>
+    </button>
+  </div>
+  <p class="text-xs text-muted" style="margin: .5rem 0 0; line-height: 1.4;">
+    Se o Chrome pedir, digite <code>allow pasting</code> no Console antes de colar. Sem o comando: F12 → Aplicação → Cookies → <code>gf-token-production</code>.
+    O token vale como uma senha: não envie para ninguém.
+  </p>
+</div>

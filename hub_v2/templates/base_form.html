@@ -43,6 +43,7 @@
           {% if field.help_text %}
           <p class="form-help">{{ field.help_text }}</p>
           {% endif %}
+          {% if field.name == "gf_token" %}{% include "accounts/partials/gftoken_help.html" %}{% endif %}
           {% for error in field.errors %}
           <p class="form-error"><i class="bi bi-exclamation-circle"></i> {{ error }}</p>
           {% endfor %}

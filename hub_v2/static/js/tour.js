@@ -67,10 +67,10 @@
     { page: /^\/accounts\/create\/$/, target: "#id_email", wrap: ".form-group", icon: "bi-envelope",
       chapter: "2 · A conta", title: "E-mail e senha",
       text: "Os mesmos do login do GameForge (o do Ikariam). A senha é guardada criptografada.", sample: "voce@exemplo.com · ••••••••" },
-    { page: /^\/accounts\/create\/$/, target: "#id_gf_token", wrap: ".form-group", icon: "bi-key",
-      chapter: "2 · A conta", title: "Token (opcional)",
-      text: "Com o cookie gf-token-production, o hub já busca os mundos ao salvar. Sem ele, os mundos são buscados na página da conta.",
-      sample: "No lobby do GameForge: F12 → Aplicação → Cookies → gf-token-production" },
+    { page: /^\/accounts\/create\/$/, target: '[data-tour="gf-help"]', wrap: ".form-group", icon: "bi-cookie",
+      chapter: "2 · A conta", title: "Token do lobby (recomendado)",
+      text: "Com o token, o agente usa a sessão que você já abriu no lobby, sem novo login com a senha, e os mundos chegam ao salvar. Três passos: lobby aberto, F12 → Console, colar o comando — o token já fica copiado.",
+      sample: "Copiar → F12 → Console → colar → Enter → colar no campo" },
     { page: /^\/accounts\/create\/$/, target: '[data-tour="form-submit"]', icon: "bi-check-lg",
       chapter: "2 · A conta", title: "Criar Conta",
       text: function (s) {
@@ -265,6 +265,7 @@
       '<span class="iktour-bar"><i></i></span>' +
       '<div class="iktour-foot">' +
       '<button type="button" class="iktour-btn ghost" data-act="back"><i class="bi bi-arrow-left"></i> Voltar</button>' +
+      '<button type="button" class="iktour-btn ghost" data-act="skip" title="Ir para o próximo capítulo">Pular <i class="bi bi-skip-forward"></i></button>' +
       '<a class="iktour-btn gold" data-act="cta" hx-boost="false"></a>' +
       '<button type="button" class="iktour-btn primary" data-act="next"></button></div>';
     root.appendChild(el("div", "iktour-shield"));
@@ -275,6 +276,7 @@
     card.querySelector(".iktour-close").addEventListener("click", finish);
     card.querySelector('[data-act="back"]').addEventListener("click", function () { go(index - 1, -1); });
     card.querySelector('[data-act="next"]').addEventListener("click", next);
+    card.querySelector('[data-act="skip"]').addEventListener("click", function () { skipFrom(index); });
     card.querySelector('[data-act="cta"]').addEventListener("click", function () { forget(); close(); });
     document.addEventListener("keydown", onKey, true);
     window.addEventListener("resize", onResize);
@@ -283,6 +285,21 @@
 
   function onResize() {
     window.requestAnimationFrame(function () { if (root) place(true); });
+  }
+
+  // N-126: skip to the next chapter (agent, account, worlds, first job), waiting for nothing
+  function nextChapter(i) {
+    var chapter = STEPS[i] && STEPS[i].chapter;
+    for (var j = i + 1; j < STEPS.length; j++) {
+      if (STEPS[j].chapter !== chapter) return j;
+    }
+    return -1;
+  }
+
+  function skipFrom(i) {
+    var j = nextChapter(i);
+    if (j < 0) { finish(); return; }
+    if (root) go(j, 1); else continueTo(j);
   }
 
   function next() {
@@ -329,6 +346,7 @@
     card.querySelector(".iktour-sample span").textContent = sample || "";
     card.querySelector(".iktour-bar i").style.width = Math.round((index + 1) * 100 / STEPS.length) + "%";
     card.querySelector('[data-act="back"]').style.display = index > 0 && !step.final ? "" : "none";
+    card.querySelector('[data-act="skip"]').style.display = step.chapter && !step.final && nextChapter(index) > 0 ? "" : "none";
     var waits = resolve(step.waits);
     var nextButton = card.querySelector('[data-act="next"]');
     nextButton.innerHTML = index === 0 ? 'Começar <i class="bi bi-arrow-right"></i>'
@@ -485,12 +503,14 @@
     chip.setAttribute("data-path", window.location.pathname);
     chip.innerHTML = '<i class="bi ' + (ready ? "bi-check-circle-fill" : "bi-arrow-repeat") + '"></i>' +
       '<span><small></small><b></b></span>' +
-      (ready ? '<button type="button" class="iktour-btn primary" data-act="go">Continuar <i class="bi bi-arrow-right"></i></button>' : "") +
+      (ready ? '<button type="button" class="iktour-btn primary" data-act="go">Continuar <i class="bi bi-arrow-right"></i></button>'
+             : '<button type="button" class="iktour-btn ghost" data-act="skip" title="Seguir sem esperar">Pular <i class="bi bi-skip-forward"></i></button>') +
       '<button type="button" class="iktour-close" data-act="stop" aria-label="Encerrar o tour"><i class="bi bi-x-lg"></i></button>';
     chip.querySelector("small").textContent = "Tour · " + (gate.chapter || "Ikabot");
     chip.querySelector("b").textContent = ready ? gate.readyText : gate.waitText;
     chip.querySelector('[data-act="stop"]').addEventListener("click", finish);
     if (ready) chip.querySelector('[data-act="go"]').addEventListener("click", function () { continueTo(saved.i); });
+    else chip.querySelector('[data-act="skip"]').addEventListener("click", function () { chipHide(); skipFrom(saved.u); });
   }
 
   function chipHide() {

@@ -157,7 +157,7 @@ class TourTests(TestCase):
         pages = {
             "/": ['data-tour="novo-job"', 'href="/jobs/"', 'href="/game/"', 'href="/game/actions/"'],
             reverse("accounts:node-list"): ['data-tour="nodes"'],
-            reverse("accounts:account-create"): ['id="id_node"', 'id="id_label"', 'id="id_email"', 'id="id_gf_token"', 'data-tour="form-submit"'],
+            reverse("accounts:account-create"): ['id="id_node"', 'id="id_label"', 'id="id_email"', 'id="id_gf_token"', 'data-tour="gf-help"', 'data-tour="form-submit"'],
             reverse("accounts:account-list"): ['data-tour="account-row"'],
             reverse("accounts:account-detail", args=[account.pk]): ['data-tour="discover"', 'data-tour="worlds"'],
         }
@@ -165,7 +165,7 @@ class TourTests(TestCase):
             html = self.client.get(url).content.decode()
             for marker in markers:
                 self.assertIn(marker, html, f"{marker} em {url}")
-        for selector in ('[data-tour="nodes"]', "#id_node", "#id_label", "#id_email", "#id_gf_token", '[data-tour="form-submit"]', '[data-tour="account-row"]',
+        for selector in ('[data-tour="nodes"]', "#id_node", "#id_label", "#id_email", '[data-tour="gf-help"]', '[data-tour="form-submit"]', '[data-tour="account-row"]',
                          '[data-tour="discover"]', '[data-tour="worlds"]', '[data-tour="novo-job"]', 'a.sidebar-item[href="/jobs/"]'):
             self.assertIn(selector, script)
         self.assertIn('data-state-url="/settings/tour/state/"', self.client.get("/").content.decode())
