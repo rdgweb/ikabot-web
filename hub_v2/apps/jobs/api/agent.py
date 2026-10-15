@@ -707,11 +707,14 @@ class ConstructionSupportView(APIView):
         # For legacy jobs without root_job_id, fall back to the old BFS walk.
         root_id = root_job.root_job_id or root_job.pk
 
+        # Only the active transports are read with their inputs: a long plan's tree holds hundreds of replans
+        # carrying the whole step list each (N-132: ~145 MB per call when the whole tree was loaded).
+        transport_fields = ("id", "source_job_id", "action_code", "status", "inputs_json", "created_at", "scheduled_for")
+        active_transports = {"action_code": 2, "status__in": ("queued", "running", "scheduled")}
         if root_job.root_job_id is not None or root_job.source_job_id is None:
             # Fast path: single indexed query covering the whole tree
             descendants = list(
-                Job.objects.filter(root_job_id=root_id)
-                .only("id", "source_job_id", "action_code", "status", "inputs_json", "created_at")
+                Job.objects.filter(root_job_id=root_id, **active_transports).only(*transport_fields)
             )
         else:
             # Legacy fallback for old jobs without root_job_id
@@ -724,21 +727,21 @@ class ConstructionSupportView(APIView):
                 if not cursor.source_job_id:
                     break
                 cursor = Job.objects.filter(pk=cursor.source_job_id).first()
-            descendants = []
+            tree: list[UUID] = []
             frontier = set(lineage)
             visited = set(frontier)
             while frontier:
-                children = list(
-                    Job.objects.filter(source_job_id__in=frontier)
-                    .only("id", "source_job_id", "action_code", "status", "inputs_json", "created_at")
-                )
+                children = list(Job.objects.filter(source_job_id__in=frontier).values_list("id", flat=True))
                 frontier = set()
-                for child in children:
-                    if child.pk in visited:
+                for child_id in children:
+                    if child_id in visited:
                         continue
-                    visited.add(child.pk)
-                    descendants.append(child)
-                    frontier.add(child.pk)
+                    visited.add(child_id)
+                    tree.append(child_id)
+                    frontier.add(child_id)
+            descendants = list(
+                Job.objects.filter(pk__in=tree, **active_transports).only(*transport_fields).order_by("created_at")
+            )
 
         entries: list[dict] = []
         for child in descendants:
