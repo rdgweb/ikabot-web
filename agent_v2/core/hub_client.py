@@ -60,12 +60,29 @@ def _agent_image_identity() -> str:
     return image
 
 
+class HubSession(requests.Session):
+    """A pooled connection the hub has just closed (idle keep-alive, a renewed worker) fails with
+    "Connection reset" when reused; a read is simply sent again, once. Writes are never repeated,
+    and a timeout is not a closed connection."""
+
+    _RETRY_METHODS = frozenset({"GET", "HEAD"})
+
+    def request(self, method, url, *args, **kwargs):
+        try:
+            return super().request(method, url, *args, **kwargs)
+        except requests.ConnectionError as exc:
+            if str(method).upper() not in self._RETRY_METHODS or isinstance(exc, requests.Timeout):
+                raise
+            logger.info("Hub connection dropped on %s %s; sending it again once", method, url.split("?")[0])
+            return super().request(method, url, *args, **kwargs)
+
+
 class HubClient:
     """All agent-to-hub communication goes through here."""
 
     def __init__(self):
         self.base_url = settings.hub_url.rstrip("/")
-        self.session = requests.Session()
+        self.session = HubSession()
         self.session.headers["X-Agent-Token"] = settings.agent_token
         self.session.headers["X-Agent-Node-ID"] = settings.agent_node_id
         self.session.headers["Content-Type"] = "application/json"

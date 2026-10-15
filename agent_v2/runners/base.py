@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
+import requests
+
 from sessions import GameSessionService
 from sessions.game_session_service import LoginCooldownActive
 from core.config import settings
@@ -186,6 +188,10 @@ class BaseRunner:
                         # GameSessionService, only ever picked fresh when blank.
                         "user_agent": user_agent,
                     }
+        except requests.RequestException:
+            # The hub could not be reached: that is not "no credentials" — the job executor
+            # treats it as a transient network failure and reschedules the job (N-133).
+            raise
         except Exception as e:
             logger.warning("Failed to fetch config from hub: %s", e)
 
