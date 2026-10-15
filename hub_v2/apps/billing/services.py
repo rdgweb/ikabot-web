@@ -191,9 +191,16 @@ def _apply(account: BillingAccount, event: str, obj: dict) -> str:
         if account.status != BillingAccount.ACTIVE:
             account.status = BillingAccount.ACTIVE
             fields.append("status")
-        from apps.proxy.platform import end_due
+        from apps.proxy.platform import end_due, mark_billed
 
         end_due(account.organization)                   # N-129: add-ons switched off end with the old period
+        if mark_billed(account.organization) and account.subscription_id:
+            from . import asaas
+
+            try:                                        # charged once now: the ones switched off leave the next charge
+                asaas.update_subscription_value(account.subscription_id, monthly_value(account), "IkaHub — plano e adicionais")
+            except asaas.AsaasError:
+                logger.warning("Subscription value of organization %s not refreshed after the add-ons were charged", account.organization_id)
         if account.pending_limit:                       # the lower tier chosen before starts with the new period
             account.limit, account.price, account.pending_limit = account.pending_limit, plans.price_for(account.pending_limit), None
             fields += ["limit", "price", "pending_limit"]
@@ -388,9 +395,15 @@ def set_proxy_addon(account: BillingAccount, game_account, on: bool) -> dict:
     if not game_account.platform_proxies:
         return {"ok": True}
     if subscribed(account):
-        game_account.platform_proxies_ends_at = account.paid_until
+        if game_account.platform_proxies_billed:
+            until = account.paid_until                   # already charged once: off at the end of this period
+        else:
+            # switched on in this period and never charged: the next monthly charge includes it, so it lasts
+            # until the end of that period too (switching on and off is not a way to use it for free)
+            until = _end_of(_add_month(timezone.localtime(account.paid_until).date()))
+        game_account.platform_proxies_ends_at = until
         game_account.save(update_fields=["platform_proxies_ends_at", "updated_at"])
         asaas.update_subscription_value(account.subscription_id, monthly_value(account), "IkaHub — plano e adicionais")
-        return {"ok": True, "until": account.paid_until}
+        return {"ok": True, "until": until}
     platform.end(game_account)
     return {"ok": True}

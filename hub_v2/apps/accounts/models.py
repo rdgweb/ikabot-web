@@ -248,6 +248,7 @@ class Account(UUIDTimestampModel):
     # N-129: 3 proxies of the platform's pool, lent to this account only (an add-on of the plan)
     platform_proxies = models.BooleanField(default=False)
     platform_proxies_ends_at = models.DateTimeField(null=True, blank=True)   # switched off: lasts until the paid period ends
+    platform_proxies_billed = models.BooleanField(default=False)   # already in a paid monthly charge since switched on
 
     class Meta:
         ordering = ["label"]

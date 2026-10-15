@@ -99,18 +99,37 @@ class PlatformProxiesTests(TestCase):
         finally:
             scope.deactivate(token)
 
-    def test_switching_off_lasts_until_the_due_date_then_they_go_back(self):
-        self._subscribe()
-        with patch("apps.billing.asaas.update_subscription_value"):
+    def _on_then_off(self):
+        with patch("apps.billing.asaas.update_subscription_value") as update:
             self.client.post("/organizacao/proxies/", {"action": "addon", "account": str(self.account.pk), "on": "1"})
             self.client.post("/organizacao/proxies/", {"action": "addon", "account": str(self.account.pk), "on": "0"})
-        self.assertEqual(ProxyProfile._base_manager.filter(lent_to=self.account).count(), 3)   # still theirs
+        return update
+
+    def test_switching_on_and_off_before_any_charge_still_pays_one_month(self):
+        self._subscribe()
+        update = self._on_then_off()
+        self.assertEqual(update.call_args.args[1], Decimal("29.90") + Decimal("4.90"))     # the next charge keeps it
+        self.account.refresh_from_db()
+        self.assertGreater(self.account.platform_proxies_ends_at, timezone.now() + timedelta(days=45))   # through the next period
         platform.end_due(now=timezone.now() + timedelta(days=21))
+        self.assertEqual(ProxyProfile._base_manager.filter(lent_to=self.account).count(), 3)          # still theirs
+        platform.end_due(now=timezone.now() + timedelta(days=60))
         self.assertFalse(ProxyProfile._base_manager.filter(lent_to=self.account).exists())
         self.assertFalse(AccountProxyReservation._base_manager.filter(account=self.account).exists())
         self.assertEqual(ProxyProfile._base_manager.filter(organization=self.platform).count(), 25)
         self.node.refresh_from_db()
         self.assertEqual(self.node.proxy, "")
+
+    def test_once_charged_switching_off_lasts_until_the_due_date(self):
+        self._subscribe()
+        with patch("apps.billing.asaas.update_subscription_value"):
+            self.client.post("/organizacao/proxies/", {"action": "addon", "account": str(self.account.pk), "on": "1"})
+        platform.mark_billed(self.org)                                                    # a monthly charge was paid
+        with patch("apps.billing.asaas.update_subscription_value") as update:
+            self.client.post("/organizacao/proxies/", {"action": "addon", "account": str(self.account.pk), "on": "0"})
+        self.assertEqual(update.call_args.args[1], Decimal("29.90"))                      # out of the next charge
+        self.account.refresh_from_db()
+        self.assertEqual(self.account.platform_proxies_ends_at, account_for(self.org).paid_until)
 
     def test_the_pool_keeps_a_reserve_for_the_platform(self):
         self.assertEqual(platform.accounts_available(), (25 - platform.PLATFORM_RESERVE) // 3)

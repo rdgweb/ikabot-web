@@ -94,8 +94,10 @@ def enable(account) -> list:
     """Switch the add-on on (or keep it on): fill the account up to 3 proxies."""
     from .models import AccountProxyReservation
 
+    if not account.platform_proxies:
+        account.platform_proxies_billed = False      # newly on: the next monthly charge includes it, whatever happens
     account.platform_proxies, account.platform_proxies_ends_at = True, None
-    account.save(update_fields=["platform_proxies", "platform_proxies_ends_at", "updated_at"])
+    account.save(update_fields=["platform_proxies", "platform_proxies_ends_at", "platform_proxies_billed", "updated_at"])
     have = AccountProxyReservation._base_manager.filter(account=account, proxy_profile__active=True).count()
     return lend(account, PROXIES_PER_ACCOUNT - have)
 
@@ -109,8 +111,8 @@ def end(account) -> int:
         for proxy in ProxyProfile._base_manager.select_for_update().filter(lent_to=account):
             give_back(proxy)
             count += 1
-        account.platform_proxies, account.platform_proxies_ends_at = False, None
-        account.save(update_fields=["platform_proxies", "platform_proxies_ends_at", "updated_at"])
+        account.platform_proxies, account.platform_proxies_ends_at, account.platform_proxies_billed = False, None, False
+        account.save(update_fields=["platform_proxies", "platform_proxies_ends_at", "platform_proxies_billed", "updated_at"])
     return count
 
 
@@ -131,7 +133,18 @@ def end_due(organization=None, now=None) -> int:
 
 
 def accounts_with_addon(organization) -> int:
+    """Add-ons the next monthly charge includes: the ones on, and the ones switched off before ever being charged."""
+    from django.db.models import Q
+
+    from apps.accounts.models import Account
+
+    return Account._base_manager.filter(organization=organization, platform_proxies=True).filter(
+        Q(platform_proxies_ends_at__isnull=True) | Q(platform_proxies_billed=False)).count()
+
+
+def mark_billed(organization) -> int:
+    """A monthly charge was paid: every add-on in it has now been charged at least once."""
     from apps.accounts.models import Account
 
     return Account._base_manager.filter(organization=organization, platform_proxies=True,
-                                        platform_proxies_ends_at__isnull=True).count()
+                                        platform_proxies_billed=False).update(platform_proxies_billed=True)
