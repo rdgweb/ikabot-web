@@ -161,6 +161,14 @@ def _workflow_config(action_code: int, inputs: dict) -> dict:
     }
 
 
+# N-135: what a person starts may take a paused workflow out of the pause; what the system
+# creates by itself (follow-ups, reschedules, automations) never does.
+USER_TRIGGERS = frozenset({
+    "manual", "manual_restart", "manual_resume", "manual_retry", "manual_run_now", "manual_unstuck",
+    "telegram_callback", "user_start_cycle",
+})
+
+
 def _workflow_status_from_job(status: str) -> str:
     if status in {"queued", "running"}:
         return "active"
@@ -534,7 +542,8 @@ def create_job_with_workflow(
             workflow.root_job_id = job.pk
             update_fields_wf.append("root_job_id")
 
-        workflow.status = _workflow_status_from_job(status)
+        if workflow.status != "paused" or trigger_type in USER_TRIGGERS:
+            workflow.status = _workflow_status_from_job(status)
         workflow.active_run = workflow_run
         workflow.next_scheduled_for = scheduled_for
         workflow.last_event_at = timezone.now()

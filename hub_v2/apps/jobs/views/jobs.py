@@ -3755,7 +3755,11 @@ class WorkflowActionView(LoginRequiredMixin, View):
                 status="scheduled",
             ).update(status="cancelled", finished_at=now, updated_at=now, lease_expires_at=None)
         elif action == "resume":
-            latest = workflow_jobs.order_by("-created_at").first()
+            # N-135: resume the workflow's own action (the construction plan, not the last market follow-up)
+            root_action = (Job.objects.filter(pk=workflow.root_job_id).values_list("action_code", flat=True).first()
+                           if workflow.root_job_id else None)
+            latest = ((workflow_jobs.filter(action_code=root_action).order_by("-created_at").first() if root_action else None)
+                      or workflow_jobs.order_by("-created_at").first())
             if latest is not None:
                 eta = workflow.next_scheduled_for or now
                 if eta < now:

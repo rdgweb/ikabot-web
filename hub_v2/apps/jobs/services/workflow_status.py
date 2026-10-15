@@ -77,14 +77,15 @@ def _is_recurring(workflow) -> bool:
 def effective_status(workflow, facts: dict | None, *, recurring: bool | None = None) -> str:
     """active | waiting | problem | paused | finished | cancelled | draft."""
     facts = facts or _NO_FACTS
+    if workflow.status == "paused":
+        # pausing is the user's explicit choice: neither history nor a follow-up still
+        # finishing (e.g. ships already on their way) turns it into anything else (N-135)
+        return "paused"
     if facts["active"]:
         # an error as the latest news is a problem even with other jobs still lined up
         if facts["error"]:
             return "problem"
         return "active" if facts["running"] else "waiting"
-    if workflow.status == "paused":
-        # pausing is the user's explicit choice: history does not turn it into "finished"
-        return "paused"
     if facts["error"]:
         return "problem"
     recent = set(facts["statuses"]) - {"error"}
