@@ -1,0 +1,9 @@
+Olá, {{ user.get_username }}!
+
+Recebemos um pedido para criar uma senha nova na sua conta do IkaHub. Abra o link abaixo (vale 2 horas e funciona uma vez):
+
+{{ base }}{% url 'password-reset-confirm' uidb64=uid token=token %}
+
+Se não foi você, ignore este e-mail: a senha atual continua valendo.
+
+IkaHub

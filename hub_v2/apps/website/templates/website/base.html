@@ -38,7 +38,7 @@
       <div class="right">
         <a class="lang" href="{{ other_lang_url }}" hreflang="{% if lang == 'pt' %}en{% else %}pt-BR{% endif %}"><i class="bi bi-translate"></i> <span class="lang-label">{{ ui.other_lang }}</span></a>
         <a class="btn btn-ghost btn-sm" href="/login/">{{ ui.login }}</a>
-        <a class="btn btn-primary btn-sm" href="{{ links.contact }}">{{ ui.invite }}</a>
+        <a class="btn btn-primary btn-sm" href="{{ cta.href }}">{{ cta.label }}</a>
       </div>
     </div>
   </header>

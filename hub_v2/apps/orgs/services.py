@@ -116,9 +116,8 @@ def accept_invite(invite, *, username: str, password: str, ip=None, user_agent: 
     from django.contrib.auth import get_user_model
     from django.db import transaction
     from django.utils import timezone
-    from django.utils.text import slugify
 
-    from .models import Membership, Organization, TermsAcceptance
+    from .models import TermsAcceptance
 
     User = get_user_model()
     with transaction.atomic():
@@ -126,15 +125,84 @@ def accept_invite(invite, *, username: str, password: str, ip=None, user_agent: 
         user.set_password(password)
         user._own_organization = True
         user.save()
-        base = slugify(invite.organization_name)[:40] or "organizacao"
-        slug = base
-        while Organization.objects.filter(slug=slug).exists():
-            slug = f"{base}-{__import__('secrets').token_hex(3)}"
-        organization = Organization.objects.create(name=invite.organization_name, slug=slug)
-        Membership.objects.create(organization=organization, user=user, role=Membership.OWNER)
+        organization = own_organization(user, invite.organization_name)
         TermsAcceptance.objects.create(user=user, version=TERMS_VERSION, ip=ip, user_agent=(user_agent or "")[:200])
         invite.used_at = timezone.now()
         invite.used_by = user
         invite.organization = organization
         invite.save(update_fields=["used_at", "used_by", "organization", "updated_at"])
     return user, organization
+
+
+def own_organization(user, name: str):
+    """A new organization owned by this person (invitation or open sign-up)."""
+    import secrets
+
+    from django.utils.text import slugify
+
+    from .models import Membership, Organization
+
+    name = (name or "").strip()[:120] or user.get_username()
+    base = slugify(name)[:40] or "organizacao"
+    slug = base
+    while Organization.objects.filter(slug=slug).exists():
+        slug = f"{base}-{secrets.token_hex(3)}"
+    organization = Organization.objects.create(name=name, slug=slug)
+    Membership.objects.create(organization=organization, user=user, role=Membership.OWNER)
+    return organization
+
+
+# --- Open sign-up (N-125): the account only works after the e-mail is confirmed ---------------
+
+SIGNUP_SALT = "ikahub.signup"
+SIGNUP_MAX_AGE = 48 * 3600
+
+
+def signup_available() -> bool:
+    from django.conf import settings
+
+    return bool(settings.SIGNUP_OPEN and settings.EMAIL_READY)
+
+
+def register(*, email: str, username: str, password: str, organization_name: str, ip=None, user_agent: str = ""):
+    """An inactive person with the accepted terms; the organization comes with the confirmation."""
+    from django.contrib.auth import get_user_model
+    from django.db import transaction
+
+    from .models import TermsAcceptance
+
+    User = get_user_model()
+    with transaction.atomic():
+        user = User(username=username, email=email, is_active=False)
+        user.set_password(password)
+        user._own_organization = True
+        user.save()
+        TermsAcceptance.objects.create(user=user, version=TERMS_VERSION, ip=ip, user_agent=(user_agent or "")[:200])
+    return user
+
+
+def signup_token(user, organization_name: str, lang: str) -> str:
+    from django.core import signing
+
+    return signing.dumps({"u": user.pk, "o": (organization_name or "")[:120], "l": lang, "h": user.password[-12:]}, salt=SIGNUP_SALT)
+
+
+def confirm_signup(token: str):
+    """(user, organization, lang) for a good link — once; None when expired, forged or used."""
+    from django.contrib.auth import get_user_model
+    from django.core import signing
+    from django.db import transaction
+
+    try:
+        data = signing.loads(token, salt=SIGNUP_SALT, max_age=SIGNUP_MAX_AGE)
+    except signing.BadSignature:
+        return None
+    User = get_user_model()
+    with transaction.atomic():
+        user = User.objects.select_for_update().filter(pk=data.get("u")).first()
+        if user is None or user.is_active or user.password[-12:] != data.get("h"):
+            return None
+        user.is_active = True
+        user.save(update_fields=["is_active"])
+        organization = own_organization(user, data.get("o") or "")
+    return user, organization, data.get("l") or "pt"

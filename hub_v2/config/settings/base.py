@@ -140,6 +140,7 @@ TEMPLATES = [
                 "core.context_processors.hub_version",
                 "core.context_processors.htmx_context",
                 "apps.billing.context_processors.billing_notice",
+                "apps.website.password.site_flags",
                 "apps.telemetry.context.telemetry_prompt",
                 "apps.settings_app.tour.tour_context",
             ],
@@ -289,6 +290,22 @@ SITE_LEGAL = {
 # visit statistics (Umami in the same server, never published): the hub hands out only the script and the count
 UMAMI_URL = os.environ.get("UMAMI_URL", "").strip().rstrip("/")
 UMAMI_WEBSITE_ID = os.environ.get("UMAMI_WEBSITE_ID", "").strip()
+
+# --- E-mail (N-125): the owner's own SMTP (app password), only in the environment ---
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "").strip()
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587").strip() or 587)
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "").strip()
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "").strip()
+EMAIL_USE_SSL = EMAIL_PORT == 465
+EMAIL_USE_TLS = not EMAIL_USE_SSL
+EMAIL_TIMEOUT = 15
+EMAIL_READY = bool(EMAIL_HOST and EMAIL_HOST_USER and EMAIL_HOST_PASSWORD)
+DEFAULT_FROM_EMAIL = os.environ.get("EMAIL_FROM", "").strip() or (f"IkaHub <{EMAIL_HOST_USER}>" if EMAIL_HOST_USER else "IkaHub <nao-responda@localhost>")
+# without SMTP nothing is sent (never to the log: the messages carry sign-in links)
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend" if EMAIL_READY else "django.core.mail.backends.dummy.EmailBackend"
+PASSWORD_RESET_TIMEOUT = 2 * 3600
+# open sign-up on the site (with SMTP); off = by invitation only
+SIGNUP_OPEN = os.environ.get("SIGNUP_OPEN", "false").strip().lower() in ("1", "true", "yes")
 
 # --- Billing (N-124): Asaas. The key only in the environment; sandbox until said otherwise ---
 ASAAS_API_KEY = os.environ.get("ASAAS_API_KEY", "").strip()

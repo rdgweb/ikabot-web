@@ -1,0 +1,18 @@
+{% extends "website/base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div class="wrap narrow">
+    <h1>Link inválido ou vencido</h1>
+    <p>O link de confirmação vale 48 horas e só funciona uma vez. Se a conta já foi confirmada, é só entrar.</p>
+  </div>
+</div>
+<section style="padding-top: 10px;">
+  <div class="wrap narrow">
+    <div class="card" style="display: flex; gap: 12px; flex-wrap: wrap;">
+      <a class="btn btn-primary" href="/login/"><i class="bi bi-box-arrow-in-right"></i> Entrar</a>
+      <a class="btn btn-ghost" href="{{ links.signup }}">Criar conta de novo</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

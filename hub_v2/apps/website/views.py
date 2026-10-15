@@ -14,7 +14,7 @@ from django.utils import timezone
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
-from apps.orgs.services import TERMS_VERSION
+from apps.orgs.services import TERMS_VERSION, signup_available
 
 from . import content as C
 from .models import InviteRequest
@@ -52,6 +52,9 @@ def _context(request, lang: str, page: str, **extra) -> dict:
         "og_image": base + "/static/website/og.png",
         "indexable": settings.SITE_INDEXABLE,
         "ui": C.UI[lang], "links": {key: C.path_of(lang, key) for key in C.PAGES},
+        "open_signup": signup_available(),
+        "cta": ({"label": C.UI[lang]["start"], "href": C.path_of(lang, "signup"), "icon": "bi-rocket-takeoff"} if signup_available()
+                else {"label": C.UI[lang]["invite"], "href": C.path_of(lang, "contact"), "icon": "bi-envelope-paper"}),
         "legal": settings.SITE_LEGAL, "terms_version": TERMS_VERSION,
         "umami": bool(settings.UMAMI_URL and settings.UMAMI_WEBSITE_ID), "umami_id": settings.UMAMI_WEBSITE_ID,
         "structured": json.dumps(_structured(base, lang, page), ensure_ascii=False).replace("<", "\\" + "u003c"),
@@ -89,6 +92,8 @@ class SitePageView(View):
             extra = {"faq": C.FAQ[lang]}
         elif page == "contact":
             extra = {"t": C.CONTACT[lang], "sent": request.GET.get("ok") == "1"}
+        elif page == "signup":
+            extra = {"t": C.SIGNUP[lang], "sent": request.GET.get("ok") == "1"}
         template = f"website/legal/{page}_{lang}.html" if page in C.LEGAL_PAGES else f"website/{page}.html"
         return render(request, template, _context(request, lang, page, **extra))
 
@@ -212,3 +217,95 @@ def stats_send(request):
         return HttpResponse(status=202)                        # a lost visit never shows as an error to the visitor
     return HttpResponse(upstream.content[:4096], status=upstream.status_code,
                         content_type=upstream.headers.get("Content-Type", "application/json"))
+
+
+# --- Open sign-up (N-125) ----------------------------------------------------------------------
+
+SIGNUPS_PER_HOUR = 3
+
+
+class SignupView(View):
+    """POST /<lang>/cadastro|signup/enviar/ — an inactive account and the confirmation e-mail."""
+
+    def post(self, request, lang):
+        from django.contrib.auth import get_user_model
+        from django.contrib.auth.password_validation import validate_password
+        from django.core.mail import send_mail
+
+        from apps.audit.services import client_ip, record
+        from apps.orgs.services import register, signup_token
+
+        if lang not in C.LANGS:
+            raise Http404()
+        back = C.path_of(lang, "signup")
+        if not signup_available():
+            return HttpResponseRedirect(back)
+        t = C.SIGNUP[lang]
+        form = {key: (request.POST.get(key) or "").strip() for key in ("email", "username", "organization")}
+        password = request.POST.get("password1") or ""
+        if request.POST.get("website"):                       # the hidden field: a robot filled it
+            return HttpResponseRedirect(back + "?ok=1")
+        User = get_user_model()
+        errors = []
+        try:
+            validate_email(form["email"])
+        except ValidationError:
+            errors.append(t["error_email"])
+        else:
+            if User.objects.filter(email__iexact=form["email"]).exists():
+                errors.append(t["error_email_used"])
+        try:
+            User.username_validator(form["username"])
+        except ValidationError:
+            errors.append(t["error_username"])
+        if form["username"] and User.objects.filter(username__iexact=form["username"]).exists():
+            errors.append(t["error_username_used"])
+        if password != (request.POST.get("password2") or ""):
+            errors.append(t["error_password"])
+        else:
+            try:
+                validate_password(password, user=User(username=form["username"], email=form["email"]))
+            except ValidationError as exc:
+                errors.extend(exc.messages)
+        if request.POST.get("accept_terms") != "1":
+            errors.append(t["error_terms"])
+        ip = client_ip(request)
+        key = f"site:signup:{ip or 'none'}"
+        if not errors and cache.get(key, 0) >= SIGNUPS_PER_HOUR:
+            errors.append(t["error_rate"])
+        if errors:
+            ctx = _context(request, lang, "signup", t=t, errors=errors, form=form)
+            return render(request, "website/signup.html", ctx, status=400)
+        cache.add(key, 0, timeout=3600)
+        try:
+            cache.incr(key)
+        except ValueError:
+            cache.set(key, 1, timeout=3600)
+        user = register(email=form["email"][:254], username=form["username"], password=password,
+                        organization_name=form["organization"], ip=ip, user_agent=request.META.get("HTTP_USER_AGENT", ""))
+        link = f"{site_url(request)}/conta/confirmar/{signup_token(user, form['organization'], lang)}/"
+        try:
+            send_mail(t["mail_subject"], t["mail_body"].format(name=user.get_username(), link=link), None, [user.email])
+        except Exception:  # noqa: BLE001 - the person can sign up again; the half account is removed
+            logger.exception("Sign-up e-mail could not be sent")
+            user.delete()
+            ctx = _context(request, lang, "signup", t=t, errors=[t["error_send"]], form=form)
+            return render(request, "website/signup.html", ctx, status=503)
+        record("signup.created", user=user, target=user, target_label=user.get_username())
+        return HttpResponseRedirect(back + "?ok=1")
+
+
+def confirm_signup_view(request, token):
+    """GET /conta/confirmar/<token>/ — the e-mail is confirmed: the organization and the trial start."""
+    from django.contrib.auth import login
+
+    from apps.audit.services import record
+    from apps.orgs.services import confirm_signup
+
+    result = confirm_signup(token)
+    if result is None:
+        return render(request, "website/confirm_failed.html", _context(request, "pt", "signup"), status=410)
+    user, organization, _lang = result
+    record("signup.confirmed", user=user, target=organization, target_label=organization.name, organization=organization)
+    login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+    return HttpResponseRedirect("/")

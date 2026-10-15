@@ -4,11 +4,11 @@
 <div class="hero">
   <div class="wrap">
     <div>
-      <span class="pill"><i class="bi bi-stars"></i> {{ ui.beta }}</span>
+      <span class="pill"><i class="bi bi-stars"></i> {% if open_signup %}{{ ui.beta_open }}{% else %}{{ ui.beta }}{% endif %}</span>
       <h1>{{ t.title }}</h1>
       <p class="lead">{{ t.lead }}</p>
       <div class="actions">
-        <a class="btn btn-primary" href="{{ links.contact }}"><i class="bi bi-envelope-paper"></i> {{ ui.invite }}</a>
+        <a class="btn btn-primary" href="{{ cta.href }}"><i class="bi {{ cta.icon }}"></i> {{ cta.label }}</a>
         <a class="btn btn-ghost" href="{{ links.pricing }}">{{ ui.see_pricing }} <i class="bi bi-arrow-right"></i></a>
       </div>
     </div>
@@ -100,9 +100,9 @@
 <section>
   <div class="wrap">
     <div class="card center" style="padding: 36px;">
-      <h2 class="sec-title" style="margin-bottom: 8px;">{{ t.cta_title }}</h2>
-      <p style="margin-bottom: 20px;">{{ t.cta_text }}</p>
-      <a class="btn btn-primary" href="{{ links.contact }}"><i class="bi bi-envelope-paper"></i> {{ ui.invite }}</a>
+      <h2 class="sec-title" style="margin-bottom: 8px;">{% if open_signup %}{{ t.cta_open_title }}{% else %}{{ t.cta_title }}{% endif %}</h2>
+      <p style="margin-bottom: 20px;">{% if open_signup %}{{ t.cta_open_text }}{% else %}{{ t.cta_text }}{% endif %}</p>
+      <a class="btn btn-primary" href="{{ cta.href }}"><i class="bi {{ cta.icon }}"></i> {{ cta.label }}</a>
     </div>
   </div>
 </section>

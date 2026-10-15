@@ -13,8 +13,8 @@
     <details{% if forloop.first %} open{% endif %}><summary>{{ q }}</summary><p>{{ a }}</p></details>
     {% endfor %}
     <div class="card center" style="margin-top: 26px;">
-      <p style="margin-bottom: 14px;">{{ ui.beta }}</p>
-      <a class="btn btn-primary" href="{{ links.contact }}"><i class="bi bi-envelope-paper"></i> {{ ui.invite }}</a>
+      <p style="margin-bottom: 14px;">{% if open_signup %}{{ ui.beta_open }}{% else %}{{ ui.beta }}{% endif %}</p>
+      <a class="btn btn-primary" href="{{ cta.href }}"><i class="bi {{ cta.icon }}"></i> {{ cta.label }}</a>
     </div>
   </div>
 </section>

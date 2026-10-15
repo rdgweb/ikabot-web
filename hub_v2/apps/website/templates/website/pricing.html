@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-head">
   <div class="wrap">
-    <span class="pill"><i class="bi bi-stars"></i> {{ ui.beta }}</span>
+    <span class="pill"><i class="bi bi-stars"></i> {% if open_signup %}{{ ui.beta_open }}{% else %}{{ ui.beta }}{% endif %}</span>
     <h1 style="margin-top: 14px;">{{ t.title }}</h1>
     <p>{{ t.lead }}</p>
   </div>
@@ -57,7 +57,7 @@
     <div class="card"><h3 style="margin-top: 0;"><i class="bi bi-diagram-3" style="color: var(--gold-2);"></i> {{ t.what_title }}</h3><p>{{ t.what_text }}</p></div>
   </div>
   <div class="wrap center" style="margin-top: 30px;">
-    <a class="btn btn-primary" href="{{ links.contact }}"><i class="bi bi-envelope-paper"></i> {{ ui.invite }}</a>
+    <a class="btn btn-primary" href="{{ cta.href }}"><i class="bi {{ cta.icon }}"></i> {{ cta.label }}</a>
   </div>
 </section>
 {% endblock %}

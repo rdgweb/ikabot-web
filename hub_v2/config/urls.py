@@ -17,6 +17,7 @@ handler500 = "config.views.custom_500"
 from apps.orgs.invite_views import InviteAcceptView, InviteManageView  # noqa: E402
 from apps.website import views as site_views  # noqa: E402
 from apps.billing import views as billing_views  # noqa: E402
+from apps.website import password as site_password  # noqa: E402
 
 urlpatterns = [
     # Django admin
@@ -24,6 +25,11 @@ urlpatterns = [
     # Authentication
     path("login/", auth_views.LoginView.as_view(template_name="registration/login.html"), name="login"),
     path("logout/", HtmxLogoutView.as_view(), name="logout"),
+    # N-125: forgot my password, by e-mail
+    path("senha/esqueci/", site_password.ResetRequestView.as_view(), name="password-reset"),
+    path("senha/enviado/", site_password.ResetSentView.as_view(), name="password-reset-sent"),
+    path("senha/nova/<uidb64>/<token>/", site_password.ResetConfirmView.as_view(), name="password-reset-confirm"),
+    path("senha/pronto/", site_password.ResetDoneView.as_view(), name="password-reset-done"),
     # API documentation
     path("api/schema/", AuthenticatedSchemaView.as_view(), name="api-schema"),
     path("api/docs/", ApiDocsView.as_view(), name="api-docs"),

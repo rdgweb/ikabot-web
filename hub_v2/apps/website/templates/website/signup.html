@@ -1,0 +1,46 @@
+{% extends "website/base.html" %}
+
+{% block content %}
+<div class="page-head">
+  <div class="wrap narrow">
+    <span class="pill"><i class="bi bi-stars"></i> {{ ui.beta_open }}</span>
+    <h1 style="margin-top: 14px;">{% if open_signup %}{{ t.title }}{% else %}{{ t.closed_title }}{% endif %}</h1>
+    <p>{% if open_signup %}{{ t.lead }}{% else %}{{ t.closed_text }}{% endif %}</p>
+  </div>
+</div>
+
+<section style="padding-top: 10px;">
+  <div class="wrap narrow">
+    {% if not open_signup %}
+    <div class="card center"><a class="btn btn-primary" href="{{ links.contact }}"><i class="bi bi-envelope-paper"></i> {{ ui.invite }}</a></div>
+    {% elif sent %}
+    <div class="success"><h3 style="margin-bottom: 6px;"><i class="bi bi-envelope-check" style="color: var(--green);"></i> {{ t.sent_title }}</h3><p style="margin: 0;">{{ t.sent_text }}</p></div>
+    {% else %}
+    <div class="card">
+      {% for error in errors %}<div class="error">{{ error }}</div>{% endfor %}
+      <form class="form" method="post" action="{% if lang == 'pt' %}{% url 'site-pt-signup-send' %}{% else %}{% url 'site-en-signup-send' %}{% endif %}">
+        {% csrf_token %}
+        <label for="s-email">{{ t.email }}</label>
+        <input id="s-email" type="email" name="email" required maxlength="254" autocomplete="email" value="{{ form.email|default:'' }}">
+        <label for="s-user">{{ t.username }}</label>
+        <input id="s-user" name="username" required maxlength="150" autocomplete="username" value="{{ form.username|default:'' }}">
+        <small class="note" style="display: block; margin-top: 4px;">{{ t.username_help }}</small>
+        <label for="s-org">{{ t.organization }}</label>
+        <input id="s-org" name="organization" maxlength="120" value="{{ form.organization|default:'' }}">
+        <label for="s-p1">{{ t.password1 }}</label>
+        <input id="s-p1" type="password" name="password1" required autocomplete="new-password">
+        <label for="s-p2">{{ t.password2 }}</label>
+        <input id="s-p2" type="password" name="password2" required autocomplete="new-password">
+        <div class="hp" aria-hidden="true"><label>Website<input name="website" tabindex="-1" autocomplete="off"></label></div>
+        <label style="display: flex; gap: 10px; align-items: flex-start; font-weight: 400; margin-top: 18px;">
+          <input type="checkbox" name="accept_terms" value="1" required style="width: auto; margin-top: 4px;">
+          <span>{% if lang == 'pt' %}Li e aceito os <a href="{{ links.terms }}" target="_blank" rel="noopener">termos de uso</a> e a <a href="{{ links.privacy }}" target="_blank" rel="noopener">política de privacidade</a>, inclusive o risco de a automação violar as regras do Ikariam.{% else %}I have read and accept the <a href="{{ links.terms }}" target="_blank" rel="noopener">terms of use</a> and the <a href="{{ links.privacy }}" target="_blank" rel="noopener">privacy policy</a>, including the risk that automation breaks the Ikariam rules.{% endif %}</span>
+        </label>
+        <button class="btn btn-primary" type="submit" style="margin-top: 16px;"><i class="bi bi-rocket-takeoff"></i> {{ t.send }}</button>
+      </form>
+      <p class="note">{{ t.have }} <a href="/login/">{{ t.login }}</a></p>
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

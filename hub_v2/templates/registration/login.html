@@ -54,7 +54,8 @@
       </form>
     </div>
 
-    <p class="text-center text-sm mt-5"><a href="/pt/" style="color: #8a6420; font-weight: 600;"><i class="bi bi-arrow-left"></i> Conheça o IkaHub</a></p>
+    <p class="text-center text-sm mt-4"><a href="/senha/esqueci/" style="color: #4f86b9;">Esqueci minha senha</a>{% if signup_open %} · <a href="/pt/cadastro/" style="color: #4f86b9; font-weight: 600;">Criar conta grátis</a>{% endif %}</p>
+    <p class="text-center text-sm mt-3"><a href="/pt/" style="color: #8a6420; font-weight: 600;"><i class="bi bi-arrow-left"></i> Conheça o IkaHub</a></p>
 
     <p class="text-center text-xs mt-3" style="color: #b5ad9a;">
       ikabot hub v{{ HUB_VERSION|default:"0.0.1" }}

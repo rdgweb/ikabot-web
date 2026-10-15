@@ -1,0 +1,21 @@
+{% extends "orgs/public_base.html" %}
+{% block title %}Nova senha — IkaHub{% endblock %}
+{% block content %}
+<div class="pub-card">
+  {% if validlink %}
+  <h1 style="font-size: 1.2rem; font-weight: 700; margin-bottom: .8rem;">Criar uma senha nova</h1>
+  {% if form.errors %}<div class="pub-error">{% for field in form %}{% for e in field.errors %}{{ e }}<br>{% endfor %}{% endfor %}{% for e in form.non_field_errors %}{{ e }}<br>{% endfor %}</div>{% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <label for="id_new_password1">Senha nova</label>
+    <input type="password" name="new_password1" id="id_new_password1" required autocomplete="new-password" class="form-input w-full">
+    <label for="id_new_password2" style="margin-top: .8rem;">Repita a senha</label>
+    <input type="password" name="new_password2" id="id_new_password2" required autocomplete="new-password" class="form-input w-full">
+    <button type="submit" class="btn btn-primary w-full" style="margin-top: 1rem;"><i class="bi bi-key"></i> Salvar senha</button>
+  </form>
+  {% else %}
+  <h1 style="font-size: 1.2rem; font-weight: 700; margin-bottom: .4rem;">Link inválido ou vencido</h1>
+  <p class="pub-muted">O link vale 2 horas e só funciona uma vez. <a href="{% url 'password-reset' %}" style="color: #4f86b9;">Pedir outro</a>.</p>
+  {% endif %}
+</div>
+{% endblock %}

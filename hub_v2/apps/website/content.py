@@ -8,11 +8,11 @@ LANGS = ("pt", "en")
 HTML_LANG = {"pt": "pt-BR", "en": "en"}
 X_DEFAULT = "en"
 
-PAGES = ("home", "pricing", "faq", "contact", "terms", "privacy", "refund")
+PAGES = ("home", "pricing", "faq", "contact", "signup", "terms", "privacy", "refund")
 SLUGS = {
-    "pt": {"home": "", "pricing": "precos", "faq": "faq", "contact": "contato",
+    "pt": {"home": "", "pricing": "precos", "faq": "faq", "contact": "contato", "signup": "cadastro",
            "terms": "termos", "privacy": "privacidade", "refund": "reembolso"},
-    "en": {"home": "", "pricing": "pricing", "faq": "faq", "contact": "contact",
+    "en": {"home": "", "pricing": "pricing", "faq": "faq", "contact": "contact", "signup": "signup",
            "terms": "terms", "privacy": "privacy", "refund": "refund"},
 }
 LEGAL_PAGES = ("terms", "privacy", "refund")
@@ -34,6 +34,7 @@ META = {
         "faq": ("Perguntas frequentes — IkaHub",
                 "Subcontas, agente, proxies, segurança da senha, risco de banimento e cancelamento: as dúvidas mais comuns sobre o IkaHub."),
         "contact": ("Pedir convite — IkaHub", "O IkaHub está em beta fechado. Peça um convite e fale com a equipe."),
+        "signup": ("Criar conta grátis — IkaHub", "Crie sua conta no IkaHub: 7 dias grátis, até 4 subcontas, sem cartão."),
         "terms": ("Termos de uso — IkaHub", "Termos de uso e de serviço do IkaHub."),
         "privacy": ("Política de privacidade — IkaHub", "Quais dados o IkaHub guarda, para quê, por quanto tempo e como exercer seus direitos (LGPD)."),
         "refund": ("Cancelamento e reembolso — IkaHub", "Como cancelar o IkaHub e como funcionam os reembolsos."),
@@ -48,6 +49,7 @@ META = {
         "faq": ("FAQ — IkaHub",
                 "Sub-accounts, agent, proxies, password safety, ban risk and cancelling: the most common questions about IkaHub."),
         "contact": ("Request an invite — IkaHub", "IkaHub is in closed beta. Request an invite and talk to the team."),
+        "signup": ("Create a free account — IkaHub", "Create your IkaHub account: 7 free days, up to 4 sub-accounts, no card."),
         "terms": ("Terms of use — IkaHub", "IkaHub terms of use and service."),
         "privacy": ("Privacy policy — IkaHub", "What data IkaHub keeps, why, for how long and how to exercise your rights."),
         "refund": ("Cancellation and refunds — IkaHub", "How to cancel IkaHub and how refunds work."),
@@ -60,6 +62,7 @@ UI = {
                 "terms": "Termos", "privacy": "Privacidade", "refund": "Reembolso"},
         "login": "Entrar", "invite": "Pedir convite", "see_pricing": "Ver preços", "other_lang": "English",
         "beta": "Beta fechado · por convite",
+        "start": "Começar grátis", "beta_open": "7 dias grátis · sem cartão",
         "footer_disclaimer": "O IkaHub não é afiliado, aprovado nem mantido pela Gameforge. Ikariam é marca registrada da Gameforge 4D GmbH.",
         "footer_legal": "Legal", "footer_product": "Produto",
         "updated": "Versão",
@@ -69,6 +72,7 @@ UI = {
                 "terms": "Terms", "privacy": "Privacy", "refund": "Refunds"},
         "login": "Sign in", "invite": "Request an invite", "see_pricing": "See pricing", "other_lang": "Português",
         "beta": "Closed beta · invite only",
+        "start": "Start free", "beta_open": "7 free days · no card",
         "footer_disclaimer": "IkaHub is not affiliated with, endorsed or maintained by Gameforge. Ikariam is a registered trademark of Gameforge 4D GmbH.",
         "footer_legal": "Legal", "footer_product": "Product",
         "updated": "Version",
@@ -110,6 +114,7 @@ HOME = {
         "pricing_text": "A partir de R$ 14,90 por mês para até 4 subcontas, com agente e proxy próprios. Pausou uma subconta, liberou a vaga.",
         "cta_title": "Quer testar no beta?",
         "cta_text": "O IkaHub está em beta fechado. Peça um convite.",
+        "cta_open_title": "Comece agora", "cta_open_text": "7 dias grátis, até 4 subcontas, sem cartão.",
         "mock": {"title": "Painel", "jobs": "Fila", "online": "agente online",
                  "rows": [("Transporte", "concluído"), ("Construção", "em andamento"), ("Mercado", "agendado")]},
     },
@@ -147,6 +152,7 @@ HOME = {
         "pricing_text": "From US$ 4 a month for up to 4 sub-accounts, with your own agent and proxies. Pause a sub-account and the slot is free.",
         "cta_title": "Want to try the beta?",
         "cta_text": "IkaHub is in closed beta. Request an invite.",
+        "cta_open_title": "Start now", "cta_open_text": "7 free days, up to 4 sub-accounts, no card.",
         "mock": {"title": "Dashboard", "jobs": "Queue", "online": "agent online",
                  "rows": [("Transport", "done"), ("Building", "running"), ("Trade", "scheduled")]},
     },
@@ -297,5 +303,56 @@ CONTACT = {
         "sent_title": "Request received", "sent_text": "Thank you! We will reply to the email you gave.",
         "error_email": "Enter a valid email.", "error_rate": "Too many requests from this address. Try again later.",
         "direct": "Talk to us",
+    },
+}
+
+SIGNUP = {
+    "pt": {
+        "title": "Criar conta grátis", "lead": "7 dias grátis, até 4 subcontas, sem cartão. Depois, escolha a faixa.",
+        "email": "E-mail", "username": "Usuário", "username_help": "Letras, números e @ . + - _ (sem espaços).",
+        "organization": "Nome da sua aliança ou equipe (opcional)", "password1": "Senha", "password2": "Repita a senha",
+        "terms": "Li e aceito os {terms} e a {privacy}, inclusive o risco de a automação violar as regras do Ikariam.",
+        "terms_link": "termos de uso", "privacy_link": "política de privacidade",
+        "send": "Criar conta", "have": "Já tem conta?", "login": "Entrar",
+        "sent_title": "Confira seu e-mail", "sent_text": "Enviamos um link para confirmar a conta. Ele vale 48 horas; veja também o spam.",
+        "closed_title": "Cadastro por convite", "closed_text": "No momento as contas novas entram por convite.",
+        "error_email": "Informe um e-mail válido.", "error_email_used": "Este e-mail já tem conta. Entre ou use \"Esqueci minha senha\".",
+        "error_username": "Usuário: use letras, números e @ . + - _ (sem espaços).", "error_username_used": "Este usuário já existe; escolha outro.",
+        "error_password": "As senhas não conferem.", "error_terms": "É preciso aceitar os termos.",
+        "error_rate": "Muitos cadastros deste endereço. Tente de novo mais tarde.", "error_send": "Não conseguimos enviar o e-mail agora. Tente de novo em instantes.",
+        "mail_subject": "Confirme sua conta no IkaHub",
+        "mail_body": """Olá, {name}!
+
+Para ativar sua conta no IkaHub, abra o link abaixo (vale 48 horas):
+
+{link}
+
+Se não foi você, ignore este e-mail.
+
+IkaHub""",
+    },
+    "en": {
+        "title": "Create a free account", "lead": "7 free days, up to 4 sub-accounts, no card. Then pick a tier.",
+        "email": "Email", "username": "Username", "username_help": "Letters, numbers and @ . + - _ (no spaces).",
+        "organization": "Your alliance or team name (optional)", "password1": "Password", "password2": "Repeat the password",
+        "terms": "I have read and accept the {terms} and the {privacy}, including the risk that automation breaks the Ikariam rules.",
+        "terms_link": "terms of use", "privacy_link": "privacy policy",
+        "send": "Create account", "have": "Already have an account?", "login": "Sign in",
+        "sent_title": "Check your email", "sent_text": "We sent a link to confirm the account. It is valid for 48 hours; check spam too.",
+        "closed_title": "Sign-up by invitation", "closed_text": "Right now new accounts join by invitation.",
+        "error_email": "Enter a valid email.", "error_email_used": "This email already has an account. Sign in or use \"Forgot my password\".",
+        "error_username": "Username: use letters, numbers and @ . + - _ (no spaces).", "error_username_used": "This username is taken; pick another.",
+        "error_password": "The passwords do not match.", "error_terms": "You need to accept the terms.",
+        "error_rate": "Too many sign-ups from this address. Try again later.", "error_send": "We could not send the email right now. Try again shortly.",
+        "mail_subject": "Confirm your IkaHub account",
+        "mail_body": """Hi, {name}!
+
+To activate your IkaHub account, open the link below (valid for 48 hours):
+
+{link}
+
+If this was not you, ignore this email.
+
+IkaHub""",
     },
 }

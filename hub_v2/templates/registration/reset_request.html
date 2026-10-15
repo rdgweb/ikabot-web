@@ -1,0 +1,19 @@
+{% extends "orgs/public_base.html" %}
+{% block title %}Esqueci minha senha — IkaHub{% endblock %}
+{% block content %}
+<div class="pub-card">
+  <h1 style="font-size: 1.2rem; font-weight: 700; margin-bottom: .4rem;">Esqueci minha senha</h1>
+  {% if not email_ready %}
+  <p class="pub-muted">A recuperação por e-mail ainda não está disponível. Fale com a equipe.</p>
+  {% else %}
+  <p class="pub-muted" style="margin-bottom: 1rem;">Informe o e-mail da conta. Se ele existir, enviamos um link para criar uma senha nova (vale 2 horas).</p>
+  <form method="post">
+    {% csrf_token %}
+    <label for="id_email">E-mail</label>
+    <input type="email" name="email" id="id_email" required autocomplete="email" class="form-input w-full">
+    <button type="submit" class="btn btn-primary w-full" style="margin-top: 1rem;"><i class="bi bi-envelope"></i> Enviar link</button>
+  </form>
+  {% endif %}
+  <p class="pub-muted" style="margin-top: 1rem;"><a href="/login/" style="color: #4f86b9;">Voltar para o login</a></p>
+</div>
+{% endblock %}
