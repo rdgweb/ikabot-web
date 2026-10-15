@@ -6,7 +6,7 @@
 
   <div class="flex flex-wrap gap-2 items-center" data-panel-filters>
     {% if nodes|length > 1 %}
-    <select x-model="filterNode" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto" style="padding-right: 1.9rem;" aria-label="Filtrar por nó" data-filter="node">
+    <select x-model="filterNode" @change="applyFilter()" class="form-input !py-1 text-xs !w-auto" style="padding-left: 0.6rem; padding-right: 2.25rem; min-width: 8.5rem;" aria-label="Filtrar por nó" data-filter="node">
       <option value="">Todos os nós</option>
       {% for node in nodes %}
       <option value="{{ node.pk }}" data-node="{{ node.pk }}">{{ node.name }}</option>
@@ -15,7 +15,7 @@
     {% endif %}
 
     {% if accounts|length > 1 %}
-    <select x-model="filterAccount" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto" style="padding-right: 1.9rem;" aria-label="Filtrar por conta" data-filter="account">
+    <select x-model="filterAccount" @change="applyFilter()" class="form-input !py-1 text-xs !w-auto" style="padding-left: 0.6rem; padding-right: 2.25rem; min-width: 8.5rem;" aria-label="Filtrar por conta" data-filter="account">
       <option value="">Todas as contas</option>
       {% for acct in accounts %}
       <option value="{{ acct.pk }}" data-account="{{ acct.pk }}" data-node="{{ acct.node_id|default_if_none:"" }}">{{ acct.label }}</option>
@@ -24,7 +24,7 @@
     {% endif %}
 
     {% if account_cards|length > 1 %}
-    <select x-model="filterServer" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto" style="padding-right: 1.9rem;" aria-label="Filtrar por jogador" data-filter="player">
+    <select x-model="filterServer" @change="applyFilter()" class="form-input !py-1 text-xs !w-auto" style="padding-left: 0.6rem; padding-right: 2.25rem; min-width: 8.5rem;" aria-label="Filtrar por jogador" data-filter="player">
       <option value="">Todos os jogadores</option>
       {% for card in account_cards %}
       <option value="{{ card.game_account_id }}" data-game-account="{{ card.game_account_id }}" data-account="{{ card.account.pk }}" data-node="{{ card.account.node_id|default_if_none:"" }}">{{ card.player_name }} · {{ card.server_id }}</option>
@@ -33,7 +33,7 @@
     {% endif %}
 
     {% if city_options %}
-    <select x-model="filterCity" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto" style="padding-right: 1.9rem;" aria-label="Filtrar por cidade" data-filter="city">
+    <select x-model="filterCity" @change="applyFilter()" class="form-input !py-1 text-xs !w-auto" style="padding-left: 0.6rem; padding-right: 2.25rem; min-width: 8.5rem;" aria-label="Filtrar por cidade" data-filter="city">
       <option value="">Todas as cidades</option>
       {% for city in city_options %}
       <option value="{{ city.name }}" data-game-accounts="{{ city.game_accounts }}">{{ city.name }}</option>
