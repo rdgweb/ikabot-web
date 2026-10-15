@@ -36,6 +36,13 @@ def mark_done(user) -> None:
     AppSetting.objects.update_or_create(key=_done_key(user), defaults={"value": timezone.now().isoformat(timespec="seconds")})
 
 
+def restart(user) -> None:
+    """N-126: the person asked to see the tour again; it starts on the next page."""
+    from .models import AppSetting
+
+    AppSetting.objects.filter(key=_done_key(user)).delete()
+
+
 def set_enabled(enabled: bool) -> None:
     from .models import AppSetting
 

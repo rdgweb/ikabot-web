@@ -7,108 +7,99 @@
 {% endblock %}
 
 {% block content %}
-{# N-124: plano da organização, faixas por subcontas ativas, pagamento pelo Asaas #}
+{# N-124/N-126: plano da organização, faixas por subcontas ativas, pagamento pelo Asaas #}
+{% include "orgs/_org_head.html" %}
 <style>
-  .pl-top { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 1.2rem; }
-  .pl-stat { display: flex; align-items: center; gap: .8rem; }
-  .pl-stat i.big { display: grid; place-items: center; width: 2.6rem; height: 2.6rem; border-radius: 12px; font-size: 1.3rem; background: rgba(79,134,185,.12); color: var(--ik-sea); }
-  .pl-stat.ok i.big { background: rgba(45,122,45,.12); color: #2d7a2d; }
-  .pl-stat.warn i.big { background: rgba(201,156,78,.18); color: #8a6420; }
-  .pl-stat.bad i.big { background: rgba(176,58,46,.12); color: #b03a2e; }
-  .pl-stat b { display: block; color: var(--ik-ink); font-size: 1.05rem; }
-  .pl-stat small { color: var(--ik-muted); }
-  .pl-tiers { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-  .pl-tier { position: relative; display: block; text-align: center; padding: 1rem .8rem; border-radius: 14px; border: 1px solid var(--ik-line, #dbc9a7); background: #fffdf7; cursor: pointer; }
+  .pl-tiers { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .pl-tier { position: relative; display: flex; flex-direction: column; align-items: center; gap: .2rem; padding: 1.05rem .8rem .9rem; border-radius: .75rem;
+             border: 1px solid var(--ik-line); background: var(--ik-paper); cursor: pointer; transition: box-shadow .15s, border-color .15s; }
+  .pl-tier:hover { box-shadow: 0 2px 10px rgba(0, 0, 0, .09); }
   .pl-tier input { position: absolute; opacity: 0; pointer-events: none; }
-  .pl-tier .n { font-size: .82rem; color: var(--ik-muted); font-weight: 600; }
-  .pl-tier .p { font-size: 1.35rem; font-weight: 700; color: #654b1f; margin-top: .2rem; }
-  .pl-tier .p small { font-size: .78rem; color: var(--ik-muted); font-weight: 600; }
-  .pl-tier.off { opacity: .45; cursor: not-allowed; }
-  .pl-tier:has(input:checked) { border-color: #c99c4e; box-shadow: 0 0 0 3px rgba(201,156,78,.25); }
-  .pl-tag { position: absolute; top: -.55rem; left: 50%; transform: translateX(-50%); font-size: .66rem; font-weight: 700; padding: .1rem .5rem; border-radius: 999px; white-space: nowrap; }
+  .pl-tier .n { font-size: .72rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ik-muted); }
+  .pl-tier .p { font-size: 1.3rem; font-weight: 700; color: var(--ik-ink); white-space: nowrap; }
+  .pl-tier .p small { font-size: .74rem; color: var(--ik-muted); font-weight: 600; }
+  .pl-tier.off { opacity: .4; cursor: not-allowed; }
+  .pl-tier:has(input:checked) { border-color: #c99c4e; box-shadow: 0 0 0 3px rgba(201, 156, 78, .25); }
+  .pl-tag { position: absolute; top: -.6rem; left: 50%; transform: translateX(-50%); font-size: .64rem; font-weight: 700; padding: .12rem .55rem; border-radius: 999px; white-space: nowrap; }
   .pl-tag.cur { background: #2d7a2d; color: #fff; }
   .pl-tag.sug { background: #c99c4e; color: #fff; }
+  .pl-msg { display: flex; gap: .6rem; align-items: flex-start; padding: .7rem .9rem; border-radius: .65rem; margin-bottom: 1rem; font-size: .85rem; color: var(--ik-ink); }
+  .pl-msg.error { border: 1px solid rgba(179, 64, 47, .45); border-left: 4px solid #b3402f; background: rgba(179, 64, 47, .07); }
+  .pl-msg.success, .pl-msg.info { border: 1px solid rgba(45, 122, 45, .35); border-left: 4px solid #2d7a2d; background: rgba(45, 122, 45, .07); }
 </style>
 
-<div class="mb-5 flex flex-wrap items-end justify-between gap-3">
-  <h1 class="text-xl font-bold text-ink flex items-center gap-2"><i class="bi bi-credit-card text-sea"></i> Plano</h1>
-  {% if sandbox and configured %}<span class="badge badge-warning">Asaas em modo de teste</span>{% endif %}
-</div>
-
+{% for message in messages %}
+<div class="pl-msg {{ message.tags }}"><i class="bi {% if message.tags == 'error' %}bi-exclamation-triangle{% else %}bi-check2-circle{% endif %}"></i> {{ message }}</div>
+{% endfor %}
 {% if returned %}
-<div class="card p-4 mb-4 text-sm" style="border-color: rgba(45,122,45,.4);"><i class="bi bi-hourglass-split"></i> Recebemos você de volta do pagamento. O plano muda assim que o Asaas confirmar — no Pix e no cartão costuma ser na hora.</div>
+<div class="pl-msg info"><i class="bi bi-hourglass-split"></i> De volta do pagamento: o plano muda assim que o Asaas confirmar — no cartão é na hora; no boleto/Pix, quando for pago.</div>
 {% endif %}
 
-<div class="pl-top">
-  <div class="card p-5">
-    <div class="pl-stat {% if state.code == 'exempt' or state.code == 'active' %}ok{% elif state.code == 'trial' or state.code == 'overdue' %}warn{% else %}bad{% endif %}">
-      <i class="big bi {% if state.code == 'exempt' or state.code == 'active' %}bi-check2-circle{% elif state.code == 'trial' %}bi-hourglass-split{% elif state.code == 'overdue' %}bi-exclamation-triangle{% else %}bi-pause-circle{% endif %}"></i>
-      <span><b>{{ state.label }}</b>
-        <small>{% if state.code == 'exempt' %}sem cobrança{% elif state.ends_at %}{% if state.code == 'trial' %}até {% elif state.code == 'active' %}{% if account.status == 'canceled' %}até {% else %}próxima cobrança {% endif %}{% else %}venceu em {% endif %}{{ state.ends_at|date:"d/m/Y" }}{% endif %}</small></span>
-    </div>
+<div class="org-cards">
+  <div class="org-card">
+    <span class="org-icon {% if state.code == 'exempt' or state.code == 'active' %}ok{% elif state.code == 'trial' or state.code == 'overdue' %}warn{% else %}bad{% endif %}">
+      <i class="bi {% if state.code == 'exempt' or state.code == 'active' %}bi-check2-circle{% elif state.code == 'trial' %}bi-hourglass-split{% elif state.code == 'overdue' %}bi-exclamation-triangle{% else %}bi-pause-circle{% endif %}"></i></span>
+    <span style="min-width: 0;"><span class="org-card-label">Situação</span><span class="org-card-value" style="display: block;">{{ state.label }}</span>
+      <span class="org-card-note">{% if state.code == 'exempt' %}sem cobrança{% elif state.ends_at %}{% if state.code == 'trial' %}até{% elif state.code == 'active' %}{% if account.status == 'canceled' %}vale até{% else %}renova em{% endif %}{% else %}venceu em{% endif %} {{ state.ends_at|date:"d/m/Y" }}{% endif %}</span></span>
   </div>
-  <div class="card p-5">
-    <div class="pl-stat">
-      <i class="big bi bi-people"></i>
-      <span><b>{{ active }}{% if state.limit %} de {{ state.limit }}{% endif %}</b><small>subcontas ativas</small></span>
-    </div>
-  </div>
+  <a class="org-card" href="/organizacao/subcontas/">
+    <span class="org-icon gold"><i class="bi bi-toggles"></i></span>
+    <span style="flex: 1; min-width: 0;"><span class="org-card-label">Subcontas ativas</span>
+      <span class="org-card-value" style="display: block;">{{ active }}{% if state.limit %} <small style="font-size: .8rem; color: var(--ik-muted);">de {{ state.limit }}</small>{% endif %}</span>
+      {% if state.limit %}<span class="org-meter{% if active >= state.limit %} full{% endif %}" style="display: block;"><i style="width: {% widthratio active state.limit 100 %}%;"></i></span>{% endif %}</span>
+  </a>
   {% if price and account.status != 'trial' and account.status != 'exempt' %}
-  <div class="card p-5">
-    <div class="pl-stat">
-      <i class="big bi bi-cash-coin"></i>
-      <span><b>{{ price }}</b><small>por mês</small></span>
-    </div>
+  <div class="org-card">
+    <span class="org-icon"><i class="bi bi-cash-coin"></i></span>
+    <span><span class="org-card-label">Mensal</span><span class="org-card-value" style="display: block;">{{ price }}</span></span>
   </div>
+  {% endif %}
+  {% if sandbox and configured %}
+  <div class="org-card"><span class="org-icon warn"><i class="bi bi-cone-striped"></i></span>
+    <span><span class="org-card-label">Pagamento</span><span class="org-card-value" style="display: block; font-size: .95rem;">Modo de teste</span></span></div>
   {% endif %}
 </div>
 
-{% if state.code == 'paused' or state.code == 'read_only' %}
-<div class="card p-4 mb-4 text-sm" style="border-color: rgba(176,58,46,.45); color: #8c3028;">
-  <i class="bi bi-pause-circle"></i> Os agentes não recebem jobs enquanto o plano não estiver em dia. Nada foi apagado: assine ou pague e tudo volta na hora.
-  {% if state.code == 'read_only' %}A organização está só para leitura.{% endif %}
-</div>
-{% endif %}
-
 {% if state.code != 'exempt' %}
-<div class="card p-5">
+<div class="org-panel">
   {% if not configured %}
-  <p class="text-sm text-muted">A cobrança ainda não está disponível nesta plataforma.</p>
+  <p class="text-sm text-muted" style="margin: 0;">A cobrança ainda não está disponível nesta plataforma.</p>
   {% elif not can_change %}
-  <p class="text-sm text-muted">Só o dono da organização escolhe e paga o plano.</p>
+  <p class="text-sm text-muted" style="margin: 0;">Só o dono da organização escolhe e paga o plano.</p>
   {% else %}
+  <h3><i class="bi bi-layers"></i> {% if account.subscription_id and account.status == 'active' %}Trocar de faixa{% else %}Escolha a faixa{% endif %}</h3>
   <form method="post">
     {% csrf_token %}
     <div class="pl-tiers">
       {% for o in options %}
       <label class="pl-tier{% if not o.fits %} off{% endif %}">
         <input type="radio" name="limit" value="{{ o.limit }}" {% if not o.fits %}disabled{% endif %} {% if o.current or o.suggested and not account.subscription_id %}checked{% endif %}>
-        {% if o.current %}<span class="pl-tag cur">atual</span>{% elif o.suggested %}<span class="pl-tag sug">indicado</span>{% endif %}
-        <div class="n">até {{ o.limit }} subcontas</div>
-        <div class="p">{{ o.price }}<small>/mês</small></div>
+        {% if o.current %}<span class="pl-tag cur">atual</span>{% elif o.suggested %}<span class="pl-tag sug">indicada</span>{% endif %}
+        <span class="n">até {{ o.limit }} subcontas</span>
+        <span class="p">{{ o.price }}<small>/mês</small></span>
       </label>
       {% endfor %}
     </div>
     {% if more %}
-    <div class="mt-3 text-sm text-muted flex flex-wrap items-center gap-2">
-      Mais de 100:
+    <div class="org-form" style="margin-top: .8rem; align-items: center;">
+      <span class="text-sm text-muted">Mais de 100:</span>
       <select name="limit_more" class="form-input" style="width: auto;" onchange="if (this.value) { this.form.querySelectorAll('input[name=limit]').forEach(i => i.checked = false); this.name = 'limit'; }">
         <option value="">escolher</option>
         {% for o in more %}<option value="{{ o.limit }}">até {{ o.limit }} — {{ o.price }}/mês</option>{% endfor %}
       </select>
     </div>
     {% endif %}
-    <div class="mt-4 flex flex-wrap items-center gap-3">
+    <div class="org-form" style="margin-top: 1rem; align-items: center;">
       {% if account.subscription_id and account.status == 'active' %}
       <button class="btn btn-primary" type="submit"><i class="bi bi-arrow-repeat"></i> Trocar de faixa</button>
       {% else %}
       <button class="btn btn-primary" type="submit"><i class="bi bi-credit-card"></i> Assinar</button>
-      <span class="text-xs text-muted">Pix, cartão ou boleto, na página segura do Asaas. Renova todo mês.</span>
+      <span class="org-chip off"><i class="bi bi-shield-lock"></i> cartão, boleto ou Pix · página do Asaas</span>
       {% endif %}
     </div>
   </form>
   {% if account.subscription_id and account.status == 'active' %}
-  <form method="post" class="mt-4" onsubmit="return confirm('Cancelar a assinatura? O plano vale até o fim do período pago e depois os jobs pausam.');">
+  <form method="post" style="margin-top: 1rem; padding-top: .9rem; border-top: 1px solid var(--ik-line);" onsubmit="return confirm('Cancelar a assinatura? O plano vale até o fim do período pago e depois os jobs pausam.');">
     {% csrf_token %}<input type="hidden" name="action" value="cancel">
     <button class="btn btn-secondary btn-sm" type="submit"><i class="bi bi-x-circle"></i> Cancelar assinatura</button>
   </form>

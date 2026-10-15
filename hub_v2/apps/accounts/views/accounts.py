@@ -90,7 +90,9 @@ class AccountDetailView(LoginRequiredMixin, DetailView):
             })
 
         ctx["bot_config"] = bot_config
-        ctx["bot_active"] = bot_config.is_active
+        from apps.telegram.services.config import platform_bot
+
+        ctx["bot_active"] = platform_bot().is_active      # N-126: the bot is the platform's; the chat is the organization's
         ctx["global_linked"] = bot_config.is_linked
         ctx["ga_configs"] = ga_configs
         ctx["has_any_linked"] = any(c["is_linked"] for c in ga_configs) or bot_config.is_linked

@@ -29,6 +29,14 @@ def _public_url(request, path: str) -> str:
     return base + path
 
 
+def _org_tabs(request, tab: str) -> dict:
+    """The header of Minha organização (N-126)."""
+    from apps.orgs.services import role_of
+
+    role = Membership.OWNER if request.user.is_superuser else role_of(request.user, request.organization)
+    return {"organization": request.organization, "tab": tab, "role": role}
+
+
 def _is_owner(request) -> bool:
     if request.user.is_superuser:
         return True
@@ -60,6 +68,7 @@ class PlanView(LoginRequiredMixin, TemplateView):
             "more": [{"limit": limit, "price": plans.brl(plans.price_for(limit))} for limit in plans.limits()[7:]],
             "price": plans.brl(account.price) if account.price else "",
             "returned": self.request.GET.get("ok") == "1",
+            **_org_tabs(self.request, "plan"),
         })
         return ctx
 

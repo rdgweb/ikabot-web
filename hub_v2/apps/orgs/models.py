@@ -82,6 +82,8 @@ class Invite(UUIDTimestampModel):
     used_at = models.DateTimeField(null=True, blank=True)
     used_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     organization = models.ForeignKey(Organization, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    # N-126: with a role, the person joins `organization` (set at creation) instead of getting their own
+    role = models.CharField(max_length=16, blank=True, default="")
 
     class Meta:
         ordering = ["-created_at"]

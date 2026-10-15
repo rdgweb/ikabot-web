@@ -40,10 +40,10 @@
     <div class="flex items-center gap-3">
       <i class="bi bi-person-circle text-xl flex-shrink-0" style="color: #8a7e66;"></i>
       <div class="flex-1 min-w-0 sidebar-collapsible">
-        <p class="text-sm font-medium truncate" style="color: #c4b99a;">{{ user.username }}</p>
-        <p class="text-xs" style="color: #8a7e66;">
-          {% if user.is_superuser %}Admin{% elif user.groups.all %}{{ user.groups.first.name }}{% else %}User{% endif %}
-        </p>
+        <a href="/conta/" title="Minha conta" style="text-decoration: none;">
+          <p class="text-sm font-medium truncate" style="color: #c4b99a;">{{ user.first_name|default:user.username }}</p>
+          <p class="text-xs" style="color: #8a7e66;">Minha conta <i class="bi bi-gear"></i></p>
+        </a>
       </div>
       <form method="post" action="{% url 'logout' %}" class="sidebar-collapsible">
         {% csrf_token %}

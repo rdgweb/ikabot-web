@@ -25,7 +25,7 @@ class OrganizationTelegramPageTests(TestCase):
 
     def test_the_customer_sees_and_links_only_its_own_chat(self, _name):
         page = self.client.get(reverse("orgs:telegram")).content.decode()
-        self.assertIn("Nenhum chat vinculado", page)                   # the platform's chat (111) is not theirs
+        self.assertIn("Não vinculado", page)                   # the platform's chat (111) is not theirs
         self.client.post(reverse("orgs:telegram"), {"action": "link"})
         page = self.client.get(reverse("orgs:telegram")).content.decode()
         config_b = organization_config(self.org_b)
@@ -41,7 +41,7 @@ class OrganizationTelegramPageTests(TestCase):
     def test_a_reader_only_looks(self, _name):
         Membership.objects.filter(user=self.customer).update(role="viewer")
         self.assertEqual(self.client.get(reverse("orgs:telegram")).status_code, 200)
-        self.assertEqual(self.client.post(reverse("orgs:telegram"), {"action": "link"}).status_code, 404)
+        self.assertEqual(self.client.post(reverse("orgs:telegram"), {"action": "link"}).status_code, 403)   # N-126: a viewer only looks
         self.assertEqual(organization_config(self.org_b).link_code, "")
 
     def test_unlinking_touches_only_its_chat(self, _name):
@@ -87,5 +87,5 @@ class CaptchaChoicePageTests(TestCase):
 
         self.assertEqual(preferences_of(org).captcha_telegram, "on")
         Membership.objects.filter(user=owner).update(role="viewer")
-        self.assertEqual(self.client.post(reverse("orgs:telegram"), {"action": "captcha", "captcha_telegram": "off"}).status_code, 404)
+        self.assertEqual(self.client.post(reverse("orgs:telegram"), {"action": "captcha", "captcha_telegram": "off"}).status_code, 403)
         self.assertEqual(preferences_of(org).captcha_telegram, "on")

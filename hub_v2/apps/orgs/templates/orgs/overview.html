@@ -1,0 +1,47 @@
+{% extends base_template|default:"base.html" %}
+
+{% block title %}Minha organização{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <span class="text-ink">Minha organização</span>
+{% endblock %}
+
+{% block content %}
+{% include "orgs/_org_head.html" %}
+
+<div class="org-cards">
+  <a class="org-card" href="/organizacao/plano/">
+    <span class="org-icon {% if plan.code == 'exempt' or plan.code == 'active' %}ok{% elif plan.code == 'trial' or plan.code == 'overdue' %}warn{% else %}bad{% endif %}"><i class="bi bi-credit-card"></i></span>
+    <span style="min-width: 0;"><span class="org-card-label">Plano</span><span class="org-card-value" style="display: block;">{{ plan.label }}</span>
+      <span class="org-card-note">{% if plan.code == 'exempt' %}sem cobrança{% elif plan.ends_at %}{% if plan.code == 'trial' %}até{% elif plan.code == 'active' %}renova em{% else %}venceu em{% endif %} {{ plan.ends_at|date:"d/m" }}{% endif %}{% if plan_price and plan.code != 'trial' %} · {{ plan_price }}/mês{% endif %}</span></span>
+  </a>
+  <a class="org-card" href="/organizacao/subcontas/">
+    <span class="org-icon gold"><i class="bi bi-toggles"></i></span>
+    <span style="min-width: 0; flex: 1;"><span class="org-card-label">Subcontas ativas</span><span class="org-card-value" style="display: block;">{{ active }}{% if plan.limit %} <small style="font-size: .8rem; color: var(--ik-muted);">de {{ plan.limit }}</small>{% endif %}</span>
+      {% if plan.limit %}<span class="org-meter{% if active >= plan.limit %} full{% endif %}" style="display: block;"><i style="width: {% widthratio active plan.limit 100 %}%;"></i></span>{% endif %}</span>
+  </a>
+  <a class="org-card" href="/accounts/nodes/">
+    <span class="org-icon {% if nodes and online == nodes %}ok{% elif nodes %}warn{% endif %}"><i class="bi bi-hdd-network"></i></span>
+    <span><span class="org-card-label">Agentes</span><span class="org-card-value" style="display: block;">{{ online }} <small style="font-size: .8rem; color: var(--ik-muted);">de {{ nodes }} online</small></span></span>
+  </a>
+  <a class="org-card" href="/accounts/">
+    <span class="org-icon"><i class="bi bi-person-badge"></i></span>
+    <span><span class="org-card-label">Contas GameForge</span><span class="org-card-value" style="display: block;">{{ accounts }}</span></span>
+  </a>
+  <a class="org-card" href="/organizacao/membros/">
+    <span class="org-icon"><i class="bi bi-people"></i></span>
+    <span><span class="org-card-label">Membros</span><span class="org-card-value" style="display: block;">{{ members }}</span></span>
+  </a>
+</div>
+
+{% if is_owner %}
+<div class="org-panel" style="max-width: 34rem;">
+  <h3><i class="bi bi-pencil-square"></i> Nome da organização</h3>
+  <form method="post" class="org-form">
+    {% csrf_token %}
+    <div style="flex: 1; min-width: 200px;"><input name="name" class="form-input w-full" maxlength="120" value="{{ organization.name }}" required></div>
+    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check2"></i> Salvar</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

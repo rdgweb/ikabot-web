@@ -68,6 +68,8 @@ class OrganizationTelegramView(LoginRequiredMixin, TemplateView):
             "can_change": can_change(self.request),
             "preferences": preferences_of(self.request.organization),
             "captcha_choices": OrganizationPreferences.CAPTCHA_TELEGRAM_CHOICES,
+            "organization": self.request.organization, "tab": "telegram",
+            "role": Membership.OWNER if self.request.user.is_superuser else getattr(membership_of(self.request), "role", ""),
         })
         return ctx
 

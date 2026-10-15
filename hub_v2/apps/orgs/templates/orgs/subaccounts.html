@@ -1,0 +1,50 @@
+{% extends base_template|default:"base.html" %}
+
+{% block title %}Subcontas{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <span class="text-ink">Subcontas</span>
+{% endblock %}
+
+{% block content %}
+{% include "orgs/_org_head.html" %}
+
+<div class="org-cards" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));">
+  <div class="org-card">
+    <span class="org-icon gold"><i class="bi bi-toggles"></i></span>
+    <span style="flex: 1; min-width: 0;"><span class="org-card-label">Ativas</span>
+      <span class="org-card-value" style="display: block;">{{ active }}{% if limit %} <small style="font-size: .8rem; color: var(--ik-muted);">de {{ limit }}</small>{% endif %}</span>
+      {% if limit %}<span class="org-meter{% if active >= limit %} full{% endif %}" style="display: block;"><i style="width: {% widthratio active limit 100 %}%;"></i></span>{% endif %}</span>
+  </div>
+  {% if limit and active >= limit %}
+  <a class="org-card" href="/organizacao/plano/">
+    <span class="org-icon warn"><i class="bi bi-arrow-up-circle"></i></span>
+    <span><span class="org-card-label">Faixa cheia</span><span class="org-card-value" style="display: block; font-size: .95rem;">Subir de faixa</span></span>
+  </a>
+  {% endif %}
+</div>
+
+{% for group in groups %}
+<div class="org-panel" style="margin-bottom: .9rem;">
+  <h3><i class="bi bi-person-badge"></i> {{ group.account.label }} {% if not group.account.active %}<span class="org-chip off">conta pausada</span>{% endif %}</h3>
+  {% for world in group.worlds %}
+  <div class="org-row">
+    <div class="main"><b>{{ world.name|default:world.server_id }}</b><span>{{ world.server_language|upper }} · mundo {{ world.server_number }}</span></div>
+    {% if world.blocked %}<span class="org-chip bad">bloqueada</span>
+    {% elif world.active and group.account.active %}<span class="org-chip ok">ativa</span>
+    {% else %}<span class="org-chip off">pausada</span>{% endif %}
+    {% if can_run %}
+    <form method="post">{% csrf_token %}<input type="hidden" name="world" value="{{ world.pk }}">
+      <button type="submit" class="org-switch{% if world.active %} on{% endif %}" title="{% if world.active %}Pausar{% else %}Ativar{% endif %}" aria-label="{% if world.active %}Pausar{% else %}Ativar{% endif %} {{ world.name }}"
+              {% if world.blocked %}disabled{% elif not world.active and limit and active >= limit %}disabled{% endif %}></button>
+    </form>
+    {% endif %}
+  </div>
+  {% empty %}
+  <p class="text-sm text-muted">Nenhuma subconta encontrada ainda.</p>
+  {% endfor %}
+</div>
+{% empty %}
+<div class="org-panel"><p class="text-sm text-muted" style="margin: 0;">Nenhuma conta GameForge ainda. <a href="/accounts/create/" class="link-sea font-semibold">Cadastrar conta</a></p></div>
+{% endfor %}
+{% endblock %}

@@ -125,7 +125,13 @@ def accept_invite(invite, *, username: str, password: str, ip=None, user_agent: 
         user.set_password(password)
         user._own_organization = True
         user.save()
-        organization = own_organization(user, invite.organization_name)
+        if invite.role and invite.organization_id:
+            from .models import Membership
+
+            organization = invite.organization                # N-126: joins the organization that invited
+            Membership.objects.create(organization=organization, user=user, role=invite.role)
+        else:
+            organization = own_organization(user, invite.organization_name)
         TermsAcceptance.objects.create(user=user, version=TERMS_VERSION, ip=ip, user_agent=(user_agent or "")[:200])
         invite.used_at = timezone.now()
         invite.used_by = user
@@ -206,3 +212,32 @@ def confirm_signup(token: str):
         user.save(update_fields=["is_active"])
         organization = own_organization(user, data.get("o") or "")
     return user, organization, data.get("l") or "pt"
+
+
+def create_member_invite(*, organization, email: str, role: str, created_by):
+    """N-126: the owner brings someone into the organization (one use, 7 days). Returns (invite, token)."""
+    import secrets
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from core.auth.tokens import hash_agent_token
+
+    from .models import Invite, Membership
+
+    if role not in (Membership.OWNER, Membership.OPERATOR, Membership.VIEWER):
+        raise ValueError(role)
+    token = secrets.token_urlsafe(32)
+    invite = Invite.objects.create(
+        email=email.strip().lower(), organization_name=organization.name, organization=organization, role=role,
+        token_hash=hash_agent_token(token), created_by=created_by, expires_at=timezone.now() + timedelta(days=7),
+    )
+    return invite, token
+
+
+def role_of(user, organization) -> str:
+    if user is None or organization is None or not getattr(user, "is_authenticated", False):
+        return ""
+    from .models import Membership
+
+    return Membership.objects.filter(user=user, organization=organization).values_list("role", flat=True).first() or ""

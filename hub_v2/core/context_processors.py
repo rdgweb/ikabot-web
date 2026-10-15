@@ -38,6 +38,9 @@ def nav_context(request):
             # N-106: what each organization sets for itself
             "label": "Minha organização",
             "items": [
+                {"name": "Visão geral", "url": "/organizacao/", "icon": "bi-building-gear"},
+                {"name": "Subcontas", "url": "/organizacao/subcontas/", "icon": "bi-toggles"},
+                {"name": "Membros", "url": "/organizacao/membros/", "icon": "bi-people"},
                 {"name": "Telegram", "url": "/organizacao/telegram/", "icon": "bi-telegram"},
                 {"name": "Plano", "url": "/organizacao/plano/", "icon": "bi-credit-card"},
             ],

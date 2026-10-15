@@ -42,7 +42,7 @@ class CustomerInstallTests(TestCase):
         self.client.post(reverse("accounts:node-new-key", args=[node.pk]))
         self.assertNotEqual(Node._base_manager.get(pk=node.pk).agent_token_hash, old_hash)
         Membership.objects.filter(user=self.owner).update(role="viewer")
-        self.assertEqual(self.client.post(reverse("accounts:node-new-key", args=[node.pk])).status_code, 404)
+        self.assertEqual(self.client.post(reverse("accounts:node-new-key", args=[node.pk])).status_code, 403)   # N-126: a viewer only looks
 
     def test_another_organizations_node_and_broker_nodes_are_out_of_reach(self):
         other = Node.objects.create(name="da-plataforma", transport=Node.TRANSPORT_HTTPS)      # default organization

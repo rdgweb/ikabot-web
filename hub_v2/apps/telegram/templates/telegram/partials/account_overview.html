@@ -26,14 +26,14 @@
       <div class="px-3 py-2 rounded text-xs mb-4 bg-amber-50 text-amber-700 border border-amber-200">
         <i class="bi bi-exclamation-triangle mr-1"></i>
         Chat global não vinculado —
-        <a href="{% url 'telegram:config' %}" class="underline font-medium">Configurar</a>
+        <a href="{% if user_is_staff %}{% url 'telegram:config' %}{% else %}/organizacao/telegram/{% endif %}" class="underline font-medium">Configurar</a>
       </div>
     {% endif %}
   {% else %}
     <div class="px-3 py-2 rounded text-xs mb-4 bg-amber-50 text-amber-700 border border-amber-200">
       <i class="bi bi-exclamation-triangle mr-1"></i>
-      Bot <strong>Inativo</strong> —
-      <a href="{% url 'telegram:config' %}" class="underline font-medium">Config Telegram</a>
+      Bot <strong>Inativo</strong>{% if user_is_staff %} —
+      <a href="{% url 'telegram:config' %}" class="underline font-medium">Config Telegram</a>{% endif %}
     </div>
   {% endif %}
 
@@ -43,11 +43,11 @@
       {% for item in ga_configs %}
         <div class="border border-line rounded">
           <button class="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-[var(--ik-sand-light)] transition-colors"
-                  hx-get="{% url 'telegram:ga-settings' item.ga.pk %}"
+                  {% if user_is_staff %}hx-get="{% url 'telegram:ga-settings' item.ga.pk %}"
                   hx-target="#tg-ga-{{ item.ga.pk }}"
                   hx-swap="innerHTML"
                   hx-push-url="false"
-                  hx-trigger="click once">
+                  hx-trigger="click once"{% else %}type="button" style="cursor: default;"{% endif %}>
             <div class="flex items-center gap-2">
               <span class="font-medium text-ink">{{ item.ga.name|default:item.ga.server_id }}</span>
               <span class="text-xs text-muted font-mono">{{ item.ga.server_id }}</span>
@@ -62,7 +62,7 @@
               {% else %}
                 <span class="inline-block w-2 h-2 rounded-full bg-gray-300" title="Não vinculado"></span>
               {% endif %}
-              <i class="bi bi-chevron-down text-muted text-xs"></i>
+              {% if user_is_staff %}<i class="bi bi-chevron-down text-muted text-xs"></i>{% endif %}
             </div>
           </button>
 

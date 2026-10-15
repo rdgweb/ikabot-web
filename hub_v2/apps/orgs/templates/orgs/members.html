@@ -1,0 +1,72 @@
+{% extends base_template|default:"base.html" %}
+
+{% block title %}Membros{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <span class="text-ink">Membros</span>
+{% endblock %}
+
+{% block content %}
+{% include "orgs/_org_head.html" %}
+
+{% if new_link %}
+<div class="org-panel" style="margin-bottom: 1rem; border-color: rgba(201,156,78,.7);">
+  <h3><i class="bi bi-link-45deg"></i> Link do convite</h3>
+  <code style="display: block; padding: .7rem .8rem; border-radius: 10px; background: rgba(201,156,78,.1); word-break: break-all;">{{ new_link }}</code>
+</div>
+{% endif %}
+
+<div class="org-cols">
+  <div class="org-panel">
+    <h3><i class="bi bi-people"></i> Membros <span style="margin-left: auto; font-size: .72rem; font-weight: 500; color: var(--ik-muted);">{{ members|length }}</span></h3>
+    {% for m in members %}
+    <div class="org-row">
+      <span class="org-icon{% if m.role == 'owner' %} gold{% endif %}" style="width: 32px; height: 32px; font-size: .95rem;"><i class="bi {% if m.role == 'owner' %}bi-star{% elif m.role == 'operator' %}bi-joystick{% else %}bi-eye{% endif %}"></i></span>
+      <div class="main"><b>{{ m.user.first_name|default:m.user.username }}{% if m.user == user %} (você){% endif %}</b><span>{{ m.user.email|default:m.user.username }}</span></div>
+      {% if is_owner and m.user != user %}
+      <form method="post" style="display: flex; gap: .35rem; align-items: center;">
+        {% csrf_token %}<input type="hidden" name="member" value="{{ m.pk }}">
+        <select name="role" class="form-input" style="width: auto; padding: .25rem .5rem; font-size: .8rem;" onchange="this.form.action.value='role'; this.form.submit();">
+          {% for code, label in roles %}<option value="{{ code }}" {% if m.role == code %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <input type="hidden" name="action" value="role">
+        <button type="submit" class="btn btn-secondary btn-sm" title="Tirar da organização" onclick="if (!confirm('Tirar {{ m.user.username }} da organização?')) return false; this.form.action.value='remove';"><i class="bi bi-person-dash"></i></button>
+      </form>
+      {% else %}
+      <span class="org-chip {% if m.role == 'owner' %}gold{% else %}off{% endif %}">{{ m.get_role_display }}</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if is_owner %}
+  <div class="org-panel">
+    <h3><i class="bi bi-person-plus"></i> Convidar</h3>
+    <form method="post" class="org-form">
+      {% csrf_token %}<input type="hidden" name="action" value="invite">
+      <div style="flex: 1; min-width: 190px;"><label>E-mail</label><input type="email" name="email" class="form-input w-full" required></div>
+      <div><label>Papel</label>
+        <select name="role" class="form-input">
+          <option value="operator">Operador</option><option value="viewer">Leitor</option><option value="owner">Dono</option>
+        </select></div>
+      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-send"></i> {% if email_ready %}Enviar convite{% else %}Gerar link{% endif %}</button>
+    </form>
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; margin-top: 1rem;">
+      <div class="org-row" style="border: 0; flex-direction: column; align-items: flex-start; gap: .15rem;"><span class="org-chip gold"><i class="bi bi-star"></i> Dono</span><span class="text-xs text-muted">tudo, plano e membros</span></div>
+      <div class="org-row" style="border: 0; flex-direction: column; align-items: flex-start; gap: .15rem;"><span class="org-chip ok"><i class="bi bi-joystick"></i> Operador</span><span class="text-xs text-muted">contas, nós e jobs</span></div>
+      <div class="org-row" style="border: 0; flex-direction: column; align-items: flex-start; gap: .15rem;"><span class="org-chip off"><i class="bi bi-eye"></i> Leitor</span><span class="text-xs text-muted">só olha</span></div>
+    </div>
+    {% if pending %}
+    <p class="org-title" style="margin-top: 1rem;">Esperando aceitar</p>
+    {% for invite in pending %}
+    <div class="org-row">
+      <div class="main"><b>{{ invite.email }}</b><span>{% if invite.role == "owner" %}Dono{% elif invite.role == "viewer" %}Leitor{% else %}Operador{% endif %} · vale até {{ invite.expires_at|date:"d/m" }}</span></div>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="cancel"><input type="hidden" name="invite" value="{{ invite.pk }}">
+        <button type="submit" class="btn btn-secondary btn-sm" title="Cancelar convite"><i class="bi bi-x-lg"></i></button></form>
+    </div>
+    {% endfor %}
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends base_template|default:"base.html" %}
+
+{% block title %}Minha conta{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <span class="text-ink">Minha conta</span>
+{% endblock %}
+
+{% block content %}
+{% include "orgs/_org_style.html" %}
+
+<div class="org-head">
+  <h1 style="margin: 0; font-size: 1.25rem; font-weight: 700; color: var(--ik-ink); display: flex; align-items: center; gap: .5rem;">
+    <i class="bi bi-person-circle" style="color: #c99c4e;"></i> {{ user.first_name|default:user.username }}
+    <small style="font-size: .8rem; font-weight: 500; color: var(--ik-muted);">{% if organization %}{{ organization.name }}{% if role_label %} · {{ role_label }}{% endif %}{% endif %}</small>
+  </h1>
+</div>
+
+<div class="org-cols">
+  <div class="org-panel">
+    <h3><i class="bi bi-person-vcard"></i> Dados</h3>
+    <form method="post" class="space-y-3">
+      {% csrf_token %}<input type="hidden" name="action" value="profile">
+      <div class="org-form"><div style="flex: 1;"><label>Usuário</label><input class="form-input w-full" value="{{ user.username }}" disabled></div></div>
+      <div class="org-form"><div style="flex: 1;"><label>Nome</label><input name="first_name" class="form-input w-full" maxlength="150" value="{{ user.first_name }}"></div></div>
+      <div class="org-form"><div style="flex: 1;"><label>E-mail</label><input type="email" name="email" class="form-input w-full" required value="{{ user.email }}"></div></div>
+      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check2"></i> Salvar</button>
+    </form>
+  </div>
+
+  <div class="org-panel">
+    <h3><i class="bi bi-key"></i> Senha</h3>
+    {% if password_form.errors %}<div class="text-sm mb-3" style="color: #9c3526;">{% for field in password_form %}{% for e in field.errors %}{{ e }}<br>{% endfor %}{% endfor %}</div>{% endif %}
+    <form method="post" class="space-y-3">
+      {% csrf_token %}<input type="hidden" name="action" value="password">
+      <div class="org-form"><div style="flex: 1;"><label>Senha atual</label><input type="password" name="old_password" class="form-input w-full" required autocomplete="current-password"></div></div>
+      <div class="org-form"><div style="flex: 1;"><label>Senha nova</label><input type="password" name="new_password1" class="form-input w-full" required autocomplete="new-password"></div></div>
+      <div class="org-form"><div style="flex: 1;"><label>Repita a senha nova</label><input type="password" name="new_password2" class="form-input w-full" required autocomplete="new-password"></div></div>
+      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-key"></i> Trocar senha</button>
+    </form>
+  </div>
+
+  <div class="org-panel">
+    <h3><i class="bi bi-signpost-split"></i> Tour</h3>
+    <form method="post">
+      {% csrf_token %}<input type="hidden" name="action" value="tour">
+      <button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-play-circle"></i> Ver o tour de novo</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

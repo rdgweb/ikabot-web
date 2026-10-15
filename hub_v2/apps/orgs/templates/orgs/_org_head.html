@@ -1,0 +1,13 @@
+{# N-126: cabeçalho comum de Minha organização — mesmo visual do Dashboard (o CSS do hub é pré-compilado) #}
+{% include "orgs/_org_style.html" %}
+
+<div class="org-head">
+  <h1><i class="bi bi-building-gear" style="color: #c99c4e;"></i> {{ organization.name }} <small>{% if role == 'owner' %}você é o dono{% elif role == 'operator' %}você é operador{% elif role == 'viewer' %}você é leitor{% endif %}</small></h1>
+</div>
+<nav class="org-tabs">
+  <a href="/organizacao/" class="{% if tab == 'overview' %}on{% endif %}"><i class="bi bi-grid"></i> Visão geral</a>
+  <a href="/organizacao/subcontas/" class="{% if tab == 'subaccounts' %}on{% endif %}"><i class="bi bi-toggles"></i> Subcontas</a>
+  <a href="/organizacao/membros/" class="{% if tab == 'members' %}on{% endif %}"><i class="bi bi-people"></i> Membros</a>
+  <a href="/organizacao/telegram/" class="{% if tab == 'telegram' %}on{% endif %}"><i class="bi bi-telegram"></i> Telegram</a>
+  <a href="/organizacao/plano/" class="{% if tab == 'plan' %}on{% endif %}"><i class="bi bi-credit-card"></i> Plano</a>
+</nav>
