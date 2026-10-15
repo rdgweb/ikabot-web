@@ -29,6 +29,18 @@ def _public_url(request, path: str) -> str:
     return base + path
 
 
+def _monthly(account):
+    from .services import monthly_value
+
+    return monthly_value(account)
+
+
+def _addons(organization) -> int:
+    from apps.proxy.platform import accounts_with_addon
+
+    return accounts_with_addon(organization)
+
+
 def _leave_to(request, url: str):
     """N-126: the Asaas page is another site — a boosted (HTMX) request must leave with a full page load,
     or the browser follows the redirect inside XHR and CORS blocks it."""
@@ -84,6 +96,8 @@ class PlanView(LoginRequiredMixin, TemplateView):
                         for limit in plans.limits()[:7]],
             "subscribed": subscribed,
             "upgrade_value": plans.brl(account.upgrade_value) if account.upgrade_payment_id else "",
+            "monthly": plans.brl(_monthly(account)) if subscribed else "",
+            "addons": _addons(self.request.organization),
             "more": [{"limit": limit, "price": plans.brl(plans.price_for(limit))} for limit in plans.limits()[7:]],
             "price": plans.brl(account.price) if account.price else "",
             "returned": self.request.GET.get("ok") == "1",

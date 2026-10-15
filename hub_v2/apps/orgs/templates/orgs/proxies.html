@@ -1,0 +1,96 @@
+{% extends base_template|default:"base.html" %}
+
+{% block title %}Proxies{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <span class="text-ink">Proxies</span>
+{% endblock %}
+
+{% block content %}
+{# N-129: os proxies da organização e o adicional de proxies da plataforma por conta GameForge #}
+{% include "orgs/_org_head.html" %}
+
+{% for message in messages %}
+<div class="org-panel" style="margin-bottom: 1rem; padding: .7rem .9rem; border-left: 4px solid {% if message.tags == 'error' %}#b3402f{% else %}#2d7a2d{% endif %}; font-size: .85rem;">{{ message }}</div>
+{% endfor %}
+
+<div class="org-cards">
+  <div class="org-card">
+    <span class="org-icon {% if own and own_ok == own|length %}ok{% elif own %}warn{% endif %}"><i class="bi bi-shield-lock"></i></span>
+    <span><span class="org-card-label">Seus proxies</span><span class="org-card-value" style="display: block;">{{ own_ok }} <small style="font-size: .8rem; color: var(--ik-muted);">de {{ own|length }} ok</small></span></span>
+  </div>
+  {% if not is_platform %}
+  <div class="org-card">
+    <span class="org-icon gold"><i class="bi bi-globe2"></i></span>
+    <span><span class="org-card-label">Proxies da plataforma</span><span class="org-card-value" style="display: block;">{{ addon_price }} <small style="font-size: .8rem; color: var(--ik-muted);">/mês por conta</small></span>
+      <span class="org-card-note">3 exclusivos · {% if available %}{{ available }} vaga(s){% else %}esgotados no momento{% endif %}</span></span>
+  </div>
+  {% endif %}
+</div>
+
+<div class="org-panel" style="margin-bottom: 1rem;">
+  <h3><i class="bi bi-person-badge"></i> Por conta GameForge</h3>
+  {% for row in rows %}
+  <div class="org-row">
+    <div class="main"><b>{{ row.account.label }}</b><span>{% if row.account.node %}nó {{ row.account.node.name }}{% else %}sem nó{% endif %}</span></div>
+    {% if row.total %}<span class="org-chip {% if row.ok == row.total %}ok{% elif row.ok %}gold{% else %}bad{% endif %}">{{ row.ok }}/{{ row.total }} ok</span>
+    {% else %}<span class="org-chip off">sem proxy</span>{% endif %}
+    {% if not is_platform %}
+      {% if row.account.platform_proxies and row.account.platform_proxies_ends_at %}<span class="org-chip gold">plataforma até {{ row.account.platform_proxies_ends_at|date:"d/m" }}</span>
+      {% elif row.account.platform_proxies %}<span class="org-chip ok"><i class="bi bi-globe2"></i> plataforma</span>{% endif %}
+      {% if is_owner %}
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="addon"><input type="hidden" name="account" value="{{ row.account.pk }}">
+        <input type="hidden" name="on" value="{% if row.account.platform_proxies and not row.account.platform_proxies_ends_at %}0{% else %}1{% endif %}">
+        <button type="submit" class="org-switch{% if row.account.platform_proxies and not row.account.platform_proxies_ends_at %} on{% endif %}"
+                title="Proxies da plataforma ({{ addon_price }}/mês)" aria-label="Proxies da plataforma para {{ row.account.label }}"
+                {% if not subscribed and not row.account.platform_proxies %}disabled{% endif %}
+                {% if row.account.platform_proxies and not row.account.platform_proxies_ends_at %}onclick="return confirm('Desligar os proxies da plataforma desta conta? Eles ficam até o fim do período pago.');"{% endif %}></button>
+      </form>
+      {% endif %}
+    {% endif %}
+  </div>
+  {% empty %}
+  <p class="text-sm text-muted" style="margin: 0;">Nenhuma conta GameForge ainda.</p>
+  {% endfor %}
+  {% if not is_platform and not subscribed %}<p class="text-xs text-muted" style="margin: .7rem 0 0;"><i class="bi bi-info-circle"></i> Os proxies da plataforma pedem uma assinatura ativa (Plano).</p>{% endif %}
+  <p class="text-xs text-muted" style="margin: .4rem 0 0;"><i class="bi bi-diagram-2"></i> Uma conta GameForge por agente: cada conta sai sempre pelos seus próprios proxies.</p>
+</div>
+
+<div class="org-cols">
+  <div class="org-panel">
+    <h3><i class="bi bi-shield-lock"></i> Seus proxies
+      {% if can_run and own %}<form method="post" style="margin-left: auto;">{% csrf_token %}<input type="hidden" name="action" value="test"><button class="btn btn-secondary btn-sm" type="submit"><i class="bi bi-lightning"></i> Testar todos</button></form>{% endif %}
+    </h3>
+    {% for proxy in own %}
+    <div class="org-row">
+      <div class="main"><b>{{ proxy.address }}:{{ proxy.port }}</b>
+        <span>{% if proxy.assigned_node %}nó {{ proxy.assigned_node.name }}{% elif proxy.account_reservation %}conta {{ proxy.account_reservation.account.label }}{% else %}livre{% endif %}{% if proxy.last_test_latency_ms %} · {{ proxy.last_test_latency_ms }} ms{% endif %}</span></div>
+      {% if not proxy.active %}<span class="org-chip off">fora</span>
+      {% elif proxy.last_test_status %}<span class="org-chip ok">ok</span>
+      {% elif proxy.last_test_status is None %}<span class="org-chip off">não testado</span>
+      {% else %}<span class="org-chip bad">falha</span>{% endif %}
+      {% if can_run %}
+      <form method="post" onsubmit="return confirm('Remover este proxy?');">{% csrf_token %}<input type="hidden" name="action" value="remove"><input type="hidden" name="proxy" value="{{ proxy.pk }}">
+        <button class="btn btn-secondary btn-sm" type="submit" title="Remover"><i class="bi bi-trash"></i></button></form>
+      {% endif %}
+    </div>
+    {% empty %}
+    <p class="text-sm text-muted" style="margin: 0;">Nenhum proxy seu ainda.</p>
+    {% endfor %}
+  </div>
+
+  {% if can_run %}
+  <div class="org-panel">
+    <h3><i class="bi bi-plus-circle"></i> Adicionar</h3>
+    <form method="post">
+      {% csrf_token %}<input type="hidden" name="action" value="add">
+      <textarea name="lines" rows="6" class="form-input w-full" style="font-family: monospace; font-size: .8rem;" placeholder="host:porta:usuário:senha&#10;usuário:senha@host:porta"></textarea>
+      <div class="org-form" style="margin-top: .6rem; align-items: center;">
+        <button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-plus-lg"></i> Adicionar e testar</button>
+        <span class="org-chip off">um por linha · até 50</span>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

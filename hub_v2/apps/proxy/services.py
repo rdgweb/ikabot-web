@@ -138,6 +138,12 @@ def reserve_lobby_proxies(*, account, limit: int = MAX_LOBBY_PROXIES_PER_ACCOUNT
     return usable
 
 
+def _platform_organization_id():
+    from apps.orgs.services import default_organization
+
+    return default_organization().pk
+
+
 def sync_webshare(api_key: str | None = None) -> dict:
     """
     Sync proxies from Webshare.io API into ProxyProfile.
@@ -193,7 +199,7 @@ def sync_webshare(api_key: str | None = None) -> dict:
             country = ws_proxy.get("country_code", "")
 
             try:
-                existing = ProxyProfile.objects.get(webshare_id=ws_id)
+                existing = ProxyProfile._base_manager.get(webshare_id=ws_id)   # N-129: lent ones too
                 changed = False
                 rotated = False  # address or port changed → proxy rotated
 
@@ -243,7 +249,8 @@ def sync_webshare(api_key: str | None = None) -> dict:
                         else:
                             node.save(update_fields=["proxy"])
             except ProxyProfile.DoesNotExist:
-                ProxyProfile.objects.create(
+                ProxyProfile._base_manager.create(
+                    organization_id=_platform_organization_id(),
                     webshare_id=ws_id,
                     provider=ProxyProfile.Provider.WEBSHARE,
                     address=address,
@@ -256,7 +263,7 @@ def sync_webshare(api_key: str | None = None) -> dict:
                 result["created"] += 1
 
         # Deactivate Webshare proxies no longer in the API response
-        stale_qs = ProxyProfile.objects.filter(
+        stale_qs = ProxyProfile._base_manager.filter(
             provider=ProxyProfile.Provider.WEBSHARE,
             active=True,
         ).exclude(webshare_id__in=seen_ws_ids).select_related("assigned_node")

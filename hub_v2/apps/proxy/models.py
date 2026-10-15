@@ -40,6 +40,11 @@ class ProxyProfile(TimestampModel):
     country_code = models.CharField(max_length=8, blank=True, default="")
     active = models.BooleanField(default=True)
 
+    # N-129: a platform proxy lent to one customer's account (its organization is the customer's meanwhile)
+    lent_to = models.ForeignKey(
+        "accounts.Account", on_delete=models.SET_NULL, null=True, blank=True, related_name="lent_proxies",
+    )
+
     # Which node is using this proxy
     assigned_node = models.OneToOneField(
         "accounts.Node",

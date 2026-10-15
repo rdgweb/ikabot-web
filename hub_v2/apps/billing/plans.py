@@ -16,7 +16,10 @@ ABOVE_MAX = 300
 TRIAL_DAYS = 7
 TRIAL_LIMIT = 4
 GRACE_DAYS = 3                       # after the due date, work goes on this long
-MIN_CHARGE = Decimal("5.00")         # the Asaas' smallest charge; a smaller difference goes up for free
+MIN_CHARGE = Decimal("5.00")
+# N-129: add-ons, per GameForge account, per month
+ADDON_PROXIES = Decimal("4.90")      # 3 proxies of the platform's pool, only for that account
+ADDON_AGENT = Decimal("14.90")       # the platform runs the agent (phase 2)         # the Asaas' smallest charge; a smaller difference goes up for free
 READ_ONLY_DAYS = 30                  # after the due date, the organization only reads
 
 

@@ -191,6 +191,9 @@ def _apply(account: BillingAccount, event: str, obj: dict) -> str:
         if account.status != BillingAccount.ACTIVE:
             account.status = BillingAccount.ACTIVE
             fields.append("status")
+        from apps.proxy.platform import end_due
+
+        end_due(account.organization)                   # N-129: add-ons switched off end with the old period
         if account.pending_limit:                       # the lower tier chosen before starts with the new period
             account.limit, account.price, account.pending_limit = account.pending_limit, plans.price_for(account.pending_limit), None
             fields += ["limit", "price", "pending_limit"]
@@ -275,7 +278,7 @@ def change_tier(account: BillingAccount, organization, limit: int, *, now=None) 
         if account.pending_limit:
             account.pending_limit = None
             undone.append("pending_limit")
-            asaas.update_subscription_value(account.subscription_id, plans.price_for(limit), description)
+            asaas.update_subscription_value(account.subscription_id, monthly_value(account, limit), description)
         if account.upgrade_payment_id:
             _drop_upgrade_charge(account, undone)
         if undone:
@@ -285,13 +288,13 @@ def change_tier(account: BillingAccount, organization, limit: int, *, now=None) 
         if account.upgrade_payment_id:
             fields = []
             _drop_upgrade_charge(account, fields)
-        asaas.update_subscription_value(account.subscription_id, plans.price_for(limit), description)
+        asaas.update_subscription_value(account.subscription_id, monthly_value(account, limit), description)
         account.pending_limit = limit
         account.save(update_fields=["pending_limit", "upgrade_payment_id", "upgrade_limit", "upgrade_url", "upgrade_value", "updated_at"])
         return {"kind": "down", "when": account.paid_until}
     cost = upgrade_cost(account, limit, now)
     if cost < plans.MIN_CHARGE:                         # a few cents at the end of the period: up at once
-        asaas.update_subscription_value(account.subscription_id, plans.price_for(limit), description)
+        asaas.update_subscription_value(account.subscription_id, monthly_value(account, limit), description)
         account.limit, account.price, account.pending_limit = limit, plans.price_for(limit), None
         account.save(update_fields=["limit", "price", "pending_limit", "updated_at"])
         return {"kind": "up-free", "cost": cost}
@@ -332,7 +335,7 @@ def _finish_upgrade(account: BillingAccount, fields: list) -> str:
     fields += ["limit", "price"]
     _clear_upgrade(account, fields)
     try:
-        asaas.update_subscription_value(account.subscription_id, account.price, f"IkaHub — até {limit} subcontas")
+        asaas.update_subscription_value(account.subscription_id, monthly_value(account, limit), f"IkaHub — até {limit} subcontas")
     except asaas.AsaasError:
         logger.warning("Subscription value of organization %s not updated after the upgrade", account.organization_id)
     _notify(account, f"✅ IkaHub: diferença paga. Sua faixa agora é até {limit} subcontas.")
@@ -349,3 +352,45 @@ def pause_beyond(organization, limit: int) -> int:
     if extra:
         GameAccount._base_manager.filter(pk__in=extra).update(active=False, updated_at=timezone.now())
     return len(extra)
+
+
+# --- Add-ons (N-129) ---------------------------------------------------------------------------
+
+def monthly_value(account: BillingAccount, limit: int | None = None):
+    """What the subscription charges each month: the tier plus the add-ons switched on."""
+    from apps.proxy.platform import accounts_with_addon
+
+    tier = plans.price_for(limit or account.pending_limit or account.limit)
+    return tier + plans.ADDON_PROXIES * accounts_with_addon(account.organization)
+
+
+def subscribed(account: BillingAccount) -> bool:
+    return bool(account.subscription_id and account.status == BillingAccount.ACTIVE and account.paid_until
+                and account.paid_until > timezone.now())
+
+
+def set_proxy_addon(account: BillingAccount, game_account, on: bool) -> dict:
+    """Platform proxies for one GameForge account. On: lent now, the next charge includes them.
+    Off: they stay until the paid period ends; the next charge no longer includes them."""
+    from apps.proxy import platform
+
+    from . import asaas
+
+    if on:
+        if not subscribed(account):
+            return {"ok": False, "reason": "Os adicionais precisam de uma assinatura ativa."}
+        already = game_account.platform_proxies and not game_account.platform_proxies_ends_at
+        if not already and not game_account.platform_proxies and platform.accounts_available() < 1:
+            return {"ok": False, "reason": "Os proxies da plataforma estão esgotados no momento."}
+        lent = platform.enable(game_account)
+        asaas.update_subscription_value(account.subscription_id, monthly_value(account), "IkaHub — plano e adicionais")
+        return {"ok": True, "lent": len(lent)}
+    if not game_account.platform_proxies:
+        return {"ok": True}
+    if subscribed(account):
+        game_account.platform_proxies_ends_at = account.paid_until
+        game_account.save(update_fields=["platform_proxies_ends_at", "updated_at"])
+        asaas.update_subscription_value(account.subscription_id, monthly_value(account), "IkaHub — plano e adicionais")
+        return {"ok": True, "until": account.paid_until}
+    platform.end(game_account)
+    return {"ok": True}

@@ -51,7 +51,8 @@
   {% if price and account.status != 'trial' and account.status != 'exempt' %}
   <div class="org-card">
     <span class="org-icon"><i class="bi bi-cash-coin"></i></span>
-    <span><span class="org-card-label">Mensal</span><span class="org-card-value" style="display: block;">{{ price }}</span></span>
+    <span><span class="org-card-label">Mensal</span><span class="org-card-value" style="display: block;">{{ monthly|default:price }}</span>
+      {% if addons %}<span class="org-card-note">faixa {{ price }} + proxies em {{ addons }} conta(s)</span>{% endif %}</span>
   </div>
   {% endif %}
   {% if sandbox and configured %}

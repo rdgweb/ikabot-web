@@ -245,6 +245,9 @@ class Account(UUIDTimestampModel):
     )
     notes = models.TextField(blank=True, default="")
     active = models.BooleanField(default=True)
+    # N-129: 3 proxies of the platform's pool, lent to this account only (an add-on of the plan)
+    platform_proxies = models.BooleanField(default=False)
+    platform_proxies_ends_at = models.DateTimeField(null=True, blank=True)   # switched off: lasts until the paid period ends
 
     class Meta:
         ordering = ["label"]

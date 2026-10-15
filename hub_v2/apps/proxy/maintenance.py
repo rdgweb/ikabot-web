@@ -105,11 +105,13 @@ def _store_probe(proxy, result: dict, now) -> None:
     proxy.save(update_fields=["last_test_at", "last_test_status", "last_test_ip", "last_test_latency_ms"])
 
 
-def _free_pool():
-    """Proxies anyone may take: listed, passed the last test, not an account's and not a node's; fastest first."""
+def _free_pool(organization_id):
+    """N-129: the free proxies of ONE organization (listed, passed the last test, not an account's, not a
+    node's, not lent); fastest first. A proxy never crosses from one organization to another here."""
     from .models import ProxyProfile
 
-    return ProxyProfile.objects.filter(
+    return ProxyProfile._base_manager.filter(
+        organization_id=organization_id, lent_to__isnull=True,
         active=True, last_test_status=True, account_reservation__isnull=True, assigned_node__isnull=True,
     ).order_by("last_test_latency_ms", "address")
 
@@ -119,13 +121,13 @@ def _heal_nodes(report: dict, now) -> None:
 
     from .models import ProxyProfile
 
-    for node in Node.objects.filter(active=True, agent_last_seen_at__gte=now - NODE_SEEN_WINDOW):
-        current = ProxyProfile.objects.filter(assigned_node=node).first()
+    for node in Node._base_manager.filter(active=True, agent_last_seen_at__gte=now - NODE_SEEN_WINDOW):
+        current = ProxyProfile._base_manager.filter(assigned_node=node).first()
         if current is not None and current.active and current.last_test_status is True:
             continue
         if current is None and not node.proxy:
             continue                            # a node that never had a proxy is not ours to give one
-        best = _free_pool().first()
+        best = _free_pool(node.organization_id).first() or _lent_for_node(node)
         if best is None:
             report["without_proxy"].append(f"no {node.name}")
             continue
@@ -133,6 +135,10 @@ def _heal_nodes(report: dict, now) -> None:
             if current is not None:
                 current.assigned_node = None
                 current.save(update_fields=["assigned_node"])
+                if current.lent_to_id and not current.active:
+                    from .platform import give_back
+
+                    give_back(current)          # gone from the provider: no longer the customer's
             best.assigned_node = node
             best.save(update_fields=["assigned_node"])
             node.proxy = best.proxy_url
@@ -144,18 +150,31 @@ def _heal_nodes(report: dict, now) -> None:
         logger.warning("Proxy maintenance: node %s moved from proxy profile %s to %s", node.name, current.pk if current else "-", best.pk)
 
 
+def _lent_for_node(node):
+    """A node of an account with the platform add-on uses one of that account's own healthy proxies."""
+    from .models import ProxyProfile
+
+    return ProxyProfile._base_manager.filter(
+        lent_to__node=node, active=True, last_test_status=True, assigned_node__isnull=True,
+    ).first()
+
+
 def _heal_accounts(report: dict) -> list:
     """Replaces what must be replaced; returns the accounts that have a usable proxy now."""
     from apps.accounts.models import Account
 
     from .models import AccountProxyReservation
 
+    from .platform import give_back, lend
+
     healthy_accounts = []
-    for account in Account.objects.filter(active=True):
+    for account in Account._base_manager.filter(active=True):
         reservations = list(
-            AccountProxyReservation.objects.filter(account=account).select_related("proxy_profile").order_by("created_at", "proxy_profile__address")
+            AccountProxyReservation._base_manager.filter(account=account).select_related("proxy_profile").order_by("created_at", "proxy_profile__address")
         )
         if not reservations:
+            if account.platform_proxies and not account.platform_proxies_ends_at and lend(account, MAX_PROXIES_PER_ACCOUNT):
+                healthy_accounts.append(account)                                  # the add-on had nothing left: refill
             continue                            # an account that never asked for proxies gets them when it does
         usable = [r for r in reservations if r.proxy_profile.active and r.proxy_profile.last_test_status is True]
         gone = [r for r in reservations if not r.proxy_profile.active]
@@ -163,6 +182,8 @@ def _heal_accounts(report: dict) -> list:
         # still listed but failing: the reservation stays (stable addresses), unless nothing else is left
         to_replace = gone + (failing if not usable else [])
         if not to_replace:
+            if account.platform_proxies and not account.platform_proxies_ends_at and len(reservations) < MAX_PROXIES_PER_ACCOUNT:
+                lend(account, MAX_PROXIES_PER_ACCOUNT - len(reservations))      # the add-on was short of proxies
             if usable:
                 healthy_accounts.append(account)
             continue
@@ -170,11 +191,17 @@ def _heal_accounts(report: dict) -> list:
         with transaction.atomic():
             for reservation in to_replace:
                 removed.append(reservation.proxy_profile_id)
+                proxy = reservation.proxy_profile
                 reservation.delete()
+                if proxy.lent_to_id:
+                    give_back(proxy)            # a lent one that died goes back to the platform
             keep = len(reservations) - len(to_replace)
-            for proxy in list(_free_pool()[: max(0, MAX_PROXIES_PER_ACCOUNT - keep)]):
-                AccountProxyReservation.objects.create(account=account, proxy_profile=proxy)
+            for proxy in list(_free_pool(account.organization_id)[: max(0, MAX_PROXIES_PER_ACCOUNT - keep)]):
+                AccountProxyReservation._base_manager.create(account=account, proxy_profile=proxy)
                 added.append(proxy.pk)
+                keep += 1
+        if account.platform_proxies and not account.platform_proxies_ends_at and keep < MAX_PROXIES_PER_ACCOUNT:
+            added += [proxy.pk for proxy in lend(account, MAX_PROXIES_PER_ACCOUNT - keep)]   # the add-on refills from the platform
         report["accounts_replaced"].append({"account": account.label, "removed": removed, "added": added})
         logger.warning("Proxy maintenance: account %s lost proxy profiles %s, got %s", account.label, removed, added)
         if usable or added:
@@ -187,7 +214,7 @@ def _heal_accounts(report: dict) -> list:
 def _clear_proxy_login_blocks(accounts, report: dict, now) -> None:
     from apps.accounts.models import GameAccount
 
-    blocked = GameAccount.objects.filter(account__in=accounts, login_blocked_until__gt=now)
+    blocked = GameAccount._base_manager.filter(account__in=accounts, login_blocked_until__gt=now)
     for game_account in blocked:
         if not is_proxy_side_failure(game_account.login_block_reason):
             continue                            # blocked by the game (loginLink 400): not ours to lift
@@ -260,7 +287,7 @@ def run_proxy_maintenance(*, reason: str = "") -> dict:
     except Exception as exc:  # noqa: BLE001 - without the provider we still test and heal with what is known
         report["sync"] = {"success": False, "error": type(exc).__name__}
 
-    active = list(ProxyProfile.objects.filter(active=True))
+    active = list(ProxyProfile._base_manager.filter(active=True))
     probes = _probe_all(active)
     for proxy in active:
         result = probes.get(proxy.pk)
@@ -270,6 +297,9 @@ def run_proxy_maintenance(*, reason: str = "") -> dict:
         report["tested"] += 1
         report["passed"] += int(result["success"])
 
+    from .platform import end_due
+
+    end_due(now=now)                            # N-129: add-ons switched off whose paid period is over
     _heal_nodes(report, now)
     healthy_accounts = _heal_accounts(report)
     _clear_proxy_login_blocks(healthy_accounts, report, now)
