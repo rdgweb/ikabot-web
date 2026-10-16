@@ -94,7 +94,7 @@ def _parse_barracks_units(template_data: dict, building_type: str) -> list[dict[
 
 
 def _parse_city_military_counts(html: str, building_type: str) -> dict[int, int]:
-    """Parse stationed troop/fleet counts from cityMilitary HTML."""
+    """Parse stationed troop/fleet counts from cityMilitary HTML (all of its unit tables, like Verificar Status)."""
     counts: dict[int, int] = {}
     table_matches = re.findall(
         r'<table[^>]+class="[^"]*militaryList[^"]*"[^>]*>(.*?)</table>',
@@ -138,8 +138,8 @@ def _parse_city_military_counts(html: str, building_type: str) -> dict[int, int]
             if building_type == "troops" and not (300 <= unit_id < 400):
                 continue
             counts[unit_id] = counts.get(unit_id, 0) + amount
-        if counts:
-            break
+    # N-147: every table counts. The game splits the units over two tables (Hoplita..Carabineiro, then
+    # Aríete..Médico); stopping at the first one hid the Morteiros and Maintain trained them again every cycle.
     return counts
 
 
