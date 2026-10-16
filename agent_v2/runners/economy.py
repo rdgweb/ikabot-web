@@ -322,6 +322,7 @@ class _MiracleRunnerMixin(BaseRunner):
             "island_conversion_percent": float(state.get("island_conversion_percent") or 0),
             "citizens_per_priest": int(state.get("citizens_per_priest") or 0),
             "max_inhabitants": int(state.get("max_inhabitants") or 0),
+            "max_citizens_on_island": int(state.get("max_citizens_on_island") or 0),
             "last_status": last_status,
             "updated_at": now_iso,
         }
@@ -373,12 +374,13 @@ class AdjustPriestsRunner(_MiracleRunnerMixin, BaseRunner):
         cities            list of city ids (empty = every city with a temple)
         target_mode       "keep" (only read) | "absolute" | "percent_max" | "own_conversion"
         target_value      priests, % of the maximum, or % of the city's inhabitants converted
+        city_targets      {city_id: priests} for target_mode "city_targets" (the hub's island-faith plan)
         reserve_citizens  free citizens never taken
     Everything read goes to the snapshot in one write: each city's temple (miracle_state) and each island's miracle
     (base_snapshot.island_wonders).
     """
 
-    MODES = ("keep", "absolute", "percent_max", "own_conversion")
+    MODES = ("keep", "absolute", "percent_max", "own_conversion", "city_targets")
 
     @staticmethod
     def desired_priests(state: dict[str, Any], mode: str, value: int, reserve: int) -> int:
@@ -389,6 +391,8 @@ class AdjustPriestsRunner(_MiracleRunnerMixin, BaseRunner):
             wanted = value
         elif mode == "percent_max":
             wanted = round(maximum * value / 100.0)
+        elif mode == "city_targets":
+            wanted = value
         elif mode == "own_conversion":
             per_priest = int(state.get("citizens_per_priest") or 0)
             inhabitants = int(state.get("max_inhabitants") or 0)
@@ -426,7 +430,8 @@ class AdjustPriestsRunner(_MiracleRunnerMixin, BaseRunner):
             temple = next((b for b in city.get("buildings") or [] if str(b.get("building") or "") == "temple"), None)
             if temple and int(temple.get("position") or 0):
                 temples.append((city, temple))
-        wanted = {str(c).strip() for c in (inputs.get("cities") or []) if str(c).strip()}
+        city_targets = {str(k): v for k, v in (inputs.get("city_targets") or {}).items()} if mode == "city_targets" else {}
+        wanted = {str(c).strip() for c in (inputs.get("cities") or []) if str(c).strip()} | set(city_targets)
         chosen = [(c, t) for c, t in temples if not wanted or str(c.get("id")) in wanted]
         if not chosen:
             self.log(jid, "error", "Nenhuma cidade com templo encontrada")
@@ -446,7 +451,14 @@ class AdjustPriestsRunner(_MiracleRunnerMixin, BaseRunner):
                 time.sleep(random.uniform(1.5, 3.5))
             try:
                 state = client.get_temple_miracle_state(int(city_id), position)
-                target = self.desired_priests(state, mode, value, reserve)
+                if mode == "city_targets":
+                    try:
+                        city_value = max(0, int(city_targets.get(city_id)))
+                    except (TypeError, ValueError):
+                        city_value = int(state.get("priests") or 0)
+                    target = self.desired_priests(state, mode, city_value, reserve)
+                else:
+                    target = self.desired_priests(state, mode, value, reserve)
                 current = int(state.get("priests") or 0)
                 status = "inspected"
                 if mode != "keep" and target != current:

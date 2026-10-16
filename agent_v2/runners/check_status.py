@@ -496,6 +496,9 @@ class CheckStatusRunner(BaseRunner):
                     "research_state": existing_base.get("research_state") or {},
                     "academy_cities": existing_base.get("academy_cities") or {},
                     "academy_updated_at": existing_base.get("academy_updated_at", ""),
+                    # N-141: read by Ajustar Sacerdotes (ac=35); the status keeps them
+                    "island_wonders": existing_base.get("island_wonders") or {},
+                    "temples_updated_at": existing_base.get("temples_updated_at", ""),
                     "attack_alert_state": existing_base.get("attack_alert_state") or {},
                     "vacation_state": existing_base.get("vacation_state") or {},
                     "research_city_id": existing_base.get("research_city_id"),
@@ -522,6 +525,13 @@ class CheckStatusRunner(BaseRunner):
                 self.log(jid, "info", "Snapshot enviado com sucesso")
             except Exception as e:
                 self.log(jid, "warning", f"Falha ao enviar snapshot: {e}")
+
+            if self.temples_refresh_needed(cities_data, existing_base):
+                try:
+                    self.hub.spawn_job(jid, action_code=35, inputs={"target_mode": "keep"}, delay_seconds=2 * 60)
+                    self.log(jid, "info", "Leitura de templos e milagres agendada (mais de 6 h sem atualizar)")
+                except Exception as exc:
+                    self.log(jid, "warning", f"Nao foi possivel agendar a leitura dos templos: {exc}")
 
             if self._building_options_refresh_needed(cities_data):
                 try:
@@ -576,6 +586,29 @@ class CheckStatusRunner(BaseRunner):
                 city["daily_login_bonus_city"] = True
             merged.append(city)
         return merged
+
+    TEMPLES_STALE_SECONDS = 6 * 3600
+
+    @classmethod
+    def temples_refresh_needed(cls, cities: list[dict], base: dict) -> bool:
+        """N-141: the account has a temple and its temples/miracles were not read in the last 6 hours."""
+        has_temple = any(
+            str(b.get("building") or "") == "temple"
+            for city in cities if isinstance(city, dict)
+            for b in (city.get("buildings") or []) if isinstance(b, dict)
+        )
+        if not has_temple:
+            return False
+        raw = str((base or {}).get("temples_updated_at") or "").strip()
+        if not raw:
+            return True
+        try:
+            when = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return True
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - when).total_seconds() > cls.TEMPLES_STALE_SECONDS
 
     def _building_options_refresh_needed(self, cities: list[dict]) -> bool:
         stale_seconds = self.get_building_options_stale_seconds()

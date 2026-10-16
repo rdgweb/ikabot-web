@@ -1660,15 +1660,8 @@ def _miracle_form_context(cities):
 
 
 def _temple_form_context(snapshot, cities):
-    """N-141: the temples (priests, conversion) and each island's miracle (level, faith, who takes part)."""
-    base = {}
-    if isinstance(snapshot, AccountSnapshot):
-        base = snapshot.base_snapshot or {}
-    elif isinstance(snapshot, dict):
-        base = snapshot.get("base_snapshot") or {}
-    wonders = base.get("island_wonders") or {}
+    """N-141: the temples of the account (priests, conversion) for the priests form."""
     temple_cities = []
-    by_island: dict[str, list[dict]] = {}
     for city in cities or []:
         temple = next((b for b in city.get("buildings") or [] if str(b.get("building") or "") == "temple"), None)
         if not temple:
@@ -1684,42 +1677,10 @@ def _temple_form_context(snapshot, cities):
             "known": bool(state),
         }
         temple_cities.append(card)
-        by_island.setdefault(card["island_id"], []).append({**card, "state": state})
     temple_cities.sort(key=lambda item: str(item.get("name") or "").lower())
-    own_ids = {str(c.get("id")) for c in temple_cities}
-    islands = []
-    for island_id, own in by_island.items():
-        wonder = dict(wonders.get(str(island_id)) or {})
-        state = next((c["state"] for c in own if c["state"]), {})
-        participants = sorted(wonder.get("participants") or [], key=lambda p: -(p.get("island_share_percent") or 0))
-        # the game writes the miracle's strength in its name: "Colosso (Nível 2/5)"
-        raw_name = str(wonder.get("wonder_name") or state.get("wonder_name") or "")
-        strength = re.match(r"^(.*?)\s*\(N[ií]vel\s*(\d+)\s*/\s*(\d+)\)\s*$", raw_name)
-        islands.append({
-            "island_id": island_id,
-            "island_name": state.get("island_name") or "",
-            "wonder_name": strength.group(1) if strength else raw_name,
-            "strength": f"{strength.group(2)}/{strength.group(3)}" if strength else "",
-            "wonder_effect": state.get("wonder_effect") or "",
-            "duration_text": state.get("duration_text") or "",
-            "cooldown_text": state.get("cooldown_text") or "",
-            "available": str(state.get("activate_state") or "").lower() == "enabled",
-            "level": wonder.get("level"), "max_level_reached": bool(wonder.get("max_level_reached")),
-            "faith_percent": wonder.get("faith_percent", state.get("belief_percent")),
-            "belief_level": wonder.get("belief_level", state.get("belief_level")),
-            "upgrading": bool(wonder.get("upgrading")), "next_level_need": wonder.get("next_level_need") or 0,
-            "donated": wonder.get("donated") or 0,
-            "own_cities": [c["name"] for c in own],
-            "participants": [{**p, "own": str(p.get("city_id") or "") in own_ids} for p in participants[:10]],
-            "participant_count": len(wonder.get("participants") or []),
-            "updated_at": wonder.get("updated_at") or state.get("updated_at") or "",
-            "known": bool(wonder or state),
-        })
-    islands.sort(key=lambda item: (not item["available"], str(item.get("wonder_name") or "")))
     return {
         "summary": {"count": len(temple_cities), "temple_icon": static("game/buildings/temple.png")},
         "cities": temple_cities,
-        "islands": islands,
     }
 
 
@@ -2258,7 +2219,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities, request=None, 
         "miracle_ui": _miracle_form_context(cities),
         "experiment_ui": _experiment_form_context(snapshot, cities),
         "scientists_ui": _scientists_form_context(snapshot, cities),
-        "temple_ui": _temple_form_context(snapshot, cities) if int(action_code) in (11, 35) else {},
+        "temple_ui": _temple_form_context(snapshot, cities) if int(action_code) == 35 else {},
         "upgrade_units_ui": _upgrade_units_form_context(cities, snapshot),
         "market_ui": _market_form_context(cities),
         "training_ui": _training_form_context(snapshot, cities),
@@ -3787,6 +3748,18 @@ class JobSubmitView(LoginRequiredMixin, View):
         ).exclude(job=job).update(status="cancelled")
 
     def _create_jobs(self, ga, action_code, action_meta, inputs, cities):
+        if int(action_code) == 35 and str(inputs.get("target_mode") or "") == "island_faith":
+            # N-141: the islands of the chosen temples (none = all), balanced across every account
+            from apps.game.services.temples import balance_jobs, islands_for_organization
+
+            chosen = {str(c) for c in (inputs.get("cities") or [])}
+            islands = [i for i in islands_for_organization()
+                       if not chosen or any(t.city_id in chosen and t.game_account_id == str(ga.pk) for t in i.own)]
+            try:
+                target = max(1, min(100, int(inputs.get("target_value") or 100)))
+            except (TypeError, ValueError):
+                target = 100
+            return balance_jobs(islands, target=target)
         if int(action_code) == 1005:
             # N-138: troops and fleet in one request, in one workflow
             from apps.jobs.services.training import create_training_jobs

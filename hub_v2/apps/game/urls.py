@@ -1,5 +1,6 @@
 from django.urls import path
 
+from .views.temples import TemplesView
 from .views import (
     ActionCatalogView,
     CheckAllStatusView,
@@ -22,4 +23,5 @@ urlpatterns = [
     path("reorder-buildings/", ReorderBuildingsView.as_view(), name="reorder-buildings"),
     path("actions/", ActionCatalogView.as_view(), name="action-catalog"),
     path("construction/", ConstructionPanelView.as_view(), name="construction"),
+    path("temples/", TemplesView.as_view(), name="temples"),
 ]

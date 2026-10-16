@@ -1,5 +1,5 @@
-"""N-141: Ajustar Sacerdotes (ac=35) and the island miracle panel — what the agent read about each temple and each
-island's miracle reaches the forms (also Ativar Milagre, which never showed it)."""
+"""N-141: Ajustar Sacerdotes (ac=35) and Templos e Fé — the temples and island miracles of every account in one
+page, and the priests balanced across accounts so each island reaches 100% faith without priests to spare."""
 import json
 
 from django.contrib.auth import get_user_model
@@ -7,77 +7,100 @@ from django.test import TestCase
 
 from apps.accounts.models import Account, GameAccount, Node
 from apps.game.models import AccountSnapshot
+from apps.game.services.temples import islands_for_organization, plan_faith
 from apps.profiles.models import Preset, PresetAction, PresetGameAccount
 from apps.profiles.services import execute_preset
 from core.contracts import ACTION_CATALOG
 
 from .models import Job
 
-
-def _temple_city(cid, name, island, priests):
-    return {"id": cid, "name": name, "tradegood": 1, "island_id": island, "x": 10, "y": cid,
-            "buildings": [{"building": "temple", "position": 16, "level": 20}],
-            "miracle_state": {"priests": priests, "max_priests": 900, "own_conversion_percent": 50.0,
-                              "island_conversion_percent": 30.0, "citizens_per_priest": 7, "max_inhabitants": 3500,
-                              "wonder_name": "Templo de Hermes (Nível 2/5)", "activate_state": "enabled", "island_name": "Haunios",
-                              "cooldown_text": "", "updated_at": "2026-10-16T10:00:00+00:00"}}
+CAPACITY = 36330      # island capacity: 7 inhabitants per priest -> 0.019268% of the island per priest
 
 
-class TempleTests(TestCase):
+def _temple_city(cid, name, island, priests, max_priests, free):
+    share = round(priests * 7 * 100 / CAPACITY, 2)
+    return {"id": cid, "name": name, "tradegood": 3, "island_id": island, "x": 83, "y": 88,
+            "buildings": [{"building": "temple", "position": 16, "level": 25}],
+            "miracle_state": {"priests": priests, "max_priests": max_priests, "citizens": free,
+                              "island_conversion_percent": share, "own_conversion_percent": 50.0,
+                              "citizens_per_priest": 7, "max_inhabitants": 3500, "max_citizens_on_island": CAPACITY,
+                              "wonder_name": "Forja de Hefesto (Nível 5/5)", "activate_state": "enabled",
+                              "wonder_effect": "Todas as unidades de combate recebem 20 mais armadura e causam 15% mais dano.",
+                              "duration_text": "Duração: 1D", "cooldown_text": "Regeneração: 3D 12h", "island_name": "Haunios"}}
+
+
+class TemplesTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user("rodrigo", password="x", is_staff=True)
         self.client.force_login(self.user)
         node = Node.objects.create(name="agente", transport="https")
-        account = Account.objects.create(node=node, label="Conta", email="c@example.com", password_enc="x")
-        self.ga = GameAccount.objects.create(account=account, lobby_account_id=1, server_id="s78-br",
-                                             server_language="br", server_number=78, name="Executor")
-        AccountSnapshot.objects.create(
-            account=account, game_account=self.ga, military={},
-            base_snapshot={"island_wonders": {"4478": {
-                "level": 5, "max_level_reached": True, "faith_percent": 56.0, "belief_level": 2, "upgrading": False,
-                "participants": [{"player": "Vizinho", "city_name": "Longe", "city_id": 0, "priests": 10,
-                                  "conversion_percent": 5.0, "island_share_percent": 2.0},
-                                 {"player": "Eu", "city_name": "Valhala", "city_id": 1, "priests": 625,
-                                  "conversion_percent": 116.8, "island_share_percent": 11.9}]}}},
-            cities=[_temple_city(1, "Valhala", 4478, 625), _temple_city(2, "Hell", 4478, 100),
-                    {"id": 3, "name": "Sem templo", "tradegood": 2, "island_id": 4479, "buildings": []}])
+        self.gas = []
+        for n, (city, priests, max_priests, free) in enumerate([("Glitnir", 287, 756, 1290), ("Alfheim", 943, 943, 0)], start=1):
+            account = Account.objects.create(node=node, label=f"Conta {n}", email=f"c{n}@example.com", password_enc="x")
+            ga = GameAccount.objects.create(account=account, lobby_account_id=n, server_id="s78-br", server_language="br",
+                                            server_number=78, name=f"Jogador{n}")
+            participants = [{"player": "Outro", "city_name": "Longe", "city_id": 0, "priests": 4463,
+                             "conversion_percent": 80.0, "island_share_percent": 85.99}]
+            AccountSnapshot.objects.create(
+                account=account, game_account=ga, military={},
+                base_snapshot={"island_wonders": {"4479": {"level": 5, "max_level_reached": True, "faith_percent": 100.0,
+                                                           "participants": participants + [
+                                                               {"player": "Eu", "city_name": "Glitnir", "island_share_percent": 5.53},
+                                                               {"player": "Eu", "city_name": "Alfheim", "island_share_percent": 18.18}],
+                                                           "updated_at": "2026-10-16T18:00:00+00:00"}}},
+                cities=[_temple_city(10 + n, city, 4479, priests, max_priests, free)])
+            self.gas.append(ga)
+
+    def _jobs(self):
+        return {str(j.game_account_id): json.loads(j.inputs_json) for j in Job.objects.filter(action_code=35)}
 
     def test_the_action_is_in_the_catalog(self):
         self.assertEqual(ACTION_CATALOG[35]["name"], "Ajustar Sacerdotes")
 
-    def test_the_priests_form_shows_temples_and_the_island_miracle(self):
-        html = self.client.get("/jobs/new/form/", {"ga": str(self.ga.pk), "action": "35"}).content.decode()
-        self.assertIn("data-island-miracles", html)
-        self.assertIn("Templo de Hermes", html)
-        self.assertIn("fé <b class=\"text-ink\">56%</b>", html)
-        self.assertIn("Vizinho · Longe", html)
-        self.assertIn("força <b class=\"text-ink\">2/5</b>", html)            # strength apart from the name
-        self.assertNotIn("Templo de Hermes (Nível", html.split("data-island-miracles")[1])
+    def test_an_island_over_100_percent_is_balanced_evenly_across_accounts(self):
+        island = next(i for i in islands_for_organization() if i.island_id == "4479")
+        self.assertAlmostEqual(island.excess, 9.7, places=1)
+        self.assertTrue(plan_faith(island))
+        targets = {t.city_name: t.target for t in island.own}
+        self.assertLessEqual(abs(targets["Glitnir"] - targets["Alfheim"]), 1)        # spread evenly over the accounts
+        self.assertLess(targets["Alfheim"], 943)                                      # the excess comes off
+        faith = sum(targets.values()) * 7 * 100 / CAPACITY + island.others_share
+        self.assertGreaterEqual(faith, 100)
+        self.assertLess(faith, 100.05)                                                # and nothing to spare
+
+    def test_the_temples_page_shows_the_islands_and_balances_them(self):
+        html = self.client.get("/game/temples/").content.decode()
+        self.assertIn("Forja de Hefesto", html)
+        self.assertIn("força 5/5", html)
+        self.assertIn("sobra 9.7%", html.replace(",", "."))
+        self.assertIn("Jogador2", html)
+        island = next(i for i in islands_for_organization() if i.island_id == "4479")
+        plan_faith(island)
+        planned = {t.game_account_id: {t.city_id: t.target} for t in island.own}
+        self.client.post("/game/temples/", {"action": "balance"})
+        jobs = self._jobs()
+        self.assertEqual({k: v["city_targets"] for k, v in jobs.items()}, planned)
+        self.assertTrue(all(v["target_mode"] == "city_targets" for v in jobs.values()))
+
+    def test_the_job_form_balances_across_accounts_too(self):
+        html = self.client.get("/jobs/new/form/", {"ga": str(self.gas[0].pk), "action": "35"}).content.decode()
+        self.assertIn("Templos e Fé", html)
         self.assertIn('"citizens_per_priest": 7', html)
+        self.client.post("/jobs/new/submit/", {"game_account": str(self.gas[0].pk), "action_code": "35",
+                                                "target_mode": "island_faith", "target_value": "100", "reserve_citizens": "0"})
+        self.assertEqual(len(self._jobs()), 2)                                       # both accounts get their part
 
-    def test_activate_miracle_finally_shows_what_was_read(self):
-        html = self.client.get("/jobs/new/form/", {"ga": str(self.ga.pk), "action": "11"}).content.decode()
-        self.assertIn("Templo de Hermes", html)
-        self.assertIn("data-island-miracles", html)
+    def test_activate_miracle_points_to_the_temples_page(self):
+        html = self.client.get("/jobs/new/form/", {"ga": str(self.gas[0].pk), "action": "11"}).content.decode()
+        self.assertIn("Forja de Hefesto", html)                                     # the temple state reaches the form
+        self.assertIn("/game/temples/", html)
 
-    def test_one_job_reads_every_temple(self):
-        self.client.post("/jobs/new/submit/", {"game_account": str(self.ga.pk), "action_code": "35", "cities": ["1", "2"],
-                                                "target_mode": "own_conversion", "target_value": "100", "reserve_citizens": "0"})
-        jobs = list(Job.objects.filter(action_code=35))
-        self.assertEqual(len(jobs), 1)
-        self.assertEqual(json.loads(jobs[0].inputs_json)["cities"], ["1", "2"])
-
-    def test_the_preset_has_no_city_list_and_makes_one_job_per_account(self):
-        preset = Preset.objects.create(name="Templos", created_by=self.user)
-        PresetGameAccount.objects.create(preset=preset, game_account=self.ga)
+    def test_the_preset_balances_its_accounts_in_one_plan(self):
+        preset = Preset.objects.create(name="Fé", created_by=self.user)
+        for ga in self.gas:
+            PresetGameAccount.objects.create(preset=preset, game_account=ga)
         PresetAction.objects.create(preset=preset, action_code=35, action_name="Ajustar Sacerdotes", order=1,
-                                    inputs_json="{}", per_account_json="{}")
-        url = f"/profiles/presets/{preset.pk}/configure/1/"
-        self.assertNotIn('name="city_mode"', self.client.get(url).content.decode())
-        self.client.post(url, {"game_account": str(self.ga.pk), "action_code": "35", "target_mode": "absolute",
-                               "target_value": "300", "reserve_citizens": "0", "cities": ["1"]})
-        saved = json.loads(PresetAction.objects.get(preset=preset).inputs_json)
-        self.assertNotIn("cities", saved)
-        self.assertEqual((saved["target_mode"], str(saved["target_value"])), ("absolute", "300"))
-        execute_preset(preset, created_by=self.user)
-        self.assertEqual(Job.objects.filter(action_code=35).count(), 1)
+                                    inputs_json=json.dumps({"target_mode": "island_faith", "target_value": 100}), per_account_json="{}")
+        self.assertNotIn('name="city_mode"', self.client.get(f"/profiles/presets/{preset.pk}/configure/1/").content.decode())
+        created, errors = execute_preset(preset, created_by=self.user)
+        self.assertEqual((created, errors), (2, []))

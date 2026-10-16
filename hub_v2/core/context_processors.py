@@ -25,6 +25,7 @@ def nav_context(request):
                 {"name": "Inteligência", "url": "/intel/players/", "icon": "bi-binoculars"},
                 {"name": "Ações do Jogo", "url": "/game/actions/", "icon": "bi-controller"},
                 {"name": "Construções", "url": "/game/construction/", "icon": "bi-building"},
+                {"name": "Templos e Fé", "url": "/game/temples/", "icon": "bi-stars"},
                 {"name": "Mercado Interno", "url": "/market/", "icon": "bi-shop"},
                 {"name": "Mercado Negro", "url": "/market/black-market/", "icon": "bi-shield-exclamation"},
                 {"name": "Banco de Generais", "url": "/generais/", "icon": "bi-shield-fill-check"},

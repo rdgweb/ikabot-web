@@ -96,8 +96,26 @@ def execute_preset(preset: Preset, created_by=None) -> tuple[int, list[str]]:
 
     jobs_created = 0
     errors: list[str] = []
+    preset_ga_ids = {str(pga.game_account_id) for pga in preset_accounts}
 
     for pa in preset_actions:
+        if int(pa.action_code) == 35:
+            try:
+                saved = json.loads(pa.inputs_json or "{}")
+            except Exception:
+                saved = {}
+            if str(saved.get("target_mode") or "") == "island_faith":
+                # N-141: one plan for every island of the preset's accounts, balanced across them
+                from apps.game.services.temples import balance_jobs, islands_for_organization
+
+                islands = [i for i in islands_for_organization() if any(t.game_account_id in preset_ga_ids for t in i.own)]
+                try:
+                    target = max(1, min(100, int(saved.get("target_value") or 100)))
+                except (TypeError, ValueError):
+                    target = 100
+                jobs_created += balance_jobs(islands, target=target, created_by=created_by)
+                continue
+
         # Parse per-account overrides
         try:
             per_account = json.loads(pa.per_account_json or "{}")

@@ -2,7 +2,7 @@
 
     {% if action_code == 35 %}
     {{ temple_ui.cities|json_script:"temple-cities-data" }}
-    <div class="mb-5 overflow-hidden rounded-[24px] border shadow-[0_12px_36px_rgba(60,45,18,0.10)]"
+    <div class="mb-5 rounded-[24px] border shadow-[0_12px_36px_rgba(60,45,18,0.10)]"
          style="border-color: var(--ik-line); background:
            radial-gradient(780px 280px at 0% 0%, rgba(201,156,78,0.14), transparent 60%),
            radial-gradient(700px 260px at 100% 100%, rgba(79,134,185,0.12), transparent 60%),
@@ -11,18 +11,23 @@
            cities: [],
            isPreset: {% if preset %}true{% else %}false{% endif %},
            selectedCities: {% if form.cities.value %}{{ form.cities.value|safe }}{% else %}[]{% endif %},
-           mode: '{{ form.target_mode.value|default:'own_conversion'|escapejs }}',
+           query: '',
+           mode: '{{ form.target_mode.value|default:'island_faith'|escapejs }}',
            value: '{{ form.target_value.value|default:100|escapejs }}',
            isSelected(cityId) { return this.selectedCities.includes(String(cityId || '')); },
            toggleCity(cityId) {
              const id = String(cityId || '');
+             if (!id || this.isPreset) return;
              this.selectedCities = this.isSelected(id) ? this.selectedCities.filter(item => item !== id) : [...this.selectedCities, id];
            },
-           chosen() { return this.isPreset || !this.selectedCities.length ? this.cities : this.cities.filter(c => this.isSelected(c.id)); },
-           // the same arithmetic as the agent; the agent re-reads each temple before applying
+           filteredCities() {
+             const q = String(this.query || '').toLowerCase().trim();
+             return this.cities.filter(city => !q || [city.name, city.tradegood_name, city.x, city.y].join(' ').toLowerCase().includes(q));
+           },
+           // per-city preview for the per-city modes; the island mode is planned by the hub across accounts
            target(city) {
              const v = Math.max(0, parseInt(this.value) || 0);
-             if (this.mode === 'keep' || !city.known) return null;
+             if (!city.known || this.mode === 'keep' || this.mode === 'island_faith') return null;
              let wanted;
              if (this.mode === 'absolute') wanted = v;
              else if (this.mode === 'percent_max') wanted = Math.round(city.max_priests * v / 100);
@@ -31,9 +36,6 @@
                wanted = Math.ceil(city.max_inhabitants * v / 100 / city.citizens_per_priest);
              }
              return city.max_priests ? Math.min(city.max_priests, wanted) : wanted;
-           },
-           totalChange() {
-             return this.chosen().reduce((sum, c) => { const t = this.target(c); return sum + (t === null ? 0 : t - (c.priests || 0)); }, 0);
            }
          }"
          x-init="cities = JSON.parse(document.getElementById('temple-cities-data')?.textContent || '[]')">
@@ -41,84 +43,113 @@
            style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div class="max-w-2xl">
-            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-gold);">Templo</div>
-            <h3 class="mt-2 text-xl font-bold text-ink">Sacerdotes e milagres das ilhas</h3>
-            <p class="mt-2 text-sm leading-relaxed text-muted">Ajuste os sacerdotes como os cientistas; a cada execução o milagre de cada ilha é lido de novo.</p>
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-gold);">Ajustar Sacerdotes</div>
+            <h3 class="mt-2 text-xl font-bold text-ink">Sacerdotes dos templos</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted">Fé, milagres e quem participa de cada ilha ficam em <a href="{% url 'game:temples' %}" class="link-sea">Templos e Fé</a>.</p>
           </div>
           <div class="rounded-2xl border px-4 py-3 lg:min-w-[15rem]" style="border-color: rgba(201,156,78,0.24); background: rgba(255,255,255,0.76);">
-            <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Mudança</div>
-            <div class="mt-1 text-lg font-bold text-ink" x-text="mode === 'keep' ? 'só leitura' : ((totalChange() > 0 ? '+' : '') + totalChange() + ' sacerdotes')"></div>
-            <div class="text-[11px] text-muted" x-text="chosen().length + (chosen().length === 1 ? ' templo' : ' templos')"></div>
+            <div class="text-[10px] uppercase tracking-[0.16em] text-muted">Templos</div>
+            <div class="mt-2 flex items-center gap-3">
+              <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border" style="border-color: rgba(201,156,78,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                <img src="{{ temple_ui.summary.temple_icon }}" alt="Templo" class="h-7 w-7 object-contain">
+              </span>
+              <div>
+                <div class="text-sm font-semibold text-ink">{{ temple_ui.summary.count }} templo{{ temple_ui.summary.count|pluralize }}</div>
+                <div class="text-[11px] text-muted" x-text="isPreset ? 'todos, em cada conta' : 'nenhum marcado = todos'"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="px-5 py-5 md:px-6 space-y-4">
-        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.9fr)]">
-          <section class="rounded-[22px] border p-4" style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.8);">
+      <div class="px-5 py-5 md:px-6">
+        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(20rem,0.9fr)]">
+          <section class="rounded-[22px] border p-4" x-show="!isPreset"
+                   style="border-color: rgba(201,156,78,0.24); background: linear-gradient(180deg, rgba(201,156,78,0.08), rgba(255,255,255,0.8));">
             <div class="mb-3 flex items-center justify-between gap-3">
-              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold);">Templos</div>
-              <div class="flex gap-2 text-[11px]" x-show="!isPreset">
-                <button type="button" class="link-sea" @click="selectedCities = cities.map(c => String(c.id))">Todos</button>
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold);">Cidades com templo</div>
+              <div class="flex gap-2 text-[11px]">
+                <button type="button" class="link-sea" @click="selectedCities = filteredCities().map(c => String(c.id))">Selecionar visíveis</button>
                 <button type="button" class="text-muted hover:text-ink" @click="selectedCities = []">Limpar</button>
               </div>
             </div>
+            <label class="mb-3 block">
+              <span class="mb-1 block text-[11px] uppercase tracking-[0.14em] text-muted">Filtrar cidades</span>
+              <input type="text" x-model="query" class="form-input" placeholder="Buscar por cidade ou coordenada">
+            </label>
             <template x-for="cityId in (isPreset ? [] : selectedCities)" :key="`priests-${cityId}`">
               <input type="hidden" name="{{ form.cities.html_name }}" :value="cityId">
             </template>
-            <p class="mb-2 text-[11px] text-muted" x-text="isPreset ? 'Todos os templos de cada conta do preset.' : 'Nenhum marcado = todos os templos.'"></p>
-            <div class="grid max-h-[24rem] grid-cols-1 gap-2 overflow-y-auto p-1 sm:grid-cols-2">
-              <template x-for="city in cities" :key="`temple-${city.id}`">
-                <button type="button" :disabled="isPreset"
-                        class="relative rounded-[16px] border p-3 text-left transition-all"
-                        :style="(isPreset || isSelected(city.id))
-                          ? 'border-color: rgba(201,156,78,0.55); background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(201,156,78,0.10));'
-                          : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'"
+            <div class="grid max-h-[22rem] grid-cols-2 gap-2 overflow-y-auto p-1 xl:grid-cols-3">
+              <template x-for="city in filteredCities()" :key="`temple-${city.id}`">
+                <button type="button"
+                        class="group relative rounded-[18px] border text-left transition-all duration-150"
+                        :class="isSelected(city.id)
+                          ? 'translate-y-[-1px] ring-2 ring-[var(--ik-gold)] shadow-[0_10px_28px_rgba(201,156,78,0.18)]'
+                          : 'hover:translate-y-[-1px] hover:border-[var(--ik-gold)]/45 hover:shadow-[0_10px_24px_rgba(201,156,78,0.12)]'"
+                        :style="isSelected(city.id)
+                          ? 'border-color: rgba(201,156,78,0.50); background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(201,156,78,0.10));'
+                          : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'"
                         @click="toggleCity(city.id)">
-                  <div class="flex items-center gap-2">
-                    <img :src="city.tradegood_icon" alt="" class="h-4 w-4 object-contain">
-                    <span class="truncate text-sm font-semibold text-ink" x-text="city.name"></span>
-                    <span class="ml-auto text-[10px] text-muted" x-text="'Templo ' + city.temple_level"></span>
-                  </div>
-                  <template x-if="city.known">
-                    <div class="mt-1.5 text-[11px] text-muted">
-                      <span x-text="(city.priests || 0) + '/' + (city.max_priests || '?') + ' sacerdotes'"></span>
-                      <span x-show="city.own_conversion !== null && city.own_conversion !== undefined" x-text="' · conversão ' + city.own_conversion + '%'"></span>
-                      <template x-if="target(city) !== null && target(city) !== city.priests">
-                        <span class="font-semibold" style="color: var(--ik-gold);" x-text="' → ' + target(city)"></span>
-                      </template>
+                  <div class="ik-top-band absolute inset-x-0 top-0 h-14" style="background: linear-gradient(135deg, rgba(201,156,78,0.16), rgba(201,156,78,0.02));"></div>
+                  <div class="relative p-3">
+                    <div class="flex items-start gap-3">
+                      <div class="relative shrink-0">
+                        <div class="flex h-12 w-12 items-center justify-center rounded-[16px] border" style="border-color: rgba(201,156,78,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                          <img src="{{ temple_ui.summary.temple_icon }}" alt="Templo" class="h-7 w-7 object-contain">
+                        </div>
+                        <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white shadow-sm">
+                          <img :src="city.tradegood_icon" :alt="city.tradegood_name" class="h-4 w-4 object-contain">
+                        </div>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-start justify-between gap-2">
+                          <div class="min-w-0">
+                            <div class="truncate text-sm font-semibold text-ink" x-text="city.name || 'Cidade'"></div>
+                            <div class="mt-1 text-[11px] text-muted" x-text="`Templo Lv ${city.temple_level} • [${city.x}:${city.y}]`"></div>
+                          </div>
+                          <span class="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full border"
+                                :style="isSelected(city.id)
+                                  ? 'border-color: var(--ik-gold); color: white; background: var(--ik-gold);'
+                                  : 'border-color: rgba(201,156,78,0.24); color: var(--ik-gold); background: rgba(201,156,78,0.06);'">
+                            <i class="bi" :class="isSelected(city.id) ? 'bi-check-lg' : 'bi-plus-lg'"></i>
+                          </span>
+                        </div>
+                        <div class="mt-2 flex flex-wrap gap-1.5">
+                          <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]" style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);"
+                                x-text="city.known ? `${city.priests}/${city.max_priests} sacerdotes` : 'sem leitura'"></span>
+                          <template x-if="target(city) !== null && target(city) !== city.priests">
+                            <span class="inline-flex items-center rounded-full px-2 py-1 text-[10px] font-bold" style="background: rgba(201,156,78,0.14); color: var(--ik-gold);" x-text="`→ ${target(city)}`"></span>
+                          </template>
+                        </div>
+                      </div>
                     </div>
-                  </template>
-                  <template x-if="!city.known">
-                    <div class="mt-1.5 text-[11px] text-muted">ainda sem leitura do templo</div>
-                  </template>
+                  </div>
                 </button>
               </template>
             </div>
           </section>
 
           <section class="rounded-[22px] border p-4 space-y-3"
-                   style="border-color: rgba(79,134,185,0.24); background: linear-gradient(180deg, rgba(79,134,185,0.08), rgba(255,255,255,0.84));">
+                   style="border-color: rgba(79,134,185,0.24); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.84));">
             <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Alvo</div>
             <div>
               <label for="{{ form.target_mode.id_for_label }}" class="mb-1 block text-[11px] font-semibold text-muted">{{ form.target_mode.label }}</label>
               <div @change="mode = $event.target.value">{{ form.target_mode }}</div>
             </div>
             <div x-show="mode !== 'keep'">
-              <label for="{{ form.target_value.id_for_label }}" class="mb-1 block text-[11px] font-semibold text-muted">
-                <span x-text="mode === 'absolute' ? 'Sacerdotes por templo' : (mode === 'percent_max' ? '% do máximo' : '% dos habitantes convertidos')"></span>
-              </label>
+              <label for="{{ form.target_value.id_for_label }}" class="mb-1 block text-[11px] font-semibold text-muted"
+                     x-text="{island_faith: 'Fé da ilha (%)', absolute: 'Sacerdotes por templo', percent_max: '% do máximo', own_conversion: '% dos habitantes convertidos'}[mode] || 'Valor'"></label>
               <div @input="value = $event.target.value">{{ form.target_value }}</div>
               {% for error in form.target_value.errors %}<p class="form-error mt-1">{{ error }}</p>{% endfor %}
             </div>
-            <div x-show="mode !== 'keep'">
+            <p class="text-[11px] text-muted" x-show="mode === 'island_faith'">Reparte os sacerdotes que faltam (ou sobram) por igual entre as suas cidades de cada ilha, em todas as contas.</p>
+            <div x-show="mode !== 'keep' && mode !== 'island_faith'">
               <label for="{{ form.reserve_citizens.id_for_label }}" class="mb-1 block text-[11px] font-semibold text-muted">{{ form.reserve_citizens.label }}</label>
               {{ form.reserve_citizens }}
             </div>
           </section>
         </div>
-
-        {% include "jobs/forms/_island_miracles.html" %}
       </div>
     </div>
     {% endif %}
