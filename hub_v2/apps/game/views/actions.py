@@ -5,6 +5,7 @@ View: Action catalog — lists all game action types grouped by category.
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views.generic import TemplateView
 
+from apps.profiles.services import catalog_presets
 from core.contracts import get_actions_for_ui
 
 
@@ -15,4 +16,10 @@ class ActionCatalogView(LoginRequiredMixin, TemplateView):
         ctx = super().get_context_data(**kwargs)
         ctx["action_groups"] = get_actions_for_ui()
         ctx["total_actions"] = sum(len(group["actions"]) for group in ctx["action_groups"])
+        # N-142: presets chosen to show up here, in their category, ready to run
+        presets = catalog_presets()
+        for group in ctx["action_groups"]:
+            group["presets"] = presets.get(group["key"], [])
+            group["count"] = len(group["actions"]) + len(group["presets"])
+        ctx["total_presets"] = sum(len(group["presets"]) for group in ctx["action_groups"])
         return ctx

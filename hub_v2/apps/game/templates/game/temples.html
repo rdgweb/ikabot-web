@@ -12,12 +12,12 @@
   <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
     <div>
       <h1 class="text-2xl font-bold text-ink">Templos e Fé</h1>
-      <p class="mt-1 text-sm text-muted">{{ cards|length }} ilha{{ cards|length|pluralize }} · {{ accounts }} conta{{ accounts|pluralize }}{% if short_islands %} · <span style="color: var(--ik-gold);">{{ short_islands }} sem população para 100%</span>{% endif %}</p>
+      <p class="mt-1 text-sm text-muted">{{ cards|length }} ilha{{ cards|length|pluralize }} · {{ accounts }} conta{{ accounts|pluralize }}{% if short_islands %} · <span style="color: var(--ik-gold);">{{ short_islands }} sem como chegar a 100%</span>{% endif %}</p>
     </div>
     <div class="flex flex-wrap items-center gap-2">
-      <form method="get" class="flex items-center gap-1.5 text-[12px] text-muted" title="Cidadãos livres que cada cidade mantém fora dos sacerdotes">
+      <form method="get" class="flex items-center gap-1.5 text-[12px] text-muted whitespace-nowrap" title="Cidadãos livres que cada cidade mantém fora dos sacerdotes">
         <i class="bi bi-people"></i> manter livres
-        <input type="number" name="reserva" min="0" value="{{ reserve }}" class="form-input !w-20 !py-1 text-right" onchange="this.form.submit()">
+        <input type="number" name="reserva" min="0" value="{{ reserve }}" class="form-input text-right" style="width: 5rem; padding-top: 4px; padding-bottom: 4px;" onchange="this.form.submit()">
       </form>
       <form method="post">{% csrf_token %}<input type="hidden" name="action" value="refresh">
         <button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> Ler templos</button>
@@ -34,18 +34,18 @@
   <form method="post" class="card !p-4">{% csrf_token %}<input type="hidden" name="action" value="rules">
     <div class="flex flex-wrap items-center gap-x-5 gap-y-3">
       <span class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold);"><i class="bi bi-stars"></i> Milagres automáticos</span>
-      <label class="flex items-center gap-2 text-[12px] text-ink" title="Templo de Atena e Forja de Hefesto quando um ataque estiver chegando">
+      <label class="flex items-center gap-2 text-[12px] text-ink whitespace-nowrap" title="Templo de Atena e Forja de Hefesto quando um ataque estiver chegando">
         <input type="checkbox" name="defense_on_attack" value="1" {% if rules.defense_on_attack %}checked{% endif %} {% if not can_change_rules %}disabled{% endif %}>
         <img src="{% static 'game/buildings/temple.png' %}" alt="" class="h-4 w-4"> Ataque chegando <span class="text-muted">· Atena + Hefesto</span>
       </label>
-      <label class="flex items-center gap-2 text-[12px] text-ink" title="Colosso quando você defende e perde mais unidades que o atacante">
+      <label class="flex items-center gap-2 text-[12px] text-ink whitespace-nowrap" title="Colosso quando você defende e perde mais unidades que o atacante">
         <input type="checkbox" name="colossus_when_losing" value="1" {% if rules.colossus_when_losing %}checked{% endif %} {% if not can_change_rules %}disabled{% endif %}>
         <i class="bi bi-shield-exclamation" style="color: var(--ik-bad);"></i> Perdendo a defesa <span class="text-muted">· Colosso</span>
       </label>
-      <label class="flex items-center gap-2 text-[12px] text-ink" title="Templo de Poseidon ou de Hermes quando um envio usa essa parte dos navios">
+      <label class="flex items-center gap-2 text-[12px] text-ink whitespace-nowrap" title="Templo de Poseidon ou de Hermes quando um envio usa essa parte dos navios">
         <input type="checkbox" name="speed_on_shipments" value="1" {% if rules.speed_on_shipments %}checked{% endif %} {% if not can_change_rules %}disabled{% endif %}>
         <i class="bi bi-water" style="color: var(--ik-sea);"></i> Envio com
-        <input type="number" name="ship_share" min="10" max="100" value="{{ rules.ship_share }}" class="form-input !w-16 !py-0.5 text-right" {% if not can_change_rules %}disabled{% endif %}>% dos navios <span class="text-muted">· Poseidon / Hermes</span>
+        <input type="number" name="ship_share" min="10" max="100" value="{{ rules.ship_share }}" class="form-input text-right" style="width: 4.5rem; padding-top: 2px; padding-bottom: 2px;" {% if not can_change_rules %}disabled{% endif %}>% dos navios <span class="text-muted">· Poseidon / Hermes</span>
       </label>
       {% if can_change_rules %}<button type="submit" class="btn btn-secondary btn-sm ml-auto"><i class="bi bi-check2"></i> Salvar</button>{% endif %}
     </div>
@@ -128,7 +128,8 @@
         {% endif %}
         {% if card.short %}
         <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" style="background: rgba(201,156,78,0.14); color: var(--ik-gold);">
-          <i class="bi bi-people"></i> alcança {{ card.projected|floatformat:0 }}% · faltam {{ card.short|intcomma }} cidadãos livres</span>
+          <i class="bi {% if card.short_by_people %}bi-people{% else %}bi-building{% endif %}"></i> alcança {{ card.projected|floatformat:0 }}% ·
+          {% if card.short_by_people %}faltam {{ card.short|intcomma }} cidadãos livres{% else %}templos cheios, faltam {{ card.short|intcomma }} vagas{% endif %}{% if card.unread %} · {{ card.unread }} sem leitura{% endif %}</span>
         {% endif %}
         {% if island.participants %}
         <details class="w-full">

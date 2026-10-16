@@ -36,6 +36,9 @@ class TemplesView(LoginRequiredMixin, TemplateView):
             changes = [t for t in island.own if t.target is not None and t.target != t.priests]
             cards.append({
                 "short": island.short_priests if planned else 0,
+                # what holds the island back: free citizens somewhere, or only full temples
+                "short_by_people": any(t.limit == "populacao" for t in island.own),
+                "unread": sum(1 for t in island.own if not t.max_priests),
                 "citizens_used": sum(t.citizens_used for t in island.own),
                 "free": sum(t.free_citizens for t in island.own if t.max_priests),
                 "island": island,

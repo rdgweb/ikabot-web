@@ -10,6 +10,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import DetailView, CreateView, UpdateView, DeleteView
 
@@ -572,6 +573,28 @@ class PresetExecuteView(LoginRequiredMixin, View):
         if not jobs_created and not errors:
             messages.warning(request, "Nenhum job criado. Verifique se o preset tem contas e ações configuradas.")
 
+        back = request.POST.get("next") or request.GET.get("next") or ""
+        if back and url_has_allowed_host_and_scheme(back, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+            return redirect(back)               # N-142: run from Ações do Jogo, back to it
+        return redirect("profiles:preset-detail", pk=preset.pk)
+
+
+class PresetCatalogView(LoginRequiredMixin, View):
+    """POST — N-142: the Ações do Jogo category the preset shows up in ("" = none)."""
+
+    def post(self, request, pk):
+        from core.actions.constants import CATEGORY_META
+
+        preset = get_object_or_404(Preset, pk=pk)
+        category = request.POST.get("catalog_category", "")
+        if category and category not in CATEGORY_META:
+            category = ""
+        preset.catalog_category = category
+        preset.save(update_fields=["catalog_category", "updated_at"])
+        if category:
+            messages.success(request, f"'{preset.name}' aparece em Ações do Jogo, em {CATEGORY_META[category]['label']}.")
+        else:
+            messages.success(request, f"'{preset.name}' não aparece mais em Ações do Jogo.")
         return redirect("profiles:preset-detail", pk=preset.pk)
 
 

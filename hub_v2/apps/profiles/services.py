@@ -264,3 +264,25 @@ def execute_preset(preset: Preset, created_by=None) -> tuple[int, list[str]]:
                 _spawn_with_donation_types(inputs)
 
     return jobs_created, errors
+
+
+def catalog_presets() -> dict[str, list[dict]]:
+    """N-142: the presets chosen to show up in Ações do Jogo, by category (the request's organization scope applies)."""
+    from core.actions.registry import _plain
+
+    from .models import Preset
+
+    by_category: dict[str, list[dict]] = {}
+    presets = (Preset.objects.exclude(catalog_category="").prefetch_related("actions", "preset_accounts").order_by("name"))
+    for preset in presets:
+        actions = [a.action_name or str(a.action_code) for a in preset.actions.all()]
+        accounts = len(preset.preset_accounts.all())
+        by_category.setdefault(preset.catalog_category, []).append({
+            "pk": preset.pk,
+            "name": preset.name,
+            "description": preset.description,
+            "actions": actions,
+            "accounts": accounts,
+            "search": _plain(" ".join([preset.name, preset.description, "preset", *actions])),
+        })
+    return by_category

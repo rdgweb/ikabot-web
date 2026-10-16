@@ -52,6 +52,8 @@ class Preset(UUIDTimestampModel):
 
     name = models.CharField(max_length=128)   # N-106: unique per organization (Meta)
     description = models.TextField(blank=True, default="")
+    # N-142: the Ações do Jogo category it shows up in, ready to run ("" = only in Presets)
+    catalog_category = models.CharField(max_length=32, blank=True, default="")
     # N-106: who owns it. Stage 1 fills it with the default organization; nothing filters by it yet.
     organization = models.ForeignKey(
         "orgs.Organization", on_delete=models.PROTECT, null=True, blank=True,

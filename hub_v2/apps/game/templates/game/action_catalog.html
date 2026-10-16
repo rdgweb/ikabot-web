@@ -12,7 +12,7 @@
   {# ── Header ── #}
   <div>
     <h1 class="text-2xl font-bold text-ink">Catálogo de Ações</h1>
-    <p class="text-sm text-muted mt-1">{{ total_actions }} ações disponíveis para automação — clique em uma ação para criar um job</p>
+    <p class="text-sm text-muted mt-1">{{ total_actions }} ações disponíveis para automação{% if total_presets %} · {{ total_presets }} preset{{ total_presets|pluralize }}{% endif %} — clique em uma ação para criar um job</p>
   </div>
 
   {% include "game/_action_search.html" with action_groups=action_groups autofocus=True %}
@@ -30,12 +30,38 @@
       </div>
       <h2 class="text-base font-bold text-ink">{{ group.label }}</h2>
       <span class="text-[10px] text-muted font-medium px-1.5 py-0.5 rounded-full bg-[var(--ik-sand)]" data-group-count>
-        {{ group.actions|length }}
+        {{ group.count }}
       </span>
     </div>
 
     {# Action cards grid #}
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+      {# N-142: presets chosen for this category, run in one click (with a confirmation) #}
+      {% for preset in group.presets %}
+      <div class="card !p-4 hover:shadow-md transition-all text-left w-full" style="border-color: {{ group.color }}; border-style: dashed;"
+           data-action-item data-ready="1" data-search="{{ preset.search }}" data-fields="" data-visible="{{ preset.name }} {{ preset.description }}">
+        <div class="flex items-start gap-3">
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5" style="background: var(--ik-sand);">
+            <i class="bi bi-collection-play text-sm" style="color: {{ group.color }};"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <h3 class="text-sm font-semibold text-ink truncate">{{ preset.name }}</h3>
+              <span class="text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0" style="background: rgba(201,156,78,0.14); color: var(--ik-gold);">Preset</span>
+            </div>
+            <p class="text-[11px] text-muted leading-relaxed mt-1 line-clamp-2">{{ preset.actions|join:" · " }}</p>
+            <div class="flex items-center gap-1.5 mt-2">
+              <span class="text-[9px] font-medium px-1.5 py-0.5 rounded-full" style="background: rgba(79,134,185,0.12); color: var(--ik-sea);">
+                <i class="bi bi-person text-[8px]"></i> {{ preset.accounts }} conta{{ preset.accounts|pluralize }}</span>
+              <button type="button" class="ml-auto btn btn-primary btn-sm !py-0.5 !px-2 !text-[11px]"
+                      onclick="return openConfirm({title: 'Executar preset', message: 'Executar {{ preset.name|escapejs }} em {{ preset.accounts }} conta{{ preset.accounts|pluralize }}?', action: '{% url 'profiles:preset-execute' preset.pk %}?next={{ request.path|urlencode }}', method: 'post', confirmLabel: 'Executar'})">
+                <i class="bi bi-play-fill"></i> Executar</button>
+              <a href="{% url 'profiles:preset-detail' preset.pk %}" class="text-muted hover:text-ink text-[12px]" title="Editar preset"><i class="bi bi-pencil"></i></a>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
       {% for action in group.actions %}
       {% if action.ready %}
       <button type="button" data-action-item data-ready="{% if action.ready %}1{% else %}0{% endif %}" data-search="{{ action.search }}" data-fields="{{ action.fields }}" data-visible="{{ action.name }} {{ action.description }} {{ action.code }}"
