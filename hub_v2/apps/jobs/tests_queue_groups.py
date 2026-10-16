@@ -267,10 +267,14 @@ class CategoryTaxonomyTests(TestCase):
         self.assertEqual((unknown["label"], unknown["category"], unknown["action_code"]), ("Some Old Type", "", None))
 
     def test_frozen_migration_map_matches_the_catalog(self):
+        # the map is frozen at N-88: actions created later are not in it (and never need to be)
+        checked = 0
         for meta in ACTION_CATALOG.values():
             runner = meta.get("runner")
-            if runner:
+            if runner and runner in migration.TYPE_TO_CATEGORY:
                 self.assertEqual(migration.TYPE_TO_CATEGORY[runner], workflow_type_info(runner)["category"], runner)
+                checked += 1
+        self.assertGreater(checked, 40)
 
     def test_migration_rewrites_only_the_stored_label(self):
         node = Node.objects.create(name="node-mig")

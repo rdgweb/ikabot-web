@@ -427,6 +427,16 @@ class GameClient(IslandActions):
         action = MiracleAction(self)
         return action.activate_miracle(city_id=city_id, position=position)
 
+    def set_priests(self, city_id: int, position: int, priests: int) -> Any:
+        """Assign priests in a city's temple (N-141)."""
+        action = MiracleAction(self)
+        return action.set_priests(city_id=city_id, position=position, priests=priests)
+
+    def get_wonder_state(self, island_id: int, city_id: int = 0) -> dict[str, Any]:
+        """The island miracle: level, next level, faith and the players taking part (N-141)."""
+        action = MiracleAction(self)
+        return action.get_wonder_state(island_id=island_id, city_id=city_id)
+
     def get_research_state(self, city_id: int) -> dict[str, Any]:
         """Fetch research advisor state for one city context."""
         action = ResearchAction(self)

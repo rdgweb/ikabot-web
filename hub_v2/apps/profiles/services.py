@@ -158,7 +158,7 @@ def execute_preset(preset: Preset, created_by=None) -> tuple[int, list[str]]:
             # else (e.g. donate_loop) processes exactly one city per job and
             # expects a singular "city_id" input, so the multi-select list must be
             # fanned out into one job per city (mirrors JobSubmitView._create_jobs).
-            NO_FANOUT_ACTION_CODES = {3, 27, 601, 602}
+            NO_FANOUT_ACTION_CODES = {3, 27, 35, 601, 602}
             fans_out = bool(multi_field) and int(pa.action_code) not in NO_FANOUT_ACTION_CODES
 
             fanout_city_ids: list[str] = []

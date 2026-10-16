@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import random
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -291,6 +293,39 @@ class _MiracleRunnerMixin(BaseRunner):
             return city, None
         return None, None
 
+    @staticmethod
+    def _miracle_payload(state: dict[str, Any], city_id: str, last_status: str) -> dict[str, Any]:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        return {
+            "city_id": int(state.get("city_id") or city_id or 0),
+            "city_name": str(state.get("city_name") or ""),
+            "island_id": int(state.get("island_id") or 0),
+            "island_name": str(state.get("island_name") or ""),
+            "x": int(state.get("x") or 0),
+            "y": int(state.get("y") or 0),
+            "temple_position": int(state.get("temple_position") or 0),
+            "temple_level": int(state.get("temple_level") or 0),
+            "wonder_name": str(state.get("wonder_name") or ""),
+            "wonder_description": str(state.get("wonder_description") or ""),
+            "wonder_effect": str(state.get("wonder_effect") or ""),
+            "duration_text": str(state.get("duration_text") or ""),
+            "cooldown_text": str(state.get("cooldown_text") or ""),
+            "belief_level": int(state.get("belief_level") or 0),
+            "belief_percent": float(state.get("belief_percent") or 0),
+            "belief_text": str(state.get("belief_text") or ""),
+            "activate_state": str(state.get("activate_state") or ""),
+            "view_state": str(state.get("view_state") or ""),
+            "priests": int(state.get("priests") or 0),
+            "citizens": int(state.get("citizens") or 0),
+            "max_priests": int(state.get("max_priests") or 0),
+            "own_conversion_percent": float(state.get("own_conversion_percent") or 0),
+            "island_conversion_percent": float(state.get("island_conversion_percent") or 0),
+            "citizens_per_priest": int(state.get("citizens_per_priest") or 0),
+            "max_inhabitants": int(state.get("max_inhabitants") or 0),
+            "last_status": last_status,
+            "updated_at": now_iso,
+        }
+
     def _persist_miracle_state(
         self,
         *,
@@ -308,35 +343,7 @@ class _MiracleRunnerMixin(BaseRunner):
             base_snapshot = dict(snapshot.get("base_snapshot") or {})
             cities = [dict(city) for city in (snapshot.get("cities") or [])]
             military = snapshot.get("military") or {}
-            now_iso = datetime.now(timezone.utc).isoformat()
-
-            payload = {
-                "city_id": int(state.get("city_id") or city_id or 0),
-                "city_name": str(state.get("city_name") or ""),
-                "island_id": int(state.get("island_id") or 0),
-                "island_name": str(state.get("island_name") or ""),
-                "x": int(state.get("x") or 0),
-                "y": int(state.get("y") or 0),
-                "temple_position": int(state.get("temple_position") or 0),
-                "temple_level": int(state.get("temple_level") or 0),
-                "wonder_name": str(state.get("wonder_name") or ""),
-                "wonder_description": str(state.get("wonder_description") or ""),
-                "wonder_effect": str(state.get("wonder_effect") or ""),
-                "duration_text": str(state.get("duration_text") or ""),
-                "cooldown_text": str(state.get("cooldown_text") or ""),
-                "belief_level": int(state.get("belief_level") or 0),
-                "belief_percent": float(state.get("belief_percent") or 0),
-                "belief_text": str(state.get("belief_text") or ""),
-                "activate_state": str(state.get("activate_state") or ""),
-                "view_state": str(state.get("view_state") or ""),
-                "priests": int(state.get("priests") or 0),
-                "citizens": int(state.get("citizens") or 0),
-                "max_priests": int(state.get("max_priests") or 0),
-                "own_conversion_percent": float(state.get("own_conversion_percent") or 0),
-                "island_conversion_percent": float(state.get("island_conversion_percent") or 0),
-                "last_status": last_status,
-                "updated_at": now_iso,
-            }
+            payload = self._miracle_payload(state, city_id, last_status)
 
             for city in cities:
                 if str(city.get("id") or "") != str(city_id):
@@ -356,6 +363,154 @@ class _MiracleRunnerMixin(BaseRunner):
             )
         except Exception as exc:
             self.log(job_id, "warn", f"Nao foi possivel persistir estado do milagre no snapshot: {exc}")
+
+
+@register_runner(35)
+class AdjustPriestsRunner(_MiracleRunnerMixin, BaseRunner):
+    """Action 35 (N-141): set the priests of the chosen temples and read every island miracle.
+
+    Inputs:
+        cities            list of city ids (empty = every city with a temple)
+        target_mode       "keep" (only read) | "absolute" | "percent_max" | "own_conversion"
+        target_value      priests, % of the maximum, or % of the city's inhabitants converted
+        reserve_citizens  free citizens never taken
+    Everything read goes to the snapshot in one write: each city's temple (miracle_state) and each island's miracle
+    (base_snapshot.island_wonders).
+    """
+
+    MODES = ("keep", "absolute", "percent_max", "own_conversion")
+
+    @staticmethod
+    def desired_priests(state: dict[str, Any], mode: str, value: int, reserve: int) -> int:
+        current = int(state.get("priests") or 0)
+        maximum = int(state.get("max_priests") or 0)
+        citizens = int(state.get("citizens") or 0)
+        if mode == "absolute":
+            wanted = value
+        elif mode == "percent_max":
+            wanted = round(maximum * value / 100.0)
+        elif mode == "own_conversion":
+            per_priest = int(state.get("citizens_per_priest") or 0)
+            inhabitants = int(state.get("max_inhabitants") or 0)
+            if per_priest <= 0 or inhabitants <= 0:
+                return current
+            wanted = -(-inhabitants * value // (100 * per_priest))        # ceil
+        else:
+            return current
+        free = max(0, citizens - reserve)
+        return max(0, min(maximum or wanted, wanted, current + free))
+
+    def execute(self, job: dict[str, Any]) -> RunnerResult:
+        jid = job["job_id"]
+        aid = job["account_id"]
+        ga_id = job.get("game_account_id")
+        inputs = dict(job.get("inputs") or {})
+        if not ga_id:
+            return RunnerResult(success=False, data={"error": "missing_game_account"})
+
+        mode = str(inputs.get("target_mode") or "keep").strip().lower()
+        if mode not in self.MODES:
+            mode = "keep"
+        try:
+            value = max(0, int(inputs.get("target_value") or 0))
+        except (TypeError, ValueError):
+            value = 0
+        try:
+            reserve = max(0, int(inputs.get("reserve_citizens") or 0))
+        except (TypeError, ValueError):
+            reserve = 0
+
+        snapshot = self._get_snapshot(ga_id)
+        temples: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        for city in (snapshot or {}).get("cities") or []:
+            temple = next((b for b in city.get("buildings") or [] if str(b.get("building") or "") == "temple"), None)
+            if temple and int(temple.get("position") or 0):
+                temples.append((city, temple))
+        wanted = {str(c).strip() for c in (inputs.get("cities") or []) if str(c).strip()}
+        chosen = [(c, t) for c, t in temples if not wanted or str(c.get("id")) in wanted]
+        if not chosen:
+            self.log(jid, "error", "Nenhuma cidade com templo encontrada")
+            return RunnerResult(success=False, data={"error": "temple_not_found"})
+
+        creds = self.resolve_credentials(aid, {}, game_account_id=ga_id)
+        if not creds:
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
+        client = self.get_or_login_game_client(jid, aid, ga_id, creds)
+
+        states: dict[str, dict[str, Any]] = {}
+        changed, failed = [], []
+        for index, (city, temple) in enumerate(chosen):
+            city_id, position = str(city.get("id")), int(temple.get("position") or 0)
+            name = str(city.get("name") or city_id)
+            if index:
+                time.sleep(random.uniform(1.5, 3.5))
+            try:
+                state = client.get_temple_miracle_state(int(city_id), position)
+                target = self.desired_priests(state, mode, value, reserve)
+                current = int(state.get("priests") or 0)
+                status = "inspected"
+                if mode != "keep" and target != current:
+                    client.set_priests(int(city_id), position, target)
+                    state = client.get_temple_miracle_state(int(city_id), position)
+                    changed.append({"city_id": city_id, "city_name": name, "before": current, "after": int(state.get("priests") or 0)})
+                    status = "priests_set"
+                self.log(jid, "info", (
+                    f"Templo: {name} | sacerdotes {current} -> {state.get('priests')} (max {state.get('max_priests')}) | "
+                    f"conversao {state.get('own_conversion_percent')}% | ilha {state.get('island_conversion_percent')}% | "
+                    f"milagre {state.get('wonder_name') or '?'} ({state.get('activate_state') or '?'})"))
+                states[city_id] = self._miracle_payload(state, city_id, status)
+            except Exception as exc:
+                failed.append({"city_id": city_id, "city_name": name, "reason": str(exc)})
+                self.log(jid, "warn", f"Falha no templo de {name}: {exc}")
+
+        # each island's miracle, read once from one of our cities on it
+        wonders: dict[str, dict[str, Any]] = {}
+        for city, _temple in temples:
+            island_id = str(city.get("island_id") or (states.get(str(city.get("id"))) or {}).get("island_id") or "")
+            if not island_id or island_id in wonders:
+                continue
+            try:
+                time.sleep(random.uniform(1.0, 2.5))
+                wonder = client.get_wonder_state(int(island_id), int(city.get("id")))
+                miracle = states.get(str(city.get("id"))) or (city.get("miracle_state") or {})
+                wonder["wonder_name"] = str(miracle.get("wonder_name") or "")
+                wonders[island_id] = wonder
+                self.log(jid, "info", (
+                    f"Milagre da ilha {island_id}: {wonder['wonder_name'] or '?'} nivel {wonder['level']}"
+                    f"{' (maximo)' if wonder['max_level_reached'] else ''} | fe {wonder['faith_percent']}% | "
+                    f"{len(wonder['participants'])} cidades na ilha"))
+            except Exception as exc:
+                self.log(jid, "warn", f"Nao foi possivel ler o milagre da ilha {island_id}: {exc}")
+
+        self.save_game_client(ga_id, client)
+        self._persist_temples(jid, aid, ga_id, snapshot, states, wonders)
+        return RunnerResult(
+            success=bool(states) and not (failed and not states),
+            data={"mode": mode, "target_value": value, "changed": changed, "failed": failed,
+                  "temples": len(states), "islands": len(wonders)},
+        )
+
+    def _persist_temples(self, jid, aid, ga_id, snapshot, states, wonders) -> None:
+        if not snapshot:
+            return
+        try:
+            base_snapshot = dict(snapshot.get("base_snapshot") or {})
+            cities = [dict(city) for city in (snapshot.get("cities") or [])]
+            for city in cities:
+                state = states.get(str(city.get("id")))
+                if state:
+                    city["miracle_state"] = state
+            island_wonders = dict(base_snapshot.get("island_wonders") or {})
+            island_wonders.update(wonders)
+            base_snapshot["island_wonders"] = island_wonders
+            base_snapshot["temples_updated_at"] = datetime.now(timezone.utc).isoformat()
+            self.hub.update_snapshot(
+                aid,
+                {"base_snapshot": base_snapshot, "cities": cities, "military": snapshot.get("military") or {}, "source_job_id": jid},
+                game_account_id=ga_id,
+            )
+        except Exception as exc:
+            self.log(jid, "warn", f"Nao foi possivel gravar templos e milagres no snapshot: {exc}")
 
 
 @register_runner(5)

@@ -437,6 +437,8 @@ def _construction_city_data(cities):
             "x": x,
             "y": y,
             "island_id": city.get("island_id"),
+            # N-141: what the agent last read in the temple (priests, conversion, miracle state)
+            "miracle_state": dict(city.get("miracle_state") or {}),
             "city_occupied": bool(city.get("city_occupied")),
             "harbour_occupied": bool(city.get("harbour_occupied")),
             "occupier_name": city.get("occupier_name", ""),
@@ -1657,6 +1659,66 @@ def _miracle_form_context(cities):
     }
 
 
+def _temple_form_context(snapshot, cities):
+    """N-141: the temples (priests, conversion) and each island's miracle (level, faith, who takes part)."""
+    base = {}
+    if isinstance(snapshot, AccountSnapshot):
+        base = snapshot.base_snapshot or {}
+    elif isinstance(snapshot, dict):
+        base = snapshot.get("base_snapshot") or {}
+    wonders = base.get("island_wonders") or {}
+    temple_cities = []
+    by_island: dict[str, list[dict]] = {}
+    for city in cities or []:
+        temple = next((b for b in city.get("buildings") or [] if str(b.get("building") or "") == "temple"), None)
+        if not temple:
+            continue
+        state = dict(city.get("miracle_state") or {})
+        card = {
+            "id": city.get("id"), "name": city.get("name", ""), "x": city.get("x"), "y": city.get("y"),
+            "tradegood_name": city.get("tradegood_name", ""), "tradegood_icon": city.get("tradegood_icon", ""),
+            "temple_level": int(temple.get("level", 0) or 0), "island_id": str(city.get("island_id") or state.get("island_id") or ""),
+            "priests": int(state.get("priests") or 0), "max_priests": int(state.get("max_priests") or 0),
+            "own_conversion": state.get("own_conversion_percent"), "island_conversion": state.get("island_conversion_percent"),
+            "citizens_per_priest": int(state.get("citizens_per_priest") or 0), "max_inhabitants": int(state.get("max_inhabitants") or 0),
+            "known": bool(state),
+        }
+        temple_cities.append(card)
+        by_island.setdefault(card["island_id"], []).append({**card, "state": state})
+    temple_cities.sort(key=lambda item: str(item.get("name") or "").lower())
+    own_ids = {str(c.get("id")) for c in temple_cities}
+    islands = []
+    for island_id, own in by_island.items():
+        wonder = dict(wonders.get(str(island_id)) or {})
+        state = next((c["state"] for c in own if c["state"]), {})
+        participants = sorted(wonder.get("participants") or [], key=lambda p: -(p.get("island_share_percent") or 0))
+        islands.append({
+            "island_id": island_id,
+            "island_name": state.get("island_name") or "",
+            "wonder_name": wonder.get("wonder_name") or state.get("wonder_name") or "",
+            "wonder_effect": state.get("wonder_effect") or "",
+            "duration_text": state.get("duration_text") or "",
+            "cooldown_text": state.get("cooldown_text") or "",
+            "available": str(state.get("activate_state") or "").lower() == "enabled",
+            "level": wonder.get("level"), "max_level_reached": bool(wonder.get("max_level_reached")),
+            "faith_percent": wonder.get("faith_percent", state.get("belief_percent")),
+            "belief_level": wonder.get("belief_level", state.get("belief_level")),
+            "upgrading": bool(wonder.get("upgrading")), "next_level_need": wonder.get("next_level_need") or 0,
+            "donated": wonder.get("donated") or 0,
+            "own_cities": [c["name"] for c in own],
+            "participants": [{**p, "own": str(p.get("city_id") or "") in own_ids} for p in participants[:10]],
+            "participant_count": len(wonder.get("participants") or []),
+            "updated_at": wonder.get("updated_at") or state.get("updated_at") or "",
+            "known": bool(wonder or state),
+        })
+    islands.sort(key=lambda item: (not item["available"], str(item.get("wonder_name") or "")))
+    return {
+        "summary": {"count": len(temple_cities), "temple_icon": static("game/buildings/temple.png")},
+        "cities": temple_cities,
+        "islands": islands,
+    }
+
+
 def _research_form_context(snapshot, cities):
     base_snapshot = {}
     if isinstance(snapshot, AccountSnapshot):
@@ -1979,7 +2041,7 @@ def _custom_field_names(action_code: int) -> list[str]:
         return ["branch_seafaring", "branch_economy", "branch_knowledge", "branch_military", "branch_mythology", "fallback_interval_minutes", "ready_margin_minutes"]
     if int(action_code) == 26:
         return ["city", "use_athena_scroll", "pay_with_ambrosia"]
-    if int(action_code) == 27:
+    if int(action_code) in (27, 35):
         return ["cities", "target_mode", "target_value", "reserve_citizens"]
     if int(action_code) == 23:
         return ["cities", "sawmill_percent", "luxury_percent"]
@@ -2192,6 +2254,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities, request=None, 
         "miracle_ui": _miracle_form_context(cities),
         "experiment_ui": _experiment_form_context(snapshot, cities),
         "scientists_ui": _scientists_form_context(snapshot, cities),
+        "temple_ui": _temple_form_context(snapshot, cities) if int(action_code) in (11, 35) else {},
         "upgrade_units_ui": _upgrade_units_form_context(cities, snapshot),
         "market_ui": _market_form_context(cities),
         "training_ui": _training_form_context(snapshot, cities),
@@ -3770,10 +3833,11 @@ class JobSubmitView(LoginRequiredMixin, View):
             donation_types = [donation_types]
 
         if multi_city_key and multi_city_key in inputs:
-            if int(action_code) in {3, 27, 601, 602, 810}:
+            if int(action_code) in {3, 27, 35, 601, 602, 810}:
                 # ac=3 (distribute): single job with full cities list so runner can plan routes
                 # ac=27, ac=601, ac=602: single job by design
                 # ac=810 (market scan): one job reads every chosen city; none chosen = biggest market
+                # ac=35 (priests): one job reads every temple and every island miracle once
                 return self._create_single_job(ga, action_code, dict(inputs))
             selected_city_ids = inputs.pop(multi_city_key)
             if not isinstance(selected_city_ids, list):

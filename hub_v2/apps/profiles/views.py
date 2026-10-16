@@ -320,7 +320,7 @@ class PresetRemoveActionView(LoginRequiredMixin, View):
 
 
 # N-138: actions whose preset form decides the cities itself (no per-account city section)
-PRESET_CITYLESS_ACTIONS = {23, 1005, 1203}
+PRESET_CITYLESS_ACTIONS = {23, 35, 1005, 1203}
 
 
 def _preset_action_inputs(action_code, inputs: dict, request) -> dict:
@@ -340,6 +340,10 @@ def _preset_action_inputs(action_code, inputs: dict, request) -> dict:
         else:
             inputs.pop("maintain_scope", None)
             inputs.pop("preset_cities", None)
+        return inputs
+    if int(action_code) == 35:
+        # N-141: every temple of each account
+        inputs.pop("cities", None)
         return inputs
     if int(action_code) == 23:
         # N-139: every city of each account, each with the percentage of its own luxury good

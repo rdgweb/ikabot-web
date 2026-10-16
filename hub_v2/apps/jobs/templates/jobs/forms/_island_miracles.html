@@ -1,0 +1,77 @@
+{# N-141: each island's miracle — level, faith, whether it can be used now and who takes part. Receives: temple_ui #}
+<section class="rounded-[22px] border p-4" data-island-miracles
+         style="border-color: rgba(201,156,78,0.30); background: linear-gradient(180deg, rgba(201,156,78,0.08), rgba(255,255,255,0.84));">
+  <div class="mb-3 flex items-center gap-2">
+    <img src="{{ temple_ui.summary.temple_icon }}" alt="" class="h-6 w-6 object-contain">
+    <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold);">Milagres das suas ilhas</div>
+  </div>
+  {% if not temple_ui.islands %}
+  <p class="text-xs text-muted">Nenhuma cidade com templo.</p>
+  {% endif %}
+  <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+    {% for island in temple_ui.islands %}
+    <div class="rounded-[18px] border p-3" style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.86);">
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0">
+          <div class="truncate text-sm font-bold text-ink">{{ island.wonder_name|default:"Milagre" }}</div>
+          <div class="truncate text-[11px] text-muted">{% if island.island_name %}{{ island.island_name }} · {% endif %}{{ island.own_cities|join:", " }}</div>
+        </div>
+        {% if island.known %}
+        <span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold"
+              style="{% if island.available %}background: rgba(95,140,78,0.14); color: var(--ik-good);{% else %}background: rgba(0,0,0,0.05); color: var(--ik-muted);{% endif %}">
+          {% if island.available %}disponível{% else %}indisponível{% endif %}
+        </span>
+        {% endif %}
+      </div>
+      {% if island.known %}
+      <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+        {% if island.level %}
+        <span class="rounded-full border px-2 py-0.5" style="border-color: rgba(219,201,167,0.9);">nível <b class="text-ink">{{ island.level }}</b>{% if island.max_level_reached %} · máx{% endif %}{% if island.upgrading %} · melhorando{% endif %}</span>
+        {% endif %}
+        {% if island.faith_percent is not None %}
+        <span class="rounded-full border px-2 py-0.5" style="border-color: rgba(219,201,167,0.9);">fé <b class="text-ink">{{ island.faith_percent|floatformat:0 }}%</b>{% if island.belief_level %} · nível de fé {{ island.belief_level }}{% endif %}</span>
+        {% endif %}
+        {% if not island.max_level_reached and island.next_level_need %}
+        <span class="rounded-full border px-2 py-0.5" style="border-color: rgba(219,201,167,0.9);">próximo nível {{ island.donated }}/{{ island.next_level_need }}</span>
+        {% endif %}
+      </div>
+      {% if island.faith_percent is not None %}
+      <div class="mt-1.5 h-1.5 overflow-hidden rounded-full" style="background: var(--ik-line);">
+        <div class="h-full rounded-full" style="width: {{ island.faith_percent|floatformat:0 }}%; background: var(--ik-gold);"></div>
+      </div>
+      {% endif %}
+      {% if island.wonder_effect or island.cooldown_text or island.duration_text %}
+      <p class="mt-2 text-[11px] leading-relaxed text-muted">{{ island.wonder_effect }}{% if island.duration_text %} · {{ island.duration_text }}{% endif %}{% if island.cooldown_text %} · {{ island.cooldown_text }}{% endif %}</p>
+      {% endif %}
+      {% if island.participants %}
+      <div class="mt-2 overflow-x-auto">
+        <table class="w-full text-[11px]">
+          <thead>
+            <tr class="text-muted" style="border-bottom: 1px solid var(--ik-line);">
+              <th class="py-1 pr-2 text-left font-semibold">Jogador · cidade</th>
+              <th class="py-1 px-1 text-right font-semibold">Sacerdotes</th>
+              <th class="py-1 px-1 text-right font-semibold">Conversão</th>
+              <th class="py-1 pl-1 text-right font-semibold">Parte da ilha</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in island.participants %}
+            <tr {% if p.own %}style="background: rgba(201,156,78,0.10);"{% endif %}>
+              <td class="py-0.5 pr-2 truncate {% if p.own %}font-semibold text-ink{% else %}text-muted{% endif %}">{{ p.player }} · {{ p.city_name }}</td>
+              <td class="py-0.5 px-1 text-right font-mono">{{ p.priests }}</td>
+              <td class="py-0.5 px-1 text-right font-mono">{{ p.conversion_percent|floatformat:1 }}%</td>
+              <td class="py-0.5 pl-1 text-right font-mono">{{ p.island_share_percent|floatformat:1 }}%</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% if island.participant_count > island.participants|length %}<p class="mt-1 text-[10px] text-muted">{{ island.participant_count }} cidades na ilha; as 10 com maior parte aparecem aqui.</p>{% endif %}
+      </div>
+      {% endif %}
+      {% else %}
+      <p class="mt-2 text-[11px] text-muted">Ainda sem leitura: rode Ajustar Sacerdotes em "Só atualizar informações".</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>

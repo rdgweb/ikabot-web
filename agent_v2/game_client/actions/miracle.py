@@ -1,4 +1,17 @@
-"""Temple miracle actions."""
+"""Temple miracle actions.
+
+Temple (city building):
+  view=temple, cityId, position                         -> priests, conversion, miracle text/state (JSON)
+  action=CityScreen&function=activateWonder             -> activate the island miracle
+  action=CityScreen&function=assignPriests, priests=N   -> set the priests (N-141; form "setPriests" of the temple)
+
+Island miracle (N-141):
+  view=wonder, islandId                                  -> level, next level need, donated, island faith, upgrade in
+                                                            progress, and the table "Outros jogadores nesta ilha"
+                                                            (player, city, donated, priests, conversion, island share,
+                                                            link to the city's temple)
+Source: captures of BlackShadow701 (s78-br), April and 16/10/2026.
+"""
 
 from __future__ import annotations
 
@@ -37,6 +50,132 @@ class MiracleAction(BaseAction):
             raise ActionError("Invalid miracle activation response", action="activate_miracle") from exc
         self._raise_if_error(payload)
         return self._parse_temple_payload(payload, requested_position=position)
+
+    def set_priests(self, *, city_id: int, position: int, priests: int, **kwargs: Any) -> Any:
+        """Assign priests in a city's temple (the temple's "Designar Sacerdotes" form)."""
+        params = {
+            "action": "CityScreen",
+            "function": "assignPriests",
+            "cityId": str(city_id),
+            "position": str(position),
+            "priests": str(max(0, int(priests))),
+            "backgroundView": "city",
+            "currentCityId": str(city_id),
+            "templateView": "temple",
+            "actionRequest": self.client._action_request,
+            "ajax": "1",
+        }
+        resp = self.client._request("POST", self.client._server_url, data=params, headers=GAME_AJAX_HEADERS)
+        try:
+            payload = resp.json()
+        except Exception as exc:
+            raise ActionError("Invalid assign priests response", action="assign_priests") from exc
+        self._raise_if_error(payload)
+        self._remember_action_request(payload)
+        return payload
+
+    def get_wonder_state(self, *, island_id: int, city_id: int = 0, **kwargs: Any) -> dict[str, Any]:
+        """The island miracle: level, what the next level needs, faith and who takes part."""
+        params = {
+            "view": "wonder",
+            "islandId": str(island_id),
+            "backgroundView": "island",
+            "actionRequest": self.client._action_request,
+            "ajax": "1",
+        }
+        if city_id:
+            params["cityId"] = str(city_id)
+            params["currentCityId"] = str(city_id)
+        resp = self.client._request("POST", self.client._server_url, data=params, headers=GAME_AJAX_HEADERS)
+        try:
+            payload = resp.json()
+        except Exception as exc:
+            raise ActionError("Invalid island miracle response", action="wonder_state") from exc
+        self._remember_action_request(payload)
+        return self.parse_wonder_payload(payload, island_id=island_id)
+
+    def _remember_action_request(self, payload: Any) -> None:
+        for item in self._normalize_payload(payload):
+            if isinstance(item, list) and len(item) >= 2 and item[0] == "updateGlobalData" and isinstance(item[1], dict):
+                token = str(item[1].get("actionRequest") or "").strip()
+                if token:
+                    self.client._action_request = token
+
+    @classmethod
+    def parse_wonder_payload(cls, payload: Any, *, island_id: int = 0) -> dict[str, Any]:
+        template: dict[str, Any] = {}
+        html = ""
+        for item in cls._normalize_payload(payload):
+            if not isinstance(item, list) or len(item) < 2:
+                continue
+            if item[0] == "updateTemplateData" and isinstance(item[1], dict):
+                template = item[1]
+            elif item[0] == "changeView" and isinstance(item[1], list) and len(item[1]) >= 2 and item[1][0] == "wonder":
+                html = str(item[1][1] or "")
+        if not template and not html:
+            raise ActionError("Island miracle data missing", action="wonder_state")
+
+        def number(value: Any) -> int:
+            digits = re.sub(r"[^\d]", "", str(value or ""))
+            return int(digits or "0")
+
+        in_progress = False
+        load_js = template.get("load_js") or {}
+        try:
+            import json as _json
+
+            in_progress = bool(_json.loads(load_js.get("params") or "{}").get("inProgress"))
+        except Exception:
+            in_progress = False
+        max_reached_class = (template.get("maxLevelReached") or {})
+        progress = re.search(r'id="js_wonderUpgradeProgress"[^>]*title="([\d.,]+)%', html)
+        return {
+            "island_id": int(island_id or 0),
+            "level": number(template.get("wonderLevel") or template.get("currentWonderLevel")),
+            "next_level": number(template.get("nextWonderLevel")),
+            "next_level_need": number(template.get("js_donateNextLevel")),
+            "donated": number(template.get("js_donatedResources")),
+            "max_level_reached": "removeClass" in max_reached_class,
+            "belief_level": number(template.get("wonderLevelDisplay")),
+            "faith_percent": cls._extract_percent_value(cls._clean_html_text(template.get("wonderBeliefInfo2") or template.get("wonderBeliefTooltip") or "")),
+            "upgrading": in_progress,
+            "upgrade_percent": cls._extract_decimal(progress.group(1)) if progress else 0.0,
+            "participants": cls._parse_participants(html),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    @classmethod
+    def _parse_participants(cls, html: str) -> list[dict[str, Any]]:
+        """Rows of "Outros jogadores nesta ilha": a player's later cities leave the name blank (same player)."""
+        start = html.find("Outros jogadores nesta ilha")
+        if start < 0:
+            return []
+        rows = re.findall(r"<tr[^>]*>(.*?)</tr>", html[start:], re.S)
+        participants: list[dict[str, Any]] = []
+        last_name, last_avatar = "", 0
+        for row in rows:
+            cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+            if len(cells) < 6:
+                continue
+            avatar = re.search(r"avatarId=(\d+)", cells[0])
+            name = cls._clean_html_text(re.sub(r"&nbsp;", " ", cells[0]))
+            avatar_id = int(avatar.group(1)) if avatar else 0
+            if not name and avatar_id == last_avatar:
+                name = last_name
+            last_name, last_avatar = name, avatar_id
+            temple = re.search(r"cityId=(\d+)&(?:amp;)?position=(\d+)", row)
+            participants.append({
+                "player": name,
+                "avatar_id": avatar_id,
+                "city_name": cls._clean_html_text(cells[1]),
+                "city_id": int(temple.group(1)) if temple else 0,
+                "temple_position": int(temple.group(2)) if temple else 0,
+                "donated": int(re.sub(r"[^\d]", "", cls._clean_html_text(cells[2])) or "0"),
+                "priests": int(re.sub(r"[^\d]", "", cls._clean_html_text(cells[3])) or "0"),
+                "conversion_percent": cls._extract_percent_value(cls._clean_html_text(cells[4])),
+                "island_share_percent": cls._extract_percent_value(cls._clean_html_text(cells[5])),
+            })
+        return participants
 
     def _fetch_temple_payload(self, *, city_id: int, position: int) -> Any:
         params = {
@@ -159,6 +298,10 @@ class MiracleAction(BaseAction):
             "max_priests": max_priests,
             "own_conversion_percent": own_conversion_display,
             "island_conversion_percent": island_conversion,
+            # N-141: what converting a share of the city takes
+            "citizens_per_priest": int(callback_data.get("citizens_per_priest") or 0),
+            "max_inhabitants": int(callback_data.get("max_inhabitants") or 0),
+            "max_citizens_on_island": int(callback_data.get("max_citizens_on_island") or 0),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
