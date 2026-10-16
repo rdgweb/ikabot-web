@@ -695,8 +695,14 @@ def _duration_human(seconds: int) -> str:
 
 
 def _quick_build_options(city: dict[str, Any]) -> dict[str, Any]:
-    """N-144: what the "+" of a city offers: its buildings to raise and the new ones it can build."""
+    """N-144: what the "+" of a city offers: its buildings to raise and the new ones it can build (with their pictures)."""
+    from django.templatetags.static import static
+
     from core.catalogs import get_building_info
+
+    def icon(building: str) -> str:
+        name = get_building_info(building).get("icon")
+        return static(f"game/buildings/{name}") if name else ""
 
     upgrades = []
     for item in city.get("buildings") or []:
@@ -709,6 +715,7 @@ def _quick_build_options(city: dict[str, Any]) -> dict[str, Any]:
             "position": str(item.get("position")),
             "building": building,
             "name": str(get_building_info(building).get("name") or building),
+            "icon": icon(building),
             "level": _si(item.get("level")),
             "upgrading": bool(item.get("is_upgrading")),
         })
@@ -721,6 +728,7 @@ def _quick_build_options(city: dict[str, Any]) -> dict[str, Any]:
         new.append({
             "building": building,
             "name": str(option.get("name") or get_building_info(building).get("name") or building),
+            "icon": icon(building),
             "slot_types": list(option.get("slot_types") or []),
             "preferred_position": str(option.get("preferred_position") or ""),
         })

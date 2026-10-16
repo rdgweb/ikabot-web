@@ -41,16 +41,26 @@ class QuickBuildTests(TestCase):
         self.assertEqual(sorted(b["building"] for b in options["upgrades"]), ["townHall", "warehouse"])   # not the empty slot
         self.assertEqual([b["building"] for b in options["new"]], ["pirateFortress"])     # not researched: left out
         self.assertTrue(next(b for b in options["upgrades"] if b["building"] == "warehouse")["upgrading"])
+        self.assertTrue(all(b["icon"].endswith(".png") for b in options["upgrades"]))           # the game's pictures
 
     def test_the_dashboard_has_the_button(self):
         html = self.client.get("/game/").content.decode()
         self.assertIn("quick-build", html)
         self.assertIn("Construção rápida", html)
+        self.assertIn("baustelle_statisch.png", html)                                            # the game's building site
 
-    def _send(self, step):
+    def _send(self, *steps):
         return self.client.post("/jobs/new/submit/", {
             "game_account": str(self.ga.pk), "action_code": "1002", "auto_transport": "on", "freighter_threshold": "30000",
-            "queue_strategy": "eta_first", "research_reduction": "14", "construction_plan_json": json.dumps([step])})
+            "queue_strategy": "eta_first", "research_reduction": "14", "construction_plan_json": json.dumps(list(steps))})
+
+    def test_several_buildings_go_in_one_plan(self):
+        self._send({"city_id": "11", "building_id": "townHall", "building_name": "Prefeitura", "building_position": "0",
+                    "mode": "upgrade", "target_level": 15},
+                   {"city_id": "11", "building_id": "pirateFortress", "building_name": "Fortaleza dos Piratas",
+                    "mode": "new", "slot_types": ["sea"], "preferred_position": "17", "target_level": 2})
+        plan = json.loads(Job.objects.get(action_code=1002).inputs_json)["construction_plan_json"]
+        self.assertEqual(sorted((s["building_id"], s["target_level"]) for s in plan), [("pirateFortress", 2), ("townHall", 15)])
 
     def test_a_step_creates_the_plan_and_the_next_one_is_merged(self):
         self._send({"city_id": "11", "building_id": "warehouse", "building_name": "Armazém", "building_position": "4",

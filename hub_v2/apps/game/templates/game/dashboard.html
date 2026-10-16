@@ -968,10 +968,14 @@
             {% endif %}
             {% endfor %}
             {# N-144: raise one of these, or build a new one, straight into the construction plan #}
-            <button type="button" class="inline-flex items-center justify-center rounded border px-2 text-[16px] font-bold transition-colors hover:bg-[rgba(79,134,185,0.12)]"
-                    style="border-color: rgba(79,134,185,0.4); color: var(--ik-sea); min-height: 2.5rem;"
+            <button type="button" class="relative inline-flex items-center rounded px-1 py-0.5 transition-all hover:-translate-y-px hover:shadow-sm"
+                    style="border: 1px dashed rgba(79,134,185,0.55); background: rgba(79,134,185,0.06);"
                     title="Construção rápida nesta cidade"
-                    @click="$dispatch('quick-build', {ga: '{{ card.game_account_id }}', gaName: '{{ card.player_name|default:card.account.label|escapejs }}', city: JSON.parse($el.nextElementSibling.textContent)})"><i class="bi bi-plus-lg"></i></button>
+                    @click="$dispatch('quick-build', {ga: '{{ card.game_account_id }}', gaName: '{{ card.player_name|default:card.account.label|escapejs }}', city: JSON.parse($el.nextElementSibling.textContent)})">
+              <img src="{% static 'game/city/b/baustelle_statisch.png' %}" alt="Construir" class="w-10 h-9 object-contain">
+              <span class="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold text-white shadow"
+                    style="background: var(--ik-sea);"><i class="bi bi-plus"></i></span>
+            </button>
             {{ city.quick_build|json_script }}
           </div>
         </div>
