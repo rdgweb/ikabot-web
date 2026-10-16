@@ -61,6 +61,18 @@ def _resolve_auto_city(ga, action_code: int) -> str | None:
 logger = logging.getLogger(__name__)
 
 
+def _spawn_training(ga, inputs: dict, created_by) -> int:
+    from apps.game.models import AccountSnapshot
+    from apps.jobs.services.training import create_training_jobs
+    from apps.jobs.views.create import _get_cities, _training_form_context
+
+    snapshot = AccountSnapshot.objects.filter(game_account=ga).first()
+    cities = _training_form_context(snapshot, _get_cities(ga)).get("training_cities") or []
+    inputs = {k: v for k, v in inputs.items() if k not in ("city_id", "city", "consolidate_city_id", "city_targets")}
+    inputs["game_account"] = str(ga.pk)
+    return create_training_jobs(ga, inputs, cities, created_by=created_by)
+
+
 def execute_preset(preset: Preset, created_by=None) -> tuple[int, list[str]]:
     """
     Execute a preset by creating one job per (game_account, preset_action) combination.
@@ -107,6 +119,32 @@ def execute_preset(preset: Preset, created_by=None) -> tuple[int, list[str]]:
 
             # Start with global inputs
             inputs = dict(default_inputs)
+
+            if int(pa.action_code) == 1005:
+                # N-138: the preset holds a city rule; each account gets its own cities, troops and fleet
+                # in one workflow
+                try:
+                    jobs_created += _spawn_training(ga, inputs, created_by)
+                except Exception as exc:
+                    msg = f"Erro ao criar job para {ga} / ac=1005: {exc}"
+                    logger.warning(msg)
+                    errors.append(msg)
+                continue
+            if int(pa.action_code) == 1203:
+                # N-138: every city with a Workshop (the runner's default when no city is given)
+                inputs.pop("city_id", None)
+                inputs.pop("city", None)
+                inputs["game_account"] = str(ga.pk)
+                try:
+                    create_job_with_workflow(account=account, game_account=ga, node=node, profile=None,
+                                             action_code=1203, inputs=inputs, status="queued", start_new_run=True,
+                                             trigger_type="manual", created_by=created_by)
+                    jobs_created += 1
+                except Exception as exc:
+                    msg = f"Erro ao criar job para {ga} / ac=1203: {exc}"
+                    logger.warning(msg)
+                    errors.append(msg)
+                continue
 
             ga_key = str(ga.pk)
             ga_override = per_account.get(ga_key, {})

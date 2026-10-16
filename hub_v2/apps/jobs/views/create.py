@@ -584,9 +584,14 @@ def _training_form_context(snapshot, cities):
             "fleet": city_mil.get("fleet") or {},
         })
 
+    from django.templatetags.static import static as _static
+
     unit_catalog = [
-        {"id": u.get("id"), "name": u.get("name", "")}
-        for u in [*TRAINING_UNITS["troops"], *TRAINING_UNITS["fleet"]]
+        {"id": u.get("id"), "name": u.get("name", ""), "kind": kind,
+         "icon": _static(UNIT_ICON_MAP[u["name"]]) if UNIT_ICON_MAP.get(u.get("name") or "") else "",
+         "wood": u.get("wood", 0), "wine": u.get("wine", 0), "crystal": u.get("crystal", 0),
+         "sulfur": u.get("sulfur", 0), "upkeep": u.get("upkeep", 0)}
+        for kind in ("troops", "fleet") for u in TRAINING_UNITS[kind]
     ]
 
     return {
@@ -2066,6 +2071,84 @@ def _custom_field_names(action_code: int) -> list[str]:
     return []
 
 
+def upgrade_units_inputs(data) -> dict:
+    """The Melhorar Unidades inputs from the form (job and preset alike)."""
+    raw_targets = data.get("unit_targets_json", "[]").strip()
+    try:
+        unit_targets = json.loads(raw_targets) if raw_targets else []
+    except Exception:
+        unit_targets = []
+    if not isinstance(unit_targets, list):
+        unit_targets = []
+
+    # Sanitise each target entry
+    clean_targets = []
+    for t in unit_targets:
+        if not isinstance(t, dict):
+            continue
+        key = str(t.get("key") or "").strip()
+        if not key:
+            continue
+        attack_raw = t.get("attack_max")
+        defense_raw = t.get("defense_max")
+        legacy_raw = t.get("max_level")
+
+        def _coerce_branch(value):
+            if value in ("", None):
+                return None
+            try:
+                return max(0, int(value))
+            except (TypeError, ValueError):
+                return None
+
+        attack_max = _coerce_branch(attack_raw)
+        defense_max = _coerce_branch(defense_raw)
+
+        if attack_max is None and defense_max is None and legacy_raw not in ("", None):
+            try:
+                legacy_max = max(0, int(legacy_raw))
+            except (TypeError, ValueError):
+                legacy_max = 0
+            attack_max = legacy_max
+            defense_max = legacy_max
+
+        if attack_max is None and defense_max is None:
+            continue
+
+        clean_targets.append({
+            "key": key,
+            "attack_max": attack_max,
+            "defense_max": defense_max,
+        })
+
+    # Resource reserves
+    try:
+        min_crystal = int(data.get("min_crystal_reserve") or 0)
+    except (ValueError, TypeError):
+        min_crystal = 0
+    try:
+        min_gold = int(data.get("min_gold_reserve") or 0)
+    except (ValueError, TypeError):
+        min_gold = 0
+    priority_mode = str(data.get("priority_mode") or "offensive_first").strip() or "offensive_first"
+    if priority_mode not in {"offensive_first", "defensive_first", "shortest_first", "cheapest_first"}:
+        priority_mode = "offensive_first"
+
+    # Optional city filter from the standard city selector
+    city_id = str(data.get("city_id") or data.get("city") or "").strip()
+
+    inputs = {
+        "unit_targets": clean_targets,
+        "target_all": len(clean_targets) == 0,
+        "min_crystal_reserve": max(0, min_crystal),
+        "min_gold_reserve": max(0, min_gold),
+        "priority_mode": priority_mode,
+    }
+    if city_id:
+        inputs["city_id"] = city_id
+    return inputs
+
+
 def _job_form_context(form, action_meta, action_code, ga, cities, request=None, gas: list[str] | None = None):
     snapshot = None
     try:
@@ -2095,6 +2178,20 @@ def _job_form_context(form, action_meta, action_code, ga, cities, request=None, 
         "ships_ui": _ships_form_context(snapshot),
         "clone_ui": _clone_city_context(cities) if int(action_code) == 1301 else {"cities": []},
     }
+    if int(action_code) == 1005:
+        from apps.jobs.services.training import initial_quantities
+
+        ctx["training_initial"] = initial_quantities(getattr(form, "initial", None) or {})
+    if int(action_code) == 1203:
+        # N-138: reopening a preset (or editing the job) shows what was chosen
+        initial = getattr(form, "initial", None) or {}
+        targets = initial.get("unit_targets") if isinstance(initial.get("unit_targets"), list) else []
+        ctx["upgrade_initial"] = {
+            "unit_targets": [t for t in targets if isinstance(t, dict) and t.get("key")],
+            "priority_mode": str(initial.get("priority_mode") or ""),
+            "min_crystal_reserve": initial.get("min_crystal_reserve") or 0,
+            "min_gold_reserve": initial.get("min_gold_reserve") or 0,
+        }
     if int(action_code) == 15:
         ctx.update(_spy_context(ga, cities, getattr(form, "initial", {})))
     if int(action_code) == 16:
@@ -3052,6 +3149,8 @@ class JobSubmitView(LoginRequiredMixin, View):
 
         # remove chaves internas do patch do usuario
         patch = {k: v for k, v in (inputs or {}).items() if k not in self._EDIT_PROTECTED_KEYS}
+        if int(action_code) == 1005:
+            return self._apply_training_edit(request, target, ga, action_meta, patch)
         # Acoes por-cidade: nunca alterar a cidade na edicao (cidade e fixa por job).
         # Evita quebrar city_id e evita duplicar execucao para a mesma cidade.
         if int(action_code) in _PER_CITY_SPLIT_ACTIONS:
@@ -3060,6 +3159,42 @@ class JobSubmitView(LoginRequiredMixin, View):
                 return self._error("Nada para atualizar nos parâmetros.")
         self._write_pending_patch(target, patch)
 
+        resp = HttpResponse(
+            self._render_success(request, {"jobs_created": 0, "edited": True, "action_name": action_meta["name"]}, job=target)
+        )
+        resp["HX-Trigger"] = json.dumps({
+            "toast": {"type": "success", "message": "Parâmetros atualizados — aplicam no próximo ciclo."},
+            "jobsCreated": True,
+        })
+        return resp
+
+    def _apply_training_edit(self, request, target, ga, action_meta, patch):
+        """N-138: each job of the workflow takes its own kind's part; a kind added now starts in the same workflow."""
+        from apps.jobs.services.training import split_by_kind
+        from apps.jobs.services.workflows import create_job_with_workflow
+
+        def kind_of(job):
+            try:
+                return str(json.loads(job.inputs_json or "{}").get("building_type") or "troops")
+            except Exception:
+                return "troops"
+
+        siblings = {}
+        if target.workflow_id:
+            for job in Job.objects.filter(workflow_id=target.workflow_id, action_code=1005,
+                                          status__in=("queued", "scheduled", "running")).order_by("created_at"):
+                siblings.setdefault(kind_of(job), job)
+        siblings.setdefault(kind_of(target), target)
+        for part in split_by_kind(patch):
+            job = siblings.get(part.get("building_type"))
+            if job is not None:
+                self._write_pending_patch(job, part)
+            else:
+                create_job_with_workflow(
+                    account=ga.account, game_account=ga, node=ga.account.node, action_code=1005, inputs=part,
+                    status="queued", trigger_type="manual", explicit_workflow=target.workflow,
+                    explicit_run=target.workflow_run,
+                )
         resp = HttpResponse(
             self._render_success(request, {"jobs_created": 0, "edited": True, "action_name": action_meta["name"]}, job=target)
         )
@@ -3334,80 +3469,7 @@ class JobSubmitView(LoginRequiredMixin, View):
         return resp
 
     def _submit_upgrade_units(self, request, ga, action_code, action_meta, cities):
-        # Parse unit targets JSON
-        raw_targets = request.POST.get("unit_targets_json", "[]").strip()
-        try:
-            unit_targets = json.loads(raw_targets) if raw_targets else []
-        except Exception:
-            unit_targets = []
-        if not isinstance(unit_targets, list):
-            unit_targets = []
-
-        # Sanitise each target entry
-        clean_targets = []
-        for t in unit_targets:
-            if not isinstance(t, dict):
-                continue
-            key = str(t.get("key") or "").strip()
-            if not key:
-                continue
-            attack_raw = t.get("attack_max")
-            defense_raw = t.get("defense_max")
-            legacy_raw = t.get("max_level")
-
-            def _coerce_branch(value):
-                if value in ("", None):
-                    return None
-                try:
-                    return max(0, int(value))
-                except (TypeError, ValueError):
-                    return None
-
-            attack_max = _coerce_branch(attack_raw)
-            defense_max = _coerce_branch(defense_raw)
-
-            if attack_max is None and defense_max is None and legacy_raw not in ("", None):
-                try:
-                    legacy_max = max(0, int(legacy_raw))
-                except (TypeError, ValueError):
-                    legacy_max = 0
-                attack_max = legacy_max
-                defense_max = legacy_max
-
-            if attack_max is None and defense_max is None:
-                continue
-
-            clean_targets.append({
-                "key": key,
-                "attack_max": attack_max,
-                "defense_max": defense_max,
-            })
-
-        # Resource reserves
-        try:
-            min_crystal = int(request.POST.get("min_crystal_reserve") or 0)
-        except (ValueError, TypeError):
-            min_crystal = 0
-        try:
-            min_gold = int(request.POST.get("min_gold_reserve") or 0)
-        except (ValueError, TypeError):
-            min_gold = 0
-        priority_mode = str(request.POST.get("priority_mode") or "offensive_first").strip() or "offensive_first"
-        if priority_mode not in {"offensive_first", "defensive_first", "shortest_first", "cheapest_first"}:
-            priority_mode = "offensive_first"
-
-        # Optional city filter from the standard city selector
-        city_id = str(request.POST.get("city_id") or request.POST.get("city") or "").strip()
-
-        inputs = {
-            "unit_targets": clean_targets,
-            "target_all": len(clean_targets) == 0,
-            "min_crystal_reserve": max(0, min_crystal),
-            "min_gold_reserve": max(0, min_gold),
-            "priority_mode": priority_mode,
-        }
-        if city_id:
-            inputs["city_id"] = city_id
+        inputs = upgrade_units_inputs(request.POST)
 
         create_job_with_workflow(
             account=ga.account,
@@ -3623,6 +3685,14 @@ class JobSubmitView(LoginRequiredMixin, View):
         ).exclude(job=job).update(status="cancelled")
 
     def _create_jobs(self, ga, action_code, action_meta, inputs, cities):
+        if int(action_code) == 1005:
+            # N-138: troops and fleet in one request, in one workflow
+            from apps.jobs.services.training import create_training_jobs
+
+            snapshot = AccountSnapshot.objects.filter(game_account=ga).first()
+            training_cities = _training_form_context(snapshot, cities).get("training_cities") or []
+            return create_training_jobs(ga, inputs, training_cities)
+
         city_choices = {
             str(city.get("id")): city.get("name", "")
             for city in (cities or [])

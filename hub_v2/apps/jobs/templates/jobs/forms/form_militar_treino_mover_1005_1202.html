@@ -3,6 +3,7 @@
     {% if action_code == 1005 or action_code == 1202 %}
     {{ training_ui.training_cities|json_script:"training-cities-data" }}
     {{ training_ui.unit_catalog|json_script:"unit-catalog-data" }}
+    {% if action_code == 1005 %}{{ training_initial|json_script:"training-initial-data" }}{% endif %}
     <div class="mb-5 rounded-[24px] border shadow-[0_12px_36px_rgba(60,45,18,0.10)]"
          style="border-color: var(--ik-line); background:
            radial-gradient(780px 280px at 0% 0%, rgba(187,81,67,0.10), transparent 60%),
@@ -25,6 +26,55 @@
            multiUnits: {},
            units: {},
            customTargets: {},
+           // N-138: troops and fleet in one request; the summary shows both sides
+           isPreset: {% if preset %}true{% else %}false{% endif %},
+           presetCities: '{{ form.initial.preset_cities|default:'all'|escapejs }}',
+           catalog: {},
+           kindOf(uid) { return (this.catalog[String(uid)] || {}).kind || ''; },
+           kindUnits(kind) {
+             return Object.entries(this.units)
+               .filter(([uid, q]) => this.kindOf(uid) === kind && (parseInt(q) || 0) > 0)
+               .map(([uid, q]) => ({ ...(this.catalog[String(uid)] || {}), id: String(uid), qty: parseInt(q) }));
+           },
+           kindTotal(kind) { return this.kindUnits(kind).reduce((s, u) => s + u.qty, 0); },
+           needs() { const k = ['troops', 'fleet'].filter(kind => this.kindTotal(kind) > 0); return k.length ? k : [this.buildingType]; },
+           canTrainIn(city) { return this.needs().every(k => k === 'fleet' ? city.has_shipyard : city.has_barracks); },
+           missingIn(city) { return this.needs().filter(k => !(k === 'fleet' ? city.has_shipyard : city.has_barracks)).map(k => k === 'fleet' ? 'estaleiro' : 'quartel').join(' e '); },
+           currentOf(cityId, uid) {
+             const c = this.cityById(cityId); const u = this.catalog[String(uid)];
+             if (!c || !u) return 0;
+             return parseInt(((u.kind === 'fleet' ? c.fleet : c.troops) || {})[u.name] || 0);
+           },
+           summaryCities() {
+             if (this.mode !== 'maintain' || this.isPreset) return [];
+             if (this.maintainScope === 'local') return this.cityId ? [String(this.cityId)] : [];
+             return this.selectedCities.map(String);
+           },
+           summaryRows(kind) {
+             const cities = this.summaryCities();
+             return this.kindUnits(kind).map(u => {
+               if (this.mode !== 'maintain') return { ...u, target: u.qty, need: u.qty };
+               if (!cities.length) return { ...u, target: null, need: null };
+               let target = 0, need = 0;
+               for (const cid of cities) {
+                 const t = this.targetFor(cid, u.id);
+                 target += t;
+                 need += Math.max(0, t - this.currentOf(cid, u.id));
+               }
+               return { ...u, target, need };
+             });
+           },
+           summaryCost(kind) {
+             const cost = { wood: 0, wine: 0, crystal: 0, sulfur: 0, upkeep: 0, units: 0 };
+             for (const r of this.summaryRows(kind)) {
+               const n = r.need === null ? 0 : r.need;
+               cost.units += n;
+               for (const res of ['wood', 'wine', 'crystal', 'sulfur']) cost[res] += n * (parseInt(r[res]) || 0);
+               cost.upkeep += (r.target === null ? r.qty : r.target) * (parseInt(r.upkeep) || 0);
+             }
+             return cost;
+           },
+           fmt(n) { return new Intl.NumberFormat('pt-BR').format(n || 0); },
            trainQuery: '',
            sourceQuery: '',
            fromQuery: '',
@@ -33,7 +83,7 @@
            grandTotal() { return Object.values(this.units).reduce((s,v)=>s+(parseInt(v)||0),0); },
            cityById(id) { return this.cities.find(c => String(c.id) === String(id)); },
            selectedMaintainCities() {
-             return this.filteredCities(this.buildingType, '').filter(city => this.isSourceSelected(city.id));
+             return this.cities.filter(city => this.isSourceSelected(city.id));
            },
            filteredCities(bt, query = '') {
              return this.cities.filter(c => {
@@ -184,10 +234,9 @@
              return this.originsList().reduce((sum, cid) => sum + Object.values(this.chosenUnitsFor(cid)).reduce((s, q) => s + q, 0), 0);
            },
            visibleSourceCities() {
-             // maintain: any city can be a garrison target (training happens where barracks exist, then moves)
-             // distribute/once: only cities with barracks/shipyard can train
-             const bt = this.mode === 'maintain' ? '' : this.buildingType;
-             return this.filteredCities(bt, this.sourceQuery);
+             // every city is listed: maintain can garrison any of them (the agent trains where there is a
+             // barracks/shipyard and moves); Distribuir only uses the chosen ones that have the building
+             return this.filteredCities('', this.sourceQuery);
            },
            isSourceSelected(cityId) {
              return this.selectedCities.includes(String(cityId));
@@ -239,7 +288,13 @@
            }
          }"
          x-init="cities = JSON.parse(document.getElementById('training-cities-data')?.textContent || '[]');
-           unitIdByName = Object.fromEntries((JSON.parse(document.getElementById('unit-catalog-data')?.textContent || '[]')).map(u => [u.name, u.id]));">
+           unitIdByName = Object.fromEntries((JSON.parse(document.getElementById('unit-catalog-data')?.textContent || '[]')).map(u => [u.name, u.id]));
+           catalog = Object.fromEntries((JSON.parse(document.getElementById('unit-catalog-data')?.textContent || '[]')).map(u => [String(u.id), u]));
+           { const init = JSON.parse(document.getElementById('training-initial-data')?.textContent || 'null') || {};
+             if (init.units) units = { ...init.units };
+             if (init.city_targets) customTargets = { ...init.city_targets };
+             if (init.city_ids && init.city_ids.length) selectedCities = init.city_ids.map(String); }
+           if (isPreset) { if (mode === 'once') mode = 'maintain'; maintainScope = 'selected_uniform'; }">
 
       {# ── Header with toggles ── #}
       <div class="border-b px-5 py-4 md:px-6"
@@ -284,7 +339,7 @@
             </div>
             {% if action_code == 1005 %}
             <div class="flex gap-1 rounded-xl border border-[var(--ik-line)] p-1 bg-white">
-              <button type="button" @click="mode='once'"
+              <button type="button" @click="mode='once'" x-show="!isPreset"
                 :class="mode==='once' ? 'bg-[rgba(95,140,78,0.12)] text-[var(--ik-good)] ring-1 ring-[rgba(95,140,78,0.4)]' : 'text-muted'"
                 class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all">
                 <i class="bi bi-play-fill"></i> Uma vez
@@ -313,17 +368,29 @@
         </div>
         <div x-show="mode==='maintain'" class="mt-3 flex flex-wrap items-center gap-2">
           <span class="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">Escopo</span>
-          <button type="button" @click="maintainScope='local'"
+          <button type="button" @click="maintainScope='local'" x-show="!isPreset"
             :class="maintainScope==='local' ? 'bg-[rgba(201,156,78,0.12)] text-[var(--ik-gold)] ring-1 ring-[rgba(201,156,78,0.4)]' : 'text-muted'"
             class="rounded-lg px-3 py-1.5 text-xs font-semibold transition-all">
             Cidade única
           </button>
-          <button type="button" @click="maintainScope='selected_uniform'"
+          <button type="button" @click="maintainScope='selected_uniform'" x-show="!isPreset"
             :class="maintainScope==='selected_uniform' ? 'bg-[rgba(201,156,78,0.12)] text-[var(--ik-gold)] ring-1 ring-[rgba(201,156,78,0.4)]' : 'text-muted'"
             class="rounded-lg px-3 py-1.5 text-xs font-semibold transition-all">
             Mesmo alvo em cidades selecionadas
           </button>
-          <button type="button" @click="maintainScope='selected_custom'"
+          {# preset: the cities are a rule that fits any account #}
+          <template x-if="isPreset">
+            <span class="inline-flex flex-wrap items-center gap-2">
+              <input type="hidden" name="preset_cities" :value="presetCities">
+              <button type="button" @click="presetCities='all'"
+                :class="presetCities==='all' ? 'bg-[rgba(201,156,78,0.12)] text-[var(--ik-gold)] ring-1 ring-[rgba(201,156,78,0.4)]' : 'text-muted'"
+                class="rounded-lg px-3 py-1.5 text-xs font-semibold transition-all">Mesmo alvo em todas as cidades</button>
+              <button type="button" @click="presetCities='training'"
+                :class="presetCities==='training' ? 'bg-[rgba(201,156,78,0.12)] text-[var(--ik-gold)] ring-1 ring-[rgba(201,156,78,0.4)]' : 'text-muted'"
+                class="rounded-lg px-3 py-1.5 text-xs font-semibold transition-all">Só nas cidades com quartel/estaleiro</button>
+            </span>
+          </template>
+          <button type="button" @click="maintainScope='selected_custom'" x-show="!isPreset"
             :class="maintainScope==='selected_custom' ? 'bg-[rgba(201,156,78,0.12)] text-[var(--ik-gold)] ring-1 ring-[rgba(201,156,78,0.4)]' : 'text-muted'"
             class="rounded-lg px-3 py-1.5 text-xs font-semibold transition-all">
             Alvo customizado por cidade
@@ -333,14 +400,61 @@
       </div>
 
       <div class="px-5 py-4 md:px-6 space-y-5">
-
         {# ═══════════════════════════════════════════════════════ #}
         {# ac=1005 — TRAIN UNITS                                   #}
         {# ═══════════════════════════════════════════════════════ #}
         {% if action_code == 1005 %}
+        {# ── N-138: what this request will do, troops and fleet side by side ── #}
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2" data-training-summary>
+          <template x-for="kind in ['troops', 'fleet']" :key="'summary-' + kind">
+            <div class="rounded-[16px] border p-3"
+                 :style="kind === 'troops'
+                   ? 'border-color: rgba(187,81,67,0.30); background: rgba(187,81,67,0.04);'
+                   : 'border-color: rgba(79,134,185,0.30); background: rgba(79,134,185,0.04);'">
+              <div class="flex items-center gap-2">
+                <i class="bi" :class="kind === 'troops' ? 'bi-shield-shaded' : 'bi-water'"
+                   :style="kind === 'troops' ? 'color: var(--ik-bad);' : 'color: var(--ik-sea);'"></i>
+                <span class="text-xs font-bold text-ink" x-text="kind === 'troops' ? 'Tropas' : 'Frotas'"></span>
+                <button type="button" class="ml-auto text-[10px] link-sea" x-show="buildingType !== kind" @click="buildingType = kind">editar</button>
+              </div>
+              <template x-if="!kindUnits(kind).length">
+                <p class="mt-2 text-[11px] text-muted">Nada escolhido.</p>
+              </template>
+              <div class="mt-2 space-y-1" x-show="kindUnits(kind).length">
+                <template x-for="row in summaryRows(kind)" :key="'row-' + kind + row.id">
+                  <div class="flex items-center gap-2 text-[11px]">
+                    <img :src="row.icon" x-show="row.icon" class="h-5 w-5 object-contain" alt="">
+                    <span class="min-w-0 flex-1 truncate font-semibold text-ink" x-text="row.name"></span>
+                    <template x-if="mode !== 'maintain'"><span class="font-bold text-ink" x-text="fmt(row.qty)"></span></template>
+                    <template x-if="mode === 'maintain'">
+                      <span class="text-muted">
+                        alvo <b class="text-ink" x-text="row.target === null ? fmt(row.qty) + '/cidade' : fmt(row.target)"></b>
+                        <template x-if="row.need !== null"><span> · faltam <b class="text-ink" x-text="fmt(row.need)"></b></span></template>
+                      </span>
+                    </template>
+                  </div>
+                </template>
+                <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t pt-2 text-[10px] text-muted" style="border-color: rgba(219,201,167,0.7);">
+                  <span x-show="!(isPreset && mode === 'maintain')"><b class="text-ink" x-text="fmt(summaryCost(kind).units)"></b> <span x-text="mode === 'maintain' ? 'a treinar' : 'unidades'"></span></span>
+                  <span x-show="summaryCost(kind).wood"><img src="{% static 'game/resources/icon_wood.png' %}" class="inline h-3 w-3 -mt-0.5"> <span x-text="fmt(summaryCost(kind).wood)"></span></span>
+                  <span x-show="summaryCost(kind).wine"><img src="{% static 'game/resources/icon_wine.png' %}" class="inline h-3 w-3 -mt-0.5"> <span x-text="fmt(summaryCost(kind).wine)"></span></span>
+                  <span x-show="summaryCost(kind).crystal"><img src="{% static 'game/resources/icon_glass.png' %}" class="inline h-3 w-3 -mt-0.5"> <span x-text="fmt(summaryCost(kind).crystal)"></span></span>
+                  <span x-show="summaryCost(kind).sulfur"><img src="{% static 'game/resources/icon_sulfur.png' %}" class="inline h-3 w-3 -mt-0.5"> <span x-text="fmt(summaryCost(kind).sulfur)"></span></span>
+                  <span>↻ <span x-text="fmt(summaryCost(kind).upkeep)"></span>/h<span x-show="isPreset && mode === 'maintain'"> por cidade</span></span>
+                </div>
+              </div>
+            </div>
+          </template>
+          <p class="text-[10px] text-muted md:col-span-2" x-show="mode === 'maintain' && !isPreset && !summaryCities().length">
+            Escolha as cidades para ver quanto falta em cada uma.
+          </p>
+          <p class="text-[10px] text-muted md:col-span-2" x-show="isPreset">
+            No preset o alvo vale por cidade, para cada conta; quanto falta é calculado na hora, com o que cada conta tem.
+          </p>
+        </div>
 
         {# ── City selector (card grid) — hidden in distribute mode ── #}
-        <div x-show="mode !== 'distribute' && !(mode === 'maintain' && (maintainScope === 'selected_uniform' || maintainScope === 'selected_custom'))">
+        <div x-show="!isPreset && mode !== 'distribute' && !(mode === 'maintain' && (maintainScope === 'selected_uniform' || maintainScope === 'selected_custom'))">
           <div class="text-[11px] font-semibold uppercase tracking-[0.16em] mb-2" style="color: var(--ik-sea);">
             <span x-show="mode === 'once'">Cidade para treinar</span>
             <span x-show="mode === 'maintain'">Cidade para manter efetivo</span>
@@ -353,11 +467,13 @@
           <input type="hidden" name="{{ form.position.html_name }}"
                  :value="cityById(cityId) && buildingType==='troops' ? cityById(cityId).barracks_pos : (cityById(cityId) ? cityById(cityId).shipyard_pos : 0)">
           <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[16rem] overflow-y-auto p-0.5">
-            <template x-for="city in filteredCities(buildingType, trainQuery)" :key="city.id">
+            <template x-for="city in filteredCities('', trainQuery)" :key="city.id">
               <button type="button"
-                @click="cityId = String(city.id)"
+                @click="if (canTrainIn(city)) cityId = String(city.id)"
+                :disabled="!canTrainIn(city)"
+                :title="canTrainIn(city) ? '' : 'Sem ' + missingIn(city) + ': esta cidade não treina. Para guarnecê-la, use Manter em cidades selecionadas.'"
                 class="relative rounded-[18px] border text-left transition-all duration-150 p-3 hover:translate-y-[-1px]"
-                :class="String(cityId) === String(city.id) ? 'ring-2 ring-[var(--ik-sea)] translate-y-[-1px] shadow-[0_8px_20px_rgba(79,134,185,0.18)]' : 'hover:border-[rgba(79,134,185,0.4)]'"
+                :class="!canTrainIn(city) ? 'opacity-45 cursor-not-allowed' : (String(cityId) === String(city.id) ? 'ring-2 ring-[var(--ik-sea)] translate-y-[-1px] shadow-[0_8px_20px_rgba(79,134,185,0.18)]' : 'hover:border-[rgba(79,134,185,0.4)]')"
                 :style="String(cityId) === String(city.id)
                   ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.88));'
                   : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
@@ -401,6 +517,7 @@
                         <span x-text="buildingType === 'troops' ? `Quartel ${city.barracks_pos ?? '-'}` : `Estaleiro ${city.shipyard_pos ?? '-'}`"></span>
                       </span>
                     </div>
+                    <div class="mt-1 text-[10px] font-semibold" style="color: var(--ik-bad);" x-show="!canTrainIn(city)" x-text="'sem ' + missingIn(city)"></div>
                   </div>
                 </div>
               </button>
@@ -411,29 +528,11 @@
         {# Distribute mode notice #}
         <div x-show="mode === 'distribute'" class="rounded-[16px] border border-[rgba(79,134,185,0.3)] bg-[rgba(79,134,185,0.06)] p-4 text-sm text-muted">
           <i class="bi bi-info-circle text-[var(--ik-sea)]"></i>
-          O runner vai verificar <strong>todas as cidades com quartel/estaleiro</strong>, calcular a capacidade disponível (população + recursos) e distribuir o treino proporcionalmente. Você não precisa selecionar cidade.
+          As quantidades são <strong>divididas por igual</strong> entre as cidades escolhidas abaixo que têm quartel (tropas) ou estaleiro (frotas); sem escolher, entram todas as que treinam. Você não precisa selecionar cidade.
         </div>
 
         {# ── Unit grid — 4 colunas ── #}
-        <div x-show="mode === 'distribute' || mode === 'once'" class="rounded-[16px] border border-[rgba(219,201,167,0.9)] bg-[rgba(255,255,255,0.78)] p-4">
-          <div class="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Consolidação opcional</div>
-          <p class="mb-3 text-xs text-muted">Se informar uma cidade alvo, o sistema agenda a movimentação das unidades treinadas para lá após o tempo estimado de treino.</p>
-          <input type="hidden" name="consolidate_city_id" x-model="consolidateCityId">
-          <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 max-h-[12rem] overflow-y-auto p-0.5">
-            <template x-for="city in filteredCities('', '')" :key="'consolidate-' + city.id">
-              <button type="button"
-                @click="consolidateCityId = String(consolidateCityId) === String(city.id) ? '' : String(city.id)"
-                class="rounded-[14px] border px-3 py-2 text-left text-xs transition-all"
-                :class="String(consolidateCityId) === String(city.id) ? 'ring-2 ring-[var(--ik-sea)]' : 'hover:border-[rgba(79,134,185,0.4)]'"
-                :style="String(consolidateCityId) === String(city.id) ? 'border-color: var(--ik-sea); background: rgba(79,134,185,0.08);' : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
-                <div class="font-semibold text-ink" x-text="city.name"></div>
-                <div class="mt-1 text-[11px] text-muted" x-text="`[${city.x}:${city.y}]`"></div>
-              </button>
-            </template>
-          </div>
-        </div>
-
-        <div x-show="mode === 'distribute' || (mode === 'maintain' && (maintainScope === 'selected_uniform' || maintainScope === 'selected_custom'))" class="space-y-2">
+        <div x-show="!isPreset && (mode === 'distribute' || (mode === 'maintain' && (maintainScope === 'selected_uniform' || maintainScope === 'selected_custom')))" class="space-y-2">
           <div class="flex items-end justify-between gap-3">
             <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);" x-text="mode === 'maintain' ? 'Cidades alvo da manutenção' : 'Cidades fonte do treino'"></div>
             <label class="block w-full max-w-xs">
@@ -481,6 +580,9 @@
                         <i class="bi" :class="isSourceSelected(city.id) ? 'bi-check-lg' : 'bi-diagram-3'"></i>
                       </span>
                     </div>
+                    <div class="mt-1 text-[10px] text-muted">
+                      <span x-text="[city.has_barracks ? 'quartel' : '', city.has_shipyard ? 'estaleiro' : ''].filter(Boolean).join(' · ') || 'não treina (recebe unidades)'"></span>
+                    </div>
                     <div class="mt-2 flex flex-wrap gap-1.5">
                       <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px]"
                             style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.76);">
@@ -495,7 +597,7 @@
           </div>
         </div>
 
-        <div x-show="mode === 'maintain' && maintainScope === 'selected_custom'" class="space-y-3 rounded-[18px] border border-[rgba(201,156,78,0.34)] bg-[rgba(201,156,78,0.06)] p-4">
+        <div x-show="!isPreset && mode === 'maintain' && maintainScope === 'selected_custom'" class="space-y-3 rounded-[18px] border border-[rgba(201,156,78,0.34)] bg-[rgba(201,156,78,0.06)] p-4">
           <div>
             <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold);">Alvos por cidade</div>
             <p class="mt-1 text-xs text-muted">Defina um alvo diferente por cidade. O alvo base abaixo continua servindo como atalho inicial, mas aqui voc&ecirc; pode aumentar ou reduzir cada destino separadamente.</p>
@@ -518,14 +620,14 @@
                   </div>
                   <span class="rounded-full border border-[rgba(201,156,78,0.35)] bg-[rgba(201,156,78,0.10)] px-2 py-1 text-[10px] font-semibold text-[var(--ik-gold)]">custom</span>
                 </div>
-                <div class="grid grid-cols-2 gap-2 lg:grid-cols-4" x-show="buildingType==='troops'">
+                <div class="grid grid-cols-2 gap-2 lg:grid-cols-4" x-show="kindTotal('troops') > 0">
                   {% for unit in training_ui.troops_units %}
                   <div x-show="total('{{ unit.id }}') > 0" class="rounded-[14px] border border-[rgba(219,201,167,0.9)] bg-[rgba(255,255,255,0.88)] px-2.5 py-2">
                     <div class="mb-2 flex items-center gap-2">
                       {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="h-7 w-7 object-contain">{% endif %}
                       <div class="min-w-0">
                         <div class="truncate text-[11px] font-semibold text-ink">{{ unit.name }}</div>
-                        <div class="text-[9px] text-muted">atual: <span x-text="currentGarrison(city.id, '{{ unit.name|escapejs }}')"></span></div>
+                        <div class="text-[9px] text-muted">atual: <span x-text="currentOf(city.id, '{{ unit.id }}')"></span></div>
                       </div>
                     </div>
                     <input type="number" min="0"
@@ -535,14 +637,14 @@
                   </div>
                   {% endfor %}
                 </div>
-                <div class="grid grid-cols-2 gap-2 lg:grid-cols-4" x-show="buildingType==='fleet'">
+                <div class="grid grid-cols-2 gap-2 lg:grid-cols-4" x-show="kindTotal('fleet') > 0">
                   {% for unit in training_ui.fleet_units %}
                   <div x-show="total('{{ unit.id }}') > 0" class="rounded-[14px] border border-[rgba(219,201,167,0.9)] bg-[rgba(255,255,255,0.88)] px-2.5 py-2">
                     <div class="mb-2 flex items-center gap-2">
                       {% if unit.icon %}<img src="{% static unit.icon %}" alt="{{ unit.name }}" class="h-7 w-7 object-contain">{% endif %}
                       <div class="min-w-0">
                         <div class="truncate text-[11px] font-semibold text-ink">{{ unit.name }}</div>
-                        <div class="text-[9px] text-muted">atual: <span x-text="currentGarrison(city.id, '{{ unit.name|escapejs }}')"></span></div>
+                        <div class="text-[9px] text-muted">atual: <span x-text="currentOf(city.id, '{{ unit.id }}')"></span></div>
                       </div>
                     </div>
                     <input type="number" min="0"
@@ -561,7 +663,7 @@
           <div class="text-[11px] font-semibold uppercase tracking-[0.16em] mb-3" style="color: var(--ik-bad);">
             <span x-show="buildingType==='troops'"><i class="bi bi-shield-shaded"></i> Tropas</span>
             <span x-show="buildingType==='fleet'"><i class="bi bi-water"></i> Frotas</span>
-            — <span x-text="grandTotal()">0</span> selecionadas
+            — <span x-text="kindTotal(buildingType)">0</span> selecionadas
           </div>
 
           {# Troops grid — 4 cols #}

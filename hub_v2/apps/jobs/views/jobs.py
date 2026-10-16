@@ -3758,12 +3758,15 @@ class WorkflowActionView(LoginRequiredMixin, View):
             # N-135: resume the workflow's own action (the construction plan, not the last market follow-up)
             root_action = (Job.objects.filter(pk=workflow.root_job_id).values_list("action_code", flat=True).first()
                            if workflow.root_job_id else None)
-            latest = ((workflow_jobs.filter(action_code=root_action).order_by("-created_at").first() if root_action else None)
-                      or workflow_jobs.order_by("-created_at").first())
-            if latest is not None:
-                eta = workflow.next_scheduled_for or now
-                if eta < now:
-                    eta = now
+            # N-138: a workflow can run its action in parallel branches (troops and fleet): each one restarts
+            branches = {}
+            for job in (workflow_jobs.filter(action_code=root_action).order_by("created_at") if root_action else []):
+                branches[job.root_job_id or job.pk] = job
+            restart = list(branches.values()) or [j for j in [workflow_jobs.order_by("-created_at").first()] if j is not None]
+            eta = workflow.next_scheduled_for or now
+            if eta < now:
+                eta = now
+            for latest in restart:
                 resumed = create_job_with_workflow(
                     account=latest.account,
                     game_account=latest.game_account,
@@ -3787,7 +3790,7 @@ class WorkflowActionView(LoginRequiredMixin, View):
                 if workflow.next_scheduled_for is not None:
                     workflow.next_scheduled_for = None
                     workflow.save(update_fields=["next_scheduled_for", "updated_at"])
-                transaction.on_commit(lambda: dispatch_job(resumed, eta=eta))
+                transaction.on_commit(lambda job=resumed, when=eta: dispatch_job(job, eta=when))
         elif action == "cancel":
             workflow_jobs.filter(
                 status__in=("queued", "running", "scheduled"),

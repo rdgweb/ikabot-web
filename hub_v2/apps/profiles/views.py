@@ -319,6 +319,37 @@ class PresetRemoveActionView(LoginRequiredMixin, View):
         return HttpResponse(html)
 
 
+# N-138: actions whose preset form decides the cities itself (no per-account city section)
+PRESET_CITYLESS_ACTIONS = {1005, 1203}
+
+
+def _preset_action_inputs(action_code, inputs: dict, request) -> dict:
+    """The same inputs the job form builds, so a preset keeps everything that was chosen (N-138)."""
+    if int(action_code) == 1005:
+        from apps.jobs.views.create import JobSubmitView
+
+        inputs = JobSubmitView._normalize_train_units_inputs(inputs, request)
+        mode = inputs.get("mode") if inputs.get("mode") in ("maintain", "distribute") else "maintain"
+        inputs["mode"] = mode
+        for key in ("city_id", "city_ids", "city_targets", "consolidate_city_id", "position"):
+            inputs.pop(key, None)
+        if mode == "maintain":
+            inputs["maintain_scope"] = "selected_uniform"
+            rule = str(request.POST.get("preset_cities") or "all")
+            inputs["preset_cities"] = rule if rule in ("all", "training") else "all"
+        else:
+            inputs.pop("maintain_scope", None)
+            inputs.pop("preset_cities", None)
+        return inputs
+    if int(action_code) == 1203:
+        from apps.jobs.views.create import upgrade_units_inputs
+
+        inputs = upgrade_units_inputs(request.POST)
+        inputs.pop("city_id", None)
+        return inputs
+    return inputs
+
+
 class PresetConfigureActionView(LoginRequiredMixin, View):
     """GET/POST — configure one action's inputs (full page).
 
@@ -339,6 +370,9 @@ class PresetConfigureActionView(LoginRequiredMixin, View):
         city_building: building key required (e.g. 'pirateFortress') or None
         """
         from core.actions.constants import FIELD_CITY_SELECT
+        if int(action_code) in PRESET_CITYLESS_ACTIONS:
+            # N-138: training keeps a city rule in its own form; unit upgrades use every Workshop
+            return None, None, None
         inputs = action_meta.get("inputs") or []
         city_inputs = {inp["key"]: inp for inp in inputs if inp.get("type") == FIELD_CITY_SELECT}
         city_keys = set(city_inputs.keys())
@@ -496,6 +530,7 @@ class PresetConfigureActionView(LoginRequiredMixin, View):
 
         if form.is_valid():
             inputs = form.get_inputs_json()
+            inputs = _preset_action_inputs(pa.action_code, inputs, request)
             # Remove city fields from global inputs — they live in per_account_json
             for f in self.CITY_FIELD_NAMES:
                 inputs.pop(f, None)
