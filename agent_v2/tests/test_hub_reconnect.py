@@ -1,12 +1,15 @@
 """N-133: a connection the hub has just closed is not a failed job — reads are sent again once, and a hub
 that cannot be reached while fetching credentials is a network failure, not "no credentials"."""
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import requests
 
 from core.hub_client import HubSession
 from runners.base import BaseRunner
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class HubSessionTests(unittest.TestCase):
@@ -46,6 +49,39 @@ class HubSessionTests(unittest.TestCase):
         with fake, self.assertRaises(requests.Timeout):
             session.get("http://hub:8000/api/agent/config/")
         self.assertEqual(len(left), 1)
+
+
+class HubRestartTests(unittest.TestCase):
+    """N-136: the proxy answers 502/503/504 while the hub restarts or renews a process."""
+
+    def _session(self, *outcomes):
+        session = HubSession()
+        calls = list(outcomes)
+
+        def fake(self_, method, url, *args, **kwargs):
+            return calls.pop(0)
+
+        return session, patch.object(requests.Session, "request", fake), calls
+
+    def test_a_read_answered_502_is_sent_again_after_a_pause(self):
+        ok = MagicMock(status_code=200)
+        session, fake, left = self._session(MagicMock(status_code=502), ok)
+        with fake, patch("time.sleep") as pause:
+            self.assertIs(session.get("http://hub:8000/api/agent/config/"), ok)
+        pause.assert_called_once()
+        self.assertEqual(left, [])
+
+    def test_a_write_answered_502_is_not_repeated(self):
+        bad = MagicMock(status_code=502)
+        session, fake, left = self._session(bad, MagicMock(status_code=200))
+        with fake, patch("time.sleep"):
+            self.assertIs(session.post("http://hub:8000/api/agent/jobs/x/logs/", json={}), bad)
+        self.assertEqual(len(left), 1)
+
+    def test_the_executor_counts_a_bad_gateway_as_a_network_failure(self):
+        source = (ROOT / "job_executor.py").read_text(encoding="utf-8")
+        self.assertIn('"bad gateway"', source)
+        self.assertIn('"503 server error"', source)
 
 
 class CredentialsTests(unittest.TestCase):

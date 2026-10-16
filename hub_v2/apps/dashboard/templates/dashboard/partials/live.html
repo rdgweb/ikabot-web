@@ -142,7 +142,7 @@
       <a class="dash-aside link-sea" href="{% url 'jobs:job-list' %}">Abrir a Fila de Jobs</a>
     </h2>
     <div class="dash-cols">
-      <div class="dash-panel">
+      <div class="dash-panel dash-panel-chart">
         <div class="dash-figures">
           <div class="dash-figure"><b>{{ dash.automation.total_text }}</b><span>jobs concluídos</span></div>
           <div class="dash-figure"><b style="color: #2d7a2d;">{% if dash.automation.success_pct %}{{ dash.automation.success_pct }}%{% else %}—{% endif %}</b><span>taxa de sucesso</span></div>
@@ -165,6 +165,18 @@
           <span><i style="background: #b3402f;"></i>com erro</span>
           <span style="margin-left: auto;">pico de {{ dash.automation.peak }} por hora</span>
         </div>
+        {% if dash.automation.causes %}
+        <h3 style="margin-top: .9rem;"><i class="bi bi-search" style="color: #b3402f;"></i> Por que falharam</h3>
+        <div class="dash-causes" style="margin-top: 0;">
+          {% for cause in dash.automation.causes %}
+          <div class="dash-cause">
+            <b><i style="background: {{ cause.color }};"></i>{{ cause.label }}</b>
+            <span>{{ cause.count }}{% if cause.last %} · última às {{ cause.last }}{% endif %}</span>
+            <span class="dash-meter"><i style="width: {{ cause.share_pct }}%; background: {{ cause.color }};"></i></span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
 
       <div class="dash-panel">

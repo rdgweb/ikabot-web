@@ -121,7 +121,10 @@ def execute_job_payload(job: dict, sessions: SessionManager, proxy_url: str = ""
             exc_str = str(exc)
             _TRANSIENT = ("timed out", "timeout", "connectionpool", "connection reset",
                           "connection refused", "remotedisconnected", "broken pipe",
-                          "eof occurred", "max retries exceeded")
+                          "eof occurred", "max retries exceeded",
+                          # the hub is restarting or renewing a process (N-136)
+                          "bad gateway", "service unavailable", "gateway timeout",
+                          "502 server error", "503 server error", "504 server error")
             is_network = any(k in exc_str.lower() for k in _TRANSIENT)
 
             if is_network:

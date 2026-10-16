@@ -63,6 +63,14 @@
   .dash-figure b { display: block; font-size: 1.15rem; font-weight: 700; color: var(--ik-ink); line-height: 1.2; }
   .dash-figure span { font-size: .68rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--ik-muted); }
   .dash-bars { display: flex; align-items: flex-end; gap: 3px; height: 96px; border-bottom: 1px solid var(--ik-line); }
+  .dash-panel-chart { display: flex; flex-direction: column; }
+  .dash-panel-chart .dash-bars { flex: 1 1 auto; height: auto; min-height: 130px; }
+  .dash-causes { margin-top: .9rem; display: grid; gap: .45rem; }
+  .dash-cause { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .15rem .6rem; align-items: baseline; font-size: .75rem; }
+  .dash-cause b { font-weight: 600; color: var(--ik-ink); display: flex; align-items: center; gap: .4rem; min-width: 0; }
+  .dash-cause b i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .dash-cause span { color: var(--ik-muted); font-size: .7rem; white-space: nowrap; }
+  .dash-cause .dash-meter { grid-column: 1 / -1; }
   .dash-bar { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; }
   .dash-bar i { display: block; width: 100%; }
   .dash-bar .ok { background: #5f9a56; border-radius: 2px 2px 0 0; }

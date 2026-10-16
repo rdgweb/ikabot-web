@@ -1,6 +1,7 @@
 """HTTP client for hub API communication."""
 
 import logging
+import time
 import json
 import platform
 from typing import Any
@@ -66,15 +67,24 @@ class HubSession(requests.Session):
     and a timeout is not a closed connection."""
 
     _RETRY_METHODS = frozenset({"GET", "HEAD"})
+    # the proxy in front of the hub answers these while the hub restarts or renews a process (N-136)
+    _RETRY_STATUSES = frozenset({502, 503, 504})
+    _RETRY_PAUSE_SECONDS = 2.0
 
     def request(self, method, url, *args, **kwargs):
+        is_read = str(method).upper() in self._RETRY_METHODS
         try:
-            return super().request(method, url, *args, **kwargs)
+            response = super().request(method, url, *args, **kwargs)
         except requests.ConnectionError as exc:
-            if str(method).upper() not in self._RETRY_METHODS or isinstance(exc, requests.Timeout):
+            if not is_read or isinstance(exc, requests.Timeout):
                 raise
             logger.info("Hub connection dropped on %s %s; sending it again once", method, url.split("?")[0])
             return super().request(method, url, *args, **kwargs)
+        if is_read and response.status_code in self._RETRY_STATUSES:
+            logger.info("Hub answered %s on %s %s; sending it again once", response.status_code, method, url.split("?")[0])
+            time.sleep(self._RETRY_PAUSE_SECONDS)
+            return super().request(method, url, *args, **kwargs)
+        return response
 
 
 class HubClient:

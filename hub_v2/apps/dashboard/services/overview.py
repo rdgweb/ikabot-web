@@ -359,6 +359,51 @@ def node_rows(now) -> list[dict]:
     return rows
 
 
+# Why the jobs failed, read from each failed job's last error/warning log (N-136): (key, label, colour, words)
+ERROR_CAUSES = (
+    ("ikabotapi", "ikabotapi lento ou travado (login)", "#8f3c44", ("blackbox",)),
+    ("hub", "Comunicação com o hub", "#c29a2e", ("connection reset", "connection aborted", "connectionerror", "bad gateway",
+                                                "502 server", "503 server", "504 server", "read timed out", "remotedisconnected")),
+    ("game", "O jogo recusou a ação", "#3e84a8", ("server errors for action", "não podes", "nao podes", "feedback=")),
+    ("orphan", "Agente parou de responder", "#6f6b63", ("orfa", "órfã", "orfã")),
+    ("credentials", "Credenciais indisponíveis", "#8c6335", ("missing_credentials", "credenciais nao", "credenciais não")),
+)
+CAUSE_SAMPLE = 500
+
+
+def error_causes(error_ids, error_ends) -> list[dict]:
+    """[{label, color, count, share_pct, last}] for the failed jobs, most frequent first."""
+    from apps.jobs.models import JobLog
+
+    error_ids = list(error_ids)[-CAUSE_SAMPLE:]
+    if not error_ids:
+        return []
+    last_message: dict = {}
+    logs = (JobLog.objects.filter(job_id__in=error_ids).exclude(level="info")
+            .order_by("job_id", "-created_at").values_list("job_id", "message"))
+    for job_id, message in logs.iterator(chunk_size=2000):
+        last_message.setdefault(job_id, message)
+    found: dict[str, dict] = {}
+    for job_id in error_ids:
+        text = str(last_message.get(job_id) or "").lower()
+        key, label, color = "other", "Outros", "#b3402f"
+        for cause_key, cause_label, cause_color, words in ERROR_CAUSES:
+            if any(word in text for word in words):
+                key, label, color = cause_key, cause_label, cause_color
+                break
+        entry = found.setdefault(key, {"key": key, "label": label, "color": color, "count": 0, "last_at": None})
+        entry["count"] += 1
+        ended = error_ends.get(job_id)
+        if ended and (entry["last_at"] is None or ended > entry["last_at"]):
+            entry["last_at"] = ended
+    causes = sorted(found.values(), key=lambda entry: -entry["count"])
+    most = causes[0]["count"] if causes else 1
+    for entry in causes:
+        entry["share_pct"] = str(max(round(entry["count"] * 100 / most), 3))
+        entry["last"] = timezone.localtime(entry.pop("last_at")).strftime("%Hh%M") if entry.get("last_at") else ""
+    return causes
+
+
 def automation_stats(now) -> dict:
     """Jobs that ended in the last 24 hours: by hour, the success rate, the busiest actions and how long they take."""
     since = now - timedelta(hours=24)
@@ -372,9 +417,12 @@ def automation_stats(now) -> dict:
     actions: dict[int, dict] = {}
     ok = errors = 0
     ended = Job.objects.filter(finished_at__gte=since, status__in=("finished", "error"))
-    columns = ended.values_list("finished_at", "started_at", "status", "action_code")
-    for finished_at, started_at, status, action_code in columns.iterator(chunk_size=2000):
+    columns = ended.values_list("finished_at", "started_at", "status", "action_code", "id")
+    error_ends: dict = {}
+    for finished_at, started_at, status, action_code, job_id in columns.iterator(chunk_size=2000):
         failed = status == "error"
+        if failed:
+            error_ends[job_id] = finished_at
         bucket = index.get(timezone.localtime(finished_at).strftime("%d%H"))
         if bucket is not None:
             hours[bucket]["error" if failed else "ok"] += 1
@@ -391,7 +439,8 @@ def automation_stats(now) -> dict:
         hour["total"] = hour["ok"] + hour["error"]
         # as plain strings: a template would write "12,5" in pt-BR, which is not valid CSS
         hour["ok_pct"] = f"{hour['ok'] * 100 / peak:.1f}"
-        hour["error_pct"] = f"{max(hour['error'] * 100 / peak, 4):.1f}" if hour["error"] else "0"
+        # a single error still shows, but no longer as tall as several jobs (N-136)
+        hour["error_pct"] = f"{max(hour['error'] * 100 / peak, 2):.1f}" if hour["error"] else "0"
     for entry in actions.values():
         entry["name"] = _action_name(entry["code"])
         entry["ok_pct"] = round((entry["total"] - entry["errors"]) * 100 / entry["total"])
@@ -409,6 +458,7 @@ def automation_stats(now) -> dict:
         "average": human_seconds(sum(entry["seconds"] for entry in actions.values()) / timed) if timed else "",
         "top_actions": top,
         "failing_actions": sorted((entry for entry in actions.values() if entry["errors"]), key=lambda entry: -entry["errors"])[:4],
+        "causes": error_causes(sorted(error_ends, key=lambda job_id: error_ends[job_id]), error_ends),
     }
 
 
