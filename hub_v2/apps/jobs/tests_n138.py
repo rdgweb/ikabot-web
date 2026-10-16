@@ -137,3 +137,16 @@ class TrainingPresetTests(_TrainingSetup):
         html = self.client.get(f"/profiles/presets/{preset.pk}/configure/1/").content.decode()
         self.assertIn("Todas com Oficina", html)
         self.assertIn('"priority_mode": "defensive_first"', html)                  # comes back filled in
+
+
+class TrainingDetailTests(_TrainingSetup):
+    def test_the_job_page_adds_up_every_city_and_shows_what_is_missing(self):
+        AccountSnapshot.objects.filter(game_account=self.ga).update(
+            military={"by_city": [{"city_id": "1", "troops": {"Hoplita": 30}}, {"city_id": "2", "troops": {}}]})
+        self._submit(mode="maintain", maintain_scope="selected_uniform", city_ids=["1", "2"], **{f"units_{HOPLITE}": "50"})
+        job = Job.objects.get(action_code=1005)
+        html = self.client.get(f"/jobs/{job.pk}/").content.decode()
+        self.assertIn("Alvo total", html)
+        rows = __import__("apps.jobs.views.jobs", fromlist=["JobListView"]).JobListView._train_display(job)["maintain_rows"]
+        self.assertEqual([(r["name"], r["per_city"], r["target"], r["current"], r["need"], r["wood"]) for r in rows],
+                         [("Hoplita", 50, 100, 30, 70, 70 * 20)])

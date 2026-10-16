@@ -1524,6 +1524,7 @@ class JobListView(FilterSortListView):
         except Exception:
             return {}
 
+        from apps.game.models import AccountSnapshot
         from core.catalogs import TRAINING_UNITS, UNIT_ICON_MAP
         building_type = str(inputs.get("building_type") or "troops")
         mode = str(inputs.get("mode") or "once")
@@ -1574,9 +1575,58 @@ class JobListView(FilterSortListView):
         units_raw = inputs.get("units") or inputs.get("target_garrison") or {}
         unit_rows, totals = _make_rows(units_raw)
 
+        # N-138: keeping a garrison in several cities: the target of every city added up, what they have now
+        # (last snapshot) and what is missing — the cost is the cost of what is missing
+        city_names, garrison = {}, {}
+        snapshot = AccountSnapshot.objects.filter(game_account_id=job.game_account_id).first() if job.game_account_id else None
+        if snapshot:
+            for city in (snapshot.cities if isinstance(snapshot.cities, list) else []):
+                if isinstance(city, dict) and city.get("id") is not None:
+                    city_names[str(city["id"])] = str(city.get("name") or city["id"])
+            for city_mil in ((snapshot.military or {}).get("by_city") or []):
+                if isinstance(city_mil, dict) and city_mil.get("city_id") is not None:
+                    garrison[str(city_mil["city_id"])] = city_mil.get("fleet" if building_type == "fleet" else "troops") or {}
+        for entry in city_breakdown:
+            entry["city_name"] = city_names.get(entry["city_id"], f"Cidade {entry['city_id']}")
+        maintain_rows, maintain_totals = [], {}
+        if mode == "maintain":
+            cities = [str(c) for c in city_ids] if city_ids else ([str(city_id)] if city_id else [])
+            uniform = {str(k): int(v or 0) for k, v in (inputs.get("target_garrison") or {}).items() if int(v or 0) > 0}
+            custom = maintain_scope == "selected_custom"
+            unit_ids = list(uniform)
+            if custom:
+                for targets in city_targets_raw.values():
+                    unit_ids += [str(k) for k in (targets or {}) if str(k) not in unit_ids]
+            maintain_totals = {"target": 0, "current": 0, "need": 0, "wood": 0, "sulfur": 0, "wine": 0, "crystal": 0, "upkeep": 0}
+            for uid in unit_ids:
+                meta = catalog.get(uid) or {}
+                name = meta.get("name") or f"Unidade {uid}"
+                per_city = []
+                for cid in cities:
+                    targets = (city_targets_raw.get(cid) or uniform) if custom else uniform
+                    per_city.append(int(targets.get(uid) or 0))
+                target = sum(per_city)
+                current = sum(int((garrison.get(cid) or {}).get(name) or 0) for cid in cities) if snapshot else None
+                need = sum(max(0, t - int((garrison.get(cid) or {}).get(name) or 0)) for t, cid in zip(per_city, cities))
+                row = {
+                    "name": name, "icon": UNIT_ICON_MAP.get(name) or UNIT_ICON_MAP.get(meta.get("css") or "") or "",
+                    "per_city": per_city[0] if per_city and len(set(per_city)) == 1 else None,
+                    "target": target, "current": current, "need": need,
+                    "wood": (meta.get("wood") or 0) * need, "sulfur": (meta.get("sulfur") or 0) * need,
+                    "wine": (meta.get("wine") or 0) * need, "crystal": (meta.get("crystal") or 0) * need,
+                    "upkeep": (meta.get("upkeep") or 0) * target,
+                }
+                maintain_rows.append(row)
+                for key in ("target", "need", "wood", "sulfur", "wine", "crystal", "upkeep"):
+                    maintain_totals[key] += row[key]
+                maintain_totals["current"] += current or 0
+
         return {
             "unit_rows": unit_rows,
             "totals": totals,
+            "maintain_rows": maintain_rows,
+            "maintain_totals": maintain_totals,
+            "has_snapshot": snapshot is not None,
             "city_breakdown": city_breakdown,
             "building_type": building_type,
             "mode": mode,

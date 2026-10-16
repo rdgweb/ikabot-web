@@ -444,7 +444,7 @@
 </div>
 {% endif %}
 
-{% if train_display and train_display.unit_rows or train_display and train_display.city_breakdown %}
+{% if train_display and train_display.unit_rows or train_display and train_display.city_breakdown or train_display and train_display.maintain_rows %}
 <div class="card">
   <h3 class="mb-1 text-sm font-semibold text-ink">
     <i class="bi {% if train_display.building_type == 'fleet' %}bi-water{% else %}bi-shield-shaded{% endif %} text-sea"></i>
@@ -452,12 +452,63 @@
     {% if train_display.mode == 'maintain' %}Manter efetivo{% elif train_display.mode == 'distribute' %}Distribuir{% else %}Treinar agora{% endif %}
     {% if train_display.city_count > 1 %}<span class="badge badge-secondary ml-2">{{ train_display.city_count }} cidades</span>{% endif %}
   </h3>
+  {% if train_display.maintain_rows %}
+  {# N-138: the whole garrison: every city's target added up, what they have now and what is missing #}
+  <div class="overflow-x-auto mb-3">
+    <table class="w-full text-xs">
+      <thead>
+        <tr style="border-bottom:2px solid var(--ik-line);">
+          <th class="py-1.5 px-2 text-left text-muted">Unidade</th>
+          <th class="py-1.5 px-2 text-right text-muted">Por cidade</th>
+          <th class="py-1.5 px-2 text-right text-muted">Alvo total</th>
+          <th class="py-1.5 px-2 text-right text-muted">Atual</th>
+          <th class="py-1.5 px-2 text-right text-muted">Faltam</th>
+          <th class="py-1.5 px-2 text-right text-muted"><img src="{% static 'game/resources/icon_wood.png' %}" class="h-4 w-4 inline" title="Madeira"></th>
+          <th class="py-1.5 px-2 text-right text-muted"><img src="{% static 'game/resources/icon_sulfur.png' %}" class="h-4 w-4 inline" title="Enxofre"></th>
+          <th class="py-1.5 px-2 text-right text-muted"><img src="{% static 'game/resources/icon_wine.png' %}" class="h-4 w-4 inline" title="Vinho"></th>
+          <th class="py-1.5 px-2 text-right text-muted"><img src="{% static 'game/resources/icon_glass.png' %}" class="h-4 w-4 inline" title="Cristal"></th>
+          <th class="py-1.5 px-2 text-right text-muted" title="Manutenção ouro/hora do alvo total"><i class="bi bi-arrow-repeat text-amber-600"></i>/h</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in train_display.maintain_rows %}
+        <tr class="hover:bg-[var(--ik-sand-light)]" style="border-bottom:1px solid var(--ik-line);">
+          <td class="py-1.5 px-2 font-semibold text-ink">{% if row.icon %}<img src="{% static row.icon %}" class="h-5 w-5 inline me-1 object-contain">{% endif %}{{ row.name }}</td>
+          <td class="py-1.5 px-2 text-right font-mono text-muted">{% if row.per_city is not None %}{{ row.per_city|intcomma }}{% else %}varia{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono font-bold text-ink">{{ row.target|intcomma }}</td>
+          <td class="py-1.5 px-2 text-right font-mono text-muted">{% if row.current is not None %}{{ row.current|intcomma }}{% else %}—{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono font-bold {% if row.need %}text-ink{% else %}text-muted{% endif %}">{{ row.need|intcomma }}</td>
+          <td class="py-1.5 px-2 text-right font-mono text-muted">{% if row.wood %}{{ row.wood|intcomma }}{% else %}—{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono text-muted">{% if row.sulfur %}{{ row.sulfur|intcomma }}{% else %}—{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono text-muted">{% if row.wine %}{{ row.wine|intcomma }}{% else %}—{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono text-muted">{% if row.crystal %}{{ row.crystal|intcomma }}{% else %}—{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono text-amber-600">{{ row.upkeep|intcomma }}/h</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr style="border-top:2px solid var(--ik-line); background:var(--ik-sand-light);">
+          <td class="py-1.5 px-2 font-semibold text-ink text-[11px]" colspan="2">Total</td>
+          <td class="py-1.5 px-2 text-right font-mono font-bold text-ink">{{ train_display.maintain_totals.target|intcomma }}</td>
+          <td class="py-1.5 px-2 text-right font-mono text-muted">{% if train_display.has_snapshot %}{{ train_display.maintain_totals.current|intcomma }}{% else %}—{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono font-bold text-ink">{{ train_display.maintain_totals.need|intcomma }}</td>
+          <td class="py-1.5 px-2 text-right font-mono font-bold text-ink">{% if train_display.maintain_totals.wood %}{{ train_display.maintain_totals.wood|intcomma }}{% else %}—{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono font-bold text-ink">{% if train_display.maintain_totals.sulfur %}{{ train_display.maintain_totals.sulfur|intcomma }}{% else %}—{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono font-bold text-ink">{% if train_display.maintain_totals.wine %}{{ train_display.maintain_totals.wine|intcomma }}{% else %}—{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono font-bold text-ink">{% if train_display.maintain_totals.crystal %}{{ train_display.maintain_totals.crystal|intcomma }}{% else %}—{% endif %}</td>
+          <td class="py-1.5 px-2 text-right font-mono font-bold text-amber-600">{{ train_display.maintain_totals.upkeep|intcomma }}/h</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  <p class="text-[11px] text-muted mb-3"><i class="bi bi-info-circle"></i> Atual = guarnição das cidades no último snapshot. O custo é o do que falta treinar e a manutenção é a do alvo total (valores base, sem reduções de pesquisa).</p>
+  {% endif %}
   {% if train_display.maintain_scope == 'selected_custom' and train_display.city_breakdown %}
   <p class="text-[10px] text-muted mb-3">Alvos customizados por cidade — o runner treina o déficit em cada uma periodicamente.</p>
   {% for cb in train_display.city_breakdown %}
   <div class="mb-3">
     <div class="flex items-center gap-2 mb-1">
-      <span class="text-[10px] font-semibold text-muted">Cidade {{ cb.city_id }}</span>
+      <span class="text-[10px] font-semibold text-muted">{{ cb.city_name|default:cb.city_id }}</span>
       {% if cb.label == "padrao" %}<span class="badge badge-secondary text-[9px]">alvo padrão</span>{% endif %}
     </div>
     <div class="flex flex-wrap gap-2">
@@ -471,7 +522,7 @@
     </div>
   </div>
   {% endfor %}
-  {% else %}
+  {% elif not train_display.maintain_rows %}
   <div class="overflow-x-auto mb-4">
     <table class="w-full text-xs">
       <thead>
