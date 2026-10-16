@@ -60,8 +60,10 @@ ACTIONS = {
         "recurring": True,
         "long_running": True,
         "ready": True,
-        "description": "Mantém os deuses selecionados ativos em loop, respeitando o ciclo do santuário.",
+        "description": "Mantém em graça os deuses que suas cidades adoram (e os marcados), doando favor quando a graça de cada um termina.",
         "inputs": [
+            {"key": "keep_worshipped", "type": FIELD_BOOL, "label": "Manter os deuses adorados pelas cidades", "required": False, "default": True,
+             "help": "Deus sem graça não abençoa: o loop renova a graça de quem alguma cidade adora."},
             {"key": "god_pan", "type": FIELD_BOOL, "label": "Pan", "required": False, "default": True, "help": "Bênção de madeira."},
             {"key": "god_dionysus", "type": FIELD_BOOL, "label": "Dionísio", "required": False, "default": False, "help": "Bênção de vinho."},
             {"key": "god_tyche", "type": FIELD_BOOL, "label": "Tique", "required": False, "default": False, "help": "Bênção de mármore."},
@@ -69,7 +71,7 @@ ACTIONS = {
             {"key": "god_theia", "type": FIELD_BOOL, "label": "Teia", "required": False, "default": False, "help": "Bênção de cristal."},
             {"key": "god_hephaestus", "type": FIELD_BOOL, "label": "Hefesto", "required": False, "default": False, "help": "Bênção de enxofre."},
             {"key": "favor_recheck_minutes", "type": FIELD_INT, "label": "Recheck de favor (min)", "required": True, "min": 5, "default": 180, "help": "Se faltar favor, o runner reavalia nesse intervalo."},
-            {"key": "cycle_hours", "type": FIELD_INT, "label": "Ciclo do loop (h)", "required": True, "min": 6, "default": 72, "help": "Depois de ativar, agenda o próximo ciclo nesse intervalo."},
+            {"key": "cycle_hours", "type": FIELD_INT, "label": "Ciclo do loop (h)", "required": True, "min": 6, "default": 72, "help": "Intervalo máximo entre verificações; o loop volta antes quando uma graça termina."},
         ],
     },
     1902: {

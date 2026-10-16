@@ -1,0 +1,76 @@
+"""N-143: the shrine reading ties each worship slot to its city, and the loop keeps the worshipped gods in
+grace, giving favor only to the ones whose grace ended and coming back when the next one ends."""
+import json
+import unittest
+from unittest.mock import MagicMock
+
+from game_client.actions.shrine import ShrineAction, grace_seconds
+from runners.economy import ActivateShrineLoopRunner
+
+CSS = {1: "pan", 2: "dionysus", 3: "tyche", 4: "plutus", 5: "theia", 6: "hephaestos"}
+
+
+def _payload(graces, slots, worshipped):
+    """graces {god_id: "2D 23h"|"-"}, slots [(city_id, god_id)] -> the ajax answer of the shrine overview."""
+    template = {"cityId": 7, "position": 6, "currentFavor": 1275, "researchedGods": [1, 2, 3, 4, 5, 6],
+                "load_js": {"params": json.dumps({"godsWorshipped": {str(g): g in worshipped for g in CSS}})}}
+    for god_id, css in CSS.items():
+        template[f"shrineOfOlympus .god_{css} .gracePeriod"] = graces.get(god_id, "-")
+    selects = ""
+    for number, (city_id, god_id) in enumerate(slots, start=1):
+        template[f"shrineOfOlympus .gods.worshiping li[data-number={number}] .god"] = {"class": f"god god_{CSS[god_id]}"}
+        template[f"shrineOfOlympus .gods.worshiping li[data-number={number}] .currentBonus"] = "57,00"
+        selects += (f'<select class="dropdown js_citySelect"\n        data-number="{number}"\n'
+                    f'        data-known-city-id="{city_id}"></select>')
+    html = f'<div id="tabWorship">{selects}</div>'
+    return [["updateTemplateData", template], ["changeView", ["shrineOfOlympus", html]]]
+
+
+class ShrineReadingTests(unittest.TestCase):
+    def test_grace_text(self):
+        self.assertEqual(grace_seconds("2D 23h"), 2 * 86400 + 23 * 3600)
+        self.assertEqual(grace_seconds("21h 46m"), 21 * 3600 + 46 * 60)
+        self.assertEqual(grace_seconds("-"), 0)
+
+    def test_each_slot_has_its_city_and_god(self):
+        state = ShrineAction._parse_state_payload(_payload({3: "21h 46m"}, [(101, 3), (102, 2)], {2, 3}))
+        slots = {w["slot"]: (w["city_id"], w["god_id"]) for w in state["worship_assignments"]}
+        self.assertEqual(slots, {1: (101, 3), 2: (102, 2)})
+        self.assertEqual(state["gods_worshipped"], [2, 3])
+        self.assertEqual(state["gods"][3]["grace_seconds"], 21 * 3600 + 46 * 60)
+        self.assertEqual(state["gods"][2]["grace_seconds"], 0)
+
+
+class ShrineLoopTests(unittest.TestCase):
+    def _run(self, payload, inputs=None):
+        runner = ActivateShrineLoopRunner.__new__(ActivateShrineLoopRunner)
+        runner.log = MagicMock()
+        runner.save_game_client = MagicMock()
+        client = MagicMock()
+        states = [ShrineAction._parse_state_payload(p) for p in payload]
+        client.get_shrine_state.side_effect = states
+        runner.get_or_login_game_client = MagicMock(return_value=client)
+        context = {"jid": "j", "aid": "a", "ga_id": "g", "shrine": {"city_id": 7, "position": 6, "city_name": "Valhala"},
+                   "selected_gods": [], "keep_worshipped": True, "only_expired": True, "creds": {},
+                   "cycle_seconds": 72 * 3600, "favor_recheck_seconds": 1800, "inputs": inputs or {}}
+        result, _before, _after = runner._run_activation_cycle(context)
+        return runner, client, context, result
+
+    def test_only_the_worshipped_god_out_of_grace_gets_favor(self):
+        before = _payload({2: "2D 23h", 3: "21h 46m"}, [(101, 3), (102, 2), (103, 6)], {2, 3, 6})
+        after = _payload({2: "2D 23h", 3: "21h 46m", 6: "3D"}, [(101, 3), (102, 2), (103, 6)], {2, 3, 6})
+        runner, client, context, result = self._run([before, after])
+        client.activate_shrine_god.assert_called_once_with(7, 6, 6)         # Hefesto only
+        self.assertEqual(result["status"], "activated")
+        self.assertEqual(runner._next_check_seconds(context, result), 21 * 3600 + 46 * 60 + 120)
+
+    def test_all_in_grace_waits_for_the_first_to_end(self):
+        state = _payload({2: "2D 23h", 3: "5h"}, [(101, 3), (102, 2)], {2, 3})
+        runner, client, context, result = self._run([state])
+        client.activate_shrine_god.assert_not_called()
+        self.assertEqual(result["status"], "in_grace")
+        self.assertEqual(runner._next_check_seconds(context, result), 5 * 3600 + 120)
+
+
+if __name__ == "__main__":
+    unittest.main()

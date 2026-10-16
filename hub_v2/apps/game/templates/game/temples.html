@@ -1,5 +1,5 @@
 {% extends base_template|default:"base.html" %}
-{% load static humanize %}
+{% load static humanize hub_tags %}
 
 {% block title %}Templos e Fé{% endblock %}
 
@@ -151,5 +151,54 @@
     </div>
     {% endwith %}{% endfor %}
   </div>
+
+  {# N-143: Santuário dos Deuses — what each city worships and whether it blesses anything #}
+  {% if shrines %}
+  <div class="flex items-center gap-2 pt-2">
+    <img src="{% static 'game/gods/favor.png' %}" alt="" class="h-7 w-7 object-contain">
+    <h2 class="text-lg font-bold text-ink">Santuário dos Deuses</h2>
+  </div>
+  <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+    {% for shrine in shrines %}
+    <div class="card !p-4">
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span class="text-base font-bold text-ink">{{ shrine.game_account_name }}</span>
+        <span class="text-[11px] text-muted">{{ shrine.city_name }} · nível {{ shrine.level }}</span>
+        <span class="ml-auto inline-flex items-center gap-1 text-[12px] font-semibold text-ink"><img src="{% static 'game/gods/favor.png' %}" alt="" class="h-4 w-4"> {{ shrine.favor }}</span>
+        {% if shrine.bonus %}<span class="rounded-full px-2 py-0.5 text-[10px] font-bold" style="background: rgba(95,140,78,0.14); color: var(--ik-good);">bênção {{ shrine.bonus }}%</span>{% endif %}
+      </div>
+      <div class="mt-2 flex flex-wrap gap-1.5">
+        {% for god in shrine.gods %}
+        <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
+              style="{% if god.in_grace %}border-color: rgba(95,140,78,0.35);{% else %}border-color: rgba(187,81,67,0.45); color: var(--ik-bad);{% endif %}">
+          <img src="{% static god.image %}" alt="" class="h-4 w-4 object-contain"> {{ god.name }}
+          <span class="font-mono {% if god.in_grace %}text-muted{% endif %}">{% if god.in_grace %}{{ god.grace }}{% else %}sem graça{% endif %}</span>
+        </span>
+        {% endfor %}
+      </div>
+      {% if shrine.mapped %}
+      <div class="mt-3 space-y-1">
+        {% for c in shrine.cities %}
+        <div class="flex items-center gap-2 rounded-lg px-2 py-1 text-[12px]" style="background: var(--ik-sand-light);">
+          {% with c.tradegood|tradegood_icon as tg %}{% if tg %}<img src="{% static tg %}" alt="" class="h-4 w-4">{% endif %}{% endwith %}
+          <b class="min-w-0 flex-1 truncate text-ink">{{ c.name }}</b>
+          {% if c.god %}<span class="inline-flex items-center gap-1"><img src="{% static c.god.image %}" alt="" class="h-4 w-4 object-contain">{{ c.god.name }}</span>{% endif %}
+          {% if c.status == "ok" %}<span class="font-mono text-muted">{{ c.bonus }}%</span>
+          {% elif c.status == "wrong_good" %}<span class="rounded-full px-1.5 text-[10px] font-semibold" style="background: rgba(187,81,67,0.12); color: var(--ik-bad);">não produz {{ c.god.good }}</span>
+          {% elif c.status == "no_grace" %}<span class="rounded-full px-1.5 text-[10px] font-semibold" style="background: rgba(187,81,67,0.12); color: var(--ik-bad);">sem graça</span>
+          {% elif c.status == "no_god" %}<span class="text-[10px] text-muted">sem divindade</span>{% endif %}
+          {% if c.status != "ok" and c.recommended_god %}
+          <span class="inline-flex items-center gap-1 font-semibold" style="color: var(--ik-gold);">→ <img src="{% static c.recommended_god.image %}" alt="" class="h-4 w-4 object-contain">{{ c.recommended_god.name }}</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="mt-3 text-[11px] text-muted">A próxima leitura do santuário (Santuário em Loop ou Ativar Santuário) mostra o deus de cada cidade.</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

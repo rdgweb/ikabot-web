@@ -1,7 +1,21 @@
-"""Shrine actions - inspect and operate the Shrine of Olympus."""
+"""Shrine actions - inspect and operate the Shrine of Olympus.
+
+Overview (N-143, read on s78 with the Santuário at level 27):
+    view=shrineOfOlympus&cityId&position&activeTab=tabOverview (ajax): one page with both tabs.
+    - updateTemplateData: currentFavor, researchedGods, per god ".god_<css> .gracePeriod" ("2D 23h", "21h 46m",
+      "-" = no grace) and ".progressbar .text"; per worship slot ".gods.worshiping li[data-number=N]" .god (class
+      god_<css>), .startTime, .generatedResources, .currentBonus; load_js.params.godsWorshipped {god_id: bool}.
+    - changeView html: tabWorship has one <select class="dropdown js_citySelect" data-number=N
+      data-known-city-id=CITY> per slot (0 = empty), so a slot is tied to its city.
+Game rules seen there: each god blesses one resource and only a city that produces it gains; every city
+worshipping a god gets the same bonus ("Bênção máxima" of the shrine level, 57% at 27); a god out of grace
+blesses 0%; grace comes back for 100 Favor; one main god per city.
+Donate favor: action=DonateFavorToGod&godId&position (ajax POST).
+"""
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import Any
@@ -11,6 +25,14 @@ from ..exceptions import ActionError
 from .base_action import BaseAction
 
 logger = logging.getLogger(__name__)
+
+
+def grace_seconds(text: Any) -> int:
+    """ "2D 23h" / "21h 46m" / "45m 10s" -> seconds; "-" or nothing = 0 (no grace)."""
+    total = 0
+    for amount, unit in re.findall(r"(\d+)\s*([DdHhMmSs])", str(text or "")):
+        total += int(amount) * {"d": 86400, "h": 3600, "m": 60, "s": 1}[unit.lower()]
+    return total
 
 
 class ShrineAction(BaseAction):
@@ -146,10 +168,25 @@ class ShrineAction(BaseAction):
             gods[god_id] = {
                 "researched": god_id in researched_gods,
                 "grace_period": template_data.get(f"{prefix} .gracePeriod"),
+                "grace_seconds": grace_seconds(template_data.get(f"{prefix} .gracePeriod")),
                 "progress": int(template_data.get(f"{prefix} .progressbar .text") or 0),
                 "progress_width": ((template_data.get(f"{prefix} .bar") or {}).get("style") or {}).get("width", ""),
                 "progress_visible": (((template_data.get(f'{prefix} .progressbar') or {}).get('style') or {}).get('display') != "none"),
             }
+
+        slot_cities = {
+            int(number): int(city)
+            for number, city in re.findall(
+                r'js_citySelect"\s+data-number="(\d+)"\s+data-known-city-id="(\d+)"', change_view_html
+            )
+        }
+        gods_worshipped: list[int] = []
+        try:
+            params = json.loads(str((template_data.get("load_js") or {}).get("params") or "{}"))
+            gods_worshipped = sorted(int(g) for g, on in (params.get("godsWorshipped") or {}).items() if on)
+        except Exception:
+            gods_worshipped = []
+        god_ids = {f"god_{css}": god_id for god_id, css in css_names.items()}
 
         worship_assignments: list[dict[str, Any]] = []
         for key, value in template_data.items():
@@ -162,6 +199,8 @@ class ShrineAction(BaseAction):
             worship_assignments.append(
                 {
                     "slot": data_number,
+                    "city_id": slot_cities.get(data_number) or None,
+                    "god_id": god_ids.get(god_css),
                     "god_css": god_css,
                     "start_time": template_data.get(f"shrineOfOlympus .gods.worshiping li[data-number={data_number}] .startTime"),
                     "generated_resources": template_data.get(f"shrineOfOlympus .gods.worshiping li[data-number={data_number}] .generatedResources"),
@@ -199,6 +238,7 @@ class ShrineAction(BaseAction):
             "maximum_bonus_next_level": maximum_bonus_next_level,
             "additional_cities_possible": additional_cities_possible,
             "gods": gods,
+            "gods_worshipped": gods_worshipped,
             "worship_assignments": worship_assignments,
             "raw_template_data": template_data,
         }

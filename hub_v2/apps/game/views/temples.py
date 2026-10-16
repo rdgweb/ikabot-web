@@ -11,6 +11,7 @@ from django.views.generic import TemplateView
 
 from apps.accounts.models import GameAccount
 from apps.game.services import miracle_rules
+from apps.game.services.shrine import shrines_for_organization
 from apps.orgs.views import can_change
 from apps.game.services.temples import balance_jobs, islands_for_organization, plan_faith, projected_faith
 
@@ -50,6 +51,7 @@ class TemplesView(LoginRequiredMixin, TemplateView):
                 "own_pct": max(0, min(100 - min(100, island.others_share + island.base_share), island.own_share)),
             })
         ctx["cards"] = cards
+        ctx["shrines"] = shrines_for_organization()          # N-143
         ctx["reserve"] = reserve
         ctx["rules"] = miracle_rules.rules_for(getattr(self.request, "organization", None))
         ctx["can_change_rules"] = can_change(self.request)

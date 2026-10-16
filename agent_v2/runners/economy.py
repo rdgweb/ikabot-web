@@ -97,6 +97,7 @@ class _ShrineRunnerMixin(BaseRunner):
                 "building_level": int(state.get("building_level") or shrine.get("level") or 0),
                 "researched_gods": list(state.get("researched_gods") or []),
                 "gods": dict(state.get("gods") or {}),
+                "gods_worshipped": list(state.get("gods_worshipped") or []),
                 "additional_cities_possible": int(state.get("additional_cities_possible") or 0),
                 "worship_assignments": list(state.get("worship_assignments") or []),
                 "updated_at": now_iso,
@@ -156,7 +157,9 @@ class _ShrineRunnerMixin(BaseRunner):
             return RunnerResult(success=False, data={"error": "shrine_not_found"})
 
         selected_gods = self._selected_gods(inputs)
-        if not selected_gods:
+        # N-143 (loop): the gods some city worships are kept in grace too, even when not ticked
+        keep_worshipped = int(job.get("action_code") or 0) == 1007 and bool(inputs.get("keep_worshipped", True))
+        if not selected_gods and not keep_worshipped:
             self.log(jid, "error", "Nenhum deus selecionado para o santuario")
             return RunnerResult(success=False, data={"error": "missing_gods"})
 
@@ -175,6 +178,7 @@ class _ShrineRunnerMixin(BaseRunner):
             "inputs": inputs,
             "shrine": shrine,
             "selected_gods": selected_gods,
+            "keep_worshipped": keep_worshipped,
             "favor_recheck_seconds": favor_recheck_seconds,
             "cycle_seconds": cycle_seconds,
             "creds": creds,
@@ -194,8 +198,11 @@ class _ShrineRunnerMixin(BaseRunner):
         city_name = shrine["city_name"]
 
         state = client.get_shrine_state(city_id, position)
-        available_gods = [god_id for god_id in context["selected_gods"] if god_id in set(state.get("researched_gods") or [])]
-        unavailable_gods = [god_id for god_id in context["selected_gods"] if god_id not in set(state.get("researched_gods") or [])]
+        wanted = list(context["selected_gods"])
+        if context.get("keep_worshipped"):
+            wanted += [g for g in state.get("gods_worshipped") or [] if g not in wanted]
+        available_gods = [god_id for god_id in wanted if god_id in set(state.get("researched_gods") or [])]
+        unavailable_gods = [god_id for god_id in wanted if god_id not in set(state.get("researched_gods") or [])]
 
         if unavailable_gods:
             self.log(
@@ -205,6 +212,26 @@ class _ShrineRunnerMixin(BaseRunner):
             )
         if not available_gods:
             raise RuntimeError("gods_not_researched")
+
+        in_grace: dict[int, int] = {}
+        if context.get("only_expired"):
+            # N-143: a god still in grace keeps blessing; favor goes only to the ones whose grace ended
+            gods_state = state.get("gods") or {}
+            for god_id in list(available_gods):
+                remaining = int((gods_state.get(god_id) or gods_state.get(str(god_id)) or {}).get("grace_seconds") or 0)
+                if remaining > 0:
+                    in_grace[god_id] = remaining
+            if in_grace:
+                self.log(jid, "info", "Em graça: " + ", ".join(
+                    f"{self._god_name(g)} ({int(sec // 3600)}h{int(sec % 3600 // 60):02d})" for g, sec in in_grace.items()))
+            available_gods = [g for g in available_gods if g not in in_grace]
+            if not available_gods:
+                self.save_game_client(ga_id, client)
+                return (
+                    {"status": "in_grace", "next_grace_end_seconds": min(in_grace.values()), "selected_gods": list(in_grace)},
+                    state,
+                    {},
+                )
 
         current_favor = int(state.get("current_favor") or 0)
         favor_needed = len(available_gods) * 100
@@ -232,8 +259,14 @@ class _ShrineRunnerMixin(BaseRunner):
 
         after_state = client.get_shrine_state(city_id, position)
         self.save_game_client(ga_id, client)
+        graces = [
+            int((g or {}).get("grace_seconds") or 0)
+            for gid, g in (after_state.get("gods") or {}).items()
+            if int(gid) in set(available_gods) | set(in_grace)
+        ]
         return (
             {
+                "next_grace_end_seconds": min([sec for sec in graces if sec > 0], default=0),
                 "status": "activated",
                 "selected_gods": available_gods,
                 "before_favor": current_favor,
@@ -601,9 +634,17 @@ class ActivateShrineLoopRunner(_ShrineRunnerMixin, BaseRunner):
             return prepared
         context, snapshot, shrine = prepared
         jid = context["jid"]
+        context["only_expired"] = True
 
         try:
             result, _before_state, _after_state = self._run_activation_cycle(context)
+            if result["status"] == "in_grace":
+                delay = self._next_check_seconds(context, result)
+                self._persist_shrine_state(job_id=jid, account_id=context["aid"], game_account_id=context["ga_id"],
+                                           snapshot=snapshot, shrine=shrine, state=_before_state)
+                self.log(jid, "info", f"Todos os deuses em graça; proxima verificacao em {delay}s")
+                return RunnerResult(success=True, reschedule_seconds=delay, reschedule_inputs=context["inputs"],
+                                    data={"city_id": shrine["city_id"], "city_name": shrine["city_name"], **result})
             if result["status"] == "waiting_favor":
                 delay = context["favor_recheck_seconds"]
                 self._persist_shrine_state(
@@ -629,7 +670,7 @@ class ActivateShrineLoopRunner(_ShrineRunnerMixin, BaseRunner):
                     data={"city_id": shrine["city_id"], "city_name": shrine["city_name"], **result},
                 )
 
-            delay = context["cycle_seconds"]
+            delay = self._next_check_seconds(context, result)
             self._persist_shrine_state(
                 job_id=jid,
                 account_id=context["aid"],
@@ -659,6 +700,15 @@ class ActivateShrineLoopRunner(_ShrineRunnerMixin, BaseRunner):
                 reschedule_inputs=context["inputs"],
                 data={"status": "retry", "error": str(exc), "retry_seconds": retry_seconds},
             )
+
+
+    @staticmethod
+    def _next_check_seconds(context: dict[str, Any], result: dict[str, Any]) -> int:
+        """When the first grace ends (plus a little), never later than the loop's cycle."""
+        grace_end = int(result.get("next_grace_end_seconds") or 0)
+        if grace_end <= 0:
+            return context["cycle_seconds"]
+        return max(MIN_RECHECK_SECONDS, min(context["cycle_seconds"], grace_end + 120))
 
 
 @register_runner(11)
