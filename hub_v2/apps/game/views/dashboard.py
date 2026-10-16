@@ -169,6 +169,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                         "population": _si(city.get("population")),
                         "construction_end_at": city_construction_end_at,
                         "construction_reserved": ga_reservations.get(str(city.get("id") or ""), {}),
+                        "quick_build": _quick_build_options(city),
                     })
                     city_name = str(city.get("name") or "").strip()
                     if city_name:
@@ -691,6 +692,39 @@ def _duration_human(seconds: int) -> str:
         return f"{hours}h {minutes}m"
     days = hours // 24
     return f"{days}d {hours % 24}h"
+
+
+def _quick_build_options(city: dict[str, Any]) -> dict[str, Any]:
+    """N-144: what the "+" of a city offers: its buildings to raise and the new ones it can build."""
+    from core.catalogs import get_building_info
+
+    upgrades = []
+    for item in city.get("buildings") or []:
+        if not isinstance(item, dict):
+            continue
+        building = str(item.get("building") or "")
+        if not building or building == "empty" or item.get("position") is None:
+            continue
+        upgrades.append({
+            "position": str(item.get("position")),
+            "building": building,
+            "name": str(get_building_info(building).get("name") or building),
+            "level": _si(item.get("level")),
+            "upgrading": bool(item.get("is_upgrading")),
+        })
+    upgrades.sort(key=lambda b: b["name"])
+    new = []
+    for option in city.get("available_build_options") or []:
+        if not isinstance(option, dict) or not option.get("researched", True) or not option.get("available_positions"):
+            continue
+        building = str(option.get("building") or "")
+        new.append({
+            "building": building,
+            "name": str(option.get("name") or get_building_info(building).get("name") or building),
+            "slot_types": list(option.get("slot_types") or []),
+            "preferred_position": str(option.get("preferred_position") or ""),
+        })
+    return {"id": str(city.get("id") or ""), "name": str(city.get("name") or ""), "upgrades": upgrades, "new": new}
 
 
 def _annotate_building_remaining(city: dict[str, Any]) -> dict[str, Any]:

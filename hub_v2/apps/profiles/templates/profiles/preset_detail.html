@@ -54,7 +54,7 @@
           title="Mostrar este preset em Ações do Jogo, pronto para executar">
       {% csrf_token %}
       <i class="bi bi-controller"></i>
-      <select name="catalog_category" class="form-select !py-1 !text-[12px]" onchange="this.form.submit()" aria-label="Ações do Jogo">
+      <select name="catalog_category" class="text-[12px] text-ink" style="border: 1px solid var(--ik-line); border-radius: 8px; padding: 4px 8px; background: var(--ik-paper);" onchange="this.form.submit()" aria-label="Ações do Jogo">
         <option value="" {% if not preset.catalog_category %}selected{% endif %}>Só em Presets</option>
         {% for group in action_groups %}
         <option value="{{ group.key }}" {% if preset.catalog_category == group.key %}selected{% endif %}>Ações do Jogo · {{ group.label }}</option>

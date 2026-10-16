@@ -410,6 +410,21 @@ class GatewayTests(_Base):
         self.assertNotIn("gameforge.com", policy)
         self.assertEqual(response["Content-Type"], "text/html; charset=utf-8")
 
+    def test_the_blocked_scripts_leave_the_page_and_the_video_player_has_a_stand_in(self):
+        # N-146: the console no longer fills with refused scripts, and the cinema code finds a YT
+        self._enter()
+        page = (
+            b'<!DOCTYPE html><html><head><script src="https://pixelzirkus.gameforge.com/static/js/pz.js"></script>'
+            b'<script type="text/javascript" src="https://consent.gameforge.com/cookiebanner.js" data-x="1"></script>'
+            b'<script src="/js/game.js"></script></head><body>jogo</body></html>'
+        )
+        self._game(page)
+        html = self.client.get("/index.php", HTTP_HOST=self.host).content.decode()
+        self.assertNotIn("pixelzirkus", html)
+        self.assertNotIn("cookiebanner", html)
+        self.assertIn('<script src="/js/game.js"></script>', html)
+        self.assertLess(html.index("window.YT=window.YT||"), html.index("/js/game.js"))
+
     def test_assets_and_ajax_pass_untouched_and_redirects_stay_in_the_session(self):
         self._enter()
         self._game(b"\x89PNG\x00https://s9-br.ikariam.gameforge.com", headers={"content-type": "image/png"})

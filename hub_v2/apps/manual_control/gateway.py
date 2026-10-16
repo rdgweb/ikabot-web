@@ -53,6 +53,16 @@ PAGE_POLICY = (
     f"default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: {STATIC_CDN}; "
     "connect-src 'self'; form-action 'self'; frame-ancestors 'self'"
 )
+# N-146: the game's pages still name those blocked scripts; they are taken out of the page so the console does
+# not fill with refusals, and the cinema's video player (YouTube, blocked too) gets an empty stand-in so its
+# code does not stop on "YT is not defined". The cinema bonus is collected by the automation, not here.
+BLOCKED_SCRIPT_TAG = re.compile(
+    rb"<script\b[^>]*\bsrc=[\"'][^\"']*(?:pixelzirkus\.gameforge\.com|consent\.gameforge\.com|cookiebanner)[^\"']*[\"'][^>]*>\s*</script>",
+    re.IGNORECASE,
+)
+HEAD_SCRIPT = (b"<script>window.YT=window.YT||{PlayerState:{UNSTARTED:-1,ENDED:0,PLAYING:1,PAUSED:2,BUFFERING:3,CUED:5},"
+               b"Player:function(){var n=function(){};return{playVideo:n,pauseVideo:n,stopVideo:n,destroy:n,"
+               b"addEventListener:n,getPlayerState:function(){return -1;}};}};</script>")
 STATIC_PATH = re.compile(r"\.(css|js|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|mp3|ogg|wav|map)$", re.IGNORECASE)
 
 PAGE = """<!doctype html>
@@ -260,6 +270,10 @@ def _game_response(answer: dict, *, origin: str, script: str = "") -> HttpRespon
         whole_page = body.lstrip()[:15].lower().startswith((b"<!doctype", b"<html"))
         if status == 200 and "text/html" in content_type.lower() and whole_page:
             policy = PAGE_POLICY
+            body = BLOCKED_SCRIPT_TAG.sub(b"", body)
+            head = re.search(rb"<head\b[^>]*>", body, re.IGNORECASE)
+            if head:
+                body = body[:head.end()] + HEAD_SCRIPT + body[head.end():]
             marker = body.rfind(b"</body>")
             if marker != -1:
                 body = body[:marker] + script.encode() + body[marker:]

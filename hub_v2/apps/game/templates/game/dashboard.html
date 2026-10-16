@@ -967,6 +967,12 @@
             </div>
             {% endif %}
             {% endfor %}
+            {# N-144: raise one of these, or build a new one, straight into the construction plan #}
+            <button type="button" class="inline-flex items-center justify-center rounded border px-2 text-[16px] font-bold transition-colors hover:bg-[rgba(79,134,185,0.12)]"
+                    style="border-color: rgba(79,134,185,0.4); color: var(--ik-sea); min-height: 2.5rem;"
+                    title="Construção rápida nesta cidade"
+                    @click="$dispatch('quick-build', {ga: '{{ card.game_account_id }}', gaName: '{{ card.player_name|default:card.account.label|escapejs }}', city: JSON.parse($el.nextElementSibling.textContent)})"><i class="bi bi-plus-lg"></i></button>
+            {{ city.quick_build|json_script }}
           </div>
         </div>
         {% endif %}
@@ -1003,6 +1009,7 @@
 </div>{# end x-data gameDashboard #}
 
 {% include "accounts/partials/avatar_picker.html" %}
+{% include "game/_quick_build.html" %}
 
 {{ kpi_history|json_script:"game-dashboard-history" }}
 {{ resource_modal_data|json_script:"game-dashboard-resource-data" }}

@@ -1,0 +1,89 @@
+{# N-144: the "+" of a city in Construções — one building and the level wanted, sent as a construction plan step #}
+{# (merged into the account's active plan, or a new plan when there is none: the same path as the plan form). #}
+<div x-data="quickBuild()" @quick-build.window="open($event.detail)" x-show="shown" x-cloak
+     class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(30,22,10,0.45);"
+     @keydown.escape.window="shown = false" @click.self="shown = false">
+  <div class="card !p-5 w-full" style="max-width: 26rem;">
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Construção rápida</div>
+        <h3 class="mt-1 text-lg font-bold text-ink" x-text="city.name"></h3>
+        <div class="text-[11px] text-muted" x-text="gaName"></div>
+      </div>
+      <button type="button" class="text-muted hover:text-ink" @click="shown = false" aria-label="Fechar"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <form class="mt-4 space-y-3" @submit.prevent="send()">
+      <label class="block">
+        <span class="mb-1 block text-[11px] font-semibold text-muted">Edifício</span>
+        <select class="form-input w-full" x-model="choice" @change="pick()">
+          <optgroup label="Evoluir">
+            <template x-for="b in city.upgrades" :key="'u' + b.position">
+              <option :value="'u:' + b.position" x-text="`${b.name} · nível ${b.level}${b.upgrading ? ' (em obra)' : ''}`"></option>
+            </template>
+          </optgroup>
+          <optgroup label="Construir novo">
+            <template x-for="b in city.new" :key="'n' + b.building">
+              <option :value="'n:' + b.building" x-text="b.name"></option>
+            </template>
+          </optgroup>
+        </select>
+      </label>
+      <label class="block">
+        <span class="mb-1 block text-[11px] font-semibold text-muted">Nível alvo</span>
+        <input type="number" class="form-input w-full" min="1" max="86" x-model.number="level">
+      </label>
+      <p class="text-[11px] text-muted">Entra no plano de construção ativo da conta (ou cria um).</p>
+      <div class="flex justify-end gap-2">
+        <button type="button" class="btn btn-secondary btn-sm" @click="shown = false">Cancelar</button>
+        <button type="submit" class="btn btn-primary btn-sm" :disabled="sending || !choice || level < 1">
+          <i class="bi" :class="sending ? 'bi-hourglass-split' : 'bi-plus-lg'"></i> Adicionar ao plano</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+  function quickBuild() {
+    return {
+      shown: false, sending: false, ga: '', gaName: '', city: {id: '', name: '', upgrades: [], new: []}, choice: '', level: 1,
+      open(detail) {
+        this.ga = detail.ga; this.gaName = detail.gaName || ''; this.city = detail.city;
+        const first = this.city.upgrades[0];
+        this.choice = first ? 'u:' + first.position : (this.city.new[0] ? 'n:' + this.city.new[0].building : '');
+        this.pick();
+        this.shown = true;
+      },
+      pick() {
+        const [kind, key] = this.choice.split(':');
+        const b = kind === 'u' ? this.city.upgrades.find(x => x.position === key) : null;
+        this.level = b ? b.level + 1 : 1;
+      },
+      step() {
+        const [kind, key] = this.choice.split(':');
+        if (kind === 'u') {
+          const b = this.city.upgrades.find(x => x.position === key);
+          return {city_id: this.city.id, building_id: b.building, building_name: b.name, building_position: b.position, mode: 'upgrade', target_level: this.level};
+        }
+        const b = this.city.new.find(x => x.building === key);
+        return {city_id: this.city.id, building_id: b.building, building_name: b.name, mode: 'new', slot_types: b.slot_types,
+                preferred_position: b.preferred_position, target_level: this.level};
+      },
+      async send() {
+        this.sending = true;
+        const csrf = (document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/) || [])[1] || '';
+        const body = new URLSearchParams({game_account: this.ga, action_code: '1002', auto_transport: 'on', freighter_threshold: '30000',
+                                          queue_strategy: 'eta_first', research_reduction: '14', construction_plan_json: JSON.stringify([this.step()])});
+        let toast = {type: 'error', message: 'Falha ao enviar a construção.'};
+        try {
+          const resp = await fetch("{% url 'jobs:job-submit' %}", {method: 'POST', body,
+            headers: {'X-CSRFToken': decodeURIComponent(csrf), 'Content-Type': 'application/x-www-form-urlencoded'}});
+          const trigger = JSON.parse(resp.headers.get('HX-Trigger') || '{}');
+          if (trigger.toast) toast = trigger.toast;
+          else if (resp.ok) toast = {type: 'success', message: 'Construção adicionada ao plano.'};
+          if (toast.type === 'success') this.shown = false;
+        } catch (e) {}
+        window.dispatchEvent(new CustomEvent('toast', {detail: toast}));
+        this.sending = false;
+      },
+    };
+  }
+</script>
