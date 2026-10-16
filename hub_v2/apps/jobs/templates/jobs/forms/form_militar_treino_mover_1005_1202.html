@@ -361,7 +361,7 @@
                 :style="String(cityId) === String(city.id)
                   ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.88));'
                   : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
-                <div class="absolute inset-x-0 top-0 h-14"
+                <div class="ik-top-band absolute inset-x-0 top-0 h-14"
                      style="background: linear-gradient(135deg, rgba(79,134,185,0.16), rgba(79,134,185,0.02));"></div>
                 <div class="relative flex items-start gap-3">
                   <div class="relative shrink-0">
@@ -453,7 +453,7 @@
                        ? 'border-color: var(--ik-sea); background: linear-gradient(180deg, rgba(79,134,185,0.10), rgba(255,255,255,0.88));'
                        : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
                 <input type="checkbox" name="city_ids" :value="String(city.id)" x-model="selectedCities" class="sr-only">
-                <div class="absolute inset-x-0 top-0 h-14"
+                <div class="ik-top-band absolute inset-x-0 top-0 h-14"
                      style="background: linear-gradient(135deg, rgba(79,134,185,0.16), rgba(79,134,185,0.02));"></div>
                 <div class="relative flex items-start gap-3">
                   <div class="relative shrink-0">
@@ -735,7 +735,7 @@
                   :style="(multiOrigin ? isSourceSelected(city.id) : String(fromCityId) === String(city.id))
                     ? 'border-color: var(--ik-bad); background: rgba(187,81,67,0.08);'
                     : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
-                  <div class="absolute inset-x-0 top-0 h-14"
+                  <div class="ik-top-band absolute inset-x-0 top-0 h-14"
                        style="background: linear-gradient(135deg, rgba(187,81,67,0.14), rgba(187,81,67,0.02));"></div>
                   <div class="relative flex items-start gap-3">
                     <div class="relative shrink-0">
@@ -817,7 +817,7 @@
                   :style="(multiDestination ? isDestSelected(city.id) : String(toCityId) === String(city.id))
                     ? 'border-color: var(--ik-sea); background: rgba(79,134,185,0.08);'
                     : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
-                  <div class="absolute inset-x-0 top-0 h-14"
+                  <div class="ik-top-band absolute inset-x-0 top-0 h-14"
                        style="background: linear-gradient(135deg, rgba(79,134,185,0.16), rgba(79,134,185,0.02));"></div>
                   <div class="relative flex items-start gap-3">
                     <div class="relative shrink-0">

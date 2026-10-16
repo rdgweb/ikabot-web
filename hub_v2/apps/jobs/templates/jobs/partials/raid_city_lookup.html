@@ -23,7 +23,7 @@
               islandId = '{{ city.island_id }}';
               selectedTarget = '{{ city.name|escapejs }} ({{ city.owner_name|escapejs }})';
             ">
-      <div class="absolute inset-x-0 top-0 h-10" style="background:linear-gradient(135deg,rgba(187,81,67,0.10),rgba(187,81,67,0.02));"></div>
+      <div class="ik-top-band absolute inset-x-0 top-0 h-10" style="background:linear-gradient(135deg,rgba(187,81,67,0.10),rgba(187,81,67,0.02));"></div>
       <div class="relative p-3 flex items-start gap-2">
         <div class="h-9 w-9 shrink-0 rounded-[12px] border flex items-center justify-center mt-0.5"
              :style="targetCityId === '{{ city.game_city_id }}'

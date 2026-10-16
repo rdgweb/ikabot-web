@@ -130,7 +130,7 @@
                   :style="String(selectedCityId) === String(city.id)
                     ? 'border-color: var(--ik-bad); background: linear-gradient(180deg, rgba(187,81,67,0.08), rgba(255,255,255,0.90));'
                     : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);'">
-            <div class="absolute inset-x-0 top-0 h-12"
+            <div class="ik-top-band absolute inset-x-0 top-0 h-12"
                  style="background: linear-gradient(135deg, rgba(187,81,67,0.12), transparent);"></div>
             <div class="relative flex items-start gap-2.5">
               <div class="relative shrink-0">
@@ -214,7 +214,7 @@
                     : (isAlreadyListed(unit.id)
                         ? 'border-color: rgba(201,156,78,0.6); background: rgba(201,156,78,0.06);'
                         : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.84);')">
-            <div class="absolute inset-x-0 top-0 h-8"
+            <div class="ik-top-band absolute inset-x-0 top-0 h-8"
                  :style="unitType==='fleet'
                    ? 'background: linear-gradient(135deg, rgba(79,134,185,0.10), transparent);'
                    : 'background: linear-gradient(135deg, rgba(187,81,67,0.10), transparent);'"></div>

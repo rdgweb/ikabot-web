@@ -13,6 +13,8 @@
   <!-- Styles -->
   <link rel="stylesheet" href="{% static 'css/output.css' %}">
   <link rel="stylesheet" href="{% static 'vendor/bootstrap-icons.min.css' %}">
+  {# N-137: a colour band across the top of a rounded card follows the card's rounded corners #}
+  <style>.ik-top-band { border-top-left-radius: inherit; border-top-right-radius: inherit; }</style>
   <!-- HTMX + Alpine -->
   <script src="{% static 'vendor/htmx.min.js' %}"></script>
   <script src="{% static 'vendor/alpine.min.js' %}" defer></script>

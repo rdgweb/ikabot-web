@@ -79,7 +79,7 @@
                value="{{ city.id }}"
                @change="selectedCity = '{{ city.id|escapejs }}'"
                {% if form.source_city_id.value|stringformat:"s" == city.id|stringformat:"s" %}checked{% endif %}>
-        <div class="absolute inset-x-0 top-0 h-14"
+        <div class="ik-top-band absolute inset-x-0 top-0 h-14"
              style="background: linear-gradient(135deg, rgba(79,134,185,0.16), rgba(79,134,185,0.02));"></div>
         <div class="relative p-4">
           <div class="flex items-start gap-3">
