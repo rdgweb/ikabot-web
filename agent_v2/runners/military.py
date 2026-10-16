@@ -132,6 +132,24 @@ def _movement_matches_expected(md: dict[str, Any], expected: dict[str, Any]) -> 
     return True
 
 
+def unit_names_by_id() -> dict[int, str]:
+    """Unit id -> the name the military view writes ("303" -> "Hoplita"), so what the agent patches into the
+    snapshot reads like what Verificar Status reads (N-145: the hub-only core.catalogs is not in the agent)."""
+    try:
+        from game_client.unit_stats import UNIT_STATS
+
+        names = {int(uid): str(stats.get("name") or uid) for uid, stats in UNIT_STATS.items()}
+    except Exception:
+        names = {}
+    try:
+        from core.catalogs import TRAINING_UNITS          # present only where the hub's catalog is installed
+    except Exception:
+        return names
+    for units in TRAINING_UNITS.values():
+        for unit in units:
+            names.setdefault(int(unit["id"]), unit["name"])
+    return names
+
 @register_runner(1203)
 class UpgradeUnitsRunner(BaseRunner):
     """Automatically research unit improvements in the Workshop (Oficina do Inventor).
@@ -730,15 +748,8 @@ class TrainUnitsRunner(BaseRunner):
             # Log what we're training — combine game state names + static catalog fallback
             unit_names = {str(u["unit_id"]): u["name"] for u in state.get("units", []) if u.get("unit_id")}
             # Fallback: catalog with numeric ID -> name (e.g. "303" -> "Hoplita")
-            try:
-                from core.catalogs import TRAINING_UNITS
-                for bt_units in TRAINING_UNITS.values():
-                    for u in bt_units:
-                        uid_str = str(u["id"])
-                        if uid_str not in unit_names:
-                            unit_names[uid_str] = u["name"]
-            except Exception:
-                pass
+            for uid, name in unit_names_by_id().items():
+                unit_names.setdefault(str(uid), name)
             summary = ", ".join(
                 f"{unit_names.get(str(uid), uid)} x{qty}"
                 for uid, qty in to_train.items()
@@ -887,11 +898,7 @@ class TrainUnitsRunner(BaseRunner):
                             city_meta[cid] = {'name': str(city.get('name') or cid), 'position': pos}
                         break
 
-            try:
-                from core.catalogs import TRAINING_UNITS
-                catalog = {u['id']: u['name'] for bt in TRAINING_UNITS.values() for u in bt}
-            except Exception:
-                catalog = {}
+            catalog = unit_names_by_id()
 
             import time as _time
 
@@ -1284,11 +1291,7 @@ class StationUnitsRunner(BaseRunner):
             max_eta = 0
 
             # Resolve unit names from catalog
-            try:
-                from core.catalogs import TRAINING_UNITS
-                catalog = {u['id']: u['name'] for bt in TRAINING_UNITS.values() for u in bt}
-            except Exception:
-                catalog = {}
+            catalog = unit_names_by_id()
 
             if troop_units:
                 summary = ', '.join(f'{catalog.get(uid, uid)} x{qty}' for uid, qty in troop_units.items())

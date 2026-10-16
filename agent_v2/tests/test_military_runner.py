@@ -17,7 +17,7 @@ def _load_military_runner_module():
 
     catalogs = types.ModuleType("core.catalogs")
     catalogs.TRAINING_UNITS = {
-        "fleet": [{"id": 216, "name": "Ariete a Vapor"}],
+        "fleet": [{"id": 216, "name": "Aríete a Vapor"}],
         "troops": [],
     }
     core_pkg.catalogs = catalogs
@@ -187,7 +187,7 @@ class TrainUnitsRunnerMaintainTests(unittest.TestCase):
             ],
             "military": {
                 "by_city": [
-                    {"city_id": 39272, "city_name": "Hell", "fleet": {"Ariete a Vapor": 21}, "troops": {}},
+                    {"city_id": 39272, "city_name": "Hell", "fleet": {"Aríete a Vapor": 21}, "troops": {}},
                     {"city_id": 39267, "city_name": "Okolnir", "fleet": {}, "troops": {}},
                 ]
             },
@@ -230,8 +230,8 @@ class TrainUnitsRunnerMaintainTests(unittest.TestCase):
         by_city = payload["military"]["by_city"]
         hell = next(row for row in by_city if row["city_id"] == 39272)
         okolnir = next(row for row in by_city if row["city_id"] == 39267)
-        self.assertEqual(hell["fleet"], {"Ariete a Vapor": 19})
-        self.assertEqual(okolnir["fleet"], {"Ariete a Vapor": 2})
+        self.assertEqual(hell["fleet"], {"Aríete a Vapor": 19})
+        self.assertEqual(okolnir["fleet"], {"Aríete a Vapor": 2})
 
     def test_multi_city_trains_extra_for_cities_without_shipyard_when_no_surplus(self):
         snapshot = {

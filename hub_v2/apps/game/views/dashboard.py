@@ -330,14 +330,10 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                             continue
                         city_troops = []
                         city_fleet = []
-                        for name, count in (city_military.get("troops") or {}).items():
-                            c = _si(count)
-                            if c > 0:
-                                city_troops.append({"name": name, "count": c})
-                        for name, count in (city_military.get("fleet") or {}).items():
-                            c = _si(count)
-                            if c > 0:
-                                city_fleet.append({"name": name, "count": c})
+                        for name, count in _named_units(city_military.get("troops")).items():
+                            city_troops.append({"name": name, "count": count})
+                        for name, count in _named_units(city_military.get("fleet")).items():
+                            city_fleet.append({"name": name, "count": count})
                         military_by_city[city_id] = {
                             "troops": city_troops,
                             "fleet": city_fleet,
@@ -610,6 +606,21 @@ def _sf(value, default=0.0) -> float:
         return float(str(value))
     except (TypeError, ValueError):
         return default
+
+
+def _named_units(units) -> dict[str, int]:
+    """Unit counts by name. A move of troops used to write the unit id ("303": 50) into the snapshot (N-145):
+    the id becomes its name and adds to the same unit."""
+    from core.catalogs import TRAINING_UNITS
+
+    by_id = {str(u["id"]): u["name"] for group in TRAINING_UNITS.values() for u in group}
+    named: dict[str, int] = {}
+    for name, count in (units or {}).items() if isinstance(units, dict) else []:
+        c = _si(count)
+        if c > 0:
+            key = by_id.get(str(name).strip(), str(name))
+            named[key] = named.get(key, 0) + c
+    return named
 
 
 def _build_military_columns(cities: list[dict], key: str) -> list[str]:
