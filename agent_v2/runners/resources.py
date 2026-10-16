@@ -2060,8 +2060,9 @@ class ModifyProductionRunner(BaseRunner):
         # fetch_city_context for island_id and tradegood_type only
         context = fetch_city_context(client, int(city_id))
         island_id = context["island_id"]
-        tradegood_type = context.get("tradegood_type") or "1"
         snapshot_city = snapshot_city_map.get(str(city_id).strip()) or {}
+        # N-139: the city page often comes without the luxury good; the snapshot knows it
+        tradegood_type = self.city_tradegood(snapshot_city, context)
         snapshot_free_citizens = _to_int(snapshot_city.get("free_citizens"), 0, 0)
 
         # --- Serraria (resource) ---
@@ -2211,7 +2212,8 @@ class ModifyProductionRunner(BaseRunner):
             (
                 f"Producao ajustada: {context['city_name']} | serraria={resource_percent}% "
                 f"({resource_applied_workers}/{resource_slider['max_workers']}) | "
-                f"luxo={luxury_percent}% ({luxury_applied_workers}/{tradegood_slider['max_workers']}) | "
+                f"luxo({ {'1': 'vinho', '2': 'marmore', '3': 'cristal', '4': 'enxofre'}.get(tradegood_type, tradegood_type)})="
+                f"{luxury_percent}% ({luxury_applied_workers}/{tradegood_slider['max_workers']}) | "
                 f"cidadaos={{resource:header={resource_slider['header_citizens']},template={resource_slider['template_citizens']},usado={resource_slider['citizens']}; "
                 f"luxo:header={tradegood_slider['header_citizens']},template={tradegood_slider['template_citizens']},usado={tradegood_slider['citizens']}}} | "
                 f"snapshot={snapshot_free_citizens}"
@@ -2248,6 +2250,15 @@ class ModifyProductionRunner(BaseRunner):
     def _target_workers(max_workers: int, percent: int) -> int:
         bounded = max(0, min(150, int(percent)))
         return int(max_workers * bounded / 100)
+
+    @staticmethod
+    def city_tradegood(snapshot_city: dict, context: dict) -> str:
+        """The city's luxury good ("1" wine .. "4" sulfur): the snapshot's, then the city page's, then wine."""
+        for value in (snapshot_city.get("produced_tradegood"), snapshot_city.get("tradegood"), context.get("tradegood_type")):
+            text = str(value or "").strip()
+            if text in ("1", "2", "3", "4"):
+                return text
+        return "1"
 
     @staticmethod
     def luxury_raw_for(tradegood_type, luxury_raw: str, luxury_by_type: dict[str, str] | None) -> str:

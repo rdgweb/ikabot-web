@@ -133,3 +133,14 @@ class LuxuryPerGoodTests(unittest.TestCase):
         job["inputs"]["luxury_percent_by_type"] = {"3": "150", "4": "35", "1": ""}
         runner.execute(job)
         self.assertEqual(runner._apply_one_city.call_args.kwargs["luxury_by_type"], {"3": "150", "4": "35"})
+
+
+class CityLuxuryGoodTests(unittest.TestCase):
+    """N-139: the city page often has no luxury good — every city was treated as wine."""
+
+    def test_the_snapshot_says_which_good_the_city_produces(self):
+        pick = ModifyProductionRunner.city_tradegood
+        self.assertEqual(pick({"produced_tradegood": 4}, {"tradegood_type": ""}), "4")
+        self.assertEqual(pick({"tradegood": 3}, {"tradegood_type": ""}), "3")
+        self.assertEqual(pick({}, {"tradegood_type": "2"}), "2")
+        self.assertEqual(pick({}, {"tradegood_type": ""}), "1")
