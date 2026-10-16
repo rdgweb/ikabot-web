@@ -19,7 +19,7 @@ def _temple_city(cid, name, island, priests):
             "buildings": [{"building": "temple", "position": 16, "level": 20}],
             "miracle_state": {"priests": priests, "max_priests": 900, "own_conversion_percent": 50.0,
                               "island_conversion_percent": 30.0, "citizens_per_priest": 7, "max_inhabitants": 3500,
-                              "wonder_name": "Templo de Hermes", "activate_state": "enabled", "island_name": "Haunios",
+                              "wonder_name": "Templo de Hermes (Nível 2/5)", "activate_state": "enabled", "island_name": "Haunios",
                               "cooldown_text": "", "updated_at": "2026-10-16T10:00:00+00:00"}}
 
 
@@ -51,6 +51,8 @@ class TempleTests(TestCase):
         self.assertIn("Templo de Hermes", html)
         self.assertIn("fé <b class=\"text-ink\">56%</b>", html)
         self.assertIn("Vizinho · Longe", html)
+        self.assertIn("força <b class=\"text-ink\">2/5</b>", html)            # strength apart from the name
+        self.assertNotIn("Templo de Hermes (Nível", html.split("data-island-miracles")[1])
         self.assertIn('"citizens_per_priest": 7', html)
 
     def test_activate_miracle_finally_shows_what_was_read(self):

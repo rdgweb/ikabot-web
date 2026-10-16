@@ -1692,10 +1692,14 @@ def _temple_form_context(snapshot, cities):
         wonder = dict(wonders.get(str(island_id)) or {})
         state = next((c["state"] for c in own if c["state"]), {})
         participants = sorted(wonder.get("participants") or [], key=lambda p: -(p.get("island_share_percent") or 0))
+        # the game writes the miracle's strength in its name: "Colosso (Nível 2/5)"
+        raw_name = str(wonder.get("wonder_name") or state.get("wonder_name") or "")
+        strength = re.match(r"^(.*?)\s*\(N[ií]vel\s*(\d+)\s*/\s*(\d+)\)\s*$", raw_name)
         islands.append({
             "island_id": island_id,
             "island_name": state.get("island_name") or "",
-            "wonder_name": wonder.get("wonder_name") or state.get("wonder_name") or "",
+            "wonder_name": strength.group(1) if strength else raw_name,
+            "strength": f"{strength.group(2)}/{strength.group(3)}" if strength else "",
             "wonder_effect": state.get("wonder_effect") or "",
             "duration_text": state.get("duration_text") or "",
             "cooldown_text": state.get("cooldown_text") or "",
