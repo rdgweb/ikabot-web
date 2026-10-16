@@ -20,7 +20,26 @@
              }
            },
            selectAll() { this.selectedCities = this.cities.map(city => String(city.id)); },
-           clearAll() { this.selectedCities = []; }
+           clearAll() { this.selectedCities = []; },
+           // N-139: each city takes the percentage of the luxury good it produces
+           isPreset: {% if preset %}true{% else %}false{% endif %},
+           general: '{{ form.luxury_percent.value|default:''|escapejs }}',
+           byType: { {% for good in luxury_goods %}'{{ good.id }}': '{{ good.value }}'{% if not forloop.last %}, {% endif %}{% endfor %} },
+           goodNames: { {% for good in luxury_goods %}'{{ good.id }}': '{{ good.name|escapejs }}'{% if not forloop.last %}, {% endif %}{% endfor %} },
+           summary() {
+             const chosen = this.isPreset || !this.selectedCities.length ? this.cities : this.cities.filter(c => this.isSelected(c.id));
+             const groups = {};
+             for (const city of chosen) {
+               const good = String(city.tradegood_id || '');
+               if (!this.goodNames[good]) continue;
+               groups[good] = (groups[good] || 0) + 1;
+             }
+             return Object.keys(this.goodNames).map(good => ({
+               good, name: this.goodNames[good], cities: groups[good] || 0,
+               percent: String(this.byType[good] || '').trim() || String(this.general || '').trim() || '—',
+               own: !!String(this.byType[good] || '').trim(),
+             }));
+           }
          }">
       <div class="border-b px-4 py-4"
            style="border-color: rgba(219,201,167,0.82); background: linear-gradient(180deg, rgba(255,255,255,0.52), rgba(255,255,255,0));">
@@ -28,30 +47,31 @@
           <div class="max-w-2xl">
             <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-sea);">Alterar produção</div>
             <div class="mt-1 text-sm font-semibold text-ink">Ajuste serraria e luxo com o mesmo layout dos fluxos novos</div>
-            <p class="mt-1 text-xs leading-relaxed text-muted">Selecione as cidades e defina a porcentagem de trabalhadores para cada linha de produção.</p>
+            <p class="mt-1 text-xs leading-relaxed text-muted">Defina a porcentagem de trabalhadores da serraria e do luxo; cada luxo pode ter a sua (ex.: cristal 150%, enxofre 35%).</p>
           </div>
           <div class="flex flex-wrap gap-2">
             <button type="button" class="rounded-full border px-3 py-1.5 text-[11px] font-medium text-ink transition hover:border-[var(--ik-sea)]/45"
                     style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);"
-                    onclick="document.getElementById('{{ form.sawmill_percent.id_for_label }}').value = 100; document.getElementById('{{ form.luxury_percent.id_for_label }}').value = 100;">
+                    onclick="document.getElementById('{{ form.sawmill_percent.id_for_label }}').value = 100; document.getElementById('{{ form.luxury_percent.id_for_label }}').value = 100;" @click="general = '100'">
               100% / 100%
             </button>
             <button type="button" class="rounded-full border px-3 py-1.5 text-[11px] font-medium text-ink transition hover:border-[var(--ik-sea)]/45"
                     style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);"
-                    onclick="document.getElementById('{{ form.sawmill_percent.id_for_label }}').value = 150; document.getElementById('{{ form.luxury_percent.id_for_label }}').value = 150;">
+                    onclick="document.getElementById('{{ form.sawmill_percent.id_for_label }}').value = 150; document.getElementById('{{ form.luxury_percent.id_for_label }}').value = 150;" @click="general = '150'">
               150% / 150%
             </button>
           </div>
         </div>
       </div>
       <div class="px-4 py-4">
-        <div class="grid grid-cols-1 gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+        <div class="grid grid-cols-1 gap-3 {% if not preset %}lg:grid-cols-[1.2fr_0.8fr]{% endif %}">
+          {% if not preset %}
           <section class="rounded-[18px] border p-3"
                    style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
             <div class="mb-2 flex items-center justify-between gap-3">
               <div>
                 <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-sea);">Cidades</div>
-                <div class="text-xs text-muted">Vazio = todas continua funcionando, mas aqui você escolhe visualmente.</div>
+                <div class="text-xs text-muted">Nenhuma marcada = todas as cidades.</div>
               </div>
               <div class="flex gap-2 text-[11px]">
                 <button type="button" class="link-sea" @click="selectAll()">Selecionar todas</button>
@@ -103,6 +123,7 @@
             <p class="form-error mt-2"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
             {% endfor %}
           </section>
+          {% endif %}
 
           <section class="rounded-[18px] border p-3"
                    style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.74);">
@@ -125,14 +146,37 @@
                 {% endfor %}
               </div>
               <div>
-                <label for="{{ form.luxury_percent.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">{{ form.luxury_percent.label }}</label>
-                {{ form.luxury_percent }}
+                <label for="{{ form.luxury_percent.id_for_label }}" class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">% Luxo (geral)</label>
+                <div @input="general = $event.target.value">{{ form.luxury_percent }}</div>
                 {% for error in form.luxury_percent.errors %}
                 <p class="form-error mt-1"><i class="bi bi-exclamation-circle text-[10px]"></i> {{ error }}</p>
                 {% endfor %}
               </div>
             </div>
-            <p class="mt-2 text-[11px] text-muted">Se nenhuma cidade for marcada, o runner continua usando todas as cidades com snapshot válido.</p>
+
+            {# N-139: one percentage per luxury good; blank = the general one #}
+            <div class="mt-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Por luxo</div>
+            <div class="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {% for good in luxury_goods %}
+              <label class="block rounded-[12px] border px-2 py-1.5" style="border-color: rgba(219,201,167,0.88); background: rgba(255,255,255,0.82);">
+                <span class="flex items-center gap-1 text-[11px] font-semibold text-ink"><img src="{{ good.icon }}" alt="" class="h-4 w-4">{{ good.name }}</span>
+                <input type="number" min="0" max="150" name="luxury_percent_type_{{ good.id }}" value="{{ good.value }}"
+                       x-model="byType['{{ good.id }}']" :placeholder="general ? general + ' (geral)' : 'geral'"
+                       class="form-input mt-1 !py-1 text-xs">
+              </label>
+              {% endfor %}
+            </div>
+            <div class="mt-3 flex flex-wrap gap-1.5" data-production-summary>
+              <template x-for="row in summary()" :key="'lux-' + row.good">
+                <span class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px]"
+                      :style="row.own ? 'border-color: var(--ik-sea); background: rgba(79,134,185,0.08);' : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.8);'"
+                      x-show="isPreset || row.cities">
+                  <b class="text-ink" x-text="row.name"></b>
+                  <span class="text-muted" x-text="row.percent + (row.percent === '—' ? '' : '%') + (isPreset ? '' : ' · ' + row.cities + (row.cities === 1 ? ' cidade' : ' cidades'))"></span>
+                </span>
+              </template>
+            </div>
+            <p class="mt-2 text-[11px] text-muted">{% if preset %}Vale para todas as cidades de cada conta do preset; cada cidade usa o percentual do luxo que produz.{% else %}Cada cidade usa o percentual do luxo que produz; em branco = o geral.{% endif %}</p>
           </section>
         </div>
       </div>

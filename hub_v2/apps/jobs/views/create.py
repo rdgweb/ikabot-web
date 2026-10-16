@@ -2071,6 +2071,29 @@ def _custom_field_names(action_code: int) -> list[str]:
     return []
 
 
+LUXURY_GOODS = ((1, "Vinho"), (2, "Mármore"), (3, "Cristal"), (4, "Enxofre"))
+
+
+def with_luxury_by_type(inputs: dict, data) -> dict:
+    """Alterar Produção (N-139): a percentage per luxury good, from the luxury_percent_type_<n> fields; a good left
+    blank takes the general luxury percentage."""
+    by_type = {}
+    for good, _name in LUXURY_GOODS:
+        raw = str(data.get(f"luxury_percent_type_{good}") or "").strip()
+        if not raw:
+            continue
+        try:
+            by_type[str(good)] = max(0, min(150, int(raw)))
+        except (TypeError, ValueError):
+            continue
+    inputs = dict(inputs)
+    if by_type:
+        inputs["luxury_percent_by_type"] = by_type
+    else:
+        inputs.pop("luxury_percent_by_type", None)
+    return inputs
+
+
 def upgrade_units_inputs(data) -> dict:
     """The Melhorar Unidades inputs from the form (job and preset alike)."""
     raw_targets = data.get("unit_targets_json", "[]").strip()
@@ -2182,6 +2205,13 @@ def _job_form_context(form, action_meta, action_code, ga, cities, request=None, 
         from apps.jobs.services.training import initial_quantities
 
         ctx["training_initial"] = initial_quantities(getattr(form, "initial", None) or {})
+    if int(action_code) == 23:
+        initial = getattr(form, "initial", None) or {}
+        by_type = initial.get("luxury_percent_by_type") if isinstance(initial.get("luxury_percent_by_type"), dict) else {}
+        ctx["luxury_goods"] = [
+            {"id": good, "name": name, "icon": static(TRADEGOOD_UI[good]["icon"]), "value": by_type.get(str(good), "")}
+            for good, name in LUXURY_GOODS
+        ]
     if int(action_code) == 1203:
         # N-138: reopening a preset (or editing the job) shows what was chosen
         initial = getattr(form, "initial", None) or {}
@@ -3049,6 +3079,11 @@ class JobSubmitView(LoginRequiredMixin, View):
                 return HttpResponse(html)
         if int(action_code) == 601:
             inputs = self._normalize_island_monitor_inputs(inputs)
+        if int(action_code) == 23:
+            inputs = with_luxury_by_type(inputs, request.POST)
+            if not inputs.get("cities"):
+                # nothing chosen = every city (the agent needs the list)
+                inputs["cities"] = [str(c.get("id")) for c in (cities or []) if c.get("id") is not None]
         if int(action_code) == 1005:
             inputs = self._normalize_train_units_inputs(inputs, request)
         if int(action_code) == 1202:

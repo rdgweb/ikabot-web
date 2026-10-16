@@ -108,3 +108,28 @@ class ModifyProductionMultiCityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LuxuryPerGoodTests(unittest.TestCase):
+    """N-139: each city takes the percentage of the luxury good it produces."""
+
+    def test_each_good_has_its_own_percentage_and_the_rest_take_the_general_one(self):
+        by_type = {"3": "150", "4": "35"}
+        pick = ModifyProductionRunner.luxury_raw_for
+        self.assertEqual(pick("3", "100", by_type), "150")       # crystal
+        self.assertEqual(pick("4", "100", by_type), "35")        # sulfur
+        self.assertEqual(pick("1", "100", by_type), "100")       # wine: the general one
+        self.assertEqual(pick("2", "80", None), "80")            # old jobs: one value for every city
+
+    def test_the_job_passes_the_percentages_on_to_every_city(self):
+        runner = ModifyProductionRunner(hub=MagicMock(), sessions=MagicMock())
+        runner.resolve_credentials = MagicMock(return_value={"server": "s1", "email": "a@b.com", "password": "x"})
+        runner.get_snapshot = MagicMock(return_value=None)
+        runner.get_or_login_game_client = MagicMock(return_value=MagicMock())
+        runner.save_game_client = MagicMock()
+        runner.log = MagicMock()
+        runner._apply_one_city = MagicMock(return_value={"city_id": "1", "city_name": "City 1"})
+        job = _job(["1"])
+        job["inputs"]["luxury_percent_by_type"] = {"3": "150", "4": "35", "1": ""}
+        runner.execute(job)
+        self.assertEqual(runner._apply_one_city.call_args.kwargs["luxury_by_type"], {"3": "150", "4": "35"})

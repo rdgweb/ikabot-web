@@ -1974,6 +1974,13 @@ class ModifyProductionRunner(BaseRunner):
 
         sawmill_raw = str(inputs.get("sawmill_percent", "100")).strip()
         luxury_raw = str(inputs.get("luxury_percent", "100")).strip()
+        # N-139: a percentage per luxury good ("1" wine, "2" marble, "3" crystal, "4" sulfur); each city takes the
+        # one of the good it produces, the general one when its good has none
+        luxury_by_type = {
+            str(kind).strip(): str(value).strip()
+            for kind, value in (inputs.get("luxury_percent_by_type") or {}).items()
+            if str(value).strip() not in ("", "None")
+        }
 
         # N-42: multi-city jobs used to run in a single all-or-nothing burst — one
         # city failing a verification (e.g. a transient island-level rate limit)
@@ -2001,7 +2008,7 @@ class ModifyProductionRunner(BaseRunner):
                         self._apply_one_city(
                             jid, client, city_id,
                             sawmill_raw=sawmill_raw, luxury_raw=luxury_raw,
-                            snapshot_city_map=snapshot_city_map,
+                            snapshot_city_map=snapshot_city_map, luxury_by_type=luxury_by_type,
                         )
                     )
                     last_exc = None
@@ -2045,6 +2052,7 @@ class ModifyProductionRunner(BaseRunner):
         sawmill_raw: str,
         luxury_raw: str,
         snapshot_city_map: dict[str, dict[str, Any]],
+        luxury_by_type: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Adjust sawmill + luxury workers for a single city. Raises on verification
         failure — the caller (execute()) owns retry/partial-result policy (N-42)."""
@@ -2114,7 +2122,7 @@ class ModifyProductionRunner(BaseRunner):
             page_type=tradegood_type,
         )
         luxury_percent = self._resolve_target_percent(
-            luxury_raw,
+            self.luxury_raw_for(tradegood_type, luxury_raw, luxury_by_type),
             tradegood_slider["current_workers"],
             tradegood_slider["max_workers"],
         )
@@ -2240,6 +2248,11 @@ class ModifyProductionRunner(BaseRunner):
     def _target_workers(max_workers: int, percent: int) -> int:
         bounded = max(0, min(150, int(percent)))
         return int(max_workers * bounded / 100)
+
+    @staticmethod
+    def luxury_raw_for(tradegood_type, luxury_raw: str, luxury_by_type: dict[str, str] | None) -> str:
+        """The percentage for the city's own luxury good, or the general one (N-139)."""
+        return (luxury_by_type or {}).get(str(tradegood_type or "").strip(), luxury_raw)
 
     @staticmethod
     def _resolve_target_percent(raw: str, current_workers: int, max_workers: int) -> int:
