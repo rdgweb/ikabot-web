@@ -43,7 +43,8 @@
            currentOf(cityId, uid) {
              const c = this.cityById(cityId); const u = this.catalog[String(uid)];
              if (!c || !u) return 0;
-             return parseInt(((u.kind === 'fleet' ? c.fleet : c.troops) || {})[u.name] || 0);
+             const g = (u.kind === 'fleet' ? c.fleet : c.troops) || {};
+             return parseInt(g[u.name] || g[String(uid)] || 0);   // by name or, after the agent's patch, by id
            },
            summaryCities() {
              if (this.mode !== 'maintain' || this.isPreset) return [];

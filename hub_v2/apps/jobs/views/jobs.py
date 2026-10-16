@@ -1606,8 +1606,13 @@ class JobListView(FilterSortListView):
                     targets = (city_targets_raw.get(cid) or uniform) if custom else uniform
                     per_city.append(int(targets.get(uid) or 0))
                 target = sum(per_city)
-                current = sum(int((garrison.get(cid) or {}).get(name) or 0) for cid in cities) if snapshot else None
-                need = sum(max(0, t - int((garrison.get(cid) or {}).get(name) or 0)) for t, cid in zip(per_city, cities))
+                # the snapshot keeps some cities by unit name and others (patched by the agent) by unit id
+                def have(cid, name=name, uid=uid):
+                    city = garrison.get(cid) or {}
+                    return int(city.get(name) or city.get(uid) or 0)
+
+                current = sum(have(cid) for cid in cities) if snapshot else None
+                need = sum(max(0, t - have(cid)) for t, cid in zip(per_city, cities))
                 row = {
                     "name": name, "icon": UNIT_ICON_MAP.get(name) or UNIT_ICON_MAP.get(meta.get("css") or "") or "",
                     "per_city": per_city[0] if per_city and len(set(per_city)) == 1 else None,
