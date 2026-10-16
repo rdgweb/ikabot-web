@@ -593,6 +593,17 @@ class TelegramWebhookView(APIView):
                     answer_callback_query(cq_id, "❌ Dados invalidos.", show_alert=True)
                 return Response({"status": "ok"})
 
+            elif cq_data.startswith("miracle:"):
+                # miracle:{city_id}:{ga_id} - N-141, Ativar Milagre from the attack alert
+                from apps.game.services.miracle_rules import activate_from_telegram
+
+                city_id, _, ga_id_str = cq_data[len("miracle:"):].partition(":")
+                ok, msg = activate_from_telegram(ga_id_str, city_id)
+                answer_callback_query(cq_id, f"{'✨' if ok else '❌'} {msg[:180]}", show_alert=not ok)
+                if ok and cq_message_id and cq_chat_id:
+                    edit_message_text(cq_chat_id, cq_message_id, f"{cq_message_text}\n\n<i>✨ {msg}</i>")
+                return Response({"status": "ok"})
+
             elif cq_data.startswith("defend_skip:"):
                 answer_callback_query(cq_id, "Ignorado.")
                 if cq_message_id and cq_chat_id:

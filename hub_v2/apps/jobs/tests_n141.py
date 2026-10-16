@@ -29,7 +29,9 @@ def _temple_city(cid, name, island, priests, max_priests, free):
                               "duration_text": "Duração: 1D", "cooldown_text": "Regeneração: 3D 12h", "island_name": "Haunios"}}
 
 
-class TemplesTests(TestCase):
+class TempleAccounts(TestCase):
+    """Two accounts with a temple on the same island (Haunios), plus one other player there."""
+
     def setUp(self):
         self.user = get_user_model().objects.create_user("rodrigo", password="x", is_staff=True)
         self.client.force_login(self.user)
@@ -54,6 +56,8 @@ class TemplesTests(TestCase):
     def _jobs(self):
         return {str(j.game_account_id): json.loads(j.inputs_json) for j in Job.objects.filter(action_code=35)}
 
+
+class TemplesTests(TempleAccounts):
     def test_the_action_is_in_the_catalog(self):
         self.assertEqual(ACTION_CATALOG[35]["name"], "Ajustar Sacerdotes")
 
@@ -104,3 +108,128 @@ class TemplesTests(TestCase):
         self.assertNotIn('name="city_mode"', self.client.get(f"/profiles/presets/{preset.pk}/configure/1/").content.decode())
         created, errors = execute_preset(preset, created_by=self.user)
         self.assertEqual((created, errors), (2, []))
+
+
+class PopulationTests(TempleAccounts):
+    """Free citizens are not always enough to reach 100%: the plan says how far each island gets."""
+
+    def _short_island(self, free_glitnir):
+        snap = AccountSnapshot.objects.get(game_account=self.gas[0])
+        cities = snap.cities
+        cities[0]["miracle_state"]["citizens"] = free_glitnir
+        cities[0]["free_citizens"] = free_glitnir
+        # the other players leave: the island needs far more priests than we have citizens for
+        snap.base_snapshot["island_wonders"]["4479"]["participants"] = [
+            {"player": "Eu", "city_name": "Glitnir", "island_share_percent": 5.53},
+            {"player": "Eu", "city_name": "Alfheim", "island_share_percent": 18.18}]
+        snap.cities = cities
+        snap.save()
+        for other in AccountSnapshot.objects.exclude(pk=snap.pk):
+            other.base_snapshot["island_wonders"]["4479"]["participants"] = snap.base_snapshot["island_wonders"]["4479"]["participants"]
+            other.save()
+        return next(i for i in islands_for_organization() if i.island_id == "4479")
+
+    def test_without_free_citizens_the_plan_says_how_far_it_gets(self):
+        island = self._short_island(100)
+        self.assertTrue(plan_faith(island))
+        targets = {t.city_name: t for t in island.own}
+        self.assertEqual(targets["Glitnir"].target, 287 + 100)              # every free citizen, not more
+        self.assertEqual(targets["Glitnir"].limit, "populacao")
+        self.assertEqual(targets["Alfheim"].limit, "templo")                # already full
+        self.assertGreater(island.short_priests, 0)
+        html = self.client.get("/game/temples/").content.decode()
+        self.assertIn("faltam", html)
+        self.assertIn("sem livres", html)
+
+    def test_the_reserve_of_free_citizens_is_kept(self):
+        island = self._short_island(100)
+        plan_faith(island, reserve=40)
+        self.assertEqual(next(t for t in island.own if t.city_name == "Glitnir").target, 287 + 60)
+        self.client.post("/game/temples/", {"action": "balance", "reserva": "40"})
+        job = self._jobs()[str(self.gas[0].pk)]
+        self.assertEqual(job["reserve_citizens"], 40)
+        self.assertEqual(job["city_targets"], {"11": 347})
+
+
+class MiracleRulesTests(TempleAccounts):
+    """N-141 phase 2: Atena/Hefesto on an attack, Colosso when losing, Poseidon/Hermes on big shipments."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.orgs.models import Membership
+        from apps.orgs.services import default_organization
+
+        self.org = default_organization()
+        Membership.objects.get_or_create(organization=self.org, user=self.user, defaults={"role": Membership.OWNER})
+        snap = AccountSnapshot.objects.get(game_account=self.gas[0])
+        cities = snap.cities
+        cities[0]["miracle_state"]["wonder_name"] = "Templo de Atena (Nível 3/5)"
+        athena_far = _temple_city(99, "Longe", 777, 10, 100, 10)
+        athena_far["miracle_state"]["wonder_name"] = "Colosso (Nível 2/5)"
+        snap.cities = cities + [athena_far]
+        snap.save()
+
+    def _miracle_jobs(self):
+        return [json.loads(j.inputs_json)["city"] for j in Job.objects.filter(action_code=11)]
+
+    def test_rules_default_on_and_are_saved_from_the_page(self):
+        from apps.game.services.miracle_rules import rules_for
+
+        self.assertTrue(rules_for(self.org)["defense_on_attack"])
+        self.client.post("/game/temples/", {"action": "rules", "colossus_when_losing": "1", "ship_share": "70"})
+        rules = rules_for(self.org)
+        self.assertEqual((rules["defense_on_attack"], rules["colossus_when_losing"], rules["ship_share"]), (False, True, 70))
+        self.assertIn('name="ship_share"', self.client.get("/game/temples/").content.decode())
+
+    def test_an_attack_asks_athena_once_and_offers_the_buttons(self):
+        from apps.game.services.miracle_rules import defense_buttons, on_attack_alert
+
+        asked = on_attack_alert(self.gas[0], {"target_city_id": "11", "target_city": "Glitnir"})
+        self.assertEqual(asked, ["Templo de Atena"])                     # any temple of the account will do
+        self.assertEqual(self._miracle_jobs(), ["11"])
+        self.assertEqual(on_attack_alert(self.gas[0], {"target_city_id": "11"}), [])   # not twice within the hour
+        labels = [b["text"] for b in defense_buttons(self.gas[0], asked)]
+        self.assertIn("✨ Atena (pedido)", labels)
+        self.assertIn("✨ Colosso", labels)
+
+    def test_the_rule_off_asks_nothing(self):
+        from apps.game.services.miracle_rules import on_attack_alert, save_rules
+
+        save_rules(self.org, {"colossus_when_losing": "1"})
+        self.assertEqual(on_attack_alert(self.gas[0], {"target_city_id": "11"}), [])
+        self.assertEqual(self._miracle_jobs(), [])
+
+    def test_the_telegram_button_asks_the_miracle(self):
+        from apps.game.services.miracle_rules import activate_from_telegram
+
+        ok, msg = activate_from_telegram(str(self.gas[0].pk), "99")
+        self.assertTrue(ok, msg)
+        self.assertEqual(self._miracle_jobs(), ["99"])
+        self.assertFalse(activate_from_telegram(str(self.gas[0].pk), "12345")[0])
+
+    def test_losing_a_defense_asks_the_colossus(self):
+        from apps.combat.models import CombatReport
+        from apps.game.services.miracle_rules import on_combat_round
+
+        report = CombatReport(game_account=self.gas[0], combat_id=1, result="", target_city_id="11", target_city_name="Glitnir",
+                              defender_name="Jogador1 [ALI]", finished=False,
+                              defender_losses={"303": 40}, attacker_losses={"303": 5})
+        self.assertEqual(on_combat_round(report), ["Colosso"])
+        self.assertEqual(self._miracle_jobs(), ["99"])
+        report.defender_losses, report.attacker_losses = {"303": 5}, {"303": 40}
+        Job.objects.filter(action_code=11).delete()
+        self.assertEqual(on_combat_round(report), [])                     # winning: nothing
+
+    def test_shipments_carry_the_rule_to_the_agent(self):
+        from apps.jobs.services.dispatch import build_payload
+        from apps.jobs.services.workflows import create_job_with_workflow
+
+        ga = self.gas[0]
+        job = create_job_with_workflow(account=ga.account, game_account=ga, node=ga.account.node, action_code=2,
+                                       inputs={"from_city": "11", "to_city": "12", "wood": 500}, status="queued")
+        rules = build_payload(job)["miracle_rules"]
+        self.assertEqual((rules["speed_on_shipments"], rules["ship_share"]), (True, 50))
+        self.assertIn("Templo de Poseidon", rules["speed_miracles"])
+        other = create_job_with_workflow(account=ga.account, game_account=ga, node=ga.account.node, action_code=35,
+                                         inputs={"target_mode": "keep"}, status="queued")
+        self.assertNotIn("miracle_rules", build_payload(other))

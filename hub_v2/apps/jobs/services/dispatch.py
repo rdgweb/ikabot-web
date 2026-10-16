@@ -33,8 +33,20 @@ def _serialize_progress(job: Job) -> dict:
         return {}
 
 
+# N-141: shipments that may ask Poseidon or Hermes when they take most of the account's cargo ships
+MIRACLE_SHIPMENT_ACTIONS = frozenset({2, 3})
+
+
+def _miracle_rules(job: Job) -> dict:
+    from apps.accounts.models import Account
+    from apps.game.services.miracle_rules import agent_rules
+
+    organization = Account._base_manager.filter(pk=job.account_id).select_related("organization").first()
+    return agent_rules(getattr(organization, "organization", None))
+
+
 def build_payload(job: Job) -> dict:
-    return {
+    payload = {
         "job_id": str(job.pk),
         "account_id": str(job.account_id),
         "game_account_id": str(job.game_account_id) if job.game_account_id else None,
@@ -45,6 +57,12 @@ def build_payload(job: Job) -> dict:
         "progress": _serialize_progress(job),
         "timeout_sec": job.timeout_sec,
     }
+    if job.action_code in MIRACLE_SHIPMENT_ACTIONS:
+        try:
+            payload["miracle_rules"] = _miracle_rules(job)
+        except Exception:  # noqa: BLE001 - the job runs without the rule rather than not at all
+            payload["miracle_rules"] = {}
+    return payload
 
 
 def dispatch_job(job: Job, eta: datetime | None = None) -> None:

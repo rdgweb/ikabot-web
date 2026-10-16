@@ -4,6 +4,8 @@ An island's faith is the sum of every city's share (capped at 100%); a city's sh
 priests x inhabitants-per-priest / island capacity, so on one island every priest is worth the same share,
 whichever account owns it. Reaching 100% without excess therefore means: the priests the island still needs,
 spread evenly over our cities there, each within its temple's maximum and its free citizens.
+Free citizens are not always enough: the plan says how far each island gets and what holds each temple back
+(the temple is full, or the city has no free citizens left after the reserve it keeps).
 """
 from __future__ import annotations
 
@@ -28,10 +30,25 @@ class OwnTemple:
     free_citizens: int
     share: float
     target: int | None = None
+    reserve: int = 0
 
     @property
     def cap(self) -> int:
-        return max(self.priests, min(self.max_priests or self.priests, self.priests + max(0, self.free_citizens)))
+        return max(self.priests, min(self.max_priests or self.priests, self.priests + max(0, self.free_citizens - self.reserve)))
+
+    @property
+    def limit(self) -> str:
+        """What stops this temple from taking more priests in the plan: "templo" (full), "populacao" (no free
+        citizens left) or "" (it got all the plan asked of it)."""
+        if self.target is None or self.target < self.cap:
+            return ""
+        if self.max_priests and self.target >= self.max_priests:
+            return "templo"
+        return "populacao"
+
+    @property
+    def citizens_used(self) -> int:
+        return max(0, (self.target or 0) - self.priests) if self.target is not None else 0
 
 
 @dataclass
@@ -55,6 +72,7 @@ class Island:
     participants: list[dict] = field(default_factory=list)
     share_per_priest: float | None = None
     updated_at: str = ""
+    short_priests: int = 0          # priests the plan could not place (no room in the temples or no free citizens)
 
     @property
     def own_share(self) -> float:
@@ -83,6 +101,17 @@ class Island:
     @property
     def missing(self) -> float:
         return max(0.0, round(100 - self.raw_faith, 2))
+
+
+def _free_citizens(city: dict, state: dict) -> int:
+    """The free citizens of the city: Verificar Status reads them more often than the temple."""
+    value = city.get("free_citizens")
+    if value is None:
+        value = state.get("citizens")
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def islands_for_organization() -> list[Island]:
@@ -139,7 +168,7 @@ def islands_for_organization() -> list[Island]:
                     game_account_id=str(ga.pk), game_account_name=ga.name or ga.server_id,
                     city_id=str(city.get("id")), city_name=str(city.get("name") or city.get("id")),
                     priests=priests, max_priests=int(state.get("max_priests") or 0),
-                    free_citizens=int(state.get("citizens") or 0), share=share,
+                    free_citizens=_free_citizens(city, state), share=share,
                 ))
             else:
                 island.own.append(OwnTemple(
@@ -152,13 +181,17 @@ def islands_for_organization() -> list[Island]:
     return sorted(islands.values(), key=lambda i: (not i.available, i.wonder_name or "~", i.island_id))
 
 
-def plan_faith(island: Island, target: float = 100.0) -> bool:
+def plan_faith(island: Island, target: float = 100.0, reserve: int = 0) -> bool:
     """Fill each own temple's `target`: the priests the island still needs for `target`% faith, spread evenly over
-    our cities there (within each temple's maximum and free citizens). False when the island cannot be planned."""
+    our cities there (within each temple's maximum and the free citizens above `reserve`). What does not fit is
+    left in `island.short_priests`. False when the island cannot be planned."""
     per = island.share_per_priest
     readable = [t for t in island.own if t.max_priests]
+    island.short_priests = 0
     if not per or not readable:
         return False
+    for t in readable:
+        t.reserve = max(0, int(reserve or 0))
     needed_share = max(0.0, target - island.others_share - island.base_share)
     remaining = math.ceil(needed_share / per - 1e-9)
     open_temples = list(readable)
@@ -176,6 +209,7 @@ def plan_faith(island: Island, target: float = 100.0) -> bool:
         if len(still_open) == len(open_temples) and remaining <= 0:
             break
         open_temples = still_open
+    island.short_priests = max(0, remaining)
     return True
 
 
@@ -185,13 +219,13 @@ def projected_faith(island: Island) -> float:
     return round(min(100.0, island.base_share + island.others_share + own), 1)
 
 
-def balance_jobs(islands: list[Island], *, target: float = 100.0, created_by=None) -> int:
+def balance_jobs(islands: list[Island], *, target: float = 100.0, reserve: int = 0, created_by=None) -> int:
     """One Ajustar Sacerdotes job per game account with the planned priests of its cities."""
     from apps.jobs.services.workflows import create_job_with_workflow
 
     by_account: dict[str, dict[str, int]] = {}
     for island in islands:
-        if not plan_faith(island, target):
+        if not plan_faith(island, target, reserve):
             continue
         for t in island.own:
             if t.target is not None and t.target != t.priests:
@@ -200,7 +234,7 @@ def balance_jobs(islands: list[Island], *, target: float = 100.0, created_by=Non
     for ga in GameAccount.objects.filter(pk__in=list(by_account)).select_related("account__node"):
         create_job_with_workflow(
             account=ga.account, game_account=ga, node=ga.account.node, action_code=35,
-            inputs={"target_mode": "city_targets", "city_targets": by_account[str(ga.pk)], "reserve_citizens": 0},
+            inputs={"target_mode": "city_targets", "city_targets": by_account[str(ga.pk)], "reserve_citizens": max(0, int(reserve or 0))},
             status="queued", created_by=created_by, trigger_type="manual",
         )
         created += 1

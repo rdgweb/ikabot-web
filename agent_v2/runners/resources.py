@@ -527,6 +527,11 @@ class SendResourcesRunner(BaseRunner):
                     self.log(jid, "info", f"  ↳ {ships_used} mercante(s) reservado(s) no snapshot")
             except Exception as _exc:
                 self.log(jid, "warn", f"  ↳ Falha ao patch snapshot ships: {_exc}")
+            if (job.get("miracle_rules") or {}).get("speed_on_shipments") and not inputs.get("distribution_route"):
+                # N-141: a shipment taking most of the ships asks Poseidon/Hermes (the distribution asks per cycle)
+                from runners.miracle_speed import maybe_ask_speed_miracle
+
+                maybe_ask_speed_miracle(self, job, self.get_snapshot(jid, ga_id), ships_used, freighters=use_freighters)
 
         if ga_id:
             origin_after_dispatch = {
@@ -1182,6 +1187,7 @@ class DistributeResourcesRunner(BaseRunner):
         # last (widening window), so the batch as a whole loses its metronome cadence.
         dispatch_delay = 0.0
         dispatches_made = 0
+        cycle_ships = 0
         for route in route_entries:
             if actions_spawned >= max_routes_per_cycle:
                 break
@@ -1365,11 +1371,13 @@ class DistributeResourcesRunner(BaseRunner):
                 chunk_total = sum(remaining_chunk.values())
                 if use_freighters:
                     n = max(1, chunk_total // 50000 + (1 if chunk_total % 50000 else 0))
+                    cycle_ships += n
                     free_freighters = max(0, free_freighters - n)
                     self.log(jid, "info",
                         f"  ↳ cargueiro × {n} ({chunk_total:,}) — cargueiros restantes: {free_freighters}")
                 else:
                     n = max(1, chunk_total // 500 + (1 if chunk_total % 500 else 0))
+                    cycle_ships += n
                     self.log(jid, "info",
                         f"  ↳ mercante × {n} ({chunk_total:,})")
             if route_spawned:
@@ -1383,6 +1391,12 @@ class DistributeResourcesRunner(BaseRunner):
                         + ", ".join(f"{key}={value:,}" for key, value in route_spawned_resources.items() if value > 0)
                     ),
                 )
+
+        if cycle_ships:
+            # N-141: the cycle's shipments taking most of the ships ask Poseidon/Hermes
+            from runners.miracle_speed import maybe_ask_speed_miracle
+
+            maybe_ask_speed_miracle(self, job, snapshot, cycle_ships, freighters=use_freighters)
 
         next_seconds = 0
         if loop_enabled:

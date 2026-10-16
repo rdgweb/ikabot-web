@@ -62,6 +62,8 @@ class OrganizationPreferences(UUIDTimestampModel):
     organization = models.OneToOneField(Organization, on_delete=models.CASCADE, related_name="preferences")
     # when the automatic solver fails, send the captcha to this organization's Telegram chat
     captcha_telegram = models.CharField(max_length=8, choices=CAPTCHA_TELEGRAM_CHOICES, blank=True, default=PLATFORM)
+    # N-141: the miracles activated at the right moment (apps.game.services.miracle_rules); empty = the defaults
+    miracle_rules = models.JSONField(default=dict, blank=True)
 
     class Meta:
         verbose_name = "Preferências da organização"

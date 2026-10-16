@@ -12,19 +12,44 @@
   <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
     <div>
       <h1 class="text-2xl font-bold text-ink">Templos e Fé</h1>
-      <p class="mt-1 text-sm text-muted">{{ cards|length }} ilha{{ cards|length|pluralize }} · {{ accounts }} conta{{ accounts|pluralize }}</p>
+      <p class="mt-1 text-sm text-muted">{{ cards|length }} ilha{{ cards|length|pluralize }} · {{ accounts }} conta{{ accounts|pluralize }}{% if short_islands %} · <span style="color: var(--ik-gold);">{{ short_islands }} sem população para 100%</span>{% endif %}</p>
     </div>
-    <div class="flex flex-wrap gap-2">
+    <div class="flex flex-wrap items-center gap-2">
+      <form method="get" class="flex items-center gap-1.5 text-[12px] text-muted" title="Cidadãos livres que cada cidade mantém fora dos sacerdotes">
+        <i class="bi bi-people"></i> manter livres
+        <input type="number" name="reserva" min="0" value="{{ reserve }}" class="form-input !w-20 !py-1 text-right" onchange="this.form.submit()">
+      </form>
       <form method="post">{% csrf_token %}<input type="hidden" name="action" value="refresh">
         <button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> Ler templos</button>
       </form>
       {% if to_balance %}
-      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="balance">
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="balance"><input type="hidden" name="reserva" value="{{ reserve }}">
         <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-sliders"></i> Equilibrar {{ to_balance }} ilha{{ to_balance|pluralize }} em 100%</button>
       </form>
       {% endif %}
     </div>
   </div>
+
+  {# N-141: the miracles activated at the right moment #}
+  <form method="post" class="card !p-4">{% csrf_token %}<input type="hidden" name="action" value="rules">
+    <div class="flex flex-wrap items-center gap-x-5 gap-y-3">
+      <span class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold);"><i class="bi bi-stars"></i> Milagres automáticos</span>
+      <label class="flex items-center gap-2 text-[12px] text-ink" title="Templo de Atena e Forja de Hefesto quando um ataque estiver chegando">
+        <input type="checkbox" name="defense_on_attack" value="1" {% if rules.defense_on_attack %}checked{% endif %} {% if not can_change_rules %}disabled{% endif %}>
+        <img src="{% static 'game/buildings/temple.png' %}" alt="" class="h-4 w-4"> Ataque chegando <span class="text-muted">· Atena + Hefesto</span>
+      </label>
+      <label class="flex items-center gap-2 text-[12px] text-ink" title="Colosso quando você defende e perde mais unidades que o atacante">
+        <input type="checkbox" name="colossus_when_losing" value="1" {% if rules.colossus_when_losing %}checked{% endif %} {% if not can_change_rules %}disabled{% endif %}>
+        <i class="bi bi-shield-exclamation" style="color: var(--ik-bad);"></i> Perdendo a defesa <span class="text-muted">· Colosso</span>
+      </label>
+      <label class="flex items-center gap-2 text-[12px] text-ink" title="Templo de Poseidon ou de Hermes quando um envio usa essa parte dos navios">
+        <input type="checkbox" name="speed_on_shipments" value="1" {% if rules.speed_on_shipments %}checked{% endif %} {% if not can_change_rules %}disabled{% endif %}>
+        <i class="bi bi-water" style="color: var(--ik-sea);"></i> Envio com
+        <input type="number" name="ship_share" min="10" max="100" value="{{ rules.ship_share }}" class="form-input !w-16 !py-0.5 text-right" {% if not can_change_rules %}disabled{% endif %}>% dos navios <span class="text-muted">· Poseidon / Hermes</span>
+      </label>
+      {% if can_change_rules %}<button type="submit" class="btn btn-secondary btn-sm ml-auto"><i class="bi bi-check2"></i> Salvar</button>{% endif %}
+    </div>
+  </form>
 
   {% if not cards %}
   <div class="card text-center py-12">
@@ -82,6 +107,8 @@
           {% if t.target is not None and t.target != t.priests %}
           <span class="font-mono font-bold" style="color: {% if t.target > t.priests %}var(--ik-gold){% else %}var(--ik-bad){% endif %};">→ {{ t.target }}</span>
           {% endif %}
+          {% if t.limit == "populacao" %}<span class="rounded-full px-1.5 text-[10px] font-semibold" style="background: rgba(201,156,78,0.14); color: var(--ik-gold);" title="{{ t.free_citizens }} cidadãos livres{% if t.reserve %}, {{ t.reserve }} mantidos{% endif %}"><i class="bi bi-people"></i> sem livres</span>
+          {% elif t.limit == "templo" and card.short %}<span class="rounded-full px-1.5 text-[10px] font-semibold" style="background: rgba(0,0,0,0.05); color: var(--ik-muted);">templo cheio</span>{% endif %}
           {% else %}
           <span class="text-[10px] text-muted">sem leitura</span>
           {% endif %}
@@ -91,13 +118,17 @@
 
       <div class="mt-3 flex flex-wrap items-center gap-2">
         {% if card.changes %}
-        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="balance"><input type="hidden" name="island" value="{{ island.key }}">
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="balance"><input type="hidden" name="reserva" value="{{ reserve }}"><input type="hidden" name="island" value="{{ island.key }}">
           <button type="submit" class="btn btn-secondary btn-sm">
-            <i class="bi bi-sliders"></i> Equilibrar em 100% ({% if card.delta > 0 %}+{% endif %}{{ card.delta }} sacerdotes{% if card.projected is not None %} → fé {{ card.projected|floatformat:0 }}%{% endif %})
+            <i class="bi bi-sliders"></i> Equilibrar{% if not card.short %} em 100%{% endif %} ({% if card.delta > 0 %}+{% endif %}{{ card.delta }} sacerdotes{% if card.projected is not None %} → fé {{ card.projected|floatformat:0 }}%{% endif %})
           </button>
         </form>
         {% elif not card.planned %}
         <span class="text-[11px] text-muted">Leia os templos para planejar esta ilha.</span>
+        {% endif %}
+        {% if card.short %}
+        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" style="background: rgba(201,156,78,0.14); color: var(--ik-gold);">
+          <i class="bi bi-people"></i> alcança {{ card.projected|floatformat:0 }}% · faltam {{ card.short|intcomma }} cidadãos livres</span>
         {% endif %}
         {% if island.participants %}
         <details class="w-full">

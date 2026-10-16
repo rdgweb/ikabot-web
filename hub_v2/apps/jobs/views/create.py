@@ -3759,7 +3759,11 @@ class JobSubmitView(LoginRequiredMixin, View):
                 target = max(1, min(100, int(inputs.get("target_value") or 100)))
             except (TypeError, ValueError):
                 target = 100
-            return balance_jobs(islands, target=target)
+            try:
+                reserve = max(0, int(inputs.get("reserve_citizens") or 0))
+            except (TypeError, ValueError):
+                reserve = 0
+            return balance_jobs(islands, target=target, reserve=reserve)
         if int(action_code) == 1005:
             # N-138: troops and fleet in one request, in one workflow
             from apps.jobs.services.training import create_training_jobs

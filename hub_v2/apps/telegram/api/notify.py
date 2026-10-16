@@ -102,6 +102,20 @@ class AgentNotifyView(APIView):
                         {"text": "❌ Ignorar", "callback_data": f"defend_skip:{tc}"},
                     ]]
                 }
+            if game_account is not None:
+                # N-141: Atena and Hefesto as the attack is coming (when the organization keeps the rule on),
+                # and a button for each defense miracle the account can activate
+                from apps.game.services import miracle_rules
+
+                try:
+                    asked = miracle_rules.on_attack_alert(game_account, metadata)
+                    buttons = miracle_rules.defense_buttons(game_account, asked)
+                except Exception:  # noqa: BLE001 - the alert goes out even when the miracles cannot be read
+                    logger.warning("Miracle rules failed for the attack on %s", tc, exc_info=True)
+                    buttons = []
+                if buttons:
+                    markup = metadata.setdefault("reply_markup", {"inline_keyboard": []})
+                    markup["inline_keyboard"].append(buttons[:3])
 
         if data["event"] == "cinema_available" and game_account is not None:
             # N-104: not sent per account any more. The state is kept and one message a day

@@ -29,7 +29,7 @@ def merge_rounds(existing: str, incoming: str) -> str:
 
 def _own_side(names: str, own: str) -> bool:
     own = (own or "").strip().lower()
-    return bool(own) and any(part.strip().lower().split("[")[0] == own for part in (names or "").split(","))
+    return bool(own) and any(part.strip().lower().split("[")[0].strip() == own for part in (names or "").split(","))
 
 
 def read_into(report, *, finished=None) -> list:
@@ -104,6 +104,15 @@ def take_in(report, *, silent: bool = False, finished=None) -> str:
     from .intel import learn_safely
 
     learn_safely(report, rounds)
+
+    if not report.finished and kind == "round":
+        # N-141: defending one of our cities and losing - the Colosso, when the organization keeps the rule on
+        try:
+            from apps.game.services.miracle_rules import on_combat_round
+
+            on_combat_round(report)
+        except Exception:  # noqa: BLE001 - the report is kept even when the miracle cannot be asked
+            logger.warning("Miracle rule failed for the combat %s", report.combat_id, exc_info=True)
 
     if report.finished:
         # N-110: the combat is over - fight it again in the simulator and keep the comparison

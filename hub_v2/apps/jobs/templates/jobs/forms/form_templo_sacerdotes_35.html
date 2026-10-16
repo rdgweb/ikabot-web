@@ -143,8 +143,8 @@
               <div @input="value = $event.target.value">{{ form.target_value }}</div>
               {% for error in form.target_value.errors %}<p class="form-error mt-1">{{ error }}</p>{% endfor %}
             </div>
-            <p class="text-[11px] text-muted" x-show="mode === 'island_faith'">Reparte os sacerdotes que faltam (ou sobram) por igual entre as suas cidades de cada ilha, em todas as contas.</p>
-            <div x-show="mode !== 'keep' && mode !== 'island_faith'">
+            <p class="text-[11px] text-muted" x-show="mode === 'island_faith'">Reparte os sacerdotes que faltam (ou sobram) por igual entre as suas cidades de cada ilha, em todas as contas; onde faltar cidadão livre, as outras cidades da ilha completam.</p>
+            <div x-show="mode !== 'keep'">
               <label for="{{ form.reserve_citizens.id_for_label }}" class="mb-1 block text-[11px] font-semibold text-muted">{{ form.reserve_citizens.label }}</label>
               {{ form.reserve_citizens }}
             </div>

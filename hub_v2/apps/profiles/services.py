@@ -113,7 +113,11 @@ def execute_preset(preset: Preset, created_by=None) -> tuple[int, list[str]]:
                     target = max(1, min(100, int(saved.get("target_value") or 100)))
                 except (TypeError, ValueError):
                     target = 100
-                jobs_created += balance_jobs(islands, target=target, created_by=created_by)
+                try:
+                    reserve = max(0, int(saved.get("reserve_citizens") or 0))
+                except (TypeError, ValueError):
+                    reserve = 0
+                jobs_created += balance_jobs(islands, target=target, reserve=reserve, created_by=created_by)
                 continue
 
         # Parse per-account overrides
