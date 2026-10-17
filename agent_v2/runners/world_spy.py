@@ -39,6 +39,7 @@ Inteligência:
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from core.runner_registry import register_runner
@@ -49,6 +50,7 @@ logger = logging.getLogger(__name__)
 
 ERROR_RESCHEDULE = 5  * 60        # 5 min em caso de erro
 FALLBACK_DELAY   = 4  * 60 * 60  # 4h — fallback caso notificação falhe
+FALLBACK_RETRY_WAITS = (3, 10)    # espera (s) antes da 2ª e 3ª tentativa de criar o fallback
 
 # Missões cujo resultado é global ao jogador (não varia por cidade).
 # Basta espiionar UMA cidade por owner_id por ciclo completo.
@@ -313,25 +315,44 @@ class WorldSpyRunner(BaseRunner):
                 }
                 projected_free_slots -= 1
 
-        try:
-            resp_next = self.hub.reschedule_job(
-                jid,
-                delay_seconds=FALLBACK_DELAY,
-                inputs={
+        # Sem fallback a campanha morre (os filhos notificariam um job encerrado): tenta de novo e,
+        # se o hub continuar recusando, encerra esta rodada pedindo outra em 5 min, sem espalhar filhos.
+        next_jid = ""
+        last_exc: Exception | None = None
+        for attempt, wait in enumerate((0, *FALLBACK_RETRY_WAITS), start=1):
+            if wait:
+                time.sleep(wait)
+            try:
+                resp_next = self.hub.reschedule_job(
+                    jid,
+                    delay_seconds=FALLBACK_DELAY,
+                    inputs={
+                        "__campaign_root_id": root_id,
+                        "__spied_player_ids": sorted(projected_spied_player_ids),
+                        "__claimed_targets": projected_claimed_targets,
+                    },
+                )
+                next_jid = resp_next.get("new_job_id", "")
+                break
+            except Exception as exc:
+                last_exc = exc
+                self.log(jid, "warn", f"[WorldSpy] Falha ao criar fallback (tentativa {attempt}): {exc}")
+        if not next_jid:
+            self.log(jid, "error",
+                     f"[WorldSpy] Fallback não criado ({last_exc}). Nenhum filho enviado; "
+                     f"nova rodada em {ERROR_RESCHEDULE // 60} min.")
+            return RunnerResult(
+                success=False,
+                reschedule_seconds=ERROR_RESCHEDULE,
+                reschedule_inputs={
                     "__campaign_root_id": root_id,
-                    "__spied_player_ids": sorted(projected_spied_player_ids),
-                    "__claimed_targets": projected_claimed_targets,
+                    "__spied_player_ids": sorted(spied_player_ids),
+                    "__claimed_targets": claimed_targets,
                 },
             )
-            next_jid = resp_next.get("new_job_id", "")
-            self.log(jid, "info",
-                     f"[WorldSpy] Fallback criado: {str(next_jid)[:8]} "
-                     f"(root={root_id[:8]} → pointer atualizado)")
-        except Exception as exc:
-            self.log(jid, "warn",
-                     f"[WorldSpy] Falha ao criar fallback: {exc}. "
-                     f"Filhos não conseguirão notificar via mailbox.")
-            next_jid = ""
+        self.log(jid, "info",
+                 f"[WorldSpy] Fallback criado: {str(next_jid)[:8]} "
+                 f"(root={root_id[:8]} → pointer atualizado)")
 
         # ── Apenas aguardando filhos (sem novos alvos) ────────────────────────
         if not targets:

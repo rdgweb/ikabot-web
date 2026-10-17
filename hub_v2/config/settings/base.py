@@ -336,3 +336,16 @@ CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 # --- Default primary key ---
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# N-152: errors behind a 500 (with the traceback) go to the container log; the rest of the logging is unchanged
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {"verbose": {"format": "[{asctime}] {levelname} {name} — {message}", "style": "{"}},
+    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "verbose"}},
+    "loggers": {
+        "django.request": {"handlers": ["console"], "level": "ERROR", "propagate": False},
+        "apps.jobs.services.campaigns": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+    },
+}

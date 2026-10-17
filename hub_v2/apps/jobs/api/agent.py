@@ -357,6 +357,16 @@ class RescheduleJobView(APIView):
         responses={201: JobRescheduleResponseSerializer},
     )
     def post(self, request, job_id):
+        from django.db import OperationalError
+
+        try:
+            return self._reschedule(request, job_id)
+        except OperationalError as exc:
+            # N-152: a deadlock/lock timeout between simultaneous reschedules is transient; one more try
+            logger.warning("Reschedule %s: erro transitorio no banco (%s); repetindo uma vez", job_id, exc)
+            return self._reschedule(request, job_id)
+
+    def _reschedule(self, request, job_id):
         serializer = JobRescheduleSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -1042,26 +1052,34 @@ class NotifyParentView(APIView):
         now = timezone.now()
 
         from django.db import transaction
-        with transaction.atomic():
-            try:
-                runner_job = Job.objects.select_for_update().get(pk=current_runner_id)
-            except Job.DoesNotExist:
-                return Response({"error": "current_runner job not found."}, status=status.HTTP_404_NOT_FOUND)
+        stale = Job.objects.filter(pk=current_runner_id).values_list("status", flat=True).first()
+        if stale is None:
+            return Response({"error": "current_runner job not found."}, status=status.HTTP_404_NOT_FOUND)
+        if stale in _TERMINAL_STATUSES:
+            # N-152: the round ended without leaving the next one; revive the campaign with this notification
+            from apps.jobs.services.campaigns import revive_campaign
 
-            if runner_job.status in _TERMINAL_STATUSES:
+            revived = revive_campaign(root_job.pk, inbox=[child_done])
+            if revived is None:
                 return Response(
-                    {"error": f"Current runner {current_runner_id[:8]} is terminal ({runner_job.status}). "
-                               "Campaign may be finished or pointer stale."},
+                    {"error": f"Current runner {current_runner_id[:8]} is terminal ({stale}). Campaign cancelled."},
                     status=status.HTTP_409_CONFLICT,
                 )
+            return Response({"ok": True, "revived": str(revived.pk), "woke_early": True})
+
+        with transaction.atomic():
+            runner_job = Job.objects.select_for_update().get(pk=current_runner_id)
+            if runner_job.status in _TERMINAL_STATUSES:
+                # ended between the two reads: revive like above
+                from apps.jobs.services.campaigns import revive_campaign
+
+                transaction.on_commit(lambda: revive_campaign(root_job.pk, inbox=[child_done]))
+                return Response({"ok": True, "revived": "", "woke_early": True})
 
             # Acrescentar notificação na inbox do fallback atual
-            prog = runner_job.progress_json or {}
-            if isinstance(prog, str):
-                try:
-                    prog = json.loads(prog)
-                except Exception:
-                    prog = {}
+            # N-152: progress_json is text; the inbox used to be saved as the dict's repr (the agent read it
+            # as empty and the next notification wiped it). Read either form, always save JSON.
+            prog = _normalize_json_object(runner_job.progress_json)
             inbox = prog.get("inbox") or []
             if not isinstance(inbox, list):
                 inbox = []
@@ -1072,11 +1090,11 @@ class NotifyParentView(APIView):
             woke_early = False
             if runner_job.scheduled_for and runner_job.scheduled_for > now + timedelta(seconds=30):
                 runner_job.scheduled_for = now + timedelta(seconds=5)
-                runner_job.progress_json = prog
+                runner_job.progress_json = json.dumps(prog)
                 runner_job.save(update_fields=["progress_json", "scheduled_for", "updated_at"])
                 woke_early = True
             else:
-                runner_job.progress_json = prog
+                runner_job.progress_json = json.dumps(prog)
                 runner_job.save(update_fields=["progress_json", "updated_at"])
 
         if woke_early:

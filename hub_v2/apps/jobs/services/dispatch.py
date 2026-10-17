@@ -30,7 +30,11 @@ def _serialize_progress(job: Job) -> dict:
     try:
         return json.loads(raw) if isinstance(raw, str) else (raw if isinstance(raw, dict) else {})
     except Exception:
-        return {}
+        try:
+            parsed = ast.literal_eval(raw)       # N-152: inboxes saved as the dict's repr before the fix
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
 
 
 # N-141: shipments that may ask Poseidon or Hermes when they take most of the account's cargo ships
