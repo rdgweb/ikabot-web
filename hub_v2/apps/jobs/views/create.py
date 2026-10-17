@@ -1659,6 +1659,14 @@ def _miracle_form_context(cities):
     }
 
 
+def _snapshot_cities(snapshot) -> list:
+    """The snapshot's own city dicts (tradegood, shrine state...), not the construction view of them."""
+    raw = snapshot.cities if isinstance(snapshot, AccountSnapshot) else (snapshot or {}).get("cities") if isinstance(snapshot, dict) else None
+    if isinstance(raw, dict):
+        raw = raw.get("cities")
+    return raw if isinstance(raw, list) else []
+
+
 def _worship_form_context(cities):
     """N-143: the god each city worships now, the god of its luxury good, and the gods to pick from."""
     from apps.game.services.shrine import GOD_BY_TRADEGOOD, GODS
@@ -1668,6 +1676,7 @@ def _worship_form_context(cities):
     css_to_id = {"god_pan": 1, "god_dionysus": 2, "god_tyche": 3, "god_plutus": 4, "god_theia": 5, "god_hephaestos": 6}
     slots = [w for w in state.get("worship_assignments") or [] if isinstance(w, dict) and w.get("city_id")]
     current = {str(w["city_id"]): int(w.get("god_id") or css_to_id.get(str(w.get("god_css") or ""), 0)) for w in slots}
+    mapped = bool(slots)          # older readings did not say which city each slot belongs to
     rows = []
     for city in cities or []:
         if not isinstance(city, dict) or not city.get("id"):
@@ -1676,7 +1685,7 @@ def _worship_form_context(cities):
         rows.append({
             "id": str(city.get("id")), "name": str(city.get("name") or city.get("id")), "tradegood": tradegood,
             "tradegood_icon": static(TRADEGOOD_ICONS[tradegood]) if tradegood in TRADEGOOD_ICONS else "",
-            "current": current.get(str(city.get("id")), 0), "has_slot": str(city.get("id")) in current,
+            "current": current.get(str(city.get("id")), 0), "has_slot": str(city.get("id")) in current, "mapped": mapped,
             "suggested": GOD_BY_TRADEGOOD.get(tradegood, 0),
         })
     goods = [{"id": str(t), "label": label, "icon": static(TRADEGOOD_ICONS[t]), "suggested": GOD_BY_TRADEGOOD[t]}
@@ -2252,7 +2261,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities, request=None, 
         "experiment_ui": _experiment_form_context(snapshot, cities),
         "scientists_ui": _scientists_form_context(snapshot, cities),
         "temple_ui": _temple_form_context(snapshot, cities) if int(action_code) == 35 else {},
-        "worship_ui": _worship_form_context(cities) if int(action_code) == 36 else {},
+        "worship_ui": _worship_form_context(_snapshot_cities(snapshot) or cities) if int(action_code) == 36 else {},
         "upgrade_units_ui": _upgrade_units_form_context(cities, snapshot),
         "market_ui": _market_form_context(cities),
         "training_ui": _training_form_context(snapshot, cities),

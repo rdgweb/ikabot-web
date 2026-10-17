@@ -74,6 +74,8 @@ class ShrinePanelTests(TestCase):
         html = self.client.get("/jobs/new/form/", {"ga": str(self.ga.pk), "action": "36"}).content.decode()
         self.assertIn("Deus de cada cidade", html)
         self.assertIn('"name": "Glitnir"', html)
+        self.assertIn("icon_glass.png", html)                        # Glitnir's luxury good, from the snapshot
+        self.assertIn('"suggested": 5', html)                         # Teia pre-picked for crystal
         self.assertIn("game/gods/plutus.png", html)
         self.assertIn("/game/temples/", self.client.get("/game/temples/").content.decode())   # the panel opens this form
         self.assertIn("action=36", self.client.get("/game/temples/").content.decode())
