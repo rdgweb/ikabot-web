@@ -99,9 +99,21 @@
 
           <!-- Alvo: owner · city [x:y] -->
           <td>
-            <div class="font-medium text-sm text-ink">{{ report.target_owner|default:"—" }}</div>
+            <div class="flex flex-wrap items-baseline gap-x-1.5 text-sm">
+              {% if report.target_owner %}
+              <a class="font-medium text-ink hover:text-sea hover:underline"
+                 href="{% url 'worldintel:player-detail' %}?ga={{ report.game_account_id }}&{% if report.target_owner_id %}owner_id={{ report.target_owner_id|urlencode }}{% else %}owner_name={{ report.target_owner|urlencode }}{% endif %}">{{ report.target_owner }}</a>
+              {% else %}<span class="text-muted">—</span>{% endif %}
+              {% if report.target_ally_tag %}
+              <a class="text-xs font-semibold link-sea" title="Jogadores desta aliança em Inteligência"
+                 href="{% url 'worldintel:players' %}?ga={{ report.game_account_id }}&q={{ report.target_ally_tag|urlencode }}">[{{ report.target_ally_tag }}]</a>
+              {% endif %}
+              {% if report.target_score is not None %}<span class="font-mono text-[11px] text-muted" title="Pontuação total no último dump">{{ report.target_score|dots }}</span>{% endif %}
+            </div>
             <div class="text-xs text-muted">
-              {{ report.target_city_name|default:"" }}
+              {% if report.target_city_id %}
+              <a class="hover:text-sea hover:underline" href="{% url 'worldintel:city-detail' %}?ga={{ report.game_account_id }}&city_id={{ report.target_city_id|urlencode }}">{{ report.target_city_name|default:report.target_city_id }}</a>
+              {% else %}{{ report.target_city_name|default:"" }}{% endif %}
               {% if report.target_x is not None %}<span class="font-mono">[{{ report.target_x }}:{{ report.target_y }}]</span>{% endif %}
             </div>
           </td>

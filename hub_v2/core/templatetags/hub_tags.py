@@ -294,3 +294,12 @@ def fill_bar_color(pct):
     if pct >= 60:
         return "bg-amber-400"
     return "bg-blue-400"
+
+
+@register.filter
+def dots(value):
+    """1432240 -> "1.432.240" (thousands with dots, as the game writes them)."""
+    try:
+        return f"{int(value):,}".replace(",", ".")
+    except (TypeError, ValueError):
+        return value
