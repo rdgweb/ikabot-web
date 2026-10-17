@@ -16,6 +16,7 @@ import base64
 import json
 import logging
 import re
+from urllib.parse import parse_qs, urlsplit
 
 from django.conf import settings
 from django.http import HttpResponse, HttpResponseRedirect
@@ -49,13 +50,14 @@ REWRITTEN_TYPES = ("text/html", "javascript", "json", "text/css", "text/plain", 
 # outside host allowed. Gameforge's tracking and consent scripts would otherwise run
 # from the operator's own address, next to a session that lives on the proxy's.
 STATIC_CDN = "https://*.geo.gfsrv.net"
-PAGE_POLICY = (
+BASE_PAGE_POLICY = (
     f"default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: {STATIC_CDN}; "
     "connect-src 'self'; form-action 'self'; frame-ancestors 'self'"
 )
+YOUTUBE_ORIGIN = "https://www.youtube.com"
 # N-146: the game's pages still name those blocked scripts; they are taken out of the page so the console does
-# not fill with refusals, and the cinema's video player (YouTube, blocked too) gets an empty stand-in so its
-# code does not stop on "YT is not defined". The cinema bonus is collected by the automation, not here.
+# not fill with refusals. Accounts outside the explicit cinema allowlist keep an empty YouTube stand-in so the
+# game code does not stop on "YT is not defined" while the external player remains blocked.
 BLOCKED_SCRIPT_TAG = re.compile(
     rb"<script\b[^>]*\bsrc=[\"'][^\"']*(?:pixelzirkus\.gameforge\.com|consent\.gameforge\.com|cookiebanner)[^\"']*[\"'][^>]*>\s*</script>",
     re.IGNORECASE,
@@ -95,6 +97,8 @@ def page_script(session: ManualControlSession) -> str:
     """The script added to the game's pages, with the tag that says the control is on and through which proxy."""
     summary = services.proxy_summary(session)
     text = "Controle manual · automação pausada" + (f" · {summary['short']}" if summary["short"] else "")
+    if services.cinema_local_allowed(session.game_account_id):
+        text += " · YouTube local autorizado"
     background = "rgba(170,35,25,.92)" if summary["level"] == "bad" else "rgba(40,30,15,.82)"
     return PAGE_SCRIPT.replace("__PILL_TEXT__", json.dumps(text)).replace("__PILL_BG__", background)
 
@@ -204,6 +208,34 @@ def _request_target(request) -> str:
     return raw
 
 
+def _cinema_event(request, body: bytes) -> str:
+    """Classify cinema requests without retaining video, reward or action tokens."""
+    query = parse_qs(urlsplit(_request_target(request)).query, keep_blank_values=True)
+    content_type = request.headers.get("Content-Type", "").lower()
+    if body and "application/x-www-form-urlencoded" in content_type:
+        form = parse_qs(body[:64 * 1024].decode("utf-8", errors="ignore"), keep_blank_values=True)
+        query.update(form)
+
+    view = str((query.get("view") or [""])[-1])
+    action = str((query.get("action") or [""])[-1])
+    function = str((query.get("function") or [""])[-1])
+    if view == "cinema":
+        return "opened"
+    if action != "AdVideoRewardAction":
+        return ""
+    return function if function in ("watchVideo", "requestBonus") else ""
+
+
+def _page_policy(allow_local_youtube: bool) -> str:
+    if not allow_local_youtube:
+        return BASE_PAGE_POLICY
+    return (
+        f"{BASE_PAGE_POLICY}; "
+        f"script-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: {STATIC_CDN} {YOUTUBE_ORIGIN}; "
+        f"frame-src 'self' {YOUTUBE_ORIGIN}"
+    )
+
+
 def _forward(request, session: ManualControlSession):
     body = request.body
     if len(body) > MAX_REQUEST_BODY:
@@ -223,6 +255,7 @@ def _forward(request, session: ManualControlSession):
         "body": base64.b64encode(body).decode() if body else "",
     })
 
+    cinema_event = _cinema_event(request, body)
     answer = rpc.call(session.node_id, payload, timeout=REQUEST_TIMEOUT_SECONDS)
     services.touch(session, game_request=True)
     if answer is None:
@@ -236,12 +269,21 @@ def _forward(request, session: ManualControlSession):
         logger.warning("Manual session %s: agent error: %s", session.pk, str(answer.get("error"))[:200])
         return _page("Falha ao falar com o jogo", str(answer.get("error") or "Erro no agente.")[:300], status=502)
 
+    if cinema_event and int(answer.get("status") or 502) < 400:
+        services.record_cinema_event(session, cinema_event)
+
     if not STATIC_PATH.search(request.path):
         services.count_request(session)
-    return _game_response(answer, origin=origin, script=page_script(session))
+    return _game_response(answer, session=session, origin=origin, script=page_script(session))
 
 
-def _game_response(answer: dict, *, origin: str, script: str = "") -> HttpResponse:
+def _game_response(
+    answer: dict,
+    *,
+    session: ManualControlSession,
+    origin: str,
+    script: str = "",
+) -> HttpResponse:
     game_origin = str(answer.get("origin") or "")
     game_host = game_origin.split("://", 1)[-1]
     policy = ""
@@ -249,6 +291,7 @@ def _game_response(answer: dict, *, origin: str, script: str = "") -> HttpRespon
     body = base64.b64decode(answer.get("body") or "")
     status = int(answer.get("status") or 502)
     content_type = headers.get("content-type", "")
+    allow_local_youtube = services.cinema_local_allowed(session.game_account_id)
 
     location = headers.get("location", "")
     if location:
@@ -269,10 +312,10 @@ def _game_response(answer: dict, *, origin: str, script: str = "") -> HttpRespon
         # only whole pages: the game answers its ajax calls as text/html too
         whole_page = body.lstrip()[:15].lower().startswith((b"<!doctype", b"<html"))
         if status == 200 and "text/html" in content_type.lower() and whole_page:
-            policy = PAGE_POLICY
+            policy = _page_policy(allow_local_youtube)
             body = BLOCKED_SCRIPT_TAG.sub(b"", body)
             head = re.search(rb"<head\b[^>]*>", body, re.IGNORECASE)
-            if head:
+            if head and not allow_local_youtube:
                 body = body[:head.end()] + HEAD_SCRIPT + body[head.end():]
             marker = body.rfind(b"</body>")
             if marker != -1:
@@ -288,9 +331,11 @@ def _game_response(answer: dict, *, origin: str, script: str = "") -> HttpRespon
         response["Location"] = location
     if policy:
         response["Content-Security-Policy"] = policy
+        response["X-Ikabot-Cinema"] = "local-youtube" if allow_local_youtube else "blocked"
     response["X-Robots-Tag"] = "noindex, nofollow"
     # other sites the page loads from (the game's CDN) do not learn the session's address
     response["Referrer-Policy"] = "same-origin"
+    response["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
     response["X-Frame-Options"] = "SAMEORIGIN"
     return response
 

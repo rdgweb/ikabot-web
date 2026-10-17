@@ -325,6 +325,12 @@ ASAAS_WEBHOOK_TOKEN = os.environ.get("ASAAS_WEBHOOK_TOKEN", "").strip()
 MANUAL_GATEWAY_DOMAIN = os.environ.get("MANUAL_GATEWAY_DOMAIN", "").strip().strip(".").lower()
 MANUAL_GATEWAY_SCHEME = os.environ.get("MANUAL_GATEWAY_SCHEME", "https").strip() or "https"
 MANUAL_GATEWAY_PORT = os.environ.get("MANUAL_GATEWAY_PORT", "").strip()
+# Comma-separated GameAccount UUIDs. Empty by default: the browser must never
+# reach an external video provider unless an operator explicitly allowlists the
+# exact game accounts that may use the local connection.
+MANUAL_CINEMA_LOCAL_GAME_ACCOUNT_IDS = os.environ.get(
+    "MANUAL_CINEMA_LOCAL_GAME_ACCOUNT_IDS", ""
+).strip()
 
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL

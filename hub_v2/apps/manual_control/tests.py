@@ -9,11 +9,17 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from apps.accounts.models import Account, GameAccount, Node
+from apps.audit.models import AuditEvent
 from apps.jobs.models import Job, JobLog
 from apps.manual_control import gateway, services
 from apps.manual_control.models import HeldJob, ManualControlSession
 
-GATEWAY = {"MANUAL_GATEWAY_DOMAIN": "gw.test", "MANUAL_GATEWAY_SCHEME": "https", "MANUAL_GATEWAY_PORT": ""}
+GATEWAY = {
+    "MANUAL_GATEWAY_DOMAIN": "gw.test",
+    "MANUAL_GATEWAY_SCHEME": "https",
+    "MANUAL_GATEWAY_PORT": "",
+    "CACHES": {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
+}
 GAME = "https://s9-br.ikariam.gameforge.com"
 
 
@@ -424,6 +430,76 @@ class GatewayTests(_Base):
         self.assertNotIn("cookiebanner", html)
         self.assertIn('<script src="/js/game.js"></script>', html)
         self.assertLess(html.index("window.YT=window.YT||"), html.index("/js/game.js"))
+
+    def test_youtube_is_only_enabled_for_an_explicit_game_account_uuid(self):
+        self._enter()
+        page = (
+            b'<!DOCTYPE html><html><head><script src="https://pixelzirkus.gameforge.com/static/js/pz.js"></script>'
+            b'<script src="https://www.youtube.com/iframe_api"></script>'
+            b'<script src="/js/game.js"></script></head><body>jogo</body></html>'
+        )
+        self._game(page)
+
+        blocked = self.client.get("/index.php", HTTP_HOST=self.host)
+        self.assertEqual(blocked["X-Ikabot-Cinema"], "blocked")
+        self.assertNotIn("youtube.com", blocked["Content-Security-Policy"])
+        self.assertIn("window.YT=window.YT||", blocked.content.decode())
+
+        with override_settings(MANUAL_CINEMA_LOCAL_GAME_ACCOUNT_IDS=f"other,{self.ga.pk}"):
+            allowed = self.client.get("/index.php", HTTP_HOST=self.host)
+
+        policy = allowed["Content-Security-Policy"]
+        html = allowed.content.decode()
+        self.assertEqual(allowed["X-Ikabot-Cinema"], "local-youtube")
+        self.assertIn("script-src", policy)
+        self.assertIn("frame-src 'self' https://www.youtube.com", policy)
+        self.assertNotIn("youtube-nocookie.com", policy)
+        self.assertNotIn("window.YT=window.YT||", html)
+        self.assertNotIn("pixelzirkus", html)
+        self.assertIn("YouTube local autorizado", html)
+        self.assertEqual(allowed["Referrer-Policy"], "same-origin")
+        self.assertEqual(allowed["Permissions-Policy"], "camera=(), microphone=(), geolocation=(), payment=()")
+
+    def test_cinema_flow_is_audited_without_video_reward_or_gateway_tokens(self):
+        self._enter()
+        self._game()
+
+        with override_settings(MANUAL_CINEMA_LOCAL_GAME_ACCOUNT_IDS=(str(self.ga.pk),)):
+            self.client.post(
+                "/index.php",
+                data="view=cinema&cityId=7&actionRequest=secret-action-token",
+                content_type="application/x-www-form-urlencoded",
+                HTTP_HOST=self.host,
+            )
+            self.client.post(
+                "/index.php",
+                data="action=AdVideoRewardAction&function=watchVideo&videoId=video-secret-value&actionRequest=secret-action-token",
+                content_type="application/x-www-form-urlencoded",
+                HTTP_HOST=self.host,
+            )
+            self.client.post(
+                "/index.php",
+                data="action=AdVideoRewardAction&function=requestBonus&bonusId=bonus-secret-value&videoId=video-secret-value&actionRequest=secret-action-token",
+                content_type="application/x-www-form-urlencoded",
+                HTTP_HOST=self.host,
+            )
+
+        events = list(
+            AuditEvent.objects.filter(action__startswith="control.cinema.").order_by("created_at", "id")
+        )
+        self.assertEqual(
+            [event.action for event in events],
+            [
+                "control.cinema.opened",
+                "control.cinema.video_completed",
+                "control.cinema.reward_requested",
+            ],
+        )
+        self.assertTrue(all(event.result == "ok" for event in events))
+        serialized = repr([event.details for event in events])
+        for secret in ("video-secret-value", "bonus-secret-value", "secret-action-token", self.session.token):
+            self.assertNotIn(secret, serialized)
+        self.assertTrue(all(event.details["cinema_mode"] == "local_youtube" for event in events))
 
     def test_assets_and_ajax_pass_untouched_and_redirects_stay_in_the_session(self):
         self._enter()

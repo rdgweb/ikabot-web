@@ -84,6 +84,16 @@ def gateway_enabled() -> bool:
     return bool(gateway_domain())
 
 
+def cinema_local_allowed(game_account_id) -> bool:
+    """Whether this exact game account may load YouTube from the operator's IP."""
+    configured = getattr(settings, "MANUAL_CINEMA_LOCAL_GAME_ACCOUNT_IDS", "")
+    if isinstance(configured, str):
+        allowed_ids = {value.strip().lower() for value in configured.split(",") if value.strip()}
+    else:
+        allowed_ids = {str(value).strip().lower() for value in configured if str(value).strip()}
+    return str(game_account_id or "").strip().lower() in allowed_ids
+
+
 def session_host(session: ManualControlSession) -> str:
     return f"{session.token}.{gateway_domain()}"
 
@@ -215,6 +225,40 @@ def request_control(game_account: GameAccount, user) -> ManualControlSession:
     record("control.opened", target=game_account, target_label=f"{game_account.name or '-'} ({game_account.server_id})",
            user=user if getattr(user, "pk", None) else None, details={"node": node.name})
     return session
+
+
+def record_cinema_event(session: ManualControlSession, event: str) -> None:
+    """Persist privacy-safe cinema telemetry after a successful game response."""
+    from apps.audit.services import once_per, record
+
+    allowed = cinema_local_allowed(session.game_account_id)
+    if event == "opened" and not once_per(f"manual-cinema-opened:{session.pk}", 24 * 3600):
+        return
+
+    actions = {
+        "opened": "control.cinema.opened",
+        "watchVideo": "control.cinema.video_completed",
+        "requestBonus": "control.cinema.reward_requested",
+    }
+    action = actions.get(event)
+    if action is None:
+        return
+
+    game_account = session.game_account
+    record(
+        action,
+        target=game_account,
+        target_label=f"{game_account.name or '-'} ({game_account.server_id})",
+        user=session.user,
+        result="ok" if allowed else "denied",
+        details={
+            "cinema_mode": "local_youtube" if allowed else "blocked",
+            "manual_control_session": str(session.pk),
+            "proxy_label": session.proxy_label,
+            "proxy_scope": session.proxy_scope,
+            "exit_check": session.exit_check,
+        },
+    )
 
 
 def advance(session_id) -> dict:
