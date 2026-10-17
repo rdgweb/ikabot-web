@@ -20,6 +20,7 @@
            rows() { return this.isPreset ? this.ui.goods.map(g => ({...g, name: `Cidades de ${g.label}`, current: 0})) : this.ui.cities; },
            god(id) { return this.ui.gods.find(g => g.id === Number(id)) || null; },
            changes() { return this.ui.cities.filter(c => this.pick[c.id] && this.pick[c.id] !== c.current); },
+           newcomers() { return this.changes().filter(c => c.mapped && !c.has_slot).length; },
            column(godId) { this.rows().forEach(r => { this.pick[r.id] = godId; }); },
            suggestAll() { this.rows().forEach(r => { if (r.suggested) this.pick[r.id] = r.suggested; }); },
            payload() {
@@ -41,6 +42,8 @@
             <div class="text-[11px] text-muted" x-show="!isPreset"
                  x-text="(ui.summary ? `Santuário nível ${ui.summary.level}` : 'Sem leitura do santuário') + (ui.summary && ui.summary.room !== null ? ` · aceita mais ${ui.summary.room} cidade${ui.summary.room === 1 ? '' : 's'}` : '')"></div>
             <div class="text-[11px] text-muted" x-show="isPreset">Um deus para cada tipo de cidade, em todas as contas do preset.</div>
+            <div class="text-[11px] font-semibold" style="color: var(--ik-gold);" x-show="!isPreset && ui.summary && ui.summary.room !== null && newcomers() > ui.summary.room"
+                 x-text="`${newcomers()} cidades fora do santuário marcadas, mas só cabe${ui.summary.room === 1 ? '' : 'm'} mais ${ui.summary.room}: as outras ficam de fora`"></div>
           </div>
         </div>
         <div class="flex items-center gap-2">
