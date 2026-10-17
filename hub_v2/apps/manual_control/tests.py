@@ -416,6 +416,7 @@ class GatewayTests(_Base):
         self.assertNotIn("gameforge.com", policy)
         self.assertEqual(response["Content-Type"], "text/html; charset=utf-8")
 
+    @override_settings(MANUAL_CINEMA_YOUTUBE=False)
     def test_the_blocked_scripts_leave_the_page_and_the_video_player_has_a_stand_in(self):
         # N-146: the console no longer fills with refused scripts, and the cinema code finds a YT
         self._enter()
@@ -431,7 +432,7 @@ class GatewayTests(_Base):
         self.assertIn('<script src="/js/game.js"></script>', html)
         self.assertLess(html.index("window.YT=window.YT||"), html.index("/js/game.js"))
 
-    def test_youtube_is_only_enabled_for_an_explicit_game_account_uuid(self):
+    def test_youtube_is_enabled_for_every_account_unless_switched_off(self):
         self._enter()
         page = (
             b'<!DOCTYPE html><html><head><script src="https://pixelzirkus.gameforge.com/static/js/pz.js"></script>'
@@ -440,14 +441,14 @@ class GatewayTests(_Base):
         )
         self._game(page)
 
-        blocked = self.client.get("/index.php", HTTP_HOST=self.host)
+        with override_settings(MANUAL_CINEMA_YOUTUBE=False):
+            blocked = self.client.get("/index.php", HTTP_HOST=self.host)
         self.assertEqual(blocked["X-Ikabot-Cinema"], "blocked")
         self.assertEqual(blocked["Referrer-Policy"], "same-origin")
         self.assertNotIn("youtube.com", blocked["Content-Security-Policy"])
         self.assertIn("window.YT=window.YT||", blocked.content.decode())
 
-        with override_settings(MANUAL_CINEMA_LOCAL_GAME_ACCOUNT_IDS=f"other,{self.ga.pk}"):
-            allowed = self.client.get("/index.php", HTTP_HOST=self.host)
+        allowed = self.client.get("/index.php", HTTP_HOST=self.host)
 
         policy = allowed["Content-Security-Policy"]
         html = allowed.content.decode()
@@ -458,32 +459,31 @@ class GatewayTests(_Base):
         self.assertNotIn("window.YT=window.YT||", html)
         self.assertNotIn("pixelzirkus", html)
         self.assertIn("YouTube local autorizado", html)
-        self.assertEqual(allowed["Referrer-Policy"], "origin")
+        self.assertEqual(allowed["Referrer-Policy"], "strict-origin-when-cross-origin")
         self.assertEqual(allowed["Permissions-Policy"], "camera=(), microphone=(), geolocation=(), payment=()")
 
     def test_cinema_flow_is_audited_without_video_reward_or_gateway_tokens(self):
         self._enter()
         self._game()
 
-        with override_settings(MANUAL_CINEMA_LOCAL_GAME_ACCOUNT_IDS=(str(self.ga.pk),)):
-            self.client.post(
-                "/index.php",
-                data="view=cinema&cityId=7&actionRequest=secret-action-token",
-                content_type="application/x-www-form-urlencoded",
-                HTTP_HOST=self.host,
-            )
-            self.client.post(
-                "/index.php",
-                data="action=AdVideoRewardAction&function=watchVideo&videoId=video-secret-value&actionRequest=secret-action-token",
-                content_type="application/x-www-form-urlencoded",
-                HTTP_HOST=self.host,
-            )
-            self.client.post(
-                "/index.php",
-                data="action=AdVideoRewardAction&function=requestBonus&bonusId=bonus-secret-value&videoId=video-secret-value&actionRequest=secret-action-token",
-                content_type="application/x-www-form-urlencoded",
-                HTTP_HOST=self.host,
-            )
+        self.client.post(
+            "/index.php",
+            data="view=cinema&cityId=7&actionRequest=secret-action-token",
+            content_type="application/x-www-form-urlencoded",
+            HTTP_HOST=self.host,
+        )
+        self.client.post(
+            "/index.php",
+            data="action=AdVideoRewardAction&function=watchVideo&videoId=video-secret-value&actionRequest=secret-action-token",
+            content_type="application/x-www-form-urlencoded",
+            HTTP_HOST=self.host,
+        )
+        self.client.post(
+            "/index.php",
+            data="action=AdVideoRewardAction&function=requestBonus&bonusId=bonus-secret-value&videoId=video-secret-value&actionRequest=secret-action-token",
+            content_type="application/x-www-form-urlencoded",
+            HTTP_HOST=self.host,
+        )
 
         events = list(
             AuditEvent.objects.filter(action__startswith="control.cinema.").order_by("created_at", "id")

@@ -325,12 +325,10 @@ ASAAS_WEBHOOK_TOKEN = os.environ.get("ASAAS_WEBHOOK_TOKEN", "").strip()
 MANUAL_GATEWAY_DOMAIN = os.environ.get("MANUAL_GATEWAY_DOMAIN", "").strip().strip(".").lower()
 MANUAL_GATEWAY_SCHEME = os.environ.get("MANUAL_GATEWAY_SCHEME", "https").strip() or "https"
 MANUAL_GATEWAY_PORT = os.environ.get("MANUAL_GATEWAY_PORT", "").strip()
-# Comma-separated GameAccount UUIDs. Empty by default: the browser must never
-# reach an external video provider unless an operator explicitly allowlists the
-# exact game accounts that may use the local connection.
-MANUAL_CINEMA_LOCAL_GAME_ACCOUNT_IDS = os.environ.get(
-    "MANUAL_CINEMA_LOCAL_GAME_ACCOUNT_IDS", ""
-).strip()
+# N-153: the cinema's YouTube player loads in the operator's browser (their IP goes
+# to YouTube, not to Gameforge; the game and the bonus stay on the account proxy).
+# "false" brings back the N-146 block for every account.
+MANUAL_CINEMA_YOUTUBE = os.environ.get("MANUAL_CINEMA_YOUTUBE", "true").strip().lower() in ("1", "true", "yes")
 
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
