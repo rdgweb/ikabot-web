@@ -112,7 +112,7 @@
               {% if report.target_score is not None %}<span class="font-mono text-[11px] text-muted" title="Pontuação total no último dump">{{ report.target_score|dots }}</span>{% endif %}
             </div>
             <div class="text-xs text-muted">
-              {% if report.target_city_id and report.target_in_dump %}
+              {% if report.target_city_id and report.city_in_dump %}
               <a class="hover:text-sea hover:underline" href="{% url 'worldintel:city-detail' %}?dump={{ report.intel_dump }}&city_id={{ report.target_city_id|urlencode }}">{{ report.target_city_name|default:report.target_city_id }}</a>
               {% else %}{{ report.target_city_name|default:"" }}{% endif %}
               {% if report.target_x is not None %}<a class="font-mono hover:text-sea hover:underline" title="Jogadores desta ilha em Inteligência"

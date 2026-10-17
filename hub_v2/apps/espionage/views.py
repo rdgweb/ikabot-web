@@ -43,7 +43,7 @@ class SpyReportListView(FilterSortListView):
 def attach_target_players(reports) -> None:
     """The target player's alliance and total score from the latest world dump (by id, or by name when the report
     has no id), and that dump for the links to Inteligência."""
-    from apps.worldintel.models import WorldDump, WorldDumpPlayer
+    from apps.worldintel.models import WorldDump, WorldDumpCity, WorldDumpPlayer
 
     reports = list(reports)
     dump = WorldDump.objects.order_by("-captured_at").first()
@@ -56,6 +56,10 @@ def attach_target_players(reports) -> None:
         for row in rows:
             by_id[row.owner_id] = row
             by_name[row.owner_name.lower()] = row
+        city_ids = {r.target_city_id for r in reports if r.target_city_id}
+        cities_in_dump = set(WorldDumpCity.objects.filter(dump=dump, game_city_id__in=city_ids).values_list("game_city_id", flat=True))
+    else:
+        cities_in_dump = set()
     for report in reports:
         player = by_id.get(report.target_owner_id or "") or by_name.get((report.target_owner or "").lower())
         report.target_ally_tag = player.ally_tag if player else ""
@@ -63,6 +67,7 @@ def attach_target_players(reports) -> None:
         report.target_owner_key = player.owner_id if player else (report.target_owner_id or "")
         report.intel_dump = str(dump.pk) if dump is not None else ""
         report.target_in_dump = player is not None
+        report.city_in_dump = (report.target_city_id or "") in cities_in_dump      # a city founded after the dump is not there
 
 
 class SpyReportDeleteView(LoginRequiredMixin, View):

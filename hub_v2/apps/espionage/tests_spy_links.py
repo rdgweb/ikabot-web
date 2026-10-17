@@ -22,11 +22,21 @@ class SpyReportLinksTests(TestCase):
                                  target_city_name="Polis", target_city_id="89104", mission_id=5, target_x=88, target_y=90,
                                  data_json={"wood": 47903, "marble": 5937})
         self.dump = dump
+        from apps.worldintel.models import WorldDumpCity, WorldDumpIsland
+
+        island = WorldDumpIsland.objects.create(dump=dump, island_id="9", name="Ilha", x=88, y=90)
+        WorldDumpCity.objects.create(dump=dump, island=island, type="city", owner_id="110034", owner_name="Herakles-2929",
+                                     game_city_id="89104")
 
     def test_links_score_and_alliance(self):
         html = self.client.get("/espionage/").content.decode()
         self.assertIn("owner_id=110034", html)
         self.assertIn("city_id=89104", html)
+
+    def test_a_city_missing_from_the_dump_has_no_link(self):
+        SpyReport.objects.create(game_account=self.ga, report_id="r3", target_owner="Herakles-2929", target_owner_id="110034",
+                                 target_city_name="Nova", target_city_id="99999", mission_id=5)
+        self.assertNotIn("city_id=99999", self.client.get("/espionage/").content.decode())
         self.assertIn("q=BLOOD", html)
         self.assertIn("[BLOOD]", html)
         self.assertIn("1.432.240", html)
