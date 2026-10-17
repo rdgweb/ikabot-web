@@ -32,17 +32,17 @@ class SpyReportLinksTests(TestCase):
         html = self.client.get("/espionage/").content.decode()
         self.assertIn("owner_id=110034", html)
         self.assertIn("city_id=89104", html)
-
-    def test_a_city_missing_from_the_dump_has_no_link(self):
-        SpyReport.objects.create(game_account=self.ga, report_id="r3", target_owner="Herakles-2929", target_owner_id="110034",
-                                 target_city_name="Nova", target_city_id="99999", mission_id=5)
-        self.assertNotIn("city_id=99999", self.client.get("/espionage/").content.decode())
         self.assertIn("q=BLOOD", html)
         self.assertIn("[BLOOD]", html)
         self.assertIn("1.432.240", html)
         self.assertIn("47.903", html)                                  # the resources, with the thousands dot
         self.assertIn("q=88:90", html)                                 # the island's players
         self.assertIn(f"dump={self.dump.pk}", html)                    # the latest dump
+
+    def test_a_city_missing_from_the_dump_has_no_link(self):
+        SpyReport.objects.create(game_account=self.ga, report_id="r3", target_owner="Herakles-2929", target_owner_id="110034",
+                                 target_city_name="Nova", target_city_id="99999", mission_id=5)
+        self.assertNotIn("city_id=99999", self.client.get("/espionage/").content.decode())
 
     def test_a_report_without_the_owner_id_is_found_by_name(self):
         SpyReport.objects.create(game_account=self.ga, report_id="r2", target_owner="Herakles-2929",
