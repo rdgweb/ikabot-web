@@ -967,6 +967,9 @@ _UNIT_ID_TO_INFO: dict[int, tuple[str, str]] = {
 _UNIT_NAME_TO_ICON: dict[str, str] = {
     info[0]: info[1] for info in _UNIT_ID_TO_INFO.values()
 }
+# the unit id of each name, for the garrison report (it was used without being defined: every report with units
+# in the city broke the report collection)
+_NAME_TO_ID: dict[str, int] = {info[0]: unit_id for unit_id, info in _UNIT_ID_TO_INFO.items()}
 
 
 def _parse_workshop_from_html(report_html: str) -> list[dict[str, Any]]:
