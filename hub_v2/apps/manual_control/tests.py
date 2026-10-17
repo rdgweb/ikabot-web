@@ -442,6 +442,7 @@ class GatewayTests(_Base):
 
         blocked = self.client.get("/index.php", HTTP_HOST=self.host)
         self.assertEqual(blocked["X-Ikabot-Cinema"], "blocked")
+        self.assertEqual(blocked["Referrer-Policy"], "same-origin")
         self.assertNotIn("youtube.com", blocked["Content-Security-Policy"])
         self.assertIn("window.YT=window.YT||", blocked.content.decode())
 
@@ -457,7 +458,7 @@ class GatewayTests(_Base):
         self.assertNotIn("window.YT=window.YT||", html)
         self.assertNotIn("pixelzirkus", html)
         self.assertIn("YouTube local autorizado", html)
-        self.assertEqual(allowed["Referrer-Policy"], "same-origin")
+        self.assertEqual(allowed["Referrer-Policy"], "origin")
         self.assertEqual(allowed["Permissions-Policy"], "camera=(), microphone=(), geolocation=(), payment=()")
 
     def test_cinema_flow_is_audited_without_video_reward_or_gateway_tokens(self):

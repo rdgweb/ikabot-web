@@ -333,8 +333,9 @@ def _game_response(
         response["Content-Security-Policy"] = policy
         response["X-Ikabot-Cinema"] = "local-youtube" if allow_local_youtube else "blocked"
     response["X-Robots-Tag"] = "noindex, nofollow"
-    # other sites the page loads from (the game's CDN) do not learn the session's address
-    response["Referrer-Policy"] = "same-origin"
+    # YouTube error 153 rejects some embedded videos when no HTTP Referer is sent.
+    # Authorized cinema sessions disclose only this gateway origin, never the game path.
+    response["Referrer-Policy"] = "origin" if allow_local_youtube else "same-origin"
     response["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
     response["X-Frame-Options"] = "SAMEORIGIN"
     return response
