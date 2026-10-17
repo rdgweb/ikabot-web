@@ -58,8 +58,8 @@
     <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
       {% for rule in rule_cards %}
       <div class="rounded-2xl border p-3 transition-all" :class="edit ? 'cursor-pointer' : ''"
-           :style="{{ rule.key }} ? 'border-color: rgba(95,140,78,0.45); background: linear-gradient(180deg, rgba(95,140,78,0.08), rgba(255,255,255,0.85));'
-                                 : 'border-color: var(--ik-line); background: rgba(255,255,255,0.6); opacity: .75;'"
+           :style="{{ rule.key }} ? 'border-color: rgba(95,140,78,0.55); background: linear-gradient(180deg, rgba(95,140,78,0.14), rgba(255,255,255,0.9));'
+                                 : 'border-color: var(--ik-line); background: rgba(255,255,255,0.55); opacity: .7;'"
            @click="if (edit) { {{ rule.key }} = !{{ rule.key }}; dirty = true }">
         <div class="flex items-center gap-3">
           <div class="flex shrink-0 -space-x-2">
@@ -69,8 +69,10 @@
             <div class="text-sm font-bold text-ink">{{ rule.title }}</div>
             <div class="text-[11px] text-muted">{{ rule.miracles }}</div>
           </div>
-          <span class="relative inline-block h-5 w-9 shrink-0 rounded-full transition-colors" :style="{{ rule.key }} ? 'background: var(--ik-good);' : 'background: rgba(0,0,0,0.18);'">
-            <span class="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all" :style="{{ rule.key }} ? 'left: 18px;' : 'left: 2px;'"></span>
+          <span class="relative inline-block shrink-0 rounded-full transition-colors" style="width: 38px; height: 22px;"
+                :style="{{ rule.key }} ? 'background: var(--ik-good);' : 'background: rgba(0,0,0,0.20);'">
+            <span class="absolute rounded-full bg-white shadow transition-all" style="top: 3px; width: 16px; height: 16px;"
+                  :style="{{ rule.key }} ? 'left: 19px;' : 'left: 3px;'"></span>
           </span>
         </div>
         {% if rule.key == "ships" %}
