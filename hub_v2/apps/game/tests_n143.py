@@ -101,6 +101,32 @@ class ShrinePanelTests(TestCase):
         self.assertNotIn('name="city_mode"', html)
 
 
+class ShrineFocusTests(TestCase):
+    """A new Santuário em Loop takes over the account's previous one (switching focus with presets)."""
+
+    def test_the_new_loop_replaces_the_waiting_one(self):
+        from apps.jobs.models import Job
+        from apps.jobs.services.workflows import create_job_with_workflow
+
+        node = Node.objects.create(name="agente", transport="https")
+        account = Account.objects.create(node=node, label="Conta", email="c@example.com", password_enc="x")
+        ga = GameAccount.objects.create(account=account, lobby_account_id=1, server_id="s78-br", server_language="br",
+                                        server_number=78, name="Jogador")
+        old = create_job_with_workflow(account=account, game_account=ga, node=node, action_code=1007,
+                                       inputs={"god_tyche": True}, status="scheduled")
+        new = create_job_with_workflow(account=account, game_account=ga, node=node, action_code=1007,
+                                       inputs={"god_plutus": True}, status="queued")
+        old.refresh_from_db()
+        self.assertEqual(old.status, "cancelled")
+        self.assertEqual(Job.objects.filter(action_code=1007).exclude(status="cancelled").get().pk, new.pk)
+        # the loop rescheduling itself is not a new focus
+        again = create_job_with_workflow(account=account, game_account=ga, node=node, action_code=1007,
+                                         inputs={"god_plutus": True}, status="scheduled", source_job=new)
+        new.refresh_from_db()
+        self.assertNotEqual(new.status, "cancelled")
+        self.assertEqual(again.status, "scheduled")
+
+
 class MiracleTimerTests(TestCase):
     """N-148: the time a miracle stays in effect and the time it comes back, from the Ativar Milagre job."""
 

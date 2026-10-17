@@ -100,7 +100,7 @@ class AlignShrineTests(unittest.TestCase):
         client = MagicMock()
         client.get_shrine_state.side_effect = [state, state]
         runner.get_or_login_game_client = MagicMock(return_value=client)
-        runner.execute({"job_id": "j", "account_id": "a", "game_account_id": "g", "inputs": {"worship": '{"101": 4}'}})
+        runner.execute({"job_id": "j", "account_id": "a", "game_account_id": "g", "inputs": {"worship": '{"101": 4}', "renew_grace": False}})
         self.assertEqual([c.kwargs["new_city_id"] for c in client.change_god_worship.call_args_list], [101])   # Marmore untouched
 
     def test_wrong_gods_change_and_a_new_city_takes_a_free_slot(self):
@@ -120,15 +120,30 @@ class AlignShrineTests(unittest.TestCase):
         before["slot_order"] = [101, 102, 0]
         after = ShrineAction._parse_state_payload(_payload({}, [(101, 2), (102, 3), (103, 4)], {2, 3, 4}))
         client = MagicMock()
-        client.get_shrine_state.side_effect = [before, after]
+        fresh = dict(after, additional_cities_possible=0, slot_order=[101, 102, 103])
+        client.get_shrine_state.side_effect = [before, fresh, after]
         runner.get_or_login_game_client = MagicMock(return_value=client)
         result = runner.execute({"job_id": "j", "account_id": "a", "game_account_id": "g",
-                                 "inputs": {"by_good": {"1": 2, "2": 3, "3": 4, "4": 6}}})   # preset: crystal -> Pluto
+                                 "inputs": {"by_good": {"1": 2, "2": 3, "3": 4, "4": 6}, "renew_grace": False}})   # preset: crystal -> Pluto
         calls = [c.kwargs for c in client.change_god_worship.call_args_list]
         self.assertEqual(calls[0], {"old_city_id": 101, "new_city_id": 101, "god_id": 2, "order": [101, 102, 0]})
         self.assertEqual((calls[1]["old_city_id"], calls[1]["new_city_id"], calls[1]["god_id"], calls[1]["order"]), (0, 103, 4, [101, 102, 103]))
         self.assertEqual(len(calls), 2)                                                     # Marmore already on Tique
         self.assertTrue(result.success)
+
+
+class FocusGraceTests(unittest.TestCase):
+    def test_the_new_gods_get_grace_at_once(self):
+        from runners.economy import AlignShrineRunner
+
+        runner = AlignShrineRunner.__new__(AlignShrineRunner)
+        runner.log = MagicMock()
+        client = MagicMock()
+        state = ShrineAction._parse_state_payload(_payload({2: "2D 23h"}, [(101, 4), (102, 2)], {2, 4}))   # Pluto has no grace
+        state["current_favor"] = 250
+        client.get_shrine_state.return_value = state
+        runner._renew_worshipped_grace("j", client, 7, 6, state)
+        client.activate_shrine_god.assert_called_once_with(7, 6, 4)
 
 
 if __name__ == "__main__":

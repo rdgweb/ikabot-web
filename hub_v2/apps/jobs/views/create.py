@@ -1674,6 +1674,8 @@ def _worship_form_context(cities):
 
     state = next((c.get("shrine_state") for c in cities or [] if isinstance(c, dict) and c.get("shrine_state")), None) or {}
     css_to_id = {"god_pan": 1, "god_dionysus": 2, "god_tyche": 3, "god_plutus": 4, "god_theia": 5, "god_hephaestos": 6}
+    GOD_GOOD_ICONS = {1: "game/resources/icon_wood.png", 2: "game/resources/icon_wine.png", 3: "game/resources/icon_marble.png",
+                      4: "game/resources/icon_gold.png", 5: "game/resources/icon_glass.png", 6: "game/resources/icon_sulfur.png"}
     slots = [w for w in state.get("worship_assignments") or [] if isinstance(w, dict) and w.get("city_id")]
     current = {str(w["city_id"]): int(w.get("god_id") or css_to_id.get(str(w.get("god_css") or ""), 0)) for w in slots}
     mapped = bool(slots)          # older readings did not say which city each slot belongs to
@@ -1693,9 +1695,10 @@ def _worship_form_context(cities):
     return {
         "cities": rows,
         "goods": goods,
-        "gods": [{"id": gid, "name": meta["name"], "good": meta["good"], "image": static(meta["image"])} for gid, meta in GODS.items()],
+        "gods": [{"id": gid, "name": meta["name"], "good": meta["good"], "image": static(meta["image"]),
+                  "good_icon": static(GOD_GOOD_ICONS[gid])} for gid, meta in GODS.items()],
         "summary": {"level": int(state.get("building_level") or 0),
-                    "slots": len(state.get("slot_order") or state.get("worship_assignments") or [])} if state else None,
+                    "room": int(state["additional_cities_possible"]) if "additional_cities_possible" in state else None} if state else None,
     }
 
 

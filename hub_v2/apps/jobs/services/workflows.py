@@ -14,7 +14,7 @@ from django.utils import timezone
 
 from core.contracts import ACTION_CATALOG
 
-from ..models import Job, Workflow, WorkflowRun
+from ..models import Job, JobLog, Workflow, WorkflowRun
 
 
 _created_jobs: ContextVar[list | None] = ContextVar("created_jobs", default=None)
@@ -167,6 +167,25 @@ USER_TRIGGERS = frozenset({
     "manual", "manual_restart", "manual_resume", "manual_retry", "manual_run_now", "manual_unstuck",
     "telegram_callback", "user_start_cycle",
 })
+
+
+# N-143: one Santuário em Loop per account — a new one (form or preset) takes over the focus of the previous one
+SINGLE_LOOP_ACTIONS = frozenset({1007})
+
+
+def _replace_previous_loops(job: Job) -> int:
+    """Cancel the account's other waiting loops of the same action (the new job replaces them)."""
+    now = timezone.now()
+    previous = list(
+        Job.objects.filter(game_account_id=job.game_account_id, action_code=job.action_code, status__in=("queued", "scheduled"))
+        .exclude(pk=job.pk)
+    )
+    for old in previous:
+        Job.objects.filter(pk=old.pk).update(status="cancelled", finished_at=now, updated_at=now, lease_expires_at=None)
+        JobLog.objects.create(job=old, level="info", message=f"Substituído por um novo {ACTION_CATALOG.get(job.action_code, {}).get('name', 'loop')} ({str(job.pk)[:8]}).")
+        if old.workflow_id and old.workflow_id != job.workflow_id:
+            Workflow.objects.filter(pk=old.workflow_id).update(status="finished", next_scheduled_for=None, updated_at=now)
+    return len(previous)
 
 
 def _workflow_status_from_job(status: str) -> str:
@@ -555,6 +574,9 @@ def create_job_with_workflow(
         workflow_run.status = _run_status_from_job(status)
         workflow_run.scheduled_for = scheduled_for
         workflow_run.save(update_fields=["status", "scheduled_for", "updated_at"])
+
+        if action_code in SINGLE_LOOP_ACTIONS and source_job is None and game_account is not None:
+            _replace_previous_loops(job)
 
         collected = _created_jobs.get()
         if collected is not None:

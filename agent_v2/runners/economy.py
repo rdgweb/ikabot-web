@@ -386,7 +386,10 @@ class AlignShrineRunner(_ShrineRunnerMixin, BaseRunner):
             elif room > 0 and 0 in order:
                 order[order.index(0)] = cid
                 client.change_god_worship(city_id, old_city_id=0, new_city_id=cid, god_id=want, order=list(order))
-                room -= 1
+                # the game says how many more cities it takes after each one
+                fresh = client.get_shrine_state(city_id, position)
+                room = int(fresh.get("additional_cities_possible") or 0)
+                order = [int(c) for c in fresh.get("slot_order") or order]
             else:
                 skipped.append(name)
                 continue
@@ -399,11 +402,35 @@ class AlignShrineRunner(_ShrineRunnerMixin, BaseRunner):
             ok = now.get(cid) == want
             self.log(jid, "info" if ok else "warn", f"{name}: {'adora' if ok else 'nao passou a adorar'} {self._god_name(want)}")
         if skipped:
-            self.log(jid, "warn", "Sem vaga no santuario para: " + ", ".join(skipped))
+            self.log(jid, "warn", "O santuario nao aceita mais cidades agora; ficaram de fora: " + ", ".join(skipped))
         if not changed and not skipped:
             self.log(jid, "info", "Todas as cidades ja adoram o deus escolhido")
+        # the new focus blesses at once: favor for the worshipped gods out of grace (100 each, while there is favor)
+        if bool(inputs.get("renew_grace", True)):
+            after = self._renew_worshipped_grace(jid, client, city_id, position, after)
+        self.save_game_client(ga_id, client)
         self._persist_shrine_state(job_id=jid, account_id=aid, game_account_id=ga_id, snapshot=snapshot, shrine=shrine, state=after)
         return RunnerResult(success=True, data={"changed": len(changed), "skipped": skipped})
+
+    def _renew_worshipped_grace(self, jid: str, client, city_id: int, position: int, state: dict[str, Any]) -> dict[str, Any]:
+        gods = state.get("gods") or {}
+        out_of_grace = [
+            g for g in state.get("gods_worshipped") or []
+            if "grace_seconds" in (gods.get(g) or gods.get(str(g)) or {}) and int((gods.get(g) or gods.get(str(g)) or {}).get("grace_seconds") or 0) <= 0
+        ]
+        favor = int(state.get("current_favor") or 0)
+        donated = []
+        for god_id in out_of_grace:
+            if favor < 100:
+                self.log(jid, "warn", f"Favor insuficiente para a graça de {self._god_name(god_id)} ({favor})")
+                break
+            client.activate_shrine_god(city_id, position, god_id)
+            favor -= 100
+            donated.append(self._god_name(god_id))
+        if not donated:
+            return state
+        self.log(jid, "info", "Graça renovada: " + ", ".join(donated))
+        return client.get_shrine_state(city_id, position)
 
 
 class _MiracleRunnerMixin(BaseRunner):
