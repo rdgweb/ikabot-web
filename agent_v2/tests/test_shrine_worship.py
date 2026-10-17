@@ -154,6 +154,31 @@ class AlignRetryTests(unittest.TestCase):
         self.assertEqual(result.reschedule_inputs["attempt"], 2)
 
 
+class FillBarsTests(unittest.TestCase):
+    """The favor above the reserve fills the bar of the worshipped god with most cities and the lowest bar."""
+
+    def test_fills_the_weakest_god_down_to_the_reserve(self):
+        from unittest.mock import patch
+
+        runner = ActivateShrineLoopRunner.__new__(ActivateShrineLoopRunner)
+        runner.log, runner.save_game_client = MagicMock(), MagicMock()
+        client = MagicMock()
+        runner.get_or_login_game_client = MagicMock(return_value=client)
+        state = ShrineAction._parse_state_payload(_payload({2: "2D", 5: "2D"}, [(101, 2), (102, 5), (103, 5)], {2, 5}))
+        state["gods"][2]["progress"], state["gods"][5]["progress"] = 1000, 100
+        state["current_favor"] = 1000
+        client.get_shrine_state.return_value = state
+        context = {"jid": "j", "aid": "a", "ga_id": "g", "creds": {}, "favor_reserve": 500,
+                   "shrine": {"city_id": 7, "position": 6, "city_name": "Valhala"}}
+        with patch("runners.economy.time.sleep"):
+            _after, donations = runner._fill_bars(context, state)
+        self.assertEqual(donations, 5)                                     # 1000 -> 500 of favor, all on Teia
+        self.assertEqual({c.args[2] for c in client.activate_shrine_god.call_args_list}, {5})
+        self.assertTrue(runner._bars_open(state))                          # Teia still below 1000: back within 12 h
+        self.assertEqual(runner._next_check_seconds({"cycle_seconds": 72 * 3600, "fill_bars": True},
+                                                    {"next_grace_end_seconds": 48 * 3600}, state), 12 * 3600)
+
+
 class FocusGraceTests(unittest.TestCase):
     def test_the_new_gods_get_grace_at_once(self):
         from runners.economy import AlignShrineRunner

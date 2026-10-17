@@ -15,6 +15,7 @@ from sessions.game_session_service import LoginCooldownActive
 logger = logging.getLogger(__name__)
 
 MIN_RECHECK_SECONDS = 5 * 60
+FILL_RECHECK_SECONDS = 12 * 3600
 
 GOD_META = {
     "pan": {"id": 1, "name": "Pan"},
@@ -188,6 +189,10 @@ class _ShrineRunnerMixin(BaseRunner):
             "shrine": shrine,
             "selected_gods": selected_gods,
             "keep_worshipped": keep_worshipped,
+            # N-143: the blessing grows with the god's bar (40% of the shrine's maximum at 0, +6% every 100, up to
+            # 1000); the favor above the reserve fills the bars of the worshipped gods
+            "fill_bars": int(job.get("action_code") or 0) == 1007 and bool(inputs.get("fill_bars", True)),
+            "favor_reserve": max(0, _to_int(inputs.get("favor_reserve"), 500)),
             "favor_recheck_seconds": favor_recheck_seconds,
             "cycle_seconds": cycle_seconds,
             "creds": creds,
@@ -296,6 +301,52 @@ class _ShrineRunnerMixin(BaseRunner):
             state,
             after_state,
         )
+
+    def _fill_bars(self, context: dict[str, Any], state: dict[str, Any]) -> tuple[dict[str, Any], int]:
+        """Donate 100 at a time to the worshipped god with most cities and the lowest bar, while the favor stays
+        above the reserve. Returns the state after and how many donations were made."""
+        jid, ga_id = context["jid"], context["ga_id"]
+        shrine = context["shrine"]
+        researched = set(state.get("researched_gods") or [])
+        worshipped = [g for g in state.get("gods_worshipped") or [] if g in researched]
+        if not worshipped:
+            return state, 0
+        cities = {}
+        for slot in state.get("worship_assignments") or []:
+            if slot.get("city_id") and slot.get("god_id"):
+                cities[int(slot["god_id"])] = cities.get(int(slot["god_id"]), 0) + 1
+        gods = state.get("gods") or {}
+        bars = {g: int((gods.get(g) or gods.get(str(g)) or {}).get("progress") or 0) for g in worshipped}
+        favor = int(state.get("current_favor") or 0)
+        reserve = int(context.get("favor_reserve") or 0)
+        client = self.get_or_login_game_client(jid, context["aid"], ga_id, context["creds"])
+        city_id, position = int(shrine["city_id"]), int(shrine["position"])
+        given: dict[int, int] = {}
+        for _ in range(60):
+            open_gods = [g for g in worshipped if bars[g] < 1000]
+            if not open_gods or favor - 100 < reserve:
+                break
+            god = min(open_gods, key=lambda g: (-cities.get(g, 0), bars[g]))
+            client.activate_shrine_god(city_id, position, god)
+            bars[god] += 100
+            favor -= 100
+            given[god] = given.get(god, 0) + 1
+            time.sleep(random.uniform(0.6, 1.2))
+        if not given:
+            return state, 0
+        after = client.get_shrine_state(city_id, position)
+        self.save_game_client(ga_id, client)
+        after_gods = after.get("gods") or {}
+        self.log(jid, "info", "Barras: " + ", ".join(
+            f"{self._god_name(g)} +{n * 100} → {int((after_gods.get(g) or after_gods.get(str(g)) or {}).get('progress') or 0)}/1000"
+            for g, n in given.items()) + f" | favor {int(after.get('current_favor') or 0)} (reserva {reserve})")
+        return after, sum(given.values())
+
+    @staticmethod
+    def _bars_open(state: dict[str, Any]) -> bool:
+        gods = state.get("gods") or {}
+        return any(int((gods.get(g) or gods.get(str(g)) or {}).get("progress") or 0) < 1000
+                   for g in state.get("gods_worshipped") or [])
 
     @staticmethod
     def _find_shrine(snapshot: dict[str, Any]) -> dict[str, Any] | None:
@@ -791,8 +842,14 @@ class ActivateShrineLoopRunner(_ShrineRunnerMixin, BaseRunner):
 
         try:
             result, _before_state, _after_state = self._run_activation_cycle(context)
+            if context.get("fill_bars") and result["status"] in ("in_grace", "activated"):
+                filled_state, _donations = self._fill_bars(context, _after_state or _before_state)
+                if result["status"] == "activated":
+                    _after_state = filled_state
+                else:
+                    _before_state = filled_state
             if result["status"] == "in_grace":
-                delay = self._next_check_seconds(context, result)
+                delay = self._next_check_seconds(context, result, _before_state)
                 self._persist_shrine_state(job_id=jid, account_id=context["aid"], game_account_id=context["ga_id"],
                                            snapshot=snapshot, shrine=shrine, state=_before_state)
                 self.log(jid, "info", f"Todos os deuses em graça; proxima verificacao em {delay}s")
@@ -823,7 +880,7 @@ class ActivateShrineLoopRunner(_ShrineRunnerMixin, BaseRunner):
                     data={"city_id": shrine["city_id"], "city_name": shrine["city_name"], **result},
                 )
 
-            delay = self._next_check_seconds(context, result)
+            delay = self._next_check_seconds(context, result, _after_state or _before_state)
             self._persist_shrine_state(
                 job_id=jid,
                 account_id=context["aid"],
@@ -855,13 +912,14 @@ class ActivateShrineLoopRunner(_ShrineRunnerMixin, BaseRunner):
             )
 
 
-    @staticmethod
-    def _next_check_seconds(context: dict[str, Any], result: dict[str, Any]) -> int:
-        """When the first grace ends (plus a little), never later than the loop's cycle."""
+    def _next_check_seconds(self, context: dict[str, Any], result: dict[str, Any], state: dict[str, Any] | None = None) -> int:
+        """When the first grace ends (plus a little), never later than the loop's cycle; while a worshipped god's
+        bar is not full, within 12 h, to spend the favor the daily login brings before it hits the cap."""
         grace_end = int(result.get("next_grace_end_seconds") or 0)
-        if grace_end <= 0:
-            return context["cycle_seconds"]
-        return max(MIN_RECHECK_SECONDS, min(context["cycle_seconds"], grace_end + 120))
+        delay = context["cycle_seconds"] if grace_end <= 0 else max(MIN_RECHECK_SECONDS, min(context["cycle_seconds"], grace_end + 120))
+        if context.get("fill_bars") and state and self._bars_open(state):
+            delay = min(delay, FILL_RECHECK_SECONDS)
+        return delay
 
 
 @register_runner(11)

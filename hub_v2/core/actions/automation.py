@@ -64,6 +64,10 @@ ACTIONS = {
         "inputs": [
             {"key": "keep_worshipped", "type": FIELD_BOOL, "label": "Manter os deuses adorados pelas cidades", "required": False, "default": True,
              "help": "Deus sem graça não abençoa: o loop renova a graça de quem alguma cidade adora."},
+            {"key": "fill_bars", "type": FIELD_BOOL, "label": "Encher a barra dos deuses (até 1000)", "required": False, "default": True,
+             "help": "A bênção vai de 40% do máximo (barra 0) a 100% (barra 1000); o favor acima da reserva sobe a barra dos deuses adorados."},
+            {"key": "favor_reserve", "type": FIELD_INT, "label": "Reserva de favor", "required": False, "min": 0, "default": 500,
+             "help": "Favor que o loop nunca gasta nas barras."},
             {"key": "god_pan", "type": FIELD_BOOL, "label": "Pan", "required": False, "default": True, "help": "Bênção de madeira."},
             {"key": "god_dionysus", "type": FIELD_BOOL, "label": "Dionísio", "required": False, "default": False, "help": "Bênção de vinho."},
             {"key": "god_tyche", "type": FIELD_BOOL, "label": "Tique", "required": False, "default": False, "help": "Bênção de mármore."},
