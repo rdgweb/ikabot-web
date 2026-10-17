@@ -55,6 +55,9 @@ def attach_target_players(reports) -> None:
         player = latest.get(report.target_owner_id or "")
         report.target_ally_tag = player.ally_tag if player else ""
         report.target_score = player.total_score if player else None
+        # the links open Inteligência on the dump that has this player (each account reads its own part of the world)
+        report.intel_ga = str(player.dump.game_account_id) if player and player.dump.game_account_id else str(report.game_account_id)
+        report.intel_dump = str(player.dump_id) if player else ""
 
 
 class SpyReportDeleteView(LoginRequiredMixin, View):

@@ -1,3 +1,4 @@
+import re
 from urllib.parse import urlencode
 
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -479,7 +480,11 @@ class WorldIslandListView(WorldIntelBaseView):
             return ctx
 
         islands = WorldDumpIsland.objects.filter(dump=current_dump).prefetch_related("cities")
-        if q:
+        coords = re.fullmatch(r"\[?\s*(\d{1,3})\s*:\s*(\d{1,3})\s*\]?", q) if q else None
+        if coords:
+            # "88:90" or "[88:90]": the island at those coordinates
+            islands = islands.filter(x=int(coords.group(1)), y=int(coords.group(2)))
+        elif q:
             islands = islands.filter(
                 Q(name__icontains=q)
                 | Q(miracle_name__icontains=q)

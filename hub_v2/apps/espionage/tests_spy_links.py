@@ -19,7 +19,9 @@ class SpyReportLinksTests(TestCase):
         WorldDumpPlayer.objects.create(dump=dump, owner_id="110034", owner_name="Herakles-2929", ally_tag="BLOOD",
                                        building_score=1_000_000, research_score=400_000, army_score=32_240)
         SpyReport.objects.create(game_account=self.ga, report_id="r1", target_owner="Herakles-2929", target_owner_id="110034",
-                                 target_city_name="Polis", target_city_id="89104", mission_id=5)
+                                 target_city_name="Polis", target_city_id="89104", mission_id=5, target_x=88, target_y=90,
+                                 data_json={"wood": 47903, "marble": 5937})
+        self.dump = dump
 
     def test_links_score_and_alliance(self):
         html = self.client.get("/espionage/").content.decode()
@@ -28,3 +30,6 @@ class SpyReportLinksTests(TestCase):
         self.assertIn("q=BLOOD", html)
         self.assertIn("[BLOOD]", html)
         self.assertIn("1.432.240", html)
+        self.assertIn("47.903", html)                                  # the resources, with the thousands dot
+        self.assertIn("q=88:90", html)                                 # the island
+        self.assertIn(f"dump={self.dump.pk}", html)                    # opened on the dump that has the player
