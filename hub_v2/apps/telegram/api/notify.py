@@ -88,7 +88,17 @@ class AgentNotifyView(APIView):
                     ]]
                 }
 
+        pirate_raid = False
         if data["event"] == "attack_alert":
+            from apps.game.services.attacks import is_pirate
+
+            # N-149: a raid from a Pirate Fortress is fought by the target's own Pirate Fortress crew
+            pirate_raid = is_pirate(metadata)
+            if pirate_raid:
+                detail = str(metadata.get("mission") or "")
+                detail = detail[detail.find("("):] if "(" in detail else ""
+                metadata["mission"] = f"🏴‍☠️ Assalto pirata {detail}".strip()
+        if data["event"] == "attack_alert" and not pirate_raid:
             tc = str(metadata.get("target_city_id") or "").strip()
             ga_str = str(game_account.pk) if game_account else ""
             # tipo de defesa: se ha frota atacando e nenhuma tropa, sugere frota

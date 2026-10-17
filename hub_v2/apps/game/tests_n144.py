@@ -3,6 +3,7 @@ account's construction plan (merged into the active one, or a new plan)."""
 import json
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import TestCase
 
 from apps.accounts.models import Account, GameAccount, Node
@@ -28,6 +29,7 @@ CITY = {
 
 class QuickBuildTests(TestCase):
     def setUp(self):
+        cache.clear()                      # the panel keeps its context in the cache
         self.user = get_user_model().objects.create_user("rodrigo", password="x", is_staff=True)
         self.client.force_login(self.user)
         node = Node.objects.create(name="agente", transport="https")

@@ -17,6 +17,7 @@ from django.utils import timezone
 
 from apps.accounts.models import GameAccount, Node
 from apps.game.models import AccountSnapshot
+from apps.game.services.attacks import summary as attack_summary
 from apps.game.services.gold import net_gold_income
 from apps.game.services.vacation import read_vacation_state
 from apps.jobs.models import Job, Workflow
@@ -176,7 +177,8 @@ def account_row(game_account, snapshot, now, *, manual_control: bool = False) ->
         "full_cities": full_cities,
         "works": works,
         "work": works[0] if works else None,
-        "hostile": _si(attack.get("hostile_count")),
+        "hostile": attack_summary(attack)["attacks"],
+        "pirate_raids": attack_summary(attack)["pirates"],
         "vacation": vacation,
         "blocked_until": blocked_until,
         "blocked_reason": (game_account.login_block_reason or "")[:90] if blocked_until else "",
@@ -190,6 +192,8 @@ def account_row(game_account, snapshot, now, *, manual_control: bool = False) ->
     }
     if row["hostile"]:
         row["state"], row["state_label"] = "bad", "Sob ataque"
+    elif row["pirate_raids"]:
+        row["state"], row["state_label"] = "warn", "Assalto pirata"
     elif blocked_until:
         row["state"], row["state_label"] = "bad", "Login bloqueado"
     elif manual_control:
@@ -217,6 +221,9 @@ def build_alerts(rows, nodes, now, *, problem_workflows=0, pending_captchas=0, p
         if row["hostile"]:
             add("bad", "bi-exclamation-triangle-fill", f"{row['name']} está sob ataque", game,
                 f"{row['hostile']} movimento(s) hostil(is) a caminho.")
+        elif row["pirate_raids"]:
+            add("warn", "bi-flag-fill", f"{row['name']}: assalto pirata a caminho", game,
+                "Quem defende é a tripulação da Fortaleza dos Piratas da cidade.")
     for row in rows:
         if row["blocked_until"]:
             local = timezone.localtime(row["blocked_until"])

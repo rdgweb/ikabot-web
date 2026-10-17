@@ -16,6 +16,7 @@ from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
 
+from apps.game.services.attacks import summary as attack_summary
 from apps.accounts.avatars import avatar_url, initials
 from apps.accounts.models import Account, GameAccount, Node
 from apps.game.models import AccountSnapshotHistory
@@ -386,7 +387,8 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                 total_ships += ship_total
 
                 _attack_state = base.get("attack_alert_state") or {}
-                _under_attack = int(_attack_state.get("hostile_count") or 0) > 0
+                _hostile = attack_summary(_attack_state)          # N-149: a pirate raid is not an attack
+                _under_attack = _hostile["attacks"] > 0
                 _vacation = read_vacation_state(base)
                 account_cards.append({
                     "account": acct,
@@ -395,6 +397,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                     "snapshot": snapshot,
                     "base": base,
                     "under_attack": _under_attack,
+                    "pirate_raids": _hostile["pirates"],
                     "attack_hostile_count": int(_attack_state.get("hostile_count") or 0),
                     "on_vacation": _vacation["active"],
                     "vacation_since": _vacation["since"],

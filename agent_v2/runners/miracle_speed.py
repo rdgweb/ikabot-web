@@ -32,6 +32,11 @@ def ship_share_reached(rules: dict[str, Any], ships_used: int, max_ships: int) -
     if not rules.get("speed_on_shipments") or ships_used <= 0 or max_ships <= 0:
         return False
     try:
+        if ships_used < max(1, int(rules.get("min_ships") or 10)):     # N-148: a miracle is not spent on a few ships
+            return False
+    except (TypeError, ValueError):
+        return False
+    try:
         share = max(1, min(100, int(rules.get("ship_share") or 50)))
     except (TypeError, ValueError):
         share = 50

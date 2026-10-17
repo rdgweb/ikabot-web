@@ -133,6 +133,17 @@ def _wine_happiness_from_breakdown(breakdown: dict[str, int]) -> int:
 ROUND_WAIT_MAX = 16 * 60        # never sleep past the next round of an open combat
 
 
+PIRATE_CLASS_HINTS = ("pira", "raid")
+PIRATE_TEXT_PREFIXES = ("assalto", "raid", "pirat")
+
+
+def mission_kind(mission_class: str, mission_text: str) -> str:
+    """N-149: "pirate" for a raid from a Pirate Fortress ("Assalto" in Brazil), "attack" for the rest."""
+    if any(hint in str(mission_class or "").lower() for hint in PIRATE_CLASS_HINTS):
+        return "pirate"
+    return "pirate" if str(mission_text or "").strip().lower().startswith(PIRATE_TEXT_PREFIXES) else "attack"
+
+
 @register_runner(701)
 class AlertAttacksRunner(BaseRunner):
     def execute(self, job: dict[str, Any]) -> RunnerResult:
@@ -165,6 +176,8 @@ class AlertAttacksRunner(BaseRunner):
             hostile_movements = [item for item in scan["movements"] if bool(item.get("isHostile"))]
             total_movements = len(scan["movements"])
             hostile_count = len(hostile_movements)
+            # N-149: a pirate raid is told apart from an attack (the hub shows and handles them differently)
+            pirate_count = sum(1 for item in hostile_movements if self._movement_to_event(item, scan["time_now"])["kind"] == "pirate")
 
             matching_events = []
             new_events = []
@@ -208,6 +221,7 @@ class AlertAttacksRunner(BaseRunner):
                 interval_minutes=interval_minutes,
                 total_movements=total_movements,
                 hostile_count=hostile_count,
+                pirate_count=pirate_count,
                 matching_events=matching_events,
                 seen_map=seen_map,
                 notified_map=notified_map,
@@ -250,6 +264,7 @@ class AlertAttacksRunner(BaseRunner):
                     interval_minutes=interval_minutes,
                     total_movements=total_movements,
                     hostile_count=hostile_count,
+                    pirate_count=pirate_count,
                     matching_events=matching_events,
                     seen_map=seen_map,
                     notified_map=notified_map,
@@ -357,9 +372,13 @@ class AlertAttacksRunner(BaseRunner):
         fleet = movement.get("fleet") or {}
         event_time = _safe_int(movement.get("eventTime"), 0)
         time_left = max(0, event_time - time_now) if event_time and time_now else 0
+        mission_class = str(event.get("missionIconClass") or event.get("mission") or "")
+        mission_text = str(event.get("missionText") or "Ataque")
         return {
             "event_id": str(event.get("id") or ""),
-            "mission": str(event.get("missionText") or "Ataque"),
+            "mission": mission_text,
+            "mission_class": mission_class,
+            "kind": mission_kind(mission_class, mission_text),
             "origin_city": str(origin.get("name") or "?"),
             "origin_player": str(origin.get("avatarName") or "?"),
             "origin_city_id": str(origin.get("cityId") or ""),
@@ -401,6 +420,7 @@ class AlertAttacksRunner(BaseRunner):
     def _persist_attack_state(
         self,
         *,
+        pirate_count: int = 0,
         account_id: str,
         game_account_id: str,
         source_job_id: str,
@@ -420,6 +440,7 @@ class AlertAttacksRunner(BaseRunner):
             "checked_at": datetime.now(timezone.utc).isoformat(),
             "total_movements": int(total_movements),
             "hostile_count": int(hostile_count),
+            "pirate_count": int(pirate_count),
             "matching_count": len(matching_events),
             "events": matching_events[:10],
             "seen_events": seen_map,

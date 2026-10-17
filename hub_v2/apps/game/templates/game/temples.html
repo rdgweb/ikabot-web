@@ -9,45 +9,82 @@
 
 {% block content %}
 <div class="space-y-5">
-  <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-    <div>
-      <h1 class="text-2xl font-bold text-ink">Templos e Fé</h1>
-      <p class="mt-1 text-sm text-muted">{{ cards|length }} ilha{{ cards|length|pluralize }} · {{ accounts }} conta{{ accounts|pluralize }}{% if short_islands %} · <span style="color: var(--ik-gold);">{{ short_islands }} sem como chegar a 100%</span>{% endif %}</p>
-    </div>
-    <div class="flex flex-wrap items-center gap-2">
-      <form method="get" class="flex items-center gap-1.5 text-[12px] text-muted whitespace-nowrap" title="Cidadãos livres que cada cidade mantém fora dos sacerdotes">
-        <i class="bi bi-people"></i> manter livres
-        <input type="number" name="reserva" min="0" value="{{ reserve }}" class="form-input text-right" style="width: 5rem; padding-top: 4px; padding-bottom: 4px;" onchange="this.form.submit()">
-      </form>
-      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="refresh">
-        <button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> Ler templos</button>
-      </form>
-      {% if to_balance %}
-      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="balance"><input type="hidden" name="reserva" value="{{ reserve }}">
-        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-sliders"></i> Equilibrar {{ to_balance }} ilha{{ to_balance|pluralize }} em 100%</button>
-      </form>
-      {% endif %}
+  {# header: what there is, and the two things to do about it #}
+  <div class="rounded-[24px] border px-5 py-4 md:px-6 shadow-[0_12px_36px_rgba(60,45,18,0.08)]"
+       style="border-color: var(--ik-line); background:
+         radial-gradient(700px 240px at 0% 0%, rgba(201,156,78,0.16), transparent 60%),
+         radial-gradient(600px 220px at 100% 100%, rgba(79,134,185,0.10), transparent 60%),
+         linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div class="flex items-center gap-3">
+        <img src="{% static 'game/buildings/temple.png' %}" alt="" class="h-14 w-14 object-contain">
+        <div>
+          <h1 class="text-2xl font-bold text-ink">Templos e Fé</h1>
+          <div class="mt-1 flex flex-wrap gap-1.5 text-[11px]">
+            <span class="rounded-full border px-2 py-0.5 text-muted" style="border-color: var(--ik-line); background: rgba(255,255,255,0.7);">{{ cards|length }} ilha{{ cards|length|pluralize }}</span>
+            <span class="rounded-full border px-2 py-0.5 text-muted" style="border-color: var(--ik-line); background: rgba(255,255,255,0.7);">{{ accounts }} conta{{ accounts|pluralize }}</span>
+            {% if short_islands %}<span class="rounded-full px-2 py-0.5 font-semibold" style="background: rgba(201,156,78,0.16); color: var(--ik-gold);"><i class="bi bi-people"></i> {{ short_islands }} sem como chegar a 100%</span>{% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <form method="get" class="flex items-center gap-2 rounded-xl border px-2.5 py-1 text-[12px] text-muted" style="border-color: var(--ik-line); background: rgba(255,255,255,0.75);"
+              title="Cidadãos livres que cada cidade mantém fora dos sacerdotes">
+          <img src="{% static 'game/resources/icon_population.png' %}" alt="" class="h-4 w-4"> Reserva
+          <input type="number" name="reserva" min="0" value="{{ reserve }}" class="form-input text-center" style="width: 4.5rem; padding: 2px 4px;" onchange="this.form.submit()">
+        </form>
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="refresh">
+          <button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> Ler templos</button>
+        </form>
+        {% if to_balance %}
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="balance"><input type="hidden" name="reserva" value="{{ reserve }}">
+          <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-sliders"></i> Equilibrar {{ to_balance }} ilha{{ to_balance|pluralize }}</button>
+        </form>
+        {% endif %}
+      </div>
     </div>
   </div>
 
-  {# N-141: the miracles activated at the right moment #}
-  <form method="post" class="card !p-4">{% csrf_token %}<input type="hidden" name="action" value="rules">
-    <div class="flex flex-wrap items-center gap-x-5 gap-y-3">
+  {# N-141: the miracles activated at the right moment - one card per rule, the whole card switches it #}
+  <form method="post" x-data="{ attack: {{ rules.defense_on_attack|yesno:'true,false' }}, losing: {{ rules.colossus_when_losing|yesno:'true,false' }}, ships: {{ rules.speed_on_shipments|yesno:'true,false' }}, dirty: false, edit: {{ can_change_rules|yesno:'true,false' }} }">
+    {% csrf_token %}<input type="hidden" name="action" value="rules">
+    <input type="hidden" name="defense_on_attack" :value="attack ? '1' : ''">
+    <input type="hidden" name="colossus_when_losing" :value="losing ? '1' : ''">
+    <input type="hidden" name="speed_on_shipments" :value="ships ? '1' : ''">
+    <div class="mb-2 flex items-center gap-2">
       <span class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-gold);"><i class="bi bi-stars"></i> Milagres automáticos</span>
-      <label class="flex items-center gap-2 text-[12px] text-ink whitespace-nowrap" title="Templo de Atena e Forja de Hefesto quando um ataque estiver chegando">
-        <input type="checkbox" name="defense_on_attack" value="1" {% if rules.defense_on_attack %}checked{% endif %} {% if not can_change_rules %}disabled{% endif %}>
-        <img src="{% static 'game/buildings/temple.png' %}" alt="" class="h-4 w-4"> Ataque chegando <span class="text-muted">· Atena + Hefesto</span>
-      </label>
-      <label class="flex items-center gap-2 text-[12px] text-ink whitespace-nowrap" title="Colosso quando você defende e perde mais unidades que o atacante">
-        <input type="checkbox" name="colossus_when_losing" value="1" {% if rules.colossus_when_losing %}checked{% endif %} {% if not can_change_rules %}disabled{% endif %}>
-        <i class="bi bi-shield-exclamation" style="color: var(--ik-bad);"></i> Perdendo a defesa <span class="text-muted">· Colosso</span>
-      </label>
-      <label class="flex items-center gap-2 text-[12px] text-ink whitespace-nowrap" title="Templo de Poseidon ou de Hermes quando um envio usa essa parte dos navios">
-        <input type="checkbox" name="speed_on_shipments" value="1" {% if rules.speed_on_shipments %}checked{% endif %} {% if not can_change_rules %}disabled{% endif %}>
-        <i class="bi bi-water" style="color: var(--ik-sea);"></i> Envio com
-        <input type="number" name="ship_share" min="10" max="100" value="{{ rules.ship_share }}" class="form-input text-right" style="width: 4.5rem; padding-top: 2px; padding-bottom: 2px;" {% if not can_change_rules %}disabled{% endif %}>% dos navios <span class="text-muted">· Poseidon / Hermes</span>
-      </label>
-      {% if can_change_rules %}<button type="submit" class="btn btn-secondary btn-sm ml-auto"><i class="bi bi-check2"></i> Salvar</button>{% endif %}
+      <button type="submit" class="btn btn-primary btn-sm ml-auto" x-show="dirty" x-cloak><i class="bi bi-check2"></i> Salvar</button>
+    </div>
+    <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+      {% for rule in rule_cards %}
+      <div class="rounded-2xl border p-3 transition-all" :class="edit ? 'cursor-pointer' : ''"
+           :style="{{ rule.key }} ? 'border-color: rgba(95,140,78,0.45); background: linear-gradient(180deg, rgba(95,140,78,0.08), rgba(255,255,255,0.85));'
+                                 : 'border-color: var(--ik-line); background: rgba(255,255,255,0.6); opacity: .75;'"
+           @click="if (edit) { {{ rule.key }} = !{{ rule.key }}; dirty = true }">
+        <div class="flex items-center gap-3">
+          <div class="flex shrink-0 -space-x-2">
+            {% for image in rule.images %}<img src="{% static image %}" alt="" class="h-10 w-10 rounded-xl border object-contain p-0.5" style="border-color: var(--ik-line); background: #fffdf8;">{% endfor %}
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-bold text-ink">{{ rule.title }}</div>
+            <div class="text-[11px] text-muted">{{ rule.miracles }}</div>
+          </div>
+          <span class="relative inline-block h-5 w-9 shrink-0 rounded-full transition-colors" :style="{{ rule.key }} ? 'background: var(--ik-good);' : 'background: rgba(0,0,0,0.18);'">
+            <span class="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all" :style="{{ rule.key }} ? 'left: 18px;' : 'left: 2px;'"></span>
+          </span>
+        </div>
+        {% if rule.key == "ships" %}
+        <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-muted" @click.stop>
+          a partir de
+          <input type="number" name="ship_share" min="10" max="100" value="{{ rules.ship_share }}" class="form-input text-center" style="width: 3.4rem; padding: 1px 2px;" @input="dirty = true" {% if not can_change_rules %}disabled{% endif %}>% da frota
+          e
+          <input type="number" name="min_ships" min="1" max="500" value="{{ rules.min_ships }}" class="form-input text-center" style="width: 3.4rem; padding: 1px 2px;" @input="dirty = true" {% if not can_change_rules %}disabled{% endif %}> navios
+        </div>
+        {% else %}
+        <div class="mt-2 text-[11px] text-muted">{{ rule.when }}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
     </div>
   </form>
 

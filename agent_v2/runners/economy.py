@@ -26,6 +26,13 @@ GOD_META = {
 }
 
 
+def _plain_text(value: Any) -> str:
+    """The game sends some texts as {"text": "..."}."""
+    if isinstance(value, dict):
+        value = value.get("text") or ""
+    return str(value or "").strip()
+
+
 def _bool_label(value: Any) -> str:
     return "Sim" if bool(value) else "Nao"
 
@@ -379,11 +386,24 @@ class _MiracleRunnerMixin(BaseRunner):
             military = snapshot.get("military") or {}
             payload = self._miracle_payload(state, city_id, last_status)
 
+            island_id = ""
             for city in cities:
                 if str(city.get("id") or "") != str(city_id):
                     continue
                 city["miracle_state"] = payload
+                island_id = str(city.get("island_id") or "")
                 break
+            if last_status == "activated" and island_id:
+                # N-148: the island has one miracle; our other temples there are not available either
+                for city in cities:
+                    if str(city.get("id") or "") == str(city_id) or str(city.get("island_id") or "") != island_id:
+                        continue
+                    other = dict(city.get("miracle_state") or {})
+                    if other:
+                        other.update({"activate_state": payload.get("activate_state") or "hidden",
+                                      "cooldown_text": payload.get("cooldown_text") or other.get("cooldown_text"),
+                                      "last_status": "activated_elsewhere", "updated_at": payload.get("updated_at")})
+                        city["miracle_state"] = other
 
             self.hub.update_snapshot(
                 account_id,
@@ -768,10 +788,11 @@ class ActivateMiracleRunner(_MiracleRunnerMixin, BaseRunner):
             )
 
             if str(state.get("activate_state") or "").strip().lower() != "enabled":
-                reason = str(state.get("cooldown_text") or state.get("wonder_effect") or "Milagre indisponivel").strip()
+                reason = _plain_text(state.get("cooldown_text")) or "já ativo ou em regeneração"
                 self.log(jid, "warn", f"Milagre indisponivel: {reason}")
                 return RunnerResult(
-                    success=False,
+                    # N-148: asked by a rule (attack, combat, shipment) it is simply not needed now
+                    success=bool(inputs.get("reason")),
                     data={
                         "error": "miracle_unavailable",
                         "city_id": int(city_id),
@@ -797,7 +818,7 @@ class ActivateMiracleRunner(_MiracleRunnerMixin, BaseRunner):
                 "info",
                 (
                     f"Milagre ativado: {after_state.get('wonder_name') or state.get('wonder_name') or '?'} | "
-                    f"efeito={after_state.get('wonder_effect') or state.get('wonder_effect') or '?'}"
+                    f"efeito={_plain_text(after_state.get('wonder_effect') or state.get('wonder_effect')) or '?'}"
                 ),
             )
             if after_state.get("cooldown_text"):

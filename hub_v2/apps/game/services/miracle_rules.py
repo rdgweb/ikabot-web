@@ -21,7 +21,8 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-DEFAULTS = {"defense_on_attack": True, "colossus_when_losing": True, "speed_on_shipments": True, "ship_share": 50}
+DEFAULTS = {"defense_on_attack": True, "colossus_when_losing": True, "speed_on_shipments": True, "ship_share": 50,
+            "min_ships": 10}
 DEFENSE_MIRACLES = ("Templo de Atena", "Forja de Hefesto")
 COLOSSUS = ("Colosso",)
 SPEED_MIRACLES = ("Templo de Poseidon", "Templo de Hermes")
@@ -46,7 +47,12 @@ def save_rules(organization, data) -> dict:
         share = max(10, min(100, int(data.get("ship_share") or DEFAULTS["ship_share"])))
     except (TypeError, ValueError):
         share = DEFAULTS["ship_share"]
+    try:
+        min_ships = max(1, min(500, int(data.get("min_ships") or DEFAULTS["min_ships"])))
+    except (TypeError, ValueError):
+        min_ships = DEFAULTS["min_ships"]
     rules = {
+        "min_ships": min_ships,
         "defense_on_attack": bool(data.get("defense_on_attack")),
         "colossus_when_losing": bool(data.get("colossus_when_losing")),
         "speed_on_shipments": bool(data.get("speed_on_shipments")),
@@ -104,8 +110,10 @@ def activate(game_account, city_id, *, reason: str, trigger: str = "miracle_rule
 
 def on_attack_alert(game_account, metadata: dict) -> list[str]:
     """An attack is coming: Atena and Hefesto of the attacked city's island. Returns the miracles asked for."""
-    if not rules_for(_organization_of(game_account)).get("defense_on_attack"):
-        return []
+    from apps.game.services.attacks import is_pirate
+
+    if is_pirate(metadata) or not rules_for(_organization_of(game_account)).get("defense_on_attack"):
+        return []                               # N-149: no miracle helps against a pirate raid
     city_id = str((metadata or {}).get("target_city_id") or "")
     if not city_id:
         return []
@@ -172,4 +180,4 @@ def agent_rules(organization) -> dict:
     """What the agent needs to apply the shipment rule itself."""
     rules = rules_for(organization)
     return {"speed_on_shipments": bool(rules["speed_on_shipments"]), "ship_share": int(rules["ship_share"]),
-            "speed_miracles": list(SPEED_MIRACLES)}
+            "min_ships": int(rules["min_ships"]), "speed_miracles": list(SPEED_MIRACLES)}

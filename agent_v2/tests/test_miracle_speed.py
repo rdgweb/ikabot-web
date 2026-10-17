@@ -29,6 +29,7 @@ class SpeedMiracleTests(unittest.TestCase):
     def test_the_share_of_ships(self):
         self.assertTrue(ship_share_reached(RULES, 20, 40))
         self.assertFalse(ship_share_reached(RULES, 19, 40))
+        self.assertFalse(ship_share_reached({**RULES, "ship_share": 15}, 1, 4))      # N-148: 1 of 4 ships is not worth a miracle
         self.assertFalse(ship_share_reached({**RULES, "speed_on_shipments": False}, 40, 40))
         self.assertFalse(ship_share_reached(RULES, 20, 0))
 
@@ -47,7 +48,7 @@ class SpeedMiracleTests(unittest.TestCase):
     def test_small_shipments_and_jobs_without_the_rule_ask_nothing(self):
         self.assertFalse(maybe_ask_speed_miracle(self.runner, self._job(), _snapshot(), 5))
         self.assertFalse(maybe_ask_speed_miracle(self.runner, self._job({}), _snapshot(), 40))
-        self.assertTrue(maybe_ask_speed_miracle(self.runner, self._job(), _snapshot(), 2, freighters=True))   # 2 of 4 freighters
+        self.assertTrue(maybe_ask_speed_miracle(self.runner, self._job({**RULES, "min_ships": 2}), _snapshot(), 2, freighters=True))   # 2 of 4 freighters
         self.runner.hub.spawn_job.assert_called_once()
 
 

@@ -55,6 +55,16 @@ class TemplesView(LoginRequiredMixin, TemplateView):
         ctx["reserve"] = reserve
         ctx["rules"] = miracle_rules.rules_for(getattr(self.request, "organization", None))
         ctx["can_change_rules"] = can_change(self.request)
+        ctx["rule_cards"] = [
+            {"key": "attack", "title": "Ataque chegando", "miracles": "Templo de Atena + Forja de Hefesto",
+             "when": "Saque ou ocupação a caminho de uma cidade sua (assalto pirata não conta).",
+             "images": ["game/premium/safecapacity.png", "game/gods/hephaestus.png"]},
+            {"key": "losing", "title": "Perdendo a defesa", "miracles": "Colosso",
+             "when": "Combate numa cidade sua com mais perdas suas que do atacante.",
+             "images": ["game/units/hoplita.png"]},
+            {"key": "ships", "title": "Envio grande", "miracles": "Templo de Poseidon / Hermes",
+             "images": ["game/units/barco_mercante.png", "game/units/cargueiro.png"]},
+        ]
         ctx["short_islands"] = sum(1 for c in cards if c["short"])
         ctx["to_balance"] = sum(1 for c in cards if c["changes"])
         ctx["accounts"] = len({t.game_account_id for i in islands for t in i.own})
