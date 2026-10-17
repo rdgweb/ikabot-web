@@ -50,9 +50,9 @@
       <img src="{{ m.icon }}" alt="" class="h-11 w-11 shrink-0 object-contain">
       <div class="min-w-0 flex-1">
         <div class="text-sm font-semibold text-ink">{{ m.name }}</div>
-        <div class="mt-0.5 flex items-baseline gap-2">
+        <div class="mt-0.5 flex flex-wrap items-baseline gap-x-2">
           <span class="font-mono text-xl font-bold" style="color: var(--ik-good);">{{ m.ok|dots }}</span>
-          {% if m.failed %}<span class="font-mono text-xs font-semibold" style="color: var(--ik-bad);">{{ m.failed }} falha{{ m.failed|pluralize }}</span>{% endif %}
+          {% if m.failed %}<span class="font-mono text-xs font-semibold" style="color: var(--ik-bad); white-space: nowrap;">{{ m.failed }} falha{{ m.failed|pluralize }}</span>{% endif %}
         </div>
       </div>
     </div>
@@ -78,9 +78,9 @@
     </div>
     <div class="rounded-2xl border px-4 py-3" style="border-color: rgba(79,134,185,0.35); background: rgba(255,255,255,0.8);">
       <div class="text-[11px] font-semibold uppercase tracking-wide" style="color: var(--ik-sea);">Relatórios salvos</div>
-      <div class="mt-1 flex items-baseline gap-2">
+      <div class="mt-1 flex flex-wrap items-baseline gap-x-2">
         <span class="font-mono text-2xl font-bold text-ink">{{ c.reports|dots }}</span>
-        {% if c.reports_failed %}<span class="font-mono text-xs font-semibold" style="color: var(--ik-bad);">{{ c.reports_failed }} falhado{{ c.reports_failed|pluralize }}</span>{% endif %}
+        {% if c.reports_failed %}<span class="font-mono text-xs font-semibold" style="color: var(--ik-bad); white-space: nowrap;">{{ c.reports_failed }} falhado{{ c.reports_failed|pluralize }}</span>{% endif %}
       </div>
       <a href="{% url 'espionage:list' %}" class="mt-1 inline-flex items-center gap-1 text-[11px] link-sea">
         <img src="{% static 'game/buildings/warehouse.png' %}" alt="" class="h-4 w-4 object-contain"> {{ c.stock_cities|dots }} cidade{{ c.stock_cities|pluralize }} com estoque lido</a>
