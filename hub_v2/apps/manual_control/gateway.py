@@ -56,8 +56,8 @@ BASE_PAGE_POLICY = (
 )
 YOUTUBE_ORIGIN = "https://www.youtube.com"
 # N-146: the game's pages still name those blocked scripts; they are taken out of the page so the console does
-# not fill with refusals. Accounts outside the explicit cinema allowlist keep an empty YouTube stand-in so the
-# game code does not stop on "YT is not defined" while the external player remains blocked.
+# not fill with refusals. With the cinema's YouTube switched off (MANUAL_CINEMA_YOUTUBE=false) the page gets an
+# empty YouTube stand-in so the game code does not stop on "YT is not defined".
 BLOCKED_SCRIPT_TAG = re.compile(
     rb"<script\b[^>]*\bsrc=[\"'][^\"']*(?:pixelzirkus\.gameforge\.com|consent\.gameforge\.com|cookiebanner)[^\"']*[\"'][^>]*>\s*</script>",
     re.IGNORECASE,
@@ -97,7 +97,7 @@ def page_script(session: ManualControlSession) -> str:
     """The script added to the game's pages, with the tag that says the control is on and through which proxy."""
     summary = services.proxy_summary(session)
     text = "Controle manual · automação pausada" + (f" · {summary['short']}" if summary["short"] else "")
-    if services.cinema_local_allowed(session.game_account_id):
+    if services.cinema_local_allowed():
         text += " · YouTube local autorizado"
     background = "rgba(170,35,25,.92)" if summary["level"] == "bad" else "rgba(40,30,15,.82)"
     return PAGE_SCRIPT.replace("__PILL_TEXT__", json.dumps(text)).replace("__PILL_BG__", background)
@@ -291,7 +291,7 @@ def _game_response(
     body = base64.b64decode(answer.get("body") or "")
     status = int(answer.get("status") or 502)
     content_type = headers.get("content-type", "")
-    allow_local_youtube = services.cinema_local_allowed(session.game_account_id)
+    allow_local_youtube = services.cinema_local_allowed()
 
     location = headers.get("location", "")
     if location:
@@ -333,9 +333,11 @@ def _game_response(
         response["Content-Security-Policy"] = policy
         response["X-Ikabot-Cinema"] = "local-youtube" if allow_local_youtube else "blocked"
     response["X-Robots-Tag"] = "noindex, nofollow"
-    # YouTube error 153 rejects some embedded videos when no HTTP Referer is sent.
-    # Authorized cinema sessions disclose only this gateway origin, never the game path.
-    response["Referrer-Policy"] = "origin" if allow_local_youtube else "same-origin"
+    # YouTube answers error 153 when the embed gets no Referer. strict-origin-when-cross-origin (what YouTube asks
+    # for, and what the game's own iframe uses) sends YouTube only this session's host, while the game keeps
+    # receiving the full page address through the agent. The player still puts the page address (path included)
+    # in its own "forigin" parameter; that is YouTube's doing and no header changes it.
+    response["Referrer-Policy"] = "strict-origin-when-cross-origin" if allow_local_youtube else "same-origin"
     response["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
     response["X-Frame-Options"] = "SAMEORIGIN"
     return response

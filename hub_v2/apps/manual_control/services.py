@@ -84,14 +84,9 @@ def gateway_enabled() -> bool:
     return bool(gateway_domain())
 
 
-def cinema_local_allowed(game_account_id) -> bool:
-    """Whether this exact game account may load YouTube from the operator's IP."""
-    configured = getattr(settings, "MANUAL_CINEMA_LOCAL_GAME_ACCOUNT_IDS", "")
-    if isinstance(configured, str):
-        allowed_ids = {value.strip().lower() for value in configured.split(",") if value.strip()}
-    else:
-        allowed_ids = {str(value).strip().lower() for value in configured if str(value).strip()}
-    return str(game_account_id or "").strip().lower() in allowed_ids
+def cinema_local_allowed() -> bool:
+    """Whether the cinema's YouTube player may load from the operator's IP (N-153)."""
+    return bool(getattr(settings, "MANUAL_CINEMA_YOUTUBE", True))
 
 
 def session_host(session: ManualControlSession) -> str:
@@ -231,7 +226,7 @@ def record_cinema_event(session: ManualControlSession, event: str) -> None:
     """Persist privacy-safe cinema telemetry after a successful game response."""
     from apps.audit.services import once_per, record
 
-    allowed = cinema_local_allowed(session.game_account_id)
+    allowed = cinema_local_allowed()
     if event == "opened" and not once_per(f"manual-cinema-opened:{session.pk}", 24 * 3600):
         return
 
