@@ -1,5 +1,14 @@
 {% load humanize hub_tags %}
 {% if selected_dump %}
+{% if island_filter %}
+<div class="mb-3 flex flex-wrap items-center gap-2 rounded-xl border px-4 py-2 text-sm" style="border-color: var(--ik-line); background: rgba(255,255,255,0.7);">
+  <i class="bi bi-geo-alt-fill text-sea"></i>
+  <b class="text-ink">{{ island_filter.name|default:"Ilha" }}</b>
+  <span class="font-mono text-muted">[{{ island_filter.x }}:{{ island_filter.y }}]</span>
+  {% if island_filter.resource %}<span class="text-xs text-muted">· {{ island_filter.resource }}</span>{% endif %}
+  {% if island_filter.miracle %}<span class="text-xs text-muted">· {{ island_filter.miracle }}</span>{% endif %}
+</div>
+{% endif %}
 <div class="card !p-0 overflow-hidden">
   <div class="flex items-center justify-between px-4 py-3" style="border-bottom:1px solid var(--ik-line);">
     <div class="text-xs text-muted">

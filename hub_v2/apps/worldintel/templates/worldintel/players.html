@@ -76,7 +76,7 @@
     </div>
     <div class="flex-1 min-w-[180px]">
       <label class="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Busca</label>
-      <input type="text" name="q" value="{{ q }}" placeholder="player, aliança..."
+      <input type="text" name="q" value="{{ q }}" placeholder="player, aliança ou ilha (87:84)"
              class="form-input !py-1.5 !text-xs w-full"
              hx-get="{% url 'worldintel:players' %}"
              hx-trigger="keyup changed delay:250ms"

@@ -31,5 +31,33 @@ class SpyReportLinksTests(TestCase):
         self.assertIn("[BLOOD]", html)
         self.assertIn("1.432.240", html)
         self.assertIn("47.903", html)                                  # the resources, with the thousands dot
-        self.assertIn("q=88:90", html)                                 # the island
-        self.assertIn(f"dump={self.dump.pk}", html)                    # opened on the dump that has the player
+        self.assertIn("q=88:90", html)                                 # the island's players
+        self.assertIn(f"dump={self.dump.pk}", html)                    # the latest dump
+
+    def test_a_report_without_the_owner_id_is_found_by_name(self):
+        SpyReport.objects.create(game_account=self.ga, report_id="r2", target_owner="Herakles-2929",
+                                 target_city_name="Polis", target_city_id="89104", mission_id=6)
+        html = self.client.get("/espionage/").content.decode()
+        self.assertEqual(html.count("[BLOOD]"), 2)              # both rows know the alliance
+
+
+class IslandPlayersTests(TestCase):
+    def test_coordinates_list_the_players_of_the_island(self):
+        from apps.worldintel.models import WorldDumpCity, WorldDumpIsland
+
+        self.client.force_login(get_user_model().objects.create_user("rodrigo", password="x", is_staff=True))
+        node = Node.objects.create(name="agente", transport="https")
+        account = Account.objects.create(node=node, label="Conta", email="c@example.com", password_enc="x")
+        ga = GameAccount.objects.create(account=account, lobby_account_id=1, server_id="s78-br", server_language="br",
+                                        server_number=78, name="Jogador")
+        dump = WorldDump.objects.create(account=account, game_account=ga, captured_at=timezone.now())
+        island = WorldDumpIsland.objects.create(dump=dump, island_id="1", name="Turetia", x=87, y=84)
+        other = WorldDumpIsland.objects.create(dump=dump, island_id="2", name="Longe", x=10, y=10)
+        for owner, isl in (("UmSeteUm", island), ("CorujaVerde", island), ("Distante", other)):
+            WorldDumpPlayer.objects.create(dump=dump, owner_id=owner, owner_name=owner)
+            WorldDumpCity.objects.create(dump=dump, island=isl, type="city", owner_id=owner, owner_name=owner, game_city_id=owner)
+        html = self.client.get("/intel/players/", {"dump": str(dump.pk), "q": "87:84"}).content.decode()
+        self.assertIn("Turetia", html)
+        self.assertIn("UmSeteUm", html)
+        self.assertIn("CorujaVerde", html)
+        self.assertNotIn("Distante", html)

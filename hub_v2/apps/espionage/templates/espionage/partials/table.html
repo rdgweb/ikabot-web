@@ -100,23 +100,23 @@
           <!-- Alvo: owner · city [x:y] -->
           <td>
             <div class="flex flex-wrap items-baseline gap-x-1.5 text-sm">
-              {% if report.target_owner and not report.intel_dump %}<span class="font-medium text-ink">{{ report.target_owner }}</span>
+              {% if report.target_owner and not report.target_in_dump %}<span class="font-medium text-ink">{{ report.target_owner }}</span>
               {% elif report.target_owner %}
               <a class="font-medium text-ink hover:text-sea hover:underline"
-                 href="{% url 'worldintel:player-detail' %}?ga={{ report.intel_ga }}&dump={{ report.intel_dump }}&{% if report.target_owner_id %}owner_id={{ report.target_owner_id|urlencode }}{% else %}owner_name={{ report.target_owner|urlencode }}{% endif %}">{{ report.target_owner }}</a>
+                 href="{% url 'worldintel:player-detail' %}?dump={{ report.intel_dump }}&{% if report.target_owner_key %}owner_id={{ report.target_owner_key|urlencode }}{% else %}owner_name={{ report.target_owner|urlencode }}{% endif %}">{{ report.target_owner }}</a>
               {% else %}<span class="text-muted">—</span>{% endif %}
               {% if report.target_ally_tag %}
               <a class="text-xs font-semibold link-sea" title="Jogadores desta aliança em Inteligência"
-                 href="{% url 'worldintel:players' %}?ga={{ report.intel_ga }}&dump={{ report.intel_dump }}&q={{ report.target_ally_tag|urlencode }}">[{{ report.target_ally_tag }}]</a>
+                 href="{% url 'worldintel:players' %}?dump={{ report.intel_dump }}&q={{ report.target_ally_tag|urlencode }}">[{{ report.target_ally_tag }}]</a>
               {% endif %}
               {% if report.target_score is not None %}<span class="font-mono text-[11px] text-muted" title="Pontuação total no último dump">{{ report.target_score|dots }}</span>{% endif %}
             </div>
             <div class="text-xs text-muted">
-              {% if report.target_city_id and report.intel_dump %}
-              <a class="hover:text-sea hover:underline" href="{% url 'worldintel:city-detail' %}?ga={{ report.intel_ga }}&dump={{ report.intel_dump }}&city_id={{ report.target_city_id|urlencode }}">{{ report.target_city_name|default:report.target_city_id }}</a>
+              {% if report.target_city_id and report.target_in_dump %}
+              <a class="hover:text-sea hover:underline" href="{% url 'worldintel:city-detail' %}?dump={{ report.intel_dump }}&city_id={{ report.target_city_id|urlencode }}">{{ report.target_city_name|default:report.target_city_id }}</a>
               {% else %}{{ report.target_city_name|default:"" }}{% endif %}
-              {% if report.target_x is not None %}<a class="font-mono hover:text-sea hover:underline" title="Ilha em Inteligência"
-                 href="{% url 'worldintel:islands' %}?ga={{ report.intel_ga }}&dump={{ report.intel_dump }}&q={{ report.target_x }}:{{ report.target_y }}">[{{ report.target_x }}:{{ report.target_y }}]</a>{% endif %}
+              {% if report.target_x is not None %}<a class="font-mono hover:text-sea hover:underline" title="Jogadores desta ilha em Inteligência"
+                 href="{% url 'worldintel:players' %}?dump={{ report.intel_dump }}&q={{ report.target_x }}:{{ report.target_y }}">[{{ report.target_x }}:{{ report.target_y }}]</a>{% endif %}
             </div>
           </td>
 

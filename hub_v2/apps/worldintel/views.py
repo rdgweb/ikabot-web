@@ -130,6 +130,20 @@ class WorldPlayerListView(WorldIntelBaseView):
         players_qs = WorldDumpPlayer.objects.filter(dump=current_dump)
         has_scores = players_qs.exists()
 
+        # "87:84" (or "[87:84]"): the players with a city on that island
+        coords = re.fullmatch(r"\[?\s*(\d{1,3})\s*:\s*(\d{1,3})\s*\]?", q) if q else None
+        island_owner_ids = None
+        if coords:
+            x, y = int(coords.group(1)), int(coords.group(2))
+            island = WorldDumpIsland.objects.filter(dump=current_dump, x=x, y=y).first()
+            island_owner_ids = set(
+                WorldDumpCity.objects.filter(dump=current_dump, type="city", island__x=x, island__y=y)
+                .values_list("owner_id", flat=True)
+            )
+            ctx["island_filter"] = {"x": x, "y": y, "name": island.name if island else "",
+                                    "resource": island.resource_name if island else "",
+                                    "miracle": island.miracle_name if island else ""}
+
         if has_scores:
             players_qs = players_qs.annotate(
                 score_sum=ExpressionWrapper(
@@ -137,7 +151,9 @@ class WorldPlayerListView(WorldIntelBaseView):
                     output_field=BigIntegerField(),
                 )
             )
-            if q:
+            if island_owner_ids is not None:
+                players_qs = players_qs.filter(owner_id__in=island_owner_ids)
+            elif q:
                 players_qs = players_qs.filter(
                     Q(owner_name__icontains=q) | Q(ally_tag__icontains=q)
                 )
@@ -156,7 +172,9 @@ class WorldPlayerListView(WorldIntelBaseView):
         else:
             # Fallback: aggregate from cities
             cities_qs = WorldDumpCity.objects.filter(dump=current_dump, type="city")
-            if q:
+            if island_owner_ids is not None:
+                cities_qs = cities_qs.filter(owner_id__in=island_owner_ids)
+            elif q:
                 cities_qs = cities_qs.filter(
                     Q(owner_name__icontains=q)
                     | Q(ally_tag__icontains=q)
