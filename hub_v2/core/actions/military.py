@@ -413,7 +413,7 @@ ACTIONS = {
             # Missões
             {"key": "missions", "type": FIELD_STR, "required": False, "default": "3,5",
              "label": "Missões de inteligência (IDs, vírgula)",
-             "help": "3=Estoques, 5=Tropas, 6=Guarnição, 26=Pesquisa. Infiltração (1) é automática."},
+             "help": "5=Armazém (estoques), 6=Guarnição, 7=Tropas e frotas, 3=Nível de pesquisa, 26=Invenções. Infiltração (1) é automática."},
             # Região
             {"key": "region_x_min", "type": FIELD_INT, "required": False, "default": 0, "min": 0,
              "label": "Região X mínimo"},
