@@ -116,11 +116,11 @@ class AlignShrineTests(unittest.TestCase):
         ]}
         runner.hub.get_snapshot.return_value = snapshot
         before = ShrineAction._parse_state_payload(_payload({}, [(101, 3), (102, 3)], {3}))
-        before["additional_cities_possible"] = 1
+        before["additional_cities_possible"] = 0          # founding slots, not the shrine's: it does not matter here
         before["slot_order"] = [101, 102, 0]
         after = ShrineAction._parse_state_payload(_payload({}, [(101, 2), (102, 3), (103, 4)], {2, 3, 4}))
         client = MagicMock()
-        fresh = dict(after, additional_cities_possible=0, slot_order=[101, 102, 103])
+        fresh = dict(after, slot_order=[101, 102, 103])
         client.get_shrine_state.side_effect = [before, fresh, after]
         runner.get_or_login_game_client = MagicMock(return_value=client)
         result = runner.execute({"job_id": "j", "account_id": "a", "game_account_id": "g",
@@ -143,7 +143,7 @@ class AlignRetryTests(unittest.TestCase):
             {"id": 101, "name": "Vinho", "tradegood": 1, "buildings": [{"building": "shrineOfOlympus", "position": 6, "level": 20}]},
             {"id": 102, "name": "Marmore", "tradegood": 2}]}
         state = ShrineAction._parse_state_payload(_payload({}, [], set()))
-        state["additional_cities_possible"] = 0
+        state["slot_order"] = []                          # no free line in the worship tab
         client = MagicMock()
         client.get_shrine_state.return_value = state
         runner.get_or_login_game_client = MagicMock(return_value=client)

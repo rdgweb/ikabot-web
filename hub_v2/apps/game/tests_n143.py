@@ -118,6 +118,7 @@ class ShrineFocusTests(TestCase):
                                        inputs={"god_plutus": True}, status="queued")
         old.refresh_from_db()
         self.assertEqual(old.status, "cancelled")
+        self.assertEqual(new.workflow_id, old.workflow_id)                 # the account keeps one loop workflow
         self.assertEqual(Job.objects.filter(action_code=1007).exclude(status="cancelled").get().pk, new.pk)
         # the loop rescheduling itself is not a new focus
         again = create_job_with_workflow(account=account, game_account=ga, node=node, action_code=1007,

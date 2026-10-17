@@ -1698,7 +1698,7 @@ def _worship_form_context(cities):
         "gods": [{"id": gid, "name": meta["name"], "good": meta["good"], "image": static(meta["image"]),
                   "good_icon": static(GOD_GOOD_ICONS[gid])} for gid, meta in GODS.items()],
         "summary": {"level": int(state.get("building_level") or 0),
-                    "room": int(state["additional_cities_possible"]) if "additional_cities_possible" in state else None} if state else None,
+                    "room": list(state["slot_order"]).count(0) if state.get("slot_order") else None} if state else None,
     }
 
 

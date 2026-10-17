@@ -376,7 +376,8 @@ class AlignShrineRunner(_ShrineRunnerMixin, BaseRunner):
         state = client.get_shrine_state(city_id, position)
         order = [int(c) for c in state.get("slot_order") or []]
         current = {int(w["city_id"]): int(w.get("god_id") or 0) for w in state.get("worship_assignments") or [] if w.get("city_id")}
-        room = int(state.get("additional_cities_possible") or 0)
+        # a free slot is an empty line of the worship tab ("additional_cities_possible" is about founding cities)
+        room = order.count(0)
         changed, skipped = [], []
         skipped_ids: dict[int, int] = {}
         for city in (snapshot or {}).get("cities") or []:
@@ -393,8 +394,8 @@ class AlignShrineRunner(_ShrineRunnerMixin, BaseRunner):
                 client.change_god_worship(city_id, old_city_id=0, new_city_id=cid, god_id=want, order=list(order))
                 # the game says how many more cities it takes after each one
                 fresh = client.get_shrine_state(city_id, position)
-                room = int(fresh.get("additional_cities_possible") or 0)
                 order = [int(c) for c in fresh.get("slot_order") or order]
+                room = order.count(0)
             else:
                 skipped.append(name)
                 skipped_ids[cid] = want
