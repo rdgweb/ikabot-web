@@ -10,6 +10,8 @@ from contextvars import ContextVar
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Max
+from datetime import timedelta
+
 from django.utils import timezone
 
 from core.contracts import ACTION_CATALOG
@@ -171,6 +173,7 @@ USER_TRIGGERS = frozenset({
 
 # N-143: one Santuário em Loop per account — a new one (form or preset) takes over the focus of the previous one
 SINGLE_LOOP_ACTIONS = frozenset({1007})
+ALIGN_SHRINE_ACTION = 36
 
 
 def _replace_previous_loops(job: Job) -> int:
@@ -470,6 +473,11 @@ def create_job_with_workflow(
 ) -> Job:
     inputs_dict, inputs_json = _normalize_inputs(inputs)
     action_code = int(action_code)
+    if (action_code in SINGLE_LOOP_ACTIONS and source_job is None and game_account is not None and status == "queued"
+            and Job.objects.filter(game_account=game_account, action_code=ALIGN_SHRINE_ACTION,
+                                   status__in=("queued", "scheduled", "running")).exists()):
+        # N-143: a Deus de Cada Cidade is pending on the account: the loop starts after it changed the gods
+        status, scheduled_for = "scheduled", timezone.now() + timedelta(minutes=5)
 
     with transaction.atomic():
         source_job_id = None

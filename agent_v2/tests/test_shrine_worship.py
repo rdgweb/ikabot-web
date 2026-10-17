@@ -132,6 +132,28 @@ class AlignShrineTests(unittest.TestCase):
         self.assertTrue(result.success)
 
 
+class AlignRetryTests(unittest.TestCase):
+    def test_cities_left_out_come_back_later(self):
+        from runners.economy import AlignShrineRunner
+
+        runner = AlignShrineRunner.__new__(AlignShrineRunner)
+        runner.log, runner.save_game_client, runner.hub = MagicMock(), MagicMock(), MagicMock()
+        runner.resolve_credentials = MagicMock(return_value={"x": 1})
+        runner.hub.get_snapshot.return_value = {"base_snapshot": {}, "military": {}, "cities": [
+            {"id": 101, "name": "Vinho", "tradegood": 1, "buildings": [{"building": "shrineOfOlympus", "position": 6, "level": 20}]},
+            {"id": 102, "name": "Marmore", "tradegood": 2}]}
+        state = ShrineAction._parse_state_payload(_payload({}, [], set()))
+        state["additional_cities_possible"] = 0
+        client = MagicMock()
+        client.get_shrine_state.return_value = state
+        runner.get_or_login_game_client = MagicMock(return_value=client)
+        result = runner.execute({"job_id": "j", "account_id": "a", "game_account_id": "g",
+                                 "inputs": {"by_good": {"1": 4, "2": 4}, "renew_grace": False}})
+        self.assertEqual(result.reschedule_seconds, 6 * 3600)
+        self.assertEqual(result.reschedule_inputs["worship"], {"101": 4, "102": 4})
+        self.assertEqual(result.reschedule_inputs["attempt"], 2)
+
+
 class FocusGraceTests(unittest.TestCase):
     def test_the_new_gods_get_grace_at_once(self):
         from runners.economy import AlignShrineRunner

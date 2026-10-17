@@ -127,6 +127,33 @@ class ShrineFocusTests(TestCase):
         self.assertEqual(again.status, "scheduled")
 
 
+class ShrinePresetOrderTests(TestCase):
+    def test_the_loop_waits_for_the_god_change_even_when_it_comes_first_in_the_preset(self):
+        from apps.jobs.models import Job
+        from apps.profiles.models import Preset, PresetAction, PresetGameAccount
+        from apps.profiles.services import execute_preset
+
+        user = get_user_model().objects.create_user("rodrigo", password="x", is_staff=True)
+        node = Node.objects.create(name="agente", transport="https")
+        account = Account.objects.create(node=node, label="Conta", email="c@example.com", password_enc="x")
+        ga = GameAccount.objects.create(account=account, lobby_account_id=1, server_id="s78-br", server_language="br",
+                                        server_number=78, name="Jogador")
+        AccountSnapshot.objects.create(account=account, game_account=ga, military={}, base_snapshot={}, cities=[])
+        preset = Preset.objects.create(name="Santuário Ouro", created_by=user)
+        PresetGameAccount.objects.create(preset=preset, game_account=ga)
+        PresetAction.objects.create(preset=preset, action_code=1007, action_name="Santuário em Loop", order=1,
+                                    inputs_json=json.dumps({"keep_worshipped": True, "god_plutus": True, "cycle_hours": 72,
+                                                            "favor_recheck_minutes": 180}), per_account_json="{}")
+        PresetAction.objects.create(preset=preset, action_code=36, action_name="Deus de Cada Cidade", order=2,
+                                    inputs_json=json.dumps({"by_good": json.dumps({"1": 4, "2": 4, "3": 4, "4": 4})}), per_account_json="{}")
+        execute_preset(preset, created_by=user)
+        align = Job.objects.get(action_code=36)
+        loop = Job.objects.get(action_code=1007)
+        self.assertLess(align.created_at, loop.created_at)
+        self.assertEqual(loop.status, "scheduled")
+        self.assertGreater(loop.scheduled_for, timezone.now() + timedelta(minutes=4))
+
+
 class MiracleTimerTests(TestCase):
     """N-148: the time a miracle stays in effect and the time it comes back, from the Ativar Milagre job."""
 

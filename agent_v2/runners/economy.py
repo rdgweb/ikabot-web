@@ -340,6 +340,10 @@ def _json_dict(value: Any) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
+ALIGN_RETRY_SECONDS = 6 * 3600
+ALIGN_MAX_ATTEMPTS = 4
+
+
 @register_runner(36)
 class AlignShrineRunner(_ShrineRunnerMixin, BaseRunner):
     """Action 36 (N-143): Deus de Cada Cidade — the god each city worships, as chosen in the job form.
@@ -374,6 +378,7 @@ class AlignShrineRunner(_ShrineRunnerMixin, BaseRunner):
         current = {int(w["city_id"]): int(w.get("god_id") or 0) for w in state.get("worship_assignments") or [] if w.get("city_id")}
         room = int(state.get("additional_cities_possible") or 0)
         changed, skipped = [], []
+        skipped_ids: dict[int, int] = {}
         for city in (snapshot or {}).get("cities") or []:
             cid = int(city.get("id") or 0)
             tradegood = str(city.get("produced_tradegood") or city.get("tradegood") or "")
@@ -392,6 +397,7 @@ class AlignShrineRunner(_ShrineRunnerMixin, BaseRunner):
                 order = [int(c) for c in fresh.get("slot_order") or order]
             else:
                 skipped.append(name)
+                skipped_ids[cid] = want
                 continue
             changed.append((cid, name, want))
             time.sleep(random.uniform(0.8, 1.6))
@@ -410,6 +416,15 @@ class AlignShrineRunner(_ShrineRunnerMixin, BaseRunner):
             after = self._renew_worshipped_grace(jid, client, city_id, position, after)
         self.save_game_client(ga_id, client)
         self._persist_shrine_state(job_id=jid, account_id=aid, game_account_id=ga_id, snapshot=snapshot, shrine=shrine, state=after)
+        attempt = int(inputs.get("attempt") or 1)
+        if skipped_ids and attempt < ALIGN_MAX_ATTEMPTS:
+            # the shrine takes more cities later: try again with only the ones left out
+            retry = {k: v for k, v in inputs.items() if k not in ("worship", "by_good")}
+            retry.update({"worship": {str(c): w for c, w in skipped_ids.items()}, "attempt": attempt + 1})
+            self.log(jid, "info", f"Nova tentativa para {len(skipped_ids)} cidade(s) em {ALIGN_RETRY_SECONDS // 3600} h "
+                                  f"({attempt + 1}/{ALIGN_MAX_ATTEMPTS})")
+            return RunnerResult(success=True, reschedule_seconds=ALIGN_RETRY_SECONDS, reschedule_inputs=retry,
+                                data={"changed": len(changed), "skipped": skipped})
         return RunnerResult(success=True, data={"changed": len(changed), "skipped": skipped})
 
     def _renew_worshipped_grace(self, jid: str, client, city_id: int, position: int, state: dict[str, Any]) -> dict[str, Any]:

@@ -88,6 +88,8 @@ def execute_preset(preset: Preset, created_by=None) -> tuple[int, list[str]]:
         ).all()
     )
     preset_actions = list(preset.actions.all())
+    # N-143: the cities change god before the shrine loop reads which gods they worship
+    preset_actions.sort(key=lambda pa: 1 if int(pa.action_code) == 1007 else 0)
 
     if not preset_accounts:
         return 0, ["Nenhuma conta selecionada no preset."]
