@@ -41,6 +41,18 @@ class ShrineReadingTests(unittest.TestCase):
         self.assertEqual(state["gods"][2]["grace_seconds"], 0)
 
 
+class ActionRequestTests(unittest.TestCase):
+    def test_each_answer_keeps_the_next_action_request(self):
+        client = MagicMock()
+        client._action_request = "old"
+        client._request.return_value.json.return_value = [["updateGlobalData", {"actionRequest": "new1"}], ["provideFeedback", []]]
+        ShrineAction(client).activate_god(city_id=7, position=6, god_id=2)
+        self.assertEqual(client._action_request, "new1")
+        client._request.return_value.json.return_value = [["updateGlobalData", {"actionRequest": "new2"}]]
+        ShrineAction(client).activate_god(city_id=7, position=6, god_id=3)
+        self.assertEqual(client._request.call_args[1]["data"]["actionRequest"], "new1")    # the second donation used the fresh one
+
+
 class ShrineLoopTests(unittest.TestCase):
     def _run(self, payload, inputs=None):
         runner = ActivateShrineLoopRunner.__new__(ActivateShrineLoopRunner)

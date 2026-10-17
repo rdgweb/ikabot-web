@@ -61,7 +61,17 @@ class ShrineAction(BaseAction):
             payload = resp.json()
         except Exception as exc:
             raise ActionError("Invalid shrine overview response", action="shrine_state") from exc
+        self._remember_action_request(payload)
         return self._parse_state_payload(payload)
+
+    def _remember_action_request(self, payload: Any) -> None:
+        """N-143: every answer brings the next actionRequest; a request sent with the old one is ignored by the game
+        (the second god of the loop never got its favor)."""
+        for item in payload if isinstance(payload, list) else []:
+            if isinstance(item, list) and len(item) > 1 and item[0] == "updateGlobalData" and isinstance(item[1], dict):
+                token = item[1].get("actionRequest")
+                if token:
+                    self.client._action_request = token
 
     def get_favor(
         self,
@@ -98,10 +108,12 @@ class ShrineAction(BaseAction):
             headers=GAME_AJAX_HEADERS,
         )
         try:
-            return resp.json()
+            payload = resp.json()
         except Exception:
             logger.debug("Shrine activation returned non-JSON payload")
             return {"ok": True}
+        self._remember_action_request(payload)
+        return payload
 
     def get_full_page(
         self,

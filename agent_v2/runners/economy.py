@@ -206,8 +206,13 @@ class _ShrineRunnerMixin(BaseRunner):
 
         state = client.get_shrine_state(city_id, position)
         wanted = list(context["selected_gods"])
-        if context.get("keep_worshipped"):
-            wanted += [g for g in state.get("gods_worshipped") or [] if g not in wanted]
+        if context.get("keep_worshipped") and state.get("gods_worshipped"):
+            worshipped = list(state.get("gods_worshipped") or [])
+            idle = [g for g in wanted if g not in worshipped]
+            if idle:
+                # N-143: favor for a god no city worships blesses nothing
+                self.log(jid, "info", "Sem cidade adorando (favor não doado): " + ", ".join(self._god_name(g) for g in idle))
+            wanted = worshipped
         available_gods = [god_id for god_id in wanted if god_id in set(state.get("researched_gods") or [])]
         unavailable_gods = [god_id for god_id in wanted if god_id not in set(state.get("researched_gods") or [])]
 
@@ -266,6 +271,11 @@ class _ShrineRunnerMixin(BaseRunner):
 
         after_state = client.get_shrine_state(city_id, position)
         self.save_game_client(ga_id, client)
+        after_gods = after_state.get("gods") or {}
+        for god_id in available_gods:
+            god = after_gods.get(god_id) or after_gods.get(str(god_id)) or {}
+            if "grace_seconds" in god and int(god.get("grace_seconds") or 0) <= 0:
+                self.log(jid, "warn", f"{self._god_name(god_id)} continua sem graça depois da doação")
         graces = [
             int((g or {}).get("grace_seconds") or 0)
             for gid, g in (after_state.get("gods") or {}).items()
