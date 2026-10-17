@@ -45,18 +45,6 @@ def _miracle_rules(job: Job) -> dict:
     return agent_rules(getattr(organization, "organization", None))
 
 
-# N-143: the shrine jobs that follow the organization's choice of god per luxury good
-SHRINE_ACTIONS = frozenset({36, 1007})
-
-
-def _shrine_gods(job: Job) -> dict:
-    from apps.accounts.models import Account
-    from apps.game.services.miracle_rules import shrine_gods_for
-
-    account = Account._base_manager.filter(pk=job.account_id).select_related("organization").first()
-    return shrine_gods_for(getattr(account, "organization", None))
-
-
 def build_payload(job: Job) -> dict:
     payload = {
         "job_id": str(job.pk),
@@ -69,11 +57,6 @@ def build_payload(job: Job) -> dict:
         "progress": _serialize_progress(job),
         "timeout_sec": job.timeout_sec,
     }
-    if job.action_code in SHRINE_ACTIONS:
-        try:
-            payload["shrine_gods"] = _shrine_gods(job)
-        except Exception:  # noqa: BLE001 - the agent falls back to the god of each luxury good
-            payload["shrine_gods"] = {}
     if job.action_code in MIRACLE_SHIPMENT_ACTIONS:
         try:
             payload["miracle_rules"] = _miracle_rules(job)

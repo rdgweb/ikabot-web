@@ -1659,6 +1659,36 @@ def _miracle_form_context(cities):
     }
 
 
+def _worship_form_context(cities):
+    """N-143: the god each city worships now, the god of its luxury good, and the gods to pick from."""
+    from apps.game.services.shrine import GOD_BY_TRADEGOOD, GODS
+    from core.templatetags.hub_tags import TRADEGOOD_ICONS
+
+    state = next((c.get("shrine_state") for c in cities or [] if isinstance(c, dict) and c.get("shrine_state")), None) or {}
+    css_to_id = {"god_pan": 1, "god_dionysus": 2, "god_tyche": 3, "god_plutus": 4, "god_theia": 5, "god_hephaestos": 6}
+    slots = [w for w in state.get("worship_assignments") or [] if isinstance(w, dict) and w.get("city_id")]
+    current = {str(w["city_id"]): int(w.get("god_id") or css_to_id.get(str(w.get("god_css") or ""), 0)) for w in slots}
+    rows = []
+    for city in cities or []:
+        if not isinstance(city, dict) or not city.get("id"):
+            continue
+        tradegood = int(city.get("produced_tradegood") or city.get("tradegood") or 0)
+        rows.append({
+            "id": str(city.get("id")), "name": str(city.get("name") or city.get("id")), "tradegood": tradegood,
+            "tradegood_icon": static(TRADEGOOD_ICONS[tradegood]) if tradegood in TRADEGOOD_ICONS else "",
+            "current": current.get(str(city.get("id")), 0), "has_slot": str(city.get("id")) in current,
+            "suggested": GOD_BY_TRADEGOOD.get(tradegood, 0),
+        })
+    goods = [{"id": str(t), "label": label, "icon": static(TRADEGOOD_ICONS[t]), "suggested": GOD_BY_TRADEGOOD[t]}
+             for t, label in ((1, "vinho"), (2, "mármore"), (3, "cristal"), (4, "enxofre"))]
+    return {
+        "cities": rows,
+        "goods": goods,
+        "gods": [{"id": gid, "name": meta["name"], "good": meta["good"], "image": static(meta["image"])} for gid, meta in GODS.items()],
+        "summary": {"level": int(state.get("building_level") or 0), "slots": len(state.get("slot_order") or slots)} if state else None,
+    }
+
+
 def _temple_form_context(snapshot, cities):
     """N-141: the temples of the account (priests, conversion) for the priests form."""
     temple_cities = []
@@ -2008,6 +2038,8 @@ def _custom_field_names(action_code: int) -> list[str]:
         return ["city", "use_athena_scroll", "pay_with_ambrosia"]
     if int(action_code) in (27, 35):
         return ["cities", "target_mode", "target_value", "reserve_citizens"]
+    if int(action_code) == 36:
+        return ["worship", "by_good"]
     if int(action_code) == 23:
         return ["cities", "sawmill_percent", "luxury_percent"]
     if int(action_code) == 11:
@@ -2220,6 +2252,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities, request=None, 
         "experiment_ui": _experiment_form_context(snapshot, cities),
         "scientists_ui": _scientists_form_context(snapshot, cities),
         "temple_ui": _temple_form_context(snapshot, cities) if int(action_code) == 35 else {},
+        "worship_ui": _worship_form_context(cities) if int(action_code) == 36 else {},
         "upgrade_units_ui": _upgrade_units_form_context(cities, snapshot),
         "market_ui": _market_form_context(cities),
         "training_ui": _training_form_context(snapshot, cities),

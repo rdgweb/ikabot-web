@@ -70,26 +70,33 @@ class ShrinePanelTests(TestCase):
         gods = {g["name"]: (g["in_grace"], g["grace"]) for g in shrines_for_organization()[0].gods}
         self.assertEqual(gods["Dionísio"], (False, "sem graça"))
 
-    def test_the_organization_chooses_pluto_for_crystal_and_aligns(self):
-        from apps.jobs.models import Job
-        from apps.jobs.services.dispatch import build_payload
-
-        self.client.post("/game/temples/", {"action": "shrine_gods", "shrine_god_3": "4"})
-        glitnir = next(c for c in shrines_for_organization({"1": 2, "2": 3, "3": 4, "4": 6})[0].cities if c.name == "Glitnir")
-        self.assertEqual(glitnir.recommended, 4)
-        html = self.client.get("/game/temples/").content.decode()
+    def test_the_job_form_shows_each_city_and_its_god(self):
+        html = self.client.get("/jobs/new/form/", {"ga": str(self.ga.pk), "action": "36"}).content.decode()
+        self.assertIn("Deus de cada cidade", html)
+        self.assertIn('"name": "Glitnir"', html)
         self.assertIn("game/gods/plutus.png", html)
-        self.assertIn("Alinhar", html)
-        self.client.post("/game/temples/", {"action": "align", "game_account": str(self.ga.pk)})
+        self.assertIn("/game/temples/", self.client.get("/game/temples/").content.decode())   # the panel opens this form
+        self.assertIn("action=36", self.client.get("/game/temples/").content.decode())
+
+    def test_the_cities_picked_go_in_the_job(self):
+        from apps.jobs.models import Job
+
+        self.client.post("/jobs/new/submit/", {"game_account": str(self.ga.pk), "action_code": "36",
+                                                "worship": json.dumps({"4": 4}), "by_good": ""})
         job = Job.objects.get(action_code=36)
-        self.assertEqual(build_payload(job)["shrine_gods"]["3"], 4)
+        self.assertEqual(json.loads(json.loads(job.inputs_json)["worship"]), {"4": 4})
 
-    def test_saving_the_miracle_rules_keeps_the_shrine_choice(self):
-        from apps.game.services.miracle_rules import save_rules, save_shrine_gods, shrine_gods_for
+    def test_a_preset_chooses_by_luxury_good(self):
+        from apps.profiles.models import Preset, PresetAction, PresetGameAccount
 
-        save_shrine_gods(self.org, {"shrine_god_3": "4"})
-        save_rules(self.org, {"defense_on_attack": "1"})
-        self.assertEqual(shrine_gods_for(self.org)["3"], 4)
+        user = get_user_model().objects.get(username="rodrigo")
+        preset = Preset.objects.create(name="Deuses", created_by=user)
+        PresetGameAccount.objects.create(preset=preset, game_account=self.ga)
+        PresetAction.objects.create(preset=preset, action_code=36, action_name="Deus de Cada Cidade", order=1,
+                                    inputs_json=json.dumps({"by_good": json.dumps({"3": 4})}), per_account_json="{}")
+        html = self.client.get(f"/profiles/presets/{preset.pk}/configure/1/").content.decode()
+        self.assertIn("Deus de cada cidade", html)
+        self.assertNotIn('name="city_mode"', html)
 
 
 class MiracleTimerTests(TestCase):

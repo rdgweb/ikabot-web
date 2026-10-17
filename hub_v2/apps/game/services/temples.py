@@ -116,6 +116,15 @@ def _free_citizens(city: dict, state: dict) -> int:
         return 0
 
 
+def _plain_text(value) -> str:
+    """The game sends some texts as {"text": "..."}; older readings kept that as "{'text': '...'}"."""
+    if isinstance(value, dict):
+        return str(value.get("text") or "")
+    text = str(value or "")
+    match = re.match(r"^\{'text':\s*'(.*)'\}(.*)$", text, re.S)
+    return (match.group(1) + match.group(2)).strip() if match else text
+
+
 def islands_for_organization() -> list[Island]:
     """Every island with one of our temples (the request's organization scope applies)."""
     islands: dict[str, Island] = {}
@@ -152,7 +161,7 @@ def islands_for_organization() -> list[Island]:
                 island.wonder_name = match.group(1) if match else name
                 island.strength = f"{match.group(2)}/{match.group(3)}" if match else island.strength
                 island.island_name = island.island_name or str(state.get("island_name") or "")
-                island.effect = str(state.get("wonder_effect") or "")
+                island.effect = _plain_text(state.get("wonder_effect"))
                 island.duration = str(state.get("duration_text") or "")
                 island.cooldown = str(state.get("cooldown_text") or "")
                 island.available = island.available or str(state.get("activate_state") or "").lower() == "enabled"

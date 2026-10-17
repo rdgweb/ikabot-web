@@ -85,7 +85,23 @@ class ShrineLoopTests(unittest.TestCase):
 
 
 class AlignShrineTests(unittest.TestCase):
-    """Action 36: each city worships the god chosen for its luxury good."""
+    """Action 36: each city worships the god chosen in the job form (or, from a preset, for its luxury good)."""
+
+    def test_only_the_cities_picked_in_the_form_change(self):
+        from runners.economy import AlignShrineRunner
+
+        runner = AlignShrineRunner.__new__(AlignShrineRunner)
+        runner.log, runner.save_game_client, runner.hub = MagicMock(), MagicMock(), MagicMock()
+        runner.resolve_credentials = MagicMock(return_value={"x": 1})
+        runner.hub.get_snapshot.return_value = {"base_snapshot": {}, "military": {}, "cities": [
+            {"id": 101, "name": "Vinho", "tradegood": 1, "buildings": [{"building": "shrineOfOlympus", "position": 6, "level": 20}]},
+            {"id": 102, "name": "Marmore", "tradegood": 2}]}
+        state = ShrineAction._parse_state_payload(_payload({}, [(101, 3), (102, 3)], {3}))
+        client = MagicMock()
+        client.get_shrine_state.side_effect = [state, state]
+        runner.get_or_login_game_client = MagicMock(return_value=client)
+        runner.execute({"job_id": "j", "account_id": "a", "game_account_id": "g", "inputs": {"worship": '{"101": 4}'}})
+        self.assertEqual([c.kwargs["new_city_id"] for c in client.change_god_worship.call_args_list], [101])   # Marmore untouched
 
     def test_wrong_gods_change_and_a_new_city_takes_a_free_slot(self):
         from runners.economy import AlignShrineRunner
@@ -107,7 +123,7 @@ class AlignShrineTests(unittest.TestCase):
         client.get_shrine_state.side_effect = [before, after]
         runner.get_or_login_game_client = MagicMock(return_value=client)
         result = runner.execute({"job_id": "j", "account_id": "a", "game_account_id": "g",
-                                 "shrine_gods": {"1": 2, "2": 3, "3": 4, "4": 6}})          # crystal -> Pluto
+                                 "inputs": {"by_good": {"1": 2, "2": 3, "3": 4, "4": 6}}})   # preset: crystal -> Pluto
         calls = [c.kwargs for c in client.change_god_worship.call_args_list]
         self.assertEqual(calls[0], {"old_city_id": 101, "new_city_id": 101, "god_id": 2, "order": [101, 102, 0]})
         self.assertEqual((calls[1]["old_city_id"], calls[1]["new_city_id"], calls[1]["god_id"], calls[1]["order"]), (0, 103, 4, [101, 102, 103]))

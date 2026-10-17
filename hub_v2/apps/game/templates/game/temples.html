@@ -211,17 +211,6 @@
     <img src="{% static 'game/gods/favor.png' %}" alt="" class="h-7 w-7 object-contain">
     <h2 class="text-lg font-bold text-ink">Santuário dos Deuses</h2>
   </div>
-  {# the god each luxury good worships (Alinhar Santuário follows it) #}
-  <form method="post" class="flex flex-wrap items-center gap-2">{% csrf_token %}<input type="hidden" name="action" value="shrine_gods">
-    {% for choice in shrine_choices %}
-    <label class="inline-flex items-center gap-1.5 rounded-xl border px-2 py-1 text-[12px]" style="border-color: var(--ik-line); background: rgba(255,255,255,0.75);">
-      <img src="{% static choice.icon %}" alt="" class="h-4 w-4"> {{ choice.label }} →
-      <select name="shrine_god_{{ choice.good }}" class="text-[12px] text-ink" style="border: 0; background: transparent;" onchange="this.form.submit()" {% if not can_change_rules %}disabled{% endif %}>
-        {% for god in choice.options %}<option value="{{ god.id }}" {% if god.id == choice.chosen %}selected{% endif %}>{{ god.name }} ({{ god.good }})</option>{% endfor %}
-      </select>
-    </label>
-    {% endfor %}
-  </form>
   <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
     {% for shrine in shrines %}
     <div class="card !p-4">
@@ -230,11 +219,11 @@
         <span class="text-[11px] text-muted">{{ shrine.city_name }} · nível {{ shrine.level }}</span>
         <span class="ml-auto inline-flex items-center gap-1 text-[12px] font-semibold text-ink"><img src="{% static 'game/gods/favor.png' %}" alt="" class="h-4 w-4"> {{ shrine.favor }}</span>
         {% if shrine.bonus %}<span class="rounded-full px-2 py-0.5 text-[10px] font-bold" style="background: rgba(95,140,78,0.14); color: var(--ik-good);">bênção {{ shrine.bonus }}%</span>{% endif %}
-        {% if shrine.to_align and can_change_rules %}
-        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="align"><input type="hidden" name="game_account" value="{{ shrine.game_account_id }}">
-          <button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left-right"></i> Alinhar {{ shrine.to_align }} cidade{{ shrine.to_align|pluralize }}</button>
-        </form>
-        {% endif %}
+        <button type="button" class="btn btn-secondary btn-sm"
+                hx-get="{% url 'jobs:job-form' %}?ga={{ shrine.game_account_id }}&action=36"
+                hx-target="#job-modal-body" hx-swap="innerHTML" hx-push-url="false"
+                onclick="this.dispatchEvent(new CustomEvent('open-modal-jobcreate', {bubbles: true}));">
+          <img src="{% static 'game/gods/favor.png' %}" alt="" class="h-4 w-4"> Deuses das cidades{% if shrine.to_align %} · {{ shrine.to_align }} fora do luxo{% endif %}</button>
       </div>
       <div class="mt-2 flex flex-wrap gap-1.5">
         {% for god in shrine.gods %}

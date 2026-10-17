@@ -321,7 +321,7 @@ class PresetRemoveActionView(LoginRequiredMixin, View):
 
 
 # N-138: actions whose preset form decides the cities itself (no per-account city section)
-PRESET_CITYLESS_ACTIONS = {23, 35, 1005, 1203}
+PRESET_CITYLESS_ACTIONS = {23, 35, 36, 1005, 1203}
 
 
 def _preset_action_inputs(action_code, inputs: dict, request) -> dict:

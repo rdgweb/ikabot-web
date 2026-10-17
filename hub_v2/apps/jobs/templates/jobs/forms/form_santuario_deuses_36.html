@@ -1,0 +1,116 @@
+{% load static hub_tags %}
+
+    {% if action_code == 36 %}
+    {{ worship_ui|json_script:"worship-ui-data" }}
+    <div class="mb-5 rounded-[24px] border shadow-[0_12px_36px_rgba(60,45,18,0.10)]"
+         style="border-color: var(--ik-line); background:
+           radial-gradient(780px 280px at 0% 0%, rgba(201,156,78,0.14), transparent 60%),
+           radial-gradient(700px 260px at 100% 100%, rgba(79,134,185,0.12), transparent 60%),
+           linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
+         x-data="{
+           ui: {cities: [], gods: [], goods: []},
+           isPreset: {% if preset %}true{% else %}false{% endif %},
+           pick: {},
+           byGood: {},
+           init() {
+             this.ui = JSON.parse(document.getElementById('worship-ui-data')?.textContent || '{}');
+             let saved = {};
+             try { saved = JSON.parse('{{ form.worship.value|default:''|escapejs }}' || '{}'); } catch (e) {}
+             let savedGood = {};
+             try { savedGood = JSON.parse('{{ form.by_good.value|default:''|escapejs }}' || '{}'); } catch (e) {}
+             this.ui.cities.forEach(c => { this.pick[c.id] = Number(saved[c.id] || c.current || c.suggested || 0); });
+             this.ui.goods.forEach(g => { this.byGood[g.id] = Number(savedGood[g.id] || g.suggested); });
+           },
+           god(id) { return this.ui.gods.find(g => g.id === Number(id)) || null; },
+           changes() { return this.ui.cities.filter(c => this.pick[c.id] && this.pick[c.id] !== c.current); },
+           suggestAll() { this.ui.cities.forEach(c => { if (c.suggested) this.pick[c.id] = c.suggested; }); },
+           goodTo(good, godId) { this.ui.cities.forEach(c => { if (String(c.tradegood) === String(good)) this.pick[c.id] = godId; }); },
+           worshipJson() {
+             const out = {};
+             this.changes().forEach(c => { out[c.id] = this.pick[c.id]; });
+             return JSON.stringify(out);
+           }
+         }">
+      <input type="hidden" name="{{ form.worship.html_name }}" :value="isPreset ? '' : worshipJson()">
+      <input type="hidden" name="{{ form.by_good.html_name }}" :value="isPreset ? JSON.stringify(byGood) : ''">
+
+      <div class="border-b px-5 py-5 md:px-6"
+           style="border-color: rgba(219,201,167,0.8); background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0));">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div class="max-w-2xl">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em]" style="color: var(--ik-gold);">Santuário dos Deuses</div>
+            <h3 class="mt-2 text-xl font-bold text-ink">Deus de cada cidade</h3>
+          </div>
+          <div class="rounded-2xl border px-4 py-3 lg:min-w-[15rem]" style="border-color: rgba(201,156,78,0.24); background: rgba(255,255,255,0.76);">
+            <div class="flex items-center gap-3">
+              <img src="{% static 'game/gods/favor.png' %}" alt="" class="h-9 w-9 object-contain">
+              <div>
+                <div class="text-sm font-semibold text-ink" x-text="isPreset ? 'regra por luxo' : `${changes().length} cidade${changes().length === 1 ? '' : 's'} a mudar`"></div>
+                <div class="text-[11px] text-muted" x-show="!isPreset" x-text="ui.summary ? `santuário nível ${ui.summary.level} · ${ui.summary.slots} vagas` : 'sem leitura do santuário'"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# a preset fits any account: one choice per luxury good #}
+      <div class="px-5 py-5 md:px-6" x-show="isPreset">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <template x-for="good in ui.goods" :key="good.id">
+            <div class="rounded-[18px] border p-3" style="border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);">
+              <div class="mb-2 flex items-center gap-2 text-sm font-semibold text-ink">
+                <img :src="good.icon" alt="" class="h-5 w-5"> <span x-text="`Cidades de ${good.label}`"></span>
+              </div>
+              <div class="flex flex-wrap gap-1.5">
+                <template x-for="g in ui.gods" :key="g.id">
+                  <button type="button" class="flex flex-col items-center rounded-xl border px-1.5 py-1 text-[10px] transition-all"
+                          :style="byGood[good.id] === g.id ? 'border-color: var(--ik-gold); background: rgba(201,156,78,0.14); box-shadow: 0 0 0 2px rgba(201,156,78,0.35);' : 'border-color: var(--ik-line); background: #fffdf8; opacity: .7;'"
+                          @click="byGood[good.id] = g.id" :title="`${g.name}: ${g.good}`">
+                    <img :src="g.image" alt="" class="h-8 w-8 object-contain"><span x-text="g.name"></span>
+                  </button>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      {# the account's cities: the god of each one #}
+      <div class="px-5 py-5 md:px-6" x-show="!isPreset">
+        <div class="mb-3 flex flex-wrap items-center gap-2 text-[11px]">
+          <button type="button" class="rounded-full border px-2.5 py-1 font-semibold" style="border-color: rgba(201,156,78,0.4); color: var(--ik-gold);" @click="suggestAll()">
+            <i class="bi bi-magic"></i> Deus do luxo em todas</button>
+          <template x-for="good in ui.goods" :key="'q' + good.id">
+            <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5" style="border-color: var(--ik-line);">
+              <img :src="good.icon" alt="" class="h-4 w-4"> todas →
+              <button type="button" class="font-semibold link-sea" @click="goodTo(good.id, good.suggested)" x-text="god(good.suggested)?.name"></button>
+              <span class="text-muted">/</span>
+              <button type="button" class="font-semibold link-sea" @click="goodTo(good.id, 4)">Pluto</button>
+            </span>
+          </template>
+        </div>
+        <div class="grid grid-cols-1 gap-2 lg:grid-cols-2">
+          <template x-for="city in ui.cities" :key="city.id">
+            <div class="rounded-[18px] border p-3 transition-all"
+                 :style="pick[city.id] !== city.current ? 'border-color: rgba(201,156,78,0.55); background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(201,156,78,0.10));' : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'">
+              <div class="mb-2 flex items-center gap-2">
+                <img :src="city.tradegood_icon" x-show="city.tradegood_icon" alt="" class="h-5 w-5">
+                <span class="min-w-0 flex-1 truncate text-sm font-semibold text-ink" x-text="city.name"></span>
+                <span class="text-[10px] text-muted" x-text="city.current ? `adora ${god(city.current)?.name}` : (city.has_slot ? 'sem divindade' : 'fora do santuário')"></span>
+              </div>
+              <div class="flex flex-wrap gap-1">
+                <template x-for="g in ui.gods" :key="g.id">
+                  <button type="button" class="relative flex flex-col items-center rounded-xl border px-1 py-0.5 text-[9px] transition-all"
+                          :style="pick[city.id] === g.id ? 'border-color: var(--ik-gold); background: rgba(201,156,78,0.14); box-shadow: 0 0 0 2px rgba(201,156,78,0.35);' : 'border-color: var(--ik-line); background: #fffdf8; opacity: .6;'"
+                          @click="pick[city.id] = g.id" :title="`${g.name}: ${g.good}${g.id === city.suggested ? ' (luxo da cidade)' : ''}`">
+                    <img :src="g.image" alt="" class="h-7 w-7 object-contain"><span x-text="g.name"></span>
+                    <span x-show="g.id === city.suggested" class="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full" style="background: var(--ik-good);"></span>
+                  </button>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+    {% endif %}

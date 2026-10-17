@@ -328,23 +328,37 @@ class _ShrineRunnerMixin(BaseRunner):
         return str(god_id)
 
 
-# N-143: the god each luxury good worships unless the organization chose otherwise (Pluto, Pã...)
-DEFAULT_SHRINE_GODS = {"1": 2, "2": 3, "3": 5, "4": 6}
+def _json_dict(value: Any) -> dict:
+    if isinstance(value, dict):
+        return value
+    try:
+        import json
+
+        parsed = json.loads(str(value or "") or "{}")
+    except ValueError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 @register_runner(36)
 class AlignShrineRunner(_ShrineRunnerMixin, BaseRunner):
-    """Action 36 (N-143): every city worships the god the organization chose for its luxury good.
+    """Action 36 (N-143): Deus de Cada Cidade — the god each city worships, as chosen in the job form.
 
-    The hub sends the choice with the job (job["shrine_gods"] = {tradegood: god_id}); a city already worshipping
-    gets its god changed, a city without a slot goes into a free one while the shrine has room.
+    inputs.worship = {city_id: god_id} (the cities picked in the form); a preset sends inputs.by_good =
+    {tradegood: god_id} instead, applied to every city of the account. A city already worshipping gets its god
+    changed; a city without a slot goes into a free one while the shrine has room.
     """
 
     def execute(self, job: dict[str, Any]) -> RunnerResult:
         jid, aid, ga_id = job["job_id"], job["account_id"], job.get("game_account_id")
         if not ga_id:
             return RunnerResult(success=False, data={"error": "missing_game_account"})
-        mapping = {str(k): int(v) for k, v in (job.get("shrine_gods") or DEFAULT_SHRINE_GODS).items() if str(v).isdigit()}
+        inputs = dict(job.get("inputs") or {})
+        per_city = {str(k): int(v) for k, v in _json_dict(inputs.get("worship")).items() if str(v).isdigit() and int(v)}
+        by_good = {str(k): int(v) for k, v in _json_dict(inputs.get("by_good")).items() if str(v).isdigit() and int(v)}
+        if not per_city and not by_good:
+            self.log(jid, "info", "Nenhuma cidade para mudar")
+            return RunnerResult(success=True, data={"changed": 0})
         snapshot = self._get_snapshot(jid, ga_id)
         shrine = self._find_shrine(snapshot or {})
         if shrine is None:
@@ -363,7 +377,7 @@ class AlignShrineRunner(_ShrineRunnerMixin, BaseRunner):
         for city in (snapshot or {}).get("cities") or []:
             cid = int(city.get("id") or 0)
             tradegood = str(city.get("produced_tradegood") or city.get("tradegood") or "")
-            want = mapping.get(tradegood)
+            want = per_city.get(str(cid)) if per_city else by_good.get(tradegood)
             name = str(city.get("name") or cid)
             if not cid or not want or current.get(cid) == want:
                 continue
@@ -423,7 +437,7 @@ class _MiracleRunnerMixin(BaseRunner):
             "temple_level": int(state.get("temple_level") or 0),
             "wonder_name": str(state.get("wonder_name") or ""),
             "wonder_description": str(state.get("wonder_description") or ""),
-            "wonder_effect": str(state.get("wonder_effect") or ""),
+            "wonder_effect": _plain_text(state.get("wonder_effect")),
             "duration_text": str(state.get("duration_text") or ""),
             "cooldown_text": str(state.get("cooldown_text") or ""),
             "belief_level": int(state.get("belief_level") or 0),
