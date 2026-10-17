@@ -11,9 +11,9 @@ from django.views.generic import TemplateView
 
 from apps.accounts.models import GameAccount
 from apps.game.services import miracle_rules
-from apps.game.services.shrine import shrines_for_organization
+from apps.game.services.shrine import GODS, shrines_for_organization
 from apps.orgs.views import can_change
-from apps.game.services.temples import balance_jobs, islands_for_organization, plan_faith, projected_faith
+from apps.game.services.temples import attach_miracle_timers, balance_jobs, islands_for_organization, plan_faith, projected_faith
 
 
 def _reserve(value) -> int:
@@ -31,6 +31,7 @@ class TemplesView(LoginRequiredMixin, TemplateView):
         ctx = super().get_context_data(**kwargs)
         reserve = _reserve(self.request.GET.get("reserva"))
         islands = islands_for_organization()
+        attach_miracle_timers(islands)                     # N-148
         cards = []
         for island in islands:
             planned = plan_faith(island, reserve=reserve)
@@ -51,7 +52,15 @@ class TemplesView(LoginRequiredMixin, TemplateView):
                 "own_pct": max(0, min(100 - min(100, island.others_share + island.base_share), island.own_share)),
             })
         ctx["cards"] = cards
-        ctx["shrines"] = shrines_for_organization()          # N-143
+        organization = getattr(self.request, "organization", None)
+        chosen = miracle_rules.shrine_gods_for(organization)
+        ctx["shrines"] = shrines_for_organization(chosen)          # N-143
+        ctx["shrine_choices"] = [
+            {"good": good, "icon": icon, "label": label, "chosen": chosen[good],
+             "options": [GODS[g] | {"id": g} for g in miracle_rules.SHRINE_CHOICES[good]]}
+            for good, icon, label in (("1", "game/resources/icon_wine.png", "Vinho"), ("2", "game/resources/icon_marble.png", "Mármore"),
+                                      ("3", "game/resources/icon_glass.png", "Cristal"), ("4", "game/resources/icon_sulfur.png", "Enxofre"))
+        ]
         ctx["reserve"] = reserve
         ctx["rules"] = miracle_rules.rules_for(getattr(self.request, "organization", None))
         ctx["can_change_rules"] = can_change(self.request)
@@ -86,6 +95,21 @@ class TemplesView(LoginRequiredMixin, TemplateView):
                 messages.success(request, f"Equilíbrio pedido: {created} job{'s' if created != 1 else ''} de sacerdotes.")
             else:
                 messages.info(request, "Nada a mudar: as ilhas já estão no ponto.")
+        elif action == "shrine_gods":
+            if not can_change(request) or getattr(request, "organization", None) is None:
+                raise Http404()
+            miracle_rules.save_shrine_gods(request.organization, request.POST)
+            messages.success(request, "Deuses do santuário salvos.")
+        elif action == "align":
+            # N-143: Alinhar Santuário (ac=36) for one account
+            from apps.jobs.services.workflows import create_job_with_workflow
+
+            ga = GameAccount.objects.select_related("account__node").filter(pk=request.POST.get("game_account") or None).first()
+            if ga is None:
+                raise Http404()
+            create_job_with_workflow(account=ga.account, game_account=ga, node=ga.account.node, action_code=36, inputs={},
+                                     status="queued", created_by=request.user, trigger_type="manual")
+            messages.success(request, f"Alinhar Santuário pedido para {ga.name}.")
         elif action == "refresh":
             from apps.jobs.services.workflows import create_job_with_workflow
 

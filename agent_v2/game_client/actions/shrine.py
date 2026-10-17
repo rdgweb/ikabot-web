@@ -11,6 +11,10 @@ Game rules seen there: each god blesses one resource and only a city that produc
 worshipping a god gets the same bonus ("Bênção máxima" of the shrine level, 57% at 27); a god out of grace
 blesses 0%; grace comes back for 100 Favor; one main god per city.
 Donate favor: action=DonateFavorToGod&godId&position (ajax POST).
+Change the god of a city (shrine script, N-143): ?action=ChangeGodWorship&oldCityId&newCityId&newGodId with
+order[] = the city of every worship slot, in slot order, after the change (0 = empty slot). oldCityId=newCityId
+changes the god of a city already worshipping; oldCityId=0 puts a new city in a free slot.
+BuyGracePeriodExtension (grace for ambrosia) is never automated.
 """
 
 from __future__ import annotations
@@ -115,6 +119,38 @@ class ShrineAction(BaseAction):
         self._remember_action_request(payload)
         return payload
 
+    def change_worship(
+        self,
+        *,
+        city_id: int,
+        old_city_id: int,
+        new_city_id: int,
+        god_id: int,
+        order: list[int],
+        **kwargs: Any,
+    ) -> Any:
+        params = {
+            "action": "ChangeGodWorship",
+            "oldCityId": str(old_city_id),
+            "newCityId": str(new_city_id),
+            "newGodId": str(god_id),
+        }
+        data = {
+            "order[]": [str(c) for c in order],
+            "backgroundView": "city",
+            "currentCityId": str(city_id),
+            "templateView": "shrineOfOlympus",
+            "actionRequest": self.client._action_request,
+            "ajax": "1",
+        }
+        resp = self.client._request("POST", self.client._server_url, params=params, data=data, headers=GAME_AJAX_HEADERS)
+        try:
+            payload = resp.json()
+        except Exception:
+            return {}
+        self._remember_action_request(payload)
+        return payload
+
     def get_full_page(
         self,
         *,
@@ -186,6 +222,13 @@ class ShrineAction(BaseAction):
                 "progress_visible": (((template_data.get(f'{prefix} .progressbar') or {}).get('style') or {}).get('display') != "none"),
             }
 
+        slot_order = [
+            int(city)
+            for _number, city in sorted(
+                re.findall(r'js_citySelect"\s+data-number="(\d+)"\s+data-known-city-id="(\d+)"', change_view_html),
+                key=lambda pair: int(pair[0]),
+            )
+        ]
         slot_cities = {
             int(number): int(city)
             for number, city in re.findall(
@@ -251,6 +294,7 @@ class ShrineAction(BaseAction):
             "additional_cities_possible": additional_cities_possible,
             "gods": gods,
             "gods_worshipped": gods_worshipped,
+            "slot_order": slot_order,
             "worship_assignments": worship_assignments,
             "raw_template_data": template_data,
         }

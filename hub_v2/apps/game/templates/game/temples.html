@@ -136,6 +136,20 @@
       <p class="mt-2 text-[11px] leading-relaxed text-muted">{{ island.effect }}{% if island.duration %} · {{ island.duration }}{% endif %}{% if island.cooldown %} · {{ island.cooldown }}{% endif %}</p>
       {% endif %}
 
+      {# N-148: our miracles in effect / regenerating, counting down #}
+      {% for timer in island.timers %}
+      <div class="mt-2 flex flex-wrap items-center gap-2 rounded-lg px-2 py-1 text-[11px]" style="background: rgba(201,156,78,0.10);">
+        <i class="bi bi-hourglass-split" style="color: var(--ik-gold);"></i>
+        <b class="text-ink">{{ timer.account }}</b>
+        {% if timer.active_until %}
+        <span class="font-semibold" style="color: var(--ik-good);">em efeito · termina em <span class="font-mono" data-countdown="{{ timer.active_until|date:'U' }}"></span></span>
+        {% else %}
+        <span class="text-muted">regenerando</span>
+        {% endif %}
+        <span class="ml-auto text-muted">volta em <b class="font-mono text-ink" data-countdown="{{ timer.available_at|date:'U' }}"></b></span>
+      </div>
+      {% endfor %}
+
       {# our temples on this island, in every account #}
       <div class="mt-3 space-y-1">
         {% for t in island.own %}
@@ -197,6 +211,17 @@
     <img src="{% static 'game/gods/favor.png' %}" alt="" class="h-7 w-7 object-contain">
     <h2 class="text-lg font-bold text-ink">Santuário dos Deuses</h2>
   </div>
+  {# the god each luxury good worships (Alinhar Santuário follows it) #}
+  <form method="post" class="flex flex-wrap items-center gap-2">{% csrf_token %}<input type="hidden" name="action" value="shrine_gods">
+    {% for choice in shrine_choices %}
+    <label class="inline-flex items-center gap-1.5 rounded-xl border px-2 py-1 text-[12px]" style="border-color: var(--ik-line); background: rgba(255,255,255,0.75);">
+      <img src="{% static choice.icon %}" alt="" class="h-4 w-4"> {{ choice.label }} →
+      <select name="shrine_god_{{ choice.good }}" class="text-[12px] text-ink" style="border: 0; background: transparent;" onchange="this.form.submit()" {% if not can_change_rules %}disabled{% endif %}>
+        {% for god in choice.options %}<option value="{{ god.id }}" {% if god.id == choice.chosen %}selected{% endif %}>{{ god.name }} ({{ god.good }})</option>{% endfor %}
+      </select>
+    </label>
+    {% endfor %}
+  </form>
   <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
     {% for shrine in shrines %}
     <div class="card !p-4">
@@ -205,13 +230,18 @@
         <span class="text-[11px] text-muted">{{ shrine.city_name }} · nível {{ shrine.level }}</span>
         <span class="ml-auto inline-flex items-center gap-1 text-[12px] font-semibold text-ink"><img src="{% static 'game/gods/favor.png' %}" alt="" class="h-4 w-4"> {{ shrine.favor }}</span>
         {% if shrine.bonus %}<span class="rounded-full px-2 py-0.5 text-[10px] font-bold" style="background: rgba(95,140,78,0.14); color: var(--ik-good);">bênção {{ shrine.bonus }}%</span>{% endif %}
+        {% if shrine.to_align and can_change_rules %}
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="align"><input type="hidden" name="game_account" value="{{ shrine.game_account_id }}">
+          <button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left-right"></i> Alinhar {{ shrine.to_align }} cidade{{ shrine.to_align|pluralize }}</button>
+        </form>
+        {% endif %}
       </div>
       <div class="mt-2 flex flex-wrap gap-1.5">
         {% for god in shrine.gods %}
         <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
               style="{% if god.in_grace %}border-color: rgba(95,140,78,0.35);{% else %}border-color: rgba(187,81,67,0.45); color: var(--ik-bad);{% endif %}">
           <img src="{% static god.image %}" alt="" class="h-4 w-4 object-contain"> {{ god.name }}
-          <span class="font-mono {% if god.in_grace %}text-muted{% endif %}">{% if god.in_grace %}{{ god.grace }}{% else %}sem graça{% endif %}</span>
+          <span class="font-mono {% if god.in_grace %}text-muted{% endif %}">{{ god.grace }}</span>
         </span>
         {% endfor %}
       </div>
@@ -225,8 +255,9 @@
           {% if c.status == "ok" %}<span class="font-mono text-muted">{{ c.bonus }}%</span>
           {% elif c.status == "wrong_good" %}<span class="rounded-full px-1.5 text-[10px] font-semibold" style="background: rgba(187,81,67,0.12); color: var(--ik-bad);">não produz {{ c.god.good }}</span>
           {% elif c.status == "no_grace" %}<span class="rounded-full px-1.5 text-[10px] font-semibold" style="background: rgba(187,81,67,0.12); color: var(--ik-bad);">sem graça</span>
-          {% elif c.status == "no_god" %}<span class="text-[10px] text-muted">sem divindade</span>{% endif %}
-          {% if c.status != "ok" and c.recommended_god %}
+          {% elif c.status == "no_god" %}<span class="text-[10px] text-muted">sem divindade</span>
+          {% elif c.status == "other" %}<span class="font-mono text-muted">{{ c.bonus }}%</span>{% endif %}
+          {% if c.recommended_god and c.recommended != c.god_id %}
           <span class="inline-flex items-center gap-1 font-semibold" style="color: var(--ik-gold);">→ <img src="{% static c.recommended_god.image %}" alt="" class="h-4 w-4 object-contain">{{ c.recommended_god.name }}</span>
           {% endif %}
         </div>
@@ -239,5 +270,20 @@
     {% endfor %}
   </div>
   {% endif %}
+<script>
+  // N-148: the miracle timers count down on the page
+  (function () {
+    function human(sec) {
+      if (sec <= 0) return 'agora';
+      var d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
+      return d ? d + 'D ' + h + 'h' : (h ? h + 'h ' + String(m).padStart(2, '0') + 'm' : m + 'm');
+    }
+    function tick() {
+      var now = Date.now() / 1000;
+      document.querySelectorAll('[data-countdown]').forEach(function (el) { el.textContent = human(Math.round(el.dataset.countdown - now)); });
+    }
+    tick(); setInterval(tick, 30000);
+  })();
+</script>
 </div>
 {% endblock %}

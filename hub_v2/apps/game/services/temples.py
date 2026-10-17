@@ -9,6 +9,7 @@ Free citizens are not always enough: the plan says how far each island gets and 
 """
 from __future__ import annotations
 
+import json
 import math
 import re
 from dataclasses import dataclass, field
@@ -72,6 +73,7 @@ class Island:
     participants: list[dict] = field(default_factory=list)
     share_per_priest: float | None = None
     updated_at: str = ""
+    timers: list[dict] = field(default_factory=list)   # N-148: our accounts' miracle in effect or regenerating
     short_priests: int = 0          # priests the plan could not place (no room in the temples or no free citizens)
 
     @property
@@ -239,3 +241,56 @@ def balance_jobs(islands: list[Island], *, target: float = 100.0, reserve: int =
         )
         created += 1
     return created
+
+
+def _span_seconds(text: str) -> int:
+    """ "Duração: 1D" / "Regeneração: 3D 12h" / "de imediato" -> seconds."""
+    total = 0
+    for amount, unit in re.findall(r"(\d+)\s*([DdHhMmSs])\b", str(text or "")):
+        total += int(amount) * {"d": 86400, "h": 3600, "m": 60, "s": 1}[unit.lower()]
+    return total
+
+
+def attach_miracle_timers(islands: list[Island], *, days: int = 8) -> None:
+    """N-148: when each of our accounts activated the island's miracle (the Ativar Milagre jobs that did it), and
+    from that the time it stays in effect and the time it comes back (regeneration counted from the activation)."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.jobs.models import Job, JobLog
+
+    by_city = {(t.game_account_id, t.city_id): (island, t.game_account_name) for island in islands for t in island.own}
+    if not by_city:
+        return
+    since = timezone.now() - timedelta(days=days)
+    jobs = Job.objects.filter(action_code=11, status="finished", finished_at__gte=since,
+                              game_account_id__in={ga for ga, _ in by_city}).only("pk", "game_account_id", "inputs_json")
+    activated = {
+        log.job_id: log.created_at
+        for log in JobLog.objects.filter(job__in=jobs, message__startswith="Milagre ativado").only("job_id", "created_at")
+    }
+    latest: dict[tuple[str, str], tuple] = {}
+    for job in jobs:
+        when = activated.get(job.pk)
+        if when is None:
+            continue
+        try:
+            city = str(json.loads(job.inputs_json or "{}").get("city") or "")
+        except ValueError:
+            continue
+        hit = by_city.get((str(job.game_account_id), city))
+        if hit is None:
+            continue
+        island, account_name = hit
+        key = (island.key, str(job.game_account_id))
+        if key not in latest or when > latest[key][1]:
+            latest[key] = (island, when, account_name)
+    now = timezone.now()
+    for island, when, account_name in latest.values():
+        active_until = when + timedelta(seconds=_span_seconds(island.duration))
+        available_at = when + timedelta(seconds=_span_seconds(island.cooldown))
+        if available_at <= now:
+            continue
+        island.timers.append({"account": account_name, "activated_at": when,
+                              "active_until": active_until if active_until > now else None, "available_at": available_at})

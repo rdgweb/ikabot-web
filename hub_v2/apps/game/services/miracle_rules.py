@@ -26,6 +26,9 @@ DEFAULTS = {"defense_on_attack": True, "colossus_when_losing": True, "speed_on_s
 DEFENSE_MIRACLES = ("Templo de Atena", "Forja de Hefesto")
 COLOSSUS = ("Colosso",)
 SPEED_MIRACLES = ("Templo de Poseidon", "Templo de Hermes")
+# N-143: the god of each luxury good (tradegood id -> god id); the organization may choose Pluto or Pã instead
+DEFAULT_SHRINE_GODS = {"1": 2, "2": 3, "3": 5, "4": 6}
+SHRINE_CHOICES = {"1": (2, 4, 1), "2": (3, 4, 1), "3": (5, 4, 1), "4": (6, 4, 1)}
 SHORT_NAMES = {"Templo de Atena": "Atena", "Forja de Hefesto": "Hefesto", "Colosso": "Colosso",
                "Templo de Poseidon": "Poseidon", "Templo de Hermes": "Hermes"}
 
@@ -38,6 +41,36 @@ def rules_for(organization) -> dict:
     if prefs and isinstance(prefs.miracle_rules, dict) and prefs.miracle_rules:
         rules.update({k: v for k, v in prefs.miracle_rules.items() if k in DEFAULTS})
     return rules
+
+
+def shrine_gods_for(organization) -> dict:
+    """{tradegood id: god id} — the default god of each luxury good, with the organization's choices."""
+    from apps.orgs.models import OrganizationPreferences
+
+    gods = dict(DEFAULT_SHRINE_GODS)
+    prefs = OrganizationPreferences.objects.filter(organization=organization).first() if organization else None
+    saved = (prefs.miracle_rules or {}).get("shrine_gods") if prefs and isinstance(prefs.miracle_rules, dict) else None
+    for good, god in (saved or {}).items():
+        if str(good) in SHRINE_CHOICES and int(god) in SHRINE_CHOICES[str(good)]:
+            gods[str(good)] = int(god)
+    return gods
+
+
+def save_shrine_gods(organization, data) -> dict:
+    from apps.orgs.services import preferences_of
+
+    gods = shrine_gods_for(organization)
+    for good, choices in SHRINE_CHOICES.items():
+        try:
+            god = int(data.get(f"shrine_god_{good}") or 0)
+        except (TypeError, ValueError):
+            continue
+        if god in choices:
+            gods[good] = god
+    prefs = preferences_of(organization)
+    prefs.miracle_rules = {**(prefs.miracle_rules or {}), "shrine_gods": gods}
+    prefs.save(update_fields=["miracle_rules", "updated_at"])
+    return gods
 
 
 def save_rules(organization, data) -> dict:
@@ -59,7 +92,7 @@ def save_rules(organization, data) -> dict:
         "ship_share": share,
     }
     prefs = preferences_of(organization)
-    prefs.miracle_rules = rules
+    prefs.miracle_rules = {**(prefs.miracle_rules or {}), **rules}          # the shrine choice stays
     prefs.save(update_fields=["miracle_rules", "updated_at"])
     return rules
 

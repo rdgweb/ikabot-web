@@ -107,6 +107,8 @@ class _ShrineRunnerMixin(BaseRunner):
                 "gods_worshipped": list(state.get("gods_worshipped") or []),
                 "additional_cities_possible": int(state.get("additional_cities_possible") or 0),
                 "worship_assignments": list(state.get("worship_assignments") or []),
+                "slot_order": list(state.get("slot_order") or []),
+                "gods_read_at": now_iso,          # the grace times count from here (updated_at moves with the favor)
                 "updated_at": now_iso,
             }
 
@@ -324,6 +326,70 @@ class _ShrineRunnerMixin(BaseRunner):
             if meta["id"] == int(god_id):
                 return str(meta["name"])
         return str(god_id)
+
+
+# N-143: the god each luxury good worships unless the organization chose otherwise (Pluto, Pã...)
+DEFAULT_SHRINE_GODS = {"1": 2, "2": 3, "3": 5, "4": 6}
+
+
+@register_runner(36)
+class AlignShrineRunner(_ShrineRunnerMixin, BaseRunner):
+    """Action 36 (N-143): every city worships the god the organization chose for its luxury good.
+
+    The hub sends the choice with the job (job["shrine_gods"] = {tradegood: god_id}); a city already worshipping
+    gets its god changed, a city without a slot goes into a free one while the shrine has room.
+    """
+
+    def execute(self, job: dict[str, Any]) -> RunnerResult:
+        jid, aid, ga_id = job["job_id"], job["account_id"], job.get("game_account_id")
+        if not ga_id:
+            return RunnerResult(success=False, data={"error": "missing_game_account"})
+        mapping = {str(k): int(v) for k, v in (job.get("shrine_gods") or DEFAULT_SHRINE_GODS).items() if str(v).isdigit()}
+        snapshot = self._get_snapshot(jid, ga_id)
+        shrine = self._find_shrine(snapshot or {})
+        if shrine is None:
+            self.log(jid, "error", "Nenhum Santuario dos Deuses encontrado no snapshot")
+            return RunnerResult(success=False, data={"error": "shrine_not_found"})
+        creds = self.resolve_credentials(aid, {}, game_account_id=ga_id)
+        if not creds:
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
+        client = self.get_or_login_game_client(jid, aid, ga_id, creds)
+        city_id, position = int(shrine["city_id"]), int(shrine["position"])
+        state = client.get_shrine_state(city_id, position)
+        order = [int(c) for c in state.get("slot_order") or []]
+        current = {int(w["city_id"]): int(w.get("god_id") or 0) for w in state.get("worship_assignments") or [] if w.get("city_id")}
+        room = int(state.get("additional_cities_possible") or 0)
+        changed, skipped = [], []
+        for city in (snapshot or {}).get("cities") or []:
+            cid = int(city.get("id") or 0)
+            tradegood = str(city.get("produced_tradegood") or city.get("tradegood") or "")
+            want = mapping.get(tradegood)
+            name = str(city.get("name") or cid)
+            if not cid or not want or current.get(cid) == want:
+                continue
+            if cid in current:
+                client.change_god_worship(city_id, old_city_id=cid, new_city_id=cid, god_id=want, order=list(order))
+            elif room > 0 and 0 in order:
+                order[order.index(0)] = cid
+                client.change_god_worship(city_id, old_city_id=0, new_city_id=cid, god_id=want, order=list(order))
+                room -= 1
+            else:
+                skipped.append(name)
+                continue
+            changed.append((cid, name, want))
+            time.sleep(random.uniform(0.8, 1.6))
+        after = client.get_shrine_state(city_id, position) if changed else state
+        self.save_game_client(ga_id, client)
+        now = {int(w["city_id"]): int(w.get("god_id") or 0) for w in after.get("worship_assignments") or [] if w.get("city_id")}
+        for cid, name, want in changed:
+            ok = now.get(cid) == want
+            self.log(jid, "info" if ok else "warn", f"{name}: {'adora' if ok else 'nao passou a adorar'} {self._god_name(want)}")
+        if skipped:
+            self.log(jid, "warn", "Sem vaga no santuario para: " + ", ".join(skipped))
+        if not changed and not skipped:
+            self.log(jid, "info", "Todas as cidades ja adoram o deus escolhido")
+        self._persist_shrine_state(job_id=jid, account_id=aid, game_account_id=ga_id, snapshot=snapshot, shrine=shrine, state=after)
+        return RunnerResult(success=True, data={"changed": len(changed), "skipped": skipped})
 
 
 class _MiracleRunnerMixin(BaseRunner):

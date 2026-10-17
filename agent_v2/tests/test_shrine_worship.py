@@ -84,5 +84,36 @@ class ShrineLoopTests(unittest.TestCase):
         self.assertEqual(runner._next_check_seconds(context, result), 5 * 3600 + 120)
 
 
+class AlignShrineTests(unittest.TestCase):
+    """Action 36: each city worships the god chosen for its luxury good."""
+
+    def test_wrong_gods_change_and_a_new_city_takes_a_free_slot(self):
+        from runners.economy import AlignShrineRunner
+
+        runner = AlignShrineRunner.__new__(AlignShrineRunner)
+        runner.log, runner.save_game_client, runner.hub = MagicMock(), MagicMock(), MagicMock()
+        runner.resolve_credentials = MagicMock(return_value={"x": 1})
+        snapshot = {"base_snapshot": {}, "military": {}, "cities": [
+            {"id": 101, "name": "Vinho", "tradegood": 1, "buildings": [{"building": "shrineOfOlympus", "position": 6, "level": 20}]},
+            {"id": 102, "name": "Marmore", "tradegood": 2},
+            {"id": 103, "name": "Cristal", "tradegood": 3},
+        ]}
+        runner.hub.get_snapshot.return_value = snapshot
+        before = ShrineAction._parse_state_payload(_payload({}, [(101, 3), (102, 3)], {3}))
+        before["additional_cities_possible"] = 1
+        before["slot_order"] = [101, 102, 0]
+        after = ShrineAction._parse_state_payload(_payload({}, [(101, 2), (102, 3), (103, 4)], {2, 3, 4}))
+        client = MagicMock()
+        client.get_shrine_state.side_effect = [before, after]
+        runner.get_or_login_game_client = MagicMock(return_value=client)
+        result = runner.execute({"job_id": "j", "account_id": "a", "game_account_id": "g",
+                                 "shrine_gods": {"1": 2, "2": 3, "3": 4, "4": 6}})          # crystal -> Pluto
+        calls = [c.kwargs for c in client.change_god_worship.call_args_list]
+        self.assertEqual(calls[0], {"old_city_id": 101, "new_city_id": 101, "god_id": 2, "order": [101, 102, 0]})
+        self.assertEqual((calls[1]["old_city_id"], calls[1]["new_city_id"], calls[1]["god_id"], calls[1]["order"]), (0, 103, 4, [101, 102, 103]))
+        self.assertEqual(len(calls), 2)                                                     # Marmore already on Tique
+        self.assertTrue(result.success)
+
+
 if __name__ == "__main__":
     unittest.main()

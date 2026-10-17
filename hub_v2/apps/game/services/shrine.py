@@ -7,6 +7,9 @@ So the god of a city is the god of its luxury good; Pã (wood) and Pluto (gold) 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
+
+from django.utils import timezone
 
 from apps.accounts.models import GameAccount
 from apps.game.models import AccountSnapshot
@@ -20,6 +23,7 @@ GODS = {
     6: {"name": "Hefesto", "image": "game/gods/hephaestus.png", "good": "enxofre", "tradegood": 4},
 }
 GOD_BY_TRADEGOOD = {meta["tradegood"]: god_id for god_id, meta in GODS.items() if meta["tradegood"]}
+GOD_BY_TRADEGOOD_STR = {str(k): v for k, v in GOD_BY_TRADEGOOD.items()}
 
 
 @dataclass
@@ -30,7 +34,7 @@ class CityWorship:
     god_id: int | None
     bonus: str = ""
     generated: str = ""
-    status: str = ""          # ok | no_god | wrong_good | no_grace | unknown
+    status: str = ""          # ok | other | no_god | wrong_good | no_grace | unknown
     recommended: int | None = None
 
     @property
@@ -59,16 +63,42 @@ class Shrine:
     def problems(self) -> int:
         return sum(1 for c in self.cities if c.status in ("wrong_good", "no_grace", "no_god"))
 
-
-def _grace_seconds(god: dict) -> int:
-    if "grace_seconds" in god:
-        return int(god.get("grace_seconds") or 0)
-    text = str(god.get("grace_period") or "-").strip()
-    return 0 if text in ("", "-") else 1
+    @property
+    def to_align(self) -> int:
+        """Cities whose god is not the one chosen for their luxury good (what Alinhar Santuário changes)."""
+        return sum(1 for c in self.cities if c.recommended and c.god_id != c.recommended and c.status != "unknown")
 
 
-def shrines_for_organization() -> list[Shrine]:
-    """One card per game account with a shrine reading (the request's organization scope applies)."""
+def _grace_seconds(god: dict, read_at: datetime | None) -> int | None:
+    """Grace left now: what the game said when the shrine was read, minus the time since. None = old reading
+    (before N-143 the reading time was not kept, and the grace text could be days old)."""
+    if read_at is None or "grace_seconds" not in god:
+        return None
+    left = int(god.get("grace_seconds") or 0) - int((timezone.now() - read_at).total_seconds())
+    return max(0, left)
+
+
+def _human(seconds: int) -> str:
+    days, rest = divmod(max(0, int(seconds)), 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes = rest // 60
+    if days:
+        return f"{days}D {hours}h"
+    return f"{hours}h {minutes:02d}m" if hours else f"{minutes}m"
+
+
+def _read_at(state: dict) -> datetime | None:
+    try:
+        value = datetime.fromisoformat(str(state.get("gods_read_at") or ""))
+    except ValueError:
+        return None
+    return value if timezone.is_aware(value) else timezone.make_aware(value)
+
+
+def shrines_for_organization(chosen: dict | None = None) -> list[Shrine]:
+    """One card per game account with a shrine reading (the request's organization scope applies).
+    `chosen` = {tradegood id: god id}, the organization's god for each luxury good."""
+    chosen = {str(k): int(v) for k, v in (chosen or GOD_BY_TRADEGOOD_STR).items()}
     shrines = []
     accounts = GameAccount.objects.filter(active=True, account__active=True)
     for snap in AccountSnapshot.objects.filter(game_account__in=accounts).select_related("game_account"):
@@ -90,10 +120,12 @@ def shrines_for_organization() -> list[Shrine]:
             favor=int(state.get("current_favor") or 0), bonus=bonus, mapped=bool(by_city),
             updated_at=str(state.get("updated_at") or ""),
         )
+        read_at = _read_at(state)
+        grace = {gid: _grace_seconds(g, read_at) for gid, g in gods_state.items()}
         for god_id in sorted(worshipped):
-            g = gods_state.get(god_id) or {}
-            shrine.gods.append({**GODS[god_id], "id": god_id, "grace": str(g.get("grace_period") or "-"),
-                                "in_grace": _grace_seconds(g) > 0})
+            left = grace.get(god_id)
+            shrine.gods.append({**GODS[god_id], "id": god_id, "known": left is not None, "in_grace": bool(left),
+                                "grace": _human(left) if left else ("sem graça" if left == 0 else "leitura antiga")})
         for city in cities:
             if not isinstance(city, dict) or not city.get("id"):
                 continue
@@ -103,15 +135,17 @@ def shrines_for_organization() -> list[Shrine]:
             row = CityWorship(city_id=str(city.get("id")), name=str(city.get("name") or ""), tradegood=tradegood,
                               god_id=god_id, bonus=str((slot or {}).get("current_bonus") or ""),
                               generated=str((slot or {}).get("generated_resources") or ""),
-                              recommended=GOD_BY_TRADEGOOD.get(tradegood, 1))
+                              recommended=chosen.get(str(tradegood)) or GOD_BY_TRADEGOOD.get(tradegood, 1))
             if not by_city:
                 row.status = "unknown"
             elif not god_id:
                 row.status = "no_god"
             elif GODS[god_id]["tradegood"] and GODS[god_id]["tradegood"] != tradegood:
                 row.status = "wrong_good"
-            elif _grace_seconds(gods_state.get(god_id) or {}) <= 0:
+            elif grace.get(god_id) == 0:
                 row.status = "no_grace"
+            elif god_id != row.recommended:
+                row.status = "other"
             else:
                 row.status = "ok"
             shrine.cities.append(row)

@@ -379,6 +379,11 @@ class GameClient(IslandActions):
         action = ShrineAction(self)
         return action.activate_god(city_id=city_id, position=position, god_id=god_id)
 
+    def change_god_worship(self, city_id: int, *, old_city_id: int, new_city_id: int, god_id: int, order: list[int]) -> Any:
+        """Set the main god of a city in the shrine (N-143)."""
+        return ShrineAction(self).change_worship(city_id=city_id, old_city_id=old_city_id, new_city_id=new_city_id,
+                                                 god_id=god_id, order=order)
+
     def get_shrine_page(self, city_id: int, position: int) -> str:
         """Fetch the full shrine HTML page."""
         action = ShrineAction(self)
