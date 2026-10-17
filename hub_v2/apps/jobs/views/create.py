@@ -2088,7 +2088,7 @@ def _custom_field_names(action_code: int) -> list[str]:
     if int(action_code) == 5:
         return [*SHRINE_GOD_FIELDS, "favor_recheck_minutes"]
     if int(action_code) == 1007:
-        return [*SHRINE_GOD_FIELDS, "favor_recheck_minutes", "cycle_hours"]
+        return [*SHRINE_GOD_FIELDS, "favor_recheck_minutes", "cycle_hours", "keep_worshipped", "fill_bars", "favor_reserve"]
     if int(action_code) == 1203:
         return ["unit_targets_json", "min_crystal_reserve", "min_gold_reserve", "priority_mode"]
     if int(action_code) == 15:

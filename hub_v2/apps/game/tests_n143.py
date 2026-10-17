@@ -70,6 +70,14 @@ class ShrinePanelTests(TestCase):
         gods = {g["name"]: (g["in_grace"], g["grace"]) for g in shrines_for_organization()[0].gods}
         self.assertEqual(gods["Dionísio"], (False, "sem graça"))
 
+    def test_the_loop_form_has_the_strategy_switches(self):
+        html = self.client.get("/jobs/new/form/", {"ga": str(self.ga.pk), "action": "1007"}).content.decode()
+        self.assertIn("Estratégia", html)
+        self.assertIn('name="fill_bars"', html)
+        self.assertIn('name="favor_reserve"', html)
+        self.assertNotIn("Leitura operacional", html)
+        self.assertEqual(html.count('name="keep_worshipped"'), 1)            # not rendered again as a loose checkbox
+
     def test_the_job_form_shows_each_city_and_its_god(self):
         html = self.client.get("/jobs/new/form/", {"ga": str(self.ga.pk), "action": "36"}).content.decode()
         self.assertIn("Deus de cada cidade", html)

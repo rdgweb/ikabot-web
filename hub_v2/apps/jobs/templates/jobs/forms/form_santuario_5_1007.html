@@ -15,6 +15,8 @@
              god_theia: {{ form.god_theia.value|yesno:'true,false,false' }},
              god_hephaestus: {{ form.god_hephaestus.value|yesno:'true,false,false' }}
            },
+           {% if action_code == 1007 %}keep: {{ form.keep_worshipped.value|yesno:'true,false,true' }},
+           fill: {{ form.fill_bars.value|yesno:'true,false,true' }},{% endif %}
            selectedCount() {
              return Object.values(this.gods).filter(Boolean).length;
            }
@@ -174,26 +176,49 @@
               </div>
             </div>
 
-            <div class="rounded-[22px] border p-4"
+            {% if action_code == 1007 %}
+            {# N-143: what the loop does beyond the ticked gods #}
+            <div class="rounded-[22px] border p-4 space-y-2"
                  style="border-color: rgba(95,140,78,0.24); background: linear-gradient(180deg, rgba(95,140,78,0.10), rgba(255,255,255,0.84));">
-              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">Leitura operacional</div>
-              <div class="mt-2 space-y-2 text-sm text-muted">
-                <div class="flex items-start gap-2">
-                  <i class="bi bi-check2-circle mt-0.5 text-[var(--ik-good)]"></i>
-                  <span>O runner valida no jogo quais deuses estão pesquisados antes de doar.</span>
-                </div>
-                <div class="flex items-start gap-2">
-                  <i class="bi bi-check2-circle mt-0.5 text-[var(--ik-good)]"></i>
-                  <span>Se faltar favor, o job fica em espera e se reprograma sozinho.</span>
-                </div>
-                {% if action_code == 1007 %}
-                <div class="flex items-start gap-2">
-                  <i class="bi bi-check2-circle mt-0.5 text-[var(--ik-good)]"></i>
-                  <span>No loop, depois da ativação o próximo ciclo respeita o intervalo configurado.</span>
-                </div>
-                {% endif %}
-              </div>
+              <div class="text-[11px] font-semibold uppercase tracking-[0.16em]" style="color: var(--ik-good);">Estratégia</div>
+
+              <label class="flex cursor-pointer items-center gap-3 rounded-2xl border p-3 transition-all"
+                     :style="keep ? 'border-color: rgba(95,140,78,0.5); background: rgba(255,255,255,0.92);' : 'border-color: var(--ik-line); background: rgba(255,255,255,0.6); opacity: .75;'">
+                <input type="checkbox" name="{{ form.keep_worshipped.html_name }}" x-model="keep" class="sr-only">
+                <img src="{{ shrine_ui.summary.building_icon }}" alt="" class="h-9 w-9 shrink-0 object-contain">
+                <span class="min-w-0 flex-1">
+                  <span class="block text-sm font-semibold text-ink">Deuses das cidades</span>
+                  <span class="block text-[11px] text-muted">graça para quem as cidades adoram</span>
+                </span>
+                <span class="relative inline-block shrink-0 rounded-full transition-colors"
+                      :style="'width: 38px; height: 22px; background: ' + (keep ? 'var(--ik-good)' : 'rgba(0,0,0,0.20)')">
+                  <span class="absolute rounded-full bg-white shadow transition-all" :style="'top: 3px; width: 16px; height: 16px; left: ' + (keep ? '19px' : '3px')"></span>
+                </span>
+              </label>
+
+              <label class="block cursor-pointer rounded-2xl border p-3 transition-all"
+                     :style="fill ? 'border-color: rgba(201,156,78,0.55); background: rgba(255,255,255,0.92);' : 'border-color: var(--ik-line); background: rgba(255,255,255,0.6); opacity: .75;'">
+                <span class="flex items-center gap-3">
+                  <input type="checkbox" name="{{ form.fill_bars.html_name }}" x-model="fill" class="sr-only">
+                  <img src="{{ shrine_ui.summary.favor_icon }}" alt="" class="h-9 w-9 shrink-0 object-contain">
+                  <span class="min-w-0 flex-1">
+                    <span class="block text-sm font-semibold text-ink">Barra até 1000</span>
+                    <span class="block text-[11px] text-muted">bênção de 40% a 100% do máximo</span>
+                  </span>
+                  <span class="relative inline-block shrink-0 rounded-full transition-colors"
+                        :style="'width: 38px; height: 22px; background: ' + (fill ? 'var(--ik-gold)' : 'rgba(0,0,0,0.20)')">
+                    <span class="absolute rounded-full bg-white shadow transition-all" :style="'top: 3px; width: 16px; height: 16px; left: ' + (fill ? '19px' : '3px')"></span>
+                  </span>
+                </span>
+                <span class="mt-2 flex items-center gap-2 text-[11px] text-muted" x-show="fill" @click.stop>
+                  guardar
+                  <input type="number" name="{{ form.favor_reserve.html_name }}" min="0" value="{{ form.favor_reserve.value|default:500 }}"
+                         class="form-input text-center" style="width: 5rem; padding: 2px 4px;">
+                  <img src="{{ shrine_ui.summary.favor_icon }}" alt="favor" class="h-4 w-4"> de favor
+                </span>
+              </label>
             </div>
+            {% endif %}
           </section>
         </div>
       </div>
