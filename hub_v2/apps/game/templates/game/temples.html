@@ -69,10 +69,10 @@
             <div class="text-sm font-bold text-ink">{{ rule.title }}</div>
             <div class="text-[11px] text-muted">{{ rule.miracles }}</div>
           </div>
-          <span class="relative inline-block shrink-0 rounded-full transition-colors" style="width: 38px; height: 22px;"
-                :style="{{ rule.key }} ? 'background: var(--ik-good);' : 'background: rgba(0,0,0,0.20);'">
-            <span class="absolute rounded-full bg-white shadow transition-all" style="top: 3px; width: 16px; height: 16px;"
-                  :style="{{ rule.key }} ? 'left: 19px;' : 'left: 3px;'"></span>
+          <span class="relative inline-block shrink-0 rounded-full transition-colors"
+                :style="'width: 38px; height: 22px; background: ' + ({{ rule.key }} ? 'var(--ik-good)' : 'rgba(0,0,0,0.20)')">
+            <span class="absolute rounded-full bg-white shadow transition-all"
+                  :style="'top: 3px; width: 16px; height: 16px; left: ' + ({{ rule.key }} ? '19px' : '3px')"></span>
           </span>
         </div>
         {% if rule.key == "ships" %}
