@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import logging
 import random
 import time
@@ -29,6 +30,12 @@ GOD_META = {
 
 def _plain_text(value: Any) -> str:
     """The game sends some texts as {"text": "..."}."""
+    if isinstance(value, str) and value.lstrip().startswith("{"):
+        # N-160: the snapshot keeps it as the dict's text ("{'text': '...'}")
+        try:
+            value = ast.literal_eval(value)
+        except (ValueError, SyntaxError):
+            pass
     if isinstance(value, dict):
         value = value.get("text") or ""
     return str(value or "").strip()

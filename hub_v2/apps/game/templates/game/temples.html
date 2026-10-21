@@ -146,7 +146,10 @@
         {% else %}
         <span class="text-muted">regenerando</span>
         {% endif %}
+        {% if timer.reason %}<span class="rounded-full px-1.5 py-0.5 text-[10px] text-muted" style="background: rgba(255,255,255,0.7);">{{ timer.reason }}</span>{% endif %}
+        {% if timer.available_at %}
         <span class="ml-auto text-muted">volta em <b class="font-mono text-ink" data-countdown="{{ timer.available_at|date:'U' }}"></b></span>
+        {% endif %}
       </div>
       {% endfor %}
 

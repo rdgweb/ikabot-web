@@ -51,6 +51,20 @@
             <span :class="historyState('resources').delta>=0?'gm-text-positive':'gm-text-negative'" x-text="'Delta: ' + signedFmt(historyState('resources').delta)"></span>
             <span class="gm-text-label" x-text="'Atual: ' + fmt(historyState('resources').last)"></span>
           </div>
+          {# N-155: the balance of each resource in the chosen period (what came in minus what went out) #}
+          <div class="mt-3 grid grid-cols-2 sm:grid-cols-5 gap-2">
+            <template x-for="res in [['wood','Madeira','{% static 'game/resources/icon_wood.png' %}'],['wine','Vinho','{% static 'game/resources/icon_wine.png' %}'],['marble','Mármore','{% static 'game/resources/icon_marble.png' %}'],['crystal','Cristal','{% static 'game/resources/icon_glass.png' %}'],['sulfur','Enxofre','{% static 'game/resources/icon_sulfur.png' %}']]" :key="'res-period-'+res[0]">
+              <div class="gm-card rounded-lg px-3 py-2 flex items-center gap-2">
+                <img :src="res[2]" :alt="res[1]" style="width: 22px; height: 22px; object-fit: contain;">
+                <div class="min-w-0">
+                  <div class="gm-card-label" style="font-size: 10px;" x-text="res[1]"></div>
+                  <div class="font-mono font-bold text-sm" :class="historyState(res[0]).delta >= 0 ? 'gm-text-positive' : 'gm-text-negative'"
+                       x-text="historyState(res[0]).available ? signedFmt(historyState(res[0]).delta) : '—'"></div>
+                </div>
+              </div>
+            </template>
+          </div>
+          <div class="mt-1 text-[10px] gm-text-label">Saldo de cada recurso no período escolhido: o que entrou menos o que saiu (construção, treino, envios).</div>
         </div>
       </template>
       <template x-if="!historyState('resources').available">

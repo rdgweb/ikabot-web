@@ -32,6 +32,10 @@ class OwnTemple:
     share: float
     target: int | None = None
     reserve: int = 0
+    # N-160: what the temple reading of this city said about the account's miracle (seconds left, and when read)
+    active_left: int = 0
+    regen_left: int = 0
+    state_read_at: str = ""
 
     @property
     def cap(self) -> int:
@@ -162,8 +166,14 @@ def islands_for_organization() -> list[Island]:
                 island.strength = f"{match.group(2)}/{match.group(3)}" if match else island.strength
                 island.island_name = island.island_name or str(state.get("island_name") or "")
                 island.effect = _plain_text(state.get("wonder_effect"))
-                island.duration = str(state.get("duration_text") or "")
-                island.cooldown = str(state.get("cooldown_text") or "")
+                # N-160: only the miracle's own duration/regeneration ("Duração: 4h", "Regeneração: 1D 12h");
+                # while it is in effect or regenerating the game shows the time left instead
+                duration_text = str(state.get("duration_text") or "")
+                cooldown_text = str(state.get("cooldown_text") or "")
+                if duration_text.startswith("Duração"):
+                    island.duration = duration_text
+                if cooldown_text.startswith("Regeneração"):
+                    island.cooldown = cooldown_text
                 island.available = island.available or str(state.get("activate_state") or "").lower() == "enabled"
                 if island.faith is None and state.get("belief_percent") is not None:
                     island.faith = state.get("belief_percent")
@@ -180,6 +190,9 @@ def islands_for_organization() -> list[Island]:
                     city_id=str(city.get("id")), city_name=str(city.get("name") or city.get("id")),
                     priests=priests, max_priests=int(state.get("max_priests") or 0),
                     free_citizens=_free_citizens(city, state), share=share,
+                    active_left=_span_seconds(duration_text) if ACTIVE_LEFT.search(duration_text) else 0,
+                    regen_left=_span_seconds(cooldown_text) if REGEN_LEFT.search(cooldown_text) else 0,
+                    state_read_at=str(state.get("updated_at") or ""),
                 ))
             else:
                 island.own.append(OwnTemple(
@@ -252,6 +265,10 @@ def balance_jobs(islands: list[Island], *, target: float = 100.0, reserve: int =
     return created
 
 
+ACTIVE_LEFT = re.compile(r"Ativado por", re.IGNORECASE)
+REGEN_LEFT = re.compile(r"Tempo restante", re.IGNORECASE)
+
+
 def _span_seconds(text: str) -> int:
     """ "Duração: 1D" / "Regeneração: 3D 12h" / "de imediato" -> seconds."""
     total = 0
@@ -261,45 +278,96 @@ def _span_seconds(text: str) -> int:
 
 
 def attach_miracle_timers(islands: list[Island], *, days: int = 8) -> None:
-    """N-148: when each of our accounts activated the island's miracle (the Ativar Milagre jobs that did it), and
-    from that the time it stays in effect and the time it comes back (regeneration counted from the activation)."""
+    """N-148/N-160: for each of our accounts, the island's miracle in effect or regenerating: from the Ativar Milagre
+    job that activated it (and the miracle's own duration/regeneration) or, when newer, from the temple reading that
+    showed the time left. Each timer says why it was activated (shipment, attack, Telegram, by hand)."""
     from datetime import timedelta
 
     from django.utils import timezone
+    from django.utils.dateparse import parse_datetime
 
     from apps.jobs.models import Job, JobLog
 
-    by_city = {(t.game_account_id, t.city_id): (island, t.game_account_name) for island in islands for t in island.own}
+    by_city = {(t.game_account_id, t.city_id): (island, t) for island in islands for t in island.own}
     if not by_city:
         return
-    since = timezone.now() - timedelta(days=days)
+    now = timezone.now()
+    since = now - timedelta(days=days)
     jobs = Job.objects.filter(action_code=11, status="finished", finished_at__gte=since,
                               game_account_id__in={ga for ga, _ in by_city}).only("pk", "game_account_id", "inputs_json")
     activated = {
         log.job_id: log.created_at
         for log in JobLog.objects.filter(job__in=jobs, message__startswith="Milagre ativado").only("job_id", "created_at")
     }
-    latest: dict[tuple[str, str], tuple] = {}
+    timers: dict[tuple[str, str], dict] = {}
+
+    def offer(island, account_id, account_name, *, active_until, available_at, reason, seen_at):
+        key = (island.key, account_id)
+        current = timers.get(key)
+        if current is None or seen_at > current["seen_at"]:
+            timers[key] = {"island": island, "account": account_name, "active_until": active_until,
+                           "available_at": available_at, "reason": reason or (current or {}).get("reason", ""),
+                           "seen_at": seen_at}
+        elif reason and not current["reason"]:
+            current["reason"] = reason
+
     for job in jobs:
         when = activated.get(job.pk)
         if when is None:
             continue
         try:
-            city = str(json.loads(job.inputs_json or "{}").get("city") or "")
+            inputs = json.loads(job.inputs_json or "{}")
         except ValueError:
             continue
-        hit = by_city.get((str(job.game_account_id), city))
+        hit = by_city.get((str(job.game_account_id), str(inputs.get("city") or "")))
         if hit is None:
             continue
-        island, account_name = hit
-        key = (island.key, str(job.game_account_id))
-        if key not in latest or when > latest[key][1]:
-            latest[key] = (island, when, account_name)
-    now = timezone.now()
-    for island, when, account_name in latest.values():
-        active_until = when + timedelta(seconds=_span_seconds(island.duration))
-        available_at = when + timedelta(seconds=_span_seconds(island.cooldown))
-        if available_at <= now:
+        island, temple = hit
+        duration, cooldown = _span_seconds(island.duration), _span_seconds(island.cooldown)
+        offer(island, temple.game_account_id, temple.game_account_name,
+              active_until=when + timedelta(seconds=duration) if duration else None,
+              available_at=when + timedelta(seconds=cooldown) if cooldown else None,
+              reason=_reason_label(inputs.get("reason")), seen_at=when)
+
+    for island in islands:
+        for temple in island.own:
+            if not (temple.active_left or temple.regen_left):
+                continue
+            read_at = parse_datetime(temple.state_read_at) if temple.state_read_at else None
+            if read_at is None:
+                continue
+            if timezone.is_naive(read_at):
+                read_at = timezone.make_aware(read_at)
+            active_until = read_at + timedelta(seconds=temple.active_left) if temple.active_left else None
+            cooldown = _span_seconds(island.cooldown)
+            available_at = (read_at + timedelta(seconds=temple.regen_left) if temple.regen_left
+                            else (active_until - timedelta(seconds=_span_seconds(island.duration)) + timedelta(seconds=cooldown)
+                                  if active_until and cooldown else None))
+            offer(island, temple.game_account_id, temple.game_account_name,
+                  active_until=active_until, available_at=available_at, reason="", seen_at=read_at)
+
+    for timer in sorted(timers.values(), key=lambda t: t["account"].lower()):
+        active_until, available_at = timer["active_until"], timer["available_at"]
+        if active_until and active_until <= now:
+            active_until = None
+        if active_until is None and (available_at is None or available_at <= now):
             continue
-        island.timers.append({"account": account_name, "activated_at": when,
-                              "active_until": active_until if active_until > now else None, "available_at": available_at})
+        timer["island"].timers.append({"account": timer["account"], "active_until": active_until,
+                                       "available_at": available_at if available_at and available_at > now else None,
+                                       "reason": timer["reason"]})
+
+
+def _reason_label(reason) -> str:
+    """Why the miracle was asked for, in a few words (the reason the hub or the agent wrote in the job)."""
+    text = str(reason or "").lower()
+    if not text:
+        return ""
+    if "envio" in text or "navio" in text:
+        return "envio grande"
+    if "ataque" in text:
+        return "ataque chegando"
+    if "combate" in text or "perdendo" in text:
+        return "perdendo o combate"
+    if "telegram" in text:
+        return "Telegram"
+    return str(reason)[:40]
