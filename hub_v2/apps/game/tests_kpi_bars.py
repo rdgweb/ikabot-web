@@ -18,4 +18,5 @@ class KpiBarsTests(SimpleTestCase):
         html = (PARTIALS / "modal_resources.html").read_text("utf-8")
         self.assertNotIn("min-width:560px", html)
         self.assertIn("table-layout: fixed", html)
+        self.assertIn('class="gm-table overflow-x-auto rounded-lg" style="min-width: 0;"', html)   # .gm-table has 580px
         self.assertIn(".ik-two-cols > * { min-width: 0; }", html)
