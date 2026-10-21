@@ -74,7 +74,7 @@
                 <span class="font-mono font-bold gm-text-sea" x-text="fmt(account.ships)"></span>
               </div>
               <div class="gm-bar-track mt-1 rounded-full overflow-hidden">
-                <div class="h-full rounded-full" style="background:linear-gradient(90deg,#4a7c9e,#79a8c9);" :style="'width:'+Math.max(account.share,2)+'%'"></div>
+                <div class="h-full rounded-full" :style="'background:linear-gradient(90deg,#4a7c9e,#79a8c9); width:' + Math.max(account.share,2) + '%'"></div>
               </div>
               <div class="mt-1 flex items-center justify-between text-[10px] gm-text-label">
                 <span x-text="account.share + '%'"></span>
@@ -104,7 +104,7 @@
                 <span class="font-mono font-bold gm-text-sea" x-text="fmt(unit.count)"></span>
               </div>
               <div class="gm-bar-track-sm mt-1 rounded-full overflow-hidden">
-                <div class="h-full rounded-full" style="background:#4a7c9e;" :style="'width:'+Math.max(unit.share,2)+'%'"></div>
+                <div class="h-full rounded-full" :style="'background:#4a7c9e; width:' + Math.max(unit.share,2) + '%'"></div>
               </div>
               <div class="mt-1 text-[10px] gm-text-label" x-text="unit.share + '%'"></div>
             </div>

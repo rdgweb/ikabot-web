@@ -74,7 +74,7 @@
                 <span class="font-mono font-bold" style="color:#c9553e;" x-text="fmt(account.troops)"></span>
               </div>
               <div class="gm-bar-track mt-1 rounded-full overflow-hidden">
-                <div class="h-full rounded-full" style="background:linear-gradient(90deg,#c9553e,#e58e67);" :style="'width:'+Math.max(account.share,2)+'%'"></div>
+                <div class="h-full rounded-full" :style="'background:linear-gradient(90deg,#c9553e,#e58e67); width:' + Math.max(account.share,2) + '%'"></div>
               </div>
               <div class="mt-1 flex items-center justify-between text-[10px] gm-text-label">
                 <span x-text="account.share + '%'"></span>
@@ -100,7 +100,7 @@
                 <span class="font-mono font-bold" style="color:#c9553e;" x-text="fmt(unit.count)"></span>
               </div>
               <div class="gm-bar-track-sm mt-1 rounded-full overflow-hidden">
-                <div class="h-full rounded-full" style="background:#c9553e;" :style="'width:'+Math.max(unit.share,2)+'%'"></div>
+                <div class="h-full rounded-full" :style="'background:#c9553e; width:' + Math.max(unit.share,2) + '%'"></div>
               </div>
               <div class="mt-1 text-[10px] gm-text-label" x-text="unit.share + '%'"></div>
             </div>

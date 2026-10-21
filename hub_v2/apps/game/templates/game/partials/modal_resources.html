@@ -1,5 +1,7 @@
 {% load static %}
 <div class="grid min-h-0 h-full" style="grid-template-rows:auto minmax(0,1fr);">
+  {# N-155: a column of the two-column grids never grows past its share (a wide table stayed outside its card) #}
+  <style>.ik-two-cols > * { min-width: 0; }</style>
   <div class="gm-header flex items-center justify-between px-4 py-3 shrink-0" :style="'border-top: 4px solid ' + kpiTheme.resources.color">
     <div class="flex items-center gap-2">
       <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABkAAAAUCAMAAABPqWaPAAAC31BMVEX////468ogAEeCsPHe6//x69EgAFUtAGJbBqNiE6qJTgaqfCDXsDrXsEHx3rD469EaAEEnEy00AG86AHUgLQ1BBoJVAJxoBrdvOgB1ILcnb+ScYhNVj+SWvfHx68QTADQnAE4nAFstBk4tBmI6Bm80DWI0E1VBBnxOBpZVDY9HIFVOGoJHNEdiIJxvE700VS1BVRN8RwZ8J8QGYt6CTgZ8QYJvTmiCNMQgaNdVfImjbyCjdSCjfBq3giBbj+R1nNeJnLfElkGPtzTKo1XRt1WPvfGjveucxPHkvVv/5GLX6//k8f8TGhMTICAtDVtiAKo6LTQAOpZHIGIaOmhiDZxOJ1tbIIlbGqpoE7c0ThMAR9diIKo6R1VoILBbNHVHTidVQU5OTicTTsQNTt5iNIlVR2JoOnUTW7dVVTR1OoJbVUdiTlstVcoaW95bVVuCLcp8Or0gaN4taN6CR7dVb2KPYhOWYg2JaBOPaBOJYkdHaNd1gi1vgkE6fOtHfNFBgsRHfN5viTR8gkdHgt5VfOROguROguuwfBOPjzR8nC2qiSBoj8Rviddij969iSC3iTS9iSdOnPGCqiewnC2clolvnOTEli23j3WjlonEnCeWsDq9nEG3oy2wj7DEnDqcsEG9ozqCo+Sjty2WvTTEnGiwo4+CqvGWqr18sOTXqjSjxEG3t2i3sI+qyjSWsPHXsEeJt/GqykGqt7DXt0eq0TrKqrDetzqw0TrXt2Kwt8q3vZycvfG9vZyw10GqvdfkvUHkvU7E0UHKvaOwxPGwyt63ytHKyqPxylXRyrDkyom30d690dew0f/x0VW30fHx0WK90fHX0bC90fje0aP4107411Xr0Zb411v412LR18rx13zR19HR19fX197/3lX43m/E3vje3r3R5PH/61vR5PjX5PHr5L3k5NHX5Pj/62/x5L3r5NHx5MT/63z465z/65b/65zx69f48df/+Lf//6Ooous2AAAAAXRSTlMAQObYZgAAAaxJREFUaN5jYEACjEdrz5xqZmXAAIy3ky+wMMt8xJTgL+z1ZmGeepcRXYb/TiuL1wvmhh4M4xhPtx329mJ2223PiqqL//mR3KqWS8ueyhqv2MkPV84oJydnn7RONkpK5pG7lN0+RrjExfiaXfVFLLLGE3PcmC1cn9xkhUpMETGI1Ld0YAEqX7jp5A5nhw3nwFLP1swQMchILNGP6bZwfcjHZ2vVv/w1yDzGYz55qXrmxVoivsHpD/Z8+uIhzWXLB5Y5kZaZIubPGZ3VGChz+d3nl2/7JLjW8wEllppJ6jIJqysyJey1rLv1/uz1/Su5JXg9gDLZYUaSigIK6pxxG51WT59w4Hw7L4+hDS8D41ZTNQ0xNnltIz2OpsVb5lTO5zXhucotzc3AaMrJKcrExK4pzhGu1um0avvBmVzTPHm45jEwaoqbFyiz+bELC7EzBU2qnrV2sonNcc8KawYzUQ4xIYHYfA55VRVdFZ2OBV3ShuXbHm+WYNDREmZjUhaP0GDTlgxRWLKIh7vMerbLvSulDIcCBEMFBUWF2AWUVJXm3ndxtHK+9urNhxuOAJk6glB3deULAAAAAElFTkSuQmCC" class="w-5 h-5">
@@ -73,7 +75,7 @@
     </div>
 
     {# ── Composicao + Por conta grid ── #}
-    <div class="grid grid-cols-1 xl:grid-cols-[0.95fr_1.05fr] gap-4">
+    <div class="grid grid-cols-1 xl:grid-cols-[0.95fr_1.05fr] gap-4 ik-two-cols">
       <div class="gm-section rounded-lg p-3">
         <div class="flex items-center justify-between mb-3">
           <h4 class="gm-section-title">Composição atual</h4>
@@ -123,7 +125,7 @@
                 <span class="font-mono font-bold gm-text-title" x-text="fmt(account.resources)"></span>
               </div>
               <div class="gm-bar-track mt-2 rounded-full overflow-hidden">
-                <div class="h-full rounded-full" style="background:linear-gradient(90deg,#b78c2a,#8c6335);" :style="'width:' + Math.max(account.resourceWidth, 2) + '%'"></div>
+                <div class="h-full rounded-full" :style="'background:linear-gradient(90deg,#b78c2a,#8c6335); width:' + Math.max(account.resourceWidth || 0, 2) + '%'"></div>
               </div>
               <div class="mt-2 grid grid-cols-3 gap-2 text-[10px]">
                 <span style="color:#8f3c44;" x-text="'Vinho/h ' + fmt(account.wine_spendings)"></span>
@@ -137,7 +139,7 @@
     </div>
 
     {# ── Cidades criticas + Cidades mais ricas grid ── #}
-    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 ik-two-cols">
       <div class="gm-section rounded-lg p-3">
         <div class="flex items-center justify-between mb-3">
           <h4 class="gm-section-title">Cidades críticas</h4>
@@ -171,7 +173,8 @@
           <span class="gm-section-hint">maior estoque total</span>
         </div>
         <div class="gm-table overflow-x-auto rounded-lg">
-          <table class="w-full text-xs border-collapse" style="min-width:560px;">
+          <table class="w-full text-xs border-collapse" style="table-layout: fixed;">
+            <colgroup><col style="width: 42%;"><col style="width: 22%;"><col style="width: 14%;"><col style="width: 22%;"></colgroup>
             <thead>
               <tr>
                 <th class="text-left py-2 px-3">Cidade</th>
@@ -183,9 +186,9 @@
             <tbody>
               <template x-for="city in richestResourceCities()" :key="'resource-rich-'+city.player+'-'+city.name">
                 <tr>
-                  <td class="py-2.5 px-3">
-                    <div class="font-semibold truncate gm-text-player" x-text="city.name"></div>
-                    <div class="text-[10px] gm-text-label" x-text="city.player + (city.x && city.y ? ' [' + city.x + ':' + city.y + ']' : '')"></div>
+                  <td class="py-2.5 px-3" style="overflow: hidden;">
+                    <div class="font-semibold truncate gm-text-player" x-text="city.name" :title="city.name"></div>
+                    <div class="text-[10px] gm-text-label truncate" x-text="city.player + (city.x && city.y ? ' [' + city.x + ':' + city.y + ']' : '')"></div>
                   </td>
                   <td class="py-2.5 px-2 text-right font-mono font-semibold gm-text-title" x-text="fmt(city.resource_total)"></td>
                   <td class="py-2.5 px-2 text-right font-mono" :class="Number(city.cap_pct || 0) >= 95 ? 'gm-text-negative' : Number(city.cap_pct || 0) >= 85 ? 'gm-text-warning' : 'gm-text-positive'" x-text="city.cap_pct + '%'"></td>

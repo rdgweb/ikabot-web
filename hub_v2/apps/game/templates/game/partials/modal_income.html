@@ -75,7 +75,7 @@
                 <span class="font-mono font-bold" :class="c.income>=0?'gm-text-positive':'gm-text-negative'" x-text="signedFmt(c.income)"></span>
               </div>
               <div class="gm-bar-track-sm mt-1 rounded-full overflow-hidden" style="background:#d6e5d0;">
-                <div class="h-full rounded-full" style="background:linear-gradient(90deg,#77b35d,#2d7a2d);" :style="'width:'+Math.max(c.incomeWidth,2)+'%'"></div>
+                <div class="h-full rounded-full" :style="'background:linear-gradient(90deg,#77b35d,#2d7a2d); width:' + Math.max(c.incomeWidth,2) + '%'"></div>
               </div>
               <div class="mt-1 flex items-center justify-between text-[10px] gm-text-label">
                 <span x-text="'Bruta ' + signedFmt(c.grossIncome)"></span>

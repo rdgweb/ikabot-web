@@ -51,7 +51,8 @@ class MiracleTimersTests(TestCase):
         self.assertEqual(set(timers), {"Ativa", "Parada"})
         reading = timers["Ativa"]
         self.assertAlmostEqual((reading["active_until"] - self.now).total_seconds(), 90 * 60, delta=5)
-        self.assertAlmostEqual((reading["available_at"] - self.now).total_seconds(), 10.5 * 3600, delta=5)
+        # activated 2.5 h ago (in effect for 4 h, 1.5 h left), regenerating for 12 h from the activation
+        self.assertAlmostEqual((reading["available_at"] - self.now).total_seconds(), 9.5 * 3600, delta=5)
         by_job = timers["Parada"]
         self.assertAlmostEqual((by_job["active_until"] - self.now).total_seconds(), 3 * 3600, delta=5)
         self.assertAlmostEqual((by_job["available_at"] - self.now).total_seconds(), 11 * 3600, delta=5)
