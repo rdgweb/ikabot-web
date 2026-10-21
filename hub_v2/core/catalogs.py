@@ -285,6 +285,35 @@ UNIT_ICON_MAP.update({
     "Porta-Baloes": "game/units/Porta-balões.png",
 })
 
+# N-145: every ship of the game by its Portuguese name is a ship (and never falls back to the Hoplita image)
+_SHIP_ICONS_PT = {
+    "Barco Mercante": "game/units/barco_mercante.png",
+    "Cargueiro": "game/units/cargueiro.png",
+    "Trireme": "game/units/trieme.png",
+    "Lança-Chamas": "game/units/lancachamas.png",
+    "Submergível": "game/units/Submergível.png",
+    "Barco Balista": "game/units/Barco Balista.png",
+    "Barco Catapulta": "game/units/barcocatapulta.png",
+    "Barco Morteiro": "game/units/barcomorteiro.png",
+    "Aríete a Vapor": "game/units/Aríete a Vapor.png",
+    "Lança-Foguetes": "game/units/Lança-Foguetes.png",
+    "Lancha Rápida": "game/units/Lancha Rápida.png",
+    "Porta-balões": "game/units/Porta-balões.png",
+    "Reparador": "game/units/barcoreparador.png",
+    # newer ships without an image of their own yet: the default ship image
+    "Destruidor de Conveses": "",
+    "Triturador de Velas": "",
+    "Pironavio": "",
+    "Catapulta de Pedregulhos": "",
+    "Rachador a Remos": "",
+}
+for _name, _icon in _SHIP_ICONS_PT.items():
+    _plain = "".join(c for c in unicodedata.normalize("NFKD", _name) if not unicodedata.combining(c))
+    for _key in {_name, _plain}:
+        UNIT_CATALOG.setdefault(_key, {"name": _name, "type": "ship"})
+        if _icon:
+            UNIT_ICON_MAP.setdefault(_key, _icon)
+
 SHIP_UNIT_KEYS = {
     key for key, value in UNIT_CATALOG.items() if value.get("type") == "ship"
 }

@@ -1,5 +1,7 @@
 {% load static hub_tags %}
 {# This template is used for HTMX boosted requests — renders only the #page-content innards #}
+{# N-157: htmx takes this title for the browser tab (it must stay at the top of the response) #}
+<title>{% block title %}ikabot hub{% endblock %} — ikabot v{{ HUB_VERSION }}</title>
 {% include "components/topbar.html" %}
 <main id="main-area" class="p-6">
   {% if BILLING_NOTICE %}{% include "billing/_notice.html" %}{% endif %}

@@ -329,8 +329,8 @@
               <div>
                 <a href="{% url 'jobs:job-detail' report.action_job_id %}"
                    class="text-sea hover:underline font-mono text-[10px]"
-                   title="Ver job que executou a miss?o">
-                  a??o {{ report.action_job_id|stringformat:"s"|slice:":8" }}
+                   title="Ver job que executou a missão">
+                  ação {{ report.action_job_id|stringformat:"s"|slice:":8" }}
                 </a>
               </div>
               {% endif %}
@@ -343,7 +343,7 @@
                 </a>
               </div>
               {% elif not report.action_job_id %}
-                <span class="text-muted">???</span>
+                <span class="text-muted">—</span>
               {% endif %}
             </td>
             <td class="py-2 px-3 text-center">

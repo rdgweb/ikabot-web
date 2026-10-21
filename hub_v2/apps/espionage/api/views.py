@@ -758,7 +758,12 @@ class ScanRaidAlertsView(APIView):
             )
             xy = f"[{report.target_x}:{report.target_y}]" if report.target_x is not None else ""
             if troops:
-                troops_lines = "\n".join(f"  {qty}× {uid}" for uid, qty in troops.items())
+                from apps.combat.services.report_parser import unit_name  # N-156: the name, not the game's id
+
+                troops_lines = "\n".join(
+                    f"  {qty}× {unit_name(uid)}"
+                    for uid, qty in sorted(troops.items(), key=lambda item: -int(item[1] or 0))
+                )
                 defense_block = f"⚔️ Defesa:\n{troops_lines}"
             else:
                 defense_block = "⚔️ Defesa: sem tropas"
