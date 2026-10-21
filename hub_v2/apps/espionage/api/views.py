@@ -258,9 +258,19 @@ def _recommend_fleet_for_blockade(
     se não vencer, tenta mais navios até o que a cidade tem. Sem frota inimiga conhecida, ou
     se o simulador falhar, vale o palpite.
     """
+    return _blockade_plan(own_fleet_pt, enemy_fleet, enemy_upgrades, own_upgrades, city_level)["fleet"]
+
+
+def _blockade_plan(own_fleet_pt: dict, enemy_fleet: dict[int, int] | None = None,
+                   enemy_upgrades: dict[int, dict] | None = None, own_upgrades: dict[int, dict] | None = None,
+                   city_level: int | None = None) -> dict:
+    """N-156: the blockade fleet and whether it beats the fleet in the port ({"fleet", "can_win"}); can_win is
+    None when the port's fleet is unknown or the simulator failed, False when our fleet cannot beat it."""
     guess = _fleet_rule_for_blockade(own_fleet_pt, enemy_fleet, enemy_upgrades)
-    if not enemy_fleet or not guess:
-        return guess
+    if not enemy_fleet:
+        return {"fleet": guess, "can_win": None}
+    if not guess:
+        return {"fleet": {}, "can_win": False}
     try:
         from apps.espionage.services.battle_sea import recommend_fleet
 
@@ -270,10 +280,10 @@ def _recommend_fleet_for_blockade(
             # the field is the one of the port attacked; unknown, it is guessed from the city like the wall
             port_level=_guess_wall_level_from_city_level(city_level) if city_level else None,
         )
-        return rec["recommended"] or guess
+        return {"fleet": rec["recommended"] or guess, "can_win": bool(rec["can_win"])}
     except Exception:  # noqa: BLE001 - a blockade is never left without a fleet because the simulator failed
         logger.warning("Sea simulation failed for the blockade fleet; using the rule", exc_info=True)
-        return guess
+        return {"fleet": guess, "can_win": None}
 
 
 def _fleet_rule_for_blockade(
@@ -414,19 +424,21 @@ def _choose_raid_account(target_city_id: str, target_owner_id: str, server_id: s
             sim = None
             recommended = None
             recommended_fleet = None
+            fleet_can_win = None
             if enemy_intel and enemy_intel.get("enemy_units"):
                 sim = _simulate_attack(troops, enemy_intel, own_upgrades)
                 if sim.get("winner") != "attacker":
                     continue  # pula cidade que não vence
                 recommended = _recommend_units(troops, enemy_intel, own_upgrades)
             if enemy_intel and enemy_intel.get("needs_blockade"):
-                recommended_fleet = _recommend_fleet_for_blockade(
+                plan = _blockade_plan(
                     fleet,
                     enemy_fleet=enemy_intel.get("enemy_fleet") or {},
                     enemy_upgrades=enemy_intel.get("enemy_upgrades") or {},
                     own_upgrades=own_upgrades,
                     city_level=enemy_intel.get("city_level"),
                 )
+                recommended_fleet, fleet_can_win = plan["fleet"], plan["can_win"]
 
             # Score = sobrevivência atacante após combate (mais alto = melhor)
             if sim:
@@ -443,6 +455,7 @@ def _choose_raid_account(target_city_id: str, target_owner_id: str, server_id: s
                     "sim": sim,
                     "recommended": recommended,
                     "recommended_fleet": recommended_fleet,
+                    "fleet_can_win": fleet_can_win,
                 }
         if not best:
             continue
@@ -465,6 +478,7 @@ def _choose_raid_account(target_city_id: str, target_owner_id: str, server_id: s
             "sim": best.get("sim"),
             "recommended": best.get("recommended"),
             "recommended_fleet": best.get("recommended_fleet"),
+            "fleet_can_win": best.get("fleet_can_win"),
             "_score": score_total,
         })
 
@@ -767,6 +781,14 @@ class ScanRaidAlertsView(APIView):
                 defense_block = f"⚔️ Defesa:\n{troops_lines}"
             else:
                 defense_block = "⚔️ Defesa: sem tropas"
+            port_fleet = (enemy_intel or {}).get("enemy_fleet") or {}
+            if port_fleet:
+                # N-156: the fleet in the port, so the blockade suggestion can be judged
+                fleet_lines = "\n".join(
+                    f"  {qty}× {_ID_TO_NAME.get(int(uid), str(uid))}"
+                    for uid, qty in sorted(port_fleet.items(), key=lambda item: -int(item[1] or 0))
+                )
+                defense_block += f"\n⚓ Frota no porto:\n{fleet_lines}"
 
             # Bloco de sugestão da conta escolhida + ETA estimada
             def _eta_minutes(src_city_id: str, target_x, target_y) -> int:
@@ -812,12 +834,18 @@ class ScanRaidAlertsView(APIView):
                 else:
                     troops_text = ""
                 rec_fleet = top.get("recommended_fleet") or {}
-                if rec_fleet:
+                port_ships = sum(int(q or 0) for q in ((enemy_intel or {}).get("enemy_fleet") or {}).values())
+                if top.get("fleet_can_win") is False:
+                    # N-156: our fleet does not beat the port's; a fleet that loses is not suggested
+                    troops_text += (f"\n⚠️ Frota insuficiente para vencer a frota do porto "
+                                    f"({port_ships:,} navios)".replace(",", "."))
+                elif rec_fleet:
                     fleet_lines = ", ".join(
                         f"{qty}× {_ID_TO_NAME.get(uid, str(uid))}"
                         for uid, qty in rec_fleet.items()
                     )
-                    troops_text += f"\n⚓ Frota p/ bloquear porto: {fleet_lines}"
+                    verdict = " ✅ vence a frota do porto" if top.get("fleet_can_win") else ""
+                    troops_text += f"\n⚓ Frota p/ bloquear porto: {fleet_lines}{verdict}"
                 origin_block = (
                     f"🚢 Sugestão: {top['source_city_name']} ({top['ga_name']})\n"
                     f"  Mercantes: {top['transporters']} | Frontline: {top['frontline']} | Cerco: {top['siege']}\n"
