@@ -590,6 +590,70 @@ def _parse_troops_from_data(data_json: dict) -> dict[str, int]:
     return troops
 
 
+def _dots(value) -> str:
+    try:
+        return f"{int(value):,}".replace(",", ".")
+    except (TypeError, ValueError):
+        return str(value or "")
+
+
+def _raid_alert_variables(*, report, target_name, target_owner, xy, total, resources, troops, enemy_intel, top,
+                          eta_text, origin_block) -> dict:
+    """N-104: the rich target notice as variables, so its Telegram template can be edited piece by piece."""
+    from django.utils import timezone as _tz
+
+    from apps.combat.services.report_parser import unit_name
+
+    names = {"wood": ("🪵", "Madeira"), "wine": ("🍷", "Vinho"), "marble": ("🏛️", "Mármore"),
+             "crystal": ("💎", "Cristal"), "glass": ("💎", "Cristal"), "sulfur": ("💛", "Enxofre")}
+    resource_lines = "\n".join(f"  {names.get(k, ('•', k))[0]} {names.get(k, ('•', k))[1]}: {_dots(v)}"
+                               for k, v in (resources or {}).items() if int(v or 0) > 0)
+    defense = "\n".join(f"  {_dots(q)}× {unit_name(uid)}"
+                        for uid, q in sorted((troops or {}).items(), key=lambda item: -int(item[1] or 0))) or "  sem tropas"
+    port = (enemy_intel or {}).get("enemy_fleet") or {}
+    port_fleet = "\n".join(f"  {_dots(q)}× {_ID_TO_NAME.get(int(uid), str(uid))}"
+                           for uid, q in sorted(port.items(), key=lambda item: -int(item[1] or 0))) or "  sem navios"
+    ally = ""
+    try:
+        from apps.worldintel.models import WorldDumpPlayer
+
+        player = (WorldDumpPlayer.objects.filter(owner_id=report.target_owner_id).order_by("-dump__captured_at").first()
+                  if report.target_owner_id else None)
+        ally = f"[{player.ally_tag}]" if player and player.ally_tag else ""
+    except Exception:  # noqa: BLE001 - the notice goes out without the alliance
+        pass
+    spied_at = _tz.localtime(report.created_at).strftime("%d/%m %H:%M") if getattr(report, "created_at", None) else ""
+    sim = (top or {}).get("sim") or {}
+    verdict = (f"✅ Vitória em {sim.get('rounds', 0)} rounds, sobrevive {sim.get('attacker_survivors_pct', 0):.0f}%"
+               if sim else "")
+    troops_to_send = ", ".join(f"{q}× {_ID_TO_NAME.get(uid, str(uid))}" for uid, q in ((top or {}).get("recommended") or {}).items())
+    if (top or {}).get("fleet_can_win") is False:
+        fleet_to_send = f"⚠️ Frota insuficiente para vencer a frota do porto ({_dots(sum(int(q or 0) for q in port.values()))} navios)"
+    else:
+        fleet_to_send = ", ".join(f"{q}× {_ID_TO_NAME.get(uid, str(uid))}" for uid, q in ((top or {}).get("recommended_fleet") or {}).items())
+    return {
+        "target_city": target_name,
+        "coords": xy,
+        "target_player": target_owner,
+        "ally": ally,
+        "city_level": (enemy_intel or {}).get("city_level") or "",
+        "wall_level": (enemy_intel or {}).get("wall_level") or "",
+        "spied_at": spied_at,
+        "total": _dots(total),
+        "resources": resource_lines,
+        "defense": defense,
+        "port_fleet": port_fleet,
+        "raid_city": (top or {}).get("source_city_name", ""),
+        "raid_account": (top or {}).get("ga_name", ""),
+        "transporters": (top or {}).get("transporters", ""),
+        "eta": eta_text,
+        "verdict": verdict,
+        "troops_to_send": troops_to_send,
+        "fleet_to_send": fleet_to_send,
+        "suggestion": origin_block,
+    }
+
+
 class ScanRaidAlertsView(APIView):
     """POST /api/agent/espionage/scan-raid-alerts/
 
@@ -863,6 +927,11 @@ class ScanRaidAlertsView(APIView):
                 f"{defense_block}\n\n"
                 f"{origin_block}"
             )
+            raid_vars = _raid_alert_variables(
+                report=report, target_name=target_name, target_owner=target_owner, xy=xy, total=total_res,
+                resources=resources, troops=troops, enemy_intel=enemy_intel, top=top, eta_text=eta_text if top else "",
+                origin_block=origin_block,
+            )
 
             buttons: list[list[dict]] = []
             if top:
@@ -886,6 +955,7 @@ class ScanRaidAlertsView(APIView):
                     "report_id":      report_id,
                     "total_resources": total_res,
                 },
+                **raid_vars,
             )
             if ok:
                 ras.last_report_id = report_id

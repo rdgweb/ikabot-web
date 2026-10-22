@@ -864,6 +864,59 @@ class TrainUnitsRunner(BaseRunner):
         except Exception as exc:
             self.log(job_id, "warn", f"Snapshot militar nao atualizado com guarnicao real: {exc}")
 
+    def _handle_surplus(self, jid, inputs, surplus, city_target_map, city_current, city_names, catalog) -> list:
+        """N-159: the surplus of the units each city has a target for (other units are never touched).
+
+        surplus_mode "keep" (default) leaves it; "gather" moves it to the main army (consolidate_city_id, or the city
+        with the largest army of these units); "gather_dismiss" moves only what is at least surplus_min_pct% of the
+        city's target and dismisses (ac=1204) the smaller rest. The main army's city is never a donor.
+        """
+        mode = str(inputs.get("surplus_mode") or "keep")
+        if mode not in ("gather", "gather_dismiss"):
+            return []
+        managed = {cid: {uid for uid, qty in (target or {}).items() if _to_int(qty) > 0} for cid, target in city_target_map.items()}
+        main = _to_int(inputs.get("consolidate_city_id"))
+        if not main:
+            sizes = {cid: sum(_to_int(q) for uid, q in (city_current.get(cid) or {}).items() if uid in managed.get(cid, set()))
+                     for cid in city_target_map}
+            main = max(sizes, key=sizes.get) if sizes and max(sizes.values()) > 0 else 0
+        if not main:
+            self.log(jid, "warn", "Excedente: sem exército principal (nenhuma cidade com essas unidades); nada movido.")
+            return []
+        min_pct = max(1, min(100, _to_int(inputs.get("surplus_min_pct"), 20)))
+        main_name = city_names.get(main, str(main))
+        moves = []
+        for donor_id, donor_surplus in surplus.items():
+            if donor_id == main:
+                continue
+            gather, dismiss = {}, {}
+            for uid_str, qty in (donor_surplus or {}).items():
+                qty = _to_int(qty)
+                if qty <= 0 or uid_str not in managed.get(donor_id, set()):
+                    continue
+                target_qty = _to_int((city_target_map.get(donor_id) or {}).get(uid_str))
+                if mode == "gather_dismiss" and qty * 100 < min_pct * target_qty:
+                    dismiss[uid_str] = qty
+                else:
+                    gather[uid_str] = qty
+            donor_name = city_names.get(donor_id, str(donor_id))
+            if gather:
+                try:
+                    self.hub.spawn_job(jid, action_code=1202, inputs={"from_city_id": donor_id, "to_city_id": main, "units": gather})
+                    summary = ", ".join(f"{catalog.get(_to_int(uid), uid)} x{qty}" for uid, qty in gather.items())
+                    self.log(jid, "info", f"Excedente: {donor_name} -> exército principal {main_name} | {summary}")
+                    moves.append({"from": donor_id, "to": main, "units": gather})
+                except Exception as exc:
+                    self.log(jid, "warn", f"Excedente: envio {donor_name} -> {main_name} falhou -- {exc}")
+            if dismiss:
+                try:
+                    self.hub.spawn_job(jid, action_code=1204, inputs={"dismiss": {str(donor_id): dismiss}, "confirm": True})
+                    summary = ", ".join(f"{catalog.get(_to_int(uid), uid)} x{qty}" for uid, qty in dismiss.items())
+                    self.log(jid, "info", f"Excedente: dispensando em {donor_name} (menos de {min_pct}% do alvo) | {summary}")
+                except Exception as exc:
+                    self.log(jid, "warn", f"Excedente: dispensa em {donor_name} falhou -- {exc}")
+        return moves
+
     def _maintain_multi_city(self, jid, aid, ga_id, inputs, building_type, maintain_scope, recheck_minutes):
         """Maintain garrison across multiple cities (selected_custom or selected_uniform)."""
         city_ids = [_to_int(c) for c in (inputs.get('city_ids') or []) if _to_int(c)]
@@ -1037,6 +1090,9 @@ class TrainUnitsRunner(BaseRunner):
                         transfers_done.append({'from': donor_id, 'to': recv_id, 'units': to_move})
                     except Exception as exc:
                         self.log(jid, 'warn', f'Transferencia {donor_id}->{recv_id} falhou -- {exc}')
+
+            # N-159: what is left over after covering the cities short of their targets
+            transfers_done.extend(self._handle_surplus(jid, inputs, surplus, city_target_map, city_current, city_names, catalog))
 
             if transfers_done:
                 try:

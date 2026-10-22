@@ -2161,7 +2161,8 @@ def _custom_field_names(action_code: int) -> list[str]:
     if int(action_code) == 602:
         return ["dump_mode", "own_city_ids", "coord_x", "coord_y", "region_x_min", "region_y_min", "region_x_max", "region_y_max", "include_empty"]
     if int(action_code) == 1005:
-        return ["city_id", "city_ids", "building_type", "mode", "maintain_scope", "consolidate_city_id", "position", "recheck_minutes", "city_targets_json"]
+        return ["city_id", "city_ids", "building_type", "mode", "maintain_scope", "consolidate_city_id", "surplus_mode",
+                "surplus_min_pct", "position", "recheck_minutes", "city_targets_json"]
     if int(action_code) == 1202:
         return ["scope", "from_city_id", "to_city_id"]
     if int(action_code) == 1008:
@@ -4155,6 +4156,14 @@ class JobSubmitView(LoginRequiredMixin, View):
         consolidate_city_id = str(request.POST.get("consolidate_city_id") or "").strip()
         if consolidate_city_id:
             normalized["consolidate_city_id"] = consolidate_city_id
+        # N-159: the surplus after the targets (keep / gather in the main army / gather and dismiss the crumbs)
+        surplus_mode = str(request.POST.get("surplus_mode") or "keep").strip()
+        if surplus_mode in ("gather", "gather_dismiss"):
+            normalized["surplus_mode"] = surplus_mode
+            try:
+                normalized["surplus_min_pct"] = max(1, min(100, int(request.POST.get("surplus_min_pct") or 20)))
+            except (TypeError, ValueError):
+                normalized["surplus_min_pct"] = 20
         if mode == "maintain":
             normalized["target_garrison"] = units
             normalized["maintain_scope"] = maintain_scope

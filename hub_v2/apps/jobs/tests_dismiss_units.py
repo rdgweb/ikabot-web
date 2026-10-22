@@ -41,3 +41,25 @@ class DismissUnitsFormTests(TestCase):
         inputs = json.loads(Job.objects.get(action_code=1204).inputs_json)
         self.assertEqual(json.loads(inputs["dismiss"]), {"63388": {"303": 10}})
         self.assertTrue(inputs["confirm"])
+
+
+class MaintainSurplusFormTests(DismissUnitsFormTests):
+    """N-159: the Manter form has the surplus card and its choice reaches the job."""
+
+    def test_the_form_has_the_surplus_card(self):
+        html = self.client.get("/jobs/new/form/", {"ga": str(self.ga.pk), "action": "1005"}).content.decode()
+        self.assertIn("Juntar e dispensar o resto", html)
+        self.assertIn('name="surplus_mode"', html)
+
+    def test_the_choice_reaches_the_job(self):
+        from apps.jobs.models import Job
+
+        self.client.post("/jobs/new/submit/", {
+            "game_account": str(self.ga.pk), "action_code": "1005", "building_type": "troops", "mode": "maintain",
+            "maintain_scope": "selected_uniform", "city_ids": ["63355", "63388"], "units_303": "50",
+            "surplus_mode": "gather_dismiss", "surplus_min_pct": "25", "consolidate_city_id": "63388",
+            "recheck_minutes": "120"})
+        inputs = [json.loads(j.inputs_json) for j in Job.objects.filter(action_code=1005)]
+        self.assertTrue(inputs, "nenhum job criado")
+        self.assertTrue(all(i.get("surplus_mode") == "gather_dismiss" and i.get("surplus_min_pct") == 25
+                            and str(i.get("consolidate_city_id")) == "63388" for i in inputs), inputs)

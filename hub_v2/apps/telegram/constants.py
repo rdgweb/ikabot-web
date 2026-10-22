@@ -88,6 +88,14 @@ EVENT_TYPES = [
         "field": "notify_cinema_available",
     },
     {
+        "key": "raid_alert",
+        "label": "Alvo rico",
+        "description": "Cidade espionada com muitos recursos: estoque, defesa, frota do porto e a conta sugerida para o saque.",
+        "category": "operational",
+        "icon": "bi-gem",
+        "field": "notify_raid_alert",
+    },
+    {
         "key": "combat_report",
         "label": "Relatório de combate",
         "description": "Envia cada round e o fim dos combates acompanhados pelo Monitor de Combate, com a imagem do campo de batalha.",

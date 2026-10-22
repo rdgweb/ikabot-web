@@ -298,6 +298,15 @@ class NotificationTemplate(TimestampModel):
             "title_template": "Mudança na ilha {coords}",
             "body_template": "{island_line}\nVisto por {ga_name}\n{changes}",
         },
+        # N-104: the rich target notice, piece by piece (it used to arrive as one ready-made text)
+        "raid_alert": {
+            "icon": "🏴‍☠️",
+            "title_template": "Alvo rico: {target_city} {coords} ({target_player})",
+            "body_template": ("👤 {target_player} {ally} · cidade nível {city_level} · espionado {spied_at}\n"
+                              "💎 Total: {total}\n{resources}\n"
+                              "⚔️ Defesa:\n{defense}\n⚓ Frota no porto:\n{port_fleet}\n"
+                              "{suggestion}"),
+        },
         # N-104: one message a day for all the accounts, an hour before the game day turns
         "cinema_available": {
             "icon": "🎬",
@@ -360,6 +369,27 @@ class NotificationTemplate(TimestampModel):
             ("{provider}", "O que veio da lista do provedor"),
             ("{tests}", "Quantos proxies passaram no teste"),
             ("{reason_line}", "Por que a verificação rodou"),
+        ],
+        "raid_alert": [
+            ("{target_city}", "Cidade alvo"),
+            ("{coords}", "Coordenadas da ilha [x:y]"),
+            ("{target_player}", "Dono da cidade"),
+            ("{ally}", "Aliança do dono [TAG]"),
+            ("{city_level}", "Nível da cidade"),
+            ("{wall_level}", "Nível da muralha (lido ou estimado)"),
+            ("{spied_at}", "Quando foi espionada"),
+            ("{total}", "Total de recursos no armazém"),
+            ("{resources}", "Uma linha por recurso"),
+            ("{defense}", "Tropas na cidade, uma linha por unidade"),
+            ("{port_fleet}", "Navios no porto, uma linha por barco"),
+            ("{raid_account}", "Conta sugerida para o saque"),
+            ("{raid_city}", "Cidade de onde sai o saque"),
+            ("{transporters}", "Navios mercantes livres na conta sugerida"),
+            ("{eta}", "Viagem estimada"),
+            ("{verdict}", "Resultado simulado (vitória, rounds, sobreviventes)"),
+            ("{troops_to_send}", "Tropas a enviar"),
+            ("{fleet_to_send}", "Frota para bloquear o porto, ou o aviso de que não vence"),
+            ("{suggestion}", "O bloco inteiro da sugestão (conta, viagem, simulação, tropas e frota)"),
         ],
         "cinema_available": [
             ("{count}", "Quantas contas têm sessão disponível"),
