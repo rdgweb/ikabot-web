@@ -1540,3 +1540,70 @@ class MilitaryMovementsRunner(BaseRunner):
         except Exception as exc:
             self.log(jid, "error", f"Falha no advisor militar: {exc}")
             return RunnerResult(success=False, data={"error": str(exc)})
+
+
+@register_runner(1204)
+class DismissUnitsRunner(BaseRunner):
+    """N-154: Dispensar Unidades — dismiss troops and ships of one or more cities (irreversible).
+
+    Inputs:
+        dismiss   dict|str  {city_id: {unit_id: quantity}}; troops are 3xx, ships 2xx
+        confirm   bool      the operator confirmed it cannot be undone (nothing happens without it)
+    Never dismisses more than the city has: each quantity is capped by the city's current count.
+    """
+
+    def execute(self, job: dict[str, Any]) -> RunnerResult:
+        import json as _json
+
+        jid = job["job_id"]
+        aid = job["account_id"]
+        ga_id = job.get("game_account_id")
+        inputs = job.get("inputs") or {}
+        if not inputs.get("confirm"):
+            self.log(jid, "error", "Dispensa não confirmada no formulário: nada foi feito.")
+            return RunnerResult(success=False, data={"error": "not_confirmed"})
+        raw = inputs.get("dismiss") or {}
+        if isinstance(raw, str):
+            try:
+                raw = _json.loads(raw or "{}")
+            except ValueError:
+                raw = {}
+        plan: dict[int, dict[int, int]] = {}
+        for city, units in (raw or {}).items():
+            chosen = {_to_int(uid): _to_int(qty) for uid, qty in (units or {}).items() if _to_int(qty) > 0}
+            if _to_int(city) and chosen:
+                plan[_to_int(city)] = chosen
+        if not plan:
+            self.log(jid, "error", "Nenhuma unidade escolhida para dispensar.")
+            return RunnerResult(success=False, data={"error": "no_units"})
+
+        creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
+        if not creds:
+            self.log(jid, "error", "Credenciais não encontradas")
+            return RunnerResult(success=False, data={"error": "missing_credentials"})
+        client = self.get_or_login_game_client(jid, aid, ga_id, creds)
+        names = unit_names_by_id()
+        done: dict[str, dict[str, int]] = {}
+        failed = 0
+        for city_id, units in plan.items():
+            for kind, wanted in (("troops", {u: q for u, q in units.items() if 300 <= u < 400}),
+                                 ("fleet", {u: q for u, q in units.items() if 200 <= u < 300})):
+                if not wanted:
+                    continue
+                try:
+                    have = (client.fetch_stationed_units(city_id, building_type=kind) or {}).get("counts") or {}
+                    capped = {u: min(q, int(have.get(u, 0) or 0)) for u, q in wanted.items()}
+                    capped = {u: q for u, q in capped.items() if q > 0}
+                    if not capped:
+                        self.log(jid, "warn", f"Cidade {city_id}: nenhuma das unidades escolhidas está na cidade ({kind}).")
+                        continue
+                    client.dismiss_units(city_id, capped, building_type=kind)
+                    after = (client.fetch_stationed_units(city_id, building_type=kind) or {}).get("counts") or {}
+                    gone = {u: int(have.get(u, 0) or 0) - int(after.get(u, 0) or 0) for u in capped}
+                    text = ", ".join(f"{gone[u]}× {names.get(u, u)}" for u in capped)
+                    self.log(jid, "info", f"Cidade {city_id}: dispensado {text}")
+                    done.setdefault(str(city_id), {}).update({str(u): gone[u] for u in capped})
+                except Exception as exc:  # noqa: BLE001 - one city failing does not stop the others
+                    failed += 1
+                    self.log(jid, "error", f"Cidade {city_id}: falha ao dispensar ({kind}): {exc}")
+        return RunnerResult(success=failed == 0 and bool(done), data={"dismissed": done})

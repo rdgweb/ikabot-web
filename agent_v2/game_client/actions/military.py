@@ -1547,3 +1547,65 @@ class SendTroopsAction(BaseAction):
         for unit_type, count in units.items():
             params[unit_type] = count
         return self._ajax_request(ActionID.SEND_TROOPS, params)
+
+
+class DismissUnitsAction(BaseAction):
+    """N-154: dismiss troops or ships of a city (irreversible in the game).
+
+    Captured on 21/10/2026 (HAVIT, read only): the city's side menu "Dispensar unidades" opens
+      GET  view=garrisonEdit&activeTab=army|fleet&cityId=<city>   (tabs "Dispensar unid(s)" / "Dispensar frota(s)")
+    and its form posts
+      POST action=CityScreen&function=fireUnits&cityId=<city>&activeTab=army&<unit id>=<qty>   (troops)
+      POST action=CityScreen&function=fireShips&cityId=<city>&activeTab=fleet&<ship id>=<qty>  (ships)
+    The confirmation is only in the browser. The game answers for the city selected in the session, so the
+    view is opened first with currentCityId = the city.
+    """
+
+    def _refresh_action_request(self, resp) -> list:
+        try:
+            data = resp.json()
+        except Exception:
+            return []
+        try:
+            if data and isinstance(data[0], list) and len(data[0]) > 1:
+                ar = (data[0][1] or {}).get("actionRequest")
+                if ar:
+                    self.client._action_request = ar
+        except Exception:
+            pass
+        return data if isinstance(data, list) else []
+
+    def execute(self, city_id: int, units: dict[int, int], building_type: str = "troops", **kwargs: Any) -> dict[str, Any]:
+        units = {int(uid): int(qty) for uid, qty in (units or {}).items() if int(qty or 0) > 0}
+        if not units:
+            raise ActionError("No units to dismiss", action="dismiss")
+        fleet = building_type == "fleet"
+        tab = "fleet" if fleet else "army"
+        view = self.client._request(
+            "GET", self.client._server_url,
+            params={"view": "garrisonEdit", "activeTab": tab, "cityId": city_id, "backgroundView": "city",
+                    "currentCityId": city_id, "actionRequest": self.client._action_request, "ajax": "1"},
+            timeout=30,
+        )
+        self._refresh_action_request(view)
+        payload: dict[str, Any] = {
+            "action": "CityScreen",
+            "function": "fireShips" if fleet else "fireUnits",
+            "cityId": city_id,
+            "activeTab": tab,
+            "backgroundView": "city",
+            "currentCityId": city_id,
+            "templateView": "garrisonEdit",
+            "actionRequest": self.client._action_request,
+            "ajax": "1",
+        }
+        for uid, qty in units.items():
+            payload[str(uid)] = qty
+        logger.info("Dismiss %s city=%s units=%s", tab, city_id, units)
+        resp = self.client._request("POST", self.client._server_url, data=payload, timeout=30)
+        for entry in self._refresh_action_request(resp):
+            if isinstance(entry, list) and entry and entry[0] == "provideFeedback":
+                for fb in (entry[1] or []):
+                    if isinstance(fb, dict) and int(fb.get("type", 0) or 0) == 11:
+                        raise ActionError(f"Game error: {fb.get('text', 'unknown')}", action="dismiss")
+        return {"ok": True, "dismissed": units, "building_type": building_type}

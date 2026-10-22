@@ -2038,6 +2038,30 @@ def _diplomacy_msg_types(receiver_id: str) -> list[tuple[str, str]]:
     return options
 
 
+def _dismiss_form_context(snapshot, cities) -> dict:
+    """N-154: each city with the troops and ships it has (last military reading), for Dispensar Unidades."""
+    from apps.espionage.api.views import _NAME_TO_ID
+    from core.catalogs import get_unit_info
+
+    names = {str(c.get("id")): c.get("name") or str(c.get("id")) for c in (cities or []) if isinstance(c, dict)}
+    out = []
+    for city_mil in ((snapshot.military or {}).get("by_city") or []) if snapshot else []:
+        if not isinstance(city_mil, dict) or not city_mil.get("city_id"):
+            continue
+        units = []
+        for kind in ("troops", "fleet"):
+            for name, qty in (city_mil.get(kind) or {}).items():
+                uid = _NAME_TO_ID.get(str(name))
+                if uid and int(qty or 0) > 0:
+                    units.append({"id": int(uid), "name": str(name), "have": int(qty), "kind": kind,
+                                  "icon": static(get_unit_info(str(name))["icon"])})
+        if units:
+            cid = str(city_mil["city_id"])
+            out.append({"id": cid, "name": names.get(cid) or city_mil.get("city_name") or cid,
+                        "units": sorted(units, key=lambda u: (u["kind"] != "troops", -u["have"]))})
+    return {"cities": sorted(out, key=lambda c: c["name"].lower())}
+
+
 def _custom_field_names(action_code: int) -> list[str]:
     if int(action_code) == 808:
         return ["buyer_city_id", "unit_category"]
@@ -2053,6 +2077,8 @@ def _custom_field_names(action_code: int) -> list[str]:
         return ["cities", "target_mode", "target_value", "reserve_citizens"]
     if int(action_code) == 36:
         return ["worship", "by_good"]
+    if int(action_code) == 1204:
+        return ["dismiss", "confirm"]
     if int(action_code) == 23:
         return ["cities", "sawmill_percent", "luxury_percent"]
     if int(action_code) == 11:
@@ -2266,6 +2292,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities, request=None, 
         "scientists_ui": _scientists_form_context(snapshot, cities),
         "temple_ui": _temple_form_context(snapshot, cities) if int(action_code) == 35 else {},
         "worship_ui": _worship_form_context(_snapshot_cities(snapshot) or cities) if int(action_code) == 36 else {},
+        "dismiss_ui": _dismiss_form_context(snapshot, _snapshot_cities(snapshot) or cities) if int(action_code) == 1204 else {},
         "upgrade_units_ui": _upgrade_units_form_context(cities, snapshot),
         "market_ui": _market_form_context(cities),
         "training_ui": _training_form_context(snapshot, cities),

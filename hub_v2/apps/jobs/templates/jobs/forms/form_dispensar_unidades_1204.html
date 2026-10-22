@@ -1,0 +1,87 @@
+{% load static hub_tags %}
+
+    {% if action_code == 1204 %}
+    {# N-154: Dispensar Unidades — the troops and ships of each city, how many to dismiss, and the confirmation #}
+    {{ dismiss_ui|json_script:"dismiss-ui-data" }}
+    <div class="mb-5 rounded-[24px] border shadow-[0_12px_36px_rgba(60,45,18,0.10)]"
+         style="border-color: var(--ik-line); background:
+           radial-gradient(780px 280px at 0% 0%, rgba(187,81,67,0.10), transparent 60%),
+           linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
+         x-data="{
+           ui: {cities: []},
+           qty: {},
+           init() {
+             this.ui = JSON.parse(document.getElementById('dismiss-ui-data')?.textContent || '{}');
+             let saved = {};
+             try { saved = JSON.parse('{{ form.dismiss.value|default:''|escapejs }}' || '{}'); } catch (e) {}
+             this.ui.cities.forEach(c => c.units.forEach(u => { this.qty[c.id + ':' + u.id] = Math.min(Number((saved[c.id] || {})[u.id] || 0), u.have); }));
+           },
+           key(c, u) { return c.id + ':' + u.id; },
+           clamp(c, u) { const k = this.key(c, u); this.qty[k] = Math.max(0, Math.min(u.have, Math.floor(Number(this.qty[k]) || 0))); },
+           total() { return Object.values(this.qty).reduce((s, v) => s + (Number(v) || 0), 0); },
+           cityTotal(c) { return c.units.reduce((s, u) => s + (Number(this.qty[this.key(c, u)]) || 0), 0); },
+           payload() {
+             const out = {};
+             this.ui.cities.forEach(c => c.units.forEach(u => {
+               const q = Number(this.qty[this.key(c, u)]) || 0;
+               if (q > 0) { (out[c.id] = out[c.id] || {})[u.id] = q; }
+             }));
+             return JSON.stringify(out);
+           }
+         }">
+      <input type="hidden" name="{{ form.dismiss.html_name }}" :value="payload()">
+
+      <div class="flex flex-col gap-3 border-b px-5 py-4 md:flex-row md:items-center md:justify-between md:px-6"
+           style="border-color: rgba(219,201,167,0.8);">
+        <div class="flex items-center gap-3">
+          <img src="{% static 'game/buildings/barracks.png' %}" alt="" class="h-10 w-10 object-contain">
+          <div>
+            <h3 class="text-lg font-bold text-ink">Dispensar unidades</h3>
+            <div class="text-[11px] text-muted">Tropas e barcos de cada cidade, pela última leitura militar.</div>
+          </div>
+        </div>
+        <span class="rounded-full px-3 py-1 text-[11px] font-bold"
+              :style="total() ? 'background: rgba(187,81,67,0.14); color: var(--ik-bad);' : 'background: rgba(0,0,0,0.05); color: var(--ik-muted);'"
+              x-text="total() ? `${total().toLocaleString('pt-BR')} a dispensar` : 'nada escolhido'"></span>
+      </div>
+
+      <div class="space-y-3 px-4 py-4 md:px-6">
+        <template x-if="!ui.cities.length">
+          <div class="rounded-2xl border px-4 py-6 text-center text-sm text-muted" style="border-color: var(--ik-line);">
+            Nenhuma cidade com tropas ou barcos na última leitura desta conta.
+          </div>
+        </template>
+        <template x-for="c in ui.cities" :key="c.id">
+          <div class="rounded-2xl border px-4 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.75);">
+            <div class="mb-2 flex items-center justify-between">
+              <b class="text-sm text-ink" x-text="c.name"></b>
+              <span class="text-[11px] font-semibold" style="color: var(--ik-bad);" x-show="cityTotal(c)" x-text="`− ${cityTotal(c).toLocaleString('pt-BR')}`"></span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+              <template x-for="u in c.units" :key="u.id">
+                <div class="flex items-center gap-2 rounded-xl border px-2 py-1.5"
+                     :style="'border-color: ' + (qty[key(c, u)] ? 'rgba(187,81,67,0.45)' : 'var(--ik-line)') + '; background: rgba(255,255,255,0.9);'">
+                  <img :src="u.icon" :alt="u.name" style="width: 30px; height: 30px; object-fit: contain;">
+                  <div class="min-w-0 flex-1">
+                    <div class="truncate text-[11px] font-semibold text-ink" x-text="u.name" :title="u.name"></div>
+                    <div class="flex items-center gap-1">
+                      <input type="number" min="0" :max="u.have" x-model.number="qty[key(c, u)]" @change="clamp(c, u)"
+                             class="rounded-md border px-1 py-0.5 text-right font-mono text-xs" style="width: 4.5rem; border-color: var(--ik-line);">
+                      <span class="text-[10px] text-muted" x-text="'/ ' + u.have.toLocaleString('pt-BR')"></span>
+                      <button type="button" class="text-[10px] font-semibold" style="color: var(--ik-sea);" @click="qty[key(c, u)] = u.have">tudo</button>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <label class="mx-4 mb-4 flex items-start gap-3 rounded-2xl border px-4 py-3 md:mx-6"
+             style="border-color: rgba(187,81,67,0.45); background: rgba(187,81,67,0.06); cursor: pointer;">
+        <input type="checkbox" name="{{ form.confirm.html_name }}" {% if form.confirm.value %}checked{% endif %} style="margin-top: 3px;">
+        <span class="text-sm text-ink"><b style="color: var(--ik-bad);">Não tem volta.</b> As unidades dispensadas somem do jogo; nada é feito sem esta confirmação.</span>
+      </label>
+    </div>
+    {% endif %}

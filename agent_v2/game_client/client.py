@@ -49,7 +49,7 @@ from .actions.black_market import (
 )
 from .actions.market import BuyAction, CreateOfferAction, GetOffersAction, SellAction
 from .actions.miracle import MiracleAction
-from .actions.military import AttackAction, BlockadeFleetAction, FetchBarracksStateAction, FetchBlockadeViewAction, FetchCombatDetailedReportAction, FetchCombatReportDetailAction, FetchCombatReportsAction, FetchMilitaryAdvisorAction, FetchStationedUnitsAction, PlunderLandAction, RecallBlockadeFleetAction, SendTroopsAction, StationAction, TrainAction
+from .actions.military import AttackAction, BlockadeFleetAction, DismissUnitsAction, FetchBarracksStateAction, FetchBlockadeViewAction, FetchCombatDetailedReportAction, FetchCombatReportDetailAction, FetchCombatReportsAction, FetchMilitaryAdvisorAction, FetchStationedUnitsAction, PlunderLandAction, RecallBlockadeFleetAction, SendTroopsAction, StationAction, TrainAction
 from .actions.research import ResearchAction
 from .actions.resources import CollectAction, DonateAction, SendResourcesAction
 from .actions.shrine import ShrineAction
@@ -604,6 +604,10 @@ class GameClient(IslandActions):
         """
         action = TrainAction(self)
         return action.execute(city_id=city_id, position=position, units=units, building_type=building_type)
+
+    def dismiss_units(self, city_id: int, units: dict[int, int], building_type: str = "troops") -> dict[str, Any]:
+        """N-154: dismiss troops (building_type "troops") or ships ("fleet") of a city. Irreversible."""
+        return DismissUnitsAction(self).execute(city_id=city_id, units=units, building_type=building_type)
 
     def station_units(
         self,

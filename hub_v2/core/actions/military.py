@@ -228,6 +228,22 @@ ACTIONS = {
             {"key": "to_city_id", "type": FIELD_CITY_SELECT, "label": "Cidade de destino", "multiple": False, "required": True},
         ],
     },
+    1204: {
+        "name": "Dispensar Unidades",
+        "name_en": "Dismiss units",
+        "category": CAT_MILITARY,
+        "icon": "bi-person-x",
+        "runner": "dismiss_units",
+        "requires_game_session": True,
+        "recurring": False,
+        "long_running": False,
+        "ready": True,
+        "description": "Dispensa tropas e barcos escolhidos de cada cidade (N-154). Não tem volta.",
+        "inputs": [
+            {"key": "dismiss", "type": FIELD_STR, "label": "Unidades por cidade", "required": True},
+            {"key": "confirm", "type": FIELD_BOOL, "label": "Entendo que não tem volta", "required": True},
+        ],
+    },
     1203: {
         "name": "Melhorar Unidades",
         "name_en": "Upgrade units",
