@@ -915,6 +915,20 @@ class TrainUnitsRunner(BaseRunner):
                     self.log(jid, "warn", f"Excedente: dispensa em {donor_name} falhou -- {exc}")
         return moves
 
+    @staticmethod
+    def _training_allowance(city_ids, city_target_map, city_current, city_queued) -> dict[str, int]:
+        """N-162: per unit, how many the account still lacks across these cities: the sum of the targets minus what
+        is already there or being trained in any of them (a city trains for the ones without a barracks)."""
+        need: dict[str, int] = {}
+        have: dict[str, int] = {}
+        for city_id in city_ids:
+            for uid, qty in (city_target_map.get(city_id) or {}).items():
+                need[str(uid)] = need.get(str(uid), 0) + _to_int(qty)
+            for source in (city_current.get(city_id) or {}, city_queued.get(city_id) or {}):
+                for uid, qty in source.items():
+                    have[str(uid)] = have.get(str(uid), 0) + _to_int(qty)
+        return {uid: max(0, total - have.get(uid, 0)) for uid, total in need.items()}
+
     def _largest_army_city(self, ga_id, city_target_map) -> int:
         """The city with the most troops in the account's last military reading (one answer for the troops job and
         the fleet job, so both gather in the same place); among the cities of this Manter."""
@@ -1163,8 +1177,22 @@ class TrainUnitsRunner(BaseRunner):
                     if uid and amount > 0:
                         bucket[uid] = bucket.get(uid, 0) + amount
 
+            # N-162: never train more than the account lacks as a whole. A city without a barracks/shipyard is
+            # trained for in another city and served later; until then its units sit in that city's queue (or in its
+            # garrison as surplus), and each cycle used to order them again (Juggernaut81: 3 x 50 Lança-Chamas).
+            allowance = self._training_allowance(city_ids, city_target_map, city_current, city_queued)
+            waiting: dict[str, int] = {}
             for city_id in city_ids:
                 remaining_deficit = dict(deficit.get(city_id, {}))
+                for uid_str in list(remaining_deficit):
+                    granted = min(remaining_deficit[uid_str], allowance.get(uid_str, 0))
+                    allowance[uid_str] = allowance.get(uid_str, 0) - granted
+                    if granted < remaining_deficit[uid_str]:
+                        waiting[uid_str] = waiting.get(uid_str, 0) + remaining_deficit[uid_str] - granted
+                    if granted > 0:
+                        remaining_deficit[uid_str] = granted
+                    else:
+                        del remaining_deficit[uid_str]
                 if not remaining_deficit:
                     at_target.append(city_id)
                     continue
@@ -1182,6 +1210,10 @@ class TrainUnitsRunner(BaseRunner):
                 producer_name = city_names.get(production_city, str(production_city))
                 summary = ', '.join(f'{catalog.get(_to_int(uid), uid)} x{qty}' for uid, qty in remaining_deficit.items())
                 self.log(jid, 'info', f'{city_name}: deficit sem {bname}; treinando excedente em {producer_name} para redistribuir depois | {summary}')
+
+            if waiting:
+                summary = ', '.join(f'{catalog.get(_to_int(uid), uid)} x{qty}' for uid, qty in waiting.items())
+                self.log(jid, 'info', f'Ja treinado ou na fila para cobrir a falta (aguardando chegar/redistribuir): {summary}')
 
             for city_id in trainable_city_ids:
                 meta = city_meta.get(city_id)
