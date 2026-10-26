@@ -2129,7 +2129,7 @@ def _custom_field_names(action_code: int) -> list[str]:
             "city_ids", "missions",
             "region_x_min", "region_x_max", "region_y_min", "region_y_max",
             "only_inactive", "max_total_score", "max_army_score",
-            "skip_if_valid", "intel_ttl_hours", "max_targets", "interval_minutes",
+            "skip_if_valid", "intel_ttl_hours", "pass_interval_hours", "max_targets", "interval_minutes",
             "max_detection_risk", "recall_after", "save_reports", "delete_after_save",
             "raid_alert_enabled", "raid_alert_threshold", "raid_source_city_id",
             "raid_transporters", "raid_max_trips",

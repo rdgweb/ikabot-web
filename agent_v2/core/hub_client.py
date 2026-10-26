@@ -542,6 +542,10 @@ class HubClient:
         game_account_id: str = "",
         intel_ttl_hours: int = 0,
         source_cities: list[str] | None = None,
+        pass_since: str = "",
+        covered_owners: list[str] | None = None,
+        prioritize: bool = False,
+        rich_threshold: int = 0,
     ) -> dict:
         """GET /api/agent/worldintel/spy-targets/
 
@@ -576,6 +580,15 @@ class HubClient:
             params["intel_ttl_hours"] = intel_ttl_hours
         if source_cities:
             params["source_cities"] = ",".join(source_cities)
+        # N-163: the campaign's pass, the players it already covered, value first
+        if pass_since:
+            params["pass_since"] = pass_since
+        if covered_owners:
+            params["covered_owners"] = ",".join(covered_owners)
+        if prioritize:
+            params["prioritize"] = "1"
+        if rich_threshold:
+            params["rich_threshold"] = rich_threshold
         return self._get("/api/agent/worldintel/spy-targets", params=params)
 
     def recommend_combat_force(

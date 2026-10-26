@@ -66,6 +66,12 @@ PLAYER_SCOPE_MISSIONS: frozenset[int] = frozenset({
 })
 
 
+def _utc_now_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
 def _parse_int(value, default=None):
     try:
         return int(value) if value is not None and str(value).strip() != "" else default
@@ -116,6 +122,10 @@ class WorldSpyRunner(BaseRunner):
         # ── Inputs de alerta de raid ──────────────────────────────────────────
         raid_alert_enabled   = bool(inputs.get("raid_alert_enabled", False))
         raid_threshold       = _parse_int(inputs.get("raid_alert_threshold"), 50000)
+        # N-163: the campaign runs in passes; a pass ends when every target was read in it, the next one starts
+        # pass_interval_hours later (0 = the campaign ends with the pass)
+        pass_started_at = str(inputs.get("__pass_started_at") or "").strip() or _utc_now_iso()
+        pass_interval_hours = max(0, _parse_int(inputs.get("pass_interval_hours"), 72))
         raid_source_city     = str(inputs.get("raid_source_city_id") or "").strip()
         raid_transporters    = _parse_int(inputs.get("raid_transporters"), 0)
         raid_max_trips       = _parse_int(inputs.get("raid_max_trips"), 5)
@@ -226,6 +236,10 @@ class WorldSpyRunner(BaseRunner):
                 game_account_id=ga_id,
                 intel_ttl_hours=intel_ttl_hours,
                 source_cities=all_source_city_ids,
+                pass_since=pass_started_at,
+                covered_owners=sorted(spied_player_ids),
+                prioritize=True,
+                rich_threshold=raid_threshold,
             )
         except Exception as exc:
             self.log(jid, "error", f"Erro ao buscar alvos: {exc}")
@@ -248,7 +262,8 @@ class WorldSpyRunner(BaseRunner):
                 def _min_dist_sq(t: dict) -> float:
                     tx, ty = t.get("x", 0), t.get("y", 0)
                     return min((tx - s["x"]) ** 2 + (ty - s["y"]) ** 2 for s in free_coords)
-                targets.sort(key=_min_dist_sq)
+                # N-163: the hub's value tier first (rich, never read, poor), then the nearest free safehouse
+                targets.sort(key=lambda t: (_parse_int(t.get("priority"), 1), _min_dist_sq(t)))
 
         self.log(jid, "info",
                  f"[WorldSpy] Dump {dump_id}: {len(targets)} alvos pendentes | "
@@ -266,8 +281,22 @@ class WorldSpyRunner(BaseRunner):
 
         # ── Ciclo completo? ───────────────────────────────────────────────────
         if not targets and not busy_sources:
-            self.log(jid, "info", "[WorldSpy] ✓ Ciclo completo. Sem alvos e sem filhos ativos. Encerrando.")
-            return RunnerResult(success=True)
+            if not pass_interval_hours:
+                self.log(jid, "info", "[WorldSpy] ✓ Ciclo completo. Sem alvos e sem filhos ativos. Encerrando.")
+                return RunnerResult(success=True)
+            self.log(jid, "info",
+                     f"[WorldSpy] ✓ Volta concluída (desde {pass_started_at[:16].replace('T', ' ')} UTC): todos os alvos "
+                     f"da região lidos nesta volta. Próxima volta em {pass_interval_hours} h.")
+            return RunnerResult(
+                success=True,
+                reschedule_seconds=pass_interval_hours * 3600,
+                reschedule_inputs={
+                    "__campaign_root_id": root_id,
+                    "__pass_started_at": "",
+                    "__spied_player_ids": [],
+                    "__claimed_targets": {},
+                },
+            )
 
         # ── Criar fallback ANTES de spawnar ───────────────────────────────────
         # reschedule_job com __campaign_root_id faz hub atualizar
@@ -328,6 +357,7 @@ class WorldSpyRunner(BaseRunner):
                     delay_seconds=FALLBACK_DELAY,
                     inputs={
                         "__campaign_root_id": root_id,
+                        "__pass_started_at": pass_started_at,
                         "__spied_player_ids": sorted(projected_spied_player_ids),
                         "__claimed_targets": projected_claimed_targets,
                     },
@@ -346,6 +376,7 @@ class WorldSpyRunner(BaseRunner):
                 reschedule_seconds=ERROR_RESCHEDULE,
                 reschedule_inputs={
                     "__campaign_root_id": root_id,
+                    "__pass_started_at": pass_started_at,
                     "__spied_player_ids": sorted(spied_player_ids),
                     "__claimed_targets": claimed_targets,
                 },
@@ -478,6 +509,7 @@ class WorldSpyRunner(BaseRunner):
                     delay_seconds=FALLBACK_DELAY,
                     inputs={
                         "__campaign_root_id": root_id,
+                        "__pass_started_at": pass_started_at,
                         "__spied_player_ids": sorted(spied_player_ids),
                         "__claimed_targets": claimed_targets,
                     },

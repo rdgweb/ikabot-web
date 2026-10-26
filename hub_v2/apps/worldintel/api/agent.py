@@ -324,6 +324,17 @@ class WorldSpyTargetsView(APIView):
             except (TypeError, ValueError):
                 return default
 
+        # N-163: the campaign's pass (reports since it started count as read), the players whose per-player
+        # missions this pass already covered, and ordering by value instead of only by distance
+        from django.utils.dateparse import parse_datetime
+
+        pass_since = parse_datetime(str(request.query_params.get("pass_since") or "").strip() or "x")
+        covered_owners = {k.strip() for k in str(request.query_params.get("covered_owners") or "").split(",") if k.strip()}
+        prioritize = str(request.query_params.get("prioritize") or "0") in ("1", "true", "yes")
+        from apps.espionage.services.validity import setting as _spy_setting
+
+        rich_threshold = _int("rich_threshold", 0) or _spy_setting("spy_rich_threshold")
+
         x_min = _int("x_min"); x_max = _int("x_max")
         y_min = _int("y_min"); y_max = _int("y_max")
         max_total_score = _int("max_total_score", 0)
@@ -467,7 +478,7 @@ class WorldSpyTargetsView(APIView):
             cities_qs = cities_qs.annotate(min_dist_sq=dist_expr).order_by("min_dist_sq")
 
         # Truncate generoso pra absorver filtros subsequentes (occupied/skip_if_valid)
-        cities = list(cities_qs[:limit * 5])
+        cities = list(cities_qs) if prioritize else list(cities_qs[:limit * 5])
 
         # ── Lock global: excluir targets com job ac=15 ativo ─────────────────
         # Garante que nenhum alvo seja espionado por duas contas simultaneamente.
@@ -503,6 +514,17 @@ class WorldSpyTargetsView(APIView):
         PLAYER_SCOPE_MISSIONS = frozenset({3, 7, 10, 21, 24, 25, 26, 27})
 
         missing_missions_map: dict[str, list[int]] = {}
+
+        # N-163: the last warehouse read of each candidate (any age) — rich, never read, or poor
+        last_stock: dict[str, int] = {}
+        if cities and (prioritize or (skip_if_valid and pass_since)):
+            from apps.espionage.services.validity import stock_total as _stock_total
+
+            for row in (SpyReport.objects.filter(target_city_id__in=[c.game_city_id for c in cities], mission_id=5)
+                        .exclude(result_status__icontains="falh").order_by("created_at")
+                        .values("target_city_id", "data_json")):
+                last_stock[row["target_city_id"]] = _stock_total(row["data_json"])
+        rich_cities = {cid for cid, total in last_stock.items() if total >= rich_threshold}
 
         if skip_if_valid and cities:
             from datetime import timedelta
@@ -555,11 +577,35 @@ class WorldSpyTargetsView(APIView):
                             if owner_name:
                                 owner_name_valid_map[owner_name].add(row["mission_id"])
 
+                # N-163: read in this pass counts as read (except for a rich city, which is read again when its
+                # report expires), and a player whose per-player missions this pass already took is covered
+                city_pass_map: dict[str, set] = defaultdict(set)
+                owner_pass_map: dict[str, set] = defaultdict(set)
+                if pass_since:
+                    if city_missions:
+                        for row in SpyReport.objects.filter(
+                            target_city_id__in=city_ids_check, mission_id__in=list(city_missions), created_at__gte=pass_since,
+                        ).values("target_city_id", "mission_id").distinct():
+                            if row["target_city_id"] not in rich_cities:
+                                city_pass_map[row["target_city_id"]].add(row["mission_id"])
+                    if player_missions and owner_ids_check:
+                        for row in SpyReport.objects.filter(
+                            target_owner_id__in=owner_ids_check, mission_id__in=list(player_missions), created_at__gte=pass_since,
+                        ).values("target_owner_id", "mission_id").distinct():
+                            owner_pass_map[row["target_owner_id"]].add(row["mission_id"])
+
+                def _owner_covered(city) -> set:
+                    keys = {str(city.owner_id or ""), "name:" + (city.owner_name or "").strip().casefold()}
+                    return set(player_missions) if keys & covered_owners else set()
+
                 def _missing_missions(city) -> list[int]:
                     covered = (
                         city_valid_map.get(city.game_city_id, set())
                         | owner_valid_map.get(city.owner_id or "", set())
                         | owner_name_valid_map.get((city.owner_name or "").strip(), set())
+                        | city_pass_map.get(city.game_city_id, set())
+                        | owner_pass_map.get(city.owner_id or "", set())
+                        | _owner_covered(city)
                     )
                     missing = sorted(mission_set - covered)
                     missing_missions_map[city.game_city_id] = missing
@@ -584,7 +630,19 @@ class WorldSpyTargetsView(APIView):
                 deduped.append(c)
         cities = deduped
 
+        if prioritize:
+            # N-163: rich cities first (the richest first), then the never-read, then the poor; nearest first within
+            stock = last_stock
+            rich = rich_threshold
+
+            def _rank(city):
+                total = stock.get(city.game_city_id)
+                tier = 1 if total is None else (0 if total >= rich else 2)
+                return (tier, -(total or 0) if tier == 0 else 0, getattr(city, "min_dist_sq", 0) or 0)
+
+            cities.sort(key=_rank)
         cities = cities[:limit]
+        _stock_seen = last_stock
 
         targets = [{
             "game_city_id": c.game_city_id,
@@ -597,6 +655,9 @@ class WorldSpyTargetsView(APIView):
             "state":        c.state or "",
             "ally_tag":     c.ally_tag or "",
             "missing_missions": missing_missions_map.get(c.game_city_id, sorted(mission_ids) if mission_ids else []),
+            "last_stock":   _stock_seen.get(c.game_city_id),
+            "priority":     (1 if _stock_seen.get(c.game_city_id) is None
+                             else 0 if _stock_seen.get(c.game_city_id) >= rich_threshold else 2),
         } for c in cities]
 
         return Response({

@@ -24,6 +24,7 @@ function worldSpyForm() {
     maxArmyScore: 0,
     skipIfValid: true,
     intelTtlHours: 0,
+    passIntervalHours: 72,
     maxRisk: 35,
     recallAfter: true,
     saveReports: true,
@@ -55,6 +56,7 @@ function worldSpyForm() {
         this.maxArmyScore  = parseInt(opts.maxArmyScore)  || 0;
         this.skipIfValid   = opts.skipIfValid !== false && opts.skipIfValid !== 'false';
         this.intelTtlHours = parseInt(opts.intelTtlHours) || 0;
+        this.passIntervalHours = opts.passIntervalHours === '' || opts.passIntervalHours === undefined ? 72 : (parseInt(opts.passIntervalHours) || 0);
         this.maxRisk       = parseInt(opts.maxRisk) || 35;
         this.recallAfter   = opts.recallAfter !== false && opts.recallAfter !== 'false';
         this.saveReports   = opts.saveReports !== false && opts.saveReports !== 'false';
@@ -108,6 +110,7 @@ function worldSpyForm() {
          maxArmyScore:  '{{ form.max_army_score.value|default:0 }}',
          skipIfValid:   {{ form.skip_if_valid.value|yesno:'true,false,true' }},
          intelTtlHours: '{{ form.intel_ttl_hours.value|default:0 }}',
+         passIntervalHours: '{{ form.pass_interval_hours.value|default_if_none:72 }}',
          maxRisk:       '{{ form.max_detection_risk.value|default:35 }}',
          recallAfter:   {{ form.recall_after.value|yesno:'true,false,true' }},
          saveReports:   {{ form.save_reports.value|yesno:'true,false,true' }},
@@ -130,6 +133,7 @@ function worldSpyForm() {
   <input type="hidden" name="{{ form.max_army_score.html_name }}"    :value="maxArmyScore">
   <input type="hidden" name="{{ form.skip_if_valid.html_name }}"     :value="skipIfValid ? 'true' : 'false'">
   <input type="hidden" name="{{ form.intel_ttl_hours.html_name }}"   :value="intelTtlHours">
+  <input type="hidden" name="{{ form.pass_interval_hours.html_name }}" :value="passIntervalHours">
   <input type="hidden" name="{{ form.max_targets.html_name }}"       value="200">
   <input type="hidden" name="{{ form.max_detection_risk.html_name }}" :value="maxRisk">
   <input type="hidden" name="{{ form.recall_after.html_name }}"      :value="recallAfter ? 'true' : 'false'">
@@ -426,8 +430,15 @@ function worldSpyForm() {
 
       <div>
         <label class="text-[10px] font-semibold uppercase tracking-wider text-muted mb-1.5 block">Validade da intel (horas)</label>
-        <input type="number" min="0" x-model.number="intelTtlHours" class="form-input !text-sm w-full" placeholder="0 = padrão global (48h)">
-        <p class="text-[10px] text-muted mt-1">0 = usa configuração global. Ex: 24 = re-espia a cada dia.</p>
+        <input type="number" min="0" x-model.number="intelTtlHours" class="form-input !text-sm w-full" placeholder="0 = validade por missão">
+        <p class="text-[10px] text-muted mt-1">0 = por missão: Invenções 15 dias, Guarnição 5, Estoque 4 (alvo rico) ou 8 (pobre).</p>
+      </div>
+
+      {# N-163: the campaign runs in passes over the region #}
+      <div>
+        <label class="text-[10px] font-semibold uppercase tracking-wider text-muted mb-1.5 block">Nova volta a cada (horas)</label>
+        <input type="number" min="0" x-model.number="passIntervalHours" class="form-input !text-sm w-full" placeholder="72">
+        <p class="text-[10px] text-muted mt-1">Quando todos os alvos da região forem lidos nesta volta, a próxima começa depois deste tempo. 0 = encerra ao fim da volta.</p>
       </div>
 
       <div style="border-top:1px solid var(--ik-line);"></div>

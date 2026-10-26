@@ -13,6 +13,7 @@
       <div class="mt-0.5 flex flex-wrap gap-1.5 text-[11px]">
         <span class="rounded-full border px-2 py-0.5 text-muted" style="border-color: var(--ik-line); background: rgba(255,255,255,0.7);">desde {{ c.started_at|date:"d/m H:i" }}</span>
         <span class="rounded-full border px-2 py-0.5 text-muted" style="border-color: var(--ik-line); background: rgba(255,255,255,0.7);">{{ c.rounds }} rodada{{ c.rounds|pluralize }}</span>
+        {% if c.pass_started %}<span class="rounded-full border px-2 py-0.5 text-muted" style="border-color: var(--ik-line); background: rgba(255,255,255,0.7);">volta desde {{ c.pass_started|date:"d/m H:i" }}</span>{% endif %}
         {% if c.next_round %}<span class="rounded-full px-2 py-0.5 font-semibold" style="background: rgba(79,134,185,0.12); color: var(--ik-sea);">próxima {{ c.next_round|date:"H:i" }}</span>{% endif %}
       </div>
     </div>

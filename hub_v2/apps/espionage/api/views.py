@@ -1211,13 +1211,6 @@ class SpyReportsSaveView(APIView):
             except Exception:
                 action_job = None
 
-        # Calcula expires_at com base na configuração global (default 48h)
-        try:
-            expiry_hours = int(AppSetting.objects.get(key="spy_report_expiry_hours").value)
-        except (AppSetting.DoesNotExist, ValueError):
-            expiry_hours = 48
-        expires_at = timezone.now() + timedelta(hours=expiry_hours)
-
         saved = 0
         new_count = 0
 
@@ -1233,7 +1226,6 @@ class SpyReportsSaveView(APIView):
                 "target_y": report_data.get("target_y"),
                 "target_owner": report_data.get("target_owner") or "",
                 "target_owner_id": report_data.get("target_owner_id") or "",
-                "expires_at": expires_at,
                 "mission_id": report_data.get("mission_id"),
                 "mission_name": report_data.get("mission_name") or "",
                 "subject": report_data.get("subject") or "",
@@ -1267,6 +1259,14 @@ class SpyReportsSaveView(APIView):
                 obj.save(update_fields=update_fields)
             else:
                 new_count += 1
+
+            # N-163: validity by mission (and by stock for the warehouse), counted from the first save
+            from apps.espionage.services.validity import expires_at_for
+
+            expiry = expires_at_for(obj)
+            if obj.expires_at != expiry:
+                SpyReport.objects.filter(pk=obj.pk).update(expires_at=expiry)
+                obj.expires_at = expiry
 
             saved += 1
 

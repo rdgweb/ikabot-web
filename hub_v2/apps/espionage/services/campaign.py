@@ -54,6 +54,12 @@ def campaign_summary(job) -> dict | None:
         rounds.append(root)
     round_ids = [r.pk for r in rounds]
     next_round = min((r.scheduled_for for r in rounds if r.status == "scheduled" and r.scheduled_for), default=None)
+    # N-163: when the current pass started (the newest round carries it)
+    from django.utils.dateparse import parse_datetime
+
+    newest = max(rounds, key=lambda r: r.created_at)
+    pass_started = parse_datetime(str(_inputs(Job.objects.filter(pk=newest.pk).only("inputs_json").first() or newest)
+                                      .get("__pass_started_at") or "")) if newest else None
     last_count = (JobLog.objects.filter(job_id__in=round_ids, message__contains="alvos pendentes")
                   .order_by("-created_at").values_list("message", flat=True).first() or "")
     match = PENDING.search(last_count)
@@ -101,6 +107,7 @@ def campaign_summary(job) -> dict | None:
         "started_at": root.created_at,
         "rounds": len(rounds),
         "next_round": next_round,
+        "pass_started": pass_started,
         "pending": int(match.group(1)) if match else None,
         "pending_capped": bool(match) and int(match.group(1)) >= PENDING_CAP,
         "safehouses_busy": int(match.group(2)) if match else None,
