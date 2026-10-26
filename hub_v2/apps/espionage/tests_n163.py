@@ -78,3 +78,19 @@ class TargetsTests(TestCase):
         self.assertLess(order.index("301"), order.index("401"))          # never read before poor
         first = self.targets(prioritize="1")[0]
         self.assertEqual((first["priority"], first["last_stock"]), (0, 900_000))
+
+    def test_the_parameters_can_come_in_the_body(self):
+        # 188 covered players do not fit in a URL: the agent posts them
+        for cid in ("101", "102"):
+            self.report(cid, "Fulano", 5, days_ago=1, valid=True, data={"wood": 10})
+            self.report(cid, "Fulano", 6, days_ago=1, valid=True)
+        owners = ",".join(["name:fulano"] + [f"name:jogador{n:04d}" for n in range(400)])
+        r = self.client.post("/api/agent/worldintel/spy-targets/",
+                             {"skip_if_valid": "1", "missions": "5,6,26", "limit": 200, "game_account_id": str(self.ga.pk),
+                              "covered_owners": owners, "prioritize": "1"},
+                             content_type="application/json", HTTP_X_AGENT_TOKEN="test-agent-token",
+                             HTTP_X_AGENT_NODE_ID=str(self.node.pk))
+        self.assertEqual(r.status_code, 200, r.content[:300])
+        ids = [t["game_city_id"] for t in r.json()["targets"]]
+        self.assertNotIn("101", ids)
+        self.assertIn("301", ids)

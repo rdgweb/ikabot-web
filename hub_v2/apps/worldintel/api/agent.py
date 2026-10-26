@@ -302,24 +302,33 @@ class WorldSpyTargetsView(APIView):
     authentication_classes = [AgentTokenAuthentication]
     permission_classes = [IsAgent]
 
-    def get(self, request):
+    def post(self, request):
+        """N-163: the same as GET with the parameters in the body (the covered players do not fit in a URL)."""
+        params = request.query_params.copy()
+        for key, value in (request.data or {}).items():
+            params[key] = ",".join(str(v) for v in value) if isinstance(value, (list, tuple)) else str(value)
+        return self.get(request, params=params)
+
+    def get(self, request, params=None):
         from collections import defaultdict
         from django.db.models import OuterRef, Subquery, BigIntegerField, Q, Value
         from django.db.models.functions import Coalesce
 
+        params = params if params is not None else request.query_params
+
         # ── Params ────────────────────────────────────────────────────────────
-        skip_if_valid   = str(request.query_params.get("skip_if_valid") or "0") in ("1", "true", "yes")
-        missions_raw    = str(request.query_params.get("missions") or "").strip()
-        game_account_id = str(request.query_params.get("game_account_id") or "").strip()
-        only_inactive   = str(request.query_params.get("only_inactive") or "1") in ("1", "true", "yes")
+        skip_if_valid   = str(params.get("skip_if_valid") or "0") in ("1", "true", "yes")
+        missions_raw    = str(params.get("missions") or "").strip()
+        game_account_id = str(params.get("game_account_id") or "").strip()
+        only_inactive   = str(params.get("only_inactive") or "1") in ("1", "true", "yes")
         try:
-            intel_ttl_hours = int(request.query_params.get("intel_ttl_hours") or 0)
+            intel_ttl_hours = int(params.get("intel_ttl_hours") or 0)
         except (TypeError, ValueError):
             intel_ttl_hours = 0
 
         def _int(key, default=None):
             try:
-                v = request.query_params.get(key)
+                v = params.get(key)
                 return int(v) if v is not None else default
             except (TypeError, ValueError):
                 return default
@@ -328,9 +337,9 @@ class WorldSpyTargetsView(APIView):
         # missions this pass already covered, and ordering by value instead of only by distance
         from django.utils.dateparse import parse_datetime
 
-        pass_since = parse_datetime(str(request.query_params.get("pass_since") or "").strip() or "x")
-        covered_owners = {k.strip() for k in str(request.query_params.get("covered_owners") or "").split(",") if k.strip()}
-        prioritize = str(request.query_params.get("prioritize") or "0") in ("1", "true", "yes")
+        pass_since = parse_datetime(str(params.get("pass_since") or "").strip() or "x")
+        covered_owners = {k.strip() for k in str(params.get("covered_owners") or "").split(",") if k.strip()}
+        prioritize = str(params.get("prioritize") or "0") in ("1", "true", "yes")
         from apps.espionage.services.validity import setting as _spy_setting
 
         rich_threshold = _int("rich_threshold", 0) or _spy_setting("spy_rich_threshold")
@@ -436,7 +445,7 @@ class WorldSpyTargetsView(APIView):
 
         # ── Resolver source_coords antes do truncate para ordenar por proximidade ─
         source_coords: dict[str, dict] = {}
-        source_cities_param = request.query_params.get("source_cities", "")
+        source_cities_param = params.get("source_cities", "")
         if source_cities_param:
             sc_ids = {c.strip() for c in source_cities_param.split(",") if c.strip()}
             try:

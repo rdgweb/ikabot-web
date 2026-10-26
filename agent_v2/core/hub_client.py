@@ -589,7 +589,8 @@ class HubClient:
             params["prioritize"] = "1"
         if rich_threshold:
             params["rich_threshold"] = rich_threshold
-        return self._get("/api/agent/worldintel/spy-targets", params=params)
+        # the covered players do not fit in a URL (400 from the server): the parameters go in the body
+        return self._post("/api/agent/worldintel/spy-targets", params)
 
     def recommend_combat_force(
         self,
