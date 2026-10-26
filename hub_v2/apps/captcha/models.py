@@ -73,6 +73,7 @@ class CaptchaChallenge(models.Model):
         ("solved", "Resolvido"),
         ("failed", "Falhou"),
         ("expired", "Expirado"),
+        ("not_needed", "Apareceu sem bloquear"),    # N-164: the game showed one, the action went through anyway
     ]
 
     TYPE_CHOICES = [

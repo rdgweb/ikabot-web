@@ -181,6 +181,14 @@ class JobStatusView(APIView):
                 note = f"job_id={job.pk} exit_code={job.exit_code}"
             reconcile_internal_order_for_job(job, terminal_status=data["status"], note=note)
             reconcile_workflow_for_job(job)
+            if data["status"] == "finished" and int(job.action_code) == 35 and job.game_account_id                     and '"keep"' in (job.inputs_json or ""):
+                # N-165: a temple reading can be followed by the account's priests to keep the faith at 100%
+                try:
+                    from apps.game.services.temples import auto_balance_after_reading
+
+                    auto_balance_after_reading(job.game_account)
+                except Exception:  # noqa: BLE001 - the reading is done either way
+                    logger.warning("Auto-balance of faith failed after %s", job.pk, exc_info=True)
 
         return Response(
             JobStatusResponseSerializer(

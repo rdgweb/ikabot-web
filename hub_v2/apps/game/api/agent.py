@@ -850,6 +850,25 @@ class SolveCaptchaView(APIView):
                 )
             resp.raise_for_status()
             result = resp.json()
+            # N-164: the captchas solved through here (login/lobby, the generic detector) count on the card too —
+            # only when the account comes with the request (the card is per organization, by account)
+            try:
+                from apps.captcha.models import CaptchaChallenge
+
+                solve_ga = GameAccount.objects.filter(pk=str(request.data.get("game_account_id") or "")).first()                     if request.data.get("game_account_id") else None
+                if solve_ga is None:
+                    raise LookupError("sem conta")
+                answer = result if isinstance(result, str) else (result.get("solution") or result.get("result")
+                                                                 or result.get("text") or "") if isinstance(result, dict) else ""
+                CaptchaChallenge.objects.create(
+                    captcha_type="lobby" if captcha_type == "lobby" else "piracy" if captcha_type == "pirate" else "unknown",
+                    status="solved" if answer else "failed", solution=str(answer)[:512], solve_method="auto",
+                    solved_at=timezone.now() if answer else None, error="" if answer else "Sem resposta do ikabotapi",
+                    game_account=solve_ga)
+            except LookupError:
+                pass
+            except Exception:  # noqa: BLE001 - the answer goes back even if the card cannot count it
+                logger.warning("Captcha solve: registro falhou", exc_info=True)
             # Normalise: always return {"solution": "..."} regardless of ikabotapi format
             if isinstance(result, str):
                 return Response({"solution": result})
@@ -955,7 +974,7 @@ class CaptchaChallengeCreateView(APIView):
                     game_account = GameAccount.objects.get(pk=game_account_id)
                 except GameAccount.DoesNotExist:
                     logger.warning("CaptchaChallenge: GameAccount %s nao encontrado", game_account_id)
-            CaptchaChallenge.objects.create(
+            solved = CaptchaChallenge.objects.create(
                 captcha_type=challenge_type,
                 image_data=image_b64,
                 status="solved",
@@ -965,7 +984,8 @@ class CaptchaChallengeCreateView(APIView):
                 solved_at=timezone.now(),
                 extra_data=extra_data if isinstance(extra_data, dict) else {},
             )
-            return Response({"solution": solution, "challenge_id": None})
+            # N-164: the id goes back so the agent can say whether the game accepted the answer
+            return Response({"solution": solution, "challenge_id": solved.pk, "solved": True})
 
         # 2. Auto-solve failed — create a pending challenge
         captcha_cfg, _ = CaptchaConfig.objects.get_or_create(pk=1)
@@ -1028,6 +1048,51 @@ class CaptchaChallengeCreateView(APIView):
                 logger.warning("CaptchaChallenge: Telegram configurado mas sem chat_id disponivel")
 
         return Response({"solution": None, "challenge_id": challenge.pk})
+
+
+class CaptchaChallengeResultView(APIView):
+    """POST /api/agent/captcha/challenge/<pk>/result/ {"accepted": bool} — N-164: whether the game took the answer.
+
+    A solved challenge whose answer the game refused becomes "failed" (the card counted every answer as solved).
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request, pk):
+        from apps.captcha.models import CaptchaChallenge
+
+        challenge = CaptchaChallenge._base_manager.filter(pk=pk).first()
+        if challenge is None:
+            return Response({"error": "Desafio nao encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        accepted = str(request.data.get("accepted")).lower() in ("1", "true", "yes")
+        if accepted:
+            challenge.status = "solved"
+            challenge.error = ""
+        else:
+            challenge.status = "failed"
+            challenge.error = "Resposta recusada pelo jogo"
+        challenge.save(update_fields=["status", "error"])
+        return Response({"ok": True, "status": challenge.status})
+
+
+class CaptchaSeenView(APIView):
+    """POST /api/agent/captcha/seen/ {"type", "game_account_id"} — N-164: the game showed a captcha that did not
+    block the action (the pirate ship left anyway). Counted on the card, nothing to solve."""
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request):
+        from apps.captcha.models import CaptchaChallenge
+
+        ga_id = str(request.data.get("game_account_id") or "").strip()
+        ga = GameAccount.objects.filter(pk=ga_id).first() if ga_id else None
+        kind = str(request.data.get("type") or "unknown")
+        kind = "piracy" if kind == "pirate" else kind
+        CaptchaChallenge.objects.create(captcha_type=kind if kind in dict(CaptchaChallenge.TYPE_CHOICES) else "unknown",
+                                        status="not_needed", game_account=ga)
+        return Response({"ok": True})
 
 
 class CaptchaChallengePollView(APIView):

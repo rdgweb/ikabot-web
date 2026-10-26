@@ -1119,6 +1119,14 @@ class HubClient:
             "extra_data": extra_data or {},
         })
 
+    def report_captcha_result(self, challenge_id: int, accepted: bool) -> dict:
+        """POST /api/agent/captcha/challenge/{id}/result — N-164: whether the game took the answer."""
+        return self._post(f"/api/agent/captcha/challenge/{int(challenge_id)}/result", {"accepted": bool(accepted)})
+
+    def report_captcha_seen(self, captcha_type: str, game_account_id: str = "") -> dict:
+        """POST /api/agent/captcha/seen — N-164: a captcha shown that did not block the action."""
+        return self._post("/api/agent/captcha/seen", {"type": captcha_type, "game_account_id": game_account_id or ""})
+
     def poll_captcha_solution(self, challenge_id: int, timeout_sec: int = 120, interval: int = 10) -> str:
         """Poll until challenge solved or timeout. Returns solution string or empty."""
         import time

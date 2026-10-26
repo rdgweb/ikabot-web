@@ -371,3 +371,69 @@ def _reason_label(reason) -> str:
     if "telegram" in text:
         return "Telegram"
     return str(reason)[:40]
+
+# N-165: keep the islands we already worship at 100% faith. The temple reading (ac=35 "keep", spawned by Verificar
+# Status) only reads; when the island's population grows each priest converts a smaller share and the faith slides
+# below 100% with nobody adjusting. With the switch on, the reading of an account is followed by its adjustment.
+FAITH_FLOOR = 99.5                       # island conversion below this asks for more priests
+
+
+def faith_settings(organization) -> dict:
+    from apps.orgs.services import preferences_of
+
+    prefs = (preferences_of(organization).miracle_rules or {}) if organization is not None else {}
+    try:
+        reserve = max(0, int(prefs.get("faith_reserve") or 0))
+    except (TypeError, ValueError):
+        reserve = 0
+    return {"auto_faith": bool(prefs.get("auto_faith")), "faith_reserve": reserve}
+
+
+def save_faith_settings(organization, *, auto: bool, reserve: int) -> None:
+    from apps.orgs.services import preferences_of
+
+    prefs = preferences_of(organization)
+    prefs.miracle_rules = {**(prefs.miracle_rules or {}), "auto_faith": bool(auto), "faith_reserve": max(0, int(reserve or 0))}
+    prefs.save(update_fields=["miracle_rules", "updated_at"])
+
+
+def auto_balance_after_reading(game_account) -> int:
+    """After an account's temple reading: when its organization keeps the faith, the islands where this account
+    already has priests and whose conversion is under 100% get this account's priests adjusted. Islands with no
+    priests of ours are left alone (the Equilibrar button is for them). Returns the jobs created (0 or 1)."""
+    from apps.jobs.models import Job
+    from apps.jobs.services.workflows import create_job_with_workflow
+    from apps.orgs.scope import activate, deactivate
+
+    organization = getattr(game_account.account, "organization", None)
+    settings_ = faith_settings(organization)
+    if organization is None or not settings_["auto_faith"]:
+        return 0
+    pending = Job.objects.filter(game_account=game_account, action_code=35, status__in=("queued", "scheduled", "running"),
+                                 inputs_json__contains="city_targets").exists()
+    if pending:
+        return 0
+    token = activate(organization)
+    try:
+        islands = islands_for_organization()
+    finally:
+        deactivate(token)
+    ga_id = str(game_account.pk)
+    targets: dict[str, int] = {}
+    for island in islands:
+        if island.own_share <= 0 or island.total_share is None or island.total_share >= FAITH_FLOOR:
+            continue
+        if not plan_faith(island, 100.0, settings_["faith_reserve"]):
+            continue
+        for t in island.own:
+            if t.game_account_id == ga_id and t.target is not None and t.target > t.priests:
+                targets[t.city_id] = t.target
+    if not targets:
+        return 0
+    create_job_with_workflow(
+        account=game_account.account, game_account=game_account, node=game_account.account.node, action_code=35,
+        inputs={"target_mode": "city_targets", "city_targets": targets, "reserve_citizens": settings_["faith_reserve"],
+                "reason": "fé abaixo de 100% (automático)"},
+        status="queued", trigger_type="automation",
+    )
+    return 1

@@ -264,6 +264,7 @@ class PiracyMissionAction(BaseAction):
             base64.b64encode(image).decode("ascii"),
             game_account_id=game_account_id,
         )
+        self._challenge_id = result.get("challenge_id")      # N-164: to report whether the game took the answer
         solution = str(result.get("solution") or "").strip().upper()
         if not solution and result.get("challenge_id"):
             challenge_id = result["challenge_id"]
@@ -272,6 +273,13 @@ class PiracyMissionAction(BaseAction):
                 challenge_id, timeout_sec=120, interval=10
             ).strip().upper()
         return solution
+
+    def _report(self, call) -> None:
+        """N-164: tell the hub how the captcha went (the captcha card); never stops the mission."""
+        try:
+            call(self.client.hub)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Piracy: captcha report failed: %s", exc)
 
     def execute(
         self,
@@ -311,6 +319,7 @@ class PiracyMissionAction(BaseAction):
             if mission_started:
                 # Ship departed — mission started, captcha in response is for next attempt
                 logger.info("Piracy: ship departed despite captcha in response (no action needed)")
+                self._report(lambda hub: hub.report_captcha_seen("pirate", game_account_id))
                 break
 
             # Captcha blocked the mission start — need to solve
@@ -345,6 +354,14 @@ class PiracyMissionAction(BaseAction):
             if answered is None:
                 break
             data = answered
+            # N-164: the game took the answer when the ship left or no captcha came back
+            js_after = _extract_js_params(data)
+            left = int(js_after.get("ongoingMissionTimeRemaining") or 0) > 0 or (
+                js_after.get("showPirateFortressShip") is not None and str(js_after.get("showPirateFortressShip")) != "1")
+            accepted = left or not _response_has_captcha_signal(resp_text, data)
+            challenge_id = getattr(self, "_challenge_id", None)
+            if challenge_id:
+                self._report(lambda hub: hub.report_captcha_result(challenge_id, accepted))
 
         # Parse final result
         js_final = _extract_js_params(data)

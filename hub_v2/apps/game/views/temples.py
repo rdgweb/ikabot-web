@@ -13,7 +13,8 @@ from apps.accounts.models import GameAccount
 from apps.game.services import miracle_rules
 from apps.game.services.shrine import shrines_for_organization
 from apps.orgs.views import can_change
-from apps.game.services.temples import attach_miracle_timers, balance_jobs, islands_for_organization, plan_faith, projected_faith
+from apps.game.services.temples import (attach_miracle_timers, balance_jobs, faith_settings, islands_for_organization,
+                                       plan_faith, projected_faith, save_faith_settings)
 
 
 def _reserve(value) -> int:
@@ -54,6 +55,7 @@ class TemplesView(LoginRequiredMixin, TemplateView):
         ctx["cards"] = cards
         ctx["shrines"] = shrines_for_organization()          # N-143
         ctx["reserve"] = reserve
+        ctx["faith"] = faith_settings(getattr(self.request, "organization", None))      # N-165
         ctx["rules"] = miracle_rules.rules_for(getattr(self.request, "organization", None))
         ctx["can_change_rules"] = can_change(self.request)
         ctx["rule_cards"] = [
@@ -78,6 +80,13 @@ class TemplesView(LoginRequiredMixin, TemplateView):
                 raise Http404()
             miracle_rules.save_rules(request.organization, request.POST)
             messages.success(request, "Regras dos milagres salvas.")
+        elif action == "auto_faith":
+            if not can_change(request) or getattr(request, "organization", None) is None:
+                raise Http404()
+            on = request.POST.get("auto_faith") in ("1", "on", "true")
+            save_faith_settings(request.organization, auto=on, reserve=_reserve(request.POST.get("faith_reserve")))
+            messages.success(request, "Fé em 100% ligada: depois de cada leitura dos templos as ilhas abaixo de 100% "
+                                      "recebem mais sacerdotes." if on else "Fé em 100% desligada.")
         elif action == "balance":
             key = request.POST.get("island") or ""
             reserve = _reserve(request.POST.get("reserva"))

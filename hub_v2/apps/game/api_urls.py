@@ -5,6 +5,8 @@ from .api.agent import (
     LoginContextView,
     CaptchaChallengeCreateView,
     CaptchaChallengePollView,
+    CaptchaChallengeResultView,
+    CaptchaSeenView,
     CurrentSnapshotView,
     MilitaryMovementsUpdateView,
     PatchSnapshotBaseView,
@@ -31,5 +33,7 @@ urlpatterns = [
     path("captcha/solve/", SolveCaptchaView.as_view(), name="captcha-solve"),
     path("captcha/challenge/", CaptchaChallengeCreateView.as_view(), name="captcha-challenge-create"),
     path("captcha/challenge/<int:pk>/", CaptchaChallengePollView.as_view(), name="captcha-challenge-poll"),
+    path("captcha/challenge/<int:pk>/result/", CaptchaChallengeResultView.as_view(), name="captcha-challenge-result"),
+    path("captcha/seen/", CaptchaSeenView.as_view(), name="captcha-seen"),
     path("military-movements/", MilitaryMovementsUpdateView.as_view(), name="military-movements"),
 ]

@@ -43,7 +43,10 @@ class CaptchaImageValidationTests(TestCase):
         response = self._post("/api/agent/captcha/challenge/", {"type": "pirate", "image_b64": _b64(PNG)})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"solution": "ABC12", "challenge_id": None})
+        # N-164: the record's id comes back so the agent can say whether the game took the answer
+        body = response.json()
+        self.assertEqual((body["solution"], body["solved"]), ("ABC12", True))
+        self.assertTrue(body["challenge_id"])
         self.assertEqual(solver_post.call_args.kwargs["files"]["image"][1], PNG)
         challenge = CaptchaChallenge.objects.get()
         self.assertEqual((challenge.status, challenge.solve_method, challenge.solution), ("solved", "auto", "ABC12"))

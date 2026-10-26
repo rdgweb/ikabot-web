@@ -52,12 +52,13 @@ class CaptchaConfigView(LoginRequiredMixin, TemplateView):
             "solved_24h": challenges_24h.filter(status="solved").count(),
             "failed_24h": challenges_24h.filter(status="failed").count(),
             "expired_24h": challenges_24h.filter(status="expired").count(),
+            "not_needed_24h": challenges_24h.filter(status="not_needed").count(),   # N-164
             "pending_now": ctx["pending"].count(),
         }
 
         # Recent history
         ctx["history"] = CaptchaChallenge.objects.exclude(
-            status__in=["pending", "solving"],
+            status__in=["pending", "solving", "not_needed"],   # N-164: the ones that did not block stay in the count only
         ).select_related("game_account", "node")[:50]
 
         # Method descriptions for the UI

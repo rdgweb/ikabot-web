@@ -33,6 +33,19 @@
           <img src="{% static 'game/resources/icon_population.png' %}" alt="" class="h-4 w-4"> Reserva
           <input type="number" name="reserva" min="0" value="{{ reserve }}" class="form-input text-center" style="width: 4.5rem; padding: 2px 4px;" onchange="this.form.submit()">
         </form>
+        {# N-165: after each temple reading, the islands we worship that slid under 100% get more priests #}
+        {% if can_change_rules %}
+        <form method="post" class="flex items-center gap-2 rounded-xl border px-2.5 py-1 text-[12px]"
+              style="border-color: {% if faith.auto_faith %}rgba(95,140,78,0.5){% else %}var(--ik-line){% endif %}; background: rgba(255,255,255,0.75);"
+              title="Depois de cada leitura dos templos, as ilhas onde você já tem sacerdotes e ficaram abaixo de 100% recebem mais sacerdotes (respeitando a reserva). Ilhas sem sacerdotes seus não são tocadas.">
+          {% csrf_token %}<input type="hidden" name="action" value="auto_faith">
+          <input type="hidden" name="faith_reserve" value="{% if reserve %}{{ reserve }}{% else %}{{ faith.faith_reserve }}{% endif %}">
+          <label class="flex cursor-pointer items-center gap-1.5 font-semibold" style="color: {% if faith.auto_faith %}var(--ik-good){% else %}var(--ik-muted){% endif %};">
+            <input type="checkbox" name="auto_faith" value="1" {% if faith.auto_faith %}checked{% endif %} onchange="this.form.submit()">
+            Fé em 100% automática
+          </label>
+        </form>
+        {% endif %}
         <form method="post">{% csrf_token %}<input type="hidden" name="action" value="refresh">
           <button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> Ler templos</button>
         </form>
