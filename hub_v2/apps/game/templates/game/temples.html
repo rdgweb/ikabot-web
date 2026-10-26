@@ -23,7 +23,7 @@
           <div class="mt-1 flex flex-wrap gap-1.5 text-[11px]">
             <span class="rounded-full border px-2 py-0.5 text-muted" style="border-color: var(--ik-line); background: rgba(255,255,255,0.7);">{{ cards|length }} ilha{{ cards|length|pluralize }}</span>
             <span class="rounded-full border px-2 py-0.5 text-muted" style="border-color: var(--ik-line); background: rgba(255,255,255,0.7);">{{ accounts }} conta{{ accounts|pluralize }}</span>
-            {% if short_islands %}<span class="rounded-full px-2 py-0.5 font-semibold" style="background: rgba(201,156,78,0.16); color: var(--ik-gold);"><i class="bi bi-people"></i> {{ short_islands }} sem como chegar a 100%</span>{% endif %}
+            {% if short_islands %}<span class="rounded-full px-2 py-0.5 font-semibold" style="background: rgba(201,156,78,0.16); color: var(--ik-gold);"><i class="bi bi-people"></i> {{ short_islands }} sem como chegar a 103%</span>{% endif %}
           </div>
         </div>
       </div>
@@ -37,7 +37,7 @@
         {% if can_change_rules %}
         <form method="post" class="flex items-center gap-2 rounded-xl border px-2.5 py-1 text-[12px]"
               style="border-color: {% if faith.auto_faith %}rgba(95,140,78,0.5){% else %}var(--ik-line){% endif %}; background: rgba(255,255,255,0.75);"
-              title="Depois de cada leitura dos templos, as ilhas onde você já tem sacerdotes e ficaram abaixo de 100% recebem mais sacerdotes (respeitando a reserva). Ilhas sem sacerdotes seus não são tocadas.">
+              title="Depois de cada leitura dos templos, as ilhas onde você já tem sacerdotes e ficaram abaixo de 100% recebem sacerdotes para 103% (folga para a ilha crescer), respeitando a reserva. Ilhas sem sacerdotes seus não são tocadas.">
           {% csrf_token %}<input type="hidden" name="action" value="auto_faith">
           <input type="hidden" name="faith_reserve" value="{% if reserve %}{{ reserve }}{% else %}{{ faith.faith_reserve }}{% endif %}">
           <label class="flex cursor-pointer items-center gap-1.5 font-semibold" style="color: {% if faith.auto_faith %}var(--ik-good){% else %}var(--ik-muted){% endif %};">
@@ -189,7 +189,7 @@
         {% if card.changes %}
         <form method="post">{% csrf_token %}<input type="hidden" name="action" value="balance"><input type="hidden" name="reserva" value="{{ reserve }}"><input type="hidden" name="island" value="{{ island.key }}">
           <button type="submit" class="btn btn-secondary btn-sm">
-            <i class="bi bi-sliders"></i> Equilibrar{% if not card.short %} em 100%{% endif %} ({% if card.delta > 0 %}+{% endif %}{{ card.delta }} sacerdotes{% if card.projected is not None %} → fé {{ card.projected|floatformat:0 }}%{% endif %})
+            <i class="bi bi-sliders"></i> Equilibrar{% if not card.short %} em 103%{% endif %} ({% if card.delta > 0 %}+{% endif %}{{ card.delta }} sacerdotes{% if card.projected is not None %} → conversão {{ card.projected|floatformat:0 }}%{% endif %})
           </button>
         </form>
         {% elif not card.planned %}

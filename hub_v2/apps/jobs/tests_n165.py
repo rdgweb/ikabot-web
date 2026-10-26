@@ -54,3 +54,10 @@ class AutoFaithTests(TempleAccounts):
         self.client.post("/game/temples/", {"action": "auto_faith", "auto_faith": "1", "faith_reserve": "50"})
         self.assertEqual(faith_settings(self.org), {"auto_faith": True, "faith_reserve": 50})
         self.assertIn("Fé em 100% automática", self.client.get("/game/temples/").content.decode())
+
+
+class FaithMarginTests(AutoFaithTests):
+    def test_100_is_aimed_with_the_margin_and_a_lower_target_is_kept(self):
+        from apps.game.services.temples import FAITH_TARGET, faith_goal
+
+        self.assertEqual((FAITH_TARGET, faith_goal(100), faith_goal(80)), (103.0, 103.0, 80.0))

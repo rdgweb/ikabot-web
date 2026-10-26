@@ -205,7 +205,22 @@ def islands_for_organization() -> list[Island]:
     return sorted(islands.values(), key=lambda i: (not i.available, i.wonder_name or "~", i.island_id))
 
 
-def plan_faith(island: Island, target: float = 100.0, reserve: int = 0) -> bool:
+# N-165: the island keeps growing (with the same priests, Hell went from 9.09% to 8.27% of the island in a day and a
+# half), so aiming at exactly 100% leaves it under 100% right after. "100%" is aimed with a margin.
+FAITH_MARGIN = 3.0
+FAITH_TARGET = 100.0 + FAITH_MARGIN
+
+
+def faith_goal(target) -> float:
+    """The conversion to aim at for a faith target: 100% (or more) gets the margin; a lower target is kept."""
+    try:
+        target = float(target)
+    except (TypeError, ValueError):
+        target = 100.0
+    return FAITH_TARGET if target >= 100.0 else target
+
+
+def plan_faith(island: Island, target: float = FAITH_TARGET, reserve: int = 0) -> bool:
     """Fill each own temple's `target`: the priests the island still needs for `target`% faith, spread evenly over
     our cities there (within each temple's maximum and the free citizens above `reserve`). What does not fit is
     left in `island.short_priests`. False when the island cannot be planned."""
@@ -240,11 +255,12 @@ def plan_faith(island: Island, target: float = 100.0, reserve: int = 0) -> bool:
 def projected_faith(island: Island) -> float:
     per = island.share_per_priest or 0
     own = sum((t.target if t.target is not None else t.priests) * per for t in island.own)
-    return round(min(100.0, island.base_share + island.others_share + own), 1)
+    return round(min(FAITH_TARGET, island.base_share + island.others_share + own), 1)
 
 
-def balance_jobs(islands: list[Island], *, target: float = 100.0, reserve: int = 0, created_by=None) -> int:
+def balance_jobs(islands: list[Island], *, target: float = FAITH_TARGET, reserve: int = 0, created_by=None) -> int:
     """One Ajustar Sacerdotes job per game account with the planned priests of its cities."""
+    target = faith_goal(target)
     from apps.jobs.services.workflows import create_job_with_workflow
 
     by_account: dict[str, dict[str, int]] = {}
@@ -375,7 +391,7 @@ def _reason_label(reason) -> str:
 # N-165: keep the islands we already worship at 100% faith. The temple reading (ac=35 "keep", spawned by Verificar
 # Status) only reads; when the island's population grows each priest converts a smaller share and the faith slides
 # below 100% with nobody adjusting. With the switch on, the reading of an account is followed by its adjustment.
-FAITH_FLOOR = 99.5                       # island conversion below this asks for more priests
+FAITH_FLOOR = 100.0                      # island conversion below this asks for more priests (aimed at FAITH_TARGET)
 
 
 def faith_settings(organization) -> dict:
@@ -423,7 +439,7 @@ def auto_balance_after_reading(game_account) -> int:
     for island in islands:
         if island.own_share <= 0 or island.total_share is None or island.total_share >= FAITH_FLOOR:
             continue
-        if not plan_faith(island, 100.0, settings_["faith_reserve"]):
+        if not plan_faith(island, FAITH_TARGET, settings_["faith_reserve"]):
             continue
         for t in island.own:
             if t.game_account_id == ga_id and t.target is not None and t.target > t.priests:

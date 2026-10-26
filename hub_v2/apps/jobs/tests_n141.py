@@ -69,8 +69,8 @@ class TemplesTests(TempleAccounts):
         self.assertLessEqual(abs(targets["Glitnir"] - targets["Alfheim"]), 1)        # spread evenly over the accounts
         self.assertLess(targets["Alfheim"], 943)                                      # the excess comes off
         faith = sum(targets.values()) * 7 * 100 / CAPACITY + island.others_share
-        self.assertGreaterEqual(faith, 100)
-        self.assertLess(faith, 100.05)                                                # and nothing to spare
+        self.assertGreaterEqual(faith, 103)                                           # N-165: 100% plus the margin
+        self.assertLess(faith, 103.05)                                                # and nothing to spare
 
     def test_the_temples_page_shows_the_islands_and_balances_them(self):
         html = self.client.get("/game/temples/").content.decode()
