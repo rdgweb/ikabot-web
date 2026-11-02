@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     JobListView,
     JobDetailView,
+    WorldSpyCampaignPanelView,
     WorkflowDetailView,
     WorkflowRunsPartialView,
     WorkflowRunJobsPartialView,
@@ -69,6 +70,7 @@ urlpatterns = [
     path("<uuid:pk>/send-resources/", JobSendResourcesView.as_view(), name="job-send-resources"),
     # Job detail
     path("<uuid:pk>/", JobDetailView.as_view(), name="job-detail"),
+    path("<uuid:pk>/campaign-panel/", WorldSpyCampaignPanelView.as_view(), name="world-spy-campaign-panel"),
     path("<uuid:pk>/chain-history/", JobChainHistoryPartialView.as_view(), name="job-chain-history"),
     path("<uuid:pk>/logs/", JobLogsPartialView.as_view(), name="job-logs"),
     path("<uuid:pk>/cancel/", JobCancelView.as_view(), name="job-cancel"),

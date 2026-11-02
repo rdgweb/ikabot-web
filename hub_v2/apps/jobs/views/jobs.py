@@ -2680,6 +2680,20 @@ class JobListView(FilterSortListView):
         }
 
 
+class WorldSpyCampaignPanelView(LoginRequiredMixin, View):
+    """GET /jobs/<pk>/campaign-panel/ — the campaign card of a world spy job, asked for after the page opens: a
+    campaign has tens of thousands of jobs and counting them took the page past the gateway's time limit."""
+
+    def get(self, request, pk):
+        from apps.espionage.services.campaign import campaign_summary
+
+        job = get_object_or_404(Job, pk=pk)
+        summary = campaign_summary(job)
+        if summary is None:
+            return HttpResponse("")
+        return render(request, "jobs/partials/world_spy_campaign.html", {"world_spy_campaign": summary, "object": job})
+
+
 class JobDetailView(LoginRequiredMixin, DetailView):
     model = Job
     template_name = "jobs/job_detail.html"
@@ -2788,9 +2802,7 @@ class JobDetailView(LoginRequiredMixin, DetailView):
         context["abandon_colony_display"] = JobListView._abandon_colony_display(self.object)
         context["barbarians_display"] = JobListView._barbarians_display(self.object)
         context["spy_display"] = JobListView._spy_display(self.object)
-        from apps.espionage.services.campaign import campaign_summary
-
-        context["world_spy_campaign"] = campaign_summary(self.object)          # N-150
+        context["world_spy_campaign_lazy"] = int(self.object.action_code) == 16   # N-150: loaded after the page opens
         context["train_display"] = JobListView._train_display(self.object)
         context["station_display"] = JobListView._station_display(self.object)
         context["construction_plan"] = inputs.get("construction_plan_json") if isinstance(inputs.get("construction_plan_json"), list) else []

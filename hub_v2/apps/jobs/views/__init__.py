@@ -1,6 +1,7 @@
 from .jobs import (
     WorkflowAwareJobListView,
     JobDetailView,
+    WorldSpyCampaignPanelView,
     WorkflowDetailView,
     WorkflowRunsPartialView,
     WorkflowRunJobsPartialView,
