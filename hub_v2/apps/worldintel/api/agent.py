@@ -593,6 +593,7 @@ class WorldSpyTargetsView(APIView):
                 if pass_since:
                     if city_missions:
                         for row in SpyReport.objects.filter(
+                            Q(result_status__icontains="sucesso") | Q(result_status__icontains="success"),
                             target_city_id__in=city_ids_check, mission_id__in=list(city_missions), created_at__gte=pass_since,
                         ).values("target_city_id", "mission_id").distinct():
                             if row["target_city_id"] not in rich_cities:
@@ -675,6 +676,7 @@ class WorldSpyTargetsView(APIView):
             "dump_captured_at":   dump.captured_at.isoformat() if dump.captured_at else None,
             "total":              len(targets),
             "busy_source_cities": busy_source_cities,
+            "active_targets":     sorted(occupied_targets),   # N-168: the only targets that are really reserved
             "source_coords":      source_coords,
         })
 

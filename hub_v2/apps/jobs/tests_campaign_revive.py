@@ -65,3 +65,25 @@ class CampaignReviveTests(TestCase):
 
         Job.objects.filter(pk=self.last.pk).update(progress_json=str({"inbox": [{"target_city_id": "500"}]}))
         self.assertEqual(_serialize_progress(Job.objects.get(pk=self.last.pk))["inbox"], [{"target_city_id": "500"}])
+
+
+class SpyEndWakesTheRoundTests(CampaignReviveTests):
+    def test_a_spy_job_without_follow_up_wakes_the_round_and_with_one_does_not(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from apps.jobs.services.campaigns import wake_after_spy
+
+        later = timezone.now() + timedelta(hours=4)
+        runner = self._job("scheduled", {"__campaign_root_id": str(self.root.pk)}, scheduled_for=later)
+        self._point_to(runner)
+        spy = Job.objects.create(account=self.account, game_account=self.ga, node=self.node, action_code=15, status="error",
+                                 inputs_json=json.dumps({"__root_job_id": str(self.root.pk)}), timeout_sec=1800)
+        follow_up = Job.objects.create(account=self.account, game_account=self.ga, node=self.node, action_code=15,
+                                       status="scheduled", inputs_json="{}", timeout_sec=1800, source_job_id=spy.pk)
+        wake_after_spy(spy)
+        self.assertEqual(Job.objects.get(pk=runner.pk).scheduled_for, later)
+        Job.objects.filter(pk=follow_up.pk).delete()
+        wake_after_spy(spy)
+        self.assertLess(Job.objects.get(pk=runner.pk).scheduled_for, later)

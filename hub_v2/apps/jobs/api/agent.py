@@ -181,6 +181,14 @@ class JobStatusView(APIView):
                 note = f"job_id={job.pk} exit_code={job.exit_code}"
             reconcile_internal_order_for_job(job, terminal_status=data["status"], note=note)
             reconcile_workflow_for_job(job)
+            if int(job.action_code) == 15:
+                # N-168: a spy job that ends for any reason frees its safehouse: the campaign's round wakes up
+                try:
+                    from apps.jobs.services.campaigns import wake_after_spy
+
+                    wake_after_spy(job)
+                except Exception:  # noqa: BLE001 - the job's end is recorded either way
+                    logger.warning("Could not wake the campaign after %s", job.pk, exc_info=True)
             if data["status"] == "finished" and int(job.action_code) == 35 and job.game_account_id                     and '"keep"' in (job.inputs_json or ""):
                 # N-165: a temple reading can be followed by the account's priests to keep the faith at 100%
                 try:
@@ -475,6 +483,9 @@ class RescheduleJobView(APIView):
                             prog = json.loads(root_progress) if isinstance(root_progress, str) and root_progress else (root_progress or {})
                             prog["current_runner_id"] = str(new_job.pk)
                             Job.objects.filter(pk=root_id_str).update(progress_json=json.dumps(prog))
+                            # N-168: one round at a time; a parallel one would keep creating rounds for ever
+                            Job.objects.filter(root_job_id=root_id_str, action_code=job.action_code,
+                                               status="scheduled").exclude(pk=new_job.pk).update(status="cancelled")
                     except Exception as _e:
                         logger.warning("Falha ao atualizar current_runner_id no root %s: %s", root_id_str, _e)
 

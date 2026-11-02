@@ -96,3 +96,21 @@ def revive_campaign(root_job_id, *, inbox: list | None = None):
         logger.warning("Campanha %s sem rodada ativa (ultima %s): nova rodada %s",
                        root_id[:8], current_id[:8] or "-", str(created.pk)[:8])
     return target
+
+
+def wake_after_spy(job) -> None:
+    """N-168: a spy job of a campaign ended without a follow-up (done, aborted or with an error): its safehouse is
+    free, so the round that hands out targets runs now instead of waiting for the next notice or its 4 h."""
+    from apps.jobs.models import Job
+    from apps.jobs.services.dispatch import dispatch_job
+
+    root_id = str(_as_dict(job.inputs_json).get("__root_job_id") or "").strip()
+    if not root_id or Job.objects.filter(source_job_id=job.pk, status__in=ACTIVE).exists():
+        return
+    runner = revive_campaign(root_id)
+    if runner is None or runner.status != "scheduled" or not runner.scheduled_for:
+        return
+    if runner.scheduled_for > timezone.now() + 6 * WAKE_IN:
+        runner.scheduled_for = timezone.now() + WAKE_IN
+        Job.objects.filter(pk=runner.pk).update(scheduled_for=runner.scheduled_for)
+        dispatch_job(runner, eta=runner.scheduled_for)

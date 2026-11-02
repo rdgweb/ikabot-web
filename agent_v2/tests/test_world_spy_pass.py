@@ -55,6 +55,16 @@ class WorldSpyPassTests(unittest.TestCase):
         self.assertEqual(result.reschedule_inputs["__spied_player_ids"], [])
         self.assertTrue(any("Volta concluída" in m for _, m in hub.logs))
 
+    def test_only_targets_with_an_active_spy_job_stay_reserved(self):
+        runner = WorldSpyRunner.__new__(WorldSpyRunner)
+        runner.hub = FakeHub([{"game_city_id": "5", "city_name": "A", "owner_name": "B", "missing_missions": [5]}])
+        runner.hub.get_spy_targets = lambda **kw: {"targets": [{"game_city_id": "5", "city_name": "A", "owner_name": "B", "missing_missions": [5]}],
+                                                   "dump_id": "d", "busy_source_cities": ["9"], "source_coords": {}, "active_targets": ["7"]}
+        runner.execute({"job_id": "round", "game_account_id": "ga",
+                        "inputs": {"city_ids": "100,9", "missions": "5", "__claimed_targets": {"7": {}, "8": {}}}})
+        self.assertNotIn("8", runner.hub.reschedules[0]["__claimed_targets"])
+        self.assertIn("7", runner.hub.reschedules[0]["__claimed_targets"])
+
     def test_interval_zero_ends_the_campaign(self):
         result, _ = run({"pass_interval_hours": 0}, [])
         self.assertFalse(result.reschedule_seconds)

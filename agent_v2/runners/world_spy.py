@@ -272,6 +272,10 @@ class WorldSpyRunner(BaseRunner):
 
         if claimed_targets and not busy_sources:
             claimed_targets.clear()
+        # N-168: a reservation lasts while its spy job does; the old ones held targets (rich ones too) for ever
+        if result.get("active_targets") is not None:
+            active_targets = set(result["active_targets"])
+            claimed_targets = {cid: info for cid, info in claimed_targets.items() if cid in active_targets}
 
         if claimed_targets:
             targets = [
