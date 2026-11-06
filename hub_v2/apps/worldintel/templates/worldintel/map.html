@@ -1,0 +1,524 @@
+{% extends base_template|default:"base.html" %}
+{% load static %}
+
+{% block title %}Inteligência — Mapa{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span>
+  <a href="{% url 'worldintel:players' %}" class="text-ink">Inteligência</a>
+  <span class="mx-1">/</span>
+  <span class="text-muted">Mapa</span>
+{% endblock %}
+
+{% block content %}
+<style>
+  .wm-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
+  @media (max-width: 1100px) { .wm-wrap { grid-template-columns: minmax(0, 1fr); } }
+  .wm-sea { position: relative; border-radius: 14px; overflow: hidden; background: radial-gradient(120% 120% at 30% 20%, #3f86b5 0%, #2b6690 45%, #1d4a6d 100%); box-shadow: inset 0 0 60px rgba(0,0,0,.25); aspect-ratio: 1 / 1; cursor: grab; touch-action: none; }
+  .wm-sea.dragging { cursor: grabbing; }
+  .wm-sea canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .wm-seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--ik-sand-light); border: 1px solid var(--ik-line); }
+  .wm-seg button { border: 0; background: transparent; padding: 5px 12px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--ik-muted); cursor: pointer; }
+  .wm-seg button.on { background: var(--ik-sea); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+  .wm-tip { position: absolute; pointer-events: none; z-index: 5; min-width: 170px; max-width: 240px; padding: 8px 10px; border-radius: 10px; background: rgba(23,32,42,.92); color: #f3efe6; font-size: 11px; line-height: 1.45; box-shadow: 0 6px 18px rgba(0,0,0,.3); display: none; }
+  .wm-tip b { color: #fff; }
+  .wm-zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; z-index: 4; }
+  .wm-zoom button { width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(255,255,255,.35); background: rgba(16,40,60,.55); color: #fff; font-size: 15px; cursor: pointer; }
+  .wm-badge { position: absolute; left: 12px; top: 12px; z-index: 4; padding: 4px 10px; border-radius: 999px; background: rgba(16,40,60,.6); color: #eaf3fb; font-size: 11px; font-weight: 600; letter-spacing: .02em; }
+  .wm-time { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 12px; background: var(--ik-paper); border: 1px solid var(--ik-line); }
+  .wm-play { width: 34px; height: 34px; flex: none; border-radius: 999px; border: 0; background: var(--ik-sea); color: #fff; font-size: 15px; cursor: pointer; box-shadow: 0 2px 6px rgba(79,134,185,.4); }
+  .wm-range { flex: 1; accent-color: var(--ik-sea); }
+  .wm-tile { border-radius: 12px; padding: 9px 10px; border: 1px solid var(--ik-line); background: var(--ik-paper); }
+  .wm-tile .n { font-size: 18px; font-weight: 800; color: var(--ik-ink); line-height: 1.1; }
+  .wm-tile .l { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--ik-muted); display: flex; align-items: center; gap: 5px; }
+  .wm-dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; flex: none; }
+  .wm-ring { display: grid; grid-template-columns: 46px minmax(0, 1fr) 38px; align-items: center; gap: 8px; font-size: 11px; padding: 2px 0; }
+  .wm-ring .bar { height: 9px; border-radius: 99px; background: var(--ik-sand-light); overflow: hidden; border: 1px solid var(--ik-line); }
+  .wm-ring .bar span { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #5f8c4e, #86b86f); transition: width .25s; }
+  .wm-ring.front { font-weight: 700; }
+  .wm-ring.front .bar { border-color: var(--ik-gold); box-shadow: 0 0 0 2px rgba(201,156,78,.25); }
+  .wm-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; color: var(--ik-muted); }
+</style>
+
+<div class="space-y-4">
+
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-bold text-ink">Inteligência do Mundo</h1>
+  </div>
+
+  <div class="flex gap-1">
+    <a href="{% url 'worldintel:players' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}"
+       class="px-3 py-1.5 rounded text-xs font-semibold text-muted hover:text-ink transition-colors">
+      <i class="bi bi-people-fill"></i> Players
+    </a>
+    <a href="{% url 'worldintel:islands' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}"
+       class="px-3 py-1.5 rounded text-xs font-semibold text-muted hover:text-ink transition-colors">
+      <i class="bi bi-geo-fill"></i> Ilhas
+    </a>
+    <a href="{% url 'worldintel:map' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}"
+       class="px-3 py-1.5 rounded text-xs font-semibold bg-[var(--ik-sea)] text-white transition-colors">
+      <i class="bi bi-map-fill"></i> Mapa
+    </a>
+    <a href="{% url 'worldintel:dumps' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}"
+       class="px-3 py-1.5 rounded text-xs font-semibold text-muted hover:text-ink transition-colors">
+      <i class="bi bi-database"></i> Dumps
+    </a>
+  </div>
+
+  {% if selected_dump %}
+  <div class="card !p-3 flex flex-wrap items-center gap-3">
+    <form method="get" class="flex flex-wrap items-end gap-3">
+      <div class="flex-shrink-0">
+        <label class="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Conta</label>
+        <select name="ga" class="filter-select" onchange="this.form.submit()">
+          <option value="">Todas</option>
+          {% for ga in game_accounts %}
+            <option value="{{ ga.pk }}" {% if selected_game_account and selected_game_account.pk == ga.pk %}selected{% endif %}>{{ ga.name|default:ga.server_id }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex-shrink-0">
+        <label class="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Dump</label>
+        <select name="dump" class="filter-select" onchange="this.form.submit()">
+          {% for dump in dump_choices %}
+            <option value="{{ dump.pk }}" {% if selected_dump.pk == dump.pk %}selected{% endif %}>
+              {{ dump.captured_at|date:"d/m H:i" }} — {{ dump.title|default:"Dump"|truncatechars:30 }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    </form>
+    <div class="wm-seg" id="wm-layers" style="margin-left:auto;">
+      <button type="button" data-layer="spy" class="on"><i class="bi bi-binoculars"></i> Espionagem</button>
+      <button type="button" data-layer="res"><i class="bi bi-gem"></i> Recursos</button>
+      <button type="button" data-layer="free"><i class="bi bi-house"></i> Espaços livres</button>
+    </div>
+    <div class="relative" style="min-width:200px;">
+      <i class="bi bi-search" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); font-size:11px; color:var(--ik-muted);"></i>
+      <input id="wm-search" type="text" placeholder="jogador ou aliança" class="form-input !py-1.5 !text-xs w-full" style="padding-left:28px;">
+    </div>
+  </div>
+
+  <div class="wm-wrap" id="wm-root"
+       data-data-url="{% url 'worldintel:map-data' %}{{ map_query }}"
+       data-island-url="{% url 'worldintel:map-island' %}"
+       data-search-url="{% url 'worldintel:map-search' %}"
+       data-dump="{{ selected_dump.pk }}"
+       data-ga="{% if selected_game_account %}{{ selected_game_account.pk }}{% endif %}">
+
+    <div class="space-y-3" style="min-width:0;">
+      <div class="wm-sea" id="wm-sea">
+        <canvas id="wm-canvas"></canvas>
+        <div class="wm-badge" id="wm-badge">Carregando o mundo…</div>
+        <div class="wm-zoom">
+          <button type="button" data-zoom="in" title="Aproximar">+</button>
+          <button type="button" data-zoom="out" title="Afastar">−</button>
+          <button type="button" data-zoom="home" title="Mundo inteiro"><i class="bi bi-fullscreen" style="font-size:12px;"></i></button>
+        </div>
+        <div class="wm-tip" id="wm-tip"></div>
+      </div>
+
+      <div class="wm-time" id="wm-time" style="display:none;">
+        <button type="button" class="wm-play" id="wm-play" title="Reproduzir"><i class="bi bi-play-fill"></i></button>
+        <div style="flex:1; min-width:0;">
+          <div class="flex items-center justify-between" style="font-size:11px; margin-bottom:2px;">
+            <span class="font-semibold text-ink" id="wm-day">—</span>
+            <span class="text-muted" id="wm-day-info"></span>
+          </div>
+          <input type="range" class="wm-range w-full" id="wm-range" min="0" max="0" value="0">
+        </div>
+      </div>
+
+      <div class="card !p-4" id="wm-rereads-card" style="display:none;">
+        <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
+          <h3 class="text-sm font-semibold text-ink">Leituras de estoque por dia</h3>
+          <div class="flex flex-wrap gap-3" id="wm-reason-legend"></div>
+        </div>
+        <canvas id="wm-rereads" style="width:100%; height:150px; display:block;"></canvas>
+      </div>
+    </div>
+
+    <div class="space-y-3" style="min-width:0;">
+      <div class="card !p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-ink"><i class="bi bi-binoculars text-[var(--ik-sea)]"></i> Campanha</h3>
+          <span class="text-[10px] text-muted" id="wm-built"></span>
+        </div>
+        <div class="grid grid-cols-3 gap-2" id="wm-tiles"></div>
+      </div>
+
+      <div class="card !p-4" id="wm-rings-card" style="display:none;">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-sm font-semibold text-ink">Anéis</h3>
+          <span class="text-[10px] text-muted" id="wm-rings-day"></span>
+        </div>
+        <div id="wm-rings" style="max-height:330px; overflow-y:auto; padding-right:4px;"></div>
+      </div>
+
+      <div class="card !p-4" id="wm-island">
+        <div class="text-center py-6">
+          <i class="bi bi-hand-index text-2xl text-muted block mb-2"></i>
+          <p class="text-xs text-muted">Clique numa ilha</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="card text-center py-10">
+    <i class="bi bi-database text-3xl text-muted block mb-3"></i>
+    <p class="text-sm text-muted">Crie um dump primeiro para ver o mapa.</p>
+    <a href="{{ dump_job_create_url }}" hx-get="{{ dump_job_create_url }}" hx-target="#job-modal-body" hx-swap="innerHTML"
+       hx-push-url="false" hx-boost="false" onclick="openModal('jobcreate')" class="btn btn-primary btn-sm mt-4">
+      <i class="bi bi-plus-circle"></i> Criar dump
+    </a>
+  </div>
+  {% endif %}
+</div>
+
+{% if selected_dump %}
+<script>
+(function () {
+  const root = document.getElementById("wm-root");
+  if (!root || root.dataset.ready) return;
+  root.dataset.ready = "1";
+
+  const C = {
+    valid: "#79c26b", expired: "#e7a640", never: "#efe2c4", running: "#5fd6ff", rich: "#ffcf4a",
+    dim: "rgba(239,226,196,.28)", house: "#ffffff", hit: "#ff7ab0",
+    res: { 1: "#a64466", 2: "#c9c2b8", 3: "#79c6e6", 4: "#e8c547" },
+  };
+  const RES_NAMES = { 1: "Vinho", 2: "Mármore", 3: "Cristal", 4: "Enxofre" };
+  const REASONS = [
+    ["new", "Novas", "#4f86b9"], ["old_rule", "Venceu em 48 h", "#b7a58a"], ["rich", "Rico vencido", "#c99c4e"],
+    ["poor", "Pobre vencido", "#8bb07a"], ["failed", "Anterior falhou", "#bb5143"], ["early", "Antes de vencer", "#7d5ba6"],
+  ];
+
+  const sea = document.getElementById("wm-sea");
+  const cv = document.getElementById("wm-canvas");
+  const ctx = cv.getContext("2d");
+  const tip = document.getElementById("wm-tip");
+  const badge = document.getElementById("wm-badge");
+  const range = document.getElementById("wm-range");
+  let D = null, islands = [], layer = "spy", day = 0, lastDay = 0, hits = new Set(), selected = null;
+  let view = { s: 1, x: 0, y: 0 }, playing = null;
+
+  const fmt = (n) => Number(n || 0).toLocaleString("pt-BR");
+  const qs = (extra) => {
+    const p = new URLSearchParams({ dump: root.dataset.dump });
+    if (root.dataset.ga) p.set("ga", root.dataset.ga);
+    Object.entries(extra || {}).forEach(([k, v]) => p.set(k, v));
+    return p.toString();
+  };
+
+  // ── geometry: map 1..100 into the canvas, with zoom and pan ──
+  function size() {
+    const r = sea.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return r.width;
+  }
+  let W = 0;
+  const cell = () => (W / 101) * view.s;
+  const toPx = (gx, gy) => [(gx - 0.5) * cell() + view.x, (gy - 0.5) * cell() + view.y];
+  const toGrid = (px, py) => [(px - view.x) / cell() + 0.5, (py - view.y) / cell() + 0.5];
+
+  function islandStatus(i) {
+    // i: [id,x,y,res,mir,cities,helios,t,v,e,n,r,rich,ring,reads]
+    if (!i[7]) return null;
+    if (day < lastDay) {
+      const read = i[14].filter((d) => d <= day).length;
+      return { share: read / i[7], today: i[14].includes(day) };
+    }
+    return null;
+  }
+
+  function colorOf(i) {
+    if (layer === "res") return C.res[i[3]] || C.dim;
+    if (layer === "free") {
+      const free = Math.max(0, 17 - (i[5] || 0));
+      if (free === 0) return "rgba(187,81,67,.85)";
+      const a = Math.min(1, 0.35 + free / 10);
+      return `rgba(121,194,107,${a})`;
+    }
+    if (!i[7]) return C.dim;
+    if (day < lastDay) {
+      const st = islandStatus(i);
+      if (!st.share) return "rgba(239,226,196,.55)";
+      const g = Math.round(120 + 90 * st.share);
+      return `rgb(${Math.round(150 - 60 * st.share)},${g},${Math.round(110 - 30 * st.share)})`;
+    }
+    if (i[11]) return C.running;
+    if (i[10] === i[7]) return C.never;
+    if (i[9] > i[8]) return C.expired;
+    if (i[10] > 0 && i[8] === 0) return C.expired;
+    return C.valid;
+  }
+
+  function frontierRing() {
+    if (!D || !D.houses.length) return null;
+    const tot = {}, read = {};
+    islands.forEach((i) => {
+      if (i[13] == null || !i[7]) return;
+      tot[i[13]] = (tot[i[13]] || 0) + i[7];
+      read[i[13]] = (read[i[13]] || 0) + i[14].filter((d) => d <= day).length;
+    });
+    const keys = Object.keys(tot).map(Number).sort((a, b) => a - b);
+    for (const k of keys) if (read[k] / tot[k] < 0.9) return { ring: k, tot, read, keys };
+    return { ring: keys[keys.length - 1], tot, read, keys };
+  }
+
+  function draw() {
+    if (!W) return;
+    const h = W;
+    ctx.clearRect(0, 0, W, h);
+    const c = cell();
+    // grid every 10 squares
+    ctx.strokeStyle = "rgba(255,255,255,.07)"; ctx.lineWidth = 1;
+    ctx.fillStyle = "rgba(255,255,255,.35)"; ctx.font = "10px system-ui"; ctx.textAlign = "center";
+    for (let g = 10; g <= 100; g += 10) {
+      const [px] = toPx(g, 0), [, py] = toPx(0, g);
+      ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(W, py); ctx.stroke();
+      if (c * 10 > 34) { ctx.fillText(g, px, h - 6); ctx.fillText(g, 12, py + 3); }
+    }
+    // ring front: the area the campaign has reached
+    const fr = layer === "spy" ? frontierRing() : null;
+    if (fr && fr.ring != null) {
+      const rad = (fr.ring + 1) * D.ring_width * c;
+      ctx.save();
+      ctx.beginPath();
+      D.houses.forEach(([hx, hy]) => { const [px, py] = toPx(hx, hy); ctx.moveTo(px + rad, py); ctx.arc(px, py, rad, 0, Math.PI * 2); });
+      ctx.fillStyle = "rgba(255,236,190,.07)"; ctx.fill("nonzero");
+      ctx.restore();
+      ctx.save(); ctx.setLineDash([5, 5]); ctx.strokeStyle = "rgba(255,226,160,.55)"; ctx.lineWidth = 1.5;
+      D.houses.forEach(([hx, hy]) => { const [px, py] = toPx(hx, hy); ctx.beginPath(); ctx.arc(px, py, rad, 0, Math.PI * 2); ctx.stroke(); });
+      ctx.restore();
+    }
+    // islands
+    const sz = Math.max(2.5, c * 0.78), rr = Math.min(sz / 3, 4);
+    islands.forEach((i) => {
+      const [px, py] = toPx(i[1], i[2]);
+      if (px < -sz || py < -sz || px > W + sz || py > h + sz) return;
+      ctx.fillStyle = colorOf(i);
+      ctx.beginPath(); ctx.roundRect(px - sz / 2, py - sz / 2, sz, sz, rr); ctx.fill();
+      if (layer === "spy" && day >= lastDay && i[12] && sz > 4) {
+        ctx.strokeStyle = C.rich; ctx.lineWidth = Math.max(1.2, sz / 7);
+        ctx.beginPath(); ctx.roundRect(px - sz / 2 - 1.5, py - sz / 2 - 1.5, sz + 3, sz + 3, rr + 1); ctx.stroke();
+      }
+      if (layer === "spy" && day < lastDay && i[7] && i[14].includes(day)) {
+        ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.roundRect(px - sz / 2 - 1.5, py - sz / 2 - 1.5, sz + 3, sz + 3, rr + 1); ctx.stroke();
+      }
+      if (hits.has(i[0])) {
+        ctx.strokeStyle = C.hit; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(px, py, sz * 0.9 + 2, 0, Math.PI * 2); ctx.stroke();
+      }
+      if (selected === i[0]) {
+        ctx.strokeStyle = "#fff"; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.roundRect(px - sz / 2 - 3, py - sz / 2 - 3, sz + 6, sz + 6, rr + 2); ctx.stroke();
+      }
+    });
+    // safehouses
+    if (layer === "spy" && D) D.houses.forEach(([hx, hy, n]) => {
+      const [px, py] = toPx(hx, hy), r = Math.max(4, Math.min(9, c * 0.45));
+      ctx.fillStyle = "#17324a"; ctx.strokeStyle = C.house; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#fff"; ctx.font = `bold ${Math.max(8, r)}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      if (r >= 6) ctx.fillText(n, px, py + 0.5);
+      ctx.textBaseline = "alphabetic";
+    });
+  }
+
+  function islandAt(px, py) {
+    const [gx, gy] = toGrid(px, py), rx = Math.round(gx), ry = Math.round(gy);
+    return islands.find((i) => i[1] === rx && i[2] === ry) || null;
+  }
+
+  // ── side panels ──
+  function tiles() {
+    let t = 0, v = 0, e = 0, n = 0, r = 0, rich = 0;
+    islands.forEach((i) => { t += i[7]; v += i[8]; e += i[9]; n += i[10]; r += i[11]; rich += i[12]; });
+    const tile = (num, label, color) => `<div class="wm-tile"><div class="n">${fmt(num)}</div><div class="l"><span class="wm-dot" style="background:${color}"></span>${label}</div></div>`;
+    document.getElementById("wm-tiles").innerHTML =
+      tile(t, "Alvos", "#2b6690") + tile(v, "Válidos", C.valid) + tile(e, "Vencidos", C.expired) +
+      tile(n, "Nunca lidos", "#d9c9a3") + tile(r, "Espionando", C.running) + tile(rich, "Ricos", C.rich);
+    document.getElementById("wm-built").textContent = `dump ${D.dump.captured} · atualizado ${D.built}`;
+  }
+
+  function rings() {
+    const card = document.getElementById("wm-rings-card");
+    const fr = frontierRing();
+    if (!fr) { card.style.display = "none"; return; }
+    card.style.display = "";
+    document.getElementById("wm-rings-day").textContent = day < lastDay ? `em ${D.days[day]}` : "hoje";
+    const w = D.ring_width;
+    document.getElementById("wm-rings").innerHTML = fr.keys.map((k) => {
+      const pct = Math.round((100 * fr.read[k]) / fr.tot[k]);
+      return `<div class="wm-ring ${k === fr.ring ? "front" : ""}">
+        <span class="text-muted">${k * w}–${(k + 1) * w}</span>
+        <div class="bar" title="${fmt(fr.read[k])} de ${fmt(fr.tot[k])} alvos"><span style="width:${pct}%"></span></div>
+        <span class="text-right ${k === fr.ring ? "text-ink" : "text-muted"}">${pct}%</span></div>`;
+    }).join("");
+  }
+
+  function rereadsChart() {
+    const card = document.getElementById("wm-rereads-card");
+    if (!D.rereads.length) { card.style.display = "none"; return; }
+    card.style.display = "";
+    document.getElementById("wm-reason-legend").innerHTML = REASONS.map(([k, label, color]) => {
+      const total = D.rereads.reduce((s, d) => s + d[k], 0);
+      return `<span class="wm-chip"><span class="wm-dot" style="background:${color}"></span>${label} <b class="text-ink">${fmt(total)}</b></span>`;
+    }).join("");
+    const el = document.getElementById("wm-rereads"), r = el.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    el.width = r.width * dpr; el.height = r.height * dpr;
+    const g = el.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const n = D.rereads.length, padB = 16, H = r.height - padB, bw = r.width / n;
+    const max = Math.max(1, ...D.rereads.map((d) => REASONS.reduce((s, [k]) => s + d[k], 0)));
+    D.rereads.forEach((d, idx) => {
+      let y = H;
+      const x = idx * bw + bw * 0.15, w = bw * 0.7;
+      if (idx === day) { g.fillStyle = "rgba(79,134,185,.12)"; g.fillRect(idx * bw, 0, bw, H); }
+      REASONS.forEach(([k, , color]) => {
+        const hgt = (d[k] / max) * (H - 4);
+        if (!hgt) return;
+        g.fillStyle = color; g.fillRect(x, y - hgt, w, hgt); y -= hgt;
+      });
+      if (n <= 31 || idx % Math.ceil(n / 15) === 0) {
+        g.fillStyle = idx === day ? "#2d2a24" : "#6f6b63"; g.font = `${idx === day ? "bold " : ""}9px system-ui`; g.textAlign = "center";
+        g.fillText(D.days[idx].slice(0, 2), idx * bw + bw / 2, r.height - 3);
+      }
+    });
+    el.onclick = (ev) => { setDay(Math.min(n - 1, Math.floor((ev.offsetX / r.width) * n))); };
+  }
+
+  function setDay(d) {
+    day = d; range.value = d;
+    const info = document.getElementById("wm-day-info");
+    if (d >= lastDay) {
+      document.getElementById("wm-day").textContent = "Agora";
+      info.textContent = "situação atual dos alvos";
+    } else {
+      const read = islands.reduce((s, i) => s + i[14].filter((x) => x <= d).length, 0);
+      const todayReads = D.rereads[d] ? D.rereads[d].new : 0;
+      document.getElementById("wm-day").textContent = `${D.days[d]} · dia ${d + 1} de ${D.days.length}`;
+      info.textContent = `${fmt(read)} alvos lidos · +${fmt(todayReads)} no dia`;
+    }
+    draw(); rings(); rereadsChart();
+  }
+
+  // ── island panel ──
+  function openIsland(i) {
+    selected = i[0]; draw();
+    const box = document.getElementById("wm-island");
+    box.innerHTML = '<div class="text-center py-6 text-xs text-muted"><i class="bi bi-hourglass-split"></i> Abrindo a ilha…</div>';
+    fetch(`${root.dataset.islandUrl}?${qs({ island: i[0] })}`, { headers: { "X-Requested-With": "fetch" } })
+      .then((r) => (r.ok ? r.text() : Promise.reject(r.status)))
+      .then((html) => { box.innerHTML = html; })
+      .catch(() => { box.innerHTML = '<div class="text-xs text-muted py-4 text-center">Não consegui abrir a ilha.</div>'; });
+  }
+
+  // ── interaction ──
+  let drag = null, moved = false;
+  sea.addEventListener("pointerdown", (ev) => { drag = { x: ev.clientX, y: ev.clientY, vx: view.x, vy: view.y }; moved = false; sea.setPointerCapture(ev.pointerId); });
+  sea.addEventListener("pointermove", (ev) => {
+    const r = sea.getBoundingClientRect(), px = ev.clientX - r.left, py = ev.clientY - r.top;
+    if (drag) {
+      const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 3) { moved = true; sea.classList.add("dragging"); }
+      if (moved) { view.x = drag.vx + dx; view.y = drag.vy + dy; clamp(); draw(); tip.style.display = "none"; return; }
+    }
+    const i = islandAt(px, py);
+    if (!i) { tip.style.display = "none"; return; }
+    let html = `<b>[${i[1]}:${i[2]}]</b> · ${RES_NAMES[i[3]] || "—"} · ${i[5]} cidades`;
+    if (i[7]) {
+      html += `<br>${i[7]} alvo(s): <span style="color:${C.valid}">${i[8]} válido(s)</span>, <span style="color:${C.expired}">${i[9]} vencido(s)</span>, ${i[10]} nunca lido(s)`;
+      if (i[11]) html += `<br><span style="color:${C.running}">${i[11]} espionando agora</span>`;
+      if (i[12]) html += `<br><span style="color:${C.rich}">${i[12]} rico(s)</span>`;
+      if (i[13] != null) html += `<br><span style="opacity:.7">anel ${i[13] * D.ring_width}–${(i[13] + 1) * D.ring_width}</span>`;
+    }
+    tip.innerHTML = html; tip.style.display = "block";
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    tip.style.left = Math.min(r.width - tw - 8, px + 14) + "px";
+    tip.style.top = Math.min(r.height - th - 8, py + 14) + "px";
+  });
+  sea.addEventListener("pointerup", (ev) => {
+    sea.classList.remove("dragging");
+    if (drag && !moved) {
+      const r = sea.getBoundingClientRect(), i = islandAt(ev.clientX - r.left, ev.clientY - r.top);
+      if (i) openIsland(i);
+    }
+    drag = null;
+  });
+  sea.addEventListener("pointerleave", () => { tip.style.display = "none"; });
+  function zoomAt(f, px, py) {
+    const ns = Math.max(1, Math.min(12, view.s * f)), k = ns / view.s;
+    view.x = px - (px - view.x) * k; view.y = py - (py - view.y) * k; view.s = ns; clamp(); draw();
+  }
+  function clamp() {
+    const span = W * view.s;
+    view.x = Math.min(0, Math.max(W - span, view.x)); view.y = Math.min(0, Math.max(W - span, view.y));
+  }
+  sea.addEventListener("wheel", (ev) => {
+    ev.preventDefault();
+    const r = sea.getBoundingClientRect();
+    zoomAt(ev.deltaY < 0 ? 1.25 : 0.8, ev.clientX - r.left, ev.clientY - r.top);
+  }, { passive: false });
+  sea.querySelectorAll("[data-zoom]").forEach((b) => b.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    if (b.dataset.zoom === "home") { view = { s: 1, x: 0, y: 0 }; draw(); return; }
+    zoomAt(b.dataset.zoom === "in" ? 1.5 : 1 / 1.5, W / 2, W / 2);
+  }));
+  sea.querySelectorAll(".wm-zoom button").forEach((b) => b.addEventListener("pointerdown", (ev) => ev.stopPropagation()));
+
+  document.querySelectorAll("#wm-layers [data-layer]").forEach((b) => b.addEventListener("click", () => {
+    layer = b.dataset.layer;
+    document.querySelectorAll("#wm-layers [data-layer]").forEach((o) => o.classList.toggle("on", o === b));
+    document.getElementById("wm-time").style.display = layer === "spy" && D && D.days.length ? "" : "none";
+    badgeText(); draw();
+  }));
+
+  let searchTimer = null;
+  document.getElementById("wm-search").addEventListener("input", (ev) => {
+    clearTimeout(searchTimer);
+    const q = ev.target.value.trim();
+    searchTimer = setTimeout(() => {
+      if (q.length < 2) { hits = new Set(); badgeText(); draw(); return; }
+      fetch(`${root.dataset.searchUrl}?${qs({ q })}`).then((r) => r.json()).then((res) => {
+        hits = new Set(res.islands || []); badgeText(); draw();
+      });
+    }, 300);
+  });
+
+  function badgeText() {
+    const names = { spy: "Espionagem", res: "Recursos", free: "Espaços livres" };
+    badge.textContent = names[layer] + (hits.size ? ` · ${hits.size} ilha(s) encontradas` : "");
+  }
+
+  range.addEventListener("input", () => setDay(Number(range.value)));
+  document.getElementById("wm-play").addEventListener("click", () => {
+    const icon = document.querySelector("#wm-play i");
+    if (playing) { clearInterval(playing); playing = null; icon.className = "bi bi-play-fill"; return; }
+    if (day >= lastDay) setDay(0);
+    icon.className = "bi bi-pause-fill";
+    playing = setInterval(() => {
+      if (day >= lastDay) { clearInterval(playing); playing = null; icon.className = "bi bi-play-fill"; return; }
+      setDay(day + 1);
+    }, 700);
+  });
+
+  new ResizeObserver(() => { const old = W; W = size(); if (old && W !== old) { view.x *= W / old; view.y *= W / old; } draw(); rereadsChart(); }).observe(sea);
+
+  fetch(root.dataset.dataUrl).then((r) => r.json()).then((data) => {
+    D = data; islands = data.islands || [];
+    W = size();
+    lastDay = Math.max(0, (D.days || []).length - 1);
+    if (D.days && D.days.length) {
+      range.max = lastDay;
+      document.getElementById("wm-time").style.display = "";
+    }
+    tiles(); badgeText(); setDay(lastDay);
+  }).catch(() => { badge.textContent = "Não consegui carregar o mapa"; });
+})();
+</script>
+{% endif %}
+{% endblock %}

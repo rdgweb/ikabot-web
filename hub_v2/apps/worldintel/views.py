@@ -4,7 +4,7 @@ from urllib.parse import urlencode
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.paginator import Paginator
 from django.db.models import BigIntegerField, Count, ExpressionWrapper, F, Max, Min, Q
-from django.http import Http404, HttpResponseRedirect
+from django.http import Http404, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.views import View
@@ -537,3 +537,56 @@ class WorldIslandListView(WorldIntelBaseView):
             )
         ctx["islands"] = rows
         return ctx
+
+
+class WorldMapView(WorldIntelBaseView):
+    """N-169: the world map, with the spy campaign's ring and rereads."""
+
+    template_name = "worldintel/map.html"
+    active_tab = "map"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx.update(self._base_context())
+        query = self.request.GET.urlencode()
+        ctx["map_query"] = f"?{query}" if query else ""
+        return ctx
+
+
+class WorldMapDataView(WorldIntelBaseView):
+    """The summary the map draws, as JSON (kept for a few minutes)."""
+
+    def get(self, request, *args, **kwargs):
+        from .services.world_map import current_campaign_root, map_summary
+
+        dump = self._selected_dump()
+        if dump is None:
+            return JsonResponse({"islands": []})
+        root = current_campaign_root(self._selected_game_account())
+        return JsonResponse(map_summary(dump, root))
+
+
+class WorldMapIslandView(WorldIntelBaseView):
+    template_name = "worldintel/partials/map_island.html"
+
+    def get_context_data(self, **kwargs):
+        from .services.world_map import island_detail
+
+        ctx = super().get_context_data(**kwargs)
+        dump = self._selected_dump()
+        detail = island_detail(dump, str(self.request.GET.get("island") or "")) if dump else None
+        if detail is None:
+            raise Http404
+        ctx.update(detail)
+        ctx["islands_url"] = (reverse("worldintel:islands") + "?" +
+                              urlencode({"dump": str(dump.pk), "q": f"{detail['island'].x}:{detail['island'].y}"}))
+        ctx["monitor_url"] = self._monitor_url(dump.game_account, [str(detail["island"].island_id)])
+        return ctx
+
+
+class WorldMapSearchView(WorldIntelBaseView):
+    def get(self, request, *args, **kwargs):
+        from .services.world_map import search_islands
+
+        dump = self._selected_dump()
+        return JsonResponse({"islands": search_islands(dump, str(request.GET.get("q") or "")) if dump else []})

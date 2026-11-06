@@ -1,6 +1,9 @@
 from django.urls import path
 
-from .views import WorldCityDetailView, WorldDumpDeleteView, WorldDumpListView, WorldIslandListView, WorldPlayerDetailView, WorldPlayerListView
+from .views import (
+    WorldCityDetailView, WorldDumpDeleteView, WorldDumpListView, WorldIslandListView, WorldMapDataView, WorldMapIslandView,
+    WorldMapSearchView, WorldMapView, WorldPlayerDetailView, WorldPlayerListView,
+)
 
 app_name = "worldintel"
 
@@ -12,5 +15,9 @@ urlpatterns = [
     path("players/detail/", WorldPlayerDetailView.as_view(), name="player-detail"),
     path("players/city/", WorldCityDetailView.as_view(), name="city-detail"),
     path("islands/", WorldIslandListView.as_view(), name="islands"),
+    path("map/", WorldMapView.as_view(), name="map"),
+    path("map/data/", WorldMapDataView.as_view(), name="map-data"),
+    path("map/island/", WorldMapIslandView.as_view(), name="map-island"),
+    path("map/search/", WorldMapSearchView.as_view(), name="map-search"),
 ]
 
