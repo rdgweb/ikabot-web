@@ -4,6 +4,7 @@ The page builds each battlefield in HTML with the game's pieces (services.board)
 follows the width of the screen. The JPEG of a round is what goes on Telegram; here it is only
 offered as a file to open.
 """
+import logging
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.paginator import Paginator
@@ -19,6 +20,8 @@ from apps.accounts.models import GameAccount
 from .models import CombatReport
 from .services.board import GEOMETRY, round_board, tile
 from .services.report_parser import RESOURCE_LABELS, parse_rounds, parse_summary, unit_name
+
+logger = logging.getLogger(__name__)
 
 PAGE_SIZE = 24
 STATES = {"victory": ("Vitória", "win"), "defeat": ("Derrota", "loss")}
@@ -110,8 +113,20 @@ class CombatListView(LoginRequiredMixin, TemplateView):
             ],
             "geometry": GEOMETRY,
             "simulator": _simulator_chip(),
+            "outgoing": _outgoing(),
         })
         return ctx
+
+
+def _outgoing() -> dict:
+    """What is on its way now (raids sent and other military movements); the page works without it."""
+    from .services.outgoing import outgoing
+
+    try:
+        return outgoing()
+    except Exception:  # noqa: BLE001 - a broken movement must not take the combats page down
+        logger.warning("Could not build the outgoing movements", exc_info=True)
+        return {"raids": [], "others": [], "count": 0}
 
 
 def _simulator_chip() -> dict:

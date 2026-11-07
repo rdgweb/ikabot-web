@@ -16,6 +16,85 @@
   <a class="sim-chip" href="{% url 'combat:simulator' %}" title="O simulador comparado com os combates reais"><i class="bi bi-cpu"></i> Simulador{% if simulator.total %} · {{ simulator.winner_pct }}% vencedor certo{% endif %}</a>
 </div>
 
+{% if outgoing.count %}
+<style>
+  .cbt-out { margin-bottom: 18px; }
+  .cbt-out-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
+  .cbt-out-card { border-radius: 14px; border: 1px solid var(--ik-line); background: var(--ik-paper); overflow: hidden; }
+  .cbt-out-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; color: #fff;
+                  background: linear-gradient(135deg, rgba(23,50,74,.92), rgba(62,113,159,.85)), url('{% static "game/combat/battlefield_city_A_D.jpg" %}') center/cover; }
+  .cbt-out-head b { font-size: 14px; }
+  .cbt-out-head small { opacity: .8; font-size: 11px; }
+  .cbt-out-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 9px 14px; border-top: 1px solid var(--ik-line); font-size: 12px; }
+  .cbt-out-row:first-of-type { border-top: 0; }
+  .cbt-out-units { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11px; color: var(--ik-muted); }
+  .cbt-out-units > span { display: inline-flex; align-items: center; gap: 2px; }
+  .cbt-out-eta { font-weight: 700; color: var(--ik-ink); font-variant-numeric: tabular-nums; text-align: right; }
+  .cbt-out-tag { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: 10px; font-weight: 700; }
+  .cbt-out-tag.live { background: rgba(79,134,185,.14); color: var(--ik-sea-dark); }
+  .cbt-out-tag.win { background: rgba(95,140,78,.14); color: #4b7a3c; }
+  .cbt-out-tag.done { background: var(--ik-sand-light); color: var(--ik-muted); }
+</style>
+<div class="cbt-out">
+  <h2 class="text-sm font-semibold text-ink mb-2"><i class="bi bi-send-fill" style="color: var(--ik-sea);"></i> A caminho <span class="text-muted font-normal">· {{ outgoing.count }}</span></h2>
+  <div class="cbt-out-grid">
+    {% for group in outgoing.raids %}
+    <div class="cbt-out-card">
+      <div class="cbt-out-head">
+        <div class="min-w-0"><b>{{ group.name }}</b> <small class="font-mono">[{{ group.coords }}]</small><br><small>{{ group.owner }}</small></div>
+        <div class="text-right"><small>saque · {{ group.rows|length }} conta{{ group.rows|length|pluralize }}</small><br>{% if group.first %}<b data-eta="{{ group.first }}">—</b>{% endif %}</div>
+      </div>
+      {% for row in group.rows %}
+      <a class="cbt-out-row" href="{% url 'jobs:job-detail' row.job_id %}" style="color: inherit;">
+        <div class="min-w-0">
+          <b class="text-ink">{{ row.account }}</b> <span class="text-muted">de {{ row.source }}</span>
+          <span class="cbt-out-tag {{ row.tone }}">{{ row.label }}{% if row.trip > 1 %} · viagem {{ row.trip }}{% endif %}</span>
+        </div>
+        <div class="cbt-out-eta">{% if row.eta %}<span data-eta="{{ row.eta }}">—</span>{% endif %}</div>
+        <div class="cbt-out-units" style="grid-column: 1 / -1;">
+          {% for unit in row.units %}<span>{% include "combat/tile.html" with small=True %}{{ unit.amount }}</span>{% endfor %}
+          {% if row.ships %}<span><i class="bi bi-water"></i> {{ row.ships }} mercantes</span>{% endif %}
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% endfor %}
+    {% for move in outgoing.others %}
+    <div class="cbt-out-card">
+      <div class="cbt-out-head">
+        <div class="min-w-0"><b>{{ move.target|default:"?" }}</b><br><small>{{ move.target_owner }}</small></div>
+        <div class="text-right"><small>{{ move.mission|lower }}{% if move.returning %} · voltando{% endif %}</small><br>{% if move.eta %}<b data-eta="{{ move.eta }}">—</b>{% endif %}</div>
+      </div>
+      <div class="cbt-out-row">
+        <div class="min-w-0"><b class="text-ink">{{ move.account }}</b> <span class="text-muted">de {{ move.origin }}</span></div>
+        <div></div>
+        <div class="cbt-out-units" style="grid-column: 1 / -1;">
+          {% for unit in move.units %}<span>{% include "combat/tile.html" with small=True %}{{ unit.amount }}</span>{% endfor %}
+          {% if move.ships %}<span><i class="bi bi-water"></i> {{ move.ships }} navios</span>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+<script>
+(function () {
+  function tick() {
+    const now = Date.now() / 1000;
+    document.querySelectorAll("[data-eta]").forEach((el) => {
+      const s = Math.round(Number(el.dataset.eta) - now);
+      if (s <= 0) { el.textContent = "chegou"; return; }
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+      el.textContent = h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m ${String(sec).padStart(2, "0")}s`;
+    });
+  }
+  tick();
+  clearInterval(window.__cbtEta);
+  window.__cbtEta = setInterval(tick, 1000);
+})();
+</script>
+{% endif %}
+
 <div class="cbt-tiles">
   {% for tile in tiles %}
   {% if tile.state is None %}
