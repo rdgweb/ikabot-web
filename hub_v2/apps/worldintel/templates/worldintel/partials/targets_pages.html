@@ -1,0 +1,32 @@
+{# N-174: pages of the raid targets; only the list is swapped (the filters stay in the address) #}
+{% if page_obj.has_other_pages %}
+<nav class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 rounded-lg" style="border: 1px solid var(--ik-line); background: var(--ik-paper);">
+  <div class="text-sm text-muted">
+    Mostrando <span class="font-medium">{{ page_obj.start_index }}</span> a <span class="font-medium">{{ page_obj.end_index }}</span>
+    de <span class="font-medium">{{ page_obj.paginator.count }}</span>
+  </div>
+  <div class="flex gap-1">
+    {% if page_obj.has_previous %}
+    <a href="?{{ qs }}&page={{ page_obj.previous_page_number }}" hx-get="?{{ qs }}&page={{ page_obj.previous_page_number }}"
+       hx-target="#tg-list" hx-swap="innerHTML show:#tg-list:top" hx-push-url="true"
+       class="px-3 py-1 text-sm rounded transition-colors" style="border: 1px solid var(--ik-line); background: var(--ik-paper);"><i class="bi bi-chevron-left"></i></a>
+    {% endif %}
+    {% for num in page_obj.paginator.page_range %}
+      {% if page_obj.number == num %}
+        <span class="pagination-active px-3 py-1 text-sm rounded" style="border: 1px solid var(--ik-sea);">{{ num }}</span>
+      {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+        <a href="?{{ qs }}&page={{ num }}" hx-get="?{{ qs }}&page={{ num }}"
+           hx-target="#tg-list" hx-swap="innerHTML show:#tg-list:top" hx-push-url="true"
+           class="px-3 py-1 text-sm rounded transition-colors" style="border: 1px solid var(--ik-line); background: var(--ik-paper);">{{ num }}</a>
+      {% elif num == page_obj.number|add:"-3" or num == page_obj.number|add:"3" %}
+        <span class="px-3 py-1 text-sm text-muted">...</span>
+      {% endif %}
+    {% endfor %}
+    {% if page_obj.has_next %}
+    <a href="?{{ qs }}&page={{ page_obj.next_page_number }}" hx-get="?{{ qs }}&page={{ page_obj.next_page_number }}"
+       hx-target="#tg-list" hx-swap="innerHTML show:#tg-list:top" hx-push-url="true"
+       class="px-3 py-1 text-sm rounded transition-colors" style="border: 1px solid var(--ik-line); background: var(--ik-paper);"><i class="bi bi-chevron-right"></i></a>
+    {% endif %}
+  </div>
+</nav>
+{% endif %}

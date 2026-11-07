@@ -74,5 +74,10 @@ class PlayerMarkTests(TestCase):
             page = self.client.get(f"/intel/targets/?view={view}&dump={self.dump.pk}")
             self.assertEqual(page.status_code, 200, view)
         self.assertContains(self.client.get(f"/intel/targets/?view=multi&dump={self.dump.pk}"), "Apoio")
+        listing = self.client.get(f"/intel/targets/?view=raid&tmax=4&hide_ignored=1&page=2&dump={self.dump.pk}",
+                                  HTTP_HX_REQUEST="true", HTTP_HX_TARGET="tg-list")
+        self.assertEqual(listing.status_code, 200)
+        self.assertNotContains(listing, "<html")
+        self.assertNotContains(listing, "tg-seg")                 # only the list, not the page
         card = self.client.get(f"/intel/players/detail/?owner_name=Apoio&dump={self.dump.pk}")
         self.assertContains(card, "Desmarcar")

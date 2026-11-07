@@ -65,121 +65,54 @@
     </div>
 
     {% if view == 'raid' %}
-    <form method="get" class="flex flex-wrap items-center gap-2" style="margin-left:auto;">
+    <form method="get" class="flex flex-wrap items-center gap-2" style="margin-left:auto;"
+          hx-get="{% url 'worldintel:targets' %}" hx-trigger="change" hx-target="#tg-list" hx-swap="innerHTML" hx-push-url="true">
       <input type="hidden" name="view" value="raid">
-      <select name="min" class="filter-select" onchange="this.form.submit()">
+      <select name="min" class="filter-select">
         <option value="100000" {% if min_total == 100000 %}selected{% endif %}>≥ 100 mil</option>
         <option value="200000" {% if min_total == 200000 %}selected{% endif %}>≥ 200 mil</option>
         <option value="300000" {% if min_total == 300000 %}selected{% endif %}>≥ 300 mil</option>
         <option value="500000" {% if min_total == 500000 %}selected{% endif %}>≥ 500 mil</option>
         <option value="1000000" {% if min_total == 1000000 %}selected{% endif %}>≥ 1 milhão</option>
       </select>
-      <select name="res" class="filter-select" onchange="this.form.submit()">
+      <select name="tmax" class="filter-select">
+        <option value="">Qualquer distância</option>
+        {% for h in trip_options %}<option value="{{ h }}" {% if tmax == h %}selected{% endif %}>até {{ h }} h de viagem</option>{% endfor %}
+      </select>
+      <select name="res" class="filter-select">
         <option value="">Mais ricos no total</option>
         <option value="near" {% if res == 'near' %}selected{% endif %}>Mais perto</option>
         {% for key, label, icon in resources %}<option value="{{ key }}" {% if res == key %}selected{% endif %}>Mais {{ label|lower }}</option>{% endfor %}
       </select>
       <label class="tg-chip {% if undefended %}good{% endif %}" style="cursor:pointer;">
-        <input type="checkbox" name="undefended" value="1" {% if undefended %}checked{% endif %} onchange="this.form.submit()" style="display:none;">
+        <input type="checkbox" name="undefended" value="1" {% if undefended %}checked{% endif %} style="display:none;"
+               onchange="this.parentElement.classList.toggle('good', this.checked)">
         <i class="bi bi-shield-slash"></i> Sem defesa
+      </label>
+      <label class="tg-chip {% if hide_ignored %}good{% endif %}" style="cursor:pointer;">
+        <input type="checkbox" name="hide_ignored" value="1" {% if hide_ignored %}checked{% endif %} style="display:none;"
+               onchange="this.parentElement.classList.toggle('good', this.checked)">
+        <i class="bi bi-eye-slash"></i> Sem ignorados
       </label>
     </form>
     {% endif %}
   </div>
 
   {% if view == 'raid' %}
-    {% if targets %}
-    <div class="text-xs text-muted">{{ target_count }} alvo{{ target_count|pluralize }}{% if target_count > shown %} · mostrando {{ shown }}{% endif %}</div>
-    <div class="tg-grid">
-      {% for t in targets %}
-      <div class="tg-card {% if t.multi %}multi{% endif %}">
-        <div class="flex items-start justify-between gap-2">
-          <div class="min-w-0">
-            <div class="text-sm font-bold text-ink truncate">{{ t.name|default:"—" }} <span class="font-mono text-xs text-muted">[{{ t.coords }}]</span></div>
-            <a href="{% url 'worldintel:player-detail' %}?owner_id={{ t.owner_id }}&owner_name={{ t.owner|urlencode }}&dump={{ selected_dump.pk }}" class="text-[11px] link-sea">{{ t.owner }}</a>
-          </div>
-          {% if t.multi %}<span class="tg-chip bad"><i class="bi bi-people-fill"></i> multi</span>
-          {% elif t.state == 'raiding' %}<span class="tg-chip sea"><i class="bi bi-arrow-right-circle"></i> saqueando</span>
-          {% elif t.state == 'ignored' %}<span class="tg-chip">ignorado</span>
-          {% elif t.state == 'alerted' %}<span class="tg-chip gold"><i class="bi bi-bell-fill"></i> alertado</span>
-          {% else %}<span class="tg-chip good">novo</span>{% endif %}
-        </div>
-        <div>
-          <div class="flex items-baseline justify-between mb-1">
-            <span class="text-xl text-ink" style="font-weight:800;">{{ t.total|intcomma }}</span>
-            <span class="text-[10px] text-muted">lido {{ t.read_at|date:"d/m H:i" }} · vale até {{ t.expires_at|date:"d/m H:i" }}</span>
-          </div>
-          <div class="tg-bar">
-            {% for r in t.resources %}{% if r.share %}<span style="width:{{ r.share }}%; background:{% if r.key == 'wood' %}#9a7542{% elif r.key == 'wine' %}#a64466{% elif r.key == 'marble' %}#b9b4ad{% elif r.key == 'crystal' %}#79c6e6{% else %}#e8c547{% endif %};"></span>{% endif %}{% endfor %}
-          </div>
-        </div>
-        <div class="tg-res">
-          {% for r in t.resources %}<div><img src="{{ r.icon }}" alt="{{ r.label }}"><b>{{ r.amount|intcomma }}</b></div>{% endfor %}
-        </div>
-        {% if t.trip_human %}
-        <div class="flex items-center gap-2 text-[11px] min-w-0">
-          <i class="bi bi-clock" style="color: var(--ik-sea);"></i>
-          <span class="font-semibold text-ink">~{{ t.trip_human }}</span>
-          <span class="text-muted truncate">tropas, de {{ t.origin }}</span>
-        </div>
-        {% endif %}
-        <div class="flex flex-wrap gap-1.5">
-          {% if t.troops %}<span class="tg-chip bad"><i class="bi bi-shield-fill"></i> {{ t.troops|intcomma }} tropas</span>{% else %}<span class="tg-chip good"><i class="bi bi-shield-slash"></i> sem tropas</span>{% endif %}
-          {% if t.ships %}<span class="tg-chip bad" title="{{ t.fleet }}"><i class="bi bi-water"></i> {{ t.ships|intcomma }} navios</span>{% endif %}
-          {% if t.wall %}<span class="tg-chip" title="estimada pelo nível da cidade"><i class="bi bi-bricks"></i> muralha ~{{ t.wall }}</span>{% endif %}
-        </div>
-        {% if not t.multi and t.state != 'raiding' and t.island_id %}
-        <form method="post" action="{% url 'worldintel:target-raid' %}" class="mt-auto">
-          {% csrf_token %}
-          <input type="hidden" name="city_id" value="{{ t.city_id }}">
-          <input type="hidden" name="island_id" value="{{ t.island_id }}">
-          <input type="hidden" name="server_id" value="{{ server_id }}">
-          <input type="hidden" name="owner_id" value="{{ t.owner_id }}">
-          <input type="hidden" name="owner" value="{{ t.owner }}">
-          {% if t.accounts %}
-          <details class="tg-pick mb-2">
-            <summary class="text-[11px] link-sea" style="cursor:pointer;">Escolher contas</summary>
-            <div class="mt-2 space-y-1" style="max-height: 180px; overflow-y: auto;">
-              {% for a in t.accounts %}
-              <label class="flex items-center justify-between gap-2 rounded-lg border px-2 py-1 text-[11px]" style="border-color: var(--ik-line); cursor: pointer;">
-                <span class="flex items-center gap-2 min-w-0">
-                  <input type="checkbox" name="pick" value="{{ a.ga_id }}:{{ a.city_id }}" style="accent-color: var(--ik-sea);">
-                  <span class="truncate"><b class="text-ink">{{ a.account }}</b> <span class="text-muted">{{ a.city }}</span></span>
-                </span>
-                <span class="font-semibold text-ink flex-shrink-0">~{{ a.trip_human }}</span>
-              </label>
-              {% endfor %}
-            </div>
-          </details>
-          {% endif %}
-          <button type="submit" class="btn btn-primary btn-sm w-full"><i class="bi bi-gem"></i> <span class="tg-go">Roubar com a melhor conta</span></button>
-        </form>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </div>
+    <div id="tg-list" class="space-y-3">{% include "worldintel/partials/targets_raid.html" %}</div>
     <script>
     (function () {
-      document.querySelectorAll("form .tg-pick").forEach((box) => {
-        const form = box.closest("form"), label = form.querySelector(".tg-go");
-        box.addEventListener("change", () => {
-          const n = form.querySelectorAll("input[name=pick]:checked").length;
-          label.textContent = n ? `Roubar com ${n} conta${n > 1 ? "s" : ""}` : "Roubar com a melhor conta";
-        });
+      if (window.__tgPick) return;
+      window.__tgPick = true;
+      document.addEventListener("change", (ev) => {
+        if (ev.target.name !== "pick") return;
+        const form = ev.target.closest("form"), label = form && form.querySelector(".tg-go");
+        if (!label) return;
+        const n = form.querySelectorAll("input[name=pick]:checked").length;
+        label.textContent = n ? `Roubar com ${n} conta${n > 1 ? "s" : ""}` : "Roubar com a melhor conta";
       });
     })();
     </script>
-    {% if more %}
-    <div class="text-center">
-      <a href="?view=raid&min={{ min_total }}&res={{ res }}{% if undefended %}&undefended=1{% endif %}&n={{ more }}" class="btn btn-secondary btn-sm">Mostrar mais</a>
-    </div>
-    {% endif %}
-    {% else %}
-    <div class="card text-center py-10">
-      <i class="bi bi-gem text-3xl text-muted block mb-3"></i>
-      <p class="text-sm text-muted">Nenhum alvo com estoque válido nesse corte.</p>
-    </div>
-    {% endif %}
 
   {% elif view == 'pirate' %}
     <div class="tg-pirate">

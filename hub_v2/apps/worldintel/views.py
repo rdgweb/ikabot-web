@@ -636,6 +636,12 @@ class WorldTargetsView(WorldIntelBaseView):
     active_tab = "targets"
     VIEWS = ("raid", "pirate", "multi")
 
+    def get_template_names(self):
+        # the filters and the pages swap only the list
+        if self.request.headers.get("HX-Target") == "tg-list":
+            return ["worldintel/partials/targets_raid.html"]
+        return [self.template_name]
+
     def get_context_data(self, **kwargs):
         from django.core.cache import cache
 
@@ -663,17 +669,24 @@ class WorldTargetsView(WorldIntelBaseView):
             resource = self.request.GET.get("res") if self.request.GET.get("res") in orders else ""
             undefended = self.request.GET.get("undefended") == "1"
             try:
-                shown = max(60, min(600, int(self.request.GET.get("n") or 60)))
+                tmax = int(self.request.GET.get("tmax") or 0)
             except ValueError:
-                shown = 60
+                tmax = 0
+            hide_ignored = self.request.GET.get("hide_ignored") == "1"
             key = f"targets_raid:{getattr(organization, 'pk', '-')}:{server_id}:{min_total}:{resource}:{int(undefended)}"
             found = cache.get(key)
             if found is None:
                 found = raid_targets(organization, server_id, min_total=min_total, order=resource, only_undefended=undefended)
                 cache.set(key, found, 5 * 60)
-            ctx.update({"targets": found["targets"][:shown], "target_count": found["count"], "shown": shown,
-                        "more": shown + 60 if found["count"] > shown else 0,
-                        "min_total": min_total, "res": resource, "undefended": undefended})
+            targets = [t for t in found["targets"]
+                       if (not tmax or (t["trip"] and t["trip"] <= tmax * 3600))
+                       and not (hide_ignored and t["state"] == "ignored")]
+            query = self.request.GET.copy()
+            query.pop("page", None)
+            page_obj = Paginator(targets, 60).get_page(self.request.GET.get("page"))
+            ctx.update({"targets": list(page_obj.object_list), "page_obj": page_obj, "qs": query.urlencode(),
+                        "min_total": min_total, "res": resource, "undefended": undefended, "tmax": tmax,
+                        "hide_ignored": hide_ignored, "trip_options": (1, 2, 3, 4, 6, 8, 12, 24)})
         elif view == "pirate":
             ctx["piracy"] = piracy_overview(organization, server_id)
         else:
