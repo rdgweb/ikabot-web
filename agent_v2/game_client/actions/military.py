@@ -6,7 +6,7 @@ import logging
 import re
 from typing import Any
 
-from ..constants import ActionID
+from ..constants import GAME_AJAX_HEADERS, ActionID
 from ..exceptions import ActionError
 from ..parsers.numbers import parse_game_int
 from ..unit_stats import UNIT_STATS
@@ -607,6 +607,7 @@ class PlunderLandAction(BaseAction):
                 "actionRequest": self.client._action_request,
                 "ajax": "1",
             },
+            headers=dict(GAME_AJAX_HEADERS),
             timeout=30,
         )
         try:
@@ -614,10 +615,7 @@ class PlunderLandAction(BaseAction):
         except Exception:
             return {"travel_seconds": 0, "html": ""}
 
-        if data and isinstance(data[0], list) and len(data[0]) > 1:
-            gd = data[0][1]
-            if isinstance(gd, dict) and "actionRequest" in gd:
-                self.client._action_request = gd["actionRequest"]
+        _absorb_action_request(self.client, data)
 
         html = ""
         for entry in data:
@@ -683,14 +681,18 @@ class PlunderLandAction(BaseAction):
         except Exception:
             pass
 
-        # Phase 0b: navigate to target island to set form context.
+        # Phase 0b: navigate to target island to set form context (and keep the token the game hands back:
+        # a stale one is answered with "Acesso restrito")
         try:
-            self.client._request(
+            island_resp = self.client._request(
                 "GET",
                 self.client._server_url,
-                params={"view": "island", "islandId": int(island_id), "ajax": "1"},
+                params={"view": "island", "islandId": int(island_id), "actionRequest": self.client._action_request,
+                        "ajax": "1"},
+                headers=dict(GAME_AJAX_HEADERS),
                 timeout=20,
             )
+            _absorb_action_request(self.client, island_resp.json())
         except Exception:
             pass
 
@@ -708,6 +710,8 @@ class PlunderLandAction(BaseAction):
             "barbarianVillage": "0",
             "backgroundView": "island",
             "currentIslandId": int(island_id),
+            "currentCityId": int(from_city_id),
+            "cityId": int(from_city_id),
             "templateView": "plunder",
             "actionRequest": self.client._action_request,
             "ajax": "1",
@@ -723,14 +727,12 @@ class PlunderLandAction(BaseAction):
             "PlunderLand from=%s to=%s island=%s units=%s transporters=%s",
             from_city_id, to_city_id, island_id, units, transporters,
         )
-        resp = self.client._request("POST", self.client._server_url, data=payload, timeout=30)
+        resp = self.client._request("POST", self.client._server_url, data=payload, headers=dict(GAME_AJAX_HEADERS),
+                                    timeout=30)
 
         try:
             resp_data = resp.json()
-            if resp_data and isinstance(resp_data[0], list) and len(resp_data[0]) > 1:
-                gd = resp_data[0][1]
-                if isinstance(gd, dict) and "actionRequest" in gd:
-                    self.client._action_request = gd["actionRequest"]
+            _absorb_action_request(self.client, resp_data)
             for entry in resp_data:
                 if isinstance(entry, list) and entry[0] == "provideFeedback":
                     for fb in (entry[1] or []):
@@ -742,6 +744,15 @@ class PlunderLandAction(BaseAction):
             pass
 
         return {"ok": True, "travel_seconds": travel_seconds}
+
+
+def _absorb_action_request(client, data) -> None:
+    """Keep the actionRequest the game sends back, in whichever entry it comes (updateGlobalData)."""
+    for entry in data if isinstance(data, list) else []:
+        if isinstance(entry, list) and len(entry) > 1 and isinstance(entry[1], dict):
+            token = entry[1].get("actionRequest")
+            if token:
+                client._action_request = str(token)
 
 
 class BlockadeFleetAction(BaseAction):
