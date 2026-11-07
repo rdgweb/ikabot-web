@@ -659,15 +659,21 @@ class WorldTargetsView(WorldIntelBaseView):
                 min_total = max(0, int(self.request.GET.get("min") or setting("spy_rich_threshold")))
             except ValueError:
                 min_total = setting("spy_rich_threshold")
-            resource = self.request.GET.get("res") if self.request.GET.get("res") in {r[0] for r in RESOURCES} else ""
+            orders = {r[0] for r in RESOURCES} | {"near"}
+            resource = self.request.GET.get("res") if self.request.GET.get("res") in orders else ""
             undefended = self.request.GET.get("undefended") == "1"
+            try:
+                shown = max(60, min(600, int(self.request.GET.get("n") or 60)))
+            except ValueError:
+                shown = 60
             key = f"targets_raid:{getattr(organization, 'pk', '-')}:{server_id}:{min_total}:{resource}:{int(undefended)}"
-            targets = cache.get(key)
-            if targets is None:
-                targets = raid_targets(organization, server_id, min_total=min_total, resource=resource,
-                                       only_undefended=undefended, limit=60)
-                cache.set(key, targets, 5 * 60)
-            ctx.update({"targets": targets, "min_total": min_total, "res": resource, "undefended": undefended})
+            found = cache.get(key)
+            if found is None:
+                found = raid_targets(organization, server_id, min_total=min_total, order=resource, only_undefended=undefended)
+                cache.set(key, found, 5 * 60)
+            ctx.update({"targets": found["targets"][:shown], "target_count": found["count"], "shown": shown,
+                        "more": shown + 60 if found["count"] > shown else 0,
+                        "min_total": min_total, "res": resource, "undefended": undefended})
         elif view == "pirate":
             ctx["piracy"] = piracy_overview(organization, server_id)
         else:
@@ -692,6 +698,23 @@ class WorldTargetRaidView(WorldIntelBaseView):
         owner = str(request.POST.get("owner") or "").strip()
         if not (city_id.isdigit() and island_id.isdigit() and server_id):
             raise Http404
+        picks = [p.split(":", 1) for p in request.POST.getlist("pick") if ":" in p]
+        if picks:
+            # N-174: the accounts chosen on the card, each from its nearest city
+            from apps.accounts.models import GameAccount
+
+            allowed = {str(pk) for pk in GameAccount.objects.filter(server_id=server_id).values_list("pk", flat=True)}
+            created, failed = [], []
+            for ga_id, source_city_id in picks:
+                if ga_id not in allowed or not source_city_id.isdigit():
+                    continue
+                ok, msg = _create_raid_job(city_id, island_id, ga_id, source_city_id=source_city_id)
+                (created if ok else failed).append(msg)
+            if created:
+                messages.success(request, f"{len(created)} saque(s) criado(s).")
+            for msg in failed:
+                messages.error(request, msg)
+            return HttpResponseRedirect(reverse("worldintel:targets") + "?view=raid")
         intel = _parse_enemy_intel(city_id, owner_id, server_id, owner)
         choices = _choose_raid_account(city_id, owner_id, server_id, top_n=1, enemy_intel=intel)
         if not choices:

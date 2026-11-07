@@ -76,6 +76,7 @@
       </select>
       <select name="res" class="filter-select" onchange="this.form.submit()">
         <option value="">Mais ricos no total</option>
+        <option value="near" {% if res == 'near' %}selected{% endif %}>Mais perto</option>
         {% for key, label, icon in resources %}<option value="{{ key }}" {% if res == key %}selected{% endif %}>Mais {{ label|lower }}</option>{% endfor %}
       </select>
       <label class="tg-chip {% if undefended %}good{% endif %}" style="cursor:pointer;">
@@ -88,6 +89,7 @@
 
   {% if view == 'raid' %}
     {% if targets %}
+    <div class="text-xs text-muted">{{ target_count }} alvo{{ target_count|pluralize }}{% if target_count > shown %} · mostrando {{ shown }}{% endif %}</div>
     <div class="tg-grid">
       {% for t in targets %}
       <div class="tg-card {% if t.multi %}multi{% endif %}">
@@ -114,10 +116,17 @@
         <div class="tg-res">
           {% for r in t.resources %}<div><img src="{{ r.icon }}" alt="{{ r.label }}"><b>{{ r.amount|intcomma }}</b></div>{% endfor %}
         </div>
+        {% if t.trip_human %}
+        <div class="flex items-center gap-2 text-[11px] min-w-0">
+          <i class="bi bi-clock" style="color: var(--ik-sea);"></i>
+          <span class="font-semibold text-ink">~{{ t.trip_human }}</span>
+          <span class="text-muted truncate">tropas, de {{ t.origin }}</span>
+        </div>
+        {% endif %}
         <div class="flex flex-wrap gap-1.5">
           {% if t.troops %}<span class="tg-chip bad"><i class="bi bi-shield-fill"></i> {{ t.troops|intcomma }} tropas</span>{% else %}<span class="tg-chip good"><i class="bi bi-shield-slash"></i> sem tropas</span>{% endif %}
           {% if t.ships %}<span class="tg-chip bad" title="{{ t.fleet }}"><i class="bi bi-water"></i> {{ t.ships|intcomma }} navios</span>{% endif %}
-          {% if t.wall %}<span class="tg-chip"><i class="bi bi-bricks"></i> muralha {{ t.wall }}</span>{% endif %}
+          {% if t.wall %}<span class="tg-chip" title="estimada pelo nível da cidade"><i class="bi bi-bricks"></i> muralha ~{{ t.wall }}</span>{% endif %}
         </div>
         {% if not t.multi and t.state != 'raiding' and t.island_id %}
         <form method="post" action="{% url 'worldintel:target-raid' %}" class="mt-auto">
@@ -127,12 +136,44 @@
           <input type="hidden" name="server_id" value="{{ server_id }}">
           <input type="hidden" name="owner_id" value="{{ t.owner_id }}">
           <input type="hidden" name="owner" value="{{ t.owner }}">
-          <button type="submit" class="btn btn-primary btn-sm w-full"><i class="bi bi-gem"></i> Roubar com a melhor conta</button>
+          {% if t.accounts %}
+          <details class="tg-pick mb-2">
+            <summary class="text-[11px] link-sea" style="cursor:pointer;">Escolher contas</summary>
+            <div class="mt-2 space-y-1" style="max-height: 180px; overflow-y: auto;">
+              {% for a in t.accounts %}
+              <label class="flex items-center justify-between gap-2 rounded-lg border px-2 py-1 text-[11px]" style="border-color: var(--ik-line); cursor: pointer;">
+                <span class="flex items-center gap-2 min-w-0">
+                  <input type="checkbox" name="pick" value="{{ a.ga_id }}:{{ a.city_id }}" style="accent-color: var(--ik-sea);">
+                  <span class="truncate"><b class="text-ink">{{ a.account }}</b> <span class="text-muted">{{ a.city }}</span></span>
+                </span>
+                <span class="font-semibold text-ink flex-shrink-0">~{{ a.trip_human }}</span>
+              </label>
+              {% endfor %}
+            </div>
+          </details>
+          {% endif %}
+          <button type="submit" class="btn btn-primary btn-sm w-full"><i class="bi bi-gem"></i> <span class="tg-go">Roubar com a melhor conta</span></button>
         </form>
         {% endif %}
       </div>
       {% endfor %}
     </div>
+    <script>
+    (function () {
+      document.querySelectorAll("form .tg-pick").forEach((box) => {
+        const form = box.closest("form"), label = form.querySelector(".tg-go");
+        box.addEventListener("change", () => {
+          const n = form.querySelectorAll("input[name=pick]:checked").length;
+          label.textContent = n ? `Roubar com ${n} conta${n > 1 ? "s" : ""}` : "Roubar com a melhor conta";
+        });
+      });
+    })();
+    </script>
+    {% if more %}
+    <div class="text-center">
+      <a href="?view=raid&min={{ min_total }}&res={{ res }}{% if undefended %}&undefended=1{% endif %}&n={{ more }}" class="btn btn-secondary btn-sm">Mostrar mais</a>
+    </div>
+    {% endif %}
     {% else %}
     <div class="card text-center py-10">
       <i class="bi bi-gem text-3xl text-muted block mb-3"></i>
