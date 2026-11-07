@@ -64,39 +64,51 @@
       <a href="?view=multi" class="{% if view == 'multi' %}on{% endif %}"><i class="bi bi-people"></i> Multi contas</a>
     </div>
 
-    {% if view == 'raid' %}
-    <form method="get" class="flex flex-wrap items-center gap-2" style="margin-left:auto;"
-          hx-get="{% url 'worldintel:targets' %}" hx-trigger="change" hx-target="#tg-list" hx-swap="innerHTML" hx-push-url="true">
-      <input type="hidden" name="view" value="raid">
-      <select name="min" class="filter-select">
+  </div>
+
+  {% if view == 'raid' %}
+  <form method="get" class="card !p-3 flex flex-wrap items-end gap-3"
+        hx-get="{% url 'worldintel:targets' %}" hx-trigger="change" hx-target="#tg-list" hx-swap="innerHTML" hx-push-url="true">
+    <input type="hidden" name="view" value="raid">
+    <div class="flex-shrink-0">
+      <label class="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Estoque</label>
+      <select name="min" class="filter-select" style="width:auto; min-width:140px;">
         <option value="100000" {% if min_total == 100000 %}selected{% endif %}>≥ 100 mil</option>
         <option value="200000" {% if min_total == 200000 %}selected{% endif %}>≥ 200 mil</option>
         <option value="300000" {% if min_total == 300000 %}selected{% endif %}>≥ 300 mil</option>
         <option value="500000" {% if min_total == 500000 %}selected{% endif %}>≥ 500 mil</option>
         <option value="1000000" {% if min_total == 1000000 %}selected{% endif %}>≥ 1 milhão</option>
       </select>
-      <select name="tmax" class="filter-select">
+    </div>
+    <div class="flex-shrink-0">
+      <label class="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Viagem</label>
+      <select name="tmax" class="filter-select" style="width:auto; min-width:150px;">
         <option value="">Qualquer distância</option>
-        {% for h in trip_options %}<option value="{{ h }}" {% if tmax == h %}selected{% endif %}>até {{ h }} h de viagem</option>{% endfor %}
+        {% for h in trip_options %}<option value="{{ h }}" {% if tmax == h %}selected{% endif %}>até {{ h }} h</option>{% endfor %}
       </select>
-      <select name="res" class="filter-select">
+    </div>
+    <div class="flex-shrink-0">
+      <label class="block text-[10px] font-semibold uppercase tracking-wider text-muted mb-1">Ordem</label>
+      <select name="res" class="filter-select" style="width:auto; min-width:160px;">
         <option value="">Mais ricos no total</option>
         <option value="near" {% if res == 'near' %}selected{% endif %}>Mais perto</option>
         {% for key, label, icon in resources %}<option value="{{ key }}" {% if res == key %}selected{% endif %}>Mais {{ label|lower }}</option>{% endfor %}
       </select>
-      <label class="tg-chip {% if undefended %}good{% endif %}" style="cursor:pointer;">
+    </div>
+    <div class="flex flex-wrap items-center gap-2" style="margin-left:auto; padding-bottom:6px;">
+      <label class="tg-chip {% if undefended %}good{% endif %}" style="cursor:pointer; padding:4px 12px; font-size:11px;">
         <input type="checkbox" name="undefended" value="1" {% if undefended %}checked{% endif %} style="display:none;"
                onchange="this.parentElement.classList.toggle('good', this.checked)">
         <i class="bi bi-shield-slash"></i> Sem defesa
       </label>
-      <label class="tg-chip {% if hide_ignored %}good{% endif %}" style="cursor:pointer;">
+      <label class="tg-chip {% if hide_ignored %}good{% endif %}" style="cursor:pointer; padding:4px 12px; font-size:11px;">
         <input type="checkbox" name="hide_ignored" value="1" {% if hide_ignored %}checked{% endif %} style="display:none;"
                onchange="this.parentElement.classList.toggle('good', this.checked)">
         <i class="bi bi-eye-slash"></i> Sem ignorados
       </label>
-    </form>
-    {% endif %}
-  </div>
+    </div>
+  </form>
+  {% endif %}
 
   {% if view == 'raid' %}
     <div id="tg-list" class="space-y-3">{% include "worldintel/partials/targets_raid.html" %}</div>
