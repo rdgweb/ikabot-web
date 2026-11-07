@@ -333,6 +333,15 @@ class WorldPlayerDetailView(WorldIntelBaseView):
             None,
         )
         ctx["spy_target"] = spy_target
+        # N-174/N-175: the marks of this player
+        from .models import PlayerMark
+
+        organization = getattr(self.request, "organization", None)
+        server_id = current_dump.game_account.server_id if current_dump.game_account else ""
+        marks = {m.kind: m for m in PlayerMark.objects.filter(organization=organization, server_id=server_id,
+                                                               owner_name__iexact=first.owner_name)} if organization else {}
+        ctx["mark_multi"] = marks.get(PlayerMark.KIND_MULTI)
+        ctx["mark_pirate"] = marks.get(PlayerMark.KIND_PIRATE)
         return ctx
 
 
@@ -590,3 +599,106 @@ class WorldMapSearchView(WorldIntelBaseView):
 
         dump = self._selected_dump()
         return JsonResponse({"islands": search_islands(dump, str(request.GET.get("q") or "")) if dump else []})
+
+
+class PlayerMarkToggleView(WorldIntelBaseView):
+    """N-174/N-175: mark a player as a possible multi account or as a piracy target (again: unmark)."""
+
+    def post(self, request, *args, **kwargs):
+        from django.utils.http import url_has_allowed_host_and_scheme
+
+        from .models import PlayerMark
+        from .services.marks import toggle
+
+        dump = self._selected_dump_from(request.POST)
+        kind = str(request.POST.get("kind") or "")
+        owner_name = str(request.POST.get("owner_name") or "").strip()
+        organization = getattr(request, "organization", None)
+        if dump is None or not dump.game_account or kind not in dict(PlayerMark.KIND_CHOICES) or not owner_name or organization is None:
+            raise Http404
+        toggle(organization, dump.game_account.server_id, kind, owner_id=str(request.POST.get("owner_id") or ""),
+               owner_name=owner_name, user=request.user.get_username(),
+               main_owner_name=str(request.POST.get("main_owner_name") or ""), note=str(request.POST.get("note") or ""))
+        back = str(request.POST.get("next") or "")
+        if not url_has_allowed_host_and_scheme(back, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+            back = reverse("worldintel:players")
+        return HttpResponseRedirect(back)
+
+    def _selected_dump_from(self, data):
+        dump_id = str(data.get("dump") or "").strip()
+        return WorldDump.objects.select_related("game_account").filter(pk=dump_id).first() if dump_id else None
+
+
+class WorldTargetsView(WorldIntelBaseView):
+    """N-174: Inteligência > Alvos — rich targets to raid, piracy targets and possible multi accounts."""
+
+    template_name = "worldintel/targets.html"
+    active_tab = "targets"
+    VIEWS = ("raid", "pirate", "multi")
+
+    def get_context_data(self, **kwargs):
+        from django.core.cache import cache
+
+        from apps.espionage.services.validity import setting
+
+        from .models import PlayerMark
+        from .services.marks import marks_of, suggestions
+        from .services.targets import RESOURCES, piracy_overview, raid_targets
+
+        ctx = super().get_context_data(**kwargs)
+        ctx.update(self._base_context())
+        dump = ctx["selected_dump"]
+        view = self.request.GET.get("view") if self.request.GET.get("view") in self.VIEWS else "raid"
+        organization = getattr(self.request, "organization", None)
+        server_id = dump.game_account.server_id if dump and dump.game_account else ""
+        ctx.update({"view": view, "resources": RESOURCES, "server_id": server_id})
+        if not dump:
+            return ctx
+        if view == "raid":
+            try:
+                min_total = max(0, int(self.request.GET.get("min") or setting("spy_rich_threshold")))
+            except ValueError:
+                min_total = setting("spy_rich_threshold")
+            resource = self.request.GET.get("res") if self.request.GET.get("res") in {r[0] for r in RESOURCES} else ""
+            undefended = self.request.GET.get("undefended") == "1"
+            key = f"targets_raid:{getattr(organization, 'pk', '-')}:{server_id}:{min_total}:{resource}:{int(undefended)}"
+            targets = cache.get(key)
+            if targets is None:
+                targets = raid_targets(organization, server_id, min_total=min_total, resource=resource,
+                                       only_undefended=undefended, limit=60)
+                cache.set(key, targets, 5 * 60)
+            ctx.update({"targets": targets, "min_total": min_total, "res": resource, "undefended": undefended})
+        elif view == "pirate":
+            ctx["piracy"] = piracy_overview(organization, server_id)
+        else:
+            ctx["multi_marks"] = list(marks_of(organization, server_id, PlayerMark.KIND_MULTI))
+            ctx["suggestions"] = suggestions(dump, organization)
+        return ctx
+
+
+class WorldTargetRaidView(WorldIntelBaseView):
+    """N-174: "Roubar" from the targets page — the same raid job the Telegram button creates, from the best account."""
+
+    def post(self, request, *args, **kwargs):
+        from django.contrib import messages
+
+        from apps.espionage.api.views import _choose_raid_account, _parse_enemy_intel
+        from apps.telegram.api.webhook import _create_raid_job
+
+        city_id = str(request.POST.get("city_id") or "").strip()
+        island_id = str(request.POST.get("island_id") or "").strip()
+        server_id = str(request.POST.get("server_id") or "").strip()
+        owner_id = str(request.POST.get("owner_id") or "").strip()
+        owner = str(request.POST.get("owner") or "").strip()
+        if not (city_id.isdigit() and island_id.isdigit() and server_id):
+            raise Http404
+        intel = _parse_enemy_intel(city_id, owner_id, server_id, owner)
+        choices = _choose_raid_account(city_id, owner_id, server_id, top_n=1, enemy_intel=intel)
+        if not choices:
+            messages.error(request, "Nenhuma conta vence esse alvo agora (ou todas sem mercantes).")
+        else:
+            top = choices[0]
+            ok, msg = _create_raid_job(city_id, island_id, str(top["ga_id"]), source_city_id=str(top["source_city_id"]))
+            (messages.success if ok else messages.error)(
+                request, f"Saque criado: {top['source_city_name']} ({top['ga_name']})." if ok else msg)
+        return HttpResponseRedirect(reverse("worldintel:targets") + "?view=raid")

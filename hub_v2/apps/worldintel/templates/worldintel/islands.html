@@ -40,6 +40,10 @@
        class="px-3 py-1.5 rounded text-xs font-semibold text-muted hover:text-ink transition-colors">
       <i class="bi bi-map-fill"></i> Mapa
     </a>
+    <a href="{% url 'worldintel:targets' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}"
+       class="px-3 py-1.5 rounded text-xs font-semibold text-muted hover:text-ink transition-colors">
+      <i class="bi bi-crosshair"></i> Alvos
+    </a>
     <a href="{% url 'worldintel:dumps' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}"
        class="px-3 py-1.5 rounded text-xs font-semibold text-muted hover:text-ink transition-colors">
       <i class="bi bi-database"></i> Dumps

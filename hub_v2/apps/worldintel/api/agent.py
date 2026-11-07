@@ -519,6 +519,12 @@ class WorldSpyTargetsView(APIView):
         paused = paused_spy_targets([c.game_city_id for c in cities])
         if paused:
             cities = [c for c in cities if c.game_city_id not in paused]
+        # N-175: a possible multi account is not spied
+        from apps.worldintel.services.marks import is_marked, marked
+
+        multi = marked(dump.account.organization, dump.game_account.server_id if dump.game_account else "", "multi")
+        if multi[0] or multi[1]:
+            cities = [c for c in cities if not is_marked(c.owner_id, c.owner_name, multi)]
 
         # ── skip_if_valid ─────────────────────────────────────────────────────
         # Missões player-scope: resultado é global ao jogador (não varia por cidade).
@@ -848,6 +854,25 @@ def paused_spy_targets(city_ids) -> set[str]:
 
     keys = {f"spy_paused:{cid}": cid for cid in city_ids}
     return {keys[key] for key in cache.get_many(list(keys))} if keys else set()
+
+
+class PlayerMarksView(APIView):
+    """GET /api/agent/worldintel/player-marks/?game_account_id= — the players the organization marked on that
+    server (N-174/N-175): {"multi": [names], "pirate_target": [names]}."""
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def get(self, request):
+        from apps.worldintel.services.marks import marks_of
+
+        ga = GameAccount._base_manager.filter(pk=str(request.query_params.get("game_account_id") or "")).select_related(
+            "account__organization").first()
+        if ga is None:
+            return Response({"multi": [], "pirate_target": []})
+        org = ga.account.organization
+        return Response({kind: sorted(marks_of(org, ga.server_id, kind).values_list("owner_name", flat=True))
+                         for kind in ("multi", "pirate_target")})
 
 
 class UpdateCityStateView(APIView):

@@ -633,6 +633,11 @@ class HubClient:
             **report,
         })
 
+    def get_player_marks(self, game_account_id: str) -> dict:
+        """GET /api/agent/worldintel/player-marks/ — players the organization marked on that server (N-174/N-175):
+        {"multi": [names], "pirate_target": [names]}."""
+        return self._get("/api/agent/worldintel/player-marks/", {"game_account_id": game_account_id})
+
     def update_city_state(
         self,
         game_city_id: str = "",

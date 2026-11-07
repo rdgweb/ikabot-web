@@ -111,6 +111,62 @@
     {% endif %}
   </div>
 
+  {# ── Marcas (N-174/N-175) ── #}
+  <div class="grid gap-3" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+    <form method="post" action="{% url 'worldintel:player-mark' %}" class="card !p-4"
+          style="{% if mark_multi %}border-color: rgba(187,81,67,.45); background: rgba(187,81,67,.05);{% endif %}">
+      {% csrf_token %}
+      <input type="hidden" name="dump" value="{{ selected_dump.pk }}">
+      <input type="hidden" name="kind" value="multi">
+      <input type="hidden" name="owner_id" value="{{ player.owner_id }}">
+      <input type="hidden" name="owner_name" value="{{ player.owner_name }}">
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="text-[10px] uppercase tracking-wide text-muted">Possível multi conta</div>
+          {% if mark_multi %}
+          <div class="text-sm font-bold" style="color: var(--ik-bad);"><i class="bi bi-people-fill"></i> Marcado</div>
+          <div class="text-[11px] text-muted mt-0.5">{% if mark_multi.main_owner_name %}de {{ mark_multi.main_owner_name }} · {% endif %}{{ mark_multi.note }}{% if not mark_multi.note and not mark_multi.main_owner_name %}sem espionagem, alertas e pirataria{% endif %}</div>
+          {% else %}
+          <div class="text-sm font-semibold text-ink">Não marcado</div>
+          {% endif %}
+        </div>
+        <button type="submit" class="btn btn-sm {% if mark_multi %}btn-secondary{% else %}btn-primary{% endif %} flex-shrink-0">
+          {% if mark_multi %}Desmarcar{% else %}<i class="bi bi-people"></i> Marcar{% endif %}
+        </button>
+      </div>
+      {% if not mark_multi %}
+      <div class="mt-3 grid grid-cols-2 gap-2">
+        <input type="text" name="main_owner_name" placeholder="conta principal (opcional)" class="form-input !py-1.5 !text-xs w-full">
+        <input type="text" name="note" placeholder="motivo (opcional)" class="form-input !py-1.5 !text-xs w-full">
+      </div>
+      {% endif %}
+    </form>
+    <form method="post" action="{% url 'worldintel:player-mark' %}" class="card !p-4"
+          style="{% if mark_pirate %}border-color: rgba(201,156,78,.6); background: rgba(201,156,78,.07);{% endif %}">
+      {% csrf_token %}
+      <input type="hidden" name="dump" value="{{ selected_dump.pk }}">
+      <input type="hidden" name="kind" value="pirate_target">
+      <input type="hidden" name="owner_id" value="{{ player.owner_id }}">
+      <input type="hidden" name="owner_name" value="{{ player.owner_name }}">
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="text-[10px] uppercase tracking-wide text-muted">Alvo de pirataria</div>
+          {% if mark_pirate %}
+          <div class="text-sm font-bold" style="color: var(--ik-gold-dark);"><i class="bi bi-flag-fill"></i> Marcado</div>
+          <div class="text-[11px] text-muted mt-0.5">primeiro no ciclo especial quando estiver no ranking</div>
+          {% else %}
+          <div class="text-sm font-semibold text-ink">Não marcado</div>
+          {% endif %}
+        </div>
+        <button type="submit" class="btn btn-sm {% if mark_pirate %}btn-secondary{% else %}btn-primary{% endif %} flex-shrink-0">
+          {% if mark_pirate %}Desmarcar{% else %}<i class="bi bi-flag"></i> Marcar{% endif %}
+        </button>
+      </div>
+    </form>
+  </div>
+
   {# ── Cities table ── #}
   <div class="card !p-0 overflow-hidden">
     <div class="px-4 py-3" style="border-bottom:1px solid var(--ik-line);">

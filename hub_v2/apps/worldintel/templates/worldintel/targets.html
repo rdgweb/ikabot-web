@@ -1,0 +1,258 @@
+{% extends base_template|default:"base.html" %}
+{% load humanize hub_tags %}
+
+{% block title %}Inteligência — Alvos{% endblock %}
+
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span>
+  <a href="{% url 'worldintel:players' %}" class="text-ink">Inteligência</a>
+  <span class="mx-1">/</span>
+  <span class="text-muted">Alvos</span>
+{% endblock %}
+
+{% block content %}
+<style>
+  .tg-seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--ik-sand-light); border: 1px solid var(--ik-line); }
+  .tg-seg a { padding: 6px 14px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--ik-muted); }
+  .tg-seg a.on { background: var(--ik-sea); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+  .tg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .tg-card { border-radius: 14px; border: 1px solid var(--ik-line); background: var(--ik-paper); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .tg-card.multi { opacity: .6; background: var(--ik-sand-light); }
+  .tg-bar { display: flex; height: 8px; border-radius: 99px; overflow: hidden; background: var(--ik-sand-light); }
+  .tg-res { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+  .tg-res div { text-align: center; font-size: 10px; color: var(--ik-muted); }
+  .tg-res img { width: 18px; height: 18px; display: block; margin: 0 auto 2px; }
+  .tg-res b { display: block; color: var(--ik-ink); font-size: 11px; }
+  .tg-chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 2px 9px; font-size: 10px; font-weight: 600; border: 1px solid var(--ik-line); background: #fff; color: var(--ik-ink); }
+  .tg-chip.good { border-color: rgba(95,140,78,.35); background: rgba(95,140,78,.10); color: #4b7a3c; }
+  .tg-chip.bad { border-color: rgba(187,81,67,.35); background: rgba(187,81,67,.08); color: var(--ik-bad); }
+  .tg-chip.gold { border-color: rgba(201,156,78,.5); background: rgba(201,156,78,.12); color: var(--ik-gold-dark); }
+  .tg-chip.sea { border-color: rgba(79,134,185,.35); background: rgba(79,134,185,.10); color: var(--ik-sea-dark); }
+  .tg-pirate { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr) 320px; align-items: start; }
+  @media (max-width: 900px) { .tg-pirate { grid-template-columns: minmax(0, 1fr); } }
+  .tg-rank { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+  .tg-rank > div { min-width: 120px; border-radius: 10px; border: 1px solid var(--ik-line); padding: 6px 8px; font-size: 11px; background: #fff; }
+  .tg-rank > div.self { border-color: var(--ik-sea); box-shadow: 0 0 0 1px var(--ik-sea) inset; }
+  .tg-rank > div.picked { border-color: rgba(201,156,78,.7); background: rgba(201,156,78,.08); }
+  .tg-rank > div.multi { opacity: .55; text-decoration: line-through; }
+</style>
+
+<div class="space-y-4">
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-bold text-ink">Inteligência do Mundo</h1>
+  </div>
+
+  <div class="flex gap-1">
+    <a href="{% url 'worldintel:players' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}" class="px-3 py-1.5 rounded text-xs font-semibold text-muted hover:text-ink transition-colors"><i class="bi bi-people-fill"></i> Players</a>
+    <a href="{% url 'worldintel:islands' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}" class="px-3 py-1.5 rounded text-xs font-semibold text-muted hover:text-ink transition-colors"><i class="bi bi-geo-fill"></i> Ilhas</a>
+    <a href="{% url 'worldintel:map' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}" class="px-3 py-1.5 rounded text-xs font-semibold text-muted hover:text-ink transition-colors"><i class="bi bi-map-fill"></i> Mapa</a>
+    <a href="{% url 'worldintel:targets' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}" class="px-3 py-1.5 rounded text-xs font-semibold bg-[var(--ik-sea)] text-white transition-colors"><i class="bi bi-crosshair"></i> Alvos</a>
+    <a href="{% url 'worldintel:dumps' %}{% if selected_game_account %}?ga={{ selected_game_account.pk }}{% endif %}" class="px-3 py-1.5 rounded text-xs font-semibold text-muted hover:text-ink transition-colors"><i class="bi bi-database"></i> Dumps</a>
+  </div>
+
+  {% if not selected_dump %}
+  <div class="card text-center py-10">
+    <i class="bi bi-database text-3xl text-muted block mb-3"></i>
+    <p class="text-sm text-muted">Crie um dump primeiro.</p>
+  </div>
+  {% else %}
+
+  <div class="flex flex-wrap items-center gap-3">
+    <div class="tg-seg">
+      <a href="?view=raid" class="{% if view == 'raid' %}on{% endif %}"><i class="bi bi-gem"></i> Saque</a>
+      <a href="?view=pirate" class="{% if view == 'pirate' %}on{% endif %}"><i class="bi bi-flag-fill"></i> Pirataria</a>
+      <a href="?view=multi" class="{% if view == 'multi' %}on{% endif %}"><i class="bi bi-people"></i> Multi contas</a>
+    </div>
+
+    {% if view == 'raid' %}
+    <form method="get" class="flex flex-wrap items-center gap-2" style="margin-left:auto;">
+      <input type="hidden" name="view" value="raid">
+      <select name="min" class="filter-select" onchange="this.form.submit()">
+        <option value="100000" {% if min_total == 100000 %}selected{% endif %}>≥ 100 mil</option>
+        <option value="200000" {% if min_total == 200000 %}selected{% endif %}>≥ 200 mil</option>
+        <option value="300000" {% if min_total == 300000 %}selected{% endif %}>≥ 300 mil</option>
+        <option value="500000" {% if min_total == 500000 %}selected{% endif %}>≥ 500 mil</option>
+        <option value="1000000" {% if min_total == 1000000 %}selected{% endif %}>≥ 1 milhão</option>
+      </select>
+      <select name="res" class="filter-select" onchange="this.form.submit()">
+        <option value="">Mais ricos no total</option>
+        {% for key, label, icon in resources %}<option value="{{ key }}" {% if res == key %}selected{% endif %}>Mais {{ label|lower }}</option>{% endfor %}
+      </select>
+      <label class="tg-chip {% if undefended %}good{% endif %}" style="cursor:pointer;">
+        <input type="checkbox" name="undefended" value="1" {% if undefended %}checked{% endif %} onchange="this.form.submit()" style="display:none;">
+        <i class="bi bi-shield-slash"></i> Sem defesa
+      </label>
+    </form>
+    {% endif %}
+  </div>
+
+  {% if view == 'raid' %}
+    {% if targets %}
+    <div class="tg-grid">
+      {% for t in targets %}
+      <div class="tg-card {% if t.multi %}multi{% endif %}">
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0">
+            <div class="text-sm font-bold text-ink truncate">{{ t.name|default:"—" }} <span class="font-mono text-xs text-muted">[{{ t.coords }}]</span></div>
+            <a href="{% url 'worldintel:player-detail' %}?owner_id={{ t.owner_id }}&owner_name={{ t.owner|urlencode }}&dump={{ selected_dump.pk }}" class="text-[11px] link-sea">{{ t.owner }}</a>
+          </div>
+          {% if t.multi %}<span class="tg-chip bad"><i class="bi bi-people-fill"></i> multi</span>
+          {% elif t.state == 'raiding' %}<span class="tg-chip sea"><i class="bi bi-arrow-right-circle"></i> saqueando</span>
+          {% elif t.state == 'ignored' %}<span class="tg-chip">ignorado</span>
+          {% elif t.state == 'alerted' %}<span class="tg-chip gold"><i class="bi bi-bell-fill"></i> alertado</span>
+          {% else %}<span class="tg-chip good">novo</span>{% endif %}
+        </div>
+        <div>
+          <div class="flex items-baseline justify-between mb-1">
+            <span class="text-xl text-ink" style="font-weight:800;">{{ t.total|intcomma }}</span>
+            <span class="text-[10px] text-muted">lido {{ t.read_at|date:"d/m H:i" }} · vale até {{ t.expires_at|date:"d/m H:i" }}</span>
+          </div>
+          <div class="tg-bar">
+            {% for r in t.resources %}{% if r.share %}<span style="width:{{ r.share }}%; background:{% if r.key == 'wood' %}#9a7542{% elif r.key == 'wine' %}#a64466{% elif r.key == 'marble' %}#b9b4ad{% elif r.key == 'crystal' %}#79c6e6{% else %}#e8c547{% endif %};"></span>{% endif %}{% endfor %}
+          </div>
+        </div>
+        <div class="tg-res">
+          {% for r in t.resources %}<div><img src="{{ r.icon }}" alt="{{ r.label }}"><b>{{ r.amount|intcomma }}</b></div>{% endfor %}
+        </div>
+        <div class="flex flex-wrap gap-1.5">
+          {% if t.troops %}<span class="tg-chip bad"><i class="bi bi-shield-fill"></i> {{ t.troops|intcomma }} tropas</span>{% else %}<span class="tg-chip good"><i class="bi bi-shield-slash"></i> sem tropas</span>{% endif %}
+          {% if t.ships %}<span class="tg-chip bad" title="{{ t.fleet }}"><i class="bi bi-water"></i> {{ t.ships|intcomma }} navios</span>{% endif %}
+          {% if t.wall %}<span class="tg-chip"><i class="bi bi-bricks"></i> muralha {{ t.wall }}</span>{% endif %}
+        </div>
+        {% if not t.multi and t.state != 'raiding' and t.island_id %}
+        <form method="post" action="{% url 'worldintel:target-raid' %}" class="mt-auto">
+          {% csrf_token %}
+          <input type="hidden" name="city_id" value="{{ t.city_id }}">
+          <input type="hidden" name="island_id" value="{{ t.island_id }}">
+          <input type="hidden" name="server_id" value="{{ server_id }}">
+          <input type="hidden" name="owner_id" value="{{ t.owner_id }}">
+          <input type="hidden" name="owner" value="{{ t.owner }}">
+          <button type="submit" class="btn btn-primary btn-sm w-full"><i class="bi bi-gem"></i> Roubar com a melhor conta</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card text-center py-10">
+      <i class="bi bi-gem text-3xl text-muted block mb-3"></i>
+      <p class="text-sm text-muted">Nenhum alvo com estoque válido nesse corte.</p>
+    </div>
+    {% endif %}
+
+  {% elif view == 'pirate' %}
+    <div class="tg-pirate">
+      <div class="space-y-3" style="min-width:0;">
+        {% for a in piracy.accounts %}
+        <div class="card !p-4">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <div class="flex items-center gap-3">
+              <div class="text-sm font-bold text-ink">{{ a.name }}</div>
+              {% if a.self.place %}<span class="tg-chip sea">#{{ a.self.place }} · {{ a.self.score|default:0|intcomma }} pts</span>{% endif %}
+              {% if a.final_phase %}<span class="tg-chip gold"><i class="bi bi-piggy-bank-fill"></i> acumulando</span>{% endif %}
+            </div>
+            <a href="{% url 'jobs:job-detail' a.job_id %}" class="text-[11px] link-sea">{% if a.left %}ranking vira em {{ a.left|duration_human }}{% else %}job{% endif %}</a>
+          </div>
+          <div class="tg-rank">
+            {% for e in a.entries %}
+            <div class="{% if a.self.place == e.place %}self{% endif %}" data-player="{{ e.player_name|lower }}">
+              <div class="flex justify-between"><b>#{{ e.place }}</b><span style="color:var(--ik-sea);">{{ e.score|intcomma }}</span></div>
+              <div class="truncate font-semibold text-ink">{{ e.player_name }}</div>
+            </div>
+            {% empty %}<div class="text-[11px] text-muted">sem ranking lido</div>{% endfor %}
+          </div>
+        </div>
+        {% empty %}
+        <div class="card text-center py-8"><p class="text-sm text-muted">Nenhum job de pirataria ativo neste servidor.</p></div>
+        {% endfor %}
+      </div>
+      <div class="card !p-4">
+        <h3 class="text-sm font-semibold text-ink mb-1"><i class="bi bi-flag-fill" style="color:var(--ik-gold-dark);"></i> Alvos marcados</h3>
+        <p class="text-[10px] text-muted mb-3">marque pelo detalhe do jogador</p>
+        <div class="space-y-2">
+          {% for p in piracy.picked %}
+          <div class="rounded-xl border px-3 py-2 flex items-center justify-between gap-2" style="border-color: var(--ik-line);">
+            <div class="min-w-0">
+              <div class="text-xs font-semibold text-ink truncate">{{ p.name }}</div>
+              <div class="text-[10px] {% if p.in_ranking %}text-[var(--ik-sea)]{% else %}text-muted{% endif %}">{% if p.in_ranking %}no ranking de {{ p.in_ranking|join:", " }}{% else %}fora do ranking agora{% endif %}</div>
+            </div>
+            <form method="post" action="{% url 'worldintel:player-mark' %}">
+              {% csrf_token %}
+              <input type="hidden" name="dump" value="{{ selected_dump.pk }}"><input type="hidden" name="kind" value="pirate_target">
+              <input type="hidden" name="owner_name" value="{{ p.name }}"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button type="submit" class="btn btn-secondary btn-sm !py-0.5 !px-2 text-[10px]" title="Desmarcar"><i class="bi bi-x-lg"></i></button>
+            </form>
+          </div>
+          {% empty %}
+          <div class="text-[11px] text-muted text-center py-4">Nenhum alvo marcado.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <script>
+    (function () {
+      const picked = {{ piracy.picked|length }} ? new Set([{% for p in piracy.picked %}"{{ p.name|lower|escapejs }}",{% endfor %}]) : new Set();
+      document.querySelectorAll(".tg-rank > div[data-player]").forEach((el) => { if (picked.has(el.dataset.player)) el.classList.add("picked"); });
+    })();
+    </script>
+
+  {% else %}
+    <div class="grid gap-3" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));">
+      <div class="card !p-4">
+        <h3 class="text-sm font-semibold text-ink mb-3"><i class="bi bi-people-fill" style="color:var(--ik-bad);"></i> Marcados <span class="text-muted font-normal">· {{ multi_marks|length }}</span></h3>
+        <div class="space-y-2">
+          {% for m in multi_marks %}
+          <div class="rounded-xl border px-3 py-2 flex items-center justify-between gap-2" style="border-color: rgba(187,81,67,.3); background: rgba(187,81,67,.04);">
+            <div class="min-w-0">
+              <a href="{% url 'worldintel:player-detail' %}?owner_name={{ m.owner_name|urlencode }}&dump={{ selected_dump.pk }}" class="text-xs font-semibold link-sea">{{ m.owner_name }}</a>
+              <div class="text-[10px] text-muted truncate">{% if m.main_owner_name %}de {{ m.main_owner_name }}{% endif %}{% if m.main_owner_name and m.note %} · {% endif %}{{ m.note }}</div>
+            </div>
+            <form method="post" action="{% url 'worldintel:player-mark' %}">
+              {% csrf_token %}
+              <input type="hidden" name="dump" value="{{ selected_dump.pk }}"><input type="hidden" name="kind" value="multi">
+              <input type="hidden" name="owner_name" value="{{ m.owner_name }}"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button type="submit" class="btn btn-secondary btn-sm !py-0.5 !px-2 text-[10px]">Desmarcar</button>
+            </form>
+          </div>
+          {% empty %}
+          <div class="text-[11px] text-muted text-center py-4">Ninguém marcado ainda.</div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="card !p-4">
+        <h3 class="text-sm font-semibold text-ink mb-3"><i class="bi bi-lightbulb" style="color:var(--ik-gold-dark);"></i> Sugestões <span class="text-muted font-normal">· {{ suggestions|length }}</span></h3>
+        <div class="space-y-2">
+          {% for s in suggestions %}
+          <div class="rounded-xl border px-3 py-2" style="border-color: var(--ik-line);">
+            <div class="flex items-center justify-between gap-2">
+              <div class="min-w-0">
+                <a href="{% url 'worldintel:player-detail' %}?owner_id={{ s.owner_id }}&owner_name={{ s.owner_name|urlencode }}&dump={{ selected_dump.pk }}" class="text-xs font-semibold link-sea">{{ s.owner_name }}</a>
+                {% if s.ally %}<span class="text-[10px] font-mono text-muted">[{{ s.ally }}]</span>{% endif %}
+                <span class="text-[10px] text-muted">· {{ s.score_total|intcomma }} pts</span>
+              </div>
+              <form method="post" action="{% url 'worldintel:player-mark' %}">
+                {% csrf_token %}
+                <input type="hidden" name="dump" value="{{ selected_dump.pk }}"><input type="hidden" name="kind" value="multi">
+                <input type="hidden" name="owner_id" value="{{ s.owner_id }}"><input type="hidden" name="owner_name" value="{{ s.owner_name }}">
+                <input type="hidden" name="main_owner_name" value="{{ s.main_owner_name }}">
+                <input type="hidden" name="note" value="sugestão: {{ s.shared }} de {{ s.cities }} cidades nas ilhas de {{ s.main_owner_name }}">
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" class="btn btn-primary btn-sm !py-0.5 !px-2 text-[10px]"><i class="bi bi-people"></i> Marcar</button>
+              </form>
+            </div>
+            <div class="mt-1 flex flex-wrap gap-1.5">
+              <span class="tg-chip"><i class="bi bi-geo-alt"></i> {{ s.shared }} de {{ s.cities }} cidades nas ilhas de <b>{{ s.main_owner_name }}</b> ({{ s.main_score|intcomma }})</span>
+              {% if s.same_ally %}<span class="tg-chip gold">mesma aliança</span>{% endif %}
+              {% for st in s.states %}{% if st != 'active' %}<span class="tg-chip">{{ st }}</span>{% endif %}{% endfor %}
+            </div>
+          </div>
+          {% empty %}
+          <div class="text-[11px] text-muted text-center py-4">Sem sugestões neste dump.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

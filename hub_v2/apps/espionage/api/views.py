@@ -757,10 +757,17 @@ class ScanRaidAlertsView(APIView):
         alerted = 0
         skipped = 0
         refresh_needed: list[dict] = []
+        # N-175: no rich target alert for a possible multi account
+        from apps.worldintel.services.marks import is_marked, marked
+
+        multi = marked(ga.account.organization, ga.server_id, "multi")
 
         for cid, missions in complete_cities.items():
             checked += 1
             report_res = missions[5]   # mission 5 — recursos
+            if is_marked(report_res.target_owner_id, report_res.target_owner, multi):
+                skipped += 1
+                continue
             report_grn = missions[6]   # mission 6 — guarnição militar
             report_upg = missions[26]  # mission 26 — invenções/upgrades (player-scope)
             data_res = report_res.data_json or {}

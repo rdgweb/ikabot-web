@@ -26,6 +26,7 @@ SCOPES: dict[str, tuple[str, str, bool]] = {
     "accounts.Account": ("organization", "org", False),
     "profiles.Profile": ("organization", "org", False),
     "profiles.Preset": ("organization", "org", False),
+    "worldintel.PlayerMark": ("organization", "org", False),
     "proxy.ProxyProfile": ("organization", "org", False),
     # by GameForge account
     "accounts.GameAccount": ("account", "account", False),

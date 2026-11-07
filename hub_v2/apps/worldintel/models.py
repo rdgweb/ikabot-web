@@ -160,3 +160,32 @@ class WorldDumpPlayer(models.Model):
     @property
     def total_score(self):
         return self.building_score + self.research_score + self.army_score
+
+
+class PlayerMark(UUIDTimestampModel):
+    """N-174/N-175: a player marked by the organization — a possible multi account (left out of spying, rich target
+    alerts and piracy targets) or a piracy target picked by hand."""
+
+    objects = OrgScopedManager()
+
+    KIND_MULTI = "multi"
+    KIND_PIRATE = "pirate_target"
+    KIND_CHOICES = [(KIND_MULTI, "Possível multi conta"), (KIND_PIRATE, "Alvo de pirataria")]
+
+    organization = models.ForeignKey("orgs.Organization", on_delete=models.CASCADE, related_name="player_marks")
+    server_id = models.CharField(max_length=32, db_index=True)
+    owner_id = models.CharField(max_length=32, blank=True, default="")
+    owner_name = models.CharField(max_length=128)
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES)
+    main_owner_name = models.CharField(max_length=128, blank=True, default="")
+    note = models.CharField(max_length=255, blank=True, default="")
+    created_by = models.CharField(max_length=150, blank=True, default="")
+
+    class Meta:
+        ordering = ["owner_name"]
+        constraints = [
+            models.UniqueConstraint(fields=["organization", "server_id", "owner_name", "kind"], name="worldintel_player_mark_unique"),
+        ]
+
+    def __str__(self):
+        return f"{self.get_kind_display()}: {self.owner_name}"

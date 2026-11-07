@@ -224,6 +224,15 @@ class PiracyMissionRunner(BaseRunner):
             return True
         return (time.time() - last_ts) >= interval_days * 86400
 
+    def _player_marks(self, game_account_id: str) -> tuple[set[str], set[str]]:
+        """(possible multi accounts, piracy targets picked by hand), names casefolded; empty when the hub fails."""
+        try:
+            marks = self.hub.get_player_marks(game_account_id) or {}
+        except Exception:
+            return set(), set()
+        return ({str(n).strip().casefold() for n in marks.get("multi") or []},
+                {str(n).strip().casefold() for n in marks.get("pirate_target") or []})
+
     def _protected_owner_names(self, game_account_id: str, current_player_name: str) -> set[str]:
         protected = {str(current_player_name or "").strip().lower()}
         try:
@@ -388,9 +397,12 @@ class PiracyMissionRunner(BaseRunner):
             game_account_id,
             str(client.account_info.get("player_name") or ""),
         )
+        # N-174/N-175: players marked in the hub — picked by hand come first, possible multi accounts never
+        multi, picked = self._player_marks(game_account_id)
+        only_picked = _to_bool(inputs.get("targeted_only_marked"))
 
         own_owner_id, own_scores = self._read_player_scores(client, city_id)
-        candidates: list[tuple[int, int, dict[str, Any]]] = []
+        candidates: list[tuple[int, int, int, dict[str, Any]]] = []
         for entry in entries:
             avatar_id = str(entry.get("avatar_id") or "")
             target_city_id = str(entry.get("target_city_id") or "")
@@ -398,8 +410,15 @@ class PiracyMissionRunner(BaseRunner):
                 continue
             if target_city_id in protected_city_ids:
                 continue
+            player = str(entry.get("player_name") or "").strip().casefold()
+            if player in multi:
+                self.log(jid, "info", f"Alvo {entry.get('player_name')} marcado como possível multi conta; pulando")
+                continue
+            is_picked = player in picked
+            if only_picked and not is_picked:
+                continue
             place_gap = abs(_to_int(entry.get("place")) - self_place) if self_place > 0 else 0
-            if self_place > 0 and place_gap > max_gap:
+            if self_place > 0 and place_gap > max_gap and not is_picked:
                 continue
             try:
                 target_city, target_scores = self._target_scores_for_entry(client, entry)
@@ -407,6 +426,8 @@ class PiracyMissionRunner(BaseRunner):
                 continue
             owner_name = str(target_city.get("owner_name") or "").strip().lower()
             if owner_name and owner_name in protected_names:
+                continue
+            if owner_name and owner_name.casefold() in multi:
                 continue
             if str(target_city.get("state") or "").strip().lower() == "umod":
                 self.log(jid, "info", f"Alvo {entry.get('player_name')} em ferias; pulando")
@@ -436,12 +457,12 @@ class PiracyMissionRunner(BaseRunner):
                 "own_owner_id": own_owner_id,
                 "place_gap": place_gap,
             }
-            candidates.append((place_gap, weight, enriched))
+            candidates.append((0 if is_picked else 1, place_gap, weight, enriched))
 
         if not candidates:
             return None
-        candidates.sort(key=lambda item: (item[0], item[1], str(item[2].get("player_name") or "")))
-        for _, _, enriched in candidates:
+        candidates.sort(key=lambda item: (item[0], item[1], item[2], str(item[3].get("player_name") or "")))
+        for _, _, _, enriched in candidates:
             spot = self._find_colony_spot(client, str(enriched.get("target_city_id") or ""))
             if spot:
                 return enriched, spot
