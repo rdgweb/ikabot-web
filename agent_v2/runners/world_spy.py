@@ -50,6 +50,7 @@ logger = logging.getLogger(__name__)
 
 ERROR_RESCHEDULE = 5  * 60        # 5 min em caso de erro
 FALLBACK_DELAY   = 4  * 60 * 60  # 4h — fallback caso notificação falhe
+REREAD_SHARE_PCT = 25   # N-173: share of the free safehouses a round may spend reading a city again
 FALLBACK_RETRY_WAITS = (3, 10)    # espera (s) antes da 2ª e 3ª tentativa de criar o fallback
 
 # Missões cujo resultado é global ao jogador (não varia por cidade).
@@ -408,6 +409,10 @@ class WorldSpyRunner(BaseRunner):
         skipped           = 0
         remaining_free    = list(free_entries)
         dispatched_cities: set[str] = set()  # guard contra duplicatas no dump
+        # N-173: at most this share of the free safehouses reads again a city read before; the rest moves the ring on
+        reread_share = max(0, min(100, _parse_int(inputs.get("reread_share_pct"), REREAD_SHARE_PCT)))
+        rereads_left = max(1, (len(free_entries) * reread_share + 99) // 100) if reread_share else 0
+        has_new = any(t.get("last_stock") is None for t in targets)
 
         for target in targets:
             if not remaining_free:
@@ -418,6 +423,10 @@ class WorldSpyRunner(BaseRunner):
 
             target_city_id = str(target.get("game_city_id") or "").strip()
             if not target_city_id or target_city_id in dispatched_cities:
+                skipped += 1
+                continue
+            reread = target.get("last_stock") is not None
+            if reread and has_new and rereads_left <= 0:
                 skipped += 1
                 continue
 
@@ -478,6 +487,8 @@ class WorldSpyRunner(BaseRunner):
                 )
                 spawned += 1
                 dispatched_cities.add(target_city_id)
+                if reread:
+                    rereads_left -= 1
                 claimed_targets[target_city_id] = {
                     "target_city_name": str(target.get("city_name") or ""),
                     "target_owner": str(target.get("owner_name") or ""),

@@ -65,6 +65,21 @@ class WorldSpyPassTests(unittest.TestCase):
         self.assertNotIn("8", runner.hub.reschedules[0]["__claimed_targets"])
         self.assertIn("7", runner.hub.reschedules[0]["__claimed_targets"])
 
+    def test_rereads_take_at_most_a_quarter_of_the_free_safehouses(self):
+        # N-173: 8 free houses, rich rereads first in the list: 2 of them, then the never read
+        runner = WorldSpyRunner.__new__(WorldSpyRunner)
+        rereads = [{"game_city_id": f"r{n}", "city_name": "R", "owner_name": f"o{n}", "missing_missions": [5],
+                    "last_stock": 900000, "priority": 0} for n in range(6)]
+        new = [{"game_city_id": f"n{n}", "city_name": "N", "owner_name": f"p{n}", "missing_missions": [5],
+                "last_stock": None, "priority": 1} for n in range(6)]
+        runner.hub = FakeHub(rereads + new)
+        sent = []
+        runner.hub.spawn_job = lambda parent_job_id, **kw: sent.append(kw["inputs"]["target_city_id"]) or {"job_id": "c"}
+        runner.execute({"job_id": "round", "game_account_id": "ga",
+                        "inputs": {"city_ids": ",".join(str(100 + n) for n in range(8)), "missions": "5"}})
+        self.assertEqual(sum(1 for t in sent if t.startswith("r")), 2)
+        self.assertEqual(len(sent), 8)
+
     def test_interval_zero_ends_the_campaign(self):
         result, _ = run({"pass_interval_hours": 0}, [])
         self.assertFalse(result.reschedule_seconds)

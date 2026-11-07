@@ -529,14 +529,30 @@ class WorldSpyTargetsView(APIView):
 
         # N-163: the last warehouse read of each candidate (any age) — rich, never read, or poor
         last_stock: dict[str, int] = {}
+        last_read_at: dict[str, object] = {}
         if cities and (prioritize or (skip_if_valid and pass_since)):
             from apps.espionage.services.validity import stock_total as _stock_total
 
             for row in (SpyReport.objects.filter(target_city_id__in=[c.game_city_id for c in cities], mission_id=5)
                         .exclude(result_status__icontains="falh").order_by("created_at")
-                        .values("target_city_id", "data_json")):
+                        .values("target_city_id", "data_json", "created_at")):
                 last_stock[row["target_city_id"]] = _stock_total(row["data_json"])
-        rich_cities = {cid for cid, total in last_stock.items() if total >= rich_threshold}
+                last_read_at[row["target_city_id"]] = row["created_at"]
+        # N-173: the front of the ring is the nearest city never read; a rich city beyond it is "far": it waits its
+        # turn by distance and its stock lasts as long as a poor one's (the spies' trip there and back costs)
+        never_read = [getattr(c, "min_dist_sq", None) for c in cities if c.game_city_id not in last_stock]
+        never_read = [d for d in never_read if d is not None]
+        front_sq = min(never_read) if never_read else None
+        far_rich: set[str] = set()
+        rich_cities: set[str] = set()
+        for c in cities:
+            total = last_stock.get(c.game_city_id)
+            if total is None or total < rich_threshold:
+                continue
+            if front_sq is not None and (getattr(c, "min_dist_sq", 0) or 0) > front_sq:
+                far_rich.add(c.game_city_id)
+            else:
+                rich_cities.add(c.game_city_id)
 
         if skip_if_valid and cities:
             from datetime import timedelta
@@ -557,6 +573,13 @@ class WorldSpyTargetsView(APIView):
 
                 # Valid per city (city-scope missions)
                 city_valid_map: dict[str, set] = defaultdict(set)
+                if 5 in city_missions and far_rich:
+                    from apps.espionage.services.validity import setting as _far_setting
+
+                    poor_since = now - timedelta(hours=_far_setting("spy_ttl_stock_poor_hours"))
+                    for cid in far_rich:
+                        if last_read_at.get(cid) and last_read_at[cid] >= poor_since:
+                            city_valid_map[cid].add(5)
                 if city_missions:
                     for row in SpyReport.objects.filter(
                         target_city_id__in=city_ids_check,
@@ -609,7 +632,7 @@ class WorldSpyTargetsView(APIView):
                             succeeded, target_city_id__in=city_ids_check, mission_id=mission,
                             created_at__gte=_pass_from(mission),
                         ).values_list("target_city_id", flat=True).distinct():
-                            if city_id not in rich_cities:
+                            if city_id not in rich_cities and city_id not in far_rich:   # N-173: far rich: 8 days
                                 city_pass_map[city_id].add(mission)
                     if owner_ids_check:
                         for mission in player_missions:
@@ -654,15 +677,20 @@ class WorldSpyTargetsView(APIView):
                 deduped.append(c)
         cities = deduped
 
+        def _tier(city_id):
+            # N-163: rich first, then never read, then poor; N-173: a far rich city waits with the never read
+            total = last_stock.get(city_id)
+            if total is None or city_id in far_rich:
+                return 1
+            return 0 if total >= rich_threshold else 2
+
         if prioritize:
             # N-163: rich cities first (the richest first), then the never-read, then the poor; nearest first within
             stock = last_stock
-            rich = rich_threshold
 
             def _rank(city):
-                total = stock.get(city.game_city_id)
-                tier = 1 if total is None else (0 if total >= rich else 2)
-                return (tier, -(total or 0) if tier == 0 else 0, getattr(city, "min_dist_sq", 0) or 0)
+                tier = _tier(city.game_city_id)
+                return (tier, -(stock.get(city.game_city_id) or 0) if tier == 0 else 0, getattr(city, "min_dist_sq", 0) or 0)
 
             cities.sort(key=_rank)
         cities = cities[:limit]
@@ -680,8 +708,7 @@ class WorldSpyTargetsView(APIView):
             "ally_tag":     c.ally_tag or "",
             "missing_missions": missing_missions_map.get(c.game_city_id, sorted(mission_ids) if mission_ids else []),
             "last_stock":   _stock_seen.get(c.game_city_id),
-            "priority":     (1 if _stock_seen.get(c.game_city_id) is None
-                             else 0 if _stock_seen.get(c.game_city_id) >= rich_threshold else 2),
+            "priority":     _tier(c.game_city_id),
         } for c in cities]
 
         return Response({

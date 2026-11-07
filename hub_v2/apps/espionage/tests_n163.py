@@ -94,6 +94,25 @@ class TargetsTests(TestCase):
         self.assertNotIn("301", [t["game_city_id"] for t in self.targets()])
         cache.delete("spy_paused:301")
 
+    def test_a_rich_city_beyond_the_front_of_the_ring_waits_its_turn_and_lasts_8_days(self):
+        # N-173: houses at (50,50); never read at (50,50) is the front; rich at (90,50) is far
+        from apps.game.models import AccountSnapshot
+
+        AccountSnapshot.objects.create(account=self.ga.account, game_account=self.ga, cities=[{"id": 9, "x": 50, "y": 50}])
+        far = WorldDumpIsland.objects.create(dump=self.dump, island_id="10", name="Longe", x=90, y=50)
+        WorldDumpCity.objects.create(dump=self.dump, island=far, type="city", state="inactive", game_city_id="501",
+                                     owner_id="longe", owner_name="Longe", name="C501")
+        WorldDumpCity.objects.create(dump=self.dump, island=far, type="city", state="inactive", game_city_id="502",
+                                     owner_id="velho", owner_name="Velho", name="C502")
+        for cid, owner, days in (("501", "Longe", 5), ("502", "Velho", 9), ("201", "Rico", 5)):
+            self.report(cid, owner, 5, days_ago=days, data={"wood": 900_000})
+            self.report(cid, owner, 6, days_ago=1, valid=True)
+            self.report(cid, owner, 26, days_ago=1, valid=True)
+        targets = {t["game_city_id"]: t for t in self.targets(prioritize="1", source_cities="9")}
+        self.assertNotIn("501", targets)                  # far rich read 5 days ago: still good (8 days)
+        self.assertEqual(targets["502"]["priority"], 1)   # far rich read 9 days ago: back, but by distance
+        self.assertEqual(targets["201"]["priority"], 0)   # near rich: first, after 4 days
+
     def test_value_first(self):
         self.report("201", "Rico", 5, days_ago=20, data={"wood": 900_000})
         self.report("401", "Pobre", 5, days_ago=20, data={"wood": 1_000})
