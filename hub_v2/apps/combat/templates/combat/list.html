@@ -16,17 +16,37 @@
   <a class="sim-chip" href="{% url 'combat:simulator' %}" title="O simulador comparado com os combates reais"><i class="bi bi-cpu"></i> Simulador{% if simulator.total %} · {{ simulator.winner_pct }}% vencedor certo{% endif %}</a>
 </div>
 
+
+<div class="cbt-tiles">
+  {% for tile in tiles %}
+  {% if tile.anchor %}
+  <a class="cbt-tile {{ tile.tone }}" href="{{ tile.anchor }}"><b>{{ tile.value }}</b><span>{{ tile.label }}</span></a>
+  {% elif tile.state is None %}
+  <div class="cbt-tile"><b>{{ tile.value }}</b><span>{{ tile.label }}</span></div>
+  {% else %}
+  <a class="cbt-tile {{ tile.tone }}{% if state == tile.state %} on{% endif %}" href="?{% if tile.state %}state={{ tile.state }}{% endif %}{% if account %}{% if tile.state %}&{% endif %}account={{ account }}{% endif %}"><b>{{ tile.value }}</b><span>{{ tile.label }}</span></a>
+  {% endif %}
+  {% endfor %}
+</div>
+
 {% if outgoing.count %}
 <style>
-  .cbt-out { margin-bottom: 18px; }
-  .cbt-out-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
-  .cbt-out-card { border-radius: 14px; border: 1px solid var(--ik-line); background: var(--ik-paper); overflow: hidden; }
-  .cbt-out-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; color: #fff;
-                  background: linear-gradient(135deg, rgba(23,50,74,.92), rgba(62,113,159,.85)), url('{% static "game/combat/battlefield_city_A_D.jpg" %}') center/cover; }
-  .cbt-out-head b { font-size: 14px; }
-  .cbt-out-head small { opacity: .8; font-size: 11px; }
-  .cbt-out-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 9px 14px; border-top: 1px solid var(--ik-line); font-size: 12px; }
-  .cbt-out-row:first-of-type { border-top: 0; }
+  .cbt-out { margin: 4px 0 18px; }
+  .cbt-out-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+  .cbt-out-card { border-radius: 14px; border: 1px solid var(--ik-line); background: var(--ik-paper); overflow: hidden;
+                  box-shadow: 0 1px 2px rgba(45,42,36,.05); }
+  .cbt-out-card.wide { grid-column: 1 / -1; }
+  .cbt-out-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; padding: 26px 16px 10px; color: #fff;
+                  background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,.55) 100%), url('{% static "game/combat/battlefield_city_A_D.jpg" %}') center/cover;
+                  text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+  .cbt-out-head b { font-size: 15px; }
+  .cbt-out-head small { opacity: .85; font-size: 11px; }
+  .cbt-out-head .eta { display: inline-block; border-radius: 999px; padding: 3px 10px; background: rgba(79,134,185,.9); font-size: 12px;
+                       font-weight: 700; text-shadow: none; font-variant-numeric: tabular-nums; }
+  .cbt-out-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1px; background: var(--ik-line); }
+  .cbt-out-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; padding: 10px 14px; font-size: 12px;
+                 background: var(--ik-paper); transition: background .15s; }
+  a.cbt-out-row:hover { background: var(--ik-sand-light); }
   .cbt-out-units { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11px; color: var(--ik-muted); }
   .cbt-out-units > span { display: inline-flex; align-items: center; gap: 2px; }
   .cbt-out-eta { font-weight: 700; color: var(--ik-ink); font-variant-numeric: tabular-nums; text-align: right; }
@@ -36,14 +56,15 @@
   .cbt-out-tag.done { background: var(--ik-sand-light); color: var(--ik-muted); }
 </style>
 <div class="cbt-out">
-  <h2 class="text-sm font-semibold text-ink mb-2"><i class="bi bi-send-fill" style="color: var(--ik-sea);"></i> A caminho <span class="text-muted font-normal">· {{ outgoing.count }}</span></h2>
+  <h2 id="a-caminho" class="text-sm font-semibold text-ink mb-2"><i class="bi bi-send-fill" style="color: var(--ik-sea);"></i> A caminho</h2>
   <div class="cbt-out-grid">
     {% for group in outgoing.raids %}
-    <div class="cbt-out-card">
+    <div class="cbt-out-card{% if group.rows|length > 1 %} wide{% endif %}">
       <div class="cbt-out-head">
-        <div class="min-w-0"><b>{{ group.name }}</b> <small class="font-mono">[{{ group.coords }}]</small><br><small>{{ group.owner }}</small></div>
-        <div class="text-right"><small>saque · {{ group.rows|length }} conta{{ group.rows|length|pluralize }}</small><br>{% if group.first %}<b data-eta="{{ group.first }}">—</b>{% endif %}</div>
+        <div class="min-w-0"><b>{{ group.name }}</b> <small class="font-mono">[{{ group.coords }}]</small><br><small>{{ group.owner }} · saque com {{ group.rows|length }} conta{{ group.rows|length|pluralize }}</small></div>
+        {% if group.first %}<span class="eta" title="primeira chegada" data-eta="{{ group.first }}">—</span>{% endif %}
       </div>
+      <div class="cbt-out-rows">
       {% for row in group.rows %}
       <a class="cbt-out-row" href="{% url 'jobs:job-detail' row.job_id %}" style="color: inherit;">
         <div class="min-w-0">
@@ -57,13 +78,14 @@
         </div>
       </a>
       {% endfor %}
+      </div>
     </div>
     {% endfor %}
     {% for move in outgoing.others %}
     <div class="cbt-out-card">
       <div class="cbt-out-head">
         <div class="min-w-0"><b>{{ move.target|default:"?" }}</b><br><small>{{ move.target_owner }}</small></div>
-        <div class="text-right"><small>{{ move.mission|lower }}{% if move.returning %} · voltando{% endif %}</small><br>{% if move.eta %}<b data-eta="{{ move.eta }}">—</b>{% endif %}</div>
+        <div class="text-right"><small>{{ move.mission|lower }}{% if move.returning %} · voltando{% endif %}</small><br>{% if move.eta %}<span class="eta" data-eta="{{ move.eta }}">—</span>{% endif %}</div>
       </div>
       <div class="cbt-out-row">
         <div class="min-w-0"><b class="text-ink">{{ move.account }}</b> <span class="text-muted">de {{ move.origin }}</span></div>
@@ -94,16 +116,6 @@
 })();
 </script>
 {% endif %}
-
-<div class="cbt-tiles">
-  {% for tile in tiles %}
-  {% if tile.state is None %}
-  <div class="cbt-tile"><b>{{ tile.value }}</b><span>{{ tile.label }}</span></div>
-  {% else %}
-  <a class="cbt-tile {{ tile.tone }}{% if state == tile.state %} on{% endif %}" href="?{% if tile.state %}state={{ tile.state }}{% endif %}{% if account %}{% if tile.state %}&{% endif %}account={{ account }}{% endif %}"><b>{{ tile.value }}</b><span>{{ tile.label }}</span></a>
-  {% endif %}
-  {% endfor %}
-</div>
 
 {% if accounts %}
 <div class="cbt-filters">

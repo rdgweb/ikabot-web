@@ -115,6 +115,9 @@ class CombatListView(LoginRequiredMixin, TemplateView):
             "simulator": _simulator_chip(),
             "outgoing": _outgoing(),
         })
+        if ctx["outgoing"]["count"]:
+            ctx["tiles"].insert(1, {"label": "A caminho", "value": _number(ctx["outgoing"]["count"]), "state": None,
+                                    "tone": "live", "anchor": "#a-caminho"})
         return ctx
 
 
