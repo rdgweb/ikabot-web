@@ -12,13 +12,15 @@
 
 {% block content %}
 <style>
-  .wm-wrap { display: grid; grid-template-columns: minmax(0, max(440px, calc(100vh - 260px))) minmax(320px, 1fr); gap: 16px; align-items: start; }
-  .wm-side { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; align-items: start; }
-  @media (max-width: 1000px) { .wm-wrap { grid-template-columns: minmax(0, 1fr); } }
-  .wm-sea { position: relative; border-radius: 14px; overflow: hidden; background: radial-gradient(120% 120% at 30% 20%, #3f86b5 0%, #2b6690 45%, #1d4a6d 100%); box-shadow: inset 0 0 60px rgba(0,0,0,.25); aspect-ratio: 1 / 1; cursor: default; touch-action: none; }
+  .wm-shell { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+  @media (max-width: 1100px) { .wm-shell { grid-template-columns: minmax(0, 1fr); } }
+  .wm-main { border-radius: 16px; overflow: hidden; border: 1px solid var(--ik-line); background: var(--ik-paper); box-shadow: 0 2px 10px rgba(45,42,36,.06); }
+  .wm-sea { position: relative; height: max(440px, calc(100vh - 330px)); background: radial-gradient(120% 120% at 30% 20%, #3f86b5 0%, #2b6690 45%, #1d4a6d 100%); cursor: default; touch-action: none; }
+  @media (max-width: 1100px) { .wm-sea { height: auto; aspect-ratio: 1 / 1; } }
   .wm-sea.over { cursor: pointer; }
   .wm-sea.dragging { cursor: grabbing; }
   .wm-sea canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .wm-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
   .wm-seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--ik-sand-light); border: 1px solid var(--ik-line); }
   .wm-seg button { border: 0; background: transparent; padding: 5px 12px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--ik-muted); cursor: pointer; }
   .wm-seg button.on { background: var(--ik-sea); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
@@ -27,9 +29,7 @@
   .wm-zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; z-index: 4; }
   .wm-zoom button { width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(255,255,255,.35); background: rgba(16,40,60,.55); color: #fff; font-size: 15px; cursor: pointer; }
   .wm-badge { position: absolute; left: 12px; top: 12px; z-index: 4; padding: 4px 10px; border-radius: 999px; background: rgba(16,40,60,.6); color: #eaf3fb; font-size: 11px; font-weight: 600; letter-spacing: .02em; }
-  .wm-time { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 4; display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 12px; background: rgba(14,34,52,.72); backdrop-filter: blur(4px); border: 1px solid rgba(255,255,255,.18); color: #eaf3fb; cursor: default; }
-  .wm-time .text-ink { color: #fff !important; }
-  .wm-time .text-muted { color: rgba(234,243,251,.75) !important; }
+  .wm-time { display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-top: 1px solid var(--ik-line); background: var(--ik-paper); }
   .wm-play { width: 34px; height: 34px; flex: none; border-radius: 999px; border: 0; background: var(--ik-sea); color: #fff; font-size: 15px; cursor: pointer; box-shadow: 0 2px 6px rgba(79,134,185,.4); }
   .wm-range { flex: 1; accent-color: var(--ik-sea); }
   .wm-tile { border-radius: 12px; padding: 9px 10px; border: 1px solid var(--ik-line); background: var(--ik-paper); }
@@ -103,14 +103,14 @@
     </div>
   </div>
 
-  <div class="wm-wrap" id="wm-root"
+  <div class="wm-shell" id="wm-root"
        data-data-url="{% url 'worldintel:map-data' %}{{ map_query }}"
        data-island-url="{% url 'worldintel:map-island' %}"
        data-search-url="{% url 'worldintel:map-search' %}"
        data-dump="{{ selected_dump.pk }}"
        data-ga="{% if selected_game_account %}{{ selected_game_account.pk }}{% endif %}">
 
-    <div class="space-y-3" style="min-width:0;">
+    <div class="wm-main">
       <div class="wm-sea" id="wm-sea">
         <canvas id="wm-canvas"></canvas>
         <div class="wm-badge" id="wm-badge">Carregando o mundo…</div>
@@ -120,28 +120,20 @@
           <button type="button" data-zoom="home" title="Mundo inteiro"><i class="bi bi-fullscreen" style="font-size:12px;"></i></button>
         </div>
         <div class="wm-tip" id="wm-tip"></div>
+      </div>
       <div class="wm-time" id="wm-time" style="display:none;">
         <button type="button" class="wm-play" id="wm-play" title="Reproduzir"><i class="bi bi-play-fill"></i></button>
         <div style="flex:1; min-width:0;">
-          <div class="flex items-center justify-between" style="font-size:11px; margin-bottom:2px;">
+          <div class="flex items-center justify-between gap-3" style="font-size:11px; margin-bottom:2px;">
             <span class="font-semibold text-ink" id="wm-day">—</span>
-            <span class="text-muted" id="wm-day-info"></span>
+            <span class="text-muted truncate" id="wm-day-info"></span>
           </div>
           <input type="range" class="wm-range w-full" id="wm-range" min="0" max="0" value="0">
         </div>
       </div>
-      </div>
-
-      <div class="card !p-4" id="wm-rereads-card" style="display:none;">
-        <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
-          <h3 class="text-sm font-semibold text-ink">Leituras de estoque por dia</h3>
-          <div class="flex flex-wrap gap-3" id="wm-reason-legend"></div>
-        </div>
-        <canvas id="wm-rereads" style="width:100%; height:150px; display:block;"></canvas>
-      </div>
     </div>
 
-    <div class="wm-side" style="min-width:0;">
+    <aside class="wm-side">
       <div class="card !p-4">
         <div class="flex items-center justify-between mb-3">
           <h3 class="text-sm font-semibold text-ink"><i class="bi bi-binoculars text-[var(--ik-sea)]"></i> Campanha</h3>
@@ -155,7 +147,7 @@
           <h3 class="text-sm font-semibold text-ink">Anéis</h3>
           <span class="text-[10px] text-muted" id="wm-rings-day"></span>
         </div>
-        <div id="wm-rings" style="max-height:330px; overflow-y:auto; padding-right:4px;"></div>
+        <div id="wm-rings" style="max-height:230px; overflow-y:auto; padding-right:4px;"></div>
       </div>
 
       <div class="card !p-4" id="wm-island">
@@ -164,7 +156,15 @@
           <p class="text-xs text-muted">Escolha uma ilha no mapa</p>
         </div>
       </div>
+    </aside>
+  </div>
+
+  <div class="card !p-4" id="wm-rereads-card" style="display:none;">
+    <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
+      <h3 class="text-sm font-semibold text-ink">Leituras de estoque por dia</h3>
+      <div class="flex flex-wrap gap-3" id="wm-reason-legend"></div>
     </div>
+    <canvas id="wm-rereads" style="width:100%; height:150px; display:block;"></canvas>
   </div>
   {% else %}
   <div class="card text-center py-10">
@@ -214,14 +214,14 @@
   };
 
   // ── geometry: map 1..100 into the canvas, with zoom and pan ──
+  let W = 0, H = 0;
   function size() {
     const r = sea.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
     cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    return r.width;
+    W = r.width; H = r.height;
   }
-  let W = 0;
-  const cell = () => (W / 101) * view.s;
+  const cell = () => (Math.min(W, H) / 101) * view.s;
   const toPx = (gx, gy) => [(gx - 0.5) * cell() + view.x, (gy - 0.5) * cell() + view.y];
   const toGrid = (px, py) => [(px - view.x) / cell() + 0.5, (py - view.y) / cell() + 0.5];
 
@@ -272,17 +272,21 @@
 
   function draw() {
     if (!W) return;
-    const h = W;
+    const h = H;
     ctx.clearRect(0, 0, W, h);
     const c = cell();
-    // grid every 10 squares
-    ctx.strokeStyle = "rgba(255,255,255,.07)"; ctx.lineWidth = 1;
-    ctx.fillStyle = "rgba(255,255,255,.35)"; ctx.font = "10px system-ui"; ctx.textAlign = "center";
+    // the world: a lighter square, with a line every 10 squares
+    const [x0, y0] = toPx(0.5, 0.5), [x1, y1] = toPx(100.5, 100.5);
+    ctx.fillStyle = "rgba(255,255,255,.035)"; ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.strokeStyle = "rgba(255,255,255,.16)"; ctx.lineWidth = 1; ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.strokeStyle = "rgba(255,255,255,.07)";
+    ctx.fillStyle = "rgba(255,255,255,.4)"; ctx.font = "10px system-ui"; ctx.textAlign = "center";
+    const labelY = Math.min(h - 6, y1 + 13), labelX = Math.max(12, x0 - 12);
     for (let g = 10; g <= 100; g += 10) {
       const [px] = toPx(g, 0), [, py] = toPx(0, g);
-      ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(W, py); ctx.stroke();
-      if (c * 10 > 34) { ctx.fillText(g, px, h - 6); ctx.fillText(g, 12, py + 3); }
+      ctx.beginPath(); ctx.moveTo(px, Math.max(0, y0)); ctx.lineTo(px, Math.min(h, y1)); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(Math.max(0, x0), py); ctx.lineTo(Math.min(W, x1), py); ctx.stroke();
+      if (c * 10 > 34) { ctx.fillText(g, px, labelY); ctx.fillText(g, labelX, py + 3); }
     }
     // ring front: the area the campaign has reached
     const fr = layer === "spy" ? frontierRing() : null;
@@ -442,7 +446,7 @@
     }
     tip.innerHTML = html; tip.style.display = "block";
     const tw = tip.offsetWidth, th = tip.offsetHeight;
-    tip.style.left = Math.min(r.width - tw - 8, px + 14) + "px";
+    tip.style.left = (px + 14 + tw > r.width - 8 ? px - tw - 14 : px + 14) + "px";
     tip.style.top = Math.min(r.height - th - 8, py + 14) + "px";
   });
   sea.addEventListener("pointerup", (ev) => {
@@ -459,8 +463,9 @@
     view.x = px - (px - view.x) * k; view.y = py - (py - view.y) * k; view.s = ns; clamp(); draw();
   }
   function clamp() {
-    const span = W * view.s;
-    view.x = Math.min(0, Math.max(W - span, view.x)); view.y = Math.min(0, Math.max(W - span, view.y));
+    const span = 101 * cell();
+    view.x = span <= W ? (W - span) / 2 : Math.min(0, Math.max(W - span, view.x));
+    view.y = span <= H ? (H - span) / 2 : Math.min(0, Math.max(H - span, view.y));
   }
   sea.addEventListener("wheel", (ev) => {
     ev.preventDefault();
@@ -469,10 +474,10 @@
   }, { passive: false });
   sea.querySelectorAll("[data-zoom]").forEach((b) => b.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    if (b.dataset.zoom === "home") { view = { s: 1, x: 0, y: 0 }; draw(); return; }
-    zoomAt(b.dataset.zoom === "in" ? 1.5 : 1 / 1.5, W / 2, W / 2);
+    if (b.dataset.zoom === "home") { view = { s: 1, x: 0, y: 0 }; clamp(); draw(); return; }
+    zoomAt(b.dataset.zoom === "in" ? 1.5 : 1 / 1.5, W / 2, H / 2);
   }));
-  sea.querySelectorAll(".wm-zoom button, .wm-time").forEach((b) => {
+  sea.querySelectorAll(".wm-zoom button").forEach((b) => {
     b.addEventListener("pointerdown", (ev) => ev.stopPropagation());
     b.addEventListener("pointermove", (ev) => { ev.stopPropagation(); tip.style.display = "none"; });
     b.addEventListener("pointerup", (ev) => ev.stopPropagation());
@@ -515,11 +520,11 @@
     }, 700);
   });
 
-  new ResizeObserver(() => { const old = W; W = size(); if (old && W !== old) { view.x *= W / old; view.y *= W / old; } draw(); rereadsChart(); }).observe(sea);
+  new ResizeObserver(() => { size(); clamp(); draw(); if (D) rereadsChart(); }).observe(sea);
 
   fetch(root.dataset.dataUrl).then((r) => r.json()).then((data) => {
     D = data; islands = data.islands || [];
-    W = size();
+    size(); clamp();
     lastDay = Math.max(0, (D.days || []).length - 1);
     if (D.days && D.days.length) {
       range.max = lastDay;
