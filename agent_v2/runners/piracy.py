@@ -116,6 +116,31 @@ class PiracyMissionRunner(BaseRunner):
         return _mission_level_for_time(inputs, datetime.now().hour)
 
     @staticmethod
+    def _stats_window(inputs: dict[str, Any], now: int) -> dict[str, int]:
+        """N-170: the job's totals count from one moment. Without it (a workflow copied with old totals) both start
+        again together, so missions and converted crew always cover the same period."""
+        since = _to_int(inputs.get("piracy_stats_since"), 0)
+        if since > 0:
+            return {"piracy_stats_since": since,
+                    "total_crew_converted": _to_int(inputs.get("total_crew_converted"), 0),
+                    "total_missions_started": _to_int(inputs.get("total_missions_started"), 0)}
+        return {"piracy_stats_since": now, "total_crew_converted": 0, "total_missions_started": 0}
+
+    @staticmethod
+    def _final_phase_left(inputs: dict[str, Any], now: int) -> int | None:
+        """N-171: seconds until the piracy ranking turns when we are inside its final phase (the last N hours, set in
+        the job), None otherwise. The time left is the one read with the ranking, counted down since that reading."""
+        if not _to_bool(inputs.get("final_phase_enabled")):
+            return None
+        hours = max(1, _to_int(inputs.get("final_phase_hours"), 72))
+        time_left = _to_int(inputs.get("piracy_highscore_time_left"), 0)
+        read_at = _to_int(inputs.get("piracy_highscore_updated_at"), 0)
+        if time_left <= 0 or read_at <= 0:
+            return None
+        left = time_left - max(0, now - read_at)
+        return left if 0 < left <= hours * 3600 else None
+
+    @staticmethod
     def _capture_gain_since_last_mission(inputs: dict[str, Any], capture_points: int) -> int:
         try:
             last_capture_points = int(inputs.get("last_capture_points") or 0)
@@ -647,6 +672,25 @@ class PiracyMissionRunner(BaseRunner):
                 "last_state_updated_at": int(time.time()),
                 **highscore_state,
             }
+            now_ts = int(time.time())
+            # N-170: totals of one period, and the points each crew strength costs
+            inputs = {**inputs, **self._stats_window(inputs, now_ts)}
+            _state_inputs.update(
+                piracy_stats_since=inputs["piracy_stats_since"],
+                total_crew_converted=inputs["total_crew_converted"],
+                total_missions_started=inputs["total_missions_started"],
+                last_conversion_factor=int(state.get("conversion_factor") or 10),
+            )
+            # N-171: the last hours before the ranking turns gather capture points instead of crew strength
+            final_left = self._final_phase_left({**inputs, **highscore_state}, now_ts)
+            _state_inputs["piracy_final_phase_active"] = final_left is not None
+            if final_left is not None:
+                convert_mode = "never"
+                final_level = _to_int(inputs.get("final_phase_mission_level"), 0)
+                if final_level > 0:
+                    mission_level = final_level
+                self.log(jid, "info", f"Fase final do ranking (vira em {final_left // 3600}h{(final_left % 3600) // 60:02d}): "
+                                      f"acumulando pontos de captura, sem converter")
 
             targeted_phase = str(inputs.get("_targeted_phase") or "").strip().lower()
             if targeted_phase:

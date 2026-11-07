@@ -854,28 +854,28 @@ class ScanRaidAlertsView(APIView):
                 )
                 defense_block += f"\n⚓ Frota no porto:\n{fleet_lines}"
 
-            # Bloco de sugestão da conta escolhida + ETA estimada
-            def _eta_minutes(src_city_id: str, target_x, target_y) -> int:
-                """Distância euclidiana entre source (snapshot) e target (xy do report)."""
-                if target_x is None or target_y is None:
-                    return 0
+            # Bloco de sugestão da conta escolhida + ETA (N-172: a conta do jogo, pela unidade mais lenta)
+            def _eta_text(choice) -> str:
                 from apps.game.models import AccountSnapshot
-                # Encontrar source no snapshot
-                for s in AccountSnapshot.objects.all():
-                    for c in (s.cities or []):
-                        if str(c.get("id")) == str(src_city_id):
-                            sx, sy = c.get("x"), c.get("y")
-                            if sx is None or sy is None: return 0
-                            import math
-                            d = math.sqrt((target_x - sx) ** 2 + (target_y - sy) ** 2)
-                            # Aproximação: cada unidade de distância no mapa = ~6min
-                            # (mercantes ~60 vel; valor ajustável)
-                            return int(d * 6)
-                return 0
+
+                from ..services import travel
+
+                if report.target_x is None or report.target_y is None:
+                    return "?"
+                snap = AccountSnapshot.objects.filter(game_account_id=choice["ga_id"]).only("cities").first()
+                source = next(((int(c["x"]), int(c["y"])) for c in ((snap.cities if snap else None) or [])
+                               if str(c.get("id")) == str(choice["source_city_id"]) and c.get("x") is not None), None)
+                if source is None:
+                    return "?"
+                distance = travel.island_distance(source, (report.target_x, report.target_y))
+                text = f"~{travel.human(travel.troops_journey(distance, (choice.get('recommended') or {}).keys()))} (tropas)"
+                fleet = (choice.get("recommended_fleet") or {}).keys()
+                if fleet and choice.get("fleet_can_win") is not False:
+                    text += f" · ~{travel.human(travel.fleet_journey(distance, fleet))} (frota)"
+                return text
 
             if top:
-                eta_min = _eta_minutes(top["source_city_id"], report.target_x, report.target_y)
-                eta_text = f"~{eta_min}min" if eta_min else "?"
+                eta_text = _eta_text(top)
                 sim = top.get("sim") or {}
                 if sim:
                     rounds = sim.get("rounds", 0)

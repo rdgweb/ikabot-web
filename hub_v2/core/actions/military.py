@@ -356,6 +356,12 @@ ACTIONS = {
              "min": 1, "max": 100, "help": "Só usado no modo porcentagem. Aplica sobre o ganho da missão recém-concluída, não sobre o saldo total."},
             {"key": "convert_threshold", "type": FIELD_INT, "label": "Mínimo de pontos para converter", "required": False, "default": 500,
              "min": 1, "help": "Só usado no modo mínimo."},
+            # N-171: fase final do ranking — acumula pontos de captura em vez de converter
+            {"key": "final_phase_enabled", "type": FIELD_BOOL, "label": "Fase final do ranking: acumular pontos", "required": False, "default": False},
+            {"key": "final_phase_hours", "type": FIELD_INT, "label": "Fase final — últimas horas antes do ranking virar", "required": False, "default": 72,
+             "min": 1, "max": 720},
+            {"key": "final_phase_mission_level", "type": FIELD_INT, "label": "Fase final — nível da missão (0 = o configurado)", "required": False, "default": 0,
+             "min": 0, "max": 17},
             # Ciclo especial (targeted)
             {"key": "enable_targeted_cycle", "type": FIELD_BOOL, "label": "Ativar ciclo especial (colonizar + raid)", "required": False, "default": False,
              "help": "Coloniza na ilha do alvo do ranking pirata, constrói fortaleza temporária, executa raid e abandona."},

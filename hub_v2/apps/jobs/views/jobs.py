@@ -5,7 +5,8 @@ Job list, detail, cancel, and bulk-delete views.
 import json
 import re
 from collections import Counter
-from datetime import timedelta
+import time
+from datetime import datetime, timedelta, timezone as dt_timezone
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Case, Count, Exists, F, IntegerField, Max, Min, OuterRef, Value, When, Window
@@ -1717,7 +1718,31 @@ class JobListView(FilterSortListView):
         convert_mode = str(inputs.get("convert_mode") or "never")
         highscore_entries = inputs.get("piracy_highscore_entries") if isinstance(inputs.get("piracy_highscore_entries"), list) else []
         highscore_self = inputs.get("piracy_highscore_self") if isinstance(inputs.get("piracy_highscore_self"), dict) else {}
+        # N-170: what the job created, since when; N-171: when the ranking turns and the final phase
+        now_ts = int(time.time())
+        crew_created = _to_int(inputs.get("total_crew_converted"), 0)
+        factor = _to_int(inputs.get("last_conversion_factor"), 10) or 10
+        stats_since = _to_int(inputs.get("piracy_stats_since"), 0)
+        since_days = max(1.0, (now_ts - stats_since) / 86400) if stats_since else 0
+        complete = _to_int(complete_crew_points, 0)
+        ranking_left = _to_int(inputs.get("piracy_highscore_time_left"), 0)
+        ranking_read = _to_int(inputs.get("piracy_highscore_updated_at"), 0)
+        ranking_left = max(0, ranking_left - (now_ts - ranking_read)) if ranking_left and ranking_read else 0
+        final_hours = _to_int(inputs.get("final_phase_hours"), 72)
+        final_in = max(0, ranking_left - final_hours * 3600) if ranking_left else 0
         return {
+            "crew_created": crew_created,
+            "points_spent": crew_created * factor,
+            "stats_since": datetime.fromtimestamp(stats_since, tz=dt_timezone.utc) if stats_since else None,
+            "crew_per_day": round(crew_created / since_days) if since_days else 0,
+            "crew_created_pct": min(100, round(100 * crew_created / complete)) if complete else 0,
+            "ranking_left": ranking_left,
+            "ranking_left_human": _duration_human(ranking_left) if ranking_left else "",
+            "ranking_ends_at": datetime.fromtimestamp(now_ts + ranking_left, tz=dt_timezone.utc) if ranking_left else None,
+            "final_phase_enabled": bool(inputs.get("final_phase_enabled")),
+            "final_phase_hours": final_hours,
+            "final_phase_active": bool(inputs.get("piracy_final_phase_active")) or (bool(inputs.get("final_phase_enabled")) and ranking_left and not final_in),
+            "final_phase_in_human": _duration_human(final_in) if final_in else "",
             "capture_points": capture_points,
             "crew_points": crew_points,
             "complete_crew_points": complete_crew_points,

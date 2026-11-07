@@ -105,6 +105,28 @@ class PiracyMissionRunnerTests(unittest.TestCase):
         self.assertEqual(gain, 800)
 
 
+class PiracyStatsAndFinalPhaseTests(unittest.TestCase):
+    def test_totals_without_a_start_begin_again_together(self):
+        window = PiracyMissionRunner._stats_window({"total_crew_converted": 2747, "total_missions_started": 15}, 1000)
+        self.assertEqual(window, {"piracy_stats_since": 1000, "total_crew_converted": 0, "total_missions_started": 0})
+
+    def test_totals_with_a_start_are_kept(self):
+        inputs = {"piracy_stats_since": 500, "total_crew_converted": 113, "total_missions_started": 1}
+        self.assertEqual(PiracyMissionRunner._stats_window(inputs, 1000), inputs)
+
+    def test_final_phase_counts_down_from_the_ranking_reading(self):
+        inputs = {"final_phase_enabled": True, "final_phase_hours": 48,
+                  "piracy_highscore_time_left": 50 * 3600, "piracy_highscore_updated_at": 1000}
+        self.assertIsNone(PiracyMissionRunner._final_phase_left(inputs, 1000))               # 50 h left
+        self.assertEqual(PiracyMissionRunner._final_phase_left(inputs, 1000 + 3 * 3600), 47 * 3600)
+        self.assertIsNone(PiracyMissionRunner._final_phase_left(inputs, 1000 + 51 * 3600))   # the ranking turned
+
+    def test_final_phase_off_or_without_ranking(self):
+        self.assertIsNone(PiracyMissionRunner._final_phase_left({"final_phase_hours": 48, "piracy_highscore_time_left": 10,
+                                                                 "piracy_highscore_updated_at": 1}, 2))
+        self.assertIsNone(PiracyMissionRunner._final_phase_left({"final_phase_enabled": True}, 2))
+
+
 if __name__ == "__main__":
     unittest.main()
 

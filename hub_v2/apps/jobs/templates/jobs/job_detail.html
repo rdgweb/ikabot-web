@@ -1085,14 +1085,14 @@
         <span class="text-muted"><i class="bi bi-anchor text-[10px]"></i> Navio no porto</span>
         {% endif %}
         {% if piracy_display.total_missions %}
-        <span><i class="bi bi-flag text-[10px]"></i> {{ piracy_display.total_missions }} missões enviadas</span>
+        <span><i class="bi bi-flag text-[10px]"></i> {{ piracy_display.total_missions }} missões{% if piracy_display.stats_since %} desde {{ piracy_display.stats_since|date:"d/m" }}{% endif %}</span>
         {% endif %}
       </div>
     </div>
   </div>
 
   {# ── Stats row ── #}
-  <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 mb-4">
+  <div class="grid gap-3 mb-4" style="grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));">
     <div class="rounded-xl border border-[var(--ik-line)] px-3 py-2.5">
       <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Pontos de captura</div>
       {% if piracy_display.has_state %}
@@ -1107,18 +1107,37 @@
       <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Força da tripulação</div>
       {% if piracy_display.has_state %}
       <div class="text-lg font-bold text-ink">{{ piracy_display.complete_crew_points|intcomma }}</div>
-      <div class="text-[10px] text-muted">disponível: {{ piracy_display.crew_points|default:0|intcomma }}</div>
+      <div class="mt-1 h-1.5 rounded-full overflow-hidden" style="background: var(--ik-sand-light);" title="{{ piracy_display.crew_created_pct }}% criada por este job">
+        <div class="h-full rounded-full" style="width: {{ piracy_display.crew_created_pct }}%; background: var(--ik-sea);"></div>
+      </div>
+      <div class="text-[10px] text-muted mt-1">disponível: {{ piracy_display.crew_points|default:0|intcomma }}</div>
       {% else %}
       <div class="text-lg font-bold text-muted">—</div>
       <div class="text-[10px] text-muted">aguardando ciclo</div>
       {% endif %}
     </div>
     <div class="rounded-xl border border-[var(--ik-line)] px-3 py-2.5">
-      <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Tripulação convertida</div>
-      <div class="text-lg font-bold {% if piracy_display.total_crew_converted %}text-[var(--ik-sea)]{% else %}text-muted{% endif %}">
-        {{ piracy_display.total_crew_converted|intcomma|default:"0" }}
+      <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Força criada</div>
+      <div class="flex items-baseline gap-2">
+        <span class="text-lg font-bold {% if piracy_display.crew_created %}text-[var(--ik-sea)]{% else %}text-muted{% endif %}">{{ piracy_display.crew_created|intcomma }}</span>
+        {% if piracy_display.crew_per_day %}<span class="text-[10px] text-muted">{{ piracy_display.crew_per_day|intcomma }}/dia</span>{% endif %}
       </div>
-      <div class="text-[10px] text-muted">neste job</div>
+      <div class="text-[10px] text-muted">{{ piracy_display.points_spent|intcomma }} pontos{% if piracy_display.stats_since %} · desde {{ piracy_display.stats_since|date:"d/m" }}{% endif %}</div>
+    </div>
+    <div class="rounded-xl border px-3 py-2.5" style="{% if piracy_display.final_phase_active %}border-color: rgba(201,156,78,.6); background: rgba(201,156,78,.08);{% else %}border-color: var(--ik-line);{% endif %}">
+      <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Fim do ranking</div>
+      {% if piracy_display.ranking_left %}
+      <div class="text-lg font-bold text-ink">{{ piracy_display.ranking_left_human }}</div>
+      <div class="text-[10px] text-muted">{{ piracy_display.ranking_ends_at|date:"d/m H:i" }}</div>
+      {% if piracy_display.final_phase_active %}
+      <div class="mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold" style="background: rgba(201,156,78,.18); color: var(--ik-gold-dark);"><i class="bi bi-piggy-bank-fill"></i> acumulando pontos</div>
+      {% elif piracy_display.final_phase_enabled %}
+      <div class="mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px]" style="background: var(--ik-sand-light); color: var(--ik-muted);"><i class="bi bi-hourglass-split"></i> fase final em {{ piracy_display.final_phase_in_human }}</div>
+      {% endif %}
+      {% else %}
+      <div class="text-lg font-bold text-muted">—</div>
+      <div class="text-[10px] text-muted">aguardando leitura</div>
+      {% endif %}
     </div>
     <div class="rounded-xl border border-[var(--ik-line)] px-3 py-2.5">
       <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Configuração</div>

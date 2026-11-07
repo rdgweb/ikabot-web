@@ -1288,6 +1288,8 @@ def _piracy_context(ga, all_cities: list, snapshot=None) -> dict:
         "piracy_missions": missions,
         "piracy_cities": piracy_cities,
         "piracy_highscore_preview": piracy_highscore,
+        "piracy_ranking_clock": {"time_left": int(piracy_highscore.get("time_left") or 0),
+                                 "updated_at": int(piracy_highscore.get("updated_at") or 0)},
     }
 
 
@@ -2143,6 +2145,7 @@ def _custom_field_names(action_code: int) -> list[str]:
             "night_mission_level", "night_start_hour", "night_end_hour",
             "max_random_wait",
             "convert_mode", "convert_percent", "convert_threshold",
+            "final_phase_enabled", "final_phase_hours", "final_phase_mission_level",
             "enable_targeted_cycle", "targeted_interval_days", "targeted_after_hour",
             "target_require_lower_total_score", "target_require_lower_general_score",
             "target_max_score_gap", "targeted_max_active_foundations",
@@ -4109,8 +4112,11 @@ class JobSubmitView(LoginRequiredMixin, View):
             "target_require_lower_total_score",
             "target_require_lower_general_score",
             "target_require_eta_efficiency",
+            "final_phase_enabled",
         )
         int_fields = (
+            "final_phase_hours",
+            "final_phase_mission_level",
             "targeted_interval_days",
             "targeted_after_hour",
             "target_max_score_gap",
