@@ -43,9 +43,10 @@ class TravelTests(SimpleTestCase):
         self.assertEqual(travel.journey_seconds(1, 60), 600)
         self.assertEqual(travel.journey_seconds(0, 60), 300)
 
-    def test_troops_go_at_the_slowest_of_ships_and_units(self):
-        self.assertEqual(travel.troops_journey(30, [303]), 18000)          # hoplites ride the ships: 5 h
-        self.assertEqual(travel.troops_journey(30, [303, 309]), 36000)     # a balloon (30) doubles it
+    def test_troops_go_at_their_slowest_unit(self):
+        self.assertAlmostEqual(travel.troops_journey(16.97, [305, 303]), 20365, delta=5)   # the raid of 07/11
+        self.assertEqual(travel.troops_journey(30, [303]), 24000)                          # hoplites (90)
+        self.assertEqual(travel.troops_journey(30, [303, 309]), 72000)                     # a balloon (30)
         self.assertEqual(travel.fleet_journey(30, [210, 215]), 36000)      # mortar ship (30)
         self.assertEqual(travel.human(36000), "10h")
         self.assertEqual(travel.human(5400), "1h30")
