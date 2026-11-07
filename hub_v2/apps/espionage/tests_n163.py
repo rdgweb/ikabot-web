@@ -70,6 +70,30 @@ class TargetsTests(TestCase):
         self.assertNotIn("401", ids)                                     # poor: done for this pass
         self.assertIn("201", ids)                                        # rich: read again when it expires
 
+    def test_a_reading_still_valid_when_the_pass_started_counts_for_the_pass(self):
+        # N-168: poor stock lasts 8 days, garrison 5, inventions 15
+        for cid, owner, days in (("401", "Pobre", 10 + 3), ("301", "Novo", 10 + 9)):
+            self.report(cid, owner, 5, days_ago=days, data={"wood": 1_000})
+            self.report(cid, owner, 6, days_ago=10 + 2)
+            self.report(cid, owner, 26, days_ago=10 + 2)
+        ids = [t["game_city_id"] for t in self.targets(pass_since=self.pass_start.isoformat())]
+        self.assertNotIn("401", ids)          # read 3 days before the pass: still valid when it started
+        self.assertIn("301", ids)             # read 9 days before: had already expired
+
+    def test_a_city_the_spies_could_not_reach_is_paused_not_put_on_vacation(self):
+        from django.core.cache import cache
+
+        cache.delete("spy_paused:301")
+        r = self.client.post("/api/agent/worldintel/cities/update-state/",
+                             {"game_city_id": "301", "state": "vacation", "game_account_id": str(self.ga.pk),
+                              "reason": "Spy deadlock após 8 ciclos — provável modo férias"},
+                             content_type="application/json", HTTP_X_AGENT_TOKEN="test-agent-token",
+                             HTTP_X_AGENT_NODE_ID=str(self.node.pk))
+        self.assertEqual(r.json()["state"], "spy_paused")
+        self.assertEqual(WorldDumpCity.objects.get(game_city_id="301").state, "inactive")
+        self.assertNotIn("301", [t["game_city_id"] for t in self.targets()])
+        cache.delete("spy_paused:301")
+
     def test_value_first(self):
         self.report("201", "Rico", 5, days_ago=20, data={"wood": 900_000})
         self.report("401", "Pobre", 5, days_ago=20, data={"wood": 1_000})

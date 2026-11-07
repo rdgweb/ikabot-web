@@ -516,6 +516,9 @@ class WorldSpyTargetsView(APIView):
             pass
         if occupied_targets:
             cities = [c for c in cities if c.game_city_id not in occupied_targets]
+        paused = paused_spy_targets([c.game_city_id for c in cities])
+        if paused:
+            cities = [c for c in cities if c.game_city_id not in paused]
 
         # ── skip_if_valid ─────────────────────────────────────────────────────
         # Missões player-scope: resultado é global ao jogador (não varia por cidade).
@@ -591,18 +594,29 @@ class WorldSpyTargetsView(APIView):
                 city_pass_map: dict[str, set] = defaultdict(set)
                 owner_pass_map: dict[str, set] = defaultdict(set)
                 if pass_since:
-                    if city_missions:
-                        for row in SpyReport.objects.filter(
-                            Q(result_status__icontains="sucesso") | Q(result_status__icontains="success"),
-                            target_city_id__in=city_ids_check, mission_id__in=list(city_missions), created_at__gte=pass_since,
-                        ).values("target_city_id", "mission_id").distinct():
-                            if row["target_city_id"] not in rich_cities:
-                                city_pass_map[row["target_city_id"]].add(row["mission_id"])
-                    if player_missions and owner_ids_check:
-                        for row in SpyReport.objects.filter(
-                            target_owner_id__in=owner_ids_check, mission_id__in=list(player_missions), created_at__gte=pass_since,
-                        ).values("target_owner_id", "mission_id").distinct():
-                            owner_pass_map[row["target_owner_id"]].add(row["mission_id"])
+                    from apps.espionage.services.validity import setting as _validity_setting
+
+                    def _pass_from(mission_id):
+                        # N-168: a reading still valid when the pass started counts for the pass; without it the near
+                        # cities, skipped while valid, came back when they expired and jumped ahead of the far rings
+                        key = {5: "spy_ttl_stock_poor_hours", 6: "spy_ttl_garrison_hours",
+                               26: "spy_ttl_inventions_hours"}.get(int(mission_id), "spy_report_expiry_hours")
+                        return pass_since - timedelta(hours=_validity_setting(key))
+
+                    succeeded = Q(result_status__icontains="sucesso") | Q(result_status__icontains="success")
+                    for mission in city_missions:
+                        for city_id in SpyReport.objects.filter(
+                            succeeded, target_city_id__in=city_ids_check, mission_id=mission,
+                            created_at__gte=_pass_from(mission),
+                        ).values_list("target_city_id", flat=True).distinct():
+                            if city_id not in rich_cities:
+                                city_pass_map[city_id].add(mission)
+                    if owner_ids_check:
+                        for mission in player_missions:
+                            for owner_id in SpyReport.objects.filter(
+                                target_owner_id__in=owner_ids_check, mission_id=mission, created_at__gte=_pass_from(mission),
+                            ).values_list("target_owner_id", flat=True).distinct():
+                                owner_pass_map[owner_id].add(mission)
 
                 def _owner_covered(city) -> set:
                     keys = {str(city.owner_id or ""), "name:" + (city.owner_name or "").strip().casefold()}
@@ -793,6 +807,22 @@ class CityLookupView(APIView):
         })
 
 
+SPY_PAUSE_SECONDS = 7 * 24 * 3600
+
+
+def pause_spy_target(game_city_id: str) -> None:
+    from django.core.cache import cache
+
+    cache.set(f"spy_paused:{game_city_id}", timezone.now().isoformat(), SPY_PAUSE_SECONDS)
+
+
+def paused_spy_targets(city_ids) -> set[str]:
+    from django.core.cache import cache
+
+    keys = {f"spy_paused:{cid}": cid for cid in city_ids}
+    return {keys[key] for key in cache.get_many(list(keys))} if keys else set()
+
+
 class UpdateCityStateView(APIView):
     """POST /api/agent/worldintel/cities/update-state/
 
@@ -812,7 +842,7 @@ class UpdateCityStateView(APIView):
     authentication_classes = [AgentTokenAuthentication]
     permission_classes = [IsAgent]
 
-    VALID_STATES = {"vacation", "inactive_banned", "gone", "active", "inactive"}
+    VALID_STATES = {"vacation", "inactive_banned", "gone", "active", "inactive", "spy_paused"}
 
     def post(self, request):
         game_city_id    = str(request.data.get("game_city_id") or "").strip()
@@ -828,6 +858,12 @@ class UpdateCityStateView(APIView):
                 {"error": f"state must be one of {sorted(self.VALID_STATES)}."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        # N-168: a spy job that could not gather its spies pauses the city for the campaign; it is not on vacation
+        # (older agents still say "vacation" with the deadlock reason)
+        if game_city_id and (new_state == "spy_paused" or reason.startswith("Spy deadlock")):
+            pause_spy_target(game_city_id)
+            return Response({"ok": True, "game_city_id": game_city_id, "state": "spy_paused", "updated_rows": 0})
 
         # Filter by owner_id (todos cidades do player) ou game_city_id (apenas uma)
         if owner_id:

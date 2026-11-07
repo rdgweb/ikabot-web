@@ -1191,18 +1191,18 @@ class SpyRunner(BaseRunner):
             f"Espionagem abortada: impossível acumular espiões suficientes após {MAX_NO_PROGRESS} ciclos. "
             f"Missões puladas: {[MISSION_DATA.get(m,{}).get('name',m) for m in missions_pending]}")
 
-        # Marcar cidade como inacessível no dump para não re-tentar
+        # N-168: pausa a cidade na campanha por 7 dias (não está de férias: só não deu para juntar espiões)
         target_city_id = str(inputs.get("target_city_id") or "").strip()
         if target_city_id:
             try:
                 self.hub.update_city_state(
                     game_city_id=target_city_id,
-                    state="vacation",
+                    state="spy_paused",
                     game_account_id=ga_id,
-                    reason=f"Spy deadlock após {MAX_NO_PROGRESS} ciclos — provável modo férias",
+                    reason=f"Spy deadlock após {MAX_NO_PROGRESS} ciclos",
                 )
                 self.log(jid, "warn",
-                    f"[Spy] Cidade {target_city_id} marcada como 'vacation' no dump após deadlock.")
+                    f"[Spy] Cidade {target_city_id} pausada por 7 dias na espionagem mundial.")
             except Exception as _ue:
                 self.log(jid, "warn", f"[Spy] Falha ao atualizar estado no dump: {_ue}")
 
