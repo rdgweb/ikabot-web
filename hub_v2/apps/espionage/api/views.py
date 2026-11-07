@@ -73,7 +73,8 @@ _NAVAL_SUPPORT = {218, 220, 201, 202, 204}
 _NAVAL_LINE_PREFERENCE = {
     "front": [216, 225, 223, 211, 221, 212, 217, 210],
     "ranged": [215, 224, 214, 222, 213],
-    "bomb": [219],
+    # carriers do not fight ships: theirs are beaten by front-line ships, never by our carriers
+    "bomb": [216, 225, 223, 211, 221, 212, 217, 210],
 }
 
 
@@ -342,6 +343,15 @@ def _fleet_rule_for_blockade(
             demand -= take
             if demand <= 0:
                 break
+        # what the line's own ships could not cover goes to the front line
+        for uid in _NAVAL_LINE_PREFERENCE["front"]:
+            if demand <= 0:
+                break
+            take = min(remaining.get(uid, 0), demand)
+            if take > 0:
+                rec[uid] = rec.get(uid, 0) + take
+                remaining[uid] -= take
+                demand -= take
     return rec
 
 
@@ -835,12 +845,14 @@ class ScanRaidAlertsView(APIView):
                 for k, v in resources.items() if v > 0
             )
             xy = f"[{report.target_x}:{report.target_y}]" if report.target_x is not None else ""
-            if troops:
+            land_troops = {uid: qty for uid, qty in (troops or {}).items() if str(uid).isdigit() and int(uid) >= 300}
+            if land_troops:
                 from apps.combat.services.report_parser import unit_name  # N-156: the name, not the game's id
 
+                # the ships of the port are shown below, under the fleet
                 troops_lines = "\n".join(
                     f"  {qty}× {unit_name(uid)}"
-                    for uid, qty in sorted(troops.items(), key=lambda item: -int(item[1] or 0))
+                    for uid, qty in sorted(land_troops.items(), key=lambda item: -int(item[1] or 0))
                 )
                 defense_block = f"⚔️ Defesa:\n{troops_lines}"
             else:

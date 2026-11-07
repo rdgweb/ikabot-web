@@ -6,6 +6,7 @@ engine is the one of the land battles (`battle_land`), given the field of the se
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from .battle_land import FIELD_SLOTS, SEA_FIELDS, simulate_land_battle
@@ -14,6 +15,7 @@ from .unit_stats import UNIT_STATS
 DEFAULT_ROUNDS = 40                 # sea battles go on for long: 33 rounds in one of the logs read
 WARSHIPS = {210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225}
 FRONT_SHIPS = (216, 225, 223, 211, 221, 210)
+NON_FIGHTING = (218, 219, 220)   # speedboat, balloon carrier, repair ship: they do not win a sea battle
 
 
 def sea_field(port_level: int | None) -> int:
@@ -114,6 +116,10 @@ def recommend_fleet(
     candidates = []
     if guess:
         candidates += [guess, scaled(1.5), scaled(2.0), scaled(3.0)]
+    # then growing shares of the fighting ships, before the whole fleet: a guess that loses must not send everything
+    fighting = {unit: amount for unit, amount in available.items() if unit not in NON_FIGHTING}
+    for share in (0.05, 0.1, 0.2, 0.35, 0.5, 0.75):
+        candidates.append({unit: max(1, math.ceil(amount * share)) for unit, amount in fighting.items()})
     candidates.append(dict(available))
     seen: list[dict] = []
     last = None

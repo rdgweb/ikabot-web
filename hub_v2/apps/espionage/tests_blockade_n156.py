@@ -23,3 +23,17 @@ class BlockadePlanTests(SimpleTestCase):
 
     def test_without_a_fleet_of_ours_against_ships_in_the_port(self):
         self.assertEqual(_blockade_plan({}, enemy_fleet={210: 5}), {"fleet": {}, "can_win": False})
+
+
+class BalloonCarrierPortTests(SimpleTestCase):
+    """The port of Fla 2 had only balloon carriers: the guess answered with our carriers, they lost, and the alert
+    suggested the whole fleet (1.662 ships)."""
+
+    def test_carriers_are_answered_by_front_ships_and_the_fleet_stays_small(self):
+        from apps.espionage.api.views import _ID_TO_NAME, _blockade_plan
+
+        own = {216: 417, 210: 540, 215: 48, 217: 12, 212: 40, 218: 467, 219: 101, 220: 37}
+        plan = _blockade_plan({_ID_TO_NAME[k]: v for k, v in own.items()}, {219: 70})
+        self.assertTrue(plan["can_win"])
+        self.assertNotIn(219, plan["fleet"])
+        self.assertLess(sum(plan["fleet"].values()), 200)
