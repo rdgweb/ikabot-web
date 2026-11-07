@@ -924,7 +924,8 @@ class ScanRaidAlertsView(APIView):
                     troops_text += f"\n⚓ Frota p/ bloquear porto: {fleet_lines}{verdict}"
                 origin_block = (
                     f"🚢 Sugestão: {top['source_city_name']} ({top['ga_name']})\n"
-                    f"  Mercantes: {top['transporters']} | Frontline: {top['frontline']} | Cerco: {top['siege']}\n"
+                    f"  Mercantes: {min(top['transporters'], -(-total_res // 500))} para o saque "
+                    f"(de {top['transporters']} livres) | Frontline: {top['frontline']} | Cerco: {top['siege']}\n"
                     f"  Viagem estimada: {eta_text}"
                     f"{win_text}"
                     f"{troops_text}"

@@ -226,6 +226,12 @@ class RaidCityRunner(BaseRunner):
                 delay_seconds=90,
             )
 
+        # As many merchant ships as the expected loot (and the troops) need, not every free one: a raid keeps
+        # them away for both legs of the trip
+        if not _parse_int(inputs.get("transporters"), 0) and transporters > 0:
+            transporters = self._size_transporters(jid, ga_id, target_city_id, units, transporters,
+                                                   _parse_int(inputs.get("_looted_total"), 0))
+
         # Blockade PRIMEIRO (se configurado) — sempre na primeira viagem.
         # Não depende de enemy_fleet — se needs_blockade=True, vai bloquear.
         needs_blockade = bool(inputs.get("needs_blockade", False))
@@ -328,6 +334,7 @@ class RaidCityRunner(BaseRunner):
                 "_phase":           "check_battle",
                 "_trips_done":      trips_done,
                 "_travel_seconds":  travel_seconds,
+                "_transporters_sent": transporters,
                 "_source_city_id":  source_city_id,
                 "units":            {str(k): v for k, v in units.items()},
             },
@@ -467,6 +474,7 @@ class RaidCityRunner(BaseRunner):
 
             loot = report.get("loot") or {}
             total_loot = report.get("total_loot", 0)
+            looted_before = _parse_int(inputs.get("_looted_total"), 0)
 
             # Fallback: parser do combat HTML pode vir sem o bloco de loot.
             # Olha advisor militar — pega o movimento de PLUNDER VOLTANDO desse alvo.
@@ -520,10 +528,13 @@ class RaidCityRunner(BaseRunner):
                      f"[Raid] Vitória! combatId={report.get('combat_id')} "
                      f"rounds={report.get('rounds')} saque={loot} total={total_loot:,}")
 
-            # Se navios cheios → provavelmente mais recursos → re-raid
-            snap = self._get_snapshot(jid, ga_id)
-            transporters_live = self._get_transporters(snap, source_city_id, client=client, jid=jid)
-            capacity = loot_capacity(transporters_live or 1)
+            inputs = {**inputs, "_looted_total": looted_before + int(total_loot or 0)}
+            # Se navios cheios → provavelmente mais recursos → re-raid (cheios = os navios que foram)
+            sent = _parse_int(inputs.get("_transporters_sent"), 0)
+            if not sent:
+                snap = self._get_snapshot(jid, ga_id)
+                sent = self._get_transporters(snap, source_city_id, client=client, jid=jid)
+            capacity = loot_capacity(sent or 1)
             ships_full = total_loot >= capacity * 0.9 if capacity > 0 else False
         else:
             self.log(jid, "info", "[Raid] Sem relatório recente. Assumindo que terminou.")
@@ -1003,6 +1014,22 @@ class RaidCityRunner(BaseRunner):
                 detail["army_lost"] = (r.get("result") == "defeat")
                 return detail
         return None
+
+    def _size_transporters(self, jid: str, ga_id: str, target_city_id: str, units: dict, free: int,
+                           looted: int) -> int:
+        """The merchant ships for this trip: what the spied stock still there needs, or what the troops take,
+        whichever is more, up to the free ones. Without a spy reading, all the free ones (as before)."""
+        intel = self._check_remaining_resources(jid, ga_id, target_city_id)
+        if not intel or not intel.get("total"):
+            return free
+        from game_client.actions.barbarians import calculate_transporters
+
+        expected = max(0, int(intel["total"]) - looted)
+        needed = max(transporters_needed(expected), calculate_transporters(units) if units else 1)
+        if needed >= free:
+            return free
+        self.log(jid, "info", f"[Raid] Mercantes: {needed} de {free} livres (saque esperado {expected:,}).")
+        return needed
 
     def _check_remaining_resources(self, jid: str, ga_id: str, target_city_id: str) -> dict | None:
         """Query hub for latest spy intel and return total resources. None if unavailable."""
