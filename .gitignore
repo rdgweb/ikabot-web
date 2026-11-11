@@ -60,6 +60,11 @@ tmp/
 tmp_modal_scroll_test.png
 /.codex
 
+# Local UI captures and exported review pages
+/.tmp_n50b/
+/.tmp_tour/
+/docs-tour-vazio/
+
 # Dump / capture artifacts na raiz
 /*.sql
 /unit_*.html

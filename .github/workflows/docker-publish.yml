@@ -44,6 +44,19 @@ jobs:
       - name: Test version rules
         run: python .github/scripts/test_version_guard.py
 
+      - name: Set up Node for browser regression tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test agent update confirmation
+        shell: bash
+        run: |
+          npm install --prefix "$RUNNER_TEMP/browser-tests" --no-save playwright@1.58.2
+          export NODE_PATH="$RUNNER_TEMP/browser-tests/node_modules"
+          node "$NODE_PATH/playwright/cli.js" install --with-deps chromium
+          node --test .github/scripts/test_agent_update_confirmation.cjs
+
   build:
     needs: validate
     runs-on: ubuntu-latest

@@ -118,7 +118,8 @@
                   <form method="post"
                         action="{% url 'accounts:node-request-update' node.pk %}"
                         class="inline"
-                        @submit.prevent="$dispatch('confirm', {
+                        hx-boost="false"
+                        @submit.prevent.stop="$dispatch('confirm', {
                           title: 'Atualizar agente',
                           message: 'O agente {{ node.name|escapejs }} será atualizado da versão v{{ node.agent_version|escapejs }} para v{{ agent_release.version|escapejs }}. O supervisor validará o novo container e fará rollback se ele não iniciar.',
                           confirmLabel: 'Atualizar agente',
