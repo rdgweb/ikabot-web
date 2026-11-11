@@ -2064,6 +2064,41 @@ def _dismiss_form_context(snapshot, cities) -> dict:
     return {"cities": sorted(out, key=lambda c: c["name"].lower())}
 
 
+def _barbarians_form_context(snapshot, cities) -> dict:
+    """N-179: Roubar Bárbaros — each city with its troops (last military reading) and the islands of the account,
+    so the form chooses them instead of typing ids and JSON."""
+    from apps.espionage.api.views import _NAME_TO_ID
+    from apps.worldintel.models import WorldDumpIsland
+    from core.catalogs import get_unit_info
+
+    military = {str(c.get("city_id")): c for c in (((snapshot.military or {}).get("by_city") or []) if snapshot else [])
+                if isinstance(c, dict)}
+    out, islands = [], {}
+    for city in cities or []:
+        if not isinstance(city, dict) or not city.get("id"):
+            continue
+        cid, island_id = str(city["id"]), str(city.get("island_id") or "")
+        troops = []
+        for name, qty in ((military.get(cid) or {}).get("troops") or {}).items():
+            uid = _NAME_TO_ID.get(str(name))
+            if uid and int(qty or 0) > 0:
+                troops.append({"id": int(uid), "name": str(name), "have": int(qty), "icon": static(get_unit_info(str(name))["icon"])})
+        out.append({"id": cid, "name": city.get("name") or cid, "island_id": island_id, "x": city.get("x"), "y": city.get("y"),
+                    "troops": sorted(troops, key=lambda t: -t["have"]), "total": sum(t["have"] for t in troops)})
+        if island_id:
+            entry = islands.setdefault(island_id, {"id": island_id, "x": city.get("x"), "y": city.get("y"),
+                                                   "tradegood": int(city.get("tradegood") or 0), "cities": [], "name": ""})
+            entry["cities"].append(city.get("name") or cid)
+    for island_id, name in (WorldDumpIsland.objects.filter(island_id__in=list(islands)).order_by("dump__captured_at")
+                            .values_list("island_id", "name")):
+        islands[island_id]["name"] = name
+    resources = {1: "Vinho", 2: "Mármore", 3: "Cristal", 4: "Enxofre"}
+    for island in islands.values():
+        island["resource"] = resources.get(island["tradegood"], "")
+    return {"cities": sorted(out, key=lambda c: (-c["total"], c["name"].lower())),
+            "islands": sorted(islands.values(), key=lambda i: (i["x"] or 0, i["y"] or 0))}
+
+
 def _custom_field_names(action_code: int) -> list[str]:
     if int(action_code) == 808:
         return ["buyer_city_id", "unit_category"]
@@ -2081,6 +2116,9 @@ def _custom_field_names(action_code: int) -> list[str]:
         return ["worship", "by_good"]
     if int(action_code) == 1204:
         return ["dismiss", "confirm"]
+    if int(action_code) == 19:
+        return ["city_id", "island_ids", "troop_mode", "custom_troops", "loot", "min_barb_level", "max_barb_level",
+                "min_resources", "extra_ships", "recheck_minutes", "max_random_wait"]
     if int(action_code) == 23:
         return ["cities", "sawmill_percent", "luxury_percent"]
     if int(action_code) == 11:
@@ -2297,6 +2335,7 @@ def _job_form_context(form, action_meta, action_code, ga, cities, request=None, 
         "temple_ui": _temple_form_context(snapshot, cities) if int(action_code) == 35 else {},
         "worship_ui": _worship_form_context(_snapshot_cities(snapshot) or cities) if int(action_code) == 36 else {},
         "dismiss_ui": _dismiss_form_context(snapshot, _snapshot_cities(snapshot) or cities) if int(action_code) == 1204 else {},
+        "barbarians_ui": _barbarians_form_context(snapshot, _snapshot_cities(snapshot) or cities) if int(action_code) == 19 else {},
         "upgrade_units_ui": _upgrade_units_form_context(cities, snapshot),
         "market_ui": _market_form_context(cities),
         "training_ui": _training_form_context(snapshot, cities),

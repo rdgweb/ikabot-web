@@ -11,6 +11,16 @@ RESOURCE_NAMES = {0: "Madeira", 1: "Vinho", 2: "Mármore", 3: "Cristal", 4: "Enx
 class IslandActions:
     """Mixin for island-related game client actions."""
 
+    def _keep_page_token(self, html: str) -> None:
+        """A full page brings a new actionRequest; the next action must use it (an old one is answered with
+        "Acesso restrito")."""
+        try:
+            token = self.page_parser.extract_action_request(html)
+        except Exception:
+            token = ""
+        if token:
+            self._action_request = token
+
     def fetch_island_by_id(self, island_id: str | int) -> dict[str, Any]:
         """Fetch island data by island ID."""
         resp = self._request(
@@ -18,6 +28,7 @@ class IslandActions:
             params={"view": "island", "islandId": str(island_id)},
             timeout=30,
         )
+        self._keep_page_token(resp.text)
         return _parse_island_html(resp.text)
 
     def fetch_island_by_coords(self, x: int, y: int) -> dict[str, Any]:
@@ -27,6 +38,7 @@ class IslandActions:
             params={"view": "island", "xcoord": str(x), "ycoord": str(y)},
             timeout=30,
         )
+        self._keep_page_token(resp.text)
         return _parse_island_html(resp.text)
 
     def fetch_island_by_city_id(self, city_id: str | int) -> dict[str, Any]:
@@ -40,6 +52,7 @@ class IslandActions:
             params={"view": "island", "cityId": str(city_id)},
             timeout=30,
         )
+        self._keep_page_token(resp.text)
         return _parse_island_html(resp.text)
 
     def fetch_island_area(
