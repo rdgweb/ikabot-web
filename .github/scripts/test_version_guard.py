@@ -54,14 +54,12 @@ class VersionGuardTests(unittest.TestCase):
 
     def test_changed_component_accepts_increased_version(self):
         changed = "hub_v2/apps/example.py\nhub_v2/VERSION"
-        current = self.current_hub_version()
-        major, minor, patch_number = version_guard.parse_version(current, source="test")
-        self.assertGreater(patch_number, 0)
-        previous = f"{major}.{minor}.{patch_number - 1}"
-        with patch.object(version_guard, "git", return_value=changed):
-            with patch.object(version_guard, "version_at", return_value=previous):
-                versions = version_guard.validate("base")
-        self.assertEqual(versions["hub"], current)
+        for previous, current in (("1.2.3", "1.2.4"), ("0.2.99", "0.3.0"), ("0.99.99", "1.0.0")):
+            with self.subTest(current=current), patch.object(Path, "read_text", return_value=current):
+                with patch.object(version_guard, "git", return_value=changed):
+                    with patch.object(version_guard, "version_at", return_value=previous):
+                        versions = version_guard.validate("base")
+                self.assertEqual(versions["hub"], current)
 
 
 if __name__ == "__main__":
