@@ -151,14 +151,69 @@ def read_attack_view(client, from_city_id: int | str, island_id: int | str) -> l
     return out
 
 
+# N-179: what the village yields (gold goes straight to the town; the resources need merchant ships, 500 each),
+# from the Ikariam wiki table (level: resources). Levels in between are interpolated.
+LOOT_BY_LEVEL = {1: 725, 32: 89_600, 41: 214_850, 49: 434_250, 50: 495_000}
+SHIP_CAPACITY = 500
+
+
+def loot_ships_for_level(level: int) -> int:
+    """Merchant ships to bring back the resources of a village of that level (a little more, to be safe)."""
+    level = max(1, min(50, int(level or 1)))
+    points = sorted(LOOT_BY_LEVEL.items())
+    for (l1, r1), (l2, r2) in zip(points, points[1:]):
+        if l1 <= level <= l2:
+            loot = r1 + (r2 - r1) * (level - l1) / (l2 - l1) if l2 > l1 else r1
+            return max(1, math.ceil(loot * 1.1 / SHIP_CAPACITY))
+    return max(1, math.ceil(points[-1][1] * 1.1 / SHIP_CAPACITY))
+
+
+def open_attack_view(client, from_city_id: int | str, island_id: int | str) -> dict[str, Any]:
+    """The screen the game opens for "Roubar" on the village, read for its numbers: free merchant ships, ship
+    capacity, journey time, and the upkeep and weight of each unit (troops of the same island weigh 0)."""
+    import re
+
+    resp = client._request("GET", client._server_url, params={
+        "view": "plunder", "destinationCityId": "0", "barbarianVillage": "1", "islandId": str(island_id),
+        "backgroundView": "island", "currentIslandId": str(island_id), "currentCityId": str(from_city_id),
+        "templateView": "island", "actionRequest": client._action_request, "ajax": "1",
+    }, headers=dict(GAME_AJAX_HEADERS), timeout=30)
+    data = resp.json()
+    html, feedback = "", []
+    for entry in data if isinstance(data, list) else []:
+        if not (isinstance(entry, list) and len(entry) > 1):
+            continue
+        if isinstance(entry[1], dict) and entry[1].get("actionRequest"):
+            client._action_request = str(entry[1]["actionRequest"])
+        if entry[0] in ("changeView", "changeHTML"):
+            for item in entry[1] if isinstance(entry[1], list) else [entry[1]]:
+                if isinstance(item, str) and len(item) > len(html):
+                    html = item
+        if entry[0] == "provideFeedback":
+            feedback = [str(fb.get("text") or "") for fb in entry[1] or [] if isinstance(fb, dict)]
+    if not html:
+        raise ActionError(f"Tela de ataque aos bárbaros não abriu: {'; '.join(feedback) or 'sem resposta'}",
+                          action="attackBarbarianVillage")
+    args = re.search(r"new missionController\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)", html)
+    units = {}
+    for m in re.finditer(r'sliders\["slider_(\d+)"\];\s*s\.upkeep\s*=\s*([\d.]+);\s*s\.weight\s*=\s*([\d.]+);'
+                         r'(?:\s*s\.unitJourneyTime\s*=\s*([\d.]+))?', html):
+        units[int(m.group(1))] = {"upkeep": m.group(2), "weight": float(m.group(3)), "journey": int(float(m.group(4) or 0))}
+    upkeep_fields = {int(m.group(1)): m.group(2) for m in re.finditer(r'name="cargo_army_(\d+)_upkeep"[^>]*value="([^"]*)"', html)}
+    upkeep_fields.update({int(m.group(2)): m.group(1) for m in re.finditer(r'value="([^"]*)"[^>]*name="cargo_army_(\d+)_upkeep"', html)})
+    return {
+        "free_ships": int(float(args.group(1))) if args else 0,
+        "ship_capacity": int(float(args.group(2))) if args else SHIP_CAPACITY,
+        "journey_seconds": int(float(args.group(3))) if args else 0,
+        "units": units, "upkeep": upkeep_fields,
+    }
+
+
 class AttackBarbarianVillageAction(BaseAction):
-    """Send troops to attack (or loot) the barbarian village on an island.
-
-    Uses:
-        action=transportOperations&function=attackBarbarianVillage
-
-    Both the initial attack and the loot phase use the same endpoint.
-    When barbarians.destroyed==1, the "attack" just collects the remaining resources.
+    """Send troops (and merchant ships for the loot) to the barbarian village of an island, the way the game's own
+    "Roubar" form does (N-179, checked on the game): from the town that is the current one, with
+    function=attackBarbarianVillage, destinationCityId=0, the island, the ships and each unit with its upkeep.
+    The same call collects what was left while the village is being rebuilt.
     """
 
     def execute(
@@ -170,74 +225,62 @@ class AttackBarbarianVillageAction(BaseAction):
         extra_ships: int = 0,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Send the attack.
-
-        Args:
-            from_city_id: City where troops depart from.
-            island_id: Island containing the barbarian village.
-            troops: {unit_id: quantity} mapping.
-            transporters: Override cargo ship count. Auto-calculated if None.
-            extra_ships: Additional ships beyond the auto-calculated minimum.
-
-        Returns:
-            {"ok": bool, "transporters": int, "troops": dict}
-        """
-        if not troops or not any(q > 0 for q in troops.values()):
+        if not troops or not any(int(q) > 0 for q in troops.values()):
             raise ActionError("No troops specified for barbarian attack", action="attackBarbarianVillage")
+        try:
+            from services.resource_transport import change_current_city
 
-        if transporters is None:
-            transporters = calculate_transporters(troops, extra_ships)
+            change_current_city(self.client, int(from_city_id))
+        except Exception as exc:  # noqa: BLE001 - the screen below tells if the town is not the right one
+            logger.warning("Could not switch to city %s before the barbarian attack: %s", from_city_id, exc)
+
+        view = open_attack_view(self.client, from_city_id, island_id)
+        missing = [uid for uid in troops if int(uid) not in view["units"]]
+        if missing:
+            raise ActionError(f"Tropas fora da tela de ataque desta cidade: {missing}", action="attackBarbarianVillage")
+        capacity = max(1, view["ship_capacity"])
+        weight = sum(view["units"][int(uid)]["weight"] * int(qty) for uid, qty in troops.items())
+        troop_ships = math.ceil(weight / capacity) if weight else 0
+        wanted = max(troop_ships, int(transporters or 0) + int(extra_ships or 0), 1 if not troop_ships else 0)
+        ships = min(view["free_ships"], wanted)
+        if ships < troop_ships:
+            raise ActionError(f"Faltam navios para as tropas: precisa {troop_ships}, livres {view['free_ships']}",
+                              action="attackBarbarianVillage")
 
         payload: dict[str, Any] = {
             "action": "transportOperations",
             "function": "attackBarbarianVillage",
-            "barbarianVillage": "1",
-            "islandId": str(island_id),
-            "transporter": str(transporters),
-            "backgroundView": "island",
-            "currentCityId": str(from_city_id),
-            "cityId": str(from_city_id),
             "actionRequest": self.client._action_request,
+            "islandId": str(island_id),
+            "destinationCityId": "0",
+            "transporter": str(ships),
+            "backgroundView": "island",
+            "currentIslandId": str(island_id),
+            "templateView": "plunder",
             "ajax": "1",
         }
         for uid, qty in troops.items():
             if int(qty) > 0:
-                payload[f"cargo_army_{uid}"] = int(qty)
+                payload[f"cargo_army_{int(uid)}"] = int(qty)
+                payload[f"cargo_army_{int(uid)}_upkeep"] = view["upkeep"].get(int(uid)) or view["units"][int(uid)]["upkeep"]
+        logger.info("Barbarian attack: city=%s island=%s troops=%s ships=%s", from_city_id, island_id, troops, ships)
+        resp = self.client._request("POST", self.client._server_url, data=payload, headers=dict(GAME_AJAX_HEADERS), timeout=30)
 
-        logger.info(
-            "Barbarian attack: city=%s island=%s troops=%s ships=%s",
-            from_city_id, island_id, troops, transporters,
-        )
-
-        resp = self.client._request(
-            "POST", self.client._server_url,
-            data=payload,
-            headers=dict(GAME_AJAX_HEADERS),
-            timeout=30,
-        )
-
-        ok = True
         error_msg = ""
         try:
             data = resp.json()
-            # Update actionRequest
-            for entry in data:
-                if isinstance(entry, list) and len(entry) > 1:
-                    if entry[0] == "updateGlobalData" and isinstance(entry[1], dict):
-                        ar = entry[1].get("actionRequest")
-                        if ar:
-                            self.client._action_request = str(ar)
-            # Check for error feedback
-            for entry in data:
-                if isinstance(entry, list) and entry[0] == "provideFeedback":
-                    for fb in (entry[1] or []):
-                        if isinstance(fb, dict) and int(fb.get("type", 0)) == 11:
-                            ok = False
-                            error_msg = str(fb.get("text", "game error"))
-                            raise ActionError(error_msg, action="attackBarbarianVillage")
-        except ActionError:
-            raise
-        except Exception as exc:
-            logger.warning("Failed to parse barbarian attack response: %s", exc)
-
-        return {"ok": ok, "transporters": transporters, "troops": troops, "error": error_msg}
+        except Exception:  # noqa: BLE001
+            data = []
+        for entry in data if isinstance(data, list) else []:
+            if not (isinstance(entry, list) and len(entry) > 1):
+                continue
+            if isinstance(entry[1], dict) and entry[1].get("actionRequest"):
+                self.client._action_request = str(entry[1]["actionRequest"])
+            if entry[0] == "provideFeedback":
+                for fb in entry[1] or []:
+                    if isinstance(fb, dict) and int(fb.get("type", 0)) == 11:
+                        error_msg = str(fb.get("text", "game error"))
+        if error_msg:
+            raise ActionError(error_msg, action="attackBarbarianVillage")
+        return {"ok": True, "transporters": ships, "troops": troops, "error": "",
+                "free_ships": view["free_ships"], "journey_seconds": view["journey_seconds"]}

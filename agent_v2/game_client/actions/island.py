@@ -187,6 +187,10 @@ def _parse_island_html(html: str) -> dict[str, Any]:
                 "troops": barb_raw.get("troops") or [],
                 "destroyed": int(barb_raw.get("destroyed") or 0) == 1,
                 "cooldown_seconds": int(barb_raw.get("cooldown") or 0),
+                # N-179: what the island view really carries (checked on the game)
+                "under_attack": int(barb_raw.get("underAttack") or 0) == 1,
+                "wall_level": _safe_int(barb_raw.get("wallLevel")),
+                "king": str(barb_raw.get("city") or ""),
             }
 
         return {

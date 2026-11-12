@@ -2117,8 +2117,8 @@ def _custom_field_names(action_code: int) -> list[str]:
     if int(action_code) == 1204:
         return ["dismiss", "confirm"]
     if int(action_code) == 19:
-        return ["city_id", "island_ids", "troop_mode", "custom_troops", "loot", "min_barb_level", "max_barb_level",
-                "min_resources", "extra_ships", "recheck_minutes", "max_random_wait"]
+        return ["city_id", "island_ids", "island_cities", "troop_mode", "custom_troops", "loot", "min_barb_level",
+                "max_barb_level", "min_resources", "extra_ships", "recheck_minutes", "max_random_wait"]
     if int(action_code) == 23:
         return ["cities", "sawmill_percent", "luxury_percent"]
     if int(action_code) == 11:

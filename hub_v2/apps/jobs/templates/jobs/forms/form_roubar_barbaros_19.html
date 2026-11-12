@@ -9,14 +9,13 @@
            linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
          x-data="{
            ui: {cities: [], islands: []},
-           cityId: '{{ form.city_id.value|default:''|escapejs }}',
            islands: [],
-           extra: '',
+           town: {},
            mode: '{{ form.troop_mode.value|default:'schematic'|escapejs }}',
            custom: {},
            loot: {% if form.loot.value == False or form.loot.value == 'false' or form.loot.value == 'False' %}false{% else %}true{% endif %},
            minLevel: {{ form.min_barb_level.value|default:1 }},
-           maxLevel: {{ form.max_barb_level.value|default:99 }},
+           maxLevel: {{ form.max_barb_level.value|default:9 }},
            minRes: {{ form.min_resources.value|default:0 }},
            extraShips: {{ form.extra_ships.value|default:0 }},
            recheck: {{ form.recheck_minutes.value|default:15 }},
@@ -24,29 +23,30 @@
            init() {
              this.ui = JSON.parse(document.getElementById('barbarians-ui-data')?.textContent || '{}');
              const known = new Set(this.ui.islands.map(i => i.id));
-             const saved = '{{ form.island_ids.value|default:''|escapejs }}'.split(',').map(s => s.trim()).filter(Boolean);
-             this.islands = saved.filter(id => known.has(id));
-             this.extra = saved.filter(id => !known.has(id)).join(', ');
+             this.islands = '{{ form.island_ids.value|default:''|escapejs }}'.split(',').map(s => s.trim()).filter(id => known.has(id));
+             let saved = {};
+             try { saved = JSON.parse('{{ form.island_cities.value|default:''|escapejs }}' || '{}'); } catch (e) {}
+             this.ui.islands.forEach(i => {
+               const towns = this.towns(i);
+               this.town[i.id] = towns.some(c => c.id === String(saved[i.id])) ? String(saved[i.id]) : (towns[0] ? towns[0].id : '');
+             });
              try { const c = JSON.parse('{{ form.custom_troops.value|default:''|escapejs }}' || '{}'); Object.keys(c).forEach(k => this.custom[k] = Number(c[k]) || 0); } catch (e) {}
-             if (!this.cityId && this.ui.cities.length) this.cityId = this.ui.cities[0].id;
-             if (!this.islands.length && this.city()) this.islands = [this.city().island_id];
+             if (!this.islands.length) this.islands = this.ui.islands.filter(i => this.towns(i).some(c => c.total)).map(i => i.id);
            },
-           city() { return this.ui.cities.find(c => c.id === String(this.cityId)) || null; },
-           pickCity(c) { this.cityId = c.id; if (!this.islands.length) this.islands = [c.island_id]; },
-           toggleIsland(id) { const i = this.islands.indexOf(id); i >= 0 ? this.islands.splice(i, 1) : this.islands.push(id); },
-           islandIds() {
-             const more = this.extra.split(/[,\s]+/).map(s => s.trim()).filter(s => /^\d+$/.test(s));
-             return [...this.islands, ...more.filter(id => !this.islands.includes(id))].join(',');
-           },
+           towns(i) { return this.ui.cities.filter(c => c.island_id === i.id).sort((a, b) => b.total - a.total); },
+           toggleIsland(id) { const k = this.islands.indexOf(id); k >= 0 ? this.islands.splice(k, 1) : this.islands.push(id); },
+           townMap() { const out = {}; this.islands.forEach(id => { if (this.town[id]) out[id] = this.town[id]; }); return JSON.stringify(out); },
+           firstTown() { return this.islands.length ? (this.town[this.islands[0]] || '') : ''; },
+           city() { return this.ui.cities.find(c => c.id === this.firstTown()) || null; },
            customJson() {
              const out = {};
              Object.keys(this.custom).forEach(k => { const v = Math.max(0, Math.floor(Number(this.custom[k]) || 0)); if (v) out[k] = v; });
              return JSON.stringify(out);
            },
-           customTotal() { return Object.values(this.custom).reduce((s, v) => s + (Number(v) || 0), 0); },
          }">
-      <input type="hidden" name="{{ form.city_id.html_name }}" :value="cityId">
-      <input type="hidden" name="{{ form.island_ids.html_name }}" :value="islandIds()">
+      <input type="hidden" name="{{ form.city_id.html_name }}" :value="firstTown()">
+      <input type="hidden" name="{{ form.island_ids.html_name }}" :value="islands.join(',')">
+      <input type="hidden" name="{{ form.island_cities.html_name }}" :value="townMap()">
       <input type="hidden" name="{{ form.troop_mode.html_name }}" :value="mode">
       <input type="hidden" name="{{ form.custom_troops.html_name }}" :value="mode === 'custom' ? customJson() : ''">
       <input type="hidden" name="{{ form.loot.html_name }}" :value="loot ? 'true' : 'false'">
@@ -63,59 +63,55 @@
           <img src="{% static 'game/buildings/barracks.png' %}" alt="" class="h-10 w-10 object-contain">
           <div>
             <h3 class="text-lg font-bold text-ink">Roubar bárbaros</h3>
-            <div class="text-[11px] text-muted">Ataca a vila, recolhe o saque e passa para a próxima ilha.</div>
+            <div class="text-[11px] text-muted">Cada ilha tem a sua vila; a cidade da ilha ataca e os mercantes trazem o saque.</div>
           </div>
         </div>
         <span class="rounded-full px-3 py-1 text-[11px] font-bold" style="background: rgba(166,124,46,0.14); color: var(--ik-gold-dark);"
-              x-text="islandIds() ? `${islandIds().split(',').length} ilha${islandIds().split(',').length > 1 ? 's' : ''} em rodízio` : 'escolha uma ilha'"></span>
+              x-text="islands.length ? `${islands.length} ilha${islands.length > 1 ? 's' : ''} ao mesmo tempo` : 'escolha uma ilha'"></span>
       </div>
 
       <div class="space-y-5 px-4 py-4 md:px-6">
-        {# ── Cidade de partida ── #}
+        {# ── Ilhas e a cidade que ataca em cada uma ── #}
         <div>
-          <div class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted">Cidade de partida</div>
-          <template x-if="!ui.cities.length">
+          <div class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted">Ilhas</div>
+          <template x-if="!ui.islands.length">
             <div class="rounded-2xl border px-4 py-6 text-center text-sm text-muted" style="border-color: var(--ik-line);">Sem cidades na última leitura desta conta.</div>
           </template>
-          <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));">
-            <template x-for="c in ui.cities" :key="c.id">
-              <button type="button" class="rounded-2xl border px-3 py-2 text-left transition-all" @click="pickCity(c)"
-                      :style="cityId === c.id ? 'border-color: var(--ik-sea); background: rgba(79,134,185,0.07); box-shadow: 0 0 0 1px var(--ik-sea) inset;' : 'border-color: var(--ik-line); background: rgba(255,255,255,0.75);'">
-                <div class="flex items-center justify-between gap-2">
-                  <b class="truncate text-sm text-ink" x-text="c.name"></b>
-                  <span class="font-mono text-[10px] text-muted" x-text="`[${c.x}:${c.y}]`"></span>
-                </div>
-                <div class="mt-1 flex flex-wrap items-center gap-1.5">
-                  <template x-for="t in c.troops.slice(0, 5)" :key="t.id">
-                    <span class="inline-flex items-center gap-0.5 text-[10px] text-ink" :title="t.name">
-                      <img :src="t.icon" alt="" class="h-5 w-5 object-contain"><span x-text="t.have.toLocaleString('pt-BR')"></span>
-                    </span>
-                  </template>
-                  <span class="text-[10px] text-muted" x-show="!c.troops.length">sem tropas</span>
-                </div>
-              </button>
-            </template>
-          </div>
-        </div>
-
-        {# ── Ilhas ── #}
-        <div>
-          <div class="mb-2 flex items-center justify-between">
-            <span class="text-[10px] font-semibold uppercase tracking-wider text-muted">Ilhas (na ordem do rodízio)</span>
-          </div>
-          <div class="flex flex-wrap gap-2">
+          <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));">
             <template x-for="i in ui.islands" :key="i.id">
-              <button type="button" class="rounded-xl border px-3 py-1.5 text-left text-[11px] transition-all" @click="toggleIsland(i.id)"
-                      :style="islands.includes(i.id) ? 'border-color: var(--ik-gold); background: rgba(201,156,78,0.12);' : 'border-color: var(--ik-line); background: rgba(255,255,255,0.75);'">
-                <span class="font-semibold text-ink" x-text="i.name || ('Ilha ' + i.id)"></span>
-                <span class="font-mono text-muted" x-text="`[${i.x}:${i.y}]`"></span>
-                <span class="ml-1 rounded-full px-1.5 text-[10px] font-bold" style="background: var(--ik-gold); color: #fff;"
-                      x-show="islands.includes(i.id)" x-text="islands.indexOf(i.id) + 1"></span>
-                <div class="text-[10px] text-muted" x-text="(i.resource ? i.resource + ' · ' : '') + i.cities.join(', ')"></div>
-              </button>
+              <div class="rounded-2xl border px-3 py-2 transition-all"
+                   :style="islands.includes(i.id) ? 'border-color: var(--ik-gold); background: rgba(201,156,78,0.10); box-shadow: 0 0 0 1px var(--ik-gold) inset;' : 'border-color: var(--ik-line); background: rgba(255,255,255,0.75);'">
+                <button type="button" class="flex w-full items-center justify-between gap-2 text-left" @click="toggleIsland(i.id)">
+                  <span class="min-w-0">
+                    <b class="text-sm text-ink" x-text="i.name || ('Ilha ' + i.id)"></b>
+                    <span class="font-mono text-[10px] text-muted" x-text="`[${i.x}:${i.y}]`"></span>
+                    <span class="block text-[10px] text-muted" x-text="i.resource"></span>
+                  </span>
+                  <span class="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border text-[10px]"
+                        :style="islands.includes(i.id) ? 'background: var(--ik-gold); border-color: var(--ik-gold); color: #fff;' : 'border-color: var(--ik-line); color: transparent;'"><i class="bi bi-check"></i></span>
+                </button>
+                <div class="mt-2 space-y-1" x-show="islands.includes(i.id)">
+                  <template x-for="c in towns(i)" :key="c.id">
+                    <label class="flex cursor-pointer items-center justify-between gap-2 rounded-xl border px-2 py-1"
+                           :style="town[i.id] === c.id ? 'border-color: var(--ik-sea); background: rgba(79,134,185,0.07);' : 'border-color: var(--ik-line); background: rgba(255,255,255,0.8);'">
+                      <span class="flex min-w-0 items-center gap-2">
+                        <input type="radio" :name="'town-' + i.id" :value="c.id" x-model="town[i.id]" style="accent-color: var(--ik-sea);">
+                        <span class="truncate text-[11px] font-semibold text-ink" x-text="c.name"></span>
+                      </span>
+                      <span class="flex flex-shrink-0 items-center gap-1">
+                        <template x-for="t in c.troops.slice(0, 4)" :key="t.id">
+                          <span class="inline-flex items-center gap-0.5 text-[10px] text-ink" :title="t.name">
+                            <img :src="t.icon" alt="" class="h-5 w-5 object-contain"><span x-text="t.have.toLocaleString('pt-BR')"></span>
+                          </span>
+                        </template>
+                        <span class="text-[10px] text-muted" x-show="!c.troops.length">sem tropas</span>
+                      </span>
+                    </label>
+                  </template>
+                </div>
+              </div>
             </template>
           </div>
-          <input type="text" x-model="extra" placeholder="outras ilhas (IDs separados por vírgula)" class="form-input !py-1.5 !text-xs mt-2 w-full" style="max-width: 420px;">
         </div>
 
         {# ── Tropas ── #}
@@ -155,11 +151,14 @@
         {# ── Regras ── #}
         <div class="grid gap-3" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
           <div class="rounded-2xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.75);">
-            <div class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Nível dos bárbaros</div>
+            <div class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Nível da vila</div>
             <div class="flex items-center gap-2">
-              <input type="number" min="1" max="99" x-model.number="minLevel" class="form-input !py-1 !text-xs w-full">
+              <input type="number" min="1" max="50" x-model.number="minLevel" class="form-input !py-1 !text-xs w-full">
               <span class="text-xs text-muted">a</span>
-              <input type="number" min="1" max="99" x-model.number="maxLevel" class="form-input !py-1 !text-xs w-full">
+              <input type="number" min="1" max="50" x-model.number="maxLevel" class="form-input !py-1 !text-xs w-full">
+            </div>
+            <div class="mt-1.5 text-[10px] font-semibold" style="color: var(--ik-bad);" x-show="maxLevel >= 10">
+              <i class="bi bi-exclamation-triangle-fill"></i> do 10 em diante eles podem se vingar
             </div>
           </div>
           <div class="rounded-2xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.75);">

@@ -58,6 +58,13 @@ ACTIONS = {
                 "help": "Um ou mais IDs de ilhas separados por vírgula. Ex: 12345,67890. O ataque rotaciona entre elas.",
             },
             {
+                "key": "island_cities",
+                "type": FIELD_STR,
+                "label": "Cidade que ataca em cada ilha (JSON)",
+                "required": False,
+                "help": "N-179: cada ilha é atacada por uma cidade dela mesma.",
+            },
+            {
                 "key": "troop_mode",
                 "type": FIELD_CHOICE,
                 "label": "Modo de tropas",

@@ -34,16 +34,18 @@ class BarbariansFormTests(TestCase):
         self.assertEqual({t["id"]: t["have"] for t in data["cities"][0]["troops"]}, {302: 90, 304: 21})
         self.assertEqual({i["id"]: i["resource"] for i in data["islands"]}, {"2488": "Mármore", "146": "Enxofre"})
         self.assertNotIn("Tropas personalizadas (JSON)", html)          # no raw field left
+        self.assertNotIn("Cidade que ataca em cada ilha (JSON)", html)
 
     def test_the_job_carries_the_choice(self):
         from apps.jobs.models import Job
 
         self.client.post("/jobs/new/submit/", {
-            "game_account": str(self.ga.pk), "action_code": "19", "city_id": "63355", "island_ids": "2488,146",
+            "game_account": str(self.ga.pk), "action_code": "19", "city_id": "63355", "island_ids": "2488,146", "island_cities": json.dumps({"2488": "63355", "146": "63388"}),
             "troop_mode": "custom", "custom_troops": json.dumps({"302": 60}), "loot": "false", "min_barb_level": "3",
             "max_barb_level": "20", "min_resources": "10000", "extra_ships": "2", "recheck_minutes": "15", "max_random_wait": "30"})
         inputs = json.loads(Job.objects.get(action_code=19).inputs_json)
         self.assertEqual((str(inputs["city_id"]), inputs["island_ids"], inputs["troop_mode"]), ("63355", "2488,146", "custom"))
         self.assertEqual(json.loads(inputs["custom_troops"]), {"302": 60})
         self.assertFalse(inputs["loot"])
+        self.assertEqual(json.loads(inputs["island_cities"]), {"2488": "63355", "146": "63388"})
         self.assertEqual((inputs["min_barb_level"], inputs["min_resources"]), (3, 10000))
