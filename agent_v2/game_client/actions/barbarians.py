@@ -95,6 +95,8 @@ def read_attack_view(client, from_city_id: int | str, island_id: int | str) -> l
     import re
 
     variants = {
+        "village": {"view": "barbarianVillage", "islandId": str(island_id), "destinationCityId": "0",
+                    "backgroundView": "island", "currentIslandId": str(island_id)},
         "plunder": {"view": "plunder", "barbarianVillage": "1", "islandId": str(island_id), "destinationCityId": "0",
                     "backgroundView": "island", "currentIslandId": str(island_id), "templateView": "island"},
     }
@@ -136,10 +138,11 @@ def read_attack_view(client, from_city_id: int | str, island_id: int | str) -> l
             r'<input[^>]*type="hidden"[^>]*name="([^"]+)"[^>]*value="([^"]*)"', html)}
         hidden.update({m.group(2): m.group(1)[:40] for m in re.finditer(
             r'<input[^>]*value="([^"]*)"[^>]*type="hidden"[^>]*name="([^"]+)"', html)})
-        at = html.find("weight")
+        hidden.pop("actionRequest", None)          # a session token never goes to the logs
         out.append({
             "view": name, "html": len(html), "feedback": feedback, "hidden": hidden,
-            "weight_snippet": re.sub(r"\s+", " ", html[max(0, at - 300):at + 300]) if at >= 0 else "",
+            "weight_snippets": [re.sub(r"\s+", " ", html[max(0, m.start() - 120):m.start() + 120])
+                                for m in list(re.finditer(r"[Ww]eight", html))[2:7]],
             "controller": controller.group(1)[:200] if controller else "",
             "weights": weights, "units": sorted(set(re.findall(r"cargo_army_(\d+)", html))),
             "fields": sorted(set(re.findall(r'name="([a-zA-Z_]+)"', html)))[:40],
