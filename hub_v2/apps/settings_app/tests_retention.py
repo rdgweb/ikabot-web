@@ -107,6 +107,28 @@ class RetentionTests(TestCase):
         self.assertEqual(JobRetentionReceipt.objects.count(), 1)
         self.assertEqual(process_batch(run.pk, self.user).processed, run.processed)
 
+    def test_old_steps_of_a_live_recurring_chain_are_trimmed(self):
+        # N-181: a recurring job leaves one finished step per cycle inside an active workflow; the old ones go
+        workflow = Workflow.objects.create(account=self.account, node=self.node, workflow_type="test", status="active")
+        root = self.job(workflow=workflow)
+        steps = []
+        previous = root
+        for _ in range(3):
+            previous = self.job(workflow=workflow, root_job_id=root.pk, source_job_id=previous.pk)
+            steps.append(previous)
+        live = self.job(workflow=workflow, status="scheduled", root_job_id=root.pk, source_job_id=previous.pk,
+                        finished_at=None, archived_at=None)
+        run = self.finish(preview(self.user))
+        for job in steps[:2]:
+            job.refresh_from_db()
+            self.assertTrue(json.loads(job.progress_json)["retention_compacted"])
+            self.assertFalse(job.logs.exists())
+        for job in (root, steps[2], live):                     # the chain's first job and the step before the live one
+            job.refresh_from_db()
+            self.assertEqual(job.progress_json, '{"large_result": "old"}')
+            self.assertTrue(job.logs.exists())
+        self.assertEqual(run.processed["jobs"], 2)
+
     def test_bounded_resumable_batches_and_conflicting_metric_rollback(self):
         first, second = self.snapshot(100), self.snapshot(110)
         run = preview(self.user)

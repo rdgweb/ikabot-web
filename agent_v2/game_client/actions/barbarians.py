@@ -153,7 +153,8 @@ def read_attack_view(client, from_city_id: int | str, island_id: int | str) -> l
 
 # N-179: what the village yields (gold goes straight to the town; the resources need merchant ships, 500 each),
 # from the Ikariam wiki table (level: resources). Levels in between are interpolated.
-LOOT_BY_LEVEL = {1: 725, 32: 89_600, 41: 214_850, 49: 434_250, 50: 495_000}
+LOOT_BY_LEVEL = {1: 500, 2: 575, 3: 725, 4: 950, 5: 1_250, 6: 1_625, 7: 1_995, 8: 2_500, 9: 3_100,
+                 32: 89_600, 41: 214_850, 49: 434_250, 50: 495_150}
 SHIP_CAPACITY = 500
 
 

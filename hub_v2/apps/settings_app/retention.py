@@ -3,7 +3,7 @@ import json
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import F, OuterRef, Q, Subquery
 from django.utils import timezone
 
 from apps.audit.services import record
@@ -16,7 +16,9 @@ from .models import AppSetting, RetentionRun, JobRetentionReceipt
 
 POLICY_KEY = "database_retention_policy"
 DEFAULT_POLICY = {"enabled": False, "snapshot_days": 30, "job_days": 90, "log_days": 90}
-BATCH_SIZE = 100
+BATCH_SIZE = 100            # snapshots per request (each one becomes a metric row)
+JOB_BATCH = 1000            # old jobs compacted per request, in one update
+LOG_JOB_BATCH = 2000        # jobs whose old logs go per request (by the job index; tens of thousands of lines)
 KINDS = ("snapshots", "jobs", "logs")
 COMPACT_PROGRESS = json.dumps({"message": "Detalhes antigos removidos pela política de retenção.", "retention_compacted": True})
 
@@ -37,16 +39,21 @@ def get_policy():
 
 
 def eligible_jobs(anchor, days):
-    # Never trim a live workflow, a job with live dependencies, or unarchived history.
+    """Archived jobs finished before the cutoff that nothing live still reads. A recurring job leaves one finished
+    step per cycle, and its next step carries the state on, so the old steps of a live chain may lose their details
+    and logs (N-181: requiring the whole chain or workflow to be over left 129.600 of 129.914 old jobs out). Kept:
+    the first job of a chain (some keep the chain's state, e.g. the spy campaign), the step right before a live job,
+    the newest job of each workflow, and jobs holding an active construction reservation."""
     cutoff = anchor - timedelta(days=days)
-    referenced = Job.objects.filter(Q(root_job_id__isnull=False) | Q(source_job_id__isnull=False))
+    live = Job.objects.filter(status__in=["queued", "scheduled", "running"])
+    newest_of_workflow = (Job.objects.filter(workflow_id=OuterRef("workflow_id")).order_by("-created_at").values("pk")[:1])
     return (Job.objects.filter(status__in=["finished", "error", "cancelled"],
                                finished_at__lt=cutoff, updated_at__lte=anchor, archived_at__isnull=False)
-            .filter(Q(workflow__isnull=True) | Q(workflow__status__in=["finished", "cancelled"], workflow__active_run__isnull=True))
-            .exclude(root_job_id__isnull=False)
-            .exclude(pk__in=referenced.exclude(source_job_id__isnull=True).values("source_job_id"))
-            .exclude(pk__in=referenced.exclude(root_job_id__isnull=True).values("root_job_id"))
+            .exclude(pk__in=live.exclude(source_job_id__isnull=True).values("source_job_id"))
+            .exclude(pk__in=Job.objects.exclude(root_job_id__isnull=True).values("root_job_id"))
             .exclude(pk__in=Workflow.objects.exclude(root_job_id__isnull=True).values("root_job_id"))
+            .annotate(newest_of_workflow=Subquery(newest_of_workflow))
+            .exclude(Q(workflow__isnull=False) & Q(pk=F("newest_of_workflow")))
             .exclude(construction_reservations__status="active"))
 
 
@@ -109,8 +116,28 @@ def process_batch(run_id, user, *, start=False, backup=False):
         totals = dict(run.processed)
         queries = candidates(run)
         for kind in KINDS:
+            if kind == "logs":
+                # N-181: logs go by groups of eligible jobs, through the (job, created_at) index; a cursor on the job
+                # id keeps the batches resumable (1,7 million lines would be 1.700 requests one thousand at a time)
+                if totals.get("logs_done") or not run.planned.get("logs"):
+                    continue
+                cursor = str(totals.get("logs_cursor") or "")
+                job_ids = list(eligible_jobs(run.created_at, run.policy["log_days"]).filter(pk__gt=cursor)
+                               .order_by("pk").values_list("pk", flat=True)[:LOG_JOB_BATCH]) if cursor else list(
+                    eligible_jobs(run.created_at, run.policy["log_days"]).order_by("pk").values_list("pk", flat=True)[:LOG_JOB_BATCH])
+                if not job_ids:
+                    totals["logs_done"] = True
+                    continue
+                deleted, _ = JobLog.objects.filter(
+                    job_id__in=job_ids, created_at__lt=run.created_at - timedelta(days=run.policy["log_days"])).delete()
+                totals["logs"] = totals.get("logs", 0) + deleted
+                totals["logs_cursor"] = str(job_ids[-1])
+                run.processed = totals
+                run.save(update_fields=["status", "backup_confirmed", "processed"])
+                record("retention.batch", target=run, user=user, details={"kind": kind, "count": deleted})
+                return run
             remaining = run.planned[kind] - totals.get(kind, 0)
-            limit = min(remaining, BATCH_SIZE if kind != "logs" else 1000)
+            limit = min(remaining, BATCH_SIZE if kind == "snapshots" else JOB_BATCH)
             if limit <= 0:
                 continue
             qs = queries[kind]
@@ -123,14 +150,11 @@ def process_batch(run_id, user, *, start=False, backup=False):
                     if any(getattr(metric, key) != value for key, value in values.items()):
                         raise ValueError("Métricas divergentes; o snapshot original foi preservado.")
                     row.delete()
-            elif kind == "jobs":
-                for row in rows:
-                    # Keep inputs and all relationships: old jobs remain identifiable/reusable.
-                    row.progress_json = COMPACT_PROGRESS
-                    row.save(update_fields=["progress_json"])
-                    JobRetentionReceipt.objects.get_or_create(job=row)
             else:
-                JobLog.objects.filter(pk__in=[row.pk for row in rows]).delete()
+                # Keep inputs and all relationships: old jobs remain identifiable/reusable.
+                ids = [row.pk for row in rows]
+                Job.objects.filter(pk__in=ids).update(progress_json=COMPACT_PROGRESS)
+                JobRetentionReceipt.objects.bulk_create([JobRetentionReceipt(job_id=pk) for pk in ids], ignore_conflicts=True)
             totals[kind] = totals.get(kind, 0) + len(rows)
             if rows:
                 run.processed = totals
