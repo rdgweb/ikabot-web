@@ -9,7 +9,10 @@ One job looks after several islands at once. Each round, for each island (from t
   under attack       -> the battle is on, wait;
   destroyed          -> once per destruction, if "loot" is on, send one unit with ships to collect what was left;
   ready              -> within the levels chosen, attack with the troops chosen and ships for the loot.
-Then it comes back after `recheck_minutes`.
+Nothing in the game is instant: the troops walk to the village, the battle goes in rounds, the merchant ships come
+back with the loot. While any of that is on its way (the military advisor's movements from or to the town) the island
+waits, the loot is counted from the cargo the ships bring home, and the job wakes up when the next movement lands or
+the village is rebuilt (never later than `recheck_minutes`).
 """
 
 from __future__ import annotations
@@ -101,6 +104,30 @@ def _choose_troops(mode: str, level: int, custom_json: str, available: dict[int,
     return _resolve_troops("schematic", level, custom_json, available)
 
 
+def _cargo_total(cargo: dict) -> tuple[int, int]:
+    """(resources, gold) carried by one movement."""
+    gold = sum(int(v or 0) for k, v in (cargo or {}).items() if "gold" in str(k).lower())
+    return sum(int(v or 0) for v in (cargo or {}).values()) - gold, gold
+
+
+def _barbarian_movements(movements: list[dict], town: str) -> list[dict]:
+    """The movements of one town against its village: they leave from the town (or come back to it) and the other end
+    is not a player's town (the village has no city id) or says "barbarian"."""
+    out = []
+    for m in movements or []:
+        if not isinstance(m, dict) or m.get("is_own") is False:
+            continue
+        origin, target = m.get("origin") or {}, m.get("target") or {}
+        o_city, t_city = str(origin.get("cityId") or ""), str(target.get("cityId") or "")
+        if town not in (o_city, t_city):
+            continue
+        other = t_city if o_city == town else o_city
+        text = json.dumps([m.get("mission"), m.get("mission_text"), target, origin], ensure_ascii=False).lower()
+        if other in ("", "0") or "barb" in text or "bárb" in text:
+            out.append(m)
+    return out
+
+
 def _loot_unit(available: dict[int, int]) -> dict[int, int] | None:
     for uid in LOOT_UNIT_ORDER:
         if available.get(uid, 0) > 0:
@@ -140,6 +167,7 @@ class BarbariansRunner(BaseRunner):
         recheck = max(5, _parse_int(inputs.get("recheck_minutes"), 15)) * 60
         dry_run = str(inputs.get("dry_run") or "").lower() in {"1", "true", "on", "yes"}
         state = inputs.get("islands_state") if isinstance(inputs.get("islands_state"), dict) else {}
+        wake: list[int] = []          # when a movement lands or a village is rebuilt
         totals = {key: _parse_int(inputs.get(key), 0) for key in ("total_attacks", "total_loots", "loot_total", "gold_total")}
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=game_account_id)
@@ -157,9 +185,16 @@ class BarbariansRunner(BaseRunner):
                     self.log(jid, "warn", f"Ilha {island_id}: nenhuma cidade escolhida para atacar.")
                     continue
                 try:
-                    self._island_round(jid, client, island_id, town, state.setdefault(island_id, {}), totals,
+                    st = state.setdefault(island_id, {})
+                    if self._on_the_way(jid, client, island_id, town, st, totals, wake):
+                        continue
+                    self._island_round(jid, client, island_id, town, st, totals,
                                        troop_mode, custom_troops_json, do_loot, min_level, max_level, extra_ships,
                                        max_random_wait)
+                    if st.get("status") == "rebuilding" and int(st.get("rebuild_end") or 0) > 0:
+                        wake.append(int(st["rebuild_end"]) + 30)
+                    if st.get("status") in ("attacking", "collecting"):
+                        wake.append(int(time.time()) + 90)        # look at the movement it just started
                 except Exception as exc:  # noqa: BLE001 - one island must not stop the others
                     if self.is_network_error(exc):
                         raise
@@ -171,8 +206,54 @@ class BarbariansRunner(BaseRunner):
             self.log(jid, "error", f"Bárbaros: erro inesperado: {exc}")
             return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE, data={"error": str(exc)})
 
-        return RunnerResult(success=True, reschedule_seconds=recheck,
+        now = int(time.time())
+        soon = [t - now for t in wake if t > now]
+        next_in = max(60, min([recheck] + soon))
+        if next_in < recheck:
+            self.log(jid, "info", f"Próxima olhada em {next_in // 60} min {next_in % 60} s (quando o próximo movimento chega).")
+        return RunnerResult(success=True, reschedule_seconds=next_in,
                             reschedule_inputs={**inputs, "islands_state": state, **totals, "phase": "rounds"})
+
+    def _on_the_way(self, jid, client, island_id, town, st, totals, wake) -> bool:
+        """True while troops or ships of this town are going to or coming back from its village: count the loot the
+        ships bring home (once per movement) and wait for the next arrival."""
+        try:
+            advisor = client.fetch_military_advisor(int(town))
+        except Exception as exc:  # noqa: BLE001 - without the movements the village state still guides the round
+            if self.is_network_error(exc):
+                raise
+            self.log(jid, "warn", f"Ilha {island_id}: movimentos não abriram ({exc}).")
+            return False
+        moving = _barbarian_movements(advisor.get("movement_details") or [], town)
+        if moving and not st.get("movement_logged"):
+            st["movement_logged"] = True
+            self.log(jid, "info", f"Ilha {island_id}: movimento lido {json.dumps(moving[0], ensure_ascii=False)[:700]}")
+        counted = list(st.get("counted_events") or [])
+        now = int(time.time())
+        lines = []
+        for m in moving:
+            eta = int(m.get("event_time") or 0)
+            if eta > now:
+                wake.append(eta + 20)
+            resources, gold = _cargo_total(m.get("cargo") or {})
+            key = str(m.get("event_id") or "")
+            if m.get("is_returning") and (resources or gold) and key and key not in counted:
+                counted.append(key)
+                st["looted"] = int(st.get("looted") or 0) + resources
+                st["gold"] = int(st.get("gold") or 0) + gold
+                st["cargo_counted"] = True
+                totals["loot_total"] = int(totals.get("loot_total") or 0) + resources
+                totals["gold_total"] = int(totals.get("gold_total") or 0) + gold
+                self.log(jid, "info", f"Ilha {island_id}: os mercantes voltam com {resources:,} recursos"
+                                      f"{f' e {gold:,} de ouro' if gold else ''} ({m.get('cargo')}).".replace(",", "."))
+            when = time.strftime("%H:%M:%S", time.localtime(eta)) if eta else "?"
+            lines.append(f"{'voltando' if m.get('is_returning') else 'indo'} (chega {when}, faltam {max(0, eta - now) // 60} min)")
+        st["counted_events"] = counted[-20:]
+        if not moving:
+            return False
+        st["status"] = "moving"
+        self.log(jid, "info", f"Ilha {island_id}: tropas/mercantes em movimento: " + "; ".join(lines) + ". Espero chegarem.")
+        return True
 
     def _island_round(self, jid, client, island_id, town, st, totals, troop_mode, custom_json, do_loot, min_level,
                       max_level, extra_ships, max_random_wait) -> None:
@@ -196,7 +277,7 @@ class BarbariansRunner(BaseRunner):
             st["status"] = "rebuilding"
             st["rebuild_end"] = village.get("rebuild_end") or st.get("rebuild_end") or 0
             left = village.get("total")
-            if left is not None and st.get("left_before") is not None:
+            if left is not None and st.get("left_before") is not None and not st.get("cargo_counted"):
                 # what disappeared from the village since the last look was taken by us
                 taken = max(0, int(st["left_before"]) - int(left))
                 st["looted"] = int(st.get("looted") or 0) + taken
@@ -216,6 +297,8 @@ class BarbariansRunner(BaseRunner):
                                                              transporters=ships)
                     totals["total_loots"] += 1
                     st["loots"] = int(st.get("loots") or 0) + 1
+                    st["status"] = "collecting"
+                    st["cargo_counted"] = False
                     self.log(jid, "info", f"Ilha {island_id}: vila destruída com {int(left):,} recursos; coleta com "
                                           f"{result['transporters']} mercantes.".replace(",", "."))
                     return
@@ -223,6 +306,9 @@ class BarbariansRunner(BaseRunner):
                                   + (f", {int(left):,} recursos ainda lá.".replace(",", ".") if left else "."))
             return
         st["status"] = "ready"
+        st["cargo_counted"] = False
+        if village.get("defenders"):
+            st["defenders"] = village["defenders"]
         st["left_before"] = None
         st["rebuild_end"] = 0
         if level < min_level or level > max_level:
@@ -244,6 +330,8 @@ class BarbariansRunner(BaseRunner):
                   village_resources=on_hand, village_gold=int(village.get("gold") or 0),
                   left_before=on_hand if on_hand else None, gold_pending=int(village.get("gold") or 0))
         warn = " Atenção: a partir do nível 10 os bárbaros podem se vingar." if level >= 10 else ""
+        if village.get("defenders"):
+            warn = f" Defensores: {village['defenders']}." + warn
         self.log(jid, "info", f"Ilha {island_id}: ataque à vila nível {level} (tem {on_hand:,} recursos e "
                               f"{int(village.get('gold') or 0):,} de ouro) saindo de {town} com {troops} e "
                               f"{result['transporters']} mercantes (de {result.get('free_ships')} livres).{warn}".replace(",", "."))

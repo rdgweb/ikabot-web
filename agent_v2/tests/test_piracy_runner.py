@@ -139,3 +139,29 @@ class CaptchaBackoffTests(unittest.TestCase):
     def test_backoff_tolerates_bad_streak_values(self):
         self.assertEqual(PIRACY_MODULE._captcha_backoff_seconds(0), 300)
         self.assertEqual(PIRACY_MODULE._captcha_backoff_seconds(None), 300)
+
+
+class ColonyRoomTests(unittest.TestCase):
+    """The special cycle colonizes next to the target: with every town slot of the palace taken the game has no
+    colonize form, so the cycle waits and the missions go on (LordDarkness: 10 towns, palace 9)."""
+
+    def _runner(self, snapshot):
+        runner = PiracyMissionRunner.__new__(PiracyMissionRunner)
+        runner.hub = types.SimpleNamespace(get_snapshot=lambda game_account_id: snapshot)
+        return runner
+
+    def test_palace_level_holds_one_town_more(self):
+        towns = [{"id": i, "buildings": [{"building": "palaceColony", "level": 9}]} for i in range(9)]
+        towns.append({"id": 99, "buildings": [{"building": "palace", "level": 9}]})
+        self.assertEqual(self._runner({"cities": towns})._colony_room("ga"), (10, 10))
+        self.assertEqual(self._runner({"cities": towns[1:]})._colony_room("ga"), (9, 10))
+        self.assertIsNone(self._runner({})._colony_room("ga"))
+
+    def test_retry_after_keeps_the_cycle_off(self):
+        import time as _time
+
+        runner = PiracyMissionRunner.__new__(PiracyMissionRunner)
+        base = {"enable_targeted_cycle": True, "targeted_after_hour": 0}
+        self.assertTrue(runner._targeted_cycle_due(base))
+        self.assertFalse(runner._targeted_cycle_due({**base, "targeted_retry_after": int(_time.time()) + 3600}))
+        self.assertTrue(runner._targeted_cycle_due({**base, "targeted_retry_after": int(_time.time()) - 1}))

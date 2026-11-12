@@ -3,7 +3,8 @@ weigh nothing there), merchant ships for the loot, and the game's own form field
 import unittest
 
 from game_client.actions.barbarians import AttackBarbarianVillageAction, loot_ships_for_level
-from runners.barbarians import BarbariansRunner, _choose_troops, _loot_unit
+from game_client.actions.barbarians import fetch_village_info
+from runners.barbarians import BarbariansRunner, _barbarian_movements, _cargo_total, _choose_troops, _loot_unit
 
 VIEW_HTML = """
 <input type="hidden" name="cargo_army_303_upkeep" value="3"><input type="hidden" name="cargo_army_315_upkeep" value="1">
@@ -121,6 +122,70 @@ class RoundTests(unittest.TestCase):
             self.assertEqual(len(sent), 2)                              # the battle is on
         finally:
             module.fetch_village_info = original
+
+
+class VillageScreenTests(unittest.TestCase):
+    def test_asked_in_the_query_string_like_upstream_and_read(self):
+        asked = {}
+
+        class Client:
+            _server_url = "u"
+            _action_request = "t0"
+
+            def _request(self, method, url, **kw):
+                asked.update(method=method, **kw)
+                return _Resp([["updateGlobalData", {"actionRequest": "t9"}],
+                              ["changeView", ["barbarianVillage", '<div class="army s301"><div class="u">Viking</div></div></td></tr><tr><td class="center">  1.200 </td>']],
+                              ["updateTemplateData", {"js_islandBarbarianLevel": {"text": "4"}, "js_islandBarbarianResourcegold": {"text": "2.100"},
+                                                      "js_islandBarbarianResourceresource": {"text": "700"}, "js_islandBarbarianResourcetradegood2": {"text": "250"},
+                                                      "barbarianCityCooldownTimer": {"countdown": {"enddate": 1794450000}}}]])
+
+        client = Client()
+        info = fetch_village_info(client, 4477)
+        self.assertEqual(asked["method"], "POST")
+        self.assertEqual((asked["params"]["view"], asked["params"]["destinationIslandId"]), ("barbarianVillage", "4477"))
+        self.assertNotIn("data", asked)
+        self.assertEqual((info["level"], info["gold"], info["total"], info["rebuild_end"]), (4, 2100, 950, 1794450000))
+        self.assertEqual(info["defenders"], [["Viking", 1200]])
+        self.assertEqual(client._action_request, "t9")
+
+
+class MovementTests(unittest.TestCase):
+    def test_only_the_town_against_its_village(self):
+        moves = [
+            {"is_own": True, "origin": {"cityId": 37441}, "target": {"cityId": 0, "name": "Bárbaros"}, "event_id": 1},
+            {"is_own": True, "origin": {"cityId": 0}, "target": {"cityId": "37441"}, "is_returning": True, "event_id": 2},
+            {"is_own": True, "origin": {"cityId": 37441}, "target": {"cityId": 5555}, "mission_text": "Transporte", "event_id": 3},
+            {"is_own": True, "origin": {"cityId": 9}, "target": {"cityId": 0}, "event_id": 4},
+        ]
+        self.assertEqual([m["event_id"] for m in _barbarian_movements(moves, "37441")], [1, 2])
+        self.assertEqual(_cargo_total({"wood": 500, "marble": 200, "gold": 900}), (700, 900))
+
+    def test_wait_while_on_the_way_and_count_the_cargo_once(self):
+        import time as _time
+
+        runner = BarbariansRunner.__new__(BarbariansRunner)
+        runner.hub = _Hub()
+        runner.is_network_error = lambda exc: False
+        now = int(_time.time())
+        back = {"is_own": True, "origin": {"cityId": 0}, "target": {"cityId": "37441"}, "is_returning": True,
+                "event_id": 7, "event_time": now + 45, "cargo": {"wood": 600, "sulfur": 300}}
+
+        class Game:
+            def fetch_military_advisor(self, city_id):
+                return {"movement_details": [dict(back)]}
+
+        st, totals, wake = {}, {"loot_total": 0, "gold_total": 0}, []
+        self.assertTrue(runner._on_the_way("j", Game(), "4477", "37441", st, totals, wake))
+        self.assertTrue(runner._on_the_way("j", Game(), "4477", "37441", st, totals, wake))
+        self.assertEqual((totals["loot_total"], st["looted"], st["status"]), (900, 900, "moving"))
+        self.assertEqual(wake[0], now + 65)
+
+        class Idle:
+            def fetch_military_advisor(self, city_id):
+                return {"movement_details": []}
+
+        self.assertFalse(runner._on_the_way("j", Idle(), "4477", "37441", st, totals, []))
 
 
 if __name__ == "__main__":

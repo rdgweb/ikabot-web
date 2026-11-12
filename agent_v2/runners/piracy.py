@@ -52,6 +52,7 @@ ERROR_RESCHEDULE = 10 * 60        # 10 min — generic error back-off
 MISSION_BUFFER = 60               # seconds of extra buffer after mission completes
 COLLECT_INTERVAL = 8 * 3600       # 8 h — legacy collect runner interval
 TARGETED_RECHECK = 60
+TARGETED_ROOM_RETRY = 6 * 3600   # no room for a colony / colonize refused: look again later, missions go on
 TARGETED_TZ = ZoneInfo("America/Cuiaba")
 
 
@@ -219,10 +220,29 @@ class PiracyMissionRunner(BaseRunner):
         now_local = datetime.now(TARGETED_TZ)
         if now_local.hour < after_hour:
             return False
+        if _to_int(inputs.get("targeted_retry_after"), 0) > time.time():
+            return False
         last_ts = _to_int(inputs.get("last_targeted_cycle_at"), 0)
         if last_ts <= 0:
             return True
         return (time.time() - last_ts) >= interval_days * 86400
+
+    def _colony_room(self, game_account_id: str) -> tuple[int, int] | None:
+        """(towns, towns the palace allows) from the hub snapshot; the palace of level N holds N + 1 towns.
+        None when the snapshot does not say."""
+        try:
+            snapshot = self.hub.get_snapshot(game_account_id=game_account_id) or {}
+        except Exception:
+            return None
+        cities = [c for c in (snapshot.get("cities") or []) if isinstance(c, dict)]
+        palace = 0
+        for city in cities:
+            for building in city.get("buildings") or []:
+                if isinstance(building, dict) and str(building.get("building") or "") == "palace":
+                    palace = max(palace, _to_int(building.get("level"), 0))
+        if not cities or not palace:
+            return None
+        return len(cities), palace + 1
 
     def _player_marks(self, game_account_id: str) -> tuple[set[str], set[str]]:
         """(possible multi accounts, piracy targets picked by hand), names casefolded; empty when the hub fails."""
@@ -409,6 +429,7 @@ class PiracyMissionRunner(BaseRunner):
             if not target_city_id or target_city_id == city_id or (self_avatar_id and avatar_id == self_avatar_id):
                 continue
             if target_city_id in protected_city_ids:
+                self.log(jid, "info", f"Alvo {entry.get('player_name')} é uma conta sua; pulando")
                 continue
             player = str(entry.get("player_name") or "").strip().casefold()
             if player in multi:
@@ -426,6 +447,7 @@ class PiracyMissionRunner(BaseRunner):
                 continue
             owner_name = str(target_city.get("owner_name") or "").strip().lower()
             if owner_name and owner_name in protected_names:
+                self.log(jid, "info", f"Alvo {entry.get('player_name')} é uma conta sua; pulando")
                 continue
             if owner_name and owner_name.casefold() in multi:
                 continue
@@ -465,6 +487,12 @@ class PiracyMissionRunner(BaseRunner):
         for _, _, _, enriched in candidates:
             spot = self._find_colony_spot(client, str(enriched.get("target_city_id") or ""))
             if spot:
+                self.log(jid, "info",
+                         f"Alvo escolhido: {enriched.get('player_name')} (lugar {enriched.get('place')}, "
+                         f"{enriched.get('score')} pts no ranking; pontos gerais {enriched['target_total_score']:,} contra "
+                         f"{enriched['own_total_score']:,} seus; generais {enriched['target_general_score']:,} contra "
+                         f"{enriched['own_general_score']:,}); colônia na ilha {spot.get('island_id')} pos {spot.get('position')}"
+                         .replace(",", "."))
                 return enriched, spot
             self.log(jid, "info", f"Sem slot livre para alvo {enriched.get('player_name')}; tentando proximo candidato")
         return None
@@ -864,6 +892,12 @@ class PiracyMissionRunner(BaseRunner):
                 self.save_game_client(game_account_id, client)
                 return RunnerResult(success=True, reschedule_seconds=wait, reschedule_inputs=_state_inputs)
 
+            room = self._colony_room(game_account_id) if self._targeted_cycle_due(inputs) else None
+            if room and room[0] >= room[1]:
+                # no free town slot: the game has no colonize form; the special cycle waits and the missions go on
+                self.log(jid, "info", f"Ciclo especial adiado: a conta tem {room[0]} cidades e o palácio permite "
+                                      f"{room[1]}; sem vaga para a colônia. Sigo com as missões.")
+                inputs = {**inputs, "targeted_retry_after": int(time.time()) + TARGETED_ROOM_RETRY}
             if self._targeted_cycle_due(inputs):
                 result_pair = self._choose_targeted_entry_with_spot(
                     jid,
@@ -961,71 +995,75 @@ class PiracyMissionRunner(BaseRunner):
                             reschedule_inputs={**inputs, **_state_inputs},
                             data={"status": "targeted_foundation_limit_reached", "limit": max_foundations},
                         )
-                    preview = client.get_colonization_preview(
-                        source_city_id=city_id,
-                        island_id=colony_spot["island_id"],
-                        position=int(colony_spot["position"]),
-                    )
-                    eta_ok, eta_reason = self._targeted_eta_viable(
-                        preview=preview,
-                        target_entry=target_entry,
-                        inputs=inputs,
-                    )
-                    if not eta_ok:
-                        self.log(jid, "info", f"Ciclo especial ignorado: {eta_reason}")
-                        self.save_game_client(game_account_id, client)
-                        return RunnerResult(
-                            success=True,
-                            reschedule_seconds=30 * 60,
-                            reschedule_inputs={**inputs, **_state_inputs},
-                            data={"status": "targeted_eta_not_worth_it", "reason": eta_reason, "target": target_entry},
+                    try:
+                        preview = client.get_colonization_preview(
+                            source_city_id=city_id,
+                            island_id=colony_spot["island_id"],
+                            position=int(colony_spot["position"]),
                         )
-                    known_city_ids = [item["id"] for item in fetch_owned_cities(client)]
-                    result = client.start_colonization(
-                        source_city_id=city_id,
-                        island_id=colony_spot["island_id"],
-                        position=int(colony_spot["position"]),
-                        resources={
-                            "wood": 2250,
-                            "marble": 2500,
-                        },
-                    )
-                    wait_seconds = (
-                        _to_int(preview.get("loading_time_seconds"))
-                        + _to_int(preview.get("travel_time_seconds"))
-                        + MISSION_BUFFER
-                    )
-                    self.log(
-                        jid,
-                        "info",
-                        f"Ciclo especial iniciado contra {target_entry.get('player_name')} "
-                        f"(cidade {target_entry.get('target_city_id')}) | colonia em {colony_spot['coord_x']}:{colony_spot['coord_y']} "
-                        f"pos {colony_spot['position']} | chegada {preview.get('arrival_at_text') or '-'}",
-                    )
-                    self.save_game_client(game_account_id, client)
-                    return RunnerResult(
-                        success=True,
-                        reschedule_seconds=max(wait_seconds, TARGETED_RECHECK),
-                        reschedule_inputs={
-                            **inputs,
-                            **_state_inputs,
-                            "_targeted_phase": "wait_colony",
-                            "_targeted_target_city_id": str(target_entry.get("target_city_id") or ""),
-                            "_targeted_target_island_id": str(target_entry.get("target_island_id") or ""),
-                            "_targeted_colony_island_id": str(colony_spot["island_id"]),
-                            "_targeted_colony_position": int(colony_spot["position"]),
-                            "_targeted_known_city_ids": known_city_ids,
-                            "_targeted_target_player_name": str(target_entry.get("player_name") or ""),
-                            "_targeted_colonization_feedback": result.get("feedback") or [],
-                            "_targeted_colonization_arrival_at_text": preview.get("arrival_at_text") or "",
-                        },
-                        data={
-                            "status": "targeted_cycle_started",
-                            "target": target_entry,
-                            "colony_spot": colony_spot,
-                            "colonization": result,
-                        },
-                    )
+                    except Exception as exc:  # noqa: BLE001 - the game refused the colony: missions must go on
+                        if self.is_network_error(exc):
+                            raise
+                        preview = None
+                        self.log(jid, "warn", f"Ciclo especial adiado: o jogo não abriu a colonização ({exc}). "
+                                              f"Tento de novo em {TARGETED_ROOM_RETRY // 3600} h; sigo com as missões.")
+                        inputs = {**inputs, "targeted_retry_after": int(time.time()) + TARGETED_ROOM_RETRY}
+                    if preview is not None:
+                        eta_ok, eta_reason = self._targeted_eta_viable(
+                            preview=preview,
+                            target_entry=target_entry,
+                            inputs=inputs,
+                        )
+                        if not eta_ok:
+                            self.log(jid, "info", f"Ciclo especial ignorado: {eta_reason}. Sigo com as missões.")
+                            inputs = {**inputs, "targeted_retry_after": int(time.time()) + TARGETED_ROOM_RETRY}
+                        else:
+                            known_city_ids = [item["id"] for item in fetch_owned_cities(client)]
+                            result = client.start_colonization(
+                                source_city_id=city_id,
+                                island_id=colony_spot["island_id"],
+                                position=int(colony_spot["position"]),
+                                resources={
+                                    "wood": 2250,
+                                    "marble": 2500,
+                                },
+                            )
+                            wait_seconds = (
+                                _to_int(preview.get("loading_time_seconds"))
+                                + _to_int(preview.get("travel_time_seconds"))
+                                + MISSION_BUFFER
+                            )
+                            self.log(
+                                jid,
+                                "info",
+                                f"Ciclo especial iniciado contra {target_entry.get('player_name')} "
+                                f"(cidade {target_entry.get('target_city_id')}) | colonia em {colony_spot['coord_x']}:{colony_spot['coord_y']} "
+                                f"pos {colony_spot['position']} | chegada {preview.get('arrival_at_text') or '-'}",
+                            )
+                            self.save_game_client(game_account_id, client)
+                            return RunnerResult(
+                                success=True,
+                                reschedule_seconds=max(wait_seconds, TARGETED_RECHECK),
+                                reschedule_inputs={
+                                    **inputs,
+                                    **_state_inputs,
+                                    "_targeted_phase": "wait_colony",
+                                    "_targeted_target_city_id": str(target_entry.get("target_city_id") or ""),
+                                    "_targeted_target_island_id": str(target_entry.get("target_island_id") or ""),
+                                    "_targeted_colony_island_id": str(colony_spot["island_id"]),
+                                    "_targeted_colony_position": int(colony_spot["position"]),
+                                    "_targeted_known_city_ids": known_city_ids,
+                                    "_targeted_target_player_name": str(target_entry.get("player_name") or ""),
+                                    "_targeted_colonization_feedback": result.get("feedback") or [],
+                                    "_targeted_colonization_arrival_at_text": preview.get("arrival_at_text") or "",
+                                },
+                                data={
+                                    "status": "targeted_cycle_started",
+                                    "target": target_entry,
+                                    "colony_spot": colony_spot,
+                                    "colonization": result,
+                                },
+                            )
                 else:
                     self.log(jid, "info", "Nenhum alvo elegivel com slot livre no ranking pirata nesta rodada especial")
 
@@ -1164,6 +1202,7 @@ class PiracyMissionRunner(BaseRunner):
                     "total_missions_started": _total_missions,
                     "total_crew_converted": _total_crew_converted,
                     "captcha_fail_streak": 0,
+                    "targeted_retry_after": _to_int(inputs.get("targeted_retry_after"), 0),
                 },
             )
 
