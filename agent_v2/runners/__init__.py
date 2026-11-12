@@ -39,4 +39,5 @@ from runners import (  # noqa: F401
     market_scan,
     market_sell,
     combat_monitor,
+    barbarians,
 )
