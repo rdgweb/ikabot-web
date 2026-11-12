@@ -512,7 +512,7 @@ class BarbariansRunner(BaseRunner):
             ships = calculate_transporters(troops, extra_ships) if troops else 0
             self.log(jid, "info", f"[só conferir] Ilha {island_id}: mandaria tropas={troops} navios={ships} (tabela atual)")
             for view in read_attack_view(client, city_id, island_id):
-                self.log(jid, "info", f"[só conferir] Tela {json.dumps(view, ensure_ascii=False)[:1500]}")
+                self.log(jid, "info", f"[só conferir] Tela {json.dumps(view, ensure_ascii=False)[:2800]}")
         self.save_game_client(game_account_id, client)
         self.log(jid, "info", "[só conferir] Nada foi enviado. Fim.")
         return RunnerResult(success=True, data={"status": "dry_run"})

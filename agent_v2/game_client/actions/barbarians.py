@@ -97,10 +97,17 @@ def read_attack_view(client, from_city_id: int | str, island_id: int | str) -> l
     variants = {
         "plunder": {"view": "plunder", "barbarianVillage": "1", "islandId": str(island_id), "destinationCityId": "0",
                     "backgroundView": "island", "currentIslandId": str(island_id), "templateView": "island"},
-        "barbarianVillage": {"view": "barbarianVillage", "islandId": str(island_id), "backgroundView": "island",
-                             "currentIslandId": str(island_id)},
     }
     out = []
+    try:
+        page = client._request("GET", client._server_url, params={"view": "island", "islandId": str(island_id)}, timeout=30).text
+        raw = re.search(r'"barbarians"\s*:\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})', page)
+        out.append({"view": "island_raw_barbarians", "raw": raw.group(1)[:1200] if raw else ""})
+        token = client.page_parser.extract_action_request(page)
+        if token:
+            client._action_request = token
+    except Exception as exc:  # noqa: BLE001
+        out.append({"view": "island_raw_barbarians", "error": str(exc)[:200]})
     for name, params in variants.items():
         try:
             resp = client._request("GET", client._server_url, params={**params, "currentCityId": str(from_city_id),
@@ -125,8 +132,14 @@ def read_attack_view(client, from_city_id: int | str, island_id: int | str) -> l
         controller = re.search(r"new missionController\(([^)]*)\)", html)
         weights = {m.group(1): m.group(2) for m in re.finditer(
             r'slider_(\d+)"?\s*\);[\s\S]{0,400}?weight\s*=\s*([\d.]+)', html)}
+        hidden = {m.group(1): m.group(2)[:40] for m in re.finditer(
+            r'<input[^>]*type="hidden"[^>]*name="([^"]+)"[^>]*value="([^"]*)"', html)}
+        hidden.update({m.group(2): m.group(1)[:40] for m in re.finditer(
+            r'<input[^>]*value="([^"]*)"[^>]*type="hidden"[^>]*name="([^"]+)"', html)})
+        at = html.find("weight")
         out.append({
-            "view": name, "html": len(html), "feedback": feedback,
+            "view": name, "html": len(html), "feedback": feedback, "hidden": hidden,
+            "weight_snippet": re.sub(r"\s+", " ", html[max(0, at - 300):at + 300]) if at >= 0 else "",
             "controller": controller.group(1)[:200] if controller else "",
             "weights": weights, "units": sorted(set(re.findall(r"cargo_army_(\d+)", html))),
             "fields": sorted(set(re.findall(r'name="([a-zA-Z_]+)"', html)))[:40],
