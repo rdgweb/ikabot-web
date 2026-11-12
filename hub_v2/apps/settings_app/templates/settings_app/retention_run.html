@@ -1,0 +1,34 @@
+{% extends base_template|default:"base.html" %}
+{% block title %}Retenção do banco{% endblock %}
+{% block content %}
+<div class="card p-5">
+  <h1 class="text-2xl font-bold mb-3">{% if run.status == 'done' %}Retenção concluída{% else %}Retenção do banco{% endif %}</h1>
+  <p class="text-sm text-muted mb-4">Prévia de {{ run.created_at|date:"d/m/Y H:i" }}. Abrange as contas da instalação. Os números podem diminuir se algum registro deixar de ser elegível.</p>
+  <table class="data-table mb-4">
+    <thead><tr><th>Dados</th><th>Prazo preservado</th><th>Elegíveis na prévia</th><th>Processados</th></tr></thead>
+    <tbody>
+      <tr><td>Snapshots: converter detalhes em métricas</td><td>{{ run.policy.snapshot_days }} dias</td><td>{{ run.planned.snapshots }}</td><td>{{ run.processed.snapshots|default:0 }}</td></tr>
+      <tr><td>Jobs arquivados: reduzir detalhes do resultado</td><td>{{ run.policy.job_days }} dias</td><td>{{ run.planned.jobs }}</td><td>{{ run.processed.jobs|default:0 }}</td></tr>
+      <tr><td>Logs antigos: remover</td><td>{{ run.policy.log_days }} dias</td><td>{{ run.planned.logs }}</td><td>{{ run.processed.logs|default:0 }}</td></tr>
+    </tbody>
+  </table>
+  <p class="text-sm mb-4">Redução estimada dos dados: <strong>{{ run.planned.estimated_bytes|filesizeformat }}</strong>. Estimativa por amostra, sem contar índices; não é uma promessa de espaço devolvido ao disco.</p>
+  <p class="text-sm mb-4">Os valores e datas das métricas dos gráficos são preservados. Os detalhes completos dos snapshots e resultados compactados não poderão ser recuperados sem o backup. Jobs, parâmetros, vínculos e registros atuais das contas permanecem.</p>
+  {% if run.status == 'preview' %}
+    {% if run.policy.enabled %}
+    <form method="post" hx-boost="false" @submit.prevent.stop="$dispatch('confirm', {title: 'Executar retenção?', message: 'Os detalhes antigos e logs indicados nesta prévia serão removidos. As métricas serão preservadas. Confirme somente após verificar seu backup.', confirmLabel: 'Executar retenção', style: 'danger', onConfirm: () => $el.submit()})">
+      {% csrf_token %}<input type="hidden" name="action" value="start">
+      <label class="block mb-4 text-sm"><input type="checkbox" name="backup" value="yes" required> Tenho um backup recente e verifiquei que posso restaurá-lo.</label>
+      <button type="submit" class="btn btn-danger">Confirmar e executar em lotes</button>
+    </form>
+    {% else %}<p class="text-sm mb-4">A execução está desativada. Ative a política nas configurações e gere uma nova prévia quando quiser executar.</p>{% endif %}
+  {% elif run.status == 'running' %}
+    <p class="text-sm mb-4">Cada lote é registrado separadamente. Sair desta página pausa a continuação após o lote atual; você pode retomar depois.</p>
+    <form method="post" hx-post="{% url 'settings_app:retention-run' run.pk %}" hx-target="#page-content" hx-swap="innerHTML" hx-push-url="false" hx-boost="false" {% if auto_continue %}hx-trigger="load delay:1s"{% endif %}>
+      {% csrf_token %}<input type="hidden" name="action" value="next">
+      {% if auto_continue %}<p role="status">Processando lotes…</p>{% else %}<button type="submit" class="btn btn-primary">Retomar execução</button>{% endif %}
+    </form>
+  {% endif %}
+  <a href="/settings/#retencao" hx-boost="false" class="btn btn-secondary mt-4">{% if auto_continue %}Pausar e voltar às configurações{% else %}Voltar às configurações{% endif %}</a>
+</div>
+{% endblock %}

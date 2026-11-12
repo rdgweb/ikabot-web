@@ -7,18 +7,25 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '../..');
 const read = file => fs.readFileSync(path.join(root, 'hub_v2', file), 'utf8');
-const template = read('apps/notes/templates/notes/changelog.html');
-const form = template.match(/<form method="post"[\s\S]*?<\/form>/)[0]
+const fixtures = [
+  { file: 'apps/notes/templates/notes/changelog.html', name: 'agent update', button: 'Atualizar pelo Hub', confirm: 'Atualizar agente' },
+  { file: 'apps/settings_app/templates/settings_app/retention_run.html', name: 'retention', button: 'Confirmar e executar em lotes', confirm: 'Executar retenção', backup: true },
+];
+const modal = read('templates/components/confirm_dialog.html')
+  .split('<div x-data="confirmDialog()"')[1].replace(/{% endif %}/g, '');
+
+for (const fixture of fixtures) {
+const template = read(fixture.file);
+let form = template.match(/<form method="post"[\s\S]*?<\/form>/)[0]
   .replace(/{% url 'accounts:node-request-update' node.pk %}/g, '/update')
   .replace(/{% csrf_token %}/g, '<input type="hidden" name="csrfmiddlewaretoken" value="test-token">')
   .replace(/{{ node.name\|escapejs }}/g, 'blackshadow-test')
   .replace(/{{ node.agent_version\|escapejs }}/g, '0.1.1')
   .replace(/{{ agent_release.version\|escapejs }}/g, '0.1.2');
-const modal = read('templates/components/confirm_dialog.html')
-  .split('<div x-data="confirmDialog()"')[1].replace(/{% endif %}/g, '');
+if (fixture.backup) form = form.replace('<form method="post"', '<form action="/update" method="post"');
 
 for (const navigation of ['direct', 'htmx']) {
-  test(`agent update waits for confirmation after ${navigation} navigation`, async () => {
+  test(`${fixture.name} waits for confirmation after ${navigation} navigation`, async () => {
     const browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL || undefined });
     try {
       const page = await browser.newPage();
@@ -38,7 +45,7 @@ for (const navigation of ['direct', 'htmx']) {
           return route.fulfill({ contentType: 'text/html', body: form });
         }
         await route.fulfill({ contentType: 'text/html', body: `<!doctype html>
-          <head><script src="/static/vendor/htmx.min.js"></script>
+          <head><meta charset="utf-8"><script src="/static/vendor/htmx.min.js"></script>
           <script src="/static/vendor/alpine.min.js" defer></script></head>
           <body x-data="{}" hx-boost="true" hx-target="#page-content" hx-swap="innerHTML">
           <div id="page-content">${navigation === 'direct' ? form : '<a href="/updates">Updates</a>'}</div>
@@ -48,7 +55,13 @@ for (const navigation of ['direct', 'htmx']) {
       await page.goto('http://confirmation.test/');
       if (navigation === 'htmx') await page.getByRole('link', { name: 'Updates' }).click();
       const dialog = page.locator('[x-data="confirmDialog()"]');
-      await page.getByRole('button', { name: 'Atualizar pelo Hub' }).click();
+      if (fixture.backup) {
+        await page.getByRole('button', { name: fixture.button }).click();
+        assert.equal(updates.length, 0, 'backup confirmation is required');
+        assert.equal(await dialog.isVisible(), false);
+        await page.getByRole('checkbox').check();
+      }
+      await page.getByRole('button', { name: fixture.button }).click();
       await dialog.waitFor({ state: 'visible' });
       await page.waitForTimeout(200);
       assert.equal(updates.length, 0, 'opening the dialog must not send an update');
@@ -56,18 +69,20 @@ for (const navigation of ['direct', 'htmx']) {
       await dialog.waitFor({ state: 'hidden' });
       assert.equal(updates.length, 0, 'cancel must not send an update');
       // Keyboard submission follows the same confirmation gate.
-      await page.getByRole('button', { name: 'Atualizar pelo Hub' }).focus();
+      await page.getByRole('button', { name: fixture.button }).focus();
       await page.keyboard.press('Enter');
       await dialog.waitFor({ state: 'visible' });
       assert.equal(updates.length, 0);
-      await dialog.getByRole('button', { name: 'Atualizar agente', exact: true }).click();
+      await dialog.getByRole('button', { name: fixture.confirm, exact: true }).click();
       await page.waitForURL('**/update');
       assert.equal(updates.length, 1, 'confirm must send exactly one update');
       assert.equal(updates[0].method(), 'POST');
       assert.match(updates[0].postData(), /csrfmiddlewaretoken=test-token/);
+      if (fixture.backup) assert.match(updates[0].postData(), /backup=yes/);
       assert.deepEqual(errors, []);
     } finally {
       await browser.close();
     }
   });
+}
 }

@@ -14,7 +14,7 @@ from datetime import timedelta
 
 from django.utils import timezone
 
-from apps.game.models import AccountSnapshotHistory
+from apps.game.models import AccountSnapshotHistory, AccountHistoryMetric
 from apps.game.services.gold import net_gold_income
 
 # period -> (how far back, distance between points)
@@ -114,6 +114,8 @@ def repair_partial_readings(series: list[dict]) -> list[dict]:
 
 
 def _metrics(row) -> dict:
+    if isinstance(row, AccountHistoryMetric):
+        return row.metrics
     base = row.base_snapshot or {}
     cities = row.cities if isinstance(row.cities, list) else []
     military = row.military if isinstance(row.military, dict) else {}
@@ -135,22 +137,23 @@ def build_history_map(game_account_ids: list, period: str = DEFAULT_PERIOD, now=
         return {}
     oldest = None
     if clean_period(period) == "all":
-        oldest = (
-            AccountSnapshotHistory.objects.filter(game_account_id__in=game_account_ids)
-            .order_by("captured_at").values_list("captured_at", flat=True).first()
-        )
+        starts = [model.objects.filter(game_account_id__in=game_account_ids)
+                  .order_by("captured_at").values_list("captured_at", flat=True).first()
+                  for model in (AccountSnapshotHistory, AccountHistoryMetric)]
+        oldest = min((value for value in starts if value is not None), default=None)
     points = instants(period, now, first=oldest)
     first, last = points[0], points[-1]
     grouped: dict[str, list[dict]] = {}
     for game_account_id in game_account_ids:
-        history = AccountSnapshotHistory.objects.filter(game_account_id=game_account_id)
-        # ids and times only: the snapshot columns are large, and only one row per instant is read
-        marks = list(
-            history.filter(captured_at__gte=first, captured_at__lte=last).order_by("captured_at").values_list("captured_at", "id")
-        )
-        earlier = history.filter(captured_at__lt=first).order_by("-captured_at").values_list("captured_at", "id").first()
-        if earlier:
-            marks.insert(0, earlier)
+        marks = []
+        for model in (AccountSnapshotHistory, AccountHistoryMetric):
+            history = model.objects.filter(game_account_id=game_account_id)
+            marks.extend(history.filter(captured_at__gte=first, captured_at__lte=last)
+                         .values_list("captured_at", "id"))
+            earlier = history.filter(captured_at__lt=first).order_by("-captured_at").values_list("captured_at", "id").first()
+            if earlier:
+                marks.append(earlier)
+        marks.sort()
         if not marks:
             continue
         times = [mark[0] for mark in marks]
@@ -160,6 +163,7 @@ def build_history_map(game_account_ids: list, period: str = DEFAULT_PERIOD, now=
             # before the account's first snapshot: its first known value, so the sum does not step
             chosen.append(marks[max(index, 0)][1])
         rows = AccountSnapshotHistory.objects.only("base_snapshot", "cities", "military").in_bulk(set(chosen))
+        rows.update(AccountHistoryMetric.objects.in_bulk(set(chosen)))
         cache: dict[int, dict] = {}
         bucket = []
         for point, row_id in zip(points, chosen):

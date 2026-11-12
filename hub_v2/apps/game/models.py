@@ -102,3 +102,17 @@ class AccountSnapshotHistory(UUIDTimestampModel):
 
     def __str__(self):
         return f"History {self.game_account_id or self.account_id} @ {self.captured_at}"
+
+
+class AccountHistoryMetric(models.Model):
+    """Exact KPI values of an old snapshot, without its large detailed payload (N-181)."""
+
+    objects = OrgScopedManager()
+    id = models.UUIDField(primary_key=True)  # same identity as the source snapshot
+    account = models.ForeignKey("accounts.Account", on_delete=models.CASCADE)
+    game_account = models.ForeignKey("accounts.GameAccount", on_delete=models.CASCADE, null=True, blank=True)
+    captured_at = models.DateTimeField()
+    metrics = models.JSONField()
+
+    class Meta:
+        indexes = [models.Index(fields=["game_account", "captured_at"], name="game_metric_account_time")]

@@ -21,8 +21,12 @@ from .views import (
 )
 
 app_name = "settings_app"
+from .retention_views import RetentionPolicyView, RetentionPreviewView, RetentionRunView
 
 urlpatterns = [
+    path("retention/save/", RetentionPolicyView.as_view(), name="retention-save"),
+    path("retention/preview/", RetentionPreviewView.as_view(), name="retention-preview"),
+    path("retention/<uuid:pk>/", RetentionRunView.as_view(), name="retention-run"),
     path("", SettingsPageView.as_view(), name="list"),
     path("saude/", SystemHealthView.as_view(), name="health"),
     path("primeiros-passos/", RedirectView.as_view(url="/settings/#saude"), name="first-steps"),

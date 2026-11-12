@@ -1,0 +1,3 @@
+{% extends base_template|default:"base.html" %}
+{% block content %}<div class="card p-5"><h1 class="text-xl font-bold">Confira os prazos</h1>
+<form method="post" action="{% url 'settings_app:retention-save' %}" hx-boost="false">{% csrf_token %}{{ form.as_p }}<button class="btn btn-primary" type="submit">Salvar política</button></form></div>{% endblock %}

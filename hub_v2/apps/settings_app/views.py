@@ -147,6 +147,11 @@ class SettingsPageView(LoginRequiredMixin, TemplateView):
         ctx["auto_archive_days"] = _get_int_setting("workflow_auto_archive_days", 30)
         ctx["auto_archive_last_run"] = _get_setting("workflow_auto_archive_last_run", "")
         ctx["workflow_max_runs"] = _get_int_setting("workflow_max_runs_per_workflow", 150)
+        from .retention import get_policy, POLICY_KEY
+        from .retention_views import RetentionPolicyForm
+        from .models import RetentionRun
+        ctx["retention_form"] = RetentionPolicyForm(initial=get_policy())
+        ctx["retention_runs"] = RetentionRun.objects.filter(user=self.request.user).order_by("-created_at")[:5]
 
         ctx["spy_intel_form"] = SpyIntelSettingsForm(initial={
             "spy_report_expiry_hours": _get_setting("spy_report_expiry_hours", "48"),
@@ -169,6 +174,7 @@ class SettingsPageView(LoginRequiredMixin, TemplateView):
                 "workflow_auto_archive_days",
                 "workflow_auto_archive_last_run",
                 "workflow_max_runs_per_workflow",
+                POLICY_KEY,
                 "snapshot_stale_seconds",
                 "building_options_stale_seconds",
                 "running_job_recovery_grace_seconds",

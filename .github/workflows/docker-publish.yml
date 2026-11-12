@@ -11,6 +11,17 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-24.04
+    services:
+      retention-db:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: retention-ci-only
+          MARIADB_DATABASE: retention_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
     outputs:
       hub_version: ${{ steps.versions.outputs.hub_version }}
       agent_version: ${{ steps.versions.outputs.agent_version }}
@@ -43,6 +54,21 @@ jobs:
 
       - name: Test version rules
         run: python .github/scripts/test_version_guard.py
+
+      - name: Set up Python for retention tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Test retention and history preservation
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y default-libmysqlclient-dev pkg-config
+          python -m pip install --upgrade pip
+          python -m pip install -r hub_v2/requirements.txt
+          python hub_v2/manage.py test apps.settings_app.tests_retention apps.game.tests_kpi_history --settings=config.settings.test --noinput
+          TEST_MARIADB=1 python hub_v2/manage.py test apps.settings_app.tests_retention apps.game.tests_kpi_history --settings=config.settings.test --noinput
 
       - name: Set up Node for browser regression tests
         uses: actions/setup-node@v4

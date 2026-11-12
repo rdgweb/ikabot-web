@@ -35,6 +35,7 @@ SCOPES: dict[str, tuple[str, str, bool]] = {
     "jobs.ConstructionResourceReservation": ("account", "account", False),
     "game.AccountSnapshot": ("account", "account", False),
     "game.AccountSnapshotHistory": ("account", "account", False),
+    "game.AccountHistoryMetric": ("account", "account", False),
     "worldintel.WorldDump": ("account", "account", False),
     "market.InternalMarketOrder": ("buyer_account", "account", False),
     "market.ConstructionMarketIntervention": ("account", "account", False),

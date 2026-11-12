@@ -1,0 +1,23 @@
+<section class="card mb-6" id="retencao">
+  <div class="card-header"><h2 class="font-semibold"><i class="bi bi-database"></i> Retenção do banco de dados</h2></div>
+  <div class="p-5">
+    <p class="text-sm text-muted mb-4">Arquivar organiza as listas, mas mantém os dados no banco. A retenção reduz detalhes antigos e remove logs vencidos. As métricas dos gráficos, os parâmetros dos jobs e os registros atuais das contas são preservados.</p>
+    <form method="post" action="{% url 'settings_app:retention-save' %}" hx-boost="false">
+      {% csrf_token %}
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+        <label class="text-sm">{{ retention_form.snapshot_days.label }}{{ retention_form.snapshot_days }}</label>
+        <label class="text-sm">{{ retention_form.job_days.label }}{{ retention_form.job_days }}</label>
+        <label class="text-sm">{{ retention_form.log_days.label }}{{ retention_form.log_days }}</label>
+      </div>
+      <label class="text-sm block mb-4">{{ retention_form.enabled }} {{ retention_form.enabled.label }}</label>
+      <button type="submit" class="btn btn-primary btn-sm">Salvar política</button>
+      <p class="text-xs text-muted mt-2">Salvar não executa a limpeza. Jobs ativos, não arquivados ou vinculados a operações em andamento ficam protegidos.</p>
+    </form>
+    <form method="post" action="{% url 'settings_app:retention-preview' %}" class="mt-4" hx-boost="false">
+      {% csrf_token %}<button type="submit" class="btn btn-secondary btn-sm">Ver prévia com os prazos salvos</button>
+    </form>
+    <p class="text-xs text-muted mt-3">A execução exige confirmação de backup. O espaço liberado dentro das tabelas pode ser reutilizado; o arquivo do banco não necessariamente diminui. A redução física exige manutenção separada.</p>
+    {% if retention_runs %}<h3 class="font-semibold mt-4">Últimas prévias e execuções</h3>
+    <ul>{% for run in retention_runs %}<li class="mt-2 text-sm"><a class="link-sea" href="{% url 'settings_app:retention-run' run.pk %}">{{ run.created_at|date:"d/m/Y H:i" }} — {% if run.status == 'done' %}Concluída{% elif run.status == 'running' %}Iniciada (pode ser retomada){% else %}Prévia{% endif %}</a></li>{% endfor %}</ul>{% endif %}
+  </div>
+</section>
