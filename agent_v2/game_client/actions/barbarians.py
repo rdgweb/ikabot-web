@@ -169,6 +169,46 @@ def loot_ships_for_level(level: int) -> int:
     return max(1, math.ceil(points[-1][1] * 1.1 / SHIP_CAPACITY))
 
 
+def _digits(value) -> int:
+    import re
+
+    if isinstance(value, dict):
+        value = value.get("text", value.get("value", ""))
+    found = re.sub(r"[^\d]", "", str(value or ""))
+    return int(found) if found else 0
+
+
+def fetch_village_info(client, island_id: int | str) -> dict[str, Any]:
+    """The barbarian village screen (POST view=barbarianVillage, as the upstream ikabot reads it): level, gold and
+    resources waiting to be taken, and when the rebuild ends. {} when the game does not answer it."""
+    resp = client._request("POST", client._server_url, data={
+        "view": "barbarianVillage", "islandId": str(island_id), "backgroundView": "island",
+        "currentIslandId": str(island_id), "actionRequest": client._action_request, "ajax": "1",
+    }, headers=dict(GAME_AJAX_HEADERS), timeout=30)
+    try:
+        data = resp.json()
+    except Exception:  # noqa: BLE001
+        return {}
+    fields: dict[str, Any] = {}
+    for entry in data if isinstance(data, list) else []:
+        if not (isinstance(entry, list) and len(entry) > 1 and isinstance(entry[1], dict)):
+            continue
+        if entry[1].get("actionRequest"):
+            client._action_request = str(entry[1]["actionRequest"])
+        fields.update({k: v for k, v in entry[1].items() if k.startswith(("js_islandBarbarian", "barbarianCity"))})
+    if not fields:
+        return {}
+    resources = [_digits(fields.get(key)) for key in ("js_islandBarbarianResourceresource", "js_islandBarbarianResourcetradegood1",
+                                                      "js_islandBarbarianResourcetradegood2", "js_islandBarbarianResourcetradegood3",
+                                                      "js_islandBarbarianResourcetradegood4")]
+    end = 0
+    timer = fields.get("barbarianCityCooldownTimer")
+    if isinstance(timer, dict):
+        end = _digits(((timer.get("countdown") or {}) if isinstance(timer.get("countdown"), dict) else {}).get("enddate"))
+    return {"level": _digits(fields.get("js_islandBarbarianLevel")), "gold": _digits(fields.get("js_islandBarbarianResourcegold")),
+            "resources": resources, "total": sum(resources), "rebuild_end": end, "keys": sorted(fields)[:20]}
+
+
 def open_attack_view(client, from_city_id: int | str, island_id: int | str) -> dict[str, Any]:
     """The screen the game opens for "Roubar" on the village, read for its numbers: free merchant ships, ship
     capacity, journey time, and the upkeep and weight of each unit (troops of the same island weigh 0)."""

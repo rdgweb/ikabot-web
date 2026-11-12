@@ -59,7 +59,10 @@ class AttackTests(unittest.TestCase):
 class TroopTests(unittest.TestCase):
     def test_low_levels_send_what_fights_and_high_levels_need_the_table(self):
         have = {303: 20, 315: 7, 301: 7, 306: 12, 310: 3}
-        self.assertEqual(_choose_troops("schematic", 1, "", have), {303: 20, 315: 7, 301: 7, 306: 12})
+        self.assertEqual(_choose_troops("schematic", 1, "", have), {303: 7})                 # 1 scout: 2*1+5
+        self.assertEqual(_choose_troops("schematic", 9, "", {303: 4502, 302: 2519}), {303: 105})   # 50 scouts
+        self.assertIsNone(_choose_troops("schematic", 9, "", {303: 30, 315: 7}))             # 37 against 50 scouts
+        self.assertEqual(_choose_troops("available", 1, "", have), {303: 20, 315: 7, 301: 7, 306: 12})
         self.assertIsNone(_choose_troops("schematic", 12, "", have))           # the table asks for units it lacks
         self.assertEqual(_choose_troops("custom", 12, '{"303": 10}', have), {303: 10})
         self.assertEqual(_loot_unit(have), {315: 1})
@@ -80,8 +83,13 @@ class RoundTests(unittest.TestCase):
         runner._get_available_troops = lambda jid, client, town: {303: 20, 315: 7}
         return runner
 
-    def test_a_ready_village_is_attacked_from_its_island_town_and_a_destroyed_one_collected_once(self):
+    def test_attack_with_ships_for_what_the_village_has_then_collect_until_empty_and_count_the_loot(self):
+        import runners.barbarians as module
+
         runner, sent = self._runner(), []
+        village = {"total": 1_200, "gold": 450}
+        original = module.fetch_village_info
+        module.fetch_village_info = lambda client, island_id: dict(village)
 
         class Game:
             barb = {"level": 3, "destroyed": False, "under_attack": False}
@@ -93,19 +101,26 @@ class RoundTests(unittest.TestCase):
                 sent.append(kw)
                 return {"transporters": kw["transporters"], "free_ships": 40}
 
-        game, st, totals = Game(), {}, {"total_attacks": 0, "total_loots": 0}
-        args = ("schematic", "", True, 1, 9, 0, 0)
-        runner._island_round("j", game, "4478", "63388", st, totals, *args)
-        self.assertEqual((sent[0]["from_city_id"], sent[0]["troops"]), ("63388", {303: 20, 315: 7}))
-        Game.barb = {"level": 4, "destroyed": True, "under_attack": False}
-        runner._island_round("j", game, "4478", "63388", st, totals, *args)
-        runner._island_round("j", game, "4478", "63388", st, totals, *args)
-        self.assertEqual(len(sent), 2)                          # one collection per destruction
-        self.assertEqual(sent[1]["troops"], {315: 1})
-        self.assertEqual(totals, {"total_attacks": 1, "total_loots": 1})
-        Game.barb = {"level": 4, "destroyed": False, "under_attack": True}
-        runner._island_round("j", game, "4478", "63388", st, totals, *args)
-        self.assertEqual(len(sent), 2)                          # the battle is on
+        try:
+            game, st = Game(), {}
+            totals = {"total_attacks": 0, "total_loots": 0, "loot_total": 0, "gold_total": 0}
+            args = ("schematic", "", True, 1, 9, 0, 0)
+            runner._island_round("j", game, "4478", "63388", st, totals, *args)
+            self.assertEqual((sent[0]["from_city_id"], sent[0]["troops"], sent[0]["transporters"]), ("63388", {303: 15}, 3))
+            Game.barb = {"level": 4, "destroyed": True, "under_attack": False}
+            village.update(total=300)                                   # 900 came back with the attack
+            runner._island_round("j", game, "4478", "63388", st, totals, *args)
+            self.assertEqual((sent[1]["troops"], sent[1]["transporters"]), ({315: 1}, 1))
+            village.update(total=0)                                     # the collection took the rest
+            runner._island_round("j", game, "4478", "63388", st, totals, *args)
+            self.assertEqual(len(sent), 2)
+            self.assertEqual((totals["loot_total"], totals["gold_total"], totals["total_attacks"], totals["total_loots"]),
+                             (1_200, 450, 1, 1))
+            Game.barb = {"level": 4, "destroyed": False, "under_attack": True}
+            runner._island_round("j", game, "4478", "63388", st, totals, *args)
+            self.assertEqual(len(sent), 2)                              # the battle is on
+        finally:
+            module.fetch_village_info = original
 
 
 if __name__ == "__main__":

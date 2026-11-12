@@ -2092,9 +2092,10 @@ def _barbarians_form_context(snapshot, cities) -> dict:
     for island_id, name in (WorldDumpIsland.objects.filter(island_id__in=list(islands)).order_by("dump__captured_at")
                             .values_list("island_id", "name")):
         islands[island_id]["name"] = name
-    resources = {1: "Vinho", 2: "Mármore", 3: "Cristal", 4: "Enxofre"}
     for island in islands.values():
-        island["resource"] = resources.get(island["tradegood"], "")
+        meta = TRADEGOOD_UI.get(island["tradegood"], TRADEGOOD_UI[0])
+        island["resource"] = meta["name"] if island["tradegood"] else ""
+        island["icon"] = static(meta["icon"])
     return {"cities": sorted(out, key=lambda c: (-c["total"], c["name"].lower())),
             "islands": sorted(islands.values(), key=lambda i: (i["x"] or 0, i["y"] or 0))}
 

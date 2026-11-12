@@ -21,6 +21,7 @@ from django.views import View
 from django.views.generic import DetailView
 
 from apps.accounts.avatars import avatar_url, initials
+from apps.worldintel.models import WorldDumpIsland
 from core.actions.constants import CATEGORY_META, CATEGORY_ORDER
 from core.catalogs import get_building_info
 from core.contracts import ACTION_CATALOG, RESOURCE_CHOICES
@@ -1677,18 +1678,46 @@ class JobListView(FilterSortListView):
         inputs = cls._parse_inputs(job)
         if int(job.action_code) != 19:
             return None
-        island_ids_raw = str(inputs.get("island_ids") or inputs.get("island_id") or "")
-        island_list = [s.strip() for s in island_ids_raw.split(",") if s.strip()]
+        # N-179: each island's village as the job saw it in the last round, and what the chain has taken so far
+        from datetime import datetime, timezone as dt_timezone
+
+        from apps.espionage.api.views import _ID_TO_NAME
+        from core.catalogs import get_unit_info
+
+        island_ids = [s.strip() for s in str(inputs.get("island_ids") or "").split(",") if s.strip()]
+        state = inputs.get("islands_state") if isinstance(inputs.get("islands_state"), dict) else {}
+        names = {}
+        for island_id, name, x, y in (WorldDumpIsland.objects.filter(island_id__in=island_ids).order_by("dump__captured_at")
+                                      .values_list("island_id", "name", "x", "y")):
+            names[island_id] = (name, f"{x}:{y}")
+        labels = {"ready": ("pronta", "good"), "attacking": ("atacada", "sea"), "battle": ("em batalha", "sea"),
+                  "rebuilding": ("em reconstrução", "gold")}
+        islands = []
+        for island_id in island_ids:
+            st = state.get(island_id) or {}
+            troops = []
+            for uid, qty in (st.get("last_troops") or {}).items():
+                name = _ID_TO_NAME.get(int(uid), str(uid))
+                troops.append({"name": name, "qty": int(qty or 0), "icon": static(get_unit_info(name)["icon"])})
+            end = _to_int(st.get("rebuild_end"), 0)
+            label, tone = labels.get(st.get("status") or "", ("aguardando a primeira rodada", "muted"))
+            islands.append({
+                "id": island_id, "name": names.get(island_id, ("", ""))[0], "coords": names.get(island_id, ("", ""))[1],
+                "level": st.get("level"), "label": label, "tone": tone, "town": st.get("town") or "",
+                "attacks": _to_int(st.get("attacks"), 0), "loots": _to_int(st.get("loots"), 0),
+                "looted": _to_int(st.get("looted"), 0), "gold": _to_int(st.get("gold"), 0),
+                "village_resources": _to_int(st.get("village_resources"), 0), "village_gold": _to_int(st.get("village_gold"), 0),
+                "left": st.get("left_before"), "last_ships": _to_int(st.get("last_ships"), 0), "troops": troops,
+                "attacked_at": datetime.fromtimestamp(st["attacked_at"], tz=dt_timezone.utc) if st.get("attacked_at") else None,
+                "rebuild_end": datetime.fromtimestamp(end, tz=dt_timezone.utc) if end else None,
+            })
         return {
-            "phase": inputs.get("phase") or "check",
-            "island_list": island_list,
-            "island_index": _to_int(inputs.get("island_index"), 0),
+            "islands": islands,
             "total_attacks": _to_int(inputs.get("total_attacks"), 0),
             "total_loots": _to_int(inputs.get("total_loots"), 0),
-            "last_barb_level": inputs.get("last_barb_level"),
-            "last_attack_at": inputs.get("last_attack_at"),
-            "last_loot_at": inputs.get("last_loot_at"),
-            "resources_looted": inputs.get("last_resources_looted"),
+            "loot_total": _to_int(inputs.get("loot_total"), 0),
+            "gold_total": _to_int(inputs.get("gold_total"), 0),
+            "max_level": _to_int(inputs.get("max_barb_level"), 9),
         }
 
     @classmethod

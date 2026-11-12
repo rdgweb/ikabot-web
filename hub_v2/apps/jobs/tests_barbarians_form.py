@@ -28,7 +28,8 @@ class BarbariansFormTests(TestCase):
 
     def test_the_form_lists_cities_troops_and_islands(self):
         html = self.client.get("/jobs/new/form/", {"ga": str(self.ga.pk), "action": "19"}).content.decode()
-        self.assertIn("Roubar bárbaros", html)
+        self.assertIn("Tropas do ataque", html)
+        self.assertIn("maxLevel: 9,", html)                              # past 9 the barbarians take revenge
         data = json.loads(html.split('id="barbarians-ui-data" type="application/json">')[1].split("</script>")[0])
         self.assertEqual(data["cities"][0]["name"], "lll3lll")
         self.assertEqual({t["id"]: t["have"] for t in data["cities"][0]["troops"]}, {302: 90, 304: 21})
@@ -49,3 +50,18 @@ class BarbariansFormTests(TestCase):
         self.assertFalse(inputs["loot"])
         self.assertEqual(json.loads(inputs["island_cities"]), {"2488": "63355", "146": "63388"})
         self.assertEqual((inputs["min_barb_level"], inputs["min_resources"]), (3, 10000))
+
+    def test_the_job_page_shows_what_each_island_gave(self):
+        from apps.jobs.models import Job
+
+        state = {"4477": {"level": 4, "status": "rebuilding", "attacks": 3, "loots": 1, "looted": 2_000, "gold": 900,
+                          "village_resources": 950, "village_gold": 300, "last_ships": 2, "attacked_at": 1794000000,
+                          "last_troops": {"303": 21}}}
+        job = Job.objects.create(account=self.ga.account, game_account=self.ga, node=self.ga.account.node, action_code=19,
+                                 status="scheduled", timeout_sec=60,
+                                 inputs_json=json.dumps({"island_ids": "4477", "islands_state": state, "loot_total": 2_000,
+                                                         "gold_total": 900, "total_attacks": 3, "total_loots": 1}))
+        html = self.client.get(f"/jobs/{job.pk}/").content.decode()
+        self.assertIn("Recursos roubados", html)
+        self.assertIn("em reconstrução", html)
+        self.assertIn("2.000", html)

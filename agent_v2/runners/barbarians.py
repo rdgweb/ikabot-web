@@ -21,7 +21,9 @@ import time
 from typing import Any
 
 from core.runner_registry import register_runner
-from game_client.actions.barbarians import ATTACK_SCHEMATICS, calculate_transporters, get_schematic, loot_ships_for_level
+from game_client.actions.barbarians import (
+    ATTACK_SCHEMATICS, SHIP_CAPACITY, calculate_transporters, fetch_village_info, get_schematic, loot_ships_for_level,
+)
 from runners.base import BaseRunner, RunnerResult
 
 logger = logging.getLogger(__name__)
@@ -29,6 +31,8 @@ logger = logging.getLogger(__name__)
 ERROR_RESCHEDULE = 10 * 60
 LOOT_UNIT_ORDER = (315, 301, 302, 303, 313, 304)   # the cheapest unit that can walk to collect the loot
 SUPPORT_UNITS = {310, 311}                          # cook and doctor do not fight
+VILLAGE_SCOUTS = (1, 2, 5, 8, 15, 20, 25, 35, 50)    # defenders of levels 1-9 (wiki: Barbarian Kings)
+FRONT_ORDER = (303, 302, 315, 316, 319, 301, 313, 304)  # who holds the front line against the scouts
 
 
 def _parse_int(v: Any, default: int = 0) -> int:
@@ -83,8 +87,17 @@ def _choose_troops(mode: str, level: int, custom_json: str, available: dict[int,
     fighters = {uid: n for uid, n in available.items() if n > 0 and 301 <= uid <= 321 and uid not in SUPPORT_UNITS}
     if mode == "custom":
         return _resolve_troops("custom", level, custom_json, available)
-    if mode == "available" or level <= 9:
+    if mode == "available":
         return fighters or None
+    if level <= 9:
+        # Olaf's scouts (wiki): twice their number plus five, from the front-line infantry first
+        need = 2 * VILLAGE_SCOUTS[level - 1] + 5
+        picked = {}
+        for uid in FRONT_ORDER:
+            take = min(fighters.get(uid, 0), need - sum(picked.values()))
+            if take > 0:
+                picked[uid] = take
+        return picked if sum(picked.values()) >= VILLAGE_SCOUTS[level - 1] + 1 else None
     return _resolve_troops("schematic", level, custom_json, available)
 
 
@@ -127,7 +140,7 @@ class BarbariansRunner(BaseRunner):
         recheck = max(5, _parse_int(inputs.get("recheck_minutes"), 15)) * 60
         dry_run = str(inputs.get("dry_run") or "").lower() in {"1", "true", "on", "yes"}
         state = inputs.get("islands_state") if isinstance(inputs.get("islands_state"), dict) else {}
-        totals = {"total_attacks": _parse_int(inputs.get("total_attacks"), 0), "total_loots": _parse_int(inputs.get("total_loots"), 0)}
+        totals = {key: _parse_int(inputs.get(key), 0) for key in ("total_attacks", "total_loots", "loot_total", "gold_total")}
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=game_account_id)
         if not creds:
@@ -169,25 +182,49 @@ class BarbariansRunner(BaseRunner):
             return
         level = int(barb.get("level") or 1)
         st["level"] = level
+        st["town"] = town
         if barb.get("under_attack"):
+            st["status"] = "battle"
             self.log(jid, "info", f"Ilha {island_id}: batalha em andamento contra a vila nível {level}.")
             return
+        village = {}
+        try:
+            village = fetch_village_info(client, island_id)
+        except Exception as exc:  # noqa: BLE001 - without it the level table estimates the loot
+            self.log(jid, "warn", f"Ilha {island_id}: tela da vila não abriu ({exc}); uso a tabela de saque.")
         if barb.get("destroyed"):
-            if do_loot and not st.get("collected"):
+            st["status"] = "rebuilding"
+            st["rebuild_end"] = village.get("rebuild_end") or st.get("rebuild_end") or 0
+            left = village.get("total")
+            if left is not None and st.get("left_before") is not None:
+                # what disappeared from the village since the last look was taken by us
+                taken = max(0, int(st["left_before"]) - int(left))
+                st["looted"] = int(st.get("looted") or 0) + taken
+                totals["loot_total"] = int(totals.get("loot_total") or 0) + taken
+                if st.get("gold_pending"):
+                    st["gold"] = int(st.get("gold") or 0) + int(st["gold_pending"])
+                    totals["gold_total"] = int(totals.get("gold_total") or 0) + int(st["gold_pending"])
+                    st["gold_pending"] = 0
+            if left is not None:
+                st["left_before"] = int(left)
+            if do_loot and left and int(left) > 0:
                 available = self._get_available_troops(jid, client, town)
                 unit = _loot_unit(available)
                 if unit:
-                    ships = loot_ships_for_level(max(1, level - 1))
+                    ships = max(1, -(-int(left) // SHIP_CAPACITY))
                     result = client.attack_barbarian_village(from_city_id=town, island_id=island_id, troops=unit,
                                                              transporters=ships)
                     totals["total_loots"] += 1
-                    st["collected"] = True
-                    self.log(jid, "info", f"Ilha {island_id}: vila destruída; coleta enviada com {result['transporters']} "
-                                          f"mercantes (nível {level - 1}).")
+                    st["loots"] = int(st.get("loots") or 0) + 1
+                    self.log(jid, "info", f"Ilha {island_id}: vila destruída com {int(left):,} recursos; coleta com "
+                                          f"{result['transporters']} mercantes.".replace(",", "."))
                     return
-            self.log(jid, "info", f"Ilha {island_id}: vila em reconstrução (nível {level}).")
+            self.log(jid, "info", f"Ilha {island_id}: vila em reconstrução (nível {level})"
+                                  + (f", {int(left):,} recursos ainda lá.".replace(",", ".") if left else "."))
             return
-        st["collected"] = False
+        st["status"] = "ready"
+        st["left_before"] = None
+        st["rebuild_end"] = 0
         if level < min_level or level > max_level:
             self.log(jid, "info", f"Ilha {island_id}: vila nível {level} fora da faixa {min_level}-{max_level}.")
             return
@@ -198,13 +235,18 @@ class BarbariansRunner(BaseRunner):
             return
         if max_random_wait > 0:
             time.sleep(random.randint(0, max_random_wait))
-        ships = loot_ships_for_level(level) + max(0, extra_ships)
+        on_hand = int(village.get("total") or 0)
+        ships = (max(1, -(-on_hand // SHIP_CAPACITY)) if on_hand else loot_ships_for_level(level)) + max(0, extra_ships)
         result = client.attack_barbarian_village(from_city_id=town, island_id=island_id, troops=troops, transporters=ships)
         totals["total_attacks"] += 1
-        st.update(attacked_at=int(time.time()), attacked_level=level)
+        st.update(attacked_at=int(time.time()), attacked_level=level, status="attacking", attacks=int(st.get("attacks") or 0) + 1,
+                  last_troops={str(k): v for k, v in troops.items()}, last_ships=result["transporters"],
+                  village_resources=on_hand, village_gold=int(village.get("gold") or 0),
+                  left_before=on_hand if on_hand else None, gold_pending=int(village.get("gold") or 0))
         warn = " Atenção: a partir do nível 10 os bárbaros podem se vingar." if level >= 10 else ""
-        self.log(jid, "info", f"Ilha {island_id}: ataque à vila nível {level} saindo de {town} com {troops} e "
-                              f"{result['transporters']} mercantes (de {result.get('free_ships')} livres).{warn}")
+        self.log(jid, "info", f"Ilha {island_id}: ataque à vila nível {level} (tem {on_hand:,} recursos e "
+                              f"{int(village.get('gold') or 0):,} de ouro) saindo de {town} com {troops} e "
+                              f"{result['transporters']} mercantes (de {result.get('free_ships')} livres).{warn}".replace(",", "."))
 
     def _dry_run(self, jid, client, city_id, island_ids, troop_mode, custom_troops_json, extra_ships,
                  game_account_id) -> RunnerResult:
@@ -214,6 +256,7 @@ class BarbariansRunner(BaseRunner):
         available = self._get_available_troops(jid, client, city_id)
         self.log(jid, "info", f"[só conferir] Tropas na cidade {city_id}: {available}")
         for island_id in island_ids[:3]:
+            self.log(jid, "info", f"[só conferir] Ilha {island_id}: tela da vila={json.dumps(fetch_village_info(client, island_id), ensure_ascii=False)[:900]}")
             barb = client.get_barbarian_state(island_id)
             self.log(jid, "info", f"[só conferir] Ilha {island_id}: bárbaros={json.dumps(barb, ensure_ascii=False)[:900]}")
             level = int((barb or {}).get("level") or 1)

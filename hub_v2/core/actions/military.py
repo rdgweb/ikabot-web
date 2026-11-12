@@ -106,7 +106,7 @@ ACTIONS = {
                 "type": FIELD_INT,
                 "label": "Nível máximo de bárbaros para atacar",
                 "required": False,
-                "default": 99,
+                "default": 9,
                 "min": 1,
                 "max": 99,
                 "help": "Ignora ilhas acima deste nível (bárbaros fortes demais para as tropas disponíveis).",

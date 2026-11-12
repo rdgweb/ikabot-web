@@ -1,12 +1,9 @@
 {% load static hub_tags %}
 
     {% if action_code == 19 %}
-    {# N-179: Roubar Bárbaros — city, islands in rotation, troops and the rules, chosen on cards instead of raw fields #}
+    {# N-179: Roubar Bárbaros — each island's village, attacked by a town of that island; the system's card pattern #}
     {{ barbarians_ui|json_script:"barbarians-ui-data" }}
-    <div class="mb-5 rounded-[24px] border shadow-[0_12px_36px_rgba(60,45,18,0.10)]"
-         style="border-color: var(--ik-line); background:
-           radial-gradient(780px 280px at 0% 0%, rgba(166,124,46,0.12), transparent 60%),
-           linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));"
+    <div class="space-y-4"
          x-data="{
            ui: {cities: [], islands: []},
            islands: [],
@@ -16,10 +13,13 @@
            loot: {% if form.loot.value == False or form.loot.value == 'false' or form.loot.value == 'False' %}false{% else %}true{% endif %},
            minLevel: {{ form.min_barb_level.value|default:1 }},
            maxLevel: {{ form.max_barb_level.value|default:9 }},
-           minRes: {{ form.min_resources.value|default:0 }},
-           extraShips: {{ form.extra_ships.value|default:0 }},
            recheck: {{ form.recheck_minutes.value|default:15 }},
            randomWait: {{ form.max_random_wait.value|default:0 }},
+           modes: [
+             {v: 'schematic', icon: 'bi-diagram-3', t: 'Pelo nível da vila', d: 'O necessário para cada nível: o dobro dos bárbaros até o 9, a tabela do nível depois.'},
+             {v: 'available', icon: 'bi-collection', t: 'Todas da cidade', d: 'Manda todas as tropas de combate que estiverem na cidade.'},
+             {v: 'custom', icon: 'bi-sliders', t: 'Escolher as tropas', d: 'Quantidade de cada unidade, igual em todas as ilhas.'},
+           ],
            init() {
              this.ui = JSON.parse(document.getElementById('barbarians-ui-data')?.textContent || '{}');
              const known = new Set(this.ui.islands.map(i => i.id));
@@ -31,9 +31,9 @@
                this.town[i.id] = towns.some(c => c.id === String(saved[i.id])) ? String(saved[i.id]) : (towns[0] ? towns[0].id : '');
              });
              try { const c = JSON.parse('{{ form.custom_troops.value|default:''|escapejs }}' || '{}'); Object.keys(c).forEach(k => this.custom[k] = Number(c[k]) || 0); } catch (e) {}
-             if (!this.islands.length) this.islands = this.ui.islands.filter(i => this.towns(i).some(c => c.total)).map(i => i.id);
            },
            towns(i) { return this.ui.cities.filter(c => c.island_id === i.id).sort((a, b) => b.total - a.total); },
+           townOf(i) { return this.ui.cities.find(c => c.id === this.town[i.id]) || null; },
            toggleIsland(id) { const k = this.islands.indexOf(id); k >= 0 ? this.islands.splice(k, 1) : this.islands.push(id); },
            townMap() { const out = {}; this.islands.forEach(id => { if (this.town[id]) out[id] = this.town[id]; }); return JSON.stringify(out); },
            firstTown() { return this.islands.length ? (this.town[this.islands[0]] || '') : ''; },
@@ -43,6 +43,7 @@
              Object.keys(this.custom).forEach(k => { const v = Math.max(0, Math.floor(Number(this.custom[k]) || 0)); if (v) out[k] = v; });
              return JSON.stringify(out);
            },
+           fmt(n) { return Number(n || 0).toLocaleString('pt-BR'); },
          }">
       <input type="hidden" name="{{ form.city_id.html_name }}" :value="firstTown()">
       <input type="hidden" name="{{ form.island_ids.html_name }}" :value="islands.join(',')">
@@ -52,154 +53,135 @@
       <input type="hidden" name="{{ form.loot.html_name }}" :value="loot ? 'true' : 'false'">
       <input type="hidden" name="{{ form.min_barb_level.html_name }}" :value="minLevel">
       <input type="hidden" name="{{ form.max_barb_level.html_name }}" :value="maxLevel">
-      <input type="hidden" name="{{ form.min_resources.html_name }}" :value="minRes">
-      <input type="hidden" name="{{ form.extra_ships.html_name }}" :value="extraShips">
+      <input type="hidden" name="{{ form.min_resources.html_name }}" value="0">
+      <input type="hidden" name="{{ form.extra_ships.html_name }}" value="0">
       <input type="hidden" name="{{ form.recheck_minutes.html_name }}" :value="recheck">
       <input type="hidden" name="{{ form.max_random_wait.html_name }}" :value="randomWait">
 
-      <div class="flex flex-col gap-3 border-b px-5 py-4 md:flex-row md:items-center md:justify-between md:px-6"
-           style="border-color: rgba(219,201,167,0.8);">
-        <div class="flex items-center gap-3">
-          <img src="{% static 'game/buildings/barracks.png' %}" alt="" class="h-10 w-10 object-contain">
-          <div>
-            <h3 class="text-lg font-bold text-ink">Roubar bárbaros</h3>
-            <div class="text-[11px] text-muted">Cada ilha tem a sua vila; a cidade da ilha ataca e os mercantes trazem o saque.</div>
-          </div>
-        </div>
-        <span class="rounded-full px-3 py-1 text-[11px] font-bold" style="background: rgba(166,124,46,0.14); color: var(--ik-gold-dark);"
-              x-text="islands.length ? `${islands.length} ilha${islands.length > 1 ? 's' : ''} ao mesmo tempo` : 'escolha uma ilha'"></span>
-      </div>
-
-      <div class="space-y-5 px-4 py-4 md:px-6">
-        {# ── Ilhas e a cidade que ataca em cada uma ── #}
-        <div>
-          <div class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted">Ilhas</div>
-          <template x-if="!ui.islands.length">
-            <div class="rounded-2xl border px-4 py-6 text-center text-sm text-muted" style="border-color: var(--ik-line);">Sem cidades na última leitura desta conta.</div>
-          </template>
-          <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));">
-            <template x-for="i in ui.islands" :key="i.id">
-              <div class="rounded-2xl border px-3 py-2 transition-all"
-                   :style="islands.includes(i.id) ? 'border-color: var(--ik-gold); background: rgba(201,156,78,0.10); box-shadow: 0 0 0 1px var(--ik-gold) inset;' : 'border-color: var(--ik-line); background: rgba(255,255,255,0.75);'">
-                <button type="button" class="flex w-full items-center justify-between gap-2 text-left" @click="toggleIsland(i.id)">
-                  <span class="min-w-0">
-                    <b class="text-sm text-ink" x-text="i.name || ('Ilha ' + i.id)"></b>
-                    <span class="font-mono text-[10px] text-muted" x-text="`[${i.x}:${i.y}]`"></span>
-                    <span class="block text-[10px] text-muted" x-text="i.resource"></span>
+      {# ── Ilhas ── #}
+      <div class="card !p-4">
+        <label class="form-label text-xs mb-2 block"><i class="bi bi-geo-alt-fill text-sea mr-1"></i>Ilhas <span class="text-[var(--ik-bad)]">*</span></label>
+        <template x-if="!ui.islands.length">
+          <div class="text-xs text-muted">Sem cidades na última leitura desta conta.</div>
+        </template>
+        <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
+          <template x-for="i in ui.islands" :key="i.id">
+            <div class="relative rounded-[18px] border text-left transition-all duration-150"
+                 :class="islands.includes(i.id) ? 'ring-2 ring-[var(--ik-sea)] shadow-[0_10px_28px_rgba(79,134,185,0.18)]' : 'hover:border-[var(--ik-sea)]/45'"
+                 :style="islands.includes(i.id) ? 'border-color: rgba(79,134,185,0.50); background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(79,134,185,0.10));' : 'border-color: rgba(219,201,167,0.9); background: rgba(255,255,255,0.82);'">
+              <button type="button" class="relative w-full p-3 text-left" @click="toggleIsland(i.id)">
+                <div class="flex items-start gap-2">
+                  <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border"
+                       style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+                    <img :src="i.icon" alt="" class="h-6 w-6 object-contain">
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <div class="truncate text-xs font-semibold text-ink" x-text="i.name || ('Ilha ' + i.id)"></div>
+                    <div class="text-[10px] text-muted" x-text="(i.resource ? i.resource + ' · ' : '') + `[${i.x}:${i.y}]`"></div>
+                  </div>
+                  <span class="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border"
+                        :class="islands.includes(i.id) ? 'border-[var(--ik-sea)] bg-[var(--ik-sea)] text-white' : 'border-[var(--ik-line)] text-transparent'">
+                    <i class="bi bi-check text-[10px]"></i>
                   </span>
-                  <span class="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border text-[10px]"
-                        :style="islands.includes(i.id) ? 'background: var(--ik-gold); border-color: var(--ik-gold); color: #fff;' : 'border-color: var(--ik-line); color: transparent;'"><i class="bi bi-check"></i></span>
-                </button>
-                <div class="mt-2 space-y-1" x-show="islands.includes(i.id)">
-                  <template x-for="c in towns(i)" :key="c.id">
-                    <label class="flex cursor-pointer items-center justify-between gap-2 rounded-xl border px-2 py-1"
-                           :style="town[i.id] === c.id ? 'border-color: var(--ik-sea); background: rgba(79,134,185,0.07);' : 'border-color: var(--ik-line); background: rgba(255,255,255,0.8);'">
-                      <span class="flex min-w-0 items-center gap-2">
-                        <input type="radio" :name="'town-' + i.id" :value="c.id" x-model="town[i.id]" style="accent-color: var(--ik-sea);">
-                        <span class="truncate text-[11px] font-semibold text-ink" x-text="c.name"></span>
-                      </span>
-                      <span class="flex flex-shrink-0 items-center gap-1">
-                        <template x-for="t in c.troops.slice(0, 4)" :key="t.id">
-                          <span class="inline-flex items-center gap-0.5 text-[10px] text-ink" :title="t.name">
-                            <img :src="t.icon" alt="" class="h-5 w-5 object-contain"><span x-text="t.have.toLocaleString('pt-BR')"></span>
-                          </span>
-                        </template>
-                        <span class="text-[10px] text-muted" x-show="!c.troops.length">sem tropas</span>
-                      </span>
-                    </label>
+                </div>
+              </button>
+              <div class="px-3 pb-3" x-show="islands.includes(i.id)">
+                <template x-if="towns(i).length > 1">
+                  <select x-model="town[i.id]" class="form-select !py-1 !text-xs w-full">
+                    <template x-for="c in towns(i)" :key="c.id">
+                      <option :value="c.id" :selected="town[i.id] === c.id" x-text="c.name + (c.total ? ' · ' + fmt(c.total) + ' tropas' : ' · sem tropas')"></option>
+                    </template>
+                  </select>
+                </template>
+                <div class="mt-1.5 flex flex-wrap items-center gap-1.5" x-show="townOf(i)">
+                  <span class="text-[10px] text-muted" x-show="towns(i).length === 1" x-text="townOf(i) ? townOf(i).name : ''"></span>
+                  <template x-for="t in (townOf(i) ? townOf(i).troops.slice(0, 5) : [])" :key="t.id">
+                    <span class="inline-flex items-center gap-0.5 text-[10px] text-ink" :title="t.name">
+                      <img :src="t.icon" alt="" class="h-5 w-5 object-contain"><span x-text="fmt(t.have)"></span>
+                    </span>
                   </template>
                 </div>
               </div>
-            </template>
-          </div>
-        </div>
-
-        {# ── Tropas ── #}
-        <div>
-          <div class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted">Tropas do ataque</div>
-          <div class="grid gap-2" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
-            <template x-for="opt in [{v: 'schematic', icon: 'bi-diagram-3', t: 'Pelo nível dos bárbaros', d: 'composição pronta para cada nível'},
-                                     {v: 'available', icon: 'bi-collection', t: 'Todas da cidade', d: 'manda as tropas que estiverem lá'},
-                                     {v: 'custom', icon: 'bi-sliders', t: 'Escolher', d: 'quantidade de cada unidade'}]" :key="opt.v">
-              <button type="button" class="flex items-center gap-3 rounded-2xl border px-3 py-2 text-left transition-all" @click="mode = opt.v"
-                      :style="mode === opt.v ? 'border-color: var(--ik-sea); background: rgba(79,134,185,0.07); box-shadow: 0 0 0 1px var(--ik-sea) inset;' : 'border-color: var(--ik-line); background: rgba(255,255,255,0.75);'">
-                <span class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full"
-                      :style="mode === opt.v ? 'background: var(--ik-sea); color: #fff;' : 'background: var(--ik-sand); color: var(--ik-muted);'"><i class="bi" :class="opt.icon"></i></span>
-                <span class="min-w-0"><b class="block text-xs text-ink" x-text="opt.t"></b><span class="text-[10px] text-muted" x-text="opt.d"></span></span>
-              </button>
-            </template>
-          </div>
-          <div x-show="mode === 'custom'" class="mt-3 rounded-2xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.75);">
-            <template x-if="!city() || !city().troops.length">
-              <div class="text-center text-[11px] text-muted">Essa cidade não tem tropas na última leitura.</div>
-            </template>
-            <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));">
-              <template x-for="t in (city() ? city().troops : [])" :key="t.id">
-                <label class="flex items-center gap-2 rounded-xl border px-2 py-1.5" style="border-color: var(--ik-line);">
-                  <img :src="t.icon" alt="" class="h-8 w-8 object-contain">
-                  <span class="min-w-0 flex-1">
-                    <span class="block truncate text-[11px] font-semibold text-ink" x-text="t.name"></span>
-                    <input type="number" min="0" :max="t.have" x-model.number="custom[t.id]" placeholder="0" class="form-input !py-0.5 !text-xs w-full">
-                  </span>
-                  <span class="text-[10px] text-muted" x-text="'/' + t.have.toLocaleString('pt-BR')"></span>
-                </label>
-              </template>
             </div>
-          </div>
+          </template>
         </div>
+      </div>
 
-        {# ── Regras ── #}
-        <div class="grid gap-3" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
-          <div class="rounded-2xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.75);">
-            <div class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Nível da vila</div>
-            <div class="flex items-center gap-2">
-              <input type="number" min="1" max="50" x-model.number="minLevel" class="form-input !py-1 !text-xs w-full">
+      {# ── Tropas ── #}
+      <div class="card !p-4">
+        <label class="form-label text-xs mb-2 block"><i class="bi bi-people-fill text-sea mr-1"></i>Tropas do ataque</label>
+        <div class="space-y-1.5">
+          <template x-for="opt in modes" :key="opt.v">
+            <label class="flex items-center gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-all"
+                   :class="mode === opt.v ? 'border-[var(--ik-sea)] bg-[rgba(79,134,185,0.05)]' : 'border-[var(--ik-line)] hover:border-[var(--ik-sea)]/40'"
+                   @click.prevent="mode = opt.v">
+              <div class="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
+                   :class="mode === opt.v ? 'bg-[var(--ik-sea)] text-white' : 'bg-[var(--ik-sand)] text-muted'">
+                <i class="bi text-[10px]" :class="opt.icon"></i>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="text-xs font-semibold text-ink" x-text="opt.t"></div>
+                <div class="text-[10px] text-muted" x-text="opt.d"></div>
+              </div>
+              <div class="w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center"
+                   :class="mode === opt.v ? 'border-[var(--ik-sea)]' : 'border-[var(--ik-line)]'">
+                <div class="w-2 h-2 rounded-full" :class="mode === opt.v ? 'bg-[var(--ik-sea)]' : ''"></div>
+              </div>
+            </label>
+          </template>
+        </div>
+        <div x-show="mode === 'custom'" class="mt-3 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
+          <template x-for="t in (city() ? city().troops : [])" :key="t.id">
+            <label class="flex items-center gap-2 rounded-lg border px-2 py-1.5" style="border-color: var(--ik-line);">
+              <img :src="t.icon" alt="" class="h-8 w-8 object-contain">
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-[11px] font-semibold text-ink" x-text="t.name"></span>
+                <input type="number" min="0" :max="t.have" x-model.number="custom[t.id]" placeholder="0" class="form-input !py-0.5 !text-xs w-full">
+              </span>
+            </label>
+          </template>
+        </div>
+      </div>
+
+      {# ── Regras ── #}
+      <div class="card !p-4">
+        <label class="form-label text-xs mb-2 block"><i class="bi bi-sliders text-sea mr-1"></i>Regras</label>
+        <div class="grid gap-3 md:grid-cols-4">
+          <div>
+            <label class="form-label text-[11px] mb-1 block">Nível da vila</label>
+            <div class="flex items-center gap-1.5">
+              <input type="number" min="1" max="50" x-model.number="minLevel" class="form-input !py-1.5 !text-xs w-full">
               <span class="text-xs text-muted">a</span>
-              <input type="number" min="1" max="50" x-model.number="maxLevel" class="form-input !py-1 !text-xs w-full">
-            </div>
-            <div class="mt-1.5 text-[10px] font-semibold" style="color: var(--ik-bad);" x-show="maxLevel >= 10">
-              <i class="bi bi-exclamation-triangle-fill"></i> do 10 em diante eles podem se vingar
+              <input type="number" min="1" max="50" x-model.number="maxLevel" class="form-input !py-1.5 !text-xs w-full">
             </div>
           </div>
-          <div class="rounded-2xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.75);">
-            <div class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Recursos mínimos na vila</div>
-            <input type="number" min="0" step="1000" x-model.number="minRes" class="form-input !py-1 !text-xs w-full">
-            <div class="mt-1.5 flex flex-wrap gap-1">
-              <template x-for="v in [0, 5000, 10000, 25000, 50000]" :key="'mr' + v">
-                <button type="button" class="rounded-full border px-2 py-0.5 text-[10px]" @click="minRes = v"
-                        :class="minRes === v ? 'border-[var(--ik-sea)] bg-[var(--ik-sea)] text-white' : 'border-[var(--ik-line)] text-muted'"
-                        x-text="v ? (v / 1000) + ' mil' : 'qualquer'"></button>
-              </template>
-            </div>
+          <div>
+            <label class="form-label text-[11px] mb-1 block">Conferir a cada</label>
+            <select x-model.number="recheck" class="form-select !py-1.5 !text-xs w-full">
+              <template x-for="m in [5, 10, 15, 30, 60]" :key="'rc' + m"><option :value="m" :selected="recheck === m" x-text="m + ' min'"></option></template>
+            </select>
           </div>
-          <div class="rounded-2xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.75);">
-            <div class="flex items-center justify-between">
-              <span class="text-[10px] font-semibold uppercase tracking-wider text-muted">Recolher o saque</span>
-              <button type="button" role="switch" :aria-checked="loot" @click="loot = !loot"
-                      class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out"
-                      :class="loot ? 'bg-[var(--ik-sea)]' : 'bg-gray-300'">
+          <div>
+            <label class="form-label text-[11px] mb-1 block">Espera aleatória</label>
+            <select x-model.number="randomWait" class="form-select !py-1.5 !text-xs w-full">
+              <template x-for="s in [0, 30, 60, 120, 300]" :key="'rw' + s"><option :value="s" :selected="randomWait === s" x-text="s ? 'até ' + s + ' s' : 'desligada'"></option></template>
+            </select>
+          </div>
+          <div>
+            <label class="form-label text-[11px] mb-1 block">Recolher o que sobrar</label>
+            <button type="button" role="switch" :aria-checked="loot" @click="loot = !loot" class="flex items-center gap-2 select-none text-xs text-muted">
+              <span class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out"
+                    :class="loot ? 'bg-[var(--ik-sea)]' : 'bg-gray-300'">
                 <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform duration-200 ease-in-out"
                       :style="loot ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
-              </button>
-            </div>
-            <div class="mt-2 text-[10px] text-muted" x-text="loot ? 'depois da vitória manda tropas leves buscar' : 'só ataca'"></div>
+              </span>
+              <span :class="loot ? 'text-ink font-semibold' : ''" x-text="loot ? 'sim' : 'não'"></span>
+            </button>
           </div>
-          <div class="rounded-2xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.75);">
-            <div class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Navios extras · conferir a cada</div>
-            <div class="flex items-center gap-2">
-              <input type="number" min="0" max="50" x-model.number="extraShips" class="form-input !py-1 !text-xs w-full">
-              <select x-model.number="recheck" class="form-select !py-1 !text-xs w-full">
-                <template x-for="m in [5, 10, 15, 30, 60]" :key="'rc' + m"><option :value="m" :selected="recheck === m" x-text="m + ' min'"></option></template>
-              </select>
-            </div>
-          </div>
-          <div class="rounded-2xl border px-3 py-3" style="border-color: var(--ik-line); background: rgba(255,255,255,0.75);">
-            <div class="mb-1 flex items-center justify-between">
-              <span class="text-[10px] font-semibold uppercase tracking-wider text-muted">Espera aleatória</span>
-              <span class="text-xs font-semibold text-ink" x-text="randomWait ? 'até ' + randomWait + ' s' : 'desligada'"></span>
-            </div>
-            <input type="range" min="0" max="600" step="15" x-model.number="randomWait" class="w-full accent-[var(--ik-sea)]">
-          </div>
+        </div>
+        <div class="mt-3 rounded-lg border px-3 py-2 text-[11px]" x-show="maxLevel >= 10"
+             style="border-color: rgba(187,81,67,0.35); background: rgba(187,81,67,0.06); color: var(--ik-bad);">
+          <i class="bi bi-exclamation-triangle-fill"></i> Do nível 10 em diante os bárbaros podem se vingar: atacar a cidade ou ocupar a mina.
         </div>
       </div>
     </div>
