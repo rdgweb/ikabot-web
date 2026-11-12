@@ -89,6 +89,52 @@ def calculate_transporters(troops: dict[int, int], extra: int = 0) -> int:
     return max(1, math.ceil(total_weight / CARGO_SHIP_CAPACITY) + extra)
 
 
+def read_attack_view(client, from_city_id: int | str, island_id: int | str) -> list[dict[str, Any]]:
+    """N-179: open (only read) the screens the game shows before an attack on the barbarians, to learn what it
+    expects: the form fields, the unit weights and the ships' capacity. Nothing is sent."""
+    import re
+
+    variants = {
+        "plunder": {"view": "plunder", "barbarianVillage": "1", "islandId": str(island_id), "destinationCityId": "0",
+                    "backgroundView": "island", "currentIslandId": str(island_id), "templateView": "island"},
+        "barbarianVillage": {"view": "barbarianVillage", "islandId": str(island_id), "backgroundView": "island",
+                             "currentIslandId": str(island_id)},
+    }
+    out = []
+    for name, params in variants.items():
+        try:
+            resp = client._request("GET", client._server_url, params={**params, "currentCityId": str(from_city_id),
+                                                                       "actionRequest": client._action_request, "ajax": "1"},
+                                   headers=dict(GAME_AJAX_HEADERS), timeout=30)
+            data = resp.json()
+        except Exception as exc:  # noqa: BLE001 - a diagnosis reports what failed
+            out.append({"view": name, "error": str(exc)[:200]})
+            continue
+        html, feedback = "", []
+        for entry in data if isinstance(data, list) else []:
+            if not (isinstance(entry, list) and len(entry) > 1):
+                continue
+            if isinstance(entry[1], dict) and entry[1].get("actionRequest"):
+                client._action_request = str(entry[1]["actionRequest"])
+            if entry[0] in ("changeView", "changeHTML"):
+                for item in entry[1] if isinstance(entry[1], list) else [entry[1]]:
+                    if isinstance(item, str) and len(item) > len(html):
+                        html = item
+            if entry[0] == "provideFeedback":
+                feedback = [str(fb.get("text") or "") for fb in entry[1] or [] if isinstance(fb, dict)]
+        controller = re.search(r"new missionController\(([^)]*)\)", html)
+        weights = {m.group(1): m.group(2) for m in re.finditer(
+            r'slider_(\d+)"?\s*\);[\s\S]{0,400}?weight\s*=\s*([\d.]+)', html)}
+        out.append({
+            "view": name, "html": len(html), "feedback": feedback,
+            "controller": controller.group(1)[:200] if controller else "",
+            "weights": weights, "units": sorted(set(re.findall(r"cargo_army_(\d+)", html))),
+            "fields": sorted(set(re.findall(r'name="([a-zA-Z_]+)"', html)))[:40],
+            "functions": sorted(set(re.findall(r'function["\']?\s*[:=]\s*["\']([a-zA-Z]+)', html)))[:10],
+        })
+    return out
+
+
 class AttackBarbarianVillageAction(BaseAction):
     """Send troops to attack (or loot) the barbarian village on an island.
 

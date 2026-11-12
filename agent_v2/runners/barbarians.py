@@ -179,6 +179,7 @@ class BarbariansRunner(BaseRunner):
             }
 
         current_island_id = island_ids[island_index]
+        dry_run = str(inputs.get("dry_run") or "").lower() in {"1", "true", "on", "yes"}
 
         # ── Login ──
         creds = self.resolve_credentials(aid, inputs, game_account_id=game_account_id)
@@ -189,6 +190,10 @@ class BarbariansRunner(BaseRunner):
 
         try:
             client = self.get_or_login_game_client(jid, aid, game_account_id, creds)
+
+            if dry_run:
+                return self._dry_run(jid, client, city_id, island_ids, troop_mode, custom_troops_json, extra_ships,
+                                     game_account_id)
 
             # ─── Phase: check ───────────────────────────────────────────────
             if phase == "check":
@@ -491,6 +496,26 @@ class BarbariansRunner(BaseRunner):
         self.save_game_client(game_account_id, client)
         return RunnerResult(success=True, reschedule_seconds=LOOT_POLL_INTERVAL,
                             reschedule_inputs=state(phase="loot_waiting"))
+
+    def _dry_run(self, jid, client, city_id, island_ids, troop_mode, custom_troops_json, extra_ships,
+                 game_account_id) -> RunnerResult:
+        """N-179: read everything an attack would use and log it, sending nothing (only to check the game)."""
+        from game_client.actions.barbarians import read_attack_view
+
+        available = self._get_available_troops(jid, client, city_id)
+        self.log(jid, "info", f"[só conferir] Tropas na cidade {city_id}: {available}")
+        for island_id in island_ids[:3]:
+            barb = client.get_barbarian_state(island_id)
+            self.log(jid, "info", f"[só conferir] Ilha {island_id}: bárbaros={json.dumps(barb, ensure_ascii=False)[:900]}")
+            level = int((barb or {}).get("level") or 1)
+            troops = _resolve_troops(troop_mode, level, custom_troops_json, available)
+            ships = calculate_transporters(troops, extra_ships) if troops else 0
+            self.log(jid, "info", f"[só conferir] Ilha {island_id}: mandaria tropas={troops} navios={ships} (tabela atual)")
+            for view in read_attack_view(client, city_id, island_id):
+                self.log(jid, "info", f"[só conferir] Tela {json.dumps(view, ensure_ascii=False)[:1500]}")
+        self.save_game_client(game_account_id, client)
+        self.log(jid, "info", "[só conferir] Nada foi enviado. Fim.")
+        return RunnerResult(success=True, data={"status": "dry_run"})
 
     def _get_available_troops(
         self, jid: str, client, city_id: str
