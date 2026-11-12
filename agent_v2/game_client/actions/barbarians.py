@@ -141,8 +141,8 @@ def read_attack_view(client, from_city_id: int | str, island_id: int | str) -> l
         hidden.pop("actionRequest", None)          # a session token never goes to the logs
         out.append({
             "view": name, "html": len(html), "feedback": feedback, "hidden": hidden,
-            "weight_snippets": [re.sub(r"\s+", " ", html[max(0, m.start() - 120):m.start() + 120])
-                                for m in list(re.finditer(r"[Ww]eight", html))[2:7]],
+            "weight_snippets": [re.sub(r"\s+", " ", m.group(0)) for m in re.finditer(
+                r"[\s\S]{0,160}[Ww]eight[\"']?\s*[:=]\s*[\d.]+[\s\S]{0,40}", html)][:6],
             "controller": controller.group(1)[:200] if controller else "",
             "weights": weights, "units": sorted(set(re.findall(r"cargo_army_(\d+)", html))),
             "fields": sorted(set(re.findall(r'name="([a-zA-Z_]+)"', html)))[:40],
