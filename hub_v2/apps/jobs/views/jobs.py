@@ -1691,7 +1691,8 @@ class JobListView(FilterSortListView):
                                       .values_list("island_id", "name", "x", "y")):
             names[island_id] = (name, f"{x}:{y}")
         labels = {"ready": ("pronta", "good"), "attacking": ("atacada", "sea"), "battle": ("em batalha", "sea"),
-                  "rebuilding": ("em reconstrução", "gold")}
+                  "rebuilding": ("em reconstrução", "gold"), "moving": ("tropas a caminho", "sea"),
+                  "collecting": ("coletando", "sea")}
         islands = []
         for island_id in island_ids:
             st = state.get(island_id) or {}

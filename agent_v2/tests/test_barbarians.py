@@ -180,6 +180,7 @@ class MovementTests(unittest.TestCase):
         self.assertTrue(runner._on_the_way("j", Game(), "4477", "37441", st, totals, wake))
         self.assertEqual((totals["loot_total"], st["looted"], st["status"]), (900, 900, "moving"))
         self.assertEqual(wake[0], now + 65)
+        self.assertIn("900 recursos (600 madeira, 300 enxofre)", runner.hub.logs[1])
 
         class Idle:
             def fetch_military_advisor(self, city_id):

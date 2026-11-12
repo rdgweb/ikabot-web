@@ -104,6 +104,18 @@ def _choose_troops(mode: str, level: int, custom_json: str, available: dict[int,
     return _resolve_troops("schematic", level, custom_json, available)
 
 
+def _n(value) -> str:
+    """1234567 -> 1.234.567, as the game writes it."""
+    return f"{int(value or 0):,}".replace(",", ".")
+
+
+_GOODS_PT = {"wood": "madeira", "wine": "vinho", "marble": "mármore", "glass": "cristal", "sulfur": "enxofre", "gold": "ouro"}
+
+
+def _units_text(units: dict) -> str:
+    return ", ".join(f"{_n(qty)} {_GOODS_PT.get(name, name)}" for name, qty in (units or {}).items())
+
+
 def _cargo_total(cargo: dict) -> tuple[int, int]:
     """(resources, gold) carried by one movement."""
     gold = sum(int(v or 0) for k, v in (cargo or {}).items() if "gold" in str(k).lower())
@@ -244,8 +256,8 @@ class BarbariansRunner(BaseRunner):
                 st["cargo_counted"] = True
                 totals["loot_total"] = int(totals.get("loot_total") or 0) + resources
                 totals["gold_total"] = int(totals.get("gold_total") or 0) + gold
-                self.log(jid, "info", f"Ilha {island_id}: os mercantes voltam com {resources:,} recursos"
-                                      f"{f' e {gold:,} de ouro' if gold else ''} ({m.get('cargo')}).".replace(",", "."))
+                self.log(jid, "info", f"Ilha {island_id}: os mercantes voltam com {_n(resources)} recursos"
+                                      f"{f' e {_n(gold)} de ouro' if gold else ''} ({_units_text(m.get('cargo'))}).")
             when = time.strftime("%H:%M:%S", time.localtime(eta)) if eta else "?"
             lines.append(f"{'voltando' if m.get('is_returning') else 'indo'} (chega {when}, faltam {max(0, eta - now) // 60} min)")
         st["counted_events"] = counted[-20:]
@@ -299,11 +311,11 @@ class BarbariansRunner(BaseRunner):
                     st["loots"] = int(st.get("loots") or 0) + 1
                     st["status"] = "collecting"
                     st["cargo_counted"] = False
-                    self.log(jid, "info", f"Ilha {island_id}: vila destruída com {int(left):,} recursos; coleta com "
-                                          f"{result['transporters']} mercantes.".replace(",", "."))
+                    self.log(jid, "info", f"Ilha {island_id}: vila destruída com {_n(left)} recursos; coleta com "
+                                          f"{result['transporters']} mercantes.")
                     return
             self.log(jid, "info", f"Ilha {island_id}: vila em reconstrução (nível {level})"
-                                  + (f", {int(left):,} recursos ainda lá.".replace(",", ".") if left else "."))
+                                  + (f", {_n(left)} recursos ainda lá." if left else "."))
             return
         st["status"] = "ready"
         st["cargo_counted"] = False
@@ -331,10 +343,10 @@ class BarbariansRunner(BaseRunner):
                   left_before=on_hand if on_hand else None, gold_pending=int(village.get("gold") or 0))
         warn = " Atenção: a partir do nível 10 os bárbaros podem se vingar." if level >= 10 else ""
         if village.get("defenders"):
-            warn = f" Defensores: {village['defenders']}." + warn
-        self.log(jid, "info", f"Ilha {island_id}: ataque à vila nível {level} (tem {on_hand:,} recursos e "
-                              f"{int(village.get('gold') or 0):,} de ouro) saindo de {town} com {troops} e "
-                              f"{result['transporters']} mercantes (de {result.get('free_ships')} livres).{warn}".replace(",", "."))
+            warn = " Defensores: " + ", ".join(f"{_n(q)} {name}" for name, q in village["defenders"]) + "." + warn
+        self.log(jid, "info", f"Ilha {island_id}: ataque à vila nível {level} (tem {_n(on_hand)} recursos e "
+                              f"{_n(village.get('gold'))} de ouro) saindo de {town} com {troops} e "
+                              f"{result['transporters']} mercantes (de {result.get('free_ships')} livres).{warn}")
 
     def _dry_run(self, jid, client, city_id, island_ids, troop_mode, custom_troops_json, extra_ships,
                  game_account_id) -> RunnerResult:
