@@ -113,6 +113,48 @@ MAX_REINFORCEMENTS = 2         # per battle
 EN_ROUTE_SECONDS = 20 * 60     # a reinforcement sent less than this ago may still be on its way: it counts as joining
 DEFAULT_CYCLE_MINUTES = 180    # until the job has seen two attacks in a row
 BARRACKS_TTL = 6 * 3600        # training times read from the barracks are kept this long
+LEDGER_SIZE = 60               # battles kept in the farm's book
+DROP_LEVELS = 2                # auto: the profit per hour falling this many levels in a row marks the best one behind
+
+
+def farm_book(ledger: list[dict], prices: dict) -> dict[int, dict]:
+    """Per level, from the battles the job fought: loot, gold, what the losses cost to train again, rounds, the time
+    between this attack and the next (the cycle), the profit and the profit per hour (averages per battle)."""
+    out: dict[int, dict] = {}
+    for entry in ledger or []:
+        level = int(entry.get("level") or 0)
+        if not level or entry.get("loot") is None:
+            continue
+        cost = sum(float(prices.get(str(u)) or prices.get(u) or 0) * int(q) for u, q in (entry.get("losses") or {}).items())
+        row = out.setdefault(level, {"battles": 0, "loot": 0, "gold": 0, "losses_cost": 0, "rounds": 0, "cycle": 0, "cycles": 0})
+        row["battles"] += 1
+        row["loot"] += int(entry.get("loot") or 0)
+        row["gold"] += int(entry.get("gold") or 0)
+        row["losses_cost"] += cost
+        row["rounds"] += int(entry.get("rounds") or 0)
+        if entry.get("cycle_minutes"):
+            row["cycle"] += int(entry["cycle_minutes"])
+            row["cycles"] += 1
+    for level, row in out.items():
+        n = row["battles"]
+        row.update(loot=row["loot"] // n, gold=row["gold"] // n, losses_cost=round(row["losses_cost"] / n),
+                   rounds=round(row["rounds"] / n, 1), cycle=round(row["cycle"] / row["cycles"]) if row["cycles"] else None)
+        row["profit"] = row["loot"] + row["gold"] - row["losses_cost"]
+        row["per_hour"] = round(row["profit"] * 60 / row["cycle"]) if row["cycle"] else None
+    return out
+
+
+def ideal_level(book: dict[int, dict]) -> int | None:
+    """The level whose profit per hour is the best, once it has fallen DROP_LEVELS levels in a row after it (before
+    that the farm keeps climbing: it may still get better)."""
+    levels = sorted(level for level, row in book.items() if row.get("per_hour") is not None)
+    if len(levels) < DROP_LEVELS + 1:
+        return None
+    best = max(levels, key=lambda level: book[level]["per_hour"])
+    after = [level for level in levels if level > best]
+    if len(after) < DROP_LEVELS:
+        return None
+    return best
 
 
 def _is_barbarian_row(row: dict) -> bool:
@@ -237,6 +279,9 @@ class BarbariansRunner(BaseRunner):
         do_loot = str(inputs.get("loot", True)).lower() not in {"false", "0", "no", "off"}
         # a farm trains again what each battle cost (on by default; "retrain_losses": false turns it off)
         self._retrain = str(inputs.get("retrain_losses", True)).lower() not in {"false", "0", "no", "off"}
+        # the level the farm keeps (0 = keep climbing up to the maximum) or, "auto", the best profit per hour
+        self._target_level_input = _parse_int(inputs.get("target_level"), 0)
+        self._target_auto = str(inputs.get("target_auto") or "").lower() in {"1", "true", "on", "yes"}
         min_level = _parse_int(inputs.get("min_barb_level"), 1)
         max_level = _parse_int(inputs.get("max_barb_level"), 99)
         extra_ships = _parse_int(inputs.get("extra_ships"), 0)
@@ -321,6 +366,14 @@ class BarbariansRunner(BaseRunner):
                 st["looted"] = int(st.get("looted") or 0) + resources
                 st["gold"] = int(st.get("gold") or 0) + gold
                 st["cargo_counted"] = True
+                if st.get("last_mission") == "attack":
+                    ledger = [e for e in (st.get("ledger") or []) if isinstance(e, dict)]
+                    entry = next((e for e in ledger if e.get("at") == st.get("attacked_at")), None)
+                    if entry is None:
+                        entry = {"at": st.get("attacked_at"), "level": st.get("attacked_level"), "losses": {}, "cycle_minutes": None}
+                        ledger.append(entry)
+                    entry.update(loot=int(entry.get("loot") or 0) + resources, gold=int(entry.get("gold") or 0) + gold)
+                    st["ledger"] = ledger[-LEDGER_SIZE:]
                 totals["loot_total"] = int(totals.get("loot_total") or 0) + resources
                 totals["gold_total"] = int(totals.get("gold_total") or 0) + gold
                 self.log(jid, "info", f"Ilha {island_id}: os mercantes voltam com {_n(resources)} recursos"
@@ -412,14 +465,49 @@ class BarbariansRunner(BaseRunner):
                 f"Sem reforço: {outcome(without)}. Reforço enviado de {town}: {_army_text(send)}. "
                 f"Com ele: {outcome(with_)}.")
         self.log(jid, "info", f"Ilha {island_id}: {text}")
+        message = "\n".join([
+            f"Vila nível {barb.get('level')} · ilha {island_id} · rodada {round_no}",
+            f"Enviado: {_army_text(send)}",
+            f"Sem reforço: {outcome(without)}",
+            f"Com reforço: {outcome(with_)}",
+        ])
         try:
-            self.hub.send_notification(event="attack_alert", game_account_id=getattr(self, "_game_account_id", "") or None,
-                                       title="Reforço na vila dos bárbaros", body=text,
+            self.hub.send_notification(event="barbarian_farm", game_account_id=getattr(self, "_game_account_id", "") or None,
+                                       title="Reforço contra os bárbaros", body=message,
                                        metadata={"island_id": str(island_id), "round": round_no,
                                                  "army": {str(k): v for k, v in send.items()},
                                                  "transporters": result.get("transporters")})
         except Exception as exc:  # noqa: BLE001 - the log keeps it
             self.log(jid, "warn", f"Ilha {island_id}: aviso do reforço no Telegram falhou ({exc}).")
+
+    def _track_level(self, jid, island_id, level, st) -> None:
+        """The village's level as the job sees it; a drop without an attack in between is the decay, measured in
+        hours per level."""
+        seen = st.get("level_seen") or {}
+        now = int(time.time())
+        if not seen:
+            st["level_seen"] = {"level": level, "since": now}
+            return
+        if level == int(seen.get("level") or 0):
+            return
+        attacked_since = int(st.get("attacked_at") or 0) >= int(seen.get("since") or 0)
+        if level < int(seen["level"]) and not attacked_since:
+            hours = round((now - int(seen["since"])) / 3600 / max(1, int(seen["level"]) - level), 1)
+            st["decay"] = ([d for d in (st.get("decay") or []) if isinstance(d, dict)]
+                           + [{"from": int(seen["level"]), "to": level, "hours": hours, "at": now}])[-20:]
+            self.log(jid, "info", f"Ilha {island_id}: a vila caiu do nível {seen['level']} para o {level} sem ataque "
+                                  f"({hours} h por nível).")
+        st["level_seen"] = {"level": level, "since": now}
+
+    def _target_level(self, st) -> int:
+        """The level the farm keeps: the one chosen in the job, or (auto) the best profit per hour seen."""
+        if getattr(self, "_target_auto", False):
+            book = farm_book(st.get("ledger") or [], st.get("prices") or {})
+            ideal = ideal_level(book)
+            st["ideal_level"] = ideal
+            if ideal:
+                return ideal
+        return int(getattr(self, "_target_level_input", 0) or 0)
 
     def _simulator_plan(self, jid, island_id, level, barb, village, available, st) -> dict | None:
         """Ask the hub's simulator for the best army against this village; None (wait) when it cannot win or fails."""
@@ -445,6 +533,8 @@ class BarbariansRunner(BaseRunner):
             self.log(jid, "warn", f"Ilha {island_id}: simulador indisponível ({exc}); espero a próxima rodada.")
             return None
         pred = plan.get("prediction") or {}
+        if plan.get("prices"):
+            st["prices"] = plan["prices"]
         st["plan"] = {"level": level, "army": plan.get("army") or {}, "rounds": pred.get("rounds"),
                       "morale_end": pred.get("morale_end"), "losses": pred.get("attacker_losses") or {},
                       "wall_level": payload["wall_level"], "training": (plan.get("training") or [])[:4],
@@ -535,6 +625,14 @@ class BarbariansRunner(BaseRunner):
         battle = _battle_outcome(detailed or {}, newest)
         battle["level"] = st.get("attacked_level")
         st.update(last_battle=battle, last_report_id=battle["combat_id"], report_pending=False)
+        ledger = [e for e in (st.get("ledger") or []) if isinstance(e, dict)]
+        entry = next((e for e in ledger if e.get("at") == st.get("attacked_at")), None)
+        if entry is None:
+            entry = {"at": st.get("attacked_at"), "level": battle["level"], "loot": None, "gold": None, "cycle_minutes": None}
+            ledger.append(entry)
+        entry.update(result=battle["result"], rounds=battle["rounds"],
+                     losses={str(k): int(v) for k, v in (battle["losses"] or {}).items()})
+        st["ledger"] = ledger[-LEDGER_SIZE:]
         predicted = st.get("attack_plan") or {}
         st["battles"] = (list(st.get("battles") or []) + [{**{k: battle.get(k) for k in (
             "level", "result", "rounds", "morale_start", "morale_end", "losses")},
@@ -607,9 +705,21 @@ class BarbariansRunner(BaseRunner):
             st["defenders"] = village["defenders"]
         st["left_before"] = None
         st["rebuild_end"] = 0
+        self._track_level(jid, island_id, level, st)
         if level < min_level or level > max_level:
             self.log(jid, "info", f"Ilha {island_id}: vila nível {level} fora da faixa {min_level}-{max_level}.")
             return
+        target = self._target_level(st)
+        if target and level > target:
+            if st.get("waiting_level") != level:
+                st["waiting_level"] = level
+                drops = [d for d in (st.get("decay") or []) if isinstance(d, dict)]
+                pace = (f" (a última queda medida levou {drops[-1]['hours']} h por nível)" if drops else
+                        " (ainda sem queda medida: o job mede enquanto espera)")
+                self.log(jid, "info", f"Ilha {island_id}: vila nível {level}, acima do nível do farm ({target}); "
+                                      f"espero ela cair{pace}.")
+            return
+        st["waiting_level"] = None
         available = self._get_available_troops(jid, client, town)
         troops, how = None, troop_mode
         if troop_mode == "schematic":
@@ -639,6 +749,9 @@ class BarbariansRunner(BaseRunner):
         totals["total_attacks"] += 1
         if st.get("attacked_at") and 0 < time.time() - int(st["attacked_at"]) < 12 * 3600:
             st["cycle_minutes"] = int((time.time() - int(st["attacked_at"])) // 60)
+            for entry in st.get("ledger") or []:
+                if isinstance(entry, dict) and entry.get("at") == st["attacked_at"]:
+                    entry["cycle_minutes"] = st["cycle_minutes"]
         st.update(attacked_at=int(time.time()), attacked_level=level, status="attacking", attacks=int(st.get("attacks") or 0) + 1,
                   last_mission="attack", attack_defenders_hp=_defenders_hp(village.get("defenders")), troops_rule=how,
                   report_pending=True, report_tries=0, attack_plan=st.get("plan"),

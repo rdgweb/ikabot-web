@@ -1712,6 +1712,7 @@ class JobListView(FilterSortListView):
                 "attacked_at": datetime.fromtimestamp(st["attacked_at"], tz=dt_timezone.utc) if st.get("attacked_at") else None,
                 "rebuild_end": datetime.fromtimestamp(end, tz=dt_timezone.utc) if end else None,
                 "battles": [b for b in (st.get("battles") or []) if isinstance(b, dict)][-6:][::-1],
+                **cls._barbarian_farm(st, inputs),
             })
         return {
             "islands": islands,
@@ -1721,6 +1722,43 @@ class JobListView(FilterSortListView):
             "gold_total": _to_int(inputs.get("gold_total"), 0),
             "max_level": _to_int(inputs.get("max_barb_level"), 9),
         }
+
+    @staticmethod
+    def _barbarian_farm(st: dict, inputs: dict) -> dict:
+        """N-182: per level, from the battles fought, what the farm takes and costs (losses priced as training them
+        again) and the profit per hour; the village's measured decay; the level the farm keeps."""
+        from apps.combat.services.barbarian_planner import unit_price
+
+        book: dict[int, dict] = {}
+        for entry in st.get("ledger") or []:
+            if not isinstance(entry, dict) or entry.get("loot") is None or not entry.get("level"):
+                continue
+            row = book.setdefault(int(entry["level"]), {"n": 0, "loot": 0, "gold": 0, "cost": 0.0, "rounds": 0, "cycle": 0, "cycles": 0})
+            row["n"] += 1
+            row["loot"] += int(entry.get("loot") or 0)
+            row["gold"] += int(entry.get("gold") or 0)
+            row["cost"] += sum(unit_price(int(u)) * int(q) for u, q in (entry.get("losses") or {}).items())
+            row["rounds"] += int(entry.get("rounds") or 0)
+            if entry.get("cycle_minutes"):
+                row["cycle"] += int(entry["cycle_minutes"])
+                row["cycles"] += 1
+        rows = []
+        for level in sorted(book):
+            r = book[level]
+            n = r["n"]
+            cycle = round(r["cycle"] / r["cycles"]) if r["cycles"] else None
+            profit = (r["loot"] + r["gold"] - r["cost"]) / n
+            rows.append({"level": level, "battles": n, "loot": r["loot"] // n, "gold": r["gold"] // n, "cost": round(r["cost"] / n),
+                         "rounds": round(r["rounds"] / n, 1), "cycle": cycle, "cycle_h": f"{cycle // 60}h{cycle % 60:02d}" if cycle else "",
+                         "profit": round(profit), "per_hour": round(profit * 60 / cycle) if cycle else None})
+        best = max((r for r in rows if r["per_hour"] is not None), key=lambda r: r["per_hour"], default=None)
+        decay = [d for d in (st.get("decay") or []) if isinstance(d, dict)]
+        auto = str(inputs.get("target_auto") or "").lower() in {"1", "true", "on", "yes"}
+        target = st.get("ideal_level") if auto and st.get("ideal_level") else int(inputs.get("target_level") or 0)
+        return {"farm_book": rows, "farm_best": best["level"] if best else None,
+                "decay_hours": round(sum(d["hours"] for d in decay) / len(decay), 1) if decay else None,
+                "decay_count": len(decay), "farm_target": target or None, "farm_auto": auto,
+                "waiting_level": st.get("waiting_level")}
 
     @classmethod
     def _piracy_display(cls, job):

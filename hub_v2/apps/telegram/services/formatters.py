@@ -65,6 +65,7 @@ def format_message(event_key: str, game_account=None, **kwargs) -> str:
         "cinema_available": ("Cineteatro disponivel", "\U0001f3ac"),
         "combat_report": (_e(kwargs.get("headline")) or "Relatório de combate", "⚔️"),
         "proxy_change": ("Proxies: verificacao automatica", "\U0001f501"),
+        "barbarian_farm": (_e(kwargs.get("title")) or "Bárbaros: reforço", "\u2694\ufe0f"),
     }
     title, icon = title_map.get(event_key, (action_name, "\U0001f514"))
     if event_key == "combat_report":

@@ -301,6 +301,10 @@ class BarbarianPlanView(APIView):
             return Response({"can_win": False, "army": {}, "note": f"simulador falhou: {exc}"}, status=status.HTTP_200_OK)
         result["army"] = {str(k): v for k, v in (result.get("army") or {}).items()}
         result["unknown"] = unknown
+        # what training each unit again costs, for the job's farm book
+        from core.catalogs import TRAINING_UNITS
+
+        result["prices"] = {str(u["id"]): barbarian_planner.unit_price(u["id"]) for u in TRAINING_UNITS.get("troops", [])}
         result["defenders"] = {str(k): v for k, v in defenders.items()}
         calibration = barbarian_learning.active()
         result["calibration"] = {k: calibration.get(k) for k in ("attacker_pct", "defender_pct", "samples")}

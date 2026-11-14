@@ -15,6 +15,9 @@
            maxLevel: {{ form.max_barb_level.value|default:9 }},
            recheck: {{ form.recheck_minutes.value|default:15 }},
            randomWait: {{ form.max_random_wait.value|default:0 }},
+           targetLevel: {{ form.target_level.value|default:0 }},
+           targetAuto: {% if form.target_auto.value == True or form.target_auto.value == 'true' or form.target_auto.value == 'True' %}true{% else %}false{% endif %},
+           retrain: {% if form.retrain_losses.value == False or form.retrain_losses.value == 'false' or form.retrain_losses.value == 'False' %}false{% else %}true{% endif %},
            modes: [
              {v: 'schematic', icon: 'bi-diagram-3', t: 'Pelo nível da vila', d: 'O necessário para cada nível: o dobro dos bárbaros até o 9, a tabela do nível depois.'},
              {v: 'available', icon: 'bi-collection', t: 'Todas da cidade', d: 'Manda todas as tropas de combate que estiverem na cidade.'},
@@ -56,6 +59,9 @@
       <input type="hidden" name="{{ form.min_resources.html_name }}" value="0">
       <input type="hidden" name="{{ form.extra_ships.html_name }}" value="0">
       <input type="hidden" name="{{ form.recheck_minutes.html_name }}" :value="recheck">
+      <input type="hidden" name="{{ form.target_level.html_name }}" :value="targetLevel">
+      <input type="hidden" name="{{ form.target_auto.html_name }}" :value="targetAuto ? 'true' : 'false'">
+      <input type="hidden" name="{{ form.retrain_losses.html_name }}" :value="retrain ? 'true' : 'false'">
       <input type="hidden" name="{{ form.max_random_wait.html_name }}" :value="randomWait">
 
       {# ── Ilhas ── #}
@@ -176,6 +182,35 @@
                       :style="loot ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
               </span>
               <span :class="loot ? 'text-ink font-semibold' : ''" x-text="loot ? 'sim' : 'não'"></span>
+            </button>
+          </div>
+        </div>
+        <div class="grid gap-3 md:grid-cols-3 mt-3">
+          <div>
+            <label class="form-label text-[11px] mb-1 block">Nível do farm</label>
+            <input type="number" min="0" max="50" x-model.number="targetLevel" :disabled="targetAuto" class="form-input !py-1.5 !text-xs w-full">
+            <span class="text-[10px] text-muted" x-text="targetAuto ? 'escolhido pelo lucro/h' : (targetLevel ? 'acima dele espera a vila cair' : 'sobe até o máximo')"></span>
+          </div>
+          <div>
+            <label class="form-label text-[11px] mb-1 block">Escolher pelo lucro/h</label>
+            <button type="button" role="switch" :aria-checked="targetAuto" @click="targetAuto = !targetAuto" class="flex items-center gap-2 select-none text-xs text-muted">
+              <span class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out"
+                    :class="targetAuto ? 'bg-[var(--ik-sea)]' : 'bg-gray-300'">
+                <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform duration-200 ease-in-out"
+                      :style="targetAuto ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
+              </span>
+              <span :class="targetAuto ? 'text-ink font-semibold' : ''" x-text="targetAuto ? 'sim' : 'não'"></span>
+            </button>
+          </div>
+          <div>
+            <label class="form-label text-[11px] mb-1 block">Refazer as perdas</label>
+            <button type="button" role="switch" :aria-checked="retrain" @click="retrain = !retrain" class="flex items-center gap-2 select-none text-xs text-muted">
+              <span class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out"
+                    :class="retrain ? 'bg-[var(--ik-sea)]' : 'bg-gray-300'">
+                <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform duration-200 ease-in-out"
+                      :style="retrain ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
+              </span>
+              <span :class="retrain ? 'text-ink font-semibold' : ''" x-text="retrain ? 'no quartel' : 'não'"></span>
             </button>
           </div>
         </div>

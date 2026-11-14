@@ -45,6 +45,34 @@
       {% for t in i.troops %}<span class="inline-flex items-center gap-0.5 text-[10px] text-ink" title="{{ t.name }}"><img src="{{ t.icon }}" alt="" class="h-5 w-5 object-contain">{{ t.qty|intcomma }}</span>{% endfor %}
     </div>
     {% endif %}
+    {% if i.farm_book %}
+    <div class="mt-3">
+      <div class="flex items-center justify-between gap-2 mb-1">
+        <span class="text-[10px] uppercase tracking-wide text-muted">Farm por nível</span>
+        <span class="text-[10px] text-muted">
+          {% if i.farm_target %}nível do farm <b class="text-ink">{{ i.farm_target }}</b>{% if i.farm_auto %} (pelo lucro/h){% endif %}{% else %}subindo{% endif %}
+          · queda {% if i.decay_hours %}<b class="text-ink">{{ i.decay_hours }} h</b>/nível{% else %}não medida{% endif %}
+        </span>
+      </div>
+      {% if i.waiting_level %}
+      <div class="mb-1 rounded-lg px-2 py-1 text-[11px]" style="background: rgba(201,156,78,.14); color: var(--ik-gold-dark);">
+        <i class="bi bi-hourglass-split"></i> vila no nível {{ i.waiting_level }}: esperando cair para o {{ i.farm_target }}
+      </div>
+      {% endif %}
+      <div class="grid gap-1">
+        {% for r in i.farm_book %}
+        <div class="grid items-center gap-1 rounded-lg px-2 py-1 text-[11px]" style="grid-template-columns: 2.2rem 1fr 1fr 1fr 3rem 1fr; background: {% if r.level == i.farm_best %}rgba(95,140,78,.14){% else %}var(--ik-sand-light){% endif %};">
+          <b class="text-ink">{{ r.level }}</b>
+          <span class="text-ink" title="saque médio">{{ r.loot|intcomma }}</span>
+          <span style="color: var(--ik-gold-dark);" title="ouro médio">{{ r.gold|intcomma }}</span>
+          <span style="color: #b04a3a;" title="custo para refazer as perdas">−{{ r.cost|intcomma }}</span>
+          <span class="text-muted" title="ciclo entre ataques">{{ r.cycle_h|default:"–" }}</span>
+          <b class="text-ink text-right" title="lucro por hora">{% if r.per_hour %}{{ r.per_hour|intcomma }}/h{% else %}–{% endif %}</b>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
     {% if i.battles %}
     <div class="mt-2 grid gap-1">
       {% for b in i.battles %}

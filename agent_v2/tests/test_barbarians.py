@@ -5,7 +5,7 @@ import unittest
 from game_client.actions.barbarians import AttackBarbarianVillageAction, loot_ships_for_level
 from game_client.actions.barbarians import fetch_village_info
 from game_client.actions.barbarians import _parse_defenders
-from runners.barbarians import BarbariansRunner, _barbarian_movements, _cargo_total, _choose_troops, _battle_outcome, _loot_unit
+from runners.barbarians import farm_book, ideal_level, BarbariansRunner, _barbarian_movements, _cargo_total, _choose_troops, _battle_outcome, _loot_unit
 
 REAL_LEVEL_20 = '<div class="contentBox01h"> <h3 class="header">Exército de Defesa da Vila dos Bárbaros</h3> <div class="content barbarianVillage"> <table class="table01 militaryList"> <tr> <td> <div class="army s314"> <div class="tooltip">Muralha</div> </div> </td> <td> <div class="army s320"> <div class="tooltip">Membro do Clube de Bárbaros</div> </div> </td> <td> <div class="army s316"> <div class="tooltip">Viking</div> </div> </td> <td> <div class="army s324"> <div class="tooltip">Aríete Bárbaro</div> </div> </td> </tr> <tr> <td class="center"> Nível 10 </td> <td class="center"> 275 </td> <td class="center"> 25 </td> <td class="center"> 18 </td> </tr> </table>'   # the village screen at level 20, as the game sent it (14/11/2026)
 
@@ -352,7 +352,8 @@ class ReinforceTests(unittest.TestCase):
         self.assertEqual(len(sent), 1)
         self.assertEqual(sent[0]["troops"], {302: 60, 305: 24})
         self.assertEqual(hub.asked[0]["round_html"], "r2")                   # the last round fought
-        self.assertEqual(hub.told[0]["event"], "attack_alert")
+        self.assertEqual(hub.told[0]["event"], "barbarian_farm")
+        self.assertIn("Enviado: 60 Espadachim, 24 Morteiro", hub.told[0]["body"].splitlines())
         self.assertIn("60 Espadachim, 24 Morteiro", hub.told[0]["body"])
 
     def test_what_is_still_on_its_way_goes_with_the_question(self):
@@ -409,6 +410,70 @@ class RetrainTests(unittest.TestCase):
                 raise AssertionError("não devia treinar")
 
         runner._retrain_losses("j", Game(), "4477", "37441", {"303": 10})
+
+
+class FarmBookTests(unittest.TestCase):
+    """The farm's book per level (the night of 13-14/11 as it happened) and the level it keeps."""
+
+    PRICES = {"303": 64, "308": 182}
+    NIGHT = [
+        {"level": 21, "loot": 25_000, "gold": 27_050, "losses": {"303": 31, "308": 10}, "rounds": 8, "cycle_minutes": 188},
+        {"level": 22, "loot": 28_600, "gold": 29_700, "losses": {"303": 60, "308": 2}, "rounds": 6, "cycle_minutes": 160},
+        {"level": 23, "loot": 32_600, "gold": 32_550, "losses": {"303": 97}, "rounds": 5, "cycle_minutes": 157},
+        {"level": 24, "loot": 37_000, "gold": 35_600, "losses": {"303": 106}, "rounds": 6, "cycle_minutes": 157},
+    ]
+
+    def test_profit_per_hour_per_level(self):
+        book = farm_book(self.NIGHT, self.PRICES)
+        self.assertEqual(book[24]["losses_cost"], 106 * 64)
+        self.assertEqual(book[24]["profit"], 37_000 + 35_600 - 106 * 64)
+        self.assertEqual(book[24]["per_hour"], round((37_000 + 35_600 - 106 * 64) * 60 / 157))
+
+    def test_the_ideal_is_known_only_after_it_falls_two_levels_in_a_row(self):
+        self.assertIsNone(ideal_level(farm_book(self.NIGHT, self.PRICES)))           # still getting better
+        worse = self.NIGHT + [{"level": 25, "loot": 30_000, "gold": 30_000, "losses": {"303": 400}, "cycle_minutes": 200},
+                              {"level": 26, "loot": 30_000, "gold": 30_000, "losses": {"303": 500}, "cycle_minutes": 220}]
+        self.assertEqual(ideal_level(farm_book(worse, self.PRICES)), 24)
+
+
+class LevelHoldTests(unittest.TestCase):
+    def _runner(self, target=0, auto=False):
+        runner = BarbariansRunner.__new__(BarbariansRunner)
+        runner.hub = _Hub()
+        runner._target_level_input, runner._target_auto = target, auto
+        return runner
+
+    def test_a_drop_without_attack_is_the_decay(self):
+        import time as _time
+
+        runner, st = self._runner(), {"level_seen": {"level": 25, "since": int(_time.time()) - 7200}, "attacked_at": 0}
+        runner._track_level("j", "4477", 24, st)
+        self.assertEqual((st["decay"][0]["from"], st["decay"][0]["to"]), (25, 24))
+        self.assertAlmostEqual(st["decay"][0]["hours"], 2.0, places=1)
+
+    def test_above_the_farm_level_it_waits(self):
+        runner = self._runner(target=24)
+        sent = []
+
+        class Game:
+            def get_barbarian_state(self, island_id):
+                return {"level": 25, "destroyed": False, "under_attack": False}
+
+            def attack_barbarian_village(self, **kw):
+                sent.append(kw)
+
+        import runners.barbarians as module
+        original = module.fetch_village_info
+        module.fetch_village_info = lambda client, island_id: {"total": 1, "defenders_found": True, "defender_ids": {"316": 425}}
+        try:
+            st = {}
+            runner._island_round("j", Game(), "4477", "37441", st, {"total_attacks": 0, "total_loots": 0},
+                                 "schematic", "", True, 1, 50, 0, 0)
+        finally:
+            module.fetch_village_info = original
+        self.assertEqual(sent, [])
+        self.assertEqual(st["waiting_level"], 25)
+        self.assertIn("espero ela cair", runner.hub.logs[-1])
 
 
 if __name__ == "__main__":

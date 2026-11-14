@@ -104,6 +104,14 @@ EVENT_TYPES = [
         "field": "notify_combat_report",
     },
     {
+        "key": "barbarian_farm",
+        "label": "Bárbaros: reforço",
+        "description": "Quando o farm dos bárbaros manda reforço para uma batalha em andamento: o que foi, e o resultado previsto com e sem ele.",
+        "category": "operational",
+        "icon": "bi-shield-plus",
+        "field": "notify_barbarian_farm",
+    },
+    {
         "key": "proxy_change",
         "label": "Troca de proxy",
         "description": "Avisa quando a verificação automática troca o proxy de uma conta ou de um nó, libera um bloqueio de login causado por proxy, ou não acha proxy livre.",
