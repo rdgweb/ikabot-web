@@ -310,5 +310,54 @@ class ReportTests(unittest.TestCase):
                          (True, {}, 3))
 
 
+class ReinforceTests(unittest.TestCase):
+    """A battle of ours under way: the simulator takes it up from its last round; what helps is sent and told."""
+
+    def _setup(self, send):
+        runner = BarbariansRunner.__new__(BarbariansRunner)
+        runner._game_account_id = "ga"
+        runner._get_available_troops = lambda jid, client, town: {302: 2519, 304: 661, 305: 291, 312: 608, 310: 10}
+        hub = _Hub()
+        hub.told = []
+        hub.reinforce_barbarian_battle = lambda payload: (hub.asked.append(payload) or
+                                                           {"send": send, "with": {"winner": "attacker", "rounds": 6},
+                                                            "without": {"winner": "defender", "rounds": 6}})
+        hub.send_notification = lambda **kw: hub.told.append(kw)
+        runner.hub = hub
+        sent = []
+
+        class Game:
+            def get_barbarian_state(self, island_id):
+                return {"level": 20, "under_attack": True, "wall_level": 10}
+
+            def fetch_combat_reports(self, city_id, limit=10):
+                return [{"combat_id": 77, "city_name": "Vila de Bárbaros", "result": "", "rounds": 2}]
+
+            def fetch_combat_detailed_report(self, city_id, combat_id):
+                return {"rounds": [{"round": 1, "html": "r1"}, {"round": 2, "html": "r2"}]}
+
+            def attack_barbarian_village(self, **kw):
+                sent.append(kw)
+                return {"transporters": 1}
+
+        return runner, hub, Game(), sent
+
+    def test_sends_what_the_simulator_says_once_per_round_and_tells_it(self):
+        runner, hub, game, sent = self._setup({"302": 60, "305": 24})
+        st = {}
+        runner._reinforce_if_needed("j", game, "4477", "37441", st)
+        runner._reinforce_if_needed("j", game, "4477", "37441", st)          # same round: nothing more
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0]["troops"], {302: 60, 305: 24})
+        self.assertEqual(hub.asked[0]["round_html"], "r2")                   # the last round fought
+        self.assertEqual(hub.told[0]["event"], "attack_alert")
+        self.assertIn("60 Espadachim, 24 Morteiro", hub.told[0]["body"])
+
+    def test_nothing_sent_when_nothing_helps(self):
+        runner, hub, game, sent = self._setup({})
+        runner._reinforce_if_needed("j", game, "4477", "37441", {})
+        self.assertEqual((sent, hub.told), ([], []))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -90,3 +90,28 @@ class PlannerTests(TestCase):
         self.assertTrue(answer["can_win"])
         self.assertEqual(answer["defenders"], {"320": 125, "324": 4})
         self.assertTrue(all(isinstance(k, str) for k in answer["army"]))
+
+
+class ReinforceTests(TestCase):
+    """A battle taken up from where it stands (the one sent on 13/11 with 50 steam giants and 20 cooks only)."""
+
+    STATE = {"round": 2, "attacker": {308: 50, 310: 20}, "defender": {320: 275, 316: 25, 324: 18}, "wall_standing": 5,
+             "wall_level": 10, "morale": 64, "ammo_pct": {}, "hp_pct": {308: 95}}
+
+    def test_taking_a_battle_up_keeps_its_morale_and_wall(self):
+        sim = battle_land.simulate_land_battle({308: 50, 310: 20}, {320: 275, 316: 25, 324: 18}, town_hall_level=5,
+                                               wall_level=10, max_rounds=12, calibrated=False, attacker_start_morale=30,
+                                               wall_sections_standing=5)
+        self.assertEqual(sim["winner"], "defender")
+        first = (sim["details"]["rounds"][0]["morale"].get("attacker") or {}).get("morale")
+        self.assertLessEqual(first, 30)                                      # it starts where the real one was
+        self.assertEqual(sim["details"]["rounds"][0]["wall_sections"], 5)    # and the wall is still whole
+
+    def test_the_reinforcement_turns_the_battle(self):
+        available = {302: 2519, 304: 661, 305: 291, 312: 608, 310: 10}
+        result = barbarian_planner.reinforce(self.STATE, available, wall_level=10, field_level=5, upgrades=UPGRADES)
+        self.assertEqual(result["without"]["winner"], "defender")
+        self.assertEqual(result["with"]["winner"], "attacker")
+        self.assertTrue(any(u in result["send"] for u in (305, 306, 307)))  # something to bring the wall down
+        for uid, qty in result["send"].items():
+            self.assertLessEqual(qty, available[uid])

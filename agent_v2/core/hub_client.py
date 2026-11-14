@@ -643,6 +643,16 @@ class HubClient:
         except json.JSONDecodeError:
             return {}
 
+    def reinforce_barbarian_battle(self, payload: dict) -> dict:
+        """POST /api/agent/combat/barbarians/reinforce/ — a battle against a barbarian village under way: what to send
+        so it ends well, from the simulator taking the battle up from its last round (N-182)."""
+        resp = self.session.post(self._url("/api/agent/combat/barbarians/reinforce/"), json=payload, timeout=90)
+        resp.raise_for_status()
+        try:
+            return resp.json() if resp.content else {}
+        except json.JSONDecodeError:
+            return {}
+
     def get_player_marks(self, game_account_id: str) -> dict:
         """GET /api/agent/worldintel/player-marks/ — players the organization marked on that server (N-174/N-175):
         {"multi": [names], "pirate_target": [names]}."""

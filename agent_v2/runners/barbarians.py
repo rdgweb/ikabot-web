@@ -105,6 +105,18 @@ def _choose_troops(mode: str, level: int, custom_json: str, available: dict[int,
     return _resolve_troops("schematic", level, custom_json, available)
 
 
+UNIT_NAMES = {301: "Fundeiro", 302: "Espadachim", 303: "Hoplita", 304: "Carabineiro", 305: "Morteiro", 306: "Catapulta",
+              307: "Aríete", 308: "Gigante a Vapor", 309: "Balão-Bombardeiro", 310: "Cozinheiro", 311: "Médico",
+              312: "Girocóptero", 313: "Arqueiro", 315: "Lanceiro", 316: "Viking", 320: "Membro do Clube de Bárbaros",
+              324: "Aríete Bárbaro", 325: "Catapulta Bárbara"}
+MAX_REINFORCEMENTS = 2         # per battle
+
+
+def _army_text(army: dict) -> str:
+    """{302: 60, 305: 24} -> "60 Espadachim, 24 Morteiro"."""
+    return ", ".join(f"{_n(q)} {UNIT_NAMES.get(int(u), str(u))}" for u, q in (army or {}).items() if int(q or 0) > 0)
+
+
 def _n(value) -> str:
     """1234567 -> 1.234.567, as the game writes it."""
     return f"{int(value or 0):,}".replace(",", ".")
@@ -240,6 +252,8 @@ class BarbariansRunner(BaseRunner):
                     continue
                 try:
                     st = state.setdefault(island_id, {})
+                    if st.get("last_mission") == "attack" and time.time() - int(st.get("attacked_at") or 0) < 8 * 3600:
+                        self._reinforce_if_needed(jid, client, island_id, town, st)
                     if self._on_the_way(jid, client, island_id, town, st, totals, wake):
                         continue
                     self._island_round(jid, client, island_id, town, st, totals,
@@ -308,6 +322,79 @@ class BarbariansRunner(BaseRunner):
         st["status"] = "moving"
         self.log(jid, "info", f"Ilha {island_id}: tropas/mercantes em movimento: " + "; ".join(lines) + ". Espero chegarem.")
         return True
+
+    def _reinforce_if_needed(self, jid, client, island_id, town, st) -> None:
+        """A battle of ours against the village under way: take it up from its last round in the simulator and, when
+        sending more makes it end better (a win instead of a loss, fewer losses, fewer rounds), send it and tell it on
+        Telegram. At most MAX_REINFORCEMENTS per battle, one per round."""
+        try:
+            barb = client.get_barbarian_state(island_id) or {}
+            if not barb.get("under_attack"):
+                return
+            ongoing = [r for r in client.fetch_combat_reports(int(town), limit=10)
+                       if "rbaros" in str(r.get("city_name") or "").lower() and not r.get("result")]
+            if not ongoing:
+                return
+            combat_id = int(max(ongoing, key=lambda r: int(r.get("combat_id") or 0))["combat_id"])
+            if st.get("reinforce_combat") != combat_id:
+                st.update(reinforce_combat=combat_id, reinforcements=0, reinforced_round=None)
+            if int(st.get("reinforcements") or 0) >= MAX_REINFORCEMENTS:
+                return
+            detailed = client.fetch_combat_detailed_report(int(town), combat_id) or {}
+            rounds = [r for r in (detailed.get("rounds") or []) if isinstance(r, dict) and r.get("html")]
+            if not rounds:
+                return
+            last = max(rounds, key=lambda r: int(r.get("round") or 0))
+            round_no = int(last.get("round") or len(rounds))
+            if st.get("reinforced_round") == round_no:
+                return
+            st["reinforced_round"] = round_no
+            available = self._get_available_troops(jid, client, town)
+            answer = self.hub.reinforce_barbarian_battle({
+                "game_account_id": getattr(self, "_game_account_id", ""), "level": int(barb.get("level") or 0),
+                "wall_level": int(barb.get("wall_level") or 0), "round_html": last["html"],
+                "available": {str(k): int(v) for k, v in (available or {}).items()}}) or {}
+        except Exception as exc:  # noqa: BLE001 - the battle goes on without us
+            if self.is_network_error(exc):
+                raise
+            self.log(jid, "warn", f"Ilha {island_id}: não consegui avaliar a batalha em andamento ({exc}).")
+            return
+        send = {int(k): int(v) for k, v in (answer.get("send") or {}).items() if int(v or 0) > 0}
+        without, with_ = answer.get("without") or {}, answer.get("with") or {}
+
+        def outcome(p):
+            if not p:
+                return "?"
+            won = "vitória" if p.get("winner") == "attacker" else "derrota"
+            lost = sum((p.get("attacker_losses") or {}).values())
+            return f"{won} em {p.get('rounds')} rodadas, moral final {p.get('morale_end')}%, perdas {lost}"
+
+        if not send:
+            self.log(jid, "info", f"Ilha {island_id}: batalha na rodada {round_no}; sem reforço que melhore "
+                                  f"(simulador: {outcome(without)}).")
+            return
+        try:
+            result = client.attack_barbarian_village(from_city_id=town, island_id=island_id, troops=send, transporters=1)
+        except Exception as exc:  # noqa: BLE001 - told, and the next round tries again
+            if self.is_network_error(exc):
+                raise
+            self.log(jid, "warn", f"Ilha {island_id}: o reforço não saiu ({exc}).")
+            return
+        st["reinforcements"] = int(st.get("reinforcements") or 0) + 1
+        st["last_reinforcement"] = {"round": round_no, "army": {str(k): v for k, v in send.items()}, "at": int(time.time()),
+                                    "with": with_, "without": without}
+        text = (f"Batalha contra a vila nível {barb.get('level')} (ilha {island_id}) na rodada {round_no}. "
+                f"Sem reforço: {outcome(without)}. Reforço enviado de {town}: {_army_text(send)}. "
+                f"Com ele: {outcome(with_)}.")
+        self.log(jid, "info", f"Ilha {island_id}: {text}")
+        try:
+            self.hub.send_notification(event="attack_alert", game_account_id=getattr(self, "_game_account_id", "") or None,
+                                       title="Reforço na vila dos bárbaros", body=text,
+                                       metadata={"island_id": str(island_id), "round": round_no,
+                                                 "army": {str(k): v for k, v in send.items()},
+                                                 "transporters": result.get("transporters")})
+        except Exception as exc:  # noqa: BLE001 - the log keeps it
+            self.log(jid, "warn", f"Ilha {island_id}: aviso do reforço no Telegram falhou ({exc}).")
 
     def _simulator_plan(self, jid, island_id, level, barb, village, available, st) -> dict | None:
         """Ask the hub's simulator for the best army against this village; None (wait) when it cannot win or fails."""
@@ -479,7 +566,7 @@ class BarbariansRunner(BaseRunner):
         if village.get("defenders"):
             warn = " Defensores: " + ", ".join(f"{_n(q)} {name}" for name, q in village["defenders"]) + "." + warn
         self.log(jid, "info", f"Ilha {island_id}: ataque à vila nível {level} (tem {_n(on_hand)} recursos e "
-                              f"{_n(village.get('gold'))} de ouro) saindo de {town} com {troops} ({how}) e "
+                              f"{_n(village.get('gold'))} de ouro) saindo de {town} com {_army_text(troops)} ({how}) e "
                               f"{result['transporters']} mercantes (de {result.get('free_ships')} livres).{warn}")
 
     def _dry_run(self, jid, client, city_id, island_ids, troop_mode, custom_troops_json, extra_ships,

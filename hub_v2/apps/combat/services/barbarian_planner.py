@@ -191,3 +191,71 @@ def _what_training_gains(available, defenders, wall_level, field_level, upgrades
                 out.append({"unit": uid, "more": need, **_summary(sim)})
                 break
     return out
+
+
+def battle_state(round_html: str) -> dict | None:
+    """Where a battle stands at the end of its last round, read from the round capture: who is alive on each side,
+    the attacker's morale, the wall sections still up, and per unit of the attacker its ammunition and hit points left."""
+    from .replay import _end
+    from .report_parser import parse_rounds
+
+    rounds = parse_rounds(round_html or "")
+    if not rounds:
+        return None
+    last = rounds[-1]
+    attacker = _end(last["attacker"])
+    defender = {u: q for u, q in _end(last["defender"]).items() if u != 314 and q > 0}
+    wall = last.get("wall") or {}
+    standing = int(wall.get("standing") or 0) if wall else 0
+    try:
+        morale = int(((last.get("morale") or {}).get("attacker") or [{}])[0].get("morale"))
+    except (TypeError, ValueError, IndexError):
+        morale = None
+    ammo: dict[int, list] = {}
+    hp: dict[int, list] = {}
+    for slots in (last["attacker"].get("zones") or {}).values():
+        for slot in slots or []:
+            if not slot or not slot.get("left"):
+                continue
+            if slot.get("ammo") is not None:
+                ammo.setdefault(slot["unit"], []).append(int(slot["ammo"]))
+            if slot.get("hp") is not None:
+                hp.setdefault(slot["unit"], []).append(int(slot["hp"]))
+    return {
+        "round": int(last.get("round") or 0), "attacker": {u: q for u, q in attacker.items() if q > 0}, "defender": defender,
+        "wall_standing": standing, "wall_level": int(wall.get("level") or 0) if wall else 0, "morale": morale,
+        "ammo_pct": {u: sum(v) / len(v) for u, v in ammo.items()}, "hp_pct": {u: sum(v) / len(v) for u, v in hp.items()},
+    }
+
+
+def reinforce(state: dict, available: dict[int, int], *, wall_level: int = 0, field_level: int = 5,
+              upgrades: dict[int, dict] | None = None) -> dict:
+    """The battle taken up from its real state, without and with each army the town could still send (joining the
+    next round). Returns the best one when it is better than sending nothing: winning instead of losing, or fewer
+    losses, or fewer rounds."""
+    from apps.espionage.services.battle_land import simulate_land_battle
+
+    available = {int(u): int(q) for u, q in (available or {}).items() if int(q or 0) > 0}
+    upgrades = {int(u): v for u, v in (upgrades or {}).items()}
+    attacker = {int(u): int(q) for u, q in (state.get("attacker") or {}).items()}
+    defender = {int(u): int(q) for u, q in (state.get("defender") or {}).items()}
+    if not attacker or not (defender or state.get("wall_standing")):
+        return {"send": {}, "note": "A batalha já está decidida."}
+    wall = int(state.get("wall_level") or wall_level or 0)
+
+    def fight(extra):
+        return simulate_land_battle(
+            dict(attacker), dict(defender), attacker_upgrades=upgrades, town_hall_level=field_level, wall_level=wall,
+            max_rounds=12, attacker_start_morale=state.get("morale"), wall_sections_standing=state.get("wall_standing"),
+            attacker_ammo_pct=state.get("ammo_pct") or None, attacker_hp_pct=state.get("hp_pct") or None,
+            attacker_reinforcements_by_round={2: dict(extra)} if extra else None)
+
+    without = fight({})
+    best = (_key(without, {}), {}, without)
+    for army in _candidates(available, field_level, sum(defender.values())):
+        sim = fight(army)
+        key = _key(sim, army)
+        if key < best[0]:
+            best = (key, army, sim)
+    key, army, sim = best
+    return {"send": army, "with": _summary(sim), "without": _summary(without), "state_round": state.get("round")}

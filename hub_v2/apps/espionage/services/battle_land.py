@@ -1008,6 +1008,25 @@ def _barbarian_bonus() -> tuple[float, float]:
         return 0.0, 0.0
 
 
+def _ammo_pct(army: "Army") -> dict[int, int]:
+    """Per unit with an ammunition weapon: what is left of it, in percent of a full load (as the capture shows it)."""
+    out: dict[int, int] = {}
+    for (uid, idx), left in army.ammo_left.items():
+        full = (_weapon_ammo(uid, idx) or 0) * max(1, army.units.get(uid, 0) or 0)
+        if full and army.units.get(uid, 0):
+            out[uid] = min(100, int(round(100 * left / full)))
+    return out
+
+
+def _hp_pct(army: "Army") -> dict[int, int]:
+    out: dict[int, int] = {}
+    for uid, qty in army.units.items():
+        full = qty * army.unit_max_hp(uid)
+        if full:
+            out[uid] = min(100, int(round(100 * army.hp_pools.get(uid, 0) / full)))
+    return out
+
+
 def is_barbarian_village(defender_units: dict | None) -> bool:
     """The defenders are a barbarian village's: barbarian units (a viking may be among them), no player."""
     units = {int(uid) for uid, qty in (defender_units or {}).items() if int(qty or 0) > 0}
@@ -1041,7 +1060,17 @@ def simulate_land_battle(
     calibrated: bool = True,
     morale: bool = True,
     field_key: int | None = None,
+    attacker_start_morale: int | None = None,
+    wall_sections_standing: int | None = None,
+    attacker_ammo_pct: dict[int, float] | None = None,
+    attacker_hp_pct: dict[int, float] | None = None,
+    defender_hp_pct: dict[int, float] | None = None,
 ) -> dict[str, Any]:
+    """Fight a land battle round by round.
+
+    N-182: a battle can also be taken up from where a real one is: the attacker's morale, the wall sections still
+    standing, and per unit the ammunition and hit points left (in percent), as the round capture shows them.
+    """
     if calibrated:
         # N-110: the adjustment learned from real combats and approved on the screen (0, 0 until then);
         # N-182: against a barbarian village, the one learned from the barbarian battles alone
@@ -1068,6 +1097,21 @@ def simulate_land_battle(
         damage_bonus_pct=defender_damage_bonus_pct,
         armor_bonus=defender_armor_bonus,
     )
+
+    # N-182: take a battle up from the state a round capture shows
+    if attacker_start_morale is not None:
+        attacker.morale = max(0, min(100, int(attacker_start_morale)))
+    if wall_sections_standing is not None and defender.wall_segments:
+        keep = max(0, min(len(defender.wall_segments), int(wall_sections_standing)))
+        defender.wall_segments = [hp if idx < keep else 0 for idx, hp in enumerate(defender.wall_segments)]
+        defender.wall_hp = sum(defender.wall_segments)
+    for (uid, idx), left in list(attacker.ammo_left.items()):
+        if attacker_ammo_pct and uid in attacker_ammo_pct:
+            attacker.ammo_left[(uid, idx)] = int(round(left * max(0.0, min(100.0, float(attacker_ammo_pct[uid]))) / 100))
+    for army, pct in ((attacker, attacker_hp_pct), (defender, defender_hp_pct)):
+        for uid, share in (pct or {}).items():
+            if uid in army.hp_pools:
+                army.hp_pools[uid] = max(1, int(army.hp_pools[uid] * max(0.0, min(100.0, float(share))) / 100))
 
     attacker_initial_total = sum(attacker.initial_units.values())
     defender_initial_total = sum(defender.initial_units.values())
@@ -1419,6 +1463,11 @@ def simulate_land_battle(
                 "defender_flanks": def_dep.line_total("flancos"),
                 "wall_hp": defender.wall_hp,
                 "wall_sections": wall_sections_end,
+                # N-182: what is left at the end of the round, to put beside the round capture
+                "attacker_alive": dict(attacker.units),
+                "defender_alive": dict(defender.units),
+                "attacker_ammo_pct": _ammo_pct(attacker),
+                "attacker_hp_pct": _hp_pct(attacker),
                 "morale": morale_trace,
                 "attacker_lines": _serialize_deployment(att_dep),
                 "defender_lines": _serialize_deployment(def_dep),

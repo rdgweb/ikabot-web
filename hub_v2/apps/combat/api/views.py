@@ -302,3 +302,45 @@ class BarbarianPlanView(APIView):
         calibration = barbarian_learning.active()
         result["calibration"] = {k: calibration.get(k) for k in ("attacker_pct", "defender_pct", "samples")}
         return Response(result)
+
+
+class BarbarianReinforceView(APIView):
+    """POST /api/agent/combat/barbarians/reinforce/ (N-182) — a battle against a barbarian village under way: is it
+    worth sending more, and what?
+
+    Body: game_account_id, level, wall_level, round_html (the capture of the last round fought), available ({unit id:
+    count} still in the town). Answer: send ({unit id: count}, empty when nothing helps), with / without (what the
+    simulator expects either way), state (where the battle stands, read from the capture).
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request):
+        from apps.combat.services import barbarian_planner
+
+        data = request.data or {}
+        upgrades = {}
+        try:
+            ga = GameAccount._base_manager.filter(pk=str(data.get("game_account_id"))).first() if data.get("game_account_id") else None
+            if ga is not None:
+                upgrades = {int(u): v for u, v in ((ga.snapshot.base_snapshot or {}).get("unit_improvements") or {}).items()
+                            if str(u).isdigit() and isinstance(v, dict)}
+        except Exception:  # noqa: BLE001 - a bad id fights without upgrades
+            upgrades = {}
+        state = barbarian_planner.battle_state(str(data.get("round_html") or ""))
+        if not state:
+            return Response({"send": {}, "note": "Não consegui ler a rodada."})
+        available = {int(k): int(v) for k, v in (data.get("available") or {}).items() if str(k).isdigit()}
+        try:
+            result = barbarian_planner.reinforce(state, available, wall_level=int(data.get("wall_level") or 0),
+                                                 field_level=barbarian_planner.field_for_level(int(data.get("level") or 0)),
+                                                 upgrades=upgrades)
+        except Exception as exc:  # noqa: BLE001 - without an answer nothing is sent
+            logger.warning("Barbarian reinforcement failed", exc_info=True)
+            return Response({"send": {}, "note": f"simulador falhou: {exc}"})
+        result["send"] = {str(k): v for k, v in (result.get("send") or {}).items()}
+        result["state"] = {**{k: state[k] for k in ("round", "wall_standing", "wall_level", "morale")},
+                           "attacker": {str(k): v for k, v in state["attacker"].items()},
+                           "defender": {str(k): v for k, v in state["defender"].items()}}
+        return Response(result)
