@@ -521,6 +521,10 @@ class AlertWineRunner(BaseRunner):
                 "warn",
                 f"Recovery do alerta de vinho: tentativa {int(recovery.get('attempt') or 1)}",
             )
+        # N-186: the hub freezes the all-city roster until a new city is approved.
+        if isinstance(inputs.get("city_ids"), list):
+            approved = {str(city_id) for city_id in inputs["city_ids"]}
+            cities = [city for city in cities if str(city.get("id")) in approved]
         self.checkpoint(jid, phase="scan_start", metadata={"city_count": len(cities)})
 
         city_infos: list[dict[str, Any]] = []

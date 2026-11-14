@@ -447,6 +447,18 @@ class TelegramWebhookView(APIView):
             cq_message_text = cq_msg.get("text", "")
             cq_user_id = str(cq.get("from", {}).get("id", ""))
 
+            if cq_data.startswith(("city_yes:", "city_no:")):
+                from apps.jobs.services.city_expansion import answer_proposal
+
+                action, proposal_id = cq_data.split(":", 1)
+                ok, message = answer_proposal(
+                    proposal_id, chat_id=cq_chat_id, accept=action == "city_yes", user_id=cq_user_id,
+                )
+                answer_callback_query(cq_id, message, show_alert=not ok)
+                if ok and cq_message_id:
+                    edit_message_text(cq_chat_id, cq_message_id, cq_message_text + "\n\n" + message, parse_mode=None)
+                return Response({"status": "ok"})
+
             if cq_data.startswith("captcha_reply:"):
                 challenge_id = cq_data[14:]
                 _store_pending_captcha(cq_user_id, int(challenge_id))

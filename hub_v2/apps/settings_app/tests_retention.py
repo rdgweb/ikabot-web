@@ -118,6 +118,9 @@ class RetentionTests(TestCase):
             steps.append(previous)
         live = self.job(workflow=workflow, status="scheduled", root_job_id=root.pk, source_job_id=previous.pk,
                         finished_at=None, archived_at=None)
+        # Distinct instants model successive cycles even on hosts with coarse clock resolution.
+        for index, job in enumerate([root, *steps, live]):
+            Job.objects.filter(pk=job.pk).update(created_at=self.now - timedelta(minutes=5-index))
         run = self.finish(preview(self.user))
         for job in steps[:2]:
             job.refresh_from_db()

@@ -31,6 +31,8 @@ SCOPES: dict[str, tuple[str, str, bool]] = {
     # by GameForge account
     "accounts.GameAccount": ("account", "account", False),
     "jobs.Workflow": ("account", "account", False),
+    "jobs.CityExpansionScope": ("workflow__account", "account", False),
+    "jobs.CityExpansionProposal": ("scope__workflow__account", "account", False),
     "jobs.Job": ("account", "account", False),
     "jobs.ConstructionResourceReservation": ("account", "account", False),
     "game.AccountSnapshot": ("account", "account", False),

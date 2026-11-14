@@ -82,6 +82,38 @@ class Workflow(UUIDTimestampModel):
         return f"Workflow {self.id} [{self.workflow_type}:{self.status}]"
 
 
+class CityExpansionScope(UUIDTimestampModel):
+    """N-186: remembered roster and consent for one recurring configuration."""
+    objects = OrgScopedManager()
+    workflow = models.ForeignKey(Workflow, on_delete=models.CASCADE, related_name="city_scopes")
+    key = models.CharField(max_length=100)
+    action_code = models.IntegerField()
+    field = models.CharField(max_length=32)
+    known_ids = models.JSONField(default=list)
+    selected_ids = models.JSONField(default=list)
+    approved_ids = models.JSONField(default=list)
+    enabled = models.BooleanField(default=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["workflow", "key"], name="jobs_city_scope_unique")]
+
+
+class CityExpansionProposal(UUIDTimestampModel):
+    objects = OrgScopedManager()
+    scope = models.ForeignKey(CityExpansionScope, on_delete=models.CASCADE, related_name="proposals")
+    city_id = models.CharField(max_length=32)
+    city_name = models.CharField(max_length=255)
+    template_root_id = models.UUIDField()
+    status = models.CharField(max_length=16, default="pending")
+    chat_id = models.CharField(max_length=64, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    answered_by = models.CharField(max_length=64, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["scope", "city_id"], name="jobs_city_proposal_unique")]
+
+
 class WorkflowRun(UUIDTimestampModel):
     objects = OrgScopedManager()  # N-106: only the organization of whoever is logged in
 

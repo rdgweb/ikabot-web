@@ -50,6 +50,8 @@ def _miracle_rules(job: Job) -> dict:
 
 
 def build_payload(job: Job) -> dict:
+    from .city_expansion import prepare_city_scope
+
     payload = {
         "job_id": str(job.pk),
         "account_id": str(job.account_id),
@@ -57,7 +59,7 @@ def build_payload(job: Job) -> dict:
         "source_job_id": str(job.source_job_id) if job.source_job_id else None,
         "root_job_id": str(job.root_job_id) if job.root_job_id else None,
         "action_code": job.action_code,
-        "inputs": _serialize_inputs(job),
+        "inputs": prepare_city_scope(job, _serialize_inputs(job)),
         "progress": _serialize_progress(job),
         "timeout_sec": job.timeout_sec,
     }

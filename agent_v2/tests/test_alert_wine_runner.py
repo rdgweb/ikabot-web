@@ -95,6 +95,28 @@ AlertWineRunner = MONITORING_MODULE.AlertWineRunner
 
 
 class AlertWineRunnerTests(unittest.TestCase):
+    def test_only_approved_cities_reach_wine_management(self):
+        from unittest.mock import Mock
+
+        runner = AlertWineRunner()
+        runner._get_snapshot = lambda *_: {"cities": [{"id": "1"}, {"id": "2"}]}
+        runner.is_snapshot_stale = lambda *_: False
+        runner.resolve_credentials = lambda *a, **k: {"test": True}
+        runner.get_or_login_game_client = lambda *_: object()
+        runner.log = Mock()
+        runner.checkpoint = Mock()
+        runner._read_and_manage_city = Mock(return_value={"id": "1", "floor_unmet": False, "desired_hours": None})
+        runner._pending_planned_transport_summary = lambda *_: {}
+        runner._compute_next_check_seconds = Mock(return_value=60)
+        # Stop after planning: the actual execution path must have scanned only city 1.
+        class Planned(Exception):
+            pass
+        runner._pending_planned_transport_summary = Mock(side_effect=Planned)
+        with self.assertRaises(Planned):
+            runner.execute({"job_id": "j", "account_id": "a", "game_account_id": "g", "inputs": {"city_ids": [1]}})
+        self.assertEqual(runner._read_and_manage_city.call_count, 1)
+        self.assertEqual(runner._read_and_manage_city.call_args.args[2]["id"], "1")
+
     def test_pending_planned_transport_aggregates_only_non_monitor_entries(self):
         runner = AlertWineRunner()
         runner.log = lambda *_args, **_kwargs: None
