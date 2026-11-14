@@ -110,6 +110,9 @@ UNIT_NAMES = {301: "Fundeiro", 302: "Espadachim", 303: "Hoplita", 304: "Carabine
               312: "Girocóptero", 313: "Arqueiro", 315: "Lanceiro", 316: "Viking", 320: "Membro do Clube de Bárbaros",
               324: "Aríete Bárbaro", 325: "Catapulta Bárbara"}
 MAX_REINFORCEMENTS = 2         # per battle
+EN_ROUTE_SECONDS = 20 * 60     # a reinforcement sent less than this ago may still be on its way: it counts as joining
+DEFAULT_CYCLE_MINUTES = 180    # until the job has seen two attacks in a row
+BARRACKS_TTL = 6 * 3600        # training times read from the barracks are kept this long
 
 
 def _is_barbarian_row(row: dict) -> bool:
@@ -232,6 +235,8 @@ class BarbariansRunner(BaseRunner):
         troop_mode = str(inputs.get("troop_mode") or "schematic").strip().lower()
         custom_troops_json = str(inputs.get("custom_troops") or "")
         do_loot = str(inputs.get("loot", True)).lower() not in {"false", "0", "no", "off"}
+        # a farm trains again what each battle cost (on by default; "retrain_losses": false turns it off)
+        self._retrain = str(inputs.get("retrain_losses", True)).lower() not in {"false", "0", "no", "off"}
         min_level = _parse_int(inputs.get("min_barb_level"), 1)
         max_level = _parse_int(inputs.get("max_barb_level"), 99)
         extra_ships = _parse_int(inputs.get("extra_ships"), 0)
@@ -364,10 +369,16 @@ class BarbariansRunner(BaseRunner):
                 return
             st["reinforced_round"] = round_no
             available = self._get_available_troops(jid, client, town)
+            previous = st.get("last_reinforcement") or {}
+            en_route = previous.get("army") if time.time() - int(previous.get("at") or 0) < EN_ROUTE_SECONDS else {}
             answer = self.hub.reinforce_barbarian_battle({
                 "game_account_id": getattr(self, "_game_account_id", ""), "level": int(barb.get("level") or 0),
                 "wall_level": int(barb.get("wall_level") or 0), "round_html": last["html"],
-                "available": {str(k): int(v) for k, v in (available or {}).items()}}) or {}
+                "available": {str(k): int(v) for k, v in (available or {}).items()},
+                "en_route": en_route or {},
+                "train_seconds": self._train_seconds(jid, client, town, st),
+                "loot": int(st.get("village_resources") or 0) + int(st.get("village_gold") or 0),
+                "cycle_minutes": int(st.get("cycle_minutes") or DEFAULT_CYCLE_MINUTES)}) or {}
         except Exception as exc:  # noqa: BLE001 - the battle goes on without us
             if self.is_network_error(exc):
                 raise
@@ -424,6 +435,9 @@ class BarbariansRunner(BaseRunner):
         payload = {"game_account_id": getattr(self, "_game_account_id", ""), "level": level,
                    "wall_level": int(village.get("wall_level") or barb.get("wall_level") or 0),
                    "defenders": village.get("defender_ids") or {},
+                   "loot": int(village.get("total") or 0) + int(village.get("gold") or 0),
+                   "cycle_minutes": int(st.get("cycle_minutes") or DEFAULT_CYCLE_MINUTES),
+                   "train_seconds": self._train_seconds(jid, self._client, st.get("town") or "", st),
                    "available": {str(k): int(v) for k, v in (available or {}).items()}}
         try:
             plan = self.hub.plan_barbarian_attack(payload) or {}
@@ -446,6 +460,57 @@ class BarbariansRunner(BaseRunner):
                                       f" ({plan.get('note') or 'perderia'}). Sigo olhando.")
             return None
         return plan
+
+    def _barracks(self, client, town) -> tuple[int | None, dict]:
+        """(position, state) of the town's barracks, from the snapshot and the game."""
+        position = None
+        try:
+            snapshot = self.hub.get_snapshot(game_account_id=getattr(self, "_game_account_id", "")) or {}
+            for city in snapshot.get("cities") or []:
+                if str(city.get("id")) == str(town):
+                    for building in city.get("buildings") or []:
+                        if str(building.get("building") or "") == "barracks":
+                            position = int(building.get("position", -1))
+        except Exception:  # noqa: BLE001 - without the snapshot there is no barracks to read
+            return None, {}
+        if position is None or position < 0 or client is None:
+            return None, {}
+        return position, client.fetch_barracks_state(int(town), position, "troops") or {}
+
+    def _train_seconds(self, jid, client, town, st) -> dict:
+        """{unit id: seconds to train one} in the town's barracks (reductions included), read every BARRACKS_TTL."""
+        cached = st.get("train_seconds") or {}
+        if cached and time.time() - int(st.get("train_seconds_at") or 0) < BARRACKS_TTL:
+            return cached
+        try:
+            _position, state = self._barracks(client, town)
+            seconds = {str(u.get("unit_id")): int(u.get("train_time_seconds") or 0) for u in (state.get("units") or [])
+                       if u.get("unit_id") and u.get("train_time_seconds")}
+        except Exception as exc:  # noqa: BLE001 - the plan goes on without the time to train
+            if self.is_network_error(exc):
+                raise
+            self.log(jid, "warn", f"Não consegui ler o quartel de {town} ({exc}).")
+            return cached
+        if seconds:
+            st.update(train_seconds=seconds, train_seconds_at=int(time.time()))
+        return seconds or cached
+
+    def _retrain_losses(self, jid, client, island_id, town, losses: dict) -> None:
+        """Train again, in the town's barracks, what the battle cost (as much as the town can pay now)."""
+        units = {int(u): int(q) for u, q in (losses or {}).items() if int(q or 0) > 0 and int(u) < 400}
+        if not units or not getattr(self, "_retrain", True):
+            return
+        try:
+            position, _state = self._barracks(client, town)
+            if position is None:
+                self.log(jid, "warn", f"Ilha {island_id}: sem quartel encontrado em {town} para refazer as perdas.")
+                return
+            client.train_units(int(town), position, units, "troops")
+            self.log(jid, "info", f"Ilha {island_id}: refazendo as perdas no quartel de {town}: {_army_text(units)}.")
+        except Exception as exc:  # noqa: BLE001 - told; the farm goes on
+            if self.is_network_error(exc):
+                raise
+            self.log(jid, "warn", f"Ilha {island_id}: não consegui refazer as perdas ({_army_text(units)}): {exc}.")
 
     def _learn_from_report(self, jid, client, island_id, town, st) -> None:
         """The battle report of the last attack (newest one against the village after the last read): result, rounds,
@@ -474,7 +539,8 @@ class BarbariansRunner(BaseRunner):
         st["battles"] = (list(st.get("battles") or []) + [{**{k: battle.get(k) for k in (
             "level", "result", "rounds", "morale_start", "morale_end", "losses")},
             "predicted_rounds": predicted.get("rounds"), "predicted_morale": predicted.get("morale_end")}])[-12:]
-        lost = ", ".join(f"{_n(q)} de {uid}" for uid, q in battle["losses"].items()) or "nenhuma"
+        lost = _army_text({int(u): q for u, q in battle["losses"].items()}) or "nenhuma"
+        self._retrain_losses(jid, client, island_id, town, battle["losses"])
         self.log(jid, "info", f"Ilha {island_id}: batalha nível {battle['level']}: "
                               f"{'vitória' if battle['result'] == 'victory' else 'derrota'} em {battle['rounds']} rodadas, "
                               f"moral {battle['morale_start']}% → {battle['morale_end']}%, perdas: {lost}"
@@ -482,6 +548,7 @@ class BarbariansRunner(BaseRunner):
 
     def _island_round(self, jid, client, island_id, town, st, totals, troop_mode, custom_json, do_loot, min_level,
                       max_level, extra_ships, max_random_wait) -> None:
+        self._client = client
         barb = client.get_barbarian_state(island_id)
         if not barb:
             self.log(jid, "warn", f"Ilha {island_id}: sem vila de bárbaros visível (a conta precisa ter cidade lá).")
@@ -570,6 +637,8 @@ class BarbariansRunner(BaseRunner):
         ships = (max(1, -(-on_hand // SHIP_CAPACITY)) if on_hand else loot_ships_for_level(level)) + max(0, extra_ships)
         result = client.attack_barbarian_village(from_city_id=town, island_id=island_id, troops=troops, transporters=ships)
         totals["total_attacks"] += 1
+        if st.get("attacked_at") and 0 < time.time() - int(st["attacked_at"]) < 12 * 3600:
+            st["cycle_minutes"] = int((time.time() - int(st["attacked_at"])) // 60)
         st.update(attacked_at=int(time.time()), attacked_level=level, status="attacking", attacks=int(st.get("attacks") or 0) + 1,
                   last_mission="attack", attack_defenders_hp=_defenders_hp(village.get("defenders")), troops_rule=how,
                   report_pending=True, report_tries=0, attack_plan=st.get("plan"),

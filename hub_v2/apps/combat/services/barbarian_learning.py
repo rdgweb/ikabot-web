@@ -198,8 +198,9 @@ def sample_cost(sample: dict, result: dict) -> dict:
     if sample.get("partial"):
         # a battle still being fought: only what its rounds already show
         winner_wrong, rounds_gap, attacker_error, defender_error = 0.0, 0, 0.0, 0.0
+    # the attacker's losses weigh three times: they are what a farm has to train again
     cost = (2 * winner_wrong + abs(rounds_gap) + morale_gap / 10 + wall_gap + wall_hp_gap / 25 + hp_gap / 25
-            + attacker_error + defender_error)
+            + 3 * attacker_error + defender_error)
     return {"cost": cost, "winner_wrong": winner_wrong, "rounds_gap": rounds_gap, "morale_gap": round(morale_gap, 1),
             "wall_hp_gap": round(wall_hp_gap, 1), "hp_gap": round(hp_gap, 1),
             "wall_gap": wall_gap, "attacker_error": attacker_error, "defender_error": defender_error}

@@ -115,3 +115,23 @@ class ReinforceTests(TestCase):
         self.assertTrue(any(u in result["send"] for u in (305, 306, 307)))  # something to bring the wall down
         for uid, qty in result["send"].items():
             self.assertLessEqual(qty, available[uid])
+
+
+class FarmCostTests(TestCase):
+    """For a farm the price is what has to be trained again and the time a round holds the next attack back."""
+
+    def test_unit_price_comes_from_the_game_table(self):
+        self.assertEqual(barbarian_planner.unit_price(303), 20 + 14 + barbarian_planner.CITIZEN_VALUE)
+        self.assertGreater(barbarian_planner.unit_price(305), barbarian_planner.unit_price(303))
+
+    def test_a_round_costs_its_share_of_the_cycle(self):
+        self.assertEqual(barbarian_planner.round_value(72_000, 180), 6_000)
+        self.assertEqual(barbarian_planner.round_value(0, 180), 0)
+
+    def test_what_is_on_its_way_is_not_sent_again(self):
+        state = dict(ReinforceTests.STATE)
+        available = {302: 2519, 304: 661, 305: 291, 312: 608, 310: 10}
+        first = barbarian_planner.reinforce(state, available, wall_level=10, field_level=5, upgrades=UPGRADES)
+        on_way = {int(k): v for k, v in first["send"].items()}
+        again = barbarian_planner.reinforce(state, available, wall_level=10, field_level=5, upgrades=UPGRADES, en_route=on_way)
+        self.assertEqual(again["send"], {})                                 # the same help is already coming

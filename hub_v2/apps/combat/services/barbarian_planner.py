@@ -56,12 +56,23 @@ def field_for_level(level: int) -> int:
     return 1 if int(level or 0) < 10 else 5
 
 
-def _unit_cost(uid: int) -> float:
-    """What losing one unit costs, roughly: its upkeep weighs its price and its training time."""
-    from apps.espionage.services.unit_stats import UNIT_STATS
+CITIZEN_VALUE = 30             # a citizen lost with each unit, in resources (it has to grow back and be trained again)
+EXPOSURE = 0.01                # what having a unit away costs, as a share of its price (it is not home to defend)
+ROUND_MINUTES = 15
 
-    unit = UNIT_STATS.get(int(uid)) or {}
-    return float(unit.get("upkeep") or 1) * float(unit.get("size") or 1)
+
+def unit_price(uid: int) -> float:
+    """What training one unit again costs, in resources: its price (base, from the game) and its citizen."""
+    from core.catalogs import TRAINING_UNITS
+
+    for unit in TRAINING_UNITS.get("troops", []):
+        if int(unit["id"]) == int(uid):
+            return float(sum(int(unit.get(k) or 0) for k in ("wood", "wine", "marble", "crystal", "sulfur"))) + CITIZEN_VALUE
+    return 100.0
+
+
+def _unit_cost(uid: int) -> float:
+    return unit_price(uid)
 
 
 def _fill(line: str, uid: int, field_level: int, waves: int) -> int:
@@ -70,11 +81,29 @@ def _fill(line: str, uid: int, field_level: int, waves: int) -> int:
     return max(1, (_line_capacity(field_level, line) // max(1, _unit_size(uid)))) * waves
 
 
-def _key(sim: dict, army: dict[int, int]) -> tuple:
+_FARM = {"train_seconds": {}, "cycle_minutes": 0.0}     # set by plan()/reinforce() for the call in course
+
+
+def _key(sim: dict, army: dict[int, int], round_value: float = 0.0) -> tuple:
+    """For a farm, in resources: what has to be trained again, what each round of battle holds the next attack back
+    (the village is rebuilt only after it), the time the barracks needs to train the losses again when it is longer
+    than a cycle, and a little for every unit away from home. Winning comes first."""
     morale_end = int((sim.get("morale") or {}).get("attacker") or 0)
-    lost = sum(_unit_cost(u) * q for u, q in (sim.get("attacker_losses") or {}).items())
-    return (0 if sim.get("winner") == "attacker" else 1, round(lost, 2), int(sim.get("rounds") or 99),
-            -morale_end, sum(army.values()))
+    losses = sim.get("attacker_losses") or {}
+    lost = sum(unit_price(u) * q for u, q in losses.items())
+    away = EXPOSURE * sum(unit_price(u) * q for u, q in (army or {}).items())
+    risk = 0 if morale_end >= MORALE_FLOOR else (MORALE_FLOOR - morale_end) * 100
+    train_minutes = sum(float(_FARM["train_seconds"].get(int(u)) or 0) * q for u, q in losses.items()) / 60
+    late = max(0.0, train_minutes - float(_FARM["cycle_minutes"] or 0)) if _FARM["cycle_minutes"] else 0.0
+    cost = lost + int(sim.get("rounds") or 12) * round_value + away + risk + late * (round_value / ROUND_MINUTES)
+    return (0 if sim.get("winner") == "attacker" else 1, round(cost, 1), -morale_end)
+
+
+def round_value(loot: float, cycle_minutes: float) -> float:
+    """What one more round of battle costs a farm: the share of a cycle's loot it delays."""
+    if not loot or not cycle_minutes:
+        return 0.0
+    return float(loot) * ROUND_MINUTES / float(cycle_minutes)
 
 
 def _candidates(available: dict[int, int], field_level: int, defender_total: int):
@@ -102,7 +131,9 @@ def _candidates(available: dict[int, int], field_level: int, defender_total: int
             out = dict(army)
             if c:
                 out[COOK] = c
-            # enough in the reserve not to look outnumbered (the morale loses 5 every round for it)
+            yield dict(out)
+            # and the same with enough in the reserve not to look outnumbered (-5 of morale each round): the
+            # simulator says whether that is worth it (the cooks may already cover it)
             need = math.ceil(defender_total / OUTNUMBERED_BY) + 1 - sum(out.values())
             if need > 0:
                 for uid in (315, 303, 302, 301):
@@ -113,11 +144,12 @@ def _candidates(available: dict[int, int], field_level: int, defender_total: int
                         need -= take
                     if need <= 0:
                         break
-            yield out
+                yield out
 
 
 def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: int = 0, field_level: int = 5,
-         upgrades: dict[int, dict] | None = None, explain_training: bool = True) -> dict:
+         upgrades: dict[int, dict] | None = None, explain_training: bool = True, per_round: float = 0.0,
+         train_seconds: dict | None = None, cycle_minutes: float = 0.0) -> dict:
     """The best army for this village from what the town has, with the simulation that chose it."""
     from apps.espionage.services.battle_land import simulate_land_battle
 
@@ -127,6 +159,7 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
         # a village always has defenders: without them there is nothing to plan against
         return {"can_win": False, "army": {}, "tried": 0, "note": "Sem os defensores da vila não há o que simular."}
     upgrades = {int(u): v for u, v in (upgrades or {}).items()}
+    _FARM.update(train_seconds={int(u): float(v) for u, v in (train_seconds or {}).items()}, cycle_minutes=float(cycle_minutes or 0))
 
     def fight(army):
         return simulate_land_battle(dict(army), dict(defenders), attacker_upgrades=upgrades, town_hall_level=field_level,
@@ -137,7 +170,7 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
     for army in _candidates(available, field_level, sum(defenders.values())):
         sim = fight(army)
         tried += 1
-        key = _key(sim, army)
+        key = _key(sim, army, per_round)
         if best is None or key < best[0]:
             best = (key, army, sim)
     if best is None:
@@ -152,20 +185,21 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
     if result["can_win"] and int((sim.get("morale") or {}).get("attacker") or 0) < MORALE_FLOOR:
         result["note"] = f"Vence, mas a moral termina em {(sim.get('morale') or {}).get('attacker')}%: perto de fugir."
     if explain_training:
-        result["training"] = _what_training_gains(available, defenders, wall_level, field_level, upgrades, key, army)
+        result["training"] = _what_training_gains(available, defenders, wall_level, field_level, upgrades, key, army, per_round)
     return result
 
 
 def _summary(sim: dict) -> dict:
+    lost = {int(u): int(q) for u, q in (sim.get("attacker_losses") or {}).items()}
     return {
-        "winner": sim.get("winner"), "rounds": sim.get("rounds"),
+        "winner": sim.get("winner"), "rounds": sim.get("rounds"), "losses_cost": round(sum(unit_price(u) * q for u, q in lost.items())),
         "morale_end": (sim.get("morale") or {}).get("attacker"),
         "attacker_losses": {int(u): int(q) for u, q in (sim.get("attacker_losses") or {}).items()},
         "wall_sections_left": sim.get("wall_sections_left"), "wall_sections": sim.get("wall_sections"),
     }
 
 
-def _what_training_gains(available, defenders, wall_level, field_level, upgrades, best_key, best_army) -> list[dict]:
+def _what_training_gains(available, defenders, wall_level, field_level, upgrades, best_key, best_army, per_round=0.0) -> list[dict]:
     """For each unit that can hold a line: the best army with that line full of it (one or two waves). When that is
     better than what the town can send today, how many more of it the town would need."""
     from apps.espionage.services.battle_land import simulate_land_battle
@@ -186,8 +220,8 @@ def _what_training_gains(available, defenders, wall_level, field_level, upgrades
                 continue
             sim = simulate_land_battle(dict(army), dict(defenders), attacker_upgrades=upgrades, town_hall_level=field_level,
                                        wall_level=wall_level, max_rounds=12)
-            key = _key(sim, army)
-            if key[:4] < best_key[:4]:
+            key = _key(sim, army, per_round)
+            if key[:2] < best_key[:2]:
                 out.append({"unit": uid, "more": need, **_summary(sim)})
                 break
     return out
@@ -228,8 +262,12 @@ def battle_state(round_html: str) -> dict | None:
     }
 
 
+MIN_GAIN = 0.10               # a reinforcement is sent only when it saves at least this share of what the battle costs
+
+
 def reinforce(state: dict, available: dict[int, int], *, wall_level: int = 0, field_level: int = 5,
-              upgrades: dict[int, dict] | None = None) -> dict:
+              upgrades: dict[int, dict] | None = None, en_route: dict[int, int] | None = None,
+              per_round: float = 0.0, train_seconds: dict | None = None, cycle_minutes: float = 0.0) -> dict:
     """The battle taken up from its real state, without and with each army the town could still send (joining the
     next round). Returns the best one when it is better than sending nothing: winning instead of losing, or fewer
     losses, or fewer rounds."""
@@ -242,20 +280,34 @@ def reinforce(state: dict, available: dict[int, int], *, wall_level: int = 0, fi
     if not attacker or not (defender or state.get("wall_standing")):
         return {"send": {}, "note": "A batalha já está decidida."}
     wall = int(state.get("wall_level") or wall_level or 0)
+    _FARM.update(train_seconds={int(u): float(v) for u, v in (train_seconds or {}).items()}, cycle_minutes=float(cycle_minutes or 0))
 
     def fight(extra):
         return simulate_land_battle(
             dict(attacker), dict(defender), attacker_upgrades=upgrades, town_hall_level=field_level, wall_level=wall,
             max_rounds=12, attacker_start_morale=state.get("morale"), wall_sections_standing=state.get("wall_standing"),
             attacker_ammo_pct=state.get("ammo_pct") or None, attacker_hp_pct=state.get("hp_pct") or None,
-            attacker_reinforcements_by_round={2: dict(extra)} if extra else None)
+            attacker_reinforcements_by_round={2: joined(extra)} if joined(extra) else None)
+
+    on_way = {int(u): int(q) for u, q in (en_route or {}).items() if int(q or 0) > 0}
+
+    def joined(extra):
+        out = dict(on_way)
+        for u, q in (extra or {}).items():
+            out[u] = out.get(u, 0) + q
+        return out
 
     without = fight({})
-    best = (_key(without, {}), {}, without)
+    base_key = _key(without, on_way, per_round)
+    best = (base_key, {}, without)
     for army in _candidates(available, field_level, sum(defender.values())):
         sim = fight(army)
-        key = _key(sim, army)
+        key = _key(sim, joined(army), per_round)
         if key < best[0]:
             best = (key, army, sim)
     key, army, sim = best
-    return {"send": army, "with": _summary(sim), "without": _summary(without), "state_round": state.get("round")}
+    # a reinforcement must turn a loss into a win, or save a clear share of what the battle costs
+    if army and not (key[0] < base_key[0] or key[1] <= base_key[1] * (1 - MIN_GAIN)):
+        army, sim = {}, without
+    return {"send": army, "with": _summary(sim), "without": _summary(without), "state_round": state.get("round"),
+            "en_route": {str(u): q for u, q in on_way.items()}}

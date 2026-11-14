@@ -355,10 +355,60 @@ class ReinforceTests(unittest.TestCase):
         self.assertEqual(hub.told[0]["event"], "attack_alert")
         self.assertIn("60 Espadachim, 24 Morteiro", hub.told[0]["body"])
 
+    def test_what_is_still_on_its_way_goes_with_the_question(self):
+        import time as _time
+
+        runner, hub, game, sent = self._setup({"303": 50})
+        st = {"last_reinforcement": {"army": {"302": 60}, "at": int(_time.time()) - 300}, "village_resources": 37_000,
+              "village_gold": 35_600, "cycle_minutes": 160}
+        runner._reinforce_if_needed("j", game, "4477", "37441", st)
+        self.assertEqual(hub.asked[0]["en_route"], {"302": 60})
+        self.assertEqual((hub.asked[0]["loot"], hub.asked[0]["cycle_minutes"]), (72_600, 160))
+
     def test_nothing_sent_when_nothing_helps(self):
         runner, hub, game, sent = self._setup({})
         runner._reinforce_if_needed("j", game, "4477", "37441", {})
         self.assertEqual((sent, hub.told), ([], []))
+
+
+class RetrainTests(unittest.TestCase):
+    """A farm trains again, in the town's barracks, what each battle cost."""
+
+    def _runner(self, retrain=True):
+        runner = BarbariansRunner.__new__(BarbariansRunner)
+        runner.hub = _Hub()
+        runner.hub.get_snapshot = lambda game_account_id: {"cities": [{"id": 37441, "buildings": [
+            {"building": "barracks", "position": 6, "level": 30}]}]}
+        runner._game_account_id = "ga"
+        runner._retrain = retrain
+        runner.is_network_error = lambda exc: False
+        return runner
+
+    def test_the_losses_go_to_the_barracks(self):
+        trained = []
+
+        class Game:
+            def fetch_barracks_state(self, city_id, position, building_type):
+                return {"units": [{"unit_id": 303, "train_time_seconds": 63}, {"unit_id": 308, "train_time_seconds": 540}]}
+
+            def train_units(self, city_id, position, units, building_type):
+                trained.append((city_id, position, units))
+
+        runner = self._runner()
+        runner._retrain_losses("j", Game(), "4477", "37441", {"303": 106, "308": 2})
+        self.assertEqual(trained, [(37441, 6, {303: 106, 308: 2})])
+        st = {}
+        self.assertEqual(runner._train_seconds("j", Game(), "37441", st), {"303": 63, "308": 540})
+        self.assertIn("refazendo as perdas", runner.hub.logs[-1])
+
+    def test_off_when_the_job_says_so(self):
+        runner = self._runner(retrain=False)
+
+        class Game:
+            def train_units(self, *a):
+                raise AssertionError("não devia treinar")
+
+        runner._retrain_losses("j", Game(), "4477", "37441", {"303": 10})
 
 
 if __name__ == "__main__":

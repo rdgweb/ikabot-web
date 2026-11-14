@@ -291,8 +291,11 @@ class BarbarianPlanView(APIView):
         level = int(data.get("level") or 0)
         available = {int(k): int(v) for k, v in (data.get("available") or {}).items() if str(k).isdigit()}
         try:
+            per_round = barbarian_planner.round_value(float(data.get("loot") or 0), float(data.get("cycle_minutes") or 0))
             result = barbarian_planner.plan(available, defenders, wall_level=int(data.get("wall_level") or 0),
-                                            field_level=barbarian_planner.field_for_level(level), upgrades=upgrades)
+                                            field_level=barbarian_planner.field_for_level(level), upgrades=upgrades,
+                                            per_round=per_round, train_seconds=data.get("train_seconds") or {},
+                                            cycle_minutes=float(data.get("cycle_minutes") or 0))
         except Exception as exc:  # noqa: BLE001 - the job falls back to waiting
             logger.warning("Barbarian plan failed", exc_info=True)
             return Response({"can_win": False, "army": {}, "note": f"simulador falhou: {exc}"}, status=status.HTTP_200_OK)
@@ -333,9 +336,13 @@ class BarbarianReinforceView(APIView):
             return Response({"send": {}, "note": "Não consegui ler a rodada."})
         available = {int(k): int(v) for k, v in (data.get("available") or {}).items() if str(k).isdigit()}
         try:
+            en_route = {int(k): int(v) for k, v in (data.get("en_route") or {}).items() if str(k).isdigit()}
+            per_round = barbarian_planner.round_value(float(data.get("loot") or 0), float(data.get("cycle_minutes") or 0))
             result = barbarian_planner.reinforce(state, available, wall_level=int(data.get("wall_level") or 0),
                                                  field_level=barbarian_planner.field_for_level(int(data.get("level") or 0)),
-                                                 upgrades=upgrades)
+                                                 upgrades=upgrades, en_route=en_route, per_round=per_round,
+                                                 train_seconds=data.get("train_seconds") or {},
+                                                 cycle_minutes=float(data.get("cycle_minutes") or 0))
         except Exception as exc:  # noqa: BLE001 - without an answer nothing is sent
             logger.warning("Barbarian reinforcement failed", exc_info=True)
             return Response({"send": {}, "note": f"simulador falhou: {exc}"})
