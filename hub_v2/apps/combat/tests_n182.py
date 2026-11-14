@@ -72,6 +72,10 @@ class PlannerTests(TestCase):
         for uid, qty in plan["army"].items():
             self.assertLessEqual(qty, have[uid])
 
+    def test_an_empty_village_is_never_planned(self):
+        plan = barbarian_planner.plan({308: 253, 305: 291}, {}, wall_level=10, field_level=5)
+        self.assertEqual((plan["can_win"], plan["army"]), (False, {}))
+
     def test_without_a_front_line_it_does_not_attack(self):
         plan = barbarian_planner.plan({305: 12}, {320: 75}, wall_level=1, field_level=5)
         self.assertFalse(plan["can_win"])

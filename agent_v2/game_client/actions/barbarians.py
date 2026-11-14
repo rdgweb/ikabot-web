@@ -240,8 +240,9 @@ def fetch_village_info(client, island_id: int | str) -> dict[str, Any]:
 
 def _army_snippet(html: str) -> str:
     """The defenders' table, tags kept, for the dry run to show how the game lays it out."""
-    at = (html or "").find('class="army')
-    return " ".join((html or "")[max(0, at - 400):at + 2600].split()) if at >= 0 else ""
+    html = html or ""
+    at = next((i for i in (html.find('class="army'), html.find("Clube"), html.find("rbaro"), html.find("unit")) if i >= 0), -1)
+    return " ".join(html[max(0, at - 600):at + 4000].split()) if at >= 0 else f"(sem marcador; {len(html)} caracteres)"
 
 
 def open_attack_view(client, from_city_id: int | str, island_id: int | str) -> dict[str, Any]:

@@ -123,6 +123,9 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
 
     available = {int(u): int(q) for u, q in (available or {}).items() if int(q or 0) > 0}
     defenders = {int(u): int(q) for u, q in (defenders or {}).items() if int(q or 0) > 0}
+    if not defenders:
+        # a village always has defenders: without them there is nothing to plan against
+        return {"can_win": False, "army": {}, "tried": 0, "note": "Sem os defensores da vila não há o que simular."}
     upgrades = {int(u): v for u, v in (upgrades or {}).items()}
 
     def fight(army):

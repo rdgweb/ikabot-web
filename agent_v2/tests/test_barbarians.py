@@ -99,7 +99,7 @@ class RoundTests(unittest.TestCase):
         import runners.barbarians as module
 
         runner, sent = self._runner(), []
-        village = {"total": 1_200, "gold": 450}
+        village = {"total": 1_200, "gold": 450, "defenders": [["Membro do Clube de Bárbaros", 5]]}
         original = module.fetch_village_info
         module.fetch_village_info = lambda client, island_id: dict(village)
 
@@ -238,6 +238,32 @@ class SimulatorPlanTests(unittest.TestCase):
         self.assertEqual(sent[0]["transporters"], 42)                     # 21.000 / 500
         self.assertEqual((hub.asked[0]["level"], hub.asked[0]["wall_level"]), (20, 10))
         self.assertEqual((st["attack_plan"]["rounds"], st["attack_plan"]["morale_end"]), (4, 70))
+
+    def test_no_defenders_read_means_no_attack_and_no_plan_asked(self):
+        import runners.barbarians as module
+
+        hub = _Hub({"can_win": True, "army": {"308": 50}, "prediction": {"rounds": 1}})
+        original = module.fetch_village_info
+        try:
+            module.fetch_village_info = lambda client, island_id: {"total": 21_000, "gold": 24_000, "defenders": []}
+            runner = BarbariansRunner.__new__(BarbariansRunner)
+            runner.hub, runner._game_account_id = hub, "ga"
+            runner._get_available_troops = lambda jid, client, town: {308: 253}
+            sent = []
+
+            class Game:
+                def get_barbarian_state(self, island_id):
+                    return {"level": 20, "destroyed": False, "under_attack": False, "wall_level": 10}
+
+                def attack_barbarian_village(self, **kw):
+                    sent.append(kw)
+
+            runner._island_round("j", Game(), "4477", "37441", {}, {"total_attacks": 0, "total_loots": 0},
+                                 "schematic", "", True, 1, 50, 0, 0)
+        finally:
+            module.fetch_village_info = original
+        self.assertEqual((sent, hub.asked), ([], []))
+        self.assertIn("não ataco sem saber quem defende", hub.logs[-1])
 
     def test_no_attack_when_it_cannot_win_the_hub_fails_or_a_defender_is_unknown(self):
         for hub in (_Hub({"can_win": False, "army": {}, "note": "perde"}), _Hub(fail=True),
