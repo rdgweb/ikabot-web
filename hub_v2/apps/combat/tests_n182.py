@@ -135,3 +135,10 @@ class FarmCostTests(TestCase):
         on_way = {int(k): v for k, v in first["send"].items()}
         again = barbarian_planner.reinforce(state, available, wall_level=10, field_level=5, upgrades=UPGRADES, en_route=on_way)
         self.assertEqual(again["send"], {})                                 # the same help is already coming
+
+
+class TravelTests(TestCase):
+    def test_the_slowest_unit_sets_the_way_to_the_village(self):
+        self.assertAlmostEqual(barbarian_planner.travel_minutes({308: 50, 305: 12}), 9.75, places=2)     # speed 60, as seen
+        self.assertAlmostEqual(barbarian_planner.travel_minutes({303: 20}), 6.5, places=2)              # hoplites at 90
+        self.assertAlmostEqual(barbarian_planner.travel_minutes({308: 50, 309: 10}), 19.5, places=2)    # a bombardier at 30

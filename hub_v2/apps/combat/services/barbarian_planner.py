@@ -59,6 +59,17 @@ def field_for_level(level: int) -> int:
 CITIZEN_VALUE = 30             # a citizen lost with each unit, in resources (it has to grow back and be trained again)
 EXPOSURE = 0.01                # what having a unit away costs, as a share of its price (it is not home to defend)
 ROUND_MINUTES = 15
+SAME_ISLAND_SECONDS_AT_60 = 585   # town -> its own island's village at speed 60, as seen (9:45 for steam giants and mortars;
+                                  # 6:30 for hoplites at 90; a bombardier at 30 doubles it)
+
+
+def travel_minutes(army: dict) -> float:
+    """Minutes the army takes from the town to its island's village: the slowest unit sets the pace."""
+    from apps.espionage.services.unit_stats import UNIT_STATS
+
+    speeds = [int((UNIT_STATS.get(int(u)) or {}).get("speed") or 60) for u, q in (army or {}).items() if int(q or 0) > 0]
+    slowest = min(speeds) if speeds else 60
+    return SAME_ISLAND_SECONDS_AT_60 * 60 / max(1, slowest) / 60
 
 
 def unit_price(uid: int) -> float:
@@ -95,6 +106,8 @@ def _key(sim: dict, army: dict[int, int], round_value: float = 0.0) -> tuple:
     risk = 0 if morale_end >= MORALE_FLOOR else (MORALE_FLOOR - morale_end) * 100
     train_minutes = sum(float(_FARM["train_seconds"].get(int(u)) or 0) * q for u, q in losses.items()) / 60
     late = max(0.0, train_minutes - float(_FARM["cycle_minutes"] or 0)) if _FARM["cycle_minutes"] else 0.0
+    # the way there holds the battle (and the village's rebuild) back like a round does
+    late += travel_minutes(army) if not _FARM.get("joining") else 0.0
     cost = lost + int(sim.get("rounds") or 12) * round_value + away + risk + late * (round_value / ROUND_MINUTES)
     return (0 if sim.get("winner") == "attacker" else 1, round(cost, 1), -morale_end)
 
@@ -159,7 +172,8 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
         # a village always has defenders: without them there is nothing to plan against
         return {"can_win": False, "army": {}, "tried": 0, "note": "Sem os defensores da vila não há o que simular."}
     upgrades = {int(u): v for u, v in (upgrades or {}).items()}
-    _FARM.update(train_seconds={int(u): float(v) for u, v in (train_seconds or {}).items()}, cycle_minutes=float(cycle_minutes or 0))
+    _FARM.update(train_seconds={int(u): float(v) for u, v in (train_seconds or {}).items()}, cycle_minutes=float(cycle_minutes or 0),
+                 joining=False)
 
     def fight(army):
         return simulate_land_battle(dict(army), dict(defenders), attacker_upgrades=upgrades, town_hall_level=field_level,
@@ -180,7 +194,7 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
         "can_win": sim.get("winner") == "attacker",
         "army": army,
         "tried": tried,
-        "prediction": _summary(sim),
+        "prediction": {**_summary(sim), "travel_minutes": round(travel_minutes(army), 1)},
     }
     if result["can_win"] and int((sim.get("morale") or {}).get("attacker") or 0) < MORALE_FLOOR:
         result["note"] = f"Vence, mas a moral termina em {(sim.get('morale') or {}).get('attacker')}%: perto de fugir."
@@ -280,7 +294,9 @@ def reinforce(state: dict, available: dict[int, int], *, wall_level: int = 0, fi
     if not attacker or not (defender or state.get("wall_standing")):
         return {"send": {}, "note": "A batalha já está decidida."}
     wall = int(state.get("wall_level") or wall_level or 0)
-    _FARM.update(train_seconds={int(u): float(v) for u, v in (train_seconds or {}).items()}, cycle_minutes=float(cycle_minutes or 0))
+    # a reinforcement joins a battle already going: its way there does not hold the battle back
+    _FARM.update(train_seconds={int(u): float(v) for u, v in (train_seconds or {}).items()}, cycle_minutes=float(cycle_minutes or 0),
+                 joining=True)
 
     def fight(extra):
         return simulate_land_battle(
