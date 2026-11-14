@@ -1251,6 +1251,8 @@ class FetchCombatReportsAction(BaseAction):
 
             reports.append({
                 "combat_id":      combat_id,
+                # N-182: a battle at a barbarian village has no town link; its name is only in the row's text
+                "text":           " ".join(re.sub(r"<[^>]+>", " ", row_html).split()),
                 "result":         {"green": "victory", "red": "defeat"}.get(result_class, ""),
                 "date":           date_str,
                 "rounds":         rounds,

@@ -112,6 +112,12 @@ UNIT_NAMES = {301: "Fundeiro", 302: "Espadachim", 303: "Hoplita", 304: "Carabine
 MAX_REINFORCEMENTS = 2         # per battle
 
 
+def _is_barbarian_row(row: dict) -> bool:
+    """A line of the combat list that is a battle at a barbarian village (it has no town link: the name is in the text)."""
+    text = f"{row.get('city_name') or ''} {row.get('text') or ''}".lower()
+    return "rbaros" in text or "barbar" in text
+
+
 def _army_text(army: dict) -> str:
     """{302: 60, 305: 24} -> "60 Espadachim, 24 Morteiro"."""
     return ", ".join(f"{_n(q)} {UNIT_NAMES.get(int(u), str(u))}" for u, q in (army or {}).items() if int(q or 0) > 0)
@@ -331,9 +337,17 @@ class BarbariansRunner(BaseRunner):
             barb = client.get_barbarian_state(island_id) or {}
             if not barb.get("under_attack"):
                 return
-            ongoing = [r for r in client.fetch_combat_reports(int(town), limit=10)
-                       if "rbaros" in str(r.get("city_name") or "").lower() and not r.get("result")]
+            listed = client.fetch_combat_reports(int(town), limit=10)
+            ongoing = [r for r in listed if _is_barbarian_row(r) and not r.get("result")]
             if not ongoing:
+                # the village is under our attack: a single battle without outcome in the list is that one
+                undecided = [r for r in listed if not r.get("result")]
+                ongoing = undecided if len(undecided) == 1 else []
+            if not ongoing:
+                if st.get("no_battle_logged") != int(st.get("attacked_at") or 0):
+                    st["no_battle_logged"] = int(st.get("attacked_at") or 0)
+                    self.log(jid, "info", f"Ilha {island_id}: a vila está em batalha, mas não achei a batalha na lista de "
+                                          f"combates ({len(listed)} linhas).")
                 return
             combat_id = int(max(ongoing, key=lambda r: int(r.get("combat_id") or 0))["combat_id"])
             if st.get("reinforce_combat") != combat_id:
@@ -439,7 +453,7 @@ class BarbariansRunner(BaseRunner):
         st["report_tries"] = int(st.get("report_tries") or 0) + 1
         try:
             listed = [r for r in client.fetch_combat_reports(int(town), limit=10)
-                      if "rbaros" in str(r.get("city_name") or "").lower() and r.get("result")
+                      if _is_barbarian_row(r) and r.get("result")
                       and int(r.get("combat_id") or 0) > int(st.get("last_report_id") or 0)]
         except Exception as exc:  # noqa: BLE001 - the next round tries again
             if self.is_network_error(exc):

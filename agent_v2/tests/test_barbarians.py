@@ -331,7 +331,9 @@ class ReinforceTests(unittest.TestCase):
                 return {"level": 20, "under_attack": True, "wall_level": 10}
 
             def fetch_combat_reports(self, city_id, limit=10):
-                return [{"combat_id": 77, "city_name": "Vila de Bárbaros", "result": "", "rounds": 2}]
+                # as the game lists it: no town link, the village's name only in the row's text
+                return [{"combat_id": 76, "city_name": "", "text": "13.11.2026 Batalha por Juízo Final", "result": "victory"},
+                        {"combat_id": 77, "city_name": "", "text": "14.11.2026 Batalha por Vila de Bárbaros 2", "result": "", "rounds": 2}]
 
             def fetch_combat_detailed_report(self, city_id, combat_id):
                 return {"rounds": [{"round": 1, "html": "r1"}, {"round": 2, "html": "r2"}]}
