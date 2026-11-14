@@ -195,12 +195,13 @@ def recheck_sample(check):
 def check_safely(report) -> None:
     try:
         check = check_report(report)
-        # N-182: a new battle against a barbarian village teaches the barbarian adjustment
-        if check is not None:
-            from .barbarian_learning import is_barbarian_village, learn_in_background
+        # N-182: a battle against a barbarian village teaches the barbarian adjustment, finished or round by round
+        from .barbarian_learning import is_barbarian_village, learn_in_background
 
-            if is_barbarian_village((check.inputs_json or {}).get("defender")):
-                learn_in_background()
+        if check is not None and is_barbarian_village((check.inputs_json or {}).get("defender")):
+            learn_in_background()
+        elif check is None and not report.finished and "rbaro" in (report.battle_title or "").lower():
+            learn_in_background()
     except Exception:  # noqa: BLE001 - the check never stands in the way of keeping or telling a report
         logger.warning("Could not check the simulator against the combat %s", report.combat_id, exc_info=True)
 

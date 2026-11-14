@@ -322,6 +322,9 @@ class Army:
         self.wall_was_up = False            # at the start of the round being fought
         self.wall_gaps = 0.0                # share of the sections already open when the round began
         self.wall_damage_round = 0
+        self.wall_hit_factor = 1.0          # N-182: undoes the attacker's learned troop adjustment on wall hits
+        self.wall_armor_factor = 1.0        # N-182: the wall's armour as learned from real rounds (1.0 = the formula)
+        self.wall_spread_hits = False       # N-182: set while the attacker's front line strikes the wall
         self.morale = 100
         self.damage_bonus_pct = float(damage_bonus_pct or 0.0)
         self.armor_bonus = int(armor_bonus or 0)
@@ -423,11 +426,24 @@ class Army:
         The damage goes to one section until it falls and then to the next, as the reports show.
         Returns the damage the wall took.
         """
-        effective = int(round(hit_damage - _wall_armor(self.wall_level)))
+        # N-182: an adjustment learned for the troops does not change what a wall takes; a wall's armour may be learned
+        effective = int(round(hit_damage * self.wall_hit_factor - _wall_armor(self.wall_level) * self.wall_armor_factor))
         if hits <= 0 or effective <= 0 or not self.wall_segments:
             return 0
         remaining = hits * effective
         dealt = 0
+        if self.wall_spread_hits:
+            # N-182: the front line strikes the section in front of each slot: all standing sections lose alike
+            # (a barbarian report: 50 steam giants took 25% off each of the 5 sections, round after round)
+            standing = [idx for idx, hp in enumerate(self.wall_segments) if int(hp or 0) > 0]
+            share = remaining // max(1, len(standing))
+            for idx in standing:
+                take = min(int(self.wall_segments[idx]), share)
+                self.wall_segments[idx] -= take
+                dealt += take
+            self.wall_hp = sum(max(0, int(hp or 0)) for hp in self.wall_segments)
+            self.wall_damage_round += dealt
+            return dealt
         for idx, hp in enumerate(self.wall_segments):
             hp = int(hp or 0)
             if hp <= 0:
@@ -998,6 +1014,16 @@ def _first_alive_line(deployment: RoundDeployment, targets: list[str]) -> str | 
     return None
 
 
+def _barbarian_wall_armor_pct() -> float | None:
+    try:
+        from apps.combat.services.barbarian_learning import active
+
+        value = active().get("wall_armor_pct")
+        return float(value) if value is not None else None
+    except Exception:  # noqa: BLE001 - the simulator must work without the combat app
+        return None
+
+
 def _barbarian_bonus() -> tuple[float, float]:
     """N-182: the adjustment learned from the barbarian battles alone (0, 0 until it is learned)."""
     try:
@@ -1065,16 +1091,23 @@ def simulate_land_battle(
     attacker_ammo_pct: dict[int, float] | None = None,
     attacker_hp_pct: dict[int, float] | None = None,
     defender_hp_pct: dict[int, float] | None = None,
+    wall_armor_pct: float | None = None,
 ) -> dict[str, Any]:
     """Fight a land battle round by round.
 
     N-182: a battle can also be taken up from where a real one is: the attacker's morale, the wall sections still
     standing, and per unit the ammunition and hit points left (in percent), as the round capture shows them.
     """
+    learned_attacker = 0.0
     if calibrated:
         # N-110: the adjustment learned from real combats and approved on the screen (0, 0 until then);
         # N-182: against a barbarian village, the one learned from the barbarian battles alone
-        learned_attacker, learned_defender = _barbarian_bonus() if is_barbarian_village(defender_units) else _learned_bonus()
+        if is_barbarian_village(defender_units):
+            learned_attacker, learned_defender = _barbarian_bonus()
+            if wall_armor_pct is None:
+                wall_armor_pct = _barbarian_wall_armor_pct()
+        else:
+            learned_attacker, learned_defender = _learned_bonus()
         attacker_damage_bonus_pct = float(attacker_damage_bonus_pct or 0.0) + learned_attacker
         defender_damage_bonus_pct = float(defender_damage_bonus_pct or 0.0) + learned_defender
     barbarian_village = is_barbarian_village(defender_units)
@@ -1098,6 +1131,11 @@ def simulate_land_battle(
         armor_bonus=defender_armor_bonus,
     )
 
+    if is_barbarian_village(defender_units):
+        # the learned adjustment is for the troops: hits on the wall keep their own damage
+        defender.wall_hit_factor = 100.0 / max(1.0, 100.0 + float(attacker_damage_bonus_pct or 0.0)) if attacker_damage_bonus_pct else 1.0
+    if wall_armor_pct is not None:
+        defender.wall_armor_factor = max(0.0, float(wall_armor_pct)) / 100.0
     # N-182: take a battle up from the state a round capture shows
     if attacker_start_morale is not None:
         attacker.morale = max(0, min(100, int(attacker_start_morale)))
@@ -1223,7 +1261,9 @@ def simulate_land_battle(
                     }
                 )
                 return 0, attack
+            target_army.wall_spread_hits = barbarian_village and source_line == "principal"
             losses, leftover = _apply_damage_to_line(target_army, target_dep, target_line, attack, use_wall=use_wall)
+            target_army.wall_spread_hits = False
             after_wall = target_army.wall_hp if target_army.is_defender else 0
             after = _trace_line_state(target_dep, target_line)
             round_trace.append(
@@ -1464,6 +1504,7 @@ def simulate_land_battle(
                 "wall_hp": defender.wall_hp,
                 "wall_sections": wall_sections_end,
                 # N-182: what is left at the end of the round, to put beside the round capture
+                "wall_hp_pct": [int(round(100 * max(0, hp) / max(1, _wall_segment_hp(defender.wall_level)))) for hp in defender.wall_segments],
                 "attacker_alive": dict(attacker.units),
                 "defender_alive": dict(defender.units),
                 "attacker_ammo_pct": _ammo_pct(attacker),
