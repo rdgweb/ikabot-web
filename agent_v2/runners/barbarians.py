@@ -181,48 +181,6 @@ def _battle_outcome(detailed: dict, listed: dict) -> dict:
             "reasons": reasons[:3], "losses": losses, "combat_id": int(listed.get("combat_id") or 0)}
 
 
-def _outcome_factor(battle: dict) -> tuple[float, str]:
-    """How much the next army grows because of how the last battle went (it should end in one or two rounds, with the
-    morale high and nobody lost)."""
-    if not battle:
-        return 1.0, ""
-    end = battle.get("morale_end")
-    if battle.get("result") == "defeat":
-        return 2.0, "a última foi derrota"
-    if battle.get("losses"):
-        return 1.3, "houve perdas"
-    if int(battle.get("rounds") or 0) >= 4 or (end is not None and end < 60):
-        return 1.3, f"{battle.get('rounds')} rodadas, moral terminou em {end}%"
-    if int(battle.get("rounds") or 0) == 3 or (end is not None and end < 75):
-        return 1.15, f"{battle.get('rounds')} rodadas, moral terminou em {end}%"
-    return 1.0, "vitória rápida"
-
-
-def _learned_army(st: dict, level: int, defenders, available: dict[int, int]) -> tuple[dict[int, int] | None, dict[int, int], str]:
-    """(army, missing, why): the army of the last battle, grown by how much the defenders' hit points grew since and by
-    how that battle went (rounds, morale, losses); with the morale ending low, a few more cooks. Without a battle to
-    learn from it returns None (the first attack uses the scouts rule or the table)."""
-    base = st.get("last_troops")
-    base_level = int(st.get("attacked_level") or 0)
-    battle = st.get("last_battle") or {}
-    if not base or not base_level:
-        return None, {}, ""
-    hp_now, hp_then = _defenders_hp(defenders), int(st.get("attack_defenders_hp") or 0)
-    growth = hp_now / hp_then if hp_now and hp_then else 1 + 0.1 * (level - base_level)
-    outcome, why = _outcome_factor(battle)
-    factor = max(0.5, growth) * outcome
-    army = {int(uid): math.ceil(int(qty) * factor) for uid, qty in base.items() if int(uid) != COOK}
-    cooks = int(base.get(str(COOK)) or base.get(COOK) or 0)
-    end = battle.get("morale_end")
-    if end is not None and end < 70:
-        cooks += 5
-    if cooks and available.get(COOK, 0):
-        army[COOK] = min(cooks, available.get(COOK, 0))
-    missing = {uid: qty - available.get(uid, 0) for uid, qty in army.items() if available.get(uid, 0) < qty and uid != COOK}
-    why = f"última batalha nível {base_level}: {why}; defensores ×{growth:.2f}" + (f"; +cozinheiros" if army.get(COOK) else "")
-    return (None if missing else army), missing, why
-
-
 def _loot_unit(available: dict[int, int]) -> dict[int, int] | None:
     for uid in LOOT_UNIT_ORDER:
         if available.get(uid, 0) > 0:
@@ -239,6 +197,7 @@ class BarbariansRunner(BaseRunner):
         jid = job["job_id"]
         aid = job["account_id"]
         game_account_id = job.get("game_account_id", "")
+        self._game_account_id = game_account_id
         inputs = job.get("inputs") or {}
         if not isinstance(inputs, dict):
             inputs = {}
@@ -350,6 +309,33 @@ class BarbariansRunner(BaseRunner):
         self.log(jid, "info", f"Ilha {island_id}: tropas/mercantes em movimento: " + "; ".join(lines) + ". Espero chegarem.")
         return True
 
+    def _simulator_plan(self, jid, island_id, level, barb, village, available, st) -> dict | None:
+        """Ask the hub's simulator for the best army against this village; None (wait) when it cannot win or fails."""
+        payload = {"game_account_id": getattr(self, "_game_account_id", ""), "level": level,
+                   "wall_level": int(barb.get("wall_level") or 0), "defenders": village.get("defenders") or [],
+                   "available": {str(k): int(v) for k, v in (available or {}).items()}}
+        try:
+            plan = self.hub.plan_barbarian_attack(payload) or {}
+        except Exception as exc:  # noqa: BLE001 - without the simulator nothing is sent
+            self.log(jid, "warn", f"Ilha {island_id}: simulador indisponível ({exc}); espero a próxima rodada.")
+            return None
+        pred = plan.get("prediction") or {}
+        st["plan"] = {"level": level, "army": plan.get("army") or {}, "rounds": pred.get("rounds"),
+                      "morale_end": pred.get("morale_end"), "losses": pred.get("attacker_losses") or {},
+                      "wall_level": payload["wall_level"], "training": (plan.get("training") or [])[:4],
+                      "unknown": plan.get("unknown") or [], "at": int(time.time())}
+        if plan.get("unknown"):
+            self.log(jid, "warn", f"Ilha {island_id}: o simulador ainda não conhece {', '.join(plan['unknown'])}; "
+                                  f"não ataco às cegas.")
+            return None
+        if not plan.get("can_win"):
+            if st.get("short_level") != level:
+                st["short_level"] = level
+                self.log(jid, "warn", f"Ilha {island_id}: pelo simulador, as tropas de agora não vencem a vila nível {level}"
+                                      f" ({plan.get('note') or 'perderia'}). Sigo olhando.")
+            return None
+        return plan
+
     def _learn_from_report(self, jid, client, island_id, town, st) -> None:
         """The battle report of the last attack (newest one against the village after the last read): result, rounds,
         morale and losses, kept for the next army and shown in the job."""
@@ -373,8 +359,10 @@ class BarbariansRunner(BaseRunner):
         battle = _battle_outcome(detailed or {}, newest)
         battle["level"] = st.get("attacked_level")
         st.update(last_battle=battle, last_report_id=battle["combat_id"], report_pending=False)
-        st["battles"] = (list(st.get("battles") or []) + [{k: battle.get(k) for k in (
-            "level", "result", "rounds", "morale_start", "morale_end", "losses")}])[-12:]
+        predicted = st.get("attack_plan") or {}
+        st["battles"] = (list(st.get("battles") or []) + [{**{k: battle.get(k) for k in (
+            "level", "result", "rounds", "morale_start", "morale_end", "losses")},
+            "predicted_rounds": predicted.get("rounds"), "predicted_morale": predicted.get("morale_end")}])[-12:]
         lost = ", ".join(f"{_n(q)} de {uid}" for uid, q in battle["losses"].items()) or "nenhuma"
         self.log(jid, "info", f"Ilha {island_id}: batalha nível {battle['level']}: "
                               f"{'vitória' if battle['result'] == 'victory' else 'derrota'} em {battle['rounds']} rodadas, "
@@ -445,19 +433,24 @@ class BarbariansRunner(BaseRunner):
             self.log(jid, "info", f"Ilha {island_id}: vila nível {level} fora da faixa {min_level}-{max_level}.")
             return
         available = self._get_available_troops(jid, client, town)
-        troops, missing, how = None, {}, ""
+        troops, how = None, troop_mode
         if troop_mode == "schematic":
-            troops, missing, how = _learned_army(st, level, village.get("defenders"), available)
-        if not troops and not missing:
-            # nothing to learn from yet: the first attack
+            # N-182: the army is the simulator's (hub), with the account's upgrades, the village's defenders and wall,
+            # and the adjustment learned from the real barbarian battles; no table
+            plan = self._simulator_plan(jid, island_id, level, barb, village, available, st)
+            if not plan:
+                return
+            troops = {int(k): int(v) for k, v in (plan.get("army") or {}).items() if int(v or 0) > 0}
+            pred = plan.get("prediction") or {}
+            how = (f"simulador: {pred.get('rounds')} rodadas, moral final {pred.get('morale_end')}%, "
+                   f"perdas {sum((pred.get('attacker_losses') or {}).values())}")
+        else:
             troops = _choose_troops(troop_mode, level, custom_json, available)
-            how = "primeiro ataque" if troop_mode == "schematic" else troop_mode
         if not troops:
             if st.get("short_level") != level:
                 st["short_level"] = level
-                lacking = ", ".join(f"{_n(q)} de {uid}" for uid, q in missing.items()) if missing else "unidades da tabela"
-                self.log(jid, "warn", f"Ilha {island_id}: tropas insuficientes em {town} para o nível {level} (faltam "
-                                      f"{lacking}). Sigo olhando; aviso de novo se o nível mudar.")
+                self.log(jid, "warn", f"Ilha {island_id}: tropas insuficientes em {town} para o nível {level}. "
+                                      f"Sigo olhando; aviso de novo se o nível mudar.")
             return
         st["short_level"] = None
         if max_random_wait > 0:
@@ -468,7 +461,7 @@ class BarbariansRunner(BaseRunner):
         totals["total_attacks"] += 1
         st.update(attacked_at=int(time.time()), attacked_level=level, status="attacking", attacks=int(st.get("attacks") or 0) + 1,
                   last_mission="attack", attack_defenders_hp=_defenders_hp(village.get("defenders")), troops_rule=how,
-                  report_pending=True, report_tries=0,
+                  report_pending=True, report_tries=0, attack_plan=st.get("plan"),
                   last_troops={str(k): v for k, v in troops.items()}, last_ships=result["transporters"],
                   village_resources=on_hand, village_gold=int(village.get("gold") or 0),
                   left_before=on_hand if on_hand else None, gold_pending=int(village.get("gold") or 0))

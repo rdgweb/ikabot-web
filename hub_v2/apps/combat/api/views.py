@@ -253,3 +253,52 @@ class CombatRecommendView(APIView):
             },
             "note": rec.get("note", ""),
         })
+
+
+class BarbarianPlanView(APIView):
+    """POST /api/agent/combat/barbarians/plan/ (N-182) — the best army against a barbarian village, from the simulator.
+
+    Body: game_account_id, level, wall_level, defenders ([[name, count]] as the village screen shows them, or
+    {id: count}), available ({unit id: count} of the town). The account's upgrades come from its snapshot.
+    Answer: can_win, army, prediction (rounds, morale at the end, losses, wall), training (what more of a unit
+    would gain), unknown (defender names the simulator does not know yet), calibration (the adjustment in use).
+    """
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def post(self, request):
+        from apps.combat.services import barbarian_learning, barbarian_planner
+
+        data = request.data or {}
+        ga = None
+        try:
+            ga = GameAccount._base_manager.filter(pk=str(data.get("game_account_id") or "")).first() if data.get("game_account_id") else None
+        except Exception:  # noqa: BLE001 - a bad id fights without upgrades
+            ga = None
+        upgrades = {}
+        if ga is not None:
+            try:
+                upgrades = {int(u): v for u, v in ((ga.snapshot.base_snapshot or {}).get("unit_improvements") or {}).items()
+                            if str(u).isdigit() and isinstance(v, dict)}
+            except Exception:  # noqa: BLE001 - an account without snapshot fights without upgrades
+                upgrades = {}
+        raw = data.get("defenders") or []
+        if isinstance(raw, dict):
+            defenders, unknown = {int(k): int(v) for k, v in raw.items()}, []
+        else:
+            defenders, unknown = barbarian_planner.defenders_from_names(raw)
+        level = int(data.get("level") or 0)
+        available = {int(k): int(v) for k, v in (data.get("available") or {}).items() if str(k).isdigit()}
+        try:
+            result = barbarian_planner.plan(available, defenders, wall_level=int(data.get("wall_level") or 0),
+                                            field_level=barbarian_planner.field_for_level(level), upgrades=upgrades)
+        except Exception as exc:  # noqa: BLE001 - the job falls back to waiting
+            logger.warning("Barbarian plan failed", exc_info=True)
+            return Response({"can_win": False, "army": {}, "note": f"simulador falhou: {exc}"}, status=status.HTTP_200_OK)
+        result["army"] = {str(k): v for k, v in (result.get("army") or {}).items()}
+        result["unknown"] = unknown
+        result["defenders"] = {str(k): v for k, v in defenders.items()}
+        calibration = barbarian_learning.active()
+        result["calibration"] = {k: calibration.get(k) for k in ("attacker_pct", "defender_pct", "samples")}
+        return Response(result)

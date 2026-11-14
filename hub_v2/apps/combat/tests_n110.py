@@ -229,8 +229,8 @@ class ExternalSampleTests(Base):
         self.assertEqual((board["total"], board["own"], board["winner_known"]), (1, 0, 1))
 
     def test_a_unit_the_simulator_has_no_numbers_for_leaves_the_combat_out(self):
-        unknown = {"field_level": 5, "wall_segments": 5, "attacker": {"303": 100}, "defender": {"320": 75, "324": 2}, "reinforcements": {"attacker": {}, "defender": {}}}
-        self.assertIsNone(self._add(inputs=unknown))
+        unknown = {"field_level": 5, "wall_segments": 5, "attacker": {"303": 100}, "defender": {"320": 75, "323": 2}, "reinforcements": {"attacker": {}, "defender": {}}}
+        self.assertIsNone(self._add(inputs=unknown))       # 323: a barbarian unit not seen in a report yet (N-182)
         self.assertFalse(SimulationCheck.objects.exists())
 
     def test_a_report_that_names_no_winner_does_not_count_for_the_winner_score(self):

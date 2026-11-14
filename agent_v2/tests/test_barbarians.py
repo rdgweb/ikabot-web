@@ -5,7 +5,7 @@ import unittest
 from game_client.actions.barbarians import AttackBarbarianVillageAction, loot_ships_for_level
 from game_client.actions.barbarians import fetch_village_info
 from game_client.actions.barbarians import _parse_defenders
-from runners.barbarians import BarbariansRunner, _barbarian_movements, _cargo_total, _choose_troops, _battle_outcome, _defenders_hp, _learned_army, _loot_unit
+from runners.barbarians import BarbariansRunner, _barbarian_movements, _cargo_total, _choose_troops, _battle_outcome, _loot_unit
 
 VIEW_HTML = """
 <input type="hidden" name="cargo_army_303_upkeep" value="3"><input type="hidden" name="cargo_army_315_upkeep" value="1">
@@ -71,11 +71,21 @@ class TroopTests(unittest.TestCase):
 
 
 class _Hub:
-    def __init__(self):
+    def __init__(self, plan=None, fail=False):
         self.logs = []
+        self.plan = plan if plan is not None else {"can_win": True, "army": {"303": 15},
+                                                   "prediction": {"rounds": 1, "morale_end": 90, "attacker_losses": {}}}
+        self.fail = fail
+        self.asked = []
 
     def report_log(self, job_id, level, msg):
         self.logs.append(msg)
+
+    def plan_barbarian_attack(self, payload):
+        self.asked.append(payload)
+        if self.fail:
+            raise RuntimeError("hub fora")
+        return dict(self.plan)
 
 
 class RoundTests(unittest.TestCase):
@@ -190,35 +200,53 @@ class MovementTests(unittest.TestCase):
         self.assertFalse(runner._on_the_way("j", Idle(), "4477", "37441", st, totals, []))
 
 
-class LearnedArmyTests(unittest.TestCase):
-    """No fixed table: the next army comes from the last battle (its army, how the defenders grew, how it went)."""
+class SimulatorPlanTests(unittest.TestCase):
+    """No table: the army is the one the hub's simulator chose; without its answer nothing is sent."""
 
-    HAVE = {303: 4502, 308: 253, 302: 2519, 304: 661, 305: 291, 312: 608, 309: 172, 310: 30}
-    LAST = {"302": 60, "304": 35, "305": 12, "308": 50}
+    def _round(self, hub):
+        runner = BarbariansRunner.__new__(BarbariansRunner)
+        runner.hub = hub
+        runner._game_account_id = "ga"
+        runner._get_available_troops = lambda jid, client, town: {308: 253, 302: 2519, 305: 291}
+        sent = []
 
-    def test_long_battle_with_low_morale_grows_the_army_and_brings_cooks(self):
-        battle = {"result": "victory", "rounds": 4, "morale_start": 85, "morale_end": 55, "losses": {}}
-        st = {"attacked_level": 19, "last_troops": self.LAST, "last_battle": battle}
-        army, missing, why = _learned_army(st, 20, [], self.HAVE)
-        self.assertEqual(army, {302: 86, 304: 51, 305: 18, 308: 72, 310: 5})   # x1.1 a level, x1.3 for 4 rounds
-        self.assertEqual(missing, {})
-        self.assertIn("4 rodadas", why)
+        class Game:
+            def get_barbarian_state(self, island_id):
+                return {"level": 20, "destroyed": False, "under_attack": False, "wall_level": 10}
 
-    def test_quick_win_keeps_the_army_and_follows_the_defenders(self):
-        battle = {"result": "victory", "rounds": 1, "morale_start": 90, "morale_end": 90, "losses": {}}
-        st = {"attacked_level": 19, "last_troops": {"302": 60, "308": 50}, "last_battle": battle,
-              "attack_defenders_hp": _defenders_hp([["Membro do Clube de Bárbaros", 300]])}
-        army, _, _ = _learned_army(st, 20, [["Membro do Clube de Bárbaros", 600]], self.HAVE)
-        self.assertEqual(army, {302: 120, 308: 100})
-        army, missing, _ = _learned_army(st, 20, [["Membro do Clube de Bárbaros", 600]], {302: 100, 308: 500})
-        self.assertIsNone(army)
-        self.assertEqual(missing, {302: 20})
+            def attack_barbarian_village(self, **kw):
+                sent.append(kw)
+                return {"transporters": kw["transporters"], "free_ships": 180}
 
-    def test_defeat_doubles_and_nothing_to_learn_from_returns_none(self):
-        st = {"attacked_level": 5, "last_troops": {"303": 35}, "last_battle": {"result": "defeat", "rounds": 2}}
-        self.assertEqual(_learned_army(st, 5, [], self.HAVE)[0], {303: 70})
-        self.assertEqual(_learned_army({}, 1, [], self.HAVE), (None, {}, ""))
+        import runners.barbarians as module
+        original = module.fetch_village_info
+        module.fetch_village_info = lambda client, island_id: {"total": 21_000, "gold": 24_000,
+                                                               "defenders": [["Membro do Clube de Bárbaros", 325]]}
+        try:
+            st = {}
+            runner._island_round("j", Game(), "4477", "37441", st, {"total_attacks": 0, "total_loots": 0},
+                                 "schematic", "", True, 1, 50, 0, 0)
+        finally:
+            module.fetch_village_info = original
+        return sent, st
 
+    def test_attacks_with_the_simulator_army_and_keeps_the_prediction(self):
+        hub = _Hub({"can_win": True, "army": {"308": 50, "302": 60, "305": 12},
+                    "prediction": {"rounds": 4, "morale_end": 70, "attacker_losses": {}}})
+        sent, st = self._round(hub)
+        self.assertEqual(sent[0]["troops"], {308: 50, 302: 60, 305: 12})
+        self.assertEqual(sent[0]["transporters"], 42)                     # 21.000 / 500
+        self.assertEqual((hub.asked[0]["level"], hub.asked[0]["wall_level"]), (20, 10))
+        self.assertEqual((st["attack_plan"]["rounds"], st["attack_plan"]["morale_end"]), (4, 70))
+
+    def test_no_attack_when_it_cannot_win_the_hub_fails_or_a_defender_is_unknown(self):
+        for hub in (_Hub({"can_win": False, "army": {}, "note": "perde"}), _Hub(fail=True),
+                    _Hub({"can_win": True, "army": {"308": 50}, "unknown": ["Andarilho de Guerra"]})):
+            sent, _ = self._round(hub)
+            self.assertEqual(sent, [])
+
+
+class ReportTests(unittest.TestCase):
     def test_the_report_says_rounds_morale_and_why(self):
         rnd = ('<table class="container_morale"><tr><td>Atacante</td><td>Unidades</td><td>Moral</td></tr><tr><td>Executor</td>'
                '<td>157 (-0)</td><td>{m} %</td></tr></table><script>registerMouseOver("morale104197", " Alterações da moral '

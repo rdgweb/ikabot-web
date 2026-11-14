@@ -998,6 +998,22 @@ def _first_alive_line(deployment: RoundDeployment, targets: list[str]) -> str | 
     return None
 
 
+def _barbarian_bonus() -> tuple[float, float]:
+    """N-182: the adjustment learned from the barbarian battles alone (0, 0 until it is learned)."""
+    try:
+        from apps.combat.services.barbarian_learning import active_bonus
+
+        return active_bonus()
+    except Exception:  # noqa: BLE001 - the simulator must work without the combat app
+        return 0.0, 0.0
+
+
+def is_barbarian_village(defender_units: dict | None) -> bool:
+    """The defenders are a barbarian village's: barbarian units (a viking may be among them), no player."""
+    units = {int(uid) for uid, qty in (defender_units or {}).items() if int(qty or 0) > 0}
+    return bool(units & BARBARIANS) and units <= BARBARIANS | {314, 316}
+
+
 def _learned_bonus() -> tuple[float, float]:
     try:
         from apps.combat.services.learning import active_bonus
@@ -1027,10 +1043,12 @@ def simulate_land_battle(
     field_key: int | None = None,
 ) -> dict[str, Any]:
     if calibrated:
-        # N-110: the adjustment learned from real combats and approved on the screen (0, 0 until then)
-        learned_attacker, learned_defender = _learned_bonus()
+        # N-110: the adjustment learned from real combats and approved on the screen (0, 0 until then);
+        # N-182: against a barbarian village, the one learned from the barbarian battles alone
+        learned_attacker, learned_defender = _barbarian_bonus() if is_barbarian_village(defender_units) else _learned_bonus()
         attacker_damage_bonus_pct = float(attacker_damage_bonus_pct or 0.0) + learned_attacker
         defender_damage_bonus_pct = float(defender_damage_bonus_pct or 0.0) + learned_defender
+    barbarian_village = is_barbarian_village(defender_units)
     # `field_key` names a field of the table directly (the sea ones); otherwise it comes from the town hall
     field_level = field_key if field_key in FIELD_SLOTS else _field_level_from_th(town_hall_level)
     attacker = Army(
@@ -1109,6 +1127,12 @@ def simulate_land_battle(
             enemy_has_air=defender_enemy_has_air,
             support_refill_lines=defender_support_refill_lines,
         )
+        if barbarian_village and defender.wall_standing() > 0:
+            # N-182, as every barbarian report shows: while the wall stands it is the village's whole front (its
+            # sections in the main slots), the barbarians wait in the reserve and there is no flank to take
+            def_dep.lines["principal"] = []
+            def_dep.lines["flancos"] = []
+            att_dep.lines["flancos"] = []
 
         att_start_lines = _clone_deployment(att_dep)
         def_start_lines = _clone_deployment(def_dep)
@@ -1406,6 +1430,9 @@ def simulate_land_battle(
         defender_combat = defender.total_combat_units()
         attacker_main_alive = att_dep.line_total("principal") + att_dep.line_total("flancos")
         defender_main_alive = def_dep.line_total("principal") + def_dep.line_total("flancos")
+        if barbarian_village:
+            # the barbarians kept in the reserve behind the wall come out once it falls: the village is not beaten yet
+            defender_main_alive += sum(qty for uid, qty in defender.units.items() if _classify(uid) in {"principal", "flancos"})
 
         # a whole wall holds the front for whoever is behind it, cooks included; with nobody at all
         # in the city there is no combat to go on (the wall-only reports all end in the first round)

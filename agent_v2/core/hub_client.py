@@ -633,6 +633,16 @@ class HubClient:
             **report,
         })
 
+    def plan_barbarian_attack(self, payload: dict) -> dict:
+        """POST /api/agent/combat/barbarians/plan/ — the best army against a barbarian village, from the simulator (N-182)."""
+        # the simulator tries a few thousand armies: give it more time than the usual calls
+        resp = self.session.post(self._url("/api/agent/combat/barbarians/plan/"), json=payload, timeout=90)
+        resp.raise_for_status()
+        try:
+            return resp.json() if resp.content else {}
+        except json.JSONDecodeError:
+            return {}
+
     def get_player_marks(self, game_account_id: str) -> dict:
         """GET /api/agent/worldintel/player-marks/ — players the organization marked on that server (N-174/N-175):
         {"multi": [names], "pirate_target": [names]}."""

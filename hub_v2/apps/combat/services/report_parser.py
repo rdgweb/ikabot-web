@@ -31,7 +31,7 @@ RESOURCE_LABELS = {"wood": "Madeira", "wine": "Vinho", "marble": "Mármore", "gl
 
 # the game's numeric ids (css class "s<id>"); the wall fights as a unit of the defender
 _UNITS = {int(unit["id"]): unit["name"] for group in TRAINING_UNITS.values() for unit in group}
-_UNITS.update({314: "Muralha", 320: "Membro do Clube de Bárbaros"})      # 320: as the game names it in a barbarian village
+_UNITS.update({314: "Muralha", 320: "Membro do Clube de Bárbaros", 324: "Aríete Bárbaro", 325: "Catapulta Bárbara"})      # 320: as the game names it in a barbarian village
 
 
 WALL_UNIT = 314
