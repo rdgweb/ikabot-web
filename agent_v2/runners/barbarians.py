@@ -311,16 +311,18 @@ class BarbariansRunner(BaseRunner):
 
     def _simulator_plan(self, jid, island_id, level, barb, village, available, st) -> dict | None:
         """Ask the hub's simulator for the best army against this village; None (wait) when it cannot win or fails."""
-        if not village.get("defenders"):
-            # a village always has defenders: an empty reading is a reading that failed, never a free win
+        if not village.get("defenders_found"):
+            # the defence table was not on the screen: the reading failed, which is never a free win (a table that is
+            # there and empty is a village with only its wall, and that is planned as such)
             if st.get("blind_level") != level:
                 st["blind_level"] = level
-                self.log(jid, "warn", f"Ilha {island_id}: não consegui ler os defensores da vila nível {level}; "
+                self.log(jid, "warn", f"Ilha {island_id}: a tabela de defesa da vila nível {level} não veio na tela; "
                                       f"não ataco sem saber quem defende.")
             return None
         st["blind_level"] = None
         payload = {"game_account_id": getattr(self, "_game_account_id", ""), "level": level,
-                   "wall_level": int(barb.get("wall_level") or 0), "defenders": village.get("defenders") or [],
+                   "wall_level": int(village.get("wall_level") or barb.get("wall_level") or 0),
+                   "defenders": village.get("defender_ids") or {},
                    "available": {str(k): int(v) for k, v in (available or {}).items()}}
         try:
             plan = self.hub.plan_barbarian_attack(payload) or {}

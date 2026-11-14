@@ -7,6 +7,8 @@ from game_client.actions.barbarians import fetch_village_info
 from game_client.actions.barbarians import _parse_defenders
 from runners.barbarians import BarbariansRunner, _barbarian_movements, _cargo_total, _choose_troops, _battle_outcome, _loot_unit
 
+REAL_LEVEL_20 = '<div class="contentBox01h"> <h3 class="header">Exército de Defesa da Vila dos Bárbaros</h3> <div class="content barbarianVillage"> <table class="table01 militaryList"> <tr> <td> <div class="army s314"> <div class="tooltip">Muralha</div> </div> </td> <td> <div class="army s320"> <div class="tooltip">Membro do Clube de Bárbaros</div> </div> </td> <td> <div class="army s316"> <div class="tooltip">Viking</div> </div> </td> <td> <div class="army s324"> <div class="tooltip">Aríete Bárbaro</div> </div> </td> </tr> <tr> <td class="center"> Nível 10 </td> <td class="center"> 275 </td> <td class="center"> 25 </td> <td class="center"> 18 </td> </tr> </table>'   # the village screen at level 20, as the game sent it (14/11/2026)
+
 VIEW_HTML = """
 <input type="hidden" name="cargo_army_303_upkeep" value="3"><input type="hidden" name="cargo_army_315_upkeep" value="1">
 <script>new missionController(
@@ -99,7 +101,8 @@ class RoundTests(unittest.TestCase):
         import runners.barbarians as module
 
         runner, sent = self._runner(), []
-        village = {"total": 1_200, "gold": 450, "defenders": [["Membro do Clube de Bárbaros", 5]]}
+        village = {"total": 1_200, "gold": 450, "defenders": [["Membro do Clube de Bárbaros", 5]], "defender_ids": {"320": 5},
+                   "defenders_found": True}
         original = module.fetch_village_info
         module.fetch_village_info = lambda client, island_id: dict(village)
 
@@ -146,7 +149,7 @@ class VillageScreenTests(unittest.TestCase):
             def _request(self, method, url, **kw):
                 asked.update(method=method, **kw)
                 return _Resp([["updateGlobalData", {"actionRequest": "t9"}],
-                              ["changeView", ["barbarianVillage", '<div class="army s301"><div class="u">Viking</div></div></td></tr><tr><td class="center">  1.200 </td>']],
+                              ["changeView", ["barbarianVillage", '<table class="table01 militaryList"><tr><td><div class="army s316"><div class="tooltip">Viking</div></div></td></tr><tr><td class="center">  1.200 </td></tr></table>']],
                               ["updateTemplateData", {"js_islandBarbarianLevel": {"text": "4"}, "js_islandBarbarianResourcegold": {"text": "2.100"},
                                                       "js_islandBarbarianResourceresource": {"text": "700"}, "js_islandBarbarianResourcetradegood2": {"text": "250"},
                                                       "barbarianCityCooldownTimer": {"countdown": {"enddate": 1794450000}}}]])
@@ -157,7 +160,7 @@ class VillageScreenTests(unittest.TestCase):
         self.assertEqual((asked["params"]["view"], asked["params"]["destinationIslandId"]), ("barbarianVillage", "4477"))
         self.assertNotIn("data", asked)
         self.assertEqual((info["level"], info["gold"], info["total"], info["rebuild_end"]), (4, 2100, 950, 1794450000))
-        self.assertEqual(info["defenders"], [["Viking", 1200]])
+        self.assertEqual((info["defenders"], info["defender_ids"], info["defenders_found"]), ([["Viking", 1200]], {"316": 1200}, True))
         self.assertEqual(client._action_request, "t9")
 
 
@@ -220,8 +223,9 @@ class SimulatorPlanTests(unittest.TestCase):
 
         import runners.barbarians as module
         original = module.fetch_village_info
-        module.fetch_village_info = lambda client, island_id: {"total": 21_000, "gold": 24_000,
-                                                               "defenders": [["Membro do Clube de Bárbaros", 325]]}
+        module.fetch_village_info = lambda client, island_id: {"total": 21_000, "gold": 24_000, "defenders_found": True,
+                                                               "defenders": [["Membro do Clube de Bárbaros", 275]],
+                                                               "defender_ids": {"320": 275, "316": 25, "324": 18}, "wall_level": 10}
         try:
             st = {}
             runner._island_round("j", Game(), "4477", "37441", st, {"total_attacks": 0, "total_loots": 0},
@@ -245,7 +249,8 @@ class SimulatorPlanTests(unittest.TestCase):
         hub = _Hub({"can_win": True, "army": {"308": 50}, "prediction": {"rounds": 1}})
         original = module.fetch_village_info
         try:
-            module.fetch_village_info = lambda client, island_id: {"total": 21_000, "gold": 24_000, "defenders": []}
+            module.fetch_village_info = lambda client, island_id: {"total": 21_000, "gold": 24_000, "defenders": [],
+                                                                   "defenders_found": False}
             runner = BarbariansRunner.__new__(BarbariansRunner)
             runner.hub, runner._game_account_id = hub, "ga"
             runner._get_available_troops = lambda jid, client, town: {308: 253}
@@ -265,6 +270,11 @@ class SimulatorPlanTests(unittest.TestCase):
         self.assertEqual((sent, hub.asked), ([], []))
         self.assertIn("não ataco sem saber quem defende", hub.logs[-1])
 
+    def test_the_hub_gets_the_ids_and_the_wall_read_on_the_screen(self):
+        hub = _Hub({"can_win": True, "army": {"308": 50}, "prediction": {"rounds": 3, "morale_end": 70, "attacker_losses": {}}})
+        self._round(hub)
+        self.assertEqual((hub.asked[0]["defenders"], hub.asked[0]["wall_level"]), ({"320": 275, "316": 25, "324": 18}, 10))
+
     def test_no_attack_when_it_cannot_win_the_hub_fails_or_a_defender_is_unknown(self):
         for hub in (_Hub({"can_win": False, "army": {}, "note": "perde"}), _Hub(fail=True),
                     _Hub({"can_win": True, "army": {"308": 50}, "unknown": ["Andarilho de Guerra"]})):
@@ -282,11 +292,22 @@ class ReportTests(unittest.TestCase):
         self.assertEqual((out["morale_start"], out["morale_end"], out["rounds"], out["losses"]), (85, 55, 2, {}))
         self.assertEqual(out["reasons"], ["As tropas estão exaustas. A moral foi reduzida em 10%."])
 
-    def test_several_defender_types_are_paired_in_order(self):
-        html = ('<tr><td><div class="army s320"><div class="u">Membro do Clube de Bárbaros</div></div></td>'
-                '<td><div class="army s324"><div class="u">Atirador de Machados</div></div></td></tr>'
-                '<tr><td class="center">325</td><td class="center">18</td></tr>')
-        self.assertEqual(_parse_defenders(html), [("Membro do Clube de Bárbaros", 325), ("Atirador de Machados", 18)])
+    def test_the_real_level_20_screen(self):
+        table = _parse_defenders(REAL_LEVEL_20)
+        self.assertTrue(table["found"])
+        self.assertEqual(table["units"], {320: 275, 316: 25, 324: 18})       # the wall's column is its level, not a unit
+        self.assertEqual(table["wall_level"], 10)
+        self.assertEqual(table["names"][324], "Aríete Bárbaro")
+
+    def test_one_unit_no_table_and_only_the_wall(self):
+        one = ('<table class="table01 militaryList"><tr><td><div class="army s320"><div class="tooltip">Membro do Clube de '
+               'Bárbaros</div></div></td></tr><tr><td class="center"> 2 </td></tr></table>')
+        self.assertEqual(_parse_defenders(one)["units"], {320: 2})
+        self.assertFalse(_parse_defenders("<div>outra tela</div>")["found"])
+        wall = ('<table class="table01 militaryList"><tr><td><div class="army s314"><div class="tooltip">Muralha</div></div>'
+                '</td></tr><tr><td class="center"> Nível 3 </td></tr></table>')
+        self.assertEqual((_parse_defenders(wall)["found"], _parse_defenders(wall)["units"], _parse_defenders(wall)["wall_level"]),
+                         (True, {}, 3))
 
 
 if __name__ == "__main__":

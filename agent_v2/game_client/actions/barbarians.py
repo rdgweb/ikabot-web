@@ -178,20 +178,43 @@ def _digits(value) -> int:
     return int(found) if found else 0
 
 
-def _parse_defenders(html: str) -> list[tuple[str, int]]:
-    """[(name, count)] of the village's defenders. Each unit is an icon cell (div.army + its name) and a count cell
-    (td.center); with several unit types the icons may come in one row and the counts in the next, so both lists are
-    read in order and paired; the upstream one-unit pattern is the fallback."""
+def _parse_defenders(html: str) -> dict[str, Any]:
+    """The village's defence table, as the game sends it (seen at level 20):
+
+        <table class="table01 militaryList">
+          <tr> <td><div class="army s314"><div class="tooltip">Muralha</div></div></td>
+               <td><div class="army s320"><div class="tooltip">Membro do Clube de Bárbaros</div></div></td> ... </tr>
+          <tr> <td class="center"> Nível 10 </td> <td class="center"> 275 </td> ... </tr>
+        </table>
+
+    Column by column: the unit's game id (s<id>), its name and its count; the wall (s314) shows its level instead
+    of a count. Returns found (the table was on the screen), units {id: count}, names {id: name}, wall_level."""
     import re
 
-    names = [re.sub(r"<[^>]+>", "", n).strip() for n in re.findall(
-        r'<div class="army [^"]*">\s*<div class="[^"]*">(.*?)</div>', html or "", re.S)]
-    counts = [_digits(c) for c in re.findall(r'<td class="center">\s*([\d.,\xa0 ]+?)\s*</td>', html or "")]
-    if names and len(names) == len(counts):
-        return list(zip(names, counts))
-    return [(re.sub(r"<[^>]+>", "", name).strip(), _digits(amount)) for name, amount in re.findall(
-        r'<div class="army \w*?">\s*<div class=".*?">(.*?)</div>\s*</div>\s*</td>\s*</tr>\s*<tr>\s*<td class="center">\s*([\d.,\xa0 ]+)',
-        html or "")]
+    out: dict[str, Any] = {"found": False, "units": {}, "names": {}, "wall_level": 0}
+    table = re.search(r'<table[^>]*class="[^"]*militaryList[^"]*"[^>]*>(.*?)</table>', html or "", re.S)
+    if not table:
+        return out
+    out["found"] = True
+    rows = re.findall(r"<tr[^>]*>(.*?)</tr>", table.group(1), re.S)
+    heads, values = [], []
+    for row in rows:
+        cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+        if any('class="army' in c for c in cells):
+            heads = [(re.search(r'class="army\s+s(\d+)', c), re.sub(r"<[^>]+>", " ", c)) for c in cells]
+        elif heads and not values:
+            values = [" ".join(re.sub(r"<[^>]+>", " ", c).split()) for c in cells]
+    for (uid_m, label), value in zip(heads, values):
+        if not uid_m:
+            continue
+        uid = int(uid_m.group(1))
+        name = " ".join(label.split())
+        if uid == 314:
+            out["wall_level"] = _digits(value)
+            continue
+        out["units"][uid] = out["units"].get(uid, 0) + _digits(value)
+        out["names"][uid] = name
+    return out
 
 
 def fetch_village_info(client, island_id: int | str) -> dict[str, Any]:
@@ -224,7 +247,7 @@ def fetch_village_info(client, island_id: int | str) -> dict[str, Any]:
         fields.update({k: v for k, v in entry[1].items() if k.startswith(("js_islandBarbarian", "barbarianCity"))})
     if not fields:
         return {}
-    defenders = _parse_defenders(html)
+    table = _parse_defenders(html)
     resources = [_digits(fields.get(key)) for key in ("js_islandBarbarianResourceresource", "js_islandBarbarianResourcetradegood1",
                                                       "js_islandBarbarianResourcetradegood2", "js_islandBarbarianResourcetradegood3",
                                                       "js_islandBarbarianResourcetradegood4")]
@@ -234,7 +257,9 @@ def fetch_village_info(client, island_id: int | str) -> dict[str, Any]:
         end = _digits(((timer.get("countdown") or {}) if isinstance(timer.get("countdown"), dict) else {}).get("enddate"))
     return {"level": _digits(fields.get("js_islandBarbarianLevel")), "gold": _digits(fields.get("js_islandBarbarianResourcegold")),
             "resources": resources, "total": sum(resources), "rebuild_end": end,
-            "defenders": [[name, qty] for name, qty in defenders if qty],
+            "defenders": [[table["names"].get(uid, str(uid)), qty] for uid, qty in table["units"].items() if qty],
+            "defender_ids": {str(uid): qty for uid, qty in table["units"].items() if qty},
+            "defenders_found": table["found"], "wall_level": table["wall_level"],
             "army_html": _army_snippet(html)}
 
 
