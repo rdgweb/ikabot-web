@@ -45,6 +45,18 @@
       {% for t in i.troops %}<span class="inline-flex items-center gap-0.5 text-[10px] text-ink" title="{{ t.name }}"><img src="{{ t.icon }}" alt="" class="h-5 w-5 object-contain">{{ t.qty|intcomma }}</span>{% endfor %}
     </div>
     {% endif %}
+    {% if i.battles %}
+    <div class="mt-2 grid gap-1">
+      {% for b in i.battles %}
+      <div class="flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-[11px]" style="background: var(--ik-sand-light);">
+        <span class="text-ink">nível <b>{{ b.level }}</b></span>
+        <span style="{% if b.result == 'victory' %}color: #4b7a3c;{% else %}color: #b04a3a;{% endif %}">{% if b.result == 'victory' %}vitória{% else %}derrota{% endif %} · {{ b.rounds }} rod.</span>
+        <span class="text-muted">moral {{ b.morale_start|default:"?" }}% → <b class="text-ink" {% if b.morale_end and b.morale_end < 60 %}style="color: #b04a3a;"{% endif %}>{{ b.morale_end|default:"?" }}%</b></span>
+        <span class="text-muted">perdas {% if b.losses %}<b class="text-ink">{% for k, v in b.losses.items %}{{ v }}{% if not forloop.last %}+{% endif %}{% endfor %}</b>{% else %}0{% endif %}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
   {% endfor %}
 </div>

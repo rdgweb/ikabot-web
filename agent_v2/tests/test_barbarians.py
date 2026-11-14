@@ -4,7 +4,8 @@ import unittest
 
 from game_client.actions.barbarians import AttackBarbarianVillageAction, loot_ships_for_level
 from game_client.actions.barbarians import fetch_village_info
-from runners.barbarians import BarbariansRunner, _barbarian_movements, _cargo_total, _choose_troops, _loot_unit
+from game_client.actions.barbarians import _parse_defenders
+from runners.barbarians import BarbariansRunner, _barbarian_movements, _cargo_total, _choose_troops, _battle_outcome, _defenders_hp, _learned_army, _loot_unit
 
 VIEW_HTML = """
 <input type="hidden" name="cargo_army_303_upkeep" value="3"><input type="hidden" name="cargo_army_315_upkeep" value="1">
@@ -187,6 +188,51 @@ class MovementTests(unittest.TestCase):
                 return {"movement_details": []}
 
         self.assertFalse(runner._on_the_way("j", Idle(), "4477", "37441", st, totals, []))
+
+
+class LearnedArmyTests(unittest.TestCase):
+    """No fixed table: the next army comes from the last battle (its army, how the defenders grew, how it went)."""
+
+    HAVE = {303: 4502, 308: 253, 302: 2519, 304: 661, 305: 291, 312: 608, 309: 172, 310: 30}
+    LAST = {"302": 60, "304": 35, "305": 12, "308": 50}
+
+    def test_long_battle_with_low_morale_grows_the_army_and_brings_cooks(self):
+        battle = {"result": "victory", "rounds": 4, "morale_start": 85, "morale_end": 55, "losses": {}}
+        st = {"attacked_level": 19, "last_troops": self.LAST, "last_battle": battle}
+        army, missing, why = _learned_army(st, 20, [], self.HAVE)
+        self.assertEqual(army, {302: 86, 304: 51, 305: 18, 308: 72, 310: 5})   # x1.1 a level, x1.3 for 4 rounds
+        self.assertEqual(missing, {})
+        self.assertIn("4 rodadas", why)
+
+    def test_quick_win_keeps_the_army_and_follows_the_defenders(self):
+        battle = {"result": "victory", "rounds": 1, "morale_start": 90, "morale_end": 90, "losses": {}}
+        st = {"attacked_level": 19, "last_troops": {"302": 60, "308": 50}, "last_battle": battle,
+              "attack_defenders_hp": _defenders_hp([["Membro do Clube de Bárbaros", 300]])}
+        army, _, _ = _learned_army(st, 20, [["Membro do Clube de Bárbaros", 600]], self.HAVE)
+        self.assertEqual(army, {302: 120, 308: 100})
+        army, missing, _ = _learned_army(st, 20, [["Membro do Clube de Bárbaros", 600]], {302: 100, 308: 500})
+        self.assertIsNone(army)
+        self.assertEqual(missing, {302: 20})
+
+    def test_defeat_doubles_and_nothing_to_learn_from_returns_none(self):
+        st = {"attacked_level": 5, "last_troops": {"303": 35}, "last_battle": {"result": "defeat", "rounds": 2}}
+        self.assertEqual(_learned_army(st, 5, [], self.HAVE)[0], {303: 70})
+        self.assertEqual(_learned_army({}, 1, [], self.HAVE), (None, {}, ""))
+
+    def test_the_report_says_rounds_morale_and_why(self):
+        rnd = ('<table class="container_morale"><tr><td>Atacante</td><td>Unidades</td><td>Moral</td></tr><tr><td>Executor</td>'
+               '<td>157 (-0)</td><td>{m} %</td></tr></table><script>registerMouseOver("morale104197", " Alterações da moral '
+               'As tropas estão exaustas. A moral foi reduzida em 10%. ",true,true);</script>')
+        detailed = {"rounds": [{"html": rnd.format(m=85)}, {"html": rnd.format(m=55)}], "attacker_losses": {}}
+        out = _battle_outcome(detailed, {"result": "victory", "rounds": 2, "combat_id": 9})
+        self.assertEqual((out["morale_start"], out["morale_end"], out["rounds"], out["losses"]), (85, 55, 2, {}))
+        self.assertEqual(out["reasons"], ["As tropas estão exaustas. A moral foi reduzida em 10%."])
+
+    def test_several_defender_types_are_paired_in_order(self):
+        html = ('<tr><td><div class="army s320"><div class="u">Membro do Clube de Bárbaros</div></div></td>'
+                '<td><div class="army s324"><div class="u">Atirador de Machados</div></div></td></tr>'
+                '<tr><td class="center">325</td><td class="center">18</td></tr>')
+        self.assertEqual(_parse_defenders(html), [("Membro do Clube de Bárbaros", 325), ("Atirador de Machados", 18)])
 
 
 if __name__ == "__main__":

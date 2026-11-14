@@ -1711,6 +1711,7 @@ class JobListView(FilterSortListView):
                 "left": st.get("left_before"), "last_ships": _to_int(st.get("last_ships"), 0), "troops": troops,
                 "attacked_at": datetime.fromtimestamp(st["attacked_at"], tz=dt_timezone.utc) if st.get("attacked_at") else None,
                 "rebuild_end": datetime.fromtimestamp(end, tz=dt_timezone.utc) if end else None,
+                "battles": [b for b in (st.get("battles") or []) if isinstance(b, dict)][-6:][::-1],
             })
         return {
             "islands": islands,

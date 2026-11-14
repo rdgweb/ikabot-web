@@ -178,6 +178,22 @@ def _digits(value) -> int:
     return int(found) if found else 0
 
 
+def _parse_defenders(html: str) -> list[tuple[str, int]]:
+    """[(name, count)] of the village's defenders. Each unit is an icon cell (div.army + its name) and a count cell
+    (td.center); with several unit types the icons may come in one row and the counts in the next, so both lists are
+    read in order and paired; the upstream one-unit pattern is the fallback."""
+    import re
+
+    names = [re.sub(r"<[^>]+>", "", n).strip() for n in re.findall(
+        r'<div class="army [^"]*">\s*<div class="[^"]*">(.*?)</div>', html or "", re.S)]
+    counts = [_digits(c) for c in re.findall(r'<td class="center">\s*([\d.,\xa0 ]+?)\s*</td>', html or "")]
+    if names and len(names) == len(counts):
+        return list(zip(names, counts))
+    return [(re.sub(r"<[^>]+>", "", name).strip(), _digits(amount)) for name, amount in re.findall(
+        r'<div class="army \w*?">\s*<div class=".*?">(.*?)</div>\s*</div>\s*</td>\s*</tr>\s*<tr>\s*<td class="center">\s*([\d.,\xa0 ]+)',
+        html or "")]
+
+
 def fetch_village_info(client, island_id: int | str) -> dict[str, Any]:
     """The barbarian village screen, asked the way the upstream ikabot asks it (POST with everything in the query
     string, destinationIslandId included; the form body gets an empty answer): level, gold and resources waiting to
@@ -208,9 +224,7 @@ def fetch_village_info(client, island_id: int | str) -> dict[str, Any]:
         fields.update({k: v for k, v in entry[1].items() if k.startswith(("js_islandBarbarian", "barbarianCity"))})
     if not fields:
         return {}
-    defenders = [(re.sub(r"<[^>]+>", "", name).strip(), _digits(amount)) for name, amount in re.findall(
-        r'<div class="army \w*?">\s*<div class=".*?">(.*?)</div>\s*</div>\s*</td>\s*</tr>\s*<tr>\s*<td class="center">\s*([\d.,\xa0 ]+)',
-        html)]
+    defenders = _parse_defenders(html)
     resources = [_digits(fields.get(key)) for key in ("js_islandBarbarianResourceresource", "js_islandBarbarianResourcetradegood1",
                                                       "js_islandBarbarianResourcetradegood2", "js_islandBarbarianResourcetradegood3",
                                                       "js_islandBarbarianResourcetradegood4")]
@@ -220,7 +234,14 @@ def fetch_village_info(client, island_id: int | str) -> dict[str, Any]:
         end = _digits(((timer.get("countdown") or {}) if isinstance(timer.get("countdown"), dict) else {}).get("enddate"))
     return {"level": _digits(fields.get("js_islandBarbarianLevel")), "gold": _digits(fields.get("js_islandBarbarianResourcegold")),
             "resources": resources, "total": sum(resources), "rebuild_end": end,
-            "defenders": [[name, qty] for name, qty in defenders if qty]}
+            "defenders": [[name, qty] for name, qty in defenders if qty],
+            "army_html": _army_snippet(html)}
+
+
+def _army_snippet(html: str) -> str:
+    """The defenders' table, tags kept, for the dry run to show how the game lays it out."""
+    at = (html or "").find('class="army')
+    return " ".join((html or "")[max(0, at - 400):at + 2600].split()) if at >= 0 else ""
 
 
 def open_attack_view(client, from_city_id: int | str, island_id: int | str) -> dict[str, Any]:
