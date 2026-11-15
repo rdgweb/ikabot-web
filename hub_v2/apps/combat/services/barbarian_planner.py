@@ -60,7 +60,11 @@ def field_for_level(level: int) -> int:
     return 5 if level < 30 else 10
 
 
-CITIZEN_VALUE = 30             # a citizen lost with each unit, in resources (it has to grow back and be trained again)
+TAX_PER_CITIZEN = 3.0          # gold a citizen pays per hour (town hall: 2.299 citizens -> +6.899)
+GROWTH_PER_HAPPINESS = 0.02    # citizens grown per hour for each point of happiness (town hall: 408 -> 8,19/h)
+CITIZEN_VALUE = TAX_PER_CITIZEN / GROWTH_PER_HAPPINESS
+# a citizen lost with each unit: each missing citizen adds one point of happiness, so it grows back at 2% an hour,
+# ~50 h on average, without paying its tax all that time (150 gold); the town's own numbers replace these when known
 EXPOSURE = 0.01                # what having a unit away costs, as a share of its price (it is not home to defend)
 ROUND_MINUTES = 15
 MAX_ROUNDS = 20                # a battle the simulator has not decided by then is taken as not won
@@ -77,13 +81,58 @@ def travel_minutes(army: dict) -> float:
     return SAME_ISLAND_SECONDS_AT_60 * 60 / max(1, slowest) / 60
 
 
+def citizen_value(population: dict | None = None) -> float:
+    """What a citizen lost costs the town, in gold: its tax for as long as it takes to grow back, from the town hall
+    (gold per citizen, growth per point of happiness) when the job read it."""
+    pop = population or {}
+    tax = TAX_PER_CITIZEN
+    rate = GROWTH_PER_HAPPINESS
+    try:
+        if int(pop.get("citizens") or 0) > 0 and int(pop.get("citizens_gold") or 0) > 0:
+            tax = float(pop["citizens_gold"]) / float(pop["citizens"])
+        if float(pop.get("happiness") or 0) > 50 and float(pop.get("growth") or 0) > 0:
+            rate = float(pop["growth"]) / float(pop["happiness"])
+    except (TypeError, ValueError, ZeroDivisionError):
+        return CITIZEN_VALUE
+    if not (0.5 <= tax <= 20 and 0.005 <= rate <= 0.1):
+        return CITIZEN_VALUE
+    return round(tax / rate, 1)
+
+
+CITIZENS_KEPT = 0.2            # a sustainable farm leaves this share of the town's free citizens untouched
+
+
+def sustainable_citizens(population: dict | None, cycle_minutes: float | None) -> int | None:
+    """How many citizens a cycle can take for ever: the town grows 2% of its happiness an hour, and each citizen
+    missing adds a point of happiness; the farm can keep at most (1 - CITIZENS_KEPT) of the free citizens of a full
+    town missing. None when the town hall was not read. (The agent's farm uses the same rule.)"""
+    pop = population or {}
+    if not pop.get("max") or not cycle_minutes:
+        return None
+    happiness, growth = float(pop.get("happiness") or 0), float(pop.get("growth") or 0)
+    rate = growth / happiness if happiness > 50 and growth > 0 else GROWTH_PER_HAPPINESS
+    room = max(0, int(pop.get("max") or 0) - int(pop.get("occupied") or 0))
+    happiness_full = max(0.0, happiness - room)
+    citizens_full = int(pop.get("citizens") or 0) + room
+    return int(rate * (happiness_full + (1 - CITIZENS_KEPT) * citizens_full) * float(cycle_minutes) / 60)
+
+
+def unit_citizens(uid: int) -> int:
+    """Citizens one unit takes, as the town's barracks showed (1 when not read)."""
+    try:
+        return max(1, int((_FARM.get("unit_citizens") or {}).get(int(uid)) or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
 def unit_price(uid: int) -> float:
-    """What training one unit again costs, in resources: its price (base, from the game) and its citizen."""
+    """What training one unit again costs: its price (base, from the game) and its citizens."""
     from core.catalogs import TRAINING_UNITS
 
+    citizens = unit_citizens(uid) * float(_FARM.get("citizen_value") or CITIZEN_VALUE)
     for unit in TRAINING_UNITS.get("troops", []):
         if int(unit["id"]) == int(uid):
-            return float(sum(int(unit.get(k) or 0) for k in ("wood", "wine", "marble", "crystal", "sulfur"))) + CITIZEN_VALUE
+            return float(sum(int(unit.get(k) or 0) for k in ("wood", "wine", "marble", "crystal", "sulfur"))) + citizens
     return 100.0
 
 
@@ -97,7 +146,16 @@ def _fill(line: str, uid: int, field_level: int, waves: int) -> int:
     return max(1, (_line_capacity(field_level, line) // max(1, _unit_size(uid)))) * waves
 
 
-_FARM = {"train_seconds": {}, "cycle_minutes": 0.0}     # set by plan()/reinforce() for the call in course
+_FARM = {"train_seconds": {}, "cycle_minutes": 0.0, "citizen_value": CITIZEN_VALUE, "unit_citizens": {},
+         "free_citizens": None}     # set by plan()/reinforce() for the call in course
+
+
+def set_town(population: dict | None = None, unit_citizens_read: dict | None = None) -> None:
+    """The town the army leaves from: what its citizens are worth and how many each unit takes."""
+    pop = population or {}
+    _FARM.update(citizen_value=citizen_value(pop),
+                 unit_citizens={int(u): int(c) for u, c in (unit_citizens_read or {}).items() if str(u).isdigit() and int(c or 0) > 0},
+                 free_citizens=int(pop["citizens"]) if str(pop.get("citizens") or "").isdigit() else None)
 
 
 def _key(sim: dict, army: dict[int, int], round_value: float = 0.0) -> tuple:
@@ -109,6 +167,12 @@ def _key(sim: dict, army: dict[int, int], round_value: float = 0.0) -> tuple:
     lost = sum(unit_price(u) * q for u, q in losses.items())
     away = EXPOSURE * sum(unit_price(u) * q for u, q in (army or {}).items())
     risk = 0 if morale_end >= MORALE_FLOOR else (MORALE_FLOOR - morale_end) * 100
+    free = _FARM.get("free_citizens")
+    if free is not None:
+        # more citizens lost than the town has free: the barracks cannot train them again until it grows them back
+        short = sum(unit_citizens(u) * q for u, q in losses.items()) - int(free)
+        if short > 0:
+            risk += short * float(_FARM.get("citizen_value") or CITIZEN_VALUE)
     train_minutes = sum(float(_FARM["train_seconds"].get(int(u)) or 0) * q for u, q in losses.items()) / 60
     late = max(0.0, train_minutes - float(_FARM["cycle_minutes"] or 0)) if _FARM["cycle_minutes"] else 0.0
     # the way there holds the battle (and the village's rebuild) back like a round does
@@ -169,7 +233,8 @@ def _candidates(available: dict[int, int], field_level: int, defender_total: int
 
 def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: int = 0, field_level: int = 5,
          upgrades: dict[int, dict] | None = None, explain_training: bool = True, per_round: float = 0.0,
-         train_seconds: dict | None = None, cycle_minutes: float = 0.0) -> dict:
+         train_seconds: dict | None = None, cycle_minutes: float = 0.0, population: dict | None = None,
+         unit_citizens_read: dict | None = None) -> dict:
     """The best army for this village from what the town has, with the simulation that chose it."""
     from apps.espionage.services.battle_land import simulate_land_battle
 
@@ -181,6 +246,7 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
     upgrades = {int(u): v for u, v in (upgrades or {}).items()}
     _FARM.update(train_seconds={int(u): float(v) for u, v in (train_seconds or {}).items()}, cycle_minutes=float(cycle_minutes or 0),
                  joining=False)
+    set_town(population, unit_citizens_read)
 
     def fight(army):
         return simulate_land_battle(dict(army), dict(defenders), attacker_upgrades=upgrades, town_hall_level=field_level,
@@ -214,6 +280,7 @@ def _summary(sim: dict) -> dict:
     lost = {int(u): int(q) for u, q in (sim.get("attacker_losses") or {}).items()}
     return {
         "winner": "undecided" if sim.get("undecided") else sim.get("winner"), "rounds": sim.get("rounds"), "losses_cost": round(sum(unit_price(u) * q for u, q in lost.items())),
+        "citizens_lost": sum(unit_citizens(u) * q for u, q in lost.items()),
         "morale_end": (sim.get("morale") or {}).get("attacker"),
         "attacker_losses": {int(u): int(q) for u, q in (sim.get("attacker_losses") or {}).items()},
         "wall_sections_left": sim.get("wall_sections_left"), "wall_sections": sim.get("wall_sections"),
@@ -290,7 +357,8 @@ MIN_GAIN = 0.30               # a reinforcement is sent only when it saves at le
 
 def reinforce(state: dict, available: dict[int, int], *, wall_level: int = 0, field_level: int = 5,
               upgrades: dict[int, dict] | None = None, en_route: dict[int, int] | None = None,
-              per_round: float = 0.0, train_seconds: dict | None = None, cycle_minutes: float = 0.0) -> dict:
+              per_round: float = 0.0, train_seconds: dict | None = None, cycle_minutes: float = 0.0,
+              population: dict | None = None, unit_citizens_read: dict | None = None) -> dict:
     """The battle taken up from its real state, without and with each army the town could still send (joining the
     next round). Returns the best one when it is better than sending nothing: winning instead of losing, or fewer
     losses, or fewer rounds."""
@@ -306,6 +374,7 @@ def reinforce(state: dict, available: dict[int, int], *, wall_level: int = 0, fi
     # a reinforcement joins a battle already going: its way there does not hold the battle back
     _FARM.update(train_seconds={int(u): float(v) for u, v in (train_seconds or {}).items()}, cycle_minutes=float(cycle_minutes or 0),
                  joining=True)
+    set_town(population, unit_citizens_read)
 
     def fight(extra):
         return simulate_land_battle(

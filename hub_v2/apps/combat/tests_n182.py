@@ -178,3 +178,37 @@ class ReinforceOnlyWhenItMattersTests(TestCase):
         again = barbarian_planner.reinforce(state, available, wall_level=10, field_level=5, upgrades=UPGRADES, en_route=small)
         if again["send"]:
             self.assertEqual(again["without"]["winner"] != "attacker", True)
+
+
+
+class CitizenTests(TestCase):
+    """15/11: retraining the losses took ~1.200 citizens in a night; a citizen is worth its tax until it grows back."""
+
+    def test_a_citizen_is_its_tax_while_it_grows_back(self):
+        self.assertEqual(barbarian_planner.CITIZEN_VALUE, 150)                   # 3 gold/h, 2% of the happiness per hour
+        town = {"citizens": 2299, "citizens_gold": 6899, "happiness": 408, "growth": 8.19}
+        self.assertAlmostEqual(barbarian_planner.citizen_value(town), round((6899 / 2299) / (8.19 / 408), 1))
+        self.assertEqual(barbarian_planner.citizen_value({"citizens": 5, "citizens_gold": 99999}), 150)   # nonsense: the rule
+
+    def test_the_town_sets_the_price_of_a_loss(self):
+        barbarian_planner.set_town({"citizens": 2299, "citizens_gold": 6899, "happiness": 408, "growth": 8.19}, {"308": 2})
+        try:
+            value = barbarian_planner.citizen_value({"citizens": 2299, "citizens_gold": 6899, "happiness": 408, "growth": 8.19})
+            self.assertAlmostEqual(barbarian_planner.unit_price(308), 65 + 87 + 2 * value)
+            self.assertAlmostEqual(barbarian_planner.unit_price(303), 20 + 14 + value)
+        finally:
+            barbarian_planner.set_town()
+
+    def test_losses_beyond_the_free_citizens_weigh_more(self):
+        sim = {"winner": "attacker", "rounds": 6, "attacker_losses": {303: 200}, "morale": {"attacker": 80}}
+        barbarian_planner.set_town({"citizens": 50, "max": 3770})
+        try:
+            short = barbarian_planner._key(sim, {303: 400})[1]
+        finally:
+            barbarian_planner.set_town()
+        plenty = barbarian_planner._key(sim, {303: 400})[1]
+        self.assertAlmostEqual(short - plenty, 150 * 150, delta=1)
+
+    def test_what_a_cycle_can_take_for_ever(self):
+        pop = {"citizens": 1284, "happiness": 1134, "growth": 22.7, "occupied": 2695, "max": 3770}
+        self.assertEqual(barbarian_planner.sustainable_citizens(pop, 204), int(22.7 / 1134 * (59 + 0.8 * 2359) * 204 / 60))

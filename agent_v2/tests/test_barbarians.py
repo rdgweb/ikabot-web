@@ -478,3 +478,65 @@ class LevelHoldTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class PopulationTests(unittest.TestCase):
+    """15/11: Juízo Final at 2.695 of 3.770 with 1.284 free citizens, happiness ~1.134 and ~22/h of growth, after
+    retraining ~1.200 units in a night."""
+
+    POP = {"citizens": 1284, "citizens_gold": 3852, "happiness": 1134, "growth": 22.7, "occupied": 2695, "max": 3770}
+
+    def test_what_a_cycle_can_take_for_ever(self):
+        from runners.barbarians import sustainable_citizens
+
+        # full town: happiness 59, 2.359 free; at most 80% of them missing -> 0,02 x (59 + 1.887) x 3,4 h
+        self.assertEqual(sustainable_citizens(self.POP, 204), int(22.7 / 1134 * (59 + 0.8 * 2359) * 204 / 60))
+        self.assertIsNone(sustainable_citizens({}, 204))
+
+    def test_the_book_marks_what_the_town_cannot_keep_up(self):
+        ledger = [{"level": 25, "loot": 41_801, "gold": 38_850, "losses": {"303": 111}, "rounds": 6, "cycle_minutes": 204},
+                  {"level": 29, "loot": 65_000, "gold": 53_850, "losses": {"303": 188}, "rounds": 8, "cycle_minutes": 204}]
+        book = farm_book(ledger, {"303": 184}, {"303": 1}, self.POP)
+        self.assertEqual((book[25]["citizens"], book[29]["citizens"]), (111, 188))
+        self.assertTrue(book[25]["sustainable"])
+        self.assertFalse(book[29]["sustainable"])
+
+    def test_the_ideal_is_the_best_the_town_keeps_up(self):
+        book = {25: {"per_hour": 20_000, "sustainable": True, "citizens": 111},
+                26: {"per_hour": 24_000, "sustainable": True, "citizens": 120},
+                27: {"per_hour": 30_000, "sustainable": False, "citizens": 173},
+                28: {"per_hour": 31_000, "sustainable": False, "citizens": 180}}
+        self.assertEqual(ideal_level(book), 26)
+        none_kept = {k: {**v, "sustainable": False} for k, v in book.items()}
+        self.assertEqual(ideal_level(none_kept), 25)                                 # the one that takes fewest
+
+    def test_retraining_stops_at_the_free_citizens(self):
+        trained = []
+
+        class Game:
+            def fetch_barracks_state(self, city_id, position, building_type):
+                return {"units": [{"unit_id": 303, "train_time_seconds": 63, "citizens": 1, "max_build": 5000},
+                                  {"unit_id": 302, "train_time_seconds": 80, "citizens": 1, "max_build": 5000}]}
+
+            def train_units(self, city_id, position, units, building_type):
+                trained.append(units)
+
+        runner = RetrainTests._runner(RetrainTests())
+        runner._population = lambda jid, client, town, st, fresh=False: {"citizens": 150, "max": 3770, "growth": 22.0}
+        st = {}
+        runner._retrain_losses("j", Game(), "4477", "37441", {"303": 120, "302": 66}, st)
+        self.assertEqual(trained, [{303: 120, 302: 30}])
+        self.assertEqual(st["retrain_short"], {"302": 36})
+        self.assertIn("cidadãos livres", runner.hub.logs[-1])
+
+
+    def test_only_the_battles_of_the_new_planner_choose_the_level(self):
+        runner = BarbariansRunner.__new__(BarbariansRunner)
+        runner._target_level_input, runner._target_auto = 0, True
+        old = [{"level": n, "loot": 50_000 + 10_000 * (n - 25), "gold": 40_000, "losses": {"303": 50 * (n - 24)}, "rounds": 6, "cycle_minutes": 200}
+               for n in (25, 26, 27, 28)]
+        st = {"ledger": old, "prices": {"303": 184}, "population": self.POP}
+        self.assertEqual(runner._target_level(st), 0)                       # the old armies do not choose
+        st["ledger"] = [{**e, "book": 2} for e in old]
+        self.assertEqual(runner._target_level(st), 26)                      # 27 and 28 take more than the town grows

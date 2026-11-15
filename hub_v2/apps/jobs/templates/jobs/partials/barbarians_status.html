@@ -54,6 +54,14 @@
           · queda {% if i.decay_hours %}<b class="text-ink">{{ i.decay_hours }} h</b>/nível{% else %}não medida{% endif %}
         </span>
       </div>
+      {% if i.farm_population %}
+      <div class="mb-1 flex flex-wrap items-center gap-x-3 rounded-lg px-2 py-1 text-[11px]" style="background: var(--ik-sand-light); row-gap: 2px;">
+        <span class="text-muted"><i class="bi bi-people"></i> cidade <b class="text-ink">{{ i.farm_population.occupied|intcomma }}</b>/{{ i.farm_population.max|intcomma }}</span>
+        <span class="text-muted">livres <b class="text-ink">{{ i.farm_population.citizens|intcomma }}</b></span>
+        <span class="text-muted">cresce <b class="text-ink">{{ i.farm_population.growth|floatformat:1 }}/h</b></span>
+        {% if i.farm_population.short %}<span style="color: #b04a3a;">{{ i.farm_population.short|intcomma }} sem refazer</span>{% endif %}
+      </div>
+      {% endif %}
       {% if i.waiting_level %}
       <div class="mb-1 rounded-lg px-2 py-1 text-[11px]" style="background: rgba(201,156,78,.14); color: var(--ik-gold-dark);">
         <i class="bi bi-hourglass-split"></i> vila no nível {{ i.waiting_level }}: esperando cair para o {{ i.farm_target }}
@@ -61,11 +69,13 @@
       {% endif %}
       <div class="grid gap-1">
         {% for r in i.farm_book %}
-        <div class="grid items-center gap-1 rounded-lg px-2 py-1 text-[11px]" style="grid-template-columns: 2.2rem 1fr 1fr 1fr 3rem 1fr; background: {% if r.level == i.farm_best %}rgba(95,140,78,.14){% else %}var(--ik-sand-light){% endif %};">
+        <div class="grid items-center gap-1 rounded-lg px-2 py-1 text-[11px]" style="grid-template-columns: 2.2rem 1fr 1fr 1fr 3.4rem 3rem 1fr; background: {% if r.level == i.farm_best %}rgba(95,140,78,.14){% else %}var(--ik-sand-light){% endif %};">
           <b class="text-ink">{{ r.level }}</b>
           <span class="text-ink" title="saque médio">{{ r.loot|intcomma }}</span>
           <span style="color: var(--ik-gold-dark);" title="ouro médio">{{ r.gold|intcomma }}</span>
           <span style="color: #b04a3a;" title="custo para refazer as perdas">−{{ r.cost|intcomma }}</span>
+          <span title="cidadãos perdidos por batalha{% if r.citizens_limit is not None %} (a cidade repõe até {{ r.citizens_limit }} por ciclo){% endif %}"
+                style="color: {% if r.sustainable == False %}#b04a3a{% else %}var(--ik-muted, #7a6a55){% endif %};"><i class="bi bi-people"></i> {{ r.citizens }}{% if r.sustainable == False %} !{% endif %}</span>
           <span class="text-muted" title="ciclo entre ataques">{{ r.cycle_h|default:"–" }}</span>
           <b class="text-ink text-right" title="lucro por hora">{% if r.per_hour %}{{ r.per_hour|intcomma }}/h{% else %}–{% endif %}</b>
         </div>

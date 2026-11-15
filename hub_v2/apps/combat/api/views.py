@@ -295,7 +295,9 @@ class BarbarianPlanView(APIView):
             result = barbarian_planner.plan(available, defenders, wall_level=int(data.get("wall_level") or 0),
                                             field_level=barbarian_planner.field_for_level(level), upgrades=upgrades,
                                             per_round=per_round, train_seconds=data.get("train_seconds") or {},
-                                            cycle_minutes=float(data.get("cycle_minutes") or 0))
+                                            cycle_minutes=float(data.get("cycle_minutes") or 0),
+                                            population=data.get("population") or {},
+                                            unit_citizens_read=data.get("unit_citizens") or {})
         except Exception as exc:  # noqa: BLE001 - the job falls back to waiting
             logger.warning("Barbarian plan failed", exc_info=True)
             return Response({"can_win": False, "army": {}, "note": f"simulador falhou: {exc}"}, status=status.HTTP_200_OK)
@@ -305,6 +307,7 @@ class BarbarianPlanView(APIView):
         from core.catalogs import TRAINING_UNITS
 
         result["prices"] = {str(u["id"]): barbarian_planner.unit_price(u["id"]) for u in TRAINING_UNITS.get("troops", [])}
+        result["citizen_value"] = barbarian_planner._FARM.get("citizen_value")
         result["defenders"] = {str(k): v for k, v in defenders.items()}
         calibration = barbarian_learning.active()
         result["calibration"] = {k: calibration.get(k) for k in ("attacker_pct", "defender_pct", "samples")}
@@ -347,7 +350,9 @@ class BarbarianReinforceView(APIView):
                                                               or barbarian_planner.field_for_level(int(data.get("level") or 0))),
                                                  upgrades=upgrades, en_route=en_route, per_round=per_round,
                                                  train_seconds=data.get("train_seconds") or {},
-                                                 cycle_minutes=float(data.get("cycle_minutes") or 0))
+                                                 cycle_minutes=float(data.get("cycle_minutes") or 0),
+                                                 population=data.get("population") or {},
+                                                 unit_citizens_read=data.get("unit_citizens") or {})
         except Exception as exc:  # noqa: BLE001 - without an answer nothing is sent
             logger.warning("Barbarian reinforcement failed", exc_info=True)
             return Response({"send": {}, "note": f"simulador falhou: {exc}"})

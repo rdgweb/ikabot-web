@@ -69,6 +69,8 @@ class TownHallState:
     action_points_max: int
     breakdown: dict[str, int]
     raw_html: str
+    citizens: int = 0          # free citizens (the ones that pay tax and can be trained)
+    citizens_gold: int = 0     # gold they pay per hour
 
 
 def parse_tavern_state(tavern_html: str) -> TavernState:
@@ -364,7 +366,16 @@ def parse_townhall_state(html: str) -> TownHallState:
         ):
             breakdown[key] = _decode_number(raw)
 
+    def _value(element_id: str) -> int:
+        for pattern in (rf'id=\\"{element_id}\\"[^>]*>\s*([+\-\d.,]+)\s*<', rf'id="{element_id}"[^>]*>\s*([+\-\d.,]+)\s*<'):
+            found = re.search(pattern, html, re.I)
+            if found:
+                return _decode_number(found.group(1))
+        return 0
+
     return TownHallState(
+        citizens=_value("js_TownHallPopulationGraphCitizenCount"),
+        citizens_gold=_value("js_TownHallPopulationGraphCitizensGoldProduction"),
         total_happiness=total_happiness,
         happiness_text=happiness_text,
         growth_per_hour=growth_per_hour,

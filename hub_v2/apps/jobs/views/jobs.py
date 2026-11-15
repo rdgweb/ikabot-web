@@ -1727,17 +1727,23 @@ class JobListView(FilterSortListView):
     def _barbarian_farm(st: dict, inputs: dict) -> dict:
         """N-182: per level, from the battles fought, what the farm takes and costs (losses priced as training them
         again) and the profit per hour; the village's measured decay; the level the farm keeps."""
-        from apps.combat.services.barbarian_planner import unit_price
+        from apps.combat.services.barbarian_planner import sustainable_citizens, unit_price
 
+        prices = st.get("prices") or {}
+        per_unit = {str(u): int(c) for u, c in (st.get("unit_citizens") or {}).items()}
+        pop = st.get("population") or {}
         book: dict[int, dict] = {}
         for entry in st.get("ledger") or []:
             if not isinstance(entry, dict) or entry.get("loot") is None or not entry.get("level"):
                 continue
-            row = book.setdefault(int(entry["level"]), {"n": 0, "loot": 0, "gold": 0, "cost": 0.0, "rounds": 0, "cycle": 0, "cycles": 0})
+            row = book.setdefault(int(entry["level"]), {"n": 0, "loot": 0, "gold": 0, "cost": 0.0, "rounds": 0, "cycle": 0, "cycles": 0,
+                                                        "citizens": 0})
             row["n"] += 1
+            row["citizens"] += sum(max(1, per_unit.get(str(u), 1)) * int(q) for u, q in (entry.get("losses") or {}).items())
             row["loot"] += int(entry.get("loot") or 0)
             row["gold"] += int(entry.get("gold") or 0)
-            row["cost"] += sum(unit_price(int(u)) * int(q) for u, q in (entry.get("losses") or {}).items())
+            # the prices the planner gave the job (citizens at the town's own worth), the game table otherwise
+            row["cost"] += sum(float(prices.get(str(u)) or unit_price(int(u))) * int(q) for u, q in (entry.get("losses") or {}).items())
             row["rounds"] += int(entry.get("rounds") or 0)
             if entry.get("cycle_minutes"):
                 row["cycle"] += int(entry["cycle_minutes"])
@@ -1748,14 +1754,23 @@ class JobListView(FilterSortListView):
             n = r["n"]
             cycle = round(r["cycle"] / r["cycles"]) if r["cycles"] else None
             profit = (r["loot"] + r["gold"] - r["cost"]) / n
+            citizens = round(r["citizens"] / n)
+            limit = sustainable_citizens(pop, cycle)
             rows.append({"level": level, "battles": n, "loot": r["loot"] // n, "gold": r["gold"] // n, "cost": round(r["cost"] / n),
                          "rounds": round(r["rounds"] / n, 1), "cycle": cycle, "cycle_h": f"{cycle // 60}h{cycle % 60:02d}" if cycle else "",
-                         "profit": round(profit), "per_hour": round(profit * 60 / cycle) if cycle else None})
+                         "profit": round(profit), "per_hour": round(profit * 60 / cycle) if cycle else None,
+                         "citizens": citizens, "citizens_limit": limit,
+                         "sustainable": None if limit is None else citizens <= limit})
         best = max((r for r in rows if r["per_hour"] is not None), key=lambda r: r["per_hour"], default=None)
         decay = [d for d in (st.get("decay") or []) if isinstance(d, dict)]
         auto = str(inputs.get("target_auto") or "").lower() in {"1", "true", "on", "yes"}
         target = st.get("ideal_level") if auto and st.get("ideal_level") else int(inputs.get("target_level") or 0)
-        return {"farm_book": rows, "farm_best": best["level"] if best else None,
+        population = None
+        if pop.get("max"):
+            population = {"citizens": int(pop.get("citizens") or 0), "occupied": int(pop.get("occupied") or 0),
+                          "max": int(pop.get("max") or 0), "growth": float(pop.get("growth") or 0),
+                          "short": sum(int(q) for q in (st.get("retrain_short") or {}).values())}
+        return {"farm_book": rows, "farm_best": best["level"] if best else None, "farm_population": population,
                 "decay_hours": round(sum(d["hours"] for d in decay) / len(decay), 1) if decay else None,
                 "decay_count": len(decay), "farm_target": target or None, "farm_auto": auto,
                 "waiting_level": st.get("waiting_level")}
