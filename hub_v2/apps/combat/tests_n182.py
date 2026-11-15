@@ -212,3 +212,21 @@ class CitizenTests(TestCase):
     def test_what_a_cycle_can_take_for_ever(self):
         pop = {"citizens": 1284, "happiness": 1134, "growth": 22.7, "occupied": 2695, "max": 3770}
         self.assertEqual(barbarian_planner.sustainable_citizens(pop, 204), int(22.7 / 1134 * (59 + 0.8 * 2359) * 204 / 60))
+
+
+class LocalSearchTests(TestCase):
+    """15/11, level 34: the grid fills the reserve only to not look outnumbered, so carabineers with the reserve's
+    hoplites were never tried; the walk from the best army finds what is between."""
+
+    def test_the_walk_adds_what_lowers_the_cost(self):
+        def fight(army):
+            lost = max(0, 300 - 2 * army.get(304, 0))                 # each carabineer saves two hoplites
+            return {"winner": "attacker", "rounds": 8, "attacker_losses": {303: lost} if lost else {},
+                    "morale": {"attacker": 80}}
+
+        start = {303: 400, 308: 140}
+        best = (barbarian_planner._key(fight(start), start), start, fight(start))
+        (key, army, _sim), tried = barbarian_planner._improve(best, {303: 1000, 308: 271, 304: 661}, 10, fight, 0.0)
+        self.assertGreaterEqual(army.get(304, 0), 104)
+        self.assertLess(key[1], best[0][1])
+        self.assertGreater(tried, 0)

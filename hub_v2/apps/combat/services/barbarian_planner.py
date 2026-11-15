@@ -231,6 +231,53 @@ def _candidates(available: dict[int, int], field_level: int, defender_total: int
                 yield out
 
 
+RESERVE_UNITS = (303, 302, 315, 301)   # cheap bodies that wait in the reserve and take the front's place as it falls
+SEARCH_STEPS = 25                      # rounds of the walk from the best army of the grid
+
+
+def _steps(field_level: int) -> dict[int, list[int]]:
+    """How much of each unit one step of the walk adds or takes: half a wave and a whole wave of its line."""
+    out: dict[int, list[int]] = {COOK: [5, 10]}
+    for line, units in LINE_UNITS.items():
+        for uid in units:
+            wave = _fill(line, uid, field_level, 1)
+            out[uid] = sorted({max(1, wave // 2), wave})
+    return out
+
+
+def _improve(best: tuple, available: dict[int, int], field_level: int, fight, per_round: float) -> tuple[tuple, int]:
+    """From the best army of the grid, take or add half a wave or a wave of each unit (the reserve's hoplites,
+    carabineers, mortars, cooks...) while the farm's cost falls. The grid fills each line with one unit and the reserve
+    only to the count that does not look outnumbered; the best army is often between those (15/11, level 34: 233
+    hoplites in the reserve and the carabineers together, which the grid never tried)."""
+    steps = _steps(field_level)
+    tried = 0
+    for _ in range(SEARCH_STEPS):
+        key, army, _sim = best
+        moved = False
+        for uid in sorted(set(army) | {u for u in steps if int(available.get(u, 0) or 0) > 0}):
+            have = int(available.get(uid, 0) or 0)
+            for step in steps.get(uid) or [max(1, have // 10)]:
+                for sign in (1, -1):
+                    qty = army.get(uid, 0) + sign * step
+                    if qty < 0 or qty > have or qty == army.get(uid, 0):
+                        continue
+                    trial = {u: q for u, q in army.items() if u != uid}
+                    if qty:
+                        trial[uid] = qty
+                    if not any(u in trial for u in LINE_UNITS["principal"] + LINE_UNITS["flancos"]):
+                        continue
+                    sim = fight(trial)
+                    tried += 1
+                    trial_key = _key(sim, trial, per_round)
+                    if trial_key < best[0]:
+                        best = (trial_key, trial, sim)
+                        moved = True
+        if not moved:
+            break
+    return best, tried
+
+
 def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: int = 0, field_level: int = 5,
          upgrades: dict[int, dict] | None = None, explain_training: bool = True, per_round: float = 0.0,
          train_seconds: dict | None = None, cycle_minutes: float = 0.0, population: dict | None = None,
@@ -262,6 +309,8 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
             best = (key, army, sim)
     if best is None:
         return {"can_win": False, "army": {}, "tried": 0, "note": "A cidade não tem tropas para a linha de frente."}
+    best, walked = _improve(best, available, field_level, fight, per_round)
+    tried += walked
     key, army, sim = best
     result = {
         "can_win": sim.get("winner") == "attacker" and not sim.get("undecided"),
