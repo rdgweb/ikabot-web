@@ -540,3 +540,18 @@ class PopulationTests(unittest.TestCase):
         self.assertEqual(runner._target_level(st), 0)                       # the old armies do not choose
         st["ledger"] = [{**e, "book": 2} for e in old]
         self.assertEqual(runner._target_level(st), 26)                      # 27 and 28 take more than the town grows
+
+
+class RecallTests(unittest.TestCase):
+    """15/11 18:08: the attack on level 34 was called back by hand before it fought; the job read it as a defeat in one
+    round and took the 18 minutes until the next attack as its cycle."""
+
+    def test_an_attack_called_back_is_not_a_defeat(self):
+        battle = _battle_outcome({"rounds": [], "attacker_losses": {}}, {"result": "defeat", "rounds": 1, "combat_id": 9})
+        self.assertEqual(battle["result"], "recalled")
+
+    def test_a_short_time_between_attacks_is_not_a_cycle(self):
+        from runners.barbarians import _cycle
+
+        self.assertEqual(_cycle({"cycle_minutes": 18}), 180)
+        self.assertEqual(_cycle({"cycle_minutes": 215}), 215)

@@ -1,100 +1,214 @@
 {% load humanize %}
-{# N-179: Roubar Bárbaros — what the chain took, and each island's village in the last round #}
-<div class="flex items-center justify-between gap-3 mb-3">
+<style>.barb-table th, .barb-table td { padding-left: 6px; padding-right: 6px; }</style>
+{# N-179/N-182/N-192: Roubar Bárbaros — what the chain took, and for each island the village, the attack under way, the town's people, the farm per level and the battles #}
+<div class="flex flex-wrap items-center justify-between gap-2 mb-3">
   <h3 class="text-sm font-semibold text-ink"><i class="bi bi-lightning-charge-fill text-sea"></i> Roubar Bárbaros</h3>
-  <span class="text-[10px] text-muted">até o nível {{ barb.max_level }}</span>
+  <span class="badge" style="background: var(--ik-sand-light); color: var(--ik-muted);">até o nível {{ barb.max_level }}</span>
 </div>
-<div class="grid gap-3 mb-4" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+
+<div class="grid gap-3 mb-4" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));">
   <div class="rounded-xl border border-[var(--ik-line)] px-3 py-2.5">
-    <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Recursos roubados</div>
-    <div class="text-lg font-bold text-[var(--ik-sea)]">{{ barb.loot_total|intcomma }}</div>
+    <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Recursos</div>
+    <div class="text-xl font-bold tabular-nums text-[var(--ik-sea)]">{{ barb.loot_total|intcomma }}</div>
   </div>
   <div class="rounded-xl border border-[var(--ik-line)] px-3 py-2.5">
     <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Ouro</div>
-    <div class="text-lg font-bold" style="color: var(--ik-gold-dark);">{{ barb.gold_total|intcomma }}</div>
+    <div class="text-xl font-bold tabular-nums" style="color: var(--ik-gold-dark);">{{ barb.gold_total|intcomma }}</div>
   </div>
   <div class="rounded-xl border border-[var(--ik-line)] px-3 py-2.5">
     <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Ataques</div>
-    <div class="text-lg font-bold text-ink">{{ barb.total_attacks|intcomma }}</div>
-  </div>
-  <div class="rounded-xl border border-[var(--ik-line)] px-3 py-2.5">
-    <div class="text-[10px] uppercase tracking-wide text-muted mb-1">Coletas</div>
-    <div class="text-lg font-bold text-ink">{{ barb.total_loots|intcomma }}</div>
+    <div class="text-xl font-bold tabular-nums text-ink">{{ barb.total_attacks|intcomma }}</div>
   </div>
 </div>
-<div class="grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));">
-  {% for i in barb.islands %}
-  <div class="rounded-2xl border px-3 py-3" style="border-color: var(--ik-line); background: var(--ik-paper);">
-    <div class="flex items-start justify-between gap-2">
-      <div class="min-w-0">
-        <div class="text-sm font-bold text-ink truncate">{{ i.name|default:"Ilha" }} <span class="font-mono text-[10px] text-muted">{% if i.coords %}[{{ i.coords }}]{% else %}#{{ i.id }}{% endif %}</span></div>
-        <div class="text-[10px] text-muted">vila nível <b class="text-ink">{{ i.level|default:"?" }}</b>{% if i.rebuild_end %} · volta {{ i.rebuild_end|date:"d/m H:i" }}{% endif %}</div>
+
+{% for i in barb.islands %}
+<div class="space-y-3{% if not forloop.last %} mb-5{% endif %}">
+
+  {# ── village + attack under way ── #}
+  <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+    <div class="rounded-2xl border px-4 py-3" style="border-color: var(--ik-line); background: var(--ik-paper);">
+      <div class="text-[10px] uppercase tracking-wide text-muted">Vila</div>
+      <div class="text-sm font-semibold text-ink truncate">{{ i.name|default:"Ilha" }} <span class="font-mono text-[10px] text-muted">{% if i.coords %}[{{ i.coords }}]{% else %}#{{ i.id }}{% endif %}</span></div>
+      <div class="mt-2 flex items-end gap-2">
+        <span class="text-3xl font-bold leading-none tabular-nums text-ink">{{ i.level|default:"?" }}</span>
+        <span class="text-[11px] text-muted mb-0.5">nível</span>
       </div>
-      <span class="badge" style="{% if i.tone == 'good' %}background: rgba(95,140,78,.14); color: #4b7a3c;{% elif i.tone == 'sea' %}background: rgba(79,134,185,.14); color: var(--ik-sea-dark);{% elif i.tone == 'gold' %}background: rgba(201,156,78,.16); color: var(--ik-gold-dark);{% else %}background: var(--ik-sand-light); color: var(--ik-muted);{% endif %}">{{ i.label }}</span>
-    </div>
-    <div class="mt-2 grid grid-cols-3 gap-2 text-center">
-      <div class="rounded-lg px-1 py-1.5" style="background: var(--ik-sand-light);"><div class="text-[10px] text-muted">roubado</div><b class="text-xs text-ink">{{ i.looted|intcomma }}</b></div>
-      <div class="rounded-lg px-1 py-1.5" style="background: var(--ik-sand-light);"><div class="text-[10px] text-muted">ouro</div><b class="text-xs text-ink">{{ i.gold|intcomma }}</b></div>
-      <div class="rounded-lg px-1 py-1.5" style="background: var(--ik-sand-light);"><div class="text-[10px] text-muted">ataques · coletas</div><b class="text-xs text-ink">{{ i.attacks }} · {{ i.loots }}</b></div>
-    </div>
-    {% if i.attacked_at %}
-    <div class="mt-2 text-[11px] text-muted">
-      Último ataque {{ i.attacked_at|date:"d/m H:i" }}: a vila tinha <b class="text-ink">{{ i.village_resources|intcomma }}</b> + {{ i.village_gold|intcomma }} de ouro; foram {{ i.last_ships }} mercantes{% if i.left %} · ainda lá {{ i.left|intcomma }}{% endif %}
-    </div>
-    <div class="mt-1.5 flex flex-wrap items-center gap-2">
-      {% for t in i.troops %}<span class="inline-flex items-center gap-0.5 text-[10px] text-ink" title="{{ t.name }}"><img src="{{ t.icon }}" alt="" class="h-5 w-5 object-contain">{{ t.qty|intcomma }}</span>{% endfor %}
-    </div>
-    {% endif %}
-    {% if i.farm_book %}
-    <div class="mt-3">
-      <div class="flex items-center justify-between gap-2 mb-1">
-        <span class="text-[10px] uppercase tracking-wide text-muted">Farm por nível</span>
-        <span class="text-[10px] text-muted">
-          {% if i.farm_target %}nível do farm <b class="text-ink">{{ i.farm_target }}</b>{% if i.farm_auto %} (pelo lucro/h){% endif %}{% else %}subindo{% endif %}
-          · queda {% if i.decay_hours %}<b class="text-ink">{{ i.decay_hours }} h</b>/nível{% else %}não medida{% endif %}
+      <div class="mt-2">
+        <span class="badge" style="{% if i.tone == 'good' %}background: rgba(95,140,78,.14); color: #4b7a3c;{% elif i.tone == 'sea' %}background: rgba(79,134,185,.14); color: var(--ik-sea-dark);{% elif i.tone == 'gold' %}background: rgba(201,156,78,.16); color: var(--ik-gold-dark);{% else %}background: var(--ik-sand-light); color: var(--ik-muted);{% endif %}">{{ i.label }}</span>
+        {% if i.rebuild_end %}<span class="text-[11px] text-muted"> · volta {{ i.rebuild_end|date:"H:i" }}</span>{% endif %}
+      </div>
+      {% if i.waiting_level %}
+      <div class="mt-2 rounded-lg px-2 py-1 text-[11px]" style="background: rgba(201,156,78,.14); color: var(--ik-gold-dark);">
+        <i class="bi bi-hourglass-split"></i> esperando cair para o {{ i.farm_target }}
+      </div>
+      {% endif %}
+      <div class="mt-3 flex flex-wrap gap-1 text-[10px]">
+        <span class="rounded-full px-2 py-0.5" style="background: var(--ik-sand-light); color: var(--ik-muted);">
+          {% if i.farm_target %}farm no <b class="text-ink">{{ i.farm_target }}</b>{% if i.farm_auto %} · lucro/h{% endif %}{% elif i.farm_auto %}subindo · lucro/h{% else %}subindo{% endif %}
+        </span>
+        <span class="rounded-full px-2 py-0.5" style="background: var(--ik-sand-light); color: var(--ik-muted);">
+          queda {% if i.decay_hours %}<b class="text-ink">{{ i.decay_hours }} h</b>/nível{% else %}não medida{% endif %}
         </span>
       </div>
-      {% if i.farm_population %}
-      <div class="mb-1 flex flex-wrap items-center gap-x-3 rounded-lg px-2 py-1 text-[11px]" style="background: var(--ik-sand-light); row-gap: 2px;">
-        <span class="text-muted"><i class="bi bi-people"></i> cidade <b class="text-ink">{{ i.farm_population.occupied|intcomma }}</b>/{{ i.farm_population.max|intcomma }}</span>
-        <span class="text-muted">livres <b class="text-ink">{{ i.farm_population.citizens|intcomma }}</b></span>
-        <span class="text-muted">cresce <b class="text-ink">{{ i.farm_population.growth|floatformat:1 }}/h</b></span>
-        {% if i.farm_population.short %}<span style="color: #b04a3a;">{{ i.farm_population.short|intcomma }} sem refazer</span>{% endif %}
+    </div>
+
+    <div class="rounded-2xl border px-4 py-3 md:col-span-2" style="border-color: var(--ik-line); background: var(--ik-paper);">
+      {% if i.attacked_at %}
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <div class="text-[10px] uppercase tracking-wide text-muted">Ataque · {{ i.attacked_at|date:"d/m H:i" }}</div>
+        <div class="text-[11px] text-muted"><i class="bi bi-truck"></i> {{ i.last_ships }} mercantes</div>
       </div>
-      {% endif %}
-      {% if i.waiting_level %}
-      <div class="mb-1 rounded-lg px-2 py-1 text-[11px]" style="background: rgba(201,156,78,.14); color: var(--ik-gold-dark);">
-        <i class="bi bi-hourglass-split"></i> vila no nível {{ i.waiting_level }}: esperando cair para o {{ i.farm_target }}
+      <div class="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <span class="text-lg font-bold tabular-nums text-[var(--ik-sea)]">{{ i.village_resources|intcomma }} <span class="text-[11px] font-normal text-muted">recursos</span></span>
+        <span class="text-lg font-bold tabular-nums" style="color: var(--ik-gold-dark);">{{ i.village_gold|intcomma }} <span class="text-[11px] font-normal text-muted">ouro</span></span>
       </div>
-      {% endif %}
-      <div class="grid gap-1">
-        {% for r in i.farm_book %}
-        <div class="grid items-center gap-1 rounded-lg px-2 py-1 text-[11px]" style="grid-template-columns: 2.2rem 1fr 1fr 1fr 3.4rem 3rem 1fr; background: {% if r.level == i.farm_best %}rgba(95,140,78,.14){% else %}var(--ik-sand-light){% endif %};">
-          <b class="text-ink">{{ r.level }}</b>
-          <span class="text-ink" title="saque médio">{{ r.loot|intcomma }}</span>
-          <span style="color: var(--ik-gold-dark);" title="ouro médio">{{ r.gold|intcomma }}</span>
-          <span style="color: #b04a3a;" title="custo para refazer as perdas">−{{ r.cost|intcomma }}</span>
-          <span title="cidadãos perdidos por batalha{% if r.citizens_limit is not None %} (a cidade repõe até {{ r.citizens_limit }} por ciclo){% endif %}"
-                style="color: {% if r.sustainable == False %}#b04a3a{% else %}var(--ik-muted, #7a6a55){% endif %};"><i class="bi bi-people"></i> {{ r.citizens }}{% if r.sustainable == False %} !{% endif %}</span>
-          <span class="text-muted" title="ciclo entre ataques">{{ r.cycle_h|default:"–" }}</span>
-          <b class="text-ink text-right" title="lucro por hora">{% if r.per_hour %}{{ r.per_hour|intcomma }}/h{% else %}–{% endif %}</b>
+      <div class="mt-3 flex flex-wrap gap-1.5">
+        {% for t in i.troops %}
+        <div class="flex items-center gap-1.5 rounded-lg px-2 py-1" style="background: var(--ik-sand-light);" title="{{ t.name }}">
+          <img src="{{ t.icon }}" alt="{{ t.name }}" class="h-7 w-7 object-contain">
+          <div class="leading-none">
+            <div class="text-xs font-bold tabular-nums text-ink">{{ t.qty|intcomma }}</div>
+            <div class="text-[10px] text-muted whitespace-nowrap">{{ t.name }}</div>
+          </div>
         </div>
         {% endfor %}
       </div>
-    </div>
-    {% endif %}
-    {% if i.battles %}
-    <div class="mt-2 grid gap-1">
-      {% for b in i.battles %}
-      <div class="flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-[11px]" style="background: var(--ik-sand-light);">
-        <span class="text-ink">nível <b>{{ b.level }}</b></span>
-        <span style="{% if b.result == 'victory' %}color: #4b7a3c;{% else %}color: #b04a3a;{% endif %}">{% if b.result == 'victory' %}vitória{% else %}derrota{% endif %} · {{ b.rounds }} rod.</span>
-        <span class="text-muted">moral {{ b.morale_start|default:"?" }}% → <b class="text-ink" {% if b.morale_end and b.morale_end < 60 %}style="color: #b04a3a;"{% endif %}>{{ b.morale_end|default:"?" }}%</b></span>
-        <span class="text-muted">perdas {% if b.losses %}<b class="text-ink">{% for k, v in b.losses.items %}{{ v }}{% if not forloop.last %}+{% endif %}{% endfor %}</b>{% else %}0{% endif %}</span>
+      {% if i.plan_rounds %}
+      <div class="mt-3 grid grid-cols-3 gap-2 text-center">
+        <div class="rounded-lg px-1 py-1.5" style="background: rgba(79,134,185,.08);"><div class="text-[10px] text-muted">rodadas</div><b class="text-sm tabular-nums text-ink">{{ i.plan_rounds }}</b></div>
+        <div class="rounded-lg px-1 py-1.5" style="background: rgba(79,134,185,.08);"><div class="text-[10px] text-muted">moral final</div><b class="text-sm tabular-nums text-ink">{{ i.plan_morale|default:"?" }}%</b></div>
+        <div class="rounded-lg px-1 py-1.5" style="background: rgba(79,134,185,.08);" title="{% for u in i.plan_losses %}{{ u.qty }} {{ u.name }}{% if not forloop.last %}, {% endif %}{% endfor %}"><div class="text-[10px] text-muted">perdas</div><b class="text-sm tabular-nums" style="color: #b04a3a;">{{ i.plan_losses_total|intcomma }}</b></div>
       </div>
-      {% endfor %}
+      <div class="mt-1 text-[10px] text-muted text-right">previsão do simulador</div>
+      {% endif %}
+      {% if i.reinforcement %}
+      <div class="mt-2 flex flex-wrap items-center gap-1.5 rounded-lg px-2 py-1.5" style="background: rgba(201,156,78,.12);">
+        <span class="text-[10px] font-semibold" style="color: var(--ik-gold-dark);"><i class="bi bi-plus-circle"></i> reforço</span>
+        {% for t in i.reinforcement %}<span class="inline-flex items-center gap-0.5 text-[11px] text-ink" title="{{ t.name }}"><img src="{{ t.icon }}" alt="{{ t.name }}" class="h-5 w-5 object-contain">{{ t.qty|intcomma }}</span>{% endfor %}
+      </div>
+      {% endif %}
+      {% else %}
+      <div class="text-[10px] uppercase tracking-wide text-muted">Ataque</div>
+      <div class="mt-2 text-sm text-muted">ainda nenhum</div>
+      {% endif %}
     </div>
-    {% endif %}
   </div>
-  {% endfor %}
+
+  {# ── the town's people + the farm per level ── #}
+  {% if i.farm_population or i.farm_book %}
+  <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+    <div class="rounded-2xl border px-4 py-3" style="border-color: var(--ik-line); background: var(--ik-paper);">
+      <div class="text-[10px] uppercase tracking-wide text-muted">Cidade</div>
+      {% if i.farm_population %}
+      <div class="mt-2 flex items-baseline justify-between gap-2">
+        <span class="text-lg font-bold tabular-nums text-ink">{{ i.farm_population.occupied|intcomma }}</span>
+        <span class="text-[11px] text-muted tabular-nums">de {{ i.farm_population.max|intcomma }}</span>
+      </div>
+      <div class="mt-1 h-2 w-full rounded-full overflow-hidden" style="background: var(--ik-sand-light);">
+        <div class="h-2 rounded-full" style="width: {{ i.farm_population.pct }}%; background: var(--ik-sea);"></div>
+      </div>
+      <div class="mt-3 grid grid-cols-3 gap-2 text-center">
+        <div><div class="text-[10px] text-muted">livres</div><b class="text-sm tabular-nums text-ink">{{ i.farm_population.citizens|intcomma }}</b></div>
+        <div><div class="text-[10px] text-muted">cresce</div><b class="text-sm tabular-nums text-ink">{{ i.farm_population.growth|floatformat:1 }}/h</b></div>
+        <div title="cidadãos que um ciclo pode perder sem a cidade encolher"><div class="text-[10px] text-muted">repõe/ciclo</div><b class="text-sm tabular-nums text-ink">{{ i.farm_population.per_cycle|default:"–" }}</b></div>
+      </div>
+      {% if i.farm_population.short %}
+      <div class="mt-2 rounded-lg px-2 py-1 text-[11px]" style="background: rgba(176,74,58,.10); color: #b04a3a;">
+        <i class="bi bi-exclamation-triangle"></i> {{ i.farm_population.short|intcomma }} sem refazer
+      </div>
+      {% endif %}
+      {% else %}
+      <div class="mt-2 text-sm text-muted">prefeitura ainda não lida</div>
+      {% endif %}
+    </div>
+
+    <div class="rounded-2xl border px-4 py-3 md:col-span-2" style="border-color: var(--ik-line); background: var(--ik-paper);">
+      <div class="text-[10px] uppercase tracking-wide text-muted">Farm por nível</div>
+      {% if i.farm_book %}
+      <div class="mt-2 overflow-x-auto">
+        <table class="barb-table w-full text-[11px] tabular-nums" style="min-width: 27rem;">
+          <thead>
+            <tr class="text-[10px] text-muted">
+              <th class="text-left font-normal pb-1">nível</th>
+              <th class="text-right font-normal pb-1">recursos</th>
+              <th class="text-right font-normal pb-1">ouro</th>
+              <th class="text-right font-normal pb-1">refazer</th>
+              <th class="text-right font-normal pb-1"><i class="bi bi-people"></i></th>
+              <th class="text-right font-normal pb-1">ciclo</th>
+              <th class="text-right font-normal pb-1" style="min-width: 5.5rem;">lucro/h</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in i.farm_book %}
+            <tr style="border-top: 1px solid var(--ik-line);{% if r.level == i.farm_best %} background: rgba(95,140,78,.10);{% endif %}">
+              <td class="py-1" style="padding-left: 4px;"><b class="text-ink">{{ r.level }}</b>{% if r.battles > 1 %} <span class="text-[10px] text-muted">×{{ r.battles }}</span>{% endif %}</td>
+              <td class="py-1 text-right text-ink">{{ r.loot|intcomma }}</td>
+              <td class="py-1 text-right" style="color: var(--ik-gold-dark);">{{ r.gold|intcomma }}</td>
+              <td class="py-1 text-right" style="color: #b04a3a;">−{{ r.cost|intcomma }}</td>
+              <td class="py-1 text-right" title="{% if r.citizens_limit is not None %}a cidade repõe {{ r.citizens_limit }} por ciclo{% endif %}">
+                {% if r.sustainable == False %}<span class="rounded px-1" style="background: rgba(176,74,58,.12); color: #b04a3a;">{{ r.citizens }}</span>{% else %}<span class="text-muted">{{ r.citizens }}</span>{% endif %}
+              </td>
+              <td class="py-1 text-right text-muted">{{ r.cycle_h|default:"–" }}</td>
+              <td class="py-1" style="padding-left: 8px;">
+                <div class="flex items-center justify-end gap-1.5">
+                  <div class="h-1.5 rounded-full" style="width: {{ r.bar }}%; max-width: 2.5rem; min-width: 2px; background: {% if r.level == i.farm_best %}#5f8c4e{% else %}var(--ik-sea){% endif %}; opacity: .7;"></div>
+                  <b class="text-ink">{% if r.per_hour %}{{ r.per_hour|intcomma }}{% else %}–{% endif %}</b>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="mt-2 text-sm text-muted">sem batalhas ainda</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── battles ── #}
+  {% if i.battles %}
+  <div class="rounded-2xl border px-4 py-3" style="border-color: var(--ik-line); background: var(--ik-paper);">
+    <div class="text-[10px] uppercase tracking-wide text-muted">Batalhas</div>
+    <div class="mt-2 overflow-x-auto">
+      <table class="barb-table w-full text-[11px] tabular-nums" style="min-width: 26rem;">
+        <thead>
+          <tr class="text-[10px] text-muted">
+            <th class="text-left font-normal pb-1">nível</th>
+            <th class="text-left font-normal pb-1">resultado</th>
+            <th class="text-right font-normal pb-1">rodadas</th>
+            <th class="text-right font-normal pb-1">moral</th>
+            <th class="text-left font-normal pb-1 pl-3">perdas</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in i.battles %}
+          <tr style="border-top: 1px solid var(--ik-line);">
+            <td class="py-1.5" style="padding-left: 4px;"><b class="text-ink">{{ b.level }}</b></td>
+            <td class="py-1.5">
+              <span class="rounded-full px-2 py-0.5 text-[10px]" style="{% if b.result == 'victory' %}background: rgba(95,140,78,.14); color: #4b7a3c;{% elif b.result == 'recalled' %}background: var(--ik-sand-light); color: var(--ik-muted);{% else %}background: rgba(176,74,58,.12); color: #b04a3a;{% endif %}">{% if b.result == 'victory' %}vitória{% elif b.result == 'recalled' %}recolhido{% else %}derrota{% endif %}</span>
+            </td>
+            <td class="py-1.5 text-right" title="{% if b.predicted_rounds %}previsto: {{ b.predicted_rounds }}{% endif %}">
+              <b class="text-ink">{{ b.rounds }}</b>{% if b.predicted_rounds %}<span class="text-[10px] text-muted"> / {{ b.predicted_rounds }}</span>{% endif %}
+            </td>
+            <td class="py-1.5 text-right whitespace-nowrap">
+              <span class="text-muted">{{ b.morale_start|default:"?" }}→</span><b {% if b.morale_end and b.morale_end < 60 %}style="color: #b04a3a;"{% else %}class="text-ink"{% endif %}>{{ b.morale_end|default:"?" }}%</b>
+            </td>
+            <td class="py-1.5 pl-3">
+              {% if b.lost_units %}
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                {% for u in b.lost_units %}<span class="inline-flex items-center gap-0.5 text-ink" title="{{ u.name }}"><img src="{{ u.icon }}" alt="{{ u.name }}" class="h-5 w-5 object-contain">{{ u.qty|intcomma }}</span>{% endfor %}
+              </div>
+              {% else %}<span class="text-muted">nenhuma</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="mt-1 text-[10px] text-muted text-right">rodadas: real / previsto</div>
+  </div>
+  {% endif %}
 </div>
+{% endfor %}

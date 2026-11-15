@@ -230,3 +230,8 @@ class LocalSearchTests(TestCase):
         self.assertGreaterEqual(army.get(304, 0), 104)
         self.assertLess(key[1], best[0][1])
         self.assertGreater(tried, 0)
+
+
+class ShortCycleTests(TestCase):
+    def test_an_attack_sent_again_is_not_a_cycle(self):
+        self.assertEqual(barbarian_planner.round_value(189_100, 18), barbarian_planner.round_value(189_100, 180))

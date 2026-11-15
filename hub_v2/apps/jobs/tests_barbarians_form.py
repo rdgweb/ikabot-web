@@ -62,6 +62,8 @@ class BarbariansFormTests(TestCase):
                                  inputs_json=json.dumps({"island_ids": "4477", "islands_state": state, "loot_total": 2_000,
                                                          "gold_total": 900, "total_attacks": 3, "total_loots": 1}))
         html = self.client.get(f"/jobs/{job.pk}/").content.decode()
-        self.assertIn("Recursos roubados", html)
+        self.assertIn("Recursos", html)
         self.assertIn("em reconstrução", html)
         self.assertIn("2.000", html)
+        self.assertIn("Ataque · ", html)                 # the attack under way, with its army
+        self.assertIn("Hoplita", html)

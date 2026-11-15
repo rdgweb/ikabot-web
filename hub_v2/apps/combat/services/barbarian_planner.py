@@ -187,6 +187,9 @@ def round_value(loot: float, cycle_minutes: float) -> float:
     """What one more round of battle costs a farm: the share of a cycle's loot it delays."""
     if not loot or not cycle_minutes:
         return 0.0
+    if float(cycle_minutes) < 60:
+        # an attack called back and sent again is not a cycle (15/11: 18 minutes made each round worth 150 thousand)
+        cycle_minutes = 180
     return float(loot) * ROUND_MINUTES / float(cycle_minutes)
 
 

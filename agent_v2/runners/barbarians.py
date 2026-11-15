@@ -112,6 +112,7 @@ UNIT_NAMES = {301: "Fundeiro", 302: "Espadachim", 303: "Hoplita", 304: "Carabine
 MAX_REINFORCEMENTS = 2         # per battle
 EN_ROUTE_SECONDS = 20 * 60     # a reinforcement sent less than this ago may still be on its way: it counts as joining
 DEFAULT_CYCLE_MINUTES = 180    # until the job has seen two attacks in a row
+MIN_CYCLE_MINUTES = 60         # a shorter time between attacks is not a cycle (an attack called back and sent again)
 BARRACKS_TTL = 6 * 3600        # training times read from the barracks are kept this long
 LEDGER_SIZE = 60               # battles kept in the farm's book
 DROP_LEVELS = 2                # auto: the profit per hour falling this many levels in a row marks the best one behind
@@ -135,6 +136,12 @@ def sustainable_citizens(population: dict | None, cycle_minutes: float | None) -
     happiness_full = max(0.0, happiness - room)
     citizens_full = int(pop.get("citizens") or 0) + room
     return int(rate * (happiness_full + (1 - CITIZENS_KEPT) * citizens_full) * float(cycle_minutes) / 60)
+
+
+def _cycle(st: dict) -> int:
+    """Minutes between attacks, as the job measured it (DEFAULT_CYCLE_MINUTES until it has a real one)."""
+    cycle = int(st.get("cycle_minutes") or 0)
+    return cycle if cycle >= MIN_CYCLE_MINUTES else DEFAULT_CYCLE_MINUTES
 
 
 def farm_book(ledger: list[dict], prices: dict, unit_citizens: dict | None = None,
@@ -268,11 +275,15 @@ def _battle_outcome(detailed: dict, listed: dict) -> dict:
         if m:
             morale.append(int(m.group(1)))
         for why in re.findall(r"Altera[çc][õo]es da moral\s*(.*?)\s*\"", html):
-            why = re.sub(r"\s+", " ", why).strip()
+            why = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", why)).strip()
             if why and why not in reasons:
                 reasons.append(why)
     losses = {str(k): int(v or 0) for k, v in (detailed.get("attacker_losses") or {}).items() if int(v or 0)}
-    return {"result": listed.get("result") or "", "rounds": int(listed.get("rounds") or len(rounds) or 0),
+    result = listed.get("result") or ""
+    if not losses and not morale and len(rounds) <= 1:
+        # no round fought, nobody lost: the army was called back before the battle (15/11 18:08, by hand)
+        result = "recalled"
+    return {"result": result, "rounds": int(listed.get("rounds") or len(rounds) or 0),
             "morale_start": morale[0] if morale else None, "morale_end": morale[-1] if morale else None,
             "reasons": reasons[:3], "losses": losses, "combat_id": int(listed.get("combat_id") or 0)}
 
@@ -467,7 +478,7 @@ class BarbariansRunner(BaseRunner):
                 "unit_citizens": st.get("unit_citizens") or {},
                 "population": st.get("population") or {},
                 "loot": int(st.get("village_resources") or 0) + int(st.get("village_gold") or 0),
-                "cycle_minutes": int(st.get("cycle_minutes") or DEFAULT_CYCLE_MINUTES)}) or {}
+                "cycle_minutes": _cycle(st)}) or {}
         except Exception as exc:  # noqa: BLE001 - the battle goes on without us
             if self.is_network_error(exc):
                 raise
@@ -561,7 +572,7 @@ class BarbariansRunner(BaseRunner):
                    "wall_level": int(village.get("wall_level") or barb.get("wall_level") or 0),
                    "defenders": village.get("defender_ids") or {},
                    "loot": int(village.get("total") or 0) + int(village.get("gold") or 0),
-                   "cycle_minutes": int(st.get("cycle_minutes") or DEFAULT_CYCLE_MINUTES),
+                   "cycle_minutes": _cycle(st),
                    "train_seconds": self._train_seconds(jid, self._client, st.get("town") or "", st),
                    "unit_citizens": st.get("unit_citizens") or {},
                    "population": self._population(jid, self._client, st.get("town") or "", st),
@@ -736,6 +747,9 @@ class BarbariansRunner(BaseRunner):
         st["battles"] = (list(st.get("battles") or []) + [{**{k: battle.get(k) for k in (
             "level", "result", "rounds", "morale_start", "morale_end", "losses")},
             "predicted_rounds": predicted.get("rounds"), "predicted_morale": predicted.get("morale_end")}])[-12:]
+        if battle["result"] == "recalled":
+            self.log(jid, "info", f"Ilha {island_id}: o ataque ao nível {battle['level']} voltou antes da batalha.")
+            return
         lost = _army_text({int(u): q for u, q in battle["losses"].items()}) or "nenhuma"
         self._retrain_losses(jid, client, island_id, town, battle["losses"], st)
         self.log(jid, "info", f"Ilha {island_id}: batalha nível {battle['level']}: "
@@ -846,7 +860,9 @@ class BarbariansRunner(BaseRunner):
         ships = (max(1, -(-on_hand // SHIP_CAPACITY)) if on_hand else loot_ships_for_level(level)) + max(0, extra_ships)
         result = client.attack_barbarian_village(from_city_id=town, island_id=island_id, troops=troops, transporters=ships)
         totals["total_attacks"] += 1
-        if st.get("attacked_at") and 0 < time.time() - int(st["attacked_at"]) < 12 * 3600:
+        previous = next((e for e in st.get("ledger") or [] if isinstance(e, dict) and e.get("at") == st.get("attacked_at")), None)
+        fought = previous is None or previous.get("result") in ("victory", "defeat")
+        if st.get("attacked_at") and fought and MIN_CYCLE_MINUTES * 60 <= time.time() - int(st["attacked_at"]) < 12 * 3600:
             st["cycle_minutes"] = int((time.time() - int(st["attacked_at"])) // 60)
             for entry in st.get("ledger") or []:
                 if isinstance(entry, dict) and entry.get("at") == st["attacked_at"]:

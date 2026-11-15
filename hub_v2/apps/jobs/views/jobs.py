@@ -1693,13 +1693,28 @@ class JobListView(FilterSortListView):
         labels = {"ready": ("pronta", "good"), "attacking": ("atacada", "sea"), "battle": ("em batalha", "sea"),
                   "rebuilding": ("em reconstrução", "gold"), "moving": ("tropas a caminho", "sea"),
                   "collecting": ("coletando", "sea")}
+        def units(raw) -> list[dict]:
+            out = []
+            for uid, qty in (raw or {}).items():
+                if not str(uid).isdigit() or not int(qty or 0):
+                    continue
+                name = _ID_TO_NAME.get(int(uid), str(uid))
+                out.append({"name": name, "qty": int(qty), "icon": static(get_unit_info(name)["icon"])})
+            return sorted(out, key=lambda u: -u["qty"])
+
         islands = []
         for island_id in island_ids:
             st = state.get(island_id) or {}
-            troops = []
-            for uid, qty in (st.get("last_troops") or {}).items():
-                name = _ID_TO_NAME.get(int(uid), str(uid))
-                troops.append({"name": name, "qty": int(qty or 0), "icon": static(get_unit_info(name)["icon"])})
+            troops = units(st.get("last_troops"))
+            plan = st.get("attack_plan") if isinstance(st.get("attack_plan"), dict) else {}
+            attacked_at = _to_int(st.get("attacked_at"), 0)
+            reinforcement = st.get("last_reinforcement") if isinstance(st.get("last_reinforcement"), dict) else {}
+            if _to_int(reinforcement.get("at"), 0) < attacked_at:
+                reinforcement = {}
+            battles = []
+            for b in [b for b in (st.get("battles") or []) if isinstance(b, dict)][-8:][::-1]:
+                lost = units(b.get("losses"))
+                battles.append({**b, "lost_units": lost, "lost_total": sum(u["qty"] for u in lost)})
             end = _to_int(st.get("rebuild_end"), 0)
             label, tone = labels.get(st.get("status") or "", ("aguardando a primeira rodada", "muted"))
             islands.append({
@@ -1708,10 +1723,16 @@ class JobListView(FilterSortListView):
                 "attacks": _to_int(st.get("attacks"), 0), "loots": _to_int(st.get("loots"), 0),
                 "looted": _to_int(st.get("looted"), 0), "gold": _to_int(st.get("gold"), 0),
                 "village_resources": _to_int(st.get("village_resources"), 0), "village_gold": _to_int(st.get("village_gold"), 0),
-                "left": st.get("left_before"), "last_ships": _to_int(st.get("last_ships"), 0), "troops": troops,
+                "last_ships": _to_int(st.get("last_ships"), 0), "troops": troops,
+                "troops_total": sum(t["qty"] for t in troops),
+                "plan_rounds": plan.get("rounds"), "plan_morale": plan.get("morale_end"),
+                "plan_losses": units(plan.get("losses")),
+                "plan_losses_total": sum(_to_int(q, 0) for q in (plan.get("losses") or {}).values()),
+                "reinforcement": units(reinforcement.get("army")),
+                "reinforcements": _to_int(st.get("reinforcements"), 0),
                 "attacked_at": datetime.fromtimestamp(st["attacked_at"], tz=dt_timezone.utc) if st.get("attacked_at") else None,
                 "rebuild_end": datetime.fromtimestamp(end, tz=dt_timezone.utc) if end else None,
-                "battles": [b for b in (st.get("battles") or []) if isinstance(b, dict)][-6:][::-1],
+                "battles": battles,
                 **cls._barbarian_farm(st, inputs),
             })
         return {
@@ -1762,14 +1783,19 @@ class JobListView(FilterSortListView):
                          "citizens": citizens, "citizens_limit": limit,
                          "sustainable": None if limit is None else citizens <= limit})
         best = max((r for r in rows if r["per_hour"] is not None), key=lambda r: r["per_hour"], default=None)
+        top = max([r["per_hour"] for r in rows if r["per_hour"]] or [0])
+        for r in rows:
+            r["bar"] = round(100 * max(0, r["per_hour"] or 0) / top) if top else 0
         decay = [d for d in (st.get("decay") or []) if isinstance(d, dict)]
         auto = str(inputs.get("target_auto") or "").lower() in {"1", "true", "on", "yes"}
         target = st.get("ideal_level") if auto and st.get("ideal_level") else int(inputs.get("target_level") or 0)
         population = None
         if pop.get("max"):
-            population = {"citizens": int(pop.get("citizens") or 0), "occupied": int(pop.get("occupied") or 0),
-                          "max": int(pop.get("max") or 0), "growth": float(pop.get("growth") or 0),
-                          "short": sum(int(q) for q in (st.get("retrain_short") or {}).values())}
+            occupied, room = int(pop.get("occupied") or 0), int(pop.get("max") or 0)
+            population = {"citizens": int(pop.get("citizens") or 0), "occupied": occupied, "max": room,
+                          "pct": round(100 * occupied / room) if room else 0, "growth": float(pop.get("growth") or 0),
+                          "short": sum(int(q) for q in (st.get("retrain_short") or {}).values()),
+                          "per_cycle": sustainable_citizens(pop, st["cycle_minutes"] if int(st.get("cycle_minutes") or 0) >= 60 else 180)}
         return {"farm_book": rows, "farm_best": best["level"] if best else None, "farm_population": population,
                 "decay_hours": round(sum(d["hours"] for d in decay) / len(decay), 1) if decay else None,
                 "decay_count": len(decay), "farm_target": target or None, "farm_auto": auto,
