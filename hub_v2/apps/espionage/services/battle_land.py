@@ -1187,6 +1187,7 @@ def simulate_land_battle(
     rounds_played = 0
     fled = ""
     wall_ever_hurt = False
+    undecided = False
 
     for round_no in range(1, max_rounds + 1):
         round_trace: list[dict[str, Any]] = []
@@ -1542,6 +1543,8 @@ def simulate_land_battle(
             winner = "defender" if fled == "attacker" else "attacker"
             break
     else:
+        # the rounds ran out with both sides still on the field: the game would go on; the winner below is a guess
+        undecided = True
         attacker_hp = sum(
             qty * attacker.unit_hp(uid)
             for uid, qty in attacker.units.items()
@@ -1593,6 +1596,7 @@ def simulate_land_battle(
         "wall_sections_left": defender.wall_standing(),
         "wall_never_hurt": bool(defender.wall_segments) and not wall_ever_hurt,
         "fled": fled,
+        "undecided": undecided,
         "morale": {"attacker": attacker.morale, "defender": defender.morale},
         "details": {
             "field_level": field_level,

@@ -110,7 +110,7 @@ class ReinforceTests(TestCase):
     def test_the_reinforcement_turns_the_battle(self):
         available = {302: 2519, 304: 661, 305: 291, 312: 608, 310: 10}
         result = barbarian_planner.reinforce(self.STATE, available, wall_level=10, field_level=5, upgrades=UPGRADES)
-        self.assertEqual(result["without"]["winner"], "defender")
+        self.assertNotEqual(result["without"]["winner"], "attacker")     # lost, or still open after 20 rounds
         self.assertEqual(result["with"]["winner"], "attacker")
         self.assertTrue(any(u in result["send"] for u in (305, 306, 307)))  # something to bring the wall down
         for uid, qty in result["send"].items():
@@ -142,3 +142,39 @@ class TravelTests(TestCase):
         self.assertAlmostEqual(barbarian_planner.travel_minutes({308: 50, 305: 12}), 9.75, places=2)     # speed 60, as seen
         self.assertAlmostEqual(barbarian_planner.travel_minutes({303: 20}), 6.5, places=2)              # hoplites at 90
         self.assertAlmostEqual(barbarian_planner.travel_minutes({308: 50, 309: 10}), 19.5, places=2)    # a bombardier at 30
+
+
+class FieldAndCapTests(TestCase):
+    """15/11: from level 30 on the game drew the field of seven front slots; a battle the simulator leaves open is
+    not a win (it had planned level 32 with steam giants holding the wall while the barbarians waited behind it)."""
+
+    def test_the_village_field_grows_at_30(self):
+        self.assertEqual([barbarian_planner.field_for_level(n) for n in (9, 10, 29, 30, 35)], [1, 5, 5, 10, 10])
+
+    def test_an_open_battle_is_not_won(self):
+        sim = {"winner": "attacker", "undecided": True, "rounds": 20, "attacker_losses": {}, "morale": {"attacker": 80}}
+        self.assertEqual(barbarian_planner._key(sim, {303: 10})[0], 1)
+        self.assertEqual(barbarian_planner._key({**sim, "undecided": False}, {303: 10})[0], 0)
+
+    def test_the_simulator_says_when_the_rounds_ran_out(self):
+        sim = battle_land.simulate_land_battle({303: 5}, {320: 300, 324: 16}, town_hall_level=5, wall_level=8,
+                                               max_rounds=2, calibrated=False)
+        self.assertTrue(sim["undecided"])
+        short = battle_land.simulate_land_battle({308: 50, 305: 12}, {320: 5}, town_hall_level=1, max_rounds=12, calibrated=False)
+        self.assertFalse(short["undecided"])
+
+
+class LossFloorTests(TestCase):
+    def test_one_unit_foreseen_in_a_battle_without_losses_is_a_small_error(self):
+        self.assertEqual(barbarian_learning.loss_error({}, {303: 1}), 0.05)
+        self.assertEqual(barbarian_learning.loss_error({303: 100}, {303: 50}), 0.5)
+
+
+class ReinforceOnlyWhenItMattersTests(TestCase):
+    def test_with_help_on_its_way_only_a_lost_battle_gets_more(self):
+        state = dict(ReinforceTests.STATE)
+        available = {302: 2519, 304: 661, 305: 291, 312: 608, 310: 10}
+        small = {302: 5}
+        again = barbarian_planner.reinforce(state, available, wall_level=10, field_level=5, upgrades=UPGRADES, en_route=small)
+        if again["send"]:
+            self.assertEqual(again["without"]["winner"] != "attacker", True)

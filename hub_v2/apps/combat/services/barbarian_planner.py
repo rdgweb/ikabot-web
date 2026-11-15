@@ -52,13 +52,18 @@ def defenders_from_names(defenders) -> tuple[dict[int, int], list[str]]:
 
 
 def field_for_level(level: int) -> int:
-    """The village's field, as the reports drew it: three front slots up to level 9, five from 10 on."""
-    return 1 if int(level or 0) < 10 else 5
+    """The village's field, as the reports drew it: three front slots up to level 9, five from 10 on, seven (three of
+    artillery, two on each flank) from 30 on."""
+    level = int(level or 0)
+    if level < 10:
+        return 1
+    return 5 if level < 30 else 10
 
 
 CITIZEN_VALUE = 30             # a citizen lost with each unit, in resources (it has to grow back and be trained again)
 EXPOSURE = 0.01                # what having a unit away costs, as a share of its price (it is not home to defend)
 ROUND_MINUTES = 15
+MAX_ROUNDS = 20                # a battle the simulator has not decided by then is taken as not won
 SAME_ISLAND_SECONDS_AT_60 = 585   # town -> its own island's village at speed 60, as seen (9:45 for steam giants and mortars;
                                   # 6:30 for hoplites at 90; a bombardier at 30 doubles it)
 
@@ -109,7 +114,9 @@ def _key(sim: dict, army: dict[int, int], round_value: float = 0.0) -> tuple:
     # the way there holds the battle (and the village's rebuild) back like a round does
     late += travel_minutes(army) if not _FARM.get("joining") else 0.0
     cost = lost + int(sim.get("rounds") or 12) * round_value + away + risk + late * (round_value / ROUND_MINUTES)
-    return (0 if sim.get("winner") == "attacker" else 1, round(cost, 1), -morale_end)
+    # a battle still open when the simulation stops is not won: the game goes on (the barbarians wait behind the wall)
+    won = sim.get("winner") == "attacker" and not sim.get("undecided")
+    return (0 if won else 1, round(cost, 1), -morale_end)
 
 
 def round_value(loot: float, cycle_minutes: float) -> float:
@@ -177,7 +184,7 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
 
     def fight(army):
         return simulate_land_battle(dict(army), dict(defenders), attacker_upgrades=upgrades, town_hall_level=field_level,
-                                    wall_level=wall_level, max_rounds=12)
+                                    wall_level=wall_level, max_rounds=MAX_ROUNDS)
 
     best = None
     tried = 0
@@ -191,7 +198,7 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
         return {"can_win": False, "army": {}, "tried": 0, "note": "A cidade não tem tropas para a linha de frente."}
     key, army, sim = best
     result = {
-        "can_win": sim.get("winner") == "attacker",
+        "can_win": sim.get("winner") == "attacker" and not sim.get("undecided"),
         "army": army,
         "tried": tried,
         "prediction": {**_summary(sim), "travel_minutes": round(travel_minutes(army), 1)},
@@ -206,7 +213,7 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
 def _summary(sim: dict) -> dict:
     lost = {int(u): int(q) for u, q in (sim.get("attacker_losses") or {}).items()}
     return {
-        "winner": sim.get("winner"), "rounds": sim.get("rounds"), "losses_cost": round(sum(unit_price(u) * q for u, q in lost.items())),
+        "winner": "undecided" if sim.get("undecided") else sim.get("winner"), "rounds": sim.get("rounds"), "losses_cost": round(sum(unit_price(u) * q for u, q in lost.items())),
         "morale_end": (sim.get("morale") or {}).get("attacker"),
         "attacker_losses": {int(u): int(q) for u, q in (sim.get("attacker_losses") or {}).items()},
         "wall_sections_left": sim.get("wall_sections_left"), "wall_sections": sim.get("wall_sections"),
@@ -233,7 +240,7 @@ def _what_training_gains(available, defenders, wall_level, field_level, upgrades
             if need <= 0:
                 continue
             sim = simulate_land_battle(dict(army), dict(defenders), attacker_upgrades=upgrades, town_hall_level=field_level,
-                                       wall_level=wall_level, max_rounds=12)
+                                       wall_level=wall_level, max_rounds=MAX_ROUNDS)
             key = _key(sim, army, per_round)
             if key[:2] < best_key[:2]:
                 out.append({"unit": uid, "more": need, **_summary(sim)})
@@ -244,7 +251,7 @@ def _what_training_gains(available, defenders, wall_level, field_level, upgrades
 def battle_state(round_html: str) -> dict | None:
     """Where a battle stands at the end of its last round, read from the round capture: who is alive on each side,
     the attacker's morale, the wall sections still up, and per unit of the attacker its ammunition and hit points left."""
-    from .replay import _end
+    from .replay import _end, field_level
     from .report_parser import parse_rounds
 
     rounds = parse_rounds(round_html or "")
@@ -273,10 +280,12 @@ def battle_state(round_html: str) -> dict | None:
         "round": int(last.get("round") or 0), "attacker": {u: q for u, q in attacker.items() if q > 0}, "defender": defender,
         "wall_standing": standing, "wall_level": int(wall.get("level") or 0) if wall else 0, "morale": morale,
         "ammo_pct": {u: sum(v) / len(v) for u, v in ammo.items()}, "hp_pct": {u: sum(v) / len(v) for u, v in hp.items()},
+        "field_level": field_level(rounds[0]),          # the field the game drew for this battle
     }
 
 
-MIN_GAIN = 0.10               # a reinforcement is sent only when it saves at least this share of what the battle costs
+MIN_GAIN = 0.30               # a reinforcement is sent only when it saves at least this share of what the battle costs:
+                              # the army should leave nearly right, the reinforcement is for when the battle goes wrong
 
 
 def reinforce(state: dict, available: dict[int, int], *, wall_level: int = 0, field_level: int = 5,
@@ -301,7 +310,7 @@ def reinforce(state: dict, available: dict[int, int], *, wall_level: int = 0, fi
     def fight(extra):
         return simulate_land_battle(
             dict(attacker), dict(defender), attacker_upgrades=upgrades, town_hall_level=field_level, wall_level=wall,
-            max_rounds=12, attacker_start_morale=state.get("morale"), wall_sections_standing=state.get("wall_standing"),
+            max_rounds=MAX_ROUNDS, attacker_start_morale=state.get("morale"), wall_sections_standing=state.get("wall_standing"),
             attacker_ammo_pct=state.get("ammo_pct") or None, attacker_hp_pct=state.get("hp_pct") or None,
             attacker_reinforcements_by_round={2: joined(extra)} if joined(extra) else None)
 
@@ -322,8 +331,11 @@ def reinforce(state: dict, available: dict[int, int], *, wall_level: int = 0, fi
         if key < best[0]:
             best = (key, army, sim)
     key, army, sim = best
-    # a reinforcement must turn a loss into a win, or save a clear share of what the battle costs
-    if army and not (key[0] < base_key[0] or key[1] <= base_key[1] * (1 - MIN_GAIN)):
+    # a reinforcement must turn a loss into a win, or save a clear share of what the battle costs; with one already on
+    # its way, only turning a loss into a win
+    turns_it = key[0] < base_key[0]
+    saves = key[1] <= base_key[1] * (1 - MIN_GAIN) and not on_way
+    if army and not (turns_it or saves):
         army, sim = {}, without
     return {"send": army, "with": _summary(sim), "without": _summary(without), "state_round": state.get("round"),
             "en_route": {str(u): q for u, q in on_way.items()}}

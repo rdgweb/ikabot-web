@@ -169,10 +169,22 @@ def _sim_rounds(result: dict) -> dict:
     return {"morale": morale, "wall": wall, "wall_hp": wall_hp, "hp": hp}
 
 
+LOSS_FLOOR = 20               # losses are measured against at least this many units: a battle without losses foreseen
+                              # with one is not "everything wrong" (it pulled the barbarians' damage down, N-182)
+
+
+def loss_error(real: dict, predicted: dict) -> float:
+    """How far the predicted losses of a side are from the real ones, 0 (the same) to 1 (nothing alike)."""
+    units = set(real) | set(predicted)
+    if not units:
+        return 0.0
+    gap = sum(abs(int(real.get(unit, 0)) - int(predicted.get(unit, 0))) for unit in units)
+    scale = max(sum(int(v) for v in real.values()), sum(int(v) for v in predicted.values()), LOSS_FLOOR)
+    return round(min(1.0, gap / scale), 4)
+
+
 def sample_cost(sample: dict, result: dict) -> dict:
     """How far one battle fought again is from the real one; lower is better."""
-    from .replay import loss_error
-
     real = sample["real"]
     sim_rounds = _sim_rounds(result)
     winner_wrong = 1.0 if real.get("winner") and real["winner"] != result.get("winner") else 0.0
@@ -257,10 +269,17 @@ def learn(*, save: bool = True) -> dict:
                 for a in COARSE:
                     for d in COARSE:
                         consider(float(a), float(d), w)
-            centre = best[1]
-            for step_a in FINE:
-                for step_d in FINE:
-                    consider(centre[0] + step_a, centre[1] + step_d, centre[2])
+            # then walk from the best: small steps of each side's damage and of the wall's armour while it gets better
+            for _ in range(8):
+                centre = best[1]
+                for step_a in FINE:
+                    for step_d in FINE:
+                        consider(centre[0] + step_a, centre[1] + step_d, centre[2])
+                for step_w in (-15.0, -5.0, 5.0, 15.0):
+                    if 20.0 <= centre[2] + step_w <= 130.0:
+                        consider(centre[0], centre[1], centre[2] + step_w)
+                if best[1] == centre:
+                    break
         better = bool(sample_list) and best[0] < before["cost"] - 1e-9
         result = {"samples": len(sample_list), "attacker_pct": best[1][0], "defender_pct": best[1][1],
                   "wall_armor_pct": best[1][2], "before": before, "after": best[2], "better": better,

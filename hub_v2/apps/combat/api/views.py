@@ -343,7 +343,8 @@ class BarbarianReinforceView(APIView):
             en_route = {int(k): int(v) for k, v in (data.get("en_route") or {}).items() if str(k).isdigit()}
             per_round = barbarian_planner.round_value(float(data.get("loot") or 0), float(data.get("cycle_minutes") or 0))
             result = barbarian_planner.reinforce(state, available, wall_level=int(data.get("wall_level") or 0),
-                                                 field_level=barbarian_planner.field_for_level(int(data.get("level") or 0)),
+                                                 field_level=(state.get("field_level")
+                                                              or barbarian_planner.field_for_level(int(data.get("level") or 0))),
                                                  upgrades=upgrades, en_route=en_route, per_round=per_round,
                                                  train_seconds=data.get("train_seconds") or {},
                                                  cycle_minutes=float(data.get("cycle_minutes") or 0))
