@@ -12,7 +12,7 @@ class FakeHub:
         self.reserved = reserved or {}
 
     def get_troop_reservations(self, game_account_id, exclude_job_id=""):
-        return {"reserved": self.reserved, "islands": {}}
+        return {"reserved": self.reserved, "islands": {}, "farm_towns": getattr(self, "farm_towns", [])}
 
     def get_snapshot(self, game_account_id=None):
         return {"military": {"by_city": self.by_city}}
@@ -79,3 +79,15 @@ class ReservedTeamTests(unittest.TestCase):
         spawned = handle({"surplus_mode": "gather", "consolidate_city_id": "1"},
                          {2: {"303": 50}, 3: {"303": 40}}, TARGETS, {}, reserved={"2": {"303": 30}, "3": {"303": 40}})
         self.assertEqual(spawned, [(1202, {"from_city_id": 2, "to_city_id": 1, "units": {"303": 20}})])
+
+
+class FarmTownTests(unittest.TestCase):
+    """N-194 (16/11): what a barbarian job moved to an island's town stays there (it went back to Liberado all day)."""
+
+    def test_the_farm_towns_are_never_donors(self):
+        runner = TrainUnitsRunner.__new__(TrainUnitsRunner)
+        runner.hub = FakeHub()
+        runner.hub.farm_towns = ["2"]
+        runner._handle_surplus("j", {"surplus_mode": "gather", "consolidate_city_id": "1"}, {2: {"303": 46}, 3: {"303": 5}},
+                               TARGETS, {}, {1: "Norte", 2: "Sul", 3: "Leste"}, {303: "Hoplita"}, "ga")
+        self.assertEqual(runner.hub.spawned, [(1202, {"from_city_id": 3, "to_city_id": 1, "units": {"303": 5}})])

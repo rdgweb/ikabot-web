@@ -61,14 +61,26 @@ def account_reservations(game_account_id: str, exclude_job_id: str = "") -> dict
             target = custom.get(city) or (uniform if str(inputs.get("maintain_scope") or "") != "selected_custom" or not custom else {})
             for uid, qty in target.items():
                 garrison.setdefault(city, {})[uid] = max(garrison.get(city, {}).get(uid, 0), qty)
+    farm_towns: set[str] = set()
+    ledger: list[dict] = []
     for job in Job._base_manager.filter(game_account_id=game_account_id, action_code=BARBARIANS, status__in=ACTIVE):
         inputs = _inputs(job)
         for city, units in parse_reserve(inputs.get("reserve_units")).items():
             for uid, qty in units.items():
                 reserved.setdefault(city, {})[uid] = reserved.get(city, {}).get(uid, 0) + qty
+        state = inputs.get("islands_state") if isinstance(inputs.get("islands_state"), dict) else {}
+        army = str(inputs.get("army_city") or "")
+        if army:
+            # the towns an army farms from (troops moved there for the island's village): the Manter leaves them
+            farm_towns |= {str(st.get("town")) for st in state.values()
+                           if isinstance(st, dict) and st.get("town") and str(st.get("town")) != army}
         if exclude_job_id and ((exclude_wf is not None and job.workflow_id == exclude_wf) or str(job.pk) == exclude_job_id):
             continue
+        for st in state.values():
+            if isinstance(st, dict):
+                ledger += [e for e in st.get("ledger") or [] if isinstance(e, dict)][-40:]
         ids = [s.strip() for s in str(inputs.get("island_ids") or "").split(",") if s.strip().isdigit()]
         if ids:
             islands[str(job.workflow_id or job.pk)] = ids
-    return {"reserved": reserved, "islands": islands, "garrison": garrison}
+    return {"reserved": reserved, "islands": islands, "garrison": garrison, "farm_towns": sorted(farm_towns),
+            "ledger": ledger}

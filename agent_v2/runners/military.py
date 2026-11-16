@@ -885,14 +885,19 @@ class TrainUnitsRunner(BaseRunner):
         main_name = city_names.get(main, str(main))
         # N-194: the troops reserved by the account's barbarian jobs (the assault team) stay where they are
         reserved: dict = {}
+        farm_towns: set = set()
         try:
-            reserved = (self.hub.get_troop_reservations(ga_id or "") or {}).get("reserved") or {}
+            answer = self.hub.get_troop_reservations(ga_id or "") or {}
+            reserved = answer.get("reserved") or {}
+            # N-194 (16/11): the troops a barbarian job moved to an island's town are its army there; gathering them
+            # sent them straight back to Liberado all day
+            farm_towns = {str(t) for t in answer.get("farm_towns") or []}
         except Exception as exc:  # noqa: BLE001 - without the list nothing reserved is known: nothing is gathered
             self.log(jid, "warn", f"Excedente: reservas não lidas ({exc}); nada movido nesta volta.")
             return []
         moves = []
         for donor_id, donor_surplus in surplus.items():
-            if donor_id == main:
+            if donor_id == main or str(donor_id) in farm_towns:
                 continue
             gather, dismiss = {}, {}
             kept = reserved.get(str(donor_id)) or {}

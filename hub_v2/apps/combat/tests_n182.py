@@ -390,6 +390,13 @@ class RouteAndReserveTests(TestCase):
                                                     "target_garrison": {"303": 50, "305": 6}, "city_ids": ["37436", "37441"]}))
         self.assertEqual(account_reservations(str(ga.pk))["garrison"],
                          {"37436": {"303": 50, "305": 6}, "37441": {"303": 50, "305": 6}})
+        Job.objects.create(account=account, game_account=ga, node=node, action_code=19, status="scheduled",
+                           inputs_json=_json.dumps({"island_ids": "4479", "army_city": "37436",
+                                                    "islands_state": {"4479": {"town": "37435", "ledger": [{"level": 9, "book": 2}]},
+                                                                      "4478": {"town": "37436"}}}))
+        out = account_reservations(str(ga.pk), exclude_job_id=str(mine.pk))
+        self.assertEqual(out["farm_towns"], ["37435"])                 # the army's own town is not one
+        self.assertEqual(out["ledger"], [{"level": 9, "book": 2}])
 
 
 class FrontLineTests(TestCase):

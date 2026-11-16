@@ -367,13 +367,24 @@ def _battle_outcome(detailed: dict, listed: dict) -> dict:
             if why and why not in reasons:
                 reasons.append(why)
     losses = {str(k): int(v or 0) for k, v in (detailed.get("attacker_losses") or {}).items() if int(v or 0)}
+    # N-194 (16/11): a report is a battle that happened (a recalled attack leaves none); a 1-round win without losses
+    # used to be read as "recalled" and the farm book lost those battles
     result = listed.get("result") or ""
-    if not losses and not morale and len(rounds) <= 1:
-        # no round fought, nobody lost: the army was called back before the battle (15/11 18:08, by hand)
-        result = "recalled"
     return {"result": result, "rounds": int(listed.get("rounds") or len(rounds) or 0),
             "morale_start": morale[0] if morale else None, "morale_end": morale[-1] if morale else None,
             "reasons": reasons[:3], "losses": losses, "combat_id": int(listed.get("combat_id") or 0)}
+
+
+def _defenders_joined(detailed: dict) -> int:
+    """How many barbarians the report says joined the battle on the defender's side (0 when it does not say)."""
+    import re
+
+    for r in (detailed.get("rounds") or [])[:1]:
+        text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", str((r or {}).get("html") or "")))
+        m = re.search(r"do lado do defensor, com as seguintes unidades:\s*([\d.\s]+)", text)
+        if m:
+            return sum(int(x.replace(".", "")) for x in m.group(1).split() if x.replace(".", "").isdigit())
+    return 0
 
 
 def _loot_unit(available: dict[int, int]) -> dict[int, int] | None:
@@ -420,6 +431,7 @@ class BarbariansRunner(BaseRunner):
         all_islands = str(inputs.get("all_islands") or "").lower() in {"1", "true", "on", "yes"}
         self._reserved = _parse_reserve(inputs.get("reserve_units"))
         self._fleet_cache = None
+        self._account_ledger = []
         min_level = _parse_int(inputs.get("min_barb_level"), 1)
         max_level = _parse_int(inputs.get("max_barb_level"), 99)
         extra_ships = _parse_int(inputs.get("extra_ships"), 0)
@@ -778,6 +790,10 @@ class BarbariansRunner(BaseRunner):
                 islands.append(st)
             current = [e for x in islands for e in (x.get("ledger") or [])
                        if isinstance(e, dict) and int(e.get("book") or 0) >= BOOK_VERSION]
+            # N-194 (16/11): the battles of the account's other barbarian jobs (the 34 of Juízo Final) count too;
+            # with only the levels 1-12 of one night the farm stopped at 10
+            current += [e for e in (getattr(self, "_account_ledger", None) or [])
+                        if isinstance(e, dict) and int(e.get("book") or 0) >= BOOK_VERSION]
             book = farm_book(current, st.get("prices") or {}, st.get("unit_citizens") or {}, st.get("population") or {},
                              st.get("resource_values"), st.get("unit_resources"))
             ideal = ideal_level(book)
@@ -1070,10 +1086,16 @@ class BarbariansRunner(BaseRunner):
         """The battle report of the last attack (newest one against the village after the last read): result, rounds,
         morale and losses, kept for the next army and shown in the job."""
         st["report_tries"] = int(st.get("report_tries") or 0) + 1
+        # N-194 (16/11): with several islands the newest barbarian report may be another island's battle, and the
+        # barbarians' revenge on one of our towns is in the same list (it has a town link): take only our attacks on a
+        # village, not claimed by another island, whose defenders are the ones this village had
+        claimed = {int(c) for x in (getattr(self, "_state", None) or {}).values() if isinstance(x, dict) and x is not st
+                   for c in (x.get("claimed_reports") or [])}
         try:
             listed = [r for r in client.fetch_combat_reports(int(town), limit=10)
-                      if _is_barbarian_row(r) and r.get("result")
-                      and int(r.get("combat_id") or 0) > int(st.get("last_report_id") or 0)]
+                      if _is_barbarian_row(r) and r.get("result") and not int(r.get("city_id_target") or 0)
+                      and int(r.get("combat_id") or 0) > int(st.get("last_report_id") or 0)
+                      and int(r.get("combat_id") or 0) not in claimed]
         except Exception as exc:  # noqa: BLE001 - the next round tries again
             if self.is_network_error(exc):
                 raise
@@ -1084,8 +1106,21 @@ class BarbariansRunner(BaseRunner):
                 st["report_pending"] = False
                 self.log(jid, "warn", f"Ilha {island_id}: não achei o relatório da última batalha; sigo sem ele.")
             return
-        newest = max(listed, key=lambda r: int(r.get("combat_id") or 0))
-        detailed = client.fetch_combat_detailed_report(int(town), int(newest["combat_id"]))
+        expected = sum(int(q or 0) for _name, q in (st.get("defenders") or []) if str(q).isdigit() or isinstance(q, int))
+        newest, detailed = None, None
+        for row in sorted(listed, key=lambda r: int(r.get("combat_id") or 0))[:4]:
+            found = client.fetch_combat_detailed_report(int(town), int(row["combat_id"])) or {}
+            total = _defenders_joined(found)
+            if expected and total and total != expected:
+                continue                                         # another village's battle
+            newest, detailed = row, found
+            break
+        if newest is None:
+            if st["report_tries"] >= 6:
+                st["report_pending"] = False
+                self.log(jid, "warn", f"Ilha {island_id}: nenhum relatório bate com a vila atacada; sigo sem ele.")
+            return
+        st["claimed_reports"] = ([int(c) for c in st.get("claimed_reports") or []] + [int(newest["combat_id"])])[-20:]
         battle = _battle_outcome(detailed or {}, newest)
         battle["level"] = st.get("attacked_level")
         st.update(last_battle=battle, last_report_id=battle["combat_id"], report_pending=False)
@@ -1335,6 +1370,7 @@ class BarbariansRunner(BaseRunner):
         self._reserved = merged
         self._garrison = {str(c): {str(u): int(q or 0) for u, q in (units or {}).items()}
                           for c, units in (answer.get("garrison") or {}).items()}
+        self._account_ledger = [e for e in answer.get("ledger") or [] if isinstance(e, dict)]
         return answer.get("islands") or {}
 
     def _island_towns(self, jid, game_account_id, island_ids, chosen: dict) -> dict:

@@ -583,9 +583,10 @@ class RecallTests(unittest.TestCase):
     """15/11 18:08: the attack on level 34 was called back by hand before it fought; the job read it as a defeat in one
     round and took the 18 minutes until the next attack as its cycle."""
 
-    def test_an_attack_called_back_is_not_a_defeat(self):
-        battle = _battle_outcome({"rounds": [], "attacker_losses": {}}, {"result": "defeat", "rounds": 1, "combat_id": 9})
-        self.assertEqual(battle["result"], "recalled")
+    def test_a_report_is_a_battle_never_a_recall(self):
+        # 16/11: 1-round wins without losses were read as "recalled" (a recalled attack leaves no report at all)
+        battle = _battle_outcome({"rounds": [], "attacker_losses": {}}, {"result": "victory", "rounds": 1, "combat_id": 9})
+        self.assertEqual(battle["result"], "victory")
 
     def test_a_short_time_between_attacks_is_not_a_cycle(self):
         from runners.barbarians import _cycle
@@ -862,3 +863,54 @@ class ShipsTests(unittest.TestCase):
             self.assertEqual(len(sent), 1)                                   # attacked with what there is (the rest is collected)
         finally:
             module.fetch_village_info = original
+
+
+
+class ReportMatchTests(unittest.TestCase):
+    """N-194 (16/11): several islands attack at once; each island takes only its own battle report (the defenders its
+    village had), never one another island took, never the barbarians' revenge on our town (it has a town link)."""
+
+    def _runner(self, state):
+        runner = BarbariansRunner.__new__(BarbariansRunner)
+        runner.hub = _Hub()
+        runner.is_network_error = lambda exc: False
+        runner._state = state
+        runner._retrain = False
+        return runner
+
+    def _game(self, reports, joined):
+        class Game:
+            def fetch_combat_reports(self, city_id, limit=10):
+                return [dict(r) for r in reports]
+
+            def fetch_combat_detailed_report(self, city_id, combat_id):
+                html = f"Bárbaros juntou-se ao combate, do lado do defensor, com as seguintes unidades: {joined[combat_id]}"
+                return {"rounds": [{"round": 1, "html": html}], "attacker_losses": {}}
+
+        return Game()
+
+    def test_each_island_its_own_report(self):
+        reports = [
+            {"combat_id": 500, "text": "Batalha por Juízo Final", "result": "defeat", "rounds": 2, "city_id_target": 37441},
+            {"combat_id": 501, "text": "Batalha por Vila de Bárbaros", "result": "victory", "rounds": 1, "city_id_target": 0},
+            {"combat_id": 502, "text": "Batalha por Vila de Bárbaros", "result": "victory", "rounds": 2, "city_id_target": 0},
+        ]
+        joined = {500: "360 160 35", 501: "50", 502: "75 2"}
+        a = {"report_pending": True, "attacked_level": 9, "attacked_at": 1, "defenders": [["Membro do Clube de Bárbaros", 75],
+                                                                                          ["Aríete Bárbaro", 2]]}
+        b = {"report_pending": True, "attacked_level": 8, "attacked_at": 1, "defenders": [["Membro do Clube de Bárbaros", 50]]}
+        runner = self._runner({"4479": a, "4480": b})
+        runner._learn_from_report("j", self._game(reports, joined), "4479", "37435", a)
+        runner._learn_from_report("j", self._game(reports, joined), "4480", "37437", b)
+        self.assertEqual((a["last_report_id"], a["last_battle"]["result"]), (502, "victory"))
+        self.assertEqual((b["last_report_id"], b["last_battle"]["result"]), (501, "victory"))
+
+    def test_the_book_counts_the_other_jobs_battles(self):
+        runner = self._runner({})
+        runner._target_auto = True
+        runner._target_level_input = 0
+        low = [{"level": lvl, "loot": 4000, "gold": 7000, "losses": {}, "cycle_minutes": 70 + lvl, "book": 2}
+               for lvl in (9, 10, 11, 12)]
+        st = {"ledger": low, "prices": {}}
+        runner._account_ledger = [{"level": 34, "loot": 94_000, "gold": 78_000, "losses": {"303": 90}, "cycle_minutes": 215, "book": 2}]
+        self.assertEqual(runner._target_level(st), 0)                   # the 34 pays more: keep climbing
