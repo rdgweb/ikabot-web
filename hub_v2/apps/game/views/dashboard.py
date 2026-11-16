@@ -545,6 +545,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
             barbarians = {}
         for card in account_cards:
             card["barbarians_per_hour"] = (barbarians.get(card["game_account_id"]) or {}).get("per_hour", 0)
+            card["income_with_barbarians"] = int(card.get("income") or 0) + int(card["barbarians_per_hour"] or 0)
         ctx["account_cards"] = account_cards
         ctx["city_options"] = [
             {"name": name, "game_accounts": "|".join(sorted(ids))}

@@ -296,6 +296,19 @@
                     {% if card.income > 0 %}+{% endif %}{{ card.income|intcomma }}/h
                   </span>
                 </div>
+                {% if card.barbarians_per_hour %}
+                {# N-194: the gold looted from the barbarian villages (last 24 h, per hour), beside the game's own numbers #}
+                <div class="flex justify-between text-[10px]">
+                  <span class="text-muted">Bárbaros (ouro, 24 h)</span>
+                  <span class="font-mono text-green-600">+{{ card.barbarians_per_hour|intcomma }}/h</span>
+                </div>
+                <div class="flex justify-between text-[10px] pt-1" style="border-top: 1px solid var(--ik-line);">
+                  <span class="font-semibold text-ink">Com bárbaros</span>
+                  <span class="font-mono font-bold {% if card.income_with_barbarians >= 0 %}text-green-600{% else %}text-red-500{% endif %}">
+                    {% if card.income_with_barbarians > 0 %}+{% endif %}{{ card.income_with_barbarians|intcomma }}/h
+                  </span>
+                </div>
+                {% endif %}
               </div>
             </div>
           </span>

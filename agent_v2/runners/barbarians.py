@@ -275,6 +275,7 @@ GATHER_HOURS = 24              # units trained in another town for the army are 
 SAME_ISLAND_JOURNEY = 10 * 60  # town -> its own island's village, when the attack screen was not read
 ARMY_MOVE_SECONDS = 40 * 60    # troops moved to another island, when the game does not say how long
 SUPPLY_MARGIN = 0.15           # what moves to an island: the simulator's army plus this (Rodrigo, 15/11: moving costs upkeep)
+LOOT_SHARE = 0.8               # a village is attacked only when the free merchants carry at least this share of its loot
 COLLECT_MARGIN = 15 * 60       # the village must still be down this long after the merchants arrive
 
 
@@ -418,6 +419,7 @@ class BarbariansRunner(BaseRunner):
         army_city = str(inputs.get("army_city") or "").strip()
         all_islands = str(inputs.get("all_islands") or "").lower() in {"1", "true", "on", "yes"}
         self._reserved = _parse_reserve(inputs.get("reserve_units"))
+        self._fleet_cache = None
         min_level = _parse_int(inputs.get("min_barb_level"), 1)
         max_level = _parse_int(inputs.get("max_barb_level"), 99)
         extra_ships = _parse_int(inputs.get("extra_ships"), 0)
@@ -497,6 +499,18 @@ class BarbariansRunner(BaseRunner):
             self.log(jid, "info", f"Próxima olhada em {next_in // 60} min {next_in % 60} s (quando o próximo movimento chega).")
         return RunnerResult(success=True, reschedule_seconds=next_in,
                             reschedule_inputs={**inputs, "islands_state": state, **totals, "phase": "rounds"})
+
+    def _fleet_size(self) -> int:
+        """The account's merchant ships, all of them (0 when the snapshot does not say)."""
+        cached = getattr(self, "_fleet_cache", None)
+        if cached is not None:
+            return cached
+        try:
+            base = (self.hub.get_snapshot(game_account_id=getattr(self, "_game_account_id", "")) or {}).get("base_snapshot") or {}
+            self._fleet_cache = int(base.get("max_transporters") or 0)
+        except Exception:  # noqa: BLE001 - without it the free ships are the measure
+            self._fleet_cache = 0
+        return self._fleet_cache
 
     def _supply(self, jid, client, island_ids, island_cities, state, army_city, wake) -> None:
         """N-194: a village that is ready and that the troops of its island cannot win gets troops from the town with
@@ -619,6 +633,14 @@ class BarbariansRunner(BaseRunner):
             lines.append(f"{'voltando' if m.get('is_returning') else 'indo'} (chega {when}, faltam {max(0, eta - now) // 60} min)")
         st["counted_events"] = counted[-20:]
         if not moving:
+            return False
+        if st.get("last_mission") == "attack" and all(m.get("is_returning") and not any(_cargo_total(m.get("cargo") or {}))
+                                                      for m in moving):
+            # N-194: only the troops are coming back (the merchants already brought the loot): the battle is over and
+            # what is left in the village may be collected now, before the rebuild (15/11, level 34: 24 min lost)
+            if st.get("collect_early") != st.get("attacked_at"):
+                st["collect_early"] = st.get("attacked_at")
+                self.log(jid, "info", f"Ilha {island_id}: só as tropas voltando; o que sobrou na vila pode ser coletado já.")
             return False
         st["status"] = "moving"
         self.log(jid, "info", f"Ilha {island_id}: tropas/mercantes em movimento: " + "; ".join(lines) + ". Espero chegarem.")
@@ -1197,6 +1219,23 @@ class BarbariansRunner(BaseRunner):
                                       f"Sigo olhando; aviso de novo se o nível mudar.")
             return
         st["short_level"] = None
+        on_hand_now = int(village.get("total") or 0)
+        route = st.get("route") if isinstance(st.get("route"), dict) else {}
+        free = route.get("free_ships") if time.time() - int(route.get("at") or 0) < 300 else None
+        fleet = self._fleet_size()
+        # N-194 (Rodrigo, 15/11): destroying a village while the merchants are away (bringing another island's loot)
+        # leaves its loot behind; wait for them. A village bigger than the whole fleet carries is still attacked once
+        # every merchant is home (the rest is collected right after); how far the farm climbs is the farm book's call
+        wanted = -(-on_hand_now // SHIP_CAPACITY) if on_hand_now else 0
+        if fleet:
+            wanted = min(wanted, fleet)
+        if troop_mode == "schematic" and free is not None and wanted and int(free) < LOOT_SHARE * wanted:
+            if st.get("ships_short") != level:
+                st["ships_short"] = level
+                self.log(jid, "info", f"Ilha {island_id}: a vila nível {level} tem {_n(on_hand_now)} recursos; precisa de "
+                                      f"{wanted} mercantes e há {free} livres. Espero os mercantes voltarem antes de atacar.")
+            return
+        st["ships_short"] = None
         if max_random_wait > 0:
             time.sleep(random.randint(0, max_random_wait))
         on_hand = int(village.get("total") or 0)

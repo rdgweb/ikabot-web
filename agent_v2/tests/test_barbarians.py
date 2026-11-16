@@ -795,3 +795,70 @@ class SupplyTests(unittest.TestCase):
         runner = _army_runner()
         towns = runner._island_towns("j", "ga", ["4478", "4479", "4477"], {"4478": "37436", "4479": "37436"})
         self.assertEqual(towns, {"4478": "37436", "4479": "37435", "4477": "37441"})
+
+
+
+class ShipsTests(unittest.TestCase):
+    """N-194 (Rodrigo, 15/11): the village's leftovers are collected as soon as the merchants are back (not after the
+    troops), and a big village is not attacked when the free merchants cannot bring its loot."""
+
+    def test_only_troops_coming_back_lets_the_collection_go(self):
+        import time as _time
+
+        runner = BarbariansRunner.__new__(BarbariansRunner)
+        runner.hub = _Hub()
+        runner.is_network_error = lambda exc: False
+        now = int(_time.time())
+        troops_home = {"is_own": True, "mission": "plunder", "origin": {"cityId": 0, "islandId": 4477},
+                       "target": {"cityId": "37441", "islandId": 4477}, "is_returning": True, "event_id": 70,
+                       "event_time": now + 600, "cargo": {}, "troops": {"phalanx": 300}}
+
+        class Game:
+            moves = [dict(troops_home)]
+
+            def fetch_military_advisor(self, city_id):
+                return {"movement_details": list(self.moves)}
+
+        st = {"last_mission": "attack", "attacked_at": now - 7200}
+        self.assertFalse(runner._on_the_way("j", Game(), "4477", "37441", st, {"loot_total": 0, "gold_total": 0}, []))
+        Game.moves = [dict(troops_home, cargo={"wood": 5000}, event_id=71)]      # the merchants still on the way
+        self.assertTrue(runner._on_the_way("j", Game(), "4477", "37441", st, {"loot_total": 0, "gold_total": 0}, []))
+
+    def test_no_attack_while_the_merchants_are_away(self):
+        import time as _time
+
+        import runners.barbarians as module
+
+        runner = BarbariansRunner.__new__(BarbariansRunner)
+        runner.hub = _Hub(plan={"can_win": True, "army": {"303": 300},
+                                "prediction": {"rounds": 8, "morale_end": 70, "attacker_losses": {"303": 90}}})
+        runner._get_available_troops = lambda jid, client, town: {303: 1000}
+        runner._population = lambda jid, client, town, st, fresh=False: {}
+        runner._train_seconds = lambda jid, client, town, st: {}
+        runner._route = lambda jid, island_id, st, village: (st.update(route={"free_ships": 100, "at": int(_time.time())}) or {})
+        sent = []
+        village = {"total": 110_500, "gold": 78_000, "defenders": [["Viking", 650]], "defender_ids": {"316": 650},
+                   "defenders_found": True}
+        original = module.fetch_village_info
+        module.fetch_village_info = lambda client, island_id: dict(village)
+
+        class Game:
+            def get_barbarian_state(self, island_id):
+                return {"level": 34, "destroyed": False, "under_attack": False}
+
+            def attack_barbarian_village(self, **kw):
+                sent.append(kw)
+                return {"transporters": kw["transporters"], "free_ships": 100}
+
+        try:
+            st = {}
+            totals = {"total_attacks": 0, "total_loots": 0, "loot_total": 0, "gold_total": 0}
+            runner._fleet_size = lambda: 189
+            runner._island_round("j", Game(), "4477", "37441", st, totals, "schematic", "", True, 1, 50, 0, 0)
+            self.assertEqual(sent, [])                                       # 89 of the 189 are away with other loot
+            self.assertEqual(st["ships_short"], 34)
+            runner._fleet_size = lambda: 110                                 # the fleet itself is smaller than the loot:
+            runner._island_round("j", Game(), "4477", "37441", st, totals, "schematic", "", True, 1, 50, 0, 0)
+            self.assertEqual(len(sent), 1)                                   # attacked with what there is (the rest is collected)
+        finally:
+            module.fetch_village_info = original
