@@ -623,3 +623,92 @@ class ManyIslandsTests(unittest.TestCase):
         self.assertTrue(book[21]["covered"])
         self.assertEqual(book[22]["short"], ["sulfur"])                 # 100 sulfur, the losses take 140
         self.assertEqual(ideal_level(book), 21)                         # 22+ would pay more, but not their sulfur
+
+
+
+class _ArmyHub:
+    """The hub as the farm of several towns sees it (N-194)."""
+
+    def __init__(self):
+        self.logs = []
+        self.cities = [
+            {"id": 37436, "name": "Liberado", "island_id": 4478, "buildings": [{"building": "barracks", "position": 6}]},
+            {"id": 37441, "name": "Juízo Final", "island_id": 4477, "buildings": [{"building": "barracks", "position": 7}]},
+            {"id": 37435, "name": "Sentença", "island_id": 4479, "buildings": [{"building": "port", "position": 1}]},
+            {"id": 37437, "name": "Decreto", "island_id": 4480, "buildings": []},
+        ]
+
+    def report_log(self, job_id, level, msg):
+        self.logs.append(msg)
+
+    def get_snapshot(self, game_account_id=None):
+        return {"cities": self.cities}
+
+    def get_troop_reservations(self, game_account_id, exclude_job_id=""):
+        return {"reserved": {"37436": {"303": 100}}, "islands": {"wf-other": ["4477"]}}
+
+
+class _ArmyGame:
+    def __init__(self):
+        self.trained, self.stationed = [], []
+        self.home = {"37436": {303: 500, 302: 200}, "37441": {303: 90, 308: 40}}
+
+    def fetch_stationed_units(self, city_id, building_type="troops"):
+        return {"counts": dict(self.home.get(str(city_id), {}))}
+
+    def fetch_barracks_state(self, city_id, position, kind):
+        return {"units": [{"unit_id": 303, "max_build": 1000, "citizens": 1}, {"unit_id": 308, "max_build": 30, "citizens": 2}]}
+
+    def train_units(self, city_id, position, order, kind):
+        self.trained.append((city_id, dict(order)))
+
+    def station_units(self, from_city_id, to_city_id, units, scope="troops", to_island_id=None):
+        self.stationed.append((from_city_id, to_city_id, dict(units), to_island_id))
+        return {"ok": True}
+
+
+def _army_runner():
+    runner = BarbariansRunner.__new__(BarbariansRunner)
+    runner.hub = _ArmyHub()
+    runner.is_network_error = lambda exc: False
+    runner._game_account_id = "ga"
+    runner._job_id = "j"
+    runner._reserved = {}
+    runner._population = lambda jid, client, town, st, fresh=False: {"citizens": 100, "max": 1000}
+    return runner
+
+
+class ArmyTests(unittest.TestCase):
+    """N-194: one army for every island, the assault team kept apart, losses trained in any town and brought back."""
+
+    def test_the_reserved_team_is_never_sent(self):
+        runner = _army_runner()
+        runner._load_reservations("j", "ga")
+        self.assertEqual(runner._get_available_troops("j", _ArmyGame(), "37436"), {303: 400, 302: 200})
+
+    def test_all_islands_but_the_ones_of_another_job(self):
+        runner = _army_runner()
+        others = runner._load_reservations("j", "ga")
+        self.assertEqual(runner._account_islands("j", "ga", ["4478"], others), ["4478", "4479", "4480"])
+
+    def test_what_the_army_town_cannot_train_goes_to_another_barracks_and_comes_back(self):
+        runner = _army_runner()
+        game = _ArmyGame()
+        st = {}
+        left = runner._retrain_elsewhere("j", game, "4478", "37436", {303: 50, 308: 60}, st)
+        # Juízo Final: 80 free citizens of 100 (it keeps 20%): the biggest loss first, 30 giants (the barracks' max,
+        # 2 citizens each), then 20 hoplites
+        self.assertEqual(game.trained, [(37441, {308: 30, 303: 20})])
+        self.assertEqual(left, {303: 30, 308: 30})
+        self.assertEqual(st["trained_elsewhere"][0]["city"], "37441")
+        runner._gather("j", game, "4478", "37436", st)
+        self.assertEqual(game.stationed, [(37441, 37436, {308: 30, 303: 20}, 4478)])
+        self.assertEqual(st["trained_elsewhere"], [])
+
+    def test_gather_waits_for_what_is_still_in_training(self):
+        runner = _army_runner()
+        game = _ArmyGame()
+        st = {"trained_elsewhere": [{"city": "37441", "units": {"303": 200}, "at": int(__import__("time").time())}]}
+        runner._gather("j", game, "4478", "37436", st)
+        self.assertEqual(game.stationed, [(37441, 37436, {303: 90}, 4478)])
+        self.assertEqual(st["trained_elsewhere"][0]["units"], {"303": 110})

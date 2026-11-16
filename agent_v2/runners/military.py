@@ -883,13 +883,21 @@ class TrainUnitsRunner(BaseRunner):
             return []
         min_pct = max(1, min(100, _to_int(inputs.get("surplus_min_pct"), 20)))
         main_name = city_names.get(main, str(main))
+        # N-194: the troops reserved by the account's barbarian jobs (the assault team) stay where they are
+        reserved: dict = {}
+        try:
+            reserved = (self.hub.get_troop_reservations(ga_id or "") or {}).get("reserved") or {}
+        except Exception as exc:  # noqa: BLE001 - without the list nothing reserved is known: nothing is gathered
+            self.log(jid, "warn", f"Excedente: reservas não lidas ({exc}); nada movido nesta volta.")
+            return []
         moves = []
         for donor_id, donor_surplus in surplus.items():
             if donor_id == main:
                 continue
             gather, dismiss = {}, {}
+            kept = reserved.get(str(donor_id)) or {}
             for uid_str, qty in (donor_surplus or {}).items():
-                qty = _to_int(qty)
+                qty = _to_int(qty) - _to_int(kept.get(str(uid_str)))
                 if qty <= 0:
                     continue
                 target_qty = _to_int((city_target_map.get(donor_id) or {}).get(uid_str))

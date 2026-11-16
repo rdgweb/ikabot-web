@@ -1686,6 +1686,9 @@ class JobListView(FilterSortListView):
 
         island_ids = [s.strip() for s in str(inputs.get("island_ids") or "").split(",") if s.strip()]
         state = inputs.get("islands_state") if isinstance(inputs.get("islands_state"), dict) else {}
+        if str(inputs.get("all_islands") or "").lower() in {"1", "true", "on", "yes"} and any(i in state for i in island_ids):
+            # N-194: "todas as ilhas" — the job skips the ones another job farms: show the ones it does
+            island_ids = [i for i in island_ids if i in state]
         names = {}
         for island_id, name, x, y in (WorldDumpIsland.objects.filter(island_id__in=island_ids).order_by("dump__captured_at")
                                       .values_list("island_id", "name", "x", "y")):
@@ -1717,6 +1720,11 @@ class JobListView(FilterSortListView):
                 battles.append({**b, "lost_units": lost, "lost_total": sum(u["qty"] for u in lost)})
             end = _to_int(st.get("rebuild_end"), 0)
             label, tone = labels.get(st.get("status") or "", ("aguardando a primeira rodada", "muted"))
+            elsewhere = {}
+            for e in st.get("trained_elsewhere") or []:
+                for u, q in ((e or {}).get("units") or {}).items():
+                    elsewhere[u] = elsewhere.get(u, 0) + _to_int(q, 0)
+            route = st.get("route") if isinstance(st.get("route"), dict) else {}
             islands.append({
                 "id": island_id, "name": names.get(island_id, ("", ""))[0], "coords": names.get(island_id, ("", ""))[1],
                 "level": st.get("level"), "label": label, "tone": tone, "town": st.get("town") or "",
@@ -1733,8 +1741,23 @@ class JobListView(FilterSortListView):
                 "attacked_at": datetime.fromtimestamp(st["attacked_at"], tz=dt_timezone.utc) if st.get("attacked_at") else None,
                 "rebuild_end": datetime.fromtimestamp(end, tz=dt_timezone.utc) if end else None,
                 "battles": battles,
+                "elsewhere": units(elsewhere),
+                "journey_minutes": round(_to_int(route.get("journey_seconds"), 0) / 60) if route.get("journey_seconds") else None,
                 **cls._barbarian_farm(st, inputs),
             })
+        from apps.combat.services.reservations import parse_reserve
+
+        town_names = {}
+        try:
+            from apps.game.models import AccountSnapshot
+
+            snap = AccountSnapshot._base_manager.filter(game_account_id=job.game_account_id).only("cities").first()
+            town_names = {str(c.get("id")): c.get("name") or str(c.get("id")) for c in (snap.cities if snap else []) or []
+                          if isinstance(c, dict)}
+        except Exception:  # noqa: BLE001 - ids instead of names
+            town_names = {}
+        reserved = [{"city": town_names.get(c, c), "units": units(u)} for c, u in parse_reserve(inputs.get("reserve_units")).items()]
+        army_city = str(inputs.get("army_city") or "")
         return {
             "islands": islands,
             "total_attacks": _to_int(inputs.get("total_attacks"), 0),
@@ -1742,6 +1765,8 @@ class JobListView(FilterSortListView):
             "loot_total": _to_int(inputs.get("loot_total"), 0),
             "gold_total": _to_int(inputs.get("gold_total"), 0),
             "max_level": _to_int(inputs.get("max_barb_level"), 9),
+            "army_city": town_names.get(army_city, army_city) if army_city else "",
+            "reserved": reserved,
         }
 
     @staticmethod

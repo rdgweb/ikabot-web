@@ -308,7 +308,9 @@ class BarbarianPlanView(APIView):
                                             cycle_minutes=float(data.get("cycle_minutes") or 0),
                                             population=data.get("population") or {},
                                             unit_citizens_read=data.get("unit_citizens") or {},
-                                            resource_values=values)
+                                            resource_values=values,
+                                            journey=data.get("journey") or {}, weights=data.get("weights") or {},
+                                            max_weight=data.get("max_weight"))
         except Exception as exc:  # noqa: BLE001 - the job falls back to waiting
             logger.warning("Barbarian plan failed", exc_info=True)
             return Response({"can_win": False, "army": {}, "note": f"simulador falhou: {exc}"}, status=status.HTTP_200_OK)
@@ -326,6 +328,23 @@ class BarbarianPlanView(APIView):
         calibration = barbarian_learning.active()
         result["calibration"] = {k: calibration.get(k) for k in ("attacker_pct", "defender_pct", "samples")}
         return Response(result)
+
+
+class TroopReservationsView(APIView):
+    """GET /api/agent/troops/reserved/?game_account_id=X[&exclude_job_id=Y] (N-194) — the troops no job may use or
+    move, per city ({city_id: {unit_id: count}}: the assault team, kept by the Roubar Bárbaros jobs of the account),
+    and the islands each other barbarian job already farms (so "todas as ilhas" skips them)."""
+
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def get(self, request):
+        from apps.combat.services.reservations import account_reservations
+
+        ga_id = str(request.query_params.get("game_account_id") or "")
+        if not ga_id:
+            return Response({"reserved": {}, "islands": {}})
+        return Response(account_reservations(ga_id, exclude_job_id=str(request.query_params.get("exclude_job_id") or "")))
 
 
 class BarbarianReinforceView(APIView):

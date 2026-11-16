@@ -5,10 +5,14 @@ from runners.military import TrainUnitsRunner
 
 
 class FakeHub:
-    def __init__(self, by_city=None):
+    def __init__(self, by_city=None, reserved=None):
         self.spawned = []
         self.logs = []
         self.by_city = by_city or []
+        self.reserved = reserved or {}
+
+    def get_troop_reservations(self, game_account_id, exclude_job_id=""):
+        return {"reserved": self.reserved, "islands": {}}
 
     def get_snapshot(self, game_account_id=None):
         return {"military": {"by_city": self.by_city}}
@@ -21,9 +25,9 @@ class FakeHub:
         self.logs.append((level, msg))
 
 
-def handle(inputs, surplus, targets, current, by_city=None):
+def handle(inputs, surplus, targets, current, by_city=None, reserved=None):
     runner = TrainUnitsRunner.__new__(TrainUnitsRunner)
-    runner.hub = FakeHub(by_city)
+    runner.hub = FakeHub(by_city, reserved)
     names = {1: "Norte", 2: "Sul", 3: "Leste"}
     runner._handle_surplus("j", inputs, surplus, targets, current, names, {303: "Hoplita", 301: "Fundeiro"}, "ga")
     return runner.hub.spawned
@@ -66,3 +70,12 @@ class MaintainSurplusTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReservedTeamTests(unittest.TestCase):
+    """N-194: the assault team reserved by a barbarian job is never gathered into the main army."""
+
+    def test_the_reserved_troops_stay(self):
+        spawned = handle({"surplus_mode": "gather", "consolidate_city_id": "1"},
+                         {2: {"303": 50}, 3: {"303": 40}}, TARGETS, {}, reserved={"2": {"303": 30}, "3": {"303": 40}})
+        self.assertEqual(spawned, [(1202, {"from_city_id": 2, "to_city_id": 1, "units": {"303": 20}})])

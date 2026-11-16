@@ -653,6 +653,11 @@ class HubClient:
         except json.JSONDecodeError:
             return {}
 
+    def get_troop_reservations(self, game_account_id: str, exclude_job_id: str = "") -> dict:
+        """GET /api/agent/troops/reserved/ (N-194) — {"reserved": {city_id: {unit_id: count}}, "islands": {workflow:
+        [island ids]}}: the troops no job may use or move (the assault team) and the islands other barbarian jobs farm."""
+        return self._get("/api/agent/troops/reserved/", {"game_account_id": game_account_id, "exclude_job_id": exclude_job_id})
+
     def get_player_marks(self, game_account_id: str) -> dict:
         """GET /api/agent/worldintel/player-marks/ — players the organization marked on that server (N-174/N-175):
         {"multi": [names], "pirate_target": [names]}."""

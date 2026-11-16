@@ -345,3 +345,58 @@ class IncomeGoldTests(TestCase):
                            inputs_json=_json.dumps({"islands_state": state}))
         out = farm_value.barbarian_hourly([str(ga.pk)])
         self.assertEqual(out[str(ga.pk)]["per_hour"], 2000)          # 48.000 in 24 h; the battle of 30 h ago is out
+
+
+class RouteAndReserveTests(TestCase):
+    """N-194: the way to another island counts as the attack screen showed it; an army the free ships cannot carry
+    never leaves; the assault team is kept apart."""
+
+    def test_the_journey_of_the_screen_is_the_travel(self):
+        barbarian_planner.set_route({"303": 2400, "309": 4800}, {"303": 1, "309": 3}, 100)
+        barbarian_planner._FARM["joining"] = False                      # a new attack, as plan() sets it
+        try:
+            self.assertEqual(barbarian_planner.travel_minutes({303: 10}), 40)
+            self.assertEqual(barbarian_planner.travel_minutes({303: 10, 309: 1}), 80)
+            sim = {"winner": "attacker", "rounds": 5, "attacker_losses": {}, "morale": {"attacker": 80}}
+            self.assertEqual(barbarian_planner._key(sim, {303: 100})[0], 0)
+            self.assertEqual(barbarian_planner._key(sim, {303: 101})[0], 2)        # 101 weight, 100 carried
+        finally:
+            barbarian_planner.set_route()
+        self.assertAlmostEqual(barbarian_planner.travel_minutes({303: 10}), 6.5, delta=0.1)   # its own island again
+
+    def test_reservations_of_the_account(self):
+        import json as _json
+
+        from apps.accounts.models import Account, GameAccount, Node
+        from apps.combat.services.reservations import account_reservations, parse_reserve
+        from apps.jobs.models import Job
+
+        node = Node.objects.create(name="agente", transport="https")
+        account = Account.objects.create(node=node, label="Conta", email="c@example.com", password_enc="x")
+        ga = GameAccount.objects.create(account=account, lobby_account_id=1, server_id="s78-br", server_language="br",
+                                        server_number=78, name="X")
+        mine = Job.objects.create(account=account, game_account=ga, node=node, action_code=19, status="scheduled",
+                                  inputs_json=_json.dumps({"island_ids": "4478,4479", "reserve_units": '{"37436": {"303": 120}}'}))
+        Job.objects.create(account=account, game_account=ga, node=node, action_code=19, status="scheduled",
+                           inputs_json=_json.dumps({"island_ids": "4477"}))
+        Job.objects.create(account=account, game_account=ga, node=node, action_code=19, status="finished",
+                           inputs_json=_json.dumps({"island_ids": "4480", "reserve_units": {"1": {"303": 5}}}))
+        out = account_reservations(str(ga.pk), exclude_job_id=str(mine.pk))
+        self.assertEqual(out["reserved"], {"37436": {"303": 120}})
+        self.assertEqual(sorted(i for ids in out["islands"].values() for i in ids), ["4477"])
+        self.assertEqual(parse_reserve('{"x": {"303": 1}, "5": {"303": -2, "304": 3}}'), {"5": {"304": 3}})
+
+
+class FrontLineTests(TestCase):
+    """N-194: the hoplites (or giants) hold the front; swordsmen alone only when the town has none."""
+
+    def test_the_front_is_held(self):
+        self.assertFalse(barbarian_planner._holds_the_front({302: 10}, {302: 100, 303: 100}))
+        self.assertTrue(barbarian_planner._holds_the_front({303: 10, 302: 10}, {302: 100, 303: 100}))
+        self.assertTrue(barbarian_planner._holds_the_front({302: 10}, {302: 100}))          # no hoplites in the town
+
+    def test_low_levels_go_with_hoplites(self):
+        result = barbarian_planner.plan({302: 500, 303: 500, 304: 100}, {320: 5}, wall_level=0, field_level=1,
+                                        explain_training=False)
+        self.assertTrue(result["can_win"])
+        self.assertGreater(result["army"].get(303, 0) + result["army"].get(308, 0), 0)

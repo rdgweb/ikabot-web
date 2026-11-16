@@ -73,8 +73,16 @@ SAME_ISLAND_SECONDS_AT_60 = 585   # town -> its own island's village at speed 60
 
 
 def travel_minutes(army: dict) -> float:
-    """Minutes the army takes from the town to its island's village: the slowest unit sets the pace."""
+    """Minutes the army takes from the town to the village: the slowest unit sets the pace. N-194: the journey of each
+    unit as the game's attack screen showed it (another island is farther) when the job read it; otherwise the
+    town's own island at the unit's speed."""
     from apps.espionage.services.unit_stats import UNIT_STATS
+
+    journey = _FARM.get("journey") or {}
+    if journey:
+        seen = [float(journey.get(int(u)) or 0) for u, q in (army or {}).items() if int(q or 0) > 0]
+        if seen and all(seen):
+            return max(seen) / 60
 
     speeds = [int((UNIT_STATS.get(int(u)) or {}).get("speed") or 60) for u, q in (army or {}).items() if int(q or 0) > 0]
     slowest = min(speeds) if speeds else 60
@@ -147,7 +155,22 @@ def _fill(line: str, uid: int, field_level: int, waves: int) -> int:
 
 
 _FARM = {"train_seconds": {}, "cycle_minutes": 0.0, "citizen_value": CITIZEN_VALUE, "unit_citizens": {},
-         "free_citizens": None, "values": None}     # set by plan()/reinforce() for the call in course
+         "free_citizens": None, "values": None, "journey": {}, "weights": {}, "max_weight": None}
+# set by plan()/reinforce() for the call in course; journey/weights/max_weight (N-194) come from the attack screen:
+# seconds and ship weight of each unit to this village, and what the free merchant ships carry
+
+
+def set_route(journey: dict | None = None, weights: dict | None = None, max_weight: float | None = None) -> None:
+    """The way to this village, as the game's attack screen showed it: each unit's journey (seconds) and weight, and
+    the weight the free merchant ships can carry (None: no limit known)."""
+    _FARM.update(journey={int(u): float(v) for u, v in (journey or {}).items() if str(u).isdigit()},
+                 weights={int(u): float(v) for u, v in (weights or {}).items() if str(u).isdigit()},
+                 max_weight=float(max_weight) if max_weight not in (None, "") else None)
+
+
+def army_weight(army: dict) -> float:
+    weights = _FARM.get("weights") or {}
+    return sum(float(weights.get(int(u)) or 0) * int(q or 0) for u, q in (army or {}).items())
 
 
 def set_town(population: dict | None = None, unit_citizens_read: dict | None = None,
@@ -184,6 +207,9 @@ def _key(sim: dict, army: dict[int, int], round_value: float = 0.0, travel_army:
     cost = lost + int(sim.get("rounds") or 12) * round_value + away + risk + late * (round_value / ROUND_MINUTES)
     # a battle still open when the simulation stops is not won: the game goes on (the barbarians wait behind the wall)
     won = sim.get("winner") == "attacker" and not sim.get("undecided")
+    limit = _FARM.get("max_weight")
+    if limit is not None and not _FARM.get("joining") and army_weight(travel_army if travel_army is not None else army) > limit:
+        return (2, round(cost, 1), -morale_end)          # the free ships do not carry it: it cannot leave
     return (0 if won else 1, round(cost, 1), -morale_end)
 
 
@@ -197,7 +223,16 @@ def round_value(loot: float, cycle_minutes: float) -> float:
     return float(loot) * ROUND_MINUTES / float(cycle_minutes)
 
 
-def _candidates(available: dict[int, int], field_level: int, defender_total: int):
+def _holds_the_front(army: dict, available: dict) -> bool:
+    """N-194 (Rodrigo, 15/11: swordsmen alone at the levels 1 to 9 "não tem lógica"): the front line is the hoplites'
+    and the giants'; every army takes one of them when the town has any. Only a town without them sends the flanks."""
+    front = LINE_UNITS["principal"]
+    if any(int(available.get(u, 0) or 0) > 0 for u in front):
+        return any(int(army.get(u, 0) or 0) > 0 for u in front)
+    return any(int(army.get(u, 0) or 0) > 0 for u in front + LINE_UNITS["flancos"])
+
+
+def _candidates(available: dict[int, int], field_level: int, defender_total: int, joining: bool = False):
     from apps.espionage.services.battle_land import OUTNUMBERED_BY
 
     per_line = {}
@@ -216,7 +251,11 @@ def _candidates(available: dict[int, int], field_level: int, defender_total: int
         for item in combo:
             if item:
                 army[item[0]] = army.get(item[0], 0) + item[1]
-        if not any(u in army for u in LINE_UNITS["principal"] + LINE_UNITS["flancos"]):
+        if joining:
+            # a reinforcement joins an army that already holds the front
+            if not any(u in army for u in LINE_UNITS["principal"] + LINE_UNITS["flancos"]):
+                continue
+        elif not _holds_the_front(army, available):
             continue
         for c in cooks:
             out = dict(army)
@@ -281,7 +320,7 @@ def _improve(best: tuple, available: dict[int, int], field_level: int, fight, pe
                     trial = {u: q for u, q in army.items() if u != uid}
                     if qty:
                         trial[uid] = qty
-                    if not any(u in trial for u in LINE_UNITS["principal"] + LINE_UNITS["flancos"]):
+                    if not _holds_the_front(trial, available):
                         continue
                     sim = fight(trial)
                     tried += 1
@@ -297,7 +336,8 @@ def _improve(best: tuple, available: dict[int, int], field_level: int, fight, pe
 def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: int = 0, field_level: int = 5,
          upgrades: dict[int, dict] | None = None, explain_training: bool = True, per_round: float = 0.0,
          train_seconds: dict | None = None, cycle_minutes: float = 0.0, population: dict | None = None,
-         unit_citizens_read: dict | None = None, resource_values: dict | None = None) -> dict:
+         unit_citizens_read: dict | None = None, resource_values: dict | None = None, journey: dict | None = None,
+         weights: dict | None = None, max_weight: float | None = None) -> dict:
     """The best army for this village from what the town has, with the simulation that chose it."""
     from apps.espionage.services.battle_land import simulate_land_battle
 
@@ -310,6 +350,7 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
     _FARM.update(train_seconds={int(u): float(v) for u, v in (train_seconds or {}).items()}, cycle_minutes=float(cycle_minutes or 0),
                  joining=False)
     set_town(population, unit_citizens_read, resource_values)
+    set_route(journey, weights, max_weight)
 
     seen: dict = {}
 
@@ -346,11 +387,13 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
     second, sim, tried2 = _second_wave(key, army, sim, available, defenders, field_level, wall_level, upgrades, per_round)
     tried += tried2
     result = {
-        "can_win": sim.get("winner") == "attacker" and not sim.get("undecided"),
+        "can_win": sim.get("winner") == "attacker" and not sim.get("undecided") and key[0] == 0,
         "army": army,
         "tried": tried,
         "prediction": {**_summary(sim), "travel_minutes": round(travel_minutes(army), 1)},
     }
+    if key[0] == 2:
+        result["note"] = "Os mercantes livres não levam esse exército até a vila."
     if second:
         result["second_wave"] = {str(u): q for u, q in second["army"].items()}
         result["second_wave_round"] = second["round"]
@@ -383,6 +426,9 @@ def _second_wave(key, army, sim, available, defenders, field_level, wall_level, 
         join = 1 + max(1, math.ceil(late / ROUND_MINUTES))
         for n in sorted({min(spare, wave * k) for k in (1, 2, 3)}):
             extra = {uid: n}
+            limit = _FARM.get("max_weight")
+            if limit is not None and army_weight(army) + army_weight(extra) > limit:
+                continue                                  # no ships left for them
             trial = simulate_land_battle(dict(army), dict(defenders), attacker_upgrades=upgrades, town_hall_level=field_level,
                                          wall_level=wall_level, max_rounds=MAX_ROUNDS, attacker_reinforcements_by_round={join: extra})
             tried += 1
@@ -495,6 +541,7 @@ def reinforce(state: dict, available: dict[int, int], *, wall_level: int = 0, fi
     _FARM.update(train_seconds={int(u): float(v) for u, v in (train_seconds or {}).items()}, cycle_minutes=float(cycle_minutes or 0),
                  joining=True)
     set_town(population, unit_citizens_read, resource_values)
+    set_route()
 
     def fight(extra):
         return simulate_land_battle(
@@ -514,7 +561,7 @@ def reinforce(state: dict, available: dict[int, int], *, wall_level: int = 0, fi
     without = fight({})
     base_key = _key(without, on_way, per_round)
     best = (base_key, {}, without)
-    for army in _candidates(available, field_level, sum(defender.values())):
+    for army in _candidates(available, field_level, sum(defender.values()), joining=True):
         sim = fight(army)
         key = _key(sim, joined(army), per_round)
         if key < best[0]:

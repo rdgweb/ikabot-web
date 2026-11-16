@@ -271,6 +271,30 @@ def _cargo_total(cargo: dict) -> tuple[int, int]:
 
 
 _NOT_BARBARIAN_MISSIONS = ("deployarmy", "deployfleet", "transport", "trade")
+GATHER_HOURS = 24              # units trained in another town for the army are brought to it for this long at most
+
+
+def _parse_reserve(raw) -> dict[str, dict[str, int]]:
+    """N-194: {city_id: {unit_id: count}} kept apart (the assault team), from the job's input (JSON text or dict)."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw or "{}")
+        except (TypeError, ValueError):
+            return {}
+    out: dict[str, dict[str, int]] = {}
+    for city, units in (raw.items() if isinstance(raw, dict) else []):
+        if not str(city).isdigit() or not isinstance(units, dict):
+            continue
+        kept = {}
+        for u, q in units.items():
+            try:
+                if str(u).isdigit() and int(q) > 0:
+                    kept[str(u)] = int(q)
+            except (TypeError, ValueError):
+                continue
+        if kept:
+            out[str(city)] = kept
+    return out
 
 
 def _barbarian_movements(movements: list[dict], town: str, island_id: str | None = None) -> list[dict]:
@@ -364,6 +388,7 @@ class BarbariansRunner(BaseRunner):
         aid = job["account_id"]
         game_account_id = job.get("game_account_id", "")
         self._game_account_id = game_account_id
+        self._job_id = str(jid)
         inputs = job.get("inputs") or {}
         if not isinstance(inputs, dict):
             inputs = {}
@@ -385,6 +410,10 @@ class BarbariansRunner(BaseRunner):
         # the level the farm keeps (0 = keep climbing up to the maximum) or, "auto", the best profit per hour
         self._target_level_input = _parse_int(inputs.get("target_level"), 0)
         self._target_auto = str(inputs.get("target_auto") or "").lower() in {"1", "true", "on", "yes"}
+        # N-194: one army for every island (its town), the islands of the whole account, and the troops kept apart
+        army_city = str(inputs.get("army_city") or "").strip()
+        all_islands = str(inputs.get("all_islands") or "").lower() in {"1", "true", "on", "yes"}
+        self._reserved = _parse_reserve(inputs.get("reserve_units"))
         min_level = _parse_int(inputs.get("min_barb_level"), 1)
         max_level = _parse_int(inputs.get("max_barb_level"), 99)
         extra_ships = _parse_int(inputs.get("extra_ships"), 0)
@@ -402,11 +431,16 @@ class BarbariansRunner(BaseRunner):
             return RunnerResult(success=False, reschedule_seconds=ERROR_RESCHEDULE, data={"error": "credentials_missing"})
         try:
             client = self.get_or_login_game_client(jid, aid, game_account_id, creds)
+            other_islands = self._load_reservations(jid, game_account_id)
+            if all_islands:
+                island_ids = self._account_islands(jid, game_account_id, island_ids, other_islands)
+            # the richest village first: it gets the pick of the troops (N-194)
+            island_ids = sorted(island_ids, key=lambda i: -float((state.get(i) or {}).get("village_value") or 0))
             if dry_run:
                 return self._dry_run(jid, client, city_id, island_ids, troop_mode, custom_troops_json, extra_ships,
                                      game_account_id)
             for island_id in island_ids:
-                town = island_cities.get(island_id) or city_id
+                town = army_city or island_cities.get(island_id) or city_id
                 if not town:
                     self.log(jid, "warn", f"Ilha {island_id}: nenhuma cidade escolhida para atacar.")
                     continue
@@ -633,6 +667,37 @@ class BarbariansRunner(BaseRunner):
                 return ideal
         return int(getattr(self, "_target_level_input", 0) or 0)
 
+    def _route(self, jid, island_id, st, village) -> dict:
+        """N-194: the way from the army's town to this village, from the game's own attack screen (read only): each
+        unit's journey and weight (0 on its own island), and the weight the free merchant ships carry once the loot's
+        ships are set apart. {} when the screen does not open (the plan then counts the town's own island)."""
+        from game_client.actions.barbarians import open_attack_view
+
+        town = st.get("town") or ""
+        if not town or getattr(self, "_client", None) is None:
+            return {}
+        try:
+            from services.resource_transport import change_current_city
+
+            change_current_city(self._client, int(town))
+            view = open_attack_view(self._client, town, island_id)
+        except Exception as exc:  # noqa: BLE001 - the plan goes on with the island's own journey
+            if self.is_network_error(exc):
+                raise
+            self.log(jid, "warn", f"Ilha {island_id}: tela de ataque não abriu para medir a viagem ({exc}).")
+            return {}
+        units = view.get("units") or {}
+        on_hand = int(village.get("total") or 0)
+        loot_ships = max(1, -(-on_hand // SHIP_CAPACITY)) if on_hand else 1
+        capacity = max(1, int(view.get("ship_capacity") or SHIP_CAPACITY))
+        st["route"] = {"journey_seconds": view.get("journey_seconds"), "free_ships": view.get("free_ships"), "at": int(time.time())}
+        weights = {str(u): float(i.get("weight") or 0) for u, i in units.items()}
+        out = {"journey": {str(u): int(i.get("journey") or 0) for u, i in units.items() if i.get("journey")},
+               "weights": weights}
+        if any(weights.values()):
+            out["max_weight"] = max(0, int(view.get("free_ships") or 0) - loot_ships) * capacity
+        return out
+
     def _simulator_plan(self, jid, island_id, level, barb, village, available, st) -> dict | None:
         """Ask the hub's simulator for the best army against this village; None (wait) when it cannot win or fails."""
         if not village.get("defenders_found"):
@@ -644,7 +709,8 @@ class BarbariansRunner(BaseRunner):
                                       f"não ataco sem saber quem defende.")
             return None
         st["blind_level"] = None
-        payload = {"game_account_id": getattr(self, "_game_account_id", ""), "level": level,
+        route = self._route(jid, island_id, st, village)
+        payload = {"game_account_id": getattr(self, "_game_account_id", ""), "level": level, **route,
                    "wall_level": int(village.get("wall_level") or barb.get("wall_level") or 0),
                    "defenders": village.get("defender_ids") or {},
                    "loot": int(village.get("total") or 0) + int(village.get("gold") or 0),
@@ -784,6 +850,8 @@ class BarbariansRunner(BaseRunner):
             if order:
                 client.train_units(int(town), position, order, "troops")
                 self.log(jid, "info", f"Ilha {island_id}: refazendo as perdas no quartel de {town}: {_army_text(order)}.")
+            if short:
+                short = self._retrain_elsewhere(jid, client, island_id, town, short, st)
             st["retrain_short"] = {str(u): q for u, q in short.items()}
             if short:
                 growth = float(pop.get("growth") or 0)
@@ -795,6 +863,89 @@ class BarbariansRunner(BaseRunner):
             if self.is_network_error(exc):
                 raise
             self.log(jid, "warn", f"Ilha {island_id}: não consegui refazer as perdas ({_army_text(units)}): {exc}.")
+
+    def _retrain_elsewhere(self, jid, client, island_id, town, short: dict, st: dict) -> dict:
+        """N-194: what the army's town could not train (citizens, resources), in the account's other towns with a
+        barracks, as their free citizens allow; the job brings them to the army when they are ready (_gather). Returns
+        what still could not be trained anywhere."""
+        try:
+            snapshot = self.hub.get_snapshot(game_account_id=getattr(self, "_game_account_id", "")) or {}
+        except Exception:  # noqa: BLE001 - without the towns, only the army's town trains
+            return short
+        left = {int(u): int(q) for u, q in short.items() if int(q) > 0}
+        for city in snapshot.get("cities") or []:
+            other = str(city.get("id") or "")
+            if not left or not other or other == str(town):
+                continue
+            if not any(str(b.get("building") or "") == "barracks" for b in city.get("buildings") or [] if isinstance(b, dict)):
+                continue
+            try:
+                position, state = self._barracks(client, other)
+                if position is None:
+                    continue
+                barracks = {int(u.get("unit_id")): u for u in ((state or {}).get("units") or []) if u.get("unit_id")}
+                pop = self._population(jid, client, other, {}, fresh=True)
+                free = int(pop.get("citizens") or 0) if pop.get("max") else int(city.get("free_citizens") or 0)
+                free = int(free * (1 - CITIZENS_KEPT))          # each town keeps some of its free citizens
+                order = {}
+                for uid, qty in sorted(left.items(), key=lambda kv: -kv[1]):
+                    info = barracks.get(uid) or {}
+                    take = min(qty, int(info.get("max_build") or 0)) if info else 0
+                    each = max(1, int(info.get("citizens") or 1))
+                    take = min(take, free // each)
+                    if take > 0:
+                        order[uid] = take
+                        free -= take * each
+                if not order:
+                    continue
+                client.train_units(int(other), position, order, "troops")
+                for uid, qty in order.items():
+                    left[uid] -= qty
+                left = {u: q for u, q in left.items() if q > 0}
+                st["trained_elsewhere"] = ([e for e in st.get("trained_elsewhere") or [] if isinstance(e, dict)]
+                                           + [{"city": other, "units": {str(u): q for u, q in order.items()}, "at": int(time.time())}])[-20:]
+                self.log(jid, "info", f"Ilha {island_id}: refazendo em {city.get('name') or other} o que não coube em {town}: "
+                                      f"{_army_text(order)} (vão para o exército quando ficarem prontos).")
+            except Exception as exc:  # noqa: BLE001 - the next town may train it
+                if self.is_network_error(exc):
+                    raise
+                self.log(jid, "warn", f"Ilha {island_id}: não treinei em {other} ({exc}).")
+        return left
+
+    def _gather(self, jid, client, island_id, town, st) -> None:
+        """N-194: the units this job trained in other towns, brought to the army's town as they get ready (what is
+        stationed there, up to what was trained, never the troops reserved in that town)."""
+        pending = [e for e in st.get("trained_elsewhere") or [] if isinstance(e, dict)]
+        if not pending:
+            return
+        island_of = {}
+        try:
+            snapshot = self.hub.get_snapshot(game_account_id=getattr(self, "_game_account_id", "")) or {}
+            island_of = {str(c.get("id")): int(c.get("island_id") or 0) for c in snapshot.get("cities") or []}
+        except Exception:  # noqa: BLE001 - the game finds the island by the town
+            pass
+        keep = []
+        for entry in pending:
+            other = str(entry.get("city") or "")
+            wanted = {int(u): int(q) for u, q in (entry.get("units") or {}).items() if int(q) > 0}
+            if not other or not wanted or other == str(town) or time.time() - int(entry.get("at") or 0) > GATHER_HOURS * 3600:
+                continue
+            here = self._get_available_troops(jid, client, other)        # the reserved troops are already out
+            send = {u: min(q, int(here.get(u) or 0)) for u, q in wanted.items() if int(here.get(u) or 0) > 0}
+            if send:
+                try:
+                    client.station_units(int(other), int(town), send, scope="troops", to_island_id=island_of.get(str(town)) or None)
+                    self.log(jid, "info", f"Ilha {island_id}: levando para o exército em {town} o que ficou pronto em {other}: "
+                                          f"{_army_text(send)}.")
+                except Exception as exc:  # noqa: BLE001 - tried again next round
+                    if self.is_network_error(exc):
+                        raise
+                    self.log(jid, "warn", f"Ilha {island_id}: não consegui levar {_army_text(send)} de {other} ({exc}).")
+                    send = {}
+            rest = {str(u): q - send.get(u, 0) for u, q in wanted.items() if q - send.get(u, 0) > 0}
+            if rest:
+                keep.append({**entry, "units": rest})
+        st["trained_elsewhere"] = keep
 
     def _learn_from_report(self, jid, client, island_id, town, st) -> None:
         """The battle report of the last attack (newest one against the village after the last read): result, rounds,
@@ -853,6 +1004,8 @@ class BarbariansRunner(BaseRunner):
         st["town"] = town
         if (st.get("report_pending") or (st.get("last_troops") and "last_battle" not in st)) and not barb.get("under_attack"):
             self._learn_from_report(jid, client, island_id, town, st)
+        if st.get("trained_elsewhere"):
+            self._gather(jid, client, island_id, town, st)
         if barb.get("under_attack"):
             st["status"] = "battle"
             self.log(jid, "info", f"Ilha {island_id}: batalha em andamento contra a vila nível {level}.")
@@ -860,6 +1013,8 @@ class BarbariansRunner(BaseRunner):
         village = {}
         try:
             village = fetch_village_info(client, island_id)
+            # what the village holds, for the order of the islands (the richest first)
+            st["village_value"] = int(village.get("total") or 0) + int(village.get("gold") or 0)
             village.pop("army_html", None)
         except Exception as exc:  # noqa: BLE001 - without it the level table estimates the loot
             self.log(jid, "warn", f"Ilha {island_id}: tela da vila não abriu ({exc}); uso a tabela de saque.")
@@ -1006,10 +1161,45 @@ class BarbariansRunner(BaseRunner):
     def _get_available_troops(
         self, jid: str, client, city_id: str
     ) -> dict[int, int]:
-        """Fetch stationed troop counts from cityMilitary."""
+        """Fetch stationed troop counts from cityMilitary, less the troops reserved in that city (N-194: the assault
+        team is never sent)."""
         try:
             result = client.fetch_stationed_units(int(city_id), building_type="troops")
-            return result.get("counts") or {}
+            counts = result.get("counts") or {}
         except Exception as exc:
             self.log(jid, "warn", f"Falha ao ler tropas disponíveis: {exc}")
             return {}
+        kept = (getattr(self, "_reserved", None) or {}).get(str(city_id)) or {}
+        if not kept:
+            return counts
+        return {u: q - int(kept.get(str(u)) or 0) for u, q in counts.items() if q - int(kept.get(str(u)) or 0) > 0}
+
+    def _load_reservations(self, jid, game_account_id) -> dict:
+        """The troops reserved across the account's barbarian jobs (summed with this job's own) and the islands the
+        other barbarian jobs farm."""
+        try:
+            answer = self.hub.get_troop_reservations(game_account_id, getattr(self, "_job_id", "")) or {}
+        except Exception as exc:  # noqa: BLE001 - this job's own reservation still holds
+            self.log(jid, "warn", f"Reservas de tropas não lidas ({exc}); vale a deste job.")
+            return {}
+        merged = {c: dict(u) for c, u in (getattr(self, "_reserved", None) or {}).items()}
+        for city, units in (answer.get("reserved") or {}).items():
+            for uid, qty in (units or {}).items():
+                merged.setdefault(str(city), {})[str(uid)] = max(int(merged.get(str(city), {}).get(str(uid)) or 0), int(qty or 0))
+        self._reserved = merged
+        return answer.get("islands") or {}
+
+    def _account_islands(self, jid, game_account_id, island_ids, other_islands) -> list[str]:
+        """Every island with a town of the account, less the ones another barbarian job farms (N-194)."""
+        try:
+            snapshot = self.hub.get_snapshot(game_account_id=game_account_id) or {}
+        except Exception as exc:  # noqa: BLE001 - the islands typed in the job still hold
+            self.log(jid, "warn", f"Ilhas da conta não lidas ({exc}); sigo com as do job.")
+            return island_ids
+        taken = {str(i) for ids in (other_islands or {}).values() for i in ids}
+        found = []
+        for city in snapshot.get("cities") or []:
+            island = str(city.get("island_id") or "")
+            if island and island not in taken and island not in found:
+                found.append(island)
+        return found or island_ids

@@ -18,6 +18,10 @@
            targetLevel: {{ form.target_level.value|default:0 }},
            targetAuto: {% if form.target_auto.value == True or form.target_auto.value == 'true' or form.target_auto.value == 'True' %}true{% else %}false{% endif %},
            retrain: {% if form.retrain_losses.value == False or form.retrain_losses.value == 'false' or form.retrain_losses.value == 'False' %}false{% else %}true{% endif %},
+           army: '{{ form.army_city.value|default:''|escapejs }}',
+           allIslands: {% if form.all_islands.value == True or form.all_islands.value == 'true' or form.all_islands.value == 'True' %}true{% else %}false{% endif %},
+           reserveCity: '',
+           reserve: {},
            modes: [
              {v: 'schematic', icon: 'bi-diagram-3', t: 'Pelo nível da vila', d: 'O necessário para cada nível: o dobro dos bárbaros até o 9, a tabela do nível depois.'},
              {v: 'available', icon: 'bi-collection', t: 'Todas da cidade', d: 'Manda todas as tropas de combate que estiverem na cidade.'},
@@ -34,12 +38,26 @@
                this.town[i.id] = towns.some(c => c.id === String(saved[i.id])) ? String(saved[i.id]) : (towns[0] ? towns[0].id : '');
              });
              try { const c = JSON.parse('{{ form.custom_troops.value|default:''|escapejs }}' || '{}'); Object.keys(c).forEach(k => this.custom[k] = Number(c[k]) || 0); } catch (e) {}
+             try {
+               const r = JSON.parse('{{ form.reserve_units.value|default:''|escapejs }}' || '{}');
+               const city = Object.keys(r)[0];
+               if (city) { this.reserveCity = city; Object.keys(r[city] || {}).forEach(k => this.reserve[k] = Number(r[city][k]) || 0); }
+             } catch (e) {}
+             if (this.army && !this.ui.cities.some(c => c.id === this.army)) this.army = '';
            },
+           islandIds() { return this.allIslands ? this.ui.islands.map(i => i.id) : this.islands; },
+           reserveTown() { return this.ui.cities.find(c => c.id === this.reserveCity) || null; },
+           reserveJson() {
+             const units = {};
+             Object.keys(this.reserve).forEach(k => { const v = Math.max(0, Math.floor(Number(this.reserve[k]) || 0)); if (v) units[k] = v; });
+             return this.reserveCity && Object.keys(units).length ? JSON.stringify({[this.reserveCity]: units}) : '';
+           },
+           reserveTotal() { return Object.values(this.reserve).reduce((s, v) => s + (Number(v) || 0), 0); },
            towns(i) { return this.ui.cities.filter(c => c.island_id === i.id).sort((a, b) => b.total - a.total); },
            townOf(i) { return this.ui.cities.find(c => c.id === this.town[i.id]) || null; },
            toggleIsland(id) { const k = this.islands.indexOf(id); k >= 0 ? this.islands.splice(k, 1) : this.islands.push(id); },
-           townMap() { const out = {}; this.islands.forEach(id => { if (this.town[id]) out[id] = this.town[id]; }); return JSON.stringify(out); },
-           firstTown() { return this.islands.length ? (this.town[this.islands[0]] || '') : ''; },
+           townMap() { const out = {}; this.islandIds().forEach(id => { const t = this.army || this.town[id]; if (t) out[id] = t; }); return JSON.stringify(out); },
+           firstTown() { if (this.army) return this.army; const ids = this.islandIds(); return ids.length ? (this.town[ids[0]] || '') : ''; },
            city() { return this.ui.cities.find(c => c.id === this.firstTown()) || null; },
            customJson() {
              const out = {};
@@ -49,7 +67,10 @@
            fmt(n) { return Number(n || 0).toLocaleString('pt-BR'); },
          }">
       <input type="hidden" name="{{ form.city_id.html_name }}" :value="firstTown()">
-      <input type="hidden" name="{{ form.island_ids.html_name }}" :value="islands.join(',')">
+      <input type="hidden" name="{{ form.island_ids.html_name }}" :value="islandIds().join(',')">
+      <input type="hidden" name="{{ form.army_city.html_name }}" :value="army">
+      <input type="hidden" name="{{ form.all_islands.html_name }}" :value="allIslands ? 'true' : 'false'">
+      <input type="hidden" name="{{ form.reserve_units.html_name }}" :value="reserveJson()">
       <input type="hidden" name="{{ form.island_cities.html_name }}" :value="townMap()">
       <input type="hidden" name="{{ form.troop_mode.html_name }}" :value="mode">
       <input type="hidden" name="{{ form.custom_troops.html_name }}" :value="mode === 'custom' ? customJson() : ''">
@@ -64,8 +85,63 @@
       <input type="hidden" name="{{ form.retrain_losses.html_name }}" :value="retrain ? 'true' : 'false'">
       <input type="hidden" name="{{ form.max_random_wait.html_name }}" :value="randomWait">
 
-      {# ── Ilhas ── #}
+      {# ── Exército (N-194): one army, every island ── #}
       <div class="card !p-4">
+        <label class="form-label text-xs mb-2 block"><i class="bi bi-shield-fill text-sea mr-1"></i>Exército</label>
+        <div class="grid gap-3 md:grid-cols-2">
+          <div>
+            <label class="form-label text-[11px] mb-1 block">Cidade do exército</label>
+            <select x-model="army" class="form-select !py-1.5 !text-xs w-full">
+              <option value="">cada ilha com a sua cidade</option>
+              <template x-for="c in ui.cities" :key="'army' + c.id">
+                <option :value="c.id" :selected="army === c.id" x-text="c.name + (c.total ? ' · ' + fmt(c.total) + ' tropas' : '')"></option>
+              </template>
+            </select>
+            <span class="text-[10px] text-muted" x-text="army ? 'ataca as vilas de qualquer ilha saindo daqui (de navio)' : 'cada vila é atacada de uma cidade da própria ilha'"></span>
+          </div>
+          <div>
+            <label class="form-label text-[11px] mb-1 block">Todas as ilhas da conta</label>
+            <button type="button" role="switch" :aria-checked="allIslands" @click="allIslands = !allIslands" class="flex items-center gap-2 select-none text-xs text-muted">
+              <span class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out"
+                    :class="allIslands ? 'bg-[var(--ik-sea)]' : 'bg-gray-300'">
+                <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform duration-200 ease-in-out"
+                      :style="allIslands ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
+              </span>
+              <span :class="allIslands ? 'text-ink font-semibold' : ''" x-text="allIslands ? 'sim · menos as de outro job' : 'não'"></span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {# ── Equipe reservada (N-194): the farm never sends nor moves it; the Manter never gathers it ── #}
+      <div class="card !p-4">
+        <label class="form-label text-xs mb-2 block"><i class="bi bi-lock-fill text-sea mr-1"></i>Equipe reservada</label>
+        <div class="grid gap-3 md:grid-cols-3">
+          <div>
+            <select x-model="reserveCity" @change="reserve = {}" class="form-select !py-1.5 !text-xs w-full">
+              <option value="">sem reserva</option>
+              <template x-for="c in ui.cities.filter(c => c.total)" :key="'rs' + c.id">
+                <option :value="c.id" :selected="reserveCity === c.id" x-text="c.name + ' · ' + fmt(c.total) + ' tropas'"></option>
+              </template>
+            </select>
+            <span class="text-[10px] text-muted" x-text="reserveTotal() ? fmt(reserveTotal()) + ' unidades fora do farm e do Manter' : 'o farm não usa nem move; o Manter não junta'"></span>
+          </div>
+          <div class="md:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-2" x-show="reserveTown()">
+            <template x-for="t in (reserveTown() ? reserveTown().troops : [])" :key="'rv' + t.id">
+              <label class="flex items-center gap-2 rounded-lg border px-2 py-1.5" style="border-color: var(--ik-line);">
+                <img :src="t.icon" alt="" class="h-8 w-8 object-contain">
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-[11px] font-semibold text-ink" x-text="t.name"></span>
+                  <input type="number" min="0" :max="t.have" x-model.number="reserve[t.id]" placeholder="0" class="form-input !py-0.5 !text-xs w-full">
+                </span>
+              </label>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      {# ── Ilhas ── #}
+      <div class="card !p-4" x-show="!allIslands">
         <label class="form-label text-xs mb-2 block"><i class="bi bi-geo-alt-fill text-sea mr-1"></i>Ilhas <span class="text-[var(--ik-bad)]">*</span></label>
         <template x-if="!ui.islands.length">
           <div class="text-xs text-muted">Sem cidades na última leitura desta conta.</div>
@@ -91,7 +167,7 @@
                   </span>
                 </div>
               </button>
-              <div class="px-3 pb-3" x-show="islands.includes(i.id)">
+              <div class="px-3 pb-3" x-show="islands.includes(i.id) && !army">
                 <template x-if="towns(i).length > 1">
                   <select x-model="town[i.id]" class="form-select !py-1 !text-xs w-full">
                     <template x-for="c in towns(i)" :key="c.id">
@@ -210,7 +286,7 @@
                 <span class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform duration-200 ease-in-out"
                       :style="retrain ? 'transform:translateX(20px)' : 'transform:translateX(0)'"></span>
               </span>
-              <span :class="retrain ? 'text-ink font-semibold' : ''" x-text="retrain ? 'no quartel' : 'não'"></span>
+              <span :class="retrain ? 'text-ink font-semibold' : ''" x-text="retrain ? 'em qualquer quartel' : 'não'"></span>
             </button>
           </div>
         </div>

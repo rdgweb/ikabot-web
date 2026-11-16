@@ -21,6 +21,18 @@
   </div>
 </div>
 
+{% if barb.army_city or barb.reserved %}
+<div class="flex flex-wrap items-center gap-2 mb-4 text-[11px]">
+  {% if barb.army_city %}<span class="rounded-full px-2.5 py-1" style="background: rgba(79,134,185,.12); color: var(--ik-sea-dark);"><i class="bi bi-shield-fill"></i> exército em <b>{{ barb.army_city }}</b> · todas as ilhas saem dela</span>{% endif %}
+  {% for r in barb.reserved %}
+  <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-1" style="background: var(--ik-sand-light); color: var(--ik-muted);" title="o farm não usa nem move; o Manter não junta">
+    <i class="bi bi-lock-fill"></i> reservado em <b class="text-ink">{{ r.city }}</b>
+    {% for u in r.units %}<img src="{{ u.icon }}" alt="" class="h-4 w-4 object-contain" title="{{ u.name }}"><span class="tabular-nums text-ink">{{ u.qty|intcomma }}</span>{% endfor %}
+  </span>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% for i in barb.islands %}
 <div class="space-y-3{% if not forloop.last %} mb-5{% endif %}">
 
@@ -56,7 +68,7 @@
       {% if i.attacked_at %}
       <div class="flex flex-wrap items-baseline justify-between gap-2">
         <div class="text-[10px] uppercase tracking-wide text-muted">Ataque · {{ i.attacked_at|date:"d/m H:i" }}</div>
-        <div class="text-[11px] text-muted"><i class="bi bi-truck"></i> {{ i.last_ships }} mercantes</div>
+        <div class="text-[11px] text-muted"><i class="bi bi-truck"></i> {{ i.last_ships }} mercantes{% if i.journey_minutes %} · <i class="bi bi-clock"></i> {{ i.journey_minutes }} min de viagem{% endif %}</div>
       </div>
       <div class="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <span class="text-lg font-bold tabular-nums text-[var(--ik-sea)]">{{ i.village_resources|intcomma }} <span class="text-[11px] font-normal text-muted">recursos</span></span>
@@ -112,6 +124,12 @@
         <div><div class="text-[10px] text-muted">cresce</div><b class="text-sm tabular-nums text-ink">{{ i.farm_population.growth|floatformat:1 }}/h</b></div>
         <div title="cidadãos que um ciclo pode perder sem a cidade encolher"><div class="text-[10px] text-muted">repõe/ciclo</div><b class="text-sm tabular-nums text-ink">{{ i.farm_population.per_cycle|default:"–" }}</b></div>
       </div>
+      {% if i.elsewhere %}
+      <div class="mt-2 flex flex-wrap items-center gap-1 text-[11px] text-muted" title="treinados em outras cidades; o job leva para o exército quando ficam prontos">
+        <i class="bi bi-arrow-left-right"></i> de outras cidades:
+        {% for u in i.elsewhere %}<img src="{{ u.icon }}" alt="" class="h-4 w-4 object-contain" title="{{ u.name }}"><span class="tabular-nums text-ink">{{ u.qty|intcomma }}</span>{% endfor %}
+      </div>
+      {% endif %}
       {% if i.farm_population.short %}
       <div class="mt-2 rounded-lg px-2 py-1 text-[11px]" style="background: rgba(176,74,58,.10); color: #b04a3a;">
         <i class="bi bi-exclamation-triangle"></i> {{ i.farm_population.short|intcomma }} sem refazer
