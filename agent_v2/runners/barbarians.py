@@ -272,6 +272,8 @@ def _cargo_total(cargo: dict) -> tuple[int, int]:
 
 _NOT_BARBARIAN_MISSIONS = ("deployarmy", "deployfleet", "transport", "trade")
 GATHER_HOURS = 24              # units trained in another town for the army are brought to it for this long at most
+SAME_ISLAND_JOURNEY = 10 * 60  # town -> its own island's village, when the attack screen was not read
+COLLECT_MARGIN = 15 * 60       # the village must still be down this long after the merchants arrive
 
 
 def _parse_reserve(raw) -> dict[str, dict[str, int]]:
@@ -1033,7 +1035,15 @@ class BarbariansRunner(BaseRunner):
                     st["gold_pending"] = 0
             if left is not None:
                 st["left_before"] = int(left)
-            if do_loot and left and int(left) > 0:
+            # 15/11 22:02: the collection left with the village about to be rebuilt; it would get there to a fight. Only
+            # when the village is still down on arrival (the journey, a margin, and a known end of the rebuild)
+            remaining = int(st.get("rebuild_end") or 0) - int(time.time())
+            journey = int((st.get("route") or {}).get("journey_seconds") or 0) or SAME_ISLAND_JOURNEY
+            safe = remaining > journey + COLLECT_MARGIN
+            if do_loot and left and int(left) > 0 and not safe:
+                self.log(jid, "info", f"Ilha {island_id}: {_n(left)} recursos na vila, mas ela volta em "
+                                      f"{max(0, remaining) // 60} min; os mercantes não chegariam antes. Não coleto.")
+            if do_loot and left and int(left) > 0 and safe:
                 available = self._get_available_troops(jid, client, town)
                 unit = _loot_unit(available)
                 if unit:

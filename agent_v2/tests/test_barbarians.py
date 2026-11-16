@@ -123,7 +123,7 @@ class RoundTests(unittest.TestCase):
             runner._island_round("j", game, "4478", "63388", st, totals, *args)
             self.assertEqual((sent[0]["from_city_id"], sent[0]["troops"], sent[0]["transporters"]), ("63388", {303: 15}, 3))
             Game.barb = {"level": 4, "destroyed": True, "under_attack": False}
-            village.update(total=300)                                   # 900 came back with the attack
+            village.update(total=300, rebuild_end=int(__import__("time").time()) + 7200)   # 900 came back with the attack
             runner._island_round("j", game, "4478", "63388", st, totals, *args)
             self.assertEqual((sent[1]["troops"], sent[1]["transporters"]), ({315: 1}, 1))
             village.update(total=0)                                     # the collection took the rest
@@ -201,6 +201,43 @@ class MovementTests(unittest.TestCase):
                 return {"movement_details": []}
 
         self.assertFalse(runner._on_the_way("j", Idle(), "4477", "37441", st, totals, []))
+
+
+class CollectTimingTests(unittest.TestCase):
+    """15/11 22:02: the collection left with the village about to be rebuilt (it would arrive to a fight)."""
+
+    def test_no_collection_when_the_village_is_back_before_the_merchants(self):
+        import time as _time
+
+        import runners.barbarians as module
+
+        runner = BarbariansRunner.__new__(BarbariansRunner)
+        runner.hub = _Hub()
+        runner._get_available_troops = lambda jid, client, town: {303: 20, 315: 7}
+        sent = []
+        village = {"total": 16_001, "gold": 0, "rebuild_end": int(_time.time()) + 8 * 60}
+        original = module.fetch_village_info
+        module.fetch_village_info = lambda client, island_id: dict(village)
+
+        class Game:
+            def get_barbarian_state(self, island_id):
+                return {"level": 35, "destroyed": True, "under_attack": False}
+
+            def attack_barbarian_village(self, **kw):
+                sent.append(kw)
+                return {"transporters": kw["transporters"], "free_ships": 40}
+
+        try:
+            st = {}
+            totals = {"total_attacks": 0, "total_loots": 0, "loot_total": 0, "gold_total": 0}
+            runner._island_round("j", Game(), "4477", "37441", st, totals, "schematic", "", True, 1, 50, 0, 0)
+            self.assertEqual(sent, [])
+            self.assertTrue(any("não coleto" in m.lower() for m in runner.hub.logs))
+            village["rebuild_end"] = int(_time.time()) + 3600              # an hour left: it is safe
+            runner._island_round("j", Game(), "4477", "37441", st, totals, "schematic", "", True, 1, 50, 0, 0)
+            self.assertEqual(len(sent), 1)
+        finally:
+            module.fetch_village_info = original
 
 
 class SimulatorPlanTests(unittest.TestCase):
