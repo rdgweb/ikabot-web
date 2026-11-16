@@ -145,7 +145,7 @@ def _cycle(st: dict) -> int:
 
 
 def farm_book(ledger: list[dict], prices: dict, unit_citizens: dict | None = None,
-              population: dict | None = None) -> dict[int, dict]:
+              population: dict | None = None, values: dict | None = None) -> dict[int, dict]:
     """Per level, from the battles the job fought: loot, gold, what the losses cost to train again, rounds, the time
     between this attack and the next (the cycle), the profit and the profit per hour (averages per battle); the
     citizens the losses take and whether the town grows them back within the cycle (sustainable)."""
@@ -157,7 +157,8 @@ def farm_book(ledger: list[dict], prices: dict, unit_citizens: dict | None = Non
             continue
         cost = sum(float(prices.get(str(u)) or prices.get(u) or 0) * int(q) for u, q in (entry.get("losses") or {}).items())
         row = out.setdefault(level, {"battles": 0, "loot": 0, "gold": 0, "losses_cost": 0, "rounds": 0, "cycle": 0, "cycles": 0,
-                                     "citizens": 0})
+                                     "citizens": 0, "value": 0.0})
+        row["value"] += loot_value(entry, values)
         row["battles"] += 1
         row["citizens"] += sum(max(1, per_unit.get(str(u), 1)) * int(q) for u, q in (entry.get("losses") or {}).items())
         row["loot"] += int(entry.get("loot") or 0)
@@ -171,7 +172,7 @@ def farm_book(ledger: list[dict], prices: dict, unit_citizens: dict | None = Non
         n = row["battles"]
         row.update(loot=row["loot"] // n, gold=row["gold"] // n, losses_cost=round(row["losses_cost"] / n),
                    rounds=round(row["rounds"] / n, 1), cycle=round(row["cycle"] / row["cycles"]) if row["cycles"] else None)
-        row["profit"] = row["loot"] + row["gold"] - row["losses_cost"]
+        row["profit"] = round(row["value"] / n - row["losses_cost"])
         row["per_hour"] = round(row["profit"] * 60 / row["cycle"]) if row["cycle"] else None
         row["citizens"] = round(row["citizens"] / n)
         limit = sustainable_citizens(population, row["cycle"])
@@ -218,6 +219,34 @@ _GOODS_PT = {"wood": "madeira", "wine": "vinho", "marble": "mármore", "glass": 
 
 def _units_text(units: dict) -> str:
     return ", ".join(f"{_n(qty)} {_GOODS_PT.get(name, name)}" for name, qty in (units or {}).items())
+
+
+_CARGO_NAMES = {"wood": "wood", "wine": "wine", "marble": "marble", "glass": "crystal", "crystal": "crystal", "sulfur": "sulfur"}
+RESOURCES = ("wood", "wine", "marble", "crystal", "sulfur")
+
+
+def _cargo_resources(cargo: dict) -> dict[str, int]:
+    """{resource: amount} carried by one movement (the game's "glass" is crystal); gold apart."""
+    out: dict[str, int] = {}
+    for key, qty in (cargo or {}).items():
+        name = _CARGO_NAMES.get(str(key).lower())
+        if name and int(qty or 0):
+            out[name] = out.get(name, 0) + int(qty)
+    return out
+
+
+def loot_value(entry: dict, values: dict | None) -> float:
+    """N-194: what a battle brought, in gold: each resource by its value plus the gold. Without values (an agent that
+    never got them from the hub) or without the loot by resource (older entries), the resources count one each, or at
+    the average value."""
+    gold = float(entry.get("gold") or 0)
+    if not values:
+        return float(entry.get("loot") or 0) + gold
+    by_resource = entry.get("loot_by_resource") or {}
+    if by_resource:
+        return sum(float(values.get(name) or 0) * float(qty or 0) for name, qty in by_resource.items()) + gold
+    average = sum(float(values.get(name) or 0) for name in RESOURCES) / len(RESOURCES)
+    return float(entry.get("loot") or 0) * average + gold
 
 
 def _cargo_total(cargo: dict) -> tuple[int, int]:
@@ -416,8 +445,11 @@ class BarbariansRunner(BaseRunner):
                     if entry is None:
                         entry = {"at": st.get("attacked_at"), "level": st.get("attacked_level"), "losses": {}, "cycle_minutes": None}
                         ledger.append(entry)
+                    by_resource = dict(entry.get("loot_by_resource") or {})
+                    for name, qty in _cargo_resources(m.get("cargo") or {}).items():
+                        by_resource[name] = int(by_resource.get(name) or 0) + qty
                     entry.update(loot=int(entry.get("loot") or 0) + resources, gold=int(entry.get("gold") or 0) + gold,
-                                 book=st.get("attacked_book"))
+                                 loot_by_resource=by_resource, book=st.get("attacked_book"))
                     st["ledger"] = ledger[-LEDGER_SIZE:]
                 totals["loot_total"] = int(totals.get("loot_total") or 0) + resources
                 totals["gold_total"] = int(totals.get("gold_total") or 0) + gold
@@ -478,6 +510,8 @@ class BarbariansRunner(BaseRunner):
                 "unit_citizens": st.get("unit_citizens") or {},
                 "population": st.get("population") or {},
                 "loot": int(st.get("village_resources") or 0) + int(st.get("village_gold") or 0),
+                "loot_by_resource": st.get("village_by_resource") or [],
+                "loot_gold": int(st.get("village_gold") or 0),
                 "cycle_minutes": _cycle(st)}) or {}
         except Exception as exc:  # noqa: BLE001 - the battle goes on without us
             if self.is_network_error(exc):
@@ -550,7 +584,8 @@ class BarbariansRunner(BaseRunner):
         """The level the farm keeps: the one chosen in the job, or (auto) the best profit per hour seen."""
         if getattr(self, "_target_auto", False):
             current = [e for e in (st.get("ledger") or []) if isinstance(e, dict) and int(e.get("book") or 0) >= BOOK_VERSION]
-            book = farm_book(current, st.get("prices") or {}, st.get("unit_citizens") or {}, st.get("population") or {})
+            book = farm_book(current, st.get("prices") or {}, st.get("unit_citizens") or {}, st.get("population") or {},
+                             st.get("resource_values"))
             ideal = ideal_level(book)
             st["ideal_level"] = ideal
             if ideal:
@@ -572,6 +607,8 @@ class BarbariansRunner(BaseRunner):
                    "wall_level": int(village.get("wall_level") or barb.get("wall_level") or 0),
                    "defenders": village.get("defender_ids") or {},
                    "loot": int(village.get("total") or 0) + int(village.get("gold") or 0),
+                   "loot_by_resource": list(village.get("resources") or []),
+                   "loot_gold": int(village.get("gold") or 0),
                    "cycle_minutes": _cycle(st),
                    "train_seconds": self._train_seconds(jid, self._client, st.get("town") or "", st),
                    "unit_citizens": st.get("unit_citizens") or {},
@@ -585,6 +622,9 @@ class BarbariansRunner(BaseRunner):
         pred = plan.get("prediction") or {}
         if plan.get("prices"):
             st["prices"] = plan["prices"]
+        if isinstance(plan.get("resource_values"), dict):
+            # N-194: gold per unit of each resource (the server's market), to weigh the loot like the losses
+            st["resource_values"] = plan["resource_values"]
         st["plan"] = {"level": level, "army": plan.get("army") or {}, "rounds": pred.get("rounds"),
                       "morale_end": pred.get("morale_end"), "losses": pred.get("attacker_losses") or {},
                       "wall_level": payload["wall_level"], "training": (plan.get("training") or [])[:4],
@@ -872,6 +912,7 @@ class BarbariansRunner(BaseRunner):
                   report_pending=True, report_tries=0, attack_plan=st.get("plan"),
                   last_troops={str(k): v for k, v in troops.items()}, last_ships=result["transporters"],
                   village_resources=on_hand, village_gold=int(village.get("gold") or 0),
+                  village_by_resource=list(village.get("resources") or []),
                   left_before=on_hand if on_hand else None, gold_pending=int(village.get("gold") or 0))
         warn = " Atenção: a partir do nível 10 os bárbaros podem se vingar." if level >= 10 else ""
         if village.get("defenders"):

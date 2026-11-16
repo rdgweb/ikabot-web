@@ -1748,23 +1748,31 @@ class JobListView(FilterSortListView):
     def _barbarian_farm(st: dict, inputs: dict) -> dict:
         """N-182: per level, from the battles fought, what the farm takes and costs (losses priced as training them
         again) and the profit per hour; the village's measured decay; the level the farm keeps."""
-        from apps.combat.services.barbarian_planner import sustainable_citizens, unit_price
+        from apps.combat.services import farm_value
+        from apps.combat.services.barbarian_planner import citizen_value, sustainable_citizens
 
-        prices = st.get("prices") or {}
         per_unit = {str(u): int(c) for u, c in (st.get("unit_citizens") or {}).items()}
         pop = st.get("population") or {}
+        # N-194: everything in gold: each resource by its market value, each citizen by the tax it stops paying
+        values = st.get("resource_values") if isinstance(st.get("resource_values"), dict) else farm_value.resource_values()
+        per_citizen = citizen_value(pop)
+
+        def lost_gold(uid, qty) -> float:
+            return (farm_value.unit_value(int(uid), values) + max(1, per_unit.get(str(uid), 1)) * per_citizen) * int(qty)
+
         book: dict[int, dict] = {}
         for entry in st.get("ledger") or []:
             if not isinstance(entry, dict) or entry.get("loot") is None or not entry.get("level"):
                 continue
             row = book.setdefault(int(entry["level"]), {"n": 0, "loot": 0, "gold": 0, "cost": 0.0, "rounds": 0, "cycle": 0, "cycles": 0,
-                                                        "citizens": 0})
+                                                        "citizens": 0, "value": 0.0})
             row["n"] += 1
             row["citizens"] += sum(max(1, per_unit.get(str(u), 1)) * int(q) for u, q in (entry.get("losses") or {}).items())
             row["loot"] += int(entry.get("loot") or 0)
             row["gold"] += int(entry.get("gold") or 0)
-            # the prices the planner gave the job (citizens at the town's own worth), the game table otherwise
-            row["cost"] += sum(float(prices.get(str(u)) or unit_price(int(u))) * int(q) for u, q in (entry.get("losses") or {}).items())
+            row["value"] += farm_value.loot_value(entry.get("loot_by_resource"), int(entry.get("gold") or 0), values,
+                                                  total=int(entry.get("loot") or 0))
+            row["cost"] += sum(lost_gold(u, q) for u, q in (entry.get("losses") or {}).items())
             row["rounds"] += int(entry.get("rounds") or 0)
             if entry.get("cycle_minutes"):
                 row["cycle"] += int(entry["cycle_minutes"])
@@ -1774,7 +1782,7 @@ class JobListView(FilterSortListView):
             r = book[level]
             n = r["n"]
             cycle = round(r["cycle"] / r["cycles"]) if r["cycles"] else None
-            profit = (r["loot"] + r["gold"] - r["cost"]) / n
+            profit = (r["value"] - r["cost"]) / n
             citizens = round(r["citizens"] / n)
             limit = sustainable_citizens(pop, cycle)
             rows.append({"level": level, "battles": n, "loot": r["loot"] // n, "gold": r["gold"] // n, "cost": round(r["cost"] / n),
@@ -1796,7 +1804,16 @@ class JobListView(FilterSortListView):
                           "pct": round(100 * occupied / room) if room else 0, "growth": float(pop.get("growth") or 0),
                           "short": sum(int(q) for q in (st.get("retrain_short") or {}).values()),
                           "per_cycle": sustainable_citizens(pop, st["cycle_minutes"] if int(st.get("cycle_minutes") or 0) >= 60 else 180)}
+        # the last loot against what training its battle's losses again takes, resource by resource
+        cover = None
+        for entry in reversed([e for e in (st.get("ledger") or []) if isinstance(e, dict)]):
+            if entry.get("loot_by_resource"):
+                names = {"wood": "madeira", "wine": "vinho", "marble": "mármore", "crystal": "cristal", "sulfur": "enxofre"}
+                cover = {"level": entry.get("level"),
+                         "rows": [{**c, "name": names[c["resource"]]} for c in farm_value.coverage(entry["loot_by_resource"], entry.get("losses") or {})]}
+                break
         return {"farm_book": rows, "farm_best": best["level"] if best else None, "farm_population": population,
+                "farm_cover": cover, "resource_values": values,
                 "decay_hours": round(sum(d["hours"] for d in decay) / len(decay), 1) if decay else None,
                 "decay_count": len(decay), "farm_target": target or None, "farm_auto": auto,
                 "waiting_level": st.get("waiting_level")}

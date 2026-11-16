@@ -555,3 +555,43 @@ class RecallTests(unittest.TestCase):
 
         self.assertEqual(_cycle({"cycle_minutes": 18}), 180)
         self.assertEqual(_cycle({"cycle_minutes": 215}), 215)
+
+
+class ResourceValueTests(unittest.TestCase):
+    """N-194: the loot counts each resource by what it is worth to the accounts (the hub's order), like the losses."""
+
+    VALUES = {"marble": 3.0, "crystal": 2.5, "sulfur": 2.0, "wine": 1.5, "wood": 1.0}
+
+    def test_the_ledger_keeps_the_loot_by_resource(self):
+        import time as _time
+
+        runner = BarbariansRunner.__new__(BarbariansRunner)
+        runner.hub = _Hub()
+        runner.is_network_error = lambda exc: False
+        now = int(_time.time())
+        back = {"is_own": True, "origin": {"cityId": 0}, "target": {"cityId": "37441"}, "is_returning": True,
+                "event_id": 9, "event_time": now + 45, "cargo": {"wood": 600, "glass": 50, "sulfur": 300, "gold": 70}}
+
+        class Game:
+            def fetch_military_advisor(self, city_id):
+                return {"movement_details": [dict(back)]}
+
+        st = {"last_mission": "attack", "attacked_at": now - 3600, "attacked_level": 30}
+        runner._on_the_way("j", Game(), "4477", "37441", st, {"loot_total": 0, "gold_total": 0}, [])
+        entry = st["ledger"][-1]
+        self.assertEqual(entry["loot_by_resource"], {"wood": 600, "crystal": 50, "sulfur": 300})
+        self.assertEqual((entry["loot"], entry["gold"]), (950, 70))
+
+    def test_the_book_weighs_the_loot(self):
+        from runners.barbarians import loot_value
+
+        ledger = [{"level": 30, "loot": 1000, "gold": 100, "loot_by_resource": {"marble": 1000}, "losses": {"303": 1},
+                   "cycle_minutes": 60},
+                  {"level": 31, "loot": 1000, "gold": 100, "loot_by_resource": {"wood": 1000}, "losses": {"303": 1},
+                   "cycle_minutes": 60}]
+        book = farm_book(ledger, {"303": 200}, None, None, self.VALUES)
+        self.assertEqual(book[30]["profit"], 3000 + 100 - 200)
+        self.assertEqual(book[31]["profit"], 1000 + 100 - 200)
+        # without values (an old hub): one each, as before
+        self.assertEqual(loot_value(ledger[0], None), 1100)
+        self.assertEqual(loot_value({"loot": 1000, "gold": 0}, self.VALUES), 1000 * 2.0)

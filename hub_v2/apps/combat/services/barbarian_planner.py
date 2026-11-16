@@ -126,14 +126,14 @@ def unit_citizens(uid: int) -> int:
 
 
 def unit_price(uid: int) -> float:
-    """What training one unit again costs: its price (base, from the game) and its citizens."""
-    from core.catalogs import TRAINING_UNITS
+    """What losing one unit costs, in gold (N-194): each resource it takes to train again by its market value, and its
+    citizens by the tax they stop paying until the town grows them back."""
+    from .farm_value import unit_resources, unit_value
 
     citizens = unit_citizens(uid) * float(_FARM.get("citizen_value") or CITIZEN_VALUE)
-    for unit in TRAINING_UNITS.get("troops", []):
-        if int(unit["id"]) == int(uid):
-            return float(sum(int(unit.get(k) or 0) for k in ("wood", "wine", "marble", "crystal", "sulfur"))) + citizens
-    return 100.0
+    if not unit_resources(uid):
+        return 100.0 + citizens
+    return unit_value(uid, _FARM.get("values")) + citizens
 
 
 def _unit_cost(uid: int) -> float:
@@ -147,13 +147,17 @@ def _fill(line: str, uid: int, field_level: int, waves: int) -> int:
 
 
 _FARM = {"train_seconds": {}, "cycle_minutes": 0.0, "citizen_value": CITIZEN_VALUE, "unit_citizens": {},
-         "free_citizens": None}     # set by plan()/reinforce() for the call in course
+         "free_citizens": None, "values": None}     # set by plan()/reinforce() for the call in course
 
 
-def set_town(population: dict | None = None, unit_citizens_read: dict | None = None) -> None:
-    """The town the army leaves from: what its citizens are worth and how many each unit takes."""
+def set_town(population: dict | None = None, unit_citizens_read: dict | None = None,
+             resource_values: dict | None = None) -> None:
+    """The town the army leaves from: what its citizens are worth, how many each unit takes, and what each resource
+    is worth (gold per unit; the defaults of farm_value when not given)."""
+    from .farm_value import DEFAULT_VALUES
+
     pop = population or {}
-    _FARM.update(citizen_value=citizen_value(pop),
+    _FARM.update(citizen_value=citizen_value(pop), values=dict(resource_values or DEFAULT_VALUES),
                  unit_citizens={int(u): int(c) for u, c in (unit_citizens_read or {}).items() if str(u).isdigit() and int(c or 0) > 0},
                  free_citizens=int(pop["citizens"]) if str(pop.get("citizens") or "").isdigit() else None)
 
@@ -184,7 +188,7 @@ def _key(sim: dict, army: dict[int, int], round_value: float = 0.0) -> tuple:
 
 
 def round_value(loot: float, cycle_minutes: float) -> float:
-    """What one more round of battle costs a farm: the share of a cycle's loot it delays."""
+    """What one more round of battle costs a farm: the share of a cycle's loot (in gold, N-194) it delays."""
     if not loot or not cycle_minutes:
         return 0.0
     if float(cycle_minutes) < 60:
@@ -238,13 +242,22 @@ RESERVE_UNITS = (303, 302, 315, 301)   # cheap bodies that wait in the reserve a
 SEARCH_STEPS = 25                      # rounds of the walk from the best army of the grid
 
 
+RESERVE_STEPS = (50, 100, 200, 400)     # the reserve's bodies also move in blocks (N-194)
+START_POINTS = 3                       # the walk starts from the best armies of the grid, not only from the first
+
+
 def _steps(field_level: int) -> dict[int, list[int]]:
-    """How much of each unit one step of the walk adds or takes: half a wave and a whole wave of its line."""
-    out: dict[int, list[int]] = {COOK: [5, 10]}
+    """How much of each unit one step of the walk adds or takes: half a wave up to four waves of its line, and blocks
+    of the reserve's bodies (N-194: on 15/11 the job sent 210 hoplites, 52 carabineers and 15 bombardiers twice as a
+    reinforcement in a battle the plan had left them out of; steps of half a wave never reached them)."""
+    out: dict[int, list[int]] = {COOK: [5, 10, 20]}
     for line, units in LINE_UNITS.items():
         for uid in units:
             wave = _fill(line, uid, field_level, 1)
-            out[uid] = sorted({max(1, wave // 2), wave})
+            sizes = {max(1, wave // 2), wave, 2 * wave, 4 * wave}
+            if uid in RESERVE_UNITS:
+                sizes |= set(RESERVE_STEPS)
+            out[uid] = sorted(sizes)
     return out
 
 
@@ -284,7 +297,7 @@ def _improve(best: tuple, available: dict[int, int], field_level: int, fight, pe
 def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: int = 0, field_level: int = 5,
          upgrades: dict[int, dict] | None = None, explain_training: bool = True, per_round: float = 0.0,
          train_seconds: dict | None = None, cycle_minutes: float = 0.0, population: dict | None = None,
-         unit_citizens_read: dict | None = None) -> dict:
+         unit_citizens_read: dict | None = None, resource_values: dict | None = None) -> dict:
     """The best army for this village from what the town has, with the simulation that chose it."""
     from apps.espionage.services.battle_land import simulate_land_battle
 
@@ -296,24 +309,39 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
     upgrades = {int(u): v for u, v in (upgrades or {}).items()}
     _FARM.update(train_seconds={int(u): float(v) for u, v in (train_seconds or {}).items()}, cycle_minutes=float(cycle_minutes or 0),
                  joining=False)
-    set_town(population, unit_citizens_read)
+    set_town(population, unit_citizens_read, resource_values)
+
+    seen: dict = {}
 
     def fight(army):
-        return simulate_land_battle(dict(army), dict(defenders), attacker_upgrades=upgrades, town_hall_level=field_level,
-                                    wall_level=wall_level, max_rounds=MAX_ROUNDS)
+        # the walks from each start meet the same armies again: each one is fought once
+        key = tuple(sorted((int(u), int(q)) for u, q in army.items() if q))
+        if key not in seen:
+            seen[key] = simulate_land_battle(dict(army), dict(defenders), attacker_upgrades=upgrades, town_hall_level=field_level,
+                                             wall_level=wall_level, max_rounds=MAX_ROUNDS)
+        return seen[key]
 
-    best = None
+    grid = []
     tried = 0
     for army in _candidates(available, field_level, sum(defenders.values())):
         sim = fight(army)
         tried += 1
-        key = _key(sim, army, per_round)
-        if best is None or key < best[0]:
-            best = (key, army, sim)
-    if best is None:
+        grid.append((_key(sim, army, per_round), army, sim))
+    if not grid:
         return {"can_win": False, "army": {}, "tried": 0, "note": "A cidade não tem tropas para a linha de frente."}
-    best, walked = _improve(best, available, field_level, fight, per_round)
-    tried += walked
+    grid.sort(key=lambda g: g[0])
+    best = None
+    starts = []
+    for start in grid:
+        if all(start[1] != s[1] for s in starts):
+            starts.append(start)
+        if len(starts) >= START_POINTS:
+            break
+    for start in starts:
+        found, walked = _improve(start, available, field_level, fight, per_round)
+        tried += walked
+        if best is None or found[0] < best[0]:
+            best = found
     key, army, sim = best
     result = {
         "can_win": sim.get("winner") == "attacker" and not sim.get("undecided"),
@@ -410,7 +438,8 @@ MIN_GAIN = 0.30               # a reinforcement is sent only when it saves at le
 def reinforce(state: dict, available: dict[int, int], *, wall_level: int = 0, field_level: int = 5,
               upgrades: dict[int, dict] | None = None, en_route: dict[int, int] | None = None,
               per_round: float = 0.0, train_seconds: dict | None = None, cycle_minutes: float = 0.0,
-              population: dict | None = None, unit_citizens_read: dict | None = None) -> dict:
+              population: dict | None = None, unit_citizens_read: dict | None = None,
+              resource_values: dict | None = None) -> dict:
     """The battle taken up from its real state, without and with each army the town could still send (joining the
     next round). Returns the best one when it is better than sending nothing: winning instead of losing, or fewer
     losses, or fewer rounds."""
@@ -426,7 +455,7 @@ def reinforce(state: dict, available: dict[int, int], *, wall_level: int = 0, fi
     # a reinforcement joins a battle already going: its way there does not hold the battle back
     _FARM.update(train_seconds={int(u): float(v) for u, v in (train_seconds or {}).items()}, cycle_minutes=float(cycle_minutes or 0),
                  joining=True)
-    set_town(population, unit_citizens_read)
+    set_town(population, unit_citizens_read, resource_values)
 
     def fight(extra):
         return simulate_land_battle(

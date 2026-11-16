@@ -14,6 +14,7 @@ from core.auth.backends import AgentTokenAuthentication
 from core.auth.permissions import IsAgent
 
 from ..models import CombatReport
+from ..services import farm_value
 
 logger = logging.getLogger(__name__)
 
@@ -255,6 +256,14 @@ class CombatRecommendView(APIView):
         })
 
 
+def _loot_gold(data: dict, values: dict) -> float:
+    """What the village holds for one cycle, in gold (N-194): each resource by its value, plus the gold. Agents before
+    0.1.168 send only the total (resources and gold together): it is read as resources at the average value."""
+    if data.get("loot_by_resource"):
+        return farm_value.loot_value(data.get("loot_by_resource"), float(data.get("loot_gold") or 0), values)
+    return farm_value.loot_value(None, 0, values, total=float(data.get("loot") or 0))
+
+
 class BarbarianPlanView(APIView):
     """POST /api/agent/combat/barbarians/plan/ (N-182) — the best army against a barbarian village, from the simulator.
 
@@ -290,14 +299,16 @@ class BarbarianPlanView(APIView):
             defenders, unknown = barbarian_planner.defenders_from_names(raw)
         level = int(data.get("level") or 0)
         available = {int(k): int(v) for k, v in (data.get("available") or {}).items() if str(k).isdigit()}
+        values = farm_value.resource_values(ga)
         try:
-            per_round = barbarian_planner.round_value(float(data.get("loot") or 0), float(data.get("cycle_minutes") or 0))
+            per_round = barbarian_planner.round_value(_loot_gold(data, values), float(data.get("cycle_minutes") or 0))
             result = barbarian_planner.plan(available, defenders, wall_level=int(data.get("wall_level") or 0),
                                             field_level=barbarian_planner.field_for_level(level), upgrades=upgrades,
                                             per_round=per_round, train_seconds=data.get("train_seconds") or {},
                                             cycle_minutes=float(data.get("cycle_minutes") or 0),
                                             population=data.get("population") or {},
-                                            unit_citizens_read=data.get("unit_citizens") or {})
+                                            unit_citizens_read=data.get("unit_citizens") or {},
+                                            resource_values=values)
         except Exception as exc:  # noqa: BLE001 - the job falls back to waiting
             logger.warning("Barbarian plan failed", exc_info=True)
             return Response({"can_win": False, "army": {}, "note": f"simulador falhou: {exc}"}, status=status.HTTP_200_OK)
@@ -308,6 +319,7 @@ class BarbarianPlanView(APIView):
 
         result["prices"] = {str(u["id"]): barbarian_planner.unit_price(u["id"]) for u in TRAINING_UNITS.get("troops", [])}
         result["citizen_value"] = barbarian_planner._FARM.get("citizen_value")
+        result["resource_values"] = values
         result["defenders"] = {str(k): v for k, v in defenders.items()}
         calibration = barbarian_learning.active()
         result["calibration"] = {k: calibration.get(k) for k in ("attacker_pct", "defender_pct", "samples")}
@@ -331,6 +343,7 @@ class BarbarianReinforceView(APIView):
 
         data = request.data or {}
         upgrades = {}
+        ga = None
         try:
             ga = GameAccount._base_manager.filter(pk=str(data.get("game_account_id"))).first() if data.get("game_account_id") else None
             if ga is not None:
@@ -344,7 +357,8 @@ class BarbarianReinforceView(APIView):
         available = {int(k): int(v) for k, v in (data.get("available") or {}).items() if str(k).isdigit()}
         try:
             en_route = {int(k): int(v) for k, v in (data.get("en_route") or {}).items() if str(k).isdigit()}
-            per_round = barbarian_planner.round_value(float(data.get("loot") or 0), float(data.get("cycle_minutes") or 0))
+            values = farm_value.resource_values(ga)
+            per_round = barbarian_planner.round_value(_loot_gold(data, values), float(data.get("cycle_minutes") or 0))
             result = barbarian_planner.reinforce(state, available, wall_level=int(data.get("wall_level") or 0),
                                                  field_level=(state.get("field_level")
                                                               or barbarian_planner.field_for_level(int(data.get("level") or 0))),
@@ -352,7 +366,8 @@ class BarbarianReinforceView(APIView):
                                                  train_seconds=data.get("train_seconds") or {},
                                                  cycle_minutes=float(data.get("cycle_minutes") or 0),
                                                  population=data.get("population") or {},
-                                                 unit_citizens_read=data.get("unit_citizens") or {})
+                                                 unit_citizens_read=data.get("unit_citizens") or {},
+                                                 resource_values=values)
         except Exception as exc:  # noqa: BLE001 - without an answer nothing is sent
             logger.warning("Barbarian reinforcement failed", exc_info=True)
             return Response({"send": {}, "note": f"simulador falhou: {exc}"})

@@ -121,7 +121,8 @@ class FarmCostTests(TestCase):
     """For a farm the price is what has to be trained again and the time a round holds the next attack back."""
 
     def test_unit_price_comes_from_the_game_table(self):
-        self.assertEqual(barbarian_planner.unit_price(303), 20 + 14 + barbarian_planner.CITIZEN_VALUE)
+        # N-194: wood 1 gold, sulfur 2 (third in the order), the citizen its tax
+        self.assertEqual(barbarian_planner.unit_price(303), 20 * 1 + 14 * 2 + barbarian_planner.CITIZEN_VALUE)
         self.assertGreater(barbarian_planner.unit_price(305), barbarian_planner.unit_price(303))
 
     def test_a_round_costs_its_share_of_the_cycle(self):
@@ -194,8 +195,8 @@ class CitizenTests(TestCase):
         barbarian_planner.set_town({"citizens": 2299, "citizens_gold": 6899, "happiness": 408, "growth": 8.19}, {"308": 2})
         try:
             value = barbarian_planner.citizen_value({"citizens": 2299, "citizens_gold": 6899, "happiness": 408, "growth": 8.19})
-            self.assertAlmostEqual(barbarian_planner.unit_price(308), 65 + 87 + 2 * value)
-            self.assertAlmostEqual(barbarian_planner.unit_price(303), 20 + 14 + value)
+            self.assertAlmostEqual(barbarian_planner.unit_price(308), 65 + 87 * 2 + 2 * value)
+            self.assertAlmostEqual(barbarian_planner.unit_price(303), 20 + 14 * 2 + value)
         finally:
             barbarian_planner.set_town()
 
@@ -235,3 +236,57 @@ class LocalSearchTests(TestCase):
 class ShortCycleTests(TestCase):
     def test_an_attack_sent_again_is_not_a_cycle(self):
         self.assertEqual(barbarian_planner.round_value(189_100, 18), barbarian_planner.round_value(189_100, 180))
+
+
+class FarmValueTests(TestCase):
+    """N-194: resources are not worth the same; the order is the accounts' need (Rodrigo, 15/11), wine first only when
+    the account's taverns use more than it produces."""
+
+    def test_the_order_and_wood_last(self):
+        from apps.combat.services import farm_value
+
+        v = farm_value.resource_values()
+        self.assertGreater(v["marble"], v["crystal"])
+        self.assertGreater(v["crystal"], v["sulfur"])
+        self.assertGreater(v["sulfur"], v["wine"])
+        self.assertGreater(v["wine"], v["wood"])
+
+    def test_wine_short_goes_first(self):
+        from types import SimpleNamespace
+
+        from apps.combat.services import farm_value
+
+        short = SimpleNamespace(snapshot=SimpleNamespace(cities=[
+            {"tradegood": 1, "tradegood_production_per_hour": 500, "wine_consumption": 300},
+            {"tradegood": 2, "tradegood_production_per_hour": 900, "wine_consumption": 400}]))
+        covered = SimpleNamespace(snapshot=SimpleNamespace(cities=[
+            {"tradegood": 1, "tradegood_production_per_hour": 900, "wine_consumption": 300},
+            {"tradegood": 4, "tradegood_production_per_hour": 600, "wine_consumption": 400}]))
+        self.assertTrue(farm_value.wine_short(short))
+        self.assertFalse(farm_value.wine_short(covered))
+        v = farm_value.resource_values(short)
+        self.assertEqual(max(v, key=v.get), "wine")
+        self.assertEqual(min(v, key=v.get), "wood")
+        self.assertEqual(max(farm_value.resource_values(covered), key=farm_value.resource_values(covered).get), "marble")
+
+    def test_loot_and_what_the_losses_take(self):
+        from apps.combat.services import farm_value
+
+        values = farm_value.DEFAULT_VALUES
+        # 15/11, level 34: the merchants brought this; the plan's losses
+        loot = [42401, 16671, 14066, 9378, 11983]
+        self.assertEqual(farm_value.loot_value(loot, 78600, values),
+                         42401 * 1 + 16671 * 1.5 + 14066 * 3 + 9378 * 2.5 + 11983 * 2 + 78600)
+        need = farm_value.losses_resources({302: 138, 303: 23, 308: 97})
+        self.assertEqual(need, {"wood": 138 * 15 + 23 * 20 + 97 * 65, "sulfur": 138 * 14 + 23 * 14 + 97 * 87})
+        rows = {r["resource"]: r for r in farm_value.coverage(loot, {302: 138, 303: 23, 308: 97})}
+        self.assertTrue(rows["sulfur"]["covered"])
+        self.assertEqual(rows["sulfur"]["need"], 10693)
+        self.assertEqual(farm_value.as_resources({"glass": 5, "wood": 2}), {"crystal": 5, "wood": 2})
+        # an old entry (only the total): the resources at the average value
+        self.assertEqual(farm_value.loot_value(None, 100, values, total=1000), 1000 * 2.0 + 100)
+
+    def test_the_walk_takes_blocks_of_the_reserve(self):
+        steps = barbarian_planner._steps(10)
+        self.assertIn(200, steps[303])
+        self.assertIn(400, steps[302])
