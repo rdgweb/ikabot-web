@@ -17,7 +17,7 @@
   </div>
   <div class="gm-body flex-1 min-h-0 p-3 space-y-3">
     {# ── 4 KPI cards ── #}
-    <div class="grid grid-cols-2 xl:grid-cols-4 gap-2">
+    <div class="grid grid-cols-2 xl:grid-cols-5 gap-2">
       <div class="gm-card rounded-lg p-2.5">
         <div class="gm-card-label">Líquido global</div>
         <div class="text-lg font-bold font-mono mt-1" :class="kpi.income>=0?'gm-text-positive':'gm-text-negative'" x-text="signedFmt(kpi.income)"></div>
@@ -25,6 +25,10 @@
       <div class="gm-card rounded-lg p-2.5">
         <div class="gm-card-label">Projeção 24h</div>
         <div class="text-lg font-bold font-mono mt-1" :class="incomeInsights().delta24>=0?'gm-text-positive':'gm-text-negative'" x-text="signedFmt(incomeInsights().delta24)"></div>
+      </div>
+      <div class="gm-card rounded-lg p-2.5" title="Ouro saqueado das vilas de bárbaros nas últimas 24 h, por hora">
+        <div class="gm-card-label">Bárbaros / h</div>
+        <div class="text-lg font-bold font-mono mt-1 gm-text-positive" x-text="signedFmt(kpiCards().reduce((s, c) => s + (c.barbarians || 0), 0))"></div>
       </div>
       <div class="gm-card rounded-lg p-2.5">
         <div class="gm-card-label">Contas positivas</div>
@@ -128,6 +132,7 @@
               <th class="text-left py-2 px-3">Conta</th>
               <th class="text-right py-2 px-2" style="color:#5f8b52;">Bruta</th>
               <th class="text-right py-2 px-2" style="color:#b36a2c;">Militar</th>
+              <th class="text-right py-2 px-2" style="color:#5f8b52;" title="Ouro saqueado das vilas de bárbaros nas últimas 24 h, por hora">Bárbaros</th>
               <th class="text-right py-2 px-2" style="color:#a44738;">Cientistas</th>
               <th class="text-right py-2 px-3">Liquido/h</th>
             </tr>
@@ -141,6 +146,7 @@
                 </td>
                 <td class="py-2.5 px-2 text-right font-mono font-semibold gm-text-positive" x-text="signedFmt(c.grossIncome)"></td>
                 <td class="py-2.5 px-2 text-right font-mono gm-text-warning" x-text="'-' + fmt(Math.abs(c.upkeep || 0))"></td>
+                <td class="py-2.5 px-2 text-right font-mono" :class="(c.barbarians||0)>=0?'gm-text-positive':'gm-text-negative'" x-text="c.barbarians ? signedFmt(c.barbarians) : '–'"></td>
                 <td class="py-2.5 px-2 text-right font-mono gm-text-negative" x-text="'-' + fmt(Math.abs(c.scientists || 0))"></td>
                 <td class="py-2.5 px-3 text-right">
                   <span class="gm-pill" :class="c.income>=0?'gm-pill-positive':'gm-pill-negative'" x-text="signedFmt(c.income)"></span>

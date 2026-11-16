@@ -320,6 +320,8 @@ class BarbarianPlanView(APIView):
         result["prices"] = {str(u["id"]): barbarian_planner.unit_price(u["id"]) for u in TRAINING_UNITS.get("troops", [])}
         result["citizen_value"] = barbarian_planner._FARM.get("citizen_value")
         result["resource_values"] = values
+        # N-194: what each unit takes to train, for the job to see whether the loot pays its losses resource by resource
+        result["unit_resources"] = {str(u["id"]): farm_value.unit_resources(u["id"]) for u in TRAINING_UNITS.get("troops", [])}
         result["defenders"] = {str(k): v for k, v in defenders.items()}
         calibration = barbarian_learning.active()
         result["calibration"] = {k: calibration.get(k) for k in ("attacker_pct", "defender_pct", "samples")}

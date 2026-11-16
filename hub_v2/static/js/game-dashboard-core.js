@@ -248,6 +248,7 @@ function gameDashboard() {
         ships: parseInt(d.ships || 0, 10),
         grossIncome: parseInt(d.grossIncome || 0, 10),
         upkeep: parseInt(d.upkeep || 0, 10),
+        barbarians: parseInt(d.barbarians || 0, 10),
         scientists: parseInt(d.scientists || 0, 10),
         freeTransporters: parseInt(d.freeTransporters || 0, 10),
         maxTransporters: parseInt(d.maxTransporters || 0, 10),

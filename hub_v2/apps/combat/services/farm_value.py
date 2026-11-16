@@ -129,3 +129,56 @@ def coverage(loot_by_resource, losses: dict) -> list[dict]:
     return [{"resource": name, "loot": got.get(name, 0), "need": need.get(name, 0),
              "covered": got.get(name, 0) >= need.get(name, 0)}
             for name in RESOURCES if got.get(name) or need.get(name)]
+
+
+def barbarian_hourly(game_account_ids, hours: int = 24) -> dict[str, dict]:
+    """N-194: what the barbarian farm of each game account made per hour over the last `hours`. per_hour is the gold
+    alone (the income screen counts gold only, Rodrigo 15/11); loot and losses (in gold by the resources' values) go
+    along for the farm's own screens. From the state of each Roubar Bárbaros workflow."""
+    import time as _time
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.accounts.models import GameAccount
+    from apps.jobs.models import Job
+
+    from .barbarian_planner import CITIZEN_VALUE, citizen_value
+
+    ids = [str(i) for i in game_account_ids or [] if i]
+    if not ids:
+        return {}
+    since = _time.time() - hours * 3600
+    accounts = {str(ga.pk): ga for ga in GameAccount._base_manager.filter(pk__in=ids)}
+    latest: dict = {}
+    for job in (Job._base_manager.filter(game_account_id__in=ids, action_code=19, created_at__gte=timezone.now() - timedelta(days=3))
+                .order_by("-created_at").only("workflow_id", "game_account_id", "inputs_json", "created_at")):
+        latest.setdefault(job.workflow_id or job.pk, job)
+    out: dict[str, dict] = {}
+    for job in latest.values():
+        try:
+            inputs = json.loads(job.inputs_json or "{}") if isinstance(job.inputs_json, str) else (job.inputs_json or {})
+        except (TypeError, ValueError):
+            continue
+        ga_id = str(job.game_account_id)
+        values = resource_values(accounts.get(ga_id))
+        row = out.setdefault(ga_id, {"per_hour": 0.0, "battles": 0, "gold": 0, "loot": 0.0, "losses": 0.0})
+        for st in (inputs.get("islands_state") or {}).values():
+            if not isinstance(st, dict):
+                continue
+            per_citizen = citizen_value(st.get("population") or {}) if st.get("population") else CITIZEN_VALUE
+            per_unit = {str(u): int(c) for u, c in (st.get("unit_citizens") or {}).items()}
+            for entry in st.get("ledger") or []:
+                if not isinstance(entry, dict) or int(entry.get("at") or 0) < since or entry.get("loot") is None:
+                    continue
+                loot = loot_value(entry.get("loot_by_resource"), float(entry.get("gold") or 0), values, total=float(entry.get("loot") or 0))
+                lost = sum((unit_value(int(u), values) + max(1, per_unit.get(str(u), 1)) * per_citizen) * int(q or 0)
+                           for u, q in (entry.get("losses") or {}).items() if str(u).isdigit())
+                row["battles"] += 1
+                row["gold"] += int(entry.get("gold") or 0)
+                row["loot"] += loot
+                row["losses"] += lost
+    for row in out.values():
+        row["per_hour"] = round(row["gold"] / hours)
+        row["loot"], row["losses"] = round(row["loot"]), round(row["losses"])
+    return out

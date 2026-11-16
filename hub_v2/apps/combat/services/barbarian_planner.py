@@ -162,7 +162,7 @@ def set_town(population: dict | None = None, unit_citizens_read: dict | None = N
                  free_citizens=int(pop["citizens"]) if str(pop.get("citizens") or "").isdigit() else None)
 
 
-def _key(sim: dict, army: dict[int, int], round_value: float = 0.0) -> tuple:
+def _key(sim: dict, army: dict[int, int], round_value: float = 0.0, travel_army: dict | None = None) -> tuple:
     """For a farm, in resources: what has to be trained again, what each round of battle holds the next attack back
     (the village is rebuilt only after it), the time the barracks needs to train the losses again when it is longer
     than a cycle, and a little for every unit away from home. Winning comes first."""
@@ -180,7 +180,7 @@ def _key(sim: dict, army: dict[int, int], round_value: float = 0.0) -> tuple:
     train_minutes = sum(float(_FARM["train_seconds"].get(int(u)) or 0) * q for u, q in losses.items()) / 60
     late = max(0.0, train_minutes - float(_FARM["cycle_minutes"] or 0)) if _FARM["cycle_minutes"] else 0.0
     # the way there holds the battle (and the village's rebuild) back like a round does
-    late += travel_minutes(army) if not _FARM.get("joining") else 0.0
+    late += travel_minutes(travel_army if travel_army is not None else army) if not _FARM.get("joining") else 0.0
     cost = lost + int(sim.get("rounds") or 12) * round_value + away + risk + late * (round_value / ROUND_MINUTES)
     # a battle still open when the simulation stops is not won: the game goes on (the barbarians wait behind the wall)
     won = sim.get("winner") == "attacker" and not sim.get("undecided")
@@ -343,17 +343,56 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
         if best is None or found[0] < best[0]:
             best = found
     key, army, sim = best
+    second, sim, tried2 = _second_wave(key, army, sim, available, defenders, field_level, wall_level, upgrades, per_round)
+    tried += tried2
     result = {
         "can_win": sim.get("winner") == "attacker" and not sim.get("undecided"),
         "army": army,
         "tried": tried,
         "prediction": {**_summary(sim), "travel_minutes": round(travel_minutes(army), 1)},
     }
+    if second:
+        result["second_wave"] = {str(u): q for u, q in second["army"].items()}
+        result["second_wave_round"] = second["round"]
     if result["can_win"] and int((sim.get("morale") or {}).get("attacker") or 0) < MORALE_FLOOR:
         result["note"] = f"Vence, mas a moral termina em {(sim.get('morale') or {}).get('attacker')}%: perto de fugir."
     if explain_training:
         result["training"] = _what_training_gains(available, defenders, wall_level, field_level, upgrades, key, army, per_round)
     return result
+
+
+SLOW_UNITS = (309,)            # the bombardiers fly at half the speed: sent alone right after the army, they join later
+
+
+def _second_wave(key, army, sim, available, defenders, field_level, wall_level, upgrades, per_round):
+    """N-194 (Rodrigo, 15/11: "manda 2 ondas de uma vez"): the bombardiers that the army leaves at home, sent right after
+    it, arrive later (half the speed) and join the battle as a reinforcement; the army does not wait for them on the way.
+    Returns the best second wave ({"army", "round"}) when it makes the farm cheaper, with the battle it gives."""
+    from apps.espionage.services.battle_land import simulate_land_battle
+
+    best = None
+    tried = 0
+    main_minutes = travel_minutes(army)
+    for uid in SLOW_UNITS:
+        spare = int(available.get(uid, 0) or 0) - int(army.get(uid, 0) or 0)
+        line = next((ln for ln, units in LINE_UNITS.items() if uid in units), None)
+        if spare <= 0 or not line:
+            continue
+        wave = _fill(line, uid, field_level, 1)
+        late = max(0.0, travel_minutes({uid: 1}) - main_minutes)
+        join = 1 + max(1, math.ceil(late / ROUND_MINUTES))
+        for n in sorted({min(spare, wave * k) for k in (1, 2, 3)}):
+            extra = {uid: n}
+            trial = simulate_land_battle(dict(army), dict(defenders), attacker_upgrades=upgrades, town_hall_level=field_level,
+                                         wall_level=wall_level, max_rounds=MAX_ROUNDS, attacker_reinforcements_by_round={join: extra})
+            tried += 1
+            merged = {**army, uid: int(army.get(uid, 0)) + n}
+            trial_key = _key(trial, merged, per_round, travel_army=army)
+            if trial_key < (best["key"] if best else key):
+                best = {"key": trial_key, "army": extra, "round": join, "sim": trial}
+    if not best:
+        return None, sim, tried
+    return {"army": best["army"], "round": best["round"]}, best["sim"], tried
 
 
 def _summary(sim: dict) -> dict:

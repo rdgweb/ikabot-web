@@ -5,6 +5,7 @@ Shows real game data from AccountSnapshot: cities, resources, buildings,
 production rates, gold, transporters, military, and resource projections.
 """
 
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -25,6 +26,8 @@ from apps.game.services.kpi_history import build_history_map, clean_period
 from apps.game.services.gold import gold_income, net_gold_income
 from apps.game.services.vacation import read_vacation_state
 from apps.jobs.models import ConstructionResourceReservation
+
+logger = logging.getLogger(__name__)
 
 _DASHBOARD_CACHE_TTL = 60  # seconds
 
@@ -531,6 +534,17 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         # (DashboardHistoryView). Building it costs over a second and most visits never open one.
         history_map = {}
 
+        # N-194: the gold the barbarian farm looted per hour in the last 24 h, beside the account's military upkeep in
+        # the income modal (gold only: the resources and the losses are the farm's own screen)
+        try:
+            from apps.combat.services.farm_value import barbarian_hourly
+
+            barbarians = barbarian_hourly([card["game_account_id"] for card in account_cards])
+        except Exception:  # noqa: BLE001 - the dashboard opens without it
+            logger.warning("Barbarian profit per hour unavailable", exc_info=True)
+            barbarians = {}
+        for card in account_cards:
+            card["barbarians_per_hour"] = (barbarians.get(card["game_account_id"]) or {}).get("per_hour", 0)
         ctx["account_cards"] = account_cards
         ctx["city_options"] = [
             {"name": name, "game_accounts": "|".join(sorted(ids))}

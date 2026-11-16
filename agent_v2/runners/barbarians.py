@@ -145,7 +145,8 @@ def _cycle(st: dict) -> int:
 
 
 def farm_book(ledger: list[dict], prices: dict, unit_citizens: dict | None = None,
-              population: dict | None = None, values: dict | None = None) -> dict[int, dict]:
+              population: dict | None = None, values: dict | None = None,
+              unit_resources: dict | None = None) -> dict[int, dict]:
     """Per level, from the battles the job fought: loot, gold, what the losses cost to train again, rounds, the time
     between this attack and the next (the cycle), the profit and the profit per hour (averages per battle); the
     citizens the losses take and whether the town grows them back within the cycle (sustainable)."""
@@ -157,8 +158,16 @@ def farm_book(ledger: list[dict], prices: dict, unit_citizens: dict | None = Non
             continue
         cost = sum(float(prices.get(str(u)) or prices.get(u) or 0) * int(q) for u, q in (entry.get("losses") or {}).items())
         row = out.setdefault(level, {"battles": 0, "loot": 0, "gold": 0, "losses_cost": 0, "rounds": 0, "cycle": 0, "cycles": 0,
-                                     "citizens": 0, "value": 0.0})
+                                     "citizens": 0, "value": 0.0, "got": {}, "need": {}, "seen": 0})
         row["value"] += loot_value(entry, values)
+        if unit_resources and entry.get("loot_by_resource"):
+            # N-194: what the loot brought and what training the losses again takes, resource by resource
+            row["seen"] += 1
+            for name, qty in entry["loot_by_resource"].items():
+                row["got"][name] = row["got"].get(name, 0) + int(qty or 0)
+            for u, q in (entry.get("losses") or {}).items():
+                for name, amount in (unit_resources.get(str(u)) or unit_resources.get(u) or {}).items():
+                    row["need"][name] = row["need"].get(name, 0) + int(amount) * int(q or 0)
         row["battles"] += 1
         row["citizens"] += sum(max(1, per_unit.get(str(u), 1)) * int(q) for u, q in (entry.get("losses") or {}).items())
         row["loot"] += int(entry.get("loot") or 0)
@@ -178,17 +187,23 @@ def farm_book(ledger: list[dict], prices: dict, unit_citizens: dict | None = Non
         limit = sustainable_citizens(population, row["cycle"])
         row["sustainable_citizens"] = limit
         row["sustainable"] = None if limit is None else row["citizens"] <= limit
+        # the loot pays for training the losses again, resource by resource (sulfur above all: it is the troops')
+        row["short"] = sorted(name for name, need in row.pop("need").items() if row["got"].get(name, 0) < need)
+        row["covered"] = None if not row.pop("seen") else not row["short"]
+        row.pop("got")
     return out
 
 
 def ideal_level(book: dict[int, dict]) -> int | None:
-    """The level whose profit per hour is the best among those the town can keep up (its losses grow back within the
-    cycle), once DROP_LEVELS levels after it were seen (worse, or more than the town can keep up); before that the farm
-    keeps climbing: it may still get better. When no level is sustainable, the one that takes fewest citizens."""
+    """The level whose profit per hour is the best among those the farm keeps up for ever: the town grows its lost
+    citizens back within the cycle and the loot pays for training the losses again, resource by resource (N-194); once
+    DROP_LEVELS levels after it were seen (worse, or more than the farm can keep up); before that the farm keeps
+    climbing: it may still get better. When no level keeps up, the one that takes fewest citizens."""
     levels = sorted(level for level, row in book.items() if row.get("per_hour") is not None)
     if len(levels) < DROP_LEVELS + 1:
         return None
-    keep_up = [level for level in levels if book[level].get("sustainable") is not False]
+    keep_up = [level for level in levels
+               if book[level].get("sustainable") is not False and book[level].get("covered") is not False]
     if not keep_up:
         return min(levels, key=lambda level: (book[level].get("citizens") or 0, level))
     best = max(keep_up, key=lambda level: book[level]["per_hour"])
@@ -255,21 +270,36 @@ def _cargo_total(cargo: dict) -> tuple[int, int]:
     return sum(int(v or 0) for v in (cargo or {}).values()) - gold, gold
 
 
-def _barbarian_movements(movements: list[dict], town: str) -> list[dict]:
-    """The movements of one town against its village: they leave from the town (or come back to it) and the other end
-    is not a player's town (the village has no city id) or says "barbarian"."""
+_NOT_BARBARIAN_MISSIONS = ("deployarmy", "deployfleet", "transport", "trade")
+
+
+def _barbarian_movements(movements: list[dict], town: str, island_id: str | None = None) -> list[dict]:
+    """The movements of one town against a village: they leave from the town (or come back to it) and the other end
+    is not a player's town (the village has no city id) or says "barbarian". With island_id, only that island's
+    village (N-194: one town farms the villages of several islands; each island counts its own). Moving troops to
+    another town is never one, though the game marks every movement "hasBarbarianFleet" (15/11: the troops going to
+    Liberado held the new job back)."""
     out = []
     for m in movements or []:
         if not isinstance(m, dict) or m.get("is_own") is False:
+            continue
+        if str(m.get("mission") or "").lower() in _NOT_BARBARIAN_MISSIONS:
             continue
         origin, target = m.get("origin") or {}, m.get("target") or {}
         o_city, t_city = str(origin.get("cityId") or ""), str(target.get("cityId") or "")
         if town not in (o_city, t_city):
             continue
         other = t_city if o_city == town else o_city
-        text = json.dumps([m.get("mission"), m.get("mission_text"), target, origin], ensure_ascii=False).lower()
-        if other in ("", "0") or "barb" in text or "bárb" in text:
-            out.append(m)
+        ends = {k: v for k, v in {**origin, **target}.items() if k != "hasBarbarianFleet"}
+        text = json.dumps([m.get("mission"), m.get("mission_text"), ends], ensure_ascii=False).lower()
+        if not (other in ("", "0") or "barb" in text or "bárb" in text):
+            continue
+        if island_id:
+            # the game writes the mission's island on both ends; without it, the movement is anyone's
+            islands = {str(end.get("islandId")) for end in (origin, target) if end.get("islandId")}
+            if islands and str(island_id) not in islands:
+                continue
+        out.append(m)
     return out
 
 
@@ -362,6 +392,7 @@ class BarbariansRunner(BaseRunner):
         recheck = max(5, _parse_int(inputs.get("recheck_minutes"), 15)) * 60
         dry_run = str(inputs.get("dry_run") or "").lower() in {"1", "true", "on", "yes"}
         state = inputs.get("islands_state") if isinstance(inputs.get("islands_state"), dict) else {}
+        self._state = state
         wake: list[int] = []          # when a movement lands or a village is rebuilt
         totals = {key: _parse_int(inputs.get(key), 0) for key in ("total_attacks", "total_loots", "loot_total", "gold_total")}
 
@@ -421,7 +452,7 @@ class BarbariansRunner(BaseRunner):
                 raise
             self.log(jid, "warn", f"Ilha {island_id}: movimentos não abriram ({exc}).")
             return False
-        moving = _barbarian_movements(advisor.get("movement_details") or [], town)
+        moving = _barbarian_movements(advisor.get("movement_details") or [], town, island_id)
         if moving and not st.get("movement_logged"):
             st["movement_logged"] = True
             self.log(jid, "info", f"Ilha {island_id}: movimento lido {json.dumps(moving[0], ensure_ascii=False)[:700]}")
@@ -500,7 +531,12 @@ class BarbariansRunner(BaseRunner):
             st["reinforced_round"] = round_no
             available = self._get_available_troops(jid, client, town)
             previous = st.get("last_reinforcement") or {}
-            en_route = previous.get("army") if time.time() - int(previous.get("at") or 0) < EN_ROUTE_SECONDS else {}
+            en_route = dict(previous.get("army") or {}) if time.time() - int(previous.get("at") or 0) < EN_ROUTE_SECONDS else {}
+            wave = st.get("second_wave") or {}
+            if int(wave.get("at") or 0) >= int(st.get("attacked_at") or 0) and time.time() - int(wave.get("at") or 0) < EN_ROUTE_SECONDS:
+                # the second wave of bombardiers is still on its way: the simulator counts it as coming
+                for u, q in (wave.get("army") or {}).items():
+                    en_route[str(u)] = int(en_route.get(str(u)) or 0) + int(q)
             answer = self.hub.reinforce_barbarian_battle({
                 "game_account_id": getattr(self, "_game_account_id", ""), "level": int(barb.get("level") or 0),
                 "wall_level": int(barb.get("wall_level") or 0), "round_html": last["html"],
@@ -581,11 +617,16 @@ class BarbariansRunner(BaseRunner):
         st["level_seen"] = {"level": level, "since": now}
 
     def _target_level(self, st) -> int:
-        """The level the farm keeps: the one chosen in the job, or (auto) the best profit per hour seen."""
+        """The level the farm keeps: the one chosen in the job, or (auto) the best profit per hour seen. The battles of
+        every island of the job count (N-194: a level has the same defenders on any island)."""
         if getattr(self, "_target_auto", False):
-            current = [e for e in (st.get("ledger") or []) if isinstance(e, dict) and int(e.get("book") or 0) >= BOOK_VERSION]
+            islands = [x for x in (getattr(self, "_state", None) or {}).values() if isinstance(x, dict)] or [st]
+            if st not in islands:
+                islands.append(st)
+            current = [e for x in islands for e in (x.get("ledger") or [])
+                       if isinstance(e, dict) and int(e.get("book") or 0) >= BOOK_VERSION]
             book = farm_book(current, st.get("prices") or {}, st.get("unit_citizens") or {}, st.get("population") or {},
-                             st.get("resource_values"))
+                             st.get("resource_values"), st.get("unit_resources"))
             ideal = ideal_level(book)
             st["ideal_level"] = ideal
             if ideal:
@@ -622,12 +663,15 @@ class BarbariansRunner(BaseRunner):
         pred = plan.get("prediction") or {}
         if plan.get("prices"):
             st["prices"] = plan["prices"]
+        if isinstance(plan.get("unit_resources"), dict):
+            st["unit_resources"] = plan["unit_resources"]
         if isinstance(plan.get("resource_values"), dict):
             # N-194: gold per unit of each resource (the server's market), to weigh the loot like the losses
             st["resource_values"] = plan["resource_values"]
         st["plan"] = {"level": level, "army": plan.get("army") or {}, "rounds": pred.get("rounds"),
                       "morale_end": pred.get("morale_end"), "losses": pred.get("attacker_losses") or {},
                       "wall_level": payload["wall_level"], "training": (plan.get("training") or [])[:4],
+                      "second_wave": plan.get("second_wave") or {}, "second_wave_round": plan.get("second_wave_round"),
                       "unknown": plan.get("unknown") or [], "at": int(time.time())}
         if plan.get("unknown"):
             self.log(jid, "warn", f"Ilha {island_id}: o simulador ainda não conhece {', '.join(plan['unknown'])}; "
@@ -874,7 +918,7 @@ class BarbariansRunner(BaseRunner):
             return
         st["waiting_level"] = None
         available = self._get_available_troops(jid, client, town)
-        troops, how = None, troop_mode
+        troops, how, second = None, troop_mode, {}
         if troop_mode == "schematic":
             # N-182: the army is the simulator's (hub), with the account's upgrades, the village's defenders and wall,
             # and the adjustment learned from the real barbarian battles; no table
@@ -882,6 +926,7 @@ class BarbariansRunner(BaseRunner):
             if not plan:
                 return
             troops = {int(k): int(v) for k, v in (plan.get("army") or {}).items() if int(v or 0) > 0}
+            second = {int(k): int(v) for k, v in (plan.get("second_wave") or {}).items() if int(v or 0) > 0}
             pred = plan.get("prediction") or {}
             how = (f"simulador: {pred.get('rounds')} rodadas, moral final {pred.get('morale_end')}%, "
                    f"perdas {sum((pred.get('attacker_losses') or {}).values())}")
@@ -920,6 +965,19 @@ class BarbariansRunner(BaseRunner):
         self.log(jid, "info", f"Ilha {island_id}: ataque à vila nível {level} (tem {_n(on_hand)} recursos e "
                               f"{_n(village.get('gold'))} de ouro) saindo de {town} com {_army_text(troops)} ({how}) e "
                               f"{result['transporters']} mercantes (de {result.get('free_ships')} livres).{warn}")
+        if second:
+            # N-194: the bombardiers go right after the army, alone: they fly at half the speed and join the battle
+            # later as a reinforcement, without holding the army back on the way
+            try:
+                wave = client.attack_barbarian_village(from_city_id=town, island_id=island_id, troops=second, transporters=1)
+                st["second_wave"] = {"army": {str(k): v for k, v in second.items()}, "at": int(time.time()),
+                                     "round": (st.get("plan") or {}).get("second_wave_round")}
+                self.log(jid, "info", f"Ilha {island_id}: 2ª onda logo atrás: {_army_text(second)} "
+                                      f"({wave.get('transporters')} mercantes); entram na batalha como reforço.")
+            except Exception as exc:  # noqa: BLE001 - the army goes on without them
+                if self.is_network_error(exc):
+                    raise
+                self.log(jid, "warn", f"Ilha {island_id}: 2ª onda não saiu ({exc}); a batalha segue sem ela.")
 
     def _dry_run(self, jid, client, city_id, island_ids, troop_mode, custom_troops_json, extra_ships,
                  game_account_id) -> RunnerResult:

@@ -595,3 +595,31 @@ class ResourceValueTests(unittest.TestCase):
         # without values (an old hub): one each, as before
         self.assertEqual(loot_value(ledger[0], None), 1100)
         self.assertEqual(loot_value({"loot": 1000, "gold": 0}, self.VALUES), 1000 * 2.0)
+
+
+class ManyIslandsTests(unittest.TestCase):
+    """N-194: one town farms the villages of several islands; each island counts only its own movements, and moving
+    troops to another town is never an attack."""
+
+    def test_each_island_its_own_movements(self):
+        moves = [
+            {"is_own": True, "mission": "plunder", "origin": {"cityId": 37436, "islandId": 4478},
+             "target": {"cityId": 0, "name": "Vila de Bárbaros", "islandId": 4478}, "event_id": 1},
+            {"is_own": True, "mission": "plunder", "origin": {"cityId": 37436, "islandId": 4479},
+             "target": {"cityId": 0, "name": "Vila de Bárbaros", "islandId": 4479}, "event_id": 2},
+            {"is_own": True, "mission": "deployarmy", "origin": {"cityId": 37441, "islandId": 4478},
+             "target": {"cityId": 37436, "name": "Liberado", "islandId": 4478, "hasBarbarianFleet": True}, "event_id": 3},
+        ]
+        self.assertEqual([m["event_id"] for m in _barbarian_movements(moves, "37436", "4478")], [1])
+        self.assertEqual([m["event_id"] for m in _barbarian_movements(moves, "37436", "4479")], [2])
+        self.assertEqual([m["event_id"] for m in _barbarian_movements(moves, "37436")], [1, 2])
+
+    def test_the_level_must_pay_its_losses(self):
+        units = {"303": {"wood": 20, "sulfur": 14}}
+        ledger = [{"level": lvl, "loot": 1000, "gold": 0, "losses": {"303": 10}, "cycle_minutes": 60,
+                   "loot_by_resource": {"wood": 1000 * (lvl - 19), "sulfur": sulfur}}
+                  for lvl, sulfur in ((20, 500), (21, 500), (22, 100), (23, 100), (24, 100))]
+        book = farm_book(ledger, {"303": 10}, None, None, {"wood": 1, "sulfur": 2}, units)
+        self.assertTrue(book[21]["covered"])
+        self.assertEqual(book[22]["short"], ["sulfur"])                 # 100 sulfur, the losses take 140
+        self.assertEqual(ideal_level(book), 21)                         # 22+ would pay more, but not their sulfur

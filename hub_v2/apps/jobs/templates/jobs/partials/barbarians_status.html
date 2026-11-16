@@ -154,7 +154,7 @@
           <tbody>
             {% for r in i.farm_book %}
             <tr style="border-top: 1px solid var(--ik-line);{% if r.level == i.farm_best %} background: rgba(95,140,78,.10);{% endif %}">
-              <td class="py-1" style="padding-left: 4px;"><b class="text-ink">{{ r.level }}</b>{% if r.battles > 1 %} <span class="text-[10px] text-muted">×{{ r.battles }}</span>{% endif %}</td>
+              <td class="py-1" style="padding-left: 4px;"><b class="text-ink">{{ r.level }}</b>{% if r.battles > 1 %} <span class="text-[10px] text-muted">×{{ r.battles }}</span>{% endif %}{% if r.short %} <span class="rounded px-1 text-[10px]" style="background: rgba(176,74,58,.12); color: #b04a3a;" title="o saque não paga refazer as perdas neste recurso">falta {{ r.short|join:", " }}</span>{% endif %}</td>
               <td class="py-1 text-right text-ink">{{ r.loot|intcomma }}</td>
               <td class="py-1 text-right" style="color: var(--ik-gold-dark);">{{ r.gold|intcomma }}</td>
               <td class="py-1 text-right" style="color: #b04a3a;">−{{ r.cost|intcomma }}</td>

@@ -290,3 +290,58 @@ class FarmValueTests(TestCase):
         steps = barbarian_planner._steps(10)
         self.assertIn(200, steps[303])
         self.assertIn(400, steps[302])
+
+
+class SecondWaveTests(TestCase):
+    """N-194: bombardiers sent right after the army join later and do not slow it down on the way."""
+
+    def test_the_bombardiers_go_after_when_that_is_cheaper(self):
+        calls = []
+
+        def fake(attacker, defender, **kw):
+            calls.append(kw.get("attacker_reinforcements_by_round"))
+            helped = bool(kw.get("attacker_reinforcements_by_round"))
+            return {"winner": "attacker", "rounds": 5 if helped else 7, "attacker_losses": {303: 40 if helped else 90},
+                    "morale": {"attacker": 80}}
+
+        from unittest import mock
+        army = {303: 300, 308: 100}
+        sim = fake(army, {})
+        key = barbarian_planner._key(sim, army, 1000.0)
+        with mock.patch("apps.espionage.services.battle_land.simulate_land_battle", fake):
+            second, best_sim, tried = barbarian_planner._second_wave(key, army, sim, {303: 300, 308: 100, 309: 60},
+                                                                     {316: 600}, 10, 20, {}, 1000.0)
+        self.assertTrue(second)
+        self.assertIn(309, second["army"])
+        self.assertGreaterEqual(second["round"], 2)
+        self.assertEqual(best_sim["rounds"], 5)
+
+    def test_no_spare_bombardiers_no_second_wave(self):
+        sim = {"winner": "attacker", "rounds": 5, "attacker_losses": {}, "morale": {"attacker": 80}}
+        second, _sim, tried = barbarian_planner._second_wave((0, 0, 0), {303: 10}, sim, {303: 10}, {320: 5}, 5, 0, {}, 0.0)
+        self.assertIsNone(second)
+        self.assertEqual(tried, 0)
+
+
+class IncomeGoldTests(TestCase):
+    """N-194: the income screen shows the barbarians' gold per hour (gold only)."""
+
+    def test_gold_per_hour_from_the_ledger(self):
+        import json as _json
+        import time as _time
+
+        from apps.accounts.models import Account, GameAccount, Node
+        from apps.combat.services import farm_value
+        from apps.jobs.models import Job
+
+        node = Node.objects.create(name="agente", transport="https")
+        account = Account.objects.create(node=node, label="Conta", email="c@example.com", password_enc="x")
+        ga = GameAccount.objects.create(account=account, lobby_account_id=1, server_id="s78-br", server_language="br",
+                                        server_number=78, name="X")
+        now = int(_time.time())
+        state = {"4478": {"ledger": [{"at": now - 3600, "loot": 1000, "gold": 48000, "losses": {"303": 1}},
+                                     {"at": now - 30 * 3600, "loot": 1000, "gold": 99999, "losses": {}}]}}
+        Job.objects.create(account=account, game_account=ga, node=node, action_code=19, status="scheduled",
+                           inputs_json=_json.dumps({"islands_state": state}))
+        out = farm_value.barbarian_hourly([str(ga.pk)])
+        self.assertEqual(out[str(ga.pk)]["per_hour"], 2000)          # 48.000 in 24 h; the battle of 30 h ago is out

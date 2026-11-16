@@ -1756,6 +1756,7 @@ class JobListView(FilterSortListView):
         # N-194: everything in gold: each resource by its market value, each citizen by the tax it stops paying
         values = st.get("resource_values") if isinstance(st.get("resource_values"), dict) else farm_value.resource_values()
         per_citizen = citizen_value(pop)
+        names = {"wood": "madeira", "wine": "vinho", "marble": "mármore", "crystal": "cristal", "sulfur": "enxofre"}
 
         def lost_gold(uid, qty) -> float:
             return (farm_value.unit_value(int(uid), values) + max(1, per_unit.get(str(uid), 1)) * per_citizen) * int(qty)
@@ -1765,7 +1766,7 @@ class JobListView(FilterSortListView):
             if not isinstance(entry, dict) or entry.get("loot") is None or not entry.get("level"):
                 continue
             row = book.setdefault(int(entry["level"]), {"n": 0, "loot": 0, "gold": 0, "cost": 0.0, "rounds": 0, "cycle": 0, "cycles": 0,
-                                                        "citizens": 0, "value": 0.0})
+                                                        "citizens": 0, "value": 0.0, "got": {}, "need": {}, "seen": 0})
             row["n"] += 1
             row["citizens"] += sum(max(1, per_unit.get(str(u), 1)) * int(q) for u, q in (entry.get("losses") or {}).items())
             row["loot"] += int(entry.get("loot") or 0)
@@ -1773,6 +1774,12 @@ class JobListView(FilterSortListView):
             row["value"] += farm_value.loot_value(entry.get("loot_by_resource"), int(entry.get("gold") or 0), values,
                                                   total=int(entry.get("loot") or 0))
             row["cost"] += sum(lost_gold(u, q) for u, q in (entry.get("losses") or {}).items())
+            if entry.get("loot_by_resource"):
+                row["seen"] += 1
+                for name, qty in farm_value.as_resources(entry["loot_by_resource"]).items():
+                    row["got"][name] = row["got"].get(name, 0) + qty
+                for name, qty in farm_value.losses_resources(entry.get("losses") or {}).items():
+                    row["need"][name] = row["need"].get(name, 0) + qty
             row["rounds"] += int(entry.get("rounds") or 0)
             if entry.get("cycle_minutes"):
                 row["cycle"] += int(entry["cycle_minutes"])
@@ -1789,7 +1796,8 @@ class JobListView(FilterSortListView):
                          "rounds": round(r["rounds"] / n, 1), "cycle": cycle, "cycle_h": f"{cycle // 60}h{cycle % 60:02d}" if cycle else "",
                          "profit": round(profit), "per_hour": round(profit * 60 / cycle) if cycle else None,
                          "citizens": citizens, "citizens_limit": limit,
-                         "sustainable": None if limit is None else citizens <= limit})
+                         "sustainable": None if limit is None else citizens <= limit,
+                         "short": [names[k] for k in farm_value.RESOURCES if r["need"].get(k, 0) > r["got"].get(k, 0)] if r["seen"] else []})
         best = max((r for r in rows if r["per_hour"] is not None), key=lambda r: r["per_hour"], default=None)
         top = max([r["per_hour"] for r in rows if r["per_hour"]] or [0])
         for r in rows:
@@ -1808,7 +1816,6 @@ class JobListView(FilterSortListView):
         cover = None
         for entry in reversed([e for e in (st.get("ledger") or []) if isinstance(e, dict)]):
             if entry.get("loot_by_resource"):
-                names = {"wood": "madeira", "wine": "vinho", "marble": "mármore", "crystal": "cristal", "sulfur": "enxofre"}
                 cover = {"level": entry.get("level"),
                          "rows": [{**c, "name": names[c["resource"]]} for c in farm_value.coverage(entry["loot_by_resource"], entry.get("losses") or {})]}
                 break
