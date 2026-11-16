@@ -227,6 +227,12 @@ def _holds_the_front(army: dict, available: dict) -> bool:
     """N-194 (Rodrigo, 15/11: swordsmen alone at the levels 1 to 9 "não tem lógica"): the front line is the hoplites'
     and the giants'; every army takes one of them when the town has any. Only a town without them sends the flanks."""
     front = LINE_UNITS["principal"]
+    if int(_FARM.get("wall_level") or 0) > 0:
+        # N-194 (Rodrigo, 16/11: "o morteiro é quem fura a muralha"): a village with a wall gets artillery, when the
+        # town has any (the simulator lets the front line wear a low wall down, the real battles always had mortars)
+        siege = LINE_UNITS["artilharia"]
+        if any(int(available.get(u, 0) or 0) > 0 for u in siege) and not any(int(army.get(u, 0) or 0) > 0 for u in siege):
+            return False
     if any(int(available.get(u, 0) or 0) > 0 for u in front):
         return any(int(army.get(u, 0) or 0) > 0 for u in front)
     return any(int(army.get(u, 0) or 0) > 0 for u in front + LINE_UNITS["flancos"])
@@ -351,6 +357,7 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
                  joining=False)
     set_town(population, unit_citizens_read, resource_values)
     set_route(journey, weights, max_weight)
+    _FARM["wall_level"] = int(wall_level or 0)
 
     seen: dict = {}
 
@@ -542,6 +549,7 @@ def reinforce(state: dict, available: dict[int, int], *, wall_level: int = 0, fi
                  joining=True)
     set_town(population, unit_citizens_read, resource_values)
     set_route()
+    _FARM["wall_level"] = 0
 
     def fight(extra):
         return simulate_land_battle(

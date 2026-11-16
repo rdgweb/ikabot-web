@@ -472,7 +472,9 @@ class BarbariansRunner(BaseRunner):
                         self._reinforce_if_needed(jid, client, island_id, town, st)
                     if self._on_the_way(jid, client, island_id, town, st, totals, wake):
                         continue
-                    self._island_round(jid, client, island_id, town, st, totals,
+                    # the report and the movements are read where the last attack left from; the next attack leaves
+                    # from the island's own town (16/11: following the last town kept every island on Liberado)
+                    self._island_round(jid, client, island_id, own if army_city else town, st, totals,
                                        troop_mode, custom_troops_json, do_loot, min_level, max_level, extra_ships,
                                        max_random_wait)
                     if st.get("status") == "rebuilding" and int(st.get("rebuild_end") or 0) > 0:

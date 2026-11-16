@@ -405,3 +405,23 @@ class FrontLineTests(TestCase):
                                         explain_training=False)
         self.assertTrue(result["can_win"])
         self.assertGreater(result["army"].get(303, 0) + result["army"].get(308, 0), 0)
+
+
+class WallSiegeTests(TestCase):
+    """N-194 (Rodrigo, 16/11): a village with a wall gets mortars (or other artillery) when the town has them."""
+
+    def test_a_wall_asks_for_artillery(self):
+        try:
+            barbarian_planner._FARM["wall_level"] = 2
+            self.assertFalse(barbarian_planner._holds_the_front({303: 50, 304: 37}, {303: 500, 304: 100, 305: 30}))
+            self.assertTrue(barbarian_planner._holds_the_front({303: 50, 305: 6}, {303: 500, 304: 100, 305: 30}))
+            self.assertTrue(barbarian_planner._holds_the_front({303: 50}, {303: 500}))              # no artillery at home
+            barbarian_planner._FARM["wall_level"] = 0
+            self.assertTrue(barbarian_planner._holds_the_front({303: 50}, {303: 500, 305: 30}))     # no wall
+        finally:
+            barbarian_planner._FARM["wall_level"] = 0
+
+    def test_the_plan_takes_mortars_against_a_wall(self):
+        result = barbarian_planner.plan({303: 500, 304: 100, 305: 30}, {320: 100, 324: 2}, wall_level=1, field_level=5,
+                                        explain_training=False)
+        self.assertTrue(any(result["army"].get(u, 0) for u in (305, 306, 307)))
