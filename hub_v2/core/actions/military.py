@@ -138,10 +138,10 @@ ACTIONS = {
             {
                 "key": "army_city",
                 "type": FIELD_STR,
-                "label": "Cidade do exército (todas as ilhas saem dela)",
+                "label": "Cidade do exército (de onde sai o que falta em cada ilha)",
                 "required": False,
                 "default": "",
-                "help": "N-194: o exército do farm fica nesta cidade e ataca as vilas de qualquer ilha (de navio).",
+                "help": "N-194: cada vila é atacada da cidade da sua ilha; o que faltar sai daqui (o plano do simulador +15%).",
             },
             {
                 "key": "all_islands",

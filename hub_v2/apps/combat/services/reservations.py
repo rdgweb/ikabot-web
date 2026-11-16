@@ -11,6 +11,7 @@ import json
 
 ACTIVE = ("queued", "scheduled", "running")
 BARBARIANS = 19
+MAINTAIN = 1005
 
 
 def _inputs(job) -> dict:
@@ -48,6 +49,18 @@ def account_reservations(game_account_id: str, exclude_job_id: str = "") -> dict
         exclude_wf = Job._base_manager.filter(pk=exclude_job_id).values_list("workflow_id", flat=True).first()
     reserved: dict[str, dict[str, int]] = {}
     islands: dict[str, list[str]] = {}
+    garrison: dict[str, dict[str, int]] = {}
+    # the garrisons the Manter keeps in each city: the farm's army never takes them along
+    for job in Job._base_manager.filter(game_account_id=game_account_id, action_code=MAINTAIN, status__in=ACTIVE):
+        inputs = _inputs(job)
+        if str(inputs.get("building_type") or "troops") != "troops" or str(inputs.get("mode") or "") != "maintain":
+            continue
+        uniform = {str(u): int(q) for u, q in (inputs.get("target_garrison") or {}).items() if str(q).isdigit() and int(q) > 0}
+        custom = parse_reserve(inputs.get("city_targets"))
+        for city in [str(c) for c in inputs.get("city_ids") or [] if str(c).isdigit()]:
+            target = custom.get(city) or (uniform if str(inputs.get("maintain_scope") or "") != "selected_custom" or not custom else {})
+            for uid, qty in target.items():
+                garrison.setdefault(city, {})[uid] = max(garrison.get(city, {}).get(uid, 0), qty)
     for job in Job._base_manager.filter(game_account_id=game_account_id, action_code=BARBARIANS, status__in=ACTIVE):
         inputs = _inputs(job)
         for city, units in parse_reserve(inputs.get("reserve_units")).items():
@@ -58,4 +71,4 @@ def account_reservations(game_account_id: str, exclude_job_id: str = "") -> dict
         ids = [s.strip() for s in str(inputs.get("island_ids") or "").split(",") if s.strip().isdigit()]
         if ids:
             islands[str(job.workflow_id or job.pk)] = ids
-    return {"reserved": reserved, "islands": islands}
+    return {"reserved": reserved, "islands": islands, "garrison": garrison}

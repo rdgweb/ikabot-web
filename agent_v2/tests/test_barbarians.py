@@ -749,3 +749,49 @@ class ArmyTests(unittest.TestCase):
         runner._gather("j", game, "4478", "37436", st)
         self.assertEqual(game.stationed, [(37441, 37436, {303: 90}, 4478)])
         self.assertEqual(st["trained_elsewhere"][0]["units"], {"303": 110})
+
+
+
+class SupplyTests(unittest.TestCase):
+    """N-194 (Rodrigo, 15/11): the village is attacked from its own island; what that island lacks comes from the
+    army's town: the simulator's army plus 15%, less what is already there, never the whole army."""
+
+    def test_only_what_the_plan_asks_plus_15_percent_moves(self):
+        import runners.barbarians as module
+
+        runner = _army_runner()
+        runner._garrison = {"37435": {"303": 50}}
+        game = _ArmyGame()
+        game.home["37435"] = {303: 50}                                   # Sentença: only its garrison
+        game.get_barbarian_state = lambda island_id: {"level": 12}
+        planned = []
+
+        def plan(jid, island_id, level, barb, village, available, st):
+            planned.append(dict(available))
+            return {"army": {"303": 200, "302": 40}, "second_wave": {}}
+
+        runner._simulator_plan = plan
+        original = module.fetch_village_info
+        module.fetch_village_info = lambda client, island_id: {"total": 1000}
+        try:
+            state = {"4479": {"status": "ready", "level": 12, "short_level": 12}}
+            wake = []
+            runner._supply("j", game, ["4479"], {"4479": "37435", "4478": "37436"}, state, "37436", wake)
+        finally:
+            module.fetch_village_info = original
+        self.assertEqual(planned[0], {303: 500, 302: 200})              # the garrison is never counted
+        self.assertEqual(game.stationed, [(37436, 37435, {303: 230, 302: 46}, 4479)])
+        self.assertEqual(state["4479"]["incoming"]["units"], {"303": 230, "302": 46})
+        self.assertTrue(wake)
+
+    def test_a_village_its_island_can_win_gets_nothing(self):
+        runner = _army_runner()
+        game = _ArmyGame()
+        state = {"4479": {"status": "ready", "level": 12, "short_level": None}}
+        runner._supply("j", game, ["4479"], {"4479": "37435"}, state, "37436", [])
+        self.assertEqual(game.stationed, [])
+
+    def test_each_island_its_own_town(self):
+        runner = _army_runner()
+        towns = runner._island_towns("j", "ga", ["4478", "4479", "4477"], {"4478": "37436", "4479": "37436"})
+        self.assertEqual(towns, {"4478": "37436", "4479": "37435", "4477": "37441"})

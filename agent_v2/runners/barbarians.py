@@ -273,6 +273,8 @@ def _cargo_total(cargo: dict) -> tuple[int, int]:
 _NOT_BARBARIAN_MISSIONS = ("deployarmy", "deployfleet", "transport", "trade")
 GATHER_HOURS = 24              # units trained in another town for the army are brought to it for this long at most
 SAME_ISLAND_JOURNEY = 10 * 60  # town -> its own island's village, when the attack screen was not read
+ARMY_MOVE_SECONDS = 40 * 60    # troops moved to another island, when the game does not say how long
+SUPPLY_MARGIN = 0.15           # what moves to an island: the simulator's army plus this (Rodrigo, 15/11: moving costs upkeep)
 COLLECT_MARGIN = 15 * 60       # the village must still be down this long after the merchants arrive
 
 
@@ -436,18 +438,34 @@ class BarbariansRunner(BaseRunner):
             other_islands = self._load_reservations(jid, game_account_id)
             if all_islands:
                 island_ids = self._account_islands(jid, game_account_id, island_ids, other_islands)
+            if army_city:
+                # each island is attacked from a town of that island (the army moves there)
+                island_cities = self._island_towns(jid, game_account_id, island_ids, island_cities)
             # the richest village first: it gets the pick of the troops (N-194)
             island_ids = sorted(island_ids, key=lambda i: -float((state.get(i) or {}).get("village_value") or 0))
             if dry_run:
                 return self._dry_run(jid, client, city_id, island_ids, troop_mode, custom_troops_json, extra_ships,
                                      game_account_id)
+            # N-194 (Rodrigo, 15/11): each village is attacked from a town of its own island (the troops weigh nothing,
+            # the reinforcement is next door). With an army town, what a village needs and its island does not have is
+            # moved there first: what the simulator asked plus 15%, never the whole army (moving costs upkeep)
             for island_id in island_ids:
-                town = army_city or island_cities.get(island_id) or city_id
+                own = island_cities.get(island_id) or city_id
+                st = state.setdefault(island_id, {})
+                busy = st.get("status") in ("attacking", "battle", "moving", "collecting")
+                town = (st.get("town") or own) if busy or st.get("report_pending") else own
+                incoming = st.get("incoming") if isinstance(st.get("incoming"), dict) else {}
+                if incoming and int(incoming.get("eta") or 0) > time.time() and not busy:
+                    wake.append(int(incoming["eta"]) + 30)
+                    self.log(jid, "info", f"Ilha {island_id}: tropas a caminho de {own} (chegam às "
+                                          f"{time.strftime('%H:%M', time.localtime(int(incoming['eta'])))}); ataco depois.")
+                    continue
+                if incoming:
+                    st["incoming"] = None
                 if not town:
                     self.log(jid, "warn", f"Ilha {island_id}: nenhuma cidade escolhida para atacar.")
                     continue
                 try:
-                    st = state.setdefault(island_id, {})
                     if st.get("last_mission") == "attack" and time.time() - int(st.get("attacked_at") or 0) < 8 * 3600:
                         self._reinforce_if_needed(jid, client, island_id, town, st)
                     if self._on_the_way(jid, client, island_id, town, st, totals, wake):
@@ -463,6 +481,8 @@ class BarbariansRunner(BaseRunner):
                     if self.is_network_error(exc):
                         raise
                     self.log(jid, "warn", f"Ilha {island_id}: {exc}")
+            if army_city:
+                self._supply(jid, client, island_ids, island_cities, state, army_city, wake)
             self.save_game_client(game_account_id, client)
         except Exception as exc:
             if self.is_network_error(exc):
@@ -477,6 +497,79 @@ class BarbariansRunner(BaseRunner):
             self.log(jid, "info", f"Próxima olhada em {next_in // 60} min {next_in % 60} s (quando o próximo movimento chega).")
         return RunnerResult(success=True, reschedule_seconds=next_in,
                             reschedule_inputs={**inputs, "islands_state": state, **totals, "phase": "rounds"})
+
+    def _supply(self, jid, client, island_ids, island_cities, state, army_city, wake) -> None:
+        """N-194: a village that is ready and that the troops of its island cannot win gets troops from the town with
+        the most free troops (the army's town first): the simulator plans with both together, and only what the plan
+        asks plus SUPPLY_MARGIN, less what the island already has, is moved (moving costs upkeep: never the whole
+        army). The island attacks when they arrive."""
+        self._client = client
+        busy_towns = {str(st.get("town")) for st in state.values()
+                      if isinstance(st, dict) and st.get("status") in ("attacking", "battle", "moving", "collecting")}
+        towns = list(dict.fromkeys([str(army_city)] + [str(t) for t in island_cities.values() if t]))
+        island_of = {}
+        try:
+            snapshot = self.hub.get_snapshot(game_account_id=getattr(self, "_game_account_id", "")) or {}
+            island_of = {str(c.get("id")): int(c.get("island_id") or 0) for c in snapshot.get("cities") or []}
+        except Exception:  # noqa: BLE001 - the game finds the island by the town
+            pass
+        for island_id in island_ids:
+            st = state.get(island_id) or {}
+            own = str(island_cities.get(island_id) or "")
+            level = int(st.get("level") or 0)
+            if (not own or st.get("status") != "ready" or st.get("waiting_level") or st.get("incoming")
+                    or not level or st.get("short_level") != level):
+                continue
+            here = self._get_available_troops(jid, client, own)
+            sources = []
+            for town in towns:
+                if town == own or town in busy_towns:
+                    continue
+                have = self._get_available_troops(jid, client, town)
+                if have:
+                    sources.append((sum(have.values()), town, have))
+            for _total, source, have in sorted(sources, reverse=True):
+                both = dict(here)
+                for u, q in have.items():
+                    both[u] = int(both.get(u) or 0) + int(q)
+                try:
+                    barb = client.get_barbarian_state(island_id) or {}
+                    village = fetch_village_info(client, island_id)
+                except Exception as exc:  # noqa: BLE001 - the next round tries again
+                    if self.is_network_error(exc):
+                        raise
+                    break
+                st["town"] = own
+                plan = self._simulator_plan(jid, island_id, level, barb, village, both, st)
+                if not plan:
+                    continue                                      # not even with this town's troops
+                wanted = {int(k): int(v) for k, v in (plan.get("army") or {}).items() if int(v or 0) > 0}
+                for k, v in (plan.get("second_wave") or {}).items():
+                    wanted[int(k)] = wanted.get(int(k), 0) + int(v or 0)
+                send = {}
+                for uid, qty in wanted.items():
+                    need = math.ceil(qty * (1 + SUPPLY_MARGIN)) - int(here.get(uid) or 0)
+                    take = min(need, int(have.get(uid) or 0))
+                    if take > 0:
+                        send[uid] = take
+                if not send:
+                    break
+                try:
+                    result = client.station_units(int(source), int(own), send, scope="troops",
+                                                  to_island_id=island_of.get(own) or None) or {}
+                except Exception as exc:  # noqa: BLE001 - tried again next round
+                    if self.is_network_error(exc):
+                        raise
+                    self.log(jid, "warn", f"Ilha {island_id}: não consegui levar tropas de {source} para {own} ({exc}).")
+                    break
+                eta = int(time.time()) + (int(result.get("eta_seconds") or 0) or ARMY_MOVE_SECONDS)
+                st["incoming"] = {"from": source, "units": {str(u): q for u, q in send.items()}, "eta": eta}
+                busy_towns.add(source)
+                wake.append(eta + 30)
+                self.log(jid, "info", f"Ilha {island_id}: as tropas de {own} não vencem a vila nível {level}; levando de "
+                                      f"{source} o que o simulador pediu + {int(SUPPLY_MARGIN * 100)}%: {_army_text(send)} "
+                                      f"(chegam às {time.strftime('%H:%M', time.localtime(eta))}).")
+                break
 
     def _on_the_way(self, jid, client, island_id, town, st, totals, wake) -> bool:
         """True while troops or ships of this town are going to or coming back from its village: count the loot the
@@ -1179,7 +1272,9 @@ class BarbariansRunner(BaseRunner):
         except Exception as exc:
             self.log(jid, "warn", f"Falha ao ler tropas disponíveis: {exc}")
             return {}
-        kept = (getattr(self, "_reserved", None) or {}).get(str(city_id)) or {}
+        kept = dict((getattr(self, "_reserved", None) or {}).get(str(city_id)) or {})
+        for uid, qty in ((getattr(self, "_garrison", None) or {}).get(str(city_id)) or {}).items():
+            kept[str(uid)] = int(kept.get(str(uid)) or 0) + int(qty or 0)
         if not kept:
             return counts
         return {u: q - int(kept.get(str(u)) or 0) for u, q in counts.items() if q - int(kept.get(str(u)) or 0) > 0}
@@ -1197,7 +1292,33 @@ class BarbariansRunner(BaseRunner):
             for uid, qty in (units or {}).items():
                 merged.setdefault(str(city), {})[str(uid)] = max(int(merged.get(str(city), {}).get(str(uid)) or 0), int(qty or 0))
         self._reserved = merged
+        self._garrison = {str(c): {str(u): int(q or 0) for u, q in (units or {}).items()}
+                          for c, units in (answer.get("garrison") or {}).items()}
         return answer.get("islands") or {}
+
+    def _island_towns(self, jid, game_account_id, island_ids, chosen: dict) -> dict:
+        """{island: town of the account on that island}: the one chosen in the job when it is on the island, else the
+        one with a barracks (the army can train its losses there), else any."""
+        try:
+            snapshot = self.hub.get_snapshot(game_account_id=game_account_id) or {}
+        except Exception:  # noqa: BLE001 - the job's own choice holds
+            return dict(chosen)
+        towns: dict[str, list[dict]] = {}
+        for city in snapshot.get("cities") or []:
+            towns.setdefault(str(city.get("island_id") or ""), []).append(city)
+        out = {}
+        for island_id in island_ids:
+            here = towns.get(str(island_id)) or []
+            ids = [str(c.get("id")) for c in here]
+            if str(chosen.get(island_id) or "") in ids:
+                out[island_id] = str(chosen[island_id])
+            elif here:
+                with_barracks = [c for c in here if any(str((b or {}).get("building") or "") == "barracks"
+                                                        for b in c.get("buildings") or [] if isinstance(b, dict))]
+                out[island_id] = str((with_barracks or here)[0].get("id"))
+            elif chosen.get(island_id):
+                out[island_id] = str(chosen[island_id])
+        return out
 
     def _account_islands(self, jid, game_account_id, island_ids, other_islands) -> list[str]:
         """Every island with a town of the account, less the ones another barbarian job farms (N-194)."""

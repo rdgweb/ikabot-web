@@ -385,6 +385,11 @@ class RouteAndReserveTests(TestCase):
         self.assertEqual(out["reserved"], {"37436": {"303": 120}})
         self.assertEqual(sorted(i for ids in out["islands"].values() for i in ids), ["4477"])
         self.assertEqual(parse_reserve('{"x": {"303": 1}, "5": {"303": -2, "304": 3}}'), {"5": {"304": 3}})
+        Job.objects.create(account=account, game_account=ga, node=node, action_code=1005, status="scheduled",
+                           inputs_json=_json.dumps({"building_type": "troops", "mode": "maintain", "maintain_scope": "selected_uniform",
+                                                    "target_garrison": {"303": 50, "305": 6}, "city_ids": ["37436", "37441"]}))
+        self.assertEqual(account_reservations(str(ga.pk))["garrison"],
+                         {"37436": {"303": 50, "305": 6}, "37441": {"303": 50, "305": 6}})
 
 
 class FrontLineTests(TestCase):

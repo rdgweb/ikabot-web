@@ -1725,6 +1725,8 @@ class JobListView(FilterSortListView):
                 for u, q in ((e or {}).get("units") or {}).items():
                     elsewhere[u] = elsewhere.get(u, 0) + _to_int(q, 0)
             route = st.get("route") if isinstance(st.get("route"), dict) else {}
+            incoming = st.get("incoming") if isinstance(st.get("incoming"), dict) else {}
+            incoming_eta = _to_int(incoming.get("eta"), 0)
             islands.append({
                 "id": island_id, "name": names.get(island_id, ("", ""))[0], "coords": names.get(island_id, ("", ""))[1],
                 "level": st.get("level"), "label": label, "tone": tone, "town": st.get("town") or "",
@@ -1742,6 +1744,8 @@ class JobListView(FilterSortListView):
                 "rebuild_end": datetime.fromtimestamp(end, tz=dt_timezone.utc) if end else None,
                 "battles": battles,
                 "elsewhere": units(elsewhere),
+                "incoming": units(incoming.get("units")) if incoming_eta > datetime.now().timestamp() else [],
+                "incoming_eta": datetime.fromtimestamp(incoming_eta, tz=dt_timezone.utc) if incoming_eta else None,
                 "journey_minutes": round(_to_int(route.get("journey_seconds"), 0) / 60) if route.get("journey_seconds") else None,
                 **cls._barbarian_farm(st, inputs),
             })

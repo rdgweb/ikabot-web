@@ -37,7 +37,7 @@ class BarbariansFormTests(TestCase):
         self.assertNotIn("Tropas personalizadas (JSON)", html)          # no raw field left
         self.assertNotIn("Cidade que ataca em cada ilha (JSON)", html)
         self.assertIn("Equipe reservada", html)                          # N-194
-        self.assertIn("Cidade do exército", html)
+        self.assertIn("Onde o exército está", html)
         self.assertNotIn("Tropas reservadas (equipe de assalto)", html)  # no raw JSON field
 
     def test_the_army_and_the_reserved_team_reach_the_job(self):

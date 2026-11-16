@@ -23,7 +23,7 @@
 
 {% if barb.army_city or barb.reserved %}
 <div class="flex flex-wrap items-center gap-2 mb-4 text-[11px]">
-  {% if barb.army_city %}<span class="rounded-full px-2.5 py-1" style="background: rgba(79,134,185,.12); color: var(--ik-sea-dark);"><i class="bi bi-shield-fill"></i> exército em <b>{{ barb.army_city }}</b> · todas as ilhas saem dela</span>{% endif %}
+  {% if barb.army_city %}<span class="rounded-full px-2.5 py-1" style="background: rgba(79,134,185,.12); color: var(--ik-sea-dark);"><i class="bi bi-shield-fill"></i> exército em <b>{{ barb.army_city }}</b> · leva a cada ilha o que a vila pede +15%</span>{% endif %}
   {% for r in barb.reserved %}
   <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-1" style="background: var(--ik-sand-light); color: var(--ik-muted);" title="o farm não usa nem move; o Manter não junta">
     <i class="bi bi-lock-fill"></i> reservado em <b class="text-ink">{{ r.city }}</b>
@@ -124,6 +124,12 @@
         <div><div class="text-[10px] text-muted">cresce</div><b class="text-sm tabular-nums text-ink">{{ i.farm_population.growth|floatformat:1 }}/h</b></div>
         <div title="cidadãos que um ciclo pode perder sem a cidade encolher"><div class="text-[10px] text-muted">repõe/ciclo</div><b class="text-sm tabular-nums text-ink">{{ i.farm_population.per_cycle|default:"–" }}</b></div>
       </div>
+      {% if i.incoming %}
+      <div class="mt-2 flex flex-wrap items-center gap-1 text-[11px] text-muted" title="o que o simulador pediu +15%, menos o que a ilha já tinha">
+        <i class="bi bi-arrow-right-circle"></i> chegando{% if i.incoming_eta %} às {{ i.incoming_eta|date:"H:i" }}{% endif %}:
+        {% for u in i.incoming %}<img src="{{ u.icon }}" alt="" class="h-4 w-4 object-contain" title="{{ u.name }}"><span class="tabular-nums text-ink">{{ u.qty|intcomma }}</span>{% endfor %}
+      </div>
+      {% endif %}
       {% if i.elsewhere %}
       <div class="mt-2 flex flex-wrap items-center gap-1 text-[11px] text-muted" title="treinados em outras cidades; o job leva para o exército quando ficam prontos">
         <i class="bi bi-arrow-left-right"></i> de outras cidades:

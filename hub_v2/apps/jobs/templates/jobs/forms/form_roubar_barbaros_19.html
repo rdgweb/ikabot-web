@@ -56,7 +56,7 @@
            towns(i) { return this.ui.cities.filter(c => c.island_id === i.id).sort((a, b) => b.total - a.total); },
            townOf(i) { return this.ui.cities.find(c => c.id === this.town[i.id]) || null; },
            toggleIsland(id) { const k = this.islands.indexOf(id); k >= 0 ? this.islands.splice(k, 1) : this.islands.push(id); },
-           townMap() { const out = {}; this.islandIds().forEach(id => { const t = this.army || this.town[id]; if (t) out[id] = t; }); return JSON.stringify(out); },
+           townMap() { const out = {}; this.islandIds().forEach(id => { const t = this.town[id] || this.army; if (t) out[id] = t; }); return JSON.stringify(out); },
            firstTown() { if (this.army) return this.army; const ids = this.islandIds(); return ids.length ? (this.town[ids[0]] || '') : ''; },
            city() { return this.ui.cities.find(c => c.id === this.firstTown()) || null; },
            customJson() {
@@ -90,14 +90,14 @@
         <label class="form-label text-xs mb-2 block"><i class="bi bi-shield-fill text-sea mr-1"></i>Exército</label>
         <div class="grid gap-3 md:grid-cols-2">
           <div>
-            <label class="form-label text-[11px] mb-1 block">Cidade do exército</label>
+            <label class="form-label text-[11px] mb-1 block">Onde o exército está</label>
             <select x-model="army" class="form-select !py-1.5 !text-xs w-full">
-              <option value="">cada ilha com a sua cidade</option>
+              <option value="">cada ilha com as tropas da sua cidade</option>
               <template x-for="c in ui.cities" :key="'army' + c.id">
                 <option :value="c.id" :selected="army === c.id" x-text="c.name + (c.total ? ' · ' + fmt(c.total) + ' tropas' : '')"></option>
               </template>
             </select>
-            <span class="text-[10px] text-muted" x-text="army ? 'ataca as vilas de qualquer ilha saindo daqui (de navio)' : 'cada vila é atacada de uma cidade da própria ilha'"></span>
+            <span class="text-[10px] text-muted" x-text="army ? 'cada vila é atacada da cidade da sua ilha; o que faltar sai daqui (o que o simulador pede +15%)' : 'cada vila é atacada com as tropas de uma cidade da própria ilha'"></span>
           </div>
           <div>
             <label class="form-label text-[11px] mb-1 block">Todas as ilhas da conta</label>
@@ -167,7 +167,7 @@
                   </span>
                 </div>
               </button>
-              <div class="px-3 pb-3" x-show="islands.includes(i.id) && !army">
+              <div class="px-3 pb-3" x-show="islands.includes(i.id)">
                 <template x-if="towns(i).length > 1">
                   <select x-model="town[i.id]" class="form-select !py-1 !text-xs w-full">
                     <template x-for="c in towns(i)" :key="c.id">
