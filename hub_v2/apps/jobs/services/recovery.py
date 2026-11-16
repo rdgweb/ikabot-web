@@ -11,6 +11,7 @@ from apps.accounts.models import Node
 from apps.jobs.models import Job, JobLog
 from apps.jobs.services.workflows import create_job_with_workflow
 from apps.settings_app.utils import get_int_setting
+from core.contracts import ACTION_CATALOG
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,152 @@ def _lease_seconds() -> int:
     return max(30, get_int_setting("running_job_lease_seconds", 180))
 
 
+def _orphan_resume_delay_seconds() -> int:
+    return max(60, get_int_setting("orphan_recurring_resume_delay_seconds", 300))
+
+
+# N-195: a loop whose run was orphaned (agent restarted mid-run) resumes with a new job;
+# after this many orphaned resumes in a row it stops, as before, instead of retrying for ever.
+_MAX_CONSECUTIVE_ORPHAN_RESUMES = 3
+_ORPHAN_RESUME_TRIGGER = "orphan_resume"
+
+# Inputs that say which slice of a workflow a job is: Manter tropas and Manter frota live in
+# one workflow (one job per kind), the donation loops of an account in one workflow (one job
+# per city). Two jobs of the same action are the same loop only when these match.
+_LANE_KEYS = (
+    "building_type",
+    "city_id",
+    "city_ids",
+    "cities",
+    "city",
+    "target_city",
+    "island_ids",
+    "own_city_ids",
+    "monitor_mode",
+)
+
+
+def _parse_inputs(raw) -> dict:
+    try:
+        parsed = json.loads(raw or "{}")
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _lane_value(value):
+    if isinstance(value, (list, tuple)):
+        items = [item.get("id") if isinstance(item, dict) else item for item in value]
+        return tuple(sorted(str(item) for item in items if item not in (None, "")))
+    if isinstance(value, dict):
+        return tuple(sorted((str(k), str(v)) for k, v in value.items()))
+    if value in (None, ""):
+        return ""
+    return str(value)
+
+
+def _lane_key(action_code: int, inputs: dict) -> tuple:
+    return (int(action_code),) + tuple(_lane_value(inputs.get(key)) for key in _LANE_KEYS)
+
+
+def _has_active_same_lane(job: Job, inputs: dict) -> bool:
+    """Another queued/scheduled/running job already carries this job's loop."""
+    if not job.workflow_id:
+        return False
+    key = _lane_key(job.action_code, inputs)
+    candidates = Job.objects.filter(
+        workflow_id=job.workflow_id,
+        action_code=job.action_code,
+        status__in=("queued", "running", "scheduled"),
+    ).exclude(pk=job.pk).only("pk", "source_job_id", "inputs_json", "action_code")
+    for other in candidates:
+        if other.source_job_id == job.pk:
+            return True
+        if _lane_key(other.action_code, _parse_inputs(other.inputs_json)) == key:
+            return True
+    return False
+
+
+def _job_loops(action_code: int, inputs: dict) -> bool:
+    """The job is a loop that schedules its own next cycle (catalog "recurring")."""
+    if not ACTION_CATALOG.get(int(action_code), {}).get("recurring"):
+        return False
+    if int(action_code) == 1005:
+        # Treinar agora / Distribuir run once; only Manter efetivo loops
+        return str(inputs.get("mode") or "once") == "maintain"
+    if int(action_code) == 3:
+        return bool(inputs.get("loop_enabled"))
+    return True
+
+
+def _consecutive_orphan_resumes(job: Job) -> int:
+    count = 0
+    current = job
+    seen = set()
+    while current is not None and current.pk not in seen:
+        seen.add(current.pk)
+        run = current.workflow_run
+        if run is None or run.trigger_type != _ORPHAN_RESUME_TRIGGER:
+            break
+        count += 1
+        if not current.source_job_id:
+            break
+        current = Job.objects.select_related("workflow_run").filter(pk=current.source_job_id).first()
+    return count
+
+
+def _resume_orphaned_loop(locked: Job, *, now, elapsed_seconds: int) -> str | None:
+    """Create the loop's next job from the orphan's inputs; the reason it did not, or None."""
+    workflow = locked.workflow
+    if workflow is not None and workflow.status in ("paused", "cancelled"):
+        return "workflow pausado" if workflow.status == "paused" else "workflow cancelado"
+    if _consecutive_orphan_resumes(locked) >= _MAX_CONSECUTIVE_ORPHAN_RESUMES:
+        return f"{_MAX_CONSECUTIVE_ORPHAN_RESUMES} retomadas seguidas tambem ficaram orfas"
+
+    inputs = _parse_inputs(locked.inputs_json)
+    # parameters edited while the job ran (N-13) apply to the next cycle, as in a reschedule
+    pending_patch = inputs.pop("__pending_patch", None)
+    if isinstance(pending_patch, dict) and pending_patch:
+        inputs.update(pending_patch)
+
+    delay = _orphan_resume_delay_seconds()
+    next_job = create_job_with_workflow(
+        account=locked.account,
+        game_account=locked.game_account,
+        node=locked.node,
+        profile=locked.profile,
+        action_code=locked.action_code,
+        inputs=inputs,
+        timeout_sec=locked.timeout_sec,
+        source_job=locked,
+        status="scheduled",
+        scheduled_for=now + timedelta(seconds=delay),
+        start_new_run=True,
+        trigger_type=_ORPHAN_RESUME_TRIGGER,
+    )
+    locked.status = "cancelled"
+    locked.exit_code = 98
+    locked.finished_at = now
+    locked.lease_expires_at = None
+    locked.save(update_fields=["status", "exit_code", "finished_at", "lease_expires_at", "updated_at"])
+    minutes = max(1, round(delay / 60))
+    JobLog.objects.create(
+        job=locked,
+        level="warn",
+        message=(
+            f"Execucao orfa recuperada apos {elapsed_seconds}s sem conclusao (o agente parou no meio). "
+            f"Acao recorrente: o loop continua no job {next_job.pk}, agendado para daqui a {minutes} min "
+            f"com os mesmos parametros."
+        ),
+    )
+    JobLog.objects.create(
+        job=next_job,
+        level="info",
+        message=f"Retomada do loop: o job anterior {locked.pk} ficou orfao apos {elapsed_seconds}s.",
+    )
+    return None
+
+
 def _is_job_stale(job: Job, *, now) -> bool:
     if job.lease_expires_at:
         return job.lease_expires_at <= now
@@ -71,6 +218,7 @@ def recover_stale_running_jobs(*, node: Node | None = None) -> dict[str, int]:
 
     recovered = 0
     requeued = 0
+    resumed = 0
     marked_error = 0
 
     for job in stale_jobs:
@@ -92,11 +240,9 @@ def recover_stale_running_jobs(*, node: Node | None = None) -> dict[str, int]:
                 progress = {}
 
             if locked.action_code in SAFE_REQUEUE_ACTIONS:
-                has_active_followup = Job.objects.filter(
-                    workflow_id=locked.workflow_id,
-                    action_code=locked.action_code,
-                    status__in=("queued", "running", "scheduled"),
-                ).exclude(pk=locked.pk).exists()
+                # N-195: only a job of the same slice (kind, city) counts; a workflow can hold
+                # several loops of one action (Manter tropas + frota, donations per city)
+                has_active_followup = _has_active_same_lane(locked, _parse_inputs(locked.inputs_json))
                 if has_active_followup:
                     locked.status = "cancelled"
                     locked.exit_code = 98
@@ -167,6 +313,33 @@ def recover_stale_running_jobs(*, node: Node | None = None) -> dict[str, int]:
                 action = f"reagendada como {next_job.pk}"
                 locked.status = "cancelled"
                 locked.exit_code = 98
+            elif _job_loops(locked.action_code, _parse_inputs(locked.inputs_json)):
+                # N-195: a loop (Manter tropas, Roubar Barbaros...) used to end here for good
+                if _has_active_same_lane(locked, _parse_inputs(locked.inputs_json)):
+                    locked.status = "cancelled"
+                    locked.exit_code = 98
+                    locked.finished_at = now
+                    locked.lease_expires_at = None
+                    locked.save(update_fields=["status", "exit_code", "finished_at", "lease_expires_at", "updated_at"])
+                    JobLog.objects.create(
+                        job=locked,
+                        level="warn",
+                        message=(
+                            f"Execucao orfa recuperada apos {elapsed_seconds}s -- "
+                            f"o loop ja tem o proximo job na fila; cancelando o orphan."
+                        ),
+                    )
+                    recovered += 1
+                    continue
+                not_resumed = _resume_orphaned_loop(locked, now=now, elapsed_seconds=elapsed_seconds)
+                if not_resumed is None:
+                    resumed += 1
+                    recovered += 1
+                    continue
+                marked_error += 1
+                locked.status = "error"
+                locked.exit_code = 98
+                action = f"marcada como erro; loop nao retomado ({not_resumed})"
             else:
                 marked_error += 1
                 locked.status = "error"
@@ -188,6 +361,7 @@ def recover_stale_running_jobs(*, node: Node | None = None) -> dict[str, int]:
     return {
         "recovered": recovered,
         "requeued": requeued,
+        "resumed": resumed,
         "marked_error": marked_error,
     }
 

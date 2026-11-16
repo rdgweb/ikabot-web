@@ -24,6 +24,6 @@ class Command(BaseCommand):
         result = recover_stale_running_jobs(node=node)
         self.stdout.write(
             self.style.SUCCESS(
-                "recovered={recovered} requeued={requeued} marked_error={marked_error}".format(**result)
+                "recovered={recovered} requeued={requeued} resumed={resumed} marked_error={marked_error}".format(**result)
             )
         )
