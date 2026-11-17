@@ -54,9 +54,34 @@ def active() -> dict:
     return value
 
 
-def active_bonus() -> tuple[float, float]:
+VIKING = 316
+BANDS = ("club", "viking")
+
+
+def band_of(defender_units) -> str:
+    """N-194 (17/11): the kind of village: club men and rams (levels 1-19) or with vikings (20 on). One adjustment did
+    not fit both: against the club men our troops hit about half of what the vikings' adjustment says."""
+    units = {int(u) for u, q in (defender_units or {}).items() if str(u).lstrip("-").isdigit() and int(q or 0) > 0}
+    return "viking" if VIKING in units else "club"
+
+
+def _band_value(defender_units=None) -> dict:
     value = active()
+    if defender_units is not None:
+        band = (value.get("bands") or {}).get(band_of(defender_units))
+        if isinstance(band, dict) and band.get("attacker_pct") is not None:
+            return band
+    return value
+
+
+def active_bonus(defender_units=None) -> tuple[float, float]:
+    value = _band_value(defender_units)
     return float(value.get("attacker_pct") or 0), float(value.get("defender_pct") or 0)
+
+
+def active_wall_armor(defender_units=None) -> float | None:
+    value = _band_value(defender_units).get("wall_armor_pct")
+    return float(value) if value is not None else None
 
 
 def _real_rounds(rounds: list) -> dict:
@@ -242,10 +267,41 @@ def score(sample_list: list[dict], attacker_pct: float, defender_pct: float, wal
 
 def learn(*, save: bool = True) -> dict:
     """Search the adjustment that fits the barbarian battles best (damage of each side against troops, armour of the
-    village's wall); put it into use when it is better than the one in use."""
+    village's wall), for all of them and (N-194) for each kind of village; put it into use when it is better than the
+    one in use."""
     with _LOCK:
-        sample_list = samples()
-        current = active()
+        everything = samples()
+        result = _learn(everything, active(), save=False)
+        bands, changed = {}, False
+        for band in BANDS:
+            subset = [s for s in everything if band_of((s.get("inputs") or {}).get("defender")) == band]
+            if not subset:
+                continue
+            had = ((active().get("bands") or {}).get(band)) or {}
+            found = _learn(subset, had or active(), save=False)
+            keep = found if (found["better"] or not had) else {**had, "samples": len(subset)}
+            changed = changed or found["better"] or not had
+            bands[band] = {k: keep.get(k) for k in ("samples", "attacker_pct", "defender_pct", "wall_armor_pct", "before", "after",
+                                                     "computed_at")}
+        if save and (result["better"] or changed):
+            from apps.settings_app.utils import set_setting
+
+            current = active()
+            base = result if result["better"] else {**current, "samples": len(everything)}
+            history = list(current.get("history") or [])[-9:]
+            if current:
+                history.append({k: current.get(k) for k in ("attacker_pct", "defender_pct", "wall_armor_pct", "samples", "computed_at")})
+            set_setting(SETTING_KEY, json.dumps({**{k: v for k, v in base.items() if k not in ("bands", "history")},
+                                                 "bands": bands, "history": history}, ensure_ascii=False))
+            _CACHE.update({"at": 0.0, "value": None})
+            logger.info("Barbarian calibration updated: %s", {b: (v["attacker_pct"], v["defender_pct"]) for b, v in bands.items()})
+        result["bands"] = bands
+        return result
+
+
+def _learn(sample_list: list[dict], current: dict, *, save: bool = False) -> dict:
+    """The search itself, over these samples, from the adjustment `current`."""
+    if True:
         cur = (float(current.get("attacker_pct") or 0), float(current.get("defender_pct") or 0),
                float(current.get("wall_armor_pct") or 100))
         before = score(sample_list, *cur)

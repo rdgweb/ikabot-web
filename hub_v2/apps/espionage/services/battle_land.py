@@ -1014,22 +1014,22 @@ def _first_alive_line(deployment: RoundDeployment, targets: list[str]) -> str | 
     return None
 
 
-def _barbarian_wall_armor_pct() -> float | None:
+def _barbarian_wall_armor_pct(defender_units=None) -> float | None:
     try:
-        from apps.combat.services.barbarian_learning import active
+        from apps.combat.services.barbarian_learning import active_wall_armor
 
-        value = active().get("wall_armor_pct")
-        return float(value) if value is not None else None
+        return active_wall_armor(defender_units)
     except Exception:  # noqa: BLE001 - the simulator must work without the combat app
         return None
 
 
-def _barbarian_bonus() -> tuple[float, float]:
-    """N-182: the adjustment learned from the barbarian battles alone (0, 0 until it is learned)."""
+def _barbarian_bonus(defender_units=None) -> tuple[float, float]:
+    """N-182: the adjustment learned from the barbarian battles alone (0, 0 until it is learned); N-194: the one of
+    this kind of village (club men or vikings)."""
     try:
         from apps.combat.services.barbarian_learning import active_bonus
 
-        return active_bonus()
+        return active_bonus(defender_units)
     except Exception:  # noqa: BLE001 - the simulator must work without the combat app
         return 0.0, 0.0
 
@@ -1103,9 +1103,9 @@ def simulate_land_battle(
         # N-110: the adjustment learned from real combats and approved on the screen (0, 0 until then);
         # N-182: against a barbarian village, the one learned from the barbarian battles alone
         if is_barbarian_village(defender_units):
-            learned_attacker, learned_defender = _barbarian_bonus()
+            learned_attacker, learned_defender = _barbarian_bonus(defender_units)
             if wall_armor_pct is None:
-                wall_armor_pct = _barbarian_wall_armor_pct()
+                wall_armor_pct = _barbarian_wall_armor_pct(defender_units)
         else:
             learned_attacker, learned_defender = _learned_bonus()
         attacker_damage_bonus_pct = float(attacker_damage_bonus_pct or 0.0) + learned_attacker
