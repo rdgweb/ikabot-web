@@ -32,6 +32,7 @@ LINE_UNITS = {
 COOK, DOCTOR = 310, 311
 COOK_OPTIONS = (0, 5, 10, 20, 30)
 MORALE_FLOOR = 40               # an army whose morale ends below this was close to fleeing
+MIN_ARMY_SHARE = 3              # an army never smaller than the defenders / this (the real wins: 18 vs 35, 22 vs 50, 48 vs 77)
 TRAINABLE = (303, 308, 302, 304, 305, 309, 312, 310)
 # barbarian names as the village screen shows them -> the game's ids
 BARBARIAN_NAMES = (("clube", 320), ("faca", 321), ("aríete", 324), ("ariete", 324), ("catapulta", 325), ("viking", 316))
@@ -227,6 +228,10 @@ def _holds_the_front(army: dict, available: dict) -> bool:
     """N-194 (Rodrigo, 15/11: swordsmen alone at the levels 1 to 9 "não tem lógica"): the front line is the hoplites'
     and the giants'; every army takes one of them when the town has any. Only a town without them sends the flanks."""
     front = LINE_UNITS["principal"]
+    if int(_FARM.get("min_units") or 0) and sum(int(q or 0) for q in army.values()) < int(_FARM["min_units"]):
+        # N-194 (17/11): 2 hoplites and 6 mortars against 75 club men and a wall fled in round 1, three times; the
+        # simulator called it a win. Never fewer than a third of the defenders, nor than twice an army that lost here
+        return False
     if int(_FARM.get("wall_level") or 0) > 0:
         # N-194 (Rodrigo, 16/11: "o morteiro é quem fura a muralha"): a village with a wall gets artillery, when the
         # town has any (the simulator lets the front line wear a low wall down, the real battles always had mortars)
@@ -343,7 +348,7 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
          upgrades: dict[int, dict] | None = None, explain_training: bool = True, per_round: float = 0.0,
          train_seconds: dict | None = None, cycle_minutes: float = 0.0, population: dict | None = None,
          unit_citizens_read: dict | None = None, resource_values: dict | None = None, journey: dict | None = None,
-         weights: dict | None = None, max_weight: float | None = None) -> dict:
+         weights: dict | None = None, max_weight: float | None = None, min_units: int = 0) -> dict:
     """The best army for this village from what the town has, with the simulation that chose it."""
     from apps.espionage.services.battle_land import simulate_land_battle
 
@@ -358,6 +363,7 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
     set_town(population, unit_citizens_read, resource_values)
     set_route(journey, weights, max_weight)
     _FARM["wall_level"] = int(wall_level or 0)
+    _FARM["min_units"] = max(int(min_units or 0), math.ceil(sum(defenders.values()) / MIN_ARMY_SHARE))
 
     seen: dict = {}
 
@@ -550,6 +556,7 @@ def reinforce(state: dict, available: dict[int, int], *, wall_level: int = 0, fi
     set_town(population, unit_citizens_read, resource_values)
     set_route()
     _FARM["wall_level"] = 0
+    _FARM["min_units"] = 0
 
     def fight(extra):
         return simulate_land_battle(

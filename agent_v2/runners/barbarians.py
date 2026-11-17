@@ -146,7 +146,7 @@ def _cycle(st: dict) -> int:
 
 def farm_book(ledger: list[dict], prices: dict, unit_citizens: dict | None = None,
               population: dict | None = None, values: dict | None = None,
-              unit_resources: dict | None = None) -> dict[int, dict]:
+              unit_resources: dict | None = None, towns: int = 1) -> dict[int, dict]:
     """Per level, from the battles the job fought: loot, gold, what the losses cost to train again, rounds, the time
     between this attack and the next (the cycle), the profit and the profit per hour (averages per battle); the
     citizens the losses take and whether the town grows them back within the cycle (sustainable)."""
@@ -185,6 +185,9 @@ def farm_book(ledger: list[dict], prices: dict, unit_citizens: dict | None = Non
         row["per_hour"] = round(row["profit"] * 60 / row["cycle"]) if row["cycle"] else None
         row["citizens"] = round(row["citizens"] / n)
         limit = sustainable_citizens(population, row["cycle"])
+        if limit is not None and towns > 1:
+            # N-194 (17/11): the losses are trained again in any town with a barracks: each grows its own citizens
+            limit *= int(towns)
         row["sustainable_citizens"] = limit
         row["sustainable"] = None if limit is None else row["citizens"] <= limit
         # the loot pays for training the losses again, resource by resource (sulfur above all: it is the troops')
@@ -431,6 +434,7 @@ class BarbariansRunner(BaseRunner):
         all_islands = str(inputs.get("all_islands") or "").lower() in {"1", "true", "on", "yes"}
         self._reserved = _parse_reserve(inputs.get("reserve_units"))
         self._fleet_cache = None
+        self._barracks_cache = None
         self._account_ledger = []
         min_level = _parse_int(inputs.get("min_barb_level"), 1)
         max_level = _parse_int(inputs.get("max_barb_level"), 99)
@@ -513,6 +517,20 @@ class BarbariansRunner(BaseRunner):
             self.log(jid, "info", f"Próxima olhada em {next_in // 60} min {next_in % 60} s (quando o próximo movimento chega).")
         return RunnerResult(success=True, reschedule_seconds=next_in,
                             reschedule_inputs={**inputs, "islands_state": state, **totals, "phase": "rounds"})
+
+    def _barracks_towns(self) -> int:
+        """The account's towns with a barracks (where the farm's losses can be trained again)."""
+        if getattr(self, "_barracks_cache", None) is not None:
+            return self._barracks_cache
+        count = 1
+        try:
+            snapshot = self.hub.get_snapshot(game_account_id=getattr(self, "_game_account_id", "")) or {}
+            count = sum(1 for c in snapshot.get("cities") or []
+                        if any(str((b or {}).get("building") or "") == "barracks" for b in c.get("buildings") or [] if isinstance(b, dict)))
+        except Exception:  # noqa: BLE001 - one town, as before
+            count = 1
+        self._barracks_cache = max(1, count)
+        return self._barracks_cache
 
     def _fleet_size(self) -> int:
         """The account's merchant ships, all of them (0 when the snapshot does not say)."""
@@ -795,7 +813,7 @@ class BarbariansRunner(BaseRunner):
             current += [e for e in (getattr(self, "_account_ledger", None) or [])
                         if isinstance(e, dict) and int(e.get("book") or 0) >= BOOK_VERSION]
             book = farm_book(current, st.get("prices") or {}, st.get("unit_citizens") or {}, st.get("population") or {},
-                             st.get("resource_values"), st.get("unit_resources"))
+                             st.get("resource_values"), st.get("unit_resources"), self._barracks_towns())
             ideal = ideal_level(book)
             st["ideal_level"] = ideal
             if ideal:
@@ -845,7 +863,9 @@ class BarbariansRunner(BaseRunner):
             return None
         st["blind_level"] = None
         route = self._route(jid, island_id, st, village)
+        lost_with = int((st.get("defeat_units") or {}).get(str(level)) or 0)
         payload = {"game_account_id": getattr(self, "_game_account_id", ""), "level": level, **route,
+                   "min_units": 2 * lost_with,
                    "wall_level": int(village.get("wall_level") or barb.get("wall_level") or 0),
                    "defenders": village.get("defender_ids") or {},
                    "loot": int(village.get("total") or 0) + int(village.get("gold") or 0),
@@ -1122,6 +1142,13 @@ class BarbariansRunner(BaseRunner):
             return
         st["claimed_reports"] = ([int(c) for c in st.get("claimed_reports") or []] + [int(newest["combat_id"])])[-20:]
         battle = _battle_outcome(detailed or {}, newest)
+        if battle.get("result") == "defeat" and st.get("last_troops"):
+            # N-194 (17/11): the next army against this level is at least twice the one that lost
+            lost_with = sum(int(q or 0) for q in (st.get("last_troops") or {}).values())
+            defeats = dict(st.get("defeat_units") or {})
+            level_key = str(st.get("attacked_level") or "")
+            defeats[level_key] = max(int(defeats.get(level_key) or 0), lost_with)
+            st["defeat_units"] = defeats
         battle["level"] = st.get("attacked_level")
         st.update(last_battle=battle, last_report_id=battle["combat_id"], report_pending=False)
         ledger = [e for e in (st.get("ledger") or []) if isinstance(e, dict)]

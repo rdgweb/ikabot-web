@@ -914,3 +914,35 @@ class ReportMatchTests(unittest.TestCase):
         st = {"ledger": low, "prices": {}}
         runner._account_ledger = [{"level": 34, "loot": 94_000, "gold": 78_000, "losses": {"303": 90}, "cycle_minutes": 215, "book": 2}]
         self.assertEqual(runner._target_level(st), 0)                   # the 34 pays more: keep climbing
+
+
+
+class DefeatAndScaleTests(unittest.TestCase):
+    """N-194 (17/11): an army that lost makes the next one at least twice as big; the citizens of every town with a
+    barracks count for keeping the farm up."""
+
+    def test_a_defeat_doubles_the_next_army(self):
+        runner = BarbariansRunner.__new__(BarbariansRunner)
+        runner.hub = _Hub()
+        runner.is_network_error = lambda exc: False
+        runner._state = {}
+        runner._retrain = False
+
+        class Game:
+            def fetch_combat_reports(self, city_id, limit=10):
+                return [{"combat_id": 900, "text": "Batalha por Vila de Bárbaros", "result": "defeat", "rounds": 1, "city_id_target": 0}]
+
+            def fetch_combat_detailed_report(self, city_id, combat_id):
+                return {"rounds": [{"round": 1, "html": "do lado do defensor, com as seguintes unidades: 75 2"}], "attacker_losses": {}}
+
+        st = {"report_pending": True, "attacked_level": 10, "attacked_at": 1, "last_troops": {"303": 2, "305": 6},
+              "defenders": [["Membro do Clube de Bárbaros", 75], ["Aríete Bárbaro", 2]]}
+        runner._learn_from_report("j", Game(), "4480", "37437", st)
+        self.assertEqual(st["defeat_units"], {"10": 8})
+
+    def test_every_barracks_town_keeps_the_farm_up(self):
+        pop = {"citizens": 800, "happiness": 1500, "growth": 30, "occupied": 2300, "max": 3700}
+        ledger = [{"level": 34, "loot": 90_000, "gold": 78_000, "losses": {"303": 255}, "cycle_minutes": 215}]
+        one = farm_book(ledger, {"303": 200}, None, pop)
+        seven = farm_book(ledger, {"303": 200}, None, pop, towns=7)
+        self.assertEqual(seven[34]["sustainable_citizens"], 7 * one[34]["sustainable_citizens"])

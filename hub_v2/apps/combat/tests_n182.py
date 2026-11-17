@@ -432,3 +432,18 @@ class WallSiegeTests(TestCase):
         result = barbarian_planner.plan({303: 500, 304: 100, 305: 30}, {320: 100, 324: 2}, wall_level=1, field_level=5,
                                         explain_training=False)
         self.assertTrue(any(result["army"].get(u, 0) for u in (305, 306, 307)))
+
+
+class MinimumArmyTests(TestCase):
+    """N-194 (17/11): 2 hoplites and 6 mortars against 75 club men fled in round 1; never fewer than a third of the
+    defenders, nor than the floor the job asks after a defeat."""
+
+    def test_a_third_of_the_defenders_at_least(self):
+        result = barbarian_planner.plan({303: 500, 305: 30, 304: 100}, {320: 75, 324: 2}, wall_level=5, field_level=5,
+                                        explain_training=False)
+        self.assertGreaterEqual(sum(result["army"].values()), 26)
+
+    def test_the_floor_after_a_defeat(self):
+        result = barbarian_planner.plan({303: 500, 305: 30, 304: 100}, {320: 75, 324: 2}, wall_level=5, field_level=5,
+                                        explain_training=False, min_units=60)
+        self.assertGreaterEqual(sum(result["army"].values()), 60)

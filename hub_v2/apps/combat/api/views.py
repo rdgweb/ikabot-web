@@ -310,7 +310,7 @@ class BarbarianPlanView(APIView):
                                             unit_citizens_read=data.get("unit_citizens") or {},
                                             resource_values=values,
                                             journey=data.get("journey") or {}, weights=data.get("weights") or {},
-                                            max_weight=data.get("max_weight"))
+                                            max_weight=data.get("max_weight"), min_units=int(data.get("min_units") or 0))
         except Exception as exc:  # noqa: BLE001 - the job falls back to waiting
             logger.warning("Barbarian plan failed", exc_info=True)
             return Response({"can_win": False, "army": {}, "note": f"simulador falhou: {exc}"}, status=status.HTTP_200_OK)
