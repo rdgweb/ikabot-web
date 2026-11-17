@@ -329,6 +329,17 @@ class ReportTests(unittest.TestCase):
         self.assertEqual((out["morale_start"], out["morale_end"], out["rounds"], out["losses"]), (85, 55, 2, {}))
         self.assertEqual(out["reasons"], ["As tropas estão exaustas. A moral foi reduzida em 10%."])
 
+    def test_the_defenders_who_joined_stop_before_the_next_event_date(self):
+        from runners.barbarians import _defenders_joined
+
+        html = ('<div>Eventos atuais</div><div>18.11.2026 0:30:49 Bárbaros juntou-se ao combate, do lado do defensor, com as '
+                'seguintes unidades:</div><div>175</div><div>6</div><div>18.11.2026 0:30:49 Executor está a juntar-se ao '
+                'combate, do lado do atacante, com as seguintes unidades:</div><div>12</div><div>50</div>')
+        self.assertEqual(_defenders_joined({"rounds": [{"html": html}]}), 181)
+        big = html.replace("<div>175</div>", "<div>1.250</div>")
+        self.assertEqual(_defenders_joined({"rounds": [{"html": big}]}), 1256)
+        self.assertEqual(_defenders_joined({"rounds": [{"html": "<div>outra coisa</div>"}]}), 0)
+
     def test_the_real_level_20_screen(self):
         table = _parse_defenders(REAL_LEVEL_20)
         self.assertTrue(table["found"])

@@ -384,9 +384,16 @@ def _defenders_joined(detailed: dict) -> int:
 
     for r in (detailed.get("rounds") or [])[:1]:
         text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", str((r or {}).get("html") or "")))
-        m = re.search(r"do lado do defensor, com as seguintes unidades:\s*([\d.\s]+)", text)
+        m = re.search(r"do lado do defensor, com as seguintes unidades:\s*(.*)", text)
         if m:
-            return sum(int(x.replace(".", "")) for x in m.group(1).split() if x.replace(".", "").isdigit())
+            # the counts end where the next event starts with its date ("175 6 18.11.2026 0:30:49 ..."): 18.11.2026
+            # is not a count, and summing it made every report miss the village (N-194, 18/11)
+            total = 0
+            for token in m.group(1).split():
+                if not re.fullmatch(r"\d{1,3}(?:\.\d{3})*", token):
+                    break
+                total += int(token.replace(".", ""))
+            return total
     return 0
 
 
