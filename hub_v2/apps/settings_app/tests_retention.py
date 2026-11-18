@@ -16,7 +16,7 @@ from .models import AppSetting, RetentionRun, JobRetentionReceipt
 from .retention import POLICY_KEY, DEFAULT_POLICY, get_policy, preview, process_batch
 
 
-class RetentionTests(TestCase):
+class RetentionData(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user("retention-admin", is_staff=True)
         self.node = Node.objects.create(name="retention-test")
@@ -52,6 +52,8 @@ class RetentionTests(TestCase):
                 return run
         self.fail("maintenance did not finish")
 
+
+class RetentionTests(RetentionData):
     def test_graphs_identical_after_compaction_for_every_period(self):
         old = self.snapshot(120)
         self.snapshot(45, 600)
@@ -180,3 +182,84 @@ class RetentionTests(TestCase):
         other.is_staff = False
         other.save()
         self.assertEqual(self.client.post(reverse("settings_app:retention-preview")).status_code, 404)
+
+
+@patch("apps.settings_app.retention.BATCH_PAUSE", 0)
+@patch("apps.settings_app.retention._spawn", lambda work: work())
+class RetentionInBackgroundTests(RetentionData):
+    """N-196: after the confirmation the server goes through the batches; the page may be closed."""
+
+    def setUp(self):
+        super().setUp()
+        from django.core.cache import cache
+
+        cache.clear()
+
+    def test_confirming_runs_every_batch_on_the_server(self):
+        for days in (100, 110, 120):
+            self.snapshot(days)
+        self.client.force_login(self.user)
+        run = preview(self.user)
+        url = reverse("settings_app:retention-run", args=[run.pk])
+        with patch("apps.settings_app.retention.BATCH_SIZE", 1):
+            response = self.client.post(url, {"action": "start", "backup": "yes"})
+        self.assertRedirects(response, url, fetch_redirect_response=False)
+        run.refresh_from_db()
+        self.assertEqual((run.status, run.processed["snapshots"]), ("done", 3))
+        self.assertEqual(AccountSnapshotHistory.objects.count(), 0)
+        self.assertContains(self.client.get(url), "Retenção concluída")
+
+    def test_pause_stops_and_resume_goes_on_from_where_it_stopped(self):
+        from .retention import pause, resume, run_in_background
+
+        for days in (100, 110):
+            self.snapshot(days)
+        run = preview(self.user)
+        with patch("apps.settings_app.retention.BATCH_SIZE", 1):
+            with patch("apps.settings_app.retention._spawn", lambda work: None):
+                run = process_batch(run.pk, self.user, start=True, backup=True)
+                run_in_background(run.pk)               # a runner that will never run: the lock is taken
+            from django.core.cache import cache
+
+            cache.clear()
+            self.assertEqual(pause(run.pk).status, "paused")
+            run_in_background(run.pk)                   # paused: the runner stops at once
+            self.assertEqual(AccountSnapshotHistory.objects.count(), 1)
+            self.client.force_login(self.user)
+            self.assertContains(self.client.get(reverse("settings_app:retention-run", args=[run.pk])), "Retomar")
+            self.assertEqual(resume(run.pk).status, "running")
+        run.refresh_from_db()
+        self.assertEqual((run.status, AccountSnapshotHistory.objects.count()), ("done", 0))
+
+    def test_a_run_whose_process_is_gone_is_picked_up_again(self):
+        from django.core.cache import cache
+
+        from .retention import resume_stalled
+
+        self.snapshot(100)
+        run = preview(self.user)
+        with patch("apps.settings_app.retention._spawn", lambda work: None):
+            run = process_batch(run.pk, self.user, start=True, backup=True)
+        self.snapshot(130)                              # not in the preview: stays
+        RetentionRun.objects.filter(pk=run.pk).update(status="running")
+        cache.clear()                                   # the runner's lock expired with its process
+        self.assertTrue(resume_stalled())
+        run.refresh_from_db()
+        self.assertEqual(run.status, "done")
+        self.assertFalse(resume_stalled())              # once a minute at most, and nothing left anyway
+
+    def test_a_failing_batch_stops_the_run_and_says_why(self):
+        self.snapshot(100)
+        run = preview(self.user)
+        self.policy["log_days"] = 30                    # the policy changed after the preview
+        with patch("apps.settings_app.retention._spawn", lambda work: None):
+            run = process_batch(run.pk, self.user, start=True, backup=True)
+        self.save_policy()
+        from .retention import resume
+
+        run = resume(run.pk)
+        run.refresh_from_db()
+        self.assertEqual(run.status, "paused")
+        self.assertIn("política mudou", run.processed["error"])
+        self.client.force_login(self.user)
+        self.assertContains(self.client.get(reverse("settings_app:retention-run", args=[run.pk])), "Parou:")

@@ -168,3 +168,114 @@ def process_batch(run_id, user, *, start=False, backup=False):
         run.save(update_fields=["status", "backup_confirmed", "processed"])
         record("retention.completed", target=run, user=user, details=totals)
         return run
+
+
+# N-196: after the confirmation the server goes through the batches by itself; the page only shows how far it got and
+# may be closed. One runner at a time (a lock in the shared cache, renewed at every batch); when the process that ran
+# it is gone (deploy, worker recycled) the lock expires and the agents' heartbeat starts it again.
+RUNNER_LOCK = "retention-runner"
+RUNNER_LOCK_SECONDS = 300           # longer than any batch; how long a run waits to be picked up again after a crash
+RESUME_CHECK_KEY = "retention-resume-check"
+RESUME_CHECK_SECONDS = 60
+BATCH_PAUSE = 0.2                   # between batches, so the database serves everyone else too
+
+
+def _spawn(work) -> None:
+    """Run `work` off the request. Tests replace this to run it inline."""
+    import threading
+
+    threading.Thread(target=work, name="retention", daemon=True).start()
+
+
+def runner_active(run_id=None) -> bool:
+    from django.core.cache import cache
+
+    value = cache.get(RUNNER_LOCK)
+    return bool(value) and (run_id is None or str(value) == str(run_id))
+
+
+def _set_status(run_id, status, *, error=None) -> RetentionRun:
+    with unscoped(), transaction.atomic():
+        run = RetentionRun.objects.select_for_update().get(pk=run_id)
+        if run.status in ("running", "paused"):
+            run.status = status
+            processed = dict(run.processed)
+            processed.pop("error", None)
+            if error:
+                processed["error"] = error
+            run.processed = processed
+            run.save(update_fields=["status", "processed"])
+        return run
+
+
+def pause(run_id) -> RetentionRun:
+    """The runner stops after the batch it is in."""
+    return _set_status(run_id, "paused")
+
+
+def resume(run_id) -> RetentionRun:
+    run = _set_status(run_id, "running")
+    if run.status == "running":
+        run_in_background(run.pk)
+    return run
+
+
+def run_in_background(run_id) -> bool:
+    """Go through the batches of a started run until it is done, paused or fails. False when a runner is already on."""
+    import threading
+    import time
+
+    from django.core.cache import cache
+    from django.db import connections
+
+    if not cache.add(RUNNER_LOCK, str(run_id), RUNNER_LOCK_SECONDS):
+        return False
+    caller = threading.get_ident()
+
+    def work():
+        try:
+            while True:
+                with unscoped():
+                    run = RetentionRun.objects.select_related("user").get(pk=run_id)
+                if run.status != "running":
+                    break
+                cache.set(RUNNER_LOCK, str(run_id), RUNNER_LOCK_SECONDS)
+                try:
+                    run = process_batch(run_id, run.user)
+                except Exception as exc:  # noqa: BLE001 - the run stops and says why; nothing is retried blindly
+                    with unscoped():
+                        if RetentionRun.objects.filter(pk=run_id).exclude(status="running").exists():
+                            break                       # paused while this batch waited: not an error
+                    _set_status(run_id, "paused", error=str(exc) if isinstance(exc, ValueError) else "Erro inesperado num lote; a execução parou.")
+                    if not isinstance(exc, ValueError):
+                        import logging
+
+                        logging.getLogger(__name__).exception("Retention batch failed")
+                    break
+                if run.status != "running":
+                    break
+                if BATCH_PAUSE:
+                    time.sleep(BATCH_PAUSE)
+        finally:
+            cache.delete(RUNNER_LOCK)
+            if threading.get_ident() != caller:
+                connections.close_all()
+
+    try:
+        _spawn(work)
+    except Exception:
+        cache.delete(RUNNER_LOCK)
+        raise
+    return True
+
+
+def resume_stalled() -> bool:
+    """Called by every agent heartbeat (at most once a minute does anything): a started run nobody is running any more
+    (the process that ran it is gone) goes on."""
+    from django.core.cache import cache
+
+    if not cache.add(RESUME_CHECK_KEY, 1, RESUME_CHECK_SECONDS) or cache.get(RUNNER_LOCK):
+        return False
+    with unscoped():
+        run_id = RetentionRun.objects.filter(status="running").order_by("created_at").values_list("pk", flat=True).first()
+    return bool(run_id) and run_in_background(run_id)

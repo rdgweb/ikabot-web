@@ -9,7 +9,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 
 from .models import AppSetting, RetentionRun
-from .retention import DEFAULT_POLICY, POLICY_KEY, get_policy, preview, process_batch
+from .retention import (DEFAULT_POLICY, POLICY_KEY, get_policy, pause, preview, process_batch, resume, resume_stalled,
+                        run_in_background, runner_active)
 
 
 class RetentionPolicyForm(forms.Form):
@@ -51,23 +52,34 @@ class RetentionPreviewView(StaffOnly, View):
 
 
 class RetentionRunView(StaffOnly, View):
-    def get(self, request, pk):
-        run = get_object_or_404(RetentionRun, pk=pk, user=request.user)
+    """N-196: the server runs the batches; this page starts, pauses or resumes the run and shows how far it got."""
+
+    def _page(self, request, run):
+        if run.status == "running" and not runner_active(run.pk):
+            resume_stalled()                    # nobody is running it (hub restarted): go on now
         return render(request, "settings_app/retention_run.html", {
-            "run": run, "base_template": "base_partial.html" if request.headers.get("HX-Request") == "true" else "base.html",
+            "run": run, "on_server": run.status == "running", "error": (run.processed or {}).get("error"),
+            "base_template": "base_partial.html" if request.headers.get("HX-Request") == "true" else "base.html",
         })
+
+    def get(self, request, pk):
+        return self._page(request, get_object_or_404(RetentionRun, pk=pk, user=request.user))
 
     def post(self, request, pk):
         get_object_or_404(RetentionRun, pk=pk, user=request.user)
-        if request.POST.get("action") not in ("start", "next"):
+        action = request.POST.get("action")
+        if action not in ("start", "pause", "resume", "next"):
             return HttpResponseBadRequest("Ação inválida.")
         try:
-            run = process_batch(pk, request.user, start=request.POST["action"] == "start",
-                                backup=request.POST.get("backup") == "yes")
+            if action == "start":
+                run = process_batch(pk, request.user, start=True, backup=request.POST.get("backup") == "yes")
+                if run.status == "running":
+                    run_in_background(run.pk)
+            elif action == "pause":
+                run = pause(pk)
+            else:
+                run = resume(pk)
         except ValueError as exc:
             messages.error(request, str(exc))
             return redirect("settings_app:retention-run", pk=pk)
-        return render(request, "settings_app/retention_run.html", {
-            "run": run, "auto_continue": run.status == "running",
-            "base_template": "base_partial.html" if request.headers.get("HX-Request") == "true" else "base.html",
-        })
+        return redirect("settings_app:retention-run", pk=run.pk)

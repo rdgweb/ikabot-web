@@ -177,6 +177,13 @@ class AgentHeartbeatView(APIView):
                     trigger_if_stale()
             except Exception:
                 logger.warning("Could not start proxy maintenance from heartbeat", exc_info=True)
+            try:
+                # N-196: a started database retention whose process is gone (deploy, worker recycled) goes on
+                from apps.settings_app.retention import resume_stalled
+
+                resume_stalled()
+            except Exception:
+                logger.warning("Could not resume the database retention from heartbeat", exc_info=True)
 
         if not updated:
             return Response(
