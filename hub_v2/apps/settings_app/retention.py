@@ -203,6 +203,9 @@ def _set_status(run_id, status, *, error=None) -> RetentionRun:
             processed.pop("error", None)
             if error:
                 processed["error"] = error
+            if status == "running":
+                processed["on_server"] = True   # only these go on by themselves (a run left half-way by the old page
+                                                # waits for someone to resume it)
             run.processed = processed
             run.save(update_fields=["status", "processed"])
         return run
@@ -277,5 +280,10 @@ def resume_stalled() -> bool:
     if not cache.add(RESUME_CHECK_KEY, 1, RESUME_CHECK_SECONDS) or cache.get(RUNNER_LOCK):
         return False
     with unscoped():
-        run_id = RetentionRun.objects.filter(status="running").order_by("created_at").values_list("pk", flat=True).first()
+        runs = list(RetentionRun.objects.filter(status="running").order_by("created_at").only("pk", "processed"))
+    run_id = next((r.pk for r in runs if (r.processed or {}).get("on_server")), None)
     return bool(run_id) and run_in_background(run_id)
+
+
+def started_on_server(run) -> bool:
+    return run.status == "running" and bool((run.processed or {}).get("on_server"))

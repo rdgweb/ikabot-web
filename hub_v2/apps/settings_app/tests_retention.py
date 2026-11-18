@@ -234,19 +234,39 @@ class RetentionInBackgroundTests(RetentionData):
     def test_a_run_whose_process_is_gone_is_picked_up_again(self):
         from django.core.cache import cache
 
-        from .retention import resume_stalled
+        from .retention import resume, resume_stalled
 
         self.snapshot(100)
-        run = preview(self.user)
-        with patch("apps.settings_app.retention._spawn", lambda work: None):
-            run = process_batch(run.pk, self.user, start=True, backup=True)
-        self.snapshot(130)                              # not in the preview: stays
-        RetentionRun.objects.filter(pk=run.pk).update(status="running")
-        cache.clear()                                   # the runner's lock expired with its process
-        self.assertTrue(resume_stalled())
+        with patch("apps.settings_app.retention.BATCH_SIZE", 1):
+            self.snapshot(110)
+            run = preview(self.user)
+            with patch("apps.settings_app.retention._spawn", lambda work: None):
+                run = process_batch(run.pk, self.user, start=True, backup=True)
+                resume(run.pk)                          # started on the server; its process then dies
+            self.snapshot(130)                          # not in the preview: stays
+            cache.clear()                               # the runner's lock expired with its process
+            self.assertTrue(resume_stalled())
         run.refresh_from_db()
-        self.assertEqual(run.status, "done")
+        self.assertEqual((run.status, AccountSnapshotHistory.objects.count()), ("done", 1))
         self.assertFalse(resume_stalled())              # once a minute at most, and nothing left anyway
+
+    def test_a_run_left_half_way_by_the_old_page_waits_for_someone(self):
+        from django.core.cache import cache
+
+        from .retention import resume_stalled
+
+        for days in (100, 110):
+            self.snapshot(days)
+        run = preview(self.user)
+        with patch("apps.settings_app.retention.BATCH_SIZE", 1):
+            run = process_batch(run.pk, self.user, start=True, backup=True)    # "running", as the old page left it
+        cache.clear()
+        self.assertFalse(resume_stalled())
+        self.client.force_login(self.user)
+        page = self.client.get(reverse("settings_app:retention-run", args=[run.pk]))
+        self.assertContains(page, "Retomar")
+        self.assertNotContains(page, "Rodando no servidor")
+        self.assertEqual(AccountSnapshotHistory.objects.count(), 1)
 
     def test_a_failing_batch_stops_the_run_and_says_why(self):
         self.snapshot(100)

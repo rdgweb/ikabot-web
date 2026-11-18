@@ -22,7 +22,7 @@
       <button type="submit" class="btn btn-danger">Confirmar e executar em lotes</button>
     </form>
     {% else %}<p class="text-sm mb-4">A execução está desativada. Ative a política nas configurações e gere uma nova prévia quando quiser executar.</p>{% endif %}
-  {% elif run.status == 'running' %}
+  {% elif on_server %}
     <div hx-get="{% url 'settings_app:retention-run' run.pk %}" hx-trigger="every 5s" hx-target="#page-content" hx-swap="innerHTML" hx-push-url="false">
       <p class="text-sm mb-4" role="status"><i class="bi bi-arrow-repeat"></i> Rodando no servidor. Pode fechar esta página: a limpeza continua sozinha, inclusive se o hub reiniciar.</p>
     </div>
@@ -30,7 +30,7 @@
       {% csrf_token %}<input type="hidden" name="action" value="pause">
       <button type="submit" class="btn btn-secondary">Pausar</button>
     </form>
-  {% elif run.status == 'paused' %}
+  {% elif run.status == 'paused' or run.status == 'running' %}
     {% if error %}<p class="text-sm mb-4" style="color: #b04a3a;"><i class="bi bi-exclamation-triangle"></i> Parou: {{ error }}</p>
     {% else %}<p class="text-sm mb-4">Pausada. Os lotes já feitos ficam feitos; retomar continua de onde parou.</p>{% endif %}
     <form method="post" hx-boost="false">

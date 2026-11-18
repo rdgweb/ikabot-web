@@ -10,7 +10,7 @@ from django.views import View
 
 from .models import AppSetting, RetentionRun
 from .retention import (DEFAULT_POLICY, POLICY_KEY, get_policy, pause, preview, process_batch, resume, resume_stalled,
-                        run_in_background, runner_active)
+                        runner_active, started_on_server)
 
 
 class RetentionPolicyForm(forms.Form):
@@ -55,10 +55,11 @@ class RetentionRunView(StaffOnly, View):
     """N-196: the server runs the batches; this page starts, pauses or resumes the run and shows how far it got."""
 
     def _page(self, request, run):
-        if run.status == "running" and not runner_active(run.pk):
+        on_server = started_on_server(run)
+        if on_server and not runner_active(run.pk):
             resume_stalled()                    # nobody is running it (hub restarted): go on now
         return render(request, "settings_app/retention_run.html", {
-            "run": run, "on_server": run.status == "running", "error": (run.processed or {}).get("error"),
+            "run": run, "on_server": on_server, "error": (run.processed or {}).get("error"),
             "base_template": "base_partial.html" if request.headers.get("HX-Request") == "true" else "base.html",
         })
 
@@ -74,7 +75,7 @@ class RetentionRunView(StaffOnly, View):
             if action == "start":
                 run = process_batch(pk, request.user, start=True, backup=request.POST.get("backup") == "yes")
                 if run.status == "running":
-                    run_in_background(run.pk)
+                    run = resume(run.pk)
             elif action == "pause":
                 run = pause(pk)
             else:
