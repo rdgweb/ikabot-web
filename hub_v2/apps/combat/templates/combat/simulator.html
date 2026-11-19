@@ -99,6 +99,24 @@
   </div>
 </div>
 
+{# N-197: what keeps differing from the game, round by round, read from every report by itself #}
+<div class="sim-learn">
+  <div class="sim-learn-head">
+    <b><i class="bi bi-arrow-left-right"></i> Diferenças do jogo, rodada a rodada</b>
+    <span class="cbt-state">{{ divergences|length }}</span>
+  </div>
+  {% for row in divergences %}
+  <div class="sim-row">
+    <span class="cbt-state {% if row.battles >= 5 %}loss{% endif %}">{{ row.battles }} combate{{ row.battles|pluralize }}</span>
+    <span class="sim-factor">{{ row.text }}</span>
+    {% if row.check.report_id %}<a class="sim-note" href="{% url 'combat:detail' row.check.report_id %}">rodada {{ row.round }}{% if row.kind != 'linha' %} · jogo {{ row.real }}, simulador {{ row.sim }}{% endif %} <i class="bi bi-box-arrow-up-right"></i></a>
+    {% else %}<span class="sim-note">rodada {{ row.round }}</span>{% endif %}
+  </div>
+  {% empty %}
+  <div class="sim-note">Nada se repete entre o jogo e o simulador.</div>
+  {% endfor %}
+</div>
+
 {% if cards %}
 <div class="cbt-grid">
   {% for item in cards %}

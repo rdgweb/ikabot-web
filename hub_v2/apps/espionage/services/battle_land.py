@@ -17,11 +17,12 @@ from .unit_stats import UNIT_STATS, IMPROVEMENT_BONUS_LAND, IMPROVEMENT_BONUS_NA
 LINE_PRINCIPAL = {303, 308, 316, 319} | {216, 211, 223, 225}
 LINE_FLANCOS = {302, 315, 320, 321} | {210, 221}
 LINE_LONGA = {301, 304, 313} | {213, 214, 215, 222, 224}
-LINE_ARTILH = {305, 306, 307} | {212, 217}
+LINE_ARTILH = {305, 306, 307, 324} | {212, 217}     # N-197: the barbarian ram stands in the artillery slots
 LINE_BOMB = {309} | {219}
 LINE_AA = {312} | {218}
 LINE_BAGAGEM = {310, 311} | {220}
 SIEGE = {305, 306, 307}             # what is fired at a wall
+RAMS = frozenset({307, 324})        # N-197: their ram only hits a wall
 
 PROTECTED_LINES_BY_WALL = {"principal", "flancos"}
 
@@ -80,7 +81,7 @@ DEPLOY_PRIORITY = {
     "principal_fillers": [302, 315, 321, 320] + [210, 221],
     "flancos": [302, 321, 315, 320] + [210, 221],
     "longa": [304, 313, 301] + [215, 214, 224, 213, 222],
-    "artilharia": [305, 306, 307] + [217, 212],
+    "artilharia": [305, 306, 307, 324] + [217, 212],
     "bomb": [309] + [219],
     "aa": [312] + [218],
     "bagagem": [310, 311] + [220],
@@ -91,7 +92,8 @@ DEPLOY_PRIORITY = {
 WALL_SCALE = 20
 WALL_ACCURACY = 0.30
 ARTILLERY_UPGRADE_PCT = 3.0     # each level of the artillery upgrade, in percent of the weapon (read from three real combats)
-BARBARIANS = {320, 321, 322, 323, 324, 325}     # they do not lose morale
+BARBARIANS = {320, 321, 322, 323, 324, 325}
+CLUB_MAN = 320     # they do not lose morale
 
 MORALE_TIRED = 10               # every round
 MORALE_STEP = 5                 # each of: more damage, more losses, outnumbered, bombed, flanks broken
@@ -133,6 +135,25 @@ def _field_level_from_th(town_hall_level: int) -> int:
     if th >= 5:
         return 5
     return 1
+
+
+def _slot_room(field_level: int, line: str) -> int:
+    """The room of one slot of the line (in unit sizes)."""
+    return FIELD_SLOTS.get(field_level, FIELD_SLOTS[1]).get(line, (0, 0))[1]
+
+
+def _trim_line(deployment, line: str, room: int) -> None:
+    """Keep in the line only what fits in `room` (unit sizes), in the order it was deployed; the rest waits."""
+    kept, used = [], 0
+    for stack in deployment.lines.get(line, []):
+        if stack.count <= 0:
+            continue
+        fits = max(0, room - used) // max(1, stack.size)
+        take = min(stack.count, fits)
+        if take > 0:
+            kept.append(Stack(stack.unit_id, take, stack.size))
+            used += take * stack.size
+    deployment.lines[line] = kept
 
 
 def _line_capacity(field_level: int, line: str) -> int:
@@ -325,8 +346,13 @@ class Army:
         self.wall_hit_factor = 1.0          # N-182: undoes the attacker's learned troop adjustment on wall hits
         self.wall_armor_factor = 1.0        # N-182: the wall's armour as learned from real rounds (1.0 = the formula)
         self.wall_spread_hits = False       # N-182: set while the attacker's front line strikes the wall
+        self.splash_hits = False            # N-197: set while artillery or bombs strike: their damage goes on to the next unit
         self.morale = 100
         self.damage_bonus_pct = float(damage_bonus_pct or 0.0)
+        # N-197: what was learned for each kind of unit, not for the whole army: its own hits (damage_pct) and the
+        # hits it takes (taken_pct), in percent; a village with club men and vikings gets each one's own
+        self.unit_damage_pct: dict[int, float] = {}
+        self.unit_taken_pct: dict[int, float] = {}
         self.armor_bonus = int(armor_bonus or 0)
         self.ammo_left: dict[tuple[int, int], int] = {}
         self.initial_units = dict(self.units)
@@ -397,9 +423,13 @@ class Army:
 
     def unit_damage(self, unit_id: int, weapon_index: int) -> int:
         base = _weapon_damage(unit_id, weapon_index, self.off_level(unit_id))
-        if self.damage_bonus_pct:
-            base = int(base * (1.0 + self.damage_bonus_pct / 100.0))
+        pct = self.damage_bonus_pct + float(self.unit_damage_pct.get(unit_id, 0.0))
+        if pct:
+            base = int(base * (1.0 + pct / 100.0))
         return base
+
+    def taken_factor(self, unit_id: int) -> float:
+        return 1.0 + float(self.unit_taken_pct.get(unit_id, 0.0)) / 100.0
 
     def unit_raw_damage(self, unit_id: int, weapon_index: int) -> int:
         base = _weapon_raw_damage(unit_id, weapon_index, self.off_level(unit_id))
@@ -602,7 +632,12 @@ class Army:
                     break
             return used
 
-        fill("principal", DEPLOY_PRIORITY["principal"], _line_capacity(self.field_level, "principal"))
+        principal_order = DEPLOY_PRIORITY["principal"]
+        if self.is_defender and CLUB_MAN in self.units and set(self.units) <= BARBARIANS | {316, 314}:
+            # N-197: in a village with club men and vikings the club men take the front first (the reports: 90 of
+            # 100 club men fell in the round the wall opened, 30 of 250 vikings)
+            principal_order = [CLUB_MAN] + principal_order
+        fill("principal", principal_order, _line_capacity(self.field_level, "principal"))
         principal_used = sum(stack.count * stack.size for stack in lines["principal"])
         principal_cap = _line_capacity(self.field_level, "principal")
         if principal_used < principal_cap:
@@ -611,6 +646,27 @@ class Army:
                 DEPLOY_PRIORITY["principal_fillers"],
                 principal_cap,
             )
+        # N-197: a shooter out of ammunition takes an empty main slot and fights with its close weapon (a report:
+        # 25 steam giants in 3 of the 5 slots, the carabineers shot 3 rounds from behind and then filled the other 2
+        # with the bayonet, where 16 of them fell); those still with shots stay behind
+        for uid in DEPLOY_PRIORITY["longa"]:
+            qty = remaining.get(uid, 0)
+            weapons = (UNIT_STATS.get(uid) or {}).get("weapons") or []
+            ammo_idx = next((idx for idx in range(len(weapons)) if _weapon_ammo(uid, idx)), None)
+            if qty <= 0 or ammo_idx is None:
+                continue
+            armed = int(math.ceil(self.ammo_left.get((uid, ammo_idx), 0) / max(1, _weapon_ammo(uid, ammo_idx) or 1)))
+            idle = qty - armed
+            size = _unit_size(uid)
+            fits, per_slot = room("principal", size)
+            take = min(idle, fits)
+            if take <= 0:
+                continue
+            slots_used["principal"] = slots_used.get("principal", 0) + math.ceil(take / max(1, per_slot))
+            lines["principal"].append(Stack(uid, take, size))
+            remaining[uid] -= take
+            if remaining[uid] <= 0:
+                remaining.pop(uid, None)
 
         fill("flancos", DEPLOY_PRIORITY["flancos"], _line_capacity(self.field_level, "flancos"))
         longa_cap = _line_capacity(self.field_level, "longa")
@@ -659,7 +715,8 @@ class Army:
 
 
 
-def _line_attack_profile(army: Army, deployment: RoundDeployment, line: str, preferred_weapon: int) -> AttackProfile:
+def _line_attack_profile(army: Army, deployment: RoundDeployment, line: str, preferred_weapon: int,
+                         close_weapon_units: frozenset = frozenset()) -> AttackProfile:
     profile = AttackProfile()
     for stack in deployment.lines.get(line, []):
         uid = stack.unit_id
@@ -668,6 +725,8 @@ def _line_attack_profile(army: Army, deployment: RoundDeployment, line: str, pre
             continue
         weapons = (UNIT_STATS.get(uid) or {}).get("weapons") or [{}]
         weapon_idx = preferred_weapon if preferred_weapon < len(weapons) else len(weapons) - 1
+        if uid in close_weapon_units:
+            weapon_idx = 0
 
         ammo = _weapon_ammo(uid, weapon_idx)
         if ammo is None:
@@ -781,7 +840,11 @@ def _apply_hits_to_stack(army: Army, stack: Stack, hits: int, damage_per_hit: fl
     max_hp = max(1, army.unit_max_hp(uid))
     global_hp = max(0, army.hp_pools.get(uid, global_count * max_hp))
     stack_hp = min(stack.count * max_hp, int(round(global_hp * (stack.count / max(1, global_count)))))
-    effective = max(1, int(round(damage_per_hit - army.unit_armor(uid))))
+    # N-197: a hit takes one unit at most; what it has beyond the unit's hit points is lost (barbarian reports: 10
+    # steam giants against 30 club men of 240 points took 15-19 of them a round, not the 29 the damage would pay for)
+    effective = max(1, int(round(damage_per_hit * army.taken_factor(uid) - army.unit_armor(uid))))
+    if not army.splash_hits:
+        effective = min(max_hp, effective)
     hp_loss = min(stack_hp, hits * effective)
     new_stack_hp = max(0, stack_hp - hp_loss)
     new_stack_count = int(math.ceil(new_stack_hp / max_hp)) if new_stack_hp > 0 else 0
@@ -844,7 +907,9 @@ def _apply_damage_to_line(
         global_hp = army.hp_pools.get(uid, global_count * army.unit_max_hp(uid))
         hp_total = min(stack.count * army.unit_max_hp(uid), int(round(global_hp * (stack.count / global_count))))
         armor = army.unit_armor(uid)
-        hit_value = max(1, int(round(avg_hit_damage - armor)))
+        hit_value = max(1, int(round(avg_hit_damage * army.taken_factor(uid) - armor)))
+        if not army.splash_hits:
+            hit_value = min(max(1, army.unit_max_hp(uid)), hit_value)
         hits_to_clear = max(1, int(math.ceil(hp_total / max(1, hit_value))))
         take = min(focus_remaining, hits_to_clear)
         losses += _apply_hits_to_stack(army, stack, take, avg_hit_damage)
@@ -890,7 +955,9 @@ def _bombard(
             damage_scale=1.18 if target_line in {"artilharia", "longa"} else 1.0,
             precision_scale=1.15 if target_line in {"artilharia", "longa"} else 1.0,
         )
+        defender.splash_hits = True
         _apply_damage_to_line(defender, defender_dep, target_line, tuned, use_wall=False)
+        defender.splash_hits = False
 
 
 def _tune_attack_profile(
@@ -1023,6 +1090,16 @@ def _barbarian_wall_armor_pct(defender_units=None) -> float | None:
         return None
 
 
+def _barbarian_unit_adjustment(defender_units=None) -> tuple[dict[int, tuple[float, float]], float | None]:
+    """N-197: {barbarian unit: (our damage on it, its damage), in percent} and the wall's armour, as learned."""
+    try:
+        from apps.combat.services.barbarian_learning import unit_adjustment
+
+        return unit_adjustment(defender_units)
+    except Exception:  # noqa: BLE001 - the simulator must work without the combat app
+        return {}, None
+
+
 def _barbarian_bonus(defender_units=None) -> tuple[float, float]:
     """N-182: the adjustment learned from the barbarian battles alone (0, 0 until it is learned); N-194: the one of
     this kind of village (club men or vikings)."""
@@ -1099,18 +1176,23 @@ def simulate_land_battle(
     standing, and per unit the ammunition and hit points left (in percent), as the round capture shows them.
     """
     learned_attacker = 0.0
+    barbarian_units: dict[int, tuple[float, float]] = {}
     if calibrated:
         # N-110: the adjustment learned from real combats and approved on the screen (0, 0 until then);
         # N-182: against a barbarian village, the one learned from the barbarian battles alone
         if is_barbarian_village(defender_units):
-            learned_attacker, learned_defender = _barbarian_bonus(defender_units)
+            # N-197: each barbarian unit with what was learned for its own kind (club men, vikings), none for the army
+            learned_attacker, learned_defender = 0.0, 0.0
+            barbarian_units, learned_wall = _barbarian_unit_adjustment(defender_units)
             if wall_armor_pct is None:
-                wall_armor_pct = _barbarian_wall_armor_pct(defender_units)
+                wall_armor_pct = learned_wall
         else:
             learned_attacker, learned_defender = _learned_bonus()
         attacker_damage_bonus_pct = float(attacker_damage_bonus_pct or 0.0) + learned_attacker
         defender_damage_bonus_pct = float(defender_damage_bonus_pct or 0.0) + learned_defender
     barbarian_village = is_barbarian_village(defender_units)
+    if not calibrated or not barbarian_village:
+        barbarian_units = {}
     # `field_key` names a field of the table directly (the sea ones); otherwise it comes from the town hall
     field_level = field_key if field_key in FIELD_SLOTS else _field_level_from_th(town_hall_level)
     attacker = Army(
@@ -1131,6 +1213,9 @@ def simulate_land_battle(
         armor_bonus=defender_armor_bonus,
     )
 
+    for uid, (taken, own) in barbarian_units.items():
+        defender.unit_taken_pct[uid] = taken
+        defender.unit_damage_pct[uid] = own
     if is_barbarian_village(defender_units):
         # the learned adjustment is for the troops: hits on the wall keep their own damage
         defender.wall_hit_factor = 100.0 / max(1.0, 100.0 + float(attacker_damage_bonus_pct or 0.0)) if attacker_damage_bonus_pct else 1.0
@@ -1210,12 +1295,17 @@ def simulate_land_battle(
             enemy_has_air=defender_enemy_has_air,
             support_refill_lines=defender_support_refill_lines,
         )
-        if barbarian_village and defender.wall_standing() > 0:
-            # N-182, as every barbarian report shows: while the wall stands it is the village's whole front (its
-            # sections in the main slots), the barbarians wait in the reserve and there is no flank to take
-            def_dep.lines["principal"] = []
+        barbarians_through_holes = False
+        if barbarian_village:
+            # N-197: the village's field has no flanks (battlefield_barb_*: 5 main slots and 2 artillery slots)
             def_dep.lines["flancos"] = []
-            att_dep.lines["flancos"] = []
+            if defender.wall_standing() > 0:
+                # N-182: while the wall stands its sections hold the main slots and nobody takes a flank; N-197: the
+                # barbarians come out through each section already down when the round begins, a slot each (the
+                # reports: 3 sections fell in round 1, vikings in 3 slots in round 2)
+                _trim_line(def_dep, "principal", defender.wall_broken_segments() * _slot_room(defender.field_level, "principal"))
+                att_dep.lines["flancos"] = []
+                barbarians_through_holes = True
 
         att_start_lines = _clone_deployment(att_dep)
         def_start_lines = _clone_deployment(def_dep)
@@ -1263,8 +1353,10 @@ def simulate_land_battle(
                 )
                 return 0, attack
             target_army.wall_spread_hits = barbarian_village and source_line == "principal"
+            target_army.splash_hits = source_line in {"artilharia", "bomb"}
             losses, leftover = _apply_damage_to_line(target_army, target_dep, target_line, attack, use_wall=use_wall)
             target_army.wall_spread_hits = False
+            target_army.splash_hits = False
             after_wall = target_army.wall_hp if target_army.is_defender else 0
             after = _trace_line_state(target_dep, target_line)
             round_trace.append(
@@ -1349,13 +1441,32 @@ def simulate_land_battle(
             apply_with_trace(actor="defender", source_line="bomb", target_army=attacker, target_dep=att_dep, target_label="attacker", target_line=target_line, attack=tuned, use_wall=False)
             bombed["attacker"] = bool(target_line)
 
-        att_art = _line_attack_profile(attacker, att_dep, "artilharia", 1)
-        def_art = _line_attack_profile(defender, def_dep, "artilharia", 1)
+        # N-197: a ram's ram is for a wall; against troops it swings its axe (the barbarian rams killed no steam
+        # giant in the real level 19 battle, and with the 2100 of the ram the simulator lost 6)
+        att_art = _line_attack_profile(attacker, att_dep, "artilharia", 1,
+                                       close_weapon_units=frozenset() if defender.wall_was_up else RAMS)
+        def_art = _line_attack_profile(defender, def_dep, "artilharia", 1,
+                                       close_weapon_units=frozenset() if attacker.wall_hp > 0 else RAMS)
         if att_art.total_damage > 0 and defender.wall_was_up:
             # the artillery is there to open the wall: every shot at it, nothing taken off
+            wall_before = defender.wall_hp
             apply_with_trace(actor="attacker", source_line="artilharia", target_army=defender, target_dep=def_dep, target_label="defender", target_line="principal", attack=att_art, use_wall=True, note="muralha")
+            if defender.wall_standing() == 0 and att_art.total_hits > 0 and def_dep.line_total("artilharia") > 0:
+                # N-197: the shots the wall no longer needed fall on the artillery behind it (the barbarian rams all
+                # fell in the round their wall did)
+                per_shot = max(1.0, att_art.avg_raw_damage * defender.wall_hit_factor
+                               - _wall_armor(defender.wall_level) * defender.wall_armor_factor)
+                needed = min(att_art.total_hits, int(math.ceil(wall_before / per_shot)))
+                spare = att_art.total_hits - needed
+                if spare > 0:
+                    share = spare / att_art.total_hits
+                    rest = AttackProfile(total_damage=int(att_art.total_damage * share), total_hits=spare,
+                                         weighted_precision=att_art.weighted_precision * share, raw_damage=int(att_art.raw_damage * share))
+                    apply_with_trace(actor="attacker", source_line="artilharia", target_army=defender, target_dep=def_dep, target_label="defender", target_line="artilharia", attack=rest, use_wall=False, note="depois da muralha")
         elif att_art.total_damage > 0:
-            target = _first_alive_line(def_dep, ["principal", "flancos"])
+            # N-197: with the wall down the artillery fires at the other side's artillery first (the barbarian rams
+            # all fell in the round their wall did), then at the front
+            target = _first_alive_line(def_dep, ["artilharia", "principal", "flancos"])
             if target:
                 tuned = _tune_attack_profile(
                     att_art,
@@ -1420,7 +1531,7 @@ def simulate_land_battle(
                 _losses, leftover = apply_with_trace(actor="attacker", source_line="principal", target_army=defender, target_dep=def_dep, target_label="defender", target_line=target, attack=tuned, use_wall=(target == "principal" and defender.wall_was_up))
                 if leftover.total_damage > 0 and not defender.wall_was_up:
                     spill_with_trace(actor="attacker", source_line="principal", target_army=defender, target_dep=def_dep, target_label="defender", attack=leftover, targets=["longa", "artilharia", "flancos"], note="spill")
-        if defender.wall_was_up:
+        if defender.wall_was_up and not barbarians_through_holes:
             def_main = _share(def_main, defender.wall_gaps)
         if def_main.total_damage > 0:
             target = _first_alive_line(att_dep, ["principal", "longa", "artilharia", "flancos"])
@@ -1521,6 +1632,11 @@ def simulate_land_battle(
         defender_combat = defender.total_combat_units()
         attacker_main_alive = att_dep.line_total("principal") + att_dep.line_total("flancos")
         defender_main_alive = def_dep.line_total("principal") + def_dep.line_total("flancos")
+        # N-197: an empty front does not end it while there are shooters: they shoot on, and once out of shots they
+        # take the front with their close weapon (a report: 22 carabineers whose one hoplite fell in round 1 beat 50
+        # club men in 3 rounds); mortars and cooks alone do not fight on
+        attacker_main_alive += sum(qty for uid, qty in attacker.units.items() if _classify(uid) == "longa")
+        defender_main_alive += sum(qty for uid, qty in defender.units.items() if _classify(uid) == "longa")
         if barbarian_village:
             # the barbarians kept in the reserve behind the wall come out once it falls: the village is not beaten yet
             defender_main_alive += sum(qty for uid, qty in defender.units.items() if _classify(uid) in {"principal", "flancos"})

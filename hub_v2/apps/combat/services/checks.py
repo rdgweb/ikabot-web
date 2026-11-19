@@ -88,6 +88,35 @@ def simulate_check(inputs: dict, guess: dict, *, attacker_pct: float = 0.0, defe
     return whole
 
 
+def round_divergences(inputs: dict, guess: dict, rounds: list) -> list:
+    """N-197: the same battle in the simulator beside the report, one round at a time (lines, units alive, wall)."""
+    if inputs.get("naval"):
+        return []
+    try:
+        from apps.espionage.services.battle_land import simulate_land_battle
+
+        from .divergence import compare as compare_rounds
+
+        upgrades = {int(unit): value for unit, value in (guess.get("own_upgrades") or {}).items()}
+        sides = {"attacker": upgrades if guess.get("own_side") == "attacker" else None,
+                 "defender": upgrades if guess.get("own_side") == "defender" else None}
+        for side, units in (guess.get("upgrades") or {}).items():
+            if units:
+                sides[side] = {int(unit): value for unit, value in units.items()}
+        clean = normalize(inputs)
+        sim = simulate_land_battle(
+            dict(clean["attacker"]), dict(clean["defender"]), attacker_upgrades=sides["attacker"] or {},
+            defender_upgrades=sides["defender"] or {}, town_hall_level=clean["field_level"],
+            wall_level=int(guess.get("wall_level") or 0) if clean.get("wall_segments") else 0, max_rounds=max(12, len(rounds)),
+            calibrated=False,           # like the check itself: the simulator's own rules beside the game
+            attacker_reinforcements_by_round=clean["reinforcements"]["attacker"] or None,
+            defender_reinforcements_by_round=clean["reinforcements"]["defender"] or None)
+        return compare_rounds(rounds, sim, {"attacker": clean["attacker"], "defender": clean["defender"]})
+    except Exception:  # noqa: BLE001 - the check is kept without the round by round comparison
+        logger.warning("Round by round comparison failed", exc_info=True)
+        return []
+
+
 def normalize(inputs: dict) -> dict:
     """Inputs as the simulator wants them: stored JSON turns the unit ids into text."""
     units = lambda raw: {int(unit): int(amount) for unit, amount in (raw or {}).items()}   # noqa: E731
@@ -119,6 +148,7 @@ def check_report(report):
     guess = assumptions(report, rounds, inputs)
     real = real_outcome(rounds, parse_summary(report.summary_html))
     predicted = simulate_check(inputs, guess, real_rounds=real["rounds"])
+    predicted["divergences"] = round_divergences(inputs, guess, rounds)
     score = compare(real, predicted)
     check, _created = SimulationCheck.objects.update_or_create(
         report=report,

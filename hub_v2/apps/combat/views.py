@@ -297,9 +297,12 @@ class SimulatorView(LoginRequiredMixin, TemplateView):
         checks = list(SimulationCheck.objects.select_related("report__game_account").defer("report__summary_html", "report__detailed_html")
                       .order_by("source", "-created_at"))
         calibration = SimulatorCalibration.load()
+        from .services.divergence import summary as divergence_summary
+
         ctx.update({
             "board": scoreboard(checks),
             "kinds": by_kind(checks),
+            "divergences": divergence_summary(checks),
             "cards": [check_card(check) for check in checks],
             "proposal": calibration.proposed_json or {},
             "approved": calibration.approved_json or {},

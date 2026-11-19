@@ -32,7 +32,11 @@ LINE_UNITS = {
 COOK, DOCTOR = 310, 311
 COOK_OPTIONS = (0, 5, 10, 20, 30)
 MORALE_FLOOR = 40               # an army whose morale ends below this was close to fleeing
-MIN_ARMY_SHARE = 3              # an army never smaller than the defenders / this (the real wins: 18 vs 35, 22 vs 50, 48 vs 77)
+VIKING, CLUB_MAN = 316, 320
+MIXED_MARGIN_PCT = 20           # a village with club men and vikings is planned against this much more of each defender
+MIXED_MORALE_FLOOR = 30         # and the army must end it with at least this morale (N-197: of the 19 battles there, with
+                                # both rules none of the 3 lost would have gone; the planner sends more instead)
+MIN_ARMY_SHARE = 3             # an army never smaller than the defenders / this (the real wins: 18 vs 35, 22 vs 50, 48 vs 77)
 TRAINABLE = (303, 308, 302, 304, 305, 309, 312, 310)
 # barbarian names as the village screen shows them -> the game's ids
 BARBARIAN_NAMES = (("clube", 320), ("faca", 321), ("aríete", 324), ("ariete", 324), ("catapulta", 325), ("viking", 316))
@@ -208,6 +212,8 @@ def _key(sim: dict, army: dict[int, int], round_value: float = 0.0, travel_army:
     cost = lost + int(sim.get("rounds") or 12) * round_value + away + risk + late * (round_value / ROUND_MINUTES)
     # a battle still open when the simulation stops is not won: the game goes on (the barbarians wait behind the wall)
     won = sim.get("winner") == "attacker" and not sim.get("undecided")
+    if won and morale_end < int(_FARM.get("morale_floor") or 0):
+        won = False                                      # N-197: a village with both kinds needs morale to spare
     limit = _FARM.get("max_weight")
     if limit is not None and not _FARM.get("joining") and army_weight(travel_army if travel_army is not None else army) > limit:
         return (2, round(cost, 1), -morale_end)          # the free ships do not carry it: it cannot leave
@@ -357,6 +363,13 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
     if not defenders:
         # a village always has defenders: without them there is nothing to plan against
         return {"can_win": False, "army": {}, "tried": 0, "note": "Sem os defensores da vila não há o que simular."}
+    margin = 0
+    if defenders.get(VIKING) and defenders.get(CLUB_MAN):
+        # N-194 (19/11): the village with club men and vikings is the one the simulator still misjudges (2 of 19 winners
+        # wrong, both lost battles): the army is planned against a fifth more of each defender
+        margin = MIXED_MARGIN_PCT
+        defenders = {u: int(math.ceil(q * (100 + margin) / 100)) for u, q in defenders.items()}
+    _FARM["morale_floor"] = MIXED_MORALE_FLOOR if margin else 0
     upgrades = {int(u): v for u, v in (upgrades or {}).items()}
     _FARM.update(train_seconds={int(u): float(v) for u, v in (train_seconds or {}).items()}, cycle_minutes=float(cycle_minutes or 0),
                  joining=False)
@@ -400,11 +413,14 @@ def plan(available: dict[int, int], defenders: dict[int, int], *, wall_level: in
     second, sim, tried2 = _second_wave(key, army, sim, available, defenders, field_level, wall_level, upgrades, per_round)
     tried += tried2
     result = {
-        "can_win": sim.get("winner") == "attacker" and not sim.get("undecided") and key[0] == 0,
+        "can_win": sim.get("winner") == "attacker" and not sim.get("undecided") and key[0] == 0
+                   and int((sim.get("morale") or {}).get("attacker") or 0) >= int(_FARM.get("morale_floor") or 0),
         "army": army,
         "tried": tried,
         "prediction": {**_summary(sim), "travel_minutes": round(travel_minutes(army), 1)},
     }
+    if margin:
+        result["margin_pct"] = margin
     if key[0] == 2:
         result["note"] = "Os mercantes livres não levam esse exército até a vila."
     if second:

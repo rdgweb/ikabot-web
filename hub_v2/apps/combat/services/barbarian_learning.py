@@ -26,7 +26,10 @@ SETTING_KEY = "simulator_barbarian_calibration"
 COARSE = tuple(range(-60, 61, 20))
 FINE = (-10, -5, 0, 5, 10)
 LIMITS = (-80, 80)
-MAX_SAMPLES = 80
+MAX_SAMPLES = 80                # the overall adjustment (kept for the history)
+ENGINE = "n197"                 # the simulator's rules the adjustments were learned on (N-197 changed them)
+MAX_PER_BAND = 150              # N-197: battles per kind of village; one kind never pushes the other out
+LEARN_EVERY_SECONDS = 1800      # N-197: at most one search each half hour (each battle used to start one)
 CACHE_SECONDS = 60
 _CACHE = {"at": 0.0, "value": None}
 _LOCK = threading.Lock()
@@ -55,7 +58,47 @@ def active() -> dict:
 
 
 VIKING = 316
+CLUB_MAN = 320
 BANDS = ("club", "viking")
+UNIT_BAND = {320: "club", 316: "viking", 321: "viking"}     # N-197: the knife men come with the vikings
+
+
+def _counts(defender_units) -> dict[int, int]:
+    return {int(u): int(q or 0) for u, q in (defender_units or {}).items() if str(u).lstrip("-").isdigit() and int(q or 0) > 0}
+
+
+def pure_band(defender_units) -> str | None:
+    """N-197: "club" or "viking" when the village has only one of them; None for a village with both (it is not used to
+    learn a kind, only to check the result)."""
+    units = _counts(defender_units)
+    has_club = any(UNIT_BAND.get(u) == "club" for u in units)
+    has_viking = any(UNIT_BAND.get(u) == "viking" for u in units)
+    if has_club and has_viking:
+        return None
+    return "viking" if has_viking else "club"
+
+
+def majority_band(defender_units) -> str:
+    units = _counts(defender_units)
+    club = sum(q for u, q in units.items() if UNIT_BAND.get(u) == "club")
+    viking = sum(q for u, q in units.items() if UNIT_BAND.get(u) == "viking")
+    return "viking" if viking > club else "club"
+
+
+def unit_adjustment(defender_units) -> tuple[dict[int, tuple[float, float]], float | None]:
+    """N-197: {barbarian unit: (our damage on it, its own damage), in percent} with what was learned for its kind, and
+    the wall's armour of the village's main kind. A village with club men and vikings gets each one's own (one number
+    for the whole village was what the simulator misjudged there)."""
+    bands = active().get("bands") or {}
+    main = majority_band(defender_units)
+    out: dict[int, tuple[float, float]] = {}
+    for uid in _counts(defender_units):
+        band = bands.get(UNIT_BAND.get(uid, main)) or {}
+        if band.get("attacker_pct") is not None and band.get("engine") == ENGINE:
+            out[uid] = (float(band.get("attacker_pct") or 0), float(band.get("defender_pct") or 0))
+    main_band = bands.get(main) or {}
+    wall = main_band.get("wall_armor_pct") if main_band.get("engine") == ENGINE else None
+    return out, (float(wall) if wall is not None else None)
 
 
 def band_of(defender_units) -> str:
@@ -112,11 +155,15 @@ def samples() -> list[dict]:
     from .report_parser import parse_rounds
 
     out = []
+    per_band: dict[str, int] = {}
     checks = (SimulationCheck.objects.filter(report__isnull=False).select_related("report")
-              .order_by("-created_at")[:MAX_SAMPLES * 3])
+              .order_by("-created_at")[:MAX_PER_BAND * 8])
     for check in checks:
         inputs = check.inputs_json or {}
         if inputs.get("naval") or not is_barbarian_village(inputs.get("defender")):
+            continue
+        kind = pure_band(inputs.get("defender")) or "mixed"
+        if per_band.get(kind, 0) >= MAX_PER_BAND:
             continue
         rounds = parse_rounds(check.report.detailed_html or "")
         if not rounds:
@@ -131,7 +178,8 @@ def samples() -> list[dict]:
             "defender_upgrades": {int(u): v for u, v in (upgrades.get("defender") or {}).items()},
             "real": {**(check.real_json or {}), **_real_rounds(rounds)},
         })
-        if len(out) >= MAX_SAMPLES:
+        per_band[kind] = per_band.get(kind, 0) + 1
+        if all(per_band.get(k, 0) >= MAX_PER_BAND for k in ("club", "viking", "mixed")):
             break
     out.extend(_ongoing_samples())
     return out
@@ -271,18 +319,22 @@ def learn(*, save: bool = True) -> dict:
     one in use."""
     with _LOCK:
         everything = samples()
-        result = _learn(everything, active(), save=False)
+        # N-197: each kind is learned from the villages that have only it and used unit by unit (a village with both
+        # takes each one's own); the one number for every village is no longer used against them
+        result = {"better": False, "samples": len(everything)}
         bands, changed = {}, False
         for band in BANDS:
-            subset = [s for s in everything if band_of((s.get("inputs") or {}).get("defender")) == band]
+            subset = [s for s in everything if pure_band((s.get("inputs") or {}).get("defender")) == band]
             if not subset:
                 continue
             had = ((active().get("bands") or {}).get(band)) or {}
+            if had.get("engine") != ENGINE:
+                had = {}                        # learned on the simulator before N-197: it does not hold any more
             found = _learn(subset, had or active(), save=False)
             keep = found if (found["better"] or not had) else {**had, "samples": len(subset)}
             changed = changed or found["better"] or not had
-            bands[band] = {k: keep.get(k) for k in ("samples", "attacker_pct", "defender_pct", "wall_armor_pct", "before", "after",
-                                                     "computed_at")}
+            bands[band] = {**{k: keep.get(k) for k in ("samples", "attacker_pct", "defender_pct", "wall_armor_pct", "before",
+                                                        "after", "computed_at")}, "engine": ENGINE}
         if save and (result["better"] or changed):
             from apps.settings_app.utils import set_setting
 
@@ -354,7 +406,16 @@ def _learn(sample_list: list[dict], current: dict, *, save: bool = False) -> dic
 
 
 def learn_in_background() -> None:
-    """After a new barbarian battle is checked: learn without holding up whoever brought the report."""
+    """After a new barbarian battle is checked: learn without holding up whoever brought the report (N-197: at most
+    once each LEARN_EVERY_SECONDS, there are several battles an hour and each search fights hundreds again)."""
+    try:
+        from django.core.cache import cache
+
+        if not cache.add("barbarian-learning-recent", 1, LEARN_EVERY_SECONDS):
+            return
+    except Exception:  # noqa: BLE001 - without the cache it learns every time, as before
+        pass
+
     def run() -> None:
         from django.db import connection
 
