@@ -178,6 +178,19 @@ RUNNER_LOCK_SECONDS = 300           # longer than any batch; how long a run wait
 RESUME_CHECK_KEY = "retention-resume-check"
 RESUME_CHECK_SECONDS = 60
 BATCH_PAUSE = 0.2                   # between batches, so the database serves everyone else too
+BUSY_RETRIES = 8                    # a batch that waited too long for a row someone else held is tried again this often
+BUSY_WAIT_SECONDS = 30              # with this long a wait each time (more each try)
+BUSY_CODES = {1205, 1213}           # lock wait timeout, deadlock: the database asks to try the transaction again
+
+
+def _database_busy(exc: Exception) -> bool:
+    """N-196 (20/11): "Lock wait timeout exceeded; try restarting transaction" stopped a run at 71.900 snapshots."""
+    from django.db import OperationalError
+
+    if not isinstance(exc, OperationalError):
+        return False
+    code = exc.args[0] if exc.args and isinstance(exc.args[0], int) else getattr(exc.__cause__, "args", [None])[0]
+    return code in BUSY_CODES or "lock wait timeout" in str(exc).lower() or "deadlock" in str(exc).lower()
 
 
 def _spawn(work) -> None:
@@ -236,6 +249,7 @@ def run_in_background(run_id) -> bool:
     caller = threading.get_ident()
 
     def work():
+        busy = 0
         try:
             while True:
                 with unscoped():
@@ -245,7 +259,15 @@ def run_in_background(run_id) -> bool:
                 cache.set(RUNNER_LOCK, str(run_id), RUNNER_LOCK_SECONDS)
                 try:
                     run = process_batch(run_id, run.user)
+                    busy = 0
                 except Exception as exc:  # noqa: BLE001 - the run stops and says why; nothing is retried blindly
+                    if _database_busy(exc) and busy < BUSY_RETRIES:
+                        # the batch's transaction was undone by the database: nothing half done, try it again
+                        busy += 1
+                        if threading.get_ident() != caller:
+                            connections.close_all()     # a fresh connection for the next try
+                        time.sleep(BUSY_WAIT_SECONDS * busy)
+                        continue
                     with unscoped():
                         if RetentionRun.objects.filter(pk=run_id).exclude(status="running").exists():
                             break                       # paused while this batch waited: not an error

@@ -283,3 +283,28 @@ class RetentionInBackgroundTests(RetentionData):
         self.assertIn("política mudou", run.processed["error"])
         self.client.force_login(self.user)
         self.assertContains(self.client.get(reverse("settings_app:retention-run", args=[run.pk])), "Parou:")
+
+    def test_a_busy_database_is_waited_for_and_the_batch_tried_again(self):
+        from django.db import OperationalError
+
+        from . import retention
+
+        self.snapshot(100)
+        run = preview(self.user)
+        with patch("apps.settings_app.retention._spawn", lambda work: None):
+            run = process_batch(run.pk, self.user, start=True, backup=True)
+        self.snapshot(130)
+        real = retention.process_batch
+        calls = {"n": 0}
+
+        def flaky(*args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise OperationalError(1205, "Lock wait timeout exceeded; try restarting transaction")
+            return real(*args, **kwargs)
+
+        with patch("apps.settings_app.retention.process_batch", flaky), patch("apps.settings_app.retention.BUSY_WAIT_SECONDS", 0):
+            retention.resume(run.pk)
+        run.refresh_from_db()
+        self.assertEqual(run.status, "done")
+        self.assertNotIn("error", run.processed)
