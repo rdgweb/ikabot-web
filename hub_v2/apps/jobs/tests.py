@@ -1187,11 +1187,66 @@ class BulkDeleteInBatchesTests(TestCase):
             self.client.post(reverse("jobs:job-bulk-delete"), {"job_ids": ids})
         self.assertEqual(Job.objects.filter(workflow=workflow).count(), 1)
 
-    def test_one_deletion_at_a_time(self):
+    def test_a_second_request_joins_the_queue_and_leaves_the_list_at_once(self):
+        import time
+
+        from django.core.cache import cache
+
         from .services import bulk_delete
 
-        bulk_delete._save(self.user.pk, status="running", kind="workflows", total=10, done=2)
+        cache.set(bulk_delete._key(self.user.pk), {"status": "running", "kind": "workflows", "total": 10, "done": 2,
+                                                   "pending": [], "at": time.time()}, 600)
         workflow = self._workflow_with_jobs()
         self.client.post(reverse("jobs:workflow-bulk-delete"), {"workflow_ids[]": [str(workflow.pk)]})
-        self.assertTrue(Workflow.objects.filter(pk=workflow.pk).exists())
-        self.assertContains(self.client.get(reverse("jobs:job-list")), "em segundo plano")
+        workflow.refresh_from_db()
+        self.assertIsNotNone(workflow.archived_at)                       # hidden from the list already
+        progress = bulk_delete.progress(self.user.pk)
+        self.assertEqual((progress["total"], progress["left"]), (11, 1))
+        self.assertContains(self.client.get(reverse("jobs:job-list")), "Excluindo")
+
+    def test_cancel_brings_back_what_was_not_deleted(self):
+        import time
+
+        from django.core.cache import cache
+
+        from .services import bulk_delete
+
+        cache.set(bulk_delete._key(self.user.pk), {"status": "running", "kind": "workflows", "total": 0, "done": 0,
+                                                   "pending": [], "at": time.time()}, 600)
+        earlier = self._workflow_with_jobs()
+        Workflow.objects.filter(pk=earlier.pk).update(archived_at=timezone.now())        # archived before: stays so
+        workflow = self._workflow_with_jobs()
+        self.client.post(reverse("jobs:workflow-bulk-delete"), {"workflow_ids[]": [str(workflow.pk), str(earlier.pk)]})
+        self.client.post(reverse("jobs:bulk-delete-cancel"))
+        workflow.refresh_from_db()
+        earlier.refresh_from_db()
+        self.assertIsNone(workflow.archived_at)
+        self.assertIsNotNone(earlier.archived_at)
+        self.assertEqual(Job.objects.filter(workflow=workflow).count(), 3)
+        self.assertEqual(bulk_delete.progress(self.user.pk)["status"], "cancelled")
+
+    def test_a_deletion_cut_by_a_restart_goes_on(self):
+        from django.core.cache import cache
+
+        from .services import bulk_delete
+
+        workflow = self._workflow_with_jobs()
+        cache.set(bulk_delete._key(self.user.pk), {"status": "running", "kind": "workflows", "total": 1, "done": 0,
+                                                   "pending": [["w", str(workflow.pk), ""]], "at": 0}, 600)
+        self.assertEqual(bulk_delete.progress(self.user.pk)["status"], "interrupted")
+        self.client.get(reverse("jobs:job-list"))
+        self.assertFalse(Workflow.objects.filter(pk=workflow.pk).exists())
+        self.assertEqual(bulk_delete.progress(self.user.pk)["status"], "done")
+
+    def test_the_jobs_queued_leave_the_technical_list(self):
+        import time
+
+        from django.core.cache import cache
+
+        from .services import bulk_delete
+
+        workflow = self._workflow_with_jobs(jobs=2)
+        jobs = list(Job.objects.filter(workflow=workflow))
+        cache.set(bulk_delete._key(self.user.pk), {"status": "running", "kind": "jobs", "total": 1, "done": 0,
+                                                   "pending": [["j", str(jobs[0].pk), ""]], "at": time.time()}, 600)
+        self.assertEqual(bulk_delete.pending_job_ids(self.user.pk), [str(jobs[0].pk)])

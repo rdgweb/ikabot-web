@@ -330,6 +330,14 @@ class JobListView(FilterSortListView):
         root_job_id__isnull=True
     )
 
+    def get_queryset(self):
+        # N-201: the jobs marked for deletion leave the list at once (the server deletes them in the background)
+        from apps.jobs.services import bulk_delete
+
+        qs = super().get_queryset()
+        pending = bulk_delete.pending_job_ids(self.request.user.pk)
+        return qs.exclude(pk__in=pending) if pending else qs
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         page_jobs = list(context.get("page_obj").object_list if context.get("page_obj") else context.get("object_list", []))
@@ -3271,9 +3279,9 @@ class JobBulkDeleteView(LoginRequiredMixin, View):
         ids = list(queryset.values_list("pk", flat=True))
         if not ids:
             return self._toast("Nenhum job para excluir.", "info")
-        if not bulk_delete.start(request.user.pk, job_ids=ids):
-            return self._toast("Já há uma exclusão em andamento; espere ela terminar.", "error")
-        return self._toast(f"Excluindo {len(ids)} job(s) em segundo plano. Pode continuar usando o hub.", "success")
+        outcome = bulk_delete.start(request.user.pk, job_ids=ids)
+        verb = "Somados à exclusão em andamento" if outcome == "queued" else "Excluindo"
+        return self._toast(f"{verb}: {len(ids)} job(s).", "success")
 
     @staticmethod
     def _toast(message: str, toast_type: str = "info") -> HttpResponse:
@@ -3438,6 +3446,7 @@ class WorkflowListView(FilterSortListView):
         # N-201: how far a deletion in the background got
         from apps.jobs.services import bulk_delete
 
+        bulk_delete.resume_if_cut(self.request.user.pk)          # cut by a restart: it goes on
         context["bulk_delete"] = bulk_delete.progress(self.request.user.pk)
         return context
 
@@ -4170,11 +4179,22 @@ class WorkflowBulkDeleteView(LoginRequiredMixin, View):
         if not ids:
             resp["HX-Trigger"] = json.dumps({"toast": {"type": "info", "message": "Nenhum workflow para excluir."}})
             return resp
-        if not bulk_delete.start(request.user.pk, workflow_ids=ids):
-            resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": "Já há uma exclusão em andamento; espere ela terminar."}})
-            return resp
-        resp["HX-Trigger"] = json.dumps({"toast": {"type": "success",
-                                                   "message": f"Excluindo {len(ids)} workflow(s) e seus jobs em segundo plano."}})
+        outcome = bulk_delete.start(request.user.pk, workflow_ids=ids)
+        verb = "Somados à exclusão em andamento" if outcome == "queued" else "Excluindo"
+        resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": f"{verb}: {len(ids)} workflow(s) e seus jobs."}})
+        resp["HX-Refresh"] = "true"
+        return resp
+
+
+class BulkDeleteCancelView(LoginRequiredMixin, View):
+    """N-201: stop the deletion in the background; the workflows it hid and did not delete come back."""
+
+    def post(self, request):
+        from apps.jobs.services import bulk_delete
+
+        back = bulk_delete.cancel(request.user.pk)
+        resp = HttpResponse(status=200)
+        resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": f"Exclusão cancelada; {back} workflow(s) voltaram."}})
         resp["HX-Refresh"] = "true"
         return resp
 

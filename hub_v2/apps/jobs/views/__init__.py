@@ -11,6 +11,7 @@ from .jobs import (
     WorkflowAutoArchiveView,
     WorkflowBulkArchiveView,
     WorkflowBulkDeleteView,
+    BulkDeleteCancelView,
     WorkflowLiveStatusView,
     JobLogsPartialView,
     JobChainHistoryPartialView,
