@@ -14,6 +14,7 @@ from .views import (
     WorkflowBulkArchiveView,
     WorkflowBulkDeleteView,
     BulkDeleteCancelView,
+    BulkDeleteStatusView,
     WorkflowLiveStatusView,
     JobLogsPartialView,
     JobChainHistoryPartialView,
@@ -54,6 +55,7 @@ urlpatterns = [
     path("workflows/live/", WorkflowLiveStatusView.as_view(), name="workflow-live"),
     path("workflows/bulk-delete/", WorkflowBulkDeleteView.as_view(), name="workflow-bulk-delete"),
     path("bulk-delete/cancel/", BulkDeleteCancelView.as_view(), name="bulk-delete-cancel"),
+    path("bulk-delete/status/", BulkDeleteStatusView.as_view(), name="bulk-delete-status"),
     path("workflows/bulk-archive/", WorkflowBulkArchiveView.as_view(), name="workflow-bulk-archive"),
     # Job creation modal flow
     path("new/", JobCreateModalView.as_view(), name="job-create"),

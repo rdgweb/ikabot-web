@@ -12,6 +12,7 @@ from .jobs import (
     WorkflowBulkArchiveView,
     WorkflowBulkDeleteView,
     BulkDeleteCancelView,
+    BulkDeleteStatusView,
     WorkflowLiveStatusView,
     JobLogsPartialView,
     JobChainHistoryPartialView,

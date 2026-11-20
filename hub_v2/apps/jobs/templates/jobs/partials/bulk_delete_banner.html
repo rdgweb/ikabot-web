@@ -1,0 +1,26 @@
+{# N-201: a deletion handed to the background; while it runs the banner reads itself again every few seconds #}
+<div id="bulk-delete-banner"
+     {% if bulk_delete.status == 'running' or bulk_delete.status == 'interrupted' %}hx-get="{% url 'jobs:bulk-delete-status' %}" hx-trigger="every 4s" hx-swap="outerHTML"{% endif %}>
+{% if bulk_delete %}
+<div class="card mb-3 px-4 py-3 text-sm"
+     style="border-left: 4px solid {% if bulk_delete.status == 'error' %}#b04a3a{% elif bulk_delete.status == 'done' %}#5f8c4e{% elif bulk_delete.status == 'cancelled' %}#7a7264{% else %}var(--ik-sea){% endif %};">
+  {% if bulk_delete.status == 'running' or bulk_delete.status == 'interrupted' %}
+  <div class="flex items-center gap-3">
+    <i class="bi bi-trash3" style="color: var(--ik-sea);"></i>
+    <span class="flex-1">Excluindo {{ bulk_delete.kind }} · <b>{{ bulk_delete.done }}</b> de {{ bulk_delete.total }}</span>
+    <button type="button" class="text-xs" style="color: var(--ik-bad);" hx-post="{% url 'jobs:bulk-delete-cancel' %}" hx-swap="none"
+            hx-confirm="Cancelar a exclusão? O que já foi excluído não volta; o resto volta para a lista.">Cancelar</button>
+  </div>
+  <div style="height:4px;border-radius:2px;background:var(--ik-line);margin-top:.5rem;">
+    <div style="height:4px;border-radius:2px;background:var(--ik-sea);width:{% widthratio bulk_delete.done bulk_delete.total 100 %}%;transition:width .4s;"></div>
+  </div>
+  {% elif bulk_delete.status == 'done' %}
+  <i class="bi bi-check2-circle" style="color:#5f8c4e;"></i> Exclusão concluída: {{ bulk_delete.total }} {{ bulk_delete.kind }}.
+  {% elif bulk_delete.status == 'cancelled' %}
+  <i class="bi bi-x-circle"></i> Exclusão cancelada: {{ bulk_delete.done }} de {{ bulk_delete.total }} excluídos.
+  {% else %}
+  <i class="bi bi-exclamation-triangle" style="color:#b04a3a;"></i> {{ bulk_delete.error }} ({{ bulk_delete.done }} de {{ bulk_delete.total }})
+  {% endif %}
+</div>
+{% endif %}
+</div>

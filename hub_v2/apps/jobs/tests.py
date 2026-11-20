@@ -1203,6 +1203,9 @@ class BulkDeleteInBatchesTests(TestCase):
         progress = bulk_delete.progress(self.user.pk)
         self.assertEqual((progress["total"], progress["left"]), (11, 1))
         self.assertContains(self.client.get(reverse("jobs:job-list")), "Excluindo")
+        banner = self.client.get(reverse("jobs:bulk-delete-status"))
+        self.assertContains(banner, "every 4s")
+        self.assertNotContains(banner, "atualizar")
 
     def test_cancel_brings_back_what_was_not_deleted(self):
         import time

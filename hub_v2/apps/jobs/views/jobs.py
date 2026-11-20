@@ -4186,6 +4186,18 @@ class WorkflowBulkDeleteView(LoginRequiredMixin, View):
         return resp
 
 
+class BulkDeleteStatusView(LoginRequiredMixin, View):
+    """N-201: the deletion banner alone (the list asks it every few seconds while a deletion runs)."""
+
+    def get(self, request):
+        from django.shortcuts import render
+
+        from apps.jobs.services import bulk_delete
+
+        bulk_delete.resume_if_cut(request.user.pk)
+        return render(request, "jobs/partials/bulk_delete_banner.html", {"bulk_delete": bulk_delete.progress(request.user.pk)})
+
+
 class BulkDeleteCancelView(LoginRequiredMixin, View):
     """N-201: stop the deletion in the background; the workflows it hid and did not delete come back."""
 
