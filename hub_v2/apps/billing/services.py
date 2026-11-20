@@ -74,7 +74,27 @@ def state_of(account: BillingAccount | None, now: datetime | None = None) -> Sta
 
 
 def state_for(organization, now=None) -> State:
-    return state_of(account_for(organization), now)
+    state = state_of(account_for(organization), now)
+    if organization is not None and not getattr(organization, "active", True):
+        # N-203: paused by the system's administrator: its agents get no jobs and its add-ons end
+        return State("paused", "Pausada pelo administrador", False, False, state.limit, state.ends_at)
+    return state
+
+
+def free_addons(account: BillingAccount | None, now: datetime | None = None) -> tuple[bool, datetime | None, str]:
+    """N-203: the platform's proxies and agent without charge — during the free trial (they end with it), for an
+    exempt organization, or until the date the system's administrator set (they end on it). (free, end, why)."""
+    if account is None:
+        return False, None, ""
+    now = now or timezone.now()
+    if account.addons_free_until and now <= account.addons_free_until:
+        return True, account.addons_free_until, "cortesia"
+    code = state_of(account, now).code
+    if code == "exempt":
+        return True, None, "isenta"
+    if code == "trial":
+        return True, None, "teste"
+    return False, None, ""
 
 
 def allows_work(organization) -> bool:
@@ -407,14 +427,21 @@ def set_proxy_addon(account: BillingAccount, game_account, on: bool) -> dict:
     from . import asaas
 
     if on:
-        if not subscribed(account):
+        paying = subscribed(account)
+        free, until, _why = free_addons(account)
+        if not paying and not free:
             return {"ok": False, "reason": "Os adicionais precisam de uma assinatura ativa."}
         already = game_account.platform_proxies and not game_account.platform_proxies_ends_at
         if not already and not game_account.platform_proxies and platform.accounts_available() < 1:
             return {"ok": False, "reason": "Os proxies da plataforma estão esgotados no momento."}
         lent = platform.enable(game_account)
-        asaas.update_subscription_value(account.subscription_id, monthly_value(account), "IkaHub — plano e adicionais")
-        return {"ok": True, "lent": len(lent)}
+        if paying:
+            asaas.update_subscription_value(account.subscription_id, monthly_value(account), "IkaHub — plano e adicionais")
+        else:
+            # N-203: without charge; a courtesy ends on its date, a trial's end ends them with the trial
+            game_account.platform_proxies_ends_at = until
+            game_account.save(update_fields=["platform_proxies_ends_at", "updated_at"])
+        return {"ok": True, "lent": len(lent), "free": not paying}
     if not game_account.platform_proxies:
         return {"ok": True}
     if subscribed(account):
@@ -471,6 +498,22 @@ def set_agent_addon(account: BillingAccount, game_account, on: bool, *, now=None
     from . import asaas
 
     now = now or timezone.now()
+    if on and not subscribed(account):
+        free, until, _why = free_addons(account, now)
+        if not free:
+            return {"ok": False, "reason": "Os adicionais precisam de uma assinatura ativa."}
+        # N-203: without charge (trial, exempt or the administrator's courtesy)
+        if game_account.platform_agent and not game_account.platform_agent_ends_at:
+            return {"ok": True, "kind": "already"}
+        if not game_account.platform_agent:
+            reason = platform_agent.why_not(game_account)
+            if reason:
+                return {"ok": False, "reason": reason}
+            platform_agent.provision(game_account)
+        game_account.platform_agent_ends_at = until
+        game_account.platform_agent_billed = False
+        game_account.save(update_fields=["platform_agent_ends_at", "platform_agent_billed", "updated_at"])
+        return {"ok": True, "kind": "on", "free": True}
     if on:
         if not subscribed(account):
             return {"ok": False, "reason": "Os adicionais precisam de uma assinatura ativa."}

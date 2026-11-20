@@ -119,6 +119,12 @@ class AccountCreateForm(forms.ModelForm):
         help_text="Token gf-token-production (opcional). Será criptografado.",
     )
 
+    # N-203: the platform runs the agent (no Docker at home): the node is created with it
+    platform_agent = forms.BooleanField(
+        required=False, label="Usar o agente da plataforma (sem instalar nada)",
+        help_text="O hub liga os proxies e o agente da plataforma para esta conta e cria o nó sozinho.",
+    )
+
     class Meta:
         model = Account
         fields = ["node", "label", "email", "password", "gf_token", "notes"]
@@ -128,6 +134,19 @@ class AccountCreateForm(forms.ModelForm):
             "email": forms.EmailInput(attrs={"class": "form-input"}),
             "notes": forms.Textarea(attrs={"class": "form-input", "rows": 2}),
         }
+
+    def __init__(self, *args, platform_offered: bool = False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["node"].required = False
+        if not platform_offered:
+            del self.fields["platform_agent"]
+
+    def clean(self):
+        data = super().clean()
+        if not data.get("node") and not data.get("platform_agent"):
+            self.add_error("node", "Escolha o nó que vai jogar por esta conta"
+                           + (" ou marque o agente da plataforma." if "platform_agent" in self.fields else "."))
+        return data
 
     def save(self, commit=True):
         instance = super().save(commit=False)

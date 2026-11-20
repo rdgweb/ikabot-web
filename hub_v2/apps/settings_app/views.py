@@ -90,7 +90,7 @@ class TourStateView(LoginRequiredMixin, View):
 
         from .tour import state
 
-        response = JsonResponse(state())
+        response = JsonResponse(state(getattr(request, "organization", None)))
         add_never_cache_headers(response)      # the tour polls it while it waits for the agent, the account or the worlds
         return response
 

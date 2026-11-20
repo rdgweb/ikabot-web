@@ -14,6 +14,8 @@ class BillingAccount(models.Model):
     price = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     trial_ends_at = models.DateTimeField(null=True, blank=True)
     paid_until = models.DateTimeField(null=True, blank=True)             # the next due date of a paid plan
+    # N-203: the system's administrator lets this organization use the platform's proxies and agent without charge
+    addons_free_until = models.DateTimeField(null=True, blank=True)
     # Asaas: the payment link the customer opens, the customer and the subscription it created
     link_id = models.CharField(max_length=64, blank=True, default="")
     link_url = models.URLField(blank=True, default="")

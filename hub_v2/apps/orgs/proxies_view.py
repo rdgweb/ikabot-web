@@ -47,7 +47,7 @@ class ProxiesView(OrgPage):
     def get_context_data(self, **kwargs):
         from apps.accounts.models import Account
         from apps.billing import plans
-        from apps.billing.services import account_for, subscribed
+        from apps.billing.services import account_for, free_addons, subscribed
         from apps.accounts import platform_agent
         from apps.proxy import platform
         from apps.proxy.models import AccountProxyReservation, ProxyProfile
@@ -56,6 +56,8 @@ class ProxiesView(OrgPage):
         organization = self.request.organization
         own = list(ProxyProfile.objects.filter(lent_to__isnull=True).select_related("assigned_node")
                    .prefetch_related("account_reservation__account").order_by("address", "port"))
+        billing = account_for(organization)
+        paying = subscribed(billing)
         rows = []
         for account in Account.objects.select_related("node").order_by("label"):
             reserved = [r.proxy_profile for r in AccountProxyReservation.objects.filter(account=account).select_related("proxy_profile")]
@@ -64,12 +66,18 @@ class ProxiesView(OrgPage):
                 "ok": sum(1 for proxy in reserved if proxy.active and proxy.last_test_status is True),
                 "lent": sum(1 for proxy in reserved if proxy.lent_to_id == account.pk),
                 "agent": _agent_state(account),
+                # N-203: without a subscription the end date is the trial's or the courtesy's, not "switched off"
+                "proxies_on": account.platform_proxies and (not account.platform_proxies_ends_at or not paying),
+                "agent_on": account.platform_agent and (not account.platform_agent_ends_at or not paying),
             })
-        billing = account_for(organization)
+        from apps.orgs.services import DEFAULT_SLUG
+
+        free, free_until, free_why = free_addons(billing)
         ctx.update({
+            "addons_allowed": paying or free, "free_addons": free and not paying, "free_until": free_until, "free_why": free_why,
             "own": own, "own_ok": sum(1 for proxy in own if proxy.active and proxy.last_test_status is True),
             "rows": rows, "addon_price": plans.brl(plans.ADDON_PROXIES), "subscribed": subscribed(billing),
-            "available": platform.accounts_available(), "is_platform": billing.status == billing.EXEMPT,
+            "available": platform.accounts_available(), "is_platform": getattr(organization, "slug", DEFAULT_SLUG) == DEFAULT_SLUG,
             "agent_price": plans.brl(plans.ADDON_AGENT), "agent_slots": platform_agent.slots_left(),
             "agent_offered": platform_agent.host() is not None,
         })

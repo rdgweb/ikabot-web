@@ -132,12 +132,14 @@ class TourTests(TestCase):
 
     def test_the_state_follows_the_installation(self):
         url = reverse("settings_app:tour-state")
-        self.assertEqual(self.client.get(url).json(), {"nodes": 0, "online": 0, "accounts": 0, "worlds": 0, "first_account": ""})
+        self.assertEqual(self.client.get(url).json(), {"nodes": 0, "online": 0, "accounts": 0, "worlds": 0, "first_account": "",
+                                                        "platform": False, "platform_agents": 0})
         node = Node.objects.create(name="agente-1", agent_last_seen_at=timezone.now())
         Node.objects.create(name="parado")
         account = Account.objects.create(node=node, label="Lobby", email="a@example.com", password_enc="x")
         GameAccount.objects.create(account=account, lobby_account_id=1, server_id="s78-br", server_language="br", server_number=78, name="Alpha")
-        self.assertEqual(self.client.get(url).json(), {"nodes": 2, "online": 1, "accounts": 1, "worlds": 1, "first_account": str(account.pk)})
+        self.assertEqual(self.client.get(url).json(), {"nodes": 2, "online": 1, "accounts": 1, "worlds": 1, "first_account": str(account.pk),
+                                                        "platform": False, "platform_agents": 0})
         self.assertIn("no-cache", self.client.get(url)["Cache-Control"])                # polled while the tour waits
 
     def test_the_account_form_says_why_there_is_no_node(self):

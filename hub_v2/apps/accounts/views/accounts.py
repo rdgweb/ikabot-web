@@ -105,6 +105,58 @@ class AccountCreateView(LoginRequiredMixin, CreateView):
     template_name = "accounts/account_create.html"
     success_url = reverse_lazy("accounts:account-list")
 
+    def _platform_offered(self) -> bool:
+        """N-203: a customer (not the platform's own organization) on a hub whose platform runs agents."""
+        from apps.accounts import platform_agent
+        from apps.orgs.services import DEFAULT_SLUG
+
+        organization = getattr(self.request, "organization", None)
+        return bool(organization is not None and organization.slug != DEFAULT_SLUG and platform_agent.host() is not None)
+
+    def get_form_kwargs(self):
+        return {**super().get_form_kwargs(), "platform_offered": self._platform_offered()}
+
+    def get_context_data(self, **kwargs):
+        return {**super().get_context_data(**kwargs), "platform_offered": self._platform_offered()}
+
+    def form_valid(self, form):
+        if form.cleaned_data.get("platform_agent") and not form.cleaned_data.get("node"):
+            return self._with_platform_agent(form)
+        return super().form_valid(form)
+
+    def _with_platform_agent(self, form):
+        """The account on a waiting node, then the platform's proxies and agent switched on (the agent gets its own
+        node and the account moves onto it); the waiting node goes when it is left empty."""
+        import uuid
+
+        from django.contrib import messages
+        from django.shortcuts import redirect
+
+        from apps.accounts.models import Node
+        from apps.billing.services import account_for, set_agent_addon, set_proxy_addon
+
+        organization = self.request.organization
+        waiting = Node._base_manager.create(
+            name=f"plataforma-pendente-{uuid.uuid4().hex[:6]}", organization=organization,
+            transport=Node.TRANSPORT_HTTPS, platform_managed=True, description="Esperando o agente da plataforma",
+        )
+        form.instance.node = waiting
+        form.instance.organization = organization
+        self.object = form.save()
+        billing = account_for(organization)
+        outcome = set_proxy_addon(billing, self.object, True)
+        if outcome.get("ok"):
+            outcome = set_agent_addon(billing, self.object, True)
+        self.object.refresh_from_db()
+        if self.object.node_id != waiting.pk and not Account._base_manager.filter(node=waiting).exists():
+            waiting.delete()
+        if outcome.get("ok"):
+            messages.success(self.request, f"Conta {self.object.label} criada; o agente da plataforma está subindo.")
+        else:
+            messages.warning(self.request, f"Conta {self.object.label} criada, mas o agente da plataforma não ligou: "
+                                           f"{outcome.get('reason')} Tente de novo em Minha organização → Proxies e agente.")
+        return redirect(self.get_success_url())
+
 
 class AccountEditView(LoginRequiredMixin, UpdateView):
     model = Account

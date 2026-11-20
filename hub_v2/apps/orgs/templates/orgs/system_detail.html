@@ -1,0 +1,108 @@
+{% extends base_template|default:"base.html" %}
+{% block title %}{{ row.organization.name }} · Organizações{% endblock %}
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="{% url 'system-organizations' %}" class="hover:text-ink transition-colors">Organizações</a>
+  <span class="mx-1">/</span> <span class="text-ink">{{ row.organization.name }}</span>
+{% endblock %}
+{% block content %}
+{# N-203: one organization and what the system's administrator can do with it #}
+{% with org=row.organization %}
+<div class="mb-4 flex items-center gap-3 flex-wrap">
+  <h1 class="text-xl font-bold text-ink">{{ org.name }}</h1>
+  {% include "orgs/_system_state.html" with state=row.state active=org.active %}
+  {% if row.state.ends_at %}<span class="text-sm text-muted">até {{ row.state.ends_at|date:"d/m/Y H:i" }}</span>{% endif %}
+</div>
+{% for message in messages %}
+<div class="card mb-3 px-4 py-2 text-sm" style="border-left: 4px solid {% if message.tags == 'error' %}#b04a3a{% else %}#5f8c4e{% endif %};">{{ message }}</div>
+{% endfor %}
+
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+  <div class="card p-4"><div class="text-xs text-muted">Subcontas</div><div class="text-2xl font-bold">{{ row.subaccounts }}{% if row.state.limit %}<span class="text-sm text-muted">/{{ row.state.limit }}</span>{% endif %}</div></div>
+  <div class="card p-4"><div class="text-xs text-muted">Agentes online</div><div class="text-2xl font-bold">{{ row.nodes_online }}<span class="text-sm text-muted">/{{ row.nodes }}</span></div></div>
+  <div class="card p-4"><div class="text-xs text-muted">Proxies · agente da plataforma</div><div class="text-2xl font-bold">{{ row.proxies_on }} · {{ row.agents_on }}</div></div>
+  <div class="card p-4"><div class="text-xs text-muted">Adicionais sem cobrança</div>
+    <div class="text-lg font-bold">{% if row.free_addons %}{{ row.free_why }}{% if row.free_until %} até {{ row.free_until|date:"d/m" }}{% endif %}{% else %}não{% endif %}</div></div>
+</div>
+
+{% if not row.is_platform %}
+<section class="card mb-5">
+  <div class="card-header"><h2 class="font-semibold"><i class="bi bi-sliders"></i> Plano</h2></div>
+  <div class="p-5 flex flex-wrap gap-3 items-end">
+    <form method="post" class="flex items-end gap-2" hx-boost="false">{% csrf_token %}<input type="hidden" name="action" value="extend">
+      <label class="text-sm">Estender o teste<select name="days" class="form-input"><option value="7">+7 dias</option><option value="14">+14 dias</option><option value="30">+30 dias</option></select></label>
+      <button class="btn btn-primary btn-sm">Estender</button>
+    </form>
+    <form method="post" class="flex items-end gap-2" hx-boost="false">{% csrf_token %}
+      <label class="text-sm">Proxies e agente sem cobrança até<input type="date" name="until" class="form-input" required min="{{ today|date:'Y-m-d' }}" value="{{ row.billing.addons_free_until|date:'Y-m-d' }}"></label>
+      <button class="btn btn-primary btn-sm" name="action" value="courtesy">Liberar</button>
+      {% if row.billing.addons_free_until %}<button class="btn btn-secondary btn-sm" name="action" value="courtesy_off" formnovalidate>Retirar</button>{% endif %}
+    </form>
+    <form method="post" hx-boost="false">{% csrf_token %}
+      {% if row.state.code == 'exempt' %}<button class="btn btn-secondary btn-sm" name="action" value="unexempt">Retirar isenção</button>
+      {% else %}<button class="btn btn-secondary btn-sm" name="action" value="exempt">Isentar</button>{% endif %}
+    </form>
+    <form method="post" hx-boost="false">{% csrf_token %}
+      {% if org.active %}<button class="btn btn-secondary btn-sm" name="action" value="pause">Pausar</button>
+      {% else %}<button class="btn btn-primary btn-sm" name="action" value="resume">Reativar</button>{% endif %}
+    </form>
+  </div>
+</section>
+{% endif %}
+
+<section class="card mb-5">
+  <div class="card-header"><h2 class="font-semibold"><i class="bi bi-person-badge"></i> Contas</h2></div>
+  <div class="p-4">
+    <table class="data-table w-full text-sm">
+      <thead><tr><th>Conta</th><th>Mundos</th><th>Nó</th><th>Proxies da plataforma</th><th>Agente da plataforma</th></tr></thead>
+      <tbody>
+      {% for a in row.accounts %}
+      <tr>
+        <td>{{ a.account.label }}{% if not a.account.active %} <span class="text-xs text-muted">(desligada)</span>{% endif %}</td>
+        <td>{{ a.worlds }}</td>
+        <td>{{ a.account.node.name|default:"—" }} {% if a.node_online %}<i class="bi bi-circle-fill" style="color:#5f8c4e;font-size:.5rem;"></i>{% else %}<i class="bi bi-circle" style="color:#9a3b2e;font-size:.5rem;"></i>{% endif %}</td>
+        <td>
+          <form method="post" hx-boost="false">{% csrf_token %}<input type="hidden" name="account" value="{{ a.account.pk }}">
+            {% if a.account.platform_proxies %}<button class="btn btn-secondary btn-sm" name="action" value="proxies_off">Desligar</button>{% if a.account.platform_proxies_ends_at %} <span class="text-xs text-muted">até {{ a.account.platform_proxies_ends_at|date:"d/m" }}</span>{% endif %}
+            {% else %}<button class="btn btn-primary btn-sm" name="action" value="proxies_on">Ligar</button>{% endif %}
+          </form>
+        </td>
+        <td>
+          <form method="post" hx-boost="false">{% csrf_token %}<input type="hidden" name="account" value="{{ a.account.pk }}">
+            {% if a.account.platform_agent %}<button class="btn btn-secondary btn-sm" name="action" value="agent_off">Desligar</button>{% if a.account.platform_agent_ends_at %} <span class="text-xs text-muted">até {{ a.account.platform_agent_ends_at|date:"d/m" }}</span>{% endif %}
+            {% else %}<button class="btn btn-primary btn-sm" name="action" value="agent_on">Ligar</button>{% endif %}
+          </form>
+        </td>
+      </tr>
+      {% empty %}<tr><td colspan="5" class="text-muted">Nenhuma conta</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card mb-5">
+  <div class="card-header"><h2 class="font-semibold"><i class="bi bi-people"></i> Membros</h2></div>
+  <div class="p-4">
+    <table class="data-table w-full text-sm">
+      <thead><tr><th>Usuário</th><th>Papel</th><th>Último acesso</th><th>Tutorial</th></tr></thead>
+      <tbody>
+      {% for m in row.members %}
+      <tr><td>{{ m.user.username }}{% if not m.user.is_active %} <span class="text-xs text-muted">(desligado)</span>{% endif %}</td><td>{{ m.role }}</td>
+        <td>{{ m.last_login|date:"d/m H:i"|default:"nunca" }}</td><td>{% if m.tour_done %}concluído{% else %}não terminou{% endif %}</td></tr>
+      {% empty %}<tr><td colspan="4" class="text-muted">Nenhum membro</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if not row.is_platform %}
+<section class="card" style="border-color: rgba(176,74,58,.35);">
+  <div class="card-header"><h2 class="font-semibold" style="color:#9a3b2e;"><i class="bi bi-trash"></i> Apagar organização</h2></div>
+  <form method="post" class="p-5 flex flex-wrap items-end gap-3" hx-boost="false">{% csrf_token %}<input type="hidden" name="action" value="delete">
+    <span class="text-sm text-muted">Contas, mundos, jobs, nós e proxies próprios saem; proxies e agentes da plataforma voltam; usuários só dela ficam desligados.</span>
+    <label class="text-sm">Digite <b>{{ org.name }}</b><input name="confirm_name" class="form-input" autocomplete="off"></label>
+    <button class="btn btn-danger btn-sm">Apagar</button>
+  </form>
+</section>
+{% endif %}
+{% endwith %}
+{% endblock %}

@@ -45,19 +45,29 @@
       text: function (s) {
         if (s.online) return "O agente é o programa que entra no jogo e executa os jobs; cada agente conectado aparece aqui como um nó. "
           + plural(s.online, "nó online", "nós online") + ": pronto para receber contas.";
+        // N-203: on a hub whose platform runs agents, a customer installs nothing: the agent comes with the account
+        if (s.platform && !s.platform_agents && !s.online) return "Aqui você não precisa instalar nada: o agente da plataforma joga por você. "
+          + "Na próxima etapa, ao cadastrar a conta, marque \"Usar o agente da plataforma\": o nó aparece aqui sozinho.";
+        if (s.platform && s.platform_agents && !s.online) return "O agente da plataforma está subindo para a sua conta: leva alguns minutos. O tour continua quando ele conectar.";
         if (s.nodes) return "O nó existe, mas o agente não fala com o hub há mais de 3 minutos. Sem agente online os jobs ficam parados na fila: confira se o container agent está rodando.";
         return "Ainda não há agente. Crie o nó em Novo Nó: o hub mostra o comando de instalação, já com a chave do nó, para rodar na sua máquina com Docker. Abaixo, um exemplo. O tour espera e continua quando o agente conectar.";
       },
-      example: function (s) { return s.nodes ? null : { into: '[data-tour="nodes"] > *', html: EXAMPLE_NODES }; },
-      cta: function (s) { return s.online ? null : { label: "Novo Nó", href: "/accounts/nodes/create/" }; },
+      example: function (s) { return (s.nodes || s.platform) ? null : { into: '[data-tour="nodes"] > *', html: EXAMPLE_NODES }; },
+      cta: function (s) {
+        if (s.online) return null;
+        if (s.platform && !s.platform_agents) return { label: "Cadastrar a conta", href: "/accounts/create/" };
+        return s.platform ? null : { label: "Novo Nó", href: "/accounts/nodes/create/" };
+      },
       tone: function (s) { return s.online ? "" : "warn"; },
-      waits: function (s) { return !s.online; }, until: function (s) { return s.online > 0; },
+      // a customer of the platform goes on to the account first; the agent is created with it
+      waits: function (s) { return !s.online && !(s.platform && !s.platform_agents); }, until: function (s) { return s.online > 0; },
       waitText: "Esperando o agente conectar", readyText: "O agente conectou",
       },
 
     { page: /^\/accounts\/create\/$/, go: "/accounts/create/", target: "#id_node", wrap: ".form-group", icon: "bi-hdd-network",
       chapter: "2 · A conta", title: "Quem joga por ela",
       text: function (s) {
+        if (s.platform && !s.online) return "Sem nó? Deixe vazio e marque \"Usar o agente da plataforma\" logo abaixo: o hub cria o nó e o agente para esta conta.";
         return s.nodes ? "Escolha o nó que vai jogar por esta conta. Cada conta fica sempre no mesmo nó."
           : "A lista está vazia porque ainda não há nó. Volte aqui depois que o agente conectar.";
       },

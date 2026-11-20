@@ -120,7 +120,8 @@ def end(account) -> None:
             if machine is not None:
                 AgentProvisionRequest._base_manager.create(docker_host=machine, node=node, node_ref=node.pk, action="remove")
         previous = account.previous_node
-        account.node = previous if previous is not None and previous.active else None
+        if previous is not None and previous.active:
+            account.node = previous                        # without one, it stays on the switched-off platform node
         account.platform_agent, account.platform_agent_ends_at, account.platform_agent_billed = False, None, False
         account.platform_agent_node = None
         account.platform_agent_payment_id, account.platform_agent_payment_url = "", ""

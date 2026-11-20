@@ -102,6 +102,20 @@ def finish(token, *, write: bool) -> None:
         _write(_merge(context.events))
 
 
+def rehome_organization(organization, to) -> int:
+    """N-203: an organization the system's administrator deletes keeps its history: its events (written and still
+    waiting for the response) move to `to` — nothing is changed or removed but the organization they point at."""
+    from django.db import models as django_models
+
+    from .models import AuditEvent
+
+    context = _current.get()
+    for event in (context.events if context else []):
+        if getattr(event.get("organization"), "pk", None) == organization.pk:
+            event["organization"] = to
+    return django_models.QuerySet.update(AuditEvent.objects.filter(organization=organization), organization=to)
+
+
 def current_request():
     context = _current.get()
     return context.request if context else None

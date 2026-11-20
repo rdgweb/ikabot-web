@@ -51,18 +51,24 @@ def set_enabled(enabled: bool) -> None:
         AppSetting.objects.filter(key__startswith=DONE_PREFIX).delete()
 
 
-def state() -> dict:
-    """What the installation already has, so each step of the tour talks about the real hub."""
+def state(organization=None) -> dict:
+    """What the installation already has, so each step of the tour talks about the real hub. N-203: a customer of a
+    hub whose platform runs agents is led to the platform's agent (no Docker at home) instead of a node of its own."""
+    from apps.accounts import platform_agent
     from apps.accounts.models import Account, GameAccount, Node
+    from apps.orgs.services import DEFAULT_SLUG
 
     nodes = list(Node.objects.all())
     account = Account.objects.order_by("created_at").first()
+    customer = organization is not None and getattr(organization, "slug", DEFAULT_SLUG) != DEFAULT_SLUG
     return {
         "nodes": len(nodes),
         "online": sum(1 for node in nodes if node.is_online),
         "accounts": Account.objects.count(),
         "worlds": GameAccount.objects.filter(active=True).count(),
         "first_account": str(account.pk) if account else "",
+        "platform": bool(customer and platform_agent.host() is not None),
+        "platform_agents": Account.objects.filter(platform_agent=True).count(),
     }
 
 

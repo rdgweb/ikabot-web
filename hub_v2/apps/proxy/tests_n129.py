@@ -77,6 +77,8 @@ class PlatformProxiesTests(TestCase):
         self.assertNotIn("segredo", page)
 
     def test_the_add_on_needs_a_subscription_and_lends_3_exclusive_proxies(self):
+        # N-203: during the free trial they are free; after it, a subscription (or the administrator's courtesy)
+        BillingAccount.objects.filter(pk=account_for(self.org).pk).update(trial_ends_at=timezone.now() - timedelta(days=1))
         self.client.post("/organizacao/proxies/", {"action": "addon", "account": str(self.account.pk), "on": "1"})
         self.assertFalse(ProxyProfile._base_manager.filter(lent_to=self.account).exists())   # no subscription yet
         self._subscribe()
