@@ -9,9 +9,10 @@ ENV EXPECTED_AGENT_VERSION=${EXPECTED_AGENT_VERSION}
 
 WORKDIR /app
 
-# System deps for mysqlclient; DejaVu is the font of the pictures the hub draws (combat report)
+# System deps for mysqlclient; DejaVu is the font of the pictures the hub draws (combat report); N-187: mariadb-dump
+# for the backups of the Maintenance page
 RUN apt-get update && apt-get install -y \
-    gcc default-libmysqlclient-dev pkg-config curl fonts-dejavu-core \
+    gcc default-libmysqlclient-dev pkg-config curl fonts-dejavu-core mariadb-client \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

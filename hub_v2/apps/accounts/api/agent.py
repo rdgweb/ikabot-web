@@ -184,6 +184,13 @@ class AgentHeartbeatView(APIView):
                 resume_stalled()
             except Exception:
                 logger.warning("Could not resume the database retention from heartbeat", exc_info=True)
+            try:
+                # N-187: the scheduled upkeep (daily backup, weekly optimisation) starts from here when it is due
+                from apps.settings_app.maintenance import tick
+
+                tick()
+            except Exception:
+                logger.warning("Could not check the scheduled maintenance from heartbeat", exc_info=True)
 
         if not updated:
             return Response(

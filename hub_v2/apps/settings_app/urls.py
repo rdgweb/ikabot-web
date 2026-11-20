@@ -22,8 +22,11 @@ from .views import (
 
 app_name = "settings_app"
 from .retention_views import RetentionPolicyView, RetentionPreviewView, RetentionRunView
+from .maintenance_views import MaintenanceBackupDownloadView, MaintenanceView
 
 urlpatterns = [
+    path("manutencao/", MaintenanceView.as_view(), name="maintenance"),
+    path("manutencao/backup/<str:name>/", MaintenanceBackupDownloadView.as_view(), name="maintenance-backup"),
     path("retention/save/", RetentionPolicyView.as_view(), name="retention-save"),
     path("retention/preview/", RetentionPreviewView.as_view(), name="retention-preview"),
     path("retention/<uuid:pk>/", RetentionRunView.as_view(), name="retention-run"),

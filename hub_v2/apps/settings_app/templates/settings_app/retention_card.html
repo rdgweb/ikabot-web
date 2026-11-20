@@ -1,5 +1,6 @@
 <section class="card mb-6" id="retencao">
-  <div class="card-header"><h2 class="font-semibold"><i class="bi bi-database"></i> Retenção do banco de dados</h2></div>
+  <div class="card-header flex items-center justify-between"><h2 class="font-semibold"><i class="bi bi-database"></i> Retenção do banco de dados</h2>
+    <a href="{% url 'settings_app:maintenance' %}" class="btn btn-secondary btn-sm"><i class="bi bi-tools"></i> Manutenção</a></div>
   <div class="p-5">
     <p class="text-sm text-muted mb-4">Arquivar organiza as listas, mas mantém os dados no banco. A retenção reduz detalhes antigos e remove logs vencidos. As métricas dos gráficos, os parâmetros dos jobs e os registros atuais das contas são preservados.</p>
     <form method="post" action="{% url 'settings_app:retention-save' %}" hx-boost="false">

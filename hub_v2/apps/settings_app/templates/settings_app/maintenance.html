@@ -1,0 +1,119 @@
+{% extends base_template|default:"base.html" %}
+{% block title %}Manutenção{% endblock %}
+{% block breadcrumb_items %}
+  <span class="mx-1">/</span> <a href="/settings/" class="hover:text-ink transition-colors">Configurações</a>
+  <span class="mx-1">/</span> <span class="text-ink">Manutenção</span>
+{% endblock %}
+{% block content %}
+{# N-187: the server's upkeep. The hub CSS is precompiled: existing classes and inline style only #}
+<div class="mb-4 flex items-center justify-between gap-3 flex-wrap">
+  <h1 class="text-2xl font-bold text-ink">Manutenção</h1>
+  {% if busy %}<span class="text-sm" style="color: var(--ik-sea);"><i class="bi bi-arrow-repeat"></i> Rodando no servidor</span>{% endif %}
+</div>
+{% for message in messages %}
+<div class="card mb-3 px-4 py-2 text-sm" style="border-left: 4px solid {% if message.tags == 'error' %}#b04a3a{% else %}#5f8c4e{% endif %};">{{ message }}</div>
+{% endfor %}
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+  <section class="card p-5">
+    <div class="text-sm text-muted mb-1"><i class="bi bi-hdd"></i> Disco</div>
+    {% if disk %}
+    <div class="text-2xl font-bold" style="{% if disk_alert %}color:#b04a3a;{% endif %}">{{ disk.pct }}%</div>
+    <div style="height:6px;border-radius:3px;background:var(--ik-line);margin:.5rem 0;">
+      <div style="height:6px;border-radius:3px;width:{{ disk.pct }}%;background:{% if disk_alert %}#b04a3a{% else %}var(--ik-sea){% endif %};"></div>
+    </div>
+    <div class="text-sm"><b>{{ disk.free|filesizeformat }}</b> livres de {{ disk.total|filesizeformat }}</div>
+    {% else %}<div class="text-sm text-muted">—</div>{% endif %}
+  </section>
+  <section class="card p-5">
+    <div class="text-sm text-muted mb-1"><i class="bi bi-database"></i> Banco</div>
+    <div class="text-2xl font-bold">{{ database.size|filesizeformat }}</div>
+    <div class="text-sm mt-2"><b>{{ database.free|filesizeformat }}</b> livres dentro das tabelas</div>
+  </section>
+  <section class="card p-5">
+    <div class="text-sm text-muted mb-1"><i class="bi bi-archive"></i> Backups</div>
+    <div class="text-2xl font-bold">{{ backups|length }}</div>
+    <div class="text-sm mt-2">{{ backups_size|filesizeformat }}{% if backups %} · último {{ backups.0.at|date:"d/m H:i" }}{% endif %}</div>
+    {% if not backup_dir_ok %}<div class="text-sm mt-2" style="color:#b04a3a;">Pasta de backups não montada no hub</div>{% endif %}
+  </section>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+  <section class="card">
+    <div class="card-header flex items-center justify-between">
+      <h2 class="font-semibold"><i class="bi bi-archive"></i> Backup</h2>
+      <form method="post" hx-boost="false">{% csrf_token %}<input type="hidden" name="action" value="backup">
+        <button class="btn btn-primary btn-sm" {% if busy or not backup_dir_ok %}disabled{% endif %}><i class="bi bi-play-fill"></i> Fazer agora</button>
+      </form>
+    </div>
+    <div class="p-4">
+      {% if last_backup %}<div class="text-sm mb-3"><span style="display:inline-block;padding:.05rem .5rem;border-radius:999px;font-size:.7rem;font-weight:700;color:#fff;background:{% if last_backup.status == 'ok' %}#5f8c4e{% elif last_backup.status == 'failed' %}#b04a3a{% elif last_backup.status == 'running' %}var(--ik-sea){% else %}#7a7264{% endif %};">{{ last_backup.label }}</span> {{ last_backup.detail }}</div>{% endif %}
+      <table class="data-table w-full text-sm">
+        <thead><tr><th>Arquivo</th><th>Tamanho</th><th></th></tr></thead>
+        <tbody>
+        {% for b in backups %}
+          <tr><td>{{ b.at|date:"d/m/Y H:i" }}</td><td>{{ b.size|filesizeformat }}</td>
+            <td class="text-right"><a class="link-sea" hx-boost="false" href="{% url 'settings_app:maintenance-backup' b.name %}"><i class="bi bi-download"></i></a></td></tr>
+        {% empty %}<tr><td colspan="3" class="text-muted">Nenhum</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-header flex items-center justify-between">
+      <h2 class="font-semibold"><i class="bi bi-lightning-charge"></i> Otimização</h2>
+      <form method="post" hx-boost="false">{% csrf_token %}<input type="hidden" name="action" value="optimize">
+        <button class="btn btn-secondary btn-sm" {% if busy %}disabled{% endif %}><i class="bi bi-play-fill"></i> Otimizar agora</button>
+      </form>
+    </div>
+    <div class="p-4">
+      {% if last_optimize %}<div class="text-sm mb-3"><span style="display:inline-block;padding:.05rem .5rem;border-radius:999px;font-size:.7rem;font-weight:700;color:#fff;background:{% if last_optimize.status == 'ok' %}#5f8c4e{% elif last_optimize.status == 'failed' %}#b04a3a{% elif last_optimize.status == 'running' %}var(--ik-sea){% else %}#7a7264{% endif %};">{{ last_optimize.label }}</span> {{ last_optimize.detail }}</div>{% endif %}
+      <table class="data-table w-full text-sm">
+        <thead><tr><th>Tabela</th><th>Tamanho</th><th>Livre dentro</th></tr></thead>
+        <tbody>
+        {% for t in tables %}
+          <tr><td>{{ t.name }}</td><td>{{ t.size|filesizeformat }}</td>
+            <td>{{ t.free|filesizeformat }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<section class="card mb-6">
+  <div class="card-header"><h2 class="font-semibold"><i class="bi bi-calendar-check"></i> Agenda</h2></div>
+  <form method="post" class="p-5" hx-boost="false">
+    {% csrf_token %}<input type="hidden" name="action" value="save">
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-4">
+      <label class="text-sm flex items-center gap-2">{{ form.backup_enabled }} {{ form.backup_enabled.label }}</label>
+      <label class="text-sm">{{ form.backup_hour.label }}{{ form.backup_hour }}</label>
+      <label class="text-sm">{{ form.backup_keep.label }}{{ form.backup_keep }}</label>
+      <label class="text-sm">{{ form.disk_alert_pct.label }}{{ form.disk_alert_pct }}</label>
+      <label class="text-sm flex items-center gap-2">{{ form.optimize_enabled }} {{ form.optimize_enabled.label }}</label>
+      <label class="text-sm">{{ form.optimize_weekday.label }}{{ form.optimize_weekday }}</label>
+      <label class="text-sm">{{ form.optimize_hour.label }}{{ form.optimize_hour }}</label>
+      <label class="text-sm">{{ form.optimize_min_free_mb.label }}{{ form.optimize_min_free_mb }}</label>
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">Salvar</button>
+    <a href="/settings/#retencao" class="btn btn-secondary btn-sm"><i class="bi bi-database"></i> Retenção</a>
+  </form>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2 class="font-semibold"><i class="bi bi-clock-history"></i> Execuções</h2></div>
+  <div class="p-4">
+    <table class="data-table w-full text-sm">
+      <thead><tr><th>Quando</th><th>O quê</th><th>Origem</th><th>Resultado</th><th></th></tr></thead>
+      <tbody>
+      {% for r in history %}
+        <tr><td>{{ r.when|default:"—" }}</td><td>{% if r.kind == 'backup' %}Backup{% else %}Otimização{% endif %}</td>
+          <td>{% if r.reason == 'agenda' %}agenda{% else %}manual{% endif %}</td>
+          <td><span style="display:inline-block;padding:.05rem .5rem;border-radius:999px;font-size:.7rem;font-weight:700;color:#fff;background:{% if r.status == 'ok' %}#5f8c4e{% elif r.status == 'failed' %}#b04a3a{% elif r.status == 'running' %}var(--ik-sea){% else %}#7a7264{% endif %};">{{ r.label }}</span></td><td>{{ r.detail }}</td></tr>
+      {% empty %}<tr><td colspan="5" class="text-muted">Nenhuma</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
