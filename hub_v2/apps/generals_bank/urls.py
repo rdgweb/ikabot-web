@@ -8,6 +8,8 @@ from .views import (
     BankHistoryPartialView,
     BankListView,
     BankProducerAddView,
+    BankCancelCycleView,
+    BankProducerReactivateView,
     BankProducerRemoveView,
     BankProducerUpdateView,
     BankStartCycleView,
@@ -26,6 +28,8 @@ urlpatterns = [
     path("<uuid:pk>/produtores/<uuid:producer_pk>/editar/", BankProducerUpdateView.as_view(), name="producer-update"),
     path("<uuid:pk>/produtores/<uuid:producer_pk>/remover/", BankProducerRemoveView.as_view(), name="producer-remove"),
     path("<uuid:pk>/iniciar-ciclo/", BankStartCycleView.as_view(), name="start-cycle"),
+    path("<uuid:pk>/cancelar-ciclo/", BankCancelCycleView.as_view(), name="cancel-cycle"),
+    path("<uuid:pk>/produtores/<uuid:producer_pk>/reativar/", BankProducerReactivateView.as_view(), name="producer-reactivate"),
     path("<uuid:pk>/ciclo-status/", BankCycleStatusPartialView.as_view(), name="cycle-status-partial"),
     path("<uuid:pk>/historico/", BankHistoryPartialView.as_view(), name="history-partial"),
 ]

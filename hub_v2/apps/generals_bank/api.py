@@ -58,6 +58,8 @@ class BankCycleStatusView(APIView):
                     "bm_city_name": t.bm_city_name,
                     "unit_price": t.unit_price,
                     "sell_job_id": str(t.sell_job_id) if t.sell_job_id else None,
+                    "baseline_count": t.baseline_count,          # N-184: kept here, so a retry never trains again
+                    "failure_reason": t.failure_reason,
                 }
                 for t in tasks
             ],
@@ -98,6 +100,9 @@ class BankCycleCreateView(APIView):
 
         manager_job = Job.objects.filter(pk=manager_job_id).first() if manager_job_id else None
 
+        if mode == "liquidation" and not services.LIQUIDATION_AVAILABLE:
+            # N-184: nothing lists the bank's units nor buys them back yet: a liquidation cycle would wait forever
+            return Response({"error": "liquidation_not_available"}, status=status.HTTP_400_BAD_REQUEST)
         if mode == "liquidation":
             cycle = services.create_liquidation_cycle(config, manager_job=manager_job)
         else:
@@ -147,6 +152,12 @@ class BankTaskUpdateView(APIView):
         unit_price = request.data.get("unit_price")
         unit_name = request.data.get("unit_name")
         sell_job_id = request.data.get("sell_job_id")
+        failure_reason = request.data.get("failure_reason")
+        baseline_count = request.data.get("baseline_count")
+
+        if task.status in ("sold", "cancelled") and new_status not in (None, "", task.status):
+            # N-184: a task the bank already bought or that was cancelled by hand does not come back
+            return Response({"ok": True, "task_status": task.status, "cycle_advanced": False, "ignored": True})
 
         updates = ["updated_at"]
         if new_status and new_status in dict(GeneralsBankCycleTask.STATUS_CHOICES):
@@ -166,23 +177,27 @@ class BankTaskUpdateView(APIView):
             if job:
                 task.sell_job = job
                 updates.append("sell_job")
+        if failure_reason:
+            task.failure_reason = str(failure_reason)[:500]
+            updates.append("failure_reason")
+        if baseline_count is not None and task.baseline_count is None:
+            task.baseline_count = max(0, int(baseline_count))     # written once: the stock before the cycle trained
+            updates.append("baseline_count")
 
         task.save(update_fields=updates)
 
-        # Check if all tasks are listed → advance cycle to bank_buying
+        # N-184: when no task is training any more the cycle goes on with what was listed, or fails with the reasons
         cycle = task.cycle
-        if new_status == "listed" and services.all_tasks_listed(cycle):
-            services.advance_cycle_status(cycle, "bank_buying", "Todos produtores listaram. Criando job de compra do banco.")
-            buy_job = services.create_bank_buy_job(cycle)
-            return Response({
-                "ok": True,
-                "task_status": task.status,
-                "cycle_advanced": True,
-                "cycle_status": cycle.status,
-                "buy_job_id": str(buy_job.pk) if buy_job else None,
-            })
-
-        return Response({"ok": True, "task_status": task.status, "cycle_advanced": False})
+        outcome = services.settle_cycle(cycle)
+        cycle.refresh_from_db()
+        return Response({
+            "ok": True,
+            "task_status": task.status,
+            "baseline_count": task.baseline_count,
+            "cycle_advanced": outcome != "waiting",
+            "cycle_status": cycle.status,
+            "buy_job_id": str(cycle.buy_job_id) if cycle.buy_job_id else None,
+        })
 
 
 class BankBuyCompleteView(APIView):
@@ -203,6 +218,13 @@ class BankBuyCompleteView(APIView):
             return Response({"error": "Cycle not found"}, status=status.HTTP_404_NOT_FOUND)
 
         purchases = request.data.get("purchases") or []
+        # N-184: the offers the bank could not buy, with why: those tasks fail (the units stay listed in the game)
+        for miss in request.data.get("failed") or []:
+            task_id = str((miss or {}).get("task_id") or "")
+            if task_id:
+                GeneralsBankCycleTask.objects.filter(cycle=cycle, pk=task_id).exclude(status="sold").update(
+                    status="failed", failure_reason=str(miss.get("reason") or "Banco não conseguiu comprar.")[:500],
+                    updated_at=timezone.now())
         for p in purchases:
             try:
                 counterpart_ga = GameAccount.objects.filter(pk=p.get("producer_ga_id")).first()
@@ -216,12 +238,13 @@ class BankBuyCompleteView(APIView):
                     counterpart_ga=counterpart_ga,
                     job=job,
                 )
-                # Mark tasks as sold
-                GeneralsBankCycleTask.objects.filter(
-                    cycle=cycle,
-                    producer_game_account=counterpart_ga,
-                    unit_id=int(p.get("unit_id", 0)),
-                ).update(status="sold", updated_at=timezone.now())
+                # Mark the task bought as sold (by its id when the agent sends it)
+                bought = GeneralsBankCycleTask.objects.filter(cycle=cycle)
+                if p.get("task_id"):
+                    bought = bought.filter(pk=p.get("task_id"))
+                else:
+                    bought = bought.filter(producer_game_account=counterpart_ga, unit_id=int(p.get("unit_id", 0)))
+                bought.update(status="sold", updated_at=timezone.now())
                 offer_filters = {
                     "game_account": counterpart_ga,
                     "unit_id": int(p.get("unit_id", 0)),
@@ -240,7 +263,7 @@ class BankBuyCompleteView(APIView):
             except Exception as exc:
                 logger.warning("Failed to record purchase: %s", exc)
 
-        services.advance_cycle_status(cycle, "sleeping", "Banco comprou todas as unidades disponíveis.")
+        services.advance_cycle_status(cycle, "sleeping", f"Banco comprou {len(purchases)} oferta(s).")
         return Response({"ok": True, "cycle_status": cycle.status})
 
 
@@ -258,8 +281,17 @@ class BankCycleCompleteView(APIView):
         except GeneralsBankCycle.DoesNotExist:
             return Response({"error": "Cycle not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        services.advance_cycle_status(cycle, "completed", "Ciclo concluído com sucesso.")
-        return Response({"ok": True})
+        # N-184: a cycle where part of what was listed was not bought is not a success
+        tasks = list(cycle.tasks.all())
+        missing = [t for t in tasks if t.status != "sold"]
+        if tasks and missing:
+            services.advance_cycle_status(
+                cycle, "failed",
+                f"Compra parcial: {len(tasks) - len(missing)} de {len(tasks)} oferta(s). As não compradas continuam "
+                f"no Mercado Negro das produtoras.")
+            return Response({"ok": True, "cycle_status": "failed"})
+        services.advance_cycle_status(cycle, "completed", "Ciclo concluído: banco comprou tudo o que foi listado.")
+        return Response({"ok": True, "cycle_status": "completed"})
 
 
 class BankCycleFailView(APIView):

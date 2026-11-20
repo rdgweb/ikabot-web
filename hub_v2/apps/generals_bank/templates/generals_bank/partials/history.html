@@ -1,53 +1,35 @@
-{% load static humanize hub_tags %}
-
-{% if not cycles %}
+{% load static humanize hub_tags generals_bank_tags %}
+{# N-184: each cycle with what it bought, the gold spent and why it ended #}
+{% if not rows %}
 <div class="card p-8 text-center text-muted">
   <i class="bi bi-clock-history text-3xl opacity-30 block mb-3"></i>
-  <p class="text-sm">Nenhum ciclo registrado ainda.</p>
+  <p class="text-sm">Nenhum ciclo ainda.</p>
 </div>
 {% else %}
-<div class="card overflow-hidden p-0">
-  <table class="w-full text-sm">
-    <thead>
-      <tr class="text-xs text-muted uppercase tracking-wide border-b border-[var(--ik-line)]">
-        <th class="px-4 py-3 text-left">Data</th>
-        <th class="px-4 py-3 text-left">Tipo</th>
-        <th class="px-4 py-3 text-left">Unidades</th>
-        <th class="px-4 py-3 text-right">Transações</th>
-        <th class="px-4 py-3 text-center">Status</th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-[var(--ik-line)]">
-      {% for cycle in cycles %}
-      {% with txns=cycle.transactions.all %}
-      <tr class="hover:bg-[var(--ik-hover)] transition-colors">
-        <td class="px-4 py-3 text-muted text-xs whitespace-nowrap">
-          {{ cycle.created_at|date:"d/m/y H:i" }}
-        </td>
-        <td class="px-4 py-3">
-          <span class="badge {% if cycle.mode == 'accumulation' %}badge-sea{% else %}badge-warn{% endif %} badge-sm">
-            {{ cycle.get_mode_display }}
-          </span>
-        </td>
-        <td class="px-4 py-3 text-xs text-muted">
-          {% if cycle.target_units %}
-            {% for uid, qty in cycle.target_units.items %}
-            <span>{{ qty }}× u{{ uid }}</span>{% if not forloop.last %}, {% endif %}
-            {% endfor %}
-          {% else %}—{% endif %}
-        </td>
-        <td class="px-4 py-3 text-right text-sm text-muted">
-          {{ txns.count }}
-        </td>
-        <td class="px-4 py-3 text-center">
-          <span class="badge badge-sm {% if cycle.status == 'completed' %}badge-good{% elif cycle.status in 'failed cancelled' %}badge-bad{% else %}badge-sea{% endif %}">
-            {{ cycle.get_status_display }}
-          </span>
-        </td>
-      </tr>
-      {% endwith %}
+<div class="grid gap-3">
+  {% for row in rows %}
+  <details class="card px-4 py-3">
+    <summary class="flex items-center gap-3 flex-wrap cursor-pointer" style="list-style: none;">
+      <span class="text-xs text-muted whitespace-nowrap">{{ row.cycle.created_at|date:"d/m/y H:i" }}</span>
+      {% status_chip row.cycle.status row.cycle.get_status_display %}
+      <span class="text-xs text-ink flex-1 min-w-0">
+        {% for uid, qty in row.cycle.target_units.items %}{{ qty|intcomma }}× {{ uid|unit_label }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+      </span>
+      {% if row.spent %}
+      <span class="flex items-center gap-1 text-xs"><img src="{% static 'game/resources/icon_gold.png' %}" alt="" class="h-3.5 w-3.5 object-contain">{{ row.spent|intcomma }}</span>
+      {% endif %}
+    </summary>
+    <div class="mt-3 text-xs space-y-1">
+      {% if row.cycle.result_note %}<div class="text-muted">{{ row.cycle.result_note }}</div>{% endif %}
+      {% for task in row.tasks %}
+      <div class="flex items-center gap-2 flex-wrap">
+        {% status_chip task.status task.get_status_display %}
+        <span>{{ task.producer_game_account.name }} · {{ task.quantity_target|intcomma }}× {{ task.unit_id|unit_label }}</span>
+        {% if task.failure_reason %}<span style="color: #9a3b2e;">— {{ task.failure_reason }}</span>{% endif %}
+      </div>
       {% endfor %}
-    </tbody>
-  </table>
+    </div>
+  </details>
+  {% endfor %}
 </div>
 {% endif %}

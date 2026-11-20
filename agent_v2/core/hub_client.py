@@ -1192,14 +1192,15 @@ class HubClient:
         }
         if manager_job_id:
             payload["manager_job_id"] = manager_job_id
-        return self._post("/api/agent/generals-bank/cycles/create", payload)
+        return self._post_answer("/api/agent/generals-bank/cycles/create", payload)
 
     def bank_get_cycle_status(self, cycle_id: str) -> dict:
         """GET /api/agent/generals-bank/cycles/<id>/status/"""
         return self._get(f"/api/agent/generals-bank/cycles/{cycle_id}/status")
 
     def bank_update_task(self, task_id: str, *, status: str = "", quantity_done: int | None = None,
-                         unit_price: int | None = None, unit_name: str = "", sell_job_id: str = "") -> dict:
+                         unit_price: int | None = None, unit_name: str = "", sell_job_id: str = "",
+                         failure_reason: str = "", baseline_count: int | None = None) -> dict:
         """POST /api/agent/generals-bank/tasks/<id>/update/"""
         payload: dict[str, Any] = {}
         if status:
@@ -1212,11 +1213,16 @@ class HubClient:
             payload["unit_name"] = unit_name
         if sell_job_id:
             payload["sell_job_id"] = sell_job_id
-        return self._post(f"/api/agent/generals-bank/tasks/{task_id}/update", payload)
+        if failure_reason:
+            payload["failure_reason"] = failure_reason[:500]
+        if baseline_count is not None:
+            payload["baseline_count"] = int(baseline_count)
+        return self._post_answer(f"/api/agent/generals-bank/tasks/{task_id}/update", payload)
 
-    def bank_buy_complete(self, cycle_id: str, purchases: list[dict]) -> dict:
-        """POST /api/agent/generals-bank/cycles/<id>/buy-complete/"""
-        return self._post(f"/api/agent/generals-bank/cycles/{cycle_id}/buy-complete", {"purchases": purchases})
+    def bank_buy_complete(self, cycle_id: str, purchases: list[dict], failed: list[dict] | None = None) -> dict:
+        """POST /api/agent/generals-bank/cycles/<id>/buy-complete/ (N-184: with the offers not bought and why)"""
+        return self._post(f"/api/agent/generals-bank/cycles/{cycle_id}/buy-complete",
+                          {"purchases": purchases, "failed": failed or []})
 
     def bank_cycle_complete(self, cycle_id: str) -> dict:
         """POST /api/agent/generals-bank/cycles/<id>/complete/"""
@@ -1233,6 +1239,20 @@ class HubClient:
         if not path.endswith("/"):
             path += "/"
         return f"{self.base_url}{path}"
+
+    def _post_answer(self, path: str, data: Any) -> dict:
+        """N-184: like _post, but the hub's answer to a refused request (400, 404, 409: an active cycle, no composition)
+        comes back to the runner, which decides what to do, instead of an exception it never read."""
+        resp = self.session.post(self._url(path), json=data, timeout=HUB_TIMEOUT)
+        if 400 <= resp.status_code < 500:
+            try:
+                body = resp.json()
+            except ValueError:
+                body = {}
+            return {**(body if isinstance(body, dict) else {}), "ok": False, "http_status": resp.status_code,
+                    "error": (body or {}).get("error") if isinstance(body, dict) and body.get("error") else f"http_{resp.status_code}"}
+        resp.raise_for_status()
+        return resp.json()
 
     def _get(self, path: str, params: dict | None = None) -> dict:
         resp = self.session.get(self._url(path), params=params, timeout=HUB_TIMEOUT)

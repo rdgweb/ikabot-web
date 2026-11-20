@@ -71,22 +71,17 @@ def _find_black_market_city(ga: GameAccount) -> dict | None:
 
 
 def _find_training_cities_for_unit(ga: GameAccount, unit_id: int) -> list[tuple[dict, dict]]:
+    """N-184: only a city with the training building and a Black Market of its own: units trained elsewhere would have
+    to be carried to the market, which the producer's job does not do (it always refused those tasks)."""
     building_name = "shipyard" if 200 <= int(unit_id) < 300 else "barracks"
-    candidates: list[tuple[dict, dict]] = []
-    fallback_training: list[dict] = []
-    fallback_bm = _find_black_market_city(ga)
-    for city in _snapshot_cities(ga):
-        has_training = _has_building(city, building_name)
-        has_bm = _has_building(city, "blackMarket")
-        if has_training and has_bm:
-            candidates.append((city, city))
-        elif has_training:
-            fallback_training.append(city)
-    if candidates:
-        return candidates
-    if fallback_bm:
-        return [(city, fallback_bm) for city in fallback_training]
-    return []
+    return [(city, city) for city in _snapshot_cities(ga)
+            if _has_building(city, building_name) and _has_building(city, "blackMarket")]
+
+
+def _training_cities_without_market(ga: GameAccount, unit_id: int) -> list[str]:
+    building_name = "shipyard" if 200 <= int(unit_id) < 300 else "barracks"
+    return [_city_name(city, city.get("id")) for city in _snapshot_cities(ga)
+            if _has_building(city, building_name) and not _has_building(city, "blackMarket")]
 
 
 def _has_building(city: dict, building_name: str) -> bool:
@@ -140,6 +135,7 @@ def _estimate_city_capacity(
     *,
     unit_meta: dict,
     min_resource_reserves: dict[str, int] | None,
+    min_population_reserve: int = 0,
 ) -> int:
     reserves = {key: int((min_resource_reserves or {}).get(key) or 0) for key in RESOURCE_KEYS}
     capacities: list[int] = []
@@ -150,7 +146,8 @@ def _estimate_city_capacity(
         available = max(0, int(city.get(key) or 0) - reserves.get(key, 0))
         capacities.append(available // cost)
     free_citizens = max(0, int(city.get("free_citizens") or city.get("citizens") or city.get("population") or 0))
-    capacities.append(free_citizens)
+    # N-184: the population the producer keeps free is not trained
+    capacities.append(max(0, free_citizens - max(0, int(min_population_reserve or 0))))
     return min(capacities) if capacities else free_citizens
 
 
@@ -159,6 +156,12 @@ def _project_net_gold_after_upkeep(ga: GameAccount, extra_upkeep: int) -> int:
     base = (snap.base_snapshot or {}) if snap else {}
     # N-76: the same net income the dashboard shows (bonuses included)
     return net_gold_income(base) - extra_upkeep
+
+
+def unit_name(unit_id) -> str:
+    """N-184: the unit's name, never "u303"."""
+    meta = _UNIT_META_BY_ID.get(int(unit_id or 0)) or {}
+    return str(meta.get("name") or f"Unidade {unit_id}")
 
 
 def _city_name(city: dict | None, fallback=None) -> str:
@@ -187,10 +190,12 @@ def get_bank_gold(config: GeneralsBankConfig) -> int:
 
 
 def determine_cycle_mode(config: GeneralsBankConfig) -> str:
-    gold = get_bank_gold(config)
-    if gold < config.min_gold_floor:
-        return "liquidation"
+    """N-184: the liquidation is not built (nothing lists the bank's units nor buys them back), and a bank without a
+    snapshot reads as 0 gold: every cycle is an accumulation until the liquidation exists."""
     return "accumulation"
+
+
+LIQUIDATION_AVAILABLE = False
 
 
 def build_producer_execution_plan(config: GeneralsBankConfig) -> dict:
@@ -215,11 +220,14 @@ def build_producer_execution_plan(config: GeneralsBankConfig) -> dict:
             unit_id = int(unit_id_str)
             unit_meta = _UNIT_META_BY_ID.get(unit_id)
             if not unit_meta:
-                warnings.append(f"{ga.name}: unidade {unit_id} sem metadata de treino.")
+                warnings.append(f"{ga.name}: {unit_name(unit_id)} não é treinável pelo banco.")
                 continue
             city_pairs = _find_training_cities_for_unit(ga, unit_id)
             if not city_pairs:
-                warnings.append(f"{ga.name}: sem cidade de treino para unidade {unit_id}.")
+                outside = _training_cities_without_market(ga, unit_id)
+                where = "Estaleiro" if 200 <= unit_id < 300 else "Quartel"
+                warnings.append(f"{ga.name}: {unit_name(unit_id)} precisa de {where} e Mercado Negro na mesma cidade"
+                                + (f" ({', '.join(outside)} sem Mercado Negro)." if outside else "."))
                 continue
             remaining_qty = qty
             candidates: list[dict] = []
@@ -230,6 +238,7 @@ def build_producer_execution_plan(config: GeneralsBankConfig) -> dict:
                     training_city,
                     unit_meta=unit_meta,
                     min_resource_reserves=producer.min_resource_reserves,
+                    min_population_reserve=producer.min_population_reserve,
                 )
                 if capacity <= 0:
                     continue
@@ -241,7 +250,7 @@ def build_producer_execution_plan(config: GeneralsBankConfig) -> dict:
                 })
 
             if not candidates:
-                warnings.append(f"{ga.name}: sem capacidade atual para produzir unidade {unit_id}.")
+                warnings.append(f"{ga.name}: sem recurso ou população agora para {unit_name(unit_id)}.")
                 continue
 
             candidates.sort(key=lambda item: (item["same_city_flow"], item["capacity"]), reverse=True)
@@ -281,10 +290,7 @@ def build_producer_execution_plan(config: GeneralsBankConfig) -> dict:
                     remaining_upkeep_budget = max(0, remaining_upkeep_budget - (candidate_qty * unit_upkeep))
 
             if total_planned < qty:
-                warnings.append(
-                    f"{ga.name}: unidade {unit_id} pedida={qty} planejada={total_planned} "
-                    f"(limite atual de recurso/população/ouro)."
-                )
+                warnings.append(f"{ga.name}: {unit_name(unit_id)} — {total_planned} de {qty} (recurso, população ou ouro).")
 
     return {
         "tasks": tasks,
@@ -357,7 +363,7 @@ def _create_producer_tasks(cycle: GeneralsBankCycle, plan: dict) -> None:
             bm_city_id=int(item.get("bm_city_id") or 0) or None,
             bm_city_name=str(item.get("bm_city_name") or ""),
             unit_id=int(item.get("unit_id") or 0),
-            unit_name="",
+            unit_name=unit_name(item.get("unit_id")),
             quantity_target=int(item.get("quantity_target") or 0),
             status="training",
         )
@@ -400,6 +406,61 @@ def create_producer_task_jobs(cycle: GeneralsBankCycle) -> list["Job"]:
         task.save(update_fields=["training_job", "updated_at"])
         jobs_created.append(job)
     return jobs_created
+
+
+ACTIVE_JOB = ("queued", "running", "scheduled")
+OPEN_TASK = ("training", "transporting")
+
+
+def _cycle_jobs(cycle: GeneralsBankCycle) -> list:
+    ids = [cycle.manager_job_id, cycle.buy_job_id]
+    for task in cycle.tasks.all():
+        ids += [task.training_job_id, task.transport_job_id, task.sell_job_id]
+    return [pk for pk in ids if pk]
+
+
+def cancel_cycle(cycle: GeneralsBankCycle, reason: str) -> int:
+    """N-184: end a cycle by hand: its open tasks and the jobs still waiting or running stop; nothing already bought or
+    listed is touched in the game (an offer listed stays on the Black Market). Returns the jobs stopped."""
+    from apps.jobs.models import Job
+
+    now = timezone.now()
+    with transaction.atomic():
+        stopped = Job.objects.filter(pk__in=_cycle_jobs(cycle), status__in=ACTIVE_JOB).update(
+            status="cancelled", finished_at=now, updated_at=now, lease_expires_at=None)
+        cycle.tasks.exclude(status__in=["sold", "failed", "cancelled"]).update(
+            status="cancelled", failure_reason=reason[:500], updated_at=now)
+        advance_cycle_status(cycle, "cancelled", reason)
+    return stopped
+
+
+def close_orphan_tasks(config: GeneralsBankConfig) -> int:
+    """Tasks still "training" in a cycle that already ended (the cycle of 24/05) end with it."""
+    return (GeneralsBankCycleTask.objects
+            .filter(cycle__bank_config=config, cycle__status__in=["completed", "failed", "cancelled"], status__in=OPEN_TASK)
+            .update(status="cancelled", failure_reason="O ciclo já tinha terminado.", updated_at=timezone.now()))
+
+
+def settle_cycle(cycle: GeneralsBankCycle) -> str:
+    """N-184: once no task is still training, the cycle goes on with what was listed (the bank buys only that) or, with
+    nothing listed, fails with each task's reason. Returns what happened: "waiting", "buying" or "failed"."""
+    if cycle.is_terminal or cycle.mode != "accumulation" or cycle.status not in ("training", "consolidating", "listing"):
+        return "waiting"
+    tasks = list(cycle.tasks.select_related("producer_game_account"))
+    if not tasks or any(t.status in OPEN_TASK for t in tasks):
+        return "waiting"
+    if any(t.status == "listed" for t in tasks):
+        failed = [t for t in tasks if t.status in ("failed", "cancelled")]
+        note = "Produtoras listaram. Banco vai comprar o que foi listado."
+        if failed:
+            note += f" {len(failed)} tarefa(s) sem listar."
+        advance_cycle_status(cycle, "bank_buying", note)
+        if not cycle.buy_job_id:
+            create_bank_buy_job(cycle)
+        return "buying"
+    reasons = "; ".join(f"{t.producer_game_account.name}: {t.failure_reason or t.get_status_display()}" for t in tasks)
+    advance_cycle_status(cycle, "failed", f"Nenhuma produtora listou. {reasons}"[:1000])
+    return "failed"
 
 
 def resolve_buyer_city_id(config: GeneralsBankConfig) -> int:

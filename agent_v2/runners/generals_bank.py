@@ -87,7 +87,7 @@ class GeneralsBankManageRunner(BaseRunner):
                 if error == "active_cycle_exists":
                     effective_cycle_id = str(create_result.get("cycle_id") or "")
                     self.log(jid, "warn", f"Ciclo ativo encontrado: {effective_cycle_id}")
-                elif loop_enabled and error in {"no_producer_template"}:
+                elif loop_enabled:
                     delay = auto_cycle_interval_minutes * 60
                     self.log(jid, "warn", f"Sem plano viavel no banco; novo check automatico em {auto_cycle_interval_minutes} min")
                     return RunnerResult(
@@ -133,8 +133,7 @@ class GeneralsBankManageRunner(BaseRunner):
         if cycle_status in ("sleeping", "bank_buying"):
             # Hub already created the buy job (807); just wait for completion
             if poll_count >= _MAX_POLL_CYCLES:
-                self.log(jid, "error", "Timeout aguardando ciclo completar")
-                return RunnerResult(success=False, data={"error": "poll_timeout"})
+                return self._timeout(jid, effective_cycle_id, "Tempo esgotado esperando a compra do banco.")
             return RunnerResult(
                 success=True,
                 reschedule_seconds=_POLL_INTERVAL_SEC,
@@ -149,8 +148,7 @@ class GeneralsBankManageRunner(BaseRunner):
             self.log(jid, "info", f"Tarefas: {done}/{total} listadas")
 
             if poll_count >= _MAX_POLL_CYCLES:
-                self.log(jid, "error", "Timeout aguardando produtores listarem")
-                return RunnerResult(success=False, data={"error": "producer_poll_timeout"})
+                return self._timeout(jid, effective_cycle_id, "Tempo esgotado esperando as produtoras listarem.")
 
             return RunnerResult(
                 success=True,
@@ -162,7 +160,7 @@ class GeneralsBankManageRunner(BaseRunner):
         if cycle_status in ("bank_listing", "buyers_buying"):
             self.log(jid, "info", "Liquidação em andamento — aguardando compradores")
             if poll_count >= _MAX_POLL_CYCLES:
-                return RunnerResult(success=False, data={"error": "liquidation_poll_timeout"})
+                return self._timeout(jid, effective_cycle_id, "Tempo esgotado na liquidação.")
             return RunnerResult(
                 success=True,
                 reschedule_seconds=_POLL_INTERVAL_SEC,
@@ -175,6 +173,15 @@ class GeneralsBankManageRunner(BaseRunner):
             reschedule_seconds=_POLL_INTERVAL_SEC,
             reschedule_inputs={**inputs, "_cycle_id": effective_cycle_id, "_poll_count": poll_count + 1},
         )
+
+    def _timeout(self, jid: str, cycle_id: str, note: str) -> RunnerResult:
+        """N-184: the manager gave up after ~3 h and left the cycle open, which locked the bank: now it ends it."""
+        self.log(jid, "error", note)
+        try:
+            self.hub.bank_cycle_fail(cycle_id, note)
+        except Exception as exc:  # noqa: BLE001 - the cycle can still be cancelled on the page
+            self.log(jid, "warn", f"Não consegui encerrar o ciclo no hub: {exc}")
+        return RunnerResult(success=False, data={"error": "poll_timeout", "cycle_id": cycle_id})
 
 
 @register_runner(809)
@@ -212,11 +219,10 @@ class GeneralsBankProducerTaskRunner(BaseRunner):
         quantity_target = _to_int(task.get("quantity_target"))
         sell_only_cycle_production = bool(inputs.get("sell_only_cycle_production", True))
         if not city_id or not bm_city_id or not unit_id or not quantity_target:
-            self.log(jid, "error", "Tarefa do banco incompleta: city/bm_city/unit/qty ausentes")
-            return RunnerResult(success=False, data={"error": "incomplete_task"})
+            return self._fail(jid, task_id, "Tarefa incompleta (cidade, unidade ou quantidade).", "incomplete_task")
         if city_id != bm_city_id:
-            self.log(jid, "error", f"Fluxo com transporte ainda nao suportado (city={city_id}, bm_city={bm_city_id})")
-            return RunnerResult(success=False, data={"error": "transport_stage_not_supported"})
+            return self._fail(jid, task_id, "A cidade de treino não tem Mercado Negro (o transporte não é feito).",
+                              "transport_stage_not_supported")
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
         if not creds:
@@ -230,8 +236,8 @@ class GeneralsBankProducerTaskRunner(BaseRunner):
             bm_info = self._find_building_info(ga_id, bm_city_id, "blackMarket")
             if not train_info or not bm_info:
                 missing = training_building if not train_info else "blackMarket"
-                self.log(jid, "error", f"Edificio ausente para tarefa do banco: {missing}")
-                return RunnerResult(success=False, data={"error": f"missing_{missing}"})
+                label = {"barracks": "Quartel", "shipyard": "Estaleiro", "blackMarket": "Mercado Negro"}[missing]
+                return self._fail(jid, task_id, f"{label} não encontrado na cidade {city_id}.", f"missing_{missing}")
 
             train_position = int(train_info["position"])
             bm_position = int(bm_info["position"])
@@ -239,8 +245,7 @@ class GeneralsBankProducerTaskRunner(BaseRunner):
             barracks_state = client.fetch_barracks_state(city_id, train_position, building_type)
             unit_state = next((u for u in (barracks_state.get("units") or []) if _to_int(u.get("unit_id")) == unit_id), None)
             if not unit_state:
-                self.log(jid, "error", f"Unidade {unit_id} nao encontrada no {training_building} da cidade {city_id}")
-                return RunnerResult(success=False, data={"error": "unit_not_trainable"})
+                return self._fail(jid, task_id, f"A unidade não é treinável na cidade {city_id}.", "unit_not_trainable")
 
             unit_name = str(unit_state.get("name") or f"unit={unit_id}")
             current_count = _to_int(unit_state.get("current_count"))
@@ -249,11 +254,20 @@ class GeneralsBankProducerTaskRunner(BaseRunner):
             queue_entries = [q for q in (barracks_state.get("training_queue") or []) if _to_int(q.get("unit_id")) == unit_id]
             queued_count = sum(_to_int(q.get("quantity")) for q in queue_entries)
             queued_eta = max((_to_int(q.get("remaining_seconds")) for q in queue_entries), default=0)
-            baseline_count = _to_int(inputs.get("_baseline_count"))
-            baseline_initialized = bool(inputs.get("_baseline_initialized"))
+            # N-184: the stock before the cycle trained anything is kept in the hub, written once: a retry after a
+            # network error used to lose it, count what it had trained as the old stock and train the lot again
+            stored = task.get("baseline_count")
+            if stored is not None:
+                baseline_count, baseline_initialized = _to_int(stored), True
+            else:
+                baseline_count = _to_int(inputs.get("_baseline_count"))
+                baseline_initialized = bool(inputs.get("_baseline_initialized"))
             if sell_only_cycle_production and not baseline_initialized:
                 # Preserve every pre-existing unit already in stock or queue before this cycle starts.
                 baseline_count = current_count + queued_count
+                answer = self.hub.bank_update_task(task_id, baseline_count=baseline_count)
+                if answer.get("baseline_count") is not None:
+                    baseline_count = _to_int(answer.get("baseline_count"))
                 baseline_initialized = True
             waiting_for_training = bool(inputs.get("_waiting_for_training"))
             expected_ready_at = max(_to_int(inputs.get("_expected_ready_at")), int(time.time()) + queued_eta if queued_eta > 0 else 0)
@@ -291,8 +305,8 @@ class GeneralsBankProducerTaskRunner(BaseRunner):
                 deficit = required_total - available_total
                 train_now = min(deficit, max_build) if max_build > 0 else deficit
                 if train_now <= 0:
-                    self.log(jid, "error", f"{unit_name}: max_build=0 e ainda faltam {deficit}")
-                    return RunnerResult(success=False, data={"error": "cannot_train_required_quantity"})
+                    return self._fail(jid, task_id, f"Sem recurso ou população para treinar os {deficit} que faltam.",
+                                      "cannot_train_required_quantity")
 
                 client.train_units(city_id, train_position, {unit_id: train_now}, building_type)
                 expected_wait = max(120, train_now * max(train_time, 1) + _TRAIN_BUFFER_SEC)
@@ -373,15 +387,10 @@ class GeneralsBankProducerTaskRunner(BaseRunner):
             if sell_only_cycle_production:
                 sellable_target = min(quantity_target, current_cycle_ready)
             if available_amount < sellable_target:
-                self.log(
-                    jid,
-                    "error",
-                    f"{unit_name}: BM so permite listar {available_amount}/{sellable_target} agora",
-                )
-                return RunnerResult(success=False, data={"error": "insufficient_sellable_units"})
+                return self._fail(jid, task_id, f"O Mercado Negro só deixa listar {available_amount} de {sellable_target}.",
+                                  "insufficient_sellable_units")
             if unit_price <= 0:
-                self.log(jid, "error", f"{unit_name}: nao foi possivel obter price_min no BM")
-                return RunnerResult(success=False, data={"error": "missing_unit_price"})
+                return self._fail(jid, task_id, "O Mercado Negro não mostrou o preço mínimo.", "missing_unit_price")
 
             client.add_black_market_offer(
                 city_id=bm_city_id,
@@ -440,8 +449,16 @@ class GeneralsBankProducerTaskRunner(BaseRunner):
         except Exception as exc:
             if self.is_network_error(exc):
                 return self.network_error_result(jid, exc)
-            self.log(jid, "error", f"Tarefa da produtora do banco falhou: {exc}")
-            return RunnerResult(success=False, data={"error": str(exc)})
+            return self._fail(jid, task_id, f"Erro inesperado: {exc}"[:300], str(exc)[:200])
+
+    def _fail(self, jid: str, task_id: str, reason: str, error: str) -> RunnerResult:
+        """N-184: a task that fails says so to the hub, with why (it used to stay "Treinando" for ever)."""
+        self.log(jid, "error", reason)
+        try:
+            self.hub.bank_update_task(task_id, status="failed", failure_reason=reason)
+        except Exception as exc:  # noqa: BLE001 - the cycle can still be cancelled on the page
+            self.log(jid, "warn", f"Não consegui avisar o hub da falha: {exc}")
+        return RunnerResult(success=False, data={"error": error})
 
     def _find_building_info(self, ga_id: str, city_id: int, building_type: str) -> dict[str, Any] | None:
         try:
@@ -482,6 +499,10 @@ class GeneralsBankBuyRunner(BaseRunner):
 
         if not cycle_id or not offers:
             return RunnerResult(success=False, data={"error": "cycle_id and offers required"})
+        if not inputs.get("_waited"):
+            # N-184: the offers take a moment to show to other players; wait without holding the agent (it slept 90 s)
+            self.log(jid, "info", f"Aguardando {_BUY_WAIT_SEC}s para as ofertas aparecerem no Mercado Negro.")
+            return RunnerResult(success=True, reschedule_seconds=_BUY_WAIT_SEC, reschedule_inputs={**inputs, "_waited": True})
 
         creds = self.resolve_credentials(aid, inputs, game_account_id=ga_id)
         if not creds:
@@ -496,11 +517,8 @@ class GeneralsBankBuyRunner(BaseRunner):
             buyer_city_id = _to_int(inputs.get("buyer_city_id") or config_data.get("buyer_city_id"))
             auto_vacation = bool(config_data.get("auto_vacation", True))
 
-            # Wait for offers to propagate on game servers
-            self.log(jid, "info", f"Aguardando {_BUY_WAIT_SEC}s para ofertas propagarem...")
-            time.sleep(_BUY_WAIT_SEC)
-
             purchases = []
+            failed = []
             for offer in offers:
                 producer_ga_id = str(offer.get("producer_ga_id") or "")
                 unit_id = _to_int(offer.get("unit_id"))
@@ -516,6 +534,7 @@ class GeneralsBankBuyRunner(BaseRunner):
                 bo_info = self._find_building_info(ga_id, buyer_city_id, "branchOffice") if buyer_city_id else None
                 if not bo_info:
                     self.log(jid, "warn", f"Branch Office nao encontrado em cidade {buyer_city_id}. Pulando oferta unit={unit_id}")
+                    failed.append({"task_id": task_id, "reason": "O banco não tem Escritório Comercial na cidade de compra."})
                     continue
 
                 bo_position = int(bo_info["position"])
@@ -566,6 +585,7 @@ class GeneralsBankBuyRunner(BaseRunner):
 
                     self.log(jid, "info", f"Compra OK: {quantity}x unit={unit_id} de {seller_city_name or seller_city_id}")
                     purchases.append({
+                        "task_id": task_id,
                         "producer_ga_id": producer_ga_id,
                         "unit_id": unit_id,
                         "unit_name": "",
@@ -580,14 +600,18 @@ class GeneralsBankBuyRunner(BaseRunner):
                         self.hub.bank_update_task(task_id, status="sold", quantity_done=quantity)
 
                 except Exception as buy_exc:
+                    if self.is_network_error(buy_exc):
+                        raise
                     self.log(jid, "warn", f"Falha ao comprar unit={unit_id} de {seller_city_id}: {buy_exc}")
+                    failed.append({"task_id": task_id, "reason": f"Compra falhou: {buy_exc}"[:300]})
 
-            # Report purchases to hub
+            # Report purchases (and what was not bought, with why) to hub
             if purchases:
-                self.hub.bank_buy_complete(cycle_id, purchases)
-                self.log(jid, "info", f"Banco comprou de {len(purchases)} oferta(s)")
+                self.hub.bank_buy_complete(cycle_id, purchases, failed)
+                self.log(jid, "info", f"Banco comprou {len(purchases)} de {len(offers)} oferta(s)")
             else:
                 self.log(jid, "warn", "Nenhuma compra realizada")
+                self.hub.bank_buy_complete(cycle_id, [], failed)
                 self.hub.bank_cycle_fail(cycle_id, "Banco não conseguiu comprar nenhuma oferta do ciclo.")
                 return RunnerResult(success=False, data={"error": "no_purchases_made"})
 
@@ -616,10 +640,11 @@ class GeneralsBankBuyRunner(BaseRunner):
                 except Exception as vac_exc:
                     self.log(jid, "warn", f"Falha ao entrar em ferias (nao critico): {vac_exc}")
 
-            self.hub.bank_cycle_complete(cycle_id)
+            answer = self.hub.bank_cycle_complete(cycle_id)
+            # N-184: a cycle where part of what was listed was not bought is not a success
             return RunnerResult(
-                success=True,
-                data={"cycle_id": cycle_id, "purchases": len(purchases)},
+                success=not failed and answer.get("cycle_status", "completed") == "completed",
+                data={"cycle_id": cycle_id, "purchases": len(purchases), "not_bought": len(failed)},
             )
 
         except Exception as exc:

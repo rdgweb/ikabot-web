@@ -1,5 +1,5 @@
 {% extends base_template|default:"base.html" %}
-{% load static humanize hub_tags %}
+{% load static humanize hub_tags generals_bank_tags %}
 
 {% block title %}Banco de Generais{% endblock %}
 
@@ -15,7 +15,6 @@
       <h1 class="text-xl font-bold text-ink flex items-center gap-2">
         <i class="bi bi-shield-fill-check" style="color: var(--ik-gold);"></i> Banco de Generais
       </h1>
-      <p class="mt-0.5 text-sm text-muted">Acumulação e liquidação de unidades militares entre contas.</p>
     </div>
     <a href="{% url 'generals_bank:create' %}" class="btn btn-primary btn-sm flex-shrink-0">
       <i class="bi bi-plus-lg"></i> Novo banco
@@ -52,7 +51,7 @@
           <div class="flex items-center gap-2 flex-wrap">
             <span class="font-bold text-ink">{{ bank.bank_game_account.name }}</span>
             <span class="text-xs text-muted">{{ bank.bank_game_account.account.node.name }}</span>
-            {% if not bank.is_active %}<span class="badge badge-muted badge-sm">Inativo</span>{% endif %}
+            {% if not bank.is_active %}{% status_chip "cancelled" "Inativo" %}{% endif %}
           </div>
           <div class="mt-1.5 flex items-center gap-3 flex-wrap">
             <span class="flex items-center gap-1 text-sm {% if item.gold_low %}font-semibold{% else %}text-muted{% endif %}"
@@ -60,15 +59,18 @@
               <img src="{% static 'game/resources/icon_gold.png' %}" alt="" class="h-4 w-4 object-contain">
               {{ item.gold|intcomma }}
               {% if item.gold_low %}<i class="bi bi-exclamation-triangle-fill text-xs ml-0.5"></i>{% endif %}
+              {% if item.gold_at %}<span class="text-[10px] text-muted">· há {{ item.gold_at|timesince }}</span>{% endif %}
             </span>
+            <span class="text-xs text-muted">piso {{ bank.min_gold_floor|intcomma }}</span>
             <span class="text-xs text-muted flex items-center gap-1">
               <i class="bi bi-people"></i>
-              {{ item.producers_count }} produtora{{ item.producers_count|pluralize:"s" }}
+              {{ item.ready_count }} de {{ item.producers_count }} produtora{{ item.producers_count|pluralize:"s" }} pronta{{ item.producers_count|pluralize:"s" }}
             </span>
+            {% if item.producers_count and not item.ready_count %}<span class="text-xs" style="color: var(--ik-warn);"><i class="bi bi-exclamation-triangle-fill"></i> sem composição</span>{% endif %}
             {% if item.active_cycle %}
-            <span class="badge badge-sea badge-sm">
-              <i class="bi bi-arrow-repeat mr-1"></i>{{ item.active_cycle.get_status_display }}
-            </span>
+            {% status_chip item.active_cycle.status item.active_cycle.get_status_display %}
+            {% elif item.last_cycle %}
+            <span class="text-xs text-muted">último ciclo {{ item.last_cycle.created_at|date:"d/m" }}</span> {% status_chip item.last_cycle.status item.last_cycle.get_status_display %}
             {% endif %}
           </div>
         </div>

@@ -47,7 +47,8 @@ def eligible_jobs(anchor, days):
     cutoff = anchor - timedelta(days=days)
     live = Job.objects.filter(status__in=["queued", "scheduled", "running"])
     newest_of_workflow = (Job.objects.filter(workflow_id=OuterRef("workflow_id")).order_by("-created_at").values("pk")[:1])
-    return (Job.objects.filter(status__in=["finished", "error", "cancelled"],
+    return (Job.objects.exclude(action_code__in=(806, 807, 809))       # N-184: the Generals Bank's cycles keep their jobs
+            .filter(status__in=["finished", "error", "cancelled"],
                                finished_at__lt=cutoff, updated_at__lte=anchor, archived_at__isnull=False)
             .exclude(pk__in=live.exclude(source_job_id__isnull=True).values("source_job_id"))
             .exclude(pk__in=Job.objects.exclude(root_job_id__isnull=True).values("root_job_id"))

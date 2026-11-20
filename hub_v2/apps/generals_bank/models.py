@@ -205,6 +205,11 @@ class GeneralsBankCycleTask(UUIDTimestampModel):
     quantity_done = models.IntegerField(default=0)
     unit_price = models.IntegerField(default=0, help_text="Listed price (min price from game).")
     status = models.CharField(max_length=24, choices=STATUS_CHOICES, default="training", db_index=True)
+    failure_reason = models.TextField(blank=True, default="")      # N-184: why it failed or was not bought
+    baseline_count = models.IntegerField(
+        null=True, blank=True,
+        help_text="Units of this kind the producer city had before the cycle trained any.",
+    )
 
     training_job = models.ForeignKey(
         "jobs.Job", on_delete=models.SET_NULL,

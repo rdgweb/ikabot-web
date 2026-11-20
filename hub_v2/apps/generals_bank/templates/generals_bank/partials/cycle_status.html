@@ -1,4 +1,5 @@
-{% load static humanize hub_tags %}
+{% load static humanize hub_tags generals_bank_tags %}
+{# N-184: the cycle in steps, one card per task, with why a task failed and a way to end the cycle by hand #}
 
 {% if not active_cycle %}
 <div class="flex flex-col items-center gap-3 py-16 text-muted">
@@ -6,58 +7,27 @@
        style="border-color: rgba(219,201,167,0.6); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
     <i class="bi bi-moon-stars text-2xl opacity-50" style="color: var(--ik-gold);"></i>
   </div>
-  <div class="text-center">
-    <p class="text-sm font-semibold text-ink">Nenhum ciclo ativo</p>
-    <p class="text-xs text-muted mt-0.5">Clique em "Iniciar Ciclo" para começar.</p>
-  </div>
+  <p class="text-sm font-semibold text-ink">Nenhum ciclo ativo</p>
 </div>
 
 {% else %}
 <div class="space-y-4">
-
-  {# Cycle header card #}
   <div class="overflow-hidden rounded-[20px] border"
        style="border-color: rgba(40,20,10,0.18); background: linear-gradient(180deg, rgba(255,252,245,0.98), rgba(247,241,229,0.94));">
-    <div class="px-5 py-4 border-b flex items-center justify-between gap-4 flex-wrap"
-         style="border-color: rgba(40,20,10,0.10);">
-      <div class="flex items-center gap-3">
-        <div class="h-10 w-10 shrink-0 flex items-center justify-center rounded-[12px] border"
-             style="border-color: rgba(79,134,185,0.18); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
-          {% if active_cycle.mode == "accumulation" %}
-          <i class="bi bi-arrow-down-circle-fill" style="color: var(--ik-sea);"></i>
-          {% else %}
-          <i class="bi bi-arrow-up-circle-fill" style="color: var(--ik-warn);"></i>
-          {% endif %}
+    <div class="px-5 py-4 border-b flex items-center justify-between gap-4 flex-wrap" style="border-color: rgba(40,20,10,0.10);">
+      <div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-bold text-ink">{{ active_cycle.get_mode_display }}</span>
+          {% status_chip active_cycle.status active_cycle.get_status_display %}
         </div>
-        <div>
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="font-bold text-ink">{{ active_cycle.get_mode_display }}</span>
-            <span class="badge badge-sm
-              {% if active_cycle.status == 'completed' %}badge-good
-              {% elif active_cycle.status == 'failed' %}badge-bad
-              {% elif active_cycle.status == 'cancelled' %}badge-muted
-              {% elif active_cycle.status in 'sleeping bank_buying' %}badge-warn
-              {% else %}badge-sea
-              {% endif %}">
-              {{ active_cycle.get_status_display }}
-            </span>
-          </div>
-          <div class="text-xs text-muted mt-0.5">
-            Iniciado {{ active_cycle.created_at|timesince }} atrás
-            {% if active_cycle.estimated_ready_at %}
-            · <i class="bi bi-clock"></i> ETA {{ active_cycle.estimated_ready_at|timeuntil }}
-            {% endif %}
-          </div>
-        </div>
+        <div class="text-xs text-muted mt-0.5">Começou há {{ active_cycle.created_at|timesince }}</div>
       </div>
       {% if not active_cycle.is_terminal %}
-      <div class="flex items-center gap-1.5 text-[11px]" style="color: var(--ik-sea);">
-        <svg class="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-        </svg>
-        Ao vivo · 15s
-      </div>
+      <form method="post" action="{% url 'generals_bank:cancel-cycle' bank.pk %}" hx-boost="false"
+            @submit.prevent="$dispatch('confirm', {title: 'Cancelar ciclo', message: 'Os jobs do ciclo param. O que já foi listado continua no Mercado Negro das produtoras.', style: 'danger', confirmLabel: 'Cancelar ciclo', onConfirm: () => $el.submit()})">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-x-circle"></i> Cancelar ciclo</button>
+      </form>
       {% endif %}
     </div>
 
@@ -66,118 +36,75 @@
       {% for uid, qty in active_cycle.target_units.items %}
       <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs"
             style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.7);">
-        <span class="font-bold text-ink">{{ qty|intcomma }}×</span>
-        <span class="text-muted">u{{ uid }}</span>
+        <b class="text-ink">{{ qty|intcomma }}×</b> <span class="text-muted">{{ uid|unit_label }}</span>
       </span>
       {% endfor %}
     </div>
     {% endif %}
 
-    <div class="px-5 pb-4">
-      <div class="text-[10px] font-bold uppercase tracking-[0.14em] text-muted mb-2">Jobs do ciclo</div>
-      <div class="flex flex-wrap gap-2 text-[11px]">
-        {% if active_cycle.manager_job_id %}
-        <a href="{% url 'jobs:job-detail' active_cycle.manager_job_id %}" class="inline-flex items-center gap-1 rounded-full border px-2 py-1 hover:bg-[rgba(79,134,185,0.06)]"
-           style="border-color: rgba(219,201,167,0.8);">
-          <i class="bi bi-diagram-3 text-[var(--ik-sea)]"></i>
-          <span class="font-mono">806 {{ active_cycle.manager_job_id|truncatechars:12 }}</span>
-        </a>
-        {% endif %}
-        {% if active_cycle.buy_job_id %}
-        <a href="{% url 'jobs:job-detail' active_cycle.buy_job_id %}" class="inline-flex items-center gap-1 rounded-full border px-2 py-1 hover:bg-[rgba(79,134,185,0.06)]"
-           style="border-color: rgba(219,201,167,0.8);">
-          <i class="bi bi-cart-check text-[var(--ik-good)]"></i>
-          <span class="font-mono">807 {{ active_cycle.buy_job_id|truncatechars:12 }}</span>
-        </a>
-        {% endif %}
-      </div>
+    {# the steps: producers train and list, the bank buys, the bank sleeps #}
+    {% with s=active_cycle.status %}
+    <div class="px-5 pb-4 flex items-center gap-2 text-[11px] flex-wrap">
+      {% for step, label in steps %}
+      <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-1"
+            style="{% if step in done_steps %}background: rgba(95,140,78,.14); color: #2f6b2f;{% elif step == current_step %}background: rgba(79,134,185,.16); color: #2d5f86; font-weight: 700;{% else %}background: rgba(122,114,100,.10); color: #8a8172;{% endif %}">
+        {% if step in done_steps %}<i class="bi bi-check2"></i>{% elif step == current_step %}<i class="bi bi-arrow-repeat"></i>{% endif %}{{ label }}
+      </span>
+      {% if not forloop.last %}<i class="bi bi-chevron-right text-muted"></i>{% endif %}
+      {% endfor %}
     </div>
+    {% endwith %}
   </div>
 
   {% if tasks %}
-  {# Task cards #}
-  <div>
-    <div class="text-[11px] font-semibold uppercase tracking-[0.16em] mb-3 px-1" style="color: var(--ik-sea);">
-      Tarefas das Produtoras
-    </div>
-    <div class="grid gap-3">
-      {% for task in tasks %}
-      <div class="overflow-hidden rounded-[18px] border flex items-center gap-4 px-4 py-3"
-           style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.82);">
-        <div class="h-11 w-11 shrink-0 flex items-center justify-center rounded-[12px] border"
-             style="border-color: rgba(79,134,185,0.15); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
-          {% if task.unit_name %}
-          {% with icon=task.unit_name|unit_icon %}
-          {% if icon %}<img src="{% static icon %}" alt="{{ task.unit_name }}" class="h-8 w-8 object-contain">
-          {% else %}<i class="bi bi-shield text-lg text-muted"></i>{% endif %}
-          {% endwith %}
-          {% else %}
-          <i class="bi bi-shield text-lg text-muted"></i>
-          {% endif %}
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="font-semibold text-sm text-ink">{{ task.producer_game_account.name }}</span>
-            <span class="text-xs text-muted">{{ task.unit_name|default:task.unit_id }}</span>
-          </div>
-          <div class="mt-1.5">
-            <div class="flex items-center justify-between text-[11px] text-muted mb-1">
-              <span>{{ task.quantity_done|intcomma }} / {{ task.quantity_target|intcomma }}</span>
-              {% if task.unit_price %}
-              <span class="flex items-center gap-1">
-                <img src="{% static 'game/resources/icon_gold.png' %}" alt="" class="h-3 w-3 object-contain">
-                {{ task.unit_price|intcomma }}
-              </span>
-              {% endif %}
-            </div>
-            <div class="h-1.5 rounded-full overflow-hidden" style="background: rgba(219,201,167,0.5);">
-              {% widthratio task.quantity_done task.quantity_target 100 as pct %}
-              <div class="h-full rounded-full transition-all"
-                   style="width: {{ pct }}%; background: {% if task.status == 'sold' %}var(--ik-good){% elif task.status == 'failed' %}var(--ik-bad){% else %}var(--ik-sea){% endif %};">
-              </div>
-            </div>
-          </div>
-          {% if task.bm_city_name %}
-          <div class="text-[10px] text-muted mt-1"><i class="bi bi-building"></i> {{ task.bm_city_name }}</div>
-          {% endif %}
-          <div class="mt-2 flex flex-wrap gap-2 text-[10px]">
-            {% if task.training_job_id %}
-            <a href="{% url 'jobs:job-detail' task.training_job_id %}" class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 hover:bg-[rgba(79,134,185,0.06)]"
-               style="border-color: rgba(219,201,167,0.8);">
-              <i class="bi bi-hammer text-[var(--ik-sea)]"></i>
-              <span class="font-mono">809 {{ task.training_job_id|truncatechars:10 }}</span>
-            </a>
-            {% endif %}
-            {% if task.sell_job_id %}
-            <a href="{% url 'jobs:job-detail' task.sell_job_id %}" class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 hover:bg-[rgba(79,134,185,0.06)]"
-               style="border-color: rgba(219,201,167,0.8);">
-              <i class="bi bi-shop text-[var(--ik-gold)]"></i>
-              <span class="font-mono">803 {{ task.sell_job_id|truncatechars:10 }}</span>
-            </a>
-            {% endif %}
-          </div>
-        </div>
-        <span class="badge badge-sm shrink-0
-          {% if task.status == 'sold' %}badge-good
-          {% elif task.status == 'listed' %}badge-sea
-          {% elif task.status == 'failed' %}badge-bad
-          {% elif task.status == 'cancelled' %}badge-muted
-          {% else %}badge-warn
-          {% endif %}">
-          {{ task.get_status_display }}
-        </span>
+  <div class="grid gap-3">
+    {% for task in tasks %}
+    <div class="overflow-hidden rounded-[18px] border flex items-center gap-4 px-4 py-3"
+         style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.82);">
+      <div class="h-11 w-11 shrink-0 flex items-center justify-center rounded-[12px] border"
+           style="border-color: rgba(79,134,185,0.15); background: linear-gradient(180deg, #fffdf8, #f4ecda);">
+        {% with icon=task.unit_id|unit_label|unit_icon %}
+        {% if icon %}<img src="{% static icon %}" alt="" class="h-8 w-8 object-contain">{% else %}<i class="bi bi-shield text-lg text-muted"></i>{% endif %}
+        {% endwith %}
       </div>
-      {% endfor %}
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-semibold text-sm text-ink">{{ task.producer_game_account.name }}</span>
+          <span class="text-xs text-muted">{{ task.unit_id|unit_label }}{% if task.city_name %} · {{ task.city_name }}{% endif %}</span>
+        </div>
+        <div class="mt-1.5">
+          <div class="flex items-center justify-between text-[11px] text-muted mb-1">
+            <span>{{ task.quantity_done|intcomma }} / {{ task.quantity_target|intcomma }}</span>
+            {% if task.unit_price %}
+            <span class="flex items-center gap-1"><img src="{% static 'game/resources/icon_gold.png' %}" alt="" class="h-3 w-3 object-contain">{{ task.unit_price|intcomma }}</span>
+            {% endif %}
+          </div>
+          <div class="h-1.5 rounded-full overflow-hidden" style="background: rgba(219,201,167,0.5);">
+            {% widthratio task.quantity_done task.quantity_target 100 as pct %}
+            <div class="h-full rounded-full" style="width: {{ pct }}%; background: {% if task.status == 'sold' %}var(--ik-good){% elif task.status == 'failed' %}var(--ik-bad){% else %}var(--ik-sea){% endif %};"></div>
+          </div>
+        </div>
+        {% if task.failure_reason %}<div class="text-[11px] mt-1" style="color: #9a3b2e;"><i class="bi bi-exclamation-circle"></i> {{ task.failure_reason }}</div>{% endif %}
+        <div class="mt-2 flex flex-wrap gap-2 text-[10px]">
+          {% if task.training_job_id %}<a href="{% url 'jobs:job-detail' task.training_job_id %}" class="link-sea"><i class="bi bi-hammer"></i> treino</a>{% endif %}
+          {% if task.sell_job_id and task.sell_job_id != task.training_job_id %}<a href="{% url 'jobs:job-detail' task.sell_job_id %}" class="link-sea"><i class="bi bi-shop"></i> venda</a>{% endif %}
+        </div>
+      </div>
+      {% status_chip task.status task.get_status_display %}
     </div>
+    {% endfor %}
   </div>
   {% endif %}
 
+  <div class="flex flex-wrap gap-3 text-[11px] px-1">
+    {% if active_cycle.manager_job_id %}<a href="{% url 'jobs:job-detail' active_cycle.manager_job_id %}" class="link-sea"><i class="bi bi-diagram-3"></i> job do ciclo</a>{% endif %}
+    {% if active_cycle.buy_job_id %}<a href="{% url 'jobs:job-detail' active_cycle.buy_job_id %}" class="link-sea"><i class="bi bi-cart-check"></i> compra do banco</a>{% endif %}
+  </div>
+
   {% if active_cycle.result_note %}
-  <div class="rounded-[14px] border px-4 py-3 text-sm text-muted"
-       style="border-color: rgba(219,201,167,0.6); background: rgba(255,255,255,0.6);">
+  <div class="rounded-[14px] border px-4 py-3 text-sm text-muted" style="border-color: rgba(219,201,167,0.6); background: rgba(255,255,255,0.6);">
     {{ active_cycle.result_note }}
   </div>
   {% endif %}
-
 </div>
 {% endif %}

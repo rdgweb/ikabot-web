@@ -133,12 +133,17 @@ class BankListView(LoginRequiredMixin, ListView):
         for bank in ctx["banks"]:
             gold = services.get_bank_gold(bank)
             active_cycle = services.get_active_cycle(bank)
+            active_producers = list(bank.producers.filter(is_active=True))
+            snap = AccountSnapshot.objects.filter(game_account=bank.bank_game_account).only("updated_at").first()
             banks_ctx.append({
                 "bank": bank,
                 "gold": gold,
+                "gold_at": getattr(snap, "updated_at", None),          # N-184: how old the gold read is
                 "gold_low": gold < bank.min_gold_floor,
                 "active_cycle": active_cycle,
-                "producers_count": bank.producers.filter(is_active=True).count(),
+                "last_cycle": None if active_cycle else bank.cycles.order_by("-created_at").first(),
+                "producers_count": len(active_producers),
+                "ready_count": sum(1 for p in active_producers if services._normalize_units_map(p.production_template)),
             })
         ctx["banks_ctx"] = banks_ctx
         return ctx
@@ -187,6 +192,7 @@ class BankDetailView(LoginRequiredMixin, DetailView):
             .order_by("name")
         )
         existing_producer_ids = set(bank.producers.values_list("producer_game_account_id", flat=True))
+        plan = services.build_producer_execution_plan(bank)
 
         ctx.update({
             "gold": gold,
@@ -197,13 +203,19 @@ class BankDetailView(LoginRequiredMixin, DetailView):
             "eligible_producers": eligible_producers,
             "existing_producer_ids": existing_producer_ids,
             "producers": bank.producers.select_related("producer_game_account").filter(is_active=True),
+            # N-184: a producer switched off stays visible, to be switched on again
+            "inactive_producers": bank.producers.select_related("producer_game_account").filter(is_active=False),
+            "liquidation_available": services.LIQUIDATION_AVAILABLE,
+            "liquidation_mode": False,          # N-184: the liquidation is not built; the start window only accumulates
+            "unit_names_json": json.dumps({str(u["id"]): u["name"] for u in
+                                           TRAINING_UNITS.get("troops", []) + TRAINING_UNITS.get("fleet", [])}),
             "fleet_units": TRAINING_UNITS.get("fleet", []),
             "troop_units": TRAINING_UNITS.get("troops", []),
             "all_units": TRAINING_UNITS.get("troops", []) + TRAINING_UNITS.get("fleet", []),
             "unit_catalog_json": json.dumps(TRAINING_UNITS.get("troops", []) + TRAINING_UNITS.get("fleet", [])),
             "resource_config": _RESOURCE_CONFIG,
-            "producer_plan": services.build_producer_execution_plan(bank),
-            "producer_plan_json": json.dumps(services.build_producer_execution_plan(bank)),
+            "producer_plan": plan,
+            "producer_plan_json": json.dumps(plan),
         })
         return ctx
 
@@ -295,8 +307,9 @@ class BankProducerAddView(LoginRequiredMixin, View):
                 "min_resource_reserves": min_reserves,
                 "min_population_reserve": min_pop,
                 "production_template": production_template,
-                "sell_only_cycle_production": request.POST.get("sell_only_cycle_production", "on") == "on",
-                "keep_net_gold_positive": request.POST.get("keep_net_gold_positive", "on") == "on",
+                # N-184: an unticked box is not sent at all; the default "on" made every one count as ticked
+                "sell_only_cycle_production": request.POST.get("sell_only_cycle_production") == "on",
+                "keep_net_gold_positive": request.POST.get("keep_net_gold_positive") == "on",
                 "is_active": True,
             },
         )
@@ -329,6 +342,29 @@ class BankProducerUpdateView(LoginRequiredMixin, View):
         return redirect("generals_bank:detail", pk=bank.pk)
 
 
+class BankProducerReactivateView(LoginRequiredMixin, View):
+    """N-184: a producer switched off comes back with its composition and reserves."""
+
+    def post(self, request, pk, producer_pk):
+        bank = get_object_or_404(GeneralsBankConfig, pk=pk)
+        GeneralsBankProducer.objects.filter(pk=producer_pk, bank_config=bank).update(is_active=True, updated_at=timezone.now())
+        return redirect("generals_bank:detail", pk=bank.pk)
+
+
+class BankCancelCycleView(LoginRequiredMixin, View):
+    """N-184: end the active cycle by hand (a failed task used to leave the bank locked "Treinando" forever)."""
+
+    def post(self, request, pk):
+        from apps.audit.services import record
+
+        bank = get_object_or_404(GeneralsBankConfig, pk=pk)
+        cycle = services.get_active_cycle(bank)
+        if cycle:
+            stopped = services.cancel_cycle(cycle, f"Cancelado por {request.user.get_username()}.")
+            record("generals_bank.cycle_cancelled", target=cycle, details={"jobs_stopped": stopped})
+        return redirect("generals_bank:detail", pk=bank.pk)
+
+
 class BankProducerRemoveView(LoginRequiredMixin, View):
     def post(self, request, pk, producer_pk):
         bank = get_object_or_404(GeneralsBankConfig, pk=pk)
@@ -340,30 +376,15 @@ class BankDeleteView(LoginRequiredMixin, View):
     """POST /generais/<pk>/excluir/ - cancela jobs auto e apaga o banco."""
 
     def post(self, request, pk):
+        from apps.audit.services import record
+
         bank = get_object_or_404(GeneralsBankConfig, pk=pk)
         _cancel_auto_scheduler(bank)
         active_cycle = services.get_active_cycle(bank)
         if active_cycle:
-            now = timezone.now()
-            for job_field in ("manager_job", "buy_job"):
-                job = getattr(active_cycle, job_field, None)
-                if job and job.status in ("queued", "running", "scheduled"):
-                    Job.objects.filter(pk=job.pk).update(
-                        status="cancelled",
-                        finished_at=now,
-                        updated_at=now,
-                        lease_expires_at=None,
-                    )
-            for task in GeneralsBankCycleTask.objects.filter(cycle=active_cycle):
-                for job_field in ("training_job", "transport_job", "sell_job"):
-                    job = getattr(task, job_field, None)
-                    if job and job.status in ("queued", "running", "scheduled"):
-                        Job.objects.filter(pk=job.pk).update(
-                            status="cancelled",
-                            finished_at=now,
-                            updated_at=now,
-                            lease_expires_at=None,
-                        )
+            services.cancel_cycle(active_cycle, "Banco excluído.")
+        record("generals_bank.deleted", target_label=bank.bank_game_account.name,
+               details={"cycles": bank.cycles.count()})
         bank.delete()
         return redirect("generals_bank:list")
 
@@ -420,10 +441,17 @@ class BankCycleStatusPartialView(LoginRequiredMixin, View):
         bank = get_object_or_404(GeneralsBankConfig, pk=pk)
         active_cycle = services.get_active_cycle(bank)
         tasks = list(active_cycle.tasks.select_related("producer_game_account").all()) if active_cycle else []
+        # N-184: the cycle in steps
+        steps = [("training", "Produtoras treinam e listam"), ("bank_buying", "Banco compra"), ("sleeping", "Banco volta às férias")]
+        order = {"training": 0, "consolidating": 0, "listing": 0, "bank_buying": 1, "sleeping": 2}
+        position = order.get(active_cycle.status, 0) if active_cycle else 0
         return TemplateResponse(request, "generals_bank/partials/cycle_status.html", {
             "bank": bank,
             "active_cycle": active_cycle,
             "tasks": tasks,
+            "steps": steps,
+            "current_step": steps[position][0],
+            "done_steps": [step for step, _label in steps[:position]],
         })
 
 
@@ -433,8 +461,11 @@ class BankHistoryPartialView(LoginRequiredMixin, View):
     def get(self, request, pk):
         from django.template.response import TemplateResponse
         bank = get_object_or_404(GeneralsBankConfig, pk=pk)
-        cycles = bank.cycles.prefetch_related("transactions").order_by("-created_at")[:20]
+        cycles = bank.cycles.prefetch_related("transactions", "tasks__producer_game_account").order_by("-created_at")[:20]
+        rows = [{"cycle": cycle, "tasks": list(cycle.tasks.all()),
+                 "spent": -sum(t.gold_delta for t in cycle.transactions.all() if t.direction == "buy" and t.gold_delta < 0)}
+                for cycle in cycles]
         return TemplateResponse(request, "generals_bank/partials/history.html", {
             "bank": bank,
-            "cycles": cycles,
+            "rows": rows,
         })

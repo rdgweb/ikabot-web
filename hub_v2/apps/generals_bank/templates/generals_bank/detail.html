@@ -1,5 +1,5 @@
 {% extends base_template|default:"base.html" %}
-{% load static humanize hub_tags %}
+{% load static humanize hub_tags generals_bank_tags %}
 
 {% block title %}Banco — {{ bank.bank_game_account.name }}{% endblock %}
 
@@ -23,7 +23,7 @@
         <h1 class="text-xl font-bold text-ink flex items-center gap-2 flex-wrap">
           {{ bank.bank_game_account.name }}
           <span class="text-sm font-normal text-muted">{{ bank.bank_game_account.account.node.name }}</span>
-          {% if not bank.is_active %}<span class="badge badge-muted text-xs">Inativo</span>{% endif %}
+          {% if not bank.is_active %}{% status_chip "cancelled" "Inativo" %}{% endif %}
         </h1>
         <div class="mt-1 flex items-center gap-3 text-sm flex-wrap">
           <span class="flex items-center gap-1 {% if gold_low %}text-amber-600 font-semibold{% else %}text-muted{% endif %}">
@@ -32,7 +32,7 @@
             {% if gold_low %}<i class="bi bi-exclamation-triangle-fill text-xs"></i>{% endif %}
           </span>
           {% if active_cycle %}
-          <span class="badge badge-sea text-xs"><i class="bi bi-arrow-repeat mr-1"></i>{{ active_cycle.get_status_display }}</span>
+          {% status_chip active_cycle.status active_cycle.get_status_display %}
           {% else %}
           <span class="text-xs text-muted">Sem ciclo ativo</span>
           {% endif %}
@@ -45,9 +45,14 @@
         <i class="bi bi-play-fill"></i> Iniciar Ciclo
       </button>
       {% endif %}
-      <button @click="showDelete = true" type="button" class="btn btn-danger btn-sm">
-        <i class="bi bi-trash"></i> Excluir banco
-      </button>
+      <details class="relative">
+        <summary class="btn btn-secondary btn-sm" style="list-style: none;" title="Mais"><i class="bi bi-three-dots"></i></summary>
+        <div class="absolute right-0 mt-1 z-20 rounded-lg border p-1" style="background: var(--ik-paper); border-color: var(--ik-line); min-width: 11rem;">
+          <button @click="showDelete = true" type="button" class="w-full text-left px-3 py-2 text-sm rounded" style="color: var(--ik-bad);">
+            <i class="bi bi-trash"></i> Excluir banco
+          </button>
+        </div>
+      </details>
       <template x-if="showDelete">
         <div class="fixed inset-0 z-50 flex items-center justify-center" @keydown.escape.window="showDelete = false">
           <div class="fixed inset-0 bg-black/50 backdrop-blur-sm" @click="showDelete = false"></div>
@@ -68,6 +73,7 @@
               {% csrf_token %}
               <p class="text-xs text-ink mb-4">
                 Confirma exclusão do banco <span class="font-semibold">{{ bank.bank_game_account.name }}</span>?
+                <br><span class="text-muted">O histórico de ciclos do banco é apagado junto.</span>
                 {% if active_cycle %}
                 <br><span class="text-[var(--ik-bad)]">Existe um ciclo ativo — seus jobs serão cancelados.</span>
                 {% endif %}
@@ -183,8 +189,12 @@
       <div class="border-b px-5 py-4"
            style="border-color: rgba(40,20,10,0.12); background: linear-gradient(180deg, rgba(255,255,255,0.4), rgba(255,255,255,0));">
         <h2 class="font-semibold text-ink">Produtoras</h2>
-        <p class="text-xs text-muted mt-0.5">Contas que treinam unidades para o banco. Devem estar em nodes diferentes.</p>
       </div>
+      {% if producer_plan.warnings %}
+      <div class="px-5 py-3 border-b text-xs space-y-1" style="border-color: rgba(40,20,10,0.08); background: rgba(201,146,46,.08);">
+        {% for warning in producer_plan.warnings %}<div><i class="bi bi-exclamation-triangle-fill" style="color: var(--ik-warn);"></i> {{ warning }}</div>{% endfor %}
+      </div>
+      {% endif %}
 
       {% if producers %}
       <div class="divide-y" style="border-color: rgba(40,20,10,0.08);">
@@ -240,7 +250,7 @@
                 <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] text-ink"
                       style="border-color: var(--ik-line); background: rgba(79,134,185,0.06);">
                   <span class="font-bold">{{ qty|intcomma }}×</span>
-                  <span>u{{ uid }}</span>
+                  <span>{{ uid|unit_label }}</span>
                 </span>
                 {% endfor %}
               </div>
@@ -311,12 +321,6 @@
                     </div>
                   </div>
                   <div>
-                    <div class="text-[11px] font-semibold uppercase tracking-[0.16em] mb-2" style="color: var(--ik-sea);">Grade visual da composição</div>
-                    <div class="rounded-[14px] border p-3 text-[11px] text-muted" style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.72);">
-                      Use os cards abaixo para definir a composição. O editor antigo fica oculto, mas continua alimentando o mesmo JSON enviado ao banco.
-                    </div>
-                  </div>
-                  <div>
                     {% include "generals_bank/partials/producer_template_picker.html" %}
                   </div>
                   <div class="flex justify-end">
@@ -326,7 +330,8 @@
               </details>
             </div>
           </div>
-          <form method="post" action="{% url 'generals_bank:producer-remove' bank.pk producer.pk %}" class="shrink-0">
+          <form method="post" action="{% url 'generals_bank:producer-remove' bank.pk producer.pk %}" class="shrink-0"
+                @submit.prevent="$dispatch('confirm', {title: 'Remover produtora', message: 'A produtora {{ producer.producer_game_account.name|escapejs }} sai do banco com a composição e as reservas. Para só pausar, desmarque &quot;Produtora ativa&quot;.', style: 'danger', confirmLabel: 'Remover', onConfirm: () => $el.submit()})">
             {% csrf_token %}
             <button type="submit" class="text-muted hover:text-red-500 transition-colors p-1.5 rounded-lg hover:bg-red-50" title="Remover">
               <i class="bi bi-trash text-sm"></i>
@@ -338,9 +343,20 @@
       {% else %}
       <div class="px-5 py-8 text-center text-muted">
         <i class="bi bi-people text-2xl opacity-30 block mb-2"></i>
-        <p class="text-sm">Nenhuma produtora configurada ainda.</p>
+        <p class="text-sm">Nenhuma produtora ativa.</p>
       </div>
       {% endif %}
+
+      {% for producer in inactive_producers %}
+      <div class="flex items-center gap-3 px-5 py-3 border-t" style="border-color: rgba(40,20,10,0.08); opacity: .75;">
+        <i class="bi bi-pause-circle text-muted"></i>
+        <span class="text-sm text-ink flex-1">{{ producer.producer_game_account.name }}</span>
+        {% status_chip "cancelled" "Pausada" %}
+        <form method="post" action="{% url 'generals_bank:producer-reactivate' bank.pk producer.pk %}">
+          {% csrf_token %}<button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-play"></i> Reativar</button>
+        </form>
+      </div>
+      {% endfor %}
 
       {# Add producer #}
       <details class="border-t" style="border-color: rgba(40,20,10,0.10);">
@@ -432,12 +448,6 @@
             </div>
           </div>
 
-          <div>
-            <div class="text-[11px] font-semibold uppercase tracking-[0.16em] mb-2" style="color: var(--ik-sea);">Grade visual da composição</div>
-            <div class="rounded-[14px] border p-3 text-[11px] text-muted" style="border-color: rgba(219,201,167,0.8); background: rgba(255,255,255,0.72);">
-              Use os cards abaixo para definir a composição. O editor antigo fica oculto, mas continua alimentando o mesmo JSON enviado ao banco.
-            </div>
-          </div>
 
           <div>
             {% include "generals_bank/partials/producer_template_picker.html" %}
@@ -524,7 +534,7 @@
         <div>
           <h3 class="font-bold text-ink">Iniciar Ciclo</h3>
           <p class="text-[11px] text-muted">
-            {% if gold_low %}Ciclo de liquidação — banco vende unidades{% else %}Ciclo de acumulação — produtoras treinam para o banco{% endif %}
+            {% if liquidation_mode %}Ciclo de liquidação — banco vende unidades{% else %}Ciclo de acumulação — produtoras treinam para o banco{% endif %}
           </p>
         </div>
       </div>
@@ -537,8 +547,8 @@
 
       {# Mode info #}
       <div class="rounded-[16px] border px-4 py-3 flex items-start gap-3"
-           style="{% if gold_low %}border-color: rgba(201,156,78,0.35); background: rgba(201,156,78,0.07);{% else %}border-color: rgba(79,134,185,0.25); background: rgba(79,134,185,0.06);{% endif %}">
-        {% if gold_low %}
+           style="{% if liquidation_mode %}border-color: rgba(201,156,78,0.35); background: rgba(201,156,78,0.07);{% else %}border-color: rgba(79,134,185,0.25); background: rgba(79,134,185,0.06);{% endif %}">
+        {% if liquidation_mode %}
         <i class="bi bi-exclamation-triangle-fill mt-0.5 shrink-0" style="color: var(--ik-warn);"></i>
         <div class="text-sm">
           <span class="font-semibold text-ink">Ouro baixo</span> —
@@ -556,7 +566,7 @@
         {% endif %}
       </div>
 
-      {% if not gold_low %}
+      {% if not liquidation_mode %}
       <div class="space-y-4">
         <div>
           <div class="text-[11px] font-semibold uppercase tracking-[0.16em] mb-2" style="color: var(--ik-sea);">
@@ -578,7 +588,7 @@
             <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs"
                   style="border-color: rgba(219,201,167,0.8); background: rgba(255,252,245,0.95);">
               <span class="font-bold text-ink">{{ qty|intcomma }}×</span>
-              <span class="text-muted">u{{ uid }}</span>
+              <span class="text-muted">{{ uid|unit_label }}</span>
             </span>
             {% endfor %}
           </div>
@@ -600,7 +610,7 @@
                 <div class="text-muted">{{ task.city_name }} → {{ task.bm_city_name }}</div>
               </div>
               <div class="text-right">
-                <div class="font-bold text-ink">{{ task.quantity_target|intcomma }}× u{{ task.unit_id }}</div>
+                <div class="font-bold text-ink">{{ task.quantity_target|intcomma }}× {{ task.unit_id|unit_label }}</div>
                 <div class="text-muted">{% if task.same_city_flow %}mesma cidade{% else %}com transporte{% endif %}</div>
               </div>
             </div>
@@ -635,7 +645,7 @@
                 <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs"
                       style="border-color: rgba(219,201,167,0.8); background: rgba(255,252,245,0.95);">
                   <span class="font-bold text-ink" x-text="`${entry[1]}×`"></span>
-                  <span class="text-muted" x-text="`u${entry[0]}`"></span>
+                  <span class="text-muted" x-text="(window.__gbUnitNames || {})[entry[0]] || entry[0]"></span>
                 </span>
               </template>
             </div>
@@ -657,7 +667,7 @@
     <div class="border-t px-6 py-4 flex items-center justify-between gap-3"
          style="border-color: rgba(40,20,10,0.10); background: rgba(0,0,0,0.02);">
       <div class="text-[11px] text-muted">
-        {% if gold_low %}
+        {% if liquidation_mode %}
         <span>Ciclo de liquidação</span>
         {% else %}
         <span>Fluxo gerenciado pelas produtoras configuradas</span>
@@ -678,6 +688,7 @@
 </div>{# /modal #}
 
 </div>{# /bankDetail #}
+<script>window.__gbUnitNames = {{ unit_names_json|safe }};</script>
 <script>
 window.bankDetail = function() {
   return {
