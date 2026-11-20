@@ -3265,10 +3265,15 @@ class JobBulkDeleteView(LoginRequiredMixin, View):
         else:
             return self._toast("Nenhum job selecionado.", "error")
 
-        count = queryset.count()
-        queryset.delete()
+        # N-201: in small batches off the request (all at once loaded everything into memory and ran past the page)
+        from apps.jobs.services import bulk_delete
 
-        return self._toast(f"{count} job(s) excluido(s).", "success")
+        ids = list(queryset.values_list("pk", flat=True))
+        if not ids:
+            return self._toast("Nenhum job para excluir.", "info")
+        if not bulk_delete.start(request.user.pk, job_ids=ids):
+            return self._toast("Já há uma exclusão em andamento; espere ela terminar.", "error")
+        return self._toast(f"Excluindo {len(ids)} job(s) em segundo plano. Pode continuar usando o hub.", "success")
 
     @staticmethod
     def _toast(message: str, toast_type: str = "info") -> HttpResponse:
@@ -3430,6 +3435,10 @@ class WorkflowListView(FilterSortListView):
             for size in self.PER_PAGE_OPTIONS
         ] + [{"label": "Todos", "url": self._prefs_url(per_page="all"), "active": prefs["per_page"] == "all"}]
         context["job_view_mode"] = "ops"
+        # N-201: how far a deletion in the background got
+        from apps.jobs.services import bulk_delete
+
+        context["bulk_delete"] = bulk_delete.progress(self.request.user.pk)
         return context
 
     def _prefs_url(self, **changes) -> str:
@@ -4151,17 +4160,21 @@ class WorkflowBulkDeleteView(LoginRequiredMixin, View):
         else:
             qs = Workflow.objects.filter(pk__in=pks)
 
-        # N-59: delete the jobs (and their cascaded logs/reservations) before
-        # the workflows — Job.workflow is on_delete=SET_NULL, so deleting the
-        # workflows first would orphan the jobs instead of removing them, and
-        # they'd keep showing up forever in the tech view.
-        Job.objects.filter(workflow__in=qs).delete()
+        # N-59: the jobs (with their logs and reservations) go before the workflows — Job.workflow is SET_NULL, so
+        # deleting the workflows first would orphan them. N-201: in small batches off the request (all at once
+        # loaded everything into memory, ran past the page's time and nothing was deleted)
+        from apps.jobs.services import bulk_delete
 
-        deleted_count, _ = qs.delete()
-        msg = f"{deleted_count} workflow(s) e seus jobs excluídos."
-
+        ids = list(qs.values_list("pk", flat=True))
         resp = HttpResponse(status=200)
-        resp["HX-Trigger"] = json.dumps({"toast": {"type": "success", "message": msg}})
+        if not ids:
+            resp["HX-Trigger"] = json.dumps({"toast": {"type": "info", "message": "Nenhum workflow para excluir."}})
+            return resp
+        if not bulk_delete.start(request.user.pk, workflow_ids=ids):
+            resp["HX-Trigger"] = json.dumps({"toast": {"type": "error", "message": "Já há uma exclusão em andamento; espere ela terminar."}})
+            return resp
+        resp["HX-Trigger"] = json.dumps({"toast": {"type": "success",
+                                                   "message": f"Excluindo {len(ids)} workflow(s) e seus jobs em segundo plano."}})
         resp["HX-Refresh"] = "true"
         return resp
 

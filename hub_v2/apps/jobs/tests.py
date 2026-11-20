@@ -336,6 +336,7 @@ class JobWorkflowViewTests(TestCase):
         self.assertContains(response, "workflow-logs")
 
 
+@patch("apps.jobs.services.bulk_delete._spawn", lambda work: work())     # N-201: the batches run inline here
 class WorkflowBulkActionScopeTests(TestCase):
     """N-63: 'select all filtered' must only ever affect workflows matching the
     filters actually shown on screen, never every workflow in the system."""
@@ -1133,3 +1134,64 @@ class DailyLoginSweepFormTests(TestCase):
         self.assertEqual(html.count('name="sweep_interval_hours"'), 1)
         self.assertEqual(html.count('name="sweep_before_reset_minutes"'), 1)
         self.assertIn("Passadas de coleta", html)
+
+
+@patch("apps.jobs.services.bulk_delete._spawn", lambda work: work())
+class BulkDeleteInBatchesTests(TestCase):
+    """N-201: many workflows or jobs go in small batches off the request, logs and runs included."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.user = get_user_model().objects.create_superuser("bulk-admin", "bulk@example.org", "x")
+        self.client.force_login(self.user)
+        self.node = Node.objects.create(name="bulk-node")
+        self.account = Account.objects.create(node=self.node, label="bulk", email="bulk@example.org", password_enc="x")
+        self.ga = GameAccount.objects.create(account=self.account, lobby_account_id=7, server_id="s1-br", server_language="br",
+                                             server_number=1, name="Bulk")
+
+    def _workflow_with_jobs(self, jobs=3):
+        from .models import JobLog
+
+        workflow = Workflow.objects.create(account=self.account, node=self.node, workflow_type="test", status="finished")
+        run = WorkflowRun.objects.create(workflow=workflow, sequence=1, status="finished")
+        for _ in range(jobs):
+            job = Job.objects.create(account=self.account, game_account=self.ga, node=self.node, action_code=1, status="finished",
+                                     workflow=workflow, workflow_run=run)
+            JobLog.objects.create(job=job, message="old")
+        return workflow
+
+    def test_workflows_their_runs_jobs_and_logs_go(self):
+        from .models import JobLog
+        from .services import bulk_delete
+
+        keep = self._workflow_with_jobs()
+        gone = [self._workflow_with_jobs(), self._workflow_with_jobs(jobs=5)]
+        with patch.object(bulk_delete, "JOB_BATCH", 2):
+            response = self.client.post(reverse("jobs:workflow-bulk-delete"), {"workflow_ids[]": [str(w.pk) for w in gone]})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Workflow.objects.filter(pk__in=[w.pk for w in gone]).exists())
+        self.assertFalse(Job.objects.filter(workflow__in=gone).exists())
+        self.assertFalse(WorkflowRun.objects.filter(workflow__in=gone).exists())
+        self.assertEqual(Job.objects.filter(workflow=keep).count(), 3)
+        self.assertEqual(JobLog.objects.count(), 3)
+        self.assertEqual(bulk_delete.progress(self.user.pk)["status"], "done")
+
+    def test_jobs_go_in_batches(self):
+        from .services import bulk_delete
+
+        workflow = self._workflow_with_jobs(jobs=5)
+        ids = [str(pk) for pk in Job.objects.filter(workflow=workflow).values_list("pk", flat=True)[:4]]
+        with patch.object(bulk_delete, "JOB_BATCH", 3):
+            self.client.post(reverse("jobs:job-bulk-delete"), {"job_ids": ids})
+        self.assertEqual(Job.objects.filter(workflow=workflow).count(), 1)
+
+    def test_one_deletion_at_a_time(self):
+        from .services import bulk_delete
+
+        bulk_delete._save(self.user.pk, status="running", kind="workflows", total=10, done=2)
+        workflow = self._workflow_with_jobs()
+        self.client.post(reverse("jobs:workflow-bulk-delete"), {"workflow_ids[]": [str(workflow.pk)]})
+        self.assertTrue(Workflow.objects.filter(pk=workflow.pk).exists())
+        self.assertContains(self.client.get(reverse("jobs:job-list")), "em segundo plano")

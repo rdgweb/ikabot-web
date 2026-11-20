@@ -327,5 +327,19 @@ x-init="syncFilteredCount(); startLive()"
 {% endblock %}
 
 {% block table_content %}
+{% if bulk_delete %}{# N-201: a deletion handed to the background #}
+<div class="card mb-3 px-4 py-2 text-sm flex items-center gap-3"
+     style="border-left: 4px solid {% if bulk_delete.status == 'error' %}#b04a3a{% elif bulk_delete.status == 'done' %}#5f8c4e{% else %}var(--ik-sea){% endif %};">
+  {% if bulk_delete.status == 'running' %}
+  <i class="bi bi-arrow-repeat"></i>
+  <span>Excluindo {{ bulk_delete.kind }} em segundo plano: <b>{{ bulk_delete.done }}</b> de {{ bulk_delete.total }}.</span>
+  <a href="{{ request.get_full_path }}" class="link-sea">atualizar</a>
+  {% elif bulk_delete.status == 'done' %}
+  <i class="bi bi-check2-circle"></i><span>Exclusão concluída: {{ bulk_delete.total }} {{ bulk_delete.kind }}.</span>
+  {% else %}
+  <i class="bi bi-exclamation-triangle"></i><span>{{ bulk_delete.error }} ({{ bulk_delete.done }} de {{ bulk_delete.total }} feitos)</span>
+  {% endif %}
+</div>
+{% endif %}
 {% include "jobs/partials/workflow_table.html" %}
 {% endblock %}

@@ -35,6 +35,8 @@ services:
   mariadb:
     image: mariadb:11
     restart: unless-stopped
+    # N-201: cache do InnoDB (o padrão de fábrica, 128 MB, deixa quase tudo no disco); ajuste DB_BUFFER_POOL_SIZE no .env
+    command: ["--innodb-buffer-pool-size=${DB_BUFFER_POOL_SIZE:-256M}"]
     logging: *logging
     environment:
       MARIADB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?defina MYSQL_ROOT_PASSWORD no .env (o instalador gera)}
