@@ -4192,8 +4192,12 @@ class BulkDeleteStatusView(LoginRequiredMixin, View):
     def get(self, request):
         from django.shortcuts import render
 
+        from django.shortcuts import redirect
+
         from apps.jobs.services import bulk_delete
 
+        if request.headers.get("HX-Request") != "true":
+            return redirect("jobs:job-list")                 # opened by hand: the list, where the banner lives
         bulk_delete.resume_if_cut(request.user.pk)
         return render(request, "jobs/partials/bulk_delete_banner.html", {"bulk_delete": bulk_delete.progress(request.user.pk)})
 

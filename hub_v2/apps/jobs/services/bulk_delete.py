@@ -25,7 +25,9 @@ logger = logging.getLogger(__name__)
 JOB_BATCH = 200                 # jobs per transaction (their logs go first, by the job index)
 RUN_BATCH = 1000                # workflow runs per transaction
 PROGRESS_SECONDS = 6 * 3600
-STALE_SECONDS = 180             # a running deletion that has not moved in this long was cut (hub restarted)
+SHOW_DONE_SECONDS = 60          # a finished or cancelled deletion stays on the list this long
+SHOW_ERROR_SECONDS = 600
+STALE_SECONDS = 180            # a running deletion that has not moved in this long was cut (hub restarted)
 BUSY_RETRIES = 8
 BUSY_WAIT_SECONDS = 15
 LOCK_SECONDS = 10
@@ -38,6 +40,12 @@ def _key(user_id) -> str:
 def progress(user_id) -> dict | None:
     value = cache.get(_key(user_id))
     if not isinstance(value, dict):
+        return None
+    # N-201 (Rodrigo, 20/11): the end is shown for a moment, then the banner goes away (it stayed for hours)
+    ended_ago = time.time() - float(value.get("finished_at") or value.get("at") or 0)
+    if value.get("status") in ("done", "cancelled") and ended_ago > SHOW_DONE_SECONDS:
+        return None
+    if value.get("status") == "error" and ended_ago > SHOW_ERROR_SECONDS:
         return None
     shown = {k: v for k, v in value.items() if k != "pending"}
     shown["left"] = len(value.get("pending") or [])

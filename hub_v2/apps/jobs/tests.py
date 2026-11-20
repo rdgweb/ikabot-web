@@ -1203,8 +1203,11 @@ class BulkDeleteInBatchesTests(TestCase):
         progress = bulk_delete.progress(self.user.pk)
         self.assertEqual((progress["total"], progress["left"]), (11, 1))
         self.assertContains(self.client.get(reverse("jobs:job-list")), "Excluindo")
-        banner = self.client.get(reverse("jobs:bulk-delete-status"))
+        banner = self.client.get(reverse("jobs:bulk-delete-status"), HTTP_HX_REQUEST="true")
         self.assertContains(banner, "every 4s")
+        self.assertContains(banner, 'hx-target="this"')
+        self.assertContains(banner, 'hx-push-url="false"')
+        self.assertEqual(self.client.get(reverse("jobs:bulk-delete-status")).status_code, 302)
         self.assertNotContains(banner, "atualizar")
 
     def test_cancel_brings_back_what_was_not_deleted(self):
@@ -1253,3 +1256,18 @@ class BulkDeleteInBatchesTests(TestCase):
         cache.set(bulk_delete._key(self.user.pk), {"status": "running", "kind": "jobs", "total": 1, "done": 0,
                                                    "pending": [["j", str(jobs[0].pk), ""]], "at": time.time()}, 600)
         self.assertEqual(bulk_delete.pending_job_ids(self.user.pk), [str(jobs[0].pk)])
+
+
+@patch("apps.jobs.services.bulk_delete._spawn", lambda work: work())
+class BulkDeleteBannerTests(TestCase):
+    def test_the_end_shows_for_a_minute_then_the_banner_goes(self):
+        import time
+
+        from django.core.cache import cache
+
+        from .services import bulk_delete
+
+        cache.set(bulk_delete._key(1), {"status": "done", "total": 40, "done": 40, "finished_at": time.time()}, 600)
+        self.assertEqual(bulk_delete.progress(1)["status"], "done")
+        cache.set(bulk_delete._key(1), {"status": "done", "total": 40, "done": 40, "finished_at": time.time() - 120}, 600)
+        self.assertIsNone(bulk_delete.progress(1))
