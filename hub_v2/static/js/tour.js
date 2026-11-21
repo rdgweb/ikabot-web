@@ -52,7 +52,13 @@
         if (s.nodes) return "O nó existe, mas o agente não fala com o hub há mais de 3 minutos. Sem agente online os jobs ficam parados na fila: confira se o container agent está rodando.";
         return "Ainda não há agente. Crie o nó em Novo Nó: o hub mostra o comando de instalação, já com a chave do nó, para rodar na sua máquina com Docker. Abaixo, um exemplo. O tour espera e continua quando o agente conectar.";
       },
-      example: function (s) { return (s.nodes || s.platform) ? null : { into: '[data-tour="nodes"] > *', html: EXAMPLE_NODES }; },
+      example: function (s) {
+        if (s.nodes) return null;
+        // N-207: a customer of the platform sees the platform's node as it will look
+        var html = s.platform ? EXAMPLE_NODES.replace("ikabot-agent", "Agente da plataforma").replace(
+          '<span class="text-muted text-xs">Nenhum</span>', '<span class="font-mono text-xs text-muted">proxy exclusivo</span>') : EXAMPLE_NODES;
+        return { into: '[data-tour="nodes"] > *', html: html };
+      },
       cta: function (s) {
         if (s.online) return null;
         if (s.platform && !s.platform_agents) return { label: "Cadastrar a conta", href: "/accounts/create/" };
