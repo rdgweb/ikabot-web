@@ -61,6 +61,10 @@ class OrganizationView(SystemOnly):
                 system.set_active(org, action == "resume")
                 messages.success(request, "Organização reativada." if action == "resume" else "Organização pausada.")
             elif action in ("proxies_on", "proxies_off", "agent_on", "agent_off"):
+                from .services import DEFAULT_SLUG
+
+                if org.slug == DEFAULT_SLUG:
+                    raise ValueError("A organização da plataforma usa os próprios nós e proxies: não tem adicionais.")
                 account = get_object_or_404(Account._base_manager, pk=request.POST.get("account"), organization=org)
                 on = action.endswith("_on")
                 handler = set_proxy_addon if action.startswith("proxies") else set_agent_addon

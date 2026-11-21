@@ -146,6 +146,9 @@ class AdministratorTests(Base):
         self.assertTrue(self.admin.is_active)
         self.assertTrue(AuditEvent.objects.filter(action="organization.deleted", organization=default_organization()).exists())
         platform = default_organization()
+        page = self.client.get(f"/sistema/organizacoes/{platform.pk}/")
+        self.assertEqual(page.status_code, 200)
+        self.assertNotContains(page, "proxies_on")                               # the platform has no add-ons
         self.client.post(f"/sistema/organizacoes/{platform.pk}/", {"action": "delete", "confirm_name": platform.name})
         self.assertTrue(Organization._base_manager.filter(pk=platform.pk).exists())
 

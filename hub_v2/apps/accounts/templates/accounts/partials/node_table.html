@@ -38,8 +38,8 @@
         </td>
         <td>
           {% if node.proxy %}
-            <span class="font-mono text-xs text-muted" title="{{ node.proxy }}">
-              {{ node.proxy|truncatechars:30 }}
+            <span class="font-mono text-xs text-muted" title="{{ node.proxy_display }}">
+              {{ node.proxy_display|truncatechars:30 }}
             </span>
           {% else %}
             <span class="text-muted text-xs">Nenhum</span>

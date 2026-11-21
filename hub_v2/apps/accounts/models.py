@@ -102,6 +102,19 @@ class Node(UUIDTimestampModel):
         super().save(*args, **kwargs)
 
     @property
+    def proxy_display(self) -> str:
+        """N-203: where the node goes out, never with the proxy's user and password (they stay out of every page)."""
+        from urllib.parse import urlsplit
+
+        if not self.proxy:
+            return ""
+        try:
+            parts = urlsplit(self.proxy if "://" in self.proxy else f"http://{self.proxy}")
+            return f"{parts.hostname}:{parts.port}" if parts.port else (parts.hostname or "")
+        except ValueError:
+            return "proxy"
+
+    @property
     def is_online(self) -> bool:
         """Agent is online if last seen within 3 minutes."""
         if not self.agent_last_seen_at:

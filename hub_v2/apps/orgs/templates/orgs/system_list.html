@@ -24,7 +24,7 @@
     <div class="flex items-center gap-4 text-xs text-muted">
       <span title="Subcontas ativas"><i class="bi bi-person-badge"></i> {{ row.subaccounts }}{% if row.state.limit %}/{{ row.state.limit }}{% endif %}</span>
       <span title="Agentes online"><i class="bi bi-hdd-network"></i> {{ row.nodes_online }}/{{ row.nodes }}</span>
-      <span title="Proxies e agente da plataforma"><i class="bi bi-shield-lock"></i> {{ row.proxies_on }} · <i class="bi bi-cpu"></i> {{ row.agents_on }}</span>
+      {% if not row.is_platform %}<span title="Proxies e agente da plataforma"><i class="bi bi-shield-lock"></i> {{ row.proxies_on }} · <i class="bi bi-cpu"></i> {{ row.agents_on }}</span>{% endif %}
       <i class="bi bi-chevron-right"></i>
     </div>
   </a>
