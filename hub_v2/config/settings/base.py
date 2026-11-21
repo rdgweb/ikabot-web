@@ -193,6 +193,9 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LOGIN_URL = "/login/"
+# N-205: log in with the username or the e-mail
+# the default one stays: open sessions and the logins after sign-up and invite name it
+AUTHENTICATION_BACKENDS = ["core.auth.login.UsernameOrEmailBackend", "django.contrib.auth.backends.ModelBackend"]
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/login/"
 

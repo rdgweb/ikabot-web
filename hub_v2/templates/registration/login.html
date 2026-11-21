@@ -28,7 +28,7 @@
       {% if form.errors %}
       <div class="mb-4 p-3 rounded-lg text-sm" style="background: #fde8e5; border: 1px solid #e8b4af; color: #8c3028;">
         <i class="bi bi-exclamation-circle"></i>
-        Usuário ou senha inválidos.
+        Usuário/e-mail ou senha inválidos.
       </div>
       {% endif %}
 
@@ -37,9 +37,9 @@
         <input type="hidden" name="next" value="{{ next }}">
 
         <div class="mb-4">
-          <label for="id_username" class="block text-sm font-semibold mb-1.5" style="color: #4a4639;">Usuário</label>
-          <input type="text" name="username" id="id_username" autofocus
-                 class="form-input w-full" placeholder="seu.usuario">
+          <label for="id_username" class="block text-sm font-semibold mb-1.5" style="color: #4a4639;">Usuário ou e-mail</label>
+          <input type="text" name="username" id="id_username" autofocus autocomplete="username"
+                 class="form-input w-full" placeholder="seu.usuario ou voce@exemplo.com">
         </div>
 
         <div class="mb-6">
