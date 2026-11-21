@@ -68,6 +68,21 @@ def accounts_on(server_id: str) -> list:
                 .select_related("account").order_by("account__label", "name"))
 
 
+def eligible(server_id: str) -> list:
+    """Accounts that can take part in the plan: a Pirate Fortress (to raid and be raided) and a Pirate Fortress job
+    running (the agent acts through it)."""
+    from apps.game.models import AccountSnapshot
+    from apps.jobs.models import Job
+
+    accounts = accounts_on(server_id)
+    with_job = set(Job.objects.filter(game_account__in=accounts, action_code=PIRATE_ACTION)
+                   .exclude(status__in=("cancelled", "canceled", "failed", "completed", "done"))
+                   .values_list("game_account_id", flat=True))
+    fortress = {s.game_account_id for s in AccountSnapshot.objects.filter(game_account__in=accounts)
+                if (_fortress_city(s.cities) or {}).get("level", 0) >= 1}
+    return [ga for ga in accounts if ga.pk in with_job and ga.pk in fortress]
+
+
 def servers() -> list[str]:
     from apps.accounts.models import GameAccount
 
@@ -158,9 +173,13 @@ def month_roles(month) -> dict:
 
 
 def month_window(server_id: str, now: datetime | None = None) -> tuple[datetime, datetime]:
-    """From now to when the ranking turns (the clock the Pirate Fortress job reads), or a month when unknown."""
+    """From now to when the ranking turns (the clock the Pirate Fortress job reads), or a month when unknown. With
+    less than two days left the plan is for the next ranking: it starts when this one turns."""
     now = now or timezone.now()
     clock = overview_clock(server_id)
+    if clock is not None and clock < 2 * 86400:
+        start = now + timedelta(seconds=clock)
+        return start, start + timedelta(days=MONTH_FALLBACK_DAYS)
     end = now + timedelta(seconds=clock) if clock else now + timedelta(days=MONTH_FALLBACK_DAYS)
     return now, end
 
@@ -246,10 +265,14 @@ def plan_month(organization, server_id: str, *, champions: list | None = None, n
     old = current_month(server_id)
     if old is not None:
         close_month(old, "substituído por um novo plano")
-    accounts = accounts_on(server_id)
+    accounts = eligible(server_id)
+    if len({ga.account_id for ga in accounts}) < 2 or len(accounts) < 4:
+        raise ValueError("Faltam contas com fortaleza pirata e Pirata Automático rodando (pelo menos 4, de 2 lobbys).")
     chosen = list(champions) if champions else pick_champions(accounts, server_id, rng)
     if len(chosen) != CHAMPIONS or chosen[0].account_id == chosen[1].account_id:
         raise ValueError("São 2 campeãs de lobbys diferentes.")
+    if any(ga not in accounts for ga in chosen):
+        raise ValueError("A campeã precisa ter fortaleza pirata e o Pirata Automático rodando.")
     starts, ends = month_window(server_id, now)
     month = PiracyMonth.objects.create(organization=organization, server_id=server_id, starts_at=starts, ends_at=ends,
                                        chosen_by="escolha" if champions else "sorteio")

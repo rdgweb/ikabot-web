@@ -3,6 +3,7 @@ other lobbies (never inside one), the same raider never on the same account twic
 import random
 from collections import Counter
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -10,6 +11,7 @@ from django.utils import timezone
 
 from apps.accounts.models import Account, GameAccount, Node
 from apps.game.models import AccountSnapshot
+from apps.jobs.models import Job
 from apps.orgs.models import Membership, Organization
 from core.auth.tokens import hash_agent_token
 
@@ -48,6 +50,8 @@ class Base(TestCase):
                                          "self_entry": {"place": n, "score": 1000 - n, "target_city_id": str(1000 + n),
                                                         "target_island_id": str(500 + n)}, "entries": []}})
                 self.accounts.append(ga)
+                with patch("apps.jobs.signals.dispatch_job", create=True):
+                    Job.objects.create(account=lobby, node=self.node, game_account=ga, action_code=17, status="scheduled")
         self.client.force_login(self.user)
 
 
@@ -136,3 +140,27 @@ class PlanTests(Base):
         page = self.client.get("/pirataria/?server=s1-br").content.decode()
         self.assertNotIn("J1<", page)
         self.assertNotIn("Caminho dos pontos", page)
+
+
+class EligibilityTests(Base):
+    def test_accounts_without_fortress_or_job_stay_out_and_a_turning_ranking_plans_the_next(self):
+        from apps.orgs.scope import activate, deactivate
+
+        Job.objects.filter(game_account=self.accounts[0]).delete()
+        AccountSnapshot.objects.filter(game_account=self.accounts[1]).update(cities=[])
+        token = activate(self.org)
+        try:
+            able = services.eligible("s1-br")
+            self.assertNotIn(self.accounts[0], able)
+            self.assertNotIn(self.accounts[1], able)
+            with self.assertRaises(ValueError):
+                services.plan_month(self.org, "s1-br", champions=[self.accounts[0], self.accounts[12]])
+            for snap in AccountSnapshot.objects.all():
+                snap.base_snapshot["piracy_highscore"]["time_left"] = 3600
+                snap.save()
+            month = services.plan_month(self.org, "s1-br", rng=random.Random(3))
+        finally:
+            deactivate(token)
+        self.assertGreater(month.starts_at, timezone.now() + timedelta(minutes=50))   # from the turn on
+        involved = set(month.routes.values_list("raider_id", flat=True)) | set(month.routes.values_list("target_id", flat=True))
+        self.assertFalse({self.accounts[0].pk, self.accounts[1].pk} & involved)

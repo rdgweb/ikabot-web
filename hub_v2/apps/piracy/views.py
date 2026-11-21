@@ -56,8 +56,11 @@ class PiracyView(LoginRequiredMixin, View):
         if clock is not None:
             days, rest = divmod(int(clock), 86400)
             clock_human = (f"{days}d {rest // 3600}h" if days else f"{rest // 3600}h {(rest % 3600) // 60:02d}min")
+        able = {ga.pk for ga in services.eligible(server)} if server else set()
+        for row in data.get("rows", []):
+            row["eligible"] = row["ga"].pk in able
         return render(request, "piracy/index.html", {
-            **data, "server": server, "clock_human": clock_human, "servers": services.servers(), "weeks": weeks, "history": history,
+            **data, "server": server, "clock_human": clock_human, "eligible_count": len(able), "servers": services.servers(), "weeks": weeks, "history": history,
             "can_run": _can_run(request), "base_template": _base(request),
             "champions": [c.game_account for c in month.champions.select_related("game_account__account")] if month else [],
         })

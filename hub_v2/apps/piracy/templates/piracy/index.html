@@ -78,15 +78,17 @@
     </form>
     {% endif %}
     {% else %}
-    <p class="text-sm text-muted" style="margin: 0 0 .8rem;">Nenhum plano neste mês. Duas contas de lobbys diferentes ficam com os pontos; as outras passam os pontos até elas.</p>
-    {% if can_run and rows|length > 2 %}
+    <p class="text-sm text-muted" style="margin: 0 0 .8rem;">Nenhum plano neste mês. Duas contas de lobbys diferentes ficam com os pontos; as outras passam os pontos até elas.
+      Entram {{ eligible_count }} de {{ rows|length }} contas: as que têm fortaleza pirata e o Pirata Automático rodando.
+      {% if clock and clock < 172800 %}Faltando menos de 2 dias, o plano vale a partir da virada do ranking.{% endif %}</p>
+    {% if can_run and eligible_count >= 4 %}
     <form method="post" class="org-form" hx-boost="false">{% csrf_token %}<input type="hidden" name="server" value="{{ server }}">
       <button class="btn btn-primary btn-sm" name="action" value="plan"><i class="bi bi-shuffle"></i> Sortear as campeãs</button>
     </form>
     <form method="post" class="org-form" style="margin-top: .7rem;" hx-boost="false">{% csrf_token %}<input type="hidden" name="server" value="{{ server }}">
       {% for n in "12" %}
       <select name="champion" class="form-input" style="max-width: 15rem;">
-        {% for r in rows %}<option value="{{ r.ga.pk }}">{{ r.ga.name }} · {{ r.lobby }}</option>{% endfor %}
+        {% for r in rows %}{% if r.eligible %}<option value="{{ r.ga.pk }}">{{ r.ga.name }} · {{ r.lobby }}</option>{% endif %}{% endfor %}
       </select>
       {% endfor %}
       <button class="btn btn-secondary btn-sm" name="action" value="choose"><i class="bi bi-hand-index"></i> Escolher estas</button>
@@ -136,7 +138,7 @@
       <tbody>
       {% for r in rows %}
       <tr>
-        <td><b class="text-ink">{{ r.ga.name }}</b></td>
+        <td><b class="text-ink">{{ r.ga.name }}</b>{% if not r.eligible %} <span class="text-xs text-muted" title="sem fortaleza pirata ou sem Pirata Automático">· fora do plano</span>{% endif %}</td>
         <td class="text-muted">{{ r.lobby }}</td>
         <td>{% if r.role == "campeã" %}<span class="org-chip gold"><i class="bi bi-trophy-fill"></i> campeã</span>{% elif r.role %}<span class="org-chip off">{{ r.role }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
         <td>{% if r.fortress %}nível {{ r.fortress.level }} <span class="text-muted">{{ r.fortress.name }}</span>{% else %}<span class="text-muted">sem fortaleza</span>{% endif %}</td>
