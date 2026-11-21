@@ -312,7 +312,7 @@ class TelegramPagesTests(Base):
         chat_id, text = send.call_args.args[:2]
         self.assertEqual(chat_id, "1000")
         self.assertIn("Teste do modelo", text)
-        self.assertIn("Mudança na ilha [83:90]", text)
+        self.assertIn("Mudança na ilha [50:50]", text)
 
         self.bot.chat_id = ""
         self.bot.save()

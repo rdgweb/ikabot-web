@@ -1,0 +1,19 @@
+<div class="card !p-0 overflow-hidden" style="border-left: 4px solid {{ color }};">
+  <div class="flex items-center gap-3 px-4 py-3">
+    <span class="flex flex-shrink-0 items-center justify-center" style="width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--ik-line);"></span>
+    <div class="min-w-0 flex-1">
+      <div class="flex flex-wrap items-center gap-2">
+        <i class="bi {{ icon }} text-muted"></i>
+        <span class="text-sm font-semibold" style="color: var(--ik-sea);">{{ title }}</span>
+        <span class="text-sm text-ink">· {{ what }}</span>
+        {% if recurring %}<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs" style="background: rgba(79,134,185,.12); color: #3f6f9b;"><i class="bi bi-arrow-repeat"></i> recorrente</span>{% endif %}
+        <span class="rounded-full px-2 py-0.5 text-xs font-semibold" style="background: {{ bg }}; color: {{ color }};">{{ status }}</span>
+      </div>
+      <div class="mt-1 text-xs text-muted"><i class="bi bi-clock"></i> {{ meta }}</div>
+    </div>
+    <div class="flex flex-shrink-0 items-center gap-2">
+      <span class="btn btn-secondary btn-sm" style="pointer-events: none;"><i class="bi bi-pause-fill"></i></span>
+      <span class="btn btn-secondary btn-sm" style="pointer-events: none;"><i class="bi bi-box-arrow-up-right"></i></span>
+    </div>
+  </div>
+</div>

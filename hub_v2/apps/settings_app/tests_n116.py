@@ -158,6 +158,9 @@ class TourTests(TestCase):
         account = Account.objects.create(node=node, label="Lobby", email="a@example.com", password_enc="x")
         pages = {
             "/": ['data-tour="novo-job"', 'href="/jobs/"', 'href="/game/"', 'href="/game/actions/"'],
+            "/jobs/": ['data-tour="jobs"', 'data-tour-example="jobs"'],                          # N-209: empty screens bring an example
+            "/game/": ['data-tour="game"', 'data-tour-example="game"'],
+            "/game/actions/": ['data-tour="actions"'],
             reverse("accounts:node-list"): ['data-tour="nodes"'],
             reverse("accounts:account-create"): ['id="id_node"', 'data-tour="account-who"', 'id="id_label"', 'id="id_email"', 'id="id_gf_token"', 'data-tour="gf-help"', 'data-tour="form-submit"'],
             reverse("accounts:account-list"): ['data-tour="account-row"'],
@@ -168,7 +171,8 @@ class TourTests(TestCase):
             for marker in markers:
                 self.assertIn(marker, html, f"{marker} em {url}")
         for selector in ('[data-tour="nodes"]', '[data-tour="account-who"]', "#id_label", "#id_email", '[data-tour="gf-help"]', '[data-tour="form-submit"]', '[data-tour="account-row"]',
-                         '[data-tour="discover"]', '[data-tour="worlds"]', '[data-tour="novo-job"]', 'a.sidebar-item[href="/jobs/"]'):
+                         '[data-tour="discover"]', '[data-tour="worlds"]', '[data-tour="novo-job"]', '[data-tour="jobs"]', '[data-tour="game"]',
+                         '[data-tour="actions"]', 'data-tour-example'):
             self.assertIn(selector, script)
         self.assertIn('data-state-url="/settings/tour/state/"', self.client.get("/").content.decode())
         self.assertNotIn("data-tour-script", self.client.get("/", HTTP_HX_REQUEST="true", HTTP_HX_BOOSTED="true").content.decode())

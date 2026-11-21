@@ -15,6 +15,14 @@
 
   function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
 
+  // N-209: an empty screen brings its own example (a <template data-tour-example> rendered by the page, with made-up data)
+  function pageExample(name, into) {
+    return function () {
+      var tpl = document.querySelector('template[data-tour-example="' + name + '"]');
+      return tpl ? { into: into, html: tpl.innerHTML } : null;
+    };
+  }
+
   // what an empty list looks like once it is filled; shown only while the step is open, never saved
   var EXAMPLE_NODES =
     '<div class="card overflow-hidden p-0"><table class="data-table"><thead><tr><th>Nome</th><th>Localização</th><th>IP Externo</th>' +
@@ -34,7 +42,7 @@
     '<th class="text-left py-2 px-2 text-muted font-semibold">Lobby ID</th><th class="text-left py-2 px-2 text-muted font-semibold">Grupo</th>' +
     '<th class="text-center py-2 px-2 text-muted font-semibold">Mod. Mundo</th><th class="text-center py-2 px-2 text-muted font-semibold">Governo</th>' +
     '<th class="text-center py-2 px-2 text-muted font-semibold">Status</th></tr></thead><tbody>' +
-    worldRow("s78-br", "Jogador", "1") + worldRow("s12-br", "Jogador", "2") + '</tbody></table></div>';
+    worldRow("s1-br", "Jogador", "1") + worldRow("s2-br", "Jogador", "2") + '</tbody></table></div>';
 
   var STEPS = [
     { icon: "bi-stars", title: "Bem-vindo ao Ikabot",
@@ -121,16 +129,18 @@
     { target: '[data-tour="novo-job"]', icon: "bi-plus-lg",
       chapter: "4 · O primeiro job", title: "Novo Job",
       text: "Tudo o que o Ikabot faz no jogo é um job. O primeiro é Verificar Status: ele lê cidades, recursos e edifícios.",
-      sample: "Novo Job → Jogador (s78-br) → Verificar Status → Enviar" },
-    { target: 'a.sidebar-item[href="/jobs/"]', icon: "bi-list-task",
+      sample: "Novo Job → Jogador (s1-br) → Verificar Status → Enviar" },
+    { page: /^\/jobs\/$/, go: "/jobs/", target: '[data-tour="jobs"]', icon: "bi-list-task",
       chapter: "4 · O primeiro job", title: "Fila de Jobs",
-      text: "Acompanhe cada job: na fila, executando, concluído ou com erro, com o log de cada passo." },
-    { target: 'a.sidebar-item[href="/game/"]', icon: "bi-joystick",
+      text: "Acompanhe cada job: na fila, executando, concluído ou com erro, com o log de cada passo. Os recorrentes voltam sozinhos no próximo ciclo.",
+      example: pageExample("jobs", '[data-tour="jobs"] > *') },
+    { page: /^\/game\/$/, go: "/game/", target: '[data-tour="game"]', icon: "bi-joystick",
       chapter: "4 · O primeiro job", title: "Painel do Jogo",
-      text: "Depois do Verificar Status, as cidades da subconta aparecem aqui." },
-    { target: 'a.sidebar-item[href="/game/actions/"]', icon: "bi-controller",
+      text: "Depois do Verificar Status, cada subconta aparece aqui com as cidades, os recursos, o militar e as construções.",
+      example: pageExample("game", '[data-tour="game"] > .card') },
+    { page: /^\/game\/actions\/$/, go: "/game/actions/", target: '[data-tour="actions"]', icon: "bi-controller",
       chapter: "Daqui em diante", title: "Ações do Jogo",
-      text: "Construir, transportar, pesquisar, vender e o resto: escolha a ação e a subconta." },
+      text: "Construir, transportar, pesquisar, vender e o resto: escolha a ação e a subconta. Os presets comuns também aparecem aqui, prontos para usar." },
 
     { icon: "bi-flag", title: "Tudo pronto", final: true,
       text: "Se algo não andar, Configurações → Saúde do sistema mostra o que falta. O tour pode ser revisto por lá." },

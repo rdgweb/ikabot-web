@@ -76,6 +76,8 @@ ACTIONS = {
     "billing.checkout": ("plano", "Abriu o pagamento do plano"),
     "billing.changed": ("plano", "Trocou a faixa do plano"),
     "billing.canceled": ("plano", "Cancelou a assinatura"),
+    "preset.common": ("jobs", "Tornou um preset comum a todas as organizações"),
+    "preset.common_removed": ("jobs", "Tirou um preset dos comuns"),
     "billing.subscriptions_opened": ("plano", "Abriu as assinaturas para os clientes"),
     "billing.subscriptions_closed": ("plano", "Fechou as assinaturas dos clientes"),
     "organization.trial_extended": ("plano", "Estendeu o teste de uma organização"),

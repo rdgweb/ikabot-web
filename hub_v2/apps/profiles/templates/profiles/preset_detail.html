@@ -61,6 +61,17 @@
         {% endfor %}
       </select>
     </form>
+    {% if user_is_staff and preset.organization.slug == "principal" or user_is_staff and preset.is_common %}
+    {# N-206: common: every customer organization gets a copy (without your accounts and their own settings) #}
+    <form method="post" action="{% url 'profiles:preset-common' preset.pk %}" hx-boost="false"
+          title="Comum: cada organização de cliente recebe uma cópia, sem as suas contas e sem os ajustes por conta">
+      {% csrf_token %}<input type="hidden" name="on" value="{% if preset.is_common %}0{% else %}1{% endif %}">
+      <button type="submit" class="btn btn-secondary btn-sm"><i class="bi {% if preset.is_common %}bi-people-fill{% else %}bi-people{% endif %}"></i>
+        {% if preset.is_common %}Comum a todos{% else %}Tornar comum{% endif %}</button>
+    </form>
+    {% elif preset.source_id %}
+    <span class="text-[12px] text-muted" title="Veio dos presets comuns da plataforma"><i class="bi bi-people"></i> preset comum</span>
+    {% endif %}
     <form method="post" action="{% url 'profiles:preset-execute' preset.pk %}">
       {% csrf_token %}
       <button type="submit"

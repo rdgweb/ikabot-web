@@ -201,47 +201,47 @@ COUNT_DAYS = 14
 # what a notice looks like when none of its kind was sent yet (the editor prefers the last real one)
 SAMPLE_CONTEXTS = {
     "cinema_available": {
-        "count": 3, "accounts": "• BlackShadow701 — Midgard\n• HAVIT — lll1lll\n• ScorpiO — ScorpiO M",
+        "count": 3, "accounts": "• Jogador — Atenas\n• Jogador2 — Esparta\n• Jogador3 — Tebas",
         "reset_time": "00:00", "reset_in": "1h",
     },
     "island_monitor": {
-        "ga_name": "BlackShadow701", "server_id": "s78-br", "title": "Mudança na ilha [83:90]",
-        "island": "Ilha [83:90] — Colosso", "coords": "[83:90]", "resource": "Vinho", "miracle": "Colosso",
+        "ga_name": "Jogador", "server_id": "s1-br", "title": "Mudança na ilha [50:50]",
+        "island": "Ilha [50:50] — Colosso", "coords": "[50:50]", "resource": "Vinho", "miracle": "Colosso",
         "changes": "➕ Fulano [ABC] colonizou Nova Polis\n🔄 Velha: Ciclano → Beltrano", "changes_count": 2,
     },
     "attack_alert": {
-        "ga_name": "BlackShadow701", "server_id": "s78-br", "mission": "Roubar", "target_city": "Valhala",
+        "ga_name": "Jogador", "server_id": "s1-br", "mission": "Roubar", "target_city": "Atenas",
         "origin_player": "Fulano", "origin_city": "Polis Inimiga", "troops": 70, "fleet": 12, "time_left_human": "21min 22s",
     },
     "job_failed": {
-        "ga_name": "BlackShadow701", "server_id": "s78-br", "action_name": "Distribuir Recursos", "city_name": "Valhala",
-        "node_name": "local-dev", "exit_code": "1", "job_id": "71cfa2a2", "body": "Timeout ao conectar no servidor",
+        "ga_name": "Jogador", "server_id": "s1-br", "action_name": "Distribuir Recursos", "city_name": "Atenas",
+        "node_name": "node-01", "exit_code": "1", "job_id": "71cfa2a2", "body": "Timeout ao conectar no servidor",
     },
     "job_done": {
-        "ga_name": "BlackShadow701", "server_id": "s78-br", "action_name": "Enviar Recursos", "city_name": "Valhala",
-        "node_name": "local-dev", "job_id": "71cfa2a2", "body": "",
+        "ga_name": "Jogador", "server_id": "s1-br", "action_name": "Enviar Recursos", "city_name": "Atenas",
+        "node_name": "node-01", "job_id": "71cfa2a2", "body": "",
     },
     # used only while the hub keeps no combat report (the preview prefers a real one)
     "combat_report": {
-        "ga_name": "BlackShadow701", "server_id": "s78-br", "phase": "final", "headline": "Vitória em 2 rounds",
-        "city": "Quartzum [80:71]", "versus": "BlackShadow701 × Godeus", "attacker": "BlackShadow701", "defender": "Godeus",
+        "ga_name": "Jogador", "server_id": "s1-br", "phase": "final", "headline": "Vitória em 2 rounds",
+        "city": "Corinto [51:52]", "versus": "Jogador × Fulano", "attacker": "Jogador", "defender": "Fulano",
         "result": "Vitória", "round": 2, "total_rounds": 2, "attacker_losses": "sem perdas",
         "defender_losses": "Lanceiro -286, Muralha -7", "losses": "Atacante: sem perdas\nDefensor: Lanceiro -286, Muralha -7",
         "loot_line": "Saque: 80.631 madeira · 2.220 enxofre", "date": "03.06.2026 12:54:33",
     },
     "proxy_change": {
-        "changes": "Conta Principal: 2 proxy(s) fora de uso, 2 novo(s) reservado(s).\nBloqueio de login liberado: BlackShadow701.",
+        "changes": "Conta Principal: 2 proxy(s) fora de uso, 2 novo(s) reservado(s).\nBloqueio de login liberado: Jogador.",
         "provider": "Lista do provedor: 3 novo(s), 2 retirado(s).", "tests": "Teste: 18 de 20 proxies ok.",
-        "reason_line": "Motivo da verificação: falha de proxy no login de BlackShadow701.",
+        "reason_line": "Motivo da verificação: falha de proxy no login de Jogador.",
     },
     "diplomacy_message": {
-        "ga_name": "BlackShadow701", "server_id": "s78-br", "sender": "Fulano", "subject": "Tratado cultural",
+        "ga_name": "Jogador", "server_id": "s1-br", "sender": "Fulano", "subject": "Tratado cultural",
         "game_date": "12.10.2026 18:00", "message_body": "Olá, aceita um tratado cultural?",
         "reply_command": "/responder 1234 <texto>", "accept_command": "/responder 1234 yes", "decline_command": "/responder 1234 no",
     },
 }
 GENERIC_SAMPLE = {
-    "action_name": "Check Status", "ga_name": "Cidade01", "server_id": "s61-br", "account_name": "player@email.com",
+    "action_name": "Check Status", "ga_name": "Cidade01", "server_id": "s1-br", "account_name": "player@email.com",
     "node_name": "node-01", "agent_name": "agent-1", "exit_code": "1", "job_id": "abc-123", "status": "error",
     "error": "Timeout ao conectar", "title": "Aviso", "body": "Texto do aviso",
 }

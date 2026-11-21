@@ -141,7 +141,7 @@
 {% if account_cards %}
 <div class="space-y-6">
   {% for card in account_cards %}
-  <div class="card game-card {% if card.under_attack %}under-attack{% endif %}" x-data="{ tab: 'cities', open: true }"
+  <div class="card game-card {% if card.under_attack %}under-attack{% endif %}" x-data="{ tab: 'cities', open: true }" {% if forloop.first %}data-tour="game"{% endif %}
        {% if card.under_attack %}style="border-color: var(--ik-bad); box-shadow: 0 0 0 2px rgba(187,81,67,0.35), 0 10px 30px rgba(187,81,67,0.18); background: linear-gradient(180deg, rgba(187,81,67,0.06), transparent 40%);"{% elif card.pirate_raids %}style="border-color: #6b4f2a; box-shadow: 0 0 0 2px rgba(107,79,42,0.30), 0 10px 30px rgba(107,79,42,0.14); background: linear-gradient(180deg, rgba(107,79,42,0.06), transparent 40%);"{% elif card.on_vacation %}style="border-color: var(--ik-sea); box-shadow: 0 0 0 2px rgba(79,134,185,0.30), 0 10px 30px rgba(79,134,185,0.14); background: linear-gradient(180deg, rgba(79,134,185,0.07), transparent 40%);"{% endif %}
        data-node="{{ card.account.node_id }}"
        data-account="{{ card.account.pk }}"
@@ -1021,13 +1021,14 @@
 </div>
 
 {% else %}
-<div class="card text-center py-12">
+<div data-tour="game"><div class="card text-center py-12">
   <i class="bi bi-controller text-4xl text-muted block mb-3"></i>
   <p class="text-sm text-muted">Nenhuma conta de jogo encontrada.</p>
   <a href="{% url 'accounts:account-list' %}" class="btn btn-primary btn-sm mt-4">
     <i class="bi bi-plus-circle"></i> Gerenciar Contas
   </a>
-</div>
+</div></div>
+<template data-tour-example="game">{% include "game/partials/tour_example.html" %}</template>
 {% endif %}
 
 </div>{# end x-data gameDashboard #}

@@ -322,7 +322,7 @@ class NotificationTemplate(TimestampModel):
     # N-104: the variables each notice fills, shown next to its editor
     COMMON_VARS = [
         ("{ga_name}", "Nome da conta do jogo"),
-        ("{server_id}", "Servidor (ex.: s78-br)"),
+        ("{server_id}", "Servidor (ex.: s1-br)"),
         ("{account_name}", "Conta do lobby"),
     ]
     # notices about the system, not about one game account: the common variables stay out

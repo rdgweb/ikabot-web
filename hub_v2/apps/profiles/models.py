@@ -66,6 +66,10 @@ class Preset(UUIDTimestampModel):
         on_delete=models.SET_NULL,
         related_name="presets",
     )
+    # N-206: a preset of the platform marked common: every customer organization gets a copy (without the accounts and
+    # their own settings); the copy remembers where it came from
+    is_common = models.BooleanField(default=False)
+    source = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="copies")
 
     class Meta:
         ordering = ["name"]

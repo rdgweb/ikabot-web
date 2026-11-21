@@ -17,6 +17,7 @@ from .views import (
     PresetRemoveActionView,
     PresetConfigureActionView,
     PresetCatalogView,
+    PresetCommonView,
     PresetExecuteView,
     PresetUpdateView,
     PresetDeleteView,
@@ -43,6 +44,7 @@ urlpatterns = [
     path("presets/<uuid:pk>/configure/<int:action_order>/", PresetConfigureActionView.as_view(), name="preset-configure-action"),
     path("presets/<uuid:pk>/execute/", PresetExecuteView.as_view(), name="preset-execute"),
     path("presets/<uuid:pk>/catalog/", PresetCatalogView.as_view(), name="preset-catalog"),
+    path("presets/<uuid:pk>/common/", PresetCommonView.as_view(), name="preset-common"),
     path("presets/<uuid:pk>/update/", PresetUpdateView.as_view(), name="preset-update"),
     path("presets/<uuid:pk>/delete/", PresetDeleteView.as_view(), name="preset-delete"),
 ]

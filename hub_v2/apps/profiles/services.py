@@ -268,12 +268,62 @@ def execute_preset(preset: Preset, created_by=None) -> tuple[int, list[str]]:
     return jobs_created, errors
 
 
+def _seeded_key(organization) -> str:
+    return f"common_presets_seeded:{organization.pk}"
+
+
+def ensure_common_presets(organization) -> int:
+    """N-206: every customer organization gets a copy of each common preset of the platform once (a copy it deletes does
+    not come back). The copy has the general settings, no accounts and none of the platform's per-account settings."""
+    import json
+
+    from apps.orgs.services import DEFAULT_SLUG
+    from apps.settings_app.utils import get_setting, set_setting
+
+    from .models import Preset, PresetAction
+
+    if organization is None or organization.slug == DEFAULT_SLUG:
+        return 0
+    common = list(Preset._base_manager.filter(is_common=True, organization__slug=DEFAULT_SLUG).prefetch_related("actions"))
+    if not common:
+        return 0
+    try:
+        seeded = set(json.loads(get_setting(_seeded_key(organization), "[]") or "[]"))
+    except ValueError:
+        seeded = set()
+    missing = [p for p in common if str(p.pk) not in seeded]
+    if not missing:
+        return 0
+    taken = set(Preset._base_manager.filter(organization=organization).values_list("name", flat=True))
+    made = 0
+    for original in missing:
+        name, n = original.name, 2
+        while name in taken:
+            name, n = f"{original.name} ({n})", n + 1
+        copy = Preset._base_manager.create(name=name, description=original.description, organization=organization,
+                                           catalog_category=original.catalog_category, source=original)
+        for action in PresetAction._base_manager.filter(preset=original).order_by("order"):
+            PresetAction._base_manager.create(preset=copy, action_code=action.action_code, action_name=action.action_name,
+                                              order=action.order, inputs_json=action.inputs_json, per_account_json="{}")
+        taken.add(name)
+        seeded.add(str(original.pk))
+        made += 1
+    set_setting(_seeded_key(organization), json.dumps(sorted(seeded)))
+    return made
+
+
 def catalog_presets() -> dict[str, list[dict]]:
     """N-142: the presets chosen to show up in Ações do Jogo, by category (the request's organization scope applies)."""
     from core.actions.registry import _plain
 
+    from apps.orgs.scope import current_organization
+
     from .models import Preset
 
+    try:
+        ensure_common_presets(current_organization())
+    except Exception:  # noqa: BLE001 — the catalog never breaks for this
+        pass
     by_category: dict[str, list[dict]] = {}
     presets = (Preset.objects.exclude(catalog_category="").prefetch_related("actions", "preset_accounts").order_by("name"))
     for preset in presets:

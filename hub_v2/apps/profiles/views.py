@@ -7,7 +7,7 @@ import logging
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -149,6 +149,9 @@ def _get_all_active_gas():
 
 class PresetListView(LoginRequiredMixin, View):
     def get(self, request):
+        from .services import ensure_common_presets
+
+        ensure_common_presets(getattr(request, "organization", None))
         presets = Preset.objects.prefetch_related("preset_accounts", "actions").order_by("name")
         return self._render(request, presets)
 
@@ -595,6 +598,23 @@ class PresetCatalogView(LoginRequiredMixin, View):
             messages.success(request, f"'{preset.name}' aparece em Ações do Jogo, em {CATEGORY_META[category]['label']}.")
         else:
             messages.success(request, f"'{preset.name}' não aparece mais em Ações do Jogo.")
+        return redirect("profiles:preset-detail", pk=preset.pk)
+
+
+class PresetCommonView(LoginRequiredMixin, View):
+    """POST — N-206: the system's administrator marks a preset of the platform as common (copied to every customer)."""
+
+    def post(self, request, pk):
+        from apps.audit.services import record
+        from apps.orgs.services import DEFAULT_SLUG
+
+        if not (request.user.is_staff or request.user.is_superuser):
+            raise Http404()
+        preset = get_object_or_404(Preset._base_manager, pk=pk, organization__slug=DEFAULT_SLUG)
+        preset.is_common = request.POST.get("on") == "1"
+        preset.save(update_fields=["is_common", "updated_at"])
+        record("preset.common" if preset.is_common else "preset.common_removed", target=preset, target_label=preset.name)
+        messages.success(request, f"'{preset.name}' {'vai para todas as organizações (sem as suas contas)' if preset.is_common else 'não é mais comum (as cópias já feitas ficam)'}.")
         return redirect("profiles:preset-detail", pk=preset.pk)
 
 

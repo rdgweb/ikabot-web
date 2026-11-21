@@ -328,5 +328,6 @@ x-init="syncFilteredCount(); startLive()"
 
 {% block table_content %}
 {% include "jobs/partials/bulk_delete_banner.html" %}
-{% include "jobs/partials/workflow_table.html" %}
+<div data-tour="jobs">{% include "jobs/partials/workflow_table.html" %}</div>
+{% if not object_list and not request.GET %}<template data-tour-example="jobs">{% include "jobs/partials/tour_example.html" %}</template>{% endif %}
 {% endblock %}

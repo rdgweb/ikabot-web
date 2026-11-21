@@ -1,0 +1,17 @@
+{# N-209: what the queue looks like once jobs run — shown by the tour only while the list is empty (nothing real) #}
+<div class="space-y-3">
+  <div class="grid grid-cols-3 gap-2 sm:grid-cols-6">
+    <div class="card !p-3 text-center" style="background: var(--ik-sand-light);"><div class="text-[11px] uppercase tracking-wide text-muted">Total</div><div class="mt-1 text-xl font-bold text-ink">4</div></div>
+    <div class="card !p-3 text-center"><div class="text-[11px] uppercase tracking-wide text-muted">Ativos</div><div class="mt-1 text-xl font-bold" style="color: var(--ik-sea);">1</div></div>
+    <div class="card !p-3 text-center"><div class="text-[11px] uppercase tracking-wide text-muted">Aguardando</div><div class="mt-1 text-xl font-bold text-amber-500">2</div></div>
+    <div class="card !p-3 text-center"><div class="text-[11px] uppercase tracking-wide text-muted">Problema</div><div class="mt-1 text-xl font-bold" style="color: var(--ik-bad);">0</div></div>
+    <div class="card !p-3 text-center"><div class="text-[11px] uppercase tracking-wide text-muted">Pausados</div><div class="mt-1 text-xl font-bold text-muted">0</div></div>
+    <div class="card !p-3 text-center"><div class="text-[11px] uppercase tracking-wide text-muted">Finalizados</div><div class="mt-1 text-xl font-bold" style="color: var(--ik-good);">1</div></div>
+  </div>
+  <div class="space-y-2">
+    {% include "jobs/partials/tour_example_row.html" with icon="bi-clipboard-data" title="Principal / Jogador" what="Verificar Status" status="Concluído" color="#5f8c4e" bg="rgba(95,140,78,.14)" meta="Terminou há 2 minutos · 6 cidades lidas" recurring=False %}
+    {% include "jobs/partials/tour_example_row.html" with icon="bi-building" title="Principal / Jogador" what="Plano de Construção" status="Executando" color="#4f86b9" bg="rgba(79,134,185,.14)" meta="Ciclo 3 · Armazém nível 12 → 13 em Polis" recurring=True %}
+    {% include "jobs/partials/tour_example_row.html" with icon="bi-flag" title="Principal / Jogador" what="Pirata Automático" status="Aguardando" color="#c9922e" bg="rgba(201,146,46,.16)" meta="Ciclo 14 · Próxima 22:40" recurring=True %}
+    {% include "jobs/partials/tour_example_row.html" with icon="bi-door-open" title="Principal / Jogador" what="Login Diário" status="Aguardando" color="#c9922e" bg="rgba(201,146,46,.16)" meta="Ciclo 2 · Próxima amanhã 08:00" recurring=True %}
+  </div>
+</div>
