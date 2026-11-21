@@ -19,9 +19,13 @@ from . import services
 from .models import PiracyMonth, PiracyRoute
 
 
-def _fortress_city(i):
-    return [{"id": str(1000 + i), "island_id": str(500 + i), "name": f"Forte{i}", "x": 50, "y": 50,
-             "buildings": [{"building": "pirateFortress", "level": 10, "position": 17}]}]
+def _fortress_city(i, room=True):
+    """One town with the Pirate Fortress and the palace; without room, a second town fills the palace (level 1: 2 towns)."""
+    towns = [{"id": str(1000 + i), "island_id": str(500 + i), "name": f"Forte{i}", "x": 50, "y": 50,
+              "buildings": [{"building": "pirateFortress", "level": 10, "position": 17}, {"building": "palace", "level": 1}]}]
+    if not room:
+        towns.append({"id": str(9000 + i), "island_id": "1", "name": f"Outra{i}", "buildings": []})
+    return towns
 
 
 class Base(TestCase):
@@ -164,3 +168,26 @@ class EligibilityTests(Base):
         self.assertGreater(month.starts_at, timezone.now() + timedelta(minutes=50))   # from the turn on
         involved = set(month.routes.values_list("raider_id", flat=True)) | set(month.routes.values_list("target_id", flat=True))
         self.assertFalse({self.accounts[0].pk, self.accounts[1].pk} & involved)
+
+
+class TownRoomTests(Base):
+    """Who raids founds a temporary colony: without a free town slot an account is only raided (an origin)."""
+
+    def test_accounts_without_room_never_raid(self):
+        from apps.orgs.scope import activate, deactivate
+
+        full = self.accounts[:12]                       # the big lobby and 2 of the medium one: palaces full
+        for ga in full:
+            AccountSnapshot.objects.filter(game_account=ga).update(cities=_fortress_city(ga.lobby_account_id, room=False))
+        token = activate(self.org)
+        try:
+            month = services.plan_month(self.org, "s1-br", rng=random.Random(5))
+        finally:
+            deactivate(token)
+        raiders = set(month.routes.values_list("raider_id", flat=True))
+        self.assertFalse(raiders & {ga.pk for ga in full})
+        for route in month.routes.select_related("raider", "target"):
+            self.assertNotEqual(route.raider.account_id, route.target.account_id)
+        self.assertIn("Sem vaga de cidade", month.notes)
+        champions = {c.game_account_id for c in month.champions.all()}
+        self.assertFalse(champions & {ga.pk for ga in full})

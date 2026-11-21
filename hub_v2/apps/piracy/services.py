@@ -43,6 +43,23 @@ def _fortress_city(cities) -> dict | None:
     return None
 
 
+def town_room(cities) -> int | None:
+    """Free town slots (the palace of level N holds N + 1 towns); None when the snapshot does not say. A raid of the
+    plan founds a temporary colony next to the target, so whoever raids needs one."""
+    cities = [c for c in cities or [] if isinstance(c, dict)]
+    palace = max([int(b.get("level") or 0) for c in cities for b in (c.get("buildings") or [])
+                  if isinstance(b, dict) and str(b.get("building") or "") == "palace"] or [0])
+    if not cities or not palace:
+        return None
+    return max(0, palace + 1 - len(cities))
+
+
+def rooms(accounts) -> dict:
+    from apps.game.models import AccountSnapshot
+
+    return {s.game_account_id: town_room(s.cities) for s in AccountSnapshot.objects.filter(game_account__in=accounts)}
+
+
 def _job_inputs(job) -> dict:
     try:
         data = json.loads(job.inputs_json or "{}")
@@ -132,7 +149,7 @@ def overview(server_id: str) -> dict:
                           "eta": event.get("time_left_human") or "", "eta_sec": int(event.get("time_left_sec") or 0)})
         fortress = _fortress_city(snap.cities if snap else None)
         rows.append({
-            "ga": ga, "lobby": ga.account.label, "fortress": fortress,
+            "ga": ga, "lobby": ga.account.label, "fortress": fortress, "room": town_room(snap.cities if snap else None),
             "place": own.get("place"), "score": own.get("score"),
             "capture_points": inputs.get("last_capture_points"), "crew": inputs.get("last_crew_points"),
             "crew_converted": inputs.get("total_crew_converted"), "missions": inputs.get("total_missions_started"),
@@ -200,10 +217,13 @@ def _past_champions(server_id: str) -> set:
     return set(PiracyChampion.objects.filter(month__server_id=server_id).values_list("game_account_id", flat=True))
 
 
-def pick_champions(accounts: list, server_id: str, rng: random.Random | None = None) -> list:
-    """Two from different lobbies, drawn among the accounts that were not champions yet (all again once everyone was)."""
+def pick_champions(accounts: list, server_id: str, rng: random.Random | None = None, room: dict | None = None) -> list:
+    """Two from different lobbies, drawn among the accounts that were not champions yet (all again once everyone was)
+    and that have a free town slot (a champion raids)."""
     rng = rng or random.Random()
     past = _past_champions(server_id)
+    if room is not None:
+        accounts = [ga for ga in accounts if (room.get(ga.pk) or 0) > 0]
     pool = [ga for ga in accounts if ga.pk not in past] or list(accounts)
     rng.shuffle(pool)
     chosen = []
@@ -221,39 +241,44 @@ def pick_champions(accounts: list, server_id: str, rng: random.Random | None = N
     return chosen
 
 
-def build_groups(accounts: list, champions: list) -> list[dict]:
-    """Split the other accounts between the champions: per group, passers (never the champion's lobby; small lobbies
-    first, they bridge the big ones) and origins, each origin given to a passer of another lobby."""
+def build_groups(accounts: list, champions: list, room: dict | None = None) -> list[dict]:
+    """Split the other accounts between the champions. Who raids founds a temporary colony, so passers come only from
+    accounts with a free town slot, of a lobby other than their champion's (small lobbies first, they bridge the big
+    ones); the others are origins, each given to a passer of another lobby — or straight to the champion when no
+    passer can take it. links: (raider, origin, stage)."""
+    room = room if room is not None else {ga.pk: 1 for ga in accounts}
+    can_raid = {ga.pk for ga in accounts if (room.get(ga.pk) or 0) > 0}
     others = [ga for ga in accounts if ga not in champions]
     lobby_size = defaultdict(int)
     for ga in accounts:
         lobby_size[ga.account_id] += 1
-    groups = [{"champion": c, "members": []} for c in champions]
-    # deal the accounts round-robin, big lobbies first so each group gets a mix
-    for i, ga in enumerate(sorted(others, key=lambda g: (-lobby_size[g.account_id], g.account_id, g.name or ""))):
-        groups[i % len(groups)]["members"].append(ga)
+    groups = [{"champion": c, "members": [], "passers": []} for c in champions]
+    # passers first: each raiding account goes to the group whose champion is of another lobby and has fewest passers
+    for ga in sorted([g for g in others if g.pk in can_raid], key=lambda g: (lobby_size[g.account_id], g.name or "")):
+        fit = [gr for gr in groups if gr["champion"].account_id != ga.account_id and len(gr["passers"]) < PASSERS_PER_GROUP]
+        if fit:
+            min(fit, key=lambda gr: len(gr["passers"]))["passers"].append(ga)
+    passers_all = {p.pk for gr in groups for p in gr["passers"]}
+    # origins: to the group that has someone (passer or champion) of another lobby to take them, the lightest one
+    for ga in sorted([g for g in others if g.pk not in passers_all], key=lambda g: (-lobby_size[g.account_id], g.name or "")):
+        fit = [gr for gr in groups if any(p.account_id != ga.account_id for p in gr["passers"])
+               or gr["champion"].account_id != ga.account_id]
+        (min(fit, key=lambda gr: len(gr["members"])) if fit else groups[0])["members"].append(ga)
     for group in groups:
         champion = group["champion"]
-        candidates = sorted([ga for ga in group["members"] if ga.account_id != champion.account_id],
-                            key=lambda g: (lobby_size[g.account_id], g.name or ""))
-        passers = []
-        for ga in candidates:                       # passers from as many lobbies as possible
-            if len(passers) < PASSERS_PER_GROUP and all(ga.account_id != p.account_id for p in passers):
-                passers.append(ga)
-        for ga in candidates:
-            if len(passers) < PASSERS_PER_GROUP and ga not in passers:
-                passers.append(ga)
-        origins = [ga for ga in group["members"] if ga not in passers]
         links, load = [], defaultdict(int)
-        for origin in origins:
-            able = [p for p in passers if p.account_id != origin.account_id]
-            if not able:
-                links.append((None, origin))
-                continue
-            passer = min(able, key=lambda p: (load[p.pk], p.name or ""))
-            load[passer.pk] += 1
-            links.append((passer, origin))
-        group.update(passers=passers, links=links)
+        for origin in group["members"]:
+            able = [p for p in group["passers"] if p.account_id != origin.account_id]
+            if able:
+                passer = min(able, key=lambda p: (load[p.pk], p.name or ""))
+                load[passer.pk] += 1
+                links.append((passer, origin, 1))
+            elif champion.account_id != origin.account_id:
+                links.append((champion, origin, 2))                  # no passer can take it: straight to the champion
+            else:
+                links.append((None, origin, 0))
+        group["links"] = links
+        group["members"] = group["members"] + group["passers"]
     return groups
 
 
@@ -268,15 +293,18 @@ def plan_month(organization, server_id: str, *, champions: list | None = None, n
     accounts = eligible(server_id)
     if len({ga.account_id for ga in accounts}) < 2 or len(accounts) < 4:
         raise ValueError("Faltam contas com fortaleza pirata e Pirata Automático rodando (pelo menos 4, de 2 lobbys).")
-    chosen = list(champions) if champions else pick_champions(accounts, server_id, rng)
+    room = rooms(accounts)
+    chosen = list(champions) if champions else pick_champions(accounts, server_id, rng, room)
     if len(chosen) != CHAMPIONS or chosen[0].account_id == chosen[1].account_id:
-        raise ValueError("São 2 campeãs de lobbys diferentes.")
+        raise ValueError("São 2 campeãs de lobbys diferentes (com vaga de cidade no palácio).")
     if any(ga not in accounts for ga in chosen):
         raise ValueError("A campeã precisa ter fortaleza pirata e o Pirata Automático rodando.")
+    if any((room.get(ga.pk) or 0) <= 0 for ga in chosen):
+        raise ValueError("A campeã precisa de uma vaga de cidade no palácio: o assalto sai de uma colônia temporária.")
     starts, ends = month_window(server_id, now)
     month = PiracyMonth.objects.create(organization=organization, server_id=server_id, starts_at=starts, ends_at=ends,
                                        chosen_by="escolha" if champions else "sorteio")
-    groups = build_groups(accounts, chosen)
+    groups = build_groups(accounts, chosen, room)
     weeks = max(1, math.ceil((ends - starts).total_seconds() / (7 * 86400)))
     span = (ends - starts) / weeks
     left_out = []
@@ -286,17 +314,24 @@ def plan_month(organization, server_id: str, *, champions: list | None = None, n
             week_start = starts + span * (week - 1)
             middle = week_start + span * STAGE_SPLIT
             week_end = week_start + span
-            for passer, origin in group["links"]:
-                if passer is None:
+            for raider, origin, stage in group["links"]:
+                if raider is None:
                     continue
-                PiracyRoute.objects.create(month=month, group=number, week=week, stage=1, raider=passer, target=origin,
-                                           due_from=week_start, due_until=middle)
+                PiracyRoute.objects.create(month=month, group=number, week=week, stage=stage, raider=raider, target=origin,
+                                           due_from=week_start if stage == 1 else middle,
+                                           due_until=middle if stage == 1 else week_end)
             for passer in group["passers"]:
                 PiracyRoute.objects.create(month=month, group=number, week=week, stage=2, raider=group["champion"],
                                            target=passer, due_from=middle, due_until=week_end)
-        left_out += [origin.name for passer, origin in group["links"] if passer is None]
+        left_out += [origin.name for raider, origin, _stage in group["links"] if raider is None]
+    no_room = [ga.name for ga in accounts if (room.get(ga.pk) or 0) <= 0]
+    notes = []
+    if no_room:
+        notes.append("Sem vaga de cidade no palácio (só são roubadas, não roubam): " + ", ".join(no_room))
     if left_out:
-        month.notes = "Sem conta de passagem de outro lobby para: " + ", ".join(left_out)
+        notes.append("Sem quem pegue de outro lobby: " + ", ".join(left_out))
+    if notes:
+        month.notes = ". ".join(notes)
         month.save(update_fields=["notes", "updated_at"])
     return month
 

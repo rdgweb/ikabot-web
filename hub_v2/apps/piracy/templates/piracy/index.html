@@ -133,7 +133,7 @@
   <h3><i class="bi bi-people"></i> Contas</h3>
   <div style="overflow-x: auto;">
     <table class="pr-table">
-      <thead><tr><th>Conta</th><th>Lobby</th><th>No mês</th><th>Fortaleza</th><th>Ranking</th><th style="text-align:right;">Pontos de captura</th>
+      <thead><tr><th>Conta</th><th>Lobby</th><th>No mês</th><th>Fortaleza</th><th>Vagas</th><th>Ranking</th><th style="text-align:right;">Pontos de captura</th>
         <th style="text-align:right;">Tripulação</th><th style="text-align:right;">Missões</th><th>Pirata Automático</th><th></th></tr></thead>
       <tbody>
       {% for r in rows %}
@@ -142,6 +142,7 @@
         <td class="text-muted">{{ r.lobby }}</td>
         <td>{% if r.role == "campeã" %}<span class="org-chip gold"><i class="bi bi-trophy-fill"></i> campeã</span>{% elif r.role %}<span class="org-chip off">{{ r.role }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
         <td>{% if r.fortress %}nível {{ r.fortress.level }} <span class="text-muted">{{ r.fortress.name }}</span>{% else %}<span class="text-muted">sem fortaleza</span>{% endif %}</td>
+        <td title="vagas de cidade no palácio: quem rouba no plano funda uma colônia temporária">{% if r.room is None %}<span class="text-muted">—</span>{% elif r.room %}{{ r.room }}{% else %}<span class="org-chip off">0</span>{% endif %}</td>
         <td>{% if r.place %}{{ r.place }}º · {{ r.score|intcomma }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
         <td class="num">{{ r.capture_points|default_if_none:"—"|intcomma }}</td>
         <td class="num">{{ r.crew|default_if_none:"—"|intcomma }}</td>
@@ -153,7 +154,7 @@
             {% if r.captchas %}<span class="org-chip gold" title="captcha esperando"><i class="bi bi-puzzle"></i> {{ r.captchas }}</span>{% endif %}</td>
       </tr>
       {% empty %}
-      <tr><td colspan="10" class="text-muted">Nenhuma conta neste servidor.</td></tr>
+      <tr><td colspan="11" class="text-muted">Nenhuma conta neste servidor.</td></tr>
       {% endfor %}
       </tbody>
     </table>
