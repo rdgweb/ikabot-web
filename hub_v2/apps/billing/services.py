@@ -97,6 +97,23 @@ def free_addons(account: BillingAccount | None, now: datetime | None = None) -> 
     return False, None, ""
 
 
+BILLING_OPEN_KEY = "billing.subscriptions_open"
+
+
+def billing_open() -> bool:
+    """N-208: may customers see the plan and subscribe? Off (the default) during the beta: the system's administrator
+    gives days and courtesies in Organizações; the plan's tab, prices and "assine" leave every customer page."""
+    from apps.settings_app.utils import get_setting
+
+    return get_setting(BILLING_OPEN_KEY, "0") == "1"
+
+
+def set_billing_open(on: bool) -> None:
+    from apps.settings_app.utils import set_setting
+
+    set_setting(BILLING_OPEN_KEY, "1" if on else "0")
+
+
 def allows_work(organization) -> bool:
     """May this organization's agents receive jobs now? (no organization: the platform's own)."""
     if organization is None:

@@ -75,6 +75,13 @@ class PlanView(LoginRequiredMixin, TemplateView):
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated and getattr(request, "organization", None) is None:
             raise Http404()
+        from .services import billing_open
+
+        if (request.user.is_authenticated and not (request.user.is_staff or request.user.is_superuser)
+                and not billing_open()):
+            from django.shortcuts import redirect
+
+            return redirect("/organizacao/")                  # N-208: no plan while the beta runs
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):

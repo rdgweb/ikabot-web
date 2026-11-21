@@ -5,8 +5,18 @@
 {# N-203: every organization, as the system's administrator sees it #}
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
   <h1 class="text-xl font-bold text-ink flex items-center gap-2"><i class="bi bi-buildings text-sea"></i> Organizações</h1>
-  <a href="{% url 'invites' %}" class="btn btn-secondary btn-sm"><i class="bi bi-envelope-paper"></i> Convites</a>
+  <div class="flex items-center gap-2 flex-wrap">
+    <form method="post" hx-boost="false" class="flex items-center gap-2">{% csrf_token %}
+      <span class="text-sm text-muted">Assinaturas</span>
+      {% if billing_open %}<button class="btn btn-secondary btn-sm" name="action" value="billing_close" onclick="return confirm('Fechar as assinaturas? O plano some das telas dos clientes.');"><i class="bi bi-toggle-on" style="color:#5f8c4e;"></i> abertas</button>
+      {% else %}<button class="btn btn-secondary btn-sm" name="action" value="billing_open" onclick="return confirm('Abrir as assinaturas? Os clientes passam a ver o plano e o botão Assinar.');"><i class="bi bi-toggle-off"></i> fechadas</button>{% endif %}
+    </form>
+    <a href="{% url 'invites' %}" class="btn btn-secondary btn-sm"><i class="bi bi-envelope-paper"></i> Convites</a>
+  </div>
 </div>
+{% for message in messages %}
+<div class="card mb-3 px-4 py-2 text-sm" style="border-left: 4px solid #5f8c4e;">{{ message }}</div>
+{% endfor %}
 <div class="grid gap-3">
   {% for row in rows %}
   <a href="{% url 'system-organization' row.organization.pk %}" class="card px-5 py-4 flex items-center gap-4 flex-wrap" style="text-decoration: none;">

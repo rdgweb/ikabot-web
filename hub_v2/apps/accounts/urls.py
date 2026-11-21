@@ -4,7 +4,7 @@ from .views import (
     DockerHostListView, DockerHostCreateView, DockerHostEditView, DockerHostTokenRotateView,
     NodeListView, NodeDetailView, NodeCreateView, NodeEditView, NodeDeleteView, NodeDeployView,
     NodeToggleView, NodeTokenRotateView, NodeProxyTestView, NodeQueuePurgeView,
-    NodeRequestUpdateView,
+    NodeRequestUpdateView, PlatformNodeCreateView,
     AccountListView, AccountDetailView, AccountCreateView, AccountEditView, AccountDeleteView,
     AccountToggleView,
     GameAccountToggleView,
@@ -26,6 +26,7 @@ urlpatterns = [
     # Nodes
     path("nodes/", NodeListView.as_view(), name="node-list"),
     path("nodes/create/", NodeCreateView.as_view(), name="node-create"),
+    path("nodes/plataforma/", PlatformNodeCreateView.as_view(), name="node-platform"),
     path("nodes/<uuid:pk>/", NodeDetailView.as_view(), name="node-detail"),
     path("nodes/<uuid:pk>/edit/", NodeEditView.as_view(), name="node-edit"),
     path("nodes/<uuid:pk>/delete/", NodeDeleteView.as_view(), name="node-delete"),

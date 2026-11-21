@@ -160,17 +160,27 @@ class PlatformAccountCreateTests(Base):
         self.node.delete()
         self.client.force_login(self.tester)
 
-    def test_a_tester_creates_the_account_with_the_platforms_agent(self):
+    def test_the_platform_node_first_then_the_account_on_it(self):
         page = self.client.get("/accounts/create/")
-        self.assertContains(page, "Usar o agente da plataforma")
-        response = self.client.post("/accounts/create/", {"label": "Nova", "email": "n@example.com", "password": "segredo",
-                                                          "platform_agent": "on"})
+        self.assertContains(page, "Agente da plataforma")
+        response = self.client.post("/accounts/nodes/plataforma/")
+        node = Node._base_manager.get(organization=self.org)
+        self.assertRedirects(response, f"/accounts/create/?node={node.pk}", fetch_redirect_response=False)
+        self.client.post("/accounts/nodes/plataforma/")                                   # the same waiting node again
+        self.assertEqual(Node._base_manager.filter(organization=self.org).count(), 1)
+        self.assertContains(self.client.get(f"/accounts/create/?node={node.pk}"), "agente da plataforma")
+        response = self.client.post("/accounts/create/", {"node": str(node.pk), "label": "Nova", "email": "n@example.com",
+                                                          "password": "segredo"})
         self.assertEqual(response.status_code, 302)
         account = Account._base_manager.get(label="Nova")
         self.assertTrue(account.platform_proxies and account.platform_agent)
-        self.assertTrue(account.node.platform_managed)
-        self.assertEqual(Node._base_manager.filter(organization=self.org).count(), 1)   # the waiting node went away
-        # the trial ends: the agent goes and the account stays on the switched-off platform node (no node of its own)
+        self.assertEqual(account.node_id, node.pk)                                        # the agent went up on that node
+        node.refresh_from_db()
+        self.assertEqual(node.docker_host_id, self.host.pk)
+        self.assertEqual(Node._base_manager.filter(organization=self.org).count(), 1)
+        # a platform node runs one account: it is not offered for a second one
+        self.assertNotContains(self.client.get("/accounts/create/"), str(node.pk))
+        # the trial ends: the agent goes and the account stays on the switched-off platform node
         BillingAccount.objects.filter(pk=self.billing.pk).update(trial_ends_at=timezone.now() - timedelta(days=1))
         from apps.accounts import platform_agent
 
@@ -178,7 +188,7 @@ class PlatformAccountCreateTests(Base):
         account.refresh_from_db()
         self.assertFalse(account.platform_agent or account.node.active)
 
-    def test_without_node_nor_the_platform_it_is_refused(self):
+    def test_without_node_it_is_refused(self):
         response = self.client.post("/accounts/create/", {"label": "Nova", "email": "n@example.com", "password": "segredo"})
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Account._base_manager.filter(label="Nova").exists())
@@ -187,3 +197,55 @@ class PlatformAccountCreateTests(Base):
         data = self.client.get("/settings/tour/state/").json()
         self.assertTrue(data["platform"])
         self.assertEqual(data["platform_agents"], 0)
+
+
+class BetaPlanClosedTests(Base):
+    """N-208: while subscriptions are closed, no customer page shows the plan."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.tester)
+
+    def test_the_plan_is_out_of_the_customer_pages_until_the_administrator_opens_it(self):
+        from apps.billing.services import set_billing_open
+
+        BillingAccount.objects.filter(pk=self.billing.pk).update(trial_ends_at=timezone.now() + timedelta(days=2))
+        page = self.client.get("/organizacao/").content.decode()
+        self.assertNotIn("/organizacao/plano/", page)
+        self.assertNotIn("Assine", page)
+        self.assertIn("Seu acesso de teste vai até", page)
+        self.assertRedirects(self.client.get("/organizacao/plano/"), "/organizacao/", fetch_redirect_response=False)
+        set_billing_open(True)
+        page = self.client.get("/organizacao/").content.decode()
+        self.assertIn("/organizacao/plano/", page)
+        self.assertIn("Assine", page)
+        self.assertEqual(self.client.get("/organizacao/plano/").status_code, 200)
+
+    def test_only_the_administrator_opens_it(self):
+        from apps.billing.services import billing_open
+
+        self.client.post("/sistema/organizacoes/", {"action": "billing_open"})
+        self.assertFalse(billing_open())
+        admin = _user("chefe", is_staff=True, is_superuser=True)
+        self.client.force_login(admin)
+        self.client.post("/sistema/organizacoes/", {"action": "billing_open"})
+        self.assertTrue(billing_open())
+
+
+class BellTests(Base):
+    def test_the_bell_counts_what_is_new_and_opening_it_sees_everything(self):
+        from apps.telegram.models import MessageAudit
+
+        self.client.force_login(self.tester)
+        MessageAudit._base_manager.create(title="Ataque chegando em Polis", body="x", status="sent", game_account=None)
+        self.assertEqual(self.client.get("/avisos/contador/").content.decode().strip(), "")   # the platform's, not its
+        from apps.accounts.models import GameAccount
+
+        world = GameAccount._base_manager.create(account=self.account, lobby_account_id=9, server_id="s9-br", name="J9",
+                                                 server_language="br", server_number=9)
+        MessageAudit._base_manager.create(title="Job falhou na conta", body="x", status="sent", game_account=world)
+        self.assertIn(">1<", self.client.get("/avisos/contador/").content.decode())
+        listing = self.client.get("/avisos/").content.decode()
+        self.assertIn("Job falhou na conta", listing)
+        self.assertNotIn("Ataque chegando", listing)
+        self.assertEqual(self.client.get("/avisos/contador/").content.decode().strip(), "")

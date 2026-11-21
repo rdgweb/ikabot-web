@@ -36,7 +36,7 @@ class OwnerAreaTests(TestCase):
 
     def test_overview_shows_the_organization_and_the_owner_renames_it(self):
         page = self.client.get("/organizacao/").content.decode()
-        for text in ("Blood", "Teste grátis", "Subcontas ativas", "Membros", "Plano"):
+        for text in ("Blood", "Teste grátis", "Subcontas ativas", "Membros", "Acesso"):        # N-208: "Plano" while subscriptions are open
             self.assertIn(text, page)
         self.client.post("/organizacao/", {"name": "Blood Norte"})
         self.org.refresh_from_db()
@@ -111,6 +111,9 @@ class OwnerAreaTests(TestCase):
         self.assertFalse(AppSetting.objects.filter(key=f"tour_done:{self.owner.pk}").exists())
 
     def test_plan_and_telegram_have_the_organization_tabs(self):
+        from apps.billing.services import set_billing_open
+
+        set_billing_open(True)                                    # N-208: the plan only while subscriptions are open
         for url in ("/organizacao/plano/", "/organizacao/telegram/", "/organizacao/membros/"):
             page = self.client.get(url).content.decode()
             self.assertIn('class="org-tabs"', page, url)

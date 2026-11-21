@@ -39,6 +39,9 @@ class ParseTests(TestCase):
 @override_settings(ASAAS_API_KEY="k", ASAAS_SANDBOX=True)
 class PlatformProxiesTests(TestCase):
     def setUp(self):
+        from apps.billing.services import set_billing_open
+
+        set_billing_open(True)   # N-208: the plan page only while subscriptions are open
         cache.clear()
         self.platform = default_organization()
         self.pool = []

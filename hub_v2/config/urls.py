@@ -15,6 +15,7 @@ handler404 = "config.views.custom_404"
 handler500 = "config.views.custom_500"
 
 from apps.orgs.invite_views import InviteAcceptView, InviteManageView  # noqa: E402
+from apps.orgs.bell import BellCountView, BellListView  # noqa: E402
 from apps.orgs.system_views import OrganizationsView, OrganizationView  # noqa: E402
 from apps.website import views as site_views  # noqa: E402
 from apps.billing import views as billing_views  # noqa: E402
@@ -63,6 +64,9 @@ urlpatterns = [
     path("termos/", site_views.old_terms, name="terms"),
     path("convite/<str:token>/", InviteAcceptView.as_view(), name="invite-accept"),
     path("users/convites/", InviteManageView.as_view(), name="invites"),
+    # N-207: the bell at the top
+    path("avisos/", BellListView.as_view(), name="bell-list"),
+    path("avisos/contador/", BellCountView.as_view(), name="bell-count"),
     # N-203: the system's administrator over every organization
     path("sistema/organizacoes/", OrganizationsView.as_view(), name="system-organizations"),
     path("sistema/organizacoes/<uuid:pk>/", OrganizationView.as_view(), name="system-organization"),

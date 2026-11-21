@@ -1,0 +1,34 @@
+{# N-207: waves behind the top of every page, the bell, the sidebar's gold streak (the hub's CSS is precompiled) #}
+<style>
+  #main-area { position: relative; isolation: isolate; }
+  .ik-waves { position: absolute; top: 0; right: 0; width: min(820px, 62%); height: 230px; z-index: -1; pointer-events: none; overflow: hidden;
+              opacity: .5; -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent); mask-image: linear-gradient(to bottom, #000 45%, transparent); }
+  .ik-waves svg { width: 100%; height: 100%; display: block; }
+  .ik-wave { animation-name: ikWave; animation-timing-function: linear; animation-iteration-count: infinite; transform-box: fill-box; will-change: transform; }
+  @keyframes ikWave { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  @media (prefers-reduced-motion: reduce) { .ik-wave { animation: none; } }
+
+  .ik-bell { position: relative; }
+  .ik-bell-btn { position: relative; width: 34px; height: 34px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center;
+                 color: var(--ik-muted); font-size: 1.05rem; background: transparent; border: 0; cursor: pointer; }
+  .ik-bell-btn:hover { background: rgba(201,156,78,.14); color: var(--ik-ink); }
+  .ik-bell-dot { position: absolute; top: 2px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #d0812a;
+                 color: #fff; font-size: .62rem; font-weight: 700; line-height: 16px; text-align: center; box-shadow: 0 0 0 2px var(--ik-paper, #fffdf7); }
+  .ik-bell-panel { position: absolute; right: 0; top: calc(100% + 8px); width: min(360px, 92vw); max-height: 70vh; overflow: auto; z-index: 60;
+                   background: var(--ik-paper, #fffdf7); border: 1px solid var(--ik-line); border-radius: 14px; box-shadow: 0 14px 40px rgba(60,40,10,.18); padding: .4rem; }
+  .ik-bell-head { display: flex; align-items: center; justify-content: space-between; padding: .45rem .6rem .5rem; font-size: .8rem; font-weight: 700; color: var(--ik-ink); }
+  .ik-bell-row { display: flex; gap: .6rem; align-items: flex-start; padding: .55rem .6rem; border-radius: 10px; text-decoration: none; color: var(--ik-ink); }
+  a.ik-bell-row:hover { background: rgba(201,156,78,.1); }
+  .ik-bell-row.new { background: rgba(201,156,78,.09); }
+  .ik-bell-ico { width: 30px; height: 30px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+                 background: rgba(79,134,185,.12); color: #3f6f9b; font-size: .9rem; }
+  .ik-bell-ico.warn { background: rgba(201,146,46,.16); color: #9a6a17; }
+  .ik-bell-ico.bad { background: rgba(179,64,47,.12); color: #b3402f; }
+  .ik-bell-main { min-width: 0; display: flex; flex-direction: column; }
+  .ik-bell-main b { font-size: .8rem; font-weight: 600; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .ik-bell-main small { font-size: .7rem; color: var(--ik-muted); }
+  .ik-bell-empty { padding: 1.4rem .6rem; text-align: center; font-size: .8rem; color: var(--ik-muted); }
+
+  .sidebar-logo { position: relative; overflow: hidden; }
+  .ik-side-streak { position: absolute; right: -10px; top: 0; width: 150px; height: 100%; pointer-events: none; opacity: .55; }
+</style>

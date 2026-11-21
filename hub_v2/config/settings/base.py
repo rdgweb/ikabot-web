@@ -141,6 +141,7 @@ TEMPLATES = [
                 "core.context_processors.hub_version",
                 "core.context_processors.htmx_context",
                 "apps.billing.context_processors.billing_notice",
+                "apps.billing.context_processors.billing_flags",
                 "apps.website.password.site_flags",
                 "apps.telemetry.context.telemetry_prompt",
                 "apps.settings_app.tour.tour_context",

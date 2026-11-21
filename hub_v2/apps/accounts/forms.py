@@ -119,15 +119,11 @@ class AccountCreateForm(forms.ModelForm):
         help_text="Token gf-token-production (opcional). Será criptografado.",
     )
 
-    # N-203: the platform runs the agent (no Docker at home): the node is created with it
-    platform_agent = forms.BooleanField(
-        required=False, label="Usar o agente da plataforma (sem instalar nada)",
-        help_text="O hub liga os proxies e o agente da plataforma para esta conta e cria o nó sozinho.",
-    )
-
     class Meta:
         model = Account
         fields = ["node", "label", "email", "password", "gf_token", "notes"]
+        labels = {"node": "Nó", "label": "Nome", "email": "E-mail do GameForge", "notes": "Observações"}
+        help_texts = {"label": "", "email": "", "notes": ""}
         widgets = {
             "node": forms.Select(attrs={"class": "form-input"}),
             "label": forms.TextInput(attrs={"class": "form-input", "placeholder": "ex: Conta Principal"}),
@@ -135,18 +131,19 @@ class AccountCreateForm(forms.ModelForm):
             "notes": forms.Textarea(attrs={"class": "form-input", "rows": 2}),
         }
 
-    def __init__(self, *args, platform_offered: bool = False, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["node"].required = False
-        if not platform_offered:
-            del self.fields["platform_agent"]
-
-    def clean(self):
-        data = super().clean()
-        if not data.get("node") and not data.get("platform_agent"):
-            self.add_error("node", "Escolha o nó que vai jogar por esta conta"
-                           + (" ou marque o agente da plataforma." if "platform_agent" in self.fields else "."))
-        return data
+        # N-207: a platform node runs one account: once it has one, it is not offered again
+        busy = Node.objects.filter(platform_managed=True, accounts__isnull=False).values_list("pk", flat=True)
+        self.fields["node"].queryset = Node.objects.filter(active=True).exclude(pk__in=list(busy)).order_by("name")
+        self.fields["node"].empty_label = "Escolha o nó"
+        self.fields["node"].error_messages["required"] = "Escolha o nó que vai jogar por esta conta."
+        self.fields["password"].label = "Senha do GameForge"
+        self.fields["password"].help_text = ""
+        self.fields["gf_token"].label = "Token do lobby"
+        self.fields["gf_token"].help_text = ""
+        self.fields["gf_token"].widget.attrs["placeholder"] = "cole aqui o gf-token-production"
+        self.fields["label"].widget.attrs["placeholder"] = "ex.: Principal"
 
     def save(self, commit=True):
         instance = super().save(commit=False)

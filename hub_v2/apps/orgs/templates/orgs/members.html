@@ -18,10 +18,10 @@
 
 <div class="org-cols">
   <div class="org-panel">
-    <h3><i class="bi bi-people"></i> Membros <span style="margin-left: auto; font-size: .72rem; font-weight: 500; color: var(--ik-muted);">{{ members|length }}</span></h3>
+    <h3><i class="bi bi-people"></i> Membros <span class="org-chip off" style="margin-left: auto;">{{ members|length }}</span></h3>
     {% for m in members %}
     <div class="org-row">
-      <span class="org-icon{% if m.role == 'owner' %} gold{% endif %}" style="width: 32px; height: 32px; font-size: .95rem;"><i class="bi {% if m.role == 'owner' %}bi-star{% elif m.role == 'operator' %}bi-joystick{% else %}bi-eye{% endif %}"></i></span>
+      <span class="org-icon{% if m.role == 'owner' %} gold{% endif %}" style="width: 40px; height: 40px; font-size: 1.05rem;"><i class="bi {% if m.role == 'owner' %}bi-star{% elif m.role == 'operator' %}bi-joystick{% else %}bi-eye{% endif %}"></i></span>
       <div class="main"><b>{{ m.user.first_name|default:m.user.username }}{% if m.user == user %} (você){% endif %}</b><span>{{ m.user.email|default:m.user.username }}</span></div>
       {% if is_owner and m.user != user %}
       <form method="post" style="display: flex; gap: .35rem; align-items: center;">
@@ -51,10 +51,11 @@
         </select></div>
       <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-send"></i> {% if email_ready %}Enviar convite{% else %}Gerar link{% endif %}</button>
     </form>
-    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; margin-top: 1rem;">
-      <div class="org-row" style="border: 0; flex-direction: column; align-items: flex-start; gap: .15rem;"><span class="org-chip gold"><i class="bi bi-star"></i> Dono</span><span class="text-xs text-muted">tudo, plano e membros</span></div>
-      <div class="org-row" style="border: 0; flex-direction: column; align-items: flex-start; gap: .15rem;"><span class="org-chip ok"><i class="bi bi-joystick"></i> Operador</span><span class="text-xs text-muted">contas, nós e jobs</span></div>
-      <div class="org-row" style="border: 0; flex-direction: column; align-items: flex-start; gap: .15rem;"><span class="org-chip off"><i class="bi bi-eye"></i> Leitor</span><span class="text-xs text-muted">só olha</span></div>
+    <p class="org-title" style="margin-top: 1.2rem;">Papéis</p>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .6rem;">
+      <div class="org-role" style="background: rgba(201,156,78,.08);"><b><i class="bi bi-star" style="color: #b4863a;"></i> Dono</b><span>tudo: contas, membros{% if BILLING_OPEN %} e plano{% endif %}</span></div>
+      <div class="org-role"><b><i class="bi bi-joystick" style="color: #2d7a2d;"></i> Operador</b><span>contas, nós e jobs</span></div>
+      <div class="org-role"><b><i class="bi bi-eye" style="color: var(--ik-muted);"></i> Leitor</b><span>só olha</span></div>
     </div>
     {% if pending %}
     <p class="org-title" style="margin-top: 1rem;">Esperando aceitar</p>

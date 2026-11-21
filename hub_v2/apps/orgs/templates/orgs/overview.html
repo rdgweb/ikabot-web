@@ -10,22 +10,23 @@
 {% include "orgs/_org_head.html" %}
 
 <div class="org-cards">
-  <a class="org-card" href="/organizacao/plano/">
-    <span class="org-icon {% if plan.code == 'exempt' or plan.code == 'active' %}ok{% elif plan.code == 'trial' or plan.code == 'overdue' %}warn{% else %}bad{% endif %}"><i class="bi bi-credit-card"></i></span>
-    <span style="min-width: 0;"><span class="org-card-label">Plano</span><span class="org-card-value" style="display: block;">{{ plan.label }}</span>
-      <span class="org-card-note">{% if plan.code == 'exempt' %}sem cobrança{% elif plan.ends_at %}{% if plan.code == 'trial' %}até{% elif plan.code == 'active' %}renova em{% else %}venceu em{% endif %} {{ plan.ends_at|date:"d/m" }}{% endif %}{% if plan_price and plan.code != 'trial' %} · {{ plan_price }}/mês{% endif %}</span></span>
-  </a>
+  {% if BILLING_OPEN %}<a class="org-card hl" href="/organizacao/plano/">{% else %}<div class="org-card hl">{% endif %}
+    <span class="org-icon gold"><i class="bi {% if plan.code == 'trial' %}bi-hourglass-split{% else %}bi-credit-card{% endif %}"></i></span>
+    <span style="min-width: 0;"><span class="org-card-label">{% if BILLING_OPEN %}Plano{% else %}Acesso{% endif %}</span><span class="org-card-value" style="display: block;">{{ plan.label }}</span>
+      <span class="org-card-note">{% if plan.code == 'exempt' %}sem cobrança{% elif plan.ends_at %}{% if plan.code == 'trial' %}até{% elif plan.code == 'active' %}renova em{% else %}venceu em{% endif %} {{ plan.ends_at|date:"d/m" }}{% endif %}{% if BILLING_OPEN and plan_price and plan.code != 'trial' %} · {{ plan_price }}/mês{% endif %}</span></span>
+    <i class="bi bi-gem mark"></i>
+  {% if BILLING_OPEN %}</a>{% else %}</div>{% endif %}
   <a class="org-card" href="/organizacao/subcontas/">
     <span class="org-icon gold"><i class="bi bi-toggles"></i></span>
-    <span style="min-width: 0; flex: 1;"><span class="org-card-label">Subcontas ativas</span><span class="org-card-value" style="display: block;">{{ active }}{% if plan.limit %} <small style="font-size: .8rem; color: var(--ik-muted);">de {{ plan.limit }}</small>{% endif %}</span>
+    <span style="min-width: 0; flex: 1;"><span class="org-card-label">Subcontas ativas</span><span class="org-card-value" style="display: block;">{{ active }}{% if plan.limit %} <small>de {{ plan.limit }}</small>{% endif %}</span>
       {% if plan.limit %}<span class="org-meter{% if active >= plan.limit %} full{% endif %}" style="display: block;"><i style="width: {% widthratio active plan.limit 100 %}%;"></i></span>{% endif %}</span>
   </a>
   <a class="org-card" href="/accounts/nodes/">
     <span class="org-icon {% if nodes and online == nodes %}ok{% elif nodes %}warn{% endif %}"><i class="bi bi-hdd-network"></i></span>
-    <span><span class="org-card-label">Agentes</span><span class="org-card-value" style="display: block;">{{ online }} <small style="font-size: .8rem; color: var(--ik-muted);">de {{ nodes }} online</small></span></span>
+    <span><span class="org-card-label">Agentes</span><span class="org-card-value" style="display: block;">{{ online }} <small>de {{ nodes }} online</small></span></span>
   </a>
   <a class="org-card" href="/accounts/">
-    <span class="org-icon"><i class="bi bi-person-badge"></i></span>
+    <span class="org-icon"><i class="bi bi-controller"></i></span>
     <span><span class="org-card-label">Contas GameForge</span><span class="org-card-value" style="display: block;">{{ accounts }}</span></span>
   </a>
   <a class="org-card" href="/organizacao/membros/">
@@ -34,14 +35,40 @@
   </a>
 </div>
 
-{% if is_owner %}
-<div class="org-panel" style="max-width: 34rem;">
-  <h3><i class="bi bi-pencil-square"></i> Nome da organização</h3>
-  <form method="post" class="org-form">
-    {% csrf_token %}
-    <div style="flex: 1; min-width: 200px;"><input name="name" class="form-input w-full" maxlength="120" value="{{ organization.name }}" required></div>
-    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check2"></i> Salvar</button>
-  </form>
+<div class="org-cols" style="grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);">
+  <div style="display: flex; flex-direction: column; gap: 1rem; min-width: 0;">
+    {% if is_owner %}
+    <div class="org-panel">
+      <h3><i class="bi bi-pencil-square"></i> Nome da organização</h3>
+      <form method="post" class="org-form">
+        {% csrf_token %}
+        <div style="flex: 1; min-width: 200px;"><input name="name" class="form-input w-full" maxlength="120" value="{{ organization.name }}" required></div>
+        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check2"></i> Salvar</button>
+      </form>
+    </div>
+    {% endif %}
+    <div class="org-panel">
+      <h3><i class="bi bi-lightning-charge"></i> Atalhos</h3>
+      <div class="org-quick">
+        <a href="/accounts/create/"><i class="bi bi-person-plus lead"></i><span class="go">Cadastrar conta <i class="bi bi-arrow-right"></i></span></a>
+        <a href="/organizacao/proxies/"><i class="bi bi-shield-lock lead"></i><span class="go">Proxies e agente <i class="bi bi-arrow-right"></i></span></a>
+        <a href="/organizacao/membros/"><i class="bi bi-people lead"></i><span class="go">Convidar membros <i class="bi bi-arrow-right"></i></span></a>
+        <a href="/organizacao/telegram/"><i class="bi bi-telegram lead"></i><span class="go">Vincular Telegram <i class="bi bi-arrow-right"></i></span></a>
+      </div>
+    </div>
+  </div>
+  <div class="org-panel">
+    <h3><i class="bi bi-clock-history"></i> Atividades recentes
+      {% if is_owner %}<a href="/atividades/" class="btn btn-secondary btn-sm" style="margin-left: auto;">Ver todas <i class="bi bi-arrow-right"></i></a>{% endif %}</h3>
+    <div class="org-feed">
+      {% for r in recent %}
+      <div class="it"><span class="ico"><i class="bi {{ r.icon }}"></i></span>
+        <span class="tx"><b>{{ r.title }}</b><span>{{ r.who }}{% if r.what %} · {{ r.what }}{% endif %}</span></span>
+        <time>há {{ r.when|timesince }}</time></div>
+      {% empty %}
+      <p class="text-sm text-muted" style="margin: 0;">Nada ainda.</p>
+      {% endfor %}
+    </div>
+  </div>
 </div>
-{% endif %}
 {% endblock %}

@@ -34,6 +34,9 @@ def customer(username="cliente", role=Membership.OWNER, organization=None):
 
 class PlanRulesTests(TestCase):
     def setUp(self):
+        from apps.billing.services import set_billing_open
+
+        set_billing_open(True)   # N-208: the plan page only while subscriptions are open
         _user, self.org = customer()
 
     def test_prices_and_tiers(self):
@@ -76,6 +79,9 @@ class PlanRulesTests(TestCase):
 @override_settings(AGENT_TOKEN="", AGENT_ALLOWED_IPS="")
 class EnforcementTests(TestCase):
     def setUp(self):
+        from apps.billing.services import set_billing_open
+
+        set_billing_open(True)   # N-208: the plan page only while subscriptions are open
         self.user, self.org = customer()
         self.node = Node.objects.create(name="agente-cliente", transport=Node.TRANSPORT_HTTPS, organization=self.org)
         self.key = self.node.new_agent_token
@@ -138,6 +144,9 @@ class EnforcementTests(TestCase):
 @override_settings(ASAAS_API_KEY="chave-de-teste", ASAAS_SANDBOX=True, ASAAS_WEBHOOK_TOKEN=TOKEN)
 class PlanPageTests(TestCase):
     def setUp(self):
+        from apps.billing.services import set_billing_open
+
+        set_billing_open(True)   # N-208: the plan page only while subscriptions are open
         self.user, self.org = customer()
         self.client.force_login(self.user)
 
@@ -234,6 +243,9 @@ class PlanPageTests(TestCase):
 @override_settings(ASAAS_WEBHOOK_TOKEN=TOKEN)
 class WebhookTests(TestCase):
     def setUp(self):
+        from apps.billing.services import set_billing_open
+
+        set_billing_open(True)   # N-208: the plan page only while subscriptions are open
         _user, self.org = customer()
         account = account_for(self.org)
         account.link_id, account.link_limit = "lnk_9", 20

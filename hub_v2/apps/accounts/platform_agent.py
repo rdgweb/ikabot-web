@@ -65,20 +65,67 @@ def _image() -> str:
     return f"{release.repository}@{release.digest}"
 
 
+WAITING_NAME = "Agente da plataforma"
+
+
+def offer(organization) -> dict:
+    """N-207: may this organization take the platform's agent now? {'offered', 'free', 'reason'} for the pages."""
+    from apps.billing.services import account_for, free_addons, subscribed
+    from apps.orgs.services import DEFAULT_SLUG
+
+    if organization is None or organization.slug == DEFAULT_SLUG or host() is None:
+        return {"offered": False, "free": False, "reason": ""}
+    billing = account_for(organization)
+    free = free_addons(billing)[0]
+    reason = "" if (free or subscribed(billing)) else "Os adicionais precisam de uma assinatura ativa."
+    return {"offered": True, "free": free, "reason": reason}
+
+
+def is_waiting(node) -> bool:
+    """N-207: a platform node made before its account — no machine yet, the agent comes when the account arrives."""
+    return bool(node is not None and node.platform_managed and node.docker_host_id is None)
+
+
+def waiting_node(organization):
+    """The organization's platform node waiting for an account (made when there is none): the customer picks it like
+    any node when registering the account, and the agent goes up on it."""
+    from .models import Node
+
+    found = (Node._base_manager.filter(organization=organization, platform_managed=True, docker_host__isnull=True, active=True)
+             .filter(accounts__isnull=True).order_by("created_at").first())
+    if found is not None:
+        return found
+    taken = set(Node._base_manager.filter(organization=organization).values_list("name", flat=True))
+    name = WAITING_NAME
+    n = 2
+    while name in taken:
+        name, n = f"{WAITING_NAME} {n}", n + 1
+    return Node._base_manager.create(name=name, organization=organization, transport=Node.TRANSPORT_HTTPS, platform_managed=True,
+                                     description="Esperando a conta: cadastre a conta GameForge neste nó")
+
+
 def provision(account) -> None:
-    """Create the node, move the account onto it and ask the supervisor for the container."""
+    """Create the node (or take the platform node the account was registered on), move the account onto it and ask
+    the supervisor for the container."""
     from core.encryption import encrypt
 
     from .models import AgentProvisionRequest, Node
 
     machine = host()
     with transaction.atomic():
-        node = Node._base_manager.create(
-            name=f"plataforma-{account.pk.hex[:8]}", organization_id=account.organization_id,
-            transport=Node.TRANSPORT_HTTPS, platform_managed=True, docker_host=machine,
-            description=f"Agente da plataforma para {account.label}",
-        )
-        token = node.new_agent_token
+        if is_waiting(account.node):
+            node = account.node
+            node.docker_host = machine
+            node.description = f"Agente da plataforma para {account.label}"
+            token = node.issue_agent_token()
+            node.save(update_fields=["docker_host", "description", "agent_token_hash", "deploy_token", "updated_at"])
+        else:
+            node = Node._base_manager.create(
+                name=f"plataforma-{account.pk.hex[:8]}", organization_id=account.organization_id,
+                transport=Node.TRANSPORT_HTTPS, platform_managed=True, docker_host=machine,
+                description=f"Agente da plataforma para {account.label}",
+            )
+            token = node.new_agent_token
         AgentProvisionRequest._base_manager.create(docker_host=machine, node=node, node_ref=node.pk, action="create",
                                                    token_enc=encrypt(token))
         account.previous_node = account.node if account.node_id and not account.node.platform_managed else account.previous_node
@@ -93,6 +140,12 @@ def provision(account) -> None:
 def _point_node_to_proxy(account, node) -> None:
     from apps.proxy.models import ProxyProfile
 
+    current = ProxyProfile._base_manager.filter(assigned_node=node).first()
+    if current is not None:                       # N-207: the node the account was registered on already uses one
+        if node.proxy != current.proxy_url:
+            node.proxy = current.proxy_url
+            node.save(update_fields=["proxy"])
+        return
     proxy = ProxyProfile._base_manager.filter(
         account_reservation__account=account, active=True, last_test_status=True, assigned_node__isnull=True).first()
     if proxy is None:

@@ -44,7 +44,7 @@ def nav_context(request):
                 {"name": "Proxies e agente", "url": "/organizacao/proxies/", "icon": "bi-shield-lock"},
                 {"name": "Membros", "url": "/organizacao/membros/", "icon": "bi-people"},
                 {"name": "Telegram", "url": "/organizacao/telegram/", "icon": "bi-telegram"},
-                {"name": "Plano", "url": "/organizacao/plano/", "icon": "bi-credit-card"},
+                {"name": "Plano", "url": "/organizacao/plano/", "icon": "bi-credit-card", "perm": "billing"},
             ],
         },
         {
@@ -84,6 +84,7 @@ def nav_context(request):
             or (item["perm"] == "operator" and is_operator)
             or (item["perm"] == "staff" and is_staff)
             or (item["perm"] == "owner" and is_owner)
+            or (item["perm"] == "billing" and _billing_open(is_staff))
         ]
         if items:
             filtered.append({"label": section["label"], "items": items})
@@ -94,6 +95,15 @@ def nav_context(request):
         "user_is_operator": is_operator,
         "user_is_staff": is_staff,
     }
+
+
+def _billing_open(is_staff: bool) -> bool:
+    """N-208: the plan in the menu only while subscriptions are open (the system's administrator always sees it)."""
+    if is_staff:
+        return True
+    from apps.billing.services import billing_open
+
+    return billing_open()
 
 
 def _is_admin(user):

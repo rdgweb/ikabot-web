@@ -105,51 +105,46 @@ class AccountCreateView(LoginRequiredMixin, CreateView):
     template_name = "accounts/account_create.html"
     success_url = reverse_lazy("accounts:account-list")
 
-    def _platform_offered(self) -> bool:
-        """N-203: a customer (not the platform's own organization) on a hub whose platform runs agents."""
-        from apps.accounts import platform_agent
-        from apps.orgs.services import DEFAULT_SLUG
-
-        organization = getattr(self.request, "organization", None)
-        return bool(organization is not None and organization.slug != DEFAULT_SLUG and platform_agent.host() is not None)
-
-    def get_form_kwargs(self):
-        return {**super().get_form_kwargs(), "platform_offered": self._platform_offered()}
+    def get_initial(self):
+        """?node=<pk>: the node just made (the platform's, from Nós or Proxies) comes chosen."""
+        initial = super().get_initial()
+        node = self.request.GET.get("node")
+        if node:
+            initial["node"] = node
+        return initial
 
     def get_context_data(self, **kwargs):
-        return {**super().get_context_data(**kwargs), "platform_offered": self._platform_offered()}
+        from apps.accounts import platform_agent
+
+        ctx = super().get_context_data(**kwargs)
+        nodes = list(ctx["form"].fields["node"].queryset)
+        ctx["platform_offer"] = platform_agent.offer(getattr(self.request, "organization", None))
+        ctx["has_nodes"] = bool(nodes)
+        ctx["platform_node_ids"] = [str(n.pk) for n in nodes if platform_agent.is_waiting(n)]
+        return ctx
 
     def form_valid(self, form):
-        if form.cleaned_data.get("platform_agent") and not form.cleaned_data.get("node"):
+        from apps.accounts import platform_agent
+
+        if platform_agent.is_waiting(form.cleaned_data.get("node")):
             return self._with_platform_agent(form)
         return super().form_valid(form)
 
     def _with_platform_agent(self, form):
-        """The account on a waiting node, then the platform's proxies and agent switched on (the agent gets its own
-        node and the account moves onto it); the waiting node goes when it is left empty."""
-        import uuid
-
+        """N-207: registered on the platform's node: the platform's proxies and agent go on (without charge in the trial),
+        and the agent goes up on that same node."""
         from django.contrib import messages
         from django.shortcuts import redirect
 
-        from apps.accounts.models import Node
         from apps.billing.services import account_for, set_agent_addon, set_proxy_addon
 
         organization = self.request.organization
-        waiting = Node._base_manager.create(
-            name=f"plataforma-pendente-{uuid.uuid4().hex[:6]}", organization=organization,
-            transport=Node.TRANSPORT_HTTPS, platform_managed=True, description="Esperando o agente da plataforma",
-        )
-        form.instance.node = waiting
         form.instance.organization = organization
         self.object = form.save()
         billing = account_for(organization)
         outcome = set_proxy_addon(billing, self.object, True)
         if outcome.get("ok"):
             outcome = set_agent_addon(billing, self.object, True)
-        self.object.refresh_from_db()
-        if self.object.node_id != waiting.pk and not Account._base_manager.filter(node=waiting).exists():
-            waiting.delete()
         if outcome.get("ok"):
             messages.success(self.request, f"Conta {self.object.label} criada; o agente da plataforma está subindo.")
         else:

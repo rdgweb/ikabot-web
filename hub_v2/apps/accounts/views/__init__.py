@@ -14,6 +14,7 @@ from .nodes import (
     NodeProxyTestView,
     NodeQueuePurgeView,
     NodeRequestUpdateView,
+    PlatformNodeCreateView,
 )
 from .accounts import (
     AccountListView,

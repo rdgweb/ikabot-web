@@ -59,9 +59,16 @@
 
 {% block page_actions %}
 {% if user_is_staff %}<a href="{% url 'accounts:docker-host-list' %}" class="btn btn-secondary btn-sm"><i class="bi bi-hdd-rack"></i> Hosts Docker</a>{% endif %}
+{% if platform_offer.offered %}
+<form method="post" action="{% url 'accounts:node-platform' %}" hx-boost="false" style="display: inline;">{% csrf_token %}
+  <button type="submit" class="btn btn-primary btn-sm" title="O agente roda na plataforma: nada para instalar"><i class="bi bi-cloud-check"></i> Usar o agente da plataforma</button>
+</form>
+<a href="{% url 'accounts:node-create' %}" class="btn btn-secondary btn-sm"><i class="bi bi-pc-display"></i> Meu agente</a>
+{% else %}
 <a href="{% url 'accounts:node-create' %}" class="btn btn-primary btn-sm">
   <i class="bi bi-plus-lg"></i> Novo Nó
 </a>
+{% endif %}
 {% endblock %}
 
 {% block table_content %}

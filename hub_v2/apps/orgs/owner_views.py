@@ -39,6 +39,22 @@ class OrgPage(LoginRequiredMixin, TemplateView):
         return ctx
 
 
+ICONS = {"usuarios": "bi-person", "nos": "bi-hdd-network", "contas": "bi-person-badge", "plano": "bi-credit-card",
+         "acesso": "bi-box-arrow-in-right", "jobs": "bi-list-task", "proxy": "bi-shield-lock", "telegram": "bi-telegram"}
+
+
+def _recent(organization, limit: int = 5) -> list[dict]:
+    """N-207: the organization's latest activity (the audit log), for the overview."""
+    from apps.audit.models import AuditEvent
+    from apps.audit.services import ACTIONS
+
+    rows = []
+    for e in AuditEvent.objects.filter(organization=organization).order_by("-created_at")[:limit]:
+        rows.append({"title": ACTIONS.get(e.action, ("", e.action))[1], "who": e.actor_label or "sistema",
+                     "what": e.target_label, "when": e.created_at, "icon": ICONS.get(e.category, "bi-dot")})
+    return rows
+
+
 class OverviewView(OrgPage):
     """GET/POST /organizacao/ — the organization at a glance; the owner renames it."""
 
@@ -61,6 +77,7 @@ class OverviewView(OrgPage):
             "accounts": Account.objects.count(),
             "nodes": len(nodes), "online": sum(1 for node in nodes if node.is_online),
             "members": Membership.objects.filter(organization=organization).count(),
+            "recent": _recent(organization),
         })
         return ctx
 

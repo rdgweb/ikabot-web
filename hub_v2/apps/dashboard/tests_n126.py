@@ -21,6 +21,9 @@ def customer(username, org_name):
 
 class CustomerPanelTests(TestCase):
     def setUp(self):
+        from apps.billing.services import set_billing_open
+
+        set_billing_open(True)   # N-208: the plan page only while subscriptions are open
         cache.clear()
         self.staff = get_user_model().objects.create_user("rodrigo", password="x", is_staff=True)
         node = Node.objects.create(name="no-plataforma")
@@ -62,6 +65,9 @@ class CustomerPanelTests(TestCase):
 @override_settings(ASAAS_API_KEY="chave-de-teste", SITE_URL="https://hub.example")
 class SubscribeReturnAddressTests(TestCase):
     def test_the_return_address_is_the_published_https_one(self):
+        from apps.billing.services import set_billing_open
+
+        set_billing_open(True)   # N-208
         user, _org = customer("dono", "Norte")
         self.client.force_login(user)
         with patch("apps.billing.asaas.create_payment_link", return_value=("lnk", "https://pay.example/lnk")) as create:

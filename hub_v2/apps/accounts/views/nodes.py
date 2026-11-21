@@ -99,6 +99,33 @@ class PlatformNodeGuard:
                 return redirect("accounts:node-list")
         return super().dispatch(request, *args, **kwargs)
 
+class PlatformNodeCreateView(LoginRequiredMixin, View):
+    """N-207: "Usar o agente da plataforma" — the platform's node first (like a node of one's own), the account is
+    registered on it and the agent goes up then. One waiting node per organization is reused."""
+
+    def post(self, request):
+        from apps.accounts import platform_agent
+        from apps.orgs.models import Membership
+        from apps.orgs.services import role_of
+
+        organization = getattr(request, "organization", None)
+        role = role_of(request.user, organization) if organization is not None else None
+        if role not in (Membership.OWNER, Membership.OPERATOR):
+            raise Http404()
+        offer = platform_agent.offer(organization)
+        if not offer["offered"]:
+            raise Http404()
+        if offer["reason"]:
+            messages.error(request, offer["reason"])
+            return redirect("accounts:node-list")
+        node = platform_agent.waiting_node(organization)
+        from apps.audit.services import record
+
+        record("node.platform_created", target=node, target_label=node.name)
+        messages.success(request, f"Nó \"{node.name}\" pronto: cadastre a conta GameForge nele e o agente sobe sozinho.")
+        return redirect(f"{reverse_lazy('accounts:account-create')}?node={node.pk}")
+
+
 class NodeListView(FilterSortListView):
     model = Node
     filterset_class = NodeFilter
@@ -111,6 +138,9 @@ class NodeListView(FilterSortListView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["ip_conflicts"] = _get_ip_conflicts()
+        from apps.accounts import platform_agent
+
+        ctx["platform_offer"] = platform_agent.offer(getattr(self.request, "organization", None))
         expected_agent_version = getattr(settings, "EXPECTED_AGENT_VERSION", "").strip()
         for node in ctx["object_list"]:
             node.agent_version_state = classify_agent_version(

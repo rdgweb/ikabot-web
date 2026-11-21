@@ -16,7 +16,7 @@
       <span class="org-card-value" style="display: block;">{{ active }}{% if limit %} <small style="font-size: .8rem; color: var(--ik-muted);">de {{ limit }}</small>{% endif %}</span>
       {% if limit %}<span class="org-meter{% if active >= limit %} full{% endif %}" style="display: block;"><i style="width: {% widthratio active limit 100 %}%;"></i></span>{% endif %}</span>
   </div>
-  {% if limit and active >= limit %}
+  {% if BILLING_OPEN and limit and active >= limit %}
   <a class="org-card" href="/organizacao/plano/">
     <span class="org-icon warn"><i class="bi bi-arrow-up-circle"></i></span>
     <span><span class="org-card-label">Faixa cheia</span><span class="org-card-value" style="display: block; font-size: .95rem;">Subir de faixa</span></span>
@@ -26,7 +26,7 @@
 
 {% for group in groups %}
 <div class="org-panel" style="margin-bottom: .9rem;">
-  <h3><i class="bi bi-person-badge"></i> {{ group.account.label }} {% if not group.account.active %}<span class="org-chip off">conta pausada</span>{% endif %}</h3>
+  <h3><i class="bi bi-controller"></i> {{ group.account.label }} {% if not group.account.active %}<span class="org-chip off">conta pausada</span>{% endif %}</h3>
   {% for world in group.worlds %}
   <div class="org-row">
     <div class="main"><b>{{ world.name|default:world.server_id }}</b><span>{{ world.server_language|upper }} · mundo {{ world.server_number }}</span></div>
@@ -45,6 +45,15 @@
   {% endfor %}
 </div>
 {% empty %}
-<div class="org-panel"><p class="text-sm text-muted" style="margin: 0;">Nenhuma conta GameForge ainda. <a href="/accounts/create/" class="link-sea font-semibold">Cadastrar conta</a></p></div>
+<div class="org-panel org-empty">
+  <div class="org-empty-art"><i class="bi bi-controller"></i><span class="plus"><i class="bi bi-plus-lg"></i></span></div>
+  <div>
+    <h2>Nenhuma conta GameForge ainda</h2>
+    <p>Cadastre a conta e o hub passa a jogar por ela.</p>
+    <div class="acts">
+      <a href="/accounts/create/" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Cadastrar conta</a>
+    </div>
+  </div>
+</div>
 {% endfor %}
 {% endblock %}

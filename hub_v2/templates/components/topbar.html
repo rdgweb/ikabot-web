@@ -27,6 +27,18 @@
       <i class="bi bi-plus-lg"></i>
       <span class="hidden sm:inline">Novo Job</span>
     </button>
+    {# N-207: the bell — what happened lately for this organization #}
+    <div class="ik-bell" x-data="{ open: false }" @click.outside="open = false" @keydown.escape.window="open = false">
+      <button type="button" class="ik-bell-btn" title="Avisos" aria-label="Avisos" @click="open = !open"
+              hx-get="{% url 'bell-list' %}" hx-target="#ik-bell-list" hx-swap="innerHTML" hx-push-url="false" hx-trigger="click" hx-boost="false">
+        <i class="bi bi-bell"></i>
+        <span id="ik-bell-count" hx-get="{% url 'bell-count' %}" hx-trigger="load delay:800ms, every 60s" hx-target="this" hx-swap="innerHTML" hx-push-url="false"></span>
+      </button>
+      <div class="ik-bell-panel" x-show="open" x-cloak x-transition.opacity>
+        <div class="ik-bell-head"><span>Avisos</span></div>
+        <div id="ik-bell-list"><div class="ik-bell-empty">Carregando…</div></div>
+      </div>
+    </div>
     <span class="hidden sm:inline text-muted text-xs" title="Hora local">
       <i class="bi bi-clock"></i> <span data-clock>--:--</span>
     </span>

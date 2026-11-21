@@ -92,7 +92,8 @@ class CustomerProbeTests(TestCase):
                                        .values_list("address", "port", "username", "password_enc", "active")),
             "docker host": list(DockerHost._base_manager.values("name", "active", "organization_id")),
             # its own tutorial mark is its to change
-            "settings": sorted(AppSetting.objects.exclude(key=f"tour_done:{self.user.pk}").values_list("key", "value")),
+            "settings": sorted(AppSetting.objects.exclude(key__in=[f"tour_done:{self.user.pk}", f"bell_seen:{self.user.pk}"])
+                               .values_list("key", "value")),
             "organizations": sorted(Organization._base_manager.values_list("name", "slug", "active")),
             "staff": sorted(get_user_model().objects.values_list("username", "is_staff", "is_superuser")),
             "plan": (billing.status, billing.limit, billing.trial_ends_at, billing.addons_free_until),

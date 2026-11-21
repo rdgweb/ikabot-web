@@ -25,8 +25,22 @@ def _base(request) -> str:
 
 class OrganizationsView(SystemOnly):
     def get(self, request):
+        from apps.billing.services import billing_open
+
         rows = [system.overview(org) for org in Organization._base_manager.order_by("-created_at")]
-        return render(request, "orgs/system_list.html", {"rows": rows, "base_template": _base(request)})
+        return render(request, "orgs/system_list.html", {"rows": rows, "base_template": _base(request),
+                                                         "billing_open": billing_open()})
+
+    def post(self, request):
+        """N-208: open or close subscriptions for every customer."""
+        from apps.audit.services import record
+        from apps.billing.services import set_billing_open
+
+        on = request.POST.get("action") == "billing_open"
+        set_billing_open(on)
+        record("billing.subscriptions_opened" if on else "billing.subscriptions_closed", target_label="Assinaturas")
+        messages.success(request, "Assinaturas abertas para os clientes." if on else "Assinaturas fechadas: o plano sumiu das telas dos clientes.")
+        return redirect("system-organizations")
 
 
 class OrganizationView(SystemOnly):
