@@ -26,6 +26,7 @@ SCOPES: dict[str, tuple[str, str, bool]] = {
     "accounts.Account": ("organization", "org", False),
     "profiles.Profile": ("organization", "org", False),
     "profiles.Preset": ("organization", "org", False),
+    "piracy.PiracyMonth": ("organization", "org", False),
     "worldintel.PlayerMark": ("organization", "org", False),
     "proxy.ProxyProfile": ("organization", "org", False),
     # by GameForge account
@@ -65,6 +66,8 @@ SCOPES: dict[str, tuple[str, str, bool]] = {
     "market.PublicMarketOffer": ("scan__game_account", "game_account", False),
     "captcha.CaptchaChallenge": ("game_account", "game_account", False),
     "generals_bank.GeneralsBankConfig": ("bank_game_account", "game_account", False),
+    "piracy.PiracyChampion": ("game_account", "game_account", False),
+    "piracy.PiracyRoute": ("raider", "game_account", False),
     "generals_bank.GeneralsBankProducer": ("producer_game_account", "game_account", False),
     "generals_bank.GeneralsBankCycleTask": ("producer_game_account", "game_account", False),
     "generals_bank.GeneralsBankCycle": ("bank_config__bank_game_account", "game_account", False),

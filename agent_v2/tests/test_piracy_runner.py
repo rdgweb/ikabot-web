@@ -165,3 +165,61 @@ class ColonyRoomTests(unittest.TestCase):
         self.assertTrue(runner._targeted_cycle_due(base))
         self.assertFalse(runner._targeted_cycle_due({**base, "targeted_retry_after": int(_time.time()) + 3600}))
         self.assertTrue(runner._targeted_cycle_due({**base, "targeted_retry_after": int(_time.time()) - 1}))
+
+
+class MonthPlanTests(unittest.TestCase):
+    """N-211: the month's plan — the hub's route comes first (outside the ranking too), the same lobby is never
+    raided, and every outcome goes back to the hub."""
+
+    def _runner(self, config=None, next_payload=None):
+        runner = PiracyMissionRunner.__new__(PiracyMissionRunner)
+        self.reports, self.logs = [], []
+        runner.hub = types.SimpleNamespace(
+            get_piracy_next=lambda game_account_id: next_payload or {"route": None, "hold": False},
+            report_piracy_route=lambda route_id, status, message="": self.reports.append((route_id, status, message)),
+        )
+        runner.get_agent_config = lambda: config or {"accounts": []}
+        runner.log = lambda jid, level, text: self.logs.append((level, text))
+        runner._find_colony_spot = lambda client, target_city_id: {"island_id": "9", "position": 3, "coord_x": 1, "coord_y": 2}
+        return runner
+
+    def _route(self, **extra):
+        return {"route_id": "r1", "target_game_account_id": "ga-target", "raider_lobby": "L1", "target_lobby": "L2",
+                "stage": 1, "week": 1, "player_name": "Alvo", "target_city_id": "123", "target_island_id": "45", **extra}
+
+    def test_the_plan_route_becomes_the_target_without_the_ranking(self):
+        runner = self._runner()
+        entry, spot = runner._planned_pair("j", object(), self._route(), "ga-raider")
+        self.assertEqual((entry["target_city_id"], entry["_route_id"], entry["_route_keep"]), ("123", "r1", True))
+        self.assertEqual(spot["island_id"], "9")
+        self.assertEqual(self.reports, [])
+        entry, _spot = runner._planned_pair("j", object(), self._route(stage=2), "ga-champion")
+        self.assertFalse(entry["_route_keep"])                       # the champion follows its job's conversion
+
+    def test_same_lobby_is_refused_by_the_hub_ids_or_the_agent_config(self):
+        runner = self._runner()
+        self.assertIsNone(runner._planned_pair("j", object(), self._route(target_lobby="L1"), "ga-raider"))
+        self.assertEqual(self.reports[-1][1:], ("failed", "mesmo lobby"))
+        config = {"accounts": [{"game_accounts": [{"id": "ga-raider"}, {"id": "ga-target"}]}]}
+        runner = self._runner(config=config)
+        self.assertIsNone(runner._planned_pair("j", object(), self._route(), "ga-raider"))
+        self.assertEqual(self.reports[-1][1], "failed")
+
+    def test_no_colony_spot_or_city_is_reported(self):
+        runner = self._runner()
+        runner._find_colony_spot = lambda client, target_city_id: None
+        self.assertIsNone(runner._planned_pair("j", object(), self._route(), "ga-raider"))
+        self.assertEqual(self.reports[-1][1], "failed")
+        self.assertIsNone(runner._planned_pair("j", object(), self._route(target_city_id=""), "ga-raider"))
+
+    def test_plan_next_survives_the_hub(self):
+        runner = self._runner(next_payload={"route": self._route(), "hold": True})
+        plan = runner._plan_next("ga")
+        self.assertTrue(plan["hold"])
+        self.assertEqual(plan["route"]["route_id"], "r1")
+
+        def boom(game_account_id):
+            raise RuntimeError("hub fora")
+
+        runner.hub.get_piracy_next = boom
+        self.assertEqual(runner._plan_next("ga"), {"route": None, "hold": False})

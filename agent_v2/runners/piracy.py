@@ -244,6 +244,64 @@ class PiracyMissionRunner(BaseRunner):
             return None
         return len(cities), palace + 1
 
+    # ── N-211: the month's plan (champions) ──────────────────────────────────────────────────────────────────────
+
+    def _plan_next(self, game_account_id: str) -> dict[str, Any]:
+        """What the hub's plan asks of this account now: a route to raid (an account of another lobby of the same
+        organization) and whether to keep the capture points because the plan takes them this week."""
+        try:
+            data = self.hub.get_piracy_next(game_account_id) or {}
+        except Exception:
+            return {"route": None, "hold": False}
+        route = data.get("route") if isinstance(data.get("route"), dict) else None
+        return {"route": route, "hold": bool(data.get("hold"))}
+
+    def _report_route(self, jid: str, route_id: str, status: str, message: str = "") -> None:
+        if not route_id:
+            return
+        try:
+            self.hub.report_piracy_route(route_id, status, message)
+        except Exception as exc:
+            self.log(jid, "warn", f"Plano do mês: falha ao avisar o hub ({status}): {exc}")
+
+    def _same_lobby(self, game_account_id: str, route: dict[str, Any]) -> bool:
+        """Accounts of the same lobby never raid each other, whatever the plan says."""
+        raider_lobby, target_lobby = str(route.get("raider_lobby") or ""), str(route.get("target_lobby") or "")
+        if raider_lobby and raider_lobby == target_lobby:
+            return True
+        target = str(route.get("target_game_account_id") or "")
+        try:
+            config = self.get_agent_config()
+        except Exception:
+            return False
+        for account in config.get("accounts") or []:
+            ids = {str(ga.get("id") or "") for ga in account.get("game_accounts") or []}
+            if str(game_account_id) in ids and target in ids:
+                return True
+        return False
+
+    def _planned_pair(self, jid: str, client, route: dict[str, Any], game_account_id: str):
+        """(target_entry, colony_spot) for the plan's route, or None (reported to the hub as failed)."""
+        route_id = str(route.get("route_id") or "")
+        name = str(route.get("player_name") or "?")
+        if self._same_lobby(game_account_id, route):
+            self.log(jid, "error", f"SEGURANCA: o plano pediu assalto em {name}, do mesmo lobby; recusado")
+            self._report_route(jid, route_id, "failed", "mesmo lobby")
+            return None
+        target_city_id = str(route.get("target_city_id") or "")
+        if not target_city_id:
+            self._report_route(jid, route_id, "failed", "sem a cidade da fortaleza do alvo")
+            return None
+        spot = self._find_colony_spot(client, target_city_id)
+        if not spot:
+            self.log(jid, "info", f"Plano do mês: sem vaga para colônia perto de {name}")
+            self._report_route(jid, route_id, "failed", "sem vaga para a colônia perto do alvo")
+            return None
+        self.log(jid, "info", f"Plano do mês: pegar os pontos de {name} (semana {route.get('week')}, etapa {route.get('stage')})")
+        entry = {"player_name": name, "target_city_id": target_city_id, "target_island_id": str(route.get("target_island_id") or ""),
+                 "score": 10 ** 9, "_route_id": route_id, "_route_keep": _to_int(route.get("stage")) == 1}
+        return entry, spot
+
     def _player_marks(self, game_account_id: str) -> tuple[set[str], set[str]]:
         """(possible multi accounts, piracy targets picked by hand), names casefolded; empty when the hub fails."""
         try:
@@ -812,6 +870,7 @@ class PiracyMissionRunner(BaseRunner):
                         destination_island_id=target_island_id,
                     )
                     raid_wait = max(TARGETED_RECHECK, _to_int(raid.get("time_remaining"), 0) + MISSION_BUFFER)
+                    self._report_route(jid, str(inputs.get("_targeted_route_id") or ""), "sent", f"assalto saiu da colônia {temp_city_id}")
                     self.save_game_client(game_account_id, client)
                     return RunnerResult(
                         success=True,
@@ -857,7 +916,10 @@ class PiracyMissionRunner(BaseRunner):
                             data={"error": "abandon_safety_blocked", "temp_city_id": temp_city_id, "known_ids": list(known_ids_set)},
                         )
                     try:
-                        self._targeted_convert_capture_points(jid, client, city_id=temp_city_id, inputs=inputs)
+                        keep = _to_bool(inputs.get("_targeted_route_keep"))
+                        self._targeted_convert_capture_points(
+                            jid, client, city_id=temp_city_id,
+                            inputs={**inputs, "targeted_convert_mode": "never"} if keep else inputs)
                     except Exception as exc:
                         self.log(jid, "warn", f"Falha ao converter pontos do ciclo especial antes do abandono: {exc}")
                     abandon_pending = self._abandon_temp_colony(jid, client, game_account_id, temp_city_id)
@@ -870,6 +932,7 @@ class PiracyMissionRunner(BaseRunner):
                             data=abandon_pending.data,
                         )
                     self.log(jid, "info", f"Colonia temporaria {temp_city_id} abandonada; ciclo especial concluido")
+                    self._report_route(jid, str(inputs.get("_targeted_route_id") or ""), "done", "assalto feito e colônia abandonada")
                     cleaned = _clear_targeted_state(inputs)
                     cleaned["last_targeted_cycle_at"] = int(time.time())
                     self.save_game_client(game_account_id, client)
@@ -892,14 +955,23 @@ class PiracyMissionRunner(BaseRunner):
                 self.save_game_client(game_account_id, client)
                 return RunnerResult(success=True, reschedule_seconds=wait, reschedule_inputs=_state_inputs)
 
-            room = self._colony_room(game_account_id) if self._targeted_cycle_due(inputs) else None
+            # N-211: the month's plan — this week's route comes first; an account the plan takes from keeps its points
+            plan = self._plan_next(game_account_id)
+            if plan["hold"] and convert_mode != "never":
+                self.log(jid, "info", "Plano do mês: os pontos desta conta passam adiante nesta semana; guardando sem converter")
+                convert_mode = "never"
+            planned_pair = self._planned_pair(jid, client, plan["route"], game_account_id) if plan["route"] else None
+            room = self._colony_room(game_account_id) if (planned_pair or self._targeted_cycle_due(inputs)) else None
             if room and room[0] >= room[1]:
                 # no free town slot: the game has no colonize form; the special cycle waits and the missions go on
                 self.log(jid, "info", f"Ciclo especial adiado: a conta tem {room[0]} cidades e o palácio permite "
                                       f"{room[1]}; sem vaga para a colônia. Sigo com as missões.")
                 inputs = {**inputs, "targeted_retry_after": int(time.time()) + TARGETED_ROOM_RETRY}
-            if self._targeted_cycle_due(inputs):
-                result_pair = self._choose_targeted_entry_with_spot(
+                if planned_pair:
+                    self._report_route(jid, planned_pair[0]["_route_id"], "failed", "sem vaga de cidade (palácio)")
+                    planned_pair = None
+            if planned_pair or self._targeted_cycle_due(inputs):
+                result_pair = planned_pair or self._choose_targeted_entry_with_spot(
                     jid,
                     client,
                     city_id=city_id,
@@ -955,6 +1027,7 @@ class PiracyMissionRunner(BaseRunner):
                         )
                         if fresh_target_city and str(fresh_target_city.get("state") or "").strip().lower() == "umod":
                             self.log(jid, "info", f"Alvo {target_entry.get('player_name')} entrou em ferias; abortando ciclo especial")
+                            self._report_route(jid, str(target_entry.get("_route_id") or ""), "failed", "alvo em férias")
                             self.save_game_client(game_account_id, client)
                             return RunnerResult(
                                 success=True,
@@ -976,6 +1049,7 @@ class PiracyMissionRunner(BaseRunner):
                                 self.log(jid, "info", f"Novo slot encontrado: ilha {new_spot['island_id']} pos {new_spot['position']}")
                             else:
                                 self.log(jid, "warn", "Nenhum slot disponivel nas ilhas proximas; adiando ciclo especial")
+                                self._report_route(jid, str(target_entry.get("_route_id") or ""), "failed", "vaga da colônia ocupada")
                                 self.save_game_client(game_account_id, client)
                                 return RunnerResult(
                                     success=True,
@@ -988,6 +1062,7 @@ class PiracyMissionRunner(BaseRunner):
                     max_foundations = max(1, _to_int(inputs.get("targeted_max_active_foundations"), 1))
                     if not self._within_active_foundation_limit(client, limit=max_foundations, game_account_id=game_account_id, piracy_city_id=city_id):
                         self.log(jid, "info", f"Limite ativo de colonias temporarias atingido ({max_foundations}); adiando ciclo especial")
+                        self._report_route(jid, str(target_entry.get("_route_id") or ""), "failed", "limite de colônias temporárias")
                         self.save_game_client(game_account_id, client)
                         return RunnerResult(
                             success=True,
@@ -1008,6 +1083,7 @@ class PiracyMissionRunner(BaseRunner):
                         self.log(jid, "warn", f"Ciclo especial adiado: o jogo não abriu a colonização ({exc}). "
                                               f"Tento de novo em {TARGETED_ROOM_RETRY // 3600} h; sigo com as missões.")
                         inputs = {**inputs, "targeted_retry_after": int(time.time()) + TARGETED_ROOM_RETRY}
+                        self._report_route(jid, str(target_entry.get("_route_id") or ""), "failed", "o jogo não abriu a colonização")
                     if preview is not None:
                         eta_ok, eta_reason = self._targeted_eta_viable(
                             preview=preview,
@@ -1016,6 +1092,7 @@ class PiracyMissionRunner(BaseRunner):
                         )
                         if not eta_ok:
                             self.log(jid, "info", f"Ciclo especial ignorado: {eta_reason}. Sigo com as missões.")
+                            self._report_route(jid, str(target_entry.get("_route_id") or ""), "failed", eta_reason)
                             inputs = {**inputs, "targeted_retry_after": int(time.time()) + TARGETED_ROOM_RETRY}
                         else:
                             known_city_ids = [item["id"] for item in fetch_owned_cities(client)]
@@ -1054,6 +1131,8 @@ class PiracyMissionRunner(BaseRunner):
                                     "_targeted_colony_position": int(colony_spot["position"]),
                                     "_targeted_known_city_ids": known_city_ids,
                                     "_targeted_target_player_name": str(target_entry.get("player_name") or ""),
+                                    "_targeted_route_id": str(target_entry.get("_route_id") or ""),
+                                    "_targeted_route_keep": bool(target_entry.get("_route_keep")),
                                     "_targeted_colonization_feedback": result.get("feedback") or [],
                                     "_targeted_colonization_arrival_at_text": preview.get("arrival_at_text") or "",
                                 },

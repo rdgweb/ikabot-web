@@ -658,6 +658,14 @@ class HubClient:
         [island ids]}}: the troops no job may use or move (the assault team) and the islands other barbarian jobs farm."""
         return self._get("/api/agent/troops/reserved/", {"game_account_id": game_account_id, "exclude_job_id": exclude_job_id})
 
+    def get_piracy_next(self, game_account_id: str) -> dict:
+        """GET /api/agent/piracy/next/ — N-211: the month's plan for this account: {"route": {...} | None, "hold": bool}."""
+        return self._get("/api/agent/piracy/next/", {"game_account_id": game_account_id})
+
+    def report_piracy_route(self, route_id: str, status: str, message: str = "") -> dict:
+        """POST /api/agent/piracy/routes/<id>/ — N-211: sent | done | failed."""
+        return self._post(f"/api/agent/piracy/routes/{route_id}/", {"status": status, "message": message[:250]})
+
     def get_player_marks(self, game_account_id: str) -> dict:
         """GET /api/agent/worldintel/player-marks/ — players the organization marked on that server (N-174/N-175):
         {"multi": [names], "pirate_target": [names]}."""

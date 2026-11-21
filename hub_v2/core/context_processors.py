@@ -31,6 +31,7 @@ def nav_context(request):
                 {"name": "Banco de Generais", "url": "/generais/", "icon": "bi-shield-fill-check"},
                 {"name": "Diplomacia", "url": "/diplomacy/", "icon": "bi-envelope"},
                 {"name": "Espionagem", "url": "/espionage/", "icon": "bi-binoculars"},
+                {"name": "Pirataria", "url": "/pirataria/", "icon": "bi-flag"},
                 {"name": "Combates", "url": "/combat/", "icon": "bi-shield-shaded"},
                 {"name": "Fila de Jobs", "url": "/jobs/", "icon": "bi-list-task"},
             ],
