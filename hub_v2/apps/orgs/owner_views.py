@@ -49,7 +49,7 @@ def _recent(organization, limit: int = 5) -> list[dict]:
     from apps.audit.services import ACTIONS
 
     rows = []
-    for e in AuditEvent.objects.filter(organization=organization).order_by("-created_at")[:limit]:
+    for e in AuditEvent.objects.filter(organization=organization).exclude(category="acesso").order_by("-created_at")[:limit]:
         rows.append({"title": ACTIONS.get(e.action, ("", e.action))[1], "who": e.actor_label or "sistema",
                      "what": e.target_label, "when": e.created_at, "icon": ICONS.get(e.category, "bi-dot")})
     return rows
