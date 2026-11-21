@@ -1,8 +1,11 @@
 {# N-207: waves behind the top of every page, the bell, the sidebar's gold streak (the hub's CSS is precompiled) #}
 <style>
   #main-area { position: relative; isolation: isolate; }
-  .ik-waves { position: absolute; top: 0; right: 0; width: min(820px, 62%); height: 230px; z-index: -1; pointer-events: none; overflow: hidden;
-              opacity: .9; -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent); mask-image: linear-gradient(to bottom, #000 55%, transparent); }
+  /* the fade lives on the block itself (left and bottom), so the waves never end in a straight cut whatever the width */
+  .ik-waves { position: absolute; top: 0; right: 0; width: min(980px, 72%); height: 230px; z-index: -1; pointer-events: none; overflow: hidden; opacity: .9;
+              -webkit-mask-image: linear-gradient(to right, transparent, #000 55%), linear-gradient(to bottom, #000 55%, transparent);
+              -webkit-mask-composite: source-in; mask-image: linear-gradient(to right, transparent, #000 55%), linear-gradient(to bottom, #000 55%, transparent);
+              mask-composite: intersect; }
   .ik-waves svg { width: 100%; height: 100%; display: block; }
   .ik-wave { animation-name: ikWave; animation-timing-function: linear; animation-iteration-count: infinite; transform-box: fill-box; will-change: transform; }
   @keyframes ikWave { from { transform: translateX(0); } to { transform: translateX(-50%); } }
