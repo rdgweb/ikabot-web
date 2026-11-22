@@ -184,6 +184,7 @@ BONUS = 0.1
 MIN_POINTS = 100             # fewer capture points than this are not worth a raid (targets by hand)
 DRAW_HOURS = 24              # a raid of the plan happens at a random time within this many hours
 START_DELAY = timedelta(minutes=15)   # the plan starts this long after it is drawn
+TURN_MARGIN = timedelta(minutes=30)   # the last raid before a ranking turn is drawn at least this long before it
 PAIR_DAYS = 7                # the same raider takes from the same account once in this many days
 ROUTE_HOURS = 6              # a raid decided and not sent in this time is dropped (the next free ship gets a new one)
 
@@ -675,14 +676,23 @@ def next_for(game_account, now: datetime | None = None) -> dict:
         if (theirs["points"] or 0) < month.min_points or not sure_win(mine["crew"], theirs["crew"], month.min_win_percent):
             continue
         candidates.append((theirs["points"], theirs["crew"], ga))
+    # a random time within the next day, so the raids of the plan have no pattern — but before the ranking turns:
+    # at the turn every account's capture points go back to 0, so a raid after it would take nothing
+    window_end = now + timedelta(hours=DRAW_HOURS)
+    if month.turn_at and now < month.turn_at:
+        window_end = min(window_end, month.turn_at - TURN_MARGIN)
+    if window_end <= now:
+        return {"route": None, "hold": hold, **extra}
     for points, crew, ga in sorted(candidates, key=lambda c: -c[0]):
         if not _target_info(ga):
             continue
-        # a random time within the next day, so the raids of the plan have no pattern
-        when = now + timedelta(seconds=random.randint(0, DRAW_HOURS * 3600))
+        when = now + timedelta(seconds=random.randint(0, int((window_end - now).total_seconds())))
+        until = when + timedelta(hours=ROUTE_HOURS)
+        if month.turn_at and now < month.turn_at:
+            until = min(until, month.turn_at)
         PiracyRoute.objects.create(month=month, group=member.group, week=week, stage=level, raider=game_account,
                                    target=ga, target_points=points, raider_crew=mine["crew"], target_crew=crew,
-                                   due_from=when, due_until=when + timedelta(hours=ROUTE_HOURS))
+                                   due_from=when, due_until=until)
         return {"route": None, "hold": hold, **extra}
     return {"route": _outside_route(month, member, game_account, mine, now, week, role), "hold": hold, **extra}
 

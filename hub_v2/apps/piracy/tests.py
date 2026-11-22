@@ -374,3 +374,22 @@ class FinalPhaseTests(Base):
         job.save(update_fields=["inputs_json"])
         data = self.agent(f"/api/agent/piracy/next/?game_account_id={origin.pk}")
         self.assertEqual((data["hold"], data["share_percent"], data["crew_floor"]), (True, 0, None))
+
+
+class TurnResetTests(Base):
+    def test_before_the_turn_the_raid_is_drawn_before_it(self):
+        for snap in AccountSnapshot.objects.all():
+            snap.base_snapshot["piracy_highscore"]["time_left"] = 5 * 3600     # the ranking turns in 5 hours
+            snap.save()
+        month = self.plan()
+        champion = month.members.filter(role="champion").first().game_account
+        self.set_strength(champion, points=0, crew=30000)
+        self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
+        route = PiracyRoute.objects.get(status="planned")
+        self.assertLessEqual(route.due_from, month.turn_at - services.TURN_MARGIN)
+        self.assertLessEqual(route.due_until, month.turn_at)
+        # too close to the turn: nothing is drawn (the points go back to 0)
+        PiracyRoute.objects.all().delete()
+        PiracyMonth.objects.filter(pk=month.pk).update(turn_at=timezone.now() + timedelta(minutes=10))
+        self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
+        self.assertFalse(PiracyRoute.objects.exists())
