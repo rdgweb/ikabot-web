@@ -1,0 +1,19 @@
+ikabot-web
+Required Notice: Copyright (c) 2026 Rodrigo (rdgweb) (https://github.com/rdgweb/ikabot-web)
+
+O ikabot-web é distribuído sob a PolyForm Noncommercial License 1.0.0 (arquivo LICENSE):
+uso, teste e modificação para fins não comerciais são permitidos; uso comercial, incluindo
+revenda ou oferta paga do software ou de serviço baseado nele, não é.
+
+Componentes de terceiros seguem as licenças deles:
+
+- ikabot (https://github.com/Ikabot-Collective/ikabot), base do projeto.
+  MIT License, Copyright (c) 2018 Physics.
+  As partes vindas do ikabot continuam sob a licença MIT, cujo texto completo está
+  no repositório do ikabot.
+
+- IkabotAPI (https://github.com/Ikabot-Collective/IkabotAPI), imagem montada a partir do
+  repositório original (docker-compose.yml); segue a licença do projeto original.
+
+Ikariam é marca da Gameforge. Este projeto não tem ligação com a Gameforge; o uso de
+automação no jogo é de responsabilidade de cada jogador, conforme as regras do jogo.

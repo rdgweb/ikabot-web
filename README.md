@@ -191,4 +191,14 @@ address in the browser bar, or login fails with a CSRF error.
 
 ## Licença
 
-Este projeto se apoia no [ikabot](https://github.com/Ikabot-Collective/ikabot), do Ikabot Collective.
+[PolyForm Noncommercial 1.0.0](LICENSE): pode instalar, testar e modificar para uso pessoal ou
+outro fim não comercial. Uso comercial, incluindo revenda ou oferta paga do software ou de um
+serviço baseado nele, não é permitido.
+
+Este projeto se apoia no [ikabot](https://github.com/Ikabot-Collective/ikabot), do Ikabot
+Collective (licença MIT); as partes vindas dele e os demais componentes de terceiros seguem as
+licenças deles (veja [NOTICE](NOTICE)). O uso de automação no Ikariam é de responsabilidade de
+cada jogador, conforme as regras do jogo.
+
+*License: PolyForm Noncommercial 1.0.0 — free for personal and other noncommercial use,
+including changes; no commercial use or resale. Third-party parts keep their own licenses.*
