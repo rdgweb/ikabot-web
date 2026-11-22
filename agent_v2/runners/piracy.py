@@ -251,7 +251,7 @@ class PiracyMissionRunner(BaseRunner):
         organization, surely beaten, or a target added by hand), and how to convert: a champion converts all, the
         others keep their points and convert share_percent once every share_every_hours."""
         empty = {"route": None, "hold": False, "convert_all": False, "share_percent": 0, "share_every_hours": 24,
-                 "crew_cap": None, "crew_floor": None}
+                 "crew_cap": None, "crew_floor": None, "route_at": 0}
         try:
             data = self.hub.get_piracy_next(game_account_id) or {}
         except Exception:
@@ -262,7 +262,8 @@ class PiracyMissionRunner(BaseRunner):
                 "share_percent": max(0, min(100, _to_int(data.get("share_percent"), 0))),
                 "share_every_hours": max(1, _to_int(data.get("share_every_hours"), 24)),
                 "crew_cap": _to_int(cap) if cap is not None else None,
-                "crew_floor": _to_int(floor) if floor is not None else None}
+                "crew_floor": _to_int(floor) if floor is not None else None,
+                "route_at": _to_int(data.get("route_at"), 0)}
 
     def _direct_raid(self, jid: str, client, city_id: str, route: dict[str, Any]) -> dict[str, Any] | None:
         """The raid straight from the fortress (the target within its reach); None when the game does not send it."""
@@ -1322,6 +1323,17 @@ class PiracyMissionRunner(BaseRunner):
                     f"Nível da missão ajustado de {mission_level} para {effective_level} "
                     f"(fortaleza nível {fortress_level})",
                 )
+
+            # N-211: a raid of the plan is due soon — no mission that would keep the ship away at that time
+            route_at = _to_int(plan.get("route_at"), 0)
+            mission_time = _MISSION_DURATIONS.get(effective_level, 0)
+            if route_at and now_ts < route_at < now_ts + mission_time + MISSION_BUFFER:
+                wait = max(60, route_at - now_ts + 30)
+                self.log(jid, "info", f"Plano do mês: roubo marcado às {datetime.fromtimestamp(route_at, TARGETED_TZ):%H:%M}; "
+                                      f"sem missão agora para o navio estar livre (volto em {wait // 60} min)")
+                self.save_game_client(game_account_id, client)
+                return RunnerResult(success=True, reschedule_seconds=wait, reschedule_inputs={**inputs, **_state_inputs},
+                                    data={"status": "plan_waiting_raid", "route_at": route_at})
 
             # c) optional random wait before mission (anti-detection)
             if max_random_wait > 0:

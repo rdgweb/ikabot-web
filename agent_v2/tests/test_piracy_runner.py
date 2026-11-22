@@ -276,3 +276,12 @@ class MonthPlanConversionTests(unittest.TestCase):
         self.assertEqual(runner._floor_convert("j", self.client, "1", state, 50000, 31000), 1000)
         self.assertEqual(runner._floor_convert("j", self.client, "1", state, 5000, 31000), 500)     # only what it has
         self.assertEqual(runner._floor_convert("j", self.client, "1", state, 50000, 29000), 0)
+
+
+class PlanRouteAtTests(unittest.TestCase):
+    def test_plan_next_reads_when_the_raid_is(self):
+        runner = PiracyMissionRunner.__new__(PiracyMissionRunner)
+        runner.hub = types.SimpleNamespace(get_piracy_next=lambda game_account_id: {"route": None, "hold": False, "route_at": 1800000000})
+        self.assertEqual(runner._plan_next("ga")["route_at"], 1800000000)
+        runner.hub = types.SimpleNamespace(get_piracy_next=lambda game_account_id: {"route": None})
+        self.assertEqual(runner._plan_next("ga")["route_at"], 0)

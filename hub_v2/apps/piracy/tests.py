@@ -384,8 +384,9 @@ class TurnResetTests(Base):
         month = self.plan()
         champion = month.members.filter(role="champion").first().game_account
         self.set_strength(champion, points=0, crew=30000)
-        self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
+        data = self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
         route = PiracyRoute.objects.get(status="planned")
+        self.assertEqual(data["route_at"], int(route.due_from.timestamp()))   # the agent keeps the ship free for it
         self.assertLessEqual(route.due_from, month.turn_at - services.TURN_MARGIN)
         self.assertLessEqual(route.due_until, month.turn_at)
         # too close to the turn: nothing is drawn (the points go back to 0)

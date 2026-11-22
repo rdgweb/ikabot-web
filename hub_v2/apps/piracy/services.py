@@ -652,8 +652,8 @@ def next_for(game_account, now: datetime | None = None) -> dict:
     open_route = (PiracyRoute._base_manager.filter(raider=game_account, month=month, status=PiracyRoute.PLANNED, due_until__gt=now)
                   .select_related("raider__account", "target__account", "outside").order_by("due_from").first())
     if open_route is not None:
-        if open_route.due_from > now:                       # drawn for later today: nothing yet
-            return {"route": None, "hold": hold, **extra}
+        if open_route.due_from > now:                       # drawn for later: the ship must be free then
+            return {"route": None, "hold": hold, **extra, "route_at": int(open_route.due_from.timestamp())}
         info = _target_info(open_route.target) if open_route.target_id else _outside_info(open_route.outside)
         if info:
             return {"route": _payload(open_route, info), "hold": hold, **extra}
@@ -693,7 +693,7 @@ def next_for(game_account, now: datetime | None = None) -> dict:
         PiracyRoute.objects.create(month=month, group=member.group, week=week, stage=level, raider=game_account,
                                    target=ga, target_points=points, raider_crew=mine["crew"], target_crew=crew,
                                    due_from=when, due_until=until)
-        return {"route": None, "hold": hold, **extra}
+        return {"route": None, "hold": hold, **extra, "route_at": int(when.timestamp())}
     return {"route": _outside_route(month, member, game_account, mine, now, week, role), "hold": hold, **extra}
 
 
