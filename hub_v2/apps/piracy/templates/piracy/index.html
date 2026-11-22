@@ -82,8 +82,9 @@
   <section class="org-panel">
     <h3><i class="bi bi-trophy"></i> Campeãs do mês
       {% if month %}
-      <span class="org-chip {% if month.paused %}off{% else %}ok{% endif %}" style="margin-left: auto;">{% if month.paused %}pausado{% else %}ativo{% endif %}</span>
-      <span class="org-chip gold">{{ month.starts_at|date:"d/m H:i" }} → {{ month.ends_at|date:"d/m H:i" }}</span>
+      <span class="org-chip {% if month.paused %}off{% elif month.starts_at > now %}gold{% else %}ok{% endif %}" style="margin-left: auto;">
+        {% if month.paused %}pausado{% elif month.starts_at > now %}começa {{ month.starts_at|date:"d/m H:i" }}{% else %}rodando desde {{ month.starts_at|date:"d/m H:i" }}{% endif %}</span>
+      <span class="org-chip off">termina {{ month.ends_at|date:"d/m H:i" }}</span>
       {% endif %}</h3>
     {% if month %}
     <div class="pr-flow">
