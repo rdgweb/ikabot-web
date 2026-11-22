@@ -274,8 +274,20 @@ class PiracyMissionRunner(BaseRunner):
             if self.is_network_error(exc):
                 raise
             self.log(jid, "info", f"Plano do mês: o assalto direto não saiu ({exc})")
-            return None
-        return raid if raid.get("ok") else None
+            raid = {"ok": False}
+        if raid.get("ok"):
+            return raid
+        # the game may not confirm in words: if the ship left, the raid went (never try again nor colonize then)
+        try:
+            state = client.get_piracy_state(city_id)
+        except Exception as exc:
+            if self.is_network_error(exc):
+                raise
+            state = {}
+        left = _to_int(state.get("time_remaining"), 0)
+        if left > 0:
+            return {**raid, "ok": True, "time_remaining": left}
+        return None
 
     def _share_convert(self, jid: str, client, city_id: str, state: dict[str, Any], capture_points: int, percent: int,
                        crew_cap: int | None = None) -> int:
@@ -332,7 +344,7 @@ class PiracyMissionRunner(BaseRunner):
     def _planned_pair(self, jid: str, client, route: dict[str, Any], game_account_id: str):
         """(target_entry, colony_spot) for the plan's route, or None (reported to the hub as failed)."""
         route_id = str(route.get("route_id") or "")
-        name = str(route.get("player_name") or "?")
+        name = str(route.get("player_name") or route.get("target_name") or "?")
         if self._same_lobby(game_account_id, route):
             self.log(jid, "error", f"SEGURANCA: o plano pediu assalto em {name}, do mesmo lobby; recusado")
             self._report_route(jid, route_id, "failed", "mesmo lobby")

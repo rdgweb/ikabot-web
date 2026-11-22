@@ -620,7 +620,8 @@ def _outside_info(target) -> dict | None:
 def _payload(route, info) -> dict:
     return {"route_id": str(route.pk), "target_game_account_id": str(route.target_id or ""),
             "raider_lobby": str(route.raider.account_id), "target_lobby": str(route.target.account_id) if route.target_id else "",
-            "stage": route.stage, "outside": bool(route.outside_id), "target_points": route.target_points, **info}
+            "stage": route.stage, "outside": bool(route.outside_id), "target_points": route.target_points,
+            "target_name": route.target_name, **info}
 
 
 def next_for(game_account, now: datetime | None = None) -> dict:

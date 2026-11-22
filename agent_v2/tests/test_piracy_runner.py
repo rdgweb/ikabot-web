@@ -285,3 +285,18 @@ class PlanRouteAtTests(unittest.TestCase):
         self.assertEqual(runner._plan_next("ga")["route_at"], 1800000000)
         runner.hub = types.SimpleNamespace(get_piracy_next=lambda game_account_id: {"route": None})
         self.assertEqual(runner._plan_next("ga")["route_at"], 0)
+
+
+class DirectRaidConfirmTests(unittest.TestCase):
+    """The game does not always confirm the raid in words: a ship that left means the raid went."""
+
+    def test_a_busy_ship_confirms_the_raid(self):
+        runner = PiracyMissionRunner.__new__(PiracyMissionRunner)
+        runner.log = lambda jid, level, text: None
+        runner.is_network_error = lambda exc: False
+        client = types.SimpleNamespace(start_piracy_raid=lambda **kw: {"ok": False},
+                                       get_piracy_state=lambda city_id: {"time_remaining": 2500})
+        raid = runner._direct_raid("j", client, "77", {"target_city_id": "1", "target_island_id": "2"})
+        self.assertEqual((raid["ok"], raid["time_remaining"]), (True, 2500))
+        client.get_piracy_state = lambda city_id: {"time_remaining": 0}
+        self.assertIsNone(runner._direct_raid("j", client, "77", {"target_city_id": "1", "target_island_id": "2"}))
