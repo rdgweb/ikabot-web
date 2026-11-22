@@ -54,7 +54,7 @@ class Base(TestCase):
                 with patch("apps.jobs.signals.dispatch_job", create=True):
                     self.jobs[ga.pk] = Job.objects.create(account=lobby, node=self.node, game_account=ga, action_code=17,
                                                           status="scheduled")
-                self.set_strength(ga, points=5000, crew=1000)
+                self.set_strength(ga, points=15000, crew=1000)
                 self.accounts.append(ga)
         self.client.force_login(self.user)
 
@@ -110,16 +110,21 @@ class PlanTests(Base):
         group = [m.game_account for m in month.members.filter(group=champion_m.group).exclude(pk=champion_m.pk)]
         self.set_strength(champion, points=0, crew=30000)
         data = self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
-        route = PiracyRoute.objects.select_related("target").get(pk=data["route"]["route_id"])
+        self.assertIsNone(data["route"])                                     # drawn for a time within the next day
+        route = PiracyRoute.objects.select_related("target").get(raider=champion, status="planned")
+        self.assertLessEqual(route.due_from, timezone.now() + timedelta(hours=services.DRAW_HOURS, minutes=1))
+        PiracyRoute.objects.filter(pk=route.pk).update(due_from=timezone.now() - timedelta(minutes=1))
+        data = self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
+        self.assertEqual(data["route"]["route_id"], str(route.pk))
         self.assertIn(route.target, group)
         self.assertNotEqual(route.target.account_id, champion.account_id)
         self.assertGreaterEqual(services.win_chance(route.raider_crew, route.target_crew) * 100, month.min_win_percent)
         self.assertEqual(self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")["route"]["route_id"], str(route.pk))
         self.agent(f"/api/agent/piracy/routes/{route.pk}/", "post", status="sent")
         self.agent(f"/api/agent/piracy/routes/{route.pk}/", "post", status="done", message="ganhou")
-        data = self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
-        if data["route"]:
-            self.assertNotEqual(data["route"]["target_game_account_id"], str(route.target_id))     # not twice in 7 days
+        self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
+        for later in PiracyRoute.objects.filter(raider=champion, status="planned"):
+            self.assertNotEqual(later.target_id, route.target_id)          # not twice in 7 days
         # a crew without the chance asked takes nothing (1100 against 1000: about 72%)
         PiracyRoute.objects.filter(raider=champion, status="planned").update(status="skipped")
         self.set_strength(champion, points=0, crew=1100)
@@ -210,3 +215,43 @@ class WinChanceTests(TestCase):
         self.assertIsNone(services.win_chance(None, 1000))
         self.assertTrue(services.sure_win(1150, 1000, 95))
         self.assertFalse(services.sure_win(1100, 1000, 95))
+
+
+class ThresholdPauseTests(Base):
+    def test_below_the_points_nothing_and_paused_everyone_plays_normally(self):
+        month = self.plan(min_points=20000)
+        champion = month.members.filter(role="champion").first().game_account
+        origin = month.members.filter(role="origin").first().game_account
+        self.set_strength(champion, points=0, crew=30000)
+        self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
+        self.assertFalse(PiracyRoute.objects.exists())                       # everyone holds 15000 < 20000
+        PiracyMonth.objects.filter(pk=month.pk).update(min_points=10000)
+        self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
+        self.assertEqual(PiracyRoute.objects.filter(status="planned").count(), 1)
+        self.client.post("/pirataria/", {"action": "pause", "server": "s1-br"})
+        self.assertFalse(PiracyRoute.objects.filter(status="planned").exists())
+        data = self.agent(f"/api/agent/piracy/next/?game_account_id={origin.pk}")
+        self.assertEqual((data["route"], data["hold"]), (None, False))
+        self.client.post("/pirataria/", {"action": "resume", "server": "s1-br"})
+        self.assertTrue(self.agent(f"/api/agent/piracy/next/?game_account_id={origin.pk}")["hold"])
+
+
+class TargetSearchTests(Base):
+    def test_only_cities_with_piracy_and_never_an_own_player(self):
+        from apps.worldintel.models import WorldDump, WorldDumpCity, WorldDumpIsland
+
+        dump = WorldDump.objects.create(account=self.accounts[0].account, game_account=self.accounts[0], captured_at=timezone.now())
+        island = WorldDumpIsland.objects.create(dump=dump, island_id="77", x=40, y=41)
+        WorldDumpCity.objects.create(dump=dump, island=island, game_city_id="5001", name="Porto", owner_name="Inimigo",
+                                     actions_json={"piracy_raid": 1})
+        WorldDumpCity.objects.create(dump=dump, island=island, game_city_id="5002", name="Vila", owner_name="Inimigo2")
+        WorldDumpCity.objects.create(dump=dump, island=island, game_city_id="5003", name="Minha", owner_name="J1",
+                                     actions_json={"piracy_raid": 1})
+        page = self.client.get("/pirataria/alvos/?server=s1-br&q=Inim").content.decode()
+        self.assertIn("Porto", page)
+        self.assertNotIn("Vila", page)
+        self.assertIn('value="5001"', page)
+        self.assertNotIn("Minha", self.client.get("/pirataria/alvos/?server=s1-br&q=J1").content.decode())
+        self.client.post("/pirataria/", {"action": "add_target", "server": "s1-br", "player_name": "Inimigo",
+                                         "city_id": "5001", "island_id": "77"})
+        self.assertEqual(PiracyTarget.objects.get().city_id, "5001")

@@ -31,6 +31,8 @@ class PiracyMonth(UUIDTimestampModel):
     share_percent = models.PositiveSmallIntegerField(default=10)       # the others convert this share of their points...
     share_every_hours = models.PositiveSmallIntegerField(default=24)   # ...once in this many hours
     min_win_percent = models.PositiveSmallIntegerField(default=95)     # raid only with at least this chance of winning
+    min_points = models.PositiveIntegerField(default=10000)            # an account is taken from once it holds this many points
+    paused = models.BooleanField(default=False)                        # paused: every account plays as if there were no plan
     notes = models.TextField(blank=True, default="")
 
     class Meta:

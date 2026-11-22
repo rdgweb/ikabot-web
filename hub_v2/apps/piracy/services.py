@@ -181,7 +181,8 @@ def overview(server_id: str) -> dict:
 
 WIN_FACTOR = 1.1 / 0.9       # each side gets -10%..+10% on its crew: a sure win needs crew > target crew x 1.1 / 0.9
 BONUS = 0.1
-MIN_POINTS = 100             # fewer capture points than this are not worth a raid
+MIN_POINTS = 100             # fewer capture points than this are not worth a raid (targets by hand)
+DRAW_HOURS = 24              # a raid of the plan happens at a random time within this many hours
 PAIR_DAYS = 7                # the same raider takes from the same account once in this many days
 ROUTE_HOURS = 6              # a raid decided and not sent in this time is dropped (the next free ship gets a new one)
 
@@ -267,7 +268,7 @@ def build_groups(accounts: list, champions: list) -> list[dict]:
 @transaction.atomic
 def plan_month(organization, server_id: str, *, champions: list | None = None, now: datetime | None = None,
                rng: random.Random | None = None, share_percent: int = 10, share_every_hours: int = 24,
-               min_win_percent: int = 95):
+               min_win_percent: int = 95, min_points: int = 10000):
     """Close the open month of that server and start a new one: champions, passers and origins of each group."""
     now = now or timezone.now()
     old = current_month(server_id)
@@ -286,7 +287,8 @@ def plan_month(organization, server_id: str, *, champions: list | None = None, n
                                        chosen_by="escolha" if champions else "sorteio",
                                        share_percent=max(0, min(100, int(share_percent))),
                                        share_every_hours=max(1, min(240, int(share_every_hours or 24))),
-                                       min_win_percent=max(50, min(100, int(min_win_percent or 95))))
+                                       min_win_percent=max(50, min(100, int(min_win_percent or 95))),
+                                       min_points=max(100, int(min_points or 10000)))
     for number, group in enumerate(build_groups(accounts, chosen), start=1):
         PiracyChampion.objects.create(month=month, game_account=group["champion"], group=number)
         PiracyMember.objects.create(month=month, game_account=group["champion"], role=PiracyMember.CHAMPION, group=number)
@@ -311,6 +313,45 @@ def expire(now: datetime | None = None) -> int:
     for month in PiracyMonth._base_manager.filter(status=PiracyMonth.OPEN, ends_at__lt=now):
         close_month(month, "o ranking virou")
     return skipped
+
+
+# ── targets ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+def search_targets(server_id: str, query: str, limit: int = 20) -> list[dict]:
+    """Cities with a Pirate Fortress (the game offers a piracy raid on them) of the latest world dump of the server,
+    by player, alliance or city name; the organization's own players left out."""
+    from apps.worldintel.models import WorldDump, WorldDumpCity
+    from django.db.models import Q
+
+    query = (query or "").strip()
+    if len(query) < 2:
+        return []
+    dump = WorldDump.objects.filter(game_account__server_id=server_id).order_by("-captured_at", "-created_at").first()
+    if dump is None:
+        return []
+    own = {str(ga.name or "").strip().casefold() for ga in accounts_on(server_id)}
+    rows = []
+    cities = (WorldDumpCity._base_manager.filter(dump=dump).filter(
+        Q(owner_name__icontains=query) | Q(ally_tag__icontains=query) | Q(name__icontains=query))
+        .select_related("island").order_by("owner_name", "name")[:400])
+    for city in cities:
+        actions = city.actions_json or {}
+        has_piracy = ("piracy_raid" in actions) if isinstance(actions, (dict, list)) else False
+        if not has_piracy or str(city.owner_name or "").strip().casefold() in own:
+            continue
+        rows.append({"player": city.owner_name, "ally": city.ally_tag, "city": city.name, "city_id": city.game_city_id,
+                     "island_id": city.island.island_id if city.island_id else "", "x": city.island.x if city.island_id else "",
+                     "y": city.island.y if city.island_id else "", "level": city.level})
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def marked_targets(organization, server_id: str) -> list[str]:
+    """Players marked as piracy targets in Inteligência — suggested on the page."""
+    from apps.worldintel.services.marks import marks_of
+
+    return sorted(marks_of(organization, server_id, "pirate_target").values_list("owner_name", flat=True))
 
 
 # ── the agent's side ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -396,7 +437,7 @@ def next_for(game_account, now: datetime | None = None) -> dict:
     now = now or timezone.now()
     expire(now)
     member = (PiracyMember._base_manager.filter(game_account=game_account, month__status=PiracyMonth.OPEN,
-                                                 month__starts_at__lte=now).select_related("month").first())
+                                                 month__starts_at__lte=now, month__paused=False).select_related("month").first())
     if member is None:
         return {"route": None, "hold": False}
     month = member.month
@@ -404,8 +445,10 @@ def next_for(game_account, now: datetime | None = None) -> dict:
     extra = {"convert_all": not hold, "share_percent": month.share_percent if hold else 0,
              "share_every_hours": month.share_every_hours}
     open_route = (PiracyRoute._base_manager.filter(raider=game_account, month=month, status=PiracyRoute.PLANNED, due_until__gt=now)
-                  .select_related("raider__account", "target__account", "outside").first())
+                  .select_related("raider__account", "target__account", "outside").order_by("due_from").first())
     if open_route is not None:
+        if open_route.due_from > now:                       # drawn for later today: nothing yet
+            return {"route": None, "hold": hold, **extra}
         info = _target_info(open_route.target) if open_route.target_id else _outside_info(open_route.outside)
         if info:
             return {"route": _payload(open_route, info), "hold": hold, **extra}
@@ -416,24 +459,28 @@ def next_for(game_account, now: datetime | None = None) -> dict:
     week = max(1, int((now - month.starts_at).total_seconds() // (7 * 86400)) + 1)
     recent = set(PiracyRoute._base_manager.filter(raider=game_account, created_at__gte=now - timedelta(days=PAIR_DAYS))
                  .exclude(status=PiracyRoute.SKIPPED).values_list("target_id", flat=True))
+    taken = set(PiracyRoute._base_manager.filter(month=month, status__in=(PiracyRoute.PLANNED, PiracyRoute.SENT))
+                .values_list("target_id", flat=True))           # one raid on an account at a time
     candidates = []
     for other in (PiracyMember._base_manager.filter(month=month, group=member.group)
                   .exclude(game_account=game_account).select_related("game_account__account")):
         ga = other.game_account
-        if PiracyMember.LEVEL[other.role] >= level or ga.account_id == game_account.account_id or ga.pk in recent:
+        if (PiracyMember.LEVEL[other.role] >= level or ga.account_id == game_account.account_id
+                or ga.pk in recent or ga.pk in taken):
             continue
         theirs = strength(ga)
-        if (theirs["points"] or 0) < MIN_POINTS or not sure_win(mine["crew"], theirs["crew"], month.min_win_percent):
+        if (theirs["points"] or 0) < month.min_points or not sure_win(mine["crew"], theirs["crew"], month.min_win_percent):
             continue
         candidates.append((theirs["points"], theirs["crew"], ga))
     for points, crew, ga in sorted(candidates, key=lambda c: -c[0]):
-        info = _target_info(ga)
-        if not info:
+        if not _target_info(ga):
             continue
-        route = PiracyRoute.objects.create(month=month, group=member.group, week=week, stage=level, raider=game_account,
-                                           target=ga, target_points=points, raider_crew=mine["crew"], target_crew=crew,
-                                           due_from=now, due_until=now + timedelta(hours=ROUTE_HOURS))
-        return {"route": _payload(route, info), "hold": hold, **extra}
+        # a random time within the next day, so the raids of the plan have no pattern
+        when = now + timedelta(seconds=random.randint(0, DRAW_HOURS * 3600))
+        PiracyRoute.objects.create(month=month, group=member.group, week=week, stage=level, raider=game_account,
+                                   target=ga, target_points=points, raider_crew=mine["crew"], target_crew=crew,
+                                   due_from=when, due_until=when + timedelta(hours=ROUTE_HOURS))
+        return {"route": None, "hold": hold, **extra}
     return {"route": _outside_route(month, member, game_account, mine, now, week), "hold": hold, **extra}
 
 

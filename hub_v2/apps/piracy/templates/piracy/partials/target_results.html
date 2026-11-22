@@ -1,0 +1,16 @@
+{# N-211: cities with piracy found in Inteligência; one click makes the player a target #}
+{% for r in rows %}
+<div class="pr-line">
+  <span class="who"><b>{{ r.player }}</b>{% if r.ally %} <span class="text-xs text-muted">[{{ r.ally }}]</span>{% endif %}
+    <small>{{ r.city }} · [{{ r.x }}:{{ r.y }}] · cidade nível {{ r.level }}</small></span>
+  {% if can_run %}
+  <form method="post" action="/pirataria/" hx-boost="false">{% csrf_token %}
+    <input type="hidden" name="server" value="{{ server }}"><input type="hidden" name="player_name" value="{{ r.player }}">
+    <input type="hidden" name="city_id" value="{{ r.city_id }}"><input type="hidden" name="island_id" value="{{ r.island_id }}">
+    <button class="btn btn-primary btn-sm" name="action" value="add_target"><i class="bi bi-crosshair"></i></button>
+  </form>
+  {% endif %}
+</div>
+{% empty %}
+{% if q|length >= 2 %}<p class="text-xs text-muted" style="margin: .4rem 0 0;">Nenhuma cidade com pirataria para "{{ q }}".</p>{% endif %}
+{% endfor %}

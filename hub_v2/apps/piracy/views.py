@@ -57,6 +57,16 @@ def _best_odds(rows, able) -> list[dict]:
     return sorted(out, key=lambda o: -o["chance"])[:6]
 
 
+class TargetSearchView(LoginRequiredMixin, View):
+    """GET /pirataria/alvos/?server=&q= — cities with piracy from Inteligência, to pick a target (HTMX)."""
+
+    def get(self, request):
+        server = _server(request)
+        rows = services.search_targets(server, request.GET.get("q", "")) if server else []
+        return render(request, "piracy/partials/target_results.html", {"rows": rows, "server": server,
+                                                                       "can_run": _can_run(request), "q": request.GET.get("q", "")})
+
+
 class PiracyView(LoginRequiredMixin, View):
     def get(self, request):
         server = _server(request)
@@ -84,6 +94,7 @@ class PiracyView(LoginRequiredMixin, View):
             **data, "server": server, "servers": services.servers(), "clock_human": _clock_human(data.get("clock")),
             "eligible_count": len(able), "groups": groups, "routes": routes, "history": history, "own_ranked": own_ranked,
             "targets": PiracyTarget.objects.filter(server_id=server).order_by("player_name") if server else [],
+            "marked": services.marked_targets(getattr(request, "organization", None), server) if server else [],
             "can_run": _can_run(request), "base_template": _base(request), "win_factor_pct": round((services.WIN_FACTOR - 1) * 100, 1),
             "best_odds": _best_odds(data.get("rows", []), able),
         })
@@ -105,7 +116,8 @@ class PiracyView(LoginRequiredMixin, View):
                 month = services.plan_month(request.organization, server, champions=champions,
                                             share_percent=int(request.POST.get("share_percent") or 10),
                                             share_every_hours=int(request.POST.get("share_every_hours") or 24),
-                                            min_win_percent=int(request.POST.get("min_win_percent") or 95))
+                                            min_win_percent=int(request.POST.get("min_win_percent") or 95),
+                                            min_points=int(request.POST.get("min_points") or 10000))
                 names = ", ".join(c.game_account.name for c in month.champions.select_related("game_account"))
                 record("piracy.month_planned", target=month, target_label=f"{server}: {names}")
                 messages.success(request, f"Campeãs do mês: {names}.")
@@ -115,9 +127,20 @@ class PiracyView(LoginRequiredMixin, View):
                     month.share_percent = max(0, min(100, int(request.POST.get("share_percent") or 0)))
                     month.share_every_hours = max(1, min(240, int(request.POST.get("share_every_hours") or 24)))
                     month.min_win_percent = max(50, min(100, int(request.POST.get("min_win_percent") or 95)))
-                    month.save(update_fields=["share_percent", "share_every_hours", "min_win_percent", "updated_at"])
+                    month.min_points = max(100, int(request.POST.get("min_points") or 10000))
+                    month.save(update_fields=["share_percent", "share_every_hours", "min_win_percent", "min_points", "updated_at"])
                     messages.success(request, f"As outras contas convertem {month.share_percent}% a cada {month.share_every_hours}h; "
                                               f"assalto só com {month.min_win_percent}% de chance de vencer ou mais.")
+            elif action in ("pause", "resume"):
+                month = services.current_month(server)
+                if month:
+                    month.paused = action == "pause"
+                    month.save(update_fields=["paused", "updated_at"])
+                    if month.paused:
+                        month.routes.filter(status=PiracyRoute.PLANNED).update(status=PiracyRoute.SKIPPED, message="plano pausado")
+                    record("piracy.month_paused" if month.paused else "piracy.month_resumed", target=month, target_label=server)
+                    messages.success(request, "Plano pausado: as contas jogam como se não houvesse plano." if month.paused
+                                     else "Plano retomado.")
             elif action == "close":
                 month = services.current_month(server)
                 if month:
