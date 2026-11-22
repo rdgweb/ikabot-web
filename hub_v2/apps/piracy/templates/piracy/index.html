@@ -92,16 +92,18 @@
         {% if g.champion %}
         <div class="pr-champ"><span class="crown"><i class="bi bi-trophy-fill"></i></span>
           <span style="min-width: 0;"><b>{{ g.champion.ga.name }}</b>
-            <span class="text-xs text-muted" style="display: block;">{{ g.champion.ga.account.label }} · trip. {{ g.champion.crew|default_if_none:"?"|intcomma }}</span></span>
+            <span class="text-xs text-muted" style="display: block;">{{ g.champion.ga.account.label }} · trip. {{ g.champion.crew|default_if_none:"?"|intcomma }} · converte tudo, junta na fase final</span></span>
           {% if g.projection %}<span style="margin-left: auto; text-align: right;" title="soma dos pontos de cada conta x a chance de chegarem à campeã (direto ou pela passagem)">
             <span class="org-card-label" style="display: block;">pode juntar</span>
             <b style="font-family: ui-monospace, monospace;">≈ {{ g.projection.expected|intcomma }}</b>
             <span class="text-xs text-muted" style="display: block;">de {{ g.projection.held|intcomma }}</span></span>{% endif %}</div>
         {% endif %}
         {% if g.passers %}<p class="pr-stage">Passagens</p>
-        <div class="pr-chips">{% for r in g.passers %}<span class="pr-chip{% if r.capture_points >= month.min_points %} hot{% endif %}"><b>{{ r.ga.name }}</b><span>{{ r.capture_points|default_if_none:"?"|intcomma }} pts · {{ r.crew|default_if_none:"?"|intcomma }} trip.</span></span>{% endfor %}</div>{% endif %}
+        <div class="pr-chips">{% for r in g.passers %}<span class="pr-chip{% if r.capture_points >= month.min_points %} hot{% endif %}"><b>{{ r.ga.name }}</b><span>{{ r.capture_points|default_if_none:"?"|intcomma }} pts · {{ r.crew|default_if_none:"?"|intcomma }} trip.</span>
+          {% if r.must_convert %}<span style="color: #9a6a17;">converter {{ r.must_convert|intcomma }} para roubar</span>{% elif r.can_convert is not None %}<span>pode converter {{ r.can_convert|intcomma }}</span>{% endif %}</span>{% endfor %}</div>{% endif %}
         {% if g.origins %}<p class="pr-stage">Origens</p>
-        <div class="pr-chips">{% for r in g.origins %}<span class="pr-chip{% if r.capture_points >= month.min_points %} hot{% endif %}"><b>{{ r.ga.name }}</b><span>{{ r.capture_points|default_if_none:"?"|intcomma }} pts · {{ r.crew|default_if_none:"?"|intcomma }} trip.</span></span>{% endfor %}</div>{% endif %}
+        <div class="pr-chips">{% for r in g.origins %}<span class="pr-chip{% if r.capture_points >= month.min_points %} hot{% endif %}"><b>{{ r.ga.name }}</b><span>{{ r.capture_points|default_if_none:"?"|intcomma }} pts · {{ r.crew|default_if_none:"?"|intcomma }} trip.</span>
+          {% if r.can_convert is not None %}<span{% if not r.can_convert %} style="color: #9c3526;"{% endif %}>{% if r.can_convert %}pode converter {{ r.can_convert|intcomma }}{% else %}forte demais: não converter{% endif %}</span>{% endif %}</span>{% endfor %}</div>{% endif %}
         {% if g.projection %}<p class="pr-stage">Chega à campeã</p>
         <div class="pr-chips">{% for d in g.projection.detail %}<span class="pr-chip" style="{% if not d.chance %}opacity: .55;{% endif %}"><b>{{ d.ga.name }} · {{ d.chance }}%</b><span>{{ d.way }}</span></span>{% endfor %}</div>{% endif %}
       </div>
@@ -175,6 +177,28 @@
     {% endif %}
   </section>
 </div>
+
+{% if month %}
+<section class="org-panel" style="margin-bottom: .9rem; padding: .9rem 1.1rem;">
+  <h3 style="margin-bottom: .5rem;"><i class="bi bi-alarm"></i> Próximos ataques</h3>
+  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: .5rem;">
+    {% for route in next_raids %}
+    <div class="pr-chip" style="flex-direction: row; align-items: center; gap: .55rem;">
+      <span class="org-chip {% if route.status == 'sent' %}gold{% elif route.stage == 3 %}bad{% else %}ok{% endif %}">{% if route.status == 'sent' %}a caminho{% else %}{{ route.due_from|date:"d/m H:i" }}{% endif %}</span>
+      <span style="min-width: 0;"><b>{{ route.raider.name }} ← {{ route.target_name }}</b>
+        <span style="display: block;">{% if route.target_points %}{{ route.target_points|intcomma }} pts{% endif %}{% if route.raider_crew and route.target_crew %} · {{ route.raider_crew|intcomma }} × {{ route.target_crew|intcomma }}{% endif %}</span></span>
+    </div>
+    {% endfor %}
+    {% for r in waiting %}
+    <div class="pr-chip" style="flex-direction: row; align-items: center; gap: .55rem; opacity: .8;">
+      <span class="org-chip off">aguardando</span>
+      <span style="min-width: 0;"><b>{{ r.ga.name }}</b><span style="display: block;">{{ r.capture_points|intcomma }} pts · ninguém do grupo vence ainda</span></span>
+    </div>
+    {% endfor %}
+    {% if not next_raids and not waiting %}<p class="text-sm text-muted" style="margin: 0;">Nenhum: nenhuma conta passou de {{ month.min_points|intcomma }} pontos{% if month.starts_at > now %} e o plano começa {{ month.starts_at|date:"d/m H:i" }}{% endif %}.</p>{% endif %}
+  </div>
+</section>
+{% endif %}
 
 <div class="pr-trio">
   <section class="org-panel">

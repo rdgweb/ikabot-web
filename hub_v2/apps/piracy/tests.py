@@ -276,3 +276,36 @@ class ProjectionTests(Base):
             self.assertEqual(d["chance"], 0)                                  # never straight from its own lobby
         rows[champion.pk]["crew"] = 900                                       # weaker than all: gathers nothing
         self.assertEqual(services.projection(month, rows)[champion_m.group]["expected"], 0)
+
+
+class BudgetTests(Base):
+    """How much each account may convert: below the crew its raider beats with the month's chance (cap); a passer needs
+    the crew that beats its origins (floor)."""
+
+    def test_caps_and_floors_follow_the_crews(self):
+        self.assertAlmostEqual(services.win_chance(services.ratio_for(95) * 1000, 1000), 0.95, delta=0.005)
+        month = self.plan()
+        crews = {ga.pk: 30000 for ga in self.accounts}
+        champion_m = month.members.filter(role="champion").first()
+        crews[champion_m.game_account_id] = 40000
+        result = services.budgets(month, crews)
+        ratio = services.ratio_for(month.min_win_percent)
+        for m in month.members.filter(group=champion_m.group, role="passer").select_related("game_account"):
+            b = result[m.game_account_id]
+            self.assertEqual(b["cap"], int(40000 / ratio))                      # the champion still beats it
+            if b["floor"]:
+                self.assertEqual(b["floor"], int(30000 * ratio) + 1)            # it beats its origins
+        self.assertNotIn(champion_m.game_account_id, result)                    # the champion converts all
+        origin = month.members.filter(role="origin").select_related("game_account").first()
+        data = self.agent(f"/api/agent/piracy/next/?game_account_id={origin.game_account_id}")
+        self.assertIn("crew_cap", data)
+
+    def test_the_page_shows_the_next_raids(self):
+        month = self.plan()
+        champion = month.members.filter(role="champion").first().game_account
+        self.set_strength(champion, points=0, crew=30000)
+        self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
+        route = PiracyRoute.objects.get(status="planned")
+        page = self.client.get("/pirataria/?server=s1-br").content.decode()
+        self.assertIn("Próximos ataques", page)
+        self.assertIn(timezone.localtime(route.due_from).strftime("%d/%m %H:%M"), page)

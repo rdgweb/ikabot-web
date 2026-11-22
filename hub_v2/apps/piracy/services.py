@@ -317,6 +317,17 @@ def expire(now: datetime | None = None) -> int:
 
 # ── what a champion can gather ─────────────────────────────────────────────────────────────────────────────────────
 
+def upcoming(month, rows_by_ga: dict) -> dict:
+    """The next raids of the plan (drawn times) and the accounts over the points limit still without a raider."""
+    planned = list(month.routes.filter(status__in=(PiracyRoute.PLANNED, PiracyRoute.SENT))
+                   .select_related("raider", "target", "outside").order_by("due_from"))
+    busy = {r.target_id for r in planned if r.target_id}
+    waiting = [row for ga_id, row in rows_by_ga.items()
+               if (row.get("role") in ("passagem", "origem")) and (row.get("capture_points") or 0) >= month.min_points
+               and ga_id not in busy]
+    return {"planned": planned, "waiting": sorted(waiting, key=lambda r: -(r.get("capture_points") or 0))}
+
+
 def projection(month, rows_by_ga: dict) -> dict:
     """Per group: how many points the champion can gather this month from what the accounts hold now. A lost raid takes
     nothing (only the pair's week), so each account adds its points x the chance they reach the champion: straight
@@ -432,6 +443,51 @@ def win_chance(raider_crew: int | None, target_crew: int | None) -> float | None
     return total / steps
 
 
+def ratio_for(min_percent: int) -> float:
+    """How many times bigger the raider's crew must be to win with at least that chance."""
+    low, high = 0.8, WIN_FACTOR
+    for _ in range(40):
+        middle = (low + high) / 2
+        if (win_chance(middle * 10000, 10000) or 0) * 100 >= min(100, max(1, min_percent)):
+            high = middle
+        else:
+            low = middle
+    return high
+
+
+def budgets(month, crews: dict) -> dict:
+    """Per account of the month, the crew it may have (cap: its raider still wins with the month's chance) and the crew
+    it needs (floor: a passer beats its origins) — what decides how much it can convert. crews: game account id -> crew.
+    The champion has neither (it converts all, and gathers in its final phase)."""
+    ratio = ratio_for(month.min_win_percent)
+    members = list(month.members.select_related("game_account"))
+    out = {}
+    for group in {m.group for m in members}:
+        of = [m for m in members if m.group == group]
+        champion = next((m.game_account for m in of if m.role == PiracyMember.CHAMPION), None)
+        passers = [m.game_account for m in of if m.role == PiracyMember.PASSER]
+        origins = [m.game_account for m in of if m.role == PiracyMember.ORIGIN]
+
+        def raiders_of(ga, role):
+            if role == PiracyMember.PASSER:
+                return [champion] if champion and champion.account_id != ga.account_id else []
+            return [p for p in passers if p.account_id != ga.account_id] + (
+                [champion] if champion and champion.account_id != ga.account_id else [])
+
+        for m in of:
+            if m.role == PiracyMember.CHAMPION:
+                continue
+            ga = m.game_account
+            raider_crews = [crews.get(r.pk) for r in raiders_of(ga, m.role) if crews.get(r.pk) is not None]
+            cap = int(max(raider_crews) / ratio) if raider_crews else None
+            floor = None
+            if m.role == PiracyMember.PASSER:
+                theirs = [crews.get(o.pk) for o in origins if o.account_id != ga.account_id and crews.get(o.pk) is not None]
+                floor = int(max(theirs) * ratio) + 1 if theirs else None
+            out[ga.pk] = {"cap": cap, "floor": floor, "crew": crews.get(ga.pk)}
+    return out
+
+
 def sure_win(raider_crew: int | None, target_crew: int | None, min_percent: int = 100) -> bool:
     chance = win_chance(raider_crew, target_crew)
     return chance is not None and chance * 100 >= min(100, max(1, min_percent)) - 1e-9
@@ -490,7 +546,12 @@ def next_for(game_account, now: datetime | None = None) -> dict:
     month = member.month
     hold = member.role != PiracyMember.CHAMPION
     extra = {"convert_all": not hold, "share_percent": month.share_percent if hold else 0,
-             "share_every_hours": month.share_every_hours}
+             "share_every_hours": month.share_every_hours, "crew_cap": None, "crew_floor": None}
+    if hold:
+        crews = {m.game_account_id: strength(m.game_account)["crew"]
+                 for m in month.members.filter(group=member.group).select_related("game_account")}
+        mine_budget = budgets(month, crews).get(game_account.pk) or {}
+        extra.update(crew_cap=mine_budget.get("cap"), crew_floor=mine_budget.get("floor"))
     open_route = (PiracyRoute._base_manager.filter(raider=game_account, month=month, status=PiracyRoute.PLANNED, due_until__gt=now)
                   .select_related("raider__account", "target__account", "outside").order_by("due_from").first())
     if open_route is not None:

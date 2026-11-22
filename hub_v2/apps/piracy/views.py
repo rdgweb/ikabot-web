@@ -5,6 +5,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import Http404
 from django.shortcuts import redirect, render
+from django.utils import timezone
 from django.views import View
 
 from . import services
@@ -79,6 +80,14 @@ class PiracyView(LoginRequiredMixin, View):
             by_ga[row["ga"].pk] = row
         groups = []
         projected = services.projection(month, by_ga) if month else {}
+        budget = services.budgets(month, {pk: row.get("crew") for pk, row in by_ga.items()}) if month else {}
+        for pk, row in by_ga.items():
+            b = budget.get(pk) or {}
+            crew, factor = row.get("crew"), 10
+            row["cap"], row["floor"] = b.get("cap"), b.get("floor")
+            row["can_convert"] = max(0, (b["cap"] - crew) * factor) if b.get("cap") is not None and crew is not None else None
+            row["must_convert"] = max(0, (b["floor"] - crew) * factor) if b.get("floor") is not None and crew is not None else None
+        nxt = services.upcoming(month, by_ga) if month else {"planned": [], "waiting": []}
         if month:
             members = list(month.members.select_related("game_account__account"))
             for number in sorted({m.group for m in members}):
@@ -94,10 +103,10 @@ class PiracyView(LoginRequiredMixin, View):
         own_ranked = sorted([r for r in data.get("rows", []) if r.get("place")], key=lambda r: int(r["place"]))
         return render(request, "piracy/index.html", {
             **data, "server": server, "servers": services.servers(), "clock_human": _clock_human(data.get("clock")),
-            "eligible_count": len(able), "groups": groups, "routes": routes, "history": history, "own_ranked": own_ranked,
+            "eligible_count": len(able), "groups": groups, "next_raids": nxt["planned"], "waiting": nxt["waiting"], "routes": routes, "history": history, "own_ranked": own_ranked,
             "targets": PiracyTarget.objects.filter(server_id=server).order_by("player_name") if server else [],
             "marked": services.marked_targets(getattr(request, "organization", None), server) if server else [],
-            "can_run": _can_run(request), "base_template": _base(request), "win_factor_pct": round((services.WIN_FACTOR - 1) * 100, 1),
+            "can_run": _can_run(request), "base_template": _base(request), "now": timezone.now(), "win_factor_pct": round((services.WIN_FACTOR - 1) * 100, 1),
             "best_odds": _best_odds(data.get("rows", []), able),
         })
 

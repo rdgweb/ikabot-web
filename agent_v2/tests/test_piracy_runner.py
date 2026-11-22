@@ -249,3 +249,30 @@ class MonthPlanTests(unittest.TestCase):
         self.assertEqual(converted, [("77", 50)])                  # 10% of 5000 = 500 points = 50 crew
         runner._share_convert("j", client, "77", {"conversion_factor": 10}, 50, 10)
         self.assertEqual(len(converted), 1)                         # 5 points make no crew
+
+
+class MonthPlanConversionTests(unittest.TestCase):
+    """N-211: what an account of the plan may convert — never above the crew its raider still beats; a passer
+    converts what it lacks to beat its origins."""
+
+    def _runner(self):
+        runner = PiracyMissionRunner.__new__(PiracyMissionRunner)
+        runner.log = lambda jid, level, text: None
+        self.converted = []
+        self.client = types.SimpleNamespace(convert_piracy_points=lambda city_id, crew: self.converted.append(crew))
+        return runner
+
+    def test_the_share_stops_at_the_cap(self):
+        runner = self._runner()
+        state = {"conversion_factor": 10, "complete_crew_points": 29900}
+        self.assertEqual(runner._share_convert("j", self.client, "1", state, 20000, 10, crew_cap=30000), 100)
+        self.assertEqual(runner._share_convert("j", self.client, "1", {**state, "complete_crew_points": 30000}, 20000, 10, crew_cap=30000), 0)
+        self.assertEqual(runner._share_convert("j", self.client, "1", state, 20000, 10), 200)   # no cap: the whole share
+        self.assertEqual(self.converted, [100, 200])
+
+    def test_a_passer_converts_what_it_lacks(self):
+        runner = self._runner()
+        state = {"conversion_factor": 10, "complete_crew_points": 30000}
+        self.assertEqual(runner._floor_convert("j", self.client, "1", state, 50000, 31000), 1000)
+        self.assertEqual(runner._floor_convert("j", self.client, "1", state, 5000, 31000), 500)     # only what it has
+        self.assertEqual(runner._floor_convert("j", self.client, "1", state, 50000, 29000), 0)
