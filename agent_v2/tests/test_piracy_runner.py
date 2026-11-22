@@ -213,13 +213,39 @@ class MonthPlanTests(unittest.TestCase):
         self.assertIsNone(runner._planned_pair("j", object(), self._route(target_city_id=""), "ga-raider"))
 
     def test_plan_next_survives_the_hub(self):
-        runner = self._runner(next_payload={"route": self._route(), "hold": True})
+        runner = self._runner(next_payload={"route": self._route(), "hold": True, "share_percent": 10, "share_every_hours": 24})
         plan = runner._plan_next("ga")
         self.assertTrue(plan["hold"])
-        self.assertEqual(plan["route"]["route_id"], "r1")
+        self.assertFalse(plan["convert_all"])
+        self.assertEqual((plan["route"]["route_id"], plan["share_percent"]), ("r1", 10))
 
         def boom(game_account_id):
             raise RuntimeError("hub fora")
 
         runner.hub.get_piracy_next = boom
-        self.assertEqual(runner._plan_next("ga"), {"route": None, "hold": False})
+        plan = runner._plan_next("ga")
+        self.assertEqual((plan["route"], plan["hold"], plan["convert_all"]), (None, False, False))
+
+    def test_direct_raid_from_the_fortress_or_none(self):
+        runner = self._runner()
+        runner.is_network_error = lambda exc: False
+        client = types.SimpleNamespace(start_piracy_raid=lambda **kw: {"ok": True, "time_remaining": 900, **kw})
+        raid = runner._direct_raid("j", client, "77", self._route())
+        self.assertEqual((raid["source_city_id"], raid["destination_city_id"]), ("77", "123"))
+        client.start_piracy_raid = lambda **kw: {"ok": False}
+        self.assertIsNone(runner._direct_raid("j", client, "77", self._route()))
+
+        def out_of_reach(**kw):
+            raise RuntimeError("modal")
+
+        client.start_piracy_raid = out_of_reach
+        self.assertIsNone(runner._direct_raid("j", client, "77", self._route()))
+
+    def test_share_conversion_takes_only_the_share(self):
+        runner = self._runner()
+        converted = []
+        client = types.SimpleNamespace(convert_piracy_points=lambda city_id, crew: converted.append((city_id, crew)))
+        runner._share_convert("j", client, "77", {"conversion_factor": 10}, 5000, 10)
+        self.assertEqual(converted, [("77", 50)])                  # 10% of 5000 = 500 points = 50 crew
+        runner._share_convert("j", client, "77", {"conversion_factor": 10}, 50, 10)
+        self.assertEqual(len(converted), 1)                         # 5 points make no crew

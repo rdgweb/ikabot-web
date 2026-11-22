@@ -78,6 +78,8 @@ ACTIONS = {
     "billing.canceled": ("plano", "Cancelou a assinatura"),
     "piracy.month_planned": ("jobs", "Montou o plano da pirataria do mês"),
     "piracy.month_closed": ("jobs", "Encerrou o plano da pirataria do mês"),
+    "piracy.target_added": ("jobs", "Adicionou um alvo de pirataria"),
+    "piracy.target_removed": ("jobs", "Retirou um alvo de pirataria"),
     "preset.common": ("jobs", "Tornou um preset comum a todas as organizações"),
     "preset.common_removed": ("jobs", "Tirou um preset dos comuns"),
     "billing.subscriptions_opened": ("plano", "Abriu as assinaturas para os clientes"),

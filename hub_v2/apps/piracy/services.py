@@ -5,9 +5,9 @@ job's own counters (capture points, crew, missions), the pirate raids on their w
 piracy captchas.
 
 Plan side: two champions a month from different lobbies (a lottery among the accounts that were not champions yet);
-each group has passers (lobbies other than its champion's) and origins. Each week a passer raids an origin (stage 1)
-and the champion raids the passer (stage 2). Fixed rules: the same lobby never raids itself; the same raider never
-raids the same account twice in a week.
+each group has passers (lobbies other than its champion's) and origins. Whenever a ship is free the hub decides the
+raid on the spot (see next_for). Fixed rules: the same lobby never raids itself; the same raider never raids the same
+account twice in 7 days; only sure wins (crew > target crew x 1.1 / 0.9) among the organization's accounts.
 """
 from __future__ import annotations
 
@@ -20,12 +20,11 @@ from datetime import datetime, timedelta
 from django.db import transaction
 from django.utils import timezone
 
-from .models import PiracyChampion, PiracyMonth, PiracyRoute
+from .models import PiracyChampion, PiracyMember, PiracyMonth, PiracyRoute, PiracyTarget
 
 PIRATE_ACTION = 17
 CHAMPIONS = 2
 PASSERS_PER_GROUP = 3
-STAGE_SPLIT = 0.5          # share of each week given to stage 1 (passers take from origins) before the champion's stage
 MONTH_FALLBACK_DAYS = 30
 
 
@@ -148,10 +147,15 @@ def overview(server_id: str) -> dict:
             raids.append({"account": ga, "from": event.get("origin_player") or "?", "city": event.get("target_city") or "",
                           "eta": event.get("time_left_human") or "", "eta_sec": int(event.get("time_left_sec") or 0)})
         fortress = _fortress_city(snap.cities if snap else None)
+        above = next((e for e in highscore.get("entries") or []
+                      if own.get("place") and int(e.get("place") or 0) == int(own.get("place")) - 1), None)
         rows.append({
+            "gap_up": (int(above.get("score") or 0) - int(own.get("score") or 0)) if above else None,
+            "above_name": (above or {}).get("player_name") or "",
             "ga": ga, "lobby": ga.account.label, "fortress": fortress, "room": town_room(snap.cities if snap else None),
             "place": own.get("place"), "score": own.get("score"),
-            "capture_points": inputs.get("last_capture_points"), "crew": inputs.get("last_crew_points"),
+            "capture_points": inputs.get("last_capture_points"),
+            "crew": inputs.get("last_complete_crew_points", inputs.get("last_crew_points")),
             "crew_converted": inputs.get("total_crew_converted"), "missions": inputs.get("total_missions_started"),
             "final_phase": bool(inputs.get("piracy_final_phase_active")),
             "special": (inputs.get("_targeted_phase") or ""), "special_target": inputs.get("_targeted_target_player_name") or "",
@@ -173,20 +177,20 @@ def overview(server_id: str) -> dict:
 
 # ── the month ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
+WIN_FACTOR = 1.1 / 0.9       # each side gets -10%..+10% on its crew: a sure win needs crew > target crew x 1.1 / 0.9
+MIN_POINTS = 100             # fewer capture points than this are not worth a raid
+PAIR_DAYS = 7                # the same raider takes from the same account once in this many days
+ROUTE_HOURS = 6              # a raid decided and not sent in this time is dropped (the next free ship gets a new one)
+
+
 def current_month(server_id: str):
     return PiracyMonth.objects.filter(server_id=server_id, status=PiracyMonth.OPEN).order_by("-starts_at").first()
 
 
 def month_roles(month) -> dict:
     """game account id -> "campeã" | "passagem" | "origem"."""
-    roles = {c.game_account_id: "campeã" for c in month.champions.all()}
-    for route in month.routes.all():
-        if route.stage == 2:
-            roles.setdefault(route.target_id, "passagem")
-        else:
-            roles.setdefault(route.raider_id, "passagem")
-            roles.setdefault(route.target_id, "origem")
-    return roles
+    names = {PiracyMember.CHAMPION: "campeã", PiracyMember.PASSER: "passagem", PiracyMember.ORIGIN: "origem"}
+    return {m.game_account_id: names[m.role] for m in month.members.all()}
 
 
 def month_window(server_id: str, now: datetime | None = None) -> tuple[datetime, datetime]:
@@ -217,13 +221,10 @@ def _past_champions(server_id: str) -> set:
     return set(PiracyChampion.objects.filter(month__server_id=server_id).values_list("game_account_id", flat=True))
 
 
-def pick_champions(accounts: list, server_id: str, rng: random.Random | None = None, room: dict | None = None) -> list:
-    """Two from different lobbies, drawn among the accounts that were not champions yet (all again once everyone was)
-    and that have a free town slot (a champion raids)."""
+def pick_champions(accounts: list, server_id: str, rng: random.Random | None = None) -> list:
+    """Two from different lobbies, drawn among the accounts that were not champions yet (all again once everyone was)."""
     rng = rng or random.Random()
     past = _past_champions(server_id)
-    if room is not None:
-        accounts = [ga for ga in accounts if (room.get(ga.pk) or 0) > 0]
     pool = [ga for ga in accounts if ga.pk not in past] or list(accounts)
     rng.shuffle(pool)
     chosen = []
@@ -241,98 +242,53 @@ def pick_champions(accounts: list, server_id: str, rng: random.Random | None = N
     return chosen
 
 
-def build_groups(accounts: list, champions: list, room: dict | None = None) -> list[dict]:
-    """Split the other accounts between the champions. Who raids founds a temporary colony, so passers come only from
-    accounts with a free town slot, of a lobby other than their champion's (small lobbies first, they bridge the big
-    ones); the others are origins, each given to a passer of another lobby — or straight to the champion when no
-    passer can take it. links: (raider, origin, stage)."""
-    room = room if room is not None else {ga.pk: 1 for ga in accounts}
-    can_raid = {ga.pk for ga in accounts if (room.get(ga.pk) or 0) > 0}
+def build_groups(accounts: list, champions: list) -> list[dict]:
+    """Split the other accounts between the champions: per group, passers (never the champion's lobby; small lobbies
+    first, they bridge the big ones) and origins (any lobby: whoever takes them must be of another one)."""
     others = [ga for ga in accounts if ga not in champions]
     lobby_size = defaultdict(int)
     for ga in accounts:
         lobby_size[ga.account_id] += 1
-    groups = [{"champion": c, "members": [], "passers": []} for c in champions]
-    # passers first: each raiding account goes to the group whose champion is of another lobby and has fewest passers
-    for ga in sorted([g for g in others if g.pk in can_raid], key=lambda g: (lobby_size[g.account_id], g.name or "")):
-        fit = [gr for gr in groups if gr["champion"].account_id != ga.account_id and len(gr["passers"]) < PASSERS_PER_GROUP]
+    groups = [{"champion": c, "passers": [], "origins": []} for c in champions]
+    for ga in sorted(others, key=lambda g: (lobby_size[g.account_id], g.name or "")):
+        fit = [gr for gr in groups if gr["champion"].account_id != ga.account_id and len(gr["passers"]) < PASSERS_PER_GROUP
+               and all(p.account_id != ga.account_id for p in gr["passers"])]
         if fit:
             min(fit, key=lambda gr: len(gr["passers"]))["passers"].append(ga)
-    passers_all = {p.pk for gr in groups for p in gr["passers"]}
-    # origins: to the group that has someone (passer or champion) of another lobby to take them, the lightest one
-    for ga in sorted([g for g in others if g.pk not in passers_all], key=lambda g: (-lobby_size[g.account_id], g.name or "")):
-        fit = [gr for gr in groups if any(p.account_id != ga.account_id for p in gr["passers"])
-               or gr["champion"].account_id != ga.account_id]
-        (min(fit, key=lambda gr: len(gr["members"])) if fit else groups[0])["members"].append(ga)
-    for group in groups:
-        champion = group["champion"]
-        links, load = [], defaultdict(int)
-        for origin in group["members"]:
-            able = [p for p in group["passers"] if p.account_id != origin.account_id]
-            if able:
-                passer = min(able, key=lambda p: (load[p.pk], p.name or ""))
-                load[passer.pk] += 1
-                links.append((passer, origin, 1))
-            elif champion.account_id != origin.account_id:
-                links.append((champion, origin, 2))                  # no passer can take it: straight to the champion
-            else:
-                links.append((None, origin, 0))
-        group["links"] = links
-        group["members"] = group["members"] + group["passers"]
+    taken = {p.pk for gr in groups for p in gr["passers"]}
+    for ga in [g for g in others if g.pk not in taken]:
+        min(groups, key=lambda gr: len(gr["origins"]))["origins"].append(ga)
     return groups
 
 
 @transaction.atomic
 def plan_month(organization, server_id: str, *, champions: list | None = None, now: datetime | None = None,
-               rng: random.Random | None = None):
-    """Close the open month of that server (its planned routes are skipped) and plan a new one."""
+               rng: random.Random | None = None, share_percent: int = 10, share_every_hours: int = 24):
+    """Close the open month of that server and start a new one: champions, passers and origins of each group."""
     now = now or timezone.now()
     old = current_month(server_id)
     if old is not None:
         close_month(old, "substituído por um novo plano")
     accounts = eligible(server_id)
-    if len({ga.account_id for ga in accounts}) < 2 or len(accounts) < 4:
-        raise ValueError("Faltam contas com fortaleza pirata e Pirata Automático rodando (pelo menos 4, de 2 lobbys).")
-    room = rooms(accounts)
-    chosen = list(champions) if champions else pick_champions(accounts, server_id, rng, room)
+    if len({ga.account_id for ga in accounts}) < 2 or len(accounts) < 3:
+        raise ValueError("Faltam contas com fortaleza pirata e Pirata Automático rodando (pelo menos 3, de 2 lobbys).")
+    chosen = list(champions) if champions else pick_champions(accounts, server_id, rng)
     if len(chosen) != CHAMPIONS or chosen[0].account_id == chosen[1].account_id:
-        raise ValueError("São 2 campeãs de lobbys diferentes (com vaga de cidade no palácio).")
+        raise ValueError("São 2 campeãs de lobbys diferentes.")
     if any(ga not in accounts for ga in chosen):
         raise ValueError("A campeã precisa ter fortaleza pirata e o Pirata Automático rodando.")
-    if any((room.get(ga.pk) or 0) <= 0 for ga in chosen):
-        raise ValueError("A campeã precisa de uma vaga de cidade no palácio: o assalto sai de uma colônia temporária.")
     starts, ends = month_window(server_id, now)
     month = PiracyMonth.objects.create(organization=organization, server_id=server_id, starts_at=starts, ends_at=ends,
-                                       chosen_by="escolha" if champions else "sorteio")
-    groups = build_groups(accounts, chosen, room)
-    weeks = max(1, math.ceil((ends - starts).total_seconds() / (7 * 86400)))
-    span = (ends - starts) / weeks
-    left_out = []
-    for number, group in enumerate(groups, start=1):
+                                       chosen_by="escolha" if champions else "sorteio",
+                                       share_percent=max(0, min(100, int(share_percent))),
+                                       share_every_hours=max(1, min(240, int(share_every_hours or 24))))
+    for number, group in enumerate(build_groups(accounts, chosen), start=1):
         PiracyChampion.objects.create(month=month, game_account=group["champion"], group=number)
-        for week in range(1, weeks + 1):
-            week_start = starts + span * (week - 1)
-            middle = week_start + span * STAGE_SPLIT
-            week_end = week_start + span
-            for raider, origin, stage in group["links"]:
-                if raider is None:
-                    continue
-                PiracyRoute.objects.create(month=month, group=number, week=week, stage=stage, raider=raider, target=origin,
-                                           due_from=week_start if stage == 1 else middle,
-                                           due_until=middle if stage == 1 else week_end)
-            for passer in group["passers"]:
-                PiracyRoute.objects.create(month=month, group=number, week=week, stage=2, raider=group["champion"],
-                                           target=passer, due_from=middle, due_until=week_end)
-        left_out += [origin.name for raider, origin, _stage in group["links"] if raider is None]
-    no_room = [ga.name for ga in accounts if (room.get(ga.pk) or 0) <= 0]
-    notes = []
-    if no_room:
-        notes.append("Sem vaga de cidade no palácio (só são roubadas, não roubam): " + ", ".join(no_room))
-    if left_out:
-        notes.append("Sem quem pegue de outro lobby: " + ", ".join(left_out))
-    if notes:
-        month.notes = ". ".join(notes)
-        month.save(update_fields=["notes", "updated_at"])
+        PiracyMember.objects.create(month=month, game_account=group["champion"], role=PiracyMember.CHAMPION, group=number)
+        for ga in group["passers"]:
+            PiracyMember.objects.create(month=month, game_account=ga, role=PiracyMember.PASSER, group=number)
+        for ga in group["origins"]:
+            PiracyMember.objects.create(month=month, game_account=ga, role=PiracyMember.ORIGIN, group=number)
     return month
 
 
@@ -343,16 +299,31 @@ def close_month(month, reason: str = "encerrado") -> None:
 
 
 def expire(now: datetime | None = None) -> int:
-    """Routes whose window passed without a raid are skipped; months past their end close."""
+    """A raid decided and not sent in ROUTE_HOURS is dropped; months past their end close."""
     now = now or timezone.now()
     skipped = PiracyRoute._base_manager.filter(status=PiracyRoute.PLANNED, due_until__lt=now).update(
-        status=PiracyRoute.SKIPPED, message="o prazo da etapa passou")
+        status=PiracyRoute.SKIPPED, message="não saiu a tempo")
     for month in PiracyMonth._base_manager.filter(status=PiracyMonth.OPEN, ends_at__lt=now):
         close_month(month, "o ranking virou")
     return skipped
 
 
 # ── the agent's side ───────────────────────────────────────────────────────────────────────────────────────────────
+
+def strength(game_account) -> dict:
+    """What the Pirate Fortress job last read of this account: capture points and crew strength (None when unknown)."""
+    from apps.jobs.models import Job
+
+    job = (Job._base_manager.filter(game_account=game_account, action_code=PIRATE_ACTION).order_by("-created_at").first())
+    inputs = _job_inputs(job) if job else {}
+    crew = inputs.get("last_complete_crew_points", inputs.get("last_crew_points"))
+    points = inputs.get("last_capture_points")
+    return {"crew": int(crew) if crew is not None else None, "points": int(points) if points is not None else None}
+
+
+def sure_win(raider_crew: int | None, target_crew: int | None) -> bool:
+    return raider_crew is not None and target_crew is not None and raider_crew > target_crew * WIN_FACTOR
+
 
 def _target_info(target) -> dict | None:
     from apps.game.models import AccountSnapshot
@@ -369,39 +340,100 @@ def _target_info(target) -> dict | None:
             "player_name": base.get("player_name") or target.name or ""}
 
 
+def _outside_info(target) -> dict | None:
+    """City of a target added by hand: as typed, or its fortress city from the rankings the accounts read."""
+    from apps.game.models import AccountSnapshot
+
+    if target.city_id:
+        return {"target_city_id": target.city_id, "target_island_id": target.island_id, "player_name": target.player_name}
+    wanted = target.player_name.strip().casefold()
+    for snap in AccountSnapshot._base_manager.filter(game_account__server_id=target.server_id,
+                                                      game_account__account__organization=target.organization):
+        for entry in ((snap.base_snapshot or {}).get("piracy_highscore") or {}).get("entries") or []:
+            if str(entry.get("player_name") or "").strip().casefold() == wanted and entry.get("target_city_id"):
+                return {"target_city_id": str(entry["target_city_id"]), "target_island_id": str(entry.get("target_island_id") or ""),
+                        "player_name": target.player_name}
+    return None
+
+
+def _payload(route, info) -> dict:
+    return {"route_id": str(route.pk), "target_game_account_id": str(route.target_id or ""),
+            "raider_lobby": str(route.raider.account_id), "target_lobby": str(route.target.account_id) if route.target_id else "",
+            "stage": route.stage, "outside": bool(route.outside_id), "target_points": route.target_points, **info}
+
+
 def next_for(game_account, now: datetime | None = None) -> dict:
-    """What the Pirate Fortress job of this account does for the plan now: {"route": {...} | None, "hold": bool}.
-    hold: this account will be raided by the plan this week — keep the capture points instead of converting them."""
+    """What the Pirate Fortress job of this account does for the plan now:
+    {"route": {...} | None, "hold": bool, "convert_all": bool, "share_percent": int, "share_every_hours": int}.
+    Champions convert all their points (convert_all) and, after gathering, raid the targets added by hand. The others
+    keep their points (hold), converting share_percent of them once every share_every_hours. route: whom to raid now —
+    someone earlier on the way, of another lobby, surely beaten, not raided by it in the last 7 days, with the most
+    capture points."""
     now = now or timezone.now()
     expire(now)
-    route = (PiracyRoute._base_manager.filter(raider=game_account, status=PiracyRoute.PLANNED, month__status=PiracyMonth.OPEN,
-                                              due_from__lte=now, due_until__gt=now)
-             .select_related("target__account", "raider__account").order_by("due_until").first())
-    hold = PiracyRoute._base_manager.filter(target=game_account, status__in=(PiracyRoute.PLANNED, PiracyRoute.SENT),
-                                            month__status=PiracyMonth.OPEN, due_until__gt=now,
-                                            due_from__lte=now + timedelta(days=4)).exists()
-    payload = None
-    while route is not None:
-        if route.raider.account_id == route.target.account_id:          # never inside a lobby, whatever the plan says
-            route.status, route.message = PiracyRoute.SKIPPED, "mesmo lobby"
-            route.save(update_fields=["status", "message", "updated_at"])
-        else:
-            info = _target_info(route.target)
-            if info:
-                payload = {"route_id": str(route.pk), "target_game_account_id": str(route.target_id),
-                           "raider_lobby": str(route.raider.account_id), "target_lobby": str(route.target.account_id),
-                           "stage": route.stage, "week": route.week, **info}
-                break
-            route.status, route.message = PiracyRoute.SKIPPED, "a conta alvo não tem fortaleza pirata conhecida"
-            route.save(update_fields=["status", "message", "updated_at"])
-        route = (PiracyRoute._base_manager.filter(raider=game_account, status=PiracyRoute.PLANNED, month__status=PiracyMonth.OPEN,
-                                                  due_from__lte=now, due_until__gt=now)
-                 .select_related("target__account", "raider__account").order_by("due_until").first())
-    return {"route": payload, "hold": hold}
+    member = (PiracyMember._base_manager.filter(game_account=game_account, month__status=PiracyMonth.OPEN,
+                                                 month__starts_at__lte=now).select_related("month").first())
+    if member is None:
+        return {"route": None, "hold": False}
+    month = member.month
+    hold = member.role != PiracyMember.CHAMPION
+    extra = {"convert_all": not hold, "share_percent": month.share_percent if hold else 0,
+             "share_every_hours": month.share_every_hours}
+    open_route = (PiracyRoute._base_manager.filter(raider=game_account, month=month, status=PiracyRoute.PLANNED, due_until__gt=now)
+                  .select_related("raider__account", "target__account", "outside").first())
+    if open_route is not None:
+        info = _target_info(open_route.target) if open_route.target_id else _outside_info(open_route.outside)
+        if info:
+            return {"route": _payload(open_route, info), "hold": hold, **extra}
+    if member.role == PiracyMember.ORIGIN:
+        return {"route": None, "hold": hold, **extra}
+    level = PiracyMember.LEVEL[member.role]
+    mine = strength(game_account)
+    week = max(1, int((now - month.starts_at).total_seconds() // (7 * 86400)) + 1)
+    recent = set(PiracyRoute._base_manager.filter(raider=game_account, created_at__gte=now - timedelta(days=PAIR_DAYS))
+                 .exclude(status=PiracyRoute.SKIPPED).values_list("target_id", flat=True))
+    candidates = []
+    for other in (PiracyMember._base_manager.filter(month=month, group=member.group)
+                  .exclude(game_account=game_account).select_related("game_account__account")):
+        ga = other.game_account
+        if PiracyMember.LEVEL[other.role] >= level or ga.account_id == game_account.account_id or ga.pk in recent:
+            continue
+        theirs = strength(ga)
+        if (theirs["points"] or 0) < MIN_POINTS or not sure_win(mine["crew"], theirs["crew"]):
+            continue
+        candidates.append((theirs["points"], theirs["crew"], ga))
+    for points, crew, ga in sorted(candidates, key=lambda c: -c[0]):
+        info = _target_info(ga)
+        if not info:
+            continue
+        route = PiracyRoute.objects.create(month=month, group=member.group, week=week, stage=level, raider=game_account,
+                                           target=ga, target_points=points, raider_crew=mine["crew"], target_crew=crew,
+                                           due_from=now, due_until=now + timedelta(hours=ROUTE_HOURS))
+        return {"route": _payload(route, info), "hold": hold, **extra}
+    return {"route": _outside_route(month, member, game_account, mine, now, week), "hold": hold, **extra}
+
+
+def _outside_route(month, member, game_account, mine, now, week) -> dict | None:
+    """A target added by hand, raided by a champion (the strongest crew) — not twice by the same one in 7 days."""
+    if member.role != PiracyMember.CHAMPION:
+        return None
+    recent = set(PiracyRoute._base_manager.filter(raider=game_account, created_at__gte=now - timedelta(days=PAIR_DAYS))
+                 .exclude(status=PiracyRoute.SKIPPED).values_list("outside_id", flat=True))
+    for target in PiracyTarget._base_manager.filter(organization=month.organization, server_id=month.server_id, active=True):
+        if target.pk in recent:
+            continue
+        info = _outside_info(target)
+        if not info:
+            continue
+        route = PiracyRoute.objects.create(month=month, group=member.group, week=week, stage=3, raider=game_account,
+                                           outside=target, raider_crew=mine["crew"], due_from=now,
+                                           due_until=now + timedelta(hours=ROUTE_HOURS))
+        return _payload(route, info)
+    return None
 
 
 def report(route, status: str, message: str = "") -> None:
-    """The agent says how the raid went: sent (on its way), done (raided, colony left), failed."""
+    """The agent says how the raid went: sent (on its way), done (won: the points came), failed (lost or not sent)."""
     now = timezone.now()
     if status == PiracyRoute.SENT:
         route.status, route.sent_at = status, now

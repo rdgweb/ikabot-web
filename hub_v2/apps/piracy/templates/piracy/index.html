@@ -5,21 +5,39 @@
 {% block breadcrumb_items %}<span class="mx-1">/</span> <span class="text-ink">Pirataria</span>{% endblock %}
 
 {% block content %}
-{# N-210/N-211: a pirataria das contas num servidor e as campeãs do mês #}
+{# N-210/N-211: a pirataria das contas num servidor, as campeãs do mês e os alvos #}
 {% include "orgs/_org_style.html" %}
 <style>
-  .pr-route { display: flex; align-items: center; gap: .6rem; padding: .45rem 0; border-top: 1px solid var(--ik-line); font-size: .82rem; }
-  .pr-route:first-child { border-top: 0; }
-  .pr-route .who { flex: 1; min-width: 0; }
-  .pr-route .who b { font-weight: 600; color: var(--ik-ink); }
-  .pr-route .who small { display: block; font-size: .7rem; color: var(--ik-muted); }
-  .pr-table { width: 100%; font-size: .8rem; border-collapse: collapse; }
-  .pr-table th { text-align: left; font-size: .66rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ik-muted); padding: .5rem .5rem; border-bottom: 1px solid var(--ik-line); white-space: nowrap; }
-  .pr-table td { padding: .55rem .5rem; border-bottom: 1px solid var(--ik-line); white-space: nowrap; }
-  .pr-table td.num { text-align: right; font-family: ui-monospace, monospace; }
-  .pr-champ { display: flex; align-items: center; gap: .8rem; padding: .9rem 1rem; border-radius: 14px; border: 1px solid rgba(201,156,78,.5);
-              background: linear-gradient(135deg, rgba(201,156,78,.16), rgba(201,156,78,.03)); }
-  .pr-champ .crown { width: 42px; height: 42px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; background: rgba(201,156,78,.25); color: #8a6420; font-size: 1.25rem; }
+  .pr-flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
+  .pr-group { border: 1px solid var(--ik-line); border-radius: 14px; padding: .9rem; background: rgba(255,255,255,.35); }
+  .pr-champ { display: flex; align-items: center; gap: .8rem; padding: .85rem 1rem; border-radius: 14px; border: 1px solid rgba(201,156,78,.55);
+              background: linear-gradient(135deg, rgba(201,156,78,.2), rgba(201,156,78,.04)); }
+  .pr-champ .crown { width: 44px; height: 44px; border-radius: 13px; display: inline-flex; align-items: center; justify-content: center;
+                     background: rgba(201,156,78,.28); color: #8a6420; font-size: 1.3rem; flex-shrink: 0; }
+  .pr-champ b { font-size: 1.05rem; color: var(--ik-ink); }
+  .pr-stage { margin: .8rem 0 .35rem; font-size: .66rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ik-muted);
+              display: flex; align-items: center; gap: .4rem; }
+  .pr-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .pr-chip { display: inline-flex; flex-direction: column; padding: .4rem .65rem; border-radius: 10px; border: 1px solid var(--ik-line); background: var(--ik-paper); min-width: 7.5rem; }
+  .pr-chip b { font-size: .8rem; color: var(--ik-ink); }
+  .pr-chip span { font-size: .68rem; color: var(--ik-muted); font-family: ui-monospace, monospace; }
+  .pr-acc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); gap: .8rem; }
+  .pr-acc { border: 1px solid var(--ik-line); border-radius: 14px; background: var(--ik-paper); padding: .85rem .95rem;
+            box-shadow: 0 1px 2px rgba(60,40,10,.04), 0 6px 18px rgba(120,90,30,.05); }
+  .pr-acc.out { opacity: .55; }
+  .pr-acc .top { display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem; }
+  .pr-acc .top b { flex: 1; min-width: 0; font-size: .95rem; color: var(--ik-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pr-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; }
+  .pr-stats div { background: rgba(201,156,78,.07); border-radius: 9px; padding: .4rem .5rem; }
+  .pr-stats small { display: block; font-size: .6rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ik-muted); }
+  .pr-stats strong { font-size: .88rem; font-family: ui-monospace, monospace; color: var(--ik-ink); }
+  .pr-acc .foot { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin-top: .6rem; font-size: .72rem; color: var(--ik-muted); }
+  .pr-line { display: flex; align-items: center; gap: .6rem; padding: .5rem 0; border-top: 1px solid var(--ik-line); font-size: .82rem; }
+  .pr-line:first-child { border-top: 0; }
+  .pr-line .who { flex: 1; min-width: 0; }
+  .pr-line .who b { font-weight: 600; color: var(--ik-ink); }
+  .pr-line .who small { display: block; font-size: .7rem; color: var(--ik-muted); }
+  .pr-num { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--ik-ink); }
 </style>
 
 <div class="org-head" style="justify-content: space-between;">
@@ -44,45 +62,62 @@
   <div class="org-card"><span class="org-icon gold"><i class="bi bi-trophy"></i></span>
     <span><span class="org-card-label">Melhor posição</span><span class="org-card-value" style="display: block;">{% if best_place %}{{ best_place }}º{% else %}—{% endif %}</span></span></div>
   <div class="org-card"><span class="org-icon"><i class="bi bi-gem"></i></span>
-    <span><span class="org-card-label">Pontos no ranking</span><span class="org-card-value" style="display: block;">{{ points|intcomma }}</span>
-      <span class="org-card-note">somando as contas</span></span></div>
+    <span><span class="org-card-label">Pontos no ranking</span><span class="org-card-value" style="display: block;">{{ points|intcomma }}</span></span></div>
   <div class="org-card"><span class="org-icon {% if pirates %}bad{% else %}ok{% endif %}"><i class="bi bi-exclamation-octagon"></i></span>
     <span><span class="org-card-label">Assaltos a caminho</span><span class="org-card-value" style="display: block;">{{ pirates }}</span></span></div>
   <div class="org-card"><span class="org-icon {% if captchas %}warn{% endif %}"><i class="bi bi-puzzle"></i></span>
     <span><span class="org-card-label">Captchas</span><span class="org-card-value" style="display: block;">{{ captchas }}</span></span></div>
-  <div class="org-card"><span class="org-icon"><i class="bi bi-arrow-repeat"></i></span>
-    <span><span class="org-card-label">Pirata Automático</span><span class="org-card-value" style="display: block;">{{ with_job }} <small>de {{ rows|length }}</small></span></span></div>
 </div>
 
-<div class="org-cols" style="grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);">
+<div class="org-cols" style="grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);">
   <section class="org-panel">
     <h3><i class="bi bi-trophy"></i> Campeãs do mês
-      {% if month %}<span class="org-chip gold" style="margin-left: auto;">{{ month.starts_at|date:"d/m" }} → {{ month.ends_at|date:"d/m H:i" }}</span>{% endif %}</h3>
+      {% if month %}<span class="org-chip gold" style="margin-left: auto;">{{ month.starts_at|date:"d/m H:i" }} → {{ month.ends_at|date:"d/m H:i" }}</span>{% endif %}</h3>
     {% if month %}
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .7rem;">
-      {% for c in champions %}
-      <div class="pr-champ"><span class="crown"><i class="bi bi-trophy-fill"></i></span>
-        <span><b class="text-ink">{{ c.name }}</b><span class="text-xs text-muted" style="display: block;">{{ c.account.label }} · grupo {{ forloop.counter }}</span></span></div>
+    <div class="pr-flow">
+      {% for g in groups %}
+      <div class="pr-group">
+        {% if g.champion %}
+        <div class="pr-champ"><span class="crown"><i class="bi bi-trophy-fill"></i></span>
+          <span style="min-width: 0;"><b>{{ g.champion.ga.name }}</b>
+            <span class="text-xs text-muted" style="display: block;">{{ g.champion.ga.account.label }} · tripulação {{ g.champion.crew|default_if_none:"?"|intcomma }} · converte tudo</span></span></div>
+        {% endif %}
+        {% if g.passers %}
+        <p class="pr-stage"><i class="bi bi-arrow-up"></i> Passagens</p>
+        <div class="pr-chips">{% for r in g.passers %}<span class="pr-chip"><b>{{ r.ga.name }}</b><span>{{ r.capture_points|default_if_none:"?"|intcomma }} pts · {{ r.crew|default_if_none:"?"|intcomma }} trip.</span></span>{% endfor %}</div>
+        {% endif %}
+        {% if g.origins %}
+        <p class="pr-stage"><i class="bi bi-arrow-up"></i> Origens</p>
+        <div class="pr-chips">{% for r in g.origins %}<span class="pr-chip"><b>{{ r.ga.name }}</b><span>{{ r.capture_points|default_if_none:"?"|intcomma }} pts · {{ r.crew|default_if_none:"?"|intcomma }} trip.</span></span>{% endfor %}</div>
+        {% endif %}
+      </div>
       {% endfor %}
     </div>
-    {% if month.notes %}<p class="text-xs text-muted" style="margin: .7rem 0 0;"><i class="bi bi-info-circle"></i> {{ month.notes }}</p>{% endif %}
-    <div style="display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .8rem;">
-      <span class="org-chip off"><i class="bi bi-slash-circle"></i> mesmo lobby nunca se ataca</span>
-      <span class="org-chip off"><i class="bi bi-calendar-week"></i> o mesmo par só 1 vez por semana</span>
-      <span class="org-chip off">{% if month.chosen_by == "sorteio" %}sorteadas{% else %}escolhidas{% endif %}</span>
+    <div style="display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .9rem;">
+      <span class="org-chip off"><i class="bi bi-slash-circle"></i> mesmo lobby nunca</span>
+      <span class="org-chip off"><i class="bi bi-calendar-week"></i> mesmo par 1x em 7 dias</span>
+      <span class="org-chip off"><i class="bi bi-shield-check"></i> só vitória certa: tripulação {{ win_factor_pct }}% maior</span>
+      <span class="org-chip off"><i class="bi bi-arrow-repeat"></i> as outras convertem {{ month.share_percent }}% a cada {{ month.share_every_hours }}h</span>
     </div>
     {% if can_run %}
-    <form method="post" class="org-form" style="margin-top: .9rem;" hx-boost="false">{% csrf_token %}<input type="hidden" name="server" value="{{ server }}">
-      <button class="btn btn-secondary btn-sm" name="action" value="plan" onclick="return confirm('Sortear outras campeãs? O plano atual é encerrado.');"><i class="bi bi-shuffle"></i> Sortear de novo</button>
-      <button class="btn btn-secondary btn-sm" name="action" value="close" onclick="return confirm('Encerrar o plano do mês? As passagens que faltam são puladas.');"><i class="bi bi-stop-circle"></i> Encerrar</button>
-    </form>
+    <div style="display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .9rem; align-items: flex-end;">
+      <form method="post" class="org-form" hx-boost="false">{% csrf_token %}<input type="hidden" name="server" value="{{ server }}"><input type="hidden" name="action" value="share">
+        <div><label>Converter</label><input type="number" name="share_percent" min="0" max="100" value="{{ month.share_percent }}" class="form-input" style="width: 5rem;"></div>
+        <div><label>% a cada (h)</label><input type="number" name="share_every_hours" min="1" max="240" value="{{ month.share_every_hours }}" class="form-input" style="width: 5rem;"></div>
+        <button class="btn btn-secondary btn-sm"><i class="bi bi-check2"></i> Salvar</button>
+      </form>
+      <form method="post" hx-boost="false" style="margin-left: auto; display: flex; gap: .4rem;">{% csrf_token %}<input type="hidden" name="server" value="{{ server }}">
+        <button class="btn btn-secondary btn-sm" name="action" value="plan" onclick="return confirm('Sortear outras campeãs?');"><i class="bi bi-shuffle"></i> Sortear de novo</button>
+        <button class="btn btn-secondary btn-sm" name="action" value="close" onclick="return confirm('Encerrar o plano do mês?');"><i class="bi bi-stop-circle"></i> Encerrar</button>
+      </form>
+    </div>
     {% endif %}
     {% else %}
-    <p class="text-sm text-muted" style="margin: 0 0 .8rem;">Nenhum plano neste mês. Duas contas de lobbys diferentes ficam com os pontos; as outras passam os pontos até elas.
-      Entram {{ eligible_count }} de {{ rows|length }} contas: as que têm fortaleza pirata e o Pirata Automático rodando.
-      {% if clock and clock < 172800 %}Faltando menos de 2 dias, o plano vale a partir da virada do ranking.{% endif %}</p>
-    {% if can_run and eligible_count >= 4 %}
+    <p class="text-sm text-muted" style="margin: 0 0 .9rem;">Sem campeãs neste mês. {{ eligible_count }} de {{ rows|length }} contas podem entrar (fortaleza e Pirata Automático rodando).{% if clock and clock < 172800 %} Faltando menos de 2 dias, o plano começa na virada do ranking.{% endif %}</p>
+    {% if can_run and eligible_count >= 3 %}
     <form method="post" class="org-form" hx-boost="false">{% csrf_token %}<input type="hidden" name="server" value="{{ server }}">
+      <div><label>As outras convertem</label><input type="number" name="share_percent" min="0" max="100" value="10" class="form-input" style="width: 5rem;"></div>
+      <div><label>% a cada (h)</label><input type="number" name="share_every_hours" min="1" max="240" value="24" class="form-input" style="width: 5rem;"></div>
       <button class="btn btn-primary btn-sm" name="action" value="plan"><i class="bi bi-shuffle"></i> Sortear as campeãs</button>
     </form>
     <form method="post" class="org-form" style="margin-top: .7rem;" hx-boost="false">{% csrf_token %}<input type="hidden" name="server" value="{{ server }}">
@@ -97,86 +132,99 @@
     {% endif %}
   </section>
 
-  <section class="org-panel">
-    <h3><i class="bi bi-exclamation-octagon"></i> Assaltos a caminho</h3>
-    {% for r in raids %}
-    <div class="pr-route"><span class="org-icon bad" style="width: 32px; height: 32px; font-size: .9rem;"><i class="bi bi-flag-fill"></i></span>
-      <span class="who"><b>{{ r.from }}</b> → {{ r.account.name }}<small>{{ r.city }}</small></span><span class="org-chip bad">{{ r.eta|default:"a caminho" }}</span></div>
-    {% empty %}
-    <p class="text-sm text-muted" style="margin: 0;">Nenhum assalto pirata a caminho.</p>
-    {% endfor %}
-  </section>
+  <div style="display: flex; flex-direction: column; gap: 1rem; min-width: 0;">
+    <section class="org-panel">
+      <h3><i class="bi bi-crosshair"></i> Alvos <span class="text-xs text-muted" style="font-weight: 500;">atacados pelas campeãs</span></h3>
+      {% for t in targets %}
+      <div class="pr-line"><span class="org-icon bad" style="width: 32px; height: 32px; font-size: .9rem;"><i class="bi bi-crosshair"></i></span>
+        <span class="who"><b>{{ t.player_name }}</b><small>{% if t.city_id %}cidade {{ t.city_id }}{% else %}cidade pelo ranking{% endif %} · tripulação desconhecida</small></span>
+        {% if can_run %}<form method="post" hx-boost="false">{% csrf_token %}<input type="hidden" name="server" value="{{ server }}"><input type="hidden" name="target" value="{{ t.pk }}">
+          <button class="btn btn-secondary btn-sm" name="action" value="remove_target" title="Retirar"><i class="bi bi-x-lg"></i></button></form>{% endif %}
+      </div>
+      {% empty %}
+      <p class="text-sm text-muted" style="margin: 0;">Nenhum alvo.</p>
+      {% endfor %}
+      {% if can_run %}
+      <form method="post" class="org-form" style="margin-top: .8rem;" hx-boost="false">{% csrf_token %}<input type="hidden" name="server" value="{{ server }}">
+        <div style="flex: 1; min-width: 9rem;"><label>Jogador</label><input name="player_name" class="form-input w-full" required maxlength="64"></div>
+        <div><label>ID da cidade (opcional)</label><input name="city_id" class="form-input" style="width: 8rem;" maxlength="32"></div>
+        <button class="btn btn-primary btn-sm" name="action" value="add_target"><i class="bi bi-plus-lg"></i> Adicionar</button>
+      </form>
+      {% endif %}
+    </section>
+    <section class="org-panel">
+      <h3><i class="bi bi-exclamation-octagon"></i> Assaltos a caminho</h3>
+      {% for r in raids %}
+      <div class="pr-line"><span class="org-icon bad" style="width: 32px; height: 32px; font-size: .9rem;"><i class="bi bi-flag-fill"></i></span>
+        <span class="who"><b>{{ r.from }}</b> → {{ r.account.name }}<small>{{ r.city }}</small></span><span class="org-chip bad">{{ r.eta|default:"a caminho" }}</span></div>
+      {% empty %}
+      <p class="text-sm text-muted" style="margin: 0;">Nenhum.</p>
+      {% endfor %}
+    </section>
+  </div>
 </div>
 
-{% if weeks %}
+{% if routes %}
 <section class="org-panel" style="margin-bottom: 1.4rem;">
-  <h3><i class="bi bi-diagram-3"></i> Caminho dos pontos</h3>
-  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
-    {% for w in weeks %}
-    <div>
-      <p class="org-title">Semana {{ w.week }} · {{ w.done }} de {{ w.routes|length }} feitos</p>
-      {% for route in w.routes %}
-      <div class="pr-route">
-        <span class="org-chip {% if route.stage == 2 %}gold{% else %}off{% endif %}" title="{% if route.stage == 2 %}a campeã pega da passagem{% else %}a passagem pega da origem{% endif %}">{{ route.stage }}</span>
-        <span class="who"><b>{{ route.raider.name }}</b> ← {{ route.target.name }}
-          <small>{{ route.raider.account.label }} ← {{ route.target.account.label }} · {{ route.due_from|date:"d/m H:i" }}–{{ route.due_until|date:"d/m H:i" }}{% if route.message %} · {{ route.message }}{% endif %}</small></span>
-        <span class="org-chip {% if route.status == 'done' %}ok{% elif route.status == 'sent' %}gold{% elif route.status == 'failed' %}bad{% else %}off{% endif %}">{{ route.get_status_display }}</span>
-      </div>
-      {% endfor %}
-    </div>
-    {% endfor %}
+  <h3><i class="bi bi-arrow-left-right"></i> Assaltos do plano</h3>
+  {% for route in routes %}
+  <div class="pr-line">
+    <span class="org-chip {% if route.stage == 3 %}bad{% elif route.stage == 2 %}gold{% else %}off{% endif %}">{% if route.stage == 3 %}alvo{% elif route.stage == 2 %}campeã{% else %}passagem{% endif %}</span>
+    <span class="who"><b>{{ route.raider.name }}</b> ← {{ route.target_name }}
+      <small>{{ route.created_at|date:"d/m H:i" }}{% if route.target_points %} · {{ route.target_points|intcomma }} pts{% endif %}{% if route.raider_crew and route.target_crew %} · tripulação {{ route.raider_crew|intcomma }} × {{ route.target_crew|intcomma }}{% endif %}{% if route.message %} · {{ route.message }}{% endif %}</small></span>
+    <span class="org-chip {% if route.status == 'done' %}ok{% elif route.status == 'sent' %}gold{% elif route.status == 'failed' %}bad{% else %}off{% endif %}">{{ route.get_status_display }}</span>
   </div>
+  {% endfor %}
 </section>
 {% endif %}
 
 <section class="org-panel" style="margin-bottom: 1.4rem;">
   <h3><i class="bi bi-people"></i> Contas</h3>
-  <div style="overflow-x: auto;">
-    <table class="pr-table">
-      <thead><tr><th>Conta</th><th>Lobby</th><th>No mês</th><th>Fortaleza</th><th>Vagas</th><th>Ranking</th><th style="text-align:right;">Pontos de captura</th>
-        <th style="text-align:right;">Tripulação</th><th style="text-align:right;">Missões</th><th>Pirata Automático</th><th></th></tr></thead>
-      <tbody>
-      {% for r in rows %}
-      <tr>
-        <td><b class="text-ink">{{ r.ga.name }}</b>{% if not r.eligible %} <span class="text-xs text-muted" title="sem fortaleza pirata ou sem Pirata Automático">· fora do plano</span>{% endif %}</td>
-        <td class="text-muted">{{ r.lobby }}</td>
-        <td>{% if r.role == "campeã" %}<span class="org-chip gold"><i class="bi bi-trophy-fill"></i> campeã</span>{% elif r.role %}<span class="org-chip off">{{ r.role }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
-        <td>{% if r.fortress %}nível {{ r.fortress.level }} <span class="text-muted">{{ r.fortress.name }}</span>{% else %}<span class="text-muted">sem fortaleza</span>{% endif %}</td>
-        <td title="vagas de cidade no palácio: quem rouba no plano funda uma colônia temporária">{% if r.room is None %}<span class="text-muted">—</span>{% elif r.room %}{{ r.room }}{% else %}<span class="org-chip off">0</span>{% endif %}</td>
-        <td>{% if r.place %}{{ r.place }}º · {{ r.score|intcomma }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
-        <td class="num">{{ r.capture_points|default_if_none:"—"|intcomma }}</td>
-        <td class="num">{{ r.crew|default_if_none:"—"|intcomma }}</td>
-        <td class="num">{{ r.missions|default_if_none:"—" }}</td>
-        <td>{% if r.job %}<a href="/jobs/{{ r.job.pk }}/" class="org-chip {% if r.job.status == 'failed' %}bad{% elif r.special %}gold{% else %}ok{% endif %}" style="text-decoration: none;">
-              {% if r.special %}ciclo especial{% if r.special_target %} · {{ r.special_target }}{% endif %}{% elif r.final_phase %}fase final{% else %}{{ r.job.get_status_display|lower }}{% endif %}</a>
-            {% else %}<span class="text-muted">sem job</span>{% endif %}</td>
-        <td>{% if r.pirates %}<span class="org-chip bad" title="assaltos a caminho"><i class="bi bi-flag-fill"></i> {{ r.pirates }}</span>{% endif %}
-            {% if r.captchas %}<span class="org-chip gold" title="captcha esperando"><i class="bi bi-puzzle"></i> {{ r.captchas }}</span>{% endif %}</td>
-      </tr>
-      {% empty %}
-      <tr><td colspan="11" class="text-muted">Nenhuma conta neste servidor.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
+  <div class="pr-acc-grid">
+    {% for r in rows %}
+    <div class="pr-acc{% if not r.eligible %} out{% endif %}">
+      <div class="top">
+        <b title="{{ r.ga.name }}">{{ r.ga.name }}</b>
+        {% if r.role == "campeã" %}<span class="org-chip gold"><i class="bi bi-trophy-fill"></i> campeã</span>
+        {% elif r.role %}<span class="org-chip off">{{ r.role }}</span>{% endif %}
+      </div>
+      <div class="pr-stats">
+        <div><small>Ranking</small><strong>{% if r.place %}{{ r.place }}º{% else %}—{% endif %}</strong></div>
+        <div><small>Pontos</small><strong>{{ r.capture_points|default_if_none:"—"|intcomma }}</strong></div>
+        <div><small>Tripulação</small><strong>{{ r.crew|default_if_none:"—"|intcomma }}</strong></div>
+      </div>
+      <div class="foot">
+        <span>{{ r.lobby }}</span><span>·</span>
+        <span>{% if r.fortress %}fortaleza {{ r.fortress.level }}{% else %}sem fortaleza{% endif %}</span>
+        {% if r.job %}<a href="/jobs/{{ r.job.pk }}/" class="org-chip {% if r.job.status == 'failed' %}bad{% elif r.special %}gold{% else %}ok{% endif %}" style="text-decoration: none; margin-left: auto;">
+          {% if r.special %}ciclo especial{% elif r.final_phase %}fase final{% else %}rodando{% endif %}</a>
+        {% else %}<span class="org-chip off" style="margin-left: auto;">sem Pirata Automático</span>{% endif %}
+        {% if r.pirates %}<span class="org-chip bad" title="assaltos a caminho"><i class="bi bi-flag-fill"></i> {{ r.pirates }}</span>{% endif %}
+        {% if r.captchas %}<span class="org-chip gold" title="captcha esperando"><i class="bi bi-puzzle"></i> {{ r.captchas }}</span>{% endif %}
+      </div>
+    </div>
+    {% empty %}
+    <p class="text-sm text-muted">Nenhuma conta neste servidor.</p>
+    {% endfor %}
   </div>
 </section>
 
 <div class="org-cols">
   <section class="org-panel">
-    <h3><i class="bi bi-list-ol"></i> Ranking da pirataria</h3>
-    {% for e in ranking %}
-    <div class="pr-route"><span class="org-chip {% if e.own %}gold{% else %}off{% endif %}">{{ e.place }}º</span>
-      <span class="who"><b>{{ e.player_name }}</b>{% if e.own %} <span class="text-xs" style="color: #8a6420;">sua</span>{% endif %}</span>
-      <span class="text-sm" style="font-family: ui-monospace, monospace;">{{ e.score|intcomma }}</span></div>
+    <h3><i class="bi bi-list-ol"></i> Suas contas no ranking</h3>
+    {% for r in own_ranked %}
+    <div class="pr-line"><span class="org-chip {% if forloop.first %}gold{% else %}off{% endif %}">{{ r.place }}º</span>
+      <span class="who"><b>{{ r.ga.name }}</b>{% if r.gap_up is not None %}<small>faltam {{ r.gap_up|intcomma }} para passar {{ r.above_name }}</small>{% endif %}</span>
+      <span class="pr-num">{{ r.score|intcomma }}</span></div>
     {% empty %}
-    <p class="text-sm text-muted" style="margin: 0;">O ranking aparece quando o Pirata Automático rodar.</p>
+    <p class="text-sm text-muted" style="margin: 0;">Aparece quando o Pirata Automático ler o ranking.</p>
     {% endfor %}
   </section>
   <section class="org-panel">
     <h3><i class="bi bi-clock-history"></i> Campeãs dos meses</h3>
     {% for h in history %}
-    <div class="pr-route"><span class="org-chip {% if h.month.status == 'open' %}gold{% else %}off{% endif %}">{{ h.month.starts_at|date:"m/Y" }}</span>
-      <span class="who"><b>{% for c in h.champions %}{{ c.name }}{% if not forloop.last %} · {% endif %}{% endfor %}</b><small>{{ h.month.get_status_display }}</small></span></div>
+    <div class="pr-line"><span class="org-chip {% if h.month.status == 'open' %}gold{% else %}off{% endif %}">{{ h.month.starts_at|date:"m/Y" }}</span>
+      <span class="who"><b>{% for c in h.champions %}{{ c.name }}{% if not forloop.last %} · {% endif %}{% endfor %}</b></span></div>
     {% empty %}
     <p class="text-sm text-muted" style="margin: 0;">Nenhum mês ainda.</p>
     {% endfor %}

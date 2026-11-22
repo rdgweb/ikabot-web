@@ -8,6 +8,7 @@ from django.shortcuts import redirect, render
 from django.views import View
 
 from . import services
+from .models import PiracyMember, PiracyMonth, PiracyRoute, PiracyTarget
 
 
 def _base(request) -> str:
@@ -35,34 +36,41 @@ def _server(request) -> str:
     return counts.most_common(1)[0][0] if counts else ""
 
 
+def _clock_human(clock) -> str:
+    if clock is None:
+        return ""
+    days, rest = divmod(int(clock), 86400)
+    return f"{days}d {rest // 3600}h" if days else f"{rest // 3600}h {(rest % 3600) // 60:02d}min"
+
+
 class PiracyView(LoginRequiredMixin, View):
     def get(self, request):
         server = _server(request)
         data = services.overview(server) if server else {"rows": [], "ranking": [], "raids": []}
         month = data.get("month")
-        weeks = []
-        if month:
-            by_week = {}
-            for route in month.routes.select_related("raider__account", "target__account").order_by("week", "stage", "group"):
-                by_week.setdefault(route.week, []).append(route)
-            weeks = [{"week": w, "routes": rs, "done": sum(1 for r in rs if r.status == "done")} for w, rs in sorted(by_week.items())]
-        history = []
-        from .models import PiracyMonth
-
-        for past in PiracyMonth.objects.filter(server_id=server).prefetch_related("champions__game_account")[:12]:
-            history.append({"month": past, "champions": [c.game_account for c in past.champions.all()]})
-        clock = data.get("clock")
-        clock_human = ""
-        if clock is not None:
-            days, rest = divmod(int(clock), 86400)
-            clock_human = (f"{days}d {rest // 3600}h" if days else f"{rest // 3600}h {(rest % 3600) // 60:02d}min")
         able = {ga.pk for ga in services.eligible(server)} if server else set()
+        by_ga = {}
         for row in data.get("rows", []):
             row["eligible"] = row["ga"].pk in able
+            by_ga[row["ga"].pk] = row
+        groups = []
+        if month:
+            members = list(month.members.select_related("game_account__account"))
+            for number in sorted({m.group for m in members}):
+                of = [m for m in members if m.group == number]
+                pick = lambda role: [by_ga.get(m.game_account_id) or {"ga": m.game_account} for m in of if m.role == role]
+                champion = pick(PiracyMember.CHAMPION)
+                groups.append({"number": number, "champion": champion[0] if champion else None,
+                               "passers": pick(PiracyMember.PASSER), "origins": pick(PiracyMember.ORIGIN)})
+        routes = (list(month.routes.select_related("raider", "target", "outside").order_by("-created_at")[:20]) if month else [])
+        history = [{"month": past, "champions": [c.game_account for c in past.champions.all()]}
+                   for past in PiracyMonth.objects.filter(server_id=server).prefetch_related("champions__game_account")[:12]]
+        own_ranked = sorted([r for r in data.get("rows", []) if r.get("place")], key=lambda r: int(r["place"]))
         return render(request, "piracy/index.html", {
-            **data, "server": server, "clock_human": clock_human, "eligible_count": len(able), "servers": services.servers(), "weeks": weeks, "history": history,
-            "can_run": _can_run(request), "base_template": _base(request),
-            "champions": [c.game_account for c in month.champions.select_related("game_account__account")] if month else [],
+            **data, "server": server, "servers": services.servers(), "clock_human": _clock_human(data.get("clock")),
+            "eligible_count": len(able), "groups": groups, "routes": routes, "history": history, "own_ranked": own_ranked,
+            "targets": PiracyTarget.objects.filter(server_id=server).order_by("player_name") if server else [],
+            "can_run": _can_run(request), "base_template": _base(request), "win_factor_pct": round((services.WIN_FACTOR - 1) * 100, 1),
         })
 
     def post(self, request):
@@ -77,18 +85,46 @@ class PiracyView(LoginRequiredMixin, View):
                 champions = None
                 if action == "choose":
                     ids = request.POST.getlist("champion")
-                    pool = {str(ga.pk): ga for ga in services.accounts_on(server)}
+                    pool = {str(ga.pk): ga for ga in services.eligible(server)}
                     champions = [pool[i] for i in ids if i in pool]
-                month = services.plan_month(request.organization, server, champions=champions)
+                month = services.plan_month(request.organization, server, champions=champions,
+                                            share_percent=int(request.POST.get("share_percent") or 10),
+                                            share_every_hours=int(request.POST.get("share_every_hours") or 24))
                 names = ", ".join(c.game_account.name for c in month.champions.select_related("game_account"))
                 record("piracy.month_planned", target=month, target_label=f"{server}: {names}")
                 messages.success(request, f"Campeãs do mês: {names}.")
+            elif action == "share":
+                month = services.current_month(server)
+                if month:
+                    month.share_percent = max(0, min(100, int(request.POST.get("share_percent") or 0)))
+                    month.share_every_hours = max(1, min(240, int(request.POST.get("share_every_hours") or 24)))
+                    month.save(update_fields=["share_percent", "share_every_hours", "updated_at"])
+                    messages.success(request, f"As outras contas convertem {month.share_percent}% a cada {month.share_every_hours}h.")
             elif action == "close":
                 month = services.current_month(server)
                 if month:
                     services.close_month(month, "encerrado pelo usuário")
                     record("piracy.month_closed", target=month, target_label=server)
-                    messages.success(request, "Plano do mês encerrado; o que estava planejado foi pulado.")
+                    messages.success(request, "Plano do mês encerrado.")
+            elif action == "add_target":
+                name = (request.POST.get("player_name") or "").strip()[:64]
+                if not name:
+                    raise ValueError("Digite o nome do jogador.")
+                own = {str(ga.name or "").strip().casefold() for ga in services.accounts_on(server)}
+                if name.casefold() in own:
+                    raise ValueError("Esse jogador é uma conta sua: as suas já entram pelo plano do mês.")
+                target, _created = PiracyTarget.objects.update_or_create(
+                    organization=request.organization, server_id=server, player_name=name,
+                    defaults={"active": True, "city_id": (request.POST.get("city_id") or "").strip()[:32],
+                              "island_id": (request.POST.get("island_id") or "").strip()[:32]})
+                record("piracy.target_added", target=target, target_label=f"{server}: {name}")
+                messages.success(request, f"{name} entrou como alvo.")
+            elif action == "remove_target":
+                target = PiracyTarget.objects.filter(pk=request.POST.get("target")).first()
+                if target:
+                    record("piracy.target_removed", target=target, target_label=f"{server}: {target.player_name}")
+                    target.delete()
+                    messages.success(request, "Alvo retirado.")
         except ValueError as exc:
             messages.error(request, str(exc))
         return redirect(f"/pirataria/?server={server}")
