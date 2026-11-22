@@ -52,6 +52,8 @@ ERROR_RESCHEDULE = 10 * 60        # 10 min — generic error back-off
 MISSION_BUFFER = 60               # seconds of extra buffer after mission completes
 COLLECT_INTERVAL = 8 * 3600       # 8 h — legacy collect runner interval
 TARGETED_RECHECK = 60
+# N-211 (22/11): the month's plan founds a temporary colony to reach a target out of the fortress's reach — off for now
+PLAN_COLONY = False
 TARGETED_ROOM_RETRY = 6 * 3600   # no room for a colony / colonize refused: look again later, missions go on
 TARGETED_TZ = ZoneInfo("America/Cuiaba")
 
@@ -340,6 +342,19 @@ class PiracyMissionRunner(BaseRunner):
             if str(game_account_id) in ids and target in ids:
                 return True
         return False
+
+    def _out_of_reach(self, jid: str, client, route: dict[str, Any], game_account_id: str):
+        """The plan's target is out of the fortress's reach: (target_entry, colony_spot) to found a temporary colony
+        near it, or None. N-211 (22/11): Rodrigo does not want temporary colonies for now (PLAN_COLONY off): the route
+        goes back to the hub as failed and the hub draws someone else."""
+        name = route.get("player_name") or route.get("target_name")
+        if PLAN_COLONY:
+            self.log(jid, "info", f"Plano do mês: {name} fora do alcance da fortaleza; tentando pela colônia temporária")
+            return self._planned_pair(jid, client, route, game_account_id)
+        self.log(jid, "info", f"Plano do mês: {name} fora do alcance da fortaleza; sem colônia temporária (desligada), "
+                              f"o hub escolhe outro")
+        self._report_route(jid, str(route.get("route_id") or ""), "failed", "fora do alcance da fortaleza")
+        return None
 
     def _planned_pair(self, jid: str, client, route: dict[str, Any], game_account_id: str):
         """(target_entry, colony_spot) for the plan's route, or None (reported to the hub as failed)."""
@@ -1070,8 +1085,7 @@ class PiracyMissionRunner(BaseRunner):
                         reschedule_inputs={**inputs, **_state_inputs, "_plan_route_id": route_id, "_plan_points_before": capture_points},
                         data={"status": "plan_raid_sent", "route": route_id},
                     )
-                self.log(jid, "info", f"Plano do mês: {route.get('player_name')} fora do alcance da fortaleza; tentando pela colônia temporária")
-                planned_pair = self._planned_pair(jid, client, route, game_account_id)
+                planned_pair = self._out_of_reach(jid, client, route, game_account_id)
             room = self._colony_room(game_account_id) if (planned_pair or self._targeted_cycle_due(inputs)) else None
             if room and room[0] >= room[1]:
                 # no free town slot: the game has no colonize form; the special cycle waits and the missions go on

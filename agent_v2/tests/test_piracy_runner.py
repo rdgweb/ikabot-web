@@ -300,3 +300,18 @@ class DirectRaidConfirmTests(unittest.TestCase):
         self.assertEqual((raid["ok"], raid["time_remaining"]), (True, 2500))
         client.get_piracy_state = lambda city_id: {"time_remaining": 0}
         self.assertIsNone(runner._direct_raid("j", client, "77", {"target_city_id": "1", "target_island_id": "2"}))
+
+
+class NoPlanColonyTests(unittest.TestCase):
+    """N-211 (22/11): out of the fortress's reach, the plan founds no temporary colony for now: the route goes back to
+    the hub as failed (the hub draws someone else)."""
+
+    def test_out_of_reach_founds_no_colony(self):
+        runner = PiracyMissionRunner.__new__(PiracyMissionRunner)
+        runner.log = lambda *a, **k: None
+        reported = []
+        runner._report_route = lambda jid, route_id, status, message="": reported.append((route_id, status, message))
+        runner._planned_pair = lambda *a, **k: self.fail("no colony while PLAN_COLONY is off")
+        self.assertFalse(PIRACY_MODULE.PLAN_COLONY)
+        self.assertIsNone(runner._out_of_reach("j", object(), {"route_id": "r1", "player_name": "Alvo"}, "ga"))
+        self.assertEqual(reported, [("r1", "failed", "fora do alcance da fortaleza")])
