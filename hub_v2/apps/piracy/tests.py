@@ -362,3 +362,15 @@ class RotationTests(Base):
             seen |= {m.game_account_id for m in services.members_now(month, now) if m.role == "passer"}
         others = {k for k, v in first.items() if v != "champion"}
         self.assertEqual(seen, others)                                        # every account passes points on in turn
+
+
+class FinalPhaseTests(Base):
+    def test_nobody_converts_in_the_final_phase(self):
+        month = self.plan()
+        origin = month.members.filter(role="origin").first().game_account
+        job = self.jobs[origin.pk]
+        job.inputs_json = json.dumps({"last_capture_points": 15000, "last_complete_crew_points": 1000,
+                                      "piracy_final_phase_active": True})
+        job.save(update_fields=["inputs_json"])
+        data = self.agent(f"/api/agent/piracy/next/?game_account_id={origin.pk}")
+        self.assertEqual((data["hold"], data["share_percent"], data["crew_floor"]), (True, 0, None))

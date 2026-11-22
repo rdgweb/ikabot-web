@@ -572,6 +572,14 @@ def budgets(month, crews: dict) -> dict:
     return out
 
 
+def _final_phase(game_account) -> bool:
+    """The account's Pirate Fortress job is in the ranking's final phase (it says so in what it last read)."""
+    from apps.jobs.models import Job
+
+    job = Job._base_manager.filter(game_account=game_account, action_code=PIRATE_ACTION).order_by("-created_at").first()
+    return bool(_job_inputs(job).get("piracy_final_phase_active")) if job else False
+
+
 def sure_win(raider_crew: int | None, target_crew: int | None, min_percent: int = 100) -> bool:
     chance = win_chance(raider_crew, target_crew)
     return chance is not None and chance * 100 >= min(100, max(1, min_percent)) - 1e-9
@@ -637,6 +645,9 @@ def next_for(game_account, now: datetime | None = None) -> dict:
         crews = {m.game_account_id: strength(m.game_account)["crew"] for m in now_members if m.group == member.group}
         mine_budget = budgets(month, crews).get(game_account.pk) or {}
         extra.update(crew_cap=mine_budget.get("cap"), crew_floor=mine_budget.get("floor"))
+        # in the final phase of the ranking (the points count for the position at the turn) nobody converts
+        if _final_phase(game_account):
+            extra.update(share_percent=0, crew_floor=None)
     open_route = (PiracyRoute._base_manager.filter(raider=game_account, month=month, status=PiracyRoute.PLANNED, due_until__gt=now)
                   .select_related("raider__account", "target__account", "outside").order_by("due_from").first())
     if open_route is not None:
