@@ -19,6 +19,9 @@ RELEASE_REPOSITORIES = {
     "agent": "blackoneal/ikabot-web-agent",
 }
 RELEASE_CACHE_SECONDS = 300
+RELEASE_ERROR_SECONDS = 60          # a failed lookup is remembered only briefly
+RELEASE_LAST_GOOD_SECONDS = 7 * 86400
+RELEASE_TIMEOUTS = (5, 12)          # a slow Docker Hub gets a second, longer try
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,7 @@ class RegistryRelease:
     published_at: datetime | None = None
     digest: str = ""
     error: str = ""
+    notice: str = ""          # the last known release shown while Docker Hub does not answer
 
     @property
     def image(self) -> str:
@@ -81,22 +85,32 @@ def get_registry_release(component: str, *, force: bool = False) -> RegistryRele
         if isinstance(cached, RegistryRelease):
             return cached
 
-    try:
-        response = requests.get(
-            f"{DOCKER_HUB_API}/{repository}/tags",
-            params={"page_size": 100, "ordering": "last_updated"},
-            timeout=5,
-        )
-        response.raise_for_status()
-        release = _release_from_payload(component, repository, response.json())
-    except (requests.RequestException, TypeError, ValueError) as exc:
-        release = RegistryRelease(
-            component=component,
-            repository=repository,
-            error=f"Docker Hub indisponível: {exc}",
-        )
+    failure = None
+    for timeout in RELEASE_TIMEOUTS:
+        try:
+            response = requests.get(
+                f"{DOCKER_HUB_API}/{repository}/tags",
+                params={"page_size": 100, "ordering": "last_updated"},
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            release = _release_from_payload(component, repository, response.json())
+            break
+        except (requests.RequestException, TypeError, ValueError) as exc:
+            failure = exc
+    else:
+        # Docker Hub slow or down: the last release that was read stays valid (the agent's digest included)
+        last = cache.get(f"{key}:last_good")
+        if isinstance(last, RegistryRelease) and not last.error:
+            release = RegistryRelease(**{**last.__dict__, "notice": "Docker Hub lento agora: mostrando a última versão conhecida."})
+        else:
+            release = RegistryRelease(component=component, repository=repository, error=f"Docker Hub indisponível: {failure}")
+        cache.set(key, release, RELEASE_ERROR_SECONDS)
+        return release
 
     cache.set(key, release, RELEASE_CACHE_SECONDS)
+    if not release.error:
+        cache.set(f"{key}:last_good", release, RELEASE_LAST_GOOD_SECONDS)
     return release
 
 

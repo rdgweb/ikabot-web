@@ -36,6 +36,8 @@
       </dl>
       {% if hub_release.error %}
         <p class="mt-3 text-xs text-[var(--ik-bad)]"><i class="bi bi-exclamation-triangle"></i> {{ hub_release.error }}</p>
+      {% elif hub_release.notice %}
+        <p class="mt-3 text-xs text-muted"><i class="bi bi-hourglass-split"></i> {{ hub_release.notice }}</p>
       {% else %}
         <p class="mt-3 text-xs text-muted">{{ hub_release.image }}{% if hub_release.published_at %} · {{ hub_release.published_at|date:"d/m/Y H:i" }}{% endif %}</p>
       {% endif %}
@@ -84,6 +86,8 @@
       </dl>
       {% if agent_release.error %}
         <p class="mt-3 text-xs text-[var(--ik-bad)]"><i class="bi bi-exclamation-triangle"></i> {{ agent_release.error }}</p>
+      {% elif agent_release.notice %}
+        <p class="mt-3 text-xs text-muted"><i class="bi bi-hourglass-split"></i> {{ agent_release.notice }}</p>
       {% else %}
         <p class="mt-3 text-xs text-muted">{{ agent_release.image }}{% if agent_release.published_at %} · {{ agent_release.published_at|date:"d/m/Y H:i" }}{% endif %}</p>
       {% endif %}
