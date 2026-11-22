@@ -1109,6 +1109,20 @@ class BarbariansRunner(BaseRunner):
                 keep.append({**entry, "units": rest})
         st["trained_elsewhere"] = keep
 
+    def _report_unread(self, jid, client, island_id, town, st, why: str) -> None:
+        """No report could be read yet: try again in the next rounds; after 6 tries train again what the simulator
+        said this attack would lose (an estimate, said so), so the farm does not shrink when the reports fail."""
+        if st["report_tries"] < 6:
+            return
+        st["report_pending"] = False
+        estimate = {str(k): int(v) for k, v in ((st.get("attack_plan") or {}).get("losses") or {}).items() if int(v or 0) > 0}
+        if not estimate:
+            self.log(jid, "warn", f"Ilha {island_id}: {why}; sigo sem ele.")
+            return
+        self.log(jid, "warn", f"Ilha {island_id}: {why}; refaço as perdas estimadas pelo simulador para este ataque: "
+                              f"{_army_text({int(u): q for u, q in estimate.items()})}.")
+        self._retrain_losses(jid, client, island_id, town, estimate, st)
+
     def _learn_from_report(self, jid, client, island_id, town, st) -> None:
         """The battle report of the last attack (newest one against the village after the last read): result, rounds,
         morale and losses, kept for the next army and shown in the job."""
@@ -1129,24 +1143,32 @@ class BarbariansRunner(BaseRunner):
             self.log(jid, "warn", f"Ilha {island_id}: relatórios não abriram ({exc}).")
             return
         if not listed:
-            if st["report_tries"] >= 6:
-                st["report_pending"] = False
-                self.log(jid, "warn", f"Ilha {island_id}: não achei o relatório da última batalha; sigo sem ele.")
+            self._report_unread(jid, client, island_id, town, st, "não achei o relatório da última batalha")
             return
         expected = sum(int(q or 0) for _name, q in (st.get("defenders") or []) if str(q).isdigit() or isinstance(q, int))
-        newest, detailed = None, None
-        for row in sorted(listed, key=lambda r: int(r.get("combat_id") or 0))[:4]:
+        # N-212 (22/11): one attack can leave more than one report (a reinforcement arriving makes its own, 1 round, with
+        # no battle tables): look at every new one, count only a report with content (morale or losses read) whose
+        # defenders are this village's, and among those take the longest battle; the side ones are set aside, never
+        # read as "a defeat in 1 round without losses" (that stopped the losses from being trained again)
+        newest, detailed, best_rounds, side = None, None, -1, []
+        for row in sorted(listed, key=lambda r: int(r.get("combat_id") or 0))[:8]:
             found = client.fetch_combat_detailed_report(int(town), int(row["combat_id"])) or {}
             total = _defenders_joined(found)
             if expected and total and total != expected:
                 continue                                         # another village's battle
-            newest, detailed = row, found
-            break
+            outcome = _battle_outcome(found, row)
+            if outcome["morale_start"] is None and not outcome["losses"] and not total:
+                side.append(int(row["combat_id"]))               # no morale, no losses, no defenders: not the battle
+                continue
+            if outcome["rounds"] > best_rounds:
+                newest, detailed, best_rounds = row, found, outcome["rounds"]
         if newest is None:
-            if st["report_tries"] >= 6:
-                st["report_pending"] = False
-                self.log(jid, "warn", f"Ilha {island_id}: nenhum relatório bate com a vila atacada; sigo sem ele.")
+            if side:
+                st["claimed_reports"] = ([int(c) for c in st.get("claimed_reports") or []] + side)[-20:]
+            self._report_unread(jid, client, island_id, town, st, "nenhum relatório da batalha abriu com rodadas e perdas")
             return
+        if side:
+            st["claimed_reports"] = ([int(c) for c in st.get("claimed_reports") or []] + side)[-20:]
         st["claimed_reports"] = ([int(c) for c in st.get("claimed_reports") or []] + [int(newest["combat_id"])])[-20:]
         battle = _battle_outcome(detailed or {}, newest)
         if battle.get("result") == "defeat" and st.get("last_troops"):

@@ -957,3 +957,59 @@ class DefeatAndScaleTests(unittest.TestCase):
         one = farm_book(ledger, {"303": 200}, None, pop)
         seven = farm_book(ledger, {"303": 200}, None, pop, towns=7)
         self.assertEqual(seven[34]["sustainable_citizens"], 7 * one[34]["sustainable_citizens"])
+
+
+class SideReportTests(unittest.TestCase):
+    """N-212 (22/11): a reinforcement leaves its own report (1 round, no battle tables). It is not the battle: the
+    real report (morale and losses read) is taken; with nothing readable after the tries, the simulator's estimate of
+    the losses is trained again."""
+
+    def _runner(self):
+        runner = BarbariansRunner.__new__(BarbariansRunner)
+        runner.hub = _Hub()
+        runner.is_network_error = lambda exc: False
+        runner._state = {}
+        runner._retrain = False
+        runner.logs = []
+        runner.log = lambda jid, level, text: runner.logs.append(text)
+        return runner
+
+    def test_the_side_report_is_never_the_battle(self):
+        battle_html = ("do lado do defensor, com as seguintes unidades: 75 2 "
+                       "Atacante Unidades Moral Hoplita 200 (-20) 80 % ")
+
+        class Game:
+            def fetch_combat_reports(self, city_id, limit=10):
+                return [{"combat_id": 700, "text": "Batalha por Vila de Bárbaros", "result": "victory", "rounds": 9, "city_id_target": 0},
+                        {"combat_id": 701, "text": "Batalha por Vila de Bárbaros", "result": "defeat", "rounds": 1, "city_id_target": 0}]
+
+            def fetch_combat_detailed_report(self, city_id, combat_id):
+                if combat_id == 700:
+                    return {"rounds": [{"round": 1, "html": battle_html}], "attacker_losses": {"303": 40}}
+                return {"rounds": [{"round": 1, "html": "Reforço chegou"}], "attacker_losses": {}}
+
+        st = {"report_pending": True, "attacked_level": 37, "attacked_at": 1,
+              "defenders": [["Membro do Clube de Bárbaros", 75], ["Aríete Bárbaro", 2]]}
+        runner = self._runner()
+        runner._learn_from_report("j", Game(), "4478", "37436", st)
+        self.assertEqual((st["last_battle"]["result"], st["last_battle"]["rounds"]), ("victory", 9))
+        self.assertEqual(st["last_battle"]["losses"], {"303": 40})
+        self.assertIn(701, st["claimed_reports"])                        # set aside, never read as the battle
+
+    def test_nothing_readable_trains_the_simulator_estimate(self):
+        class Game:
+            def fetch_combat_reports(self, city_id, limit=10):
+                return [{"combat_id": 800, "text": "Batalha por Vila de Bárbaros", "result": "defeat", "rounds": 1, "city_id_target": 0}]
+
+            def fetch_combat_detailed_report(self, city_id, combat_id):
+                return {"rounds": [], "attacker_losses": {}}
+
+        st = {"report_pending": True, "attacked_level": 37, "attacked_at": 1, "report_tries": 5,
+              "attack_plan": {"losses": {"303": 30, "302": 0}}}
+        runner = self._runner()
+        trained = []
+        runner._retrain_losses = lambda jid, client, island_id, town, losses, st: trained.append(losses)
+        runner._learn_from_report("j", Game(), "4478", "37436", st)
+        self.assertEqual(trained, [{"303": 30}])
+        self.assertFalse(st["report_pending"])
+        self.assertNotIn("last_battle", st)                              # no fake defeat recorded
