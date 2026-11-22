@@ -246,22 +246,40 @@ def pick_champions(accounts: list, server_id: str, rng: random.Random | None = N
     return chosen
 
 
-def build_groups(accounts: list, champions: list) -> list[dict]:
-    """Split the other accounts between the champions: per group, passers (never the champion's lobby; small lobbies
-    first, they bridge the big ones) and origins (any lobby: whoever takes them must be of another one)."""
-    others = [ga for ga in accounts if ga not in champions]
+def build_groups(accounts: list, champions: list, crews: dict | None = None) -> list[dict]:
+    """Split the other accounts between the champions. An account never goes to a champion of its own lobby: it goes to
+    the champion of another lobby that beats it with the best chance (by crew), keeping the groups balanced. Inside a
+    group, passers are the accounts of lobbies other than the champion's that the champion beats best (small lobbies
+    first among equals), origins the rest."""
+    crews = crews or {}
     lobby_size = defaultdict(int)
     for ga in accounts:
         lobby_size[ga.account_id] += 1
-    groups = [{"champion": c, "passers": [], "origins": []} for c in champions]
-    for ga in sorted(others, key=lambda g: (lobby_size[g.account_id], g.name or "")):
-        fit = [gr for gr in groups if gr["champion"].account_id != ga.account_id and len(gr["passers"]) < PASSERS_PER_GROUP
-               and all(p.account_id != ga.account_id for p in gr["passers"])]
-        if fit:
-            min(fit, key=lambda gr: len(gr["passers"]))["passers"].append(ga)
-    taken = {p.pk for gr in groups for p in gr["passers"]}
-    for ga in [g for g in others if g.pk not in taken]:
-        min(groups, key=lambda gr: len(gr["origins"]))["origins"].append(ga)
+    groups = [{"champion": c, "members": [], "passers": [], "origins": []} for c in champions]
+
+    def odds(champion, ga):
+        value = win_chance(crews.get(champion.pk), crews.get(ga.pk))
+        return value if value is not None else 0.5
+
+    others = [ga for ga in accounts if ga not in champions]
+    # the accounts that only one champion may take first, then the rest by how strong they are
+    others.sort(key=lambda ga: (sum(1 for g in groups if g["champion"].account_id != ga.account_id), -(crews.get(ga.pk) or 0)))
+    size = math.ceil(len(others) / max(1, len(groups)))
+    for ga in others:
+        fit = [g for g in groups if g["champion"].account_id != ga.account_id]
+        if not fit:
+            continue                                   # every champion is of its lobby: it stays out this month
+        roomy = [g for g in fit if len(g["members"]) < size] or fit
+        max(roomy, key=lambda g: (odds(g["champion"], ga), -len(g["members"])))["members"].append(ga)
+    for group in groups:
+        champion = group["champion"]
+        ranked = sorted(group["members"], key=lambda ga: (-odds(champion, ga), lobby_size[ga.account_id], ga.name or ""))
+        passers = []
+        for ga in ranked:                              # passers from as many lobbies as possible
+            if len(passers) < PASSERS_PER_GROUP and all(ga.account_id != p.account_id for p in passers):
+                passers.append(ga)
+        group["passers"] = passers if len(group["members"]) > len(passers) else []
+        group["origins"] = [ga for ga in group["members"] if ga not in group["passers"]]
     return groups
 
 
@@ -289,7 +307,8 @@ def plan_month(organization, server_id: str, *, champions: list | None = None, n
                                        share_every_hours=max(1, min(240, int(share_every_hours or 24))),
                                        min_win_percent=max(50, min(100, int(min_win_percent or 95))),
                                        min_points=max(100, int(min_points or 10000)))
-    for number, group in enumerate(build_groups(accounts, chosen), start=1):
+    crews = {ga.pk: strength(ga)["crew"] for ga in accounts}
+    for number, group in enumerate(build_groups(accounts, chosen, crews), start=1):
         PiracyChampion.objects.create(month=month, game_account=group["champion"], group=number)
         PiracyMember.objects.create(month=month, game_account=group["champion"], role=PiracyMember.CHAMPION, group=number)
         for ga in group["passers"]:
@@ -368,7 +387,17 @@ def projection(month, rows_by_ga: dict) -> dict:
                     if via > best:
                         best, way = via, f"por {passer.name}"
             expected += points(ga) * best
-            detail.append({"ga": ga, "points": points(ga), "chance": round(best * 100), "way": way if best else "não alcança"})
+            if not best:                                   # say why its points do not reach the champion
+                raw = win_chance(crew(champion), crew(ga))
+                if crew(ga) is None or crew(champion) is None:
+                    way = "tripulação não lida"
+                elif champion.account_id == ga.account_id and not passers:
+                    way = "mesmo lobby da campeã"
+                elif champion.account_id == ga.account_id:
+                    way = "mesmo lobby; passagem não vence"
+                else:
+                    way = f"campeã vence só {round((raw or 0) * 100)}%"
+            detail.append({"ga": ga, "points": points(ga), "chance": round(best * 100), "way": way})
         out[group] = {"expected": int(expected), "held": held, "detail": sorted(detail, key=lambda d: -d["points"])}
     return out
 

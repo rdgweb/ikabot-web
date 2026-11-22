@@ -321,3 +321,19 @@ class CapWinsTests(Base):
         for m in month.members.filter(group=champion_m.group, role="passer"):
             b = result[m.game_account_id]
             self.assertTrue(b["floor"] is None or b["floor"] <= b["cap"])    # origins of 30k would need ~34.5k: left out
+
+
+class GroupingTests(Base):
+    def test_no_account_in_the_group_of_a_champion_of_its_lobby(self):
+        for seed in range(6):
+            month = self.plan(seed=seed)
+            champions = {m.group: m.game_account for m in month.members.filter(role="champion").select_related("game_account")}
+            for m in month.members.exclude(role="champion").select_related("game_account"):
+                self.assertNotEqual(m.game_account.account_id, champions[m.group].account_id)
+
+    def test_regroup_keeps_the_champions(self):
+        month = self.plan()
+        before = sorted(month.champions.values_list("game_account_id", flat=True))
+        self.client.post("/pirataria/", {"action": "regroup", "server": "s1-br"})
+        month = PiracyMonth.objects.get(status="open")
+        self.assertEqual(sorted(month.champions.values_list("game_account_id", flat=True)), before)

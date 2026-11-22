@@ -118,12 +118,21 @@ class PiracyView(LoginRequiredMixin, View):
         server = _server(request)
         action = request.POST.get("action", "")
         try:
-            if action in ("plan", "choose"):
+            if action in ("plan", "choose", "regroup"):
                 champions = None
+                current = services.current_month(server)
+                if action == "regroup" and current:
+                    champions = [c.game_account for c in current.champions.select_related("game_account").order_by("group")]
+                    request.POST = request.POST.copy()
+                    for field in ("share_percent", "share_every_hours", "min_win_percent", "min_points"):
+                        request.POST[field] = str(getattr(current, field))
                 if action == "choose":
                     ids = request.POST.getlist("champion")
                     pool = {str(ga.pk): ga for ga in services.eligible(server)}
                     champions = [pool[i] for i in ids if i in pool]
+                if action == "regroup" and current:
+                    services.close_month(current, "grupos refeitos")
+                    PiracyMonth.objects.filter(pk=current.pk).delete() if not current.routes.exclude(status="skipped").exists() else None
                 month = services.plan_month(request.organization, server, champions=champions,
                                             share_percent=int(request.POST.get("share_percent") or 10),
                                             share_every_hours=int(request.POST.get("share_every_hours") or 24),
